@@ -6,11 +6,11 @@ authors = []
 readme = "README.md"
 
 [tool.poetry.group.main.dependencies]
-python = ">=3.11,<3.13"
+python = ">=3.11,<3.12"
 
 # required for dependabot
 [tool.poetry.dependencies]
-python = ">=3.11,<3.13"
+python = ">=3.11,<3.12"
 
 [tool.poetry.group.chat.dependencies]
 onyx-chat = { path = "onyx/chat", develop = true }

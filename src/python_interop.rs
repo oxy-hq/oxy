@@ -23,7 +23,7 @@ pub fn execute_bigquery_query(
     // Construct site-packages path
     let mut site_packages_path = PathBuf::from(poetry_env_path);
     site_packages_path.push("lib");
-    site_packages_path.push("python3.12");  // Adjust this to your Python version
+    site_packages_path.push("python3.11");  // TODO: Adjust to be dynamically determined
     site_packages_path.push("site-packages");
 
     Python::with_gil(|py| -> PyResult<()> {
@@ -43,7 +43,7 @@ pub fn execute_bigquery_query(
         }
 
         // Try to import onyx
-        match py.import("onyx") {
+        match py.import("onyx.catalog.adapters.connector.bigquery") {
             Ok(_) => println!("Successfully imported onyx"),
             Err(e) => println!("Failed to import onyx: {:?}", e),
         }
