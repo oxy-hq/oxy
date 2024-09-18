@@ -1,0 +1,16 @@
+[tool.poetry]
+name = "onyx-chat"
+version = "0.0.0"
+description = ""
+authors = ["Tay Nguyen <15603942+hotay@users.noreply.github.com>"]
+readme = "README.md"
+packages = [{ include = "onyx", from = "src" }]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+openai = "^1.33.0"
+onyx-shared = { path = "../shared", develop = true }
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

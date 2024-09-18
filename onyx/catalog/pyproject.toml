@@ -1,0 +1,35 @@
+[tool.poetry]
+name = "onyx-catalog"
+version = "0.0.0"
+description = ""
+authors = ["Tay Nguyen <15603942+hotay@users.noreply.github.com>"]
+readme = "README.md"
+packages = [{ include = "onyx", from = "src" }]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+pydantic = "^2.6.4"
+pydantic-settings = "^2.2.1"
+snowflake-connector-python = { version = "^3.6.0" }
+langchain = "^0.2.0"
+langchain-core = "^0.2.0"
+langchain-community = "^0.2.0"
+langchain-openai = "^0.1.8"
+openai = "^1.33.0"
+tiktoken = "^0.7.0"
+onyx-shared = { path = "../shared", develop = true, extras = ["orm"] }
+fire = { version = "^0.5.0" }
+apache-airflow-client = "^2.8.0"
+google-cloud-bigquery = "^3.15.0"
+# ingest
+aiohttp = "^3.8.5"
+orjson = "^3.10.7"
+ibis-framework = { extras = ["clickhouse", "duckdb"], version = "^9.3.0" }
+tenacity = "*"
+clickhouse-connect = "*"
+sqlglot = "*"
+semantic-text-splitter = "^0.16.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
