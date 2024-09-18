@@ -1,5 +1,5 @@
+use log::debug;
 use pyo3::prelude::*;
-
 use pyo3::types::PyDict;
 use std::error::Error;
 use std::path::PathBuf;
@@ -18,7 +18,7 @@ pub fn execute_bigquery_query(
     query: &str,
 ) -> Result<(), Box<dyn Error>> {
     let poetry_env_path = get_poetry_env_path();
-    println!("Poetry environment path: {}", poetry_env_path);
+    debug!("Poetry environment path: {}", poetry_env_path);
 
     // Construct site-packages path
     let mut site_packages_path = PathBuf::from(poetry_env_path);
@@ -35,16 +35,19 @@ pub fn execute_bigquery_query(
         )?;
 
         // Print sys.path
-        println!("sys.path: {:?}", sys.getattr("path")?.extract::<Vec<String>>()?);
+        debug!("sys.path: {:?}", sys.getattr("path")?.extract::<Vec<String>>()?);
 
-        match py.import("google") {
-            Ok(_) => println!("Successfully imported google"),
-            Err(e) => println!("Failed to import google: {:?}", e),
+        // Try to import onyx
+        match py.import("onyx") {
+            Ok(_) => println!("Successfully imported onyx"),
+            Err(e) => println!("Failed to import onyx: {:?}", e),
         }
 
         // Try to import onyx
-        match py.import("onyx.catalog.adapters.connector.bigquery") {
-            Ok(_) => println!("Successfully imported onyx"),
+        // I have no idea why the import is messed up like this, but it is.
+        // The bigquery module isn't working, so need to figure out what's wrong, but for now will try using a simpler connector.
+        match py.import("onyx.catalog.src.onyx.catalog.adapters.connector") {
+            Ok(_) => println!("Successfully imported onyx sub-library"),
             Err(e) => println!("Failed to import onyx: {:?}", e),
         }
 

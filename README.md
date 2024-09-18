@@ -13,6 +13,7 @@ curl https://sh.rustup.rs -sSf | sh
 
 ### Build
 Run `make build` to build.
+So long as the python code doesn't change, `make build` only needs to be run once, and then we can just run `cargo build` to update the CLI.
 
 The build sequencing is as follows:
 - The python modules are installed using `poetry` to a virtual environment.
@@ -22,6 +23,4 @@ The build sequencing is as follows:
 This repository is a mixed Python/rust repository.
 - ./onyx contains the backend-workspaces code (directly from titanium)
 - ./src contains rust code
-
 The CLI tool is built in Rust, and executes code from the Python backend code with `pyo3`. The choice of rust for the CLI tool primarily because the CLI is faster, and longer-term, we will want to extend the capabilities of the CLI to do things that are latency-sensitive, e.g. fuzzy-searching through command history, exploring results, viewing warehouse context.
-
