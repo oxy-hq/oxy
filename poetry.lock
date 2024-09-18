@@ -3805,7 +3805,7 @@ tiktoken = "^0.7.0"
 
 [package.source]
 type = "directory"
-url = "python/ai"
+url = "onyx/ai"
 
 [[package]]
 name = "onyx-catalog"
@@ -3840,7 +3840,7 @@ tiktoken = "^0.7.0"
 
 [package.source]
 type = "directory"
-url = "python/catalog"
+url = "onyx/catalog"
 
 [[package]]
 name = "onyx-chat"
@@ -3857,7 +3857,7 @@ openai = "^1.33.0"
 
 [package.source]
 type = "directory"
-url = "python/chat"
+url = "onyx/chat"
 
 [[package]]
 name = "onyx-shared"
@@ -3882,7 +3882,7 @@ orm = ["sqlalchemy (>=2.0.30,<3.0.0)"]
 
 [package.source]
 type = "directory"
-url = "python/shared"
+url = "onyx/shared"
 
 [[package]]
 name = "openai"
@@ -6654,4 +6654,4 @@ cffi = ["cffi (>=1.11)"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.11,<3.13"
-content-hash = "95f9227def1fb4b4e2a2bd6482d1652b82b39ac6f2b8090c8f87d774972f14a2"
+content-hash = "ea1165146442a032e17e53a3db62501b7701080348404ea096acacb8c23dfaff"

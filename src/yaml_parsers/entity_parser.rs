@@ -4,8 +4,7 @@ use std::fs;
 #[derive(Deserialize)]
 pub struct EntityConfig {
     pub entities: Vec<Entity>,
-    pub metrics: Vec<Metric>,
-    pub time_grains: Vec<TimeGrain>,
+    pub calculations: Vec<Calculation>,
 }
 
 #[derive(Deserialize)]
@@ -15,15 +14,9 @@ pub struct Entity {
 }
 
 #[derive(Deserialize)]
-pub struct Metric {
+pub struct Calculation {
     pub name: String,
     pub sql: String,
-}
-
-#[derive(Deserialize)]
-pub struct TimeGrain {
-    pub name: String,
-    pub universal_key: String,
 }
 
 pub fn parse_entity_config() -> Result<EntityConfig, Box<dyn std::error::Error>> {
@@ -49,8 +42,8 @@ pub fn format_system_message(config: &EntityConfig, output_type: &str) -> String
     }
 
     message.push_str("\nCalculations:\n");
-    for metric in &config.calculations {
-        message.push_str(&format!("- {}: {}\n", metric.name, metric.sql));
+    for calculation in &config.calculations {
+        message.push_str(&format!("- {}: {}\n", calculation.name, calculation.sql));
     }
 
     message.push_str("\nUse this information to inform your responses.");

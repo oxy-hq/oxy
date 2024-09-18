@@ -1,18 +1,15 @@
-mod config_parser;
+mod python_interop;
+mod yaml_parsers;
 
 use clap::Parser;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::error::Error;
-use std::fs;
 use serde_json::json;
-use google_cloud_bigquery::client::{ClientConfig, Client as BigQueryClient};
-use google_cloud_bigquery::client::google_cloud_auth::credentials::CredentialsFile;
-use google_cloud_bigquery::http::job::query::QueryRequest;
-use google_cloud_bigquery::query::row::Row;
 
-use crate::config_parser::{parse_entity_config, format_system_message};
+use crate::yaml_parsers::config_parser::{Config, parse_config};
+use crate::python_interop::execute_bigquery_query;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -48,34 +45,22 @@ struct Choice {
     message: Message,
 }
 
-#[derive(Deserialize)]
-struct Config {
-    connections: Vec<Connection>,
-}
-
-#[derive(Deserialize)]
-struct Connection {
-    name: String,
-    r#type: String,
-    key_path: String,
-}
-
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
     let api_key = env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY not set");
     let client = Client::new();
 
-    // Read and parse config.yml
-    let config_content = fs::read_to_string("config.yml")?;
-    let config: Config = serde_yaml::from_str(&config_content)?;
-    let bigquery_connection = config.connections.iter()
-        .find(|c| c.r#type == "bigquery")
-        .expect("No BigQuery connection found in config.yml");
+    // Parse the configuration
+    let config = parse_config()?;
+    
+    let bigquery_warehouse = config.warehouses.iter()
+        .find(|w| w.r#type == "bigquery")
+        .expect("No BigQuery warehouse found in config.yml");
 
     // Step 1: Generate SQL using OpenAI
     let sql_request = json!({
-        "model": "gpt-3.5-turbo-0613",
+        "model": "gpt-3.5-turbo",
         "messages": [
             {
                 "role": "system",
@@ -104,29 +89,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
     println!("Generated SQL query: {}", sql_query);
 
     // Step 2: Execute SQL against BigQuery
-    let cred = CredentialsFile::new_from_file(bigquery_connection.key_path).await?;
-    let (config, project_id) = ClientConfig::new_with_credentials(cred).await?;
-    let bigquery_client = BigQueryClient::new(config).await?;
-
-    let request = QueryRequest {
-        query: sql_query.to_string(),
-        ..Default::default()
-    };
-
-    let mut iter = bigquery_client.query::<Row>(&project_id.unwrap(), request).await?;
-    let mut results = Vec::new();
-    while let Some(row) = iter.next().await? {
-        let mut row_data = Vec::new();
-        let mut index = 0;
-        loop {
-            match row.column::<String>(index) {
-                Ok(value) => row_data.push(value),
-                Err(_) => break, // Assume we've reached the end of the row
-            }
-            index += 1;
-        }
-        results.push(row_data);
-    }
+    let results = execute_bigquery_query(
+        &bigquery_warehouse.key_path,
+        &bigquery_warehouse.name,
+        "default_dataset", // You might want to add this to the Warehouse struct or use a default
+        sql_query,
+    )?;
 
     let result_json = serde_json::to_string_pretty(&results)?;
     println!("Query result: {}", result_json);
