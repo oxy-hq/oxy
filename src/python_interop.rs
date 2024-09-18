@@ -15,6 +15,8 @@ pub fn execute_bigquery_query(
     // let output = Command::new("poetry")
     //     .args(&["env", "info", "--path"])
     //     .output()?;
+    
+    // this is hacky as fuck, but I don't know how else to get the path to the venv
     let poetry_env_path = "/Users/robertyi/Library/Caches/pypoetry/virtualenvs/onyx-eou4WPV5-py3.12";
     println!("Poetry environment path: {}", poetry_env_path);
 
