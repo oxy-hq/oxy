@@ -11,6 +11,7 @@ python = ">=3.11,<3.12"
 # required for dependabot
 [tool.poetry.dependencies]
 python = ">=3.11,<3.12"
+psycopg2 = "^2.9.9"
 
 [tool.poetry.group.chat.dependencies]
 onyx-chat = { path = "onyx/chat", develop = true }

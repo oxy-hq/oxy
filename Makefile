@@ -2,6 +2,7 @@
 
 build:
 	@echo "Installing Poetry dependencies..."
+	poetry lock --no-update
 	poetry install
 
 	@echo "Activating Poetry shell..."
