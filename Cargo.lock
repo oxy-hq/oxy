@@ -1381,6 +1381,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3fdb12b2476b595f9358c5161aa467c2438859caa136dec86c26fdd2efe17b92"
 
 [[package]]
+name = "onyx"
+version = "0.1.0"
+dependencies = [
+ "arrow 32.0.0",
+ "clap",
+ "pyo3",
+ "pyo3-arrow",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "tokio",
+]
+
+[[package]]
 name = "openssl"
 version = "0.10.66"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1422,21 +1437,6 @@ dependencies = [
  "libc",
  "pkg-config",
  "vcpkg",
-]
-
-[[package]]
-name = "orb"
-version = "0.1.0"
-dependencies = [
- "arrow 32.0.0",
- "clap",
- "pyo3",
- "pyo3-arrow",
- "reqwest",
- "serde",
- "serde_json",
- "serde_yaml",
- "tokio",
 ]
 
 [[package]]

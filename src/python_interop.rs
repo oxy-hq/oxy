@@ -3,7 +3,13 @@ use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use std::error::Error;
 use std::path::PathBuf;
-use std::process::Command;
+
+// Include the generated file
+include!(concat!(env!("OUT_DIR"), "/poetry_path.rs"));
+
+pub fn get_poetry_env_path() -> &'static str {
+    POETRY_ENV_PATH
+}
 
 pub fn execute_bigquery_query(
     credentials_key: &str,
@@ -11,13 +17,7 @@ pub fn execute_bigquery_query(
     dataset: &str,
     query: &str,
 ) -> Result<(), Box<dyn Error>> {
-    // Get Poetry environment path
-    // let output = Command::new("poetry")
-    //     .args(&["env", "info", "--path"])
-    //     .output()?;
-    
-    // this is hacky as fuck, but I don't know how else to get the path to the venv
-    let poetry_env_path = "/Users/robertyi/Library/Caches/pypoetry/virtualenvs/onyx-eou4WPV5-py3.12";
+    let poetry_env_path = get_poetry_env_path();
     println!("Poetry environment path: {}", poetry_env_path);
 
     // Construct site-packages path
@@ -46,12 +46,6 @@ pub fn execute_bigquery_query(
         match py.import("onyx") {
             Ok(_) => println!("Successfully imported onyx"),
             Err(e) => println!("Failed to import onyx: {:?}", e),
-        }
-
-        // Try to import the full module path
-        match py.import("onyx.catalog.adapters.connector.bigquery") {
-            Ok(_) => println!("Successfully imported onyx.catalog.adapters.connector.bigquery"),
-            Err(e) => println!("Failed to import onyx.catalog.adapters.connector.bigquery: {:?}", e),
         }
 
         Ok(())
