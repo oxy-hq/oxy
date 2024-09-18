@@ -1,4 +1,5 @@
 use pyo3::prelude::*;
+
 use pyo3::types::PyDict;
 use std::error::Error;
 use std::path::PathBuf;
@@ -9,8 +10,7 @@ pub fn execute_bigquery_query(
     database: &str,
     dataset: &str,
     query: &str,
-) -> Result<Vec<Vec<String>>, Box<dyn Error>> {
-    
+) -> Result<(), Box<dyn Error>> {
     // Get Poetry environment path
     let output = Command::new("poetry")
         .args(&["env", "info", "--path"])
@@ -23,7 +23,7 @@ pub fn execute_bigquery_query(
     site_packages_path.push("python3.9");  // Adjust this to your Python version
     site_packages_path.push("site-packages");
 
-    Python::with_gil(|py| -> PyResult<Vec<Vec<String>>> {
+    Python::with_gil(|py| -> PyResult<()> {
         // Add the site-packages directory to sys.path
         let sys = py.import("sys")?;
         sys.getattr("path")?.call_method1(
@@ -31,28 +31,27 @@ pub fn execute_bigquery_query(
             (site_packages_path.to_str().unwrap(),)
         )?;
 
-        let onyx = py.import("onyx")?;
-        // let onyx = py.import("onyx.catalog.adapters.connector.bigquery")?;
-        // 
-        // let connector_class = onyx.getattr("BigQueryConnector")?;
-        // let connection_config = PyDict::new(py);
-        // connection_config.set_item("credentials_key", credentials_key)?;
-        // connection_config.set_item("database", database)?;
-        // connection_config.set_item("dataset", dataset)?;
+        // Print sys.path
+        println!("sys.path: {:?}", sys.getattr("path")?.extract::<Vec<String>>()?);
 
-        // let connector = connector_class.call1((
-        //     "organization_id",
-        //     "connection_id",
-        //     connection_config,
-        // ))?;
+        match py.import("google") {
+            Ok(_) => println!("Successfully imported google"),
+            Err(e) => println!("Failed to import google: {:?}", e),
+        }
 
-        // let connected_connector = connector.call_method0("connect")?;
-        // let result = connected_connector.call_method1("query", (query,))?;
-     
-        // // Convert the Python result to a Vec<Vec<String>>
-        // let result: Vec<Vec<String>> = result.extract()?;
+        // Try to import onyx
+        match py.import("onyx") {
+            Ok(_) => println!("Successfully imported onyx"),
+            Err(e) => println!("Failed to import onyx: {:?}", e),
+        }
 
-        Ok(result)
+        // Try to import the full module path
+        match py.import("onyx.catalog.adapters.connector.bigquery") {
+            Ok(_) => println!("Successfully imported onyx.catalog.adapters.connector.bigquery"),
+            Err(e) => println!("Failed to import onyx.catalog.adapters.connector.bigquery: {:?}", e),
+        }
+
+        Ok(())
     }).map_err(|e| e.into())
 }
 
