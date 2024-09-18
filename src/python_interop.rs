@@ -12,15 +12,16 @@ pub fn execute_bigquery_query(
     query: &str,
 ) -> Result<(), Box<dyn Error>> {
     // Get Poetry environment path
-    let output = Command::new("poetry")
-        .args(&["env", "info", "--path"])
-        .output()?;
-    let poetry_env_path = String::from_utf8(output.stdout)?.trim().to_string();
+    // let output = Command::new("poetry")
+    //     .args(&["env", "info", "--path"])
+    //     .output()?;
+    let poetry_env_path = "/Users/robertyi/Library/Caches/pypoetry/virtualenvs/onyx-eou4WPV5-py3.12";
+    println!("Poetry environment path: {}", poetry_env_path);
 
     // Construct site-packages path
     let mut site_packages_path = PathBuf::from(poetry_env_path);
     site_packages_path.push("lib");
-    site_packages_path.push("python3.9");  // Adjust this to your Python version
+    site_packages_path.push("python3.12");  // Adjust this to your Python version
     site_packages_path.push("site-packages");
 
     Python::with_gil(|py| -> PyResult<()> {
