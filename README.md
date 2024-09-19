@@ -60,11 +60,11 @@ The `semantic-models` directory can also contain sub-directories which define **
 
 ```jsx
 .
-*├── entities.yml*
-└── **product**
-    ├── **product-onboarding**
-    *│   └── entities.yml
-    └── entities.yml*
+├── entities.yml
+└── product
+    ├── product-onboarding
+    │   └── entities.yml
+    └── entities.yml
 ```
 
 Here are how the scopes are defined in the example above:
