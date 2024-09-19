@@ -10,7 +10,7 @@ pub struct Agent {
     pub scope: String,
 }
 
-pub fn parse_agent(file_path: &str) -> Result<Agent, Box<dyn Error>> {
+pub fn parse_agent_config(file_path: &str) -> Result<Agent, Box<dyn Error>> {
     let agent_content = fs::read_to_string(file_path)?;
     let agent: Agent = serde_yaml::from_str(&agent_content)?;
     Ok(agent)

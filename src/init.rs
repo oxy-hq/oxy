@@ -6,6 +6,7 @@ use std::process::Command;
 use serde_yaml;
 use std::error::Error;
 use std::result::Result;
+use crate::yaml_parsers::config_parser::get_config_path;
 
 pub fn init() -> Result<(), Box<dyn Error>> {
     // TODO: Step 1: Check for dbt-profiles.yml NONFUNCTIONAL
@@ -20,16 +21,15 @@ pub fn init() -> Result<(), Box<dyn Error>> {
         }
     }
 
-    let home_dir = home_dir().ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "Home directory not found"))?;
-    let onyx_dir = home_dir.join(".config").join("onyx");
-    let config_path = onyx_dir.join("config.yml");
+    let config_path = get_config_path();
 
     if config_path.exists() {
         println!("config.yml found in {}. Only initializing current directory.", config_path.display());
         return Ok(());
     } else {
         // Step 2: Create .onyx folder and config.yml
-        fs::create_dir_all(&onyx_dir)?;
+        let onyx_dir = config_path.parent().expect("Failed to get parent directory");
+        fs::create_dir_all(onyx_dir)?;
 
         let config_content = format!(r#"
 warehouses:
@@ -47,8 +47,8 @@ defaults:
 agent: default
 project_path: {}
     "#, env::current_dir()?.display());
-        fs::write(config_path, config_content)?;
-        println!("Created .config/onyx/config.yml in home directory");
+        fs::write(&config_path, config_content)?;
+        println!("Created config.yml in {}", config_path.display());
     }
 
     // Step 3: Use cargo-generate for project scaffolding
