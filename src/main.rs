@@ -5,8 +5,9 @@ mod ai;
 
 use clap::Parser;
 use reqwest::Client;
-use std::error::Error;
 use std::env;
+use std::error::Error;
+use std::path::PathBuf;
 
 use crate::yaml_parsers::config_parser::{Config, parse_config};
 use crate::python_interop::execute_bigquery_query;
@@ -58,13 +59,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn load_agent(agent_name: &str) -> Result<Agent, Box<dyn Error>> {
-    let agent_file = format!("agents/{}.yml", agent_name);
-    parse_agent(&agent_file)
+fn load_agent(agent_name: &str, config: &Config) -> Result<Agent, Box<dyn Error>> {
+    let agent_file = PathBuf::from(&config.defaults.project_path)
+        .join("agents")
+        .join(format!("{}.yml", agent_name));
+    parse_agent(&agent_file.to_string_lossy())
 }
 
 async fn process_input(input: &str, output_format: Option<&str>, config: &Config) -> Result<(), Box<dyn Error>> {
-    let agent = load_agent(&config.defaults.agent)?;
+    let agent = load_agent(&config.defaults.agent, config)?;
     
     let api_key = env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY not set");
     let client = Client::new();
