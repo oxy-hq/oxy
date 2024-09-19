@@ -1,4 +1,4 @@
-<p align="center"><img src="docs/readme-banner.png" width="600"/></p>
+<p align="center"><img src="docs/readme-banner.png"/></p>
 
 # onyx core
 
