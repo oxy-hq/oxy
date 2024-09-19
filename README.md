@@ -1,11 +1,18 @@
 # onyx core
 
+<p align="center"><img src="docs/whale_logo.svg" width="600"/></p>
+
 ## The fastest way to build data agents
 `onyx` is a lightweight, yaml-based data agent builder for the command-line.
 
-`onyx` consists of two principle elements to configure:
-- `semantic-models`: Configuration files that define a hierarchically scoped series of semantic definitions relevant to different scales of the business (from specific teams to the business as a whole).
+### What is a data agent?
+A data agent is an LLM-based agent that can manipulate and synthesize data. `onyx` is a tool that allows you to build these agents quickly and easily, with a focus on flexibility and ease of use. 
+
+Data agents built in `onyx` ingest semantic information about the business -- either auto-generated or maintained by an analytics domain expert -- and use this to either execute SQL queries against a database, retrieve from an in-process database, or retrieve from local sources (text, pdf, etc.)
+
+`onyx` consists of two principle elements to configure these data agents:
 - `agents`: Configuration files that define the agents. Each agent is scoped to particular semantic models.
+- `semantic-models`: Configuration files that define a hierarchically scoped series of semantic definitions relevant to different scales of the business (from specific teams to the business as a whole).
 
 ## Quickstart
 ```bash
@@ -71,6 +78,7 @@ Here are how the scopes are defined in the example above:
 This scoping mechanism follows a pattern that mirrors what we believe to be the optimal ownership hierarchy for data stewardship — every team inherits all scopes that are broader than themselves. This allows for efficient reuse and organization of entities while maintaining clear ownership boundaries. Each team or project can introduce their own entities at their specific scope level while still inheriting and utilizing the broader scope entities defined at higher levels.
 
 These scopes are defined within the `config.yml` file at the base of the directory (see the Configuration section).
+TODO: Enable scope inheritance to be turned off.
 
 ## Agent definition (`agent.yml` configuration)
 Agents have four key properties:
