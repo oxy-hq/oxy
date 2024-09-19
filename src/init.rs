@@ -1,11 +1,13 @@
 use dirs::home_dir;
-use std::fs;
+use std::{env, fs};
 use std::path::{Path, PathBuf};
 use std::io::{self, Write};
 use std::process::Command;
 use serde_yaml;
+use std::error::Error;
+use std::result::Result;
 
-pub fn init() -> io::Result<()> {
+pub fn init() -> Result<(), Box<dyn Error>> {
     // Step 1: Check for dbt-profiles.yml
     if Path::new("dbt-profiles.yml").exists() {
         print!("dbt-profiles.yml found. Do you want to use this? (y/n): ");
@@ -20,11 +22,11 @@ pub fn init() -> io::Result<()> {
 
     // Step 2: Create .onyx folder and config.yml
     let home_dir = home_dir().ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "Home directory not found"))?;
-    let onyx_dir = home_dir.join(".onyx");
+    let onyx_dir = home_dir.join(".config").join("onyx");
     fs::create_dir_all(&onyx_dir)?;
 
     let config_path = onyx_dir.join("config.yml");
-    let config_content = r#"
+    let config_content = format!(r#"
 warehouses:
   - name: primary_warehouse
     type: bigquery
@@ -38,7 +40,8 @@ models:
 
 defaults:
   agent: default
-"#;
+  project_path: {}
+"#, env::current_dir()?.display());
     fs::write(config_path, config_content)?;
     println!("Created .onyx/config.yml in home directory");
 
