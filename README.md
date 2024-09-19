@@ -4,12 +4,10 @@
 `onyx` is a lightweight, yaml-based data agent builder for the command-line.
 
 `onyx` consists of two principle elements to configure:
-- `semantic-models`:
-- `agents`:
-  The configuration files that define agents that have access to particular semantic models.
+- `semantic-models`: Configuration files that define a hierarchically scoped series of semantic definitions relevant to different scales of the business (from specific teams to the business as a whole).
+- `agents`: Configuration files that define the agents. Each agent is scoped to particular semantic models.
 
 ## Quickstart
-
 ```bash
 onyx init  # Initialize a folder as an onyx project
 onyx bootstrap-semantics -f queries.sql  # Create some base entities.yml files inferred from a file of SQL queries
@@ -75,7 +73,11 @@ This scoping mechanism follows a pattern that mirrors what we believe to be the 
 These scopes are defined within the `config.yml` file at the base of the directory (see the Configuration section).
 
 ## Agent definition (`agent.yml` configuration)
-Agent 
+Agents have four key properties:
+- `model`: the model to be used, as specified within the `.config/onyx/config.yaml` file.
+- `warehouse`: the warehouse against which queries are run, also specified in the `.config/onyx/config.yaml` file.
+- `instructions`: a prompt given to the agent which can reference entities, metrics, and analyses using Jinja syntax
+- `scope`: the scope of semantic models that the agent has access to.
 
 ## Contributing
 
