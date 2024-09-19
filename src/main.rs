@@ -9,10 +9,9 @@ use std::{env, io};
 use std::error::Error;
 use std::path::PathBuf;
 
-use crate::yaml_parsers::config_parser::{Config, parse_config};
-use crate::python_interop::execute_bigquery_query;
 use crate::ai::{generate_ai_response, interpret_results};
-use crate::yaml_parsers::agent_parser::{Agent, parse_agent};
+use crate::python_interop::execute_bigquery_query;
+use crate::yaml_parsers::config_parser::{Config, ParsedConfig, parse_config, get_config_path};
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -48,7 +47,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
         },
         None => {
             if !args.input.is_empty() {
-                let config = parse_config()?;
+                let config_path = get_config_path();
+                let config = parse_config(config_path)?;
                 process_input(&args.input, args.output.as_deref(), &config).await?;
             } else {
                 println!("Use 'onyx init' to initialize a new project or provide a question/command.");
@@ -59,28 +59,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn load_agent(agent_name: &str, config: &Config) -> Result<Agent, Box<dyn Error>> {
-    let agent_file = PathBuf::from(&config.defaults.project_path)
-        .join("agents")
-        .join(format!("{}.yml", agent_name));
-    parse_agent(&agent_file.to_string_lossy())
-}
-
 async fn process_input(input: &str, output_format: Option<&str>, config: &Config) -> Result<(), Box<dyn Error>> {
-    let agent = load_agent(&config.defaults.agent, config)?;
-    
-    let model = config.models.iter()
-        .find(|m| m.name == agent.model)
-        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "Model not found"))?;
+    let ParsedConfig { agent, model, warehouse } = config.load_defaults()?;
 
     let api_key = env::var(&model.key_var)
         .map_err(|_| io::Error::new(io::ErrorKind::NotFound, format!("{} not set", model.key_var)))?;
 
     let client = Client::new();
-
-    let bigquery_warehouse = config.warehouses.iter()
-        .find(|w| w.name == agent.warehouse)
-        .expect("Specified warehouse not found in config.yml");
 
     let is_code_output = output_format == Some("code");
     let system_message = if is_code_output {
@@ -95,8 +80,8 @@ async fn process_input(input: &str, output_format: Option<&str>, config: &Config
         println!("Generated SQL query: {}", content);
 
         let results = execute_bigquery_query(
-            &bigquery_warehouse.key_path,
-            &bigquery_warehouse.name,
+            &warehouse.key_path,
+            &warehouse.name,
             "default_dataset",
             &content,
         )?;
