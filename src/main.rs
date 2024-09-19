@@ -1,16 +1,17 @@
 mod python_interop;
 mod yaml_parsers;
 mod init;
+mod ai;
 
-use clap::{Command, Arg, ArgMatches, Parser};
+use clap::Parser;
 use reqwest::Client;
-use serde::{Deserialize, Serialize};
-use std::env;
 use std::error::Error;
-use serde_json::json;
+use std::env;
 
 use crate::yaml_parsers::config_parser::{Config, parse_config};
 use crate::python_interop::execute_bigquery_query;
+use crate::ai::{generate_ai_response, interpret_results};
+use crate::yaml_parsers::agent_parser::{Agent, parse_agent};
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -43,12 +44,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 Ok(_) => println!("Initialization complete"),
                 Err(e) => eprintln!("Initialization failed: {}", e),
             }
-            return Ok(());
         },
         None => {
             if !args.input.is_empty() {
-                // Process the input with OpenAI
-                process_input(&args).await?;
+                let config = parse_config()?;
+                process_input(&args.input, args.output.as_deref(), &config).await?;
             } else {
                 println!("Use 'onyx init' to initialize a new project or provide a question/command.");
             }
@@ -58,95 +58,48 @@ async fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-async fn process_input(args: &Args) -> Result<(), Box<dyn Error>> {
+fn load_agent(agent_name: &str) -> Result<Agent, Box<dyn Error>> {
+    let agent_file = format!("agents/{}.yml", agent_name);
+    parse_agent(&agent_file)
+}
+
+async fn process_input(input: &str, output_format: Option<&str>, config: &Config) -> Result<(), Box<dyn Error>> {
+    let agent = load_agent(&config.defaults.agent)?;
+    
     let api_key = env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY not set");
     let client = Client::new();
 
-    // Parse the configuration
-    let config = parse_config()?;
-    
     let bigquery_warehouse = config.warehouses.iter()
-        .find(|w| w.r#type == "bigquery")
-        .expect("No BigQuery warehouse found in config.yml");
+        .find(|w| w.name == agent.warehouse)
+        .expect("Specified warehouse not found in config.yml");
 
-    // Determine if we're generating SQL or processing a general query
-    let is_code_output = args.output.as_deref() == Some("code");
+    let model = config.models.iter()
+        .find(|m| m.name == agent.model)
+        .expect("Specified model not found in config.yml");
+
+    let is_code_output = output_format == Some("code");
     let system_message = if is_code_output {
-        "You are a SQL expert. Generate a SQL query for BigQuery based on the user's question. Respond with only the SQL query, no explanations."
+        &agent.instructions
     } else {
         "You are an AI assistant. Answer the user's question or process their command."
     };
 
-    // Step 1: Generate response using OpenAI
-    let request = json!({
-        "model": "gpt-3.5-turbo",
-        "messages": [
-            {
-                "role": "system",
-                "content": system_message
-            },
-            {
-                "role": "user",
-                "content": &args.input
-            }
-        ]
-    });
-
-    let response = client
-        .post("https://api.openai.com/v1/chat/completions")
-        .header("Authorization", format!("Bearer {}", api_key))
-        .json(&request)
-        .send()
-        .await?
-        .json::<serde_json::Value>()
-        .await?;
-
-    let content = response["choices"][0]["message"]["content"]
-        .as_str()
-        .expect("Failed to get content from OpenAI");
+    let content = generate_ai_response(&client, &api_key, system_message, input, &model.model_ref).await?;
 
     if is_code_output {
         println!("Generated SQL query: {}", content);
 
-        // Execute SQL against BigQuery
         let results = execute_bigquery_query(
             &bigquery_warehouse.key_path,
             &bigquery_warehouse.name,
             "default_dataset",
-            content,
+            &content,
         )?;
 
         let result_json = serde_json::to_string_pretty(&results)?;
         println!("Query result: {}", result_json);
 
-        // Interpret results using OpenAI
-        let interpret_request = json!({
-            "model": "gpt-3.5-turbo",
-            "messages": [
-                {
-                    "role": "system",
-                    "content": "You are a data analyst. Interpret the following query results and provide a concise summary."
-                },
-                {
-                    "role": "user",
-                    "content": format!("Question: {}\\n\\nSQL Query: {}\\n\\nQuery Results: {}", args.input, content, result_json)
-                }
-            ]
-        });
-
-        let interpret_response = client
-            .post("https://api.openai.com/v1/chat/completions")
-            .header("Authorization", format!("Bearer {}", api_key))
-            .json(&interpret_request)
-            .send()
-            .await?
-            .json::<serde_json::Value>()
-            .await?;
-
-        let interpretation = interpret_response["choices"][0]["message"]["content"]
-            .as_str()
-            .expect("Failed to get interpretation from OpenAI");
-
+        let interpretation = interpret_results(&client, &api_key, input, &content, &result_json, &model.model_ref).await?;
         println!("Interpretation: {}", interpretation);
     } else {
         println!("Response: {}", content);
