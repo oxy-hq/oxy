@@ -11,6 +11,7 @@ crate-type = ["cdylib"]
 [dependencies]
 arrow = "32.0.0"
 clap = { version = "4.4", features = ["derive"] }
+dirs = "5.0.1"  # Use the latest version available
 env_logger = "0.10"
 log = "0.4"
 pyo3 = { version = "0.21.0", features = ["auto-initialize"] }
