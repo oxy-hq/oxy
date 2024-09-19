@@ -31,7 +31,7 @@ pub fn format_system_message(config: &EntityConfig, output_type: &str) -> String
     if output_type == "code" {
         message.push_str("You are a helpful assistant that responds with SQL queries. Always respond with only the SQL query, no explanations. ");
     } else {
-        message.push_str("You are a helpful assistant that responds to questions about a software product. ");
+        message.push_str("You are a helpful assistant that responds to questions. ");
     }
 
     message.push_str("Here's information about our data model:\n\n");
