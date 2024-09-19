@@ -5,7 +5,7 @@ mod ai;
 
 use clap::Parser;
 use reqwest::Client;
-use std::env;
+use std::{env, io};
 use std::error::Error;
 use std::path::PathBuf;
 
@@ -69,16 +69,18 @@ fn load_agent(agent_name: &str, config: &Config) -> Result<Agent, Box<dyn Error>
 async fn process_input(input: &str, output_format: Option<&str>, config: &Config) -> Result<(), Box<dyn Error>> {
     let agent = load_agent(&config.defaults.agent, config)?;
     
-    let api_key = env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY not set");
+    let model = config.models.iter()
+        .find(|m| m.name == agent.model)
+        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "Model not found"))?;
+
+    let api_key = env::var(&model.key_var)
+        .map_err(|_| io::Error::new(io::ErrorKind::NotFound, format!("{} not set", model.key_var)))?;
+
     let client = Client::new();
 
     let bigquery_warehouse = config.warehouses.iter()
         .find(|w| w.name == agent.warehouse)
         .expect("Specified warehouse not found in config.yml");
-
-    let model = config.models.iter()
-        .find(|m| m.name == agent.model)
-        .expect("Specified model not found in config.yml");
 
     let is_code_output = output_format == Some("code");
     let system_message = if is_code_output {
