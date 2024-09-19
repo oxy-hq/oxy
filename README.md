@@ -1,7 +1,5 @@
 <p align="center"><img src="docs/readme-banner.png"/></p>
 
-# onyx core
-
 ## The fastest way to build data agents
 `onyx` is a lightweight, yaml-based data agent builder for the command-line.
 
