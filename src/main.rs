@@ -101,7 +101,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // Step 3: Interpret results using OpenAI
     let interpret_request = json!({
-        "model": "gpt-3.5-turbo-0613",
+        "model": "gpt-3.5-turbo",
         "messages": [
             {
                 "role": "system",
