@@ -1,6 +1,6 @@
 use serde::Deserialize;
-use std::fs;
 use std::error::Error;
+use std::fs;
 
 #[derive(Deserialize, Debug)]
 pub struct Agent {
