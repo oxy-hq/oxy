@@ -9,14 +9,16 @@ name = "onyx"
 crate-type = ["cdylib"]
 
 [dependencies]
-arrow = "32.0.0"
-clap = { version = "4.4", features = ["derive"] }
-dirs = "5.0.1"  # Use the latest version available
-env_logger = "0.10"
+arrow = "46.0.0"
+arrow-cast = { version = "46.0.0", features = ["prettyprint"] }
+clap = { version = "4.5.18", features = ["derive"] }
+connectorx = { version = "0.3.3", features = ["dst_arrow", "src_bigquery"] }
+dirs = "5.0.1"
+env_logger = "0.11"
 log = "0.4"
 pyo3 = { version = "0.21.0", features = ["auto-initialize"] }
-pyo3-arrow = "0.1.0"
-reqwest = { version = "0.11", features = ["json"] }
+pyo3-arrow = "0.2.1"
+reqwest = { version = "0.12.7", features = ["json"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.9"
