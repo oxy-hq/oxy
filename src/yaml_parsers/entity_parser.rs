@@ -1,5 +1,6 @@
 use serde::Deserialize;
 use std::fs;
+use std::path::PathBuf;
 
 #[derive(Deserialize)]
 pub struct EntityConfig {
@@ -19,8 +20,12 @@ pub struct Calculation {
     pub sql: String,
 }
 
-pub fn parse_entity_config() -> Result<EntityConfig, Box<dyn std::error::Error>> {
-    let contents = fs::read_to_string("entities.yml")?;
+pub fn parse_entity_config_from_scope(
+    scope: &str,
+    project_path: &PathBuf,
+) -> Result<EntityConfig, Box<dyn std::error::Error>> {
+    let file_path = project_path.join("data").join(scope).join("entities.yml");
+    let contents = fs::read_to_string(file_path)?;
     let config: EntityConfig = serde_yaml::from_str(&contents)?;
     Ok(config)
 }
@@ -38,7 +43,10 @@ pub fn format_system_message(config: &EntityConfig, output_type: &str) -> String
 
     message.push_str("Entities:\n");
     for entity in &config.entities {
-        message.push_str(&format!("- {}: key = {}\n", entity.name, entity.universal_key));
+        message.push_str(&format!(
+            "- {}: key = {}\n",
+            entity.name, entity.universal_key
+        ));
     }
 
     message.push_str("\nCalculations:\n");

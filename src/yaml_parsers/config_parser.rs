@@ -1,8 +1,8 @@
+use crate::yaml_parsers::agent_parser::{parse_agent_config, AgentConfig};
 use dirs::home_dir;
 use serde::Deserialize;
-use std::{fs, io, path::PathBuf};
 use std::error::Error;
-use crate::yaml_parsers::agent_parser::{Agent, parse_agent_config};
+use std::{fs, io, path::PathBuf};
 
 #[derive(Deserialize, Debug)]
 pub struct Config {
@@ -48,41 +48,45 @@ pub fn parse_config(config_path: PathBuf) -> Result<Config, Box<dyn Error>> {
 }
 
 pub struct ParsedConfig {
-    pub agent: Agent,
+    pub agent_config: AgentConfig,
     pub model: Model,
-    pub warehouse: Warehouse
+    pub warehouse: Warehouse,
 }
 
 impl Config {
-
     pub fn load_defaults(&self) -> Result<ParsedConfig, Box<dyn Error>> {
-
         let default_agent_file = PathBuf::from(&self.defaults.project_path)
             .join("agents")
             .join(format!("{}.yml", self.defaults.agent));
 
-        let agent = parse_agent_config(&default_agent_file.to_string_lossy())?;
-        let model = self.load_model(&agent.model)?;
-        let warehouse = self.load_warehouse(&agent.warehouse)?;
+        let agent_config = parse_agent_config(&default_agent_file.to_string_lossy())?;
+        let model = self.load_model(&agent_config.model)?;
+        let warehouse = self.load_warehouse(&agent_config.warehouse)?;
 
         Ok(ParsedConfig {
-            agent,
+            agent_config,
             model,
             warehouse,
         })
     }
 
     fn load_model(&self, model_name: &str) -> Result<Model, Box<dyn Error>> {
-        self.models.iter()
+        self.models
+            .iter()
             .find(|m| m.name == model_name)
             .cloned()
-            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "Default model not found").into())
+            .ok_or_else(|| {
+                io::Error::new(io::ErrorKind::NotFound, "Default model not found").into()
+            })
     }
 
     fn load_warehouse(&self, warehouse_name: &str) -> Result<Warehouse, Box<dyn Error>> {
-        self.warehouses.iter()
+        self.warehouses
+            .iter()
             .find(|w| w.name == warehouse_name)
             .cloned()
-            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "Default warehouse not found").into())
+            .ok_or_else(|| {
+                io::Error::new(io::ErrorKind::NotFound, "Default warehouse not found").into()
+            })
     }
 }

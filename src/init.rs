@@ -1,12 +1,10 @@
-use dirs::home_dir;
-use std::{env, fs};
-use std::path::{Path, PathBuf};
-use std::io::{self, Write};
-use std::process::Command;
-use serde_yaml;
-use std::error::Error;
-use std::result::Result;
 use crate::yaml_parsers::config_parser::get_config_path;
+use std::error::Error;
+use std::io::{self, Write};
+use std::path::Path;
+use std::process::Command;
+use std::result::Result;
+use std::{env, fs};
 
 pub fn init() -> Result<(), Box<dyn Error>> {
     // TODO: Step 1: Check for dbt-profiles.yml NONFUNCTIONAL
@@ -24,14 +22,20 @@ pub fn init() -> Result<(), Box<dyn Error>> {
     let config_path = get_config_path();
 
     if config_path.exists() {
-        println!("config.yml found in {}. Only initializing current directory.", config_path.display());
+        println!(
+            "config.yml found in {}. Only initializing current directory.",
+            config_path.display()
+        );
         return Ok(());
     } else {
         // Step 2: Create .onyx folder and config.yml
-        let onyx_dir = config_path.parent().expect("Failed to get parent directory");
+        let onyx_dir = config_path
+            .parent()
+            .expect("Failed to get parent directory");
         fs::create_dir_all(onyx_dir)?;
 
-        let config_content = format!(r#"
+        let config_content = format!(
+            r#"
 warehouses:
 - name: primary_warehouse
     type: bigquery
@@ -46,7 +50,9 @@ models:
 defaults:
 agent: default
 project_path: {}
-    "#, env::current_dir()?.display());
+    "#,
+            env::current_dir()?.display()
+        );
         fs::write(&config_path, config_content)?;
         println!("Created config.yml in {}", config_path.display());
     }
@@ -54,7 +60,13 @@ project_path: {}
     // Step 3: Use cargo-generate for project scaffolding
     println!("Creating project scaffolding...");
     let output = Command::new("cargo")
-        .args(&["generate", "--git", "https://github.com/onyx-hq/onyx-sample-repo", "--name", "onyx-project"])
+        .args(&[
+            "generate",
+            "--git",
+            "https://github.com/onyx-hq/onyx-sample-repo",
+            "--name",
+            "onyx-project",
+        ])
         .output()?;
 
     if output.status.success() {
