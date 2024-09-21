@@ -16,6 +16,7 @@ connectorx = { version = "0.3.3", features = ["dst_arrow", "src_bigquery"] }
 dirs = "5.0.1"
 env_logger = "0.11"
 log = "0.4"
+minijinja = "2.3.1"
 pyo3 = { version = "0.21.0", features = ["auto-initialize"] }
 pyo3-arrow = "0.2.1"
 reqwest = { version = "0.12.7", features = ["json"] }

@@ -2,22 +2,64 @@ use serde::Deserialize;
 use std::fs;
 use std::path::PathBuf;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct EntityConfig {
+    #[serde(default)]
     pub entities: Vec<Entity>,
-    pub calculations: Vec<Calculation>,
+    #[serde(default)]
+    pub metrics: Vec<Metric>,
+    #[serde(default)]
+    pub analyses: Vec<Analysis>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct Entity {
     pub name: String,
+    #[serde(default)]
     pub universal_key: String,
 }
 
-#[derive(Deserialize)]
-pub struct Calculation {
+#[derive(Deserialize, Debug, Clone)]
+pub struct Metric {
     pub name: String,
     pub sql: String,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct Analysis {
+    pub name: String,
+    pub sql: String,
+}
+
+impl EntityConfig {
+    pub fn format_entities(&self) -> String {
+        self.entities
+            .iter()
+            .map(|e| format!("- {}: key = {}", e.name, e.universal_key))
+            .collect::<Vec<String>>()
+            .join("\n")
+    }
+
+    pub fn format_metrics(&self) -> String {
+        self.metrics
+            .iter()
+            .map(|m| format!("- {}: {}", m.name, m.sql))
+            .collect::<Vec<String>>()
+            .join("\n")
+    }
+
+    pub fn format_analyses(&self) -> String {
+        self.analyses
+            .iter()
+            .map(|a| format!("- {}: {}", a.name, a.sql))
+            .collect::<Vec<String>>()
+            .join("\n")
+    }
+
+    pub fn format_schema(&self) -> String {
+        // TODO: Implement schema formatting logic
+        "Schema information placeholder".to_string()
+    }
 }
 
 pub fn parse_entity_config_from_scope(
@@ -28,32 +70,4 @@ pub fn parse_entity_config_from_scope(
     let contents = fs::read_to_string(file_path)?;
     let config: EntityConfig = serde_yaml::from_str(&contents)?;
     Ok(config)
-}
-
-pub fn format_system_message(config: &EntityConfig, output_type: &str) -> String {
-    let mut message = String::new();
-
-    if output_type == "code" {
-        message.push_str("You are a helpful assistant that responds with SQL queries. Always respond with only the SQL query, no explanations. ");
-    } else {
-        message.push_str("You are a helpful assistant that responds to questions. ");
-    }
-
-    message.push_str("Here's information about our data model:\n\n");
-
-    message.push_str("Entities:\n");
-    for entity in &config.entities {
-        message.push_str(&format!(
-            "- {}: key = {}\n",
-            entity.name, entity.universal_key
-        ));
-    }
-
-    message.push_str("\nCalculations:\n");
-    for calculation in &config.calculations {
-        message.push_str(&format!("- {}: {}\n", calculation.name, calculation.sql));
-    }
-
-    message.push_str("\nUse this information to inform your responses.");
-    message
 }
