@@ -86,31 +86,18 @@ impl Agent {
         sql_query: &str,
         result_string: &str,
     ) -> Result<String, Box<dyn Error>> {
-        let system_message = "You are a data analyst. Interpret the following query results and provide a concise summary.";
-        let user_message = format!(
-            "Question: {}\n\nSQL Query: {}\n\nQuery Results: {}",
-            input, sql_query, result_string
-        );
+        let (system_message, user_message) = self
+            .compile_postscript(input, Some(sql_query), Some(result_string), None)
+            .await?;
 
-        self.generate_ai_response(system_message, &user_message)
+        self.generate_ai_response(&system_message, &user_message)
             .await
     }
 
     pub async fn generate_sql_query(&self, input: &str) -> Result<String, Box<dyn Error>> {
-        let system_message = "You are an SQL expert. Your task is to generate SQL queries based on user requests. Provide only the SQL query without any explanation or additional text.";
-
-        let user_message = format!("Generate a SQL query for the following request: {}", input);
-
-        let sql_query = self
-            .generate_ai_response(system_message, &user_message)
-            .await?;
-
-        // Basic validation to ensure the response looks like a SQL query
-        if !sql_query.trim().to_lowercase().starts_with("select") {
-            return Err("Generated response does not appear to be a valid SQL query".into());
-        }
-
-        Ok(sql_query)
+        let (system_message, user_message) = self.compile_instructions(input).await?;
+        self.generate_ai_response(&system_message, &user_message)
+            .await
     }
 
     async fn execute_bigquery_query(
@@ -133,15 +120,18 @@ impl Agent {
     }
 
     pub async fn execute_chain(&self, input: &str) -> Result<(), Box<dyn Error>> {
+        // Uses `instructions` from agent config
         let sql_query = self.generate_sql_query(input).await?;
         println!("Generated SQL query: {}", sql_query);
 
+        // Execute query
         let record_batches = self.execute_bigquery_query(&sql_query).await?;
-        let result_string = pretty_format_batches(&record_batches)?;
+        let result_string = pretty_format_batches(&record_batches)?.to_string();
         print_batches(&record_batches)?;
 
+        // Uses `postscript` from agent config
         let interpretation = self
-            .interpret_results(input, &sql_query, &result_string.to_string())
+            .interpret_results(input, &sql_query, &result_string)
             .await?;
         println!("Interpretation: {}", interpretation);
 
@@ -151,14 +141,13 @@ impl Agent {
     pub async fn compile_instructions(
         &self,
         input: &str,
-        entity_config: &EntityConfig,
     ) -> Result<(String, String), Box<dyn Error>> {
         let ctx = context! {
             input => input,
-            entities => entity_config.format_entities(),
-            metrics => entity_config.format_metrics(),
-            analyses => entity_config.format_analyses(),
-            schema => entity_config.format_schema(),
+            entities => self.entity_config.format_entities(),
+            metrics => self.entity_config.format_metrics(),
+            analyses => self.entity_config.format_analyses(),
+            schema => self.entity_config.format_schema(),
         };
 
         self.instructions.compile(ctx)
