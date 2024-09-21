@@ -1,8 +1,10 @@
+use crate::yaml_parsers::agent_parser::MessagePair;
 use crate::yaml_parsers::config_parser::ParsedConfig;
 use crate::yaml_parsers::entity_parser::EntityConfig;
 use arrow::record_batch::RecordBatch;
 use arrow_cast::pretty::{pretty_format_batches, print_batches};
 use connectorx::prelude::{get_arrow, CXQuery, SourceConn};
+use minijinja::context;
 use reqwest::Client;
 use serde_json::json;
 use std::convert::TryFrom;
@@ -14,6 +16,9 @@ pub struct Agent {
     model_ref: String,
     model_key: String,
     warehouse_key_path: String,
+    instructions: MessagePair,
+    tools: Vec<String>,
+    postscript: MessagePair,
     entity_config: EntityConfig,
 }
 
@@ -23,12 +28,19 @@ impl Agent {
         let model_key_var = parsed_config.model.key_var;
         let model_key = env::var(&model_key_var).expect("Environment variable not found");
         let warehouse_key_path = parsed_config.warehouse.key_path;
+        let instructions = parsed_config.agent_config.instructions;
+
+        let tools = parsed_config.agent_config.tools;
+        let postscript = parsed_config.agent_config.postscript;
 
         Agent {
             client: Client::new(),
             model_ref,
             model_key,
             warehouse_key_path,
+            instructions,
+            tools,
+            postscript,
             entity_config,
         }
     }
@@ -134,5 +146,38 @@ impl Agent {
         println!("Interpretation: {}", interpretation);
 
         Ok(())
+    }
+
+    pub async fn compile_instructions(
+        &self,
+        input: &str,
+        entity_config: &EntityConfig,
+    ) -> Result<(String, String), Box<dyn Error>> {
+        let ctx = context! {
+            input => input,
+            entities => entity_config.format_entities(),
+            metrics => entity_config.format_metrics(),
+            analyses => entity_config.format_analyses(),
+            schema => entity_config.format_schema(),
+        };
+
+        self.instructions.compile(ctx)
+    }
+
+    pub async fn compile_postscript(
+        &self,
+        input: &str,
+        sql_query: Option<&str>,
+        sql_results: Option<&str>,
+        retrieve_results: Option<&str>,
+    ) -> Result<(String, String), Box<dyn Error>> {
+        let ctx = context! {
+            input => input,
+            sql_query => sql_query,
+            sql_results => sql_results,
+            retrieve_results => retrieve_results,
+        };
+
+        self.postscript.compile(ctx)
     }
 }

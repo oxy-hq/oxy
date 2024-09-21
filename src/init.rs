@@ -48,8 +48,8 @@ models:
     model_ref: gpt-3.5-turbo
 
 defaults:
-agent: default
-project_path: {}
+  agent: default
+  project_path: {}
     "#,
             env::current_dir()?.display()
         );
