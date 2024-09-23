@@ -1,18 +1,17 @@
-use std::error::Error;
-use std::path::{Path, PathBuf};
-use std::fs;
 use skim::prelude::*;
+use std::error::Error;
+use std::fs;
+use std::path::PathBuf;
 
-pub fn search_files(project_path: &PathBuf) -> Result<(), Box<dyn Error>> {
+pub fn search_files(project_path: &PathBuf) -> Result<Option<String>, Box<dyn Error>> {
     let data_path = project_path.join("data");
     let manifest = construct_manifest(&data_path)?;
 
-    let preview_cmd = format!("cat {}/{{}}",
-                              data_path.to_string_lossy());
+    let preview_cmd = format!("cat {}/{{}}", data_path.to_string_lossy());
 
     let options = SkimOptionsBuilder::default()
         .height(Some("50%"))
-        .multi(true)
+        .multi(false)
         .preview(Some(&preview_cmd))
         .build()
         .unwrap();
@@ -22,13 +21,22 @@ pub fn search_files(project_path: &PathBuf) -> Result<(), Box<dyn Error>> {
 
     let selected_items = Skim::run_with(&options, Some(items))
         .map(|out| out.selected_items)
-        .unwrap_or_else(|| Vec::new());
+        .unwrap_or_default();
 
-    for item in selected_items.iter() {
-        println!("{}", item.output());
+    if let Some(item) = selected_items.first() {
+        let file_name = item.output().into_owned();
+        let file_path = data_path.join(file_name);
+        if file_path.exists() {
+            match fs::read_to_string(&file_path) {
+                Ok(content) => Ok(Some(content)),
+                Err(e) => Err(Box::new(e)),
+            }
+        } else {
+            Ok(None)
+        }
+    } else {
+        Ok(None)
     }
-
-    Ok(())
 }
 
 fn construct_manifest(data_path: &PathBuf) -> Result<String, Box<dyn Error>> {

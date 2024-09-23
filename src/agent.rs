@@ -119,12 +119,19 @@ impl Agent {
         Ok(result)
     }
 
-    pub async fn execute_chain(&self, input: &str) -> Result<(), Box<dyn Error>> {
-        // Uses `instructions` from agent config
-        let sql_query = self.generate_sql_query(input).await?;
-        println!("Generated SQL query: {}", sql_query);
+    pub async fn execute_chain(
+        &self,
+        input: &str,
+        query: Option<String>,
+    ) -> Result<(), Box<dyn Error>> {
+        let sql_query = if let Some(provided_query) = query {
+            provided_query
+        } else {
+            self.generate_sql_query(input).await?
+        };
+        println!("SQL query: {}", sql_query);
 
-        // Execute query
+        // TODO: support other warehouses
         let record_batches = self.execute_bigquery_query(&sql_query).await?;
         let result_string = pretty_format_batches(&record_batches)?.to_string();
         print_batches(&record_batches)?;
