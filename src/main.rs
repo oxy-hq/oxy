@@ -1,14 +1,15 @@
 mod agent;
 mod init;
-mod yaml_parsers;
 mod search;
+mod yaml_parsers;
 
 use clap::Parser;
+use skim::prelude::*;
 use std::error::Error;
 use std::path::PathBuf;
-use skim::prelude::*;
 
 use crate::agent::Agent;
+use crate::search::search_files;
 use crate::yaml_parsers::config_parser::{get_config_path, parse_config, Config};
 use crate::yaml_parsers::entity_parser::parse_entity_config_from_scope;
 
@@ -43,15 +44,30 @@ async fn main() -> Result<(), Box<dyn Error>> {
             Err(e) => eprintln!("Initialization failed: {}", e),
         },
         None => {
+            let config_path = get_config_path();
+
+            // Parse the config.yaml file into strings
+            let config = parse_config(config_path)?;
+            // From that config, load defaults and save as struct objects where possible
+            let parsed_config = config.load_defaults()?;
+            // Parse the entity config from the scope defined in default agent config
+            let entity_config = parse_entity_config_from_scope(
+                &parsed_config.agent_config.scope,
+                &config.defaults.project_path,
+            )?;
+            // Create the agent from the parsed config and entity config
+            let agent = Agent::new(parsed_config, entity_config);
+
             if !args.input.is_empty() {
-                let config_path = get_config_path();
-                let config = parse_config(config_path)?;
-                handle_input(&args.input, &config).await?;
+                agent.execute_chain(&args.input, None).await?;
             } else {
-                let config_path = get_config_path();
-                let config = parse_config(config_path)?;
                 let project_path = PathBuf::from(&config.defaults.project_path);
-                search::search_files(&project_path)?;
+                match search_files(&project_path)? {
+                    Some(content) => {
+                        agent.execute_chain("", Some(content)).await?;
+                    }
+                    None => println!("File not found."),
+                }
             }
         }
     }
@@ -59,14 +75,3 @@ async fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-async fn handle_input(input: &str, config: &Config) -> Result<(), Box<dyn Error>> {
-    let parsed_config = config.load_defaults()?;
-    let entity_config = parse_entity_config_from_scope(
-        &parsed_config.agent_config.scope,
-        &config.defaults.project_path,
-    )?;
-
-    let agent = Agent::new(parsed_config, entity_config);
-
-    agent.execute_chain(input).await
-}
