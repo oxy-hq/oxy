@@ -1,13 +1,12 @@
+use crate::connector::{Connector, WarehouseInfo};
 use crate::yaml_parsers::agent_parser::MessagePair;
 use crate::yaml_parsers::config_parser::ParsedConfig;
 use crate::yaml_parsers::entity_parser::EntityConfig;
 use arrow::record_batch::RecordBatch;
 use arrow_cast::pretty::{pretty_format_batches, print_batches};
-use connectorx::prelude::{get_arrow, CXQuery, SourceConn};
 use minijinja::context;
 use reqwest::Client;
 use serde_json::json;
-use std::convert::TryFrom;
 use std::env;
 use std::error::Error;
 
@@ -15,11 +14,12 @@ pub struct Agent {
     client: Client,
     model_ref: String,
     model_key: String,
-    warehouse_key_path: String,
     instructions: MessagePair,
     tools: Vec<String>,
     postscript: MessagePair,
     entity_config: EntityConfig,
+    connector: Connector,
+    warehouse_info: Option<WarehouseInfo>,
 }
 
 impl Agent {
@@ -27,7 +27,6 @@ impl Agent {
         let model_ref = parsed_config.model.model_ref;
         let model_key_var = parsed_config.model.key_var;
         let model_key = env::var(&model_key_var).expect("Environment variable not found");
-        let warehouse_key_path = parsed_config.warehouse.key_path;
         let instructions = parsed_config.agent_config.instructions;
 
         let tools = parsed_config.agent_config.tools;
@@ -35,14 +34,20 @@ impl Agent {
 
         Agent {
             client: Client::new(),
+            connector: Connector::new(parsed_config.warehouse),
+            warehouse_info: None,
             model_ref,
             model_key,
-            warehouse_key_path,
             instructions,
             tools,
             postscript,
             entity_config,
         }
+    }
+
+    pub async fn init(&mut self) -> Result<(), Box<dyn Error>> {
+        self.warehouse_info = Some(self.connector.load_warehouse_info().await);
+        Ok(())
     }
 
     pub async fn generate_ai_response(
@@ -94,8 +99,10 @@ impl Agent {
             .await
     }
 
-    pub async fn generate_sql_query(&self, input: &str) -> Result<String, Box<dyn Error>> {
+    pub async fn generate_sql_query(&mut self, input: &str) -> Result<String, Box<dyn Error>> {
         let (system_message, user_message) = self.compile_instructions(input).await?;
+        log::debug!("Instructions: {}", system_message);
+        log::debug!("User message: {}", user_message);
         self.generate_ai_response(&system_message, &user_message)
             .await
     }
@@ -104,37 +111,25 @@ impl Agent {
         &self,
         query: &str,
     ) -> Result<Vec<RecordBatch>, Box<dyn Error>> {
-        let conn_string = format!("bigquery://{}", self.warehouse_key_path);
-        let query = query.to_string(); // convert to owned string for closure
-
-        let result = tokio::task::spawn_blocking(move || {
-            let source_conn = SourceConn::try_from(conn_string.as_str())?;
-            let queries = &[CXQuery::from(query.as_str())];
-            let destination =
-                get_arrow(&source_conn, None, queries).expect("Run failed at get_arrow.");
-            destination.arrow()
-        })
-        .await??;
-
+        let result = self.connector.run_query(query).await?;
+        print_batches(&result)?;
         Ok(result)
     }
 
-    pub async fn execute_chain(
-        &self,
-        input: &str,
-        query: Option<String>,
-    ) -> Result<(), Box<dyn Error>> {
+    pub async fn execute_chain(&mut self, input: &str, query: Option<String>,) -> Result<(), Box<dyn Error>> {
+        // Uses `instructions` from agent config
         let sql_query = if let Some(provided_query) = query {
             provided_query
         } else {
             self.generate_sql_query(input).await?
         };
         println!("SQL query: {}", sql_query);
+        // Execute query
+        let result_string: String = match self.execute_bigquery_query(&sql_query).await {
+            Ok(record_batches) => pretty_format_batches(&record_batches)?.to_string(),
+            Err(error) => format!("Error executing query: {}", error),
+        };
 
-        // TODO: support other warehouses
-        let record_batches = self.execute_bigquery_query(&sql_query).await?;
-        let result_string = pretty_format_batches(&record_batches)?.to_string();
-        print_batches(&record_batches)?;
 
         // Uses `postscript` from agent config
         let interpretation = self
@@ -146,15 +141,19 @@ impl Agent {
     }
 
     pub async fn compile_instructions(
-        &self,
+        &mut self,
         input: &str,
     ) -> Result<(String, String), Box<dyn Error>> {
+        if self.warehouse_info.is_none() {
+            self.init().await?;
+        }
         let ctx = context! {
             input => input,
             entities => self.entity_config.format_entities(),
             metrics => self.entity_config.format_metrics(),
             analyses => self.entity_config.format_analyses(),
             schema => self.entity_config.format_schema(),
+            warehouse => self.warehouse_info
         };
 
         self.instructions.compile(ctx)

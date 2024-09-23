@@ -1,9 +1,11 @@
 mod agent;
+mod connector;
 mod init;
 mod search;
 mod yaml_parsers;
 
 use clap::Parser;
+use connector::Connector;
 use skim::prelude::*;
 use std::error::Error;
 use std::path::PathBuf;
@@ -32,6 +34,8 @@ struct Args {
 #[derive(Parser, Debug)]
 enum SubCommand {
     Init,
+    ListDatasets,
+    ListTables,
 }
 
 #[tokio::main]
@@ -42,6 +46,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
         Some(SubCommand::Init) => match init::init() {
             Ok(_) => println!("Initialization complete"),
             Err(e) => eprintln!("Initialization failed: {}", e),
+        },
+        Some(SubCommand::ListTables) => {
+            let config_path = get_config_path();
+            let config = parse_config(config_path)?;
+            let parsed_config = config.load_defaults()?;
+            let ddls = Connector::new(parsed_config.warehouse).get_schemas().await;
+            print!("{:?}", ddls);
+        },
+        Some(SubCommand::ListDatasets) => {
+            let config_path = get_config_path();
+            let config = parse_config(config_path)?;
+            let parsed_config = config.load_defaults()?;
+            let datasets = Connector::new(parsed_config.warehouse).list_datasets().await;
+            print!("{:?}", datasets);
         },
         None => {
             let config_path = get_config_path();
@@ -56,7 +74,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 &config.defaults.project_path,
             )?;
             // Create the agent from the parsed config and entity config
-            let agent = Agent::new(parsed_config, entity_config);
+            let mut agent = Agent::new(parsed_config, entity_config);
 
             if !args.input.is_empty() {
                 agent.execute_chain(&args.input, None).await?;
