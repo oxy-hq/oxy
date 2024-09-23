@@ -31,11 +31,10 @@ impl Connector {
     }
 
     pub async fn list_datasets(&self) -> Vec<String> {
-        let result = self.run_query(
-            "SELECT schema_name FROM INFORMATION_SCHEMA.SCHEMATA",
-        )
-        .await
-        .unwrap();
+        let result = self
+            .run_query("SELECT schema_name FROM INFORMATION_SCHEMA.SCHEMATA")
+            .await
+            .unwrap();
         let result_iter = result
             .iter()
             .flat_map(|batch| as_string_array(batch.column(0)).iter());
@@ -47,14 +46,13 @@ impl Connector {
     }
 
     pub async fn get_schemas(&self) -> Vec<String> {
-        let result = self.run_query(
-            &format!(
+        let result = self
+            .run_query(&format!(
                 "SELECT ddl FROM `{}`.INFORMATION_SCHEMA.TABLES",
                 self.config.dataset
-            ),
-        )
-        .await
-        .unwrap();
+            ))
+            .await
+            .unwrap();
         let result_iter = result
             .iter()
             .flat_map(|batch| as_string_array(batch.column(0)).iter());
@@ -74,13 +72,12 @@ impl Connector {
         let result = tokio::task::spawn_blocking(move || {
             let source_conn = SourceConn::try_from(conn_string.as_str())?;
             let queries = &[CXQuery::from(query.as_str())];
-            let destination = get_arrow(&source_conn, None, queries).expect("Run failed at get_arrow.");
+            let destination =
+                get_arrow(&source_conn, None, queries).expect("Run failed at get_arrow.");
             destination.arrow()
         })
         .await??;
 
         Ok(result)
     }
-
 }
-

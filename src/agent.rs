@@ -10,6 +10,11 @@ use serde_json::json;
 use std::env;
 use std::error::Error;
 
+use syntect::easy::HighlightLines;
+use syntect::highlighting::{Style, ThemeSet};
+use syntect::parsing::SyntaxSet;
+use syntect::util::{as_24_bit_terminal_escaped, LinesWithEndings};
+
 pub struct Agent {
     client: Client,
     model_ref: String,
@@ -112,32 +117,56 @@ impl Agent {
         query: &str,
     ) -> Result<Vec<RecordBatch>, Box<dyn Error>> {
         let result = self.connector.run_query(query).await?;
+        println!("\n\x1b[1;32mResults:\x1b[0m");
         print_batches(&result)?;
         Ok(result)
     }
 
-    pub async fn execute_chain(&mut self, input: &str, query: Option<String>,) -> Result<(), Box<dyn Error>> {
+    pub async fn execute_chain(
+        &mut self,
+        input: &str,
+        query: Option<String>,
+    ) -> Result<(), Box<dyn Error>> {
         // Uses `instructions` from agent config
         let sql_query = if let Some(provided_query) = query {
             provided_query
         } else {
             self.generate_sql_query(input).await?
         };
-        println!("SQL query: {}", sql_query);
+
+        println!("\n\x1b[1;32mSQL query:\x1b[0m");
+        self.print_colored_sql(&sql_query);
+
         // Execute query
         let result_string: String = match self.execute_bigquery_query(&sql_query).await {
             Ok(record_batches) => pretty_format_batches(&record_batches)?.to_string(),
             Err(error) => format!("Error executing query: {}", error),
         };
 
-
         // Uses `postscript` from agent config
         let interpretation = self
             .interpret_results(input, &sql_query, &result_string)
             .await?;
-        println!("Interpretation: {}", interpretation);
+
+        // Print interpretation with green bold formatting and a newline above
+        println!("\n\x1b[1;32mInterpretation:\x1b[0m");
+        println!("{}", interpretation);
 
         Ok(())
+    }
+
+    fn print_colored_sql(&self, sql: &str) {
+        let ps = SyntaxSet::load_defaults_newlines();
+        let ts = ThemeSet::load_defaults();
+        let syntax = ps.find_syntax_by_extension("sql").unwrap();
+        let mut h = HighlightLines::new(syntax, &ts.themes["base16-ocean.dark"]);
+
+        for line in LinesWithEndings::from(sql) {
+            let ranges: Vec<(Style, &str)> = h.highlight_line(line, &ps).unwrap();
+            let escaped = as_24_bit_terminal_escaped(&ranges[..], false);
+            print!("{}", escaped);
+        }
+        println!();
     }
 
     pub async fn compile_instructions(
