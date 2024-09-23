@@ -1,9 +1,12 @@
 mod agent;
 mod init;
 mod yaml_parsers;
+mod search;
 
 use clap::Parser;
 use std::error::Error;
+use std::path::PathBuf;
+use skim::prelude::*;
 
 use crate::agent::Agent;
 use crate::yaml_parsers::config_parser::{get_config_path, parse_config, Config};
@@ -45,9 +48,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 let config = parse_config(config_path)?;
                 handle_input(&args.input, &config).await?;
             } else {
-                println!(
-                    "Use 'onyx init' to initialize a new project or provide a question/command."
-                );
+                let config_path = get_config_path();
+                let config = parse_config(config_path)?;
+                let project_path = PathBuf::from(&config.defaults.project_path);
+                search::search_files(&project_path)?;
             }
         }
     }
