@@ -25,3 +25,4 @@ serde_json = "1.0"
 serde_yaml = "0.9"
 tokio = { version = "1.0", features = ["full"] }
 skim = "0.10.4"
+openai_api_rust = "0.1.9"

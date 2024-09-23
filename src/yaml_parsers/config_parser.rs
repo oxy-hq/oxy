@@ -23,6 +23,7 @@ pub struct Warehouse {
     pub name: String,
     pub r#type: String,
     pub key_path: String,
+    pub dataset: String,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -47,6 +48,7 @@ pub fn parse_config(config_path: PathBuf) -> Result<Config, Box<dyn Error>> {
     Ok(config)
 }
 
+#[derive(Debug)]
 pub struct ParsedConfig {
     pub agent_config: AgentConfig,
     pub model: Model,

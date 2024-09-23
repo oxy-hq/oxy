@@ -66,7 +66,7 @@ pub fn parse_entity_config_from_scope(
     scope: &str,
     project_path: &PathBuf,
 ) -> Result<EntityConfig, Box<dyn std::error::Error>> {
-    let file_path = project_path.join("data").join(scope).join("entities.yml");
+    let file_path: PathBuf = project_path.join("data").join(scope).join("entities.yml");
     let contents = fs::read_to_string(file_path)?;
     let config: EntityConfig = serde_yaml::from_str(&contents)?;
     Ok(config)
