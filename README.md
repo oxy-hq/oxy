@@ -4,59 +4,53 @@
 `onyx` is a lightweight, yaml-based data agent builder for the command-line.
 
 ### What is a data agent?
-A data agent is an LLM-based agent that can manipulate and synthesize data. `onyx` is a tool that allows you to build these agents quickly and easily, with a focus on flexibility and ease of use. 
+A data agent is an LLM-based agent that can manipulate and synthesize data. `onyx` is a tool that allows you to build these agents quickly and easily, with a focus on flexibility and ease of use.
 
-Data agents built in `onyx` ingest semantic information about the business -- either auto-generated or maintained by an analytics domain expert -- and use this to either execute SQL queries against a database, retrieve from an in-process database, or retrieve from local sources (text, pdf, etc.)
+Data agents built in `onyx` ingest semantic information and use this to either execute SQL queries against a database, retrieve from an in-process database, or retrieve from local sources (text, pdf, etc.)
 
-`onyx` consists of two principle elements to configure these data agents:
+`onyx` consists of two principal elements to configure these data agents:
 - `agents`: Configuration files that define the agents. Each agent is scoped to particular semantic models.
-- `semantic-models`: Configuration files that define a hierarchically scoped series of semantic definitions relevant to different scales of the business (from specific teams to the business as a whole).
+- `data`: A directory of SQL queries, organized in a directory structure that reflects the organization structure. Each SQL file should be placed in the sub-directory corresponding to the widest set of teams that it serves (company-wide metrics, for instance, should be placed in the base `data/` directory).
 
 ## Quickstart
+Start by initializing a new repository with onyx:
 ```bash
 onyx init  # Initialize a folder as an onyx project
-onyx bootstrap-semantics -f queries.sql  # Create some base entities.yml files inferred from a file of SQL queries
-
-onyx "How many users do we have?"
-We have 100 users.
-
-onyx --output=code "How many users do we have?"
-select count(distinct id_user) from dim_users
 ```
 
-At this point, Onyx will function as a rudimentary text-to-SQL answer engine. To truly leverage the power of `onyx`, though, you'll need to understand how to configure two kinds of yaml configs within our platform: entities and agents.
+This will construct a scaffolding within the current working directory with the necessary directories and a `default` agent for you to start working with.
 
+This will also initialize a global config file in `~/.config/onyx/config.yml` (if it doesn't already exist). You should populate this with information with your warehouse credentials and LLM preferences.
 
-## Semantic modeling (`entities.yml` configuration)
+Put some SQL queries into the `data` directory to seed the engine. An important aspect of `onyx` is the concept of `scope` -- the subset of the `data` directory that is available to an `agent`. By default, `onyx` comes with a way to access both the *narrowest* scope (that of a single query) and the *widest* scope (the entire `data` directory).
 
-Semantic definitions live within a dbt-esque repository within the `semantic-models` directory, wherein there are `entities.yml` files, such as shown below.
+To access SQL-level scope, you can run:
 
-```yaml
-entities:
-  - name: user  # use a single word that is intuitive for the business
-    universal_key: id_user
-  - name: organization
-    universal_key: id_organization
-  - name: country
-    universal_key: dim_organization
-  - name: page
-    universal_key: id_page
-
-calculations:
-  - name: users
-    sql: |
-      select count(distinct {{entities.user.key}}) from core.dim_users
+```bash
+onyx search  # Search through your SQL queries and execute them on selection
 ```
 
-There are only three concepts to be aware of: `entities`, `metrics`, and `analyses`.
+which will execute the selected query.
 
-- **Entities:** if you’re familiar with Looker nomenclature, these are equivalent to dimensions, but the connotation we are going for is that these represent concrete, slowly-changing objects.
-- **Metrics:** these are the equivalent of measures in Looker. These are metrics with a pertinent, generally stable business relevance. While these are a subset of analyses, it's important to distinguish them when possible.
-- **Analyses:** these are just sql queries with descriptions. This includes metrics or more complex analyses.
+To access the org-wide scope, you can ask questions of the `default` LLM, which will source from the `data` base directory (scope: `all`) by default.
 
-### Semantic scoping
+```bash
+onyx ask "How many users do we have?"  # Ask a question of the default agent
+```
 
-The `semantic-models` directory can also contain sub-directories which define **scope**. 
+If you want to access a specific agent (for either `search` or `ask`), you can do so by specifying the agent name (removing the `.yml` extension) as an argument.
+
+```bash
+onyx ask --agent=default "How many users do we have?"  # Ask a question of the specific agent `default.yaml`
+```
+
+## The data directory
+
+TODO
+
+## Defining scope
+
+NEEDS REWRITE
 
 ```jsx
 .
