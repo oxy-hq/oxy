@@ -5,6 +5,7 @@ mod search;
 mod yaml_parsers;
 
 use clap::Parser;
+use clap::CommandFactory;
 use connector::Connector;
 use skim::prelude::*;
 use std::error::Error;
@@ -39,9 +40,32 @@ struct Args {
 
 #[derive(Parser, Debug)]
 enum SubCommand {
+    /// Initialize a repository as an onyx project. Also creates a ~/.config/onyx/config.yaml file if it doesn't exist
     Init,
     ListDatasets,
     ListTables,
+    /// Search through SQL in your project path. Execute and pass through agent postscript step on selection
+    Search,
+    /// Ask a question to the specified agent. If no agent is specified, the default agent is used
+    Ask(AskArgs),
+}
+
+#[derive(Parser, Debug)]
+struct AskArgs {
+    question: String,
+}
+
+async fn setup_agent(agent_name: Option<&str>) -> Result<(Agent, PathBuf), Box<dyn Error>> {
+    let config_path = get_config_path();
+    let config = parse_config(config_path)?;
+    let parsed_config = config.load_config(agent_name.filter(|s| !s.is_empty()))?;
+    let entity_config = parse_entity_config_from_scope(
+        &parsed_config.agent_config.scope,
+        &config.defaults.project_path,
+    )?;
+    let agent = Agent::new(parsed_config, entity_config);
+    let project_path = PathBuf::from(&config.defaults.project_path);
+    Ok((agent, project_path))
 }
 
 #[tokio::main]
@@ -67,34 +91,21 @@ async fn main() -> Result<(), Box<dyn Error>> {
             let datasets = Connector::new(parsed_config.warehouse).list_datasets().await;
             print!("{:?}", datasets);
         },
-        None => {
-            let config_path = get_config_path();
-
-            // Parse the config.yaml file into strings
-            let config = parse_config(config_path)?;
-
-            let parsed_config = config.load_config(args.agent.as_deref().filter(|s| !s.is_empty()))?;
-
-            // Parse the entity config from the scope defined in agent config
-            let entity_config = parse_entity_config_from_scope(
-                &parsed_config.agent_config.scope,
-                &config.defaults.project_path,
-            )?;
-
-            // Create the agent from the parsed config and entity config
-            let mut agent = Agent::new(parsed_config, entity_config);
-
-            if !args.input.is_empty() {
-                agent.execute_chain(&args.input, None).await?;
-            } else {
-                let project_path = PathBuf::from(&config.defaults.project_path);
-                match search_files(&project_path)? {
-                    Some(content) => {
-                        agent.execute_chain("", Some(content)).await?;
-                    }
-                    None => println!(""),
+        Some(SubCommand::Search) => {
+            let (mut agent, project_path) = setup_agent(args.agent.as_deref()).await?;
+            match search_files(&project_path)? {
+                Some(content) => {
+                    agent.execute_chain("", Some(content)).await?;
                 }
+                None => println!("No files found or selected."),
             }
+        },
+        Some(SubCommand::Ask(ask_args)) => {
+            let (mut agent, _) = setup_agent(args.agent.as_deref()).await?;
+            agent.execute_chain(&ask_args.question, None).await?;
+        },
+        None => {
+            Args::command().print_help().unwrap();
         }
     }
 
