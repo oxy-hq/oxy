@@ -1,7 +1,7 @@
 use skim::prelude::*;
 use std::error::Error;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub fn search_files(project_path: &PathBuf) -> Result<Option<String>, Box<dyn Error>> {
     let data_path = project_path.join("data");
@@ -10,7 +10,6 @@ pub fn search_files(project_path: &PathBuf) -> Result<Option<String>, Box<dyn Er
     let preview_cmd = format!("cat {}/{{}}", data_path.to_string_lossy());
 
     let options = SkimOptionsBuilder::default()
-        .height(Some("50%"))
         .multi(false)
         .preview(Some(&preview_cmd))
         .build()
@@ -45,25 +44,24 @@ pub fn search_files(project_path: &PathBuf) -> Result<Option<String>, Box<dyn Er
     }
 }
 
-fn construct_manifest(data_path: &PathBuf) -> Result<String, Box<dyn Error>> {
+fn construct_manifest(data_path: &Path) -> Result<String, Box<dyn Error>> {
     let mut manifest = String::new();
+    collect_files_recursively(data_path, &mut manifest, data_path)?;
+    Ok(manifest)
+}
 
-    if data_path.is_dir() {
-        for entry in fs::read_dir(data_path)? {
-            let entry = entry?;
-            let path = entry.path();
-            if path.is_file() {
-                if let Ok(relative_path) = path.strip_prefix(data_path) {
-                    manifest.push_str(&format!("{}\n", relative_path.display()));
-                }
+fn collect_files_recursively(dir: &Path, manifest: &mut String, base_path: &Path) -> Result<(), Box<dyn Error>> {
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_dir() {
+            collect_files_recursively(&path, manifest, base_path)?;
+        } else if path.is_file() {
+            if let Some(path_str) = path.strip_prefix(base_path)?.to_str() {
+                manifest.push_str(path_str);
+                manifest.push('\n');
             }
         }
-    } else {
-        return Err(Box::new(std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            "Data directory not found",
-        )));
     }
-
-    Ok(manifest)
+    Ok(())
 }
