@@ -9,6 +9,8 @@ use connector::Connector;
 use skim::prelude::*;
 use std::error::Error;
 use std::path::PathBuf;
+use std::fs;
+use std::ffi::OsStr;
 
 use crate::agent::Agent;
 use crate::search::search_files;
@@ -29,6 +31,10 @@ struct Args {
     /// Subcommand
     #[clap(subcommand)]
     command: Option<SubCommand>,
+
+    /// Specify a custom agent configuration
+    #[clap(long, value_name = "AGENT_NAME")]
+    agent: Option<String>,
 }
 
 #[derive(Parser, Debug)]
@@ -50,14 +56,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
         Some(SubCommand::ListTables) => {
             let config_path = get_config_path();
             let config = parse_config(config_path)?;
-            let parsed_config = config.load_defaults()?;
+            let parsed_config = config.load_config(None)?;
             let ddls = Connector::new(parsed_config.warehouse).get_schemas().await;
             print!("{:?}", ddls);
         },
         Some(SubCommand::ListDatasets) => {
             let config_path = get_config_path();
             let config = parse_config(config_path)?;
-            let parsed_config = config.load_defaults()?;
+            let parsed_config = config.load_config(None)?;
             let datasets = Connector::new(parsed_config.warehouse).list_datasets().await;
             print!("{:?}", datasets);
         },
@@ -66,13 +72,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
             // Parse the config.yaml file into strings
             let config = parse_config(config_path)?;
-            // From that config, load defaults and save as struct objects where possible
-            let parsed_config = config.load_defaults()?;
-            // Parse the entity config from the scope defined in default agent config
+
+            let parsed_config = config.load_config(args.agent.as_deref().filter(|s| !s.is_empty()))?;
+
+            // Parse the entity config from the scope defined in agent config
             let entity_config = parse_entity_config_from_scope(
                 &parsed_config.agent_config.scope,
                 &config.defaults.project_path,
             )?;
+
             // Create the agent from the parsed config and entity config
             let mut agent = Agent::new(parsed_config, entity_config);
 
@@ -84,7 +92,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     Some(content) => {
                         agent.execute_chain("", Some(content)).await?;
                     }
-                    None => println!("File not found."),
+                    None => println!(""),
                 }
             }
         }
@@ -92,4 +100,3 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     Ok(())
 }
-

@@ -56,12 +56,25 @@ pub struct ParsedConfig {
 }
 
 impl Config {
-    pub fn load_defaults(&self) -> Result<ParsedConfig, Box<dyn Error>> {
-        let default_agent_file = PathBuf::from(&self.defaults.project_path)
-            .join("agents")
-            .join(format!("{}.yml", self.defaults.agent));
+    pub fn load_config(&self, agent_name: Option<&str>) -> Result<ParsedConfig, Box<dyn Error>> {
+        let agent_file = if let Some(name) = agent_name {
+            PathBuf::from(&self.defaults.project_path)
+                .join("agents")
+                .join(format!("{}.yml", name))
+        } else {
+            PathBuf::from(&self.defaults.project_path)
+                .join("agents")
+                .join(format!("{}.yml", self.defaults.agent))
+        };
 
-        let agent_config = parse_agent_config(&default_agent_file.to_string_lossy())?;
+        if !agent_file.exists() {
+            return Err(Box::new(io::Error::new(
+                io::ErrorKind::NotFound,
+                format!("Agent configuration file not found: {:?}", agent_file),
+            )));
+        }
+
+        let agent_config = parse_agent_config(&agent_file.to_string_lossy())?;
         let model = self.load_model(&agent_config.model)?;
         let warehouse = self.load_warehouse(&agent_config.warehouse)?;
 

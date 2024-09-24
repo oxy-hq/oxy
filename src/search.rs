@@ -19,9 +19,15 @@ pub fn search_files(project_path: &PathBuf) -> Result<Option<String>, Box<dyn Er
     let item_reader = SkimItemReader::default();
     let items = item_reader.of_bufread(std::io::Cursor::new(manifest));
 
-    let selected_items = Skim::run_with(&options, Some(items))
-        .map(|out| out.selected_items)
-        .unwrap_or_default();
+    let selected_items = match Skim::run_with(&options, Some(items)) {
+        Some(out) => {
+            if out.is_abort {
+                return Ok(None); // User cancelled, return None
+            }
+            out.selected_items
+        }
+        None => return Ok(None), // Skim was closed without selection
+    };
 
     if let Some(item) = selected_items.first() {
         let file_name = item.output().into_owned();
