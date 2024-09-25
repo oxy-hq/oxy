@@ -11,6 +11,8 @@ pub struct AgentConfig {
     pub instructions: MessagePair,
     pub tools: Vec<String>,
     pub postscript: MessagePair,
+    pub system_instructions: String,
+    pub sql_tool_instructions: String,
 }
 
 #[derive(Deserialize, Debug, Clone)]

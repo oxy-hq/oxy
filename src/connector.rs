@@ -1,4 +1,4 @@
-use arrow::array::as_string_array;
+use arrow::{array::as_string_array, record_batch::RecordBatch};
 use connectorx::prelude::{get_arrow, CXQuery, SourceConn};
 
 use crate::yaml_parsers::config_parser::Warehouse;
@@ -7,7 +7,7 @@ pub struct Connector {
     config: Warehouse,
 }
 
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, Clone)]
 pub struct WarehouseInfo {
     name: String,
     dialect: String,
@@ -66,7 +66,7 @@ impl Connector {
     pub async fn run_query(
         &self,
         query: &str,
-    ) -> Result<Vec<arrow::record_batch::RecordBatch>, Box<dyn std::error::Error>> {
+    ) -> Result<Vec<RecordBatch>, Box<dyn std::error::Error>> {
         let conn_string = format!("bigquery://{}", self.config.key_path);
         let query = query.to_string(); // convert to owned string for closure
         let result = tokio::task::spawn_blocking(move || {

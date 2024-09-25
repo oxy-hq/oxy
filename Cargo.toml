@@ -26,5 +26,7 @@ serde_yaml = "0.9"
 syntect = "5.0"
 tokio = { version = "1.0", features = ["full"] }
 skim = "0.10.4"
-openai_api_rust = "0.1.9"
+async-openai = "0.24.0"
+schemars = "0.8.21"
+async-trait = "0.1.82"
 colored = "2.1.0"
