@@ -1,7 +1,8 @@
-use std::process::Command;
+// TODO: The python module is currently unused, but leaving this hear as the setup was cumbersome.
+
 use std::fs;
 use std::path::Path;
-
+use std::process::Command;
 
 fn main() {
     /* In order to get pyo3 to use a particular virtual environment (and, in particular, for this
@@ -20,7 +21,7 @@ fn main() {
      * with this method was that it seemed like it could cause problems during development, where
      * one might be developing on one part of the system at a time, rather than building in
      * sequence, in which case the environmental variable may be unavailable to cargo.
-     * 
+     *
      * So I've come to a very strange solution here, where I'm writing the poetry virtualenv path
      * to a rust file that is then included in the build.
      */
@@ -43,7 +44,7 @@ fn main() {
     let dest_path = Path::new(&out_dir).join("poetry_path.rs");
     fs::write(
         &dest_path,
-        format!("pub const POETRY_ENV_PATH: &str = \"{}\";", poetry_env_path)
-    ).unwrap();
-
+        format!("pub const POETRY_ENV_PATH: &str = \"{}\";", poetry_env_path),
+    )
+    .unwrap();
 }

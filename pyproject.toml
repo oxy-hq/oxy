@@ -13,18 +13,6 @@ python = ">=3.11,<3.12"
 python = ">=3.11,<3.12"
 psycopg2 = "^2.9.9"
 
-[tool.poetry.group.chat.dependencies]
-onyx-chat = { path = "onyx/chat", develop = true }
-
-[tool.poetry.group.ai.dependencies]
-onyx-ai = { path = "onyx/ai", develop = true }
-
-[tool.poetry.group.catalog.dependencies]
-onyx-catalog = { path = "onyx/catalog", develop = true }
-
-[tool.poetry.group.shared.dependencies]
-onyx-shared = { path = "onyx/shared", develop = true }
-
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.1.7"
 pytest = "^7.4.4"

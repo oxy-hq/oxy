@@ -8,9 +8,7 @@ pub struct AgentConfig {
     pub model: String,
     pub warehouse: String,
     pub scope: String,
-    pub instructions: MessagePair,
     pub tools: Vec<String>,
-    pub postscript: MessagePair,
     pub system_instructions: String,
     pub sql_tool_instructions: String,
 }

@@ -1,4 +1,3 @@
-mod agent;
 mod client;
 mod connector;
 mod init;
@@ -15,13 +14,10 @@ use clap::Parser;
 use client::LLMAgent;
 use connector::Connector;
 use std::error::Error;
-use std::ffi::OsStr;
-use std::fs;
 use std::path::PathBuf;
 
 use crate::search::search_files;
 use crate::yaml_parsers::config_parser::{get_config_path, parse_config};
-use crate::yaml_parsers::entity_parser::parse_entity_config_from_scope;
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -66,10 +62,6 @@ async fn setup_agent(
     let config_path = get_config_path();
     let config = parse_config(config_path)?;
     let parsed_config = config.load_config(agent_name.filter(|s| !s.is_empty()))?;
-    let entity_config = parse_entity_config_from_scope(
-        &parsed_config.agent_config.scope,
-        &config.defaults.project_path,
-    )?;
     let mut tools = ToolBox::default();
     let mut prompt_builder = PromptBuilder::new(&parsed_config.agent_config);
     prompt_builder.setup(&parsed_config.warehouse).await;
