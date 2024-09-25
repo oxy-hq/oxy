@@ -1,21 +1,26 @@
 mod agent;
+mod client;
 mod connector;
 mod init;
+mod prompt;
 mod search;
+mod tools;
 mod yaml_parsers;
 
-use clap::Parser;
+use crate::client::OpenAIAgent;
+use crate::prompt::PromptBuilder;
+use crate::tools::ToolBox;
 use clap::CommandFactory;
+use clap::Parser;
+use client::LLMAgent;
 use connector::Connector;
-use skim::prelude::*;
 use std::error::Error;
-use std::path::PathBuf;
-use std::fs;
 use std::ffi::OsStr;
+use std::fs;
+use std::path::PathBuf;
 
-use crate::agent::Agent;
 use crate::search::search_files;
-use crate::yaml_parsers::config_parser::{get_config_path, parse_config, Config};
+use crate::yaml_parsers::config_parser::{get_config_path, parse_config};
 use crate::yaml_parsers::entity_parser::parse_entity_config_from_scope;
 
 #[derive(Parser, Debug)]
@@ -55,7 +60,9 @@ struct AskArgs {
     question: String,
 }
 
-async fn setup_agent(agent_name: Option<&str>) -> Result<(Agent, PathBuf), Box<dyn Error>> {
+async fn setup_agent(
+    agent_name: Option<&str>,
+) -> Result<(Box<dyn LLMAgent>, PathBuf), Box<dyn Error>> {
     let config_path = get_config_path();
     let config = parse_config(config_path)?;
     let parsed_config = config.load_config(agent_name.filter(|s| !s.is_empty()))?;
@@ -63,13 +70,19 @@ async fn setup_agent(agent_name: Option<&str>) -> Result<(Agent, PathBuf), Box<d
         &parsed_config.agent_config.scope,
         &config.defaults.project_path,
     )?;
-    let agent = Agent::new(parsed_config, entity_config);
+    let mut tools = ToolBox::default();
+    let mut prompt_builder = PromptBuilder::new(&parsed_config.agent_config);
+    prompt_builder.setup(&parsed_config.warehouse).await;
+    tools.fill_toolbox(&parsed_config, &prompt_builder).await;
+    // Create the agent from the parsed config and entity config
+    let agent = OpenAIAgent::new(parsed_config, tools, prompt_builder);
     let project_path = PathBuf::from(&config.defaults.project_path);
-    Ok((agent, project_path))
+    Ok((Box::new(agent), project_path))
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
+    env_logger::init();
     let args = Args::parse();
 
     match args.command {
@@ -83,27 +96,29 @@ async fn main() -> Result<(), Box<dyn Error>> {
             let parsed_config = config.load_config(None)?;
             let ddls = Connector::new(parsed_config.warehouse).get_schemas().await;
             print!("{:?}", ddls);
-        },
+        }
         Some(SubCommand::ListDatasets) => {
             let config_path = get_config_path();
             let config = parse_config(config_path)?;
             let parsed_config = config.load_config(None)?;
-            let datasets = Connector::new(parsed_config.warehouse).list_datasets().await;
+            let datasets = Connector::new(parsed_config.warehouse)
+                .list_datasets()
+                .await;
             print!("{:?}", datasets);
-        },
+        }
         Some(SubCommand::Search) => {
-            let (mut agent, project_path) = setup_agent(args.agent.as_deref()).await?;
+            let (agent, project_path) = setup_agent(args.agent.as_deref()).await?;
             match search_files(&project_path)? {
                 Some(content) => {
-                    agent.execute_chain("", Some(content)).await?;
+                    agent.request(&content).await?;
                 }
                 None => println!("No files found or selected."),
             }
-        },
+        }
         Some(SubCommand::Ask(ask_args)) => {
-            let (mut agent, _) = setup_agent(args.agent.as_deref()).await?;
-            agent.execute_chain(&ask_args.question, None).await?;
-        },
+            let (agent, _) = setup_agent(args.agent.as_deref()).await?;
+            agent.request(&ask_args.question).await?;
+        }
         None => {
             Args::command().print_help().unwrap();
         }
