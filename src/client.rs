@@ -1,3 +1,4 @@
+use log::debug;
 use std::{env, error::Error};
 
 use async_openai::{
@@ -70,10 +71,13 @@ impl OpenAIAgent {
 #[async_trait]
 impl LLMAgent for OpenAIAgent {
     async fn request(&self, input: &str) -> Result<String, Box<dyn Error>> {
+        let system_message = self.prompt_builder.system();
+        debug!("System message: {}", system_message);
+
         let messages: Vec<ChatCompletionRequestMessage> = vec![
             ChatCompletionRequestSystemMessageArgs::default()
                 .name("onyx")
-                .content(self.prompt_builder.system())
+                .content(system_message)
                 .build()?
                 .into(),
             ChatCompletionRequestUserMessageArgs::default()
