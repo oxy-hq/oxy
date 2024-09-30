@@ -1,0 +1,19 @@
+warehouses:
+  - name: primary_warehouse
+    type: bigquery
+    key_path: /path/to/key
+    dataset: dbt_prod_core
+
+models:
+  - name: openai-4o
+    vendor: openai
+    key_var: OPENAI_API_KEY
+    model_ref: gpt-4o
+  - name: openai-4o-mini
+    vendor: openai
+    key_var: OPENAI_API_KEY
+    model_ref: gpt-4o-mini
+
+defaults:
+  agent: default
+  project_path: /path/to/project
