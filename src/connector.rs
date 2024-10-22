@@ -1,4 +1,4 @@
-use arrow::{array::as_string_array, record_batch::RecordBatch};
+use arrow_46::{array::as_string_array, record_batch::RecordBatch};
 use connectorx::prelude::{get_arrow, CXQuery, SourceConn};
 
 use crate::yaml_parsers::config_parser::Warehouse;

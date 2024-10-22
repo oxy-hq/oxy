@@ -27,24 +27,24 @@ fn main() {
      */
 
     // Get Poetry environment path
-    let output = Command::new("poetry")
-        .args(&["env", "info", "--path"])
-        .output()
-        .expect("Failed to execute poetry command");
+    // let output = Command::new("poetry")
+    //     .args(&["env", "info", "--path"])
+    //     .output()
+    //     .expect("Failed to execute poetry command");
 
-    println!("output: {:?}", output);
+    // println!("output: {:?}", output);
 
-    let poetry_env_path = String::from_utf8(output.stdout)
-        .expect("Invalid UTF-8 output from poetry command")
-        .trim()
-        .to_string();
+    // let poetry_env_path = String::from_utf8(output.stdout)
+    //     .expect("Invalid UTF-8 output from poetry command")
+    //     .trim()
+    //     .to_string();
 
-    // Generate a Rust file with the Poetry path
-    let out_dir = std::env::var("OUT_DIR").unwrap();
-    let dest_path = Path::new(&out_dir).join("poetry_path.rs");
-    fs::write(
-        &dest_path,
-        format!("pub const POETRY_ENV_PATH: &str = \"{}\";", poetry_env_path),
-    )
-    .unwrap();
+    // // Generate a Rust file with the Poetry path
+    // let out_dir = std::env::var("OUT_DIR").unwrap();
+    // let dest_path = Path::new(&out_dir).join("poetry_path.rs");
+    // fs::write(
+    //     &dest_path,
+    //     format!("pub const POETRY_ENV_PATH: &str = \"{}\";", poetry_env_path),
+    // )
+    // .unwrap();
 }

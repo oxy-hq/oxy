@@ -232,6 +232,24 @@ If you want to access a specific agent (for either `search` or `ask`), you can d
 onyx ask --agent=default "How many users do we have?"  # Ask a question of the specific agent `default.yaml`
 ```
 
+To embed files from <project_root>/data/** into vector store you can use `onyx build`. We're downloading model from huggingface hub so you may need to login using:
+
+```bash
+huggingface-cli login
+```
+
+or simply copy your plaintext token into `$HOME/.cache/huggingface/token` file. And then run build to index the data.
+
+```bash
+onyx build
+```
+
+Then verify using
+
+```bash
+onyx vec-search "Hello Embedding"
+```
+
 ## The data directory
 
 The `data` directory contains two important objects: `.sql` files, which are SQL definitions of business entities, and folders, which can be used to segment the queries and give the agents a natural sense of scope (they will have access to specific folder(s)).

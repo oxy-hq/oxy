@@ -1,23 +1,17 @@
-mod client;
-mod connector;
-mod init;
-mod prompt;
-mod search;
-mod tools;
-mod yaml_parsers;
-
-use crate::client::OpenAIAgent;
-use crate::prompt::PromptBuilder;
-use crate::tools::ToolBox;
 use clap::CommandFactory;
 use clap::Parser;
-use client::LLMAgent;
-use connector::Connector;
+use onyx::vector_search;
 use std::error::Error;
 use std::path::PathBuf;
 
-use crate::search::search_files;
-use crate::yaml_parsers::config_parser::{get_config_path, parse_config};
+use onyx::client::LLMAgent;
+use onyx::client::OpenAIAgent;
+use onyx::connector::Connector;
+use onyx::prompt::PromptBuilder;
+use onyx::search::search_files;
+use onyx::tools::ToolBox;
+use onyx::yaml_parsers::config_parser::{get_config_path, parse_config};
+use onyx::{build, init::init, BuildOpts};
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -49,10 +43,17 @@ enum SubCommand {
     Search,
     /// Ask a question to the specified agent. If no agent is specified, the default agent is used
     Ask(AskArgs),
+    Build,
+    VecSearch(VecSearchArgs),
 }
 
 #[derive(Parser, Debug)]
 struct AskArgs {
+    question: String,
+}
+
+#[derive(Parser, Debug)]
+struct VecSearchArgs {
     question: String,
 }
 
@@ -78,7 +79,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
 
     match args.command {
-        Some(SubCommand::Init) => match init::init() {
+        Some(SubCommand::Init) => match init() {
             Ok(_) => println!("Initialization complete"),
             Err(e) => eprintln!("Initialization failed: {}", e),
         },
@@ -110,6 +111,31 @@ async fn main() -> Result<(), Box<dyn Error>> {
         Some(SubCommand::Ask(ask_args)) => {
             let (agent, _) = setup_agent(args.agent.as_deref()).await?;
             agent.request(&ask_args.question).await?;
+        }
+        Some(SubCommand::Build) => {
+            let config_path = get_config_path();
+            let config = parse_config(config_path)?;
+            let project_path = &config.defaults.project_path;
+            let data_path = project_path.join("data");
+            build(
+                &config,
+                BuildOpts {
+                    force: true,
+                    data_path: data_path.to_str().unwrap().to_string(),
+                },
+            )
+            .await?;
+        }
+        Some(SubCommand::VecSearch(search_args)) => {
+            let config_path = get_config_path();
+            let config = parse_config(config_path)?;
+            let parsed_config = config.load_config(None)?;
+            vector_search(
+                &config.defaults.agent,
+                &parsed_config.retrieval,
+                &search_args.question,
+            )
+            .await?;
         }
         None => {
             Args::command().print_help().unwrap();

@@ -9,6 +9,7 @@ pub struct AgentConfig {
     pub warehouse: String,
     pub scope: String,
     pub retrieval_type: String,
+    pub retrieval: String,
     pub tools: Vec<String>,
     pub system_instructions: String,
     pub sql_tool_instructions: String,

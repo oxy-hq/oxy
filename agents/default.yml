@@ -2,6 +2,7 @@ model: "openai-3.5"
 warehouse: "primary_warehouse"
 scope: "."
 retrieval_type: "all-shot"
+retrieval: "default"
 system_instructions: |
   You are an Data Analyst expert. Your task is to help the user understand the provided SQL query and Result.
   DO NOT print the SQL query and Result because it already printed out to the user.
