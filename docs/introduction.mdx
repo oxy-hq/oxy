@@ -1,71 +1,27 @@
 ---
-title: Introduction
-description: 'Welcome to the home of your new documentation'
+title: Intro to Onyx
+description: "The fastest way to build data agents"
 ---
 
-<img
-  className="block dark:hidden"
-  src="/images/hero-light.svg"
-  alt="Hero Light"
-/>
-<img
-  className="hidden dark:block"
-  src="/images/hero-dark.svg"
-  alt="Hero Dark"
-/>
+<img class="rounded-lg" height="200" noZoom src="/images/hero.png" alt="Hero" />
 
-## Setting up
+## The fastest way to build data agents
 
-The first step to world-class documentation is setting up your editing environments.
+**Onyx** is a lightweight, yaml-based data agent builder for the command line.
 
-<CardGroup cols={2}>
-  <Card
-    title="Edit Your Docs"
-    icon="pen-to-square"
-    href="https://mintlify.com/docs/quickstart"
-  >
-    Get your docs set up locally for easy development
-  </Card>
-  <Card
-    title="Preview Changes"
-    icon="image"
-    href="https://mintlify.com/docs/development"
-  >
-    Preview your changes before you push to make sure they're perfect
-  </Card>
-</CardGroup>
+### What is a data agent?
 
-## Make it yours
+A data agent is an LLM-based agent that can manipulate and synthesize data. **Onyx** is a tool that allows you to build these agents quickly and easily, with a focus on flexibility and ease of use.
 
-Update your docs to your brand and add valuable content for the best user conversion.
+Data agents built in onyx ingest semantic information and use this to either execute SQL queries against a database, retrieve from an in-process database, or retrieve from local sources (text, pdf, etc.)
 
-<CardGroup cols={2}>
-  <Card
-    title="Customize Style"
-    icon="palette"
-    href="https://mintlify.com/docs/settings/global"
-  >
-    Customize your docs to your company's colors and brands
-  </Card>
-  <Card
-    title="Reference APIs"
-    icon="code"
-    href="https://mintlify.com/docs/api-playground/openapi"
-  >
-    Automatically generate endpoints from an OpenAPI spec
-  </Card>
-  <Card
-    title="Add Components"
-    icon="screwdriver-wrench"
-    href="https://mintlify.com/docs/components/accordion"
-  >
-    Build interactive features and designs to guide your users
-  </Card>
-  <Card
-    title="Get Inspiration"
-    icon="stars"
-    href="https://mintlify.com/customers"
-  >
-    Check out our showcase of our favorite documentation
-  </Card>
-</CardGroup>
+**Onyx** consists of two principal elements to configure these data agents:
+
+- agents: Configuration files that define the agents. Each agent is scoped to particular semantic models.
+- data: A directory of SQL queries, organized in a directory structure that reflects the organization structure. Each SQL file should be placed in the sub-directory corresponding to the widest set of teams that it serves (company-wide metrics, for instance, should be placed in the base data/ directory).
+
+### **Onyx** core vision
+
+`onyx-core` as-is provides two components: an explorer (`onyx search`) and an LLM interface that few-shots these entities into an LLM chatbot prompt chain (`onyx ask`).
+
+The longer-term vision of `onyx-core` is such that the explorer provides search through a knowledge graph defining relevant entities (e.g. queries, metrics, dimensions, but perhaps an even wider scope, ultimately).
