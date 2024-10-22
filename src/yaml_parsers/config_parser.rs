@@ -9,6 +9,7 @@ pub struct Config {
     pub defaults: Defaults,
     pub models: Vec<Model>,
     pub warehouses: Vec<Warehouse>,
+    pub retrievals: Vec<Retrieval>,
 }
 
 // These are settings stored as strings derived from the config.yml file's defaults section
@@ -34,6 +35,15 @@ pub struct Model {
     pub model_ref: String,
 }
 
+#[derive(Deserialize, Debug, Clone)]
+pub struct Retrieval {
+    pub name: String,
+    pub embed_model: String,
+    pub rerank_model: String,
+    pub top_k: usize,
+    pub factor: usize,
+}
+
 pub fn get_config_path() -> PathBuf {
     home_dir()
         .expect("Could not find home directory")
@@ -53,6 +63,7 @@ pub struct ParsedConfig {
     pub agent_config: AgentConfig,
     pub model: Model,
     pub warehouse: Warehouse,
+    pub retrieval: Retrieval,
 }
 
 impl Config {
@@ -77,11 +88,13 @@ impl Config {
         let agent_config = parse_agent_config(&agent_file.to_string_lossy())?;
         let model = self.load_model(&agent_config.model)?;
         let warehouse = self.load_warehouse(&agent_config.warehouse)?;
+        let retrieval = self.load_retrieval(&agent_config.retrieval)?;
 
         Ok(ParsedConfig {
             agent_config,
             model,
             warehouse,
+            retrieval,
         })
     }
 
@@ -102,6 +115,16 @@ impl Config {
             .cloned()
             .ok_or_else(|| {
                 io::Error::new(io::ErrorKind::NotFound, "Default warehouse not found").into()
+            })
+    }
+
+    fn load_retrieval(&self, retrieval_name: &str) -> Result<Retrieval, Box<dyn Error>> {
+        self.retrievals
+            .iter()
+            .find(|m| m.name == retrieval_name)
+            .cloned()
+            .ok_or_else(|| {
+                io::Error::new(io::ErrorKind::NotFound, "Default retrieval not found").into()
             })
     }
 }

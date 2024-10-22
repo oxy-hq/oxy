@@ -6,19 +6,18 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [lib]
 name = "onyx"
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-arrow = "46.0.0"
-arrow-cast = { version = "46.0.0", features = ["prettyprint"] }
+arrow = "^52.2"
+arrow_46 = { version="^46.0", package = "arrow" }
+arrow-cast = { version = "^46.0", features = ["prettyprint"] }
 clap = { version = "4.5.18", features = ["derive"] }
 connectorx = { version = "0.3.3", features = ["dst_arrow", "src_bigquery"] }
 dirs = "5.0.1"
 env_logger = "0.11"
 log = "0.4"
 minijinja = "2.3.1"
-pyo3 = { version = "0.21.0", features = ["auto-initialize"] }
-pyo3-arrow = "0.2.1"
 reqwest = { version = "0.12.7", features = ["json"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -30,3 +29,11 @@ async-openai = "0.24.0"
 schemars = "0.8.21"
 async-trait = "0.1.82"
 colored = "2.1.0"
+anyhow = "1.0.89"
+thiserror = "1.0.64"
+lancedb = { version = "0.11.0", features = ["sentence-transformers"] }
+dotenvy = "0.15.7"
+futures = "0.3.31"
+serde_arrow = { version = "0.12.1", features = ["arrow-52"] }
+hf-hub = "0.3.2"
+fastembed = "4.1.0"
