@@ -1,6 +1,5 @@
-use log::debug;
-use std::{env, error::Error};
-
+use super::{prompt::PromptBuilder, toolbox::ToolBox};
+use crate::yaml_parsers::config_parser::ParsedConfig;
 use async_openai::{
     config::OpenAIConfig,
     types::{
@@ -13,8 +12,8 @@ use async_openai::{
     Client,
 };
 use async_trait::async_trait;
-
-use crate::{prompt::PromptBuilder, tools::ToolBox, yaml_parsers::config_parser::ParsedConfig};
+use log::debug;
+use std::{env, error::Error};
 
 #[async_trait]
 pub trait LLMAgent {

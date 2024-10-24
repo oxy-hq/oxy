@@ -1,13 +1,9 @@
-pub mod client;
+pub mod ai;
+pub mod cli;
 pub mod connector;
-pub mod init;
-pub mod prompt;
-pub mod retrieval;
-pub mod search;
-pub mod tools;
 pub mod yaml_parsers;
 
-use retrieval::{build_embeddings, get_vector_store, search};
+use ai::retrieval::{build_embeddings, get_vector_store, search};
 use yaml_parsers::config_parser::Retrieval;
 
 pub struct BuildOpts {
