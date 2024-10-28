@@ -1,6 +1,6 @@
 use super::Tool;
 use crate::{connector::Connector, yaml_parsers::config_parser::Warehouse};
-use arrow_cast::pretty::pretty_format_batches;
+use arrow::util::pretty::pretty_format_batches;
 use async_trait::async_trait;
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -33,7 +33,7 @@ impl Tool<ExecuteSQLParams> for ExecuteSQLTool {
     async fn call_internal(
         &self,
         parameters: ExecuteSQLParams,
-    ) -> Result<String, Box<dyn std::error::Error>> {
+    ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         println!("\n\x1b[1;32mSQL query:\x1b[0m");
         print_colored_sql(&parameters.sql);
         let config = self.config.clone();
