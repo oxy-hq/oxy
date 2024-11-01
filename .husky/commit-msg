@@ -1,0 +1,1 @@
+cd web-app && pnpm dlx commitlint --edit $1
