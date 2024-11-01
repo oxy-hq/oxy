@@ -1,0 +1,1 @@
+cd web-app && pnpm lint-staged

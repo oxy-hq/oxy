@@ -9,6 +9,7 @@ name = "onyx"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+axum = "0.6.0"
 arrow = "^52.2"
 parquet = "^52.2"
 arrow_46 = { version = "^46.0", package = "arrow" }
@@ -41,4 +42,6 @@ futures = "0.3.31"
 serde_arrow = { version = "0.12.1", features = ["arrow-52"] }
 hf-hub = "0.3.2"
 fastembed = "4.1.0"
+tower-http = { version = "0.4.0", features = ["fs"] }
+include_dir = "0.7"
 uuid = "1.11.0"
