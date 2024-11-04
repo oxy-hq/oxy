@@ -8,8 +8,10 @@ edition = "2021"
 name = "onyx"
 crate-type = ["cdylib", "rlib"]
 
+[workspace]
+members = [".", "migration", "entity"]
+
 [dependencies]
-axum = "0.6.0"
 arrow = "^52.2"
 parquet = "^52.2"
 arrow_46 = { version = "^46.0", package = "arrow" }
@@ -34,14 +36,23 @@ async-openai = "0.24.0"
 schemars = "0.8.21"
 async-trait = "0.1.82"
 colored = "2.1.0"
+axum = {version ="0.7.7", features = ["macros"]}
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing = "0.1"
+dotenvy = "0.15"
+uuid = {version = "1.11.0", features = ["v4", "serde"]}
+axum-streams = "0.19.0"
 anyhow = "1.0.89"
 thiserror = "1.0.64"
 lancedb = { version = "0.11.0", features = ["sentence-transformers"] }
-dotenvy = "0.15.7"
 futures = "0.3.31"
 serde_arrow = { version = "0.12.1", features = ["arrow-52"] }
 hf-hub = "0.3.2"
 fastembed = "4.1.0"
-tower-http = { version = "0.4.0", features = ["fs"] }
+actix-web = "4"
+sea-orm = { version = "1.1.0", features = [ "sqlx-sqlite", "runtime-tokio-rustls", "macros" ] }
+sea-orm-migration = {version = "1.1.0", features = [   "runtime-tokio-rustls",  "sqlx-sqlite"   ]}
+migration = { path = "migration" } 
+entity = { path = "entity" } 
+tower-http = { version = "0.6.1", features = ["fs"] }
 include_dir = "0.7"
-uuid = "1.11.0"

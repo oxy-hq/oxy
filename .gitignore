@@ -77,3 +77,4 @@ onyx/**/poetry.lock
 # Onyx
 .db-*/
 .fastembed_cache/
+.env

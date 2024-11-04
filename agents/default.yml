@@ -1,4 +1,4 @@
-model: "openai-3.5"
+model: "openai-4o"
 warehouse: "primary_warehouse"
 scope: "."
 retrieval_type: "all-shot"

@@ -2,6 +2,8 @@ pub mod ai;
 pub mod cli;
 pub mod connector;
 pub mod yaml_parsers;
+pub mod db;
+mod api;
 
 use ai::retrieval::{build_embeddings, get_vector_store, search};
 use yaml_parsers::config_parser::Retrieval;

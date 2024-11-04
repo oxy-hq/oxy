@@ -12,7 +12,7 @@ use toolbox::ToolBox;
 
 pub async fn setup_agent(
     agent_name: Option<&str>,
-) -> Result<(Box<dyn LLMAgent>, PathBuf), Box<dyn std::error::Error>> {
+) -> Result<(Box<dyn LLMAgent + Send>, PathBuf), Box<dyn std::error::Error>> {
     let config_path = get_config_path();
     let config = parse_config(config_path)?;
     let parsed_config = config.load_config(agent_name.filter(|s| !s.is_empty()))?;
