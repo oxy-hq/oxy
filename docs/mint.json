@@ -6,6 +6,9 @@
     "href": "https://www.onyxint.ai/"
   },
   "favicon": "favicon.svg",
+  "background": {
+    "style": "windows"
+  },
   "colors": {
     "primary": "#000000",
     "light": "#ffffff",
@@ -18,26 +21,41 @@
   },
   "tabs": [
     {
-      "name": "API Reference",
-      "url": "api-reference"
-    }
-  ],
-  "anchors": [
-    {
-      "name": "Home",
-      "icon": "house",
-      "url": "https://www.onyxint.ai/"
+      "name": "Integrations",
+      "url": "integrations"
     },
     {
-      "name": "Community",
-      "icon": "slack",
-      "url": "https://mintlify.com/community"
+      "name": "Onyx Community",
+      "url": "community"
     }
   ],
   "navigation": [
     {
-      "group": "Get Started",
-      "pages": ["introduction", "quickstart"]
+      "group": "Getting Started",
+      "pages": ["welcome", "introduction", "quickstart"]
+    },
+    {
+      "group": "Learn about Onyx",
+      "pages": [
+        "about-onyx/basic-commands",
+        "about-onyx/data-directory",
+        "about-onyx/agent-definition"
+      ]
+    },
+    {
+      "group": "Build with Onyx",
+      "pages": ["build-with-onyx/development"]
+    },
+    {
+      "group": "Integrations",
+      "pages": [
+        "integrations/data-warehouse/overview",
+        "integrations/data-warehouse/bigquery"
+      ]
+    },
+    {
+      "group": "Contributing",
+      "pages": ["community/how-to-contribute"]
     }
   ],
   "footerSocials": {

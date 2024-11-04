@@ -1,0 +1,44 @@
+---
+title: Basic commands
+# description: "How to contribute to Onyx"
+---
+
+An important aspect of `onyx` is the concept of `scope` -- the subset of the `data` directory that is available to an `agent`. By default, `onyx` comes with a way to access both the _narrowest_ scope (that of a single query) and the _widest_ scope (the entire `data` directory).
+
+To access SQL-level scope, you can run:
+
+```bash
+onyx search  # Search through your SQL queries and execute them on selection
+```
+
+which will execute the selected query.
+
+To access the org-wide scope, you can ask questions of the `default` LLM, which will source from the `data` base directory (scope: `all`) by default.
+
+```bash
+onyx ask "How many users do we have?"  # Ask a question of the default agent
+```
+
+If you want to access a specific agent (for either `search` or `ask`), you can do so by specifying the agent name (removing the `.yml` extension) as an argument.
+
+```bash
+onyx ask --agent=default "How many users do we have?"  # Ask a question of the specific agent `default.yaml`
+```
+
+To embed files from `<project_root>/data/**` into vector store you can use `onyx build`. We're downloading model from huggingface hub so you may need to login using:
+
+```bash
+huggingface-cli login
+```
+
+or simply copy your plaintext token into `$HOME/.cache/huggingface/token` file. And then run build to index the data.
+
+```bash
+onyx build
+```
+
+Then verify using
+
+```bash
+onyx vec-search "Hello Embedding"
+```
