@@ -51,6 +51,7 @@ enum SubCommand {
     Ask(AskArgs),
     Build,
     VecSearch(VecSearchArgs),
+    Validate,
     Serve,
 }
 
@@ -126,6 +127,15 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                 &search_args.question,
             )
             .await?;
+        }
+        Some(SubCommand::Validate) => {
+            let config_path = get_config_path();
+            let result = parse_config(config_path);
+            if result.is_err() {
+                eprintln!("Error: {:?}", result.err().unwrap());
+            } else {
+                println!("Config file is valid");
+            }
         }
         Some(SubCommand::Serve) => {
             let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
