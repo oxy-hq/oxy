@@ -9,23 +9,15 @@ use init::init;
 use search::search_files;
 
 use crate::ai::setup_agent;
+use crate::api::server;
 use crate::connector::Connector;
 use crate::yaml_parsers::config_parser::get_config_path;
 use crate::yaml_parsers::config_parser::parse_config;
 use crate::{build, vector_search, BuildOpts};
 
-use include_dir::{include_dir, Dir};
-use std::{convert::Infallible, net::SocketAddr};
-use axum::{
-    body::Body,
-    http::StatusCode,
-    response::{IntoResponse, Response},
-    routing::get_service,
-    Router,
-};
-use tower_http::services::ServeDir;
+use std::net::SocketAddr;
+use axum::http::StatusCode;
 
-static DIST: Dir = include_dir!("$CARGO_MANIFEST_DIR/dist");
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -59,7 +51,7 @@ enum SubCommand {
     Ask(AskArgs),
     Build,
     VecSearch(VecSearchArgs),
-    Serve
+    Serve,
 }
 
 #[derive(Parser, Debug)]
@@ -136,15 +128,9 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             .await?;
         }
         Some(SubCommand::Serve) => {
-            let app = Router::new().fallback_service(get_service(serve_embedded()));
-
             let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
             println!("Axum server running at http://{}", addr);
-        
-            axum::Server::bind(&addr)
-                .serve(app.into_make_service())
-                .await
-                .unwrap();
+            server::serve(&addr).await;
         }
         None => {
             Args::command().print_help().unwrap();
@@ -154,10 +140,6 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-
-fn serve_embedded() -> ServeDir {
-    ServeDir::new("dist")
-}
 
 async fn handle_error(err: std::io::Error) -> (StatusCode, String) {
     (StatusCode::INTERNAL_SERVER_ERROR, format!("Unhandled error: {}", err))
