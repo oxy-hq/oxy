@@ -5713,6 +5713,7 @@ dependencies = [
  "fastembed",
  "futures",
  "hf-hub",
+ "home",
  "include_dir",
  "lancedb",
  "log",
