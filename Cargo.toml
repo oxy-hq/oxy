@@ -49,10 +49,11 @@ futures = "0.3.31"
 serde_arrow = { version = "0.12.1", features = ["arrow-52"] }
 hf-hub = "0.3.2"
 fastembed = "4.1.0"
+tower-http = { version = "0.6.1", features = ["fs", "cors"] }
+home = "0.5"
 actix-web = "4"
 sea-orm = { version = "1.1.0", features = [ "sqlx-sqlite", "runtime-tokio-rustls", "macros" ] }
 sea-orm-migration = {version = "1.1.0", features = [   "runtime-tokio-rustls",  "sqlx-sqlite"   ]}
 migration = { path = "migration" } 
 entity = { path = "entity" } 
-tower-http = { version = "0.6.1", features = ["fs"] }
 include_dir = "0.7"

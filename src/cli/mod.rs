@@ -15,9 +15,12 @@ use crate::yaml_parsers::config_parser::get_config_path;
 use crate::yaml_parsers::config_parser::parse_config;
 use crate::{build, vector_search, BuildOpts};
 
+use axum::{routing::get_service, Router};
+use include_dir::{include_dir, Dir};
 use std::net::SocketAddr;
-use axum::http::StatusCode;
+use tower_http::services::ServeDir;
 
+static DIST: Dir = include_dir!("$CARGO_MANIFEST_DIR/dist");
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -138,10 +141,25 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             }
         }
         Some(SubCommand::Serve) => {
-            let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
-            println!("Axum server running at http://{}", addr);
-            server::serve(&addr).await;
+            let server_task = tokio::spawn(async move {
+                let addr = SocketAddr::from(([127, 0, 0, 1], 3001));
+                println!("Axum server running at http://{}", addr);
+                server::serve(&addr).await;
+            });
+
+            let web_task = tokio::spawn(async move {
+                let web_app = Router::new().fallback_service(get_service(serve_embedded()));
+                let web_addr = SocketAddr::from(([127, 0, 0, 1], 3000));
+                println!("Axum web server running at http://{}", web_addr);
+                let listener = tokio::net::TcpListener::bind(web_addr).await.unwrap();
+                axum::serve(listener, web_app.into_make_service())
+                    .await
+                    .unwrap();
+            });
+
+            let _ = tokio::try_join!(server_task, web_task);
         }
+
         None => {
             Args::command().print_help().unwrap();
         }
@@ -150,7 +168,6 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-
-async fn handle_error(err: std::io::Error) -> (StatusCode, String) {
-    (StatusCode::INTERNAL_SERVER_ERROR, format!("Unhandled error: {}", err))
+fn serve_embedded() -> ServeDir {
+    ServeDir::new("dist")
 }
