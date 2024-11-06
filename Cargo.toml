@@ -57,4 +57,6 @@ sea-orm-migration = {version = "1.1.0", features = [   "runtime-tokio-rustls",  
 migration = { path = "migration" } 
 entity = { path = "entity" } 
 include_dir = "0.7"
+terminal-light = "1.7.0"
+lazy_static = "1.4.0"
 backon = "1.2.0"

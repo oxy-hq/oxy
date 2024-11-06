@@ -1,9 +1,11 @@
 mod init;
 mod search;
+mod theme;
 
 use clap::CommandFactory;
 use clap::Parser;
 use std::error::Error;
+use theme::*;
 use tower_http::services::ServeFile;
 
 use init::init;
@@ -59,6 +61,7 @@ enum SubCommand {
     Execute(ExecuteArgs),
     Validate,
     Serve,
+    TestTheme,
 }
 
 #[derive(Parser, Debug)]
@@ -172,6 +175,18 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             });
 
             let _ = tokio::try_join!(server_task, web_task);
+        }
+
+        Some(SubCommand::TestTheme) => {
+            println!("Initial theme mode: {:?}", get_current_theme_mode());
+            println!("{}", "analysis".primary());
+            println!("{}", "success".success());
+            println!("{}", "warning".warning());
+            println!("{}", "error".error());
+            println!("{}", "https://github.com/onyx-hq/onyx-sample-repo/".secondary());
+            println!("{}", "-region".tertiary());
+            println!("{}", "Viewing repository".info());
+            println!("{}", "text".text());
         }
 
         None => {
