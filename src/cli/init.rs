@@ -42,10 +42,26 @@ warehouses:
     key_path: /path/to/key
 
 models:
-- name: openai-3.5
+- name: openai-4o
     vendor: openai
+    model_ref: gpt-4o
     key_var: OPENAI_API_KEY
-    model_ref: gpt-3.5-turbo
+- name: openai-4o-mini
+    vendor: openai
+    model_ref: gpt-4o-mini
+    key_var: OPENAI_API_KEY
+- name: llama3.2
+    vendor: ollama
+    model_ref: llama3.2:latest
+    api_url: http://localhost:11434/v1
+    api_key: secret
+
+retrievals:
+  - name: default
+    embed_model: "bge-small-en-v1.5"
+    rerank_model: "jina-reranker-v2-base-multiligual"
+    top_k: 10
+    factor: 5
 
 defaults:
   agent: default

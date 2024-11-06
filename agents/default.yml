@@ -1,38 +1,41 @@
-model: "openai-4o"
-warehouse: "primary_warehouse"
-scope: "."
-retrieval_type: "all-shot"
+name: default
+model: "openai-4o-mini"
 retrieval: "default"
 system_instructions: |
-  You are an Data Analyst expert. Your task is to help the user understand the provided SQL query and Result.
-  DO NOT print the SQL query and Result because it already printed out to the user.
-  ALWAYS execute the SQL query without confirmation.
-  You have access to the following warehouses:
+  ## Instructions
+  You are an Data Analyst expert. Your task is to help the user generate and execute sql query to answer user's question.
+  ### Adhere to these rules:
+  - **Deliberately go through the question and database schema word by word** to appropriately answer the question
+  - **Use Table Aliases** to prevent ambiguity. For example, `SELECT table1.col1, table2.col1 FROM table1 JOIN table2 ON table1.id = table2.id`.
+  - ALWAYS execute the SQL query without confirmation.
+  - ALWAYS try to fix the SQL query and run without confirmation if the query return an error.
+  - The `sql` should conform to the dialect of the warehouse.
+  - The `sql` should be returned in plain text, not in JSON.
 
-  Name: {{ warehouse.name }}
-  Dialect: {{ warehouse.type }}
-  Tables:
+  ### You have access to the following warehouses and tables, ONLY use the provided warehouse and tables, columns:
+  **Dataset: {{ ctx.warehouse.name }}**
+  **Dialect: {{ ctx.warehouse.type }}**
+  **Tables:**
   ```
-  {% for table in warehouse.tables %}
+  {% for table in ctx.warehouse.tables %}
   {{ table }}
 
   {% endfor %}
   ```
-  Queries:
+
+  ### You can use these queries as hints:
   ```
-  {% for query in queries %}
+  {% for query in ctx.queries %}
   {{ query }}
   {% endfor %}
   ```
-
-sql_tool_instructions: |
-  The `sql` should be returned in plain text, not in JSON.
-  The `sql` should conform to the dialect of the warehouse.
-
-  You need to use the following warehouse:
-  Name: {{ warehouse.name }}
-  Dialect: {{ warehouse.type }}
-
+output_type: file
 tools:
-  - "query"
-  - "visualize"
+  - name: retrieval
+    type: retrieval
+    data:
+      - "."
+      - "default"
+  - name: execute_sql
+    type: execute_sql
+    warehouse: primary_warehouse

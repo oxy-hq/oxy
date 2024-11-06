@@ -2,6 +2,8 @@ pub mod ai;
 pub mod cli;
 pub mod connector;
 pub mod yaml_parsers;
+pub mod workflow;
+pub mod utils;
 pub mod db;
 mod api;
 
@@ -16,7 +18,7 @@ pub struct BuildOpts {
 pub async fn build(
     config: &yaml_parsers::config_parser::Config,
     opts: BuildOpts,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> anyhow::Result<()> {
     println!("Building...");
     build_embeddings(config, &opts.data_path).await?;
     Ok(())
@@ -26,7 +28,7 @@ pub async fn vector_search(
     agent: &str,
     retrieval: &Retrieval,
     query: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> anyhow::Result<()> {
     println!("Searching...");
     let db = get_vector_store(agent, retrieval)?;
     search(query, &db).await?;

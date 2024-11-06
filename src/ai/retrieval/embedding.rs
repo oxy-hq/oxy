@@ -29,8 +29,8 @@ pub struct Document {
 
 #[async_trait]
 pub trait VectorStore {
-    async fn embed(&self, documents: &Vec<Document>) -> Result<(), Box<dyn std::error::Error>>;
-    async fn search(&self, query: &str) -> Result<Vec<Document>, Box<dyn std::error::Error>>;
+    async fn embed(&self, documents: &Vec<Document>) -> anyhow::Result<()>;
+    async fn search(&self, query: &str) -> anyhow::Result<Vec<Document>>;
 }
 
 pub struct LanceDBStore {
@@ -88,7 +88,7 @@ impl LanceDBStore {
         connection
     }
 
-    async fn get_warehouse_metadata_table(&self) -> Result<Table, Box<dyn std::error::Error>> {
+    async fn get_warehouse_metadata_table(&self) -> anyhow::Result<Table> {
         let connection = self
             .connection
             .get_or_init(|| async { Self::lazy_init(&self.uri).await })
@@ -124,7 +124,7 @@ impl LanceDBStore {
 
 #[async_trait]
 impl VectorStore for LanceDBStore {
-    async fn embed(&self, documents: &Vec<Document>) -> Result<(), Box<dyn std::error::Error>> {
+    async fn embed(&self, documents: &Vec<Document>) -> anyhow::Result<()> {
         let table = self.get_warehouse_metadata_table().await?;
         let schema = Arc::new(Schema::new(vec![
             Field::new("content", DataType::Utf8, false),
@@ -166,7 +166,7 @@ impl VectorStore for LanceDBStore {
                 self.n_dims.try_into().unwrap(),
             ),
         );
-        println!("Total: {:?}", &embeddings.len());
+        log::info!("Total: {:?}", &embeddings.len());
 
         let batches = RecordBatchIterator::new(
             vec![RecordBatch::try_new(
@@ -180,11 +180,11 @@ impl VectorStore for LanceDBStore {
         );
 
         table.add(batches).execute().await?;
-        println!("Embedded!");
+        log::info!("Embedded!");
         Ok(())
     }
 
-    async fn search(&self, query: &str) -> Result<Vec<Document>, Box<dyn std::error::Error>> {
+    async fn search(&self, query: &str) -> anyhow::Result<Vec<Document>> {
         let query_vector = self.embed_model.embed(vec![query.to_string()], None)?;
         let table = self.get_warehouse_metadata_table().await?;
         let vector = query_vector.iter().next().unwrap();
@@ -197,7 +197,7 @@ impl VectorStore for LanceDBStore {
         let rb = results.next().await.unwrap()?;
         let docs: Vec<Document> = from_record_batch(&rb)?;
 
-        println!("Reranking...");
+        log::info!("Reranking...");
         let documents = docs
             .iter()
             .map(|doc| doc.content.clone())
@@ -210,11 +210,11 @@ impl VectorStore for LanceDBStore {
         let results = &results[0..end];
         for doc in results {
             let content = doc.document.as_ref().unwrap();
-            println!(
+            log::info!(
                 "Rank: {}\nScore: {}\nContent: {}",
                 doc.index, doc.score, content
             );
-            println!("-----------------");
+            log::info!("-----------------");
         }
         Ok(docs)
     }

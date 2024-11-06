@@ -1,32 +1,29 @@
-use super::{
-    prompt::PromptBuilder,
-    tools::{ExecuteSQLParams, ExecuteSQLTool, Tool},
-};
-use crate::yaml_parsers::config_parser::ParsedConfig;
+use super::tools::Tool;
+use crate::{ utils::truncate_with_ellipsis};
 use serde_json::Value;
 use std::collections::HashMap;
 
-type ToolParams = ExecuteSQLParams;
-type ToolImpl = Box<dyn Tool<ToolParams> + Sync + Send>;
-
 #[derive(Default)]
-pub struct ToolBox {
-    tools: HashMap<String, ToolImpl>,
+pub struct ToolBox<T> {
+    tools: HashMap<String, T>,
 }
 
 pub type SpecSerializer<Ret> = fn(String, String, Value) -> Ret;
 
-impl ToolBox {
-    pub async fn fill_toolbox(&mut self, config: &ParsedConfig, prompt_builder: &PromptBuilder) {
-        let sql_tool = ExecuteSQLTool {
-            config: config.warehouse.clone(),
-            tool_description: prompt_builder.sql_tool(),
-        };
-        self.tools
-            .insert(sql_tool.name(), Box::new(sql_tool) as ToolImpl);
-        for (_name, tool) in &mut self.tools {
-            tool.setup().await;
+impl<T> ToolBox<T> {
+    pub fn new() -> Self {
+        ToolBox {
+            tools: HashMap::new(),
         }
+    }
+}
+
+impl<T> ToolBox<T>
+where
+    T: Tool + Send + Sync,
+{
+    pub fn add_tool(&mut self, name: String, tool: T) {
+        self.tools.insert(name, tool);
     }
 
     pub fn to_spec<Ret>(&self, spec_serializer: SpecSerializer<Ret>) -> Vec<Ret> {
@@ -34,7 +31,7 @@ impl ToolBox {
         for (_name, tool) in &self.tools {
             spec.insert(
                 spec.len(),
-                spec_serializer(tool.name(), tool.description(), tool.param_spec()),
+                spec_serializer(tool.name(), tool.description(), tool.param_spec().unwrap()),
             );
         }
         spec
@@ -46,25 +43,15 @@ impl ToolBox {
         if tool.is_none() {
             return format!("Tool {} not found", name);
         }
-
-        match tool.unwrap().call(parameters).await {
+        let response = tool.unwrap().call(&parameters).await;
+        match response {
             Ok(result) => truncate_with_ellipsis(&result, 1000),
             Err(e) => {
-                log::debug!("Error executing tool: {}", e);
-                truncate_with_ellipsis(&format!("Error executing tool: {:?}", e), 1000)
+                let err_msg =
+                    truncate_with_ellipsis(&format!("Error executing tool: {:?}", e), 1000);
+                log::info!("{}", err_msg);
+                err_msg
             }
         }
     }
-}
-
-fn truncate_with_ellipsis(s: &str, max_width: usize) -> String {
-    // We should truncate at grapheme-boundary and compute character-widths,
-    // yet the dependencies on unicode-segmentation and unicode-width are
-    // not worth it.
-    let mut chars = s.chars();
-    let mut prefix = (&mut chars).take(max_width - 1).collect::<String>();
-    if chars.next().is_some() {
-        prefix.push('…');
-    }
-    prefix
 }

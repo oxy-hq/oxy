@@ -3,32 +3,11 @@ use std::{fs, path::PathBuf};
 use embedding::{Document, LanceDBStore, VectorStore};
 use fastembed::{EmbeddingModel, RerankerModel};
 
-use crate::yaml_parsers::{self, config_parser::Config};
+use crate::{utils::collect_files_recursively, yaml_parsers::{self, config_parser::Config}};
 
 pub mod embedding;
 
-fn collect_files_recursively(
-    dir: &str,
-    base_path: &str,
-) -> Result<Vec<String>, Box<dyn std::error::Error>> {
-    let manifest: &mut Vec<String> = &mut Vec::new();
-    for entry in fs::read_dir(dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        if path.is_dir() {
-            let mut paths = collect_files_recursively(path.to_str().unwrap(), base_path)?;
-            let paths = paths.as_mut();
-            manifest.append(paths);
-        } else if path.is_file() {
-            if let Some(path_str) = path.to_str() {
-                manifest.push(path_str.to_string());
-            }
-        }
-    }
-    Ok(manifest.clone())
-}
-
-fn get_documents_from_files(data_path: &str) -> Result<Vec<Document>, Box<dyn std::error::Error>> {
+fn get_documents_from_files(data_path: &str) -> anyhow::Result<Vec<Document>> {
     let files = collect_files_recursively(data_path, data_path)?;
     println!("Found: {:?}", files);
     let documents = files
@@ -48,16 +27,17 @@ fn get_documents_from_files(data_path: &str) -> Result<Vec<Document>, Box<dyn st
 pub async fn build_embeddings(
     config: &Config,
     data_path: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> anyhow::Result<()> {
     let agent_dirs = fs::read_dir(data_path)?
         .map(|entry| entry.unwrap().path())
         .filter(|path| path.is_dir())
         .collect::<Vec<PathBuf>>();
     for agent_dir in agent_dirs {
         println!("Building embeddings for agent: {:?}", agent_dir);
-        let agent = agent_dir.file_name().unwrap().to_str().unwrap();
-        let retrieval = config.load_config(Some(agent))?.retrieval;
-        let db: Box<dyn VectorStore> = get_vector_store(agent, &retrieval)?;
+        let agent_name = agent_dir.file_name().unwrap().to_str().unwrap();
+        let agent = config.load_config(Some(agent_name))?;
+        let retrieval = config.find_retrieval(agent.retrieval.as_ref().unwrap())?;
+        let db = get_vector_store(agent_name, &retrieval)?;
         let documents = get_documents_from_files(data_path)?;
         db.embed(&documents).await?;
     }
@@ -66,8 +46,8 @@ pub async fn build_embeddings(
 
 pub async fn search(
     query: &str,
-    db: &Box<dyn VectorStore>,
-) -> Result<Vec<Document>, Box<dyn std::error::Error>> {
+    db: &Box<dyn VectorStore + Sync + Send>,
+) -> anyhow::Result<Vec<Document>> {
     let documents = db.search(query).await?;
     Ok(documents)
 }
@@ -75,31 +55,31 @@ pub async fn search(
 pub fn get_vector_store(
     agent: &str,
     retrieval: &yaml_parsers::config_parser::Retrieval,
-) -> Result<Box<dyn VectorStore>, Box<dyn std::error::Error>> {
+) -> anyhow::Result<Box<dyn VectorStore + Send + Sync>> {
     let embed_model = embedding_model_from_str(&retrieval.embed_model)?;
     let rerank_model = rerank_model_from_str(&retrieval.rerank_model)?;
 
-    let db = Box::new(LanceDBStore::new(
+    let db = LanceDBStore::new(
         format!(".db-{}", agent).as_str(),
         embed_model,
         rerank_model,
         retrieval.top_k,
         retrieval.factor,
-    ));
-    Ok(db)
+    );
+    Ok(Box::new(db))
 }
 
-fn embedding_model_from_str(s: &str) -> Result<EmbeddingModel, Box<dyn std::error::Error>> {
+fn embedding_model_from_str(s: &str) -> anyhow::Result<EmbeddingModel> {
     match s {
         "bge-small-en-v1.5" => Ok(EmbeddingModel::BGESmallENV15),
-        _ => Err(format!("Unknown model: {}", s).into()),
+        _ => Err(anyhow::Error::msg(format!("Unknown model: {}", s))),
     }
 }
 
-fn rerank_model_from_str(s: &str) -> Result<RerankerModel, Box<dyn std::error::Error>> {
+fn rerank_model_from_str(s: &str) -> anyhow::Result<RerankerModel> {
     match s {
         "jina-reranker-v1-turbo-en" => Ok(RerankerModel::JINARerankerV1TurboEn),
         "jina-reranker-v2-base-multiligual" => Ok(RerankerModel::JINARerankerV2BaseMultiligual),
-        _ => Err(format!("Unknown model: {}", s).into()),
+        _ => Err(anyhow::Error::msg(format!("Unknown model: {}", s))),
     }
 }

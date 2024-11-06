@@ -1,14 +1,10 @@
-use axum::{
-    http::StatusCode,
-    response::IntoResponse,
-    Json
-};
 use crate::yaml_parsers::config_parser::get_config_path;
 use crate::yaml_parsers::config_parser::parse_config;
-use std::fs;
+use axum::{http::StatusCode, response::IntoResponse, Json};
 use serde_yaml::Value;
-use std::path::PathBuf;
 use std::error::Error;
+use std::fs;
+use std::path::PathBuf;
 
 #[axum::debug_handler]
 pub async fn load_config() -> Result<impl IntoResponse, (StatusCode, String)> {
@@ -59,7 +55,7 @@ fn list_dir_contents(path: &PathBuf) -> Result<Vec<serde_json::Value>, Box<dyn E
 #[axum::debug_handler]
 pub async fn list_project_dir_structure() -> Result<impl IntoResponse, (StatusCode, String)> {
     let config_path: PathBuf = get_config_path();
-    let config = parse_config(config_path).map_err(|err| {
+    let config = parse_config(&config_path).map_err(|err| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Failed to parse config: {}", err),

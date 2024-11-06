@@ -11,12 +11,17 @@ warehouses:
 models:
   - name: openai-4o
     vendor: openai
-    key_var: OPENAI_API_KEY
     model_ref: gpt-4o
+    key_var: OPENAI_API_KEY
   - name: openai-4o-mini
     vendor: openai
-    key_var: OPENAI_API_KEY
     model_ref: gpt-4o-mini
+    key_var: OPENAI_API_KEY
+  - name: llama3.2
+    vendor: ollama
+    model_ref: llama3.2:latest
+    api_url: http://localhost:11434/v1
+    api_key: secret
 
 retrievals:
   - name: default
