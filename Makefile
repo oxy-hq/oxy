@@ -2,9 +2,9 @@
 
 build:
 	@echo "Build client ...."
-	rm -rf dict/*
+	rm -rf ./dist
 	cd web-app && pnpm install && pnpm build && cd ..
-	cp -r web-app/dist /
+	cp -r web-app/dist ./dist
 
 	@echo "Installing Poetry dependencies..."
 	poetry lock --no-update
