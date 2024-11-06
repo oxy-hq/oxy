@@ -4,6 +4,7 @@ mod search;
 use clap::CommandFactory;
 use clap::Parser;
 use std::error::Error;
+use tower_http::services::ServeFile;
 
 use init::init;
 use search::search_files;
@@ -16,7 +17,7 @@ use crate::yaml_parsers::config_parser::get_config_path;
 use crate::yaml_parsers::config_parser::parse_config;
 use crate::{build, vector_search, BuildOpts};
 
-use axum::{routing::get_service, Router};
+use axum::Router;
 use include_dir::{include_dir, Dir};
 use std::net::SocketAddr;
 use tower_http::services::ServeDir;
@@ -158,13 +159,16 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             });
 
             let web_task = tokio::spawn(async move {
-                let web_app = Router::new().fallback_service(get_service(serve_embedded()));
+                let serve_dir =
+                    ServeDir::new("dist").not_found_service(ServeFile::new("dist/index.html"));
+                let web_app = Router::new()
+                    .nest_service("/", serve_dir.clone())
+                    .fallback_service(serve_dir);
+
                 let web_addr = SocketAddr::from(([127, 0, 0, 1], 3000));
                 println!("Axum web server running at http://{}", web_addr);
                 let listener = tokio::net::TcpListener::bind(web_addr).await.unwrap();
-                axum::serve(listener, web_app.into_make_service())
-                    .await
-                    .unwrap();
+                axum::serve(listener, web_app).await.unwrap();
             });
 
             let _ = tokio::try_join!(server_task, web_task);
@@ -176,8 +180,4 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
     }
 
     Ok(())
-}
-
-fn serve_embedded() -> ServeDir {
-    ServeDir::new("dist")
 }
