@@ -28,4 +28,5 @@ styled-system
 styled-system-studio
 
 .env
-.tsbuildinfo
+*.tsbuildinfo
+.vite
