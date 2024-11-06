@@ -1,0 +1,10 @@
+name: survey_responses
+steps:
+  - name: weekly_metrics
+    prompt: Calculate week over week "Responses to forms or surveys" metric
+    agent_ref: default
+  - name: monthly_report
+    prompt: |
+      Generate a detail monthly report using week over week "Responses to forms or surveys" metric:
+      {{weekly_metrics}}
+    agent_ref: local

@@ -260,6 +260,23 @@ The `.sql` files have front-matter (TODO: define what the front-matter should lo
 
 TODO: for now, see the `agents/default.yml` file in this repo or in the `onyx-sample-repo` directory.
 
+## Local LLM
+- To start local LLM inference you can download and install `ollama`
+- Add model config into `config.yml` file:
+
+```
+- name: ollama-local
+  vendor: ollama
+  model_ref: llama3.2:latest
+```
+
+and update agent's model config:
+
+```
+model: ollama-local
+```
+- Local LLM agent needs to support tools.
+
 ## Contributing
 
 ### Language dependencies

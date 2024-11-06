@@ -22,13 +22,13 @@ pub struct WarehouseInfo {
 }
 
 impl Connector {
-    pub fn new(config: Warehouse) -> Self {
-        Connector { config }
+    pub fn new(config: &Warehouse) -> Self {
+        Connector { config: config.clone() }
     }
 
     pub async fn load_warehouse_info(&self) -> WarehouseInfo {
         let tables = self.get_schemas().await;
-        let name = self.config.name.clone();
+        let name = self.config.dataset.clone();
         let dialect = self.config.r#type.clone();
         WarehouseInfo {
             name,
@@ -46,7 +46,7 @@ impl Connector {
         if query_string.is_empty() {
             vec![]
         } else {
-            let result = self.run_query(&query_string).await.unwrap();
+            let result = self.run_query_and_load(&query_string).await.unwrap();
             let result_iter = result
                 .iter()
                 .flat_map(|batch| as_string_array(batch.column(0)).iter());
@@ -71,7 +71,7 @@ impl Connector {
         if query_string.is_empty() {
             vec![]
         } else {
-            let result = self.run_query(&query_string).await.unwrap();
+            let result = self.run_query_and_load(&query_string).await.unwrap();
             let result_iter = result
                 .iter()
                 .flat_map(|batch| as_string_array(batch.column(0)).iter());
@@ -83,23 +83,26 @@ impl Connector {
         }
     }
 
-    pub async fn run_query(
-        &self,
-        query: &str,
-    ) -> Result<Vec<RecordBatch>, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn run_query(&self, query: &str) -> anyhow::Result<String> {
         let file_path = match self.config.r#type.as_str() {
             "bigquery" => self.run_connectorx_query(query).await?,
             "duckdb" => self.run_duckdb_query(query).await?,
-            _ => return Err(format!("Unsupported dialect: {}", self.config.r#type).into()),
+            _ => {
+                return Err(anyhow::Error::msg(format!(
+                    "Unsupported dialect: {}",
+                    self.config.r#type
+                )))
+            }
         };
-
-        load_result(&file_path).await
+        Ok(file_path)
     }
 
-    async fn run_connectorx_query(
-        &self,
-        query: &str,
-    ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    async fn run_query_and_load(&self, query: &str) -> anyhow::Result<Vec<RecordBatch>> {
+        let file_path = self.run_query(query).await?;
+        load_result(&file_path)
+    }
+
+    async fn run_connectorx_query(&self, query: &str) -> anyhow::Result<String> {
         let conn_string = format!("{}://{}", self.config.r#type, self.config.key_path);
         let query = query.to_string(); // convert to owned string for closure
         let result = tokio::task::spawn_blocking(move || {
@@ -110,17 +113,15 @@ impl Connector {
             let result = destination.arrow()?;
             let file_path = format!("/tmp/{}.arrow", Uuid::new_v4());
             write_connectorx_to_ipc(&result, &file_path)?;
-            Ok::<String, Box<dyn std::error::Error + Send + Sync>>(file_path)
+            Ok::<String, anyhow::Error>(file_path)
         })
-        .await??;
+        .await
+        .map_err(|e| anyhow::Error::msg(format!("{}", e)))??;
 
         Ok(result)
     }
 
-    async fn run_duckdb_query(
-        &self,
-        query: &str,
-    ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    async fn run_duckdb_query(&self, query: &str) -> anyhow::Result<String> {
         let query = query.to_string();
         let conn = Connection::open_in_memory()?;
         let dir_set_stmt = format!("SET file_search_path = '{}'", self.config.dataset);
@@ -129,14 +130,12 @@ impl Connector {
         let arrow_chunks = stmt.query_arrow([])?.collect();
         debug!("Query results: {:?}", arrow_chunks);
         let file_path = format!("/tmp/{}.arrow", Uuid::new_v4());
-        write_duckdb_to_ipc(&arrow_chunks, &file_path);
+        write_duckdb_to_ipc(&arrow_chunks, &file_path).unwrap();
         Ok(file_path)
     }
 }
 
-async fn load_result(
-    file_path: &str,
-) -> Result<Vec<RecordBatch>, Box<dyn std::error::Error + Send + Sync>> {
+pub fn load_result(file_path: &str) -> anyhow::Result<Vec<RecordBatch>> {
     let file = File::open(file_path)?;
     let reader = FileReader::try_new(file, None)?;
 
@@ -150,10 +149,7 @@ async fn load_result(
     Ok(batches)
 }
 
-fn write_connectorx_to_ipc(
-    batches: &Vec<RecordBatch46>,
-    file_path: &str,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+fn write_connectorx_to_ipc(batches: &Vec<RecordBatch46>, file_path: &str) -> anyhow::Result<()> {
     let file = File::create(file_path)?;
     let schema = batches[0].schema();
     let schema_ref = schema.as_ref();
@@ -166,10 +162,7 @@ fn write_connectorx_to_ipc(
     Ok(())
 }
 
-fn write_duckdb_to_ipc(
-    batches: &Vec<RecordBatch>,
-    file_path: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+fn write_duckdb_to_ipc(batches: &Vec<RecordBatch>, file_path: &str) -> anyhow::Result<()> {
     let file = File::create(file_path)?;
     let schema = batches[0].schema();
     let schema_ref = schema.as_ref();

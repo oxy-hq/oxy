@@ -11,6 +11,7 @@ use search::search_files;
 use crate::ai::setup_agent;
 use crate::api::server;
 use crate::connector::Connector;
+use crate::workflow::run_workflow;
 use crate::yaml_parsers::config_parser::get_config_path;
 use crate::yaml_parsers::config_parser::parse_config;
 use crate::{build, vector_search, BuildOpts};
@@ -54,6 +55,7 @@ enum SubCommand {
     Ask(AskArgs),
     Build,
     VecSearch(VecSearchArgs),
+    Execute(ExecuteArgs),
     Validate,
     Serve,
 }
@@ -68,8 +70,12 @@ struct VecSearchArgs {
     question: String,
 }
 
+#[derive(Parser, Debug)]
+struct ExecuteArgs {
+    workflow_name: String,
+}
+
 pub async fn cli() -> Result<(), Box<dyn Error>> {
-    env_logger::init();
     let args = Args::parse();
 
     match args.command {
@@ -79,19 +85,21 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
         },
         Some(SubCommand::ListTables) => {
             let config_path = get_config_path();
-            let config = parse_config(config_path)?;
-            let parsed_config = config.load_config(None)?;
-            let ddls = Connector::new(parsed_config.warehouse).get_schemas().await;
-            print!("{:?}", ddls);
+            let config = parse_config(&config_path)?;
+            for warehouse in &config.warehouses {
+                let tables = Connector::new(warehouse).get_schemas().await;
+                for table in tables {
+                    println!("{}", table);
+                }
+            }
         }
         Some(SubCommand::ListDatasets) => {
             let config_path = get_config_path();
-            let config = parse_config(config_path)?;
-            let parsed_config = config.load_config(None)?;
-            let datasets = Connector::new(parsed_config.warehouse)
-                .list_datasets()
-                .await;
-            print!("{:?}", datasets);
+            let config = parse_config(&config_path)?;
+            for warehouse in &config.warehouses {
+                let datasets = Connector::new(warehouse).list_datasets().await;
+                print!("{:?}", datasets);
+            }
         }
         Some(SubCommand::Search) => {
             let (agent, project_path) = setup_agent(args.agent.as_deref()).await?;
@@ -108,7 +116,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
         }
         Some(SubCommand::Build) => {
             let config_path = get_config_path();
-            let config = parse_config(config_path)?;
+            let config = parse_config(&config_path)?;
             let project_path = &config.defaults.project_path;
             let data_path = project_path.join("data");
             build(
@@ -122,18 +130,20 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
         }
         Some(SubCommand::VecSearch(search_args)) => {
             let config_path = get_config_path();
-            let config = parse_config(config_path)?;
-            let parsed_config = config.load_config(None)?;
-            vector_search(
-                &config.defaults.agent,
-                &parsed_config.retrieval,
-                &search_args.question,
-            )
-            .await?;
+            let config = parse_config(&config_path)?;
+            let agent_config = config.load_config(None)?;
+            let retrieval = config.find_retrieval(&agent_config.retrieval.unwrap())?;
+            vector_search(&config.defaults.agent, &retrieval, &search_args.question).await?;
+        }
+        Some(SubCommand::Execute(execute_args)) => {
+            match run_workflow(&execute_args.workflow_name).await {
+                Ok(_) => println!("\n\x1b[1;32mWorkflow executed successfully\x1b[0m"),
+                Err(e) => eprintln!("\x1b[1;31mError executing workflow: \x1b[0m\n{}", e),
+            };
         }
         Some(SubCommand::Validate) => {
             let config_path = get_config_path();
-            let result = parse_config(config_path);
+            let result = parse_config(&config_path);
             if result.is_err() {
                 eprintln!("Error: {:?}", result.err().unwrap());
             } else {

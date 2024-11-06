@@ -1,6 +1,5 @@
 use super::Tool;
 use crate::{connector::Connector, yaml_parsers::config_parser::Warehouse};
-use arrow::util::pretty::pretty_format_batches;
 use async_trait::async_trait;
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -16,33 +15,27 @@ pub struct ExecuteSQLParams {
     pub sql: String,
 }
 
-#[derive(Clone)]
 pub struct ExecuteSQLTool {
     pub config: Warehouse,
     pub tool_description: String,
 }
 
 #[async_trait]
-impl Tool<ExecuteSQLParams> for ExecuteSQLTool {
+impl Tool for ExecuteSQLTool {
+    type Input = ExecuteSQLParams;
+
     fn name(&self) -> String {
         "execute_sql".to_string()
     }
     fn description(&self) -> String {
         self.tool_description.clone()
     }
-    async fn call_internal(
-        &self,
-        parameters: ExecuteSQLParams,
-    ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    async fn call_internal(&self, parameters: &ExecuteSQLParams) -> anyhow::Result<String> {
         println!("\n\x1b[1;32mSQL query:\x1b[0m");
         print_colored_sql(&parameters.sql);
-        let config = self.config.clone();
-        let connector = Connector::new(config);
-        let batches = connector.run_query(&parameters.sql).await?;
-        let batches_display = pretty_format_batches(&batches)?;
-        println!("\n\x1b[1;32mResults:\x1b[0m");
-        println!("{}", batches_display);
-        Ok(batches_display.to_string())
+        let connector = Connector::new(&self.config);
+        let file_path = connector.run_query(&parameters.sql).await?;
+        Ok(file_path)
     }
 }
 
