@@ -20,7 +20,7 @@ jobs:
   compile:
     name: Releasing binary version ${{ github.ref_name }} for ${{ matrix.job.os }}, target ${{ matrix.job.target }}
     needs: [changesets]
-    if: needs.changesets.outputs.onyx == 'true'
+    if: needs.changesets.outputs.onyx == 'true' || github.event_name == 'workflow_dispatch'
     #TODO: use third party runners to support building arm binaries natively
     runs-on: ${{ matrix.job.os }}
     strategy:
@@ -100,9 +100,9 @@ jobs:
       shell: bash
       run: |
         if [[ "${{ matrix.job.cross-compilation }}" == "true" ]]; then
-          cross build --release
+          cross build --release --target ${{ matrix.job.target }}
         else
-          cargo build --release
+          cargo build --release --target ${{ matrix.job.target }}
         fi
         mv target/${{ matrix.job.target }}/release/onyx onyx-${{ matrix.job.target }}
 
