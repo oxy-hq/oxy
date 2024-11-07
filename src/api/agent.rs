@@ -32,11 +32,11 @@ async fn get_agent(agent_name: Option<String>) -> Box<dyn LLMAgent + Send> {
     match agent_name {
         Some(name) => {
             let (agent, _) = ai::setup_agent(Some(name.as_str())).await.unwrap();
-            return agent;
+            agent
         }
         None => {
             let (agent, _) = ai::setup_agent(None).await.unwrap();
-            return agent;
+            agent
         }
     }
 }
@@ -45,5 +45,5 @@ async fn get_agent(agent_name: Option<String>) -> Box<dyn LLMAgent + Send> {
 pub async fn ask(extract::Json(payload): extract::Json<AskRequest>) -> Json<AskResponse> {
     let agent = get_agent(payload.agent).await;
     let result = agent.request(&payload.question.clone()).await.unwrap();
-    return Json(AskResponse { answer: result });
+    Json(AskResponse { answer: result })
 }

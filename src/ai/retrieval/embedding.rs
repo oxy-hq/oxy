@@ -84,8 +84,7 @@ impl LanceDBStore {
     }
 
     async fn lazy_init(uri: &str) -> Connection {
-        let connection = connect(uri).execute().await.unwrap();
-        connection
+        connect(uri).execute().await.unwrap()
     }
 
     async fn get_warehouse_metadata_table(&self) -> anyhow::Result<Table> {
@@ -110,12 +109,12 @@ impl LanceDBStore {
                         false,
                     ),
                 ]));
-                let table = connection
+
+                connection
                     .create_empty_table("warehouse_metadata", schema)
                     .mode(CreateTableMode::exist_ok(|builder| builder))
                     .execute()
-                    .await?;
-                table
+                    .await?
             }
         };
         Ok(table)
@@ -187,7 +186,7 @@ impl VectorStore for LanceDBStore {
     async fn search(&self, query: &str) -> anyhow::Result<Vec<Document>> {
         let query_vector = self.embed_model.embed(vec![query.to_string()], None)?;
         let table = self.get_warehouse_metadata_table().await?;
-        let vector = query_vector.iter().next().unwrap();
+        let vector = query_vector.first().unwrap();
         let mut results = table
             .vector_search(vector.to_owned())?
             .limit(self.top_k * self.factor)
@@ -212,7 +211,9 @@ impl VectorStore for LanceDBStore {
             let content = doc.document.as_ref().unwrap();
             log::info!(
                 "Rank: {}\nScore: {}\nContent: {}",
-                doc.index, doc.score, content
+                doc.index,
+                doc.score,
+                content
             );
             log::info!("-----------------");
         }

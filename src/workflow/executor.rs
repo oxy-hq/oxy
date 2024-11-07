@@ -27,7 +27,7 @@ impl WorkflowExecutor {
         )?;
         for agent_name in agent_names {
             let agent_config = config.load_config(Some(&agent_name))?;
-            let agent = from_config(&agent_name, &config, &agent_config).await;
+            let agent = from_config(&agent_name, config, &agent_config).await;
             self.agents.insert(agent_name, agent);
         }
         Ok(())
@@ -42,7 +42,7 @@ impl WorkflowExecutor {
             let agent = self
                 .agents
                 .get(&step.agent_ref)
-                .expect(format!("Agent {} not found", step.agent_ref).as_str());
+                .unwrap_or_else(|| panic!("Agent {} not found", step.agent_ref));
             let template_context = Value::from(results.clone());
             let mut env = Environment::new();
             env.add_template("step_instruct", &step.prompt).unwrap();
@@ -53,7 +53,10 @@ impl WorkflowExecutor {
                 .retry(ExponentialBuilder::default().with_max_times(step.retry))
                 // Notify when retrying
                 .notify(|err: &anyhow::Error, dur: std::time::Duration| {
-                    println!("\n\x1b[93mRetrying {} after {:?} ... \x1b[0m", step.name, dur);
+                    println!(
+                        "\n\x1b[93mRetrying {} after {:?} ... \x1b[0m",
+                        step.name, dur
+                    );
                     println!("Reason {:?}", err);
                 })
                 .await?;

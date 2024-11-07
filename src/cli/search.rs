@@ -50,7 +50,11 @@ fn construct_manifest(data_path: &Path) -> Result<String, Box<dyn Error>> {
     Ok(manifest)
 }
 
-fn collect_files_recursively(dir: &Path, manifest: &mut String, base_path: &Path) -> Result<(), Box<dyn Error>> {
+fn collect_files_recursively(
+    dir: &Path,
+    manifest: &mut String,
+    base_path: &Path,
+) -> Result<(), Box<dyn Error>> {
     for entry in fs::read_dir(dir)? {
         let entry = entry?;
         let path = entry.path();

@@ -13,8 +13,14 @@ impl MigrationTrait for Migration {
                     .if_not_exists()
                     .col(uuid(Conversations::Id))
                     .col(string(Conversations::Title))
-                    .col(timestamp_with_time_zone(Conversations::CreatedAt).extra("DEFAULT CURRENT_TIMESTAMP".to_string()))
-                    .col(timestamp_with_time_zone(Conversations::UpdatedAt).extra("DEFAULT CURRENT_TIMESTAMP".to_string()))
+                    .col(
+                        timestamp_with_time_zone(Conversations::CreatedAt)
+                            .extra("DEFAULT CURRENT_TIMESTAMP".to_string()),
+                    )
+                    .col(
+                        timestamp_with_time_zone(Conversations::UpdatedAt)
+                            .extra("DEFAULT CURRENT_TIMESTAMP".to_string()),
+                    )
                     .col(timestamp_with_time_zone_null(Conversations::DeletedAt).null())
                     .to_owned(),
             )
@@ -33,7 +39,6 @@ enum Conversations {
     Table,
     Id,
     Title,
-    Text,
     CreatedAt,
     UpdatedAt,
     DeletedAt,

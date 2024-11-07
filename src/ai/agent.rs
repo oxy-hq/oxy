@@ -184,7 +184,7 @@ where
                 );
             }
 
-            if tool_returns.len() == 0 {
+            if tool_returns.is_empty() {
                 break;
             }
             tool_calls.push(

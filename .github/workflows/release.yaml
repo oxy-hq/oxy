@@ -1,0 +1,120 @@
+name: Release
+on:
+  workflow_dispatch:
+  push:
+    tags:
+    - "[0-9]+.[0-9]+.[0-9]+"
+    branches:
+    - main
+
+jobs:
+  changesets:
+    uses: ./.github/workflows/changesets.yaml
+  compile:
+    name: Releasing binary version ${{ github.ref_name }} for ${{ matrix.job.os }}, target ${{ matrix.job.target }}
+    needs: [changesets]
+    if: needs.changesets.outputs.onyx == 'true'
+    #TODO: use third party runners to support building arm binaries natively
+    runs-on: ${{ matrix.job.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        job:
+        - os: macos-latest
+          target: x86_64-apple-darwin
+          cross-compilation: false
+        - os: macos-latest
+          target: aarch64-apple-darwin
+          cross-compilation: false
+        - os: ubuntu-latest
+          target: x86_64-unknown-linux-gnu
+          cross-compilation: false
+        # - os: windows-latest
+        #   target: x86_64-pc-windows-msvc
+        #   cross-compilation: false
+        # - os: ubuntu-latest
+        #   target: x86_64-unknown-linux-musl
+        #   cross-compilation: true
+        # - os: ubuntu-latest
+        #   target: i686-unknown-linux-gnu
+        #   cross-compilation: true
+        # - os: ubuntu-latest
+        #   target: arm-unknown-linux-gnueabihf
+        #   cross-compilation: true
+        # - os: ubuntu-latest
+        #   target: aarch64-unknown-linux-gnu
+        #   cross-compilation: true
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+    - name: Prep Rust toolchain
+      uses: actions-rust-lang/setup-rust-toolchain@v1
+      with:
+        rustflags: "" # temporarily override "-D warnings"
+        target: ${{ matrix.job.target }}
+    - name: Update Rust Toolchain Target
+      run: |
+        echo "targets = ['${{matrix.job.target}}']" >> rust-toolchain.toml
+    - name: Install cross
+      if: matrix.job.cross-compilation
+      uses: taiki-e/install-action@v2
+      with:
+        tool: cross
+    - name: Install Node.js
+      uses: actions/setup-node@v4
+      id: setup-node
+      with:
+        node-version: 20
+    - uses: pnpm/action-setup@v4
+      with:
+        run_install: |
+          cwd: web-app
+        package_json_file: web-app/package.json
+    - name: Build frontend assets
+      shell: bash
+      run: |
+        pnpm -C web-app build
+        mv web-app/dist ./
+    - name: Install required dependencies
+      shell: bash
+      # protobuf is required by lance https://github.com/lancedb/lance/issues/3073
+      # mold is required for faster builds on linux
+      run: |
+        if [[ "${{ matrix.job.os }}" =~ "ubuntu" ]]; then
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libssl-dev protobuf-compiler mold
+        elif [[ "${{ matrix.job.os }}" =~ "macos" ]]; then
+          brew install protobuf
+        fi
+        echo "Protoc version: $(protoc --version)"
+    - name: Cargo build
+      env:
+        MACOSX_DEPLOYMENT_TARGET: 14.0
+      shell: bash
+      run: |
+        if [[ "${{ matrix.job.cross-compilation }}" == "true" ]]; then
+          cross build --release
+        else
+          cargo build --release
+        fi
+        mv target/${{ matrix.job.target }}/release/onyx onyx-${{ matrix.job.target }}
+
+    - name: Private github release
+      uses: softprops/action-gh-release@v2
+      with:
+        draft: ${{ startsWith(github.ref, 'refs/tags/') }}
+        files: |
+          onyx-${{ matrix.job.target }}
+        prerelease: ${{ !startsWith(github.ref, 'refs/tags/') }}
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: Public github release
+      uses: softprops/action-gh-release@v2
+      if: ${{ startsWith(github.ref, 'refs/tags/') }}
+      with:
+        draft: true
+        files: |
+          onyx-${{ matrix.job.target }}
+        repository: onyx-hq/onyx-public-releases
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

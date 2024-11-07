@@ -183,7 +183,10 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             println!("{}", "success".success());
             println!("{}", "warning".warning());
             println!("{}", "error".error());
-            println!("{}", "https://github.com/onyx-hq/onyx-sample-repo/".secondary());
+            println!(
+                "{}",
+                "https://github.com/onyx-hq/onyx-sample-repo/".secondary()
+            );
             println!("{}", "-region".tertiary());
             println!("{}", "Viewing repository".info());
             println!("{}", "text".text());

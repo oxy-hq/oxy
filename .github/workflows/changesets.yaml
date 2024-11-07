@@ -1,0 +1,31 @@
+name: Changesets
+
+on:
+  workflow_call:
+    outputs:
+      onyx:
+        value: ${{ jobs.changesets.outputs.onyx }}
+      changes:
+        value: ${{ jobs.changesets.outputs.changes }}
+
+permissions: read-all
+
+jobs:
+  changesets:
+    runs-on: ubuntu-latest
+    outputs:
+      changes: ${{ steps.changes.outputs.changes }}
+      onyx: ${{ steps.changes.outputs.onyx }}
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dorny/paths-filter@v3
+      id: changes
+      with:
+        base: ${{ github.ref_name }}
+        filters: |
+          onyx:
+            - "src/**"
+            - "Cargo.toml"
+            - "Cargo.lock"
+            - "README.md"
+            - "LICENSE"

@@ -64,7 +64,7 @@ pub fn get_config_path() -> PathBuf {
 }
 
 pub fn parse_config(config_path: &PathBuf) -> anyhow::Result<Config> {
-    let config_str = fs::read_to_string(&config_path)?;
+    let config_str = fs::read_to_string(config_path)?;
     let config: Config = serde_yaml::from_str(&config_str)?;
     Ok(config)
 }
@@ -120,11 +120,9 @@ impl Config {
         self.models
             .iter()
             .find(|m| {
-                match {
-                    match m {
-                        Model::OpenAI { name, .. } => name,
-                        Model::Ollama { name, .. } => name,
-                    }
+                match match m {
+                    Model::OpenAI { name, .. } => name,
+                    Model::Ollama { name, .. } => name,
                 } {
                     name => name == model_name,
                 }

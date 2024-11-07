@@ -76,7 +76,7 @@ defaults:
     // Step 3: Use cargo-generate for project scaffolding
     println!("Creating project scaffolding...");
     let output = Command::new("cargo")
-        .args(&[
+        .args([
             "generate",
             "--git",
             "https://github.com/onyx-hq/onyx-sample-repo",

@@ -1,11 +1,11 @@
 pub mod ai;
+mod api;
 pub mod cli;
 pub mod connector;
-pub mod yaml_parsers;
-pub mod workflow;
-pub mod utils;
 pub mod db;
-mod api;
+pub mod utils;
+pub mod workflow;
+pub mod yaml_parsers;
 
 use ai::retrieval::{build_embeddings, get_vector_store, search};
 use yaml_parsers::config_parser::Retrieval;
@@ -24,11 +24,7 @@ pub async fn build(
     Ok(())
 }
 
-pub async fn vector_search(
-    agent: &str,
-    retrieval: &Retrieval,
-    query: &str,
-) -> anyhow::Result<()> {
+pub async fn vector_search(agent: &str, retrieval: &Retrieval, query: &str) -> anyhow::Result<()> {
     println!("Searching...");
     let db = get_vector_store(agent, retrieval)?;
     search(query, &db).await?;

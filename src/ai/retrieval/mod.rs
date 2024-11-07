@@ -3,7 +3,10 @@ use std::{fs, path::PathBuf};
 use embedding::{Document, LanceDBStore, VectorStore};
 use fastembed::{EmbeddingModel, RerankerModel};
 
-use crate::{utils::collect_files_recursively, yaml_parsers::{self, config_parser::Config}};
+use crate::{
+    utils::collect_files_recursively,
+    yaml_parsers::{self, config_parser::Config},
+};
 
 pub mod embedding;
 
@@ -24,10 +27,7 @@ fn get_documents_from_files(data_path: &str) -> anyhow::Result<Vec<Document>> {
     Ok(documents)
 }
 
-pub async fn build_embeddings(
-    config: &Config,
-    data_path: &str,
-) -> anyhow::Result<()> {
+pub async fn build_embeddings(config: &Config, data_path: &str) -> anyhow::Result<()> {
     let agent_dirs = fs::read_dir(data_path)?
         .map(|entry| entry.unwrap().path())
         .filter(|path| path.is_dir())

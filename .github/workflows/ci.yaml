@@ -1,0 +1,87 @@
+name: CI check
+
+on:
+  push:
+    branches:
+    - main
+  pull_request:
+    types:
+    - opened
+    - reopened
+    - synchronize
+    - ready_for_review
+    branches:
+    - main
+
+env:
+  CARGO_TERM_COLOR: always
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changesets:
+    uses: ./.github/workflows/changesets.yaml
+  fmt:
+    name: Onyx fmt
+    needs: [changesets]
+    if: needs.changesets.outputs.onyx == 'true' && github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Prep Rust toolchain
+      uses: actions-rust-lang/setup-rust-toolchain@v1
+      with:
+        components: rustfmt, clippy
+        rustflags: ""   # temporarily override "-D warnings"
+    - name: Prep tools for compilation
+        # protobuf is required by lance https://github.com/lancedb/lance/issues/3073
+        # mold is required for faster builds on linux
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y pkg-config libssl-dev protobuf-compiler mold
+    - name: Run cargo fmt
+      uses: actions-rs/cargo@v1
+      with:
+        command: fmt
+        args: --all --check
+  check:
+    needs: [fmt]
+    if: needs.fmt.result == 'success'
+    name: Onyx check
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Prep Rust toolchain
+      uses: actions-rust-lang/setup-rust-toolchain@v1
+      with:
+        rustflags: ""   # temporarily override "-D warnings"
+    - name: Install Node.js
+      uses: actions/setup-node@v4
+      id: setup-node
+      with:
+        node-version: 20
+    - uses: pnpm/action-setup@v4
+      with:
+        run_install: |
+          cwd: web-app
+        package_json_file: web-app/package.json
+    - name: Build frontend assets
+      shell: bash
+      run: |
+        pnpm -C web-app build
+        mv web-app/dist ./
+    - name: Prep tools for compilation
+        # protobuf is required by lance https://github.com/lancedb/lance/issues/3073
+        # mold is required for faster builds on linux
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y pkg-config libssl-dev protobuf-compiler mold
+    - name: Run cargo check
+      run: cargo check --verbose
+    - name: Run cargo clippy
+      uses: actions-rs/cargo@v1
+      with:
+        command: clippy
+        # args: -- -D warnings
