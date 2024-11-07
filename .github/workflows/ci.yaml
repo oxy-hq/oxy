@@ -39,10 +39,7 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y pkg-config libssl-dev protobuf-compiler mold
     - name: Run cargo fmt
-      uses: actions-rs/cargo@v1
-      with:
-        command: fmt
-        args: --all --check
+      run: cargo fmt --all -- --check
   check:
     needs: [fmt]
     if: needs.fmt.result == 'success'
@@ -78,7 +75,4 @@ jobs:
     - name: Run cargo check
       run: cargo check --verbose
     - name: Run cargo clippy
-      uses: actions-rs/cargo@v1
-      with:
-        command: clippy
-        # args: -- -D warnings
+      run: cargo clippy --verbose
