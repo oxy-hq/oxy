@@ -23,7 +23,9 @@ pub struct WarehouseInfo {
 
 impl Connector {
     pub fn new(config: &Warehouse) -> Self {
-        Connector { config: config.clone() }
+        Connector {
+            config: config.clone(),
+        }
     }
 
     pub async fn load_warehouse_info(&self) -> WarehouseInfo {

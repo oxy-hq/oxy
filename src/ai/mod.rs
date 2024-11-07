@@ -49,9 +49,9 @@ pub async fn from_config(
             model_ref,
             key_var,
         } => {
-            let api_key = std::env::var(&key_var).expect(
-                format!("OpenAI key not found in environment variable {}", key_var).as_str(),
-            );
+            let api_key = std::env::var(&key_var).unwrap_or_else(|_| {
+                panic!("OpenAI key not found in environment variable {}", key_var)
+            });
             Box::new(OpenAIAgent::new(
                 model_ref,
                 None,
@@ -103,7 +103,7 @@ async fn fill_tools(
             } => {
                 let warehouse_config = config
                     .find_warehouse(warehouse)
-                    .expect(format!("Warehouse {} not found", &warehouse).as_str());
+                    .unwrap_or_else(|_| panic!("Warehouse {} not found", &warehouse));
                 let warehouse_info = Connector::new(&warehouse_config)
                     .load_warehouse_info()
                     .await;

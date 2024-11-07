@@ -1,12 +1,11 @@
+use crate::db::client::establish_connection;
 use axum::{extract, Json};
 use entity::prelude::*;
 use sea_orm::ActiveModelTrait;
 use sea_orm::ActiveValue;
 use sea_orm::EntityTrait;
-use crate::db::client::establish_connection;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-
 
 #[derive(Serialize)]
 pub struct ConversationItem {
@@ -20,11 +19,9 @@ pub struct ListConversationResponse {
 }
 
 #[derive(Deserialize)]
-pub struct ListConversationRequest {
+pub struct ListConversationRequest {}
 
-}
-
-pub async fn list() -> Json<ListConversationResponse>{
+pub async fn list() -> Json<ListConversationResponse> {
     let connection = establish_connection().await;
     let results = Conversations::find().all(&connection).await.unwrap();
     let mut items = Vec::new();
@@ -40,7 +37,6 @@ pub async fn list() -> Json<ListConversationResponse>{
     Json(data)
 }
 
-
 #[derive(Deserialize)]
 pub struct CreateConversationRequest {
     pub title: String,
@@ -49,10 +45,12 @@ pub struct CreateConversationRequest {
 #[derive(Serialize)]
 pub struct CreateConversationResponse {
     pub title: String,
-    pub id: Uuid
+    pub id: Uuid,
 }
 
-pub async fn create(extract::Json(payload) :extract::Json<CreateConversationRequest>) -> Json<CreateConversationResponse> {
+pub async fn create(
+    extract::Json(payload): extract::Json<CreateConversationRequest>,
+) -> Json<CreateConversationResponse> {
     let connection = establish_connection().await;
     let new_conversation = entity::conversations::ActiveModel {
         id: ActiveValue::Set(Uuid::new_v4()),

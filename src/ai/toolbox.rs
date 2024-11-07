@@ -1,5 +1,5 @@
 use super::tools::Tool;
-use crate::{ utils::truncate_with_ellipsis};
+use crate::utils::truncate_with_ellipsis;
 use serde_json::Value;
 use std::collections::HashMap;
 
@@ -28,7 +28,7 @@ where
 
     pub fn to_spec<Ret>(&self, spec_serializer: SpecSerializer<Ret>) -> Vec<Ret> {
         let mut spec = Vec::new();
-        for (_name, tool) in &self.tools {
+        for tool in self.tools.values() {
             spec.insert(
                 spec.len(),
                 spec_serializer(tool.name(), tool.description(), tool.param_spec().unwrap()),

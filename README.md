@@ -4,7 +4,8 @@
 - [The fastest way to build data agents](#the-fastest-way-to-build-data-agents)
   - [What is a data agent?](#what-is-a-data-agent)
   - [Onyx core vision](#onyx-core-vision)
-- [Quickstart](#quickstart)
+- [Quickstart from binary](#quickstart-from-binary)
+- [Quickstart from source](#quickstart-from-source)
   - [Install rust](#install-rust)
   - [Install python](#install-python)
   - [Install poetry](#install-poetry)
@@ -41,7 +42,17 @@ Data agents built in `onyx` ingest semantic information and use this to either e
 
 The longer-term vision of `onyx-core` is such that the explorer provides search through a knowledge graph defining relevant entities (e.g. queries, metrics, dimensions, but perhaps an even wider scope, ultimately).
 
-## Quickstart
+
+## Quickstart from binary
+
+To install `onyx` from a binary, you can use the following commands:
+
+```sh
+# Download the binary
+curl -LO https://raw.githubusercontent.com/onyx-hq/onyx-core/refs/heads/main/install_onyx.sh | sh install_onyx.sh
+```
+
+## Quickstart from source
 
 *Note: these are internal instructions in the absence of a brew formulae/cask. Some steps will be eventually subsumed within a single command, `brew install onyx/onyx`.*
 
