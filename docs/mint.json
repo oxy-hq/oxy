@@ -10,10 +10,11 @@
     "style": "windows"
   },
   "colors": {
-    "primary": "#000000",
+    "primary": "#030712",
     "light": "#ffffff",
     "dark": "#000000",
-    "anchors": "#000000"
+    "anchors": "#000000",
+    "background": { "light": "#f9fafb", "dark": "#030712" }
   },
   "topbarCtaButton": {
     "type": "github",
@@ -37,9 +38,15 @@
     {
       "group": "Learn about Onyx",
       "pages": [
-        "about-onyx/basic-commands",
-        "about-onyx/data-directory",
-        "about-onyx/agent-definition"
+        {
+          "group": "How we structure Onyx",
+          "pages": [
+            "learn-about-onyx/overview",
+            "learn-about-onyx/data",
+            "learn-about-onyx/agents"
+          ]
+        },
+        "about-onyx/basic-commands"
       ]
     },
     {
@@ -47,10 +54,28 @@
       "pages": ["build-with-onyx/development"]
     },
     {
-      "group": "Integrations",
+      "group": "",
+      "pages": ["integrations/overview"]
+    },
+    {
+      "group": "Data Sources",
       "pages": [
-        "integrations/data-warehouse/overview",
-        "integrations/data-warehouse/bigquery"
+        "integrations/data-sources/bigquery",
+        "integrations/data-sources/duckdb"
+      ]
+    },
+
+    {
+      "group": "Models",
+      "pages": [
+        {
+          "group": "Self-hosted models",
+          "pages": ["integrations/models/ollama"]
+        },
+        {
+          "group": "Cloud-based models",
+          "pages": ["integrations/models/openai"]
+        }
       ]
     },
     {

@@ -1,0 +1,66 @@
+---
+title: "Agents"
+description: What is an agent and how to define them.
+---
+
+An agent is an LLM-based agent that can manipulate and synthesize data.
+Configuration files that define the agents. Each agent is scoped to particular semantic models.
+
+- Configure agents in a YAML file.
+- Organize them under an `agents` folder.
+
+### Agent components
+
+| Component             | Description           | Type     |
+| --------------------- | --------------------- | -------- |
+| model                 | LLM model to use      | required |
+| warehouse             | Warehouse to use      | required |
+| scope                 | Scope of the agent    | required |
+| retrieval_type        | Retrieval type        | required |
+| retrieval             | Retrieval method      | required |
+| system_instructions   | System instructions   | required |
+| sql_tool_instructions | SQL tool instructions | required |
+| tools                 | Tools to use          | required |
+
+### Sample config
+
+````yaml agents/default.yml
+model: "openai-4o"
+warehouse: "primary_warehouse"
+scope: "."
+retrieval_type: "all-shot"
+retrieval: "default"
+system_instructions: |
+  You are an Data Analyst expert. Your task is to help the user understand the provided SQL query and Result.
+  DO NOT print the SQL query and Result because it already printed out to the user.
+  ALWAYS execute the SQL query without confirmation.
+  You have access to the following warehouses:
+
+  Name: {{ warehouse.name }}
+  Dialect: {{ warehouse.type }}
+  Tables:
+  ```
+  {% for table in warehouse.tables %}{{ table }}
+
+  {% endfor %}
+  ```
+
+  Queries:
+  ```
+  {% for query in queries %}
+  {{ query }}
+  {% endfor %}
+  ```
+
+sql_tool_instructions: |
+The `sql` should be returned in plain text, not in JSON.
+The `sql` should conform to the dialect of the warehouse.
+
+You need to use the following warehouse:
+Name: {{ warehouse.name }}
+Dialect: {{ warehouse.type }}
+
+tools:
+- "query"
+- "visualize"
+````
