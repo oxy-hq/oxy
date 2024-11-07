@@ -7,6 +7,13 @@ on:
     branches:
     - main
 
+env:
+  CARGO_TERM_COLOR: always
+
+concurrency:
+  group: onyx-cli-${{ github.ref_name }}
+  cancel-in-progress: true
+
 jobs:
   changesets:
     uses: ./.github/workflows/changesets.yaml
@@ -50,7 +57,7 @@ jobs:
     - name: Prep Rust toolchain
       uses: actions-rust-lang/setup-rust-toolchain@v1
       with:
-        rustflags: "" # temporarily override "-D warnings"
+        rustflags: ""   # temporarily override "-D warnings"
         target: ${{ matrix.job.target }}
     - name: Update Rust Toolchain Target
       run: |
@@ -77,8 +84,8 @@ jobs:
         mv web-app/dist ./
     - name: Install required dependencies
       shell: bash
-      # protobuf is required by lance https://github.com/lancedb/lance/issues/3073
-      # mold is required for faster builds on linux
+        # protobuf is required by lance https://github.com/lancedb/lance/issues/3073
+        # mold is required for faster builds on linux
       run: |
         if [[ "${{ matrix.job.os }}" =~ "ubuntu" ]]; then
           sudo apt-get update
