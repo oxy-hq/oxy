@@ -111,7 +111,7 @@ jobs:
         if [[ "${{ github.ref }}" =~ "refs/tags/" ]]; then
           echo "::set-output name=release_tag::${{ github.ref }}"
         else
-          echo "::set-output name=release_tag::AutoBuild_$(date +"%Y.%m.%d_%H-%M")"
+          echo "::set-output name=release_tag::AutoBuild_$(date +"%Y.%m.%d.run_${{ github.run_number }}")"
         fi
     - name: Private github release
       uses: softprops/action-gh-release@v2
