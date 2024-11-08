@@ -44,8 +44,8 @@
           "group": "How we structure Onyx",
           "pages": [
             "learn-about-onyx/overview",
-            "learn-about-onyx/data",
-            "learn-about-onyx/agents"
+            "learn-about-onyx/agents",
+            "learn-about-onyx/data"
           ]
         },
         "learn-about-onyx/basic-commands"
