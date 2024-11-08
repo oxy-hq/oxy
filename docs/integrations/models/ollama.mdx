@@ -3,16 +3,30 @@ title: "Ollama"
 description: "Onyx is the fastest way to build data agents"
 ---
 
+Ollama provides an easy way to host LLMs locally.
+
 ### Setup guide
 
 <Steps>
   <Step title="Environment setup"> Start by downloading and installing [ollama](https://ollama.com/download) </Step>
-  <Step title="Add model config"> Add model config into `config.yml` file </Step>
+  <Step title="Add model config">
+    Add model config into `config.yml` file
+    ```yaml ~/.config/onyx/config.yml
+    ...
+    models:
+      - name: llama3.2 
+        vendor: ollama
+        model_ref: llama3.2:latest # or model of choice
+        api_url: http://localhost:11434
+        api_key: # your ollama api key goes here
+    ...
+    ```
+  </Step>
   <Step title="Update agent's model config">
     Update agent's model config:
 
-    ```yaml agent.yml
-    model: ollama-local
+    ```yaml agents/agent.yml
+    model: llama3.2
     ```
 
   </Step>
