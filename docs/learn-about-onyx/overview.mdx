@@ -2,24 +2,31 @@
 title: "Overview"
 ---
 
-### Structure overview
+### Core elements
 
-1. primary
+There are three core elements in Onyx:
 
-- [data](/learn-about-onyx/data)
-- [agents](/learn-about-onyx/agents)
+- [agents](/learn-about-onyx/agents): prompted LLM chatbots that can reason around data
+- [data](/learn-about-onyx/data): raw semantic source material that your agents have access to
+- [workflows](/learn-about-onyx/workflows): DAGs of agents
 
-2. The rest
+Beyond this, there is a single global configuration file that you need to set
+up, which will define the models, warehouses, and retrieval algorithms that the
+agents will have access to.
 
-- config.yml
+- [~/.config/onyx/config.yml](/learn-about-onyx/config)
 
+These fit into the following structure:
 ```bash onyx_starter_project
 onyx_starter_project/
 |--- agents/
-|    |---default.yml
+|    |--- default.yml
 |--- data/
-|    |--- product/
-|         |--- entities.yml
+|    |--- sample_query.sql
+|--- workflows/
+|    |--- sample_workflow.yml
 |--- README.md
+
+~/.config/onyx/
 |--- config.yml
 ```
