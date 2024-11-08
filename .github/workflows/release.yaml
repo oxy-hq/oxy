@@ -138,6 +138,8 @@ jobs:
         cd onyx-public-releases
         git tag -a ${{ steps.tag.outputs.release_tag }} -m "Release ${{ steps.tag.outputs.release_tag }}"
         git push origin ${{ steps.tag.outputs.release_tag }}
+      env:
+        GH_TOKEN: ${{ steps.app-token.outputs.token }}
     - name: Public github release
       uses: softprops/action-gh-release@v2
       if: ${{ startsWith(github.ref, 'refs/tags/') }}
