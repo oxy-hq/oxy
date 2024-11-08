@@ -11,9 +11,11 @@
   },
   "colors": {
     "primary": "#030712",
+    "primary": "#030712",
     "light": "#ffffff",
     "dark": "#000000",
     "anchors": "#000000",
+    "background": { "light": "#f9fafb", "dark": "#030712" },
     "background": { "light": "#f9fafb", "dark": "#030712" }
   },
   "topbarCtaButton": {
@@ -32,7 +34,7 @@
   ],
   "navigation": [
     {
-      "group": "Getting Started",
+      "group": "Get Started",
       "pages": ["welcome", "introduction", "quickstart"]
     },
     {
@@ -46,7 +48,7 @@
             "learn-about-onyx/agents"
           ]
         },
-        "about-onyx/basic-commands"
+        "learn-about-onyx/basic-commands"
       ]
     },
     {
@@ -64,7 +66,6 @@
         "integrations/data-sources/duckdb"
       ]
     },
-
     {
       "group": "Models",
       "pages": [
