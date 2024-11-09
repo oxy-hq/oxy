@@ -3,4 +3,45 @@ title: "Data"
 description: "Raw semantic source material that your agents have access to"
 ---
 
-The `data` directory stores SQL queries organized hierarchically by team scope. Place queries in directories based on their broadest user group - for example, company-wide queries go in the root `data` directory, while team-specific queries belong in their respective team subdirectories.
+The `data/` directory stores semantic information that agents can access by
+specifying the `data` parameter within the agent config. Any set of
+subdirectories within `data` can be provided therein, giving the agent access
+to any SQL folders within the given paths (and that directory only -- we do not
+recurse through any nested directories).
+
+### Structuring semantic information
+
+Each sub-directory should be populated with SQL queries with the `.sql`
+extension -- these SQL queries will be fed to the LLM as examples of queries to
+generate. For the time being, only SQL queries are accepted, but in the future,
+we will provide the ability to fill each directory with a wider range of
+semantic entities and formulas.
+
+At the top of these files, you should generally add a comment that describes
+what the query does (we call this "front matter" internally). While we
+currently only support all-shot retrieval (pulling in all queries in a
+directory), in the future, this front matter will be used for retrieval.
+
+<Warning>
+  The accepted format of this front matter will likely change in the future.
+</Warning>
+
+```sql
+/*
+ * The following query gets the date range over which the data is available.
+ */
+
+select
+  min(PARSE_DATE('%Y-%m', month)) as min_date,
+  max(PARSE_DATE('%Y-%m', month)) as max_date 
+from 'user_events.csv';
+```
+
+
+### Best practices
+
+We suggest organizing the `data/` directory in a way that reflects your org
+structure. Place queries in directories based on the broadest user group that
+might use said query - for example, company-wide queries go in the root `data/`
+directory, while team-specific queries belong in their respective team
+subdirectories.

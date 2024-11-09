@@ -40,14 +40,16 @@
     {
       "group": "Learn about Onyx",
       "pages": [
+        "learn-about-onyx/overview",
         {
-          "group": "How we structure Onyx",
+          "group": "Core concepts",
           "pages": [
-            "learn-about-onyx/overview",
             "learn-about-onyx/agents",
-            "learn-about-onyx/data"
+            "learn-about-onyx/data",
+            "learn-about-onyx/workflows"
           ]
         },
+        "learn-about-onyx/config",
         "learn-about-onyx/basic-commands"
       ]
     },
