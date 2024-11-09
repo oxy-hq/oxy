@@ -3,64 +3,95 @@ title: "Agents"
 description: Prompted LLM chatbots that can reason around data
 ---
 
-An agent is an LLM-based agent that can manipulate and synthesize data.
-Configuration files that define the agents. Each agent is scoped to particular semantic models.
+A data agent is an LLM-based agent that can manipulate and synthesize data --
+the data agent and the agent configs that define them are at the heart of onyx.
 
-- Configure agents in a YAML file.
-- Organize them under the `agents` folder.
+Typically, to prompt engineer a _data_ agent (an agent that can reason around
+data), you need a heavily manual workflow involving database schema ingestion,
+LLM prompting and step chaining/iteration, and SQL query retrieval and
+injection. Our `agent.yml` files abstract away much of this complexity,
+allowing you to focus more on the _logic_ of the prompted LLM rather than the
+details of the code execution.
 
-### Agent components
+## Agent components
 
-| Component             | Description           | Type     |
-| --------------------- | --------------------- | -------- |
-| model                 | LLM model to use      | required |
-| warehouse             | Warehouse to use      | required |
-| scope                 | Scope of the agent    | required |
-| retrieval_type        | Retrieval type        | required |
-| retrieval             | Retrieval method      | required |
-| system_instructions   | System instructions   | required |
-| sql_tool_instructions | SQL tool instructions | required |
-| tools                 | Tools to use          | required |
+Specifically, in our agent `yml` files, you need to specify the following:
+
+| Component           | Description                                                                                       | Type     |
+| ------------------- | ------------------------------------------------------------------------------------------------- | -------- |
+| model               | LLM model to use (defined in [config.yml](/learn-about-onyx/config), referenced by `name`)        | required |
+| data                | `./data` sub-directories accessible to the agent (see [data](/learn-about-onyx/data))             | optional |
+| warehouse           | Warehouse to use (defined in [config.yml](/learn-about-onyx/config), referenced by `name`)        | optional |
+| retrieval           | Retrieval method to use (defined in [config.yml](/learn-about-onyx/config), referenced by `name`) | optional |
+| retrieval_type      | Retrieval type (currently only `all-shot` is available)                                           | optional |
+| system_instructions | System instructions passed to the LLM                                                             | required |
+| output_type         | This can be either `file` or                                                                      | required |
+| tools               | Tools to use, see the Tools section below                                                         | required |
+
+### Context variables
+
+A number of variables are accessible within the prompt through the `ctx` (context) namespace as Jinja variables. These include:
+
+| Variable                    | Description                                                                                                                 |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `{{ctx.queries}}`           | An array of retrieved queries. If `all-shot` is used, every query available in the defined `data` directories will be used. |
+| `{{ctx.warehouse.tables}}`  | An array of retrieved queries. If `all-shot` is used, every query available in the defined `data` directories will be used. |
+| `{{ctx.warehouse.type}}`    | The warehouse type, as specified in [`config.yml`](/learn-about-onyx/config)                                                |
+| `{{ctx.warehouse.dataset}}` | The warehouse dataset, as specified in [`config.yml`](/learn-about-onyx/config)                                             |
+| `{{ctx.warehouse.name}}`    | The warehouse name, as specified in [`config.yml`](/learn-about-onyx/config)                                                |
+
+### Tools
+
+To enable the LLM to flexibly accomplish a wider range of tasks, our internal chain logic is as follows:
+
+1. We render your `system_instructions` using all retrieved queries and context.
+2. We feed the rendered `system_instructions` and prompt into the LLM tool calling API.
+3. We repeat steps 1 and 2 with the results of step 2 until the request specified in `system_instructions` is fulfilled.
 
 ### Sample config
 
 ````yaml agents/default.yml
-model: "openai-4o"
-warehouse: "primary_warehouse"
-scope: "."
-retrieval_type: "all-shot"
+name: default
+model: "openai-4o-mini"
 retrieval: "default"
 system_instructions: |
-  You are an Data Analyst expert. Your task is to help the user understand the provided SQL query and Result.
-  DO NOT print the SQL query and Result because it already printed out to the user.
-  ALWAYS execute the SQL query without confirmation.
-  You have access to the following warehouses:
+  ## Instructions
+  You are an Data Analyst expert. Your task is to help the user generate and execute sql query to answer user's question.
+  ### Adhere to these rules:
+  - **Deliberately go through the question and database schema word by word** to appropriately answer the question
+  - **Use Table Aliases** to prevent ambiguity. For example, `SELECT table1.col1, table2.col1 FROM table1 JOIN table2 ON table1.id = table2.id`.
+  - ALWAYS execute the SQL query without confirmation.
+  - ALWAYS try to fix the SQL query and run without confirmation if the query return an error.
+  - The `sql` should conform to the dialect of the warehouse.
+  - The `sql` should be returned in plain text, not in JSON.
 
-  Name: {{ warehouse.name }}
-  Dialect: {{ warehouse.type }}
-  Tables:
+  ### You have access to the following warehouses and tables, ONLY use the provided warehouse and tables, columns:
+  **Dataset: {{ ctx.warehouse.name }}**
+  **Dialect: {{ ctx.warehouse.type }}**
+  **Tables:**
   ```
-  {% for table in warehouse.tables %}{{ table }}
+  {% for table in ctx.warehouse.tables %}
+  {{ table }}
 
   {% endfor %}
   ```
 
-  Queries:
+  ### You can use these queries as hints:
   ```
-  {% for query in queries %}
+  {% for query in ctx.queries %}
   {{ query }}
   {% endfor %}
   ```
 
-sql_tool_instructions: |
-The `sql` should be returned in plain text, not in JSON.
-The `sql` should conform to the dialect of the warehouse.
-
-You need to use the following warehouse:
-Name: {{ warehouse.name }}
-Dialect: {{ warehouse.type }}
-
+output_type: file
 tools:
-- "query"
-- "visualize"
+  - name: retrieval
+    type: retrieval
+    retrieval_type: all-shot
+    data:
+      - "."
+      - "default"
+  - name: execute_sql
+    type: execute_sql
+    warehouse: local
 ````

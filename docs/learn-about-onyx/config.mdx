@@ -1,0 +1,53 @@
+---
+title: "Global config"
+description: How to configure your `~/.config/onyx/config.yml` file
+---
+
+The `config.yml` file contained in the `~/.config/onyx/` directory is the
+global configuration file you'll use to define three entities, specified as the
+following top-level keys:
+
+1. `warehouses`: warehouse/database connections
+2. `models`: foundation model connections
+3. `retrievals`: specifications for how retrieval should be done
+
+Beside these, there is a final namespace, `defaults`, where you can specify
+your default `project_path` (where your project repository is stored locally)
+and `agent`, which specifies the default agent that will be invoked with all
+`onyx` CLI commands.
+
+A sample `config.yml` file is shown below:
+
+```yaml
+warehouses:
+  - name: primary-warehouse
+    type: bigquery
+    key_path: /path/to/keyfile
+    dataset: kelihi
+  - name: local
+    type: duckdb
+    key_path: None
+    dataset: /path/to/local/files
+
+models:
+  - name: openai-4o-mini
+    vendor: openai
+    model_ref: gpt-4o-mini
+    key_var: OPENAI_API_KEY
+  - name: llama3.2
+    vendor: ollama
+    model_ref: llama3.2:latest
+    api_url: http://localhost:11434/v1
+    api_key: secret
+
+retrievals:
+  - name: default
+    embed_model: "bge-small-en-v1.5"
+    rerank_model: "jina-reranker-v2-base-multiligual"
+    top_k: 10
+    factor: 5
+
+defaults:
+  agent: default
+  project_path: /path/to/onyx/project
+````

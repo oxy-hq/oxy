@@ -13,11 +13,11 @@ description: "The fastest way to build data agents"
 
 Data agents are prompted LLMs that can reason around data. Data agents built in
 onyx ingest semantic information (at present, in the form of plain SQL) and use
-this to craft and execute SQL queries against a database (both cloud or
+this to craft and execute SQL queries against a database (either cloud or
 local).
 
-**Onyx** consists of two principal elements to configure these data agents,
-each tied to a specific directory within your Onyx project:
+**Onyx** consists of two principal elements to configure data agents, each tied
+to a specific directory within your Onyx project:
 
 - `./agents`: Configuration files that define the agents *in plain yaml*. Each
 agent is scoped to particular directories within the `data` directory.
@@ -32,23 +32,4 @@ command, which will send the `<question>` to the prompted LLM, or composed into 
 A workflow is a sequence of data agents that do specific tasks, defined in the
 `./workflows` directory of your Onyx project. In the Onyx
 nomenclature, each workflow is comprised of `steps`, each of which is an `{ask,
-agent}` pair. A workflow is similar to a "chain" in the prompt engineering
-parlance, but with a few key differences:
-
-- **Workflows are DAGs.** Whereas chains can become arbitrarily complex with
-arbitrarily nested loops, complex reply logic, and opaque branching structures,
-workflows are DAGs, which enforce a clearer, more predictable flow from input
-to output.
-- **Workflows separate logic from execution.** Because workflows are written in
-yaml, the DAG definition is entirely separate from the execution engine
-(usually Python), while other Python-based systems keep these tightly coupled
-and so ultimately become difficult to build and maintain.
-- **Workflows are only executable, not interactive.** Workflows are designed to
-be deterministic pipelines with data agents baked in as functional components,
-not agentic interfaces for chat.
-
-These choices generally reduce the flexibility of Onyx when compared to say,
-`langchain` or `llama_index`, but they also dramatically reduce the complexity
-of the system. You can think of Onyx's `workflow` paradigm as a domain-specific
-chain-builder for data workflows, where most (if not all) tasks simply pass
-results around between different agents.
+agent}` pair. Read more in our [workflows](/learn-about-onyx/workflows) section.
