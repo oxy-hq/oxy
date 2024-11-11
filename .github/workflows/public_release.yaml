@@ -1,0 +1,23 @@
+name: Public Release
+on:
+  release:
+    types: [released]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/create-github-app-token@v1
+      id: app-token
+      with:
+        app-id: ${{ vars.ARGO_APP_ID }}
+        private-key: ${{ secrets.ARGO_APP_PRIVATE_KEY }}
+    - name: Copy to public repo
+      uses: andrewthetechie/gha-clone-releases@v1
+      with:
+        token: ${{ steps.app-token.outputs.token }}
+        src_repo: onyx-hq/onyx-core
+        dest_repo: onyx-hq/onyx-public-releases
+        skip_draft: true
+        skip_prerelease: true
+        copy_assets: true
