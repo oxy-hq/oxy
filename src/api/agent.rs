@@ -1,5 +1,11 @@
-use crate::ai::{self, agent::LLMAgent};
-use axum::{body::Body, extract, response::IntoResponse};
+use std::{fs, path::PathBuf};
+
+use crate::{
+    ai::{self, agent::LLMAgent},
+    yaml_parsers::config_parser::{get_config_path, parse_config},
+};
+use axum::{body::Body, response::IntoResponse};
+use axum::{extract, Json};
 use futures::StreamExt;
 use reqwest::header;
 use serde::{Deserialize, Serialize};
@@ -63,4 +69,41 @@ fn stream_answer(answer: String) -> impl Stream<Item = Result<String, axum::Erro
         Ok::<_, axum::Error>(word)
     }))
     .buffered(4);
+}
+
+#[derive(Serialize)]
+pub struct AgentItem {
+    name: String,
+}
+
+#[derive(Serialize)]
+pub struct ListAgentResponse {
+    agents: Vec<AgentItem>,
+}
+
+pub async fn list() -> Json<ListAgentResponse> {
+    let config_path = get_config_path();
+    let config = parse_config(&config_path).unwrap();
+    let agent_dir = PathBuf::from(&config.defaults.project_path).join("agents");
+    let paths = fs::read_dir(agent_dir).unwrap();
+    let mut agents = Vec::<AgentItem>::new();
+
+    for path in paths {
+        match path {
+            Ok(e) => {
+                let p = e.path();
+                let file_name: &std::ffi::OsStr = p.file_name().unwrap();
+                if file_name.to_string_lossy().ends_with(".yml") {
+                    let agent_name = p.file_stem().unwrap().to_string_lossy().to_string();
+                    agents.push(AgentItem { name: agent_name });
+                }
+            }
+            Err(e) => {
+                eprintln!("Error reading agent directory: {}", e);
+                continue;
+            }
+        }
+    }
+
+    Json(ListAgentResponse { agents: agents })
 }

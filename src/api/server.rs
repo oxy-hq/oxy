@@ -15,6 +15,7 @@ pub async fn serve(address: &SocketAddr) {
 
     let app: Router = Router::new()
         .route("/ask", post(agent::ask))
+        .route("/agents", get(agent::list))
         .route("/conversations", post(conversations::create))
         .route("/conversations", get(conversations::list))
         .route("/load-config", get(config::load_config))
