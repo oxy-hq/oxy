@@ -1,7 +1,12 @@
 name: Public Release
 on:
   release:
-    types: [published, edited]
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to release"
+        required: true
 
 jobs:
   release_publicly:
@@ -22,7 +27,7 @@ jobs:
       uses: robinraju/release-downloader@v1
       with:
         preRelease: false
-        tag: ${{ github.event.release.tag_name }}
+        tag: ${{ github.event.release.tag_name || github.event.inputs.tag }}
         zipBall: false
         token: ${{ steps.app-token.outputs.token }}
         fileName: onyx-*
@@ -30,13 +35,13 @@ jobs:
       run: |
         git config --global user.name "argocd-hyperquery[bot]"
         git config --global user.email "153820223+argocd-hyperquery[bot]@users.noreply.github.com"
-        git tag -a ${{ github.event.release.tag_name }} -m "Release ${{ github.event.release.tag_name }}"
-        git push origin ${{ github.event.release.tag_name }}
+        git tag -a ${{ github.event.release.tag_name || github.event.inputs.tag }} -m "Release ${{ github.event.release.tag_name || github.event.inputs.tag }}"
+        git push origin ${{ github.event.release.tag_name || github.event.inputs.tag }}
     - name: Public github release
       uses: softprops/action-gh-release@v2
       with:
         draft: true
-        tag_name: ${{ github.event.release.tag_name }}
+        tag_name: ${{ github.event.release.tag_name || github.event.inputs.tag }}
         repository: onyx-hq/onyx-public-releases
         files: |
           onyx-*
