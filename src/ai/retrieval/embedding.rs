@@ -184,9 +184,17 @@ impl VectorStore for LanceDBStore {
     }
 
     async fn search(&self, query: &str) -> anyhow::Result<Vec<Document>> {
+        log::info!("Embedding search query: {}", query);
         let query_vector = self.embed_model.embed(vec![query.to_string()], None)?;
+
+        if query_vector.is_empty() {
+            return Err(anyhow::anyhow!("Failed to generate embeddings for query"));
+        }
+
         let table = self.get_warehouse_metadata_table().await?;
-        let vector = query_vector.first().unwrap();
+        let vector = query_vector
+            .first()
+            .ok_or_else(|| anyhow::anyhow!("No embedding vector generated"))?;
         let mut results = table
             .vector_search(vector.to_owned())?
             .limit(self.top_k * self.factor)

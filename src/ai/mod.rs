@@ -122,17 +122,17 @@ async fn fill_tools(
                 description,
                 data,
             } => {
-                let retrieval = config
-                    .find_retrieval(agent_config.retrieval.as_ref().unwrap())
-                    .unwrap();
+                // let retrieval = config
+                //    .find_retrieval(agent_config.retrieval.as_ref().unwrap())
+                //     .unwrap();
                 let queries = load_queries(config.defaults.project_path.clone(), data);
                 tool_ctx = context! {
                     queries => queries,
                     ..tool_ctx,
                 };
 
-                let tool = RetrieveTool::new(agent_name, name, retrieval, description);
-                toolbox.add_tool(name.to_string(), tool.into());
+                // let tool = RetrieveTool::new(agent_name, name, retrieval, description);
+                // toolbox.add_tool(name.to_string(), tool.into());
             }
         };
     }

@@ -65,11 +65,15 @@ impl<T> OpenAIAgent<T> {
         response_format: Option<ResponseFormat>,
     ) -> anyhow::Result<ChatCompletionResponseMessage> {
         let mut request_builder = CreateChatCompletionRequestArgs::default();
-        request_builder
-            .model(self.model.clone())
-            .tools(tools)
-            .parallel_tool_calls(false)
-            .messages(messages);
+        if tools.is_empty() {
+            request_builder.model(self.model.clone()).messages(messages);
+        } else {
+            request_builder
+                .model(self.model.clone())
+                .tools(tools)
+                .parallel_tool_calls(false)
+                .messages(messages);
+        }
         if response_format.is_some() {
             request_builder.response_format(response_format.unwrap());
         }
