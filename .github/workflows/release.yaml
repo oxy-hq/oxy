@@ -15,7 +15,7 @@ jobs:
     uses: ./.github/workflows/changesets.yaml
   compile:
     concurrency:
-      group: onyx-compile-${{ github.ref_name }}
+      group: onyx-compile-${{ github.ref_name }}-${{ matrix.job.os }}-${{ matrix.job.target }}
       cancel-in-progress: true
     name: Releasing binary version ${{ github.ref_name }} for ${{ matrix.job.os }}, target ${{ matrix.job.target }}
     needs: [changesets]
