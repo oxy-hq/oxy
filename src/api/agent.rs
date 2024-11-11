@@ -1,8 +1,12 @@
 use crate::ai::{self, agent::LLMAgent};
-use axum::{extract, Json};
+use axum::{body::Body, extract, response::IntoResponse};
+use futures::StreamExt;
+use reqwest::header;
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
+use tokio_stream::Stream;
+use tokio_stream::{self as stream};
 use uuid::Uuid;
-
 #[derive(Serialize)]
 pub struct ConversationItem {
     title: String,
@@ -41,9 +45,22 @@ async fn get_agent(agent_name: Option<String>) -> Box<dyn LLMAgent + Send> {
     }
 }
 
-#[axum::debug_handler]
-pub async fn ask(extract::Json(payload): extract::Json<AskRequest>) -> Json<AskResponse> {
+pub async fn ask(extract::Json(payload): extract::Json<AskRequest>) -> impl IntoResponse {
     let agent = get_agent(payload.agent).await;
-    let result = agent.request(&payload.question.clone()).await.unwrap();
-    Json(AskResponse { answer: result })
+    let result: String = agent.request(&payload.question.clone()).await.unwrap();
+    let s = stream_answer(result);
+    let header = [(header::CONTENT_TYPE, "text/plain; charset=UTF-8")];
+    (header, Body::from_stream(s))
+}
+
+fn stream_answer(answer: String) -> impl Stream<Item = Result<String, axum::Error>> {
+    let chars = answer
+        .chars()
+        .map(|word| word.to_string())
+        .collect::<Vec<_>>();
+    return stream::iter(chars.into_iter().map(|word| async {
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        Ok::<_, axum::Error>(word)
+    }))
+    .buffered(4);
 }
