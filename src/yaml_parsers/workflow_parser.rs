@@ -21,8 +21,21 @@ pub struct Workflow {
     pub steps: Vec<Step>,
 }
 
-pub fn parse_workflow_config(file_path: &str) -> anyhow::Result<Workflow> {
+// Temporary workflow object that reads in from the yaml file before it's combined with the
+// workflow name (filename-associated) into the `Workflow` struct
+#[derive(Deserialize)]
+struct TempWorkflow {
+    pub steps: Vec<Step>,
+}
+
+pub fn parse_workflow_config(workflow_name: &str, file_path: &str) -> anyhow::Result<Workflow> {
     let workflow_content = fs::read_to_string(file_path)?;
-    let workflow: Workflow = serde_yaml::from_str(&workflow_content)?;
+    let temp_workflow: TempWorkflow = serde_yaml::from_str(&workflow_content)?;
+
+    let workflow = Workflow {
+        name: workflow_name.to_string(),
+        steps: temp_workflow.steps,
+    };
+
     Ok(workflow)
 }

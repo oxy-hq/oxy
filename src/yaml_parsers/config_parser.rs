@@ -24,6 +24,7 @@ pub struct Defaults {
 pub struct Warehouse {
     pub name: String,
     pub r#type: String,
+    #[serde(default)]
     pub key_path: String,
     pub dataset: String,
 }
@@ -112,7 +113,8 @@ impl Config {
             )));
         }
 
-        let workflow_config = parse_workflow_config(&workflow_file.to_string_lossy())?;
+        let workflow_config =
+            parse_workflow_config(workflow_name, &workflow_file.to_string_lossy())?;
         Ok(workflow_config)
     }
 
