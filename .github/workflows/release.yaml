@@ -134,10 +134,10 @@ jobs:
     - name: Clone and tag public release
       if: startsWith(github.ref, 'refs/tags/')
       run: |
+        git config --global user.name "argocd-hyperquery[bot]"
+        git config --global user.email "153820223+argocd-hyperquery[bot]@users.noreply.github.com"
         gh repo clone onyx-hq/onyx-public-releases
         cd onyx-public-releases
-        git config --global user.email "153820223+argocd-hyperquery[bot]@users.noreply.github.com"
-        git config --global user.name "argocd-hyperquery[bot]"
         git tag -a ${{ steps.tag.outputs.release_tag }} -m "Release ${{ steps.tag.outputs.release_tag }}"
         git push origin ${{ steps.tag.outputs.release_tag }}
       env:
