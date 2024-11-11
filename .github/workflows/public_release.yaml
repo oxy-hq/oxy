@@ -1,7 +1,7 @@
 name: Public Release
 on:
   release:
-    types: [published]
+    types: [published, edited]
 
 jobs:
   release_publicly:
