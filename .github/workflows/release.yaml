@@ -57,7 +57,7 @@ jobs:
         app-id: ${{ vars.ARGO_APP_ID }}
         private-key: ${{ secrets.ARGO_APP_PRIVATE_KEY }}
     - name: Checkout repository
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
       with:
         token: ${{ steps.app-token.outputs.token }}
         fetch-depth: 0
@@ -66,7 +66,7 @@ jobs:
       with:
         rustflags: ""   # temporarily override "-D warnings"
         target: ${{ matrix.job.target }}
-        cache-key: release-${{ matrix.job.os }}-${{ matrix.job.target }}-${{ hashFiles('**/Cargo.lock') }}
+        cache-key: release-${{ matrix.job.os }}-${{ matrix.job.target }}
     - name: Update Rust Toolchain Target
       run: |
         echo "targets = ['${{matrix.job.target}}']" >> rust-toolchain.toml
@@ -92,8 +92,8 @@ jobs:
         mv web-app/dist ./
     - name: Install required dependencies
       shell: bash
-        # protobuf is required by lance https://github.com/lancedb/lance/issues/3073
-        # mold is required for faster builds on linux
+          # protobuf is required by lance https://github.com/lancedb/lance/issues/3073
+          # mold is required for faster builds on linux
       run: |
         if [[ "${{ matrix.job.os }}" =~ "ubuntu" ]]; then
           sudo apt-get update
@@ -131,17 +131,16 @@ jobs:
         prerelease: ${{ !startsWith(github.ref, 'refs/tags/') }}
       env:
         GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
-    - name: Clone and tag public release
-      if: startsWith(github.ref, 'refs/tags/')
-      run: |
-        git config --global user.name "argocd-hyperquery[bot]"
-        git config --global user.email "153820223+argocd-hyperquery[bot]@users.noreply.github.com"
-        gh repo clone onyx-hq/onyx-public-releases
-        cd onyx-public-releases
-        git tag -a ${{ steps.tag.outputs.release_tag }} -m "Release ${{ steps.tag.outputs.release_tag }}"
-        git push origin ${{ steps.tag.outputs.release_tag }}
-      env:
-        GH_TOKEN: ${{ steps.app-token.outputs.token }}
+    - name: Check out public release repo
+      uses: actions/checkout@v4
+      with:
+        token: ${{ steps.app-token.outputs.token }}
+        repository: onyx-hq/onyx-public-releases
+    - name: Bump version and push tag
+      uses: mathieudutour/github-tag-action@v6.2
+      with:
+        custom_tag: ${{ steps.tag.outputs.release_tag }}
+        github_token: ${{ steps.app-token.outputs.token }}
     - name: Public github release
       uses: softprops/action-gh-release@v2
       if: ${{ startsWith(github.ref, 'refs/tags/') }}
