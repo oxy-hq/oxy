@@ -66,6 +66,7 @@ jobs:
       with:
         rustflags: ""   # temporarily override "-D warnings"
         target: ${{ matrix.job.target }}
+        cache-key: release-${{ matrix.job.os }}-${{ matrix.job.target }}-${{ hashFiles('**/Cargo.lock') }}
     - name: Update Rust Toolchain Target
       run: |
         echo "targets = ['${{matrix.job.target}}']" >> rust-toolchain.toml
