@@ -8,16 +8,16 @@ results from one agent to the input of another. A workflow is similar to a
 "chain" in the prompt engineering parlance, but with a few key differences:
 
 - **Workflows are DAGs.** Whereas chains can become arbitrarily complex with
-arbitrarily nested loops, complex reply logic, and opaque branching structures,
-workflows are DAGs, which enforce a clearer, more predictable flow from input
-to output.
+  arbitrarily nested loops, complex reply logic, and opaque branching structures,
+  workflows are DAGs, which enforce a clearer, more predictable flow from input
+  to output.
 - **Workflows separate logic from execution.** Because workflows are written in
-yaml, the DAG definition is entirely separate from the execution engine
-(usually Python), while other Python-based systems keep these tightly coupled
-and so ultimately become difficult to build and maintain.
+  yaml, the DAG definition is entirely separate from the execution engine
+  (usually Python), while other Python-based systems keep these tightly coupled
+  and so ultimately become difficult to build and maintain.
 - **Workflows are only executable, not interactive.** Workflows are designed to
-be deterministic pipelines with data agents baked in as functional components,
-not agentic interfaces for chat.
+  be deterministic pipelines with data agents baked in as functional components,
+  not agentic interfaces for chat.
 
 These choices generally reduce the flexibility of Onyx when compared to say,
 `langchain` or `llama_index`, but they also dramatically reduce the complexity
@@ -27,13 +27,13 @@ results around between different agents.
 
 ## Sample config
 
-```yaml agents/monthly_report.yml
+```yaml workflows/monthly_report.yml
 name: monthly_report
 
 steps:
-  - name: month_over_month_metrics  # An identifier for the step. Results can be referenced by jinja-wrapping this name
-    agent_ref: default  # The agent .yml file to use for this step
-    prompt: Calculate month-over-month performance of views and clicks for the entire ad portfolio.  # The prompt given to the agent
+  - name: month_over_month_metrics # An identifier for the step. Results can be referenced by jinja-wrapping this name
+    agent_ref: default # The agent .yml file to use for this step
+    prompt: Calculate month-over-month performance of views and clicks for the entire ad portfolio. # The prompt given to the agent
   - name: monthly_report
     agent_ref: local
     prompt: |

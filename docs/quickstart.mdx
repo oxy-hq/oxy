@@ -4,171 +4,108 @@ description: "Let's learn how to install onyx-core"
 ---
 
 <Info>
-  These are internal instructions in the absence of a brew formulae/cask. Some
-  steps will be eventually subsumed within a single command, `brew install
-  onyx/onyx`
+  These are instructions in the absence of a brew formula/cask. Some steps will
+  eventually be subsumed within a single command, `brew install onyx/onyx`.
 </Info>
 
-To get started with **onyx**, you'll have to work within the terminal. By default you
-have a terminal on your macbook, which you can access through spotlight. If you want
-a faster experience, you can download tried-and-true [Iterm2](https://iterm2.com/), GPU-accelerated [Alacritty](https://github.com/alacritty/alacritty),
+To get started with **onyx**, you will need to work within the terminal. By default, you
+have a terminal on your MacBook, which you can access through Spotlight. For a faster experience, you can download tried-and-true [iTerm2](https://iterm2.com/), GPU-accelerated [Alacritty](https://github.com/alacritty/alacritty),
 or AI-native [Warp](https://warp.dev/).
 
-Once you have your terminal set up, follow the commands below:
+Once you have your terminal set up, copy and paste the commands below:
 
 <Steps>
-<Step title="Install rust">
-The best way to manage rust is with rustup. Install rust by following the official guide [here](https://www.rust-lang.org/tools/install).
+  <Step title="Install onyx">
+    Install onyx by running:
+    ```sh
+    curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/onyx-hq/onyx-public-releases/refs/heads/main/install_onyx.sh | sh install_onyx.sh
+    ```
+    <Tip>
+      You can always read the [source code of this script](https://github.com/onyx-hq/onyx-public-releases/blob/main/install_onyx.sh) to verify that it does no harm to your computer.
+    </Tip>
+    <Accordion title="(Optional) Verify installation">
+      
+      After the installation is complete, you may verify that it was successful by running:
+      ```sh
+      onyx --version
+      ```
+      and a configuration file is created at `~/.config/onyx/config.yml` by running:
+      ```sh
+      cat ~/.config/onyx/config.yml
+      # should output something
+      ```
+    </Accordion>
+  </Step>
+  <Step title="Create a sample repository">
+    In order to configure agents and other query settings, you need to create a sample repository. You can do this by running:
+    ```sh
+    git clone https://github.com/onyx-hq/onyx-sample-repo.git
+    cd onyx-sample-repo
+    ```
+    From here, you can take a look at some agents that are already configured in the agents folder. You can also add your own agents, models, and warehouses to the `config.yml` file.
+  </Step>
+  <Step title="Configure onyx">
+    Warehouses and models are configured at `~/.config/onyx/config.yml`. You can open this file in your favorite text editor and modify it to your liking.
+    ```sh
+    open ~/.config/onyx/config.yml
+    ```
+    You need to replace `/path/to/key` or `/path/to/warehouse` with the actual path to your BigQuery service key or the path to the directory where you want to store your data.
+    Here is an example of a working `config.yml` file:
+    ```yaml config.yml
+    warehouses:
+      - name: bigquery
+        type: bigquery
+        key_path: /Users/sampleuser/.config/onyx/project-dataset-XXXXXXXXXX.json
+        dataset: dbt_prod_core
+      - name: duckdbexample
+        type: duckdb
+        key_path: /Users/sampleuser/.config/onyx/project-dataset-XXXXXXXXXX.json
+        dataset: "/Users/sampleuser/onyx/onyx-sample-repo/"
 
-```sh
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-```
+    models:
+      - name: openai-4o
+        vendor: openai
+        key_var: OPENAI_API_KEY
+        model_ref: gpt-4o
+      - name: openai-4o-mini
+        vendor: openai
+        key_var: OPENAI_API_KEY
+        model_ref: gpt-4o-mini
 
-Add cargo to your path by following the instructions at the end of the installation. Or:
+    retrievals:
+      - name: default
+        embed_model: "bge-small-en-v1.5"
+        rerank_model: "jina-reranker-v2-base-multilingual"
+        top_k: 10
+        factor: 5
 
-```bash
-# Detect the current shell
-current_shell=$(basename "$SHELL")
+    defaults:
+      agent: default
+      project_path: /Users/sampleuser/onyx/onyx-sample-repo/
+    ```
 
-# Append the PATH export line to the appropriate shell profile
-case "$current_shell" in
-  bash)
-    echo 'export PATH="$HOME/.cargo/bin:$PATH"' >> ~/.bashrc
-    source ~/.bashrc
-    ;;
-  zsh)
-    echo 'export PATH="$HOME/.cargo/bin:$PATH"' >> ~/.zshrc
-    source ~/.zshrc
-    ;;
-  *)
-    echo "Unsupported shell: $current_shell"
-    ;;
-esac
-```
-
-</Step>
-<Step title="Install python">
-
-Ensure that the right python version is in your path (onyx-core uses python3.11.6). There are many ways to install python, here we recommend a few ways:
-
-<AccordionGroup>
-<Accordion title="Using asdf">
-```sh
-# Using asdf is best for amd64
-brew install asdf
-
-case $SHELL in
-*bash)
-echo -e "\n. $(brew --prefix asdf)/asdf.sh" >> ~/.bashrc
-source ~/.bashrc
-;;
-*zsh)
-echo -e "\n. $(brew --prefix asdf)/asdf.sh" >> ~/.zshrc
-source ~/.zshrc
-;;
-esac
-
-asdf plugin add python
-
-asdf install python 3.11.6
-
-asdf global python 3.11.6
-
-````
-
-</Accordion>
-
-<Accordion title="Using mise">
-```sh
-# Using mise is the best for any architecture
-curl https://mise.run | sh
-
-case $SHELL in
-  *bash)
-    echo 'eval "$(~/.local/bin/mise activate bash)"' >> ~/.bashrc
-source ~/.bashrc
-;;
-\*zsh)
-echo 'eval "$(~/.local/bin/mise activate zsh)"' >> ~/.zshrc
-source ~/.zshrc
-;;
-esac
-
-mise install python 3.11.6
-
-mise use python@3.11 --global
-
-````
-
-</Accordion>
-<Accordion title="Using brew">
-```sh
-brew install python@3.11
-brew link python@3.11
-```
-</Accordion>
-</AccordionGroup>
-</Step>
-<Step title="Install poetry">
-
-```sh
-pip install poetry
-```
-
-</Step>
-<Step title="Clone this repository">
-
-```sh
-git clone git@github.com:onyx-hq/onyx-core.git
-cd onyx-core
-
-cd ../  # Move up a directory to ensure that the sample repo is not nested within the onyx-core repo
-git clone git@github.com:onyx-hq/onyx-sample-repo.git
-cd onyx-sample-repo
-```
-
-</Step>
-<Step title="Build the crate from the repository">
-
-Inside onyx-core
-
-```sh
-cargo build --release
-```
-
-Copy the binary to your path:
-
-```sh
-cp target/release/onyx /usr/local/bin/onyx
-```
-
-Then, copy the `config.yml` file into `~/.config/onyx/`:
-
-```sh
-mkdir -p ~/.config/onyx && cp example.yml ~/.config/onyx/config.yml
-```
-
-You'll have to modify the location of `warehouse.key_path` to be the location of your BigQuery service key (you can find credentials in [1password](https://hyperquery.1password.com/app#/lwrm73rxzjvbhi5hl3ludt2xcu/AllItems/lwrm73rxzjvbhi5hl3ludt2xcumv67bpwhm4f55j6e5k4y5jjnwa) for our Hyperquery data - or make your own). and modify the `project_path` to onyx-sample-repo
-
-```sh
-# Modify the location of the key_path in the config.yml file
-open ~/.config/onyx/config.yml
-```
-
-Set the `OPENAI_API_KEY` environmental variable to an API key from OpenAI. You can create an API key [here](https://platform.openai.com/api-keys). Once you create one, you can save it by adding the following line to your `~/.bashrc` or `~/.zshrc` file:
-
-```sh
-export OPENAI_API_KEY="<YOUR_KEY_HERE>"
-
-# save it into zshrc
-# so that the next time you open a terminal, it will be available
-echo 'export OPENAI_API_KEY="<YOUR_KEY_HERE>"' >> ~/.zshrc
-```
-
-</Step>
-<Step title="Test the installation">
-
-Inside onyx-sample-repo, run: `onyx` to check that the installation worked.
-
-</Step>
+  </Step>
+  <Step title="Start using onyx">
+    Now that you have configured your `config.yml` file, you can start using Onyx.
+    <AccordionGroup>
+      <Accordion title="Using the CLI">
+        You can use the `ask` subcommand to ask questions to your agents:
+        ```sh
+        onyx ask "Who is the most engaged customer?"
+        ```
+        and receive a response from your agents.
+        There are other subcommands you can use to interact with your agents, and you can explore them by running:
+        ```sh
+        onyx --help
+        ```
+      </Accordion>
+      <Accordion title="Using the Web">
+        You can run the following command to start the Onyx server:
+        ```sh
+        onyx serve
+        ```
+        and then access the chat UI via the outputted address in your browser.
+      </Accordion>
+    </AccordionGroup>
+  </Step>
 </Steps>
