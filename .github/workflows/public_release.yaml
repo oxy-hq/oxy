@@ -18,12 +18,15 @@ jobs:
       with:
         app-id: ${{ vars.ARGO_APP_ID }}
         private-key: ${{ secrets.ARGO_APP_PRIVATE_KEY }}
+        owner: ${{ github.repository_owner }}
+        repositories: |
+          onyx-public-releases
+          onyx-core
     - name: Checkout Public Release repo
       uses: actions/checkout@v4
       with:
         repository: onyx-hq/onyx-public-releases
         token: ${{ steps.app-token.outputs.token }}
-        persist-credentials: false
     - name: Download release assets from GitHub
       uses: robinraju/release-downloader@v1
       with:
