@@ -4,20 +4,41 @@ on:
     types: [published]
 
 jobs:
-  build:
+  release_publicly:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/create-github-app-token@v1
+      name: Create GitHub App Token
       id: app-token
       with:
         app-id: ${{ vars.ARGO_APP_ID }}
         private-key: ${{ secrets.ARGO_APP_PRIVATE_KEY }}
-    - name: Copy to public repo
-      uses: andrewthetechie/gha-clone-releases@v1
+    - name: Checkout Public Release repo
+      uses: actions/checkout@v2
       with:
+        repository: onyx-hq/onyx-public-releases
         token: ${{ steps.app-token.outputs.token }}
-        src_repo: onyx-hq/onyx-core
-        dest_repo: onyx-hq/onyx-public-releases
-        skip_draft: true
-        skip_prerelease: true
-        copy_assets: true
+    - name: Download release assets from GitHub
+      uses: robinraju/release-downloader@v1
+      with:
+        preRelease: false
+        tag: ${{ github.event.release.tag_name }}
+        zipBall: false
+        token: ${{ steps.app-token.outputs.token }}
+        fileName: onyx-*
+    - name: Tag the release
+      run: |
+        git config --global user.name "argocd-hyperquery[bot]"
+        git config --global user.email "153820223+argocd-hyperquery[bot]@users.noreply.github.com"
+        git tag -a ${{ github.event.release.tag_name }} -m "Release ${{ github.event.release.tag_name }}"
+        git push origin ${{ github.event.release.tag_name }}
+    - name: Public github release
+      uses: softprops/action-gh-release@v2
+      with:
+        draft: true
+        tag_name: ${{ github.event.release.tag_name }}
+        repository: onyx-hq/onyx-public-releases
+        files: |
+          onyx-*
+      env:
+        GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
