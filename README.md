@@ -16,6 +16,7 @@
 - [Basic commands](#basic-commands)
 - [The data directory](#the-data-directory)
 - [Agent definition (`agent.yml` configuration)](#agent-definition-agentyml-configuration)
+- [Local LLM](#local-llm)
 - [Contributing](#contributing)
   - [Language dependencies](#language-dependencies)
   - [Build](#build)
@@ -49,7 +50,7 @@ To install `onyx` from a binary, you can use the following commands:
 
 ```sh
 # Download the binary
-curl -LO https://raw.githubusercontent.com/onyx-hq/onyx-core/refs/heads/main/install_onyx.sh | sh install_onyx.sh
+curl -LO https://raw.githubusercontent.com/onyx-hq/onyx-core/refs/heads/main/install_onyx.sh | bash install_onyx.sh
 ```
 
 ## Quickstart from source
