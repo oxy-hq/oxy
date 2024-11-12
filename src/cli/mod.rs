@@ -141,7 +141,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
         }
         Some(SubCommand::Execute(execute_args)) => {
             match run_workflow(&execute_args.workflow_name).await {
-                Ok(_) => println!("\n\x1b[1;32mWorkflow executed successfully\x1b[0m"),
+                Ok(_) => println!("\n✅ \x1B[0mWorkflow executed successfully\x1B[0m"),
                 Err(e) => eprintln!("\x1b[1;31mError executing workflow: \x1b[0m\n{}", e),
             };
         }

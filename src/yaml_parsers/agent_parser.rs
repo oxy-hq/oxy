@@ -32,7 +32,7 @@ fn default_retrieval_tool_description() -> String {
 
 #[derive(Serialize, Deserialize, Default, Clone, Debug)]
 #[serde(rename_all = "snake_case")]
-pub enum OutputType {
+pub enum OutputFormat {
     #[default]
     Default,
     File,
@@ -50,7 +50,7 @@ pub struct AgentConfig {
     #[serde(default = "default_tools")]
     pub tools: Option<Vec<ToolConfig>>,
     #[serde(default)]
-    pub output_type: OutputType,
+    pub output_format: OutputFormat,
 }
 
 pub fn parse_agent_config(file_path: &str) -> anyhow::Result<AgentConfig> {

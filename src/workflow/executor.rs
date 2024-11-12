@@ -98,11 +98,15 @@ impl WorkflowExecutor {
     }
 
     pub async fn execute(&self, workflow: &Workflow) -> anyhow::Result<String> {
-        println!("\n\x1b[1;32mRunning workflow: {}\x1b[0m", workflow.name);
+        println!("\n⏳Running workflow: {}", workflow.name);
         let mut step_output: Option<String> = None;
         let mut results = HashMap::<String, String>::default();
-        for step in &workflow.steps {
-            println!("\n\x1b[1;32mStarting {}\x1b[0m", step.name);
+        for (i, step) in workflow.steps.iter().enumerate() {
+            if i == 0 {
+                println!("⏳Starting {}", step.name);
+            } else {
+                println!("\n⏳Starting {}", step.name);
+            }
             let template_context = Value::from(results.clone());
             match &step.step_type {
                 StepType::Agent(agent_step) => {
