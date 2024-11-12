@@ -20,10 +20,11 @@ Once you have your terminal set up, copy and paste the commands below:
     ```sh
       curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/onyx-hq/onyx-public-releases/refs/heads/main/install_onyx.sh | bash
     ```
-    <Tip>
-      You can always read the [source code of this script](https://github.com/onyx-hq/onyx-public-releases/blob/main/install_onyx.sh) to verify that it does no harm to your computer.
-    </Tip>
-    <Accordion title="(Optional) Verify installation">
+    Upon successful installation, you should see the message "Onyx has been installed successfully."
+    <Info>
+      For transparency, you can review the [installation script's source code](https://github.com/onyx-hq/onyx-public-releases/blob/main/install_onyx.sh).
+    </Info>
+    <Accordion title="Verify Your Installation (Optional)">
 
       After the installation is complete, you may verify that it was successful by running:
       ```sh
@@ -35,6 +36,7 @@ Once you have your terminal set up, copy and paste the commands below:
       # should output something
       ```
     </Accordion>
+
   </Step>
   <Step title="Create a sample repository">
     In order to configure agents and other query settings, you need to create a sample repository. You can do this by running:
@@ -42,15 +44,62 @@ Once you have your terminal set up, copy and paste the commands below:
     git clone https://github.com/onyx-hq/onyx-sample-repo.git
     cd onyx-sample-repo
     ```
-    From here, you can take a look at some agents that are already configured in the agents folder. You can also add your own agents, models, and warehouses to the `config.yml` file.
+    Start by exploring the pre-configured agents in the `agents` folder. When you're ready, customize `config.yml` to add your own agents, models, and warehouses.
   </Step>
   <Step title="Configure onyx">
-    Warehouses and models are configured at `~/.config/onyx/config.yml`. You can open this file in your favorite text editor and modify it to your liking.
-    ```sh
-    open ~/.config/onyx/config.yml
+    The main configuration file is located at `~/.config/onyx/config.yml`.
+    You can access it by:
+    - running `open ~/.config/onyx/config.yml` in your terminal
+    - or directly in your file browser (Finder on macOS, File Explorer on Windows)
+      <Tip>
+        To show hidden files and directories:
+
+        - Mac: Open Finder and press `Cmd + Shift + .`
+        - Windows: Open File Explorer from the taskbar, select **View > Show > Hidden items**
+      </Tip>
+      <img class="rounded-md" src="/images/config-screenshot.jpeg" alt="config" />
+
+    The `config.yml` file will look like this:
+    ```yaml config.yml
+    warehouses:
+    - name: primary_warehouse
+      type: bigquery
+      key_path: /path/to/key #replace
+      dataset: dbt_prod_core
+    - name: local
+      type: duckdb
+      key_path: None
+      dataset: /path/to/files/ #replace
+
+    models:
+      - name: openai-4o
+        vendor: openai
+        model_ref: gpt-4o
+        key_var: OPENAI_API_KEY
+      - name: openai-4o-mini
+        vendor: openai
+        model_ref: gpt-4o-mini
+        key_var: OPENAI_API_KEY
+      - name: llama3.2
+        vendor: ollama
+        model_ref: llama3.2:latest
+        api_url: http://localhost:11434/v1
+        api_key: secret
+
+    retrievals:
+      - name: default
+        embed_model: "bge-small-en-v1.5"
+        rerank_model: "jina-reranker-v2-base-multiligual"
+        top_k: 10
+        factor: 5
+
+    defaults:
+      agent: default
+      project_path: /path/to/project #replace
     ```
+
     You need to replace `/path/to/key` or `/path/to/warehouse` with the actual path to your BigQuery service key or the path to the directory where you want to store your data.
-    Here is an example of a working `config.yml` file:
+    Here is a working example with actual paths:
     ```yaml config.yml
     warehouses:
       - name: bigquery
