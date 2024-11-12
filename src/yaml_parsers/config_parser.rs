@@ -20,6 +20,18 @@ pub struct Defaults {
     pub project_path: PathBuf,
 }
 
+impl Defaults {
+    pub fn expand_project_path(&mut self) {
+        if let Some(str_path) = self.project_path.to_str() {
+            if str_path.starts_with("~") {
+                if let Some(home) = home_dir() {
+                    self.project_path = home.join(str_path.trim_start_matches("~"));
+                }
+            }
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Warehouse {
     pub name: String,
@@ -66,7 +78,8 @@ pub fn get_config_path() -> PathBuf {
 
 pub fn parse_config(config_path: &PathBuf) -> anyhow::Result<Config> {
     let config_str = fs::read_to_string(config_path)?;
-    let config: Config = serde_yaml::from_str(&config_str)?;
+    let mut config: Config = serde_yaml::from_str(&config_str)?;
+    config.defaults.expand_project_path();
     Ok(config)
 }
 
