@@ -50,7 +50,7 @@ To install `onyx` from a binary, you can use the following commands:
 
 ```sh
 # Download the binary
-curl -LO https://raw.githubusercontent.com/onyx-hq/onyx-public-releases/refs/heads/main/install_onyx.sh | bash install_onyx.sh
+curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/onyx-hq/onyx-public-releases/refs/heads/main/install_onyx.sh | bash
 ```
 
 ## Quickstart from source
