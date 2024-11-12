@@ -1,7 +1,7 @@
 #!/bin/bash
 
 REPO="onyx-hq/onyx-public-releases"
-INSTALL_DIR="/usr/local/bin"
+INSTALL_DIR="$HOME/.local/bin"
 CONFIG_DIR="$HOME/.config/onyx"
 CONFIG_FILE="config.yml"
 
@@ -42,7 +42,7 @@ curl -L $BINARY_URL -o onyx
 chmod +x onyx
 
 # Move the binary to the install directory
-sudo mv onyx $INSTALL_DIR/onyx
+mv onyx $INSTALL_DIR/onyx
 
 # Create the config directory if it doesn't exist
 mkdir -p "$CONFIG_DIR"
