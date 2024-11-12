@@ -99,7 +99,7 @@ impl Connector {
         Ok(file_path)
     }
 
-    async fn run_query_and_load(&self, query: &str) -> anyhow::Result<Vec<RecordBatch>> {
+    pub async fn run_query_and_load(&self, query: &str) -> anyhow::Result<Vec<RecordBatch>> {
         let file_path = self.run_query(query).await?;
         load_result(&file_path)
     }

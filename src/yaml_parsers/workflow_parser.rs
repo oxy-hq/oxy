@@ -3,16 +3,37 @@ use std::fs;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct Step {
-    pub name: String,
+pub struct AgentStep {
     pub prompt: String,
     pub agent_ref: String,
     #[serde(default = "default_retry")]
     pub retry: usize,
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ExecuteSQLStep {
+    pub warehouse: String,
+    pub sql_file: String,
+}
+
 fn default_retry() -> usize {
     1
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(tag = "type")]
+pub enum StepType {
+    #[serde(rename = "agent")]
+    Agent(AgentStep),
+    #[serde(rename = "execute_sql")]
+    ExecuteSQL(ExecuteSQLStep),
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Step {
+    pub name: String,
+    #[serde(flatten)]
+    pub step_type: StepType,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
