@@ -1,6 +1,6 @@
 #!/bin/bash
 
-REPO="onyx-hq/onyx-core"
+REPO="onyx-hq/onyx-public-releases"
 INSTALL_DIR="/usr/local/bin"
 CONFIG_DIR="$HOME/.config/onyx"
 CONFIG_FILE="config.yml"
@@ -14,24 +14,24 @@ ARCH=$(uname -m)
 
 # Map architecture to target
 case $ARCH in
-    x86_64)
-        if [ "$OS" == "darwin" ]; then
-            TARGET="x86_64-apple-darwin"
-        else
-            TARGET="x86_64-unknown-linux-gnu"
-        fi
-        ;;
-    aarch64)
-        if [ "$OS" == "darwin" ]; then
-            TARGET="aarch64-apple-darwin"
-        else
-            TARGET="aarch64-unknown-linux-gnu"
-        fi
-        ;;
-    *)
-        echo "Unsupported architecture: $ARCH"
-        exit 1
-        ;;
+x86_64)
+	if [ "$OS" == "darwin" ]; then
+		TARGET="x86_64-apple-darwin"
+	else
+		TARGET="x86_64-unknown-linux-gnu"
+	fi
+	;;
+aarch64 | arm64)
+	if [ "$OS" == "darwin" ]; then
+		TARGET="aarch64-apple-darwin"
+	else
+		TARGET="aarch64-unknown-linux-gnu"
+	fi
+	;;
+*)
+	echo "Unsupported architecture: $ARCH"
+	exit 1
+	;;
 esac
 
 # Download the release binary
