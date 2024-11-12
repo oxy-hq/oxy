@@ -25,7 +25,7 @@ Specifically, in our agent `yml` files, you need to specify the following:
 | retrieval           | Retrieval method to use (defined in [config.yml](/learn-about-onyx/config), referenced by `name`) | optional |
 | retrieval_type      | Retrieval type (currently only `all-shot` is available)                                           | optional |
 | system_instructions | System instructions passed to the LLM                                                             | required |
-| output_type         | This can be either `file` or                                                                      | required |
+| output_format       | This can be either `file` or `default`                                                            | required |
 | tools               | Tools to use, see the Tools section below                                                         | required |
 
 ### Context variables
@@ -83,7 +83,7 @@ system_instructions: |
   {% endfor %}
   ```
 
-output_type: file
+output_format: file
 tools:
   - name: retrieval
     type: retrieval

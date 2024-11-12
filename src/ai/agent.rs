@@ -1,4 +1,4 @@
-use crate::{connector::load_result, yaml_parsers::agent_parser::OutputType};
+use crate::{connector::load_result, yaml_parsers::agent_parser::OutputFormat};
 
 use super::{toolbox::ToolBox, tools::Tool};
 use arrow::util::pretty::pretty_format_batches;
@@ -30,7 +30,7 @@ pub struct OpenAIAgent<T> {
     model: String,
     system_instruction: String,
     max_tries: u8,
-    output_type: OutputType,
+    output_format: OutputFormat,
 }
 
 impl<T> OpenAIAgent<T> {
@@ -40,7 +40,7 @@ impl<T> OpenAIAgent<T> {
         api_key: String,
         tools: ToolBox<T>,
         system_instruction: String,
-        output_type: OutputType,
+        output_format: OutputFormat,
     ) -> Self {
         let client_config = OpenAIConfig::new()
             .with_api_key(api_key)
@@ -54,7 +54,7 @@ impl<T> OpenAIAgent<T> {
             model,
             max_tries,
             system_instruction,
-            output_type,
+            output_format,
         }
     }
 
@@ -143,9 +143,9 @@ where
             tool_returns.clear();
             tool_calls.clear();
             log::debug!("Start completion request {:?}", message_with_replies);
-            let response_format = match self.output_type {
-                OutputType::Default => None,
-                OutputType::File => {
+            let response_format = match self.output_format {
+                OutputFormat::Default => None,
+                OutputFormat::File => {
                     let schema = json!(schema_for!(FilePathOutput));
                     log::info!("Schema: {}", schema);
                     Some(ResponseFormat::JsonSchema {
@@ -200,9 +200,9 @@ where
 
             tries += 1;
         }
-        println!("\n\x1b[1;32mInterpretation:\x1b[0m");
+        println!("\n\x1b[1;32mOutput:\x1b[0m");
         println!("{}", output);
-        let parsed_output = map_output(&output, &self.output_type).await?;
+        let parsed_output = map_output(&output, &self.output_format).await?;
         return Ok(parsed_output);
     }
 }
@@ -213,16 +213,16 @@ pub struct FilePathOutput {
     pub file_path: String,
 }
 
-async fn map_output(output: &str, output_type: &OutputType) -> anyhow::Result<String> {
-    match output_type {
-        OutputType::Default => Ok(output.to_string()),
-        OutputType::File => {
+async fn map_output(output: &str, output_format: &OutputFormat) -> anyhow::Result<String> {
+    match output_format {
+        OutputFormat::Default => Ok(output.to_string()),
+        OutputFormat::File => {
             log::info!("File path: {}", output);
             let file_output = serde_json::from_str::<FilePathOutput>(output)?;
             let dataset = load_result(&file_output.file_path)?;
             let batches_display = pretty_format_batches(&dataset)?;
-            println!("\n\x1b[1;32mResults:\x1b[0m");
-            println!("{}", batches_display);
+            // println!("\n\x1b[1;32mResults:\x1b[0m");
+            println!("\n{}", batches_display);
             Ok(batches_display.to_string())
         }
     }

@@ -58,7 +58,7 @@ pub async fn from_config(
                 api_key,
                 tools,
                 system_instructions,
-                agent_config.output_type.clone(),
+                agent_config.output_format.clone(),
             ))
         }
         Model::Ollama {
@@ -72,7 +72,7 @@ pub async fn from_config(
             api_key,
             tools,
             system_instructions,
-            agent_config.output_type.clone(),
+            agent_config.output_format.clone(),
         )),
     }
 }

@@ -28,7 +28,7 @@ system_instructions: |
   {{ query }}
   {% endfor %}
   ```
-output_type: file
+output_format: file
 tools:
   - name: retrieval
     type: retrieval
