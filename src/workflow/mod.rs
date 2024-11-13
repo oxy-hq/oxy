@@ -9,7 +9,7 @@ pub async fn run_workflow(workflow_name: &str) -> anyhow::Result<String> {
     let config = parse_config(&config_path)?;
     let workflow = config.load_workflow(workflow_name)?;
     let mut executor = WorkflowExecutor::default();
-    executor.load_agents(&config).await?;
+    executor.init(&config).await?;
     let response = executor.execute(&workflow).await?;
     Ok(response)
 }
