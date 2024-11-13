@@ -8,6 +8,7 @@ use backon::Retryable;
 use minijinja::{Environment, Value};
 
 use crate::connector::Connector;
+use crate::theme::*;
 use crate::utils::print_colored_sql;
 use crate::yaml_parsers::config_parser::Warehouse;
 use crate::yaml_parsers::workflow_parser::AgentStep;
@@ -111,14 +112,14 @@ impl WorkflowExecutor {
     }
 
     pub async fn execute(&self, workflow: &Workflow) -> anyhow::Result<String> {
-        println!("\n⏳Running workflow: {}", workflow.name);
+        println!("\n⏳Running workflow: {}", workflow.name.text());
         let mut step_output: Option<String> = None;
         let mut results = HashMap::<String, String>::default();
         for (i, step) in workflow.steps.iter().enumerate() {
             if i == 0 {
-                println!("⏳Starting {}", step.name);
+                println!("⏳Starting {}", step.name.text());
             } else {
-                println!("\n⏳Starting {}", step.name);
+                println!("\n⏳Starting {}", step.name.text());
             }
             let template_context = Value::from(results.clone());
             match &step.step_type {

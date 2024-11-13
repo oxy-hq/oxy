@@ -6,13 +6,14 @@ use fastembed::{EmbeddingModel, RerankerModel};
 use crate::{
     utils::collect_files_recursively,
     yaml_parsers::{self, config_parser::Config},
+    StyledText,
 };
 
 pub mod embedding;
 
 fn get_documents_from_files(data_path: &str) -> anyhow::Result<Vec<Document>> {
     let files = collect_files_recursively(data_path, data_path)?;
-    println!("Found: {:?}", files);
+    println!("{}", format!("Found: {:?}", files).text());
     let documents = files
         .iter()
         .map(|file| (file, std::fs::read_to_string(file)))
@@ -33,7 +34,10 @@ pub async fn build_embeddings(config: &Config, data_path: &str) -> anyhow::Resul
         .filter(|path| path.is_dir())
         .collect::<Vec<PathBuf>>();
     for agent_dir in agent_dirs {
-        println!("Building embeddings for agent: {:?}", agent_dir);
+        println!(
+            "{}",
+            format!("Building embeddings for agent: {:?}", agent_dir).text()
+        );
         let agent_name = agent_dir.file_name().unwrap().to_str().unwrap();
         let agent = config.load_config(Some(agent_name))?;
         let retrieval = config.find_retrieval(agent.retrieval.as_ref().unwrap())?;

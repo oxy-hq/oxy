@@ -1,11 +1,9 @@
 mod init;
 mod search;
-mod theme;
 
 use clap::CommandFactory;
 use clap::Parser;
 use std::error::Error;
-use theme::*;
 use tower_http::services::ServeFile;
 
 use init::init;
@@ -14,6 +12,7 @@ use search::search_files;
 use crate::ai::setup_agent;
 use crate::api::server;
 use crate::connector::Connector;
+use crate::theme::*;
 use crate::workflow::run_workflow;
 use crate::yaml_parsers::config_parser::get_config_path;
 use crate::yaml_parsers::config_parser::parse_config;
@@ -84,8 +83,8 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
 
     match args.command {
         Some(SubCommand::Init) => match init() {
-            Ok(_) => println!("Initialization complete"),
-            Err(e) => eprintln!("Initialization failed: {}", e),
+            Ok(_) => println!("{}", "Initialization complete".success()),
+            Err(e) => eprintln!("{}", format!("Initialization failed: {}", e).error()),
         },
         Some(SubCommand::ListTables) => {
             let config_path = get_config_path();
@@ -93,7 +92,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             for warehouse in &config.warehouses {
                 let tables = Connector::new(warehouse).get_schemas().await;
                 for table in tables {
-                    println!("{}", table);
+                    println!("{}", table.text());
                 }
             }
         }
@@ -102,7 +101,9 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             let config = parse_config(&config_path)?;
             for warehouse in &config.warehouses {
                 let datasets = Connector::new(warehouse).list_datasets().await;
-                print!("{:?}", datasets);
+                for dataset in datasets {
+                    println!("{}", dataset.text());
+                }
             }
         }
         Some(SubCommand::Search) => {
@@ -111,7 +112,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                 Some(content) => {
                     agent.request(&content).await?;
                 }
-                None => println!("No files found or selected."),
+                None => eprintln!("{}", "No files found or selected.".error()),
             }
         }
         Some(SubCommand::Ask(ask_args)) => {
@@ -141,23 +142,27 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
         }
         Some(SubCommand::Execute(execute_args)) => {
             match run_workflow(&execute_args.workflow_name).await {
-                Ok(_) => println!("\n✅ \x1B[0mWorkflow executed successfully\x1B[0m"),
-                Err(e) => eprintln!("\x1b[1;31mError executing workflow: \x1b[0m\n{}", e),
+                Ok(_) => println!("{}", "\n✅Workflow executed successfully".success()),
+                Err(e) => eprintln!("{}", format!("Error executing workflow: \n{}", e).error()),
             };
         }
         Some(SubCommand::Validate) => {
             let config_path = get_config_path();
             let result = parse_config(&config_path);
             if result.is_err() {
-                eprintln!("Error: {:?}", result.err().unwrap());
+                eprintln!("{}", format!("Error: {:?}", result.err().unwrap()).error());
             } else {
-                println!("Config file is valid");
+                println!("{}", "Config file is valid".success());
             }
         }
         Some(SubCommand::Serve) => {
             let server_task = tokio::spawn(async move {
                 let addr = SocketAddr::from(([127, 0, 0, 1], 3001));
-                println!("Axum server running at http://{}", addr);
+                println!(
+                    "{} {}",
+                    "Axum server running at".text(),
+                    format!("http://{}", addr).secondary()
+                );
                 server::serve(&addr).await;
             });
 
@@ -169,7 +174,11 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                     .fallback_service(serve_dir);
 
                 let web_addr = SocketAddr::from(([127, 0, 0, 1], 3000));
-                println!("Axum web server running at http://{}", web_addr);
+                println!(
+                    "{} {}",
+                    "Axum web server running at".text(),
+                    format!("http://{}", web_addr).secondary()
+                );
                 let listener = tokio::net::TcpListener::bind(web_addr).await.unwrap();
                 axum::serve(listener, web_app).await.unwrap();
             });
@@ -182,7 +191,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             println!("{}", "analysis".primary());
             println!("{}", "success".success());
             println!("{}", "warning".warning());
-            println!("{}", "error".error());
+            eprintln!("{}", "error".error());
             println!(
                 "{}",
                 "https://github.com/onyx-hq/onyx-sample-repo/".secondary()

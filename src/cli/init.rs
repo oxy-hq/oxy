@@ -1,3 +1,4 @@
+use crate::theme::*;
 use crate::yaml_parsers::config_parser::get_config_path;
 use std::error::Error;
 use std::io::{self, Write};
@@ -14,7 +15,7 @@ pub fn init() -> Result<(), Box<dyn Error>> {
         let mut input = String::new();
         io::stdin().read_line(&mut input)?;
         if input.trim().to_lowercase() == "y" {
-            println!("Using existing dbt-profiles.yml");
+            println!("{}", "Using existing dbt-profiles.yml".text());
             return Ok(());
         }
     }
@@ -23,8 +24,12 @@ pub fn init() -> Result<(), Box<dyn Error>> {
 
     if config_path.exists() {
         println!(
-            "config.yml found in {}. Only initializing current directory.",
-            config_path.display()
+            "{}",
+            format!(
+                "config.yml found in {}. Only initializing current directory.",
+                config_path.display().to_string().secondary()
+            )
+            .text()
         );
         return Ok(());
     } else {
@@ -70,11 +75,18 @@ defaults:
             env::current_dir()?.display()
         );
         fs::write(&config_path, config_content)?;
-        println!("Created config.yml in {}", config_path.display());
+        println!(
+            "{}",
+            format!(
+                "Created config.yml in {}",
+                config_path.display().to_string().secondary()
+            )
+            .text()
+        );
     }
 
     // Step 3: Use cargo-generate for project scaffolding
-    println!("Creating project scaffolding...");
+    println!("{}", "Creating project scaffolding...".text());
     let output = Command::new("cargo")
         .args([
             "generate",
@@ -86,10 +98,13 @@ defaults:
         .output()?;
 
     if output.status.success() {
-        println!("Project scaffolding created successfully");
+        println!("{}", "Project scaffolding created successfully".success());
     } else {
         let error = String::from_utf8_lossy(&output.stderr);
-        println!("Failed to create project scaffolding: {}", error);
+        println!(
+            "{}",
+            format!("Failed to create project scaffolding: {}", error).error()
+        );
     }
 
     Ok(())
