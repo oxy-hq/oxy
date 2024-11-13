@@ -86,16 +86,15 @@ jobs:
         mv web-app/dist ./
     - name: Install required dependencies
       shell: bash
-          # protobuf is required by lance https://github.com/lancedb/lance/issues/3073
-          # mold is required for faster builds on linux
       run: |
         if [[ "${{ matrix.job.os }}" =~ "ubuntu" ]]; then
           sudo apt-get update
-          sudo apt-get install -y pkg-config libssl-dev protobuf-compiler mold
-        elif [[ "${{ matrix.job.os }}" =~ "macos" ]]; then
-          brew install protobuf
-        fi
-        echo "Protoc version: $(protoc --version)"
+          sudo apt-get install -y pkg-config libssl-dev
+    # protobuf is required by lance https://github.com/lancedb/lance/issues/3073
+    - name: Install Protoc
+      uses: arduino/setup-protoc@v3
+    - uses: rui314/setup-mold@v1
+      if: matrix.job.os == 'ubuntu-latest'
     - name: Cargo build
       env:
         MACOSX_DEPLOYMENT_TARGET: 14.0
