@@ -1,9 +1,10 @@
 use crate::db::client::establish_connection;
-use axum::{extract, Json};
+use crate::db::conversations::get_conversation_by_agent;
+use crate::db::message::get_messages_by_conversation;
+use axum::extract::Path;
+use axum::Json;
 use entity::prelude::*;
-use sea_orm::ActiveModelTrait;
-use sea_orm::ActiveValue;
-use sea_orm::EntityTrait;
+use sea_orm::{prelude::DateTimeWithTimeZone, EntityTrait};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -24,7 +25,7 @@ pub struct ListConversationRequest {}
 pub async fn list() -> Json<ListConversationResponse> {
     let connection = establish_connection().await;
     let results = Conversations::find().all(&connection).await.unwrap();
-    let mut items = Vec::new();
+    let mut items: Vec<ConversationItem> = Vec::new();
     for result in results {
         items.push(ConversationItem {
             title: result.title,
@@ -37,35 +38,40 @@ pub async fn list() -> Json<ListConversationResponse> {
     Json(data)
 }
 
-#[derive(Deserialize)]
-pub struct CreateConversationRequest {
-    pub title: String,
+#[derive(Serialize)]
+pub struct MessageItem {
+    content: String,
+    id: Uuid,
+    is_human: bool,
+    created_at: DateTimeWithTimeZone,
 }
 
 #[derive(Serialize)]
-pub struct CreateConversationResponse {
-    pub title: String,
-    pub id: Uuid,
+pub struct GetConversationResponse {
+    title: String,
+    id: Uuid,
+    messages: Vec<MessageItem>,
+    agent: String,
 }
 
-pub async fn create(
-    extract::Json(payload): extract::Json<CreateConversationRequest>,
-) -> Json<CreateConversationResponse> {
-    let connection = establish_connection().await;
-    let new_conversation = entity::conversations::ActiveModel {
-        id: ActiveValue::Set(Uuid::new_v4()),
-        title: ActiveValue::Set(payload.title.clone()),
-        created_at: ActiveValue::not_set(),
-        updated_at: ActiveValue::not_set(),
-        deleted_at: ActiveValue::not_set(),
-    };
-    let inserted = new_conversation
-        .insert(&connection)
+pub async fn get(Path(agent): Path<String>) -> Json<GetConversationResponse> {
+    let conversation = get_conversation_by_agent(agent.as_str()).await.unwrap();
+    let msgs = get_messages_by_conversation(conversation.id)
         .await
-        .expect("Error saving new conversation");
-    let data = CreateConversationResponse {
-        title: inserted.title,
-        id: inserted.id,
+        .expect("Failed to get messages");
+    let res = GetConversationResponse {
+        title: conversation.title,
+        id: conversation.id,
+        messages: msgs
+            .iter()
+            .map(|m| MessageItem {
+                content: m.content.clone(),
+                id: m.id,
+                is_human: m.is_human,
+                created_at: m.created_at.clone(),
+            })
+            .collect(),
+        agent: conversation.agent,
     };
-    Json(data)
+    Json(res)
 }

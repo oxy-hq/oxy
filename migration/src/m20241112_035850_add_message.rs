@@ -9,19 +9,21 @@ impl MigrationTrait for Migration {
         manager
             .create_table(
                 Table::create()
-                    .table(Conversations::Table)
+                    .table(Messages::Table)
                     .if_not_exists()
-                    .col(uuid(Conversations::Id).primary_key())
-                    .col(string(Conversations::Title))
+                    .col(uuid(Messages::Id).primary_key())
+                    .col(uuid(Messages::ConversationId))
+                    .foreign_key(
+                        ForeignKeyCreateStatement::new()
+                            .from_col(Messages::ConversationId)
+                            .to(Conversations::Table, Conversations::Id),
+                    )
+                    .col(string(Messages::Content))
+                    .col(boolean(Messages::IsHuman))
                     .col(
-                        timestamp_with_time_zone(Conversations::CreatedAt)
+                        timestamp_with_time_zone(Messages::CreatedAt)
                             .extra("DEFAULT CURRENT_TIMESTAMP".to_string()),
                     )
-                    .col(
-                        timestamp_with_time_zone(Conversations::UpdatedAt)
-                            .extra("DEFAULT CURRENT_TIMESTAMP".to_string()),
-                    )
-                    .col(timestamp_with_time_zone_null(Conversations::DeletedAt).null())
                     .to_owned(),
             )
             .await
@@ -29,7 +31,7 @@ impl MigrationTrait for Migration {
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         manager
-            .drop_table(Table::drop().table(Conversations::Table).to_owned())
+            .drop_table(Table::drop().table(Messages::Table).to_owned())
             .await
     }
 }
@@ -38,8 +40,14 @@ impl MigrationTrait for Migration {
 enum Conversations {
     Table,
     Id,
-    Title,
+}
+
+#[derive(DeriveIden)]
+enum Messages {
+    Table,
+    Id,
+    ConversationId,
+    Content,
+    IsHuman,
     CreatedAt,
-    UpdatedAt,
-    DeletedAt,
 }

@@ -7,13 +7,23 @@ use sea_orm::entity::prelude::*;
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
-    pub created_at: Option<DateTimeWithTimeZone>,
-    pub updated_at: Option<DateTimeWithTimeZone>,
-    pub deleted_at: Option<DateTimeWithTimeZone>,
     pub title: String,
+    pub created_at: DateTimeWithTimeZone,
+    pub updated_at: DateTimeWithTimeZone,
+    pub deleted_at: Option<DateTimeWithTimeZone>,
+    pub agent: String,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+pub enum Relation {
+    #[sea_orm(has_many = "super::messages::Entity")]
+    Messages,
+}
+
+impl Related<super::messages::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Messages.def()
+    }
+}
 
 impl ActiveModelBehavior for ActiveModel {}
