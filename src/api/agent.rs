@@ -1,3 +1,4 @@
+use chrono::prelude::{DateTime, Utc};
 use std::{fs, path::PathBuf};
 
 use crate::{
@@ -107,6 +108,7 @@ struct Message {
 #[derive(Serialize)]
 pub struct AgentItem {
     name: String,
+    updated_at: DateTime<Utc>,
 }
 
 #[derive(Serialize)]
@@ -128,7 +130,10 @@ pub async fn list() -> Json<ListAgentResponse> {
                 let file_name: &std::ffi::OsStr = p.file_name().unwrap();
                 if file_name.to_string_lossy().ends_with(".yml") {
                     let agent_name = p.file_stem().unwrap().to_string_lossy().to_string();
-                    agents.push(AgentItem { name: agent_name });
+                    agents.push(AgentItem {
+                        name: agent_name,
+                        updated_at: p.metadata().unwrap().modified().unwrap().into(),
+                    });
                 }
             }
             Err(e) => {
@@ -138,5 +143,6 @@ pub async fn list() -> Json<ListAgentResponse> {
         }
     }
 
+    agents.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
     Json(ListAgentResponse { agents: agents })
 }
