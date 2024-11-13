@@ -34,6 +34,7 @@ export default tseslint.config(
         { allowConstantExport: true },
       ],
       ...sonarjs.configs.recommended.rules,
+      'sonarjs/mouse-events-a11y': 'off',
     },
     settings: {
       react: {
