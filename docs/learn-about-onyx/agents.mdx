@@ -20,10 +20,8 @@ Specifically, in our agent `yml` files, you need to specify the following:
 | Component           | Description                                                                                       | Type     |
 | ------------------- | ------------------------------------------------------------------------------------------------- | -------- |
 | model               | LLM model to use (defined in [config.yml](/learn-about-onyx/config), referenced by `name`)        | required |
-| data                | `./data` sub-directories accessible to the agent (see [data](/learn-about-onyx/data))             | optional |
-| warehouse           | Warehouse to use (defined in [config.yml](/learn-about-onyx/config), referenced by `name`)        | optional |
-| retrieval           | Retrieval method to use (defined in [config.yml](/learn-about-onyx/config), referenced by `name`) | optional |
-| retrieval_type      | Retrieval type (currently only `all-shot` is available)                                           | optional |
+| data                | `./data` sub-directories accessible to the agent (see [data](/learn-about-onyx/data))             | required |
+| warehouse           | Warehouse to use (defined in [config.yml](/learn-about-onyx/config), referenced by `name`)        | required |
 | system_instructions | System instructions passed to the LLM                                                             | required |
 | output_format       | This can be either `file` or `default`                                                            | required |
 | tools               | Tools to use, see the Tools section below                                                         | required |
@@ -51,9 +49,7 @@ To enable the LLM to flexibly accomplish a wider range of tasks, our internal ch
 ### Sample config
 
 ````yaml agents/default.yml
-name: default
 model: "openai-4o-mini"
-retrieval: "default"
 system_instructions: |
   ## Instructions
   You are an Data Analyst expert. Your task is to help the user generate and execute sql query to answer user's question.
