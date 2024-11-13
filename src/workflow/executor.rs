@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::fs;
+use std::path::PathBuf;
 
 use arrow::util::pretty::pretty_format_batches;
 use backon::ExponentialBuilder;
@@ -22,10 +23,11 @@ use crate::{
 pub struct WorkflowExecutor {
     agents: HashMap<String, Box<dyn LLMAgent + Send + Sync>>,
     warehouses: HashMap<String, Warehouse>,
+    data_path: PathBuf,
 }
 
 impl WorkflowExecutor {
-    pub async fn load_agents(&mut self, config: &Config) -> anyhow::Result<()> {
+    pub async fn init(&mut self, config: &Config) -> anyhow::Result<()> {
         let agent_names = list_file_stems(
             config
                 .defaults
@@ -43,6 +45,7 @@ impl WorkflowExecutor {
             self.warehouses
                 .insert(warehouse.name.clone(), warehouse.clone());
         }
+        self.data_path = config.defaults.project_path.join("data");
         Ok(())
     }
 
@@ -80,7 +83,17 @@ impl WorkflowExecutor {
         let wh_config = self.warehouses.get(&execute_sql_step.warehouse);
         match wh_config {
             Some(wh) => {
-                let query = fs::read_to_string(&execute_sql_step.sql_file)?;
+                let query_file = self.data_path.join(&execute_sql_step.sql_file);
+                let query = match fs::read_to_string(&query_file) {
+                    Ok(query) => query,
+                    Err(e) => {
+                        return Err(anyhow::anyhow!(
+                            "Error reading query file {}: {}",
+                            &query_file.display(),
+                            e
+                        ));
+                    }
+                };
                 print_colored_sql(&query);
                 let results = Connector::new(wh).run_query_and_load(&query).await?;
                 let batches_display = pretty_format_batches(&results)?;

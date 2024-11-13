@@ -3,7 +3,7 @@ steps:
   - name: weekly_metrics
     type: execute_sql
     warehouse: primary_warehouse
-    sql_file: data/default/example.sql
+    sql_file: default/example.sql
   - name: monthly_report
     type: agent
     prompt: |
