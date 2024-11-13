@@ -46,7 +46,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing = "0.1"
 dotenvy = "0.15"
 uuid = {version = "1.11.0", features = ["v4", "serde"]}
-axum-streams = "0.19.0"
+axum-streams = {version = "0.19.0", features=["json", "csv", "protobuf", "text"]}
 anyhow = "1.0.89"
 thiserror = "1.0.64"
 lancedb = { version = "0.11.0", features = ["sentence-transformers"] }
@@ -66,3 +66,4 @@ terminal-light = "1.7.0"
 lazy_static = "1.4.0"
 backon = "1.2.0"
 tokio-stream = "0.1.16"
+async-stream = "0.3.6"

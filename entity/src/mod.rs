@@ -3,3 +3,4 @@
 pub mod prelude;
 
 pub mod conversations;
+pub mod messages;

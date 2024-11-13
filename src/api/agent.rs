@@ -2,16 +2,19 @@ use std::{fs, path::PathBuf};
 
 use crate::{
     ai::{self, agent::LLMAgent},
+    db::{
+        conversations::{create_conversation, get_conversation_by_agent},
+        message::save_message,
+    },
     yaml_parsers::config_parser::{get_config_path, parse_config},
 };
-use axum::{body::Body, response::IntoResponse};
+use async_stream::stream;
+use axum::response::IntoResponse;
 use axum::{extract, Json};
-use futures::StreamExt;
-use reqwest::header;
+use axum_streams::StreamBodyAs;
+use sea_orm::prelude::DateTimeWithTimeZone;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
-use tokio_stream::Stream;
-use tokio_stream::{self as stream};
 use uuid::Uuid;
 #[derive(Serialize)]
 pub struct ConversationItem {
@@ -35,40 +38,70 @@ pub struct AskResponse {
 #[derive(Deserialize)]
 pub struct AskRequest {
     pub question: String,
-    pub agent: Option<String>,
+    pub agent: String,
 }
 
-async fn get_agent(agent_name: Option<String>) -> Box<dyn LLMAgent + Send> {
-    match agent_name {
-        Some(name) => {
-            let (agent, _) = ai::setup_agent(Some(name.as_str())).await.unwrap();
-            agent
-        }
-        None => {
-            let (agent, _) = ai::setup_agent(None).await.unwrap();
-            agent
-        }
-    }
+async fn get_agent(agent_name: &str) -> Box<dyn LLMAgent + Send> {
+    let (agent, _) = ai::setup_agent(Some(agent_name)).await.unwrap();
+    agent
 }
 
 pub async fn ask(extract::Json(payload): extract::Json<AskRequest>) -> impl IntoResponse {
-    let agent = get_agent(payload.agent).await;
-    let result: String = agent.request(&payload.question.clone()).await.unwrap();
-    let s = stream_answer(result);
-    let header = [(header::CONTENT_TYPE, "text/plain; charset=UTF-8")];
-    (header, Body::from_stream(s))
-}
+    let conversation = get_conversation_by_agent(payload.agent.as_str()).await;
+    let conversation_id: Uuid;
+    match conversation {
+        Some(c) => {
+            conversation_id = c.id;
+        }
+        None => {
+            let new_conversation = create_conversation(&payload.agent).await;
+            conversation_id = new_conversation.id;
+        }
+    }
+    let question = save_message(conversation_id, &payload.question, true).await;
+    let s = stream! {
+        yield Message {
+            content: payload.question.clone(),
+            id: question.id,
+            is_human: question.is_human,
+            created_at: question.created_at,
+        };
 
-fn stream_answer(answer: String) -> impl Stream<Item = Result<String, axum::Error>> {
+    let agent = get_agent(&payload.agent).await;
+    let result: String =agent.request(&payload.question).await.unwrap();
+    let answer = save_message(
+        conversation_id,
+        &result,
+        false,
+    ).await;
     let chars = answer
+        .content
         .chars()
         .map(|word| word.to_string())
         .collect::<Vec<_>>();
-    return stream::iter(chars.into_iter().map(|word| async {
+    let msgs = chars.into_iter().map(|word| {
+        let msg = Message {
+            content: word.to_string(),
+            id: answer.id,
+            is_human: answer.is_human,
+            created_at: answer.created_at.clone(),
+        };
+        msg
+    }).collect::<Vec<_>>();
+    for msg in msgs {
         tokio::time::sleep(Duration::from_millis(50)).await;
-        Ok::<_, axum::Error>(word)
-    }))
-    .buffered(4);
+        yield msg;
+    }
+    };
+    return StreamBodyAs::json_nl(s);
+}
+
+#[derive(Serialize)]
+struct Message {
+    content: String,
+    id: Uuid,
+    is_human: bool,
+    created_at: DateTimeWithTimeZone,
 }
 
 #[derive(Serialize)]
