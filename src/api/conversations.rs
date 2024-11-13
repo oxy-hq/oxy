@@ -2,6 +2,7 @@ use crate::db::client::establish_connection;
 use crate::db::conversations::get_conversation_by_agent;
 use crate::db::message::get_messages_by_conversation;
 use axum::extract::Path;
+use axum::http::StatusCode;
 use axum::Json;
 use entity::prelude::*;
 use sea_orm::{prelude::DateTimeWithTimeZone, EntityTrait};
@@ -54,14 +55,19 @@ pub struct GetConversationResponse {
     agent: String,
 }
 
-pub async fn get(Path(agent): Path<String>) -> Json<GetConversationResponse> {
-    let conversation = get_conversation_by_agent(agent.as_str()).await.unwrap();
-    let msgs = get_messages_by_conversation(conversation.id)
+pub async fn get(Path(agent): Path<String>) -> Result<Json<GetConversationResponse>, StatusCode> {
+    let conversation = get_conversation_by_agent(agent.as_str()).await;
+    if conversation.is_none() {
+        // check agent exists
+        return Err(StatusCode::NOT_FOUND);
+    }
+    let c = conversation.unwrap();
+    let msgs = get_messages_by_conversation(c.id)
         .await
         .expect("Failed to get messages");
     let res = GetConversationResponse {
-        title: conversation.title,
-        id: conversation.id,
+        title: c.title,
+        id: c.id,
         messages: msgs
             .iter()
             .map(|m| MessageItem {
@@ -71,7 +77,7 @@ pub async fn get(Path(agent): Path<String>) -> Json<GetConversationResponse> {
                 created_at: m.created_at.clone(),
             })
             .collect(),
-        agent: conversation.agent,
+        agent: c.agent,
     };
-    Json(res)
+    Ok(Json(res))
 }
