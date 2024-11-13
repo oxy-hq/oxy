@@ -25,16 +25,32 @@ of the system. You can think of Onyx's `workflow` paradigm as a domain-specific
 chain-builder for data workflows, where most (if not all) tasks simply pass
 results around between different agents.
 
+
+## Workflow components
+
+Workflows are DAGs comprised of `steps`. Each step has a few common properties:
+
+| Component           | Description                                                                                       | Type     |
+| ------------------- | ------------------------------------------------------------------------------------------------- | -------- |
+| name | Identifier for the step. Output of the step can be referenced as `{{name}}`. | required |
+| type | The tool to use for this step. Options: `execute_sql`, `agent`. | required |
+| sql_file | The sql file within the `data` directory to execute | required for `type: execute_sql`|
+| agent_ref | The agent to use within the `agents` directory, referenced by the agent's `name`. | required for `type: agent`|
+| prompt | The input prompt passed to the agent for this step. | required for `type: agent`|
+
 ## Sample config
 
 ```yaml workflows/monthly_report.yml
-name: monthly_report
-
 steps:
+  - name: raw_sql_calculation
+    type: execute_sql
+    sql_file: month_over_month_overall_performance.sql # A sql file to execute deterministically
   - name: month_over_month_metrics # An identifier for the step. Results can be referenced by jinja-wrapping this name
+    type: agent
     agent_ref: default # The agent .yml file to use for this step
     prompt: Calculate month-over-month performance of views and clicks for the entire ad portfolio. # The prompt given to the agent
   - name: monthly_report
+    type: agent
     agent_ref: local
     prompt: |
       Create a report using the provided data that looks as follows:
