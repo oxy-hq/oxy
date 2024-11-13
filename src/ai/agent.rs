@@ -1,6 +1,7 @@
 use crate::{connector::load_result, yaml_parsers::agent_parser::OutputFormat};
 
 use super::{toolbox::ToolBox, tools::Tool};
+use crate::theme::*;
 use arrow::util::pretty::pretty_format_batches;
 use async_openai::{
     config::{OpenAIConfig, OPENAI_API_BASE},
@@ -200,7 +201,7 @@ where
 
             tries += 1;
         }
-        println!("\n\x1b[1;32mOutput:\x1b[0m");
+        println!("{}", "\nOutput:".primary());
         println!("{}", output);
         let parsed_output = map_output(&output, &self.output_format).await?;
         return Ok(parsed_output);
@@ -221,8 +222,8 @@ async fn map_output(output: &str, output_format: &OutputFormat) -> anyhow::Resul
             let file_output = serde_json::from_str::<FilePathOutput>(output)?;
             let dataset = load_result(&file_output.file_path)?;
             let batches_display = pretty_format_batches(&dataset)?;
-            // println!("\n\x1b[1;32mResults:\x1b[0m");
-            println!("\n{}", batches_display);
+            // println!("{}","\nResults:".primary());
+            println!("\n{}", batches_display.to_string().text());
             Ok(batches_display.to_string())
         }
     }

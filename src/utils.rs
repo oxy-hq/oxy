@@ -1,5 +1,6 @@
 use std::{fs, path::PathBuf};
 
+use crate::theme::*;
 use syntect::{
     easy::HighlightLines,
     highlighting::{Style, ThemeSet},
@@ -50,7 +51,7 @@ pub fn list_file_stems(path: &str) -> anyhow::Result<Vec<String>> {
 }
 
 pub fn print_colored_sql(sql: &str) {
-    println!("\n\x1b[1;32mSQL query:\x1b[0m");
+    println!("{}", "\nSQL query:".primary());
     let ps = SyntaxSet::load_defaults_newlines();
     let ts = ThemeSet::load_defaults();
     let syntax = ps.find_syntax_by_extension("sql").unwrap();
