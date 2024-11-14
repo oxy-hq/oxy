@@ -5546,6 +5546,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tower-http",
+ "tower-serve-static",
  "tracing",
  "tracing-subscriber",
  "uuid",
@@ -6211,7 +6212,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e9552f850d5f0964a4e4d0bf306459ac29323ddfbae05e35a7c0d35cb0803cc5"
 dependencies = [
  "anyhow",
- "itertools 0.10.5",
+ "itertools 0.13.0",
  "proc-macro2",
  "quote",
  "syn 2.0.87",
@@ -8790,6 +8791,27 @@ name = "tower-layer"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "121c2a6cda46980bb0fcd1647ffaf6cd3fc79a013de288782836f6df9c48780e"
+
+[[package]]
+name = "tower-serve-static"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "148022c3d604d85a3b558ef7154aa90aaec5f9506beae64f6ad4e856306d287f"
+dependencies = [
+ "bytes",
+ "futures-util",
+ "http 1.1.0",
+ "http-body 1.0.1",
+ "http-body-util",
+ "include_dir",
+ "mime",
+ "mime_guess",
+ "percent-encoding",
+ "pin-project",
+ "tokio",
+ "tokio-util",
+ "tower-service",
+]
 
 [[package]]
 name = "tower-service"

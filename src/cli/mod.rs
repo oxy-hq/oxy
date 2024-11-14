@@ -4,7 +4,6 @@ mod search;
 use clap::CommandFactory;
 use clap::Parser;
 use std::error::Error;
-use tower_http::services::ServeFile;
 
 use init::init;
 use search::search_files;
@@ -17,12 +16,11 @@ use crate::workflow::run_workflow;
 use crate::yaml_parsers::config_parser::get_config_path;
 use crate::yaml_parsers::config_parser::parse_config;
 use crate::{build, vector_search, BuildOpts};
-use std::path::{Path, PathBuf};
+use tower_serve_static::ServeDir;
 
-use axum::Router;
+use axum::{routing::get_service, Router};
 use include_dir::{include_dir, Dir};
 use std::net::SocketAddr;
-use tower_http::services::ServeDir;
 
 static DIST: Dir = include_dir!("$CARGO_MANIFEST_DIR/dist");
 
@@ -168,16 +166,22 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             });
 
             let web_task = tokio::spawn(async move {
-                let dist_path = get_dist_path();
-                let serve_dir = ServeDir::new(&dist_path)
-                    .not_found_service(ServeFile::new(dist_path.join("index.html")));
+                let serve_dir = ServeDir::new(&DIST);
+
+                let fallback_service =
+                    get_service(ServeDir::new(&DIST).append_index_html_on_directories(true));
+
                 let web_app = Router::new()
                     .nest_service("/", serve_dir.clone())
-                    .fallback_service(serve_dir);
+                    .fallback_service(fallback_service);
 
-                print!("dist {}", dist_path.display());
                 let web_addr = SocketAddr::from(([127, 0, 0, 1], 3000));
                 let listener = tokio::net::TcpListener::bind(web_addr).await.unwrap();
+                println!(
+                    "{} {}",
+                    "Web app server running at".text(),
+                    format!("http://{}", web_addr).secondary()
+                );
                 axum::serve(listener, web_app).await.unwrap();
             });
 
@@ -205,16 +209,4 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
     }
 
     Ok(())
-}
-
-// For development, use the actual dist directory
-#[cfg(debug_assertions)]
-fn get_dist_path() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("dist")
-}
-
-// For release builds, use the embedded dist directory from the binary
-#[cfg(not(debug_assertions))]
-fn get_dist_path() -> PathBuf {
-    PathBuf::from(DIST.path())
 }
