@@ -17,6 +17,7 @@ use crate::workflow::run_workflow;
 use crate::yaml_parsers::config_parser::get_config_path;
 use crate::yaml_parsers::config_parser::parse_config;
 use crate::{build, vector_search, BuildOpts};
+use std::path::{Path, PathBuf};
 
 use axum::Router;
 use include_dir::{include_dir, Dir};
@@ -167,18 +168,15 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             });
 
             let web_task = tokio::spawn(async move {
-                let serve_dir =
-                    ServeDir::new("dist").not_found_service(ServeFile::new("dist/index.html"));
+                let dist_path = get_dist_path();
+                let serve_dir = ServeDir::new(&dist_path)
+                    .not_found_service(ServeFile::new(dist_path.join("index.html")));
                 let web_app = Router::new()
                     .nest_service("/", serve_dir.clone())
                     .fallback_service(serve_dir);
 
+                print!("dist {}", dist_path.display());
                 let web_addr = SocketAddr::from(([127, 0, 0, 1], 3000));
-                println!(
-                    "{} {}",
-                    "Axum web server running at".text(),
-                    format!("http://{}", web_addr).secondary()
-                );
                 let listener = tokio::net::TcpListener::bind(web_addr).await.unwrap();
                 axum::serve(listener, web_app).await.unwrap();
             });
@@ -207,4 +205,16 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
     }
 
     Ok(())
+}
+
+// For development, use the actual dist directory
+#[cfg(debug_assertions)]
+fn get_dist_path() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("dist")
+}
+
+// For release builds, use the embedded dist directory from the binary
+#[cfg(not(debug_assertions))]
+fn get_dist_path() -> PathBuf {
+    PathBuf::from(DIST.path())
 }
