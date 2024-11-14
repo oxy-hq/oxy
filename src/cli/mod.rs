@@ -1,6 +1,7 @@
 mod init;
 mod search;
 
+use axum::handler::Handler;
 use clap::CommandFactory;
 use clap::Parser;
 use std::error::Error;
@@ -18,9 +19,16 @@ use crate::yaml_parsers::config_parser::parse_config;
 use crate::{build, vector_search, BuildOpts};
 use tower_serve_static::ServeDir;
 
-use axum::{routing::get_service, Router};
+use axum::{
+    body::Body,
+    http::{Request, StatusCode},
+    routing::get_service,
+    Router,
+};
+
 use include_dir::{include_dir, Dir};
 use std::net::SocketAddr;
+use tower::service_fn;
 
 static DIST: Dir = include_dir!("$CARGO_MANIFEST_DIR/dist");
 
@@ -166,13 +174,31 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             });
 
             let web_task = tokio::spawn(async move {
-                let serve_dir = ServeDir::new(&DIST);
-
+                let serve_with_fallback = service_fn(move |req: Request<Body>| {
+                    async move {
+                        let res = get_service(ServeDir::new(&DIST))
+                            .call(req, None::<()>)
+                            .await;
+                        if res.status() == StatusCode::NOT_FOUND {
+                            // If 404, fallback to serving index.html
+                            let index_req = Request::builder()
+                                .uri("/index.html")
+                                .body(Body::empty())
+                                .unwrap();
+                            let response = get_service(ServeDir::new(&DIST))
+                                .call(index_req, None::<()>)
+                                .await;
+                            return Ok(response);
+                        } else {
+                            return Ok(res);
+                        }
+                    }
+                });
                 let fallback_service =
                     get_service(ServeDir::new(&DIST).append_index_html_on_directories(true));
 
                 let web_app = Router::new()
-                    .nest_service("/", serve_dir.clone())
+                    .nest_service("/", serve_with_fallback)
                     .fallback_service(fallback_service);
 
                 let web_addr = SocketAddr::from(([127, 0, 0, 1], 3000));
