@@ -11,16 +11,17 @@
   },
   "colors": {
     "primary": "#030712",
-    "primary": "#030712",
     "light": "#ffffff",
     "dark": "#000000",
     "anchors": "#000000",
-    "background": { "light": "#f9fafb", "dark": "#030712" },
-    "background": { "light": "#f9fafb", "dark": "#030712" }
+    "background": {
+      "light": "#f9fafb",
+      "dark": "#030712"
+    }
   },
   "topbarCtaButton": {
     "type": "github",
-    "url": "https://github.com/onyx-hq/onyx-core"
+    "url": "https://github.com/onyx-hq/onyx"
   },
   "tabs": [
     {
@@ -35,7 +36,11 @@
   "navigation": [
     {
       "group": "Get Started",
-      "pages": ["welcome", "introduction", "quickstart"]
+      "pages": [
+        "welcome",
+        "introduction",
+        "quickstart"
+      ]
     },
     {
       "group": "Learn about Onyx",
@@ -55,11 +60,15 @@
     },
     {
       "group": "Build with Onyx",
-      "pages": ["build-with-onyx/development"]
+      "pages": [
+        "build-with-onyx/development"
+      ]
     },
     {
       "group": "",
-      "pages": ["integrations/overview"]
+      "pages": [
+        "integrations/overview"
+      ]
     },
     {
       "group": "Data Sources",
@@ -73,17 +82,23 @@
       "pages": [
         {
           "group": "Self-hosted models",
-          "pages": ["integrations/models/ollama"]
+          "pages": [
+            "integrations/models/ollama"
+          ]
         },
         {
           "group": "Cloud-based models",
-          "pages": ["integrations/models/openai"]
+          "pages": [
+            "integrations/models/openai"
+          ]
         }
       ]
     },
     {
       "group": "Contributing",
-      "pages": ["community/how-to-contribute"]
+      "pages": [
+        "community/how-to-contribute"
+      ]
     }
   ],
   "footerSocials": {

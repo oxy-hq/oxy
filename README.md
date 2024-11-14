@@ -1,6 +1,5 @@
 <p align="center"><img src="docs/readme-banner.png"/></p>
 
-
 - [The fastest way to build data agents](#the-fastest-way-to-build-data-agents)
   - [What is a data agent?](#what-is-a-data-agent)
   - [Onyx core vision](#onyx-core-vision)
@@ -39,10 +38,9 @@ Data agents built in `onyx` ingest semantic information and use this to either e
 
 ### Onyx core vision
 
-`onyx-core` as-is provides two components: an `explorer` (`onyx search`) and an LLM interface that few-shots these entities into an LLM chatbot prompt chain (`onyx ask`).
+`onyx` as-is provides two components: an `explorer` (`onyx search`) and an LLM interface that few-shots these entities into an LLM chatbot prompt chain (`onyx ask`).
 
-The longer-term vision of `onyx-core` is such that the explorer provides search through a knowledge graph defining relevant entities (e.g. queries, metrics, dimensions, but perhaps an even wider scope, ultimately).
-
+The longer-term vision of `onyx` is such that the explorer provides search through a knowledge graph defining relevant entities (e.g. queries, metrics, dimensions, but perhaps an even wider scope, ultimately).
 
 ## Quickstart from binary
 
@@ -93,7 +91,7 @@ esac
 
 ### Install python
 
-Ensure that the right python version is in your path (onyx-core uses python3.11.6). There are many ways to install python, here we recommend a few ways:
+Ensure that the right python version is in your path (onyx uses python3.11.6). There are many ways to install python, here we recommend a few ways:
 
 ```sh
 # Using asdf is best for amd64
@@ -156,17 +154,17 @@ pip install poetry
 ### Clone this repository
 
 ```sh
-git clone git@github.com:onyx-hq/onyx-core.git
-cd onyx-core
+git clone git@github.com:onyx-hq/onyx.git
+cd onyx
 
-cd ../  # Move up a directory to ensure that the sample repo is not nested within the onyx-core repo
+cd ../  # Move up a directory to ensure that the sample repo is not nested within the onyx repo
 git clone git@github.com:onyx-hq/onyx-sample-repo.git
 cd onyx-sample-repo
 ```
 
 ### Build the crate from the repository
 
-Inside onyx-core
+Inside onyx
 
 ```sh
 cargo build --release
@@ -204,7 +202,6 @@ echo 'export OPENAI_API_KEY="<YOUR_KEY_HERE>"' >> ~/.zshrc
 ### Test the installation
 
 Inside onyx-sample-repo, run: `onyx` to check that the installation worked.
-
 
 ## Starting from scratch
 
@@ -273,6 +270,7 @@ The `.sql` files have front-matter (TODO: define what the front-matter should lo
 TODO: for now, see the `agents/default.yml` file in this repo or in the `onyx-sample-repo` directory.
 
 ## Local LLM
+
 - To start local LLM inference you can download and install `ollama`
 - Add model config into `config.yml` file:
 
@@ -287,13 +285,14 @@ and update agent's model config:
 ```
 model: ollama-local
 ```
+
 - Local LLM agent needs to support tools.
 
 ## Contributing
 
 ### Language dependencies
 
-Need to install Python and rust (*find instruction above*). Right now, Python is not being used, but the `build.rs` file and the `make build` command set up scaffolding if you want to incorporate Python. In general, we will follow the principle that everything should be in rust where possible for `onyx-core`. But this is obviously not possible for a number of integrations and data-specific tasks.
+Need to install Python and rust (*find instruction above*). Right now, Python is not being used, but the `build.rs` file and the `make build` command set up scaffolding if you want to incorporate Python. In general, we will follow the principle that everything should be in rust where possible for `onyx`. But this is obviously not possible for a number of integrations and data-specific tasks.
 
 ### Build
 
