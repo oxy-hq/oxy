@@ -3,6 +3,8 @@ use crate::api::config;
 use crate::api::conversations;
 use axum::routing::{get, post};
 use axum::Router;
+use migration::Migrator;
+use migration::MigratorTrait;
 use std::net::SocketAddr;
 use tokio;
 use tower_http::cors::{Any, CorsLayer};
@@ -12,6 +14,10 @@ pub async fn serve(address: &SocketAddr) {
         .allow_origin(Any)
         .allow_methods(tower_http::cors::Any)
         .allow_headers(tower_http::cors::Any);
+
+    let db = crate::db::client::establish_connection().await;
+    // migrate db
+    let _ = Migrator::up(&db, None).await;
 
     let app: Router = Router::new()
         .route("/ask", post(agent::ask))
