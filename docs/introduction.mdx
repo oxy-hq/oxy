@@ -3,7 +3,13 @@ title: Intro to Onyx
 description: "The fastest way to build data agents"
 ---
 
-<img class="rounded-lg" height="200" noZoom src="/images/hero.png" alt="Hero" />
+<img
+  class="rounded-lg"
+  height="200"
+  noZoom
+  src="/images/banner.png"
+  alt="banner"
+/>
 
 # The fastest way to build data agents
 
@@ -19,10 +25,10 @@ local).
 **Onyx** consists of two principal elements to configure data agents, each tied
 to a specific directory within your Onyx project:
 
-- `./agents`: Configuration files that define the agents *in plain yaml*. Each
-agent is scoped to particular directories within the `data` directory.
+- `./agents`: Configuration files that define the agents _in plain yaml_. Each
+  agent is scoped to particular directories within the `data` directory.
 - `./data`: A directory of SQL queries (which we generally suggest should be
-organized into a directory structure that reflects the organization structure).
+  organized into a directory structure that reflects the organization structure).
 
 Data agents can be interfaced with directly using the `onyx ask <question>`
 command, which will send the `<question>` to the prompted LLM, or composed into `workflows`.
