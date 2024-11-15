@@ -1,8 +1,13 @@
 use sea_orm::{Database, DatabaseConnection};
 
-pub async fn establish_connection() -> DatabaseConnection {
-    let database_url = "sqlite://./db.sqlite?mode=rwc"; // hard coded for now, use db file in the root directory
+pub fn get_db_directory() -> String {
+    let homedir = home::home_dir().unwrap();
+    let db_directory = homedir.join(".local/share/onyx");
+    return db_directory.as_path().to_str().unwrap().to_string();
+}
 
-    let db: DatabaseConnection = Database::connect(database_url).await.unwrap();
+pub async fn establish_connection() -> DatabaseConnection {
+    let db_path = format!("sqlite://{}/db.sqlite?mode=rwc", get_db_directory());
+    let db: DatabaseConnection = Database::connect(db_path).await.unwrap();
     db
 }
