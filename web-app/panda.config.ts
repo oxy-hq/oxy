@@ -1,6 +1,7 @@
 import { defineConfig } from "@pandacss/dev";
-import { theme } from "./src/styles/theme";
+
 import { globalCss } from "./src/styles/globals";
+import { theme } from "./src/styles/theme";
 import { extendedUtils } from "./src/styles/utils";
 
 export default defineConfig({

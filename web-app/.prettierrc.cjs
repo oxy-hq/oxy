@@ -5,25 +5,22 @@ module.exports = {
   semi: true,
   singleQuote: false,
   jsxSingleQuote: true,
-  trailingComma: 'none',
+  trailingComma: "none",
   bracketSpacing: true,
   bracketSameLine: false,
-  arrowParens: 'always',
-  endOfLine: 'crlf',
-  plugins: [
-    '@ianvs/prettier-plugin-sort-imports',
-    'prettier-plugin-tailwindcss'
-  ],
+  arrowParens: "always",
+  endOfLine: "crlf",
+  plugins: ["@ianvs/prettier-plugin-sort-imports", "prettier-plugin-tailwindcss"],
   importOrder: [
-    '^react$',
-    '',
-    '<TYPES>',
-    '<TYPES>^[.]',
-    '',
-    '<THIRD_PARTY_MODULES>',
-    '',
-    '^[@]/',
-    '',
-    '^[.]'
+    "^react$",
+    "",
+    "<TYPES>",
+    "<TYPES>^[.]",
+    "",
+    "<THIRD_PARTY_MODULES>",
+    "",
+    "^[@]/",
+    "",
+    "^[.]"
   ]
 };

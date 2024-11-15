@@ -24,6 +24,7 @@ This project combines cutting-edge technologies to create a powerful, efficient,
 2. **TypeScript**
 
 3. **Vite**
+
    - A fast, modern frontend build tool.
 
 4. **SWC (Speedy Web Compiler)**
@@ -32,6 +33,7 @@ This project combines cutting-edge technologies to create a powerful, efficient,
 ### UI and Styling
 
 5. **Radix Primitives**
+
    - Unstyled, accessible components for building high-quality design systems and web apps.
 
 6. **Panda CSS**
@@ -40,6 +42,7 @@ This project combines cutting-edge technologies to create a powerful, efficient,
 ### Code Quality and Consistency
 
 7. **ESLint**
+
    - Identifies and reports on patterns in JavaScript/TypeScript code.
    - Notable plugins and extends:
      - eslint-config-airbnb: Popular style guide for React projects
@@ -58,6 +61,7 @@ This project combines cutting-edge technologies to create a powerful, efficient,
 9. **Husky**
 
 10. **Commitlint**
+
     - Checks if your commit messages meet the conventional commit format.
 
 11. **Lint-staged**
@@ -65,6 +69,7 @@ This project combines cutting-edge technologies to create a powerful, efficient,
 ### State Management and Data Fetching
 
 12. **React Query**
+
     - A powerful library for managing server state in React applications.
 
 13. **Zustand**
@@ -85,9 +90,11 @@ This project combines cutting-edge technologies to create a powerful, efficient,
 To get started with this project, follow these steps:
 
 1. Ensure you have the correct Node.js version installed:
+
    ```
    node --version
    ```
+
    If you need to update or switch Node versions, we recommend using [nvm](https://github.com/nvm-sh/nvm) or [volta](https://volta.sh/).
 
 2. Clone the repository

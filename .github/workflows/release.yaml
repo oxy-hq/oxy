@@ -74,6 +74,7 @@ jobs:
       id: setup-node
       with:
         node-version: 20
+        cache: 'pnpm'
     - uses: pnpm/action-setup@v4
       with:
         run_install: |
@@ -89,12 +90,20 @@ jobs:
         path: ${{ env.STORE_PATH }}
         key: pnpm-store-${{ matrix.job.os }}-${{ matrix.job.target }}-${{ hashFiles('**/pnpm-lock.yaml') }}
         restore-keys: |
+          pnpm-store-${{ matrix.job.os }}-${{ matrix.job.target }}
           pnpm-store-
-    - name: Build frontend assets
+    - name: Cache turbo build setup
+      uses: actions/cache@v4
+      with:
+        path: .turbo
+        key: turbo-${{ matrix.job.os }}-${{ matrix.job.target }}-${{ github.sha }}
+        restore-keys: |
+          turbo-${{ matrix.job.os }}-${{ matrix.job.target }}-
+          turbo-
+    - name: Build
       shell: bash
       run: |
         pnpm -C web-app build
-        mv web-app/dist ./
     - name: Install required dependencies
       shell: bash
       run: |
