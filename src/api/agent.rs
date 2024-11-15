@@ -90,7 +90,7 @@ pub async fn ask(extract::Json(payload): extract::Json<AskRequest>) -> impl Into
         msg
     }).collect::<Vec<_>>();
     for msg in msgs {
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        tokio::time::sleep(Duration::from_millis(10)).await;
         yield msg;
     }
     };
