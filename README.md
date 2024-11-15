@@ -4,11 +4,9 @@
   - [What is a data agent?](#what-is-a-data-agent)
   - [Onyx core vision](#onyx-core-vision)
 - [Quickstart from binary](#quickstart-from-binary)
-- [Quickstart from source](#quickstart-from-source)
-  - [Install rust](#install-rust)
-  - [Install python](#install-python)
-  - [Install poetry](#install-poetry)
+- [Compile from source](#compile-from-source)
   - [Clone this repository](#clone-this-repository)
+  - [Install rust \& node](#install-rust--node)
   - [Build the crate from the repository](#build-the-crate-from-the-repository)
   - [Test the installation](#test-the-installation)
 - [Starting from scratch](#starting-from-scratch)
@@ -18,8 +16,7 @@
 - [Local LLM](#local-llm)
 - [Contributing](#contributing)
   - [Language dependencies](#language-dependencies)
-  - [Build](#build)
-  - [Repository structure](#repository-structure)
+  - [Extra - install python \& poetry](#extra---install-python--poetry)
 
 ## The fastest way to build data agents
 
@@ -51,15 +48,21 @@ To install `onyx` from a binary, you can use the following commands:
 curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/onyx-hq/onyx-public-releases/refs/heads/main/install_onyx.sh | bash
 ```
 
-## Quickstart from source
+## Compile from source
 
-*Note: these are internal instructions in the absence of a brew formulae/cask. Some steps will be eventually subsumed within a single command, `brew install onyx/onyx`.*
 
-To get started with `onyx`, you'll have to work within the terminal. By default you have a terminal on your macbook, which you can access through spotlight. If you want a faster experience, you can download tried-and-true [Iterm2](https://iterm2.com/), GPU-accelerated [Alacritty](https://github.com/alacritty/alacritty), or AI-native [Warp](https://warp.dev).
+### Clone this repository
 
-Once you have your terminal set up, following the commands below:
+```sh
+git clone git@github.com:onyx-hq/onyx.git
+cd onyx
 
-### Install rust
+cd ../  # Move up a directory to ensure that the sample repo is not nested within the onyx repo
+git clone git@github.com:onyx-hq/onyx-sample-repo.git
+cd onyx-sample-repo
+```
+
+### Install rust & node
 
 The best way to manage rust is with rustup. Install rust by following the official guide [here](https://www.rust-lang.org/tools/install).
 
@@ -89,34 +92,11 @@ case "$current_shell" in
 esac
 ```
 
-### Install python
-
-Ensure that the right python version is in your path (onyx uses python3.11.6). There are many ways to install python, here we recommend a few ways:
-
-```sh
-# Using asdf is best for amd64
-brew install asdf
-
-case $SHELL in
-  *bash)
-    echo -e "\n. $(brew --prefix asdf)/asdf.sh" >> ~/.bashrc
-    source ~/.bashrc
-    ;;
-  *zsh)
-    echo -e "\n. $(brew --prefix asdf)/asdf.sh" >> ~/.zshrc
-    source ~/.zshrc
-    ;;
-esac
-
-asdf plugin add python
-
-asdf install python 3.11.6
-
-asdf global python 3.11.6
-```
+Node is used for `onyx serve` command. You can install it by following the official guide [here](https://nodejs.org/en/download/).
+We recommend using version 20, but you can use any version that is compatible with the project.
 
 ```sh
-# Using mise is the best for any architecture
+# Using mise is a recommended way to install node and manage versions
 curl https://mise.run | sh
 
 
@@ -131,35 +111,15 @@ case $SHELL in
     ;;
 esac
 
-mise install python 3.11.6
-
-mise use python@3.11 --global
-
+# inside this repo
+mise install
 ```
 
-```sh
-# Using brew
-brew install python@3.11
-brew link python@3.11
-```
-
-### Install poetry
-
-Poetry is a python package manager that we use to manage python dependencies. Install poetry by following the official guide [here](https://python-poetry.org/docs/). Or you can install it with pip:
+After nodejs is installed, install project dependencies:
 
 ```sh
-pip install poetry
-```
-
-### Clone this repository
-
-```sh
-git clone git@github.com:onyx-hq/onyx.git
-cd onyx
-
-cd ../  # Move up a directory to ensure that the sample repo is not nested within the onyx repo
-git clone git@github.com:onyx-hq/onyx-sample-repo.git
-cd onyx-sample-repo
+corepack enable && corepack prepare --activate
+pnpm install
 ```
 
 ### Build the crate from the repository
@@ -167,12 +127,21 @@ cd onyx-sample-repo
 Inside onyx
 
 ```sh
+# this will build everything, incl the frontend for onyx serve
+pnpm run build
+
+# after the first build, you can use this to build faster
+# this will just build the CLI
 cargo build --release
+
+# this will just build the frontend
+pnpm -C web-app build
 ```
 
-Copy the binary to your path:
+After building, you can install the binary to your path:
 
 ```sh
+# Install the binary to your path
 cp target/release/onyx /usr/local/bin/onyx
 ```
 
@@ -292,22 +261,64 @@ model: ollama-local
 
 ### Language dependencies
 
-Need to install Python and rust (*find instruction above*). Right now, Python is not being used, but the `build.rs` file and the `make build` command set up scaffolding if you want to incorporate Python. In general, we will follow the principle that everything should be in rust where possible for `onyx`. But this is obviously not possible for a number of integrations and data-specific tasks.
+Need to install node and rust (*find instruction above*). Right now, Python is not being used, but the `build.rs` file contains some hint for scaffolding if you want to incorporate Python. In general, we will follow the principle that everything should be in rust where possible for `onyx`. But this is obviously not possible for a number of integrations and data-specific tasks.
 
-### Build
+### Extra - install python & poetry
 
-Run `make build` to build.
-So long as the python code doesn't change, `make build` only needs to be run once, and then we can just run `cargo build` to update the CLI.
+Ensure that the right python version is in your path (onyx uses python3.11.6). There are many ways to install python, here we recommend a few ways:
 
-The build sequencing is as follows:
+```sh
+# Using asdf is best for amd64
+brew install asdf
 
-- The python modules are installed using `poetry` to a virtual environment.
-- The rust crate is built, and uses `pyo3` to execute the code *using the virtual environment that was made in the previous step*.
+case $SHELL in
+  *bash)
+    echo -e "\n. $(brew --prefix asdf)/asdf.sh" >> ~/.bashrc
+    source ~/.bashrc
+    ;;
+  *zsh)
+    echo -e "\n. $(brew --prefix asdf)/asdf.sh" >> ~/.zshrc
+    source ~/.zshrc
+    ;;
+esac
 
-### Repository structure
+asdf plugin add python
+asdf install python 3.11.6
 
-This repository is a mixed Python/rust repository.
+asdf global python 3.11.6
+```
 
-- ./onyx contains python code
-- ./src contains rust code
-The CLI tool is built in Rust, and executes code from the Python backend code with `pyo3`. The choice of rust for the CLI tool came primarily to optimize for user experience and technical defensibility, as opposed to optimizing for leveraging community contributions for development. See the decision doc [here](https://www.notion.so/hyperquery/Why-Rust-for-CLI-front-end-10c13791d2b580f2afe2c9b2d2c663ea) for full context.
+```sh
+# Using mise is the best for any architecture
+curl https://mise.run | sh
+
+
+case $SHELL in
+  *bash)
+    echo 'eval "$(~/.local/bin/mise activate bash)"' >> ~/.bashrc
+    source ~/.bashrc
+    ;;
+  *zsh)
+    echo 'eval "$(~/.local/bin/mise activate zsh)"' >> ~/.zshrc
+    source ~/.zshrc
+    ;;
+esac
+
+mise install python 3.11.6
+
+mise use python@3.11 --global
+
+```
+
+```sh
+# Using brew
+brew install python@3.11
+brew link python@3.11
+```
+
+Poetry is a python package manager that we use to manage python dependencies. Install poetry by following the official guide [here](https://python-poetry.org/docs/). Or you can install it with pip:
+
+```sh
+pip install poetry
+```
+

@@ -79,7 +79,6 @@ jobs:
       shell: bash
       run: |
         pnpm -C web-app build
-        mv web-app/dist ./
     - name: Prep tools for compilation
           # protobuf is required by lance https://github.com/lancedb/lance/issues/3073
           # mold is required for faster builds on linux
