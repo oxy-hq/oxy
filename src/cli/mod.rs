@@ -58,8 +58,9 @@ enum SubCommand {
     Init,
     ListDatasets,
     ListTables,
-    /// Search through SQL in your project path. Execute and pass through agent postscript step on selection
-    Search,
+    /// Search through SQL in your project path. Run them against the associated warehouse on
+    /// selection.
+    Run(RunArgs),
     /// Ask a question to the specified agent. If no agent is specified, the default agent is used
     Ask(AskArgs),
     Build,
@@ -73,6 +74,11 @@ enum SubCommand {
 #[derive(Parser, Debug)]
 struct AskArgs {
     question: String,
+}
+
+#[derive(Parser, Debug)]
+struct RunArgs {
+    file: Option<String>,
 }
 
 #[derive(Parser, Debug)]
@@ -113,13 +119,31 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                 }
             }
         }
-        Some(SubCommand::Search) => {
-            let (agent, project_path) = setup_agent(args.agent.as_deref()).await?;
-            match search_files(&project_path)? {
-                Some(content) => {
-                    agent.request(&content).await?;
+        Some(SubCommand::Run(run_args)) => {
+            let (agent, config_path) = setup_agent(args.agent.as_deref()).await?;
+            let config = parse_config(&config_path)?;
+            let project_path = &config.defaults.project_path;
+
+            match run_args.file {
+                Some(file) => {
+                    // Run specific SQL file from data directory
+                    let file_path = project_path.join("data").join(file);
+                    match std::fs::read_to_string(&file_path) {
+                        Ok(content) => {
+                            agent.request(&content).await?;
+                        }
+                        Err(e) => eprintln!("{}", format!("Error reading file: {}", e).error()),
+                    }
                 }
-                None => eprintln!("{}", "No files found or selected.".error()),
+                None => {
+                    // Interactive file search mode
+                    match search_files(&project_path)? {
+                        Some(content) => {
+                            agent.request(&content).await?;
+                        }
+                        None => eprintln!("{}", "No files found or selected.".error()),
+                    }
+                }
             }
         }
         Some(SubCommand::Ask(ask_args)) => {
