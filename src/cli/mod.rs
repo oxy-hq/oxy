@@ -4,6 +4,7 @@ mod search;
 use axum::handler::Handler;
 use clap::CommandFactory;
 use clap::Parser;
+use log::debug;
 use std::error::Error;
 
 use init::init;
@@ -88,7 +89,7 @@ struct VecSearchArgs {
 
 #[derive(Parser, Debug)]
 struct ExecuteArgs {
-    workflow_name: String,
+    workflow_name: Option<String>,
 }
 
 pub async fn cli() -> Result<(), Box<dyn Error>> {
@@ -124,26 +125,26 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             let config = parse_config(&config_path)?;
             let project_path = &config.defaults.project_path;
 
-            match run_args.file {
-                Some(file) => {
-                    // Run specific SQL file from data directory
-                    let file_path = project_path.join("data").join(file);
-                    match std::fs::read_to_string(&file_path) {
-                        Ok(content) => {
-                            agent.request(&content).await?;
-                        }
-                        Err(e) => eprintln!("{}", format!("Error reading file: {}", e).error()),
+            let file_path = if let Some(file) = run_args.file {
+                // Use specific SQL file from data directory
+                project_path.join("data").join(file)
+            } else {
+                // Interactive file search mode
+                let subdirectory_name = "data";
+                match search_files(&project_path, &subdirectory_name)? {
+                    Some(file_name) => project_path.join("data").join(file_name),
+                    None => {
+                        eprintln!("{}", "No files found or selected.".error());
+                        return Ok(());
                     }
                 }
-                None => {
-                    // Interactive file search mode
-                    match search_files(&project_path)? {
-                        Some(content) => {
-                            agent.request(&content).await?;
-                        }
-                        None => eprintln!("{}", "No files found or selected.".error()),
-                    }
+            };
+
+            match std::fs::read_to_string(&file_path) {
+                Ok(content) => {
+                    agent.request(&content).await?;
                 }
+                Err(e) => eprintln!("{}", format!("Error reading file: {}", e).error()),
             }
         }
         Some(SubCommand::Ask(ask_args)) => {
@@ -172,10 +173,34 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             vector_search(&config.defaults.agent, &retrieval, &search_args.question).await?;
         }
         Some(SubCommand::Execute(execute_args)) => {
-            match run_workflow(&execute_args.workflow_name).await {
-                Ok(_) => println!("{}", "\n✅Workflow executed successfully".success()),
-                Err(e) => eprintln!("{}", format!("Error executing workflow: \n{}", e).error()),
-            };
+            if let Some(workflow_name) = execute_args.workflow_name {
+                match run_workflow(&workflow_name).await {
+                    Ok(_) => println!("{}", "\n✅Workflow executed successfully".success()),
+                    Err(e) => eprintln!("{}", format!("Error executing workflow: \n{}", e).error()),
+                }
+            } else {
+                let config_path = get_config_path();
+                let config = parse_config(&config_path)?;
+                let project_path = &config.defaults.project_path;
+                let subdirectory_name = "workflows";
+                match search_files(&project_path, &subdirectory_name)? {
+                    Some(workflow_file) => {
+                        let workflow_name =
+                            workflow_file.strip_suffix(".yml").unwrap_or(&workflow_file);
+                        debug!("Executing workflow: {}", workflow_name);
+                        match run_workflow(&workflow_name).await {
+                            Ok(_) => println!("{}", "\n✅Workflow executed successfully".success()),
+                            Err(e) => {
+                                eprintln!(
+                                    "{}",
+                                    format!("Error executing workflow: \n{}", e).error()
+                                )
+                            }
+                        }
+                    }
+                    None => eprintln!("{}", "No workflow files found or selected.".error()),
+                }
+            }
         }
         Some(SubCommand::Validate) => {
             let config_path = get_config_path();

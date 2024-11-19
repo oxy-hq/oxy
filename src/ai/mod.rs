@@ -143,7 +143,9 @@ fn load_queries(project_path: PathBuf, paths: &Vec<String>) -> Vec<String> {
     let mut queries = vec![];
 
     for path in paths {
+        log::debug!("Loading queries for path: {}", path);
         queries.extend(load_queries_for_scope(&project_path, path));
+        log::debug!("Loaded queries");
     }
 
     queries
@@ -155,7 +157,9 @@ fn load_queries_for_scope(project_path: &PathBuf, path: &str) -> Vec<String> {
 
     let mut queries = vec![];
     if let Ok(entries) = fs::read_dir(query_path) {
+        log::debug!("Reading queries from path: {}", query_path.display());
         for entry in entries.flatten() {
+            log::debug!("Reading query: {}", entry.path().display());
             if let Ok(content) = fs::read_to_string(entry.path()) {
                 queries.push(content);
             }
