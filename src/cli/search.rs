@@ -3,11 +3,14 @@ use std::error::Error;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-pub fn search_files(project_path: &PathBuf) -> Result<Option<String>, Box<dyn Error>> {
-    let data_path = project_path.join("data");
-    let manifest = construct_manifest(&data_path)?;
+pub fn search_files(
+    project_path: &PathBuf,
+    subdirectory_name: &str,
+) -> Result<Option<String>, Box<dyn Error>> {
+    let subdirectory_path = project_path.join(subdirectory_name);
+    let manifest = construct_manifest(&subdirectory_path)?;
 
-    let preview_cmd = format!("cat {}/{{}}", data_path.to_string_lossy());
+    let preview_cmd = format!("cat {}/{{}}", subdirectory_path.to_string_lossy());
 
     let options = SkimOptionsBuilder::default()
         .multi(false)
@@ -30,15 +33,7 @@ pub fn search_files(project_path: &PathBuf) -> Result<Option<String>, Box<dyn Er
 
     if let Some(item) = selected_items.first() {
         let file_name = item.output().into_owned();
-        let file_path = data_path.join(file_name);
-        if file_path.exists() {
-            match fs::read_to_string(&file_path) {
-                Ok(content) => Ok(Some(content)),
-                Err(e) => Err(Box::new(e)),
-            }
-        } else {
-            Ok(None)
-        }
+        Ok(Some(file_name))
     } else {
         Ok(None)
     }
