@@ -75,14 +75,11 @@ pub async fn ask(extract::Json(payload): extract::Json<AskRequest>) -> impl Into
         &result,
         false,
     ).await;
-    let chars = answer
-        .content
-        .chars()
-        .map(|word| word.to_string())
-        .collect::<Vec<_>>();
-    let msgs = chars.into_iter().map(|word| {
+
+    let chunks = vec![answer.content];
+    let msgs = chunks.into_iter().map(|chunk| {
         let msg = Message {
-            content: word.to_string(),
+            content: chunk.to_string(),
             id: answer.id,
             is_human: answer.is_human,
             created_at: answer.created_at.clone(),
