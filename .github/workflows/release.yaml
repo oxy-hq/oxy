@@ -111,6 +111,8 @@ jobs:
     # protobuf is required by lance https://github.com/lancedb/lance/issues/3073
     - name: Install Protoc
       uses: arduino/setup-protoc@v3
+      with:
+        repo-token: ${{ secrets.GITHUB_TOKEN }}
     - uses: rui314/setup-mold@v1
       if: matrix.job.os == 'ubuntu-latest'
     - name: Cargo build
