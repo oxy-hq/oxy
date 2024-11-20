@@ -30,6 +30,8 @@ use serde::Deserialize;
 use serde_json::json;
 use std::fmt::Display;
 
+const MAX_DISPLAY_ROWS: usize = 100;
+
 #[async_trait]
 pub trait LLMAgent {
     async fn request(&self, input: &str) -> anyhow::Result<String>;
@@ -231,15 +233,35 @@ async fn map_output(output: &str, output_format: &OutputFormat) -> anyhow::Resul
             log::info!("File path: {}", output);
             let file_output = serde_json::from_str::<FilePathOutput>(output)?;
             let mut dataset = load_result(&file_output.file_path)?;
-            if dataset.len() > 0 {
-                dataset = vec![dataset[0].slice(0, std::cmp::min(100, dataset[0].num_rows()))];
+            let mut truncated = false;
+            if dataset.len() > 0 && dataset[0].num_rows() > MAX_DISPLAY_ROWS {
+                dataset = vec![dataset[0].slice(0, MAX_DISPLAY_ROWS)];
+                truncated = true;
             }
             let batches_display = pretty_format_batches(&dataset)?;
             let markdown_table = record_batches_to_markdown(&dataset)?;
-            // println!("{}","\nResults:".primary());
-            println!("\n{}", batches_display.to_string().text());
-            Ok(markdown_table.to_string())
+
+            println!(
+                "\n{}",
+                format_table_output(&batches_display.to_string(), truncated).text()
+            );
+            Ok(format_table_output(&markdown_table.to_string(), truncated))
         }
+    }
+}
+
+fn format_table_output(table: &str, truncated: bool) -> String {
+    if truncated {
+        format!(
+            "{}\n{}",
+            format!(
+                "Results have been truncated. Showing only the first {} rows.",
+                MAX_DISPLAY_ROWS
+            ),
+            table
+        )
+    } else {
+        table.to_string()
     }
 }
 
