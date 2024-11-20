@@ -2,7 +2,14 @@ use crate::{connector::load_result, yaml_parsers::agent_parser::OutputFormat};
 
 use super::{toolbox::ToolBox, tools::Tool};
 use crate::theme::*;
-use arrow::util::pretty::pretty_format_batches;
+use arrow::{
+    error::ArrowError,
+    record_batch::RecordBatch,
+    util::{
+        display::{ArrayFormatter, FormatOptions},
+        pretty::pretty_format_batches,
+    },
+};
 use async_openai::{
     config::{OpenAIConfig, OPENAI_API_BASE},
     types::{
@@ -15,10 +22,13 @@ use async_openai::{
     Client,
 };
 use async_trait::async_trait;
+use comfy_table::presets::ASCII_MARKDOWN;
+use comfy_table::{Cell, Table};
 use log::debug;
 use schemars::{schema_for, JsonSchema};
 use serde::Deserialize;
 use serde_json::json;
+use std::fmt::Display;
 
 #[async_trait]
 pub trait LLMAgent {
@@ -220,11 +230,51 @@ async fn map_output(output: &str, output_format: &OutputFormat) -> anyhow::Resul
         OutputFormat::File => {
             log::info!("File path: {}", output);
             let file_output = serde_json::from_str::<FilePathOutput>(output)?;
-            let dataset = load_result(&file_output.file_path)?;
+            let mut dataset = load_result(&file_output.file_path)?;
+            if dataset.len() > 0 {
+                dataset = vec![dataset[0].slice(0, std::cmp::min(100, dataset[0].num_rows()))];
+            }
             let batches_display = pretty_format_batches(&dataset)?;
+            let markdown_table = record_batches_to_markdown(&dataset)?;
             // println!("{}","\nResults:".primary());
             println!("\n{}", batches_display.to_string().text());
-            Ok(batches_display.to_string())
+            Ok(markdown_table.to_string())
         }
     }
+}
+
+fn record_batches_to_markdown(results: &[RecordBatch]) -> Result<impl Display, ArrowError> {
+    let options = FormatOptions::default().with_display_error(true);
+    let mut table = Table::new();
+    table.load_preset(ASCII_MARKDOWN);
+
+    if results.is_empty() {
+        return Ok(table);
+    }
+
+    let schema = results[0].schema();
+
+    let mut header = Vec::new();
+    for field in schema.fields() {
+        header.push(Cell::new(field.name()));
+    }
+    table.set_header(header);
+
+    for batch in results {
+        let formatters = batch
+            .columns()
+            .iter()
+            .map(|c| ArrayFormatter::try_new(c.as_ref(), &options))
+            .collect::<Result<Vec<_>, ArrowError>>()?;
+
+        for row in 0..batch.num_rows() {
+            let mut cells = Vec::new();
+            for formatter in &formatters {
+                cells.push(Cell::new(formatter.value(row)));
+            }
+            table.add_row(cells);
+        }
+    }
+
+    Ok(table)
 }
