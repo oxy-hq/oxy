@@ -4,12 +4,13 @@ pub mod toolbox;
 pub mod tools;
 
 use crate::{
+    config::{
+        get_config_path,
+        model::{AgentConfig, Config, Model, ToolConfig},
+        parse_config,
+    },
     connector::Connector,
     union_tools,
-    yaml_parsers::{
-        agent_parser::{AgentConfig, ToolConfig},
-        config_parser::{get_config_path, parse_config, Config, Model},
-    },
 };
 use agent::{LLMAgent, OpenAIAgent};
 use async_trait::async_trait;

@@ -1,10 +1,10 @@
-use crate::yaml_parsers::config_parser::get_config_path;
-use crate::yaml_parsers::config_parser::parse_config;
 use axum::{http::StatusCode, response::IntoResponse, Json};
 use serde_yaml::Value;
 use std::error::Error;
 use std::fs;
 use std::path::PathBuf;
+
+use crate::config::{get_config_path, parse_config};
 
 #[axum::debug_handler]
 pub async fn load_config() -> Result<impl IntoResponse, (StatusCode, String)> {

@@ -1,7 +1,5 @@
 use super::Tool;
-use crate::{
-    connector::Connector, utils::print_colored_sql, yaml_parsers::config_parser::Warehouse,
-};
+use crate::{config::model::Warehouse, connector::Connector, utils::print_colored_sql};
 use async_trait::async_trait;
 use schemars::JsonSchema;
 use serde::Deserialize;

@@ -1,6 +1,6 @@
 use executor::WorkflowExecutor;
 
-use crate::yaml_parsers::config_parser::{get_config_path, parse_config};
+use crate::config::{get_config_path, parse_config};
 
 pub mod executor;
 

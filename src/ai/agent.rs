@@ -1,4 +1,4 @@
-use crate::{connector::load_result, yaml_parsers::agent_parser::OutputFormat};
+use crate::{config::model::OutputFormat, connector::load_result};
 
 use super::{toolbox::ToolBox, tools::Tool};
 use crate::theme::*;

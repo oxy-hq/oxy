@@ -1,7 +1,7 @@
 use super::Tool;
 use crate::{
     ai::retrieval::{embedding::VectorStore, get_vector_store},
-    yaml_parsers::config_parser::Retrieval,
+    config::model::Retrieval,
 };
 use async_trait::async_trait;
 use schemars::JsonSchema;

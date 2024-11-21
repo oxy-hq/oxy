@@ -1,17 +1,17 @@
-use crate::yaml_parsers::agent_parser::{parse_agent_config, AgentConfig};
+use std::{path::PathBuf, rc::Rc};
+pub mod model;
+mod parser;
+mod validate;
+use garde::Validate;
+
+use anyhow;
+use model::{AgentConfig, Config, Model, Retrieval, Warehouse, Workflow};
+
 use dirs::home_dir;
-use serde::{Deserialize, Serialize};
-use std::{fs, io, path::PathBuf};
-
-use super::workflow_parser::{parse_workflow_config, Workflow};
-
-#[derive(Deserialize, Debug)]
-pub struct Config {
-    pub defaults: Defaults,
-    pub models: Vec<Model>,
-    pub warehouses: Vec<Warehouse>,
-    pub retrievals: Vec<Retrieval>,
-}
+use parser::{parse_agent_config, parse_workflow_config};
+use serde::Deserialize;
+use std::{fs, io};
+use validate::ValidationContext;
 
 // These are settings stored as strings derived from the config.yml file's defaults section
 #[derive(Debug, Deserialize)]
@@ -32,55 +32,12 @@ impl Defaults {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct Warehouse {
-    pub name: String,
-    pub r#type: String,
-    #[serde(default)]
-    pub key_path: String,
-    pub dataset: String,
-}
-
-#[derive(Deserialize, Debug, Clone)]
-#[serde(tag = "vendor")]
-pub enum Model {
-    #[serde(rename = "openai")]
-    OpenAI {
-        name: String,
-        model_ref: String,
-        key_var: String,
-    },
-    #[serde(rename = "ollama")]
-    Ollama {
-        name: String,
-        model_ref: String,
-        api_key: String,
-        api_url: String,
-    },
-}
-
-#[derive(Deserialize, Debug, Clone)]
-pub struct Retrieval {
-    pub name: String,
-    pub embed_model: String,
-    pub rerank_model: String,
-    pub top_k: usize,
-    pub factor: usize,
-}
-
 pub fn get_config_path() -> PathBuf {
     home_dir()
         .expect("Could not find home directory")
         .join(".config")
         .join("onyx")
         .join("config.yml")
-}
-
-pub fn parse_config(config_path: &PathBuf) -> anyhow::Result<Config> {
-    let config_str = fs::read_to_string(config_path)?;
-    let mut config: Config = serde_yaml::from_str(&config_str)?;
-    config.defaults.expand_project_path();
-    Ok(config)
 }
 
 #[derive(Debug)]
@@ -92,14 +49,19 @@ pub struct ParsedConfig {
 }
 
 impl Config {
+    pub fn get_agents_dir(&self) -> PathBuf {
+        return PathBuf::from(&self.defaults.project_path).join("agents");
+    }
+
+    pub fn get_sql_dir(&self) -> PathBuf {
+        return PathBuf::from(&self.defaults.project_path).join("data");
+    }
+
     pub fn load_config(&self, agent_name: Option<&str>) -> anyhow::Result<AgentConfig> {
         let agent_file = if let Some(name) = agent_name {
-            PathBuf::from(&self.defaults.project_path)
-                .join("agents")
-                .join(format!("{}.yml", name))
+            self.get_agents_dir().join(format!("{}.yml", name))
         } else {
-            PathBuf::from(&self.defaults.project_path)
-                .join("agents")
+            self.get_agents_dir()
                 .join(format!("{}.yml", self.defaults.agent))
         };
 
@@ -112,6 +74,26 @@ impl Config {
 
         let agent_config = parse_agent_config(&agent_file.to_string_lossy())?;
         Ok(agent_config)
+    }
+
+    pub fn list_workflows(&self) -> anyhow::Result<Vec<String>> {
+        let workflow_dir = PathBuf::from(&self.defaults.project_path).join("workflows");
+
+        let mut workflows = vec![];
+        for entry in fs::read_dir(workflow_dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.is_file() {
+                if let Some(ext) = path.extension() {
+                    if ext == "yml" {
+                        let file_stem = path.file_stem().unwrap().to_str().unwrap();
+                        workflows.push(file_stem.to_string());
+                    }
+                }
+            }
+        }
+
+        Ok(workflows)
     }
 
     pub fn load_workflow(&self, workflow_name: &str) -> anyhow::Result<Workflow> {
@@ -128,6 +110,7 @@ impl Config {
 
         let workflow_config =
             parse_workflow_config(workflow_name, &workflow_file.to_string_lossy())?;
+
         Ok(workflow_config)
     }
 
@@ -166,5 +149,54 @@ impl Config {
             .ok_or_else(|| {
                 io::Error::new(io::ErrorKind::NotFound, "Default retrieval not found").into()
             })
+    }
+}
+
+pub fn load_config() -> anyhow::Result<Config> {
+    let config_path = get_config_path();
+    let config = parse_config(&config_path)?;
+
+    Ok(config)
+}
+
+pub fn parse_config(config_path: &PathBuf) -> anyhow::Result<Config> {
+    let config_str = fs::read_to_string(&config_path)?;
+    let result = serde_yaml::from_str::<Config>(&config_str);
+    match result {
+        Ok(config) => {
+            let rc = Rc::new(config);
+            let context = ValidationContext {
+                config: Rc::clone(&rc),
+            };
+            let mut validation_result = Rc::clone(&rc).validate_with(&context);
+            if validation_result.is_ok() {
+                let workflows = Rc::clone(&rc).list_workflows()?;
+                for workflow in workflows {
+                    let workflow_config = Rc::clone(&rc).load_workflow(&workflow)?;
+                    let workflow_context = ValidationContext {
+                        config: Rc::clone(&rc),
+                    };
+                    validation_result = workflow_config.validate_with(&workflow_context);
+                }
+            }
+            drop(context);
+            match validation_result {
+                Ok(_) => match Rc::try_unwrap(rc) {
+                    Ok(config) => return Ok(config),
+                    Err(_) => return Err(anyhow::anyhow!("Failed to unwrap Rc")),
+                },
+                Err(e) => {
+                    return Err(anyhow::anyhow!("Invalid configuration: \n{}", e));
+                }
+            }
+        }
+        Err(e) => {
+            let mut rawError = e.to_string();
+            rawError = rawError.replace("usize", "unsigned integer");
+            return Err(anyhow::anyhow!(
+                "Failed to parse config file:\n{}",
+                rawError
+            ));
+        }
     }
 }

@@ -6,21 +6,19 @@ pub mod db;
 pub mod theme;
 pub mod utils;
 pub mod workflow;
-pub mod yaml_parsers;
 
 use ai::retrieval::{build_embeddings, get_vector_store, search};
 use theme::*;
-use yaml_parsers::config_parser::Retrieval;
+pub mod config;
+
+use config::model::{Config, Retrieval};
 
 pub struct BuildOpts {
     pub force: bool,
     pub data_path: String,
 }
 
-pub async fn build(
-    config: &yaml_parsers::config_parser::Config,
-    opts: BuildOpts,
-) -> anyhow::Result<()> {
+pub async fn build(config: &Config, opts: BuildOpts) -> anyhow::Result<()> {
     println!("{}", "Building...".text());
     build_embeddings(config, &opts.data_path).await?;
     Ok(())

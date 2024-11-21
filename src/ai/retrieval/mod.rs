@@ -3,11 +3,8 @@ use std::{fs, path::PathBuf};
 use embedding::{Document, LanceDBStore, VectorStore};
 use fastembed::{EmbeddingModel, RerankerModel};
 
-use crate::{
-    utils::collect_files_recursively,
-    yaml_parsers::{self, config_parser::Config},
-    StyledText,
-};
+use crate::config::model::{Config, Retrieval};
+use crate::{utils::collect_files_recursively, StyledText};
 
 pub mod embedding;
 
@@ -58,7 +55,7 @@ pub async fn search(
 
 pub fn get_vector_store(
     agent: &str,
-    retrieval: &yaml_parsers::config_parser::Retrieval,
+    retrieval: &Retrieval,
 ) -> anyhow::Result<Box<dyn VectorStore + Send + Sync>> {
     let embed_model = embedding_model_from_str(&retrieval.embed_model)?;
     let rerank_model = rerank_model_from_str(&retrieval.rerank_model)?;
@@ -73,14 +70,14 @@ pub fn get_vector_store(
     Ok(Box::new(db))
 }
 
-fn embedding_model_from_str(s: &str) -> anyhow::Result<EmbeddingModel> {
+pub fn embedding_model_from_str(s: &str) -> anyhow::Result<EmbeddingModel> {
     match s {
         "bge-small-en-v1.5" => Ok(EmbeddingModel::BGESmallENV15),
         _ => Err(anyhow::Error::msg(format!("Unknown model: {}", s))),
     }
 }
 
-fn rerank_model_from_str(s: &str) -> anyhow::Result<RerankerModel> {
+pub fn rerank_model_from_str(s: &str) -> anyhow::Result<RerankerModel> {
     match s {
         "jina-reranker-v1-turbo-en" => Ok(RerankerModel::JINARerankerV1TurboEn),
         "jina-reranker-v2-base-multiligual" => Ok(RerankerModel::JINARerankerV2BaseMultiligual),
