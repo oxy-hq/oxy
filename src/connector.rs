@@ -8,7 +8,7 @@ use log::debug;
 use std::fs::File;
 use uuid::Uuid;
 
-use crate::yaml_parsers::config_parser::Warehouse;
+use crate::config::model::Warehouse;
 
 pub struct Connector {
     config: Warehouse,
@@ -105,7 +105,11 @@ impl Connector {
     }
 
     async fn run_connectorx_query(&self, query: &str) -> anyhow::Result<String> {
-        let conn_string = format!("{}://{}", self.config.r#type, self.config.key_path);
+        let conn_string = format!(
+            "{}://{}",
+            self.config.r#type,
+            self.config.key_path.as_path().to_str().unwrap()
+        );
         let query = query.to_string(); // convert to owned string for closure
         let result = tokio::task::spawn_blocking(move || {
             let source_conn = SourceConn::try_from(conn_string.as_str())?;

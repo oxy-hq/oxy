@@ -1,9 +1,11 @@
 mod init;
 mod search;
 
+use crate::config::*;
 use axum::handler::Handler;
 use clap::CommandFactory;
 use clap::Parser;
+use colored::Colorize;
 use log::debug;
 use std::error::Error;
 
@@ -15,8 +17,6 @@ use crate::api::server;
 use crate::connector::Connector;
 use crate::theme::*;
 use crate::workflow::run_workflow;
-use crate::yaml_parsers::config_parser::get_config_path;
-use crate::yaml_parsers::config_parser::parse_config;
 use crate::{build, vector_search, BuildOpts};
 use tower_serve_static::ServeDir;
 
@@ -203,10 +203,9 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             }
         }
         Some(SubCommand::Validate) => {
-            let config_path = get_config_path();
-            let result = parse_config(&config_path);
+            let result = load_config();
             if result.is_err() {
-                eprintln!("{}", format!("Error: {:?}", result.err().unwrap()).error());
+                eprintln!("{}", result.err().unwrap().to_string().red());
             } else {
                 println!("{}", "Config file is valid".success());
             }

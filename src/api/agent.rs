@@ -3,11 +3,11 @@ use std::{fs, path::PathBuf};
 
 use crate::{
     ai::{self, agent::LLMAgent},
+    config::{get_config_path, parse_config},
     db::{
         conversations::{create_conversation, get_conversation_by_agent},
         message::save_message,
     },
-    yaml_parsers::config_parser::{get_config_path, parse_config},
 };
 use async_stream::stream;
 use axum::response::IntoResponse;

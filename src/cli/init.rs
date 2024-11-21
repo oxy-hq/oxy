@@ -1,5 +1,5 @@
+use crate::cli::get_config_path;
 use crate::theme::*;
-use crate::yaml_parsers::config_parser::get_config_path;
 use std::error::Error;
 use std::io::{self, Write};
 use std::path::Path;
