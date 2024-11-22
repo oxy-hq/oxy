@@ -131,7 +131,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             } else {
                 // Interactive file search mode
                 let subdirectory_name = "data";
-                match search_files(&project_path, &subdirectory_name)? {
+                match search_files(project_path, subdirectory_name)? {
                     Some(file_name) => project_path.join("data").join(file_name),
                     None => {
                         eprintln!("{}", "No files found or selected.".error());
@@ -183,12 +183,12 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                 let config = parse_config(&config_path)?;
                 let project_path = &config.defaults.project_path;
                 let subdirectory_name = "workflows";
-                match search_files(&project_path, &subdirectory_name)? {
+                match search_files(project_path, subdirectory_name)? {
                     Some(workflow_file) => {
                         let workflow_name =
                             workflow_file.strip_suffix(".yml").unwrap_or(&workflow_file);
                         debug!("Executing workflow: {}", workflow_name);
-                        match run_workflow(&workflow_name).await {
+                        match run_workflow(workflow_name).await {
                             Ok(_) => println!("{}", "\n✅Workflow executed successfully".success()),
                             Err(e) => {
                                 eprintln!(
@@ -236,9 +236,9 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                             let response = get_service(ServeDir::new(&DIST))
                                 .call(index_req, None::<()>)
                                 .await;
-                            return Ok(response);
+                            Ok(response)
                         } else {
-                            return Ok(res);
+                            Ok(res)
                         }
                     }
                 });
@@ -264,6 +264,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
 
         Some(SubCommand::TestTheme) => {
             println!("Initial theme mode: {:?}", get_current_theme_mode());
+            println!("True color support: {:?}", detect_true_color_support());
             println!("{}", "analysis".primary());
             println!("{}", "success".success());
             println!("{}", "warning".warning());

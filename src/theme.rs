@@ -119,16 +119,32 @@ impl Theme {
             }, // gray
         }
     }
+
+    fn legacy() -> Self {
+        Theme {
+            primary: Color::Green,
+            secondary: Color::Blue,
+            tertiary: Color::Magenta,
+            success: Color::Green,
+            warning: Color::Yellow,
+            error: Color::Red,
+            info: Color::Cyan,
+            text: Color::White,
+        }
+    }
 }
 
 impl ThemeManager {
     fn new() -> Self {
+        let true_color = Self::detect_true_color_support();
         let mode = Self::detect_terminal_theme();
-        let current_theme = match mode {
+        let mut current_theme = match mode {
             ThemeMode::Dark => Theme::dark(),
             ThemeMode::Light => Theme::light(),
         };
-
+        if !true_color {
+            current_theme = Theme::legacy()
+        }
         ThemeManager {
             current_theme,
             mode,
@@ -141,6 +157,12 @@ impl ThemeManager {
             Ok(luma) if luma < 0.2 => ThemeMode::Dark,
             _ => ThemeMode::Dark,
         }
+    }
+
+    fn detect_true_color_support() -> bool {
+        std::env::var("COLORTERM")
+            .map(|v| v.to_lowercase() == "truecolor")
+            .unwrap_or(false)
     }
 
     fn get_instance() -> &'static Mutex<ThemeManager> {
@@ -158,6 +180,10 @@ impl ThemeManager {
 
 pub fn get_current_theme_mode() -> ThemeMode {
     ThemeManager::get_instance().lock().unwrap().mode.clone()
+}
+
+pub fn detect_true_color_support() -> bool {
+    ThemeManager::detect_true_color_support()
 }
 
 pub fn switch_theme(mode: ThemeMode) {
