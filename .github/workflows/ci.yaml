@@ -69,7 +69,7 @@ jobs:
       - name: Run lint-staged
         shell: bash
         run: |
-          pnpm lint-staged --diff="${{ github.base_ref }}...${{ github.head_ref }}"
+          pnpm lint-staged --diff="origin/${{ github.base_ref }}...origin/${{ github.head_ref }}"
   check:
     needs: [fmt, changesets]
     if: (needs.changesets.outputs.onyx == 'true' && github.ref_name == 'main') || needs.fmt.result == 'success'
