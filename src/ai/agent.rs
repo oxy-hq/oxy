@@ -1,15 +1,10 @@
-use crate::{config::model::OutputFormat, connector::load_result};
+use crate::{
+    ai::utils::record_batches_to_markdown, config::model::OutputFormat, connector::load_result,
+};
 
 use super::{toolbox::ToolBox, tools::Tool};
 use crate::theme::*;
-use arrow::{
-    error::ArrowError,
-    record_batch::RecordBatch,
-    util::{
-        display::{ArrayFormatter, FormatOptions},
-        pretty::pretty_format_batches,
-    },
-};
+use arrow::util::pretty::pretty_format_batches;
 use async_openai::{
     config::{OpenAIConfig, OPENAI_API_BASE},
     types::{
@@ -22,15 +17,18 @@ use async_openai::{
     Client,
 };
 use async_trait::async_trait;
-use comfy_table::presets::ASCII_MARKDOWN;
-use comfy_table::{Cell, Table};
 use log::debug;
 use schemars::{schema_for, JsonSchema};
 use serde::Deserialize;
 use serde_json::json;
-use std::fmt::Display;
 
 const MAX_DISPLAY_ROWS: usize = 100;
+
+#[derive(Deserialize, Debug, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct FilePathOutput {
+    pub file_path: String,
+}
 
 #[async_trait]
 pub trait LLMAgent {
@@ -156,7 +154,7 @@ where
             tool_returns.clear();
             tool_calls.clear();
             log::debug!("Start completion request {:?}", message_with_replies);
-            let response_format = match self.output_format {
+            let response_format: Option<ResponseFormat> = match self.output_format {
                 OutputFormat::Default => None,
                 OutputFormat::File => {
                     let schema = json!(schema_for!(FilePathOutput));
@@ -176,11 +174,11 @@ where
             let ret_message = self
                 .completion_request(message_with_replies, tools.clone(), response_format)
                 .await?;
+
             output = ret_message
                 .content
                 .unwrap_or("Empty response from OpenAI".to_string())
                 .clone();
-
             let tool_call_requests = ret_message.tool_calls.unwrap_or_default();
             log::info!(
                 "Number of tool calls: {} on {}",
@@ -220,12 +218,6 @@ where
     }
 }
 
-#[derive(Deserialize, Debug, JsonSchema)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct FilePathOutput {
-    pub file_path: String,
-}
-
 async fn map_output(output: &str, output_format: &OutputFormat) -> anyhow::Result<String> {
     match output_format {
         OutputFormat::Default => Ok(output.to_string()),
@@ -263,40 +255,4 @@ fn format_table_output(table: &str, truncated: bool) -> String {
     } else {
         table.to_string()
     }
-}
-
-fn record_batches_to_markdown(results: &[RecordBatch]) -> Result<impl Display, ArrowError> {
-    let options = FormatOptions::default().with_display_error(true);
-    let mut table = Table::new();
-    table.load_preset(ASCII_MARKDOWN);
-
-    if results.is_empty() {
-        return Ok(table);
-    }
-
-    let schema = results[0].schema();
-
-    let mut header = Vec::new();
-    for field in schema.fields() {
-        header.push(Cell::new(field.name()));
-    }
-    table.set_header(header);
-
-    for batch in results {
-        let formatters = batch
-            .columns()
-            .iter()
-            .map(|c| ArrayFormatter::try_new(c.as_ref(), &options))
-            .collect::<Result<Vec<_>, ArrowError>>()?;
-
-        for row in 0..batch.num_rows() {
-            let mut cells = Vec::new();
-            for formatter in &formatters {
-                cells.push(Cell::new(formatter.value(row)));
-            }
-            table.add_row(cells);
-        }
-    }
-
-    Ok(table)
 }

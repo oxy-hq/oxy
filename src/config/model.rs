@@ -207,9 +207,7 @@ pub enum ToolConfig {
 }
 
 fn default_sql_tool_description() -> String {
-    "Execute the SQL query. If the query is invalid, fix it and run again.
-      Output of this tool is a <file_path> used to retrieve the result."
-        .to_string()
+    "Execute the SQL query. If the query is invalid, fix it and run again.".to_string()
 }
 
 fn default_retrieval_tool_description() -> String {

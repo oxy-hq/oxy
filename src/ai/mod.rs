@@ -2,6 +2,7 @@ pub mod agent;
 pub mod retrieval;
 pub mod toolbox;
 pub mod tools;
+pub mod utils;
 
 use crate::{
     config::{
@@ -115,6 +116,7 @@ async fn fill_tools(
                 let tool = ExecuteSQLTool {
                     config: warehouse_config.clone(),
                     tool_description: description.to_string(),
+                    output_format: agent_config.output_format.clone(),
                 };
                 toolbox.add_tool(name.to_string(), tool.into());
             }
