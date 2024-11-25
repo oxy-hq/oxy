@@ -30,14 +30,7 @@ pub struct WorkflowExecutor {
 
 impl WorkflowExecutor {
     pub async fn init(&mut self, config: &Config) -> anyhow::Result<()> {
-        let agent_names = list_file_stems(
-            config
-                .defaults
-                .project_path
-                .join("agents")
-                .to_str()
-                .unwrap(),
-        )?;
+        let agent_names = list_file_stems(config.project_path.join("agents").to_str().unwrap())?;
         for agent_name in agent_names {
             let agent_config = config.load_config(Some(&agent_name))?;
             let agent = from_config(&agent_name, config, &agent_config).await;
@@ -47,7 +40,7 @@ impl WorkflowExecutor {
             self.warehouses
                 .insert(warehouse.name.clone(), warehouse.clone());
         }
-        self.data_path = config.defaults.project_path.join("data");
+        self.data_path = config.project_path.join("data");
         Ok(())
     }
 

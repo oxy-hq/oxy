@@ -116,7 +116,7 @@ pub struct ListAgentResponse {
 pub async fn list() -> Json<ListAgentResponse> {
     let config_path = get_config_path();
     let config = parse_config(&config_path).unwrap();
-    let agent_dir = PathBuf::from(&config.defaults.project_path).join("agents");
+    let agent_dir = PathBuf::from(&config.project_path).join("agents");
     let paths = fs::read_dir(agent_dir).unwrap();
     let mut agents = Vec::<AgentItem>::new();
 

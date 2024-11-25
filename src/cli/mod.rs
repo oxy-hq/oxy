@@ -123,7 +123,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
         Some(SubCommand::Run(run_args)) => {
             let (agent, config_path) = setup_agent(args.agent.as_deref()).await?;
             let config = parse_config(&config_path)?;
-            let project_path = &config.defaults.project_path;
+            let project_path = &config.project_path;
 
             let file_path = if let Some(file) = run_args.file {
                 // Use specific SQL file from data directory
@@ -154,7 +154,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
         Some(SubCommand::Build) => {
             let config_path = get_config_path();
             let config = parse_config(&config_path)?;
-            let project_path = &config.defaults.project_path;
+            let project_path = &config.project_path;
             let data_path = project_path.join("data");
             build(
                 &config,
@@ -181,7 +181,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             } else {
                 let config_path = get_config_path();
                 let config = parse_config(&config_path)?;
-                let project_path = &config.defaults.project_path;
+                let project_path = &config.project_path;
                 let subdirectory_name = "workflows";
                 match search_files(project_path, subdirectory_name)? {
                     Some(workflow_file) => {

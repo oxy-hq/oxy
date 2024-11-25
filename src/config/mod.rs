@@ -1,4 +1,4 @@
-use std::{path::PathBuf, rc::Rc};
+use std::{env, path::PathBuf, rc::Rc};
 pub mod model;
 mod parser;
 mod validate;
@@ -33,10 +33,8 @@ impl Defaults {
 }
 
 pub fn get_config_path() -> PathBuf {
-    home_dir()
-        .expect("Could not find home directory")
-        .join(".config")
-        .join("onyx")
+    std::env::current_dir()
+        .expect("Could not get current directory")
         .join("config.yml")
 }
 
@@ -50,11 +48,11 @@ pub struct ParsedConfig {
 
 impl Config {
     pub fn get_agents_dir(&self) -> PathBuf {
-        PathBuf::from(&self.defaults.project_path).join("agents")
+        return PathBuf::from(&self.project_path).join("agents");
     }
 
     pub fn get_sql_dir(&self) -> PathBuf {
-        PathBuf::from(&self.defaults.project_path).join("data")
+        return PathBuf::from(&self.project_path).join("data");
     }
 
     pub fn load_config(&self, agent_name: Option<&str>) -> anyhow::Result<AgentConfig> {
@@ -77,7 +75,7 @@ impl Config {
     }
 
     pub fn list_workflows(&self) -> anyhow::Result<Vec<String>> {
-        let workflow_dir = PathBuf::from(&self.defaults.project_path).join("workflows");
+        let workflow_dir = PathBuf::from(&self.project_path).join("workflows");
 
         let mut workflows = vec![];
         for entry in fs::read_dir(workflow_dir)? {
@@ -97,7 +95,7 @@ impl Config {
     }
 
     pub fn load_workflow(&self, workflow_name: &str) -> anyhow::Result<Workflow> {
-        let workflow_file = PathBuf::from(&self.defaults.project_path)
+        let workflow_file = PathBuf::from(&self.project_path)
             .join("workflows")
             .join(format!("{}.yml", workflow_name));
 
@@ -163,7 +161,8 @@ pub fn parse_config(config_path: &PathBuf) -> anyhow::Result<Config> {
     let config_str = fs::read_to_string(config_path)?;
     let result = serde_yaml::from_str::<Config>(&config_str);
     match result {
-        Ok(config) => {
+        Ok(mut config) => {
+            config.project_path = std::env::current_dir().expect("Could not get current directory");
             let rc = Rc::new(config);
             let context = ValidationContext {
                 config: Rc::clone(&rc),
@@ -179,6 +178,7 @@ pub fn parse_config(config_path: &PathBuf) -> anyhow::Result<Config> {
                     validation_result = workflow_config.validate_with(&workflow_context);
                 }
             }
+
             drop(context);
             match validation_result {
                 Ok(_) => match Rc::try_unwrap(rc) {
