@@ -59,7 +59,7 @@ impl WorkflowExecutor {
         let agent = self
             .agents
             .get(&agent_step.agent_ref)
-            .expect(format!("Agent {} not found", agent_step.agent_ref).as_str());
+            .unwrap_or_else(|| panic!("Agent {} not found", agent_step.agent_ref));
         let mut env = Environment::new();
         env.add_template("step_instruct", &agent_step.prompt)
             .unwrap();
@@ -103,12 +103,10 @@ impl WorkflowExecutor {
                 println!("{}", batches_display);
                 Ok(batches_display.to_string())
             }
-            None => {
-                return Err(anyhow::anyhow!(
-                    "Warehouse {} not found",
-                    execute_sql_step.warehouse
-                ));
-            }
+            None => Err(anyhow::anyhow!(
+                "Warehouse {} not found",
+                execute_sql_step.warehouse
+            )),
         }
     }
 
@@ -125,11 +123,11 @@ impl WorkflowExecutor {
             let template_context = Value::from(results.clone());
             match &step.step_type {
                 StepType::Agent(agent_step) => {
-                    step_output = Some(self.execute_agent(&agent_step, &template_context).await?);
+                    step_output = Some(self.execute_agent(agent_step, &template_context).await?);
                 }
                 StepType::ExecuteSQL(execute_sql_step) => {
                     step_output = Some(
-                        self.execute_sql(&execute_sql_step, &template_context)
+                        self.execute_sql(execute_sql_step, &template_context)
                             .await?,
                     );
                 }

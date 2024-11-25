@@ -15,7 +15,7 @@ pub async fn get_conversation_by_agent(agent: &str) -> Option<conversations::Mod
         .one(&connection)
         .await;
 
-    return conversations.unwrap();
+    conversations.unwrap()
 }
 
 pub async fn create_conversation(agent_name: &str) -> conversations::Model {
@@ -28,9 +28,9 @@ pub async fn create_conversation(agent_name: &str) -> conversations::Model {
         agent: ActiveValue::Set(agent_name.to_string()),
         title: ActiveValue::Set(agent_name.to_string()),
     };
-    let inserted = new_conversation
+
+    new_conversation
         .insert(&connection)
         .await
-        .expect("Error saving new conversation");
-    inserted
+        .expect("Error saving new conversation")
 }

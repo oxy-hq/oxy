@@ -38,7 +38,7 @@ pub fn validation_directory_path(path: &PathBuf, _: &ValidationContext) -> garde
 pub fn validate_env_var(env_var: &str, _: &ValidationContext) -> garde::Result {
     match env::var(env_var) {
         Ok(_) => Ok(()),
-        Err(_) => return Err(format_error_message(ENV_VAR_NOT_FOUND_ERROR, env_var)),
+        Err(_) => Err(format_error_message(ENV_VAR_NOT_FOUND_ERROR, env_var)),
     }
 }
 
