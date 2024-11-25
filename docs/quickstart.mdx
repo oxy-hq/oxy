@@ -1,160 +1,189 @@
 ---
-title: "Quickstart"
-description: "Let's learn how to install onyx"
+title: 'Quickstart'
+description: "Let's learn how to start using onyx"
 ---
 
-<Info>
-  These are instructions in the absence of a brew formula/cask. Some steps will
-  eventually be subsumed within a single command, `brew install onyx/onyx`.
-</Info>
 
-To get started with **onyx**, you will need to work within the terminal. By default, you
-have a terminal on your MacBook, which you can access through Spotlight. For a faster experience, you can download tried-and-true [iTerm2](https://iterm2.com/), GPU-accelerated [Alacritty](https://github.com/alacritty/alacritty),
-or AI-native [Warp](https://warp.dev/).
 
-Once you have your terminal set up, copy and paste the commands below:
+### Overview
 
-<Steps>
-  <Step title="Install onyx">
-    Install onyx by running:
-    ```sh
-      curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/onyx-hq/onyx-public-releases/refs/heads/main/install_onyx.sh | bash
-    ```
-    Upon successful installation, you should see the message "Onyx has been installed successfully."
-    <Info>
-      For transparency, you can review the [installation script's source code](https://github.com/onyx-hq/onyx-public-releases/blob/main/install_onyx.sh).
-    </Info>
-    <Accordion title="Verify Your Installation (Optional)">
+In this quickstart guide, we will use BigQuery as our data warehouse and OpenAI as our LLM provider. It will show you how to:
+- Install onyx
+- Connect onyx to BigQuery
+- Connect onyx to OpenAI
 
-      After the installation is complete, you may verify that it was successful by running:
-      ```sh
-      onyx --version
-      ```
-      and a configuration file is created at `~/.config/onyx/config.yml` by running:
-      ```sh
-      cat ~/.config/onyx/config.yml
-      # should output something
-      ```
-    </Accordion>
+### Prerequisites
+- Access to onyx's [GitHub repository](https://github.com/onyx-hq/onyx)
+- A Google Cloud account that has access to the BigQuery dataset you want to use
+- An OpenAI API key
 
-  </Step>
-  <Step title="Create a sample repository">
-    In order to configure agents and other query settings, you need to create a sample repository. You can do this by running:
-    ```sh
-    git clone https://github.com/onyx-hq/onyx-sample-repo.git
-    cd onyx-sample-repo
-    ```
-    Start by exploring the pre-configured agents in the `agents` folder. When you're ready, customize `config.yml` to add your own agents, models, and warehouses.
-  </Step>
-  <Step title="Configure onyx">
-    The main configuration file is located at `~/.config/onyx/config.yml`.
-    You can access it by:
-    - running `open ~/.config/onyx/config.yml` in your terminal
-    - or directly in your file browser (Finder on macOS, File Explorer on Windows)
-      <Tip>
-        To show hidden files and directories:
+### Install and configure onyx
+Onyx supports both Mac and Windows.
+<Tabs>
+  <Tab title="Mac">
 
-        - Mac: Open Finder and press `Cmd + Shift + .`
-        - Windows: Open File Explorer from the taskbar, select **View > Show > Hidden items**
-      </Tip>
-      <img class="rounded-md" src="/images/config-screenshot.jpeg" alt="config" />
+    To get started with **onyx**, you will need to work within the terminal. We recommend using [iTerm2](https://iterm2.com/) as it offers better features, customization options, and more frequent updates compared to the default terminal.
 
-    The `config.yml` file will look like this:
-    ```yaml config.yml
-    warehouses:
-    - name: primary_warehouse
-      type: bigquery
-      key_path: /path/to/key #replace
-      dataset: dbt_prod_core
-    - name: local
-      type: duckdb
-      key_path: None
-      dataset: /path/to/files/ #replace
+    Other great terminal options include the GPU-accelerated [Alacritty](https://github.com/alacritty/alacritty)
+    or AI-native [Warp](https://warp.dev/).
 
-    models:
-      - name: openai-4o
-        vendor: openai
-        model_ref: gpt-4o
-        key_var: OPENAI_API_KEY
-      - name: openai-4o-mini
-        vendor: openai
-        model_ref: gpt-4o-mini
-        key_var: OPENAI_API_KEY
-      - name: llama3.2
-        vendor: ollama
-        model_ref: llama3.2:latest
-        api_url: http://localhost:11434/v1
-        api_key: secret
+    <Warning>
+      Please refrain from using the default macOS terminal. It receives updates less frequently than other terminal emulators, which may impact your development experience.
+    </Warning>
 
-    retrievals:
-      - name: default
-        embed_model: "bge-small-en-v1.5"
-        rerank_model: "jina-reranker-v2-base-multiligual"
-        top_k: 10
-        factor: 5
+    Once you have your terminal set up, follow the steps below:
 
-    defaults:
-      agent: default
-      project_path: /path/to/project #replace
-    ```
-
-    You need to replace `/path/to/key` or `/path/to/warehouse` with the actual path to your BigQuery service key or the path to the directory where you want to store your data.
-    Here is a working example with actual paths:
-    ```yaml config.yml
-    warehouses:
-      - name: bigquery
-        type: bigquery
-        key_path: /Users/sampleuser/.config/onyx/project-dataset-XXXXXXXXXX.json
-        dataset: dbt_prod_core
-      - name: duckdbexample
-        type: duckdb
-        key_path: /Users/sampleuser/.config/onyx/project-dataset-XXXXXXXXXX.json
-        dataset: "/Users/sampleuser/onyx/onyx-sample-repo/"
-
-    models:
-      - name: openai-4o
-        vendor: openai
-        key_var: OPENAI_API_KEY
-        model_ref: gpt-4o
-      - name: openai-4o-mini
-        vendor: openai
-        key_var: OPENAI_API_KEY
-        model_ref: gpt-4o-mini
-
-    retrievals:
-      - name: default
-        embed_model: "bge-small-en-v1.5"
-        rerank_model: "jina-reranker-v2-base-multilingual"
-        top_k: 10
-        factor: 5
-
-    defaults:
-      agent: default
-      project_path: /Users/sampleuser/onyx/onyx-sample-repo/
-    ```
-
-  </Step>
-  <Step title="Start using onyx">
-    Now that you have configured your `config.yml` file, you can start using Onyx.
-    <AccordionGroup>
-      <Accordion title="Using the CLI">
-        You can use the `ask` subcommand to ask questions to your agents:
+    <Steps>
+      <Step title="Install onyx">
+        Install onyx by running:
         ```sh
-        onyx ask "Who is the most engaged customer?"
+          curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/onyx-hq/onyx-public-releases/refs/heads/main/install_onyx.sh | bash
         ```
-        and receive a response from your agents.
-        There are other subcommands you can use to interact with your agents, and you can explore them by running:
+        Upon successful installation, you should see the message "Onyx has been installed successfully."
+        <img class="rounded-md" src="/images/installation-success.jpeg" alt="installation successful" />
+
+        <Info>
+          For transparency, you can review the [installation script's source code](https://github.com/onyx-hq/onyx-public-releases/blob/main/install_onyx.sh).
+        </Info>
+        <Accordion title="Verify Your Installation (Optional)">
+
+          After the installation is complete, you may verify that it was successful by running:
+          ```sh
+          onyx --version
+          ```
+          and a configuration file is created at `~/.config/onyx/config.yml` by running:
+          ```sh
+          cat ~/.config/onyx/config.yml
+          # should output something
+          ```
+        </Accordion>
+
+      </Step>
+      <Step title="Create a sample repository">
+        In order to configure agents and other query settings, you need to create a sample repository. You can do this by running:
         ```sh
-        onyx --help
+        git clone git@github.com:onyx-hq/onyx-sample-repo.git
+        cd onyx-sample-repo
         ```
-      </Accordion>
-      <Accordion title="Using the Web">
-        You can run the following command to start the Onyx server:
-        ```sh
-        onyx serve
+        <Note>
+          If you haven’t set it up yet, now would be a good time to do so with these [SSH keys](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/generating-a-new-ssh-key-and-adding-it-to-the-ssh-agent).
+        </Note>
+
+        Start by exploring the pre-configured agents, default and product-team, in the `agents` folder. When you're ready, customize `config.yml` to add your own agents, models, and warehouses.
+      </Step>
+      <Step title="Configure onyx">
+        The main configuration file is located at `~/.config/onyx/config.yml`.
+        You can access it by:
+        - running `open ~/.config/onyx/config.yml` in your terminal. This will open the file in your default IDE (generally, Xcode).
+        - or directly in your Finder
+          <Tip>
+            To show hidden files and directories, open Finder and press `Cmd + Shift + .`
+          </Tip>
+          <img class="rounded-md" src="/images/config-screenshot.jpeg" alt="config" />
+        The `config.yml` file will look like this:
+        ```yaml config.yml
+        warehouses:
+        - name: primary_warehouse
+          type: bigquery
+          key_path: /path/to/key #replace
+          dataset: dbt_prod_core
+
+        models:
+          - name: openai-4o
+            vendor: openai
+            model_ref: gpt-4o
+            key_var: OPENAI_API_KEY
+
+        retrievals:
+          - name: default
+            embed_model: "bge-small-en-v1.5"
+            rerank_model: "jina-reranker-v2-base-multiligual"
+            top_k: 10
+            factor: 5
+
+        defaults:
+          agent: default
+          project_path: /path/to/project #replace
         ```
-        and then access the chat UI via the outputted address in your browser.
-      </Accordion>
-    </AccordionGroup>
-  </Step>
-</Steps>
+      </Step>
+      <Step title="Connect onyx to BigQuery">
+
+        You need to replace `/path/to/key` or `/path/to/warehouse` with the actual path to your BigQuery service key or the path to the directory where you want to store your data.
+        Here is a working example with actual paths:
+
+        ```yaml config.yml
+        warehouses:
+          - name: bigquery
+            type: bigquery
+            key_path: /Users/sampleuser/.config/onyx/project-dataset-XXXXXXXXXX.json
+            dataset: dbt_prod_core
+          - name: duckdbexample
+            type: duckdb
+            key_path: /Users/sampleuser/.config/onyx/project-dataset-XXXXXXXXXX.json
+            dataset: "/Users/sampleuser/onyx/onyx-sample-repo/"
+
+        models:
+          - name: openai-4o
+            vendor: openai
+            key_var: OPENAI_API_KEY
+            model_ref: gpt-4o
+          - name: openai-4o-mini
+            vendor: openai
+            key_var: OPENAI_API_KEY
+            model_ref: gpt-4o-mini
+
+        retrievals:
+          - name: default
+            embed_model: "bge-small-en-v1.5"
+            rerank_model: "jina-reranker-v2-base-multilingual"
+            top_k: 10
+            factor: 5
+
+        defaults:
+          agent: default
+          project_path: /Users/sampleuser/onyx/onyx-sample-repo/
+        ```
+
+      </Step>
+      <Step title="Connect onyx to OpenAI">
+        For the model, we recommend using OpenAI's gpt-4o. For alternative models, please refer to our integration documentation, [here](/integrations/overview).
+       
+        Replace `OPENAI_API_KEY` with your actual OpenAI API key.
+      </Step>
+    </Steps>
+
+  </Tab>
+  <Tab title="Windows (coming soon)">
+    Coming soon
+  </Tab>
+</Tabs>
+
+### All Done!
+
+Congrats! You're ready to start using Onyx now.
+
+<AccordionGroup>
+  <Accordion title="Using the CLI (Recommended)">
+    You can use the `ask` subcommand to ask questions to your agents:
+   
+    ```sh 
+    onyx ask "Who is the most engaged customer?"
+    ```
+    
+    and receive a response from your agents. There are other subcommands you can
+    use to interact with your agents, and you can explore them by
+    running: 
+    
+    ```sh 
+    onyx --help
+    ```
+  </Accordion>
+  <Accordion title="Using the Web">
+    You can run the following command to start the Onyx server:
+    
+     ```sh
+    onyx serve
+    ```
+    and then access the chat UI via the outputted address in your browser.
+  </Accordion>
+</AccordionGroup>
