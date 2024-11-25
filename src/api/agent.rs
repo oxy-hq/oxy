@@ -78,13 +78,13 @@ pub async fn ask(extract::Json(payload): extract::Json<AskRequest>) -> impl Into
 
     let chunks = vec![answer.content];
     let msgs = chunks.into_iter().map(|chunk| {
-        let msg = Message {
+
+        Message {
             content: chunk.to_string(),
             id: answer.id,
             is_human: answer.is_human,
-            created_at: answer.created_at.clone(),
-        };
-        msg
+            created_at: answer.created_at,
+        }
     }).collect::<Vec<_>>();
     for msg in msgs {
         tokio::time::sleep(Duration::from_millis(10)).await;
@@ -141,5 +141,5 @@ pub async fn list() -> Json<ListAgentResponse> {
     }
 
     agents.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
-    Json(ListAgentResponse { agents: agents })
+    Json(ListAgentResponse { agents })
 }

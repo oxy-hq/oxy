@@ -50,11 +50,11 @@ pub struct ParsedConfig {
 
 impl Config {
     pub fn get_agents_dir(&self) -> PathBuf {
-        return PathBuf::from(&self.defaults.project_path).join("agents");
+        PathBuf::from(&self.defaults.project_path).join("agents")
     }
 
     pub fn get_sql_dir(&self) -> PathBuf {
-        return PathBuf::from(&self.defaults.project_path).join("data");
+        PathBuf::from(&self.defaults.project_path).join("data")
     }
 
     pub fn load_config(&self, agent_name: Option<&str>) -> anyhow::Result<AgentConfig> {
@@ -160,7 +160,7 @@ pub fn load_config() -> anyhow::Result<Config> {
 }
 
 pub fn parse_config(config_path: &PathBuf) -> anyhow::Result<Config> {
-    let config_str = fs::read_to_string(&config_path)?;
+    let config_str = fs::read_to_string(config_path)?;
     let result = serde_yaml::from_str::<Config>(&config_str);
     match result {
         Ok(config) => {
@@ -182,21 +182,19 @@ pub fn parse_config(config_path: &PathBuf) -> anyhow::Result<Config> {
             drop(context);
             match validation_result {
                 Ok(_) => match Rc::try_unwrap(rc) {
-                    Ok(config) => return Ok(config),
-                    Err(_) => return Err(anyhow::anyhow!("Failed to unwrap Rc")),
+                    Ok(config) => Ok(config),
+                    Err(_) => Err(anyhow::anyhow!("Failed to unwrap Rc")),
                 },
-                Err(e) => {
-                    return Err(anyhow::anyhow!("Invalid configuration: \n{}", e));
-                }
+                Err(e) => Err(anyhow::anyhow!("Invalid configuration: \n{}", e)),
             }
         }
         Err(e) => {
             let mut rawError = e.to_string();
             rawError = rawError.replace("usize", "unsigned integer");
-            return Err(anyhow::anyhow!(
+            Err(anyhow::anyhow!(
                 "Failed to parse config file:\n{}",
                 rawError
-            ));
+            ))
         }
     }
 }

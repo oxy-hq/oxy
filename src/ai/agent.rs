@@ -234,7 +234,7 @@ async fn map_output(output: &str, output_format: &OutputFormat) -> anyhow::Resul
             let file_output = serde_json::from_str::<FilePathOutput>(output)?;
             let mut dataset = load_result(&file_output.file_path)?;
             let mut truncated = false;
-            if dataset.len() > 0 && dataset[0].num_rows() > MAX_DISPLAY_ROWS {
+            if !dataset.is_empty() && dataset[0].num_rows() > MAX_DISPLAY_ROWS {
                 dataset = vec![dataset[0].slice(0, MAX_DISPLAY_ROWS)];
                 truncated = true;
             }

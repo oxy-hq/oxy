@@ -13,12 +13,12 @@ pub async fn get_messages_by_conversation(
     conversation_id: Uuid,
 ) -> Result<Vec<messages::Model>, DbErr> {
     let connection = establish_connection().await;
-    let results = Messages::find()
+
+    Messages::find()
         .filter(messages::Column::ConversationId.eq(conversation_id))
         .order_by_asc(messages::Column::CreatedAt)
         .all(&connection)
-        .await;
-    results
+        .await
 }
 
 pub async fn save_message(conversation_id: Uuid, content: &str, is_human: bool) -> messages::Model {
@@ -31,9 +31,8 @@ pub async fn save_message(conversation_id: Uuid, content: &str, is_human: bool) 
         created_at: ActiveValue::not_set(),
     };
 
-    let result = new_message
+    new_message
         .insert(&connection)
         .await
-        .expect("Error saving new message");
-    return result;
+        .expect("Error saving new message")
 }

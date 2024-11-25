@@ -74,7 +74,7 @@ pub async fn get(Path(agent): Path<String>) -> Result<Json<GetConversationRespon
                 content: m.content.clone(),
                 id: m.id,
                 is_human: m.is_human,
-                created_at: m.created_at.clone(),
+                created_at: m.created_at,
             })
             .collect(),
         agent: c.agent,
