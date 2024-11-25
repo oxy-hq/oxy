@@ -1,15 +1,17 @@
 use dirs::home_dir;
 use garde::Validate;
+use serde::de::Deserializer;
 use serde::{Deserialize, Serialize};
+use std::env;
 use std::path::PathBuf;
 
 use crate::config::validate::validate_file_path;
 use crate::config::validate::{
     validate_agent_exists, validate_embed_model, validate_env_var, validate_rerank_model,
-    validate_sql_file, validate_warehouse_exists, validation_directory_path, ValidationContext,
+    validate_sql_file, validate_warehouse_exists, ValidationContext,
 };
 
-#[derive(Deserialize, Validate, Debug)]
+#[derive(Serialize, Deserialize, Validate, Debug)]
 #[garde(context(ValidationContext))]
 pub struct Config {
     #[garde(dive)]
@@ -20,6 +22,9 @@ pub struct Config {
     pub warehouses: Vec<Warehouse>,
     #[garde(dive)]
     pub retrievals: Vec<Retrieval>,
+    #[serde(skip)]
+    #[garde(skip)]
+    pub project_path: PathBuf,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -34,15 +39,13 @@ pub struct AgentConfig {
 }
 
 // These are settings stored as strings derived from the config.yml file's defaults section
-#[derive(Debug, Validate, Deserialize)]
+#[derive(Debug, Validate, Deserialize, Serialize)]
 #[garde(context(ValidationContext))]
 // #[garde(context(Config as ctx))]
 pub struct Defaults {
     #[garde(length(min = 1))]
     #[garde(custom(validate_agent_exists))]
     pub agent: String,
-    #[garde(custom(validation_directory_path))]
-    pub project_path: PathBuf,
 }
 
 #[derive(Serialize, Deserialize, Debug, Validate, Clone)]
@@ -58,7 +61,7 @@ pub struct Warehouse {
     pub dataset: String,
 }
 
-#[derive(Deserialize, Debug, Clone, Validate)]
+#[derive(Deserialize, Debug, Clone, Validate, Serialize)]
 #[garde(context(ValidationContext))]
 #[serde(tag = "vendor")]
 pub enum Model {
@@ -92,7 +95,7 @@ pub enum OutputFormat {
     File,
 }
 
-#[derive(Deserialize, Debug, Clone, Validate)]
+#[derive(Deserialize, Debug, Clone, Validate, Serialize)]
 #[garde(context(ValidationContext))]
 pub struct Retrieval {
     #[garde(length(min = 1))]
@@ -223,16 +226,4 @@ pub enum OutputType {
 
 fn default_tools() -> Option<Vec<ToolConfig>> {
     Some(vec![])
-}
-
-impl Defaults {
-    pub fn expand_project_path(&mut self) {
-        if let Some(str_path) = self.project_path.to_str() {
-            if str_path.starts_with("~") {
-                if let Some(home) = home_dir() {
-                    self.project_path = home.join(str_path.trim_start_matches("~"));
-                }
-            }
-        }
-    }
 }

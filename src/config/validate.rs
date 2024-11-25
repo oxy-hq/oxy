@@ -16,6 +16,13 @@ fn format_error_message(error_message: &str, value: impl Display) -> garde::Erro
 }
 
 pub fn validate_file_path(path: &PathBuf, _: &ValidationContext) -> garde::Result {
+    if path.is_absolute() || path.components().count() > 1 {
+        return Err(format_error_message(
+            "File must be in the current directory",
+            path.as_path().to_string_lossy(),
+        ));
+    }
+
     if !path.exists() {
         return Err(format_error_message(
             FILE_NOT_FOUND_ERROR,

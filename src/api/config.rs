@@ -61,7 +61,7 @@ pub async fn list_project_dir_structure() -> Result<impl IntoResponse, (StatusCo
             format!("Failed to parse config: {}", err),
         )
     })?;
-    let project_path = PathBuf::from(&config.defaults.project_path);
+    let project_path = PathBuf::from(&config.project_path);
     let dir_structure = list_dir_contents(&project_path).map_err(|err| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,

@@ -126,7 +126,7 @@ async fn fill_tools(
                 // let retrieval = config
                 //    .find_retrieval(agent_config.retrieval.as_ref().unwrap())
                 //     .unwrap();
-                let queries = load_queries(config.defaults.project_path.clone(), data);
+                let queries = load_queries(config.project_path.clone(), data);
                 tool_ctx = context! {
                     queries => queries,
                     ..tool_ctx,
