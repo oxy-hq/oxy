@@ -10,16 +10,20 @@ use minijinja::{Environment, Value};
 use crate::config::model::AgentStep;
 use crate::config::model::Config;
 use crate::config::model::ExecuteSQLStep;
+use crate::config::model::Step;
 use crate::config::model::StepType;
 use crate::config::model::Warehouse;
 use crate::config::model::Workflow;
 use crate::connector::Connector;
 use crate::utils::print_colored_sql;
+use crate::workflow::context::Output;
 use crate::StyledText;
 use crate::{
     ai::{agent::LLMAgent, from_config},
-    utils::{list_file_stems, truncate_with_ellipsis},
+    utils::list_file_stems,
 };
+
+use super::context::ContextBuilder;
 
 #[derive(Default)]
 pub struct WorkflowExecutor {
@@ -53,11 +57,7 @@ impl WorkflowExecutor {
             .agents
             .get(&agent_step.agent_ref)
             .unwrap_or_else(|| panic!("Agent {} not found", agent_step.agent_ref));
-        let mut env = Environment::new();
-        env.add_template("step_instruct", &agent_step.prompt)
-            .unwrap();
-        let tmpl = env.get_template("step_instruct").unwrap();
-        let prompt = tmpl.render(context).unwrap();
+        let prompt = render_template(&agent_step.prompt, context);
         log::info!("Prompt: {}", &prompt);
         let step_output = (|| async { agent.request(&prompt).await })
             .retry(ExponentialBuilder::default().with_max_times(agent_step.retry))
@@ -73,12 +73,14 @@ impl WorkflowExecutor {
     async fn execute_sql(
         &self,
         execute_sql_step: &ExecuteSQLStep,
-        _context: &Value,
+        context: &Value,
     ) -> anyhow::Result<String> {
         let wh_config = self.warehouses.get(&execute_sql_step.warehouse);
+        log::info!("SQL Context: {:?}", context);
         match wh_config {
             Some(wh) => {
-                let query_file = self.data_path.join(&execute_sql_step.sql_file);
+                let rendered_sql_file = render_template(&execute_sql_step.sql_file, context);
+                let query_file = self.data_path.join(&rendered_sql_file);
                 let query = match fs::read_to_string(&query_file) {
                     Ok(query) => query,
                     Err(e) => {
@@ -103,36 +105,63 @@ impl WorkflowExecutor {
         }
     }
 
-    pub async fn execute(&self, workflow: &Workflow) -> anyhow::Result<String> {
-        println!("\n⏳Running workflow: {}", workflow.name.text());
-        let mut step_output: Option<String> = None;
-        let mut results = HashMap::<String, String>::default();
-        for (i, step) in workflow.steps.iter().enumerate() {
+    async fn execute_steps(
+        &self,
+        steps: &Vec<Step>,
+        execution_context: &mut ContextBuilder,
+    ) -> anyhow::Result<()> {
+        for (i, step) in steps.iter().enumerate() {
             if i == 0 {
                 println!("⏳Starting {}", step.name.text());
             } else {
                 println!("\n⏳Starting {}", step.name.text());
             }
-            let template_context = Value::from(results.clone());
+            let template_context = execution_context.build_j2_context();
+
             match &step.step_type {
                 StepType::Agent(agent_step) => {
-                    step_output = Some(self.execute_agent(agent_step, &template_context).await?);
+                    let step_output = self.execute_agent(&agent_step, &template_context).await?;
+                    execution_context.add_output(step.name.clone(), Output::Single(step_output));
                 }
                 StepType::ExecuteSQL(execute_sql_step) => {
-                    step_output = Some(
-                        self.execute_sql(execute_sql_step, &template_context)
-                            .await?,
-                    );
+                    let step_output = self
+                        .execute_sql(&execute_sql_step, &template_context)
+                        .await?;
+                    execution_context.add_output(step.name.clone(), Output::Single(step_output));
+                }
+                StepType::LoopSequential(loop_step) => {
+                    execution_context.enter_loop_scope(step.name.to_string());
+                    for step_value in loop_step.values.iter() {
+                        execution_context.update_value(step_value.to_string());
+                        Box::pin(self.execute_steps(&loop_step.steps, execution_context)).await?;
+                    }
+                    execution_context.escape_scope();
+                }
+                StepType::Formatter(formatter_step) => {
+                    let step_output = render_template(&formatter_step.template, &template_context);
+                    println!("{}", "\nOutput:".primary());
+                    println!("{}", step_output);
+                    execution_context.add_output(step.name.clone(), Output::Single(step_output));
                 }
             }
-            results.insert(
-                step.name.clone(),
-                truncate_with_ellipsis(&step_output.clone().unwrap_or_default(), 10000),
-            );
         }
-        let workflow_result = &step_output.unwrap_or_default();
-        log::info!("\n\x1b[1;32mWorkflow output:\n{}\x1b[0m", &workflow_result);
-
-        Ok(workflow_result.to_string())
+        Ok(())
     }
+
+    pub async fn execute(&self, workflow: &Workflow) -> anyhow::Result<Output> {
+        println!("\n⏳Running workflow: {}", workflow.name.text());
+        let mut execution_context = ContextBuilder::new();
+        self.execute_steps(&workflow.steps, &mut execution_context)
+            .await?;
+        let results = execution_context.get_outputs();
+        log::info!("\n\x1b[1;32mWorkflow output:\n{:?}\x1b[0m", results);
+        Ok(results.clone())
+    }
+}
+
+fn render_template(template: &str, context: &Value) -> String {
+    let mut env = Environment::new();
+    env.add_template(template, template).unwrap();
+    let tmpl = env.get_template(template).unwrap();
+    tmpl.render(context).unwrap()
 }
