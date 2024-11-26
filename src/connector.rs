@@ -6,9 +6,10 @@ use connectorx::prelude::{get_arrow, CXQuery, SourceConn};
 use duckdb::Connection;
 use log::debug;
 use std::fs::File;
+use std::path::PathBuf;
 use uuid::Uuid;
 
-use crate::config::model::Warehouse;
+use crate::config::model::{Warehouse, WarehouseType};
 
 pub struct Connector {
     config: Warehouse,
@@ -31,7 +32,7 @@ impl Connector {
     pub async fn load_warehouse_info(&self) -> WarehouseInfo {
         let tables = self.get_schemas().await;
         let name = self.config.dataset.clone();
-        let dialect = self.config.r#type.clone();
+        let dialect = self.config.warehouse_type.to_string();
         WarehouseInfo {
             name,
             dialect,
@@ -40,9 +41,11 @@ impl Connector {
     }
 
     pub async fn list_datasets(&self) -> Vec<String> {
-        let query_string = match self.config.r#type.as_str() {
-            "bigquery" => "SELECT schema_name FROM INFORMATION_SCHEMA.SCHEMATA".to_owned(),
-            "duckdb" => "".to_owned(), // redundant, but left to indicate explicit support
+        let query_string = match self.config.warehouse_type {
+            WarehouseType::Bigquery(_) => {
+                "SELECT schema_name FROM INFORMATION_SCHEMA.SCHEMATA".to_owned()
+            }
+            WarehouseType::DuckDB(_) => "".to_owned(),
             _ => "".to_owned(),
         };
         if query_string.is_empty() {
@@ -61,13 +64,13 @@ impl Connector {
     }
 
     pub async fn get_schemas(&self) -> Vec<String> {
-        let query_string = match self.config.r#type.as_str() {
-            "bigquery" => format!(
+        let query_string = match self.config.warehouse_type {
+            WarehouseType::Bigquery(_) => format!(
                 "SELECT ddl FROM `{}`.INFORMATION_SCHEMA.TABLES",
                 self.config.dataset
             )
             .to_owned(),
-            "duckdb" => "".to_owned(), // redundant, but left to indicate explicit support
+            WarehouseType::DuckDB(_) => "".to_owned(),
             _ => "".to_owned(),
         };
         if query_string.is_empty() {
@@ -86,13 +89,16 @@ impl Connector {
     }
 
     pub async fn run_query(&self, query: &str) -> anyhow::Result<String> {
-        let file_path = match self.config.r#type.as_str() {
-            "bigquery" => self.run_connectorx_query(query).await?,
-            "duckdb" => self.run_duckdb_query(query).await?,
+        let file_path = match &self.config.warehouse_type {
+            WarehouseType::Bigquery(bigquery) => {
+                self.run_connectorx_query(query, bigquery.key_path.clone())
+                    .await?
+            }
+            WarehouseType::DuckDB(_) => self.run_duckdb_query(query).await?,
             _ => {
                 return Err(anyhow::Error::msg(format!(
                     "Unsupported dialect: {}",
-                    self.config.r#type
+                    self.config.warehouse_type
                 )))
             }
         };
@@ -104,10 +110,14 @@ impl Connector {
         load_result(&file_path)
     }
 
-    async fn run_connectorx_query(&self, query: &str) -> anyhow::Result<String> {
+    async fn run_connectorx_query(&self, query: &str, key_path: PathBuf) -> anyhow::Result<String> {
         let current_dir = std::env::current_dir().expect("Failed to get current directory");
-        let key_path = current_dir.join(&self.config.key_path);
-        let conn_string = format!("{}://{}", self.config.r#type, key_path.to_str().unwrap());
+        let key_path = current_dir.join(&key_path);
+        let conn_string = format!(
+            "{}://{}",
+            self.config.warehouse_type,
+            key_path.to_str().unwrap()
+        );
         let query = query.to_string(); // convert to owned string for closure
         let result = tokio::task::spawn_blocking(move || {
             let source_conn = SourceConn::try_from(conn_string.as_str())?;

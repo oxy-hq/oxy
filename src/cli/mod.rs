@@ -204,10 +204,16 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
         }
         Some(SubCommand::Validate) => {
             let result = load_config();
-            if result.is_err() {
-                eprintln!("{}", result.err().unwrap().to_string().red());
-            } else {
-                println!("{}", "Config file is valid".success());
+            match result {
+                Ok(config) => match config.validate_workflows() {
+                    Ok(_) => {
+                        println!("{}", "Config file is valid".success())
+                    }
+                    Err(e) => {
+                        eprintln!("{}", e.to_string().error().red());
+                    }
+                },
+                Err(e) => eprintln!("{}", e.to_string().error().red()),
             }
         }
         Some(SubCommand::Serve) => {

@@ -1,6 +1,6 @@
 use super::model::Config;
 use crate::ai::retrieval::{embedding_model_from_str, rerank_model_from_str};
-use std::{env, fmt::Display, path::PathBuf, rc::Rc};
+use std::{env, fmt::Display, path::PathBuf};
 
 const INVALID_EMBED_MODEL_ERROR: &str = "invalid embedding model";
 const INVALID_RERANK_MODEL_ERROR: &str = "invalid reranking model";
@@ -69,7 +69,7 @@ pub fn validate_rerank_model(rerank_model: &str, _: &ValidationContext) -> garde
 }
 
 pub struct ValidationContext {
-    pub config: Rc<Config>,
+    pub config: Config,
 }
 
 pub fn validate_warehouse_exists(

@@ -42,9 +42,9 @@ impl Output {
     }
 }
 
-impl Into<Value> for Output {
-    fn into(self) -> Value {
-        match self {
+impl From<Output> for Value {
+    fn from(val: Output) -> Self {
+        match val {
             Output::Single(s) => Value::from_safe_string(s),
             Output::Multi(m) => Value::from_object(
                 m.into_iter()
@@ -60,9 +60,9 @@ impl Into<Value> for Output {
     }
 }
 
-impl Into<HashMap<String, Value>> for Output {
-    fn into(self) -> HashMap<String, Value> {
-        match self {
+impl From<Output> for HashMap<String, Value> {
+    fn from(val: Output) -> Self {
+        match val {
             Output::Multi(m) => m
                 .into_iter()
                 .map(|(k, v)| (k, v.into()))
@@ -127,6 +127,12 @@ pub struct ContextBuilder {
 }
 
 const ROOT_SCOPE: &str = "";
+
+impl Default for ContextBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl ContextBuilder {
     pub fn new() -> Self {
