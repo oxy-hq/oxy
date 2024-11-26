@@ -143,8 +143,26 @@ pub struct AgentStep {
 pub struct ExecuteSQLStep {
     #[garde(custom(validate_warehouse_exists))]
     pub warehouse: String,
-    #[garde(custom(validate_sql_file))]
+    // #[garde(custom(validate_sql_file))]
+    // Skipping validation for now to allow sql file templating
+    #[garde(length(min = 1))]
     pub sql_file: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Validate)]
+#[garde(context(ValidationContext))]
+pub struct LoopSequentialStep {
+    #[garde(length(min = 1))]
+    pub values: Vec<String>,
+    #[garde(dive)]
+    pub steps: Vec<Step>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Validate)]
+#[garde(context(ValidationContext))]
+pub struct FormatterStep {
+    #[garde(length(min = 1))]
+    pub template: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, Validate)]
@@ -155,6 +173,10 @@ pub enum StepType {
     Agent(#[garde(dive)] AgentStep),
     #[serde(rename = "execute_sql")]
     ExecuteSQL(#[garde(dive)] ExecuteSQLStep),
+    #[serde(rename = "loop_sequential")]
+    LoopSequential(#[garde(dive)] LoopSequentialStep),
+    #[serde(rename = "formatter")]
+    Formatter(#[garde(dive)] FormatterStep),
 }
 
 // Temporary workflow object that reads in from the yaml file before it's combined with the

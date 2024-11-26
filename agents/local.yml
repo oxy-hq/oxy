@@ -1,5 +1,5 @@
 name: local
-model: "llama3.2"
+model: "openai-4o-mini"
 system_instructions: |
   You are an Data Analyst expert.
   Your task is to help the user generate report given the input.

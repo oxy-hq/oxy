@@ -1,12 +1,44 @@
 name: survey_responses
 steps:
-  - name: weekly_metrics
-    type: execute_sql
-    warehouse: primary_warehouse
-    sql_file: default/example.sql
-  - name: monthly_report
-    type: agent
-    prompt: |
-      Generate a detail monthly report using week over week "Responses to forms or surveys" metric:
-      {{weekly_metrics}}
-    agent_ref: default
+  - name: schedules
+    type: loop_sequential
+    values:
+      - "weekly"
+      - "monthly"
+    steps:
+      - name: metrics
+        type: loop_sequential
+        values:
+          - "responses"
+          - "rejected"
+        steps:
+          - name: table
+            type: execute_sql
+            warehouse: primary_warehouse
+            sql_file: example_{{schedules.value}}_{{metrics.value}}.sql
+          - name: report
+            type: agent
+            prompt: |
+              Generate a detail {{schedules.value}} report using {{metrics.value}} metrics:
+              {{table}}
+            agent_ref: local
+
+      - name: metric_reports
+        type: formatter
+        template: |
+          {% for metric in metrics %}
+          -- Metric: {{metric.value}} --
+          {{metric.report}}
+          -- End of Metric: {{metric.value}} --
+          {% endfor %}
+
+
+  - name: formatter
+    type: formatter
+    template: |
+      # Survey Responses Report
+      {% for schedule in schedules %}
+      -- Schedule: {{schedule.value}} --
+      {{schedule.metric_reports}}
+      -- End of Schedule: {{schedule.value}} --
+      {% endfor %}
