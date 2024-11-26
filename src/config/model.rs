@@ -1,17 +1,16 @@
 use dirs::home_dir;
 use garde::Validate;
-use serde::de::Deserializer;
 use serde::{Deserialize, Serialize};
-use std::env;
+use std::fmt;
 use std::path::PathBuf;
 
 use crate::config::validate::validate_file_path;
 use crate::config::validate::{
     validate_agent_exists, validate_embed_model, validate_env_var, validate_rerank_model,
-    validate_sql_file, validate_warehouse_exists, ValidationContext,
+    validate_warehouse_exists, ValidationContext,
 };
 
-#[derive(Serialize, Deserialize, Validate, Debug)]
+#[derive(Serialize, Deserialize, Validate, Debug, Clone)]
 #[garde(context(ValidationContext))]
 pub struct Config {
     #[garde(dive)]
@@ -39,7 +38,7 @@ pub struct AgentConfig {
 }
 
 // These are settings stored as strings derived from the config.yml file's defaults section
-#[derive(Debug, Validate, Deserialize, Serialize)]
+#[derive(Debug, Validate, Deserialize, Serialize, Clone)]
 #[garde(context(ValidationContext))]
 // #[garde(context(Config as ctx))]
 pub struct Defaults {
@@ -50,15 +49,49 @@ pub struct Defaults {
 
 #[derive(Serialize, Deserialize, Debug, Validate, Clone)]
 #[garde(context(ValidationContext))]
+pub struct BigQuery {
+    #[garde(custom(validate_file_path))]
+    pub key_path: PathBuf,
+}
+
+#[derive(Serialize, Deserialize, Debug, Validate, Clone)]
+#[garde(context(ValidationContext))]
+pub struct DuckDB {
+    #[garde(skip)]
+    pub key_path: PathBuf,
+}
+
+#[derive(Serialize, Deserialize, Debug, Validate, Clone)]
+#[garde(context(ValidationContext))]
+#[serde(tag = "type")]
+pub enum WarehouseType {
+    #[serde(rename = "bigquery")]
+    Bigquery(#[garde(dive)] BigQuery),
+    #[serde(rename = "duckdb")]
+    DuckDB(#[garde(dive)] DuckDB),
+}
+
+impl fmt::Display for WarehouseType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            WarehouseType::Bigquery(_) => write!(f, "bigquery"),
+            WarehouseType::DuckDB(_) => write!(f, "duckdb"),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Validate, Clone)]
+#[garde(context(ValidationContext))]
 pub struct Warehouse {
     #[garde(length(min = 1))]
     pub name: String,
-    #[garde(length(min = 1))]
-    pub r#type: String,
-    #[garde(custom(validate_file_path))]
-    pub key_path: PathBuf,
+
     #[garde(length(min = 1))]
     pub dataset: String,
+
+    #[serde(flatten)]
+    #[garde(dive)]
+    pub warehouse_type: WarehouseType,
 }
 
 #[derive(Deserialize, Debug, Clone, Validate, Serialize)]
@@ -177,6 +210,8 @@ pub enum StepType {
     LoopSequential(#[garde(dive)] LoopSequentialStep),
     #[serde(rename = "formatter")]
     Formatter(#[garde(dive)] FormatterStep),
+    #[serde(other)]
+    Unknown,
 }
 
 // Temporary workflow object that reads in from the yaml file before it's combined with the

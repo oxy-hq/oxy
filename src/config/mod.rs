@@ -1,7 +1,7 @@
-use std::{env, path::PathBuf, rc::Rc};
+use std::path::PathBuf;
 pub mod model;
 mod parser;
-mod validate;
+pub mod validate;
 use garde::Validate;
 
 use anyhow;
@@ -47,12 +47,34 @@ pub struct ParsedConfig {
 }
 
 impl Config {
+    pub fn validate_workflow(&self, workflow: &Workflow) -> anyhow::Result<()> {
+        let context = ValidationContext {
+            config: self.clone(),
+        };
+        match workflow.validate_with(&context) {
+            Ok(_) => Ok(()),
+            Err(e) => Err(anyhow::anyhow!(
+                "Invalid workflow: {} \n{}",
+                workflow.name,
+                e
+            )),
+        }
+    }
+
+    pub fn validate_workflows(&self) -> anyhow::Result<()> {
+        for workflow_name in self.list_workflows()? {
+            let workflow = self.load_workflow(&workflow_name)?;
+            self.validate_workflow(&workflow)?;
+        }
+        Ok(())
+    }
+
     pub fn get_agents_dir(&self) -> PathBuf {
-        return PathBuf::from(&self.project_path).join("agents");
+        PathBuf::from(&self.project_path).join("agents")
     }
 
     pub fn get_sql_dir(&self) -> PathBuf {
-        return PathBuf::from(&self.project_path).join("data");
+        PathBuf::from(&self.project_path).join("data")
     }
 
     pub fn load_config(&self, agent_name: Option<&str>) -> anyhow::Result<AgentConfig> {
@@ -151,7 +173,7 @@ impl Config {
 }
 
 pub fn load_config() -> anyhow::Result<Config> {
-    let config_path = get_config_path();
+    let config_path: PathBuf = get_config_path();
     let config = parse_config(&config_path)?;
 
     Ok(config)
@@ -163,28 +185,13 @@ pub fn parse_config(config_path: &PathBuf) -> anyhow::Result<Config> {
     match result {
         Ok(mut config) => {
             config.project_path = std::env::current_dir().expect("Could not get current directory");
-            let rc = Rc::new(config);
             let context = ValidationContext {
-                config: Rc::clone(&rc),
+                config: config.clone(),
             };
-            let mut validation_result = Rc::clone(&rc).validate_with(&context);
-            if validation_result.is_ok() {
-                let workflows = Rc::clone(&rc).list_workflows()?;
-                for workflow in workflows {
-                    let workflow_config = Rc::clone(&rc).load_workflow(&workflow)?;
-                    let workflow_context = ValidationContext {
-                        config: Rc::clone(&rc),
-                    };
-                    validation_result = workflow_config.validate_with(&workflow_context);
-                }
-            }
-
+            let validation_result = config.validate_with(&context);
             drop(context);
             match validation_result {
-                Ok(_) => match Rc::try_unwrap(rc) {
-                    Ok(config) => Ok(config),
-                    Err(_) => Err(anyhow::anyhow!("Failed to unwrap Rc")),
-                },
+                Ok(_) => Ok(config),
                 Err(e) => Err(anyhow::anyhow!("Invalid configuration: \n{}", e)),
             }
         }

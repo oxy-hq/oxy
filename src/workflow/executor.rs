@@ -120,12 +120,12 @@ impl WorkflowExecutor {
 
             match &step.step_type {
                 StepType::Agent(agent_step) => {
-                    let step_output = self.execute_agent(&agent_step, &template_context).await?;
+                    let step_output = self.execute_agent(agent_step, &template_context).await?;
                     execution_context.add_output(step.name.clone(), Output::Single(step_output));
                 }
                 StepType::ExecuteSQL(execute_sql_step) => {
                     let step_output = self
-                        .execute_sql(&execute_sql_step, &template_context)
+                        .execute_sql(execute_sql_step, &template_context)
                         .await?;
                     execution_context.add_output(step.name.clone(), Output::Single(step_output));
                 }
@@ -142,6 +142,9 @@ impl WorkflowExecutor {
                     println!("{}", "\nOutput:".primary());
                     println!("{}", step_output);
                     execution_context.add_output(step.name.clone(), Output::Single(step_output));
+                }
+                StepType::Unknown => {
+                    println!("Encountered unknown step type. Skipping.");
                 }
             }
         }

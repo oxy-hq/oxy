@@ -1,5 +1,5 @@
 use crate::cli::get_config_path;
-use crate::cli::model::{Config, Retrieval};
+use crate::cli::model::{BigQuery, Config, DuckDB, Retrieval, WarehouseType};
 use crate::theme::*;
 use include_dir::{include_dir, Dir};
 use std::io::{self, Write};
@@ -8,7 +8,6 @@ use std::{fmt, fs};
 
 use super::model::{Defaults, Model, Warehouse};
 
-// Custom error type for better error handling
 #[derive(Debug)]
 pub enum InitError {
     IoError(io::Error),
@@ -34,8 +33,6 @@ static AGENTS_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/agents");
 static DATA_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/data");
 static WORKFLOWS_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/workflows");
 
-// Helper function to prompt for input with default value
-// Helper function to prompt for input with default value
 fn prompt_with_default(prompt: &str, default: &str) -> io::Result<String> {
     print!("{} (default: {}): ", prompt, default);
     io::stdout().flush()?;
@@ -49,16 +46,18 @@ fn prompt_with_default(prompt: &str, default: &str) -> io::Result<String> {
     })
 }
 
-// Function to collect warehouse configurations
 fn collect_warehouses() -> Result<Vec<Warehouse>, InitError> {
     let mut warehouses = Vec::new();
 
     loop {
         println!("\nWarehouse {}:", warehouses.len() + 1);
+
+        let name = prompt_with_default("Name", "warehouse-1")?;
+        let warehouse_type = choose_warehouse_type()?;
+
         let warehouse = Warehouse {
-            name: prompt_with_default("Name", "warehouse-1")?,
-            r#type: prompt_with_default("Type", "bigquery")?,
-            key_path: PathBuf::from(prompt_with_default("Key path", "bigquery.key")?),
+            name: name.clone(),
+            warehouse_type,
             dataset: prompt_with_default("Dataset", "dbt_prod_core")?,
         };
 
@@ -72,7 +71,29 @@ fn collect_warehouses() -> Result<Vec<Warehouse>, InitError> {
     Ok(warehouses)
 }
 
-// Function to collect model configurations
+fn choose_warehouse_type() -> Result<WarehouseType, InitError> {
+    println!("Choose warehouse type:");
+    println!("1. BigQuery");
+    println!("2. DuckDB");
+
+    loop {
+        let choice = prompt_with_default("Type (1 or 2)", "1")?;
+        match choice.trim() {
+            "1" => {
+                return Ok(WarehouseType::Bigquery(BigQuery {
+                    key_path: PathBuf::from(prompt_with_default("Key path", "bigquery.key")?),
+                }))
+            }
+            "2" => {
+                return Ok(WarehouseType::DuckDB(DuckDB {
+                    key_path: PathBuf::new(),
+                }))
+            }
+            _ => println!("Invalid choice. Please enter 1 or 2."),
+        }
+    }
+}
+
 fn collect_models() -> Result<Vec<Model>, InitError> {
     let mut models = Vec::new();
 
@@ -136,7 +157,6 @@ fn create_and_populate_directory(name: &str, dir: &Dir) -> Result<(), InitError>
     Ok(())
 }
 
-// Function to create directory structure
 fn create_project_structure() -> Result<(), InitError> {
     let directories = [
         ("agents", &AGENTS_DIR),
@@ -151,7 +171,6 @@ fn create_project_structure() -> Result<(), InitError> {
     Ok(())
 }
 
-// Main initialization function
 pub fn init() -> Result<(), InitError> {
     let config_path = get_config_path();
 
@@ -175,7 +194,6 @@ pub fn init() -> Result<(), InitError> {
     Ok(())
 }
 
-// Function to create configuration file
 fn create_config_file(config_path: &Path) -> Result<(), InitError> {
     if let Some(parent) = config_path.parent() {
         fs::create_dir_all(parent)?;
