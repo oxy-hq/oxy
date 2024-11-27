@@ -125,7 +125,7 @@ jobs:
         if [[ "${{ matrix.job.cross-compilation }}" == "true" ]]; then
           cross build --release --target ${{ matrix.job.target }}
         else
-          carg zigbuild --release --target ${{ matrix.job.target }}${{ matrix.job.glibc-version }}
+          cargo zigbuild --release --target ${{ matrix.job.target }}${{ matrix.job.glibc-version }}
         fi
         mv target/${{ matrix.job.target }}/release/onyx onyx-${{ matrix.job.target }}
     - name: Generate release tag
