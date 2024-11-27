@@ -15,8 +15,6 @@ env/
 bin/
 build/
 develop-eggs/
-dist/*
-!dist/.gitkeep
 eggs/
 lib/
 lib64/
