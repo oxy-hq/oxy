@@ -46,7 +46,6 @@ jobs:
         uses: arduino/setup-protoc@v3
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - uses: rui314/setup-mold@v1
       - name: Install Node.js
         uses: actions/setup-node@v4
         id: setup-node
@@ -109,8 +108,6 @@ jobs:
         uses: arduino/setup-protoc@v3
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-      # mold is required for faster builds on linux
-      - uses: rui314/setup-mold@v1
       - name:
           Prep tools for compilation
           # protobuf is required by lance https://github.com/lancedb/lance/issues/3073

@@ -71,3 +71,4 @@ tower-serve-static = "0.1.1"
 tower = "0.5.1"
 garde = {version = "0.20.0", features = ["full"]}
 comfy-table = "7.1.3"
+native-tls = { version = "0.2.12", features = ["vendored"] }

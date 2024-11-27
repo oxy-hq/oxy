@@ -27,14 +27,13 @@ jobs:
       matrix:
         job:
         - os: macos-latest
-          target: x86_64-apple-darwin
+          target: universal2-apple-darwin
           cross-compilation: false
-        - os: macos-latest
-          target: aarch64-apple-darwin
-          cross-compilation: false
+          glibc-version: ""
         - os: ubuntu-latest
           target: x86_64-unknown-linux-gnu
           cross-compilation: false
+          glibc-version: ".2.31" # to stay compatible with ubuntu 20.04
         # - os: windows-latest
         #   target: x86_64-pc-windows-msvc
         #   cross-compilation: false
@@ -59,7 +58,7 @@ jobs:
       uses: actions-rust-lang/setup-rust-toolchain@v1
       with:
         rustflags: ""   # temporarily override "-D warnings"
-        target: ${{ matrix.job.target }}
+        target: ${{ matrix.job.os == 'macos-latest' && 'x86_64-apple-darwin,aarch64-apple-darwin' || matrix.job.target }}
         cache-key: release-${{ matrix.job.os }}-${{ matrix.job.target }}
     - name: Update Rust Toolchain Target
       run: |
@@ -113,8 +112,11 @@ jobs:
       uses: arduino/setup-protoc@v3
       with:
         repo-token: ${{ secrets.GITHUB_TOKEN }}
-    - uses: rui314/setup-mold@v1
-      if: matrix.job.os == 'ubuntu-latest'
+    - uses: mlugg/setup-zig@v1
+    - name: Setup cargo zigbuild
+      shell: bash
+      run: |
+        cargo install --locked cargo-zigbuild
     - name: Cargo build
       env:
         MACOSX_DEPLOYMENT_TARGET: 14.0
@@ -123,7 +125,7 @@ jobs:
         if [[ "${{ matrix.job.cross-compilation }}" == "true" ]]; then
           cross build --release --target ${{ matrix.job.target }}
         else
-          cargo build --release --target ${{ matrix.job.target }}
+          carg zigbuild --release --target ${{ matrix.job.target }}${{ matrix.job.glibc-version }}
         fi
         mv target/${{ matrix.job.target }}/release/onyx onyx-${{ matrix.job.target }}
     - name: Generate release tag
