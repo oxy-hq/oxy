@@ -2,8 +2,6 @@
 
 REPO="onyx-hq/onyx-public-releases"
 INSTALL_DIR="$HOME/.local/bin"
-CONFIG_DIR="$HOME/.config/onyx"
-CONFIG_FILE="config.yml"
 
 # Ensure the install directory exists
 mkdir -p "$INSTALL_DIR"
@@ -36,13 +34,18 @@ fi
 
 # Map architecture to target
 case $ARCH in
-x86_64 | aarch64)
+x86_64)
 	if [ "$OS" == "darwin" ]; then
-		TARGET="universal2-apple-darwin"
-	elif [ "$OS" == "mingw" ] || [ "$OS" == "msys" ]; then
-		TARGET="${ARCH}-pc-windows-msvc"
+		TARGET="x86_64-apple-darwin"
 	else
-		TARGET="${ARCH}-unknown-linux-gnu"
+		TARGET="x86_64-unknown-linux-gnu"
+	fi
+	;;
+aarch64)
+	if [ "$OS" == "darwin" ]; then
+		TARGET="aarch64-apple-darwin"
+	else
+		TARGET="aarch64-unknown-linux-gnu"
 	fi
 	;;
 *)
@@ -53,26 +56,14 @@ esac
 
 # Download the release binary
 BINARY_URL="https://github.com/$REPO/releases/download/$LATEST_TAG/onyx-$TARGET"
-curl -L $BINARY_URL -o onyx
+curl -L $BINARY_URL -o onyx-$TARGET
 
 # Make the binary executable
-chmod +x onyx
+chmod +x onyx-$TARGET
 
 # Move the binary to the install directory
-mv onyx $INSTALL_DIR/onyx
+mv onyx-$TARGET $INSTALL_DIR/onyx
 
-# Create the config directory if it doesn't exist
-mkdir -p "$CONFIG_DIR"
+echo "Please visit this page for the latest configuration updates https://raw.githubusercontent.com/$REPO/$LATEST_TAG/example_config.yml"
 
-# Check if the config file exists and compare it before downloading the latest file
-if [ -f "$CONFIG_DIR/$CONFIG_FILE" ]; then
-	curl -L https://raw.githubusercontent.com/$REPO/main/example_config.yml >"$CONFIG_DIR/$CONFIG_FILE.latest"
-	echo "Config file already exists. The latest version will be saved as $CONFIG_FILE.latest"
-	echo "To show the differences, run: diff $CONFIG_DIR/$CONFIG_FILE $CONFIG_DIR/$CONFIG_FILE.latest"
-	echo "Or open $CONFIG_DIR/$CONFIG_FILE.latest in your favorite editor"
-else
-	echo "Config file does not exist. Downloading the latest version..."
-	curl -L https://raw.githubusercontent.com/$REPO/main/example_config.yml -o "$CONFIG_DIR/$CONFIG_FILE"
-fi
-
-echo "Onyx has been installed successfully!"
+echo "Onyx version $LATEST_TAG for $TARGET has been installed successfully!"
