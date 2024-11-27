@@ -3,42 +3,91 @@ title: "Workflows"
 description: How to define workflows
 ---
 
-A workflow is a handful of agents with specific `prompt`s, composed by passing
-results from one agent to the input of another. A workflow is similar to a
-"chain" in the prompt engineering parlance, but with a few key differences:
-
-- **Workflows are DAGs.** Whereas chains can become arbitrarily complex with
-  arbitrarily nested loops, complex reply logic, and opaque branching structures,
-  workflows are DAGs, which enforce a clearer, more predictable flow from input
-  to output.
-- **Workflows separate logic from execution.** Because workflows are written in
-  yaml, the DAG definition is entirely separate from the execution engine
-  (usually Python), while other Python-based systems keep these tightly coupled
-  and so ultimately become difficult to build and maintain.
-- **Workflows are only executable, not interactive.** Workflows are designed to
-  be deterministic pipelines with data agents baked in as functional components,
-  not agentic interfaces for chat.
-
-These choices generally reduce the flexibility of Onyx when compared to say,
-`langchain` or `llama_index`, but they also dramatically reduce the complexity
-of the system. You can think of Onyx's `workflow` paradigm as a domain-specific
-chain-builder for data workflows, where most (if not all) tasks simply pass
-results around between different agents.
-
+A workflow is a series of tasks (`steps`) executed sequentially. Each `step`
+can be either a deterministic command (such as `execute_sql`, in which a named
+sql query is executed) or an agent given a prompt. These steps are composed by
+passing results from one agent to the input of another -- the output of each
+step can be accessed with Jinja as `{{ name_of_step }}`.
 
 ## Workflow components
 
 Workflows are DAGs comprised of `steps`. Each step has a few common properties:
 
-| Component           | Description                                                                                       | Type     |
-| ------------------- | ------------------------------------------------------------------------------------------------- | -------- |
-| name | Identifier for the step. Output of the step can be referenced as `{{name}}`. | required |
-| type | The tool to use for this step. Options: `execute_sql`, `agent`. | required |
-| sql_file | The sql file within the `data` directory to execute | required for `type: execute_sql`|
-| agent_ref | The agent to use within the `agents` directory, referenced by the agent's `name`. | required for `type: agent`|
-| prompt | The input prompt passed to the agent for this step. | required for `type: agent`|
+| Component | Description                                                                  | Type     |
+| --------- | ---------------------------------------------------------------------------- | -------- |
+| name      | Identifier for the step. Output of the step can be referenced as `{{name}}`. | required |
+| type      | The tool to use for this step. See the following section for possible types. | required |
 
-## Sample config
+Specific step types have additional property requirements.
+
+### `type: agent`
+
+| Component | Description                                                                       | Type                       |
+| --------- | --------------------------------------------------------------------------------- | -------------------------- |
+| agent_ref | The agent to use within the `agents` directory, referenced by the agent's `name`. | required for `type: agent` |
+| prompt    | The input prompt passed to the agent for this step.                               | required for `type: agent` |
+
+### `type: execute_sql`
+
+Executes a SQL query referenced by filename.
+
+| Component | Description                                              | Type     |
+| --------- | -------------------------------------------------------- | -------- |
+| sql_file  | The sql file within the `data` directory to execute      | required |
+| warehouse | The name of the `warehouse` to execute the query against | required |
+
+### `type: formatter`
+
+Formats the provided `template` using the outputs of other `steps`, then passes
+the rendered template as output.
+
+| Component | Description                                       | Type     |
+| --------- | ------------------------------------------------- | -------- |
+| template  | The template to be rendered and passed as output. | required |
+
+### `type: loop_sequential`
+
+| Component | Description                                                                 | Type     |
+| --------- | --------------------------------------------------------------------------- | -------- |
+| values    | Values to iterate over for each `step` in the current step's `steps` array. | required |
+| steps     | Defines the steps to execute for each `value`.                              | required |
+
+`values` are accessed within the `steps` of the `loop_sequential` step as
+`<name>.value`, where `<name>` is the name of the step. A sample partial config
+is shown below:
+
+```yaml
+steps:
+  - name: loop_through_animals
+    type: loop_sequential
+    values: ["whale", "dolphin", "shark"]
+    steps:
+      - name: get_number_of_animals
+        type: agent
+        agent_ref: default
+        prompt: |
+          Get the number of {{ loop_through_animals.value }}s in the ocean.
+```
+
+This is often combined with the `type: formatter` step, which can loop through
+the resulting outputs and form them into a single string. The output from a
+`loop_sequential` is an array of dictionaries for each `value`, where the keys
+for each element of each dictionary is named according to the `step`'s' `name`
+field. These can be accessed by using Jinja, by looping through the `{{
+<loop_name> }}` variable (`{{ loop_through_animals }}` above).
+
+An example of this behavior is shown below:
+
+```yaml
+- name: format_animal_report
+  type: formatter
+  template: |
+    {% for animal in loop_through_animals %}
+    {{ animal.get_number_of_animals }}
+    {% endfor %}
+```
+
+## Examples
 
 ```yaml workflows/monthly_report.yml
 steps:
@@ -57,3 +106,27 @@ steps:
       The overall portfolio brought in X views and Y clicks in MM/YYYY, up A% and B%, respectively.
       {{month_over_month_metrics}}
 ```
+
+## Workflows vs. chains
+
+A workflow is
+similar to a "chain" in the prompt engineering parlance, but with a few key
+differences:
+
+- **Workflows are DAGs.** Whereas chains can become arbitrarily complex with
+  arbitrarily nested loops, complex reply logic, and opaque branching structures,
+  workflows are DAGs, which enforce a clearer, more predictable flow from input
+  to output.
+- **Workflows separate logic from execution.** Because workflows are written in
+  yaml, the DAG definition is entirely separate from the execution engine
+  (usually Python), while other Python-based systems keep these tightly coupled
+  and so ultimately become difficult to build and maintain.
+- **Workflows are only executable, not interactive.** Workflows are designed to
+  be deterministic pipelines with data agents baked in as functional components,
+  not agentic interfaces for chat.
+
+These choices generally reduce the flexibility of Onyx when compared to say,
+`langchain` or `llama_index`, but they also dramatically reduce the complexity
+of the system. You can think of Onyx's `workflow` paradigm as a domain-specific
+chain-builder for data workflows, where most (if not all) tasks simply pass
+results around between different agents.

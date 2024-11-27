@@ -10,11 +10,11 @@ There are three core elements in Onyx:
 - [data](/learn-about-onyx/data): raw semantic source material that your agents have access to
 - [workflows](/learn-about-onyx/workflows): DAGs of agents
 
-Beyond this, there is a single global configuration file that you need to set
-up, which will define the models, warehouses, and retrieval algorithms that the
+Beyond this, there is a single configuration file that you need to set up,
+which will define the models, warehouses, and retrieval algorithms that the
 agents will have access to.
 
-- [~/.config/onyx/config.yml](/learn-about-onyx/config): global configuration file
+- [./config.yml](/learn-about-onyx/config): onyx project configuration file
 
 These fit into the following structure:
 
@@ -26,8 +26,5 @@ onyx_starter_project/
 |    |--- sample_query.sql
 |--- workflows/
 |    |--- sample_workflow.yml
-|--- README.md
-
-~/.config/onyx/
 |--- config.yml
 ```

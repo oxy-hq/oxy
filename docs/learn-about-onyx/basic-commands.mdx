@@ -4,7 +4,7 @@ title: Basic commands
 
 ### Agent interaction
 
-Once you have your agents, config, and data configured, you can ask this agent questions by running `onyx ask <prompt>`, as shown below:
+Once you have your agents, config, and data configured, you can ask this agent questions by running `onyx ask <prompt>` from within the root of your `onyx` project directory, as shown below:
 
 ```bash
 onyx ask "How many users do we have?"  # Ask a question of the default agent
@@ -24,20 +24,14 @@ To execute a workflow, you can run:
 onyx execute workflow_name  # Replace workflow_name with workflow name without the `.yml` extension
 ```
 
-### Other utilities
-
-```bash
-onyx search  # Search through your SQL queries and execute them on selection
-```
-
-# Work-in-progress
-
-<Warning>The functionality in this section is not yet operational.</Warning>
-
 ### Frontend client
 
 If you'd like to run a local instance of a web-client, you can run `onyx
 serve`, which will stand up a lightweight API server and web application.
+
+# Work-in-progress
+
+<Warning>The functionality in this section is not yet operational.</Warning>
 
 ### Embedding management
 
