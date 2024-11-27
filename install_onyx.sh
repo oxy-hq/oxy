@@ -36,18 +36,13 @@ fi
 
 # Map architecture to target
 case $ARCH in
-x86_64)
+x86_64 | aarch64)
 	if [ "$OS" == "darwin" ]; then
-		TARGET="x86_64-apple-darwin"
+		TARGET="universal2-apple-darwin"
+	elif [ "$OS" == "mingw" ] || [ "$OS" == "msys" ]; then
+		TARGET="${ARCH}-pc-windows-msvc"
 	else
-		TARGET="x86_64-unknown-linux-gnu"
-	fi
-	;;
-aarch64 | arm64)
-	if [ "$OS" == "darwin" ]; then
-		TARGET="aarch64-apple-darwin"
-	else
-		TARGET="aarch64-unknown-linux-gnu"
+		TARGET="${ARCH}-unknown-linux-gnu"
 	fi
 	;;
 *)
