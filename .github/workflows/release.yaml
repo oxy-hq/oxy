@@ -26,11 +26,11 @@ jobs:
       fail-fast: false
       matrix:
         job:
-        - os: macos-latest
-          target: universal2-apple-darwin
-          cross-compilation: false
-          glibc-version: ""
-        - os: ubuntu-latest
+        # - os: macos-latest
+        #   target: universal2-apple-darwin
+        #   cross-compilation: false
+        #   glibc-version: ""
+        - os: ubuntu-20.04
           target: x86_64-unknown-linux-gnu
           cross-compilation: false
           glibc-version: ".2.31" # to stay compatible with ubuntu 20.04
@@ -125,7 +125,7 @@ jobs:
         if [[ "${{ matrix.job.cross-compilation }}" == "true" ]]; then
           cross build --release --target ${{ matrix.job.target }}
         else
-          cargo zigbuild --release --target ${{ matrix.job.target }}${{ matrix.job.glibc-version }}
+          cargo build --release --target ${{ matrix.job.target }}
         fi
         mv target/${{ matrix.job.target }}/release/onyx onyx-${{ matrix.job.target }}
     - name: Generate release tag
