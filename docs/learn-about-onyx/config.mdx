@@ -3,26 +3,15 @@ title: "Global config"
 description: How to configure your `~/.config/onyx/config.yml` file
 ---
 
-<Tip>
-
-To show hidden files and directories:
-
-- Mac: Open Finder and press `Cmd + Shift + .`
-- Windows: Open File Explorer from the taskbar, select **View > Show > Hidden items**
-
-</Tip>
-
-The `config.yml` file contained in the `~/.config/onyx/` directory is the
-global configuration file you'll use to define three entities, specified as the
-following top-level keys:
+The `config.yml` file at the root of your repository is the configuration file
+you'll use to define three entities, specified as the following top-level keys:
 
 1. `warehouses`: warehouse/database connections
 2. `models`: foundation model connections
 3. `retrievals`: specifications for how retrieval should be done
 
 Beside these, there is a final namespace, `defaults`, where you can specify
-your default `project_path` (where your project repository is stored locally)
-and `agent`, which specifies the default agent that will be invoked with all
+`agent`, which specifies the default agent that will be invoked with all
 `onyx` CLI commands.
 
 A sample `config.yml` file is shown below:
@@ -58,5 +47,4 @@ retrievals:
 
 defaults:
   agent: default
-  project_path: /path/to/onyx/project
 ```
