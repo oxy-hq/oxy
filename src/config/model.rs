@@ -1,6 +1,7 @@
 use dirs::home_dir;
 use garde::Validate;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fmt;
 use std::path::PathBuf;
 
@@ -180,6 +181,9 @@ pub struct ExecuteSQLStep {
     // Skipping validation for now to allow sql file templating
     #[garde(length(min = 1))]
     pub sql_file: String,
+    #[serde(default)]
+    #[garde(skip)]
+    pub variables: Option<HashMap<String, String>>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Validate)]

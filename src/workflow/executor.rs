@@ -80,10 +80,24 @@ impl WorkflowExecutor {
         log::info!("SQL Context: {:?}", context);
         match wh_config {
             Some(wh) => {
+                let mut variables = HashMap::new();
+                if let Some(vars) = &execute_sql_step.variables {
+                    for (key, value) in vars {
+                        let rendered_value = render_template(value, context);
+                        variables.insert(key.clone(), rendered_value);
+                    }
+                }
+
                 let rendered_sql_file = render_template(&execute_sql_step.sql_file, context);
                 let query_file = self.data_path.join(&rendered_sql_file);
                 let query = match fs::read_to_string(&query_file) {
-                    Ok(query) => query,
+                    Ok(query) => {
+                        if !variables.is_empty() {
+                            render_template(&query, &Value::from_serialize(&variables))
+                        } else {
+                            query
+                        }
+                    }
                     Err(e) => {
                         return Err(anyhow::anyhow!(
                             "Error reading query file {}: {}",
@@ -92,6 +106,7 @@ impl WorkflowExecutor {
                         ));
                     }
                 };
+
                 print_colored_sql(&query);
                 let results = Connector::new(wh).run_query_and_load(&query).await?;
                 let json_blob = record_batches_to_json(&results)?;
