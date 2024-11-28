@@ -1,6 +1,8 @@
 mod init;
 
 use crate::config::*;
+use crate::utils::print_colored_sql;
+use arrow::util::pretty::pretty_format_batches;
 use axum::handler::Handler;
 use clap::CommandFactory;
 use clap::Parser;
@@ -83,6 +85,7 @@ struct AskArgs {
 
 #[derive(Parser, Debug)]
 struct RunArgs {
+    warehouse: Option<String>,
     file: Option<String>,
 }
 
@@ -125,8 +128,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             }
         }
         Some(SubCommand::Run(run_args)) => {
-            let (agent, config_path) =
-                setup_agent(args.agent.as_deref(), &FileFormat::Json).await?;
+            let config_path = get_config_path();
             let config = parse_config(&config_path)?;
             let project_path = &config.project_path;
 
@@ -138,11 +140,32 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                 return Ok(());
             };
 
-            match std::fs::read_to_string(&file_path) {
-                Ok(content) => {
-                    agent.request(&content).await?;
+            match run_args.warehouse {
+                Some(warehouse) => match std::fs::read_to_string(&file_path) {
+                    Ok(query) => {
+                        let wh_config = config.find_warehouse(&warehouse);
+                        match wh_config {
+                            Ok(wh) => {
+                                print_colored_sql(&query);
+                                let results =
+                                    Connector::new(&wh).run_query_and_load(&query).await?;
+                                let batches_display = pretty_format_batches(&results)?;
+                                println!("\n\x1b[1;32mResults:\x1b[0m");
+                                println!("{}", batches_display);
+                                return Ok(());
+                            }
+                            Err(_) => {
+                                eprintln!("Error: Warehouse not found in config");
+                                return Ok(());
+                            }
+                        }
+                    }
+                    Err(e) => eprintln!("{}", format!("Error reading file: {}", e).error()),
+                },
+                None => {
+                    eprintln!("Error: Missing required warehouse argument");
+                    return Ok(());
                 }
-                Err(e) => eprintln!("{}", format!("Error reading file: {}", e).error()),
             }
         }
         Some(SubCommand::Ask(ask_args)) => {
