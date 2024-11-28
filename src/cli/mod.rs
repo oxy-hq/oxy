@@ -1,5 +1,4 @@
 mod init;
-mod search;
 
 use crate::config::*;
 use axum::handler::Handler;
@@ -10,7 +9,6 @@ use log::debug;
 use std::error::Error;
 
 use init::init;
-use search::search_files;
 
 use crate::ai::setup_agent;
 use crate::api::server;
@@ -129,15 +127,8 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                 // Use specific SQL file from data directory
                 project_path.join("data").join(file)
             } else {
-                // Interactive file search mode
-                let subdirectory_name = "data";
-                match search_files(project_path, subdirectory_name)? {
-                    Some(file_name) => project_path.join("data").join(file_name),
-                    None => {
-                        eprintln!("{}", "No files found or selected.".error());
-                        return Ok(());
-                    }
-                }
+                eprintln!("Error: Missing required filename argument");
+                return Ok(());
             };
 
             match std::fs::read_to_string(&file_path) {
@@ -179,27 +170,8 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                     Err(e) => eprintln!("{}", format!("Error executing workflow: \n{}", e).error()),
                 }
             } else {
-                let config_path = get_config_path();
-                let config = parse_config(&config_path)?;
-                let project_path = &config.project_path;
-                let subdirectory_name = "workflows";
-                match search_files(project_path, subdirectory_name)? {
-                    Some(workflow_file) => {
-                        let workflow_name =
-                            workflow_file.strip_suffix(".yml").unwrap_or(&workflow_file);
-                        debug!("Executing workflow: {}", workflow_name);
-                        match run_workflow(workflow_name).await {
-                            Ok(_) => println!("{}", "\n✅Workflow executed successfully".success()),
-                            Err(e) => {
-                                eprintln!(
-                                    "{}",
-                                    format!("Error executing workflow: \n{}", e).error()
-                                )
-                            }
-                        }
-                    }
-                    None => eprintln!("{}", "No workflow files found or selected.".error()),
-                }
+                eprintln!("Error: Missing required filename argument");
+                return Ok(());
             }
         }
         Some(SubCommand::Validate) => {
