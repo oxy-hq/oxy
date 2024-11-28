@@ -17,14 +17,15 @@ crate-type = ["cdylib", "rlib"]
 members = [".", "migration", "entity"]
 
 [dependencies]
-arrow = "^52.2"
-parquet = "^52.2"
+arrow = { version = "^53.3.0", features = ["json"] }
+parquet = "^53.3.0"
 arrow_46 = { version = "^46.0", package = "arrow" }
 parquet_46 = { version = "^46.0", package = "parquet" }
+arrow_52 = { version = "^52.2", package = "arrow" } # LanceDB compatibility
 clap = { version = "4.5.18", features = ["derive"] }
 connectorx = { version = "0.3.3", features = ["dst_arrow", "src_bigquery"] }
 dirs = "5.0.1"
-duckdb = { version = "=1.0.0", features = [
+duckdb = { version = "=1.1.1", features = [
   "bundled",
 ] } # 1.0.0 uses arrow 52.2; "bundled" forces duckdb build from source (https://github.com/duckdb/duckdb-rs?tab=readme-ov-file#notes-on-building-duckdb-and-libduckdb-sys)
 env_logger = "0.11"
@@ -40,12 +41,17 @@ async-openai = "0.24.0"
 schemars = "0.8.21"
 async-trait = "0.1.82"
 colored = "2.1.0"
-axum = {version ="0.7.7", features = ["macros"]}
+axum = { version = "0.7.7", features = ["macros"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing = "0.1"
 dotenvy = "0.15"
-uuid = {version = "1.11.0", features = ["v4", "serde"]}
-axum-streams = {version = "0.19.0", features=["json", "csv", "protobuf", "text"]}
+uuid = { version = "1.11.0", features = ["v4", "serde"] }
+axum-streams = { version = "0.19.0", features = [
+  "json",
+  "csv",
+  "protobuf",
+  "text",
+] }
 anyhow = "1.0.89"
 thiserror = "1.0.64"
 lancedb = { version = "0.11.0", features = ["sentence-transformers"] }
@@ -55,10 +61,17 @@ hf-hub = "0.3.2"
 fastembed = "4.1.0"
 tower-http = { version = "0.6.1", features = ["fs", "cors"] }
 home = "0.5"
-sea-orm = { version = "1.1.0", features = [ "sqlx-sqlite", "runtime-tokio-rustls", "macros" ] }
-sea-orm-migration = {version = "1.1.0", features = [   "runtime-tokio-rustls",  "sqlx-sqlite"   ]}
-migration = { path = "migration" } 
-entity = { path = "entity" } 
+sea-orm = { version = "1.1.0", features = [
+  "sqlx-sqlite",
+  "runtime-tokio-rustls",
+  "macros",
+] }
+sea-orm-migration = { version = "1.1.0", features = [
+  "runtime-tokio-rustls",
+  "sqlx-sqlite",
+] }
+migration = { path = "migration" }
+entity = { path = "entity" }
 include_dir = "0.7"
 terminal-light = "1.7.0"
 lazy_static = "1.4.0"
@@ -68,6 +81,6 @@ async-stream = "0.3.6"
 chrono = "0.4.38"
 tower-serve-static = "0.1.1"
 tower = "0.5.1"
-garde = {version = "0.20.0", features = ["full"]}
+garde = { version = "0.20.0", features = ["full"] }
 comfy-table = "7.1.3"
 native-tls = { version = "0.2.12", features = ["vendored"] }

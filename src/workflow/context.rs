@@ -208,7 +208,7 @@ impl ContextBuilder {
                 "value".to_string(),
                 Value::from_safe_string(scope.param.clone()),
             )]);
-            if idx == stack_depth {
+            if idx == stack_depth || idx == 1 {
                 context.extend(scope_context);
                 context.insert(scope_name.clone(), Value::from_object(param_context));
             } else {

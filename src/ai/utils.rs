@@ -1,3 +1,4 @@
+use arrow::json as arrow_json;
 use arrow::{
     error::ArrowError,
     record_batch::RecordBatch,
@@ -22,8 +23,8 @@ pub fn record_batches_to_markdown(results: &[RecordBatch]) -> Result<impl Displa
     for field in schema.fields() {
         header.push(Cell::new(field.name()));
     }
-    table.set_header(header);
 
+    table.set_header(header);
     for batch in results {
         let formatters = batch
             .columns()
@@ -41,4 +42,19 @@ pub fn record_batches_to_markdown(results: &[RecordBatch]) -> Result<impl Displa
     }
 
     Ok(table)
+}
+
+pub fn record_batches_to_json(batches: &[RecordBatch]) -> Result<String, ArrowError> {
+    // Write the record batches out as JSON
+    let buf = Vec::new();
+    let mut writer = arrow_json::LineDelimitedWriter::new(buf);
+
+    // Convert each RecordBatch reference to &RecordBatch
+    let batch_refs: Vec<&RecordBatch> = batches.iter().collect();
+    writer.write_batches(&batch_refs)?;
+    writer.finish()?;
+
+    // Get the underlying buffer back and convert to string
+    let buf = writer.into_inner();
+    String::from_utf8(buf).map_err(|e| ArrowError::ExternalError(Box::new(e)))
 }

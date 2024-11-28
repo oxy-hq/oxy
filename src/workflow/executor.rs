@@ -7,6 +7,7 @@ use backon::ExponentialBuilder;
 use backon::Retryable;
 use minijinja::{Environment, Value};
 
+use crate::ai::utils::record_batches_to_json;
 use crate::config::model::AgentStep;
 use crate::config::model::Config;
 use crate::config::model::ExecuteSQLStep;
@@ -93,10 +94,11 @@ impl WorkflowExecutor {
                 };
                 print_colored_sql(&query);
                 let results = Connector::new(wh).run_query_and_load(&query).await?;
+                let json_blob = record_batches_to_json(&results)?;
                 let batches_display = pretty_format_batches(&results)?;
                 println!("\n\x1b[1;32mResults:\x1b[0m");
                 println!("{}", batches_display);
-                Ok(batches_display.to_string())
+                Ok(json_blob)
             }
             None => Err(anyhow::anyhow!(
                 "Warehouse {} not found",
