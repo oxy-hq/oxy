@@ -11,6 +11,7 @@ use crate::ai::utils::record_batches_to_json;
 use crate::config::model::AgentStep;
 use crate::config::model::Config;
 use crate::config::model::ExecuteSQLStep;
+use crate::config::model::FileFormat;
 use crate::config::model::Step;
 use crate::config::model::StepType;
 use crate::config::model::Warehouse;
@@ -38,7 +39,7 @@ impl WorkflowExecutor {
         let agent_names = list_file_stems(config.project_path.join("agents").to_str().unwrap())?;
         for agent_name in agent_names {
             let agent_config = config.load_config(Some(&agent_name))?;
-            let agent = from_config(&agent_name, config, &agent_config).await;
+            let agent = from_config(&agent_name, config, &agent_config, &FileFormat::Json).await;
             self.agents.insert(agent_name, agent);
         }
         for warehouse in &config.warehouses {

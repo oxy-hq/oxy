@@ -129,6 +129,15 @@ pub enum OutputFormat {
     File,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+pub enum FileFormat {
+    #[serde(rename = "json")]
+    Json,
+    #[serde(rename = "markdown")]
+    #[default]
+    Markdown,
+}
+
 #[derive(Deserialize, Debug, Clone, Validate, Serialize)]
 #[garde(context(ValidationContext))]
 pub struct Retrieval {
@@ -273,14 +282,6 @@ fn default_sql_tool_description() -> String {
 
 fn default_retrieval_tool_description() -> String {
     "Retrieve the relevant SQL queries to support query generation.".to_string()
-}
-
-#[derive(Serialize, Deserialize, Default, Clone, Debug)]
-#[serde(rename_all = "snake_case")]
-pub enum OutputType {
-    #[default]
-    Default,
-    File,
 }
 
 fn default_tools() -> Option<Vec<ToolConfig>> {
