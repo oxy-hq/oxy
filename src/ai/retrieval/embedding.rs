@@ -1,6 +1,6 @@
 use std::{cmp::min, sync::Arc};
 
-use arrow::{
+use arrow_52::{
     array::{Array, FixedSizeListArray, RecordBatch, RecordBatchIterator, StringArray},
     datatypes::{DataType, Field, Float32Type, Schema},
 };

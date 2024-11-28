@@ -1,5 +1,7 @@
 use crate::{
-    ai::utils::record_batches_to_markdown, config::model::OutputFormat, connector::load_result,
+    ai::utils::{record_batches_to_json, record_batches_to_markdown},
+    config::model::OutputFormat,
+    connector::load_result,
 };
 
 use super::{toolbox::ToolBox, tools::Tool};
@@ -232,12 +234,13 @@ async fn map_output(output: &str, output_format: &OutputFormat) -> anyhow::Resul
             }
             let batches_display = pretty_format_batches(&dataset)?;
             let markdown_table = record_batches_to_markdown(&dataset)?;
+            let json_blob = record_batches_to_json(&dataset)?;
 
             println!(
                 "\n{}",
                 format_table_output(&batches_display.to_string(), truncated).text()
             );
-            Ok(format_table_output(&markdown_table.to_string(), truncated))
+            Ok(format_table_output(&json_blob.to_string(), truncated))
         }
     }
 }
