@@ -29,10 +29,22 @@ impl From<io::Error> for InitError {
     }
 }
 
-static AGENTS_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/agents");
-static DATA_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/data");
-static WORKFLOWS_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/workflows");
+// hardcode the path for windows because of macro expansion issues
+// when using CARGO_MANIFEST_DIR with windows path separators
+// TODO: replace with a more robust solution, like using env AGENTS_DIR_PATH
+#[cfg(target_os = "windows")]
+static AGENTS_DIR: Dir = include_dir!("D:\\a\\onyx\\onyx\\agents");
+#[cfg(target_os = "windows")]
+static DATA_DIR: Dir = include_dir!("D:\\a\\onyx\\onyx\\data");
+#[cfg(target_os = "windows")]
+static WORKFLOWS_DIR: Dir = include_dir!("D:\\a\\onyx\\onyx\\workflows");
 
+#[cfg(not(target_os = "windows"))]
+static AGENTS_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/agents");
+#[cfg(not(target_os = "windows"))]
+static DATA_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/data");
+#[cfg(not(target_os = "windows"))]
+static WORKFLOWS_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/workflows");
 fn prompt_with_default(prompt: &str, default: &str) -> io::Result<String> {
     print!("{} (default: {}): ", prompt, default);
     io::stdout().flush()?;
