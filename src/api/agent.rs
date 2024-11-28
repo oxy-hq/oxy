@@ -3,7 +3,7 @@ use std::{fs, path::PathBuf};
 
 use crate::{
     ai::{self, agent::LLMAgent},
-    config::{get_config_path, parse_config},
+    config::{get_config_path, model::FileFormat, parse_config},
     db::{
         conversations::{create_conversation, get_conversation_by_agent},
         message::save_message,
@@ -43,7 +43,9 @@ pub struct AskRequest {
 }
 
 async fn get_agent(agent_name: &str) -> Box<dyn LLMAgent + Send> {
-    let (agent, _) = ai::setup_agent(Some(agent_name)).await.unwrap();
+    let (agent, _) = ai::setup_agent(Some(agent_name), &FileFormat::Markdown)
+        .await
+        .unwrap();
     agent
 }
 

@@ -1,6 +1,6 @@
 use crate::{
     ai::utils::{record_batches_to_json, record_batches_to_markdown},
-    config::model::OutputFormat,
+    config::model::{FileFormat, OutputFormat},
     connector::load_result,
 };
 
@@ -43,7 +43,9 @@ pub struct OpenAIAgent<T> {
     model: String,
     system_instruction: String,
     max_tries: u8,
+    // @TODO: Lets clean this up once we finalize the output format
     output_format: OutputFormat,
+    file_format: FileFormat,
 }
 
 impl<T> OpenAIAgent<T> {
@@ -54,6 +56,7 @@ impl<T> OpenAIAgent<T> {
         tools: ToolBox<T>,
         system_instruction: String,
         output_format: OutputFormat,
+        file_format: FileFormat,
     ) -> Self {
         let client_config = OpenAIConfig::new()
             .with_api_key(api_key)
@@ -68,6 +71,7 @@ impl<T> OpenAIAgent<T> {
             max_tries,
             system_instruction,
             output_format,
+            file_format,
         }
     }
 
@@ -215,12 +219,16 @@ where
         }
         println!("{}", "\nOutput:".primary());
         println!("{}", output);
-        let parsed_output = map_output(&output, &self.output_format).await?;
+        let parsed_output = map_output(&output, &self.output_format, &self.file_format).await?;
         return Ok(parsed_output);
     }
 }
 
-async fn map_output(output: &str, output_format: &OutputFormat) -> anyhow::Result<String> {
+async fn map_output(
+    output: &str,
+    output_format: &OutputFormat,
+    file_format: &FileFormat,
+) -> anyhow::Result<String> {
     match output_format {
         OutputFormat::Default => Ok(output.to_string()),
         OutputFormat::File => {
@@ -235,12 +243,16 @@ async fn map_output(output: &str, output_format: &OutputFormat) -> anyhow::Resul
             let batches_display = pretty_format_batches(&dataset)?;
             let markdown_table = record_batches_to_markdown(&dataset)?;
             let json_blob = record_batches_to_json(&dataset)?;
-
             println!(
                 "\n{}",
                 format_table_output(&batches_display.to_string(), truncated).text()
             );
-            Ok(format_table_output(&json_blob.to_string(), truncated))
+            match file_format {
+                FileFormat::Json => Ok(format_table_output(&json_blob, truncated)),
+                FileFormat::Markdown => {
+                    Ok(format_table_output(&markdown_table.to_string(), truncated))
+                }
+            }
         }
     }
 }

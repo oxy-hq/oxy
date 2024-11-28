@@ -7,7 +7,7 @@ pub mod utils;
 use crate::{
     config::{
         get_config_path,
-        model::{AgentConfig, Config, Model, ToolConfig},
+        model::{AgentConfig, Config, FileFormat, Model, ToolConfig},
         parse_config,
     },
     connector::Connector,
@@ -24,12 +24,13 @@ use tools::{ExecuteSQLParams, ExecuteSQLTool, RetrieveParams, RetrieveTool, Tool
 
 pub async fn setup_agent(
     agent_name: Option<&str>,
+    file_format: &FileFormat,
 ) -> anyhow::Result<(Box<dyn LLMAgent + Send + Sync>, PathBuf)> {
     let config_path = get_config_path();
     let config = parse_config(&config_path)?;
     let agent_name = agent_name.unwrap_or(config.defaults.agent.as_ref());
     let agent_config = config.load_config(Some(agent_name))?;
-    let agent = from_config(agent_name, &config, &agent_config).await;
+    let agent = from_config(agent_name, &config, &agent_config, file_format).await;
     Ok((agent, config_path))
 }
 
@@ -37,6 +38,7 @@ pub async fn from_config(
     agent_name: &str,
     config: &Config,
     agent_config: &AgentConfig,
+    file_format: &FileFormat,
 ) -> Box<dyn LLMAgent + Send + Sync> {
     let model = config.find_model(&agent_config.model).unwrap();
     let mut tools = ToolBox::<MultiTool>::new();
@@ -61,6 +63,7 @@ pub async fn from_config(
                 tools,
                 system_instructions,
                 agent_config.output_format.clone(),
+                file_format.clone(),
             ))
         }
         Model::Ollama {
@@ -75,6 +78,7 @@ pub async fn from_config(
             tools,
             system_instructions,
             agent_config.output_format.clone(),
+            file_format.clone(),
         )),
     }
 }

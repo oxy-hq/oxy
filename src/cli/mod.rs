@@ -5,6 +5,7 @@ use axum::handler::Handler;
 use clap::CommandFactory;
 use clap::Parser;
 use colored::Colorize;
+use model::FileFormat;
 use std::error::Error;
 
 use init::init;
@@ -124,7 +125,8 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             }
         }
         Some(SubCommand::Run(run_args)) => {
-            let (agent, config_path) = setup_agent(args.agent.as_deref()).await?;
+            let (agent, config_path) =
+                setup_agent(args.agent.as_deref(), &FileFormat::Json).await?;
             let config = parse_config(&config_path)?;
             let project_path = &config.project_path;
 
@@ -144,7 +146,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             }
         }
         Some(SubCommand::Ask(ask_args)) => {
-            let (agent, _) = setup_agent(args.agent.as_deref()).await?;
+            let (agent, _) = setup_agent(args.agent.as_deref(), &FileFormat::Markdown).await?;
             agent.request(&ask_args.question).await?;
         }
         Some(SubCommand::Build) => {
