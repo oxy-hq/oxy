@@ -5,7 +5,6 @@ use axum::handler::Handler;
 use clap::CommandFactory;
 use clap::Parser;
 use colored::Colorize;
-use log::debug;
 use std::error::Error;
 
 use init::init;
@@ -29,6 +28,12 @@ use include_dir::{include_dir, Dir};
 use std::net::SocketAddr;
 use tower::service_fn;
 
+// hardcode the path for windows because of macro expansion issues
+// when using CARGO_MANIFEST_DIR with windows path separators
+// TODO: replace with a more robust solution, like using env DIST_DIR_PATH
+#[cfg(target_os = "windows")]
+static DIST: Dir = include_dir!("D:\\a\\onyx\\onyx\\dist");
+#[cfg(not(target_os = "windows"))]
 static DIST: Dir = include_dir!("$CARGO_MANIFEST_DIR/dist");
 
 #[derive(Parser, Debug)]
