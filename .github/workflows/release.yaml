@@ -4,9 +4,8 @@ on:
   push:
     tags:
       - "[0-9]+.[0-9]+.[0-9]+"
-  schedule:
-    - cron: "0 0 * * *"
-
+    paths-ignore:
+      - 'docs/**'
 env:
   CARGO_TERM_COLOR: always
 
@@ -137,11 +136,7 @@ jobs:
       - name: Generate release tag
         id: tag
         run: |
-          if [[ "${{ github.ref }}" =~ "refs/tags/" ]]; then
-            echo "::set-output name=release_tag::${{ github.ref_name }}"
-          else
-            echo "::set-output name=release_tag::NightlyBuild_$(date +"%Y.%m.%d.run_${{ github.run_number }}")"
-          fi
+          echo "::set-output name=release_tag::${{ github.ref_name }}"
       - name: Private github release
         uses: softprops/action-gh-release@v2
         with:
