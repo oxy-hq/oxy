@@ -186,13 +186,13 @@ jobs:
       run: |
         git config --global user.name '${{ steps.app-token.outputs.app-slug }}[bot]'
         git config --global user.email '${{ steps.get-user-id.outputs.user-id }}+${{ steps.app-token.outputs.app-slug }}[bot]@users.noreply.github.com>'
-        git tag -a ${{ github.ref }} -m "Release ${{ github.ref }}"
-        git push origin ${{ github.ref }}
+        git tag -a ${{ github.ref_name }} -m "Release ${{ github.ref_name }}"
+        git push origin ${{ github.ref_name }}
     - name: Public github release
       uses: softprops/action-gh-release@v2
       with:
         draft: true
-        tag_name: ${{ github.ref }}
+        tag_name: ${{ github.ref_name }}
         repository: onyx-hq/onyx-public-releases
         files: |
           onyx-*
