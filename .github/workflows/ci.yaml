@@ -9,9 +9,13 @@ on:
       - ready_for_review
     branches:
       - main
+    paths-ignore:
+      - 'docs/**'
   push:
     branches:
       - main
+    paths-ignore:
+      - 'docs/**'
 
 env:
   CARGO_TERM_COLOR: always
