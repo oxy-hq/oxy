@@ -64,6 +64,4 @@ chmod +x onyx-$TARGET
 # Move the binary to the install directory
 mv onyx-$TARGET $INSTALL_DIR/onyx
 
-echo "Please visit this page for the latest configuration updates https://raw.githubusercontent.com/$REPO/$LATEST_TAG/example_config.yml"
-
 echo "Onyx version $LATEST_TAG for $TARGET has been installed successfully!"
