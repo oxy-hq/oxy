@@ -243,10 +243,14 @@ async fn map_output(
             let batches_display = pretty_format_batches(&dataset)?;
             let markdown_table = record_batches_to_markdown(&dataset)?;
             let json_blob = record_batches_to_json(&dataset)?;
-            println!(
-                "\n{}",
-                format_table_output(&batches_display.to_string(), truncated).text()
-            );
+
+            if !dataset.is_empty() {
+                println!(
+                    "\n{}",
+                    format_table_output(&batches_display.to_string(), truncated).text()
+                );
+            }
+
             match file_format {
                 FileFormat::Json => Ok(format_table_output(&json_blob, truncated)),
                 FileFormat::Markdown => {

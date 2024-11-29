@@ -1,12 +1,16 @@
+use crate::theme::*;
+use arrow::datatypes::{DataType, Field, Schema};
 use arrow::ipc::{reader::FileReader, writer::FileWriter};
 use arrow::{array::as_string_array, error::ArrowError, record_batch::RecordBatch};
 use arrow_46::ipc::writer::FileWriter as FileWriter46;
+use arrow_46::datatypes::{DataType as DataType64, Field as Field64, Schema as Schema64};
 use arrow_46::record_batch::RecordBatch as RecordBatch46;
 use connectorx::prelude::{get_arrow, CXQuery, SourceConn};
 use duckdb::Connection;
 use log::debug;
 use std::fs::File;
 use std::path::PathBuf;
+use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::config::model::{Warehouse, WarehouseType};
@@ -165,7 +169,19 @@ pub fn load_result(file_path: &str) -> anyhow::Result<Vec<RecordBatch>> {
 
 fn write_connectorx_to_ipc(batches: &Vec<RecordBatch46>, file_path: &str) -> anyhow::Result<()> {
     let file = File::create(file_path)?;
-    let schema = batches[0].schema();
+    let schema = if batches.is_empty() {
+        println!(
+            "{}",
+            "Warning: query returned no results.".warning()
+        );
+        Arc::new(Schema64::new(vec![Field64::new(
+            "dummy",
+            DataType64::Int32,
+            true,
+        )]))
+    } else {
+        batches[0].schema()
+    };
     let schema_ref = schema.as_ref();
     let mut writer = FileWriter46::try_new(file, schema_ref)?;
     debug!(target: "parquet", "Writing batches to parquet file: {:?}", file_path);
@@ -178,7 +194,19 @@ fn write_connectorx_to_ipc(batches: &Vec<RecordBatch46>, file_path: &str) -> any
 
 fn write_duckdb_to_ipc(batches: &Vec<RecordBatch>, file_path: &str) -> anyhow::Result<()> {
     let file = File::create(file_path)?;
-    let schema = batches[0].schema();
+    let schema = if batches.is_empty() {
+        println!(
+            "{}",
+            "Warning: query returned no results.".warning()
+        );
+        Arc::new(Schema::new(vec![Field::new(
+            "dummy",
+            DataType::Int32,
+            true,
+        )]))
+    } else {
+        batches[0].schema()
+    };
     let schema_ref = schema.as_ref();
     let mut writer = FileWriter::try_new(file, schema_ref)?;
     for batch in batches {
