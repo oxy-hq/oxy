@@ -173,7 +173,7 @@ jobs:
       uses: robinraju/release-downloader@v1
       with:
         preRelease: false
-        tag: ${{ github.ref }}
+        tag: ${{ github.ref_name }}
         zipBall: false
         token: ${{ steps.app-token.outputs.token }}
         fileName: onyx-*
