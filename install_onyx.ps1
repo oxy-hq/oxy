@@ -31,7 +31,7 @@ $latestTag = $latestTagResponse.tag_name
 
 # Download the release binary
 $binaryUrl = "https://github.com/$repo/releases/download/$latestTag/onyx-$target.exe"
-$outputPath = "$InstallDir\onyx-$target.exe"
+$outputPath = "$InstallDir\onyx.exe"
 
 if (Test-Path -Path $outputPath) {
     Write-Host "Existing Onyx executable found. Upgrading..."
