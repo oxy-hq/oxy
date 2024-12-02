@@ -1,5 +1,11 @@
 name: local
 model: "openai-4o-mini"
+anonymize:
+    type: flash_text
+    keywords_file: keywords.txt # Relative to data directory
+    replacement: "REDACTED" # Default: "FLASH"
+    pluralize: True # Default: "False"
+    case_insensitive: True # Default: "False"
 system_instructions: |
   You are an Data Analyst expert.
   Your task is to help the user generate report given the input.

@@ -36,6 +36,7 @@ pub struct AgentConfig {
     pub tools: Option<Vec<ToolConfig>>,
     #[serde(default)]
     pub output_format: OutputFormat,
+    pub anonymize: Option<AnonymizerConfig>,
 }
 
 // These are settings stored as strings derived from the config.yml file's defaults section
@@ -127,6 +128,33 @@ pub enum OutputFormat {
     #[default]
     Default,
     File,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(tag = "type")]
+pub enum AnonymizerConfig {
+    #[serde(rename = "flash_text")]
+    FlashText {
+        #[serde(default = "default_anonymizer_replacement")]
+        replacement: String,
+        keywords_file: PathBuf,
+        #[serde(default = "default_anonymizer_pluralize")]
+        pluralize: bool,
+        #[serde(default = "default_case_insensitive")]
+        case_insensitive: bool,
+    },
+}
+
+fn default_anonymizer_replacement() -> String {
+    "FLASH".to_string()
+}
+
+fn default_anonymizer_pluralize() -> bool {
+    false
+}
+
+fn default_case_insensitive() -> bool {
+    false
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]

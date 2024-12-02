@@ -5816,6 +5816,7 @@ dependencies = [
  "native-tls",
  "parquet 46.0.0",
  "parquet 53.3.0",
+ "pluralizer",
  "reqwest 0.12.9",
  "schemars",
  "sea-orm",
@@ -6280,6 +6281,16 @@ dependencies = [
  "quick-xml 0.32.0",
  "serde",
  "time",
+]
+
+[[package]]
+name = "pluralizer"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "35e4616e94b67b8b61846ea69d4bf041a62147d569d16f437689229e2677d38c"
+dependencies = [
+ "lazy_static",
+ "regex",
 ]
 
 [[package]]
