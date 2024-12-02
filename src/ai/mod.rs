@@ -1,4 +1,5 @@
 pub mod agent;
+pub mod anonymizer;
 pub mod retrieval;
 pub mod toolbox;
 pub mod tools;
@@ -7,13 +8,14 @@ pub mod utils;
 use crate::{
     config::{
         get_config_path,
-        model::{AgentConfig, Config, FileFormat, Model, ToolConfig},
+        model::{AgentConfig, AnonymizerConfig, Config, FileFormat, Model, ToolConfig},
         parse_config,
     },
     connector::Connector,
     union_tools,
 };
 use agent::{LLMAgent, OpenAIAgent};
+use anonymizer::{base::Anonymizer, flash_text::FlashTextAnonymizer};
 use async_trait::async_trait;
 use minijinja::{context, render, Value};
 use schemars::JsonSchema;
@@ -30,7 +32,7 @@ pub async fn setup_agent(
     let config = parse_config(&config_path)?;
     let agent_name = agent_name.unwrap_or(config.defaults.agent.as_ref());
     let agent_config = config.load_config(Some(agent_name))?;
-    let agent = from_config(agent_name, &config, &agent_config, file_format).await;
+    let agent = from_config(agent_name, &config, &agent_config, file_format).await?;
     Ok((agent, config_path))
 }
 
@@ -39,13 +41,31 @@ pub async fn from_config(
     config: &Config,
     agent_config: &AgentConfig,
     file_format: &FileFormat,
-) -> Box<dyn LLMAgent + Send + Sync> {
+) -> anyhow::Result<Box<dyn LLMAgent + Send + Sync>> {
     let model = config.find_model(&agent_config.model).unwrap();
     let mut tools = ToolBox::<MultiTool>::new();
-
     let ctx = fill_tools(&mut tools, agent_name, agent_config, config).await;
-
     let system_instructions = render!(&agent_config.system_instructions, ctx);
+    let anonymizer: Option<Box<dyn Anonymizer + Send + Sync>> = match &agent_config.anonymize {
+        None => None,
+        Some(AnonymizerConfig::FlashText {
+            replacement,
+            keywords_file,
+            pluralize,
+            case_insensitive,
+        }) => {
+            let mut anonymizer = FlashTextAnonymizer::new(
+                replacement.to_string(),
+                pluralize.to_owned(),
+                case_insensitive.to_owned(),
+            );
+            let resolved_keyword_path = PathBuf::from(&config.project_path)
+                .join("data")
+                .join(keywords_file.to_owned());
+            anonymizer.add_keywords_file(&resolved_keyword_path)?;
+            Some(Box::new(anonymizer))
+        }
+    };
 
     match model {
         Model::OpenAI {
@@ -56,30 +76,32 @@ pub async fn from_config(
             let api_key = std::env::var(&key_var).unwrap_or_else(|_| {
                 panic!("OpenAI key not found in environment variable {}", key_var)
             });
-            Box::new(OpenAIAgent::new(
+            Ok(Box::new(OpenAIAgent::new(
                 model_ref,
                 None,
                 api_key,
                 tools,
                 system_instructions,
                 agent_config.output_format.clone(),
+                anonymizer,
                 file_format.clone(),
-            ))
+            )))
         }
         Model::Ollama {
             name: _,
             model_ref,
             api_key,
             api_url,
-        } => Box::new(OpenAIAgent::new(
+        } => Ok(Box::new(OpenAIAgent::new(
             model_ref,
             Some(api_url),
             api_key,
             tools,
             system_instructions,
             agent_config.output_format.clone(),
+            anonymizer,
             file_format.clone(),
-        )),
+        ))),
     }
 }
 

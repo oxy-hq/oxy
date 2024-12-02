@@ -3,8 +3,9 @@ use crate::{
     config::model::{FileFormat, OutputFormat},
     connector::load_result,
 };
+use std::collections::HashMap;
 
-use super::{toolbox::ToolBox, tools::Tool};
+use super::{anonymizer::base::Anonymizer, toolbox::ToolBox, tools::Tool};
 use crate::theme::*;
 use arrow::util::pretty::pretty_format_batches;
 use async_openai::{
@@ -45,6 +46,7 @@ pub struct OpenAIAgent<T> {
     max_tries: u8,
     // @TODO: Lets clean this up once we finalize the output format
     output_format: OutputFormat,
+    anonymizer: Option<Box<dyn Anonymizer + Send + Sync>>,
     file_format: FileFormat,
 }
 
@@ -56,6 +58,7 @@ impl<T> OpenAIAgent<T> {
         tools: ToolBox<T>,
         system_instruction: String,
         output_format: OutputFormat,
+        anonymizer: Option<Box<dyn Anonymizer + Send + Sync>>,
         file_format: FileFormat,
     ) -> Self {
         let client_config = OpenAIConfig::new()
@@ -71,6 +74,7 @@ impl<T> OpenAIAgent<T> {
             max_tries,
             system_instruction,
             output_format,
+            anonymizer,
             file_format,
         }
     }
@@ -134,16 +138,25 @@ where
     async fn request(&self, input: &str) -> anyhow::Result<String> {
         let system_message = self.system_instruction.to_string();
         debug!("System message: {}", system_message);
+        let anonymized_items = HashMap::new();
+        let (anonymized_system_message, anonymized_items) = match self.anonymizer {
+            Some(ref anonymizer) => anonymizer.anonymize(&system_message, Some(anonymized_items)),
+            None => Ok((system_message.clone(), anonymized_items)),
+        }?;
+        let (anonymized_user_message, anonymized_items) = match self.anonymizer {
+            Some(ref anonymizer) => anonymizer.anonymize(&input, Some(anonymized_items)),
+            None => Ok((input.to_string(), anonymized_items)),
+        }?;
 
         let messages: Vec<ChatCompletionRequestMessage> = vec![
             ChatCompletionRequestSystemMessageArgs::default()
                 .name("onyx")
-                .content(system_message)
+                .content(anonymized_system_message)
                 .build()?
                 .into(),
             ChatCompletionRequestUserMessageArgs::default()
                 .name("Human")
-                .content(input)
+                .content(anonymized_user_message)
                 .build()?
                 .into(),
         ];
@@ -154,6 +167,7 @@ where
         let mut tool_returns = Vec::<ChatCompletionRequestMessage>::new();
         let mut tool_calls = Vec::<ChatCompletionRequestMessage>::new();
 
+        let mut contextualize_anonymized_items = anonymized_items.clone();
         while tries < self.max_tries {
             let message_with_replies =
                 [messages.clone(), tool_calls.clone(), tool_returns.clone()].concat();
@@ -192,10 +206,19 @@ where
                 tries
             );
             for tool in tool_call_requests.clone() {
-                let tool_ret: String = self
+                let mut tool_ret: String = self
                     .tools
                     .run_tool(tool.function.name.clone(), tool.function.arguments.clone())
                     .await;
+                if self.anonymizer.is_some() {
+                    let result = self
+                        .anonymizer
+                        .as_ref()
+                        .unwrap()
+                        .anonymize(&tool_ret, Some(contextualize_anonymized_items.clone()))?;
+                    contextualize_anonymized_items.extend(result.1);
+                    tool_ret = result.0;
+                }
                 tool_returns.push(
                     ChatCompletionRequestToolMessageArgs::default()
                         .tool_call_id(tool.id.clone())
@@ -217,9 +240,18 @@ where
 
             tries += 1;
         }
+        let mut parsed_output = map_output(&output, &self.output_format, &self.file_format).await?;
+        parsed_output = match self.anonymizer {
+            Some(ref anonymizer) => {
+                let result =
+                    anonymizer.deanonymize(&parsed_output, &contextualize_anonymized_items);
+                result
+            }
+            None => parsed_output,
+        };
         println!("{}", "\nOutput:".primary());
-        println!("{}", output);
-        let parsed_output = map_output(&output, &self.output_format, &self.file_format).await?;
+        println!("{}", &parsed_output);
+
         return Ok(parsed_output);
     }
 }
