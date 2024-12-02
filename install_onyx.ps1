@@ -1,47 +1,21 @@
 param (
-    [string]$InstallDir = "$HOME/.onyx/bin"
+    [string]$InstallDir = "$env:USERPROFILE\.onyx\bin"
 )
 
-# Create the installation directory if it doesn't exist
 if (-not (Test-Path -Path $InstallDir)) {
     New-Item -ItemType Directory -Path $InstallDir -Force
 }
 
-# Determine the shell and update the PATH
-$shellName = $env:SHELL -replace '.*/', ''
-switch ($shellName) {
-    "bash" {
-        Add-Content -Path "$HOME/.bashrc" -Value "export PATH=`$PATH:$InstallDir"
-        . "$HOME/.bashrc"
-    }
-    "zsh" {
-        Add-Content -Path "$HOME/.zshrc" -Value "export PATH=`$PATH:$InstallDir"
-        . "$HOME/.zshrc"
-    }
-    default {
-        Write-Host "Unsupported shell: $shellName. Please add $InstallDir to your PATH manually before installing this tool"
-    }
-}
-
 # Map architecture to target
 $arch = (Get-CimInstance Win32_Processor).Architecture
-$os = $env:OS
 $target = ""
 
 switch ($arch) {
     9 { # x64
-        if ($os -eq "Darwin") {
-            $target = "x86_64-apple-darwin"
-        } else {
-            $target = "x86_64-unknown-linux-gnu"
-        }
+        $target = "x86_64-pc-windows-msvc"
     }
     12 { # ARM64
-        if ($os -eq "Darwin") {
-            $target = "aarch64-apple-darwin"
-        } else {
-            $target = "aarch64-unknown-linux-gnu"
-        }
+        $target = "aarch64-pc-windows-msvc"
     }
     default {
         Write-Host "Unsupported architecture: $arch"
@@ -49,15 +23,30 @@ switch ($arch) {
     }
 }
 
+# Get the latest release tag from GitHub API
+$repo = "onyx-hq/onyx"
+$latestTagUrl = "https://api.github.com/repos/$repo/releases/latest"
+$latestTagResponse = Invoke-RestMethod -Uri $latestTagUrl -Headers @{ "User-Agent" = "PowerShell" }
+$latestTag = $latestTagResponse.tag_name
+
 # Download the release binary
-$repo = "your-repo/onyx"
-$latestTag = "v1.0.0" # Replace with the actual latest tag or fetch dynamically
-$binaryUrl = "https://github.com/$repo/releases/download/$latestTag/onyx-$target"
-$outputPath = "$InstallDir/onyx-$target"
+$binaryUrl = "https://github.com/$repo/releases/download/$latestTag/onyx-$target.exe"
+$outputPath = "$InstallDir\onyx-$target.exe"
+
+if (Test-Path -Path $outputPath) {
+    Write-Host "Existing Onyx executable found. Upgrading..."
+    Remove-Item -Path $outputPath -Force
+}
 
 Invoke-WebRequest -Uri $binaryUrl -OutFile $outputPath
 
-# Make the binary executable
-chmod +x $outputPath
+# Add the installation directory to the PATH if not already present
+$envPath = [System.Environment]::GetEnvironmentVariable("Path", [System.EnvironmentVariableTarget]::User)
+if (-not $envPath.Contains($InstallDir)) {
+    [System.Environment]::SetEnvironmentVariable("Path", "$envPath;$InstallDir", [System.EnvironmentVariableTarget]::User)
+    Write-Host "Added $InstallDir to PATH"
+} else {
+    Write-Host "$InstallDir is already in PATH"
+}
 
 Write-Host "Onyx has been installed to $InstallDir"
