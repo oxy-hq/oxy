@@ -61,7 +61,7 @@
     "eslint-plugin-react": "^7.37.2",
     "eslint-plugin-react-hooks": "^5.1.0-rc.0",
     "eslint-plugin-react-refresh": "^0.4.12",
-    "eslint-plugin-sonarjs": "^2.0.4",
+    "eslint-plugin-sonarjs": "^3.0.0",
     "eslint-plugin-unicorn": "^56.0.0",
     "globals": "^15.9.0",
     "husky": "^9.1.6",
