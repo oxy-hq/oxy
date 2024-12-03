@@ -30,7 +30,7 @@ duckdb = { version = "=1.1.1", features = [
 ] } # 1.0.0 uses arrow 52.2; "bundled" forces duckdb build from source (https://github.com/duckdb/duckdb-rs?tab=readme-ov-file#notes-on-building-duckdb-and-libduckdb-sys)
 env_logger = "0.11"
 log = "0.4"
-minijinja = "2.3.1"
+minijinja = "2.5.0"
 reqwest = { version = "0.12.7", features = ["json"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
