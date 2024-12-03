@@ -102,10 +102,7 @@ impl FlashTextAnonymizer {
         let mut ch_indices = internal_text.char_indices();
         let mut start = 0;
 
-        let mut items: HashMap<String, String> = match items {
-            Some(it) => it,
-            None => HashMap::new(),
-        };
+        let mut items: HashMap<String, String> = items.unwrap_or_default();
         let mut idx = 0;
 
         let base_replacement = self.replacement.clone();
