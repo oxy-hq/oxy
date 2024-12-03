@@ -4,10 +4,13 @@ use crate::config::*;
 use crate::utils::print_colored_sql;
 use arrow::util::pretty::pretty_format_batches;
 use axum::handler::Handler;
+use clap::builder::ValueParser;
 use clap::CommandFactory;
 use clap::Parser;
 use colored::Colorize;
+use minijinja::{Environment, Value};
 use model::FileFormat;
+use std::collections::BTreeMap;
 use std::error::Error;
 
 use init::init;
@@ -38,6 +41,18 @@ use tower::service_fn;
 static DIST: Dir = include_dir!("D:\\a\\onyx\\onyx\\dist");
 #[cfg(not(target_os = "windows"))]
 static DIST: Dir = include_dir!("$CARGO_MANIFEST_DIR/dist");
+
+type Variable = (String, String);
+fn parse_variable(env: &str) -> Result<Variable, std::io::Error> {
+    if let Some((var, value)) = env.split_once('=') {
+        Ok((var.to_owned(), value.to_owned()))
+    } else {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "Invalid variable format",
+        ))
+    }
+}
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -87,6 +102,9 @@ struct AskArgs {
 struct RunArgs {
     warehouse: Option<String>,
     file: Option<String>,
+
+    #[clap(long, short = 'v', value_parser=ValueParser::new(parse_variable), num_args = 1..)]
+    variables: Vec<(String, String)>,
 }
 
 #[derive(Parser, Debug)]
@@ -142,8 +160,24 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
 
             match run_args.warehouse {
                 Some(warehouse) => match std::fs::read_to_string(&file_path) {
-                    Ok(query) => {
+                    Ok(content) => {
                         let wh_config = config.find_warehouse(&warehouse);
+                        let mut env = Environment::new();
+                        let mut query = content.clone();
+
+                        // render template if needed
+                        if !run_args.variables.is_empty() {
+                            env.add_template("query", &query)?;
+                            let tmpl = env.get_template("query").unwrap();
+                            let ctx = Value::from({
+                                let mut m = BTreeMap::new();
+                                for var in &run_args.variables {
+                                    m.insert(var.0.clone(), var.1.clone());
+                                }
+                                m
+                            });
+                            query = tmpl.render(ctx)?
+                        }
                         match wh_config {
                             Ok(wh) => {
                                 print_colored_sql(&query);

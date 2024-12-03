@@ -61,7 +61,7 @@ pub async fn from_config(
             );
             let resolved_keyword_path = PathBuf::from(&config.project_path)
                 .join("data")
-                .join(keywords_file.to_owned());
+                .join(keywords_file);
             anonymizer.add_keywords_file(&resolved_keyword_path)?;
             Some(Box::new(anonymizer))
         }

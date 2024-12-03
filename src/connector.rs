@@ -2,8 +2,8 @@ use crate::theme::*;
 use arrow::datatypes::{DataType, Field, Schema};
 use arrow::ipc::{reader::FileReader, writer::FileWriter};
 use arrow::{array::as_string_array, error::ArrowError, record_batch::RecordBatch};
-use arrow_46::ipc::writer::FileWriter as FileWriter46;
 use arrow_46::datatypes::{DataType as DataType64, Field as Field64, Schema as Schema64};
+use arrow_46::ipc::writer::FileWriter as FileWriter46;
 use arrow_46::record_batch::RecordBatch as RecordBatch46;
 use connectorx::prelude::{get_arrow, CXQuery, SourceConn};
 use duckdb::Connection;
@@ -170,10 +170,7 @@ pub fn load_result(file_path: &str) -> anyhow::Result<Vec<RecordBatch>> {
 fn write_connectorx_to_ipc(batches: &Vec<RecordBatch46>, file_path: &str) -> anyhow::Result<()> {
     let file = File::create(file_path)?;
     let schema = if batches.is_empty() {
-        println!(
-            "{}",
-            "Warning: query returned no results.".warning()
-        );
+        println!("{}", "Warning: query returned no results.".warning());
         Arc::new(Schema64::new(vec![Field64::new(
             "dummy",
             DataType64::Int32,
@@ -195,10 +192,7 @@ fn write_connectorx_to_ipc(batches: &Vec<RecordBatch46>, file_path: &str) -> any
 fn write_duckdb_to_ipc(batches: &Vec<RecordBatch>, file_path: &str) -> anyhow::Result<()> {
     let file = File::create(file_path)?;
     let schema = if batches.is_empty() {
-        println!(
-            "{}",
-            "Warning: query returned no results.".warning()
-        );
+        println!("{}", "Warning: query returned no results.".warning());
         Arc::new(Schema::new(vec![Field::new(
             "dummy",
             DataType::Int32,

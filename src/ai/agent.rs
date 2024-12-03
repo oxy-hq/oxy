@@ -144,7 +144,7 @@ where
             None => Ok((system_message.clone(), anonymized_items)),
         }?;
         let (anonymized_user_message, anonymized_items) = match self.anonymizer {
-            Some(ref anonymizer) => anonymizer.anonymize(&input, Some(anonymized_items)),
+            Some(ref anonymizer) => anonymizer.anonymize(input, Some(anonymized_items)),
             None => Ok((input.to_string(), anonymized_items)),
         }?;
 
@@ -243,9 +243,7 @@ where
         let mut parsed_output = map_output(&output, &self.output_format, &self.file_format).await?;
         parsed_output = match self.anonymizer {
             Some(ref anonymizer) => {
-                let result =
-                    anonymizer.deanonymize(&parsed_output, &contextualize_anonymized_items);
-                result
+                anonymizer.deanonymize(&parsed_output, &contextualize_anonymized_items)
             }
             None => parsed_output,
         };
