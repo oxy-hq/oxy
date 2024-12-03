@@ -41,7 +41,7 @@ async-openai = "0.24.0"
 schemars = "0.8.21"
 async-trait = "0.1.82"
 colored = "2.1.0"
-axum = { version = "0.7.7", features = ["macros"] }
+axum = { version = "0.7.9", features = ["macros"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing = "0.1"
 dotenvy = "0.15"
