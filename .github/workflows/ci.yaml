@@ -11,11 +11,6 @@ on:
       - main
     paths-ignore:
       - 'docs/**'
-  push:
-    branches:
-      - main
-    paths-ignore:
-      - 'docs/**'
 
 env:
   CARGO_TERM_COLOR: always
@@ -120,5 +115,4 @@ jobs:
       - name: Run cargo check
         run: cargo check --verbose
       - name: Run cargo clippy
-        if: github.event_name == 'pull_request'
         run: cargo clippy --verbose
