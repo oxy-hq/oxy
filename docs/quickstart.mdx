@@ -1,24 +1,26 @@
 ---
-title: 'Quickstart'
+title: "Quickstart"
 description: "Let's learn how to start using onyx"
 ---
-
-
 
 ### Overview
 
 In this quickstart guide, we will use BigQuery as our data warehouse and OpenAI as our LLM provider. It will show you how to:
+
 - Install onyx
 - Connect onyx to BigQuery
 - Connect onyx to OpenAI
 
 ### Prerequisites
+
 - Access to onyx's [GitHub repository](https://github.com/onyx-hq/onyx)
 - A Google Cloud account that has access to the BigQuery dataset you want to use
 - An OpenAI API key
 
 ### Install and configure onyx
+
 Onyx supports both Mac and Windows.
+
 <Tabs>
   <Tab title="Mac">
 
@@ -36,9 +38,19 @@ Onyx supports both Mac and Windows.
     <Steps>
       <Step title="Install onyx">
         Install onyx by running:
-        ```sh
-          curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/onyx-hq/onyx-public-releases/refs/heads/main/install_onyx.sh | bash
+
+        - For linux and macOS:
+
+        ```bash
+        bash <(curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/onyx-hq/onyx-public-releases/refs/heads/main/install_onyx.sh)
         ```
+
+        - For windows:
+
+        ```powershell
+        powershell -Command "& { iwr -useb https://raw.githubusercontent.com/onyx-hq/onyx-public-releases/refs/heads/main/install_onyx.ps1 | iex }"
+        ```
+
         Upon successful installation, you should see the message "Onyx has been installed successfully."
         <img class="rounded-md" src="/images/installation-success.jpeg" alt="installation successful" />
 
@@ -147,7 +159,7 @@ Onyx supports both Mac and Windows.
       </Step>
       <Step title="Connect onyx to OpenAI">
         For the model, we recommend using OpenAI's gpt-4o. For alternative models, please refer to our integration documentation, [here](/integrations/overview).
-       
+
         Replace `OPENAI_API_KEY` with your actual OpenAI API key.
       </Step>
     </Steps>
@@ -158,32 +170,34 @@ Onyx supports both Mac and Windows.
   </Tab>
 </Tabs>
 
-### All Done!
+### All Done
 
 Congrats! You're ready to start using Onyx now.
 
 <AccordionGroup>
   <Accordion title="Using the CLI (Recommended)">
     You can use the `ask` subcommand to ask questions to your agents:
-   
-    ```sh 
+
+    ```sh
     onyx ask "Who is the most engaged customer?"
     ```
-    
+
     and receive a response from your agents. There are other subcommands you can
     use to interact with your agents, and you can explore them by
-    running: 
-    
-    ```sh 
+    running:
+
+    ```sh
     onyx --help
     ```
+
   </Accordion>
   <Accordion title="Using the Web">
     You can run the following command to start the Onyx server:
-    
+
      ```sh
     onyx serve
     ```
     and then access the chat UI via the outputted address in your browser.
+
   </Accordion>
 </AccordionGroup>
