@@ -161,7 +161,8 @@ jobs:
         tag: ${{ github.ref_name }}
         zipBall: false
         token: ${{ steps.app-token.outputs.token }}
-        fileName: onyx-*
+        fileName: "*"
+        extract: false
     - name: Get GitHub App User ID
       id: get-user-id
       run: echo "user-id=$(gh api "/users/${{ steps.app-token.outputs.app-slug }}[bot]" --jq .id)" >> "$GITHUB_OUTPUT"
@@ -173,6 +174,11 @@ jobs:
         git config --global user.email '${{ steps.get-user-id.outputs.user-id }}+${{ steps.app-token.outputs.app-slug }}[bot]@users.noreply.github.com>'
         git tag -a ${{ github.ref_name }} -m "Release ${{ github.ref_name }}"
         git push origin ${{ github.ref_name }}
+    - name: Upload json schemas
+      run: |
+        git add *.json
+        git commit -m "chore: update json schemas"
+        git push origin HEAD
     - name: Public github release
       uses: softprops/action-gh-release@v2
       with:
@@ -181,5 +187,6 @@ jobs:
         repository: onyx-hq/onyx-public-releases
         files: |
           onyx-*
+          *.json
       env:
         GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
