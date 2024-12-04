@@ -1,0 +1,124 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "AgentConfig",
+  "type": "object",
+  "required": ["model", "system_instructions"],
+  "properties": {
+    "anonymize": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/AnonymizerConfig"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "model": {
+      "type": "string"
+    },
+    "output_format": {
+      "default": "default",
+      "allOf": [
+        {
+          "$ref": "#/definitions/OutputFormat"
+        }
+      ]
+    },
+    "retrieval": {
+      "type": ["string", "null"]
+    },
+    "system_instructions": {
+      "type": "string"
+    },
+    "tools": {
+      "default": [],
+      "type": ["array", "null"],
+      "items": {
+        "$ref": "#/definitions/ToolConfig"
+      }
+    }
+  },
+  "definitions": {
+    "AnonymizerConfig": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["keywords_file", "type"],
+          "properties": {
+            "case_insensitive": {
+              "default": false,
+              "type": "boolean"
+            },
+            "keywords_file": {
+              "type": "string"
+            },
+            "pluralize": {
+              "default": false,
+              "type": "boolean"
+            },
+            "replacement": {
+              "default": "FLASH",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": ["flash_text"]
+            }
+          }
+        }
+      ]
+    },
+    "OutputFormat": {
+      "type": "string",
+      "enum": ["default", "file"]
+    },
+    "ToolConfig": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["name", "type", "warehouse"],
+          "properties": {
+            "description": {
+              "default": "Execute the SQL query. If the query is invalid, fix it and run again.",
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": ["execute_sql"]
+            },
+            "warehouse": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["data", "name", "type"],
+          "properties": {
+            "data": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "description": {
+              "default": "Retrieve the relevant SQL queries to support query generation.",
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": ["retrieval"]
+            }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,120 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Workflow",
+  "type": "object",
+  "required": ["name", "steps"],
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "steps": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Step"
+      }
+    }
+  },
+  "definitions": {
+    "Step": {
+      "type": "object",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["agent_ref", "prompt", "type"],
+          "properties": {
+            "agent_ref": {
+              "type": "string"
+            },
+            "prompt": {
+              "type": "string"
+            },
+            "retry": {
+              "default": 1,
+              "type": "integer",
+              "format": "uint",
+              "minimum": 0.0
+            },
+            "type": {
+              "type": "string",
+              "enum": ["agent"]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["sql_file", "type", "warehouse"],
+          "properties": {
+            "sql_file": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": ["execute_sql"]
+            },
+            "variables": {
+              "default": null,
+              "type": ["object", "null"],
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "warehouse": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["steps", "type", "values"],
+          "properties": {
+            "steps": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/Step"
+              }
+            },
+            "type": {
+              "type": "string",
+              "enum": ["loop_sequential"]
+            },
+            "values": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["template", "type"],
+          "properties": {
+            "template": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": ["formatter"]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["type"],
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": ["Unknown"]
+            }
+          }
+        }
+      ],
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

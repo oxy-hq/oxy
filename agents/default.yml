@@ -1,3 +1,5 @@
+# yaml-language-server: $schema=../json-schemas/agent.json
+
 model: "openai-4o-mini"
 retrieval: "default"
 system_instructions: |

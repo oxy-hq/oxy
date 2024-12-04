@@ -1,0 +1,147 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Config",
+  "type": "object",
+  "required": ["defaults", "models", "retrievals", "warehouses"],
+  "properties": {
+    "defaults": {
+      "$ref": "#/definitions/Defaults"
+    },
+    "models": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Model"
+      }
+    },
+    "retrievals": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Retrieval"
+      }
+    },
+    "warehouses": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Warehouse"
+      }
+    }
+  },
+  "definitions": {
+    "Defaults": {
+      "type": "object",
+      "required": ["agent"],
+      "properties": {
+        "agent": {
+          "type": "string"
+        }
+      }
+    },
+    "Model": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["key_var", "model_ref", "name", "vendor"],
+          "properties": {
+            "key_var": {
+              "type": "string"
+            },
+            "model_ref": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "vendor": {
+              "type": "string",
+              "enum": ["openai"]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["api_key", "api_url", "model_ref", "name", "vendor"],
+          "properties": {
+            "api_key": {
+              "type": "string"
+            },
+            "api_url": {
+              "type": "string"
+            },
+            "model_ref": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "vendor": {
+              "type": "string",
+              "enum": ["ollama"]
+            }
+          }
+        }
+      ]
+    },
+    "Retrieval": {
+      "type": "object",
+      "required": ["embed_model", "factor", "name", "rerank_model", "top_k"],
+      "properties": {
+        "embed_model": {
+          "type": "string"
+        },
+        "factor": {
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0.0
+        },
+        "name": {
+          "type": "string"
+        },
+        "rerank_model": {
+          "type": "string"
+        },
+        "top_k": {
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0.0
+        }
+      }
+    },
+    "Warehouse": {
+      "type": "object",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["key_path", "type"],
+          "properties": {
+            "key_path": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": ["bigquery"]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["type"],
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": ["duckdb"]
+            }
+          }
+        }
+      ],
+      "required": ["dataset", "name"],
+      "properties": {
+        "dataset": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

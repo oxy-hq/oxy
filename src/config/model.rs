@@ -10,8 +10,9 @@ use crate::config::validate::{
     validate_agent_exists, validate_embed_model, validate_env_var, validate_rerank_model,
     validate_warehouse_exists, ValidationContext,
 };
+use schemars::JsonSchema;
 
-#[derive(Serialize, Deserialize, Validate, Debug, Clone)]
+#[derive(Serialize, Deserialize, Validate, Debug, Clone, JsonSchema)]
 #[garde(context(ValidationContext))]
 pub struct Config {
     #[garde(dive)]
@@ -24,10 +25,11 @@ pub struct Config {
     pub retrievals: Vec<Retrieval>,
     #[serde(skip)]
     #[garde(skip)]
+    #[schemars(skip)]
     pub project_path: PathBuf,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, JsonSchema)]
 pub struct AgentConfig {
     pub model: String,
     pub retrieval: Option<String>,
@@ -40,7 +42,7 @@ pub struct AgentConfig {
 }
 
 // These are settings stored as strings derived from the config.yml file's defaults section
-#[derive(Debug, Validate, Deserialize, Serialize, Clone)]
+#[derive(Debug, Validate, Deserialize, Serialize, Clone, JsonSchema)]
 #[garde(context(ValidationContext))]
 // #[garde(context(Config as ctx))]
 pub struct Defaults {
@@ -49,21 +51,22 @@ pub struct Defaults {
     pub agent: String,
 }
 
-#[derive(Serialize, Deserialize, Debug, Validate, Clone)]
+#[derive(Serialize, Deserialize, Debug, Validate, Clone, JsonSchema)]
 #[garde(context(ValidationContext))]
 pub struct BigQuery {
     #[garde(custom(validate_file_path))]
     pub key_path: PathBuf,
 }
 
-#[derive(Serialize, Deserialize, Debug, Validate, Clone)]
+#[derive(Serialize, Deserialize, Debug, Validate, Clone, JsonSchema)]
 #[garde(context(ValidationContext))]
 pub struct DuckDB {
     #[garde(skip)]
+    #[schemars(skip)]
     pub key_path: PathBuf,
 }
 
-#[derive(Serialize, Deserialize, Debug, Validate, Clone)]
+#[derive(Serialize, Deserialize, Debug, Validate, Clone, JsonSchema)]
 #[garde(context(ValidationContext))]
 #[serde(tag = "type")]
 pub enum WarehouseType {
@@ -82,7 +85,7 @@ impl fmt::Display for WarehouseType {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Validate, Clone)]
+#[derive(Serialize, Deserialize, Debug, Validate, Clone, JsonSchema)]
 #[garde(context(ValidationContext))]
 pub struct Warehouse {
     #[garde(length(min = 1))]
@@ -96,7 +99,7 @@ pub struct Warehouse {
     pub warehouse_type: WarehouseType,
 }
 
-#[derive(Deserialize, Debug, Clone, Validate, Serialize)]
+#[derive(Deserialize, Debug, Clone, Validate, Serialize, JsonSchema)]
 #[garde(context(ValidationContext))]
 #[serde(tag = "vendor")]
 pub enum Model {
@@ -122,7 +125,7 @@ pub enum Model {
     },
 }
 
-#[derive(Serialize, Deserialize, Default, Clone, Debug)]
+#[derive(Serialize, Deserialize, Default, Clone, Debug, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum OutputFormat {
     #[default]
@@ -130,7 +133,7 @@ pub enum OutputFormat {
     File,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, JsonSchema)]
 #[serde(tag = "type")]
 pub enum AnonymizerConfig {
     #[serde(rename = "flash_text")]
@@ -157,7 +160,7 @@ fn default_case_insensitive() -> bool {
     false
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default, JsonSchema)]
 pub enum FileFormat {
     #[serde(rename = "json")]
     Json,
@@ -166,7 +169,7 @@ pub enum FileFormat {
     Markdown,
 }
 
-#[derive(Deserialize, Debug, Clone, Validate, Serialize)]
+#[derive(Deserialize, Debug, Clone, Validate, Serialize, JsonSchema)]
 #[garde(context(ValidationContext))]
 pub struct Retrieval {
     #[garde(length(min = 1))]
@@ -189,7 +192,7 @@ pub fn get_config_path() -> PathBuf {
         .join("config.yml")
 }
 
-#[derive(Debug)]
+#[derive(Debug, JsonSchema)]
 pub struct ParsedConfig {
     pub agent_config: AgentConfig,
     pub model: Model,
@@ -197,7 +200,7 @@ pub struct ParsedConfig {
     pub retrieval: Retrieval,
 }
 
-#[derive(Serialize, Deserialize, Debug, Validate)]
+#[derive(Serialize, Deserialize, Debug, Validate, JsonSchema)]
 #[garde(context(ValidationContext))]
 pub struct AgentStep {
     #[garde(length(min = 1))]
@@ -209,7 +212,7 @@ pub struct AgentStep {
     pub retry: usize,
 }
 
-#[derive(Serialize, Deserialize, Debug, Validate)]
+#[derive(Serialize, Deserialize, Debug, Validate, JsonSchema)]
 #[garde(context(ValidationContext))]
 pub struct ExecuteSQLStep {
     #[garde(custom(validate_warehouse_exists))]
@@ -223,7 +226,7 @@ pub struct ExecuteSQLStep {
     pub variables: Option<HashMap<String, String>>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Validate)]
+#[derive(Serialize, Deserialize, Debug, Validate, JsonSchema)]
 #[garde(context(ValidationContext))]
 pub struct LoopSequentialStep {
     #[garde(length(min = 1))]
@@ -232,14 +235,14 @@ pub struct LoopSequentialStep {
     pub steps: Vec<Step>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Validate)]
+#[derive(Serialize, Deserialize, Debug, Validate, JsonSchema)]
 #[garde(context(ValidationContext))]
 pub struct FormatterStep {
     #[garde(length(min = 1))]
     pub template: String,
 }
 
-#[derive(Serialize, Deserialize, Debug, Validate)]
+#[derive(Serialize, Deserialize, Debug, Validate, JsonSchema)]
 #[garde(context(ValidationContext))]
 #[serde(tag = "type")]
 pub enum StepType {
@@ -255,14 +258,12 @@ pub enum StepType {
     Unknown,
 }
 
-// Temporary workflow object that reads in from the yaml file before it's combined with the
-// workflow name (filename-associated) into the `Workflow` struct
-#[derive(Deserialize)]
+#[derive(Deserialize, JsonSchema)]
 pub struct TempWorkflow {
     pub steps: Vec<Step>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Validate)]
+#[derive(Serialize, Deserialize, Debug, Validate, JsonSchema)]
 #[garde(context(ValidationContext))]
 pub struct Step {
     #[garde(length(min = 1))]
@@ -276,7 +277,7 @@ fn default_retry() -> usize {
     1
 }
 
-#[derive(Serialize, Deserialize, Debug, Validate)]
+#[derive(Serialize, Deserialize, Debug, Validate, JsonSchema)]
 #[garde(context(ValidationContext))]
 pub struct Workflow {
     #[garde(length(min = 1))]
@@ -285,7 +286,7 @@ pub struct Workflow {
     pub steps: Vec<Step>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, JsonSchema)]
 #[serde(tag = "type")]
 pub enum ToolConfig {
     #[serde(rename = "execute_sql")]
