@@ -30,7 +30,7 @@ jobs:
   fmt:
     name: Onyx fmt
     needs: [changesets]
-    if: needs.changesets.outputs.onyx == 'true' && github.event_name == 'pull_request' && github.event.pull_request.draft == false
+    if: needs.changesets.outputs.onyx == 'true' && github.event.pull_request.draft != true
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -75,7 +75,6 @@ jobs:
           pnpm lint-staged --diff="origin/${{ github.base_ref }}...origin/${{ github.head_ref }}"
   check:
     needs: [fmt, changesets]
-    if: (needs.changesets.outputs.onyx == 'true' && github.ref_name == 'main') || needs.fmt.result == 'success'
     name: Onyx check
     runs-on: ubuntu-latest
     steps:
