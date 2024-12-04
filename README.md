@@ -43,13 +43,19 @@ The longer-term vision of `onyx` is such that the explorer provides search throu
 
 To install `onyx` from a binary, you can use the following commands:
 
-```sh
-# Download the binary
-curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/onyx-hq/onyx-public-releases/refs/heads/main/install_onyx.sh | bash
+- For linux and macOS:
+
+```bash
+bash <(curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/onyx-hq/onyx-public-releases/refs/heads/main/install_onyx.sh)
+```
+
+- For windows:
+
+```powershell
+powershell -Command "& { iwr -useb https://raw.githubusercontent.com/onyx-hq/onyx-public-releases/refs/heads/main/install_onyx.ps1 | iex }"
 ```
 
 ## Compile from source
-
 
 ### Clone this repository
 
@@ -188,7 +194,7 @@ Put some SQL queries into the `data` directory to seed the engine.
 
 ## Basic commands
 
-An important aspect of `onyx` is the concept of `scope` -- the subset of the `data` directory that is available to an `agent`. By default, `onyx` comes with a way to access both the *narrowest* scope (that of a single query) and the *widest* scope (the entire `data` directory).
+An important aspect of `onyx` is the concept of `scope` -- the subset of the `data` directory that is available to an `agent`. By default, `onyx` comes with a way to access both the _narrowest_ scope (that of a single query) and the _widest_ scope (the entire `data` directory).
 
 To access SQL-level scope, you can run:
 
@@ -210,7 +216,7 @@ If you want to access a specific agent (for either `search` or `ask`), you can d
 onyx ask --agent=default "How many users do we have?"  # Ask a question of the specific agent `default.yaml`
 ```
 
-To embed files from <project_root>/data/** into vector store you can use `onyx build`. We're downloading model from huggingface hub so you may need to login using:
+To embed files from <project_root>/data/\*\* into vector store you can use `onyx build`. We're downloading model from huggingface hub so you may need to login using:
 
 ```bash
 huggingface-cli login
@@ -261,7 +267,7 @@ model: ollama-local
 
 ### Language dependencies
 
-Need to install node and rust (*find instruction above*). Right now, Python is not being used, but the `build.rs` file contains some hint for scaffolding if you want to incorporate Python. In general, we will follow the principle that everything should be in rust where possible for `onyx`. But this is obviously not possible for a number of integrations and data-specific tasks.
+Need to install node and rust (_find instruction above_). Right now, Python is not being used, but the `build.rs` file contains some hint for scaffolding if you want to incorporate Python. In general, we will follow the principle that everything should be in rust where possible for `onyx`. But this is obviously not possible for a number of integrations and data-specific tasks.
 
 ### Extra - install python & poetry
 
@@ -321,4 +327,3 @@ Poetry is a python package manager that we use to manage python dependencies. In
 ```sh
 pip install poetry
 ```
-
