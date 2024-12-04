@@ -237,7 +237,7 @@ fn create_config_file(config_path: &Path) -> Result<(), InitError> {
         serde_yaml::to_string(&config).map_err(|e| InitError::ExtractionError(e.to_string()))?;
 
     let content = format!(
-        "# yaml-language-server: $schema=./json-schemas/config\n{}",
+        "# yaml-language-server: $schema=https://raw.githubusercontent.com/onyx-hq/onyx-public-releases/refs/heads/main/config.json\n{}",
         yaml
     );
     fs::write(config_path, content)?;
