@@ -176,6 +176,7 @@ jobs:
         git push origin ${{ github.ref_name }}
     - name: Upload json schemas
       run: |
+        mv *.json json-schemas/
         git add *.json
         git commit -m "chore: update json schemas"
         git push origin HEAD
