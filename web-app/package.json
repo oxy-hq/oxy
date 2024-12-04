@@ -31,7 +31,7 @@
     "dayjs": "^1.11.13",
     "invariant": "^2.2.4",
     "localforage": "^1.10.0",
-    "match-sorter": "^7.0.0",
+    "match-sorter": "^8.0.0",
     "mdast": "^3.0.0",
     "openai": "^4.68.2",
     "react": "^18.3.1",
