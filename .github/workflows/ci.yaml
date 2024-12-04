@@ -68,6 +68,7 @@ jobs:
         shell: bash
         run: |
           pnpm lint-staged --diff="origin/${{ github.base_ref }}...origin/${{ github.head_ref }}"
+
   check:
     needs: [fmt, changesets]
     name: Onyx check
@@ -116,3 +117,7 @@ jobs:
         run: cargo check --verbose
       - name: Run cargo clippy
         run: cargo clippy --verbose
+      - name: Run cargo generate schema
+        shell: bash
+        run: |
+          cargo run gen-config-schema --check

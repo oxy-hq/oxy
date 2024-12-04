@@ -1,3 +1,5 @@
+# yaml-language-server: $schema=../json-schemas/workflow.json
+
 name: anonymize_sample
 steps:
   - name: execute

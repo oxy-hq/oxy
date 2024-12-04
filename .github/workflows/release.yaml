@@ -133,6 +133,7 @@ jobs:
           tag_name: ${{ steps.tag.outputs.release_tag }}
           files: |
             onyx-${{ matrix.job.target }}*
+            json-schemas/*
           prerelease: ${{ !startsWith(github.ref, 'refs/tags/') }}
   release_publicly:
     runs-on: ubuntu-latest

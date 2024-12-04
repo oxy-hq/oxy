@@ -235,7 +235,12 @@ fn create_config_file(config_path: &Path) -> Result<(), InitError> {
 
     let yaml =
         serde_yaml::to_string(&config).map_err(|e| InitError::ExtractionError(e.to_string()))?;
-    fs::write(config_path, yaml)?;
+
+    let content = format!(
+        "# yaml-language-server: $schema=./json-schemas/config\n{}",
+        yaml
+    );
+    fs::write(config_path, content)?;
 
     println!(
         "{}",

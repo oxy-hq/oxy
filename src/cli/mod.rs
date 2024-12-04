@@ -9,9 +9,13 @@ use clap::CommandFactory;
 use clap::Parser;
 use colored::Colorize;
 use minijinja::{Environment, Value};
+use model::AgentConfig;
 use model::FileFormat;
+use model::{Config, Workflow};
 use std::collections::BTreeMap;
 use std::error::Error;
+use std::process::exit;
+use std::process::Command;
 
 use init::init;
 
@@ -91,6 +95,13 @@ enum SubCommand {
     Validate,
     Serve,
     TestTheme,
+    GenConfigSchema(GenConfigSchemaArgs),
+}
+
+#[derive(Parser, Debug)]
+struct GenConfigSchemaArgs {
+    #[clap(long)]
+    check: bool,
 }
 
 #[derive(Parser, Debug)]
@@ -121,6 +132,59 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
 
     match args.command {
+        Some(SubCommand::GenConfigSchema(args)) => {
+            let schemas_path = std::path::Path::new("schemas");
+            if !schemas_path.exists() {
+                std::fs::create_dir_all(schemas_path)?;
+            }
+
+            let schemas = vec![
+                (
+                    "config.json",
+                    serde_json::to_string_pretty(&schemars::schema_for!(Config))?,
+                ),
+                (
+                    "workflow.json",
+                    serde_json::to_string_pretty(&schemars::schema_for!(Workflow))?,
+                ),
+                (
+                    "agent.json",
+                    serde_json::to_string_pretty(&schemars::schema_for!(AgentConfig))?,
+                ),
+            ];
+
+            for (filename, schema) in &schemas {
+                std::fs::write(schemas_path.join(filename), schema)?;
+            }
+
+            println!("Generated schema files successfully");
+
+            if args.check {
+                let output = Command::new("git").args(&["status", "--short"]).output()?;
+
+                if !output.status.success() {
+                    eprintln!(
+                        "Failed to get changed files: {}",
+                        String::from_utf8_lossy(&output.stderr)
+                    );
+                    exit(1);
+                }
+
+                let changed_files = String::from_utf8(output.stdout)?;
+                let schema_files: Vec<String> = schemas
+                    .iter()
+                    .map(|(filename, _)| format!("json-schemas/{}", filename))
+                    .collect();
+
+                for file in schema_files {
+                    if changed_files.contains(&file) {
+                        eprintln!("Unexpected changes were found in schema files.");
+                        eprintln!("Please review these changes and update the schema generation code by `cargo run gen-config-schema.`");
+                        exit(1)
+                    }
+                }
+            }
+        }
         Some(SubCommand::Init) => match init() {
             Ok(_) => println!("{}", "Initialization complete".success()),
             Err(e) => eprintln!("{}", format!("Initialization failed: {}", e).error()),
