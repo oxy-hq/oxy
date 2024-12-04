@@ -125,7 +125,7 @@ jobs:
       - name: Generate release tag
         id: tag
         run: |
-          echo "::set-output name=release_tag::${{ github.ref_name }}"
+          echo "release_tag=${{ github.ref_name }}" >> $GITHUB_ENV
       - name: Private github release
         uses: softprops/action-gh-release@v2
         with:
