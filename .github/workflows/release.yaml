@@ -188,6 +188,6 @@ jobs:
         repository: onyx-hq/onyx-public-releases
         files: |
           onyx-*
-          *.json
+          json-schemas/*
       env:
         GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
