@@ -133,7 +133,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
 
     match args.command {
         Some(SubCommand::GenConfigSchema(args)) => {
-            let schemas_path = std::path::Path::new("schemas");
+            let schemas_path = std::path::Path::new("json-schemas");
             if !schemas_path.exists() {
                 std::fs::create_dir_all(schemas_path)?;
             }
