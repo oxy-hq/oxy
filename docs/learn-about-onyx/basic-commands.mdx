@@ -19,11 +19,13 @@ onyx ask --agent=default "How many users do we have?"  # Ask a question of the s
 ### Run queries
 
 Run a raw query on target warehouse
+
 ```bash
 onyx run primary_warehouse example_monthly_rejected.sql
 ```
 
 Run a query rendered from a Jinja template
+
 ```bash
 onyx run primary_warehouse example_weekly_rejected.sql -v -v variable_a=1 variable_b=a variable_c=\*
 ```

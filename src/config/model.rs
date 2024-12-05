@@ -226,11 +226,18 @@ pub struct ExecuteSQLStep {
     pub variables: Option<HashMap<String, String>>,
 }
 
+#[derive(Serialize, Deserialize, Debug, JsonSchema)]
+#[serde(untagged)]
+pub enum LoopValues {
+    Template(String),
+    Array(Vec<String>),
+}
+
 #[derive(Serialize, Deserialize, Debug, Validate, JsonSchema)]
 #[garde(context(ValidationContext))]
 pub struct LoopSequentialStep {
-    #[garde(length(min = 1))]
-    pub values: Vec<String>,
+    #[garde(skip)]
+    pub values: LoopValues,
     #[garde(dive)]
     pub steps: Vec<Step>,
 }

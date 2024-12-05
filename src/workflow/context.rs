@@ -1,6 +1,7 @@
+use minijinja::Value;
 use std::collections::{HashMap, VecDeque};
 
-use minijinja::Value;
+use super::table::J2Table;
 
 #[derive(Debug, Clone)]
 pub enum Output {
@@ -8,6 +9,7 @@ pub enum Output {
     Multi(HashMap<String, Output>),
     Array(Vec<Output>),
     ArrayCursor(Vec<Output>),
+    Table(J2Table),
 }
 
 impl Output {
@@ -31,6 +33,7 @@ impl Output {
                     a.push(item);
                 }
             },
+            _ => {}
         }
     }
 
@@ -56,6 +59,7 @@ impl From<Output> for Value {
                 a.iter()
                     .map(|output| <Output as Into<Value>>::into(output.clone())),
             ),
+            Output::Table(t) => Value::from_object(t),
         }
     }
 }
