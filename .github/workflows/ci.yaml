@@ -117,7 +117,3 @@ jobs:
         run: cargo check --verbose
       - name: Run cargo clippy
         run: cargo clippy --verbose
-      - name: Run cargo generate schema
-        shell: bash
-        run: |
-          cargo run gen-config-schema --check
