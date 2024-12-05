@@ -114,12 +114,14 @@ jobs:
           else
             cargo build --release --target ${{ matrix.job.target }}
           fi
+          cargo run --release --target ${{ matrix.job.target }} -- gen-config-schema
           mv target/${{ matrix.job.target }}/release/onyx onyx-${{ matrix.job.target }}
       - name: Cargo build on Windows
         if: matrix.job.os == 'windows-latest'
         shell: pwsh
         run: |
           cargo build --release --target ${{ matrix.job.target }}
+          cargo run --release --target ${{ matrix.job.target }} -- gen-config-schema
           Move-Item -Path "target\${{ matrix.job.target }}\release\onyx.exe" -Destination "onyx-${{ matrix.job.target }}.exe"
 
       - name: Generate release tag
