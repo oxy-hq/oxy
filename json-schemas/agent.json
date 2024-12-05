@@ -2,7 +2,10 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "AgentConfig",
   "type": "object",
-  "required": ["model", "system_instructions"],
+  "required": [
+    "model",
+    "system_instructions"
+  ],
   "properties": {
     "anonymize": {
       "anyOf": [
@@ -26,14 +29,20 @@
       ]
     },
     "retrieval": {
-      "type": ["string", "null"]
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "system_instructions": {
       "type": "string"
     },
     "tools": {
       "default": [],
-      "type": ["array", "null"],
+      "type": [
+        "array",
+        "null"
+      ],
       "items": {
         "$ref": "#/definitions/ToolConfig"
       }
@@ -44,7 +53,10 @@
       "oneOf": [
         {
           "type": "object",
-          "required": ["keywords_file", "type"],
+          "required": [
+            "keywords_file",
+            "type"
+          ],
           "properties": {
             "case_insensitive": {
               "default": false,
@@ -63,7 +75,9 @@
             },
             "type": {
               "type": "string",
-              "enum": ["flash_text"]
+              "enum": [
+                "flash_text"
+              ]
             }
           }
         }
@@ -71,13 +85,20 @@
     },
     "OutputFormat": {
       "type": "string",
-      "enum": ["default", "file"]
+      "enum": [
+        "default",
+        "file"
+      ]
     },
     "ToolConfig": {
       "oneOf": [
         {
           "type": "object",
-          "required": ["name", "type", "warehouse"],
+          "required": [
+            "name",
+            "type",
+            "warehouse"
+          ],
           "properties": {
             "description": {
               "default": "Execute the SQL query. If the query is invalid, fix it and run again.",
@@ -88,7 +109,9 @@
             },
             "type": {
               "type": "string",
-              "enum": ["execute_sql"]
+              "enum": [
+                "execute_sql"
+              ]
             },
             "warehouse": {
               "type": "string"
@@ -97,7 +120,11 @@
         },
         {
           "type": "object",
-          "required": ["data", "name", "type"],
+          "required": [
+            "data",
+            "name",
+            "type"
+          ],
           "properties": {
             "data": {
               "type": "array",
@@ -114,7 +141,9 @@
             },
             "type": {
               "type": "string",
-              "enum": ["retrieval"]
+              "enum": [
+                "retrieval"
+              ]
             }
           }
         }

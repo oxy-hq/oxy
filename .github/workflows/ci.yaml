@@ -79,29 +79,6 @@ jobs:
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           rustflags: "" # temporarily override "-D warnings"
-      - name: Install Node.js
-        uses: actions/setup-node@v4
-        id: setup-node
-        with:
-          node-version: 20
-      - uses: pnpm/action-setup@v4
-        with:
-          run_install: true
-      - name: Get pnpm store directory
-        shell: bash
-        run: |
-          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
-      - uses: actions/cache@v4
-        name: Setup pnpm cache
-        with:
-          path: ${{ env.STORE_PATH }}
-          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-pnpm-store-
-      - name: Build frontend assets
-        shell: bash
-        run: |
-          pnpm -C web-app build
       # protobuf is required by lance https://github.com/lancedb/lance/issues/3073
       - name: Install Protoc
         uses: arduino/setup-protoc@v3
