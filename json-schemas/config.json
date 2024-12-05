@@ -2,7 +2,12 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "Config",
   "type": "object",
-  "required": ["defaults", "models", "retrievals", "warehouses"],
+  "required": [
+    "defaults",
+    "models",
+    "retrievals",
+    "warehouses"
+  ],
   "properties": {
     "defaults": {
       "$ref": "#/definitions/Defaults"
@@ -29,7 +34,9 @@
   "definitions": {
     "Defaults": {
       "type": "object",
-      "required": ["agent"],
+      "required": [
+        "agent"
+      ],
       "properties": {
         "agent": {
           "type": "string"
@@ -40,7 +47,12 @@
       "oneOf": [
         {
           "type": "object",
-          "required": ["key_var", "model_ref", "name", "vendor"],
+          "required": [
+            "key_var",
+            "model_ref",
+            "name",
+            "vendor"
+          ],
           "properties": {
             "key_var": {
               "type": "string"
@@ -53,13 +65,21 @@
             },
             "vendor": {
               "type": "string",
-              "enum": ["openai"]
+              "enum": [
+                "openai"
+              ]
             }
           }
         },
         {
           "type": "object",
-          "required": ["api_key", "api_url", "model_ref", "name", "vendor"],
+          "required": [
+            "api_key",
+            "api_url",
+            "model_ref",
+            "name",
+            "vendor"
+          ],
           "properties": {
             "api_key": {
               "type": "string"
@@ -75,7 +95,9 @@
             },
             "vendor": {
               "type": "string",
-              "enum": ["ollama"]
+              "enum": [
+                "ollama"
+              ]
             }
           }
         }
@@ -83,7 +105,13 @@
     },
     "Retrieval": {
       "type": "object",
-      "required": ["embed_model", "factor", "name", "rerank_model", "top_k"],
+      "required": [
+        "embed_model",
+        "factor",
+        "name",
+        "rerank_model",
+        "top_k"
+      ],
       "properties": {
         "embed_model": {
           "type": "string"
@@ -111,29 +139,41 @@
       "oneOf": [
         {
           "type": "object",
-          "required": ["key_path", "type"],
+          "required": [
+            "key_path",
+            "type"
+          ],
           "properties": {
             "key_path": {
               "type": "string"
             },
             "type": {
               "type": "string",
-              "enum": ["bigquery"]
+              "enum": [
+                "bigquery"
+              ]
             }
           }
         },
         {
           "type": "object",
-          "required": ["type"],
+          "required": [
+            "type"
+          ],
           "properties": {
             "type": {
               "type": "string",
-              "enum": ["duckdb"]
+              "enum": [
+                "duckdb"
+              ]
             }
           }
         }
       ],
-      "required": ["dataset", "name"],
+      "required": [
+        "dataset",
+        "name"
+      ],
       "properties": {
         "dataset": {
           "type": "string"

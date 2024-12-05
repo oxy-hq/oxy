@@ -1,0 +1,43 @@
+name: Update JSON Schemas
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  changesets:
+    uses: ./.github/workflows/changesets.yaml
+  update-json-schemas:
+    name: Update JSON Schemas
+    needs: [changesets]
+    if: needs.changesets.outputs.onyx == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Prep Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rustflags: "" # temporarily override "-D warnings"
+      - name: Install required dependencies
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libssl-dev
+        # protobuf is required by lance https://github.com/lancedb/lance/issues/3073
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Update json schemas
+        shell: bash
+        run: |
+          cargo run -- gen-config-schema --check
+      - name: Commit json schemas changes
+        uses: EndBug/add-and-commit@v9 # You can change this to use a specific version.
+        with:
+          add: 'json-schemas'
+          message: 'Update JSON Schemas'
+          fetch: true
