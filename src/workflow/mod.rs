@@ -5,6 +5,7 @@ use crate::config::{get_config_path, parse_config};
 
 pub mod context;
 pub mod executor;
+pub mod table;
 
 pub async fn run_workflow(workflow_name: &str) -> anyhow::Result<Output> {
     let config_path = get_config_path();

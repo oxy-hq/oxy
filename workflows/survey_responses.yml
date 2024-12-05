@@ -2,11 +2,13 @@
 
 name: survey_responses
 steps:
+  - name: intervals
+    type: execute_sql
+    warehouse: primary_warehouse
+    sql_file: example_intervals.sql
   - name: schedules
     type: loop_sequential
-    values:
-      - "weekly"
-      - "monthly"
+    values: "{{intervals.intervals}}"
     steps:
       - name: metrics
         type: loop_sequential
@@ -18,7 +20,7 @@ steps:
             type: execute_sql
             warehouse: primary_warehouse
             sql_file: example_{{schedules.value}}_{{metrics.value}}.sql
-            variables: 
+            variables:
               variable_a: "1000"
               variable_b: hello
               variable_c: "{{ metrics.value }}"
@@ -42,6 +44,12 @@ steps:
   - name: formatter
     type: formatter
     template: |
+      # Debugging
+      Row-based display:
+      {{intervals}}
+      Column-based display:
+      {{intervals.intervals}}
+
       # Survey Responses Report
       {% for schedule in schedules %}
       -- Schedule: {{schedule.value}} --

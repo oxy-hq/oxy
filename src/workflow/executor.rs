@@ -2,16 +2,18 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 
+use arrow::array::RecordBatch;
 use arrow::util::pretty::pretty_format_batches;
 use backon::ExponentialBuilder;
 use backon::Retryable;
+use minijinja::value::Enumerator;
 use minijinja::{Environment, Value};
 
-use crate::ai::utils::record_batches_to_json;
 use crate::config::model::AgentStep;
 use crate::config::model::Config;
 use crate::config::model::ExecuteSQLStep;
 use crate::config::model::FileFormat;
+use crate::config::model::LoopValues;
 use crate::config::model::Step;
 use crate::config::model::StepType;
 use crate::config::model::Warehouse;
@@ -26,6 +28,7 @@ use crate::{
 };
 
 use super::context::ContextBuilder;
+use super::table::J2Table;
 
 #[derive(Default)]
 pub struct WorkflowExecutor {
@@ -76,7 +79,7 @@ impl WorkflowExecutor {
         &self,
         execute_sql_step: &ExecuteSQLStep,
         context: &Value,
-    ) -> anyhow::Result<String> {
+    ) -> anyhow::Result<Vec<RecordBatch>> {
         let wh_config = self.warehouses.get(&execute_sql_step.warehouse);
         log::info!("SQL Context: {:?}", context);
         match wh_config {
@@ -110,11 +113,10 @@ impl WorkflowExecutor {
 
                 print_colored_sql(&query);
                 let results = Connector::new(wh).run_query_and_load(&query).await?;
-                let json_blob = record_batches_to_json(&results)?;
                 let batches_display = pretty_format_batches(&results)?;
                 println!("\n\x1b[1;32mResults:\x1b[0m");
                 println!("{}", batches_display);
-                Ok(json_blob)
+                Ok(results)
             }
             None => Err(anyhow::anyhow!(
                 "Warehouse {} not found",
@@ -145,14 +147,53 @@ impl WorkflowExecutor {
                     let step_output = self
                         .execute_sql(execute_sql_step, &template_context)
                         .await?;
-                    execution_context.add_output(step.name.clone(), Output::Single(step_output));
+                    execution_context
+                        .add_output(step.name.clone(), Output::Table(J2Table::new(step_output)));
                 }
                 StepType::LoopSequential(loop_step) => {
                     execution_context.enter_loop_scope(step.name.to_string());
-                    for step_value in loop_step.values.iter() {
-                        execution_context.update_value(step_value.to_string());
-                        Box::pin(self.execute_steps(&loop_step.steps, execution_context)).await?;
+                    match loop_step.values {
+                        LoopValues::Template(ref template) => {
+                            let variable = eval_expression(template, &template_context)?;
+                            log::info!("Loop values: {} {:?}", template, variable);
+                            let value_or_none = variable.as_object();
+                            if value_or_none.is_none() {
+                                return Err(anyhow::anyhow!(
+                                    "Values {} did not resolve to an array",
+                                    template,
+                                ));
+                            }
+                            let value = value_or_none.unwrap();
+
+                            match value.enumerate() {
+                                Enumerator::Seq(length) => {
+                                    for idx in 0..length {
+                                        let value =
+                                            value.get_value(&Value::from(idx)).unwrap_or_default();
+                                        execution_context.update_value(value.to_string());
+                                        Box::pin(
+                                            self.execute_steps(&loop_step.steps, execution_context),
+                                        )
+                                        .await?;
+                                    }
+                                }
+                                _ => {
+                                    return Err(anyhow::anyhow!(
+                                        "Values {} did not resolve to an array",
+                                        template,
+                                    ));
+                                }
+                            }
+                        }
+                        LoopValues::Array(ref values) => {
+                            for step_value in values.iter() {
+                                execution_context.update_value(step_value.to_string());
+                                Box::pin(self.execute_steps(&loop_step.steps, execution_context))
+                                    .await?;
+                            }
+                        }
                     }
+
                     execution_context.escape_scope();
                 }
                 StepType::Formatter(formatter_step) => {
@@ -185,4 +226,26 @@ fn render_template(template: &str, context: &Value) -> String {
     env.add_template(template, template).unwrap();
     let tmpl = env.get_template(template).unwrap();
     tmpl.render(context).unwrap()
+}
+
+fn eval_expression(template: &str, context: &Value) -> anyhow::Result<Value> {
+    let mut env = Environment::new();
+    env.add_template(template, template)?;
+    let tmpl = env.get_template(template)?;
+    let variables = tmpl.undeclared_variables(true);
+    if variables.len() != 1 {
+        return Err(anyhow::anyhow!(
+            "Expected one variable in expression, found {}",
+            variables.len()
+        ));
+    }
+    let variable = variables.iter().next().unwrap();
+    let expression = env.compile_expression(variable)?;
+    let value = expression.eval(context)?;
+    log::info!(
+        "Evaluated expression: {} -> {:?}",
+        template,
+        value.as_object().unwrap().repr()
+    );
+    Ok(value)
 }

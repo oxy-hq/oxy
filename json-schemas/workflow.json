@@ -15,6 +15,19 @@
     }
   },
   "definitions": {
+    "LoopValues": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      ]
+    },
     "Step": {
       "type": "object",
       "oneOf": [
@@ -78,10 +91,7 @@
               "enum": ["loop_sequential"]
             },
             "values": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
+              "$ref": "#/definitions/LoopValues"
             }
           }
         },
