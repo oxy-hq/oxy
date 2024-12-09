@@ -176,12 +176,6 @@ jobs:
         git config --global user.email '${{ steps.get-user-id.outputs.user-id }}+${{ steps.app-token.outputs.app-slug }}[bot]@users.noreply.github.com>'
         git tag -a ${{ github.ref_name }} -m "Release ${{ github.ref_name }}"
         git push origin ${{ github.ref_name }}
-    - name: Upload json schemas
-      run: |
-        mv *.json json-schemas/
-        git add *.json
-        git commit -m "chore: update json schemas"
-        git push origin HEAD
     - name: Public github release
       uses: softprops/action-gh-release@v2
       with:
@@ -193,3 +187,13 @@ jobs:
           json-schemas/*
       env:
         GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+    - name: Upload json schemas
+      run: |
+        mv *.json json-schemas/
+        if [ -n "$(git status json-schemas/*.json --porcelain)" ]; then
+          git add json-schemas/*.json
+          git commit -m "chore: update json schemas"
+          git push origin HEAD
+        else
+          echo "No changes to commit"
+        fi
