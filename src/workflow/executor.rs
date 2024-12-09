@@ -39,11 +39,11 @@ pub struct WorkflowExecutor {
 
 impl WorkflowExecutor {
     pub async fn init(&mut self, config: &Config) -> anyhow::Result<()> {
-        let agent_names = list_file_stems(config.project_path.join("agents").to_str().unwrap())?;
-        for agent_name in agent_names {
-            let agent_config = config.load_config(Some(&agent_name))?;
+        let agent_files = list_file_stems(config.project_path.join("agents").to_str().unwrap())?;
+        for agent_file in agent_files {
+            let (agent_config, agent_name) = config.load_config(Some(&agent_file))?;
             let agent = from_config(&agent_name, config, &agent_config, &FileFormat::Json).await?;
-            self.agents.insert(agent_name, agent);
+            self.agents.insert(agent_name.to_owned(), agent);
         }
         for warehouse in &config.warehouses {
             self.warehouses

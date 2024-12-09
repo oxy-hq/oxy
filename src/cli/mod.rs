@@ -8,12 +8,15 @@ use clap::builder::ValueParser;
 use clap::CommandFactory;
 use clap::Parser;
 use colored::Colorize;
+use migration::ExprTrait;
 use minijinja::{Environment, Value};
 use model::AgentConfig;
 use model::FileFormat;
 use model::{Config, Workflow};
 use std::collections::BTreeMap;
 use std::error::Error;
+use std::path::Path;
+use std::path::PathBuf;
 use std::process::exit;
 use std::process::Command;
 
@@ -87,11 +90,8 @@ enum SubCommand {
     /// Search through SQL in your project path. Run them against the associated warehouse on
     /// selection.
     Run(RunArgs),
-    /// Ask a question to the specified agent. If no agent is specified, the default agent is used
-    Ask(AskArgs),
     Build,
     VecSearch(VecSearchArgs),
-    Execute(ExecuteArgs),
     Validate,
     Serve,
     TestTheme,
@@ -99,23 +99,16 @@ enum SubCommand {
 }
 
 #[derive(Parser, Debug)]
-struct GenConfigSchemaArgs {
-    #[clap(long)]
-    check: bool,
-}
-
-#[derive(Parser, Debug)]
-struct AskArgs {
-    question: String,
-}
-
-#[derive(Parser, Debug)]
 struct RunArgs {
+    file: String,
+
+    #[clap(long)]
     warehouse: Option<String>,
-    file: Option<String>,
 
     #[clap(long, short = 'v', value_parser=ValueParser::new(parse_variable), num_args = 1..)]
     variables: Vec<(String, String)>,
+
+    question: Option<String>,
 }
 
 #[derive(Parser, Debug)]
@@ -124,8 +117,9 @@ struct VecSearchArgs {
 }
 
 #[derive(Parser, Debug)]
-struct ExecuteArgs {
-    workflow_name: Option<String>,
+struct GenConfigSchemaArgs {
+    #[clap(long)]
+    check: bool,
 }
 
 pub async fn cli() -> Result<(), Box<dyn Error>> {
@@ -211,64 +205,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
         }
         Some(SubCommand::Run(run_args)) => {
             let config_path = get_config_path();
-            let config = parse_config(&config_path)?;
-            let project_path = &config.project_path;
-
-            let file_path = if let Some(file) = run_args.file {
-                // Use specific SQL file from data directory
-                project_path.join("data").join(file)
-            } else {
-                eprintln!("Error: Missing required filename argument");
-                return Ok(());
-            };
-
-            match run_args.warehouse {
-                Some(warehouse) => match std::fs::read_to_string(&file_path) {
-                    Ok(content) => {
-                        let wh_config = config.find_warehouse(&warehouse);
-                        let mut env = Environment::new();
-                        let mut query = content.clone();
-
-                        // render template if needed
-                        if !run_args.variables.is_empty() {
-                            env.add_template("query", &query)?;
-                            let tmpl = env.get_template("query").unwrap();
-                            let ctx = Value::from({
-                                let mut m = BTreeMap::new();
-                                for var in &run_args.variables {
-                                    m.insert(var.0.clone(), var.1.clone());
-                                }
-                                m
-                            });
-                            query = tmpl.render(ctx)?
-                        }
-                        match wh_config {
-                            Ok(wh) => {
-                                print_colored_sql(&query);
-                                let results =
-                                    Connector::new(&wh).run_query_and_load(&query).await?;
-                                let batches_display = pretty_format_batches(&results)?;
-                                println!("\n\x1b[1;32mResults:\x1b[0m");
-                                println!("{}", batches_display);
-                                return Ok(());
-                            }
-                            Err(_) => {
-                                eprintln!("Error: Warehouse not found in config");
-                                return Ok(());
-                            }
-                        }
-                    }
-                    Err(e) => eprintln!("{}", format!("Error reading file: {}", e).error()),
-                },
-                None => {
-                    eprintln!("Error: Missing required warehouse argument");
-                    return Ok(());
-                }
-            }
-        }
-        Some(SubCommand::Ask(ask_args)) => {
-            let (agent, _) = setup_agent(args.agent.as_deref(), &FileFormat::Markdown).await?;
-            agent.request(&ask_args.question).await?;
+            handle_run_command(config_path, run_args).await?;
         }
         Some(SubCommand::Build) => {
             let config_path = get_config_path();
@@ -287,20 +224,9 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
         Some(SubCommand::VecSearch(search_args)) => {
             let config_path = get_config_path();
             let config = parse_config(&config_path)?;
-            let agent_config = config.load_config(None)?;
+            let (agent_config, _) = config.load_config(None)?;
             let retrieval = config.find_retrieval(&agent_config.retrieval.unwrap())?;
             vector_search(&config.defaults.agent, &retrieval, &search_args.question).await?;
-        }
-        Some(SubCommand::Execute(execute_args)) => {
-            if let Some(workflow_name) = execute_args.workflow_name {
-                match run_workflow(&workflow_name).await {
-                    Ok(_) => println!("{}", "\n✅Workflow executed successfully".success()),
-                    Err(e) => eprintln!("{}", format!("Error executing workflow: \n{}", e).error()),
-                }
-            } else {
-                eprintln!("Error: Missing required filename argument");
-                return Ok(());
-            }
         }
         Some(SubCommand::Validate) => {
             let result = load_config();
@@ -386,6 +312,106 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
 
         None => {
             Args::command().print_help().unwrap();
+        }
+    }
+
+    Ok(())
+}
+
+async fn handle_agent_file(
+    file_path: Option<&PathBuf>,
+    question: Option<String>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let question = question.ok_or_else(|| "Question is required for agent files".to_string())?;
+    let (agent, _) = setup_agent(file_path, &FileFormat::Markdown).await?;
+    agent.request(&question).await?;
+    Ok(())
+}
+
+async fn handle_sql_file(
+    file_path: &PathBuf,
+    warehouse: Option<String>,
+    config: &Config,
+    variables: &[(String, String)],
+) -> Result<(), Box<dyn std::error::Error>> {
+    let warehouse = warehouse.ok_or_else(|| "Warehouse is required for SQL files".to_string())?;
+    let content = std::fs::read_to_string(file_path)?;
+    let wh_config = config.find_warehouse(&warehouse)?;
+
+    let mut env = Environment::new();
+    let mut query = content.clone();
+
+    // Handle variable templating if variables are provided
+    if !variables.is_empty() {
+        env.add_template("query", &query)?;
+        let tmpl = env.get_template("query").unwrap();
+        let ctx = Value::from({
+            let mut m = BTreeMap::new();
+            for var in variables {
+                m.insert(var.0.clone(), var.1.clone());
+            }
+            m
+        });
+        query = tmpl.render(ctx)?
+    }
+
+    // Print colored SQL and execute query
+    print_colored_sql(&query);
+    let results = Connector::new(&wh_config)
+        .run_query_and_load(&query)
+        .await?;
+    let batches_display = pretty_format_batches(&results)?;
+    println!("\n\x1b[1;32mResults:\x1b[0m");
+    println!("{}", batches_display);
+
+    Ok(())
+}
+
+async fn handle_workflow_file(file_path: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+    match run_workflow(file_path).await {
+        Ok(_) => {
+            println!("{}", "\n✅Workflow executed successfully".success());
+            Ok(())
+        }
+        Err(e) => {
+            eprintln!("{}", format!("Error executing workflow: \n{}", e).error());
+            Err(e.into())
+        }
+    }
+}
+
+async fn handle_run_command(
+    config_path: PathBuf,
+    run_args: RunArgs,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let file = &run_args.file;
+
+    let config = parse_config(&config_path)?;
+    let project_path = &config.project_path;
+
+    let file_path = project_path.join(file);
+    if !file_path.exists() {
+        return Err(format!("Configuration file not found: {:?}", file_path).into());
+    }
+    let extension = file_path.extension().and_then(std::ffi::OsStr::to_str);
+
+    match extension {
+        Some("yml") => {
+            if file.ends_with(".workflow.yml") {
+                handle_workflow_file(&file_path).await?;
+            } else if file.ends_with(".agent.yml") {
+                handle_agent_file(Some(&file_path), run_args.question).await?;
+            } else {
+                return Err(
+                    "Invalid YAML file. Must be either *.workflow.yml or *.agent.yml".into(),
+                );
+            }
+        }
+        Some("sql") => {
+            handle_sql_file(&file_path, run_args.warehouse, &config, &run_args.variables).await?;
+        }
+        _ => {
+            return Err("Invalid file extension. Must be .workflow.yml, .agent.yml, or .sql".into())
         }
     }
 

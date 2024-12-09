@@ -42,8 +42,14 @@ pub struct AskRequest {
     pub agent: String,
 }
 
-async fn get_agent(agent_name: &str) -> Box<dyn LLMAgent + Send> {
-    let (agent, _) = ai::setup_agent(Some(agent_name), &FileFormat::Markdown)
+async fn get_agent(agent_path: &str) -> Box<dyn LLMAgent + Send> {
+    let config_path = get_config_path();
+    let config = parse_config(&config_path);
+    let project_path = &config.unwrap().project_path;
+
+    let file_path = project_path.join(&agent_path);
+
+    let (agent, _) = ai::setup_agent(Some(&file_path), &FileFormat::Markdown)
         .await
         .unwrap();
     agent
