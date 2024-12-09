@@ -25,14 +25,14 @@ use toolbox::ToolBox;
 use tools::{ExecuteSQLParams, ExecuteSQLTool, RetrieveParams, RetrieveTool, Tool};
 
 pub async fn setup_agent(
-    agent_name: Option<&str>,
+    agent_file: Option<&PathBuf>,
     file_format: &FileFormat,
 ) -> anyhow::Result<(Box<dyn LLMAgent + Send + Sync>, PathBuf)> {
     let config_path = get_config_path();
     let config = parse_config(&config_path)?;
-    let agent_name = agent_name.unwrap_or(config.defaults.agent.as_ref());
-    let agent_config = config.load_config(Some(agent_name))?;
-    let agent = from_config(agent_name, &config, &agent_config, file_format).await?;
+
+    let (agent_config, agent_name) = config.load_config(agent_file)?;
+    let agent = from_config(&agent_name, &config, &agent_config, file_format).await?;
     Ok((agent, config_path))
 }
 

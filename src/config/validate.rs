@@ -101,7 +101,7 @@ pub fn validate_agent_exists(agent: &str, context: &ValidationContext) -> garde:
     let path = context
         .config
         .get_agents_dir()
-        .join(format!("{}.yml", agent));
+        .join(format!("{}.agent.yml", agent));
     if !path.exists() {
         return Err(format_error_message(
             AGENT_NOT_FOUND_ERROR,

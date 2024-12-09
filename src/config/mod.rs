@@ -62,8 +62,8 @@ impl Config {
     }
 
     pub fn validate_workflows(&self) -> anyhow::Result<()> {
-        for workflow_name in self.list_workflows()? {
-            let workflow = self.load_workflow(&workflow_name)?;
+        for workflow_file in self.list_workflows()? {
+            let workflow = self.load_workflow(&workflow_file)?;
             self.validate_workflow(&workflow)?;
         }
         Ok(())
@@ -77,12 +77,16 @@ impl Config {
         PathBuf::from(&self.project_path).join("data")
     }
 
-    pub fn load_config(&self, agent_name: Option<&str>) -> anyhow::Result<AgentConfig> {
-        let agent_file = if let Some(name) = agent_name {
-            self.get_agents_dir().join(format!("{}.yml", name))
+    pub fn load_config(
+        &self,
+        agent_file: Option<&PathBuf>,
+    ) -> anyhow::Result<(AgentConfig, String)> {
+        let agent_file = if let Some(file) = agent_file {
+            file
         } else {
-            self.get_agents_dir()
-                .join(format!("{}.yml", self.defaults.agent))
+            &self
+                .get_agents_dir()
+                .join(format!("{}.agent.yml", self.defaults.agent))
         };
 
         if !agent_file.exists() {
@@ -93,10 +97,14 @@ impl Config {
         }
 
         let agent_config = parse_agent_config(&agent_file.to_string_lossy())?;
-        Ok(agent_config)
+
+        let agent_name = agent_file.file_stem().unwrap().to_str().unwrap();
+        let agent_name = agent_name.strip_suffix(".agent").unwrap_or(agent_name);
+
+        Ok((agent_config, agent_name.to_owned()))
     }
 
-    pub fn list_workflows(&self) -> anyhow::Result<Vec<String>> {
+    pub fn list_workflows(&self) -> anyhow::Result<Vec<PathBuf>> {
         let workflow_dir = PathBuf::from(&self.project_path).join("workflows");
 
         let mut workflows = vec![];
@@ -104,10 +112,11 @@ impl Config {
             let entry = entry?;
             let path = entry.path();
             if path.is_file() {
-                if let Some(ext) = path.extension() {
-                    if ext == "yml" {
-                        let file_stem = path.file_stem().unwrap().to_str().unwrap();
-                        workflows.push(file_stem.to_string());
+                if let Some(file_name) = path.file_name() {
+                    if let Some(file_name_str) = file_name.to_str() {
+                        if file_name_str.ends_with(".workflow.yml") {
+                            workflows.push(path);
+                        }
                     }
                 }
             }
@@ -116,20 +125,21 @@ impl Config {
         Ok(workflows)
     }
 
-    pub fn load_workflow(&self, workflow_name: &str) -> anyhow::Result<Workflow> {
-        let workflow_file = PathBuf::from(&self.project_path)
-            .join("workflows")
-            .join(format!("{}.yml", workflow_name));
-
-        if !workflow_file.exists() {
+    pub fn load_workflow(&self, workflow_path: &PathBuf) -> anyhow::Result<Workflow> {
+        if !workflow_path.exists() {
             return Err(anyhow::Error::msg(format!(
                 "Workflow configuration file not found: {:?}",
-                workflow_file
+                workflow_path
             )));
         }
 
+        let workflow_name = workflow_path.file_stem().unwrap().to_str().unwrap();
+        let workflow_name = workflow_name
+            .strip_suffix(".workflow")
+            .unwrap_or(workflow_name);
+
         let workflow_config =
-            parse_workflow_config(workflow_name, &workflow_file.to_string_lossy())?;
+            parse_workflow_config(workflow_name, &workflow_path.to_string_lossy())?;
 
         Ok(workflow_config)
     }

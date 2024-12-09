@@ -35,10 +35,9 @@ pub async fn build_embeddings(config: &Config, data_path: &str) -> anyhow::Resul
             "{}",
             format!("Building embeddings for agent: {:?}", agent_dir).text()
         );
-        let agent_name = agent_dir.file_name().unwrap().to_str().unwrap();
-        let agent = config.load_config(Some(agent_name))?;
+        let (agent, agent_name) = config.load_config(Some(&agent_dir))?;
         let retrieval = config.find_retrieval(agent.retrieval.as_ref().unwrap())?;
-        let db = get_vector_store(agent_name, &retrieval)?;
+        let db = get_vector_store(&agent_name, &retrieval)?;
         let documents = get_documents_from_files(data_path)?;
         db.embed(&documents).await?;
     }

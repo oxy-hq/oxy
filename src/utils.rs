@@ -38,16 +38,12 @@ pub fn collect_files_recursively(dir: &str, base_path: &str) -> anyhow::Result<V
     Ok(manifest.clone())
 }
 
-pub fn list_file_stems(path: &str) -> anyhow::Result<Vec<String>> {
+pub fn list_file_stems(path: &str) -> anyhow::Result<Vec<PathBuf>> {
     let files = fs::read_dir(path)?
         .map(|entry| entry.unwrap().path())
         .filter(|path| path.is_file())
         .collect::<Vec<PathBuf>>();
-    let names = files
-        .iter()
-        .map(|file| file.file_stem().unwrap().to_str().unwrap().to_string())
-        .collect();
-    Ok(names)
+    Ok(files)
 }
 
 pub fn print_colored_sql(sql: &str) {
