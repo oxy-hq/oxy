@@ -4,6 +4,7 @@ version = "0.0.1"
 description = ""
 authors = []
 readme = "README.md"
+package-mode = false
 # requires-poetry = ">=2.0" # to be added when poetry 2 is released
 
 [tool.poetry.group.main.dependencies]
@@ -15,10 +16,10 @@ onyx-py = { path = "onyx-py", develop = true }
 # required for dependabot
 [tool.poetry.dependencies]
 python = ">=3.11,<3.12"
-maturin = "^1.7.8"
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.1.7"
+maturin = "^1.7.8"
 
 [tool.ruff]
 extend-exclude = ["*_pb2*.py*"]

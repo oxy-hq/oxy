@@ -20,8 +20,4 @@ name = "onyx-py"
 version = "0.1.0"
 description = "Python bindings for Onyx"
 authors = ["The Onyx Team"]
-
-
-[tool.poetry.dependencies]
-python = ">=3.9,<3.12"
-pyarrow = "18.1.0"
+package-mode = false
