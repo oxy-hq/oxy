@@ -43,8 +43,8 @@ impl Tool for ExecuteSQLTool {
 
         match self.output_format {
             OutputFormat::Default => {
-                let dataset = load_result(&file_path)?;
-                let markdown_table = record_batches_to_markdown(&dataset)?;
+                let (datasets, schema) = load_result(&file_path)?;
+                let markdown_table = record_batches_to_markdown(&datasets, &schema)?;
                 Ok(markdown_table.to_string())
             }
             OutputFormat::File => Ok(file_path),

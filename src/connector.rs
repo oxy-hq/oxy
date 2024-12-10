@@ -1,8 +1,7 @@
-use crate::theme::*;
-use arrow::datatypes::{DataType, Field, Schema};
+use arrow::datatypes::{Schema, SchemaRef};
 use arrow::ipc::{reader::FileReader, writer::FileWriter};
 use arrow::{array::as_string_array, error::ArrowError, record_batch::RecordBatch};
-use arrow_46::datatypes::{DataType as DataType64, Field as Field64, Schema as Schema64};
+use arrow_46::datatypes::Schema as Schema64;
 use arrow_46::ipc::writer::FileWriter as FileWriter46;
 use arrow_46::record_batch::RecordBatch as RecordBatch46;
 use connectorx::prelude::{get_arrow, CXQuery, SourceConn};
@@ -55,8 +54,8 @@ impl Connector {
         if query_string.is_empty() {
             vec![]
         } else {
-            let result = self.run_query_and_load(&query_string).await.unwrap();
-            let result_iter = result
+            let (datasets, _) = self.run_query_and_load(&query_string).await.unwrap();
+            let result_iter = datasets
                 .iter()
                 .flat_map(|batch| as_string_array(batch.column(0)).iter());
             // datesets
@@ -80,8 +79,8 @@ impl Connector {
         if query_string.is_empty() {
             vec![]
         } else {
-            let result = self.run_query_and_load(&query_string).await.unwrap();
-            let result_iter = result
+            let (datasets, _) = self.run_query_and_load(&query_string).await.unwrap();
+            let result_iter = datasets
                 .iter()
                 .flat_map(|batch| as_string_array(batch.column(0)).iter());
             // ddls
@@ -109,7 +108,10 @@ impl Connector {
         Ok(file_path)
     }
 
-    pub async fn run_query_and_load(&self, query: &str) -> anyhow::Result<Vec<RecordBatch>> {
+    pub async fn run_query_and_load(
+        &self,
+        query: &str,
+    ) -> anyhow::Result<(Vec<RecordBatch>, SchemaRef)> {
         let file_path = self.run_query(query).await?;
         load_result(&file_path)
     }
@@ -128,9 +130,10 @@ impl Connector {
             let queries = &[CXQuery::from(query.as_str())];
             let destination =
                 get_arrow(&source_conn, None, queries).expect("Run failed at get_arrow.");
+            let schema = destination.arrow_schema();
             let result = destination.arrow()?;
             let file_path = format!("/tmp/{}.arrow", Uuid::new_v4());
-            write_connectorx_to_ipc(&result, &file_path)?;
+            write_connectorx_to_ipc(&result, &file_path, &schema)?;
             Ok::<String, anyhow::Error>(file_path)
         })
         .await
@@ -145,18 +148,20 @@ impl Connector {
         let dir_set_stmt = format!("SET file_search_path = '{}'", self.config.dataset);
         conn.execute(&dir_set_stmt, [])?;
         let mut stmt = conn.prepare(&query)?;
-        let arrow_chunks = stmt.query_arrow([])?.collect();
+        let arrow_stream = stmt.query_arrow([])?;
+        let schema = arrow_stream.get_schema();
+        let arrow_chunks = arrow_stream.collect();
         debug!("Query results: {:?}", arrow_chunks);
         let file_path = format!("/tmp/{}.arrow", Uuid::new_v4());
-        write_duckdb_to_ipc(&arrow_chunks, &file_path).unwrap();
+        write_duckdb_to_ipc(&arrow_chunks, &file_path, &schema).unwrap();
         Ok(file_path)
     }
 }
 
-pub fn load_result(file_path: &str) -> anyhow::Result<Vec<RecordBatch>> {
+pub fn load_result(file_path: &str) -> anyhow::Result<(Vec<RecordBatch>, SchemaRef)> {
     let file = File::open(file_path)?;
     let reader = FileReader::try_new(file, None)?;
-
+    let schema = reader.schema();
     // Collect results and handle potential errors
     let batches: Result<Vec<RecordBatch>, ArrowError> = reader.collect();
     let batches = batches?;
@@ -164,21 +169,19 @@ pub fn load_result(file_path: &str) -> anyhow::Result<Vec<RecordBatch>> {
     // Delete the temporary file
     std::fs::remove_file(file_path)?;
 
-    Ok(batches)
+    Ok((batches, schema))
 }
 
-fn write_connectorx_to_ipc(batches: &Vec<RecordBatch46>, file_path: &str) -> anyhow::Result<()> {
+fn write_connectorx_to_ipc(
+    batches: &Vec<RecordBatch46>,
+    file_path: &str,
+    schema: &Arc<Schema64>,
+) -> anyhow::Result<()> {
     let file = File::create(file_path)?;
-    let schema = if batches.is_empty() {
-        println!("{}", "Warning: query returned no results.".warning());
-        Arc::new(Schema64::new(vec![Field64::new(
-            "dummy",
-            DataType64::Int32,
-            true,
-        )]))
-    } else {
-        batches[0].schema()
-    };
+    if batches.is_empty() {
+        debug!("Warning: query returned no results.");
+    }
+    debug!("Schema: {:?}", schema);
     let schema_ref = schema.as_ref();
     let mut writer = FileWriter46::try_new(file, schema_ref)?;
     debug!(target: "parquet", "Writing batches to parquet file: {:?}", file_path);
@@ -189,18 +192,16 @@ fn write_connectorx_to_ipc(batches: &Vec<RecordBatch46>, file_path: &str) -> any
     Ok(())
 }
 
-fn write_duckdb_to_ipc(batches: &Vec<RecordBatch>, file_path: &str) -> anyhow::Result<()> {
+fn write_duckdb_to_ipc(
+    batches: &Vec<RecordBatch>,
+    file_path: &str,
+    schema: &Arc<Schema>,
+) -> anyhow::Result<()> {
     let file = File::create(file_path)?;
-    let schema = if batches.is_empty() {
-        println!("{}", "Warning: query returned no results.".warning());
-        Arc::new(Schema::new(vec![Field::new(
-            "dummy",
-            DataType::Int32,
-            true,
-        )]))
-    } else {
-        batches[0].schema()
-    };
+    if batches.is_empty() {
+        debug!("Warning: query returned no results.");
+    }
+    debug!("Schema: {:?}", schema);
     let schema_ref = schema.as_ref();
     let mut writer = FileWriter::try_new(file, schema_ref)?;
     for batch in batches {
