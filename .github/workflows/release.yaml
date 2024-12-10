@@ -126,6 +126,12 @@ jobs:
           Move-Item -Path "target\${{ matrix.job.target }}\release\onyx.exe" -Destination "onyx-${{ matrix.job.target }}.exe"
 
       #-- Build python lib
+      - name: Set up Python 3.11
+        id: setup-python
+        uses: actions/setup-python@v5
+        with:
+          python-version: 3.11
+          cache: "pip"
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
@@ -133,7 +139,8 @@ jobs:
           target: ${{ matrix.job.target }}
           args: --release --out dist
           sccache: 'true'
-          manylinux: auto
+          # manylinux: auto
+          container: off
           working-directory: onyx-py
 
       #-- Private release

@@ -29,9 +29,9 @@ zig = ["ziglang (>=0.10.0,<0.13.0)"]
 [[package]]
 name = "onyx-py"
 version = "0.1.0"
-description = ""
+description = "Python bindings for Onyx"
 optional = false
-python-versions = ">=3.11"
+python-versions = ">=3.9,<3.12"
 files = []
 develop = true
 
@@ -68,4 +68,4 @@ files = [
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.11,<3.12"
-content-hash = "da3eb21db9e12130e51644a0ca3f1a627eac3dffaeedead99d7c0c9e747e77b9"
+content-hash = "3f6820322702a4cc6025d3f97a06096ccaf551dcefee388a42797c0ea677f836"
