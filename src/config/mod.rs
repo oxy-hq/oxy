@@ -206,11 +206,11 @@ pub fn parse_config(config_path: &PathBuf) -> anyhow::Result<Config> {
             }
         }
         Err(e) => {
-            let mut rawError = e.to_string();
-            rawError = rawError.replace("usize", "unsigned integer");
+            let mut raw_error = e.to_string();
+            raw_error = raw_error.replace("usize", "unsigned integer");
             Err(anyhow::anyhow!(
                 "Failed to parse config file:\n{}",
-                rawError
+                raw_error
             ))
         }
     }

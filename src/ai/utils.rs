@@ -28,8 +28,8 @@ fn build_table(headers: &[String], rows: Vec<Vec<String>>) -> Table {
     for row in rows {
         builder.push_record(row);
     }
-    let table = builder.build();
-    table
+
+    builder.build()
 }
 
 fn get_header(schema: &Arc<Schema>) -> Vec<String> {
@@ -38,7 +38,7 @@ fn get_header(schema: &Arc<Schema>) -> Vec<String> {
         .iter()
         .map(|f| f.name().to_string())
         .collect();
-    return headers;
+    headers
 }
 
 fn create_formatters(batch: &RecordBatch) -> Result<Vec<ArrayFormatter<'_>>, ArrowError> {
@@ -52,7 +52,7 @@ fn create_formatters(batch: &RecordBatch) -> Result<Vec<ArrayFormatter<'_>>, Arr
             )
         })
         .collect::<Result<Vec<_>, ArrowError>>()?;
-    return Ok(formatters);
+    Ok(formatters)
 }
 
 fn format_row(formatters: &[ArrayFormatter], row: usize) -> Vec<String> {
