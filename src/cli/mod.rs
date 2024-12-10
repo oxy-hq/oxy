@@ -1,21 +1,30 @@
 mod init;
 
+use crate::ai::agent::AgentResult;
+use crate::ai::utils::record_batches_to_json;
 use crate::config::*;
 use crate::utils::print_colored_sql;
+use crate::workflow::run_workflow;
+use crate::workflow::WorkflowResult;
 use arrow::util::pretty::pretty_format_batches;
 use axum::handler::Handler;
 use clap::builder::ValueParser;
 use clap::CommandFactory;
 use clap::Parser;
 use colored::Colorize;
-use migration::ExprTrait;
 use minijinja::{Environment, Value};
 use model::AgentConfig;
 use model::FileFormat;
 use model::{Config, Workflow};
+use pyo3::types::PyAnyMethods;
+use pyo3::Bound;
+use pyo3::FromPyObject;
+use pyo3::IntoPyObject;
+use pyo3::PyAny;
+use pyo3::PyErr;
+use pyo3::Python;
 use std::collections::BTreeMap;
 use std::error::Error;
-use std::path::Path;
 use std::path::PathBuf;
 use std::process::exit;
 use std::process::Command;
@@ -26,7 +35,6 @@ use crate::ai::setup_agent;
 use crate::api::server;
 use crate::connector::Connector;
 use crate::theme::*;
-use crate::workflow::run_workflow;
 use crate::{build, vector_search, BuildOpts};
 use tower_serve_static::ServeDir;
 
@@ -99,7 +107,7 @@ enum SubCommand {
 }
 
 #[derive(Parser, Debug)]
-struct RunArgs {
+pub struct RunArgs {
     file: String,
 
     #[clap(long)]
@@ -111,6 +119,55 @@ struct RunArgs {
     question: Option<String>,
 }
 
+#[derive(Clone)]
+pub struct RunOptions {
+    warehouse: Option<String>,
+    variables: Option<Vec<(String, String)>>,
+    question: Option<String>,
+}
+
+impl<'py> FromPyObject<'py> for RunOptions {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> pyo3::PyResult<Self> {
+        println!("Extracting RunOption");
+        let warehouse = ob
+            .get_item("warehouse")
+            .map(|v| v.extract::<Option<String>>().unwrap_or(None))
+            .unwrap_or(None);
+        let variables = ob
+            .get_item("variables")
+            .map(|v| v.extract::<Option<Vec<(String, String)>>>().unwrap_or(None))
+            .unwrap_or(None);
+        let question = ob
+            .get_item("question")
+            .map(|v| v.extract::<Option<String>>().unwrap_or(None))
+            .unwrap_or(None);
+        Ok(RunOptions {
+            warehouse,
+            variables,
+            question,
+        })
+    }
+}
+
+impl RunArgs {
+    pub fn from(file: String, options: Option<RunOptions>) -> Self {
+        match options {
+            Some(options) => Self {
+                file,
+                warehouse: options.warehouse,
+                variables: options.variables.unwrap_or(vec![]),
+                question: options.question,
+            },
+            None => Self {
+                file,
+                warehouse: None,
+                variables: vec![],
+                question: None,
+            },
+        }
+    }
+}
+
 #[derive(Parser, Debug)]
 struct VecSearchArgs {
     question: String,
@@ -120,6 +177,69 @@ struct VecSearchArgs {
 struct GenConfigSchemaArgs {
     #[clap(long)]
     check: bool,
+}
+
+async fn handle_workflow_file(workflow_name: &PathBuf) -> Result<WorkflowResult, Box<dyn Error>> {
+    match run_workflow(workflow_name).await {
+        Ok(r) => {
+            println!("{}", "\n✅Workflow executed successfully".success());
+            Ok(r)
+        }
+        Err(e) => {
+            eprintln!("{}", format!("Error executing workflow: \n{}", e).error());
+            Err(e.into())
+        }
+    }
+}
+
+pub async fn run(
+    file: String,
+    warehouse: String,
+    variables: Vec<(String, String)>,
+) -> Result<String, Box<dyn Error>> {
+    let config_path = get_config_path();
+    let config = parse_config(&config_path)?;
+    let file_path = &config.project_path.join("data").join(file);
+
+    // Use specific SQL file from data directory
+    match std::fs::read_to_string(file_path) {
+        Ok(content) => {
+            let wh_config = config.find_warehouse(&warehouse);
+            let mut env = Environment::new();
+            let mut query = content.clone();
+
+            env.add_template("query", &query)?;
+            let tmpl = env.get_template("query").unwrap();
+            let ctx = Value::from({
+                let mut m = BTreeMap::new();
+                for var in variables {
+                    m.insert(var.0.clone(), var.1.clone());
+                }
+                m
+            });
+            query = tmpl.render(ctx)?;
+
+            match wh_config {
+                Ok(wh) => {
+                    print_colored_sql(&query);
+                    let results = Connector::new(&wh).run_query_and_load(&query).await?;
+                    let batches_display = pretty_format_batches(&results)?;
+                    let json_blob = record_batches_to_json(&results)?;
+                    println!("\n\x1b[1;32mResults:\x1b[0m");
+                    println!("{}", batches_display);
+                    Ok(json_blob)
+                }
+                Err(e) => {
+                    eprintln!("Error: Warehouse not found in config");
+                    Err(e.into())
+                }
+            }
+        }
+        Err(e) => {
+            eprintln!("{}", format!("Error reading file: {}", e).error());
+            Err(e.into())
+        }
+    }
 }
 
 pub async fn cli() -> Result<(), Box<dyn Error>> {
@@ -154,7 +274,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             println!("Generated schema files successfully");
 
             if args.check {
-                let output = Command::new("git").args(&["status", "--short"]).output()?;
+                let output = Command::new("git").args(["status", "--short"]).output()?;
 
                 if !output.status.success() {
                     eprintln!(
@@ -204,8 +324,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             }
         }
         Some(SubCommand::Run(run_args)) => {
-            let config_path = get_config_path();
-            handle_run_command(config_path, run_args).await?;
+            handle_run_command(run_args).await?;
         }
         Some(SubCommand::Build) => {
             let config_path = get_config_path();
@@ -321,11 +440,11 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
 async fn handle_agent_file(
     file_path: Option<&PathBuf>,
     question: Option<String>,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<AgentResult, Box<dyn std::error::Error>> {
     let question = question.ok_or_else(|| "Question is required for agent files".to_string())?;
     let (agent, _) = setup_agent(file_path, &FileFormat::Markdown).await?;
-    agent.request(&question).await?;
-    Ok(())
+    let result = agent.request(&question).await?;
+    Ok(result)
 }
 
 async fn handle_sql_file(
@@ -333,7 +452,7 @@ async fn handle_sql_file(
     warehouse: Option<String>,
     config: &Config,
     variables: &[(String, String)],
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<String, Box<dyn std::error::Error>> {
     let warehouse = warehouse.ok_or_else(|| "Warehouse is required for SQL files".to_string())?;
     let content = std::fs::read_to_string(file_path)?;
     let wh_config = config.find_warehouse(&warehouse)?;
@@ -364,28 +483,43 @@ async fn handle_sql_file(
     println!("\n\x1b[1;32mResults:\x1b[0m");
     println!("{}", batches_display);
 
-    Ok(())
+    Ok(batches_display.to_string())
 }
 
-async fn handle_workflow_file(file_path: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
-    match run_workflow(file_path).await {
-        Ok(_) => {
-            println!("{}", "\n✅Workflow executed successfully".success());
-            Ok(())
-        }
-        Err(e) => {
-            eprintln!("{}", format!("Error executing workflow: \n{}", e).error());
-            Err(e.into())
+pub enum RunResult {
+    Workflow(WorkflowResult),
+    Agent(AgentResult),
+    Sql(String),
+}
+
+impl<'py> IntoPyObject<'py> for RunResult {
+    type Target = PyAny;
+
+    type Output = Bound<'py, Self::Target>;
+
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        match self {
+            RunResult::Workflow(result) => {
+                let output = result.into_pyobject(py)?;
+                Ok(output.into_any())
+            }
+            RunResult::Agent(result) => {
+                let output = result.into_pyobject(py)?;
+                Ok(output.into_any())
+            }
+            RunResult::Sql(result) => Ok(result.into_pyobject(py)?.into_any()),
         }
     }
 }
 
-async fn handle_run_command(
-    config_path: PathBuf,
+pub async fn handle_run_command(
     run_args: RunArgs,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<RunResult, Box<dyn std::error::Error>> {
     let file = &run_args.file;
 
+    let config_path: PathBuf = get_config_path();
     let config = parse_config(&config_path)?;
     let project_path = &config.project_path;
 
@@ -398,9 +532,11 @@ async fn handle_run_command(
     match extension {
         Some("yml") => {
             if file.ends_with(".workflow.yml") {
-                handle_workflow_file(&file_path).await?;
+                let workflow_result = handle_workflow_file(&file_path).await?;
+                Ok(RunResult::Workflow(workflow_result))
             } else if file.ends_with(".agent.yml") {
-                handle_agent_file(Some(&file_path), run_args.question).await?;
+                let agent_result = handle_agent_file(Some(&file_path), run_args.question).await?;
+                return Ok(RunResult::Agent(agent_result));
             } else {
                 return Err(
                     "Invalid YAML file. Must be either *.workflow.yml or *.agent.yml".into(),
@@ -408,12 +544,11 @@ async fn handle_run_command(
             }
         }
         Some("sql") => {
-            handle_sql_file(&file_path, run_args.warehouse, &config, &run_args.variables).await?;
+            let sql_result =
+                handle_sql_file(&file_path, run_args.warehouse, &config, &run_args.variables)
+                    .await?;
+            Ok(RunResult::Sql(sql_result))
         }
-        _ => {
-            return Err("Invalid file extension. Must be .workflow.yml, .agent.yml, or .sql".into())
-        }
+        _ => Err("Invalid file extension. Must be .workflow.yml, .agent.yml, or .sql".into()),
     }
-
-    Ok(())
 }

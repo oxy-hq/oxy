@@ -21,11 +21,29 @@ use async_openai::{
 };
 use async_trait::async_trait;
 use log::debug;
+use pyo3::pyclass;
 use schemars::{schema_for, JsonSchema};
 use serde::Deserialize;
 use serde_json::json;
 
 const MAX_DISPLAY_ROWS: usize = 100;
+
+#[pyclass(module = "onyx_py")]
+pub struct AgentResult {
+    #[pyo3(get)]
+    pub output: String,
+    #[pyo3(get)]
+    pub steps: Vec<Step>,
+}
+
+#[pyclass(module = "onyx_py")]
+#[derive(Clone)]
+pub struct Step {
+    #[pyo3(get)]
+    name: String,
+    #[pyo3(get)]
+    output: String,
+}
 
 #[derive(Deserialize, Debug, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -35,7 +53,7 @@ pub struct FilePathOutput {
 
 #[async_trait]
 pub trait LLMAgent {
-    async fn request(&self, input: &str) -> anyhow::Result<String>;
+    async fn request(&self, input: &str) -> anyhow::Result<AgentResult>;
 }
 
 pub struct OpenAIAgent<T> {
@@ -135,7 +153,7 @@ impl<T> LLMAgent for OpenAIAgent<T>
 where
     T: Tool + Send + Sync,
 {
-    async fn request(&self, input: &str) -> anyhow::Result<String> {
+    async fn request(&self, input: &str) -> anyhow::Result<AgentResult> {
         let system_message = self.system_instruction.to_string();
         debug!("System message: {}", system_message);
         let anonymized_items = HashMap::new();
@@ -166,6 +184,7 @@ where
         let mut output = "Something went wrong".to_string();
         let mut tool_returns = Vec::<ChatCompletionRequestMessage>::new();
         let mut tool_calls = Vec::<ChatCompletionRequestMessage>::new();
+        let mut steps: Vec<Step> = vec![];
 
         let mut contextualize_anonymized_items = anonymized_items.clone();
         while tries < self.max_tries {
@@ -219,6 +238,12 @@ where
                     contextualize_anonymized_items.extend(result.1);
                     tool_ret = result.0;
                 }
+
+                steps.push(Step {
+                    name: tool.function.name.clone(),
+                    output: tool_ret.clone(),
+                });
+
                 tool_returns.push(
                     ChatCompletionRequestToolMessageArgs::default()
                         .tool_call_id(tool.id.clone())
@@ -249,8 +274,10 @@ where
         };
         println!("{}", "\nOutput:".primary());
         println!("{}", &parsed_output);
-
-        return Ok(parsed_output);
+        return Ok(AgentResult {
+            output: parsed_output,
+            steps,
+        });
     }
 }
 

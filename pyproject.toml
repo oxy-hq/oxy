@@ -1,33 +1,24 @@
 [tool.poetry]
 name = "onyx"
-version = "0.0.0"
+version = "0.0.1"
 description = ""
 authors = []
 readme = "README.md"
+# requires-poetry = ">=2.0" # to be added when poetry 2 is released
 
 [tool.poetry.group.main.dependencies]
 python = ">=3.11,<3.12"
 
+[tool.poetry.group.onyx-py.dependencies]
+onyx-py = { path = "onyx-py", develop = true }
+
 # required for dependabot
 [tool.poetry.dependencies]
 python = ">=3.11,<3.12"
-psycopg2 = "^2.9.9"
+maturin = "^1.7.8"
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.1.7"
-pytest = "^7.4.4"
-pytest-asyncio = "0.23.5.post1"
-grpcio-tools = "^1.64.1"
-ruff-lsp = "^0.0.45"
-jupyterlab = "^4.1.5"
-matplotlib = "^3.8.4"
-import-linter = "^2.0"
-
-[tool.poetry.group.test.dependencies]
-pytest-asyncio = "^0.23.2"
-coverage = "^7.4.4"
-hypothesis = { version = "^6.100.0", extras = ["cli"] }
-faiss-cpu = "^1.8.0"
 
 [tool.ruff]
 extend-exclude = ["*_pb2*.py*"]

@@ -47,7 +47,7 @@ async fn get_agent(agent_path: &str) -> Box<dyn LLMAgent + Send> {
     let config = parse_config(&config_path);
     let project_path = &config.unwrap().project_path;
 
-    let file_path = project_path.join(&agent_path);
+    let file_path = project_path.join(agent_path);
 
     let (agent, _) = ai::setup_agent(Some(&file_path), &FileFormat::Markdown)
         .await
@@ -77,7 +77,7 @@ pub async fn ask(extract::Json(payload): extract::Json<AskRequest>) -> impl Into
         };
 
     let agent = get_agent(&payload.agent).await;
-    let result: String =agent.request(&payload.question).await.unwrap();
+    let result: String =agent.request(&payload.question).await.unwrap().output;
     let answer = save_message(
         conversation_id,
         &result,

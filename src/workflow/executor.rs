@@ -29,6 +29,8 @@ use crate::{
 
 use super::context::ContextBuilder;
 use super::table::J2Table;
+use super::WorkflowResult;
+use super::WorkflowResultStep;
 
 #[derive(Default)]
 pub struct WorkflowExecutor {
@@ -72,7 +74,7 @@ impl WorkflowExecutor {
                 println!("Reason {:?}", err);
             })
             .await?;
-        Ok(step_output)
+        Ok(step_output.output)
     }
 
     async fn execute_sql(
@@ -129,7 +131,8 @@ impl WorkflowExecutor {
         &self,
         steps: &Vec<Step>,
         execution_context: &mut ContextBuilder,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<Vec<WorkflowResultStep>> {
+        let mut result_steps: Vec<WorkflowResultStep> = vec![];
         for (i, step) in steps.iter().enumerate() {
             if i == 0 {
                 println!("⏳Starting {}", step.name.text());
@@ -141,12 +144,21 @@ impl WorkflowExecutor {
             match &step.step_type {
                 StepType::Agent(agent_step) => {
                     let step_output = self.execute_agent(agent_step, &template_context).await?;
+                    result_steps.push(WorkflowResultStep {
+                        name: step.name.clone(),
+                        output: step_output.clone(),
+                    });
                     execution_context.add_output(step.name.clone(), Output::Single(step_output));
                 }
                 StepType::ExecuteSQL(execute_sql_step) => {
                     let step_output = self
                         .execute_sql(execute_sql_step, &template_context)
                         .await?;
+                    let string_result = pretty_format_batches(&step_output)?;
+                    result_steps.push(WorkflowResultStep {
+                        name: step.name.clone(),
+                        output: string_result.to_string(),
+                    });
                     execution_context
                         .add_output(step.name.clone(), Output::Table(J2Table::new(step_output)));
                 }
@@ -200,6 +212,10 @@ impl WorkflowExecutor {
                     let step_output = render_template(&formatter_step.template, &template_context);
                     println!("{}", "\nOutput:".primary());
                     println!("{}", step_output);
+                    result_steps.push(WorkflowResultStep {
+                        name: step.name.clone(),
+                        output: step_output.clone(),
+                    });
                     execution_context.add_output(step.name.clone(), Output::Single(step_output));
                 }
                 StepType::Unknown => {
@@ -207,17 +223,21 @@ impl WorkflowExecutor {
                 }
             }
         }
-        Ok(())
+        Ok(result_steps)
     }
 
-    pub async fn execute(&self, workflow: &Workflow) -> anyhow::Result<Output> {
+    pub async fn execute(&self, workflow: &Workflow) -> anyhow::Result<WorkflowResult> {
         println!("\n⏳Running workflow: {}", workflow.name.text());
         let mut execution_context = ContextBuilder::new();
-        self.execute_steps(&workflow.steps, &mut execution_context)
+        let result_steps = self
+            .execute_steps(&workflow.steps, &mut execution_context)
             .await?;
         let results = execution_context.get_outputs();
         log::info!("\n\x1b[1;32mWorkflow output:\n{:?}\x1b[0m", results);
-        Ok(results.clone())
+        Ok(WorkflowResult {
+            output: results.clone(),
+            steps: result_steps,
+        })
     }
 }
 

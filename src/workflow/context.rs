@@ -2,6 +2,11 @@ use minijinja::Value;
 use std::collections::{HashMap, VecDeque};
 
 use super::table::J2Table;
+use pyo3::{
+    prelude::*,
+    types::{PyDict, PyList, PyString},
+};
+use pyo3_arrow::PyRecordBatch;
 
 #[derive(Debug, Clone)]
 pub enum Output {
@@ -10,6 +15,53 @@ pub enum Output {
     Array(Vec<Output>),
     ArrayCursor(Vec<Output>),
     Table(J2Table),
+}
+
+pub fn convert_output_to_python<'py>(py: Python<'py>, output: &Output) -> Bound<'py, PyAny> {
+    match output {
+        Output::Single(s) => {
+            return PyString::new(py, s).into_any();
+        }
+        Output::Multi(m) => {
+            let dict = PyDict::new(py);
+            for (k, v) in m {
+                dict.set_item(k, convert_output_to_python(py, v)).unwrap();
+            }
+            dict.into_any()
+        }
+        Output::Array(a) => {
+            let elements = a.iter().map(|v| convert_output_to_python(py, v));
+            let list = PyList::new(py, elements).unwrap();
+            list.into_any()
+        }
+        Output::ArrayCursor(a) => {
+            let elements = a.iter().map(|v| convert_output_to_python(py, v));
+            let list = PyList::new(py, elements).unwrap();
+            list.into_any()
+        }
+        Output::Table(table) => {
+            let mut record_batchs = vec![];
+            let iterator = table.clone().into_iter();
+            for batch in iterator {
+                let rb = PyRecordBatch::new(batch);
+                record_batchs.push(rb.to_pyarrow(py).unwrap());
+            }
+            return PyList::new(py, record_batchs).unwrap().into_any();
+        }
+    }
+}
+
+impl<'py> IntoPyObject<'py> for Output {
+    type Target = PyAny;
+
+    type Output = Bound<'py, Self::Target>;
+
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        let output = convert_output_to_python(py, &self);
+        Ok(output)
+    }
 }
 
 impl Output {
