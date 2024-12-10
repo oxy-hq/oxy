@@ -21,3 +21,10 @@ version = "0.1.0"
 description = "Python bindings for Onyx"
 authors = ["The Onyx Team"]
 package-mode = false
+
+[tool.poetry.group.main.dependencies]
+python = ">=3.11,<3.12"
+
+[tool.poetry.group.dev.dependencies]
+maturin = "^1.7.8"
+ruff = "^0.8.2"
