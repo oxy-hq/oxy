@@ -2,11 +2,11 @@ mod init;
 
 use crate::ai::agent::AgentResult;
 use crate::ai::utils::record_batches_to_json;
+use crate::ai::utils::record_batches_to_table;
 use crate::config::*;
 use crate::utils::print_colored_sql;
 use crate::workflow::run_workflow;
 use crate::workflow::WorkflowResult;
-use arrow::util::pretty::pretty_format_batches;
 use axum::handler::Handler;
 use clap::builder::ValueParser;
 use clap::CommandFactory;
@@ -222,9 +222,9 @@ pub async fn run(
             match wh_config {
                 Ok(wh) => {
                     print_colored_sql(&query);
-                    let results = Connector::new(&wh).run_query_and_load(&query).await?;
-                    let batches_display = pretty_format_batches(&results)?;
-                    let json_blob = record_batches_to_json(&results)?;
+                    let (datasets, schema) = Connector::new(&wh).run_query_and_load(&query).await?;
+                    let batches_display = record_batches_to_table(&datasets, &schema)?;
+                    let json_blob = record_batches_to_json(&datasets)?;
                     println!("\n\x1b[1;32mResults:\x1b[0m");
                     println!("{}", batches_display);
                     Ok(json_blob)
@@ -476,10 +476,10 @@ async fn handle_sql_file(
 
     // Print colored SQL and execute query
     print_colored_sql(&query);
-    let results = Connector::new(&wh_config)
+    let (datasets, schema) = Connector::new(&wh_config)
         .run_query_and_load(&query)
         .await?;
-    let batches_display = pretty_format_batches(&results)?;
+    let batches_display = record_batches_to_table(&datasets, &schema)?;
     println!("\n\x1b[1;32mResults:\x1b[0m");
     println!("{}", batches_display);
 

@@ -5879,7 +5879,9 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "syntect",
+ "tabled",
  "terminal-light",
+ "terminal_size",
  "thiserror 1.0.69",
  "tokio",
  "tokio-stream",
@@ -6055,6 +6057,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6ff55baddef9e4ad00f88b6c743a2a8062d4c6ade126c2a528644b8e444d52ce"
 dependencies = [
  "stable_deref_trait",
+]
+
+[[package]]
+name = "papergrid"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d2b0f8def1f117e13c895f3eda65a7b5650688da29d6ad04635f61bc7b92eebd"
+dependencies = [
+ "bytecount",
+ "fnv",
+ "unicode-width 0.2.0",
 ]
 
 [[package]]
@@ -8680,6 +8693,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "tabled"
+version = "0.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c6709222f3973137427ce50559cd564dc187a95b9cfe01613d2f4e93610e510a"
+dependencies = [
+ "papergrid",
+ "tabled_derive",
+]
+
+[[package]]
+name = "tabled_derive"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "931be476627d4c54070a1f3a9739ccbfec9b36b39815106a20cce2243bbcefe1"
+dependencies = [
+ "heck 0.4.1",
+ "proc-macro-error2",
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
+]
+
+[[package]]
 name = "tagptr"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8872,6 +8908,16 @@ dependencies = [
  "crossterm",
  "thiserror 1.0.69",
  "xterm-query",
+]
+
+[[package]]
+name = "terminal_size"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5352447f921fda68cf61b4101566c0bdb5104eff6804d0678e5227580ab6a4e9"
+dependencies = [
+ "rustix 0.38.41",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

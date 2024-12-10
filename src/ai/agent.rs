@@ -1,5 +1,5 @@
 use crate::{
-    ai::utils::{record_batches_to_json, record_batches_to_markdown},
+    ai::utils::{record_batches_to_json, record_batches_to_markdown, record_batches_to_table},
     config::model::{FileFormat, OutputFormat},
     connector::load_result,
 };
@@ -7,7 +7,6 @@ use std::collections::HashMap;
 
 use super::{anonymizer::base::Anonymizer, toolbox::ToolBox, tools::Tool};
 use crate::theme::*;
-use arrow::util::pretty::pretty_format_batches;
 use async_openai::{
     config::{OpenAIConfig, OPENAI_API_BASE},
     types::{
@@ -291,22 +290,22 @@ async fn map_output(
         OutputFormat::File => {
             log::info!("File path: {}", output);
             let file_output = serde_json::from_str::<FilePathOutput>(output)?;
-            let mut dataset = load_result(&file_output.file_path)?;
+            let (batches, schema) = load_result(&file_output.file_path)?;
+            let mut dataset = batches;
             let mut truncated = false;
             if !dataset.is_empty() && dataset[0].num_rows() > MAX_DISPLAY_ROWS {
                 dataset = vec![dataset[0].slice(0, MAX_DISPLAY_ROWS)];
                 truncated = true;
             }
-            let batches_display = pretty_format_batches(&dataset)?;
-            let markdown_table = record_batches_to_markdown(&dataset)?;
+
+            let batches_display = record_batches_to_table(&dataset, &schema)?;
+            let markdown_table = record_batches_to_markdown(&dataset, &schema)?;
             let json_blob = record_batches_to_json(&dataset)?;
 
-            if !dataset.is_empty() {
-                println!(
-                    "\n{}",
-                    format_table_output(&batches_display.to_string(), truncated).text()
-                );
-            }
+            println!(
+                "\n{}",
+                format_table_output(&batches_display.to_string(), truncated).text()
+            );
 
             match file_format {
                 FileFormat::Json => Ok(format_table_output(&json_blob, truncated)),
