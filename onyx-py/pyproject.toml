@@ -1,0 +1,27 @@
+[build-system]
+requires = ["maturin>=1.7,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "onyx-py"
+requires-python = ">=3.11"
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: Implementation :: PyPy",
+]
+dynamic = ["version"]
+
+[tool.maturin]
+features = ["pyo3/extension-module"]
+
+[tool.poetry]
+name = "onyx-py"
+version = "0.1.0"
+description = "Python bindings for Onyx"
+authors = ["The Onyx Team"]
+
+
+[tool.poetry.dependencies]
+python = ">=3.9,<3.12"
+pyarrow = "18.1.0"

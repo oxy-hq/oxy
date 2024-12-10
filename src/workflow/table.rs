@@ -15,6 +15,15 @@ impl J2Table {
     }
 }
 
+impl IntoIterator for J2Table {
+    type Item = RecordBatch;
+    type IntoIter = std::vec::IntoIter<Self::Item>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
 impl Object for J2Table {
     fn repr(self: &Arc<Self>) -> ObjectRepr {
         ObjectRepr::Iterable

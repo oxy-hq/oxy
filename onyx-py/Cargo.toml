@@ -1,0 +1,18 @@
+[package]
+name = "onyx-py"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+name = "onyx_py"
+crate-type = ["cdylib"]
+
+[dependencies]
+onyx = { path = "../" }
+tokio = { version = "1.0", features = ["full"] }
+
+[dependencies.pyo3]
+version = "0.23.1"
+features = ["experimental-async"]
+pyo3-arrow = "0.6.0"

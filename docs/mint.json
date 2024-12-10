@@ -59,6 +59,12 @@
       "pages": ["build-with-onyx/development"]
     },
     {
+      "group": "Clients",
+      "pages": [
+        "clients/python"
+      ]
+    },
+    {
       "group": "",
       "pages": ["integrations/overview"]
     },
