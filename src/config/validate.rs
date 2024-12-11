@@ -1,4 +1,4 @@
-use super::model::Config;
+use super::model::{Config, ProjectPath};
 use crate::ai::retrieval::{embedding_model_from_str, rerank_model_from_str};
 use std::{env, fmt::Display, path::PathBuf};
 
@@ -23,10 +23,12 @@ pub fn validate_file_path(path: &PathBuf, _: &ValidationContext) -> garde::Resul
         ));
     }
 
-    if !path.exists() {
+    let file_path = ProjectPath::get_path(&path.as_path().to_string_lossy());
+
+    if !file_path.exists() {
         return Err(format_error_message(
             FILE_NOT_FOUND_ERROR,
-            path.as_path().to_string_lossy(),
+            file_path.as_path().to_string_lossy(),
         ));
     }
     Ok(())
@@ -87,7 +89,7 @@ pub fn validate_warehouse_exists(
 }
 
 pub fn validate_sql_file(sql_file: &str, context: &ValidationContext) -> garde::Result {
-    let path = context.config.get_sql_dir().join(sql_file);
+    let path = &ProjectPath::get_path(sql_file);
     if !path.exists() {
         return Err(format_error_message(
             SQL_FILE_NOT_FOUND_ERROR,
@@ -98,10 +100,7 @@ pub fn validate_sql_file(sql_file: &str, context: &ValidationContext) -> garde::
 }
 
 pub fn validate_agent_exists(agent: &str, context: &ValidationContext) -> garde::Result {
-    let path = context
-        .config
-        .get_agents_dir()
-        .join(format!("{}.agent.yml", agent));
+    let path = &ProjectPath::get_path(agent);
     if !path.exists() {
         return Err(format_error_message(
             AGENT_NOT_FOUND_ERROR,

@@ -1,4 +1,3 @@
-use dirs::home_dir;
 use garde::Validate;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -10,7 +9,13 @@ use crate::config::validate::{
     validate_agent_exists, validate_embed_model, validate_env_var, validate_rerank_model,
     validate_warehouse_exists, ValidationContext,
 };
+use lazy_static::lazy_static;
 use schemars::JsonSchema;
+use std::sync::Mutex;
+
+lazy_static! {
+    static ref PROJECT_PATH: Mutex<PathBuf> = Mutex::new(PathBuf::new());
+}
 
 #[derive(Serialize, Deserialize, Validate, Debug, Clone, JsonSchema)]
 #[garde(context(ValidationContext))]
@@ -23,10 +28,6 @@ pub struct Config {
     pub warehouses: Vec<Warehouse>,
     #[garde(dive)]
     pub retrievals: Vec<Retrieval>,
-    #[serde(skip)]
-    #[garde(skip)]
-    #[schemars(skip)]
-    pub project_path: PathBuf,
 }
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema)]
@@ -184,14 +185,6 @@ pub struct Retrieval {
     pub factor: usize,
 }
 
-pub fn get_config_path() -> PathBuf {
-    home_dir()
-        .expect("Could not find home directory")
-        .join(".config")
-        .join("onyx")
-        .join("config.yml")
-}
-
 #[derive(Debug, JsonSchema)]
 pub struct ParsedConfig {
     pub agent_config: AgentConfig,
@@ -322,4 +315,42 @@ fn default_retrieval_tool_description() -> String {
 
 fn default_tools() -> Option<Vec<ToolConfig>> {
     Some(vec![])
+}
+
+pub struct ProjectPath;
+
+impl ProjectPath {
+    fn init() -> PathBuf {
+        let mut current_dir = std::env::current_dir().expect("Could not get current directory");
+
+        for _ in 0..10 {
+            let config_path = current_dir.join("config.yml");
+            if config_path.exists() {
+                let mut project_path = PROJECT_PATH.lock().unwrap();
+                *project_path = current_dir.clone();
+
+                return current_dir;
+            }
+
+            if !current_dir.pop() {
+                break;
+            }
+        }
+
+        panic!("Could not find config.yml");
+    }
+
+    pub fn get() -> PathBuf {
+        let project_path = PROJECT_PATH.lock().unwrap().clone();
+        if project_path.as_os_str().is_empty() {
+            return Self::init();
+        }
+
+        return project_path;
+    }
+
+    pub fn get_path(relative_path: &str) -> PathBuf {
+        let project_root = Self::get();
+        project_root.join(relative_path)
+    }
 }

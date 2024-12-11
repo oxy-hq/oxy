@@ -7,9 +7,10 @@ pub mod utils;
 
 use crate::{
     config::{
-        get_config_path,
-        model::{AgentConfig, AnonymizerConfig, Config, FileFormat, Model, ToolConfig},
-        parse_config,
+        load_config,
+        model::{
+            AgentConfig, AnonymizerConfig, Config, FileFormat, Model, ProjectPath, ToolConfig,
+        },
     },
     connector::Connector,
     union_tools,
@@ -27,13 +28,12 @@ use tools::{ExecuteSQLParams, ExecuteSQLTool, RetrieveParams, RetrieveTool, Tool
 pub async fn setup_agent(
     agent_file: Option<&PathBuf>,
     file_format: &FileFormat,
-) -> anyhow::Result<(Box<dyn LLMAgent + Send + Sync>, PathBuf)> {
-    let config_path = get_config_path();
-    let config = parse_config(&config_path)?;
+) -> anyhow::Result<(Box<dyn LLMAgent + Send + Sync>)> {
+    let config = load_config()?;
 
-    let (agent_config, agent_name) = config.load_config(agent_file)?;
+    let (agent_config, agent_name) = config.load_agent_config(agent_file)?;
     let agent = from_config(&agent_name, &config, &agent_config, file_format).await?;
-    Ok((agent, config_path))
+    Ok(agent)
 }
 
 pub async fn from_config(
@@ -59,9 +59,7 @@ pub async fn from_config(
                 pluralize.to_owned(),
                 case_insensitive.to_owned(),
             );
-            let resolved_keyword_path = PathBuf::from(&config.project_path)
-                .join("data")
-                .join(keywords_file);
+            let resolved_keyword_path = ProjectPath::get_path("data").join(keywords_file);
             anonymizer.add_keywords_file(&resolved_keyword_path)?;
             Some(Box::new(anonymizer))
         }
@@ -154,7 +152,7 @@ async fn fill_tools(
                 // let retrieval = config
                 //    .find_retrieval(agent_config.retrieval.as_ref().unwrap())
                 //     .unwrap();
-                let queries = load_queries(config.project_path.clone(), data);
+                let queries = load_queries(data);
                 tool_ctx = context! {
                     queries => queries,
                     ..tool_ctx,
@@ -168,20 +166,20 @@ async fn fill_tools(
     tool_ctx
 }
 
-fn load_queries(project_path: PathBuf, paths: &Vec<String>) -> Vec<String> {
+fn load_queries(paths: &Vec<String>) -> Vec<String> {
     let mut queries = vec![];
 
     for path in paths {
         log::debug!("Loading queries for path: {}", path);
-        queries.extend(load_queries_for_scope(&project_path, path));
+        queries.extend(load_queries_for_scope(path));
         log::debug!("Loaded queries");
     }
 
     queries
 }
 
-fn load_queries_for_scope(project_path: &PathBuf, path: &str) -> Vec<String> {
-    let query_path = &project_path.join("data").join(path);
+fn load_queries_for_scope(path: &str) -> Vec<String> {
+    let query_path = &ProjectPath::get_path("data").join(path);
     log::debug!("Query path: {}; scope: {}", query_path.display(), path);
 
     let mut queries = vec![];

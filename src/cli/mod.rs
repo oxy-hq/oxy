@@ -15,6 +15,7 @@ use colored::Colorize;
 use minijinja::{Environment, Value};
 use model::AgentConfig;
 use model::FileFormat;
+use model::ProjectPath;
 use model::{Config, Workflow};
 use pyo3::types::PyAnyMethods;
 use pyo3::Bound;
@@ -197,9 +198,8 @@ pub async fn run(
     warehouse: String,
     variables: Vec<(String, String)>,
 ) -> Result<String, Box<dyn Error>> {
-    let config_path = get_config_path();
-    let config = parse_config(&config_path)?;
-    let file_path = &config.project_path.join("data").join(file);
+    let config = load_config()?;
+    let file_path = ProjectPath::get_path("data").join(file);
 
     // Use specific SQL file from data directory
     match std::fs::read_to_string(file_path) {
@@ -304,8 +304,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             Err(e) => eprintln!("{}", format!("Initialization failed: {}", e).error()),
         },
         Some(SubCommand::ListTables) => {
-            let config_path = get_config_path();
-            let config = parse_config(&config_path)?;
+            let config = load_config()?;
             for warehouse in &config.warehouses {
                 let tables = Connector::new(warehouse).get_schemas().await;
                 for table in tables {
@@ -314,8 +313,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             }
         }
         Some(SubCommand::ListDatasets) => {
-            let config_path = get_config_path();
-            let config = parse_config(&config_path)?;
+            let config = load_config()?;
             for warehouse in &config.warehouses {
                 let datasets = Connector::new(warehouse).list_datasets().await;
                 for dataset in datasets {
@@ -327,10 +325,8 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             handle_run_command(run_args).await?;
         }
         Some(SubCommand::Build) => {
-            let config_path = get_config_path();
-            let config = parse_config(&config_path)?;
-            let project_path = &config.project_path;
-            let data_path = project_path.join("data");
+            let config = load_config()?;
+            let data_path = ProjectPath::get_path("data");
             build(
                 &config,
                 BuildOpts {
@@ -341,9 +337,8 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             .await?;
         }
         Some(SubCommand::VecSearch(search_args)) => {
-            let config_path = get_config_path();
-            let config = parse_config(&config_path)?;
-            let (agent_config, _) = config.load_config(None)?;
+            let config = load_config()?;
+            let (agent_config, _) = config.load_agent_config(None)?;
             let retrieval = config.find_retrieval(&agent_config.retrieval.unwrap())?;
             vector_search(&config.defaults.agent, &retrieval, &search_args.question).await?;
         }
@@ -442,7 +437,7 @@ async fn handle_agent_file(
     question: Option<String>,
 ) -> Result<AgentResult, Box<dyn std::error::Error>> {
     let question = question.ok_or_else(|| "Question is required for agent files".to_string())?;
-    let (agent, _) = setup_agent(file_path, &FileFormat::Markdown).await?;
+    let agent = setup_agent(file_path, &FileFormat::Markdown).await?;
     let result = agent.request(&question).await?;
     Ok(result)
 }
@@ -519,14 +514,13 @@ pub async fn handle_run_command(
 ) -> Result<RunResult, Box<dyn std::error::Error>> {
     let file = &run_args.file;
 
-    let config_path: PathBuf = get_config_path();
-    let config = parse_config(&config_path)?;
-    let project_path = &config.project_path;
+    let current_dir = std::env::current_dir().expect("Could not get current directory");
 
-    let file_path = project_path.join(file);
+    let file_path = current_dir.join(file);
     if !file_path.exists() {
         return Err(format!("Configuration file not found: {:?}", file_path).into());
     }
+
     let extension = file_path.extension().and_then(std::ffi::OsStr::to_str);
 
     match extension {
@@ -544,6 +538,7 @@ pub async fn handle_run_command(
             }
         }
         Some("sql") => {
+            let config = load_config()?;
             let sql_result =
                 handle_sql_file(&file_path, run_args.warehouse, &config, &run_args.variables)
                     .await?;

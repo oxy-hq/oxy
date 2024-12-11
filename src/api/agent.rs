@@ -1,9 +1,9 @@
 use chrono::prelude::{DateTime, Utc};
-use std::{fs, path::PathBuf};
+use std::fs;
 
 use crate::{
     ai::{self, agent::LLMAgent},
-    config::{get_config_path, model::FileFormat, parse_config},
+    config::model::{FileFormat, ProjectPath},
     db::{
         conversations::{create_conversation, get_conversation_by_agent},
         message::save_message,
@@ -43,13 +43,9 @@ pub struct AskRequest {
 }
 
 async fn get_agent(agent_path: &str) -> Box<dyn LLMAgent + Send> {
-    let config_path = get_config_path();
-    let config = parse_config(&config_path);
-    let project_path = &config.unwrap().project_path;
+    let file_path = ProjectPath::get_path(agent_path);
 
-    let file_path = project_path.join(agent_path);
-
-    let (agent, _) = ai::setup_agent(Some(&file_path), &FileFormat::Markdown)
+    let agent = ai::setup_agent(Some(&file_path), &FileFormat::Markdown)
         .await
         .unwrap();
     agent
@@ -122,9 +118,7 @@ pub struct ListAgentResponse {
 }
 
 pub async fn list() -> Json<ListAgentResponse> {
-    let config_path = get_config_path();
-    let config = parse_config(&config_path).unwrap();
-    let agent_dir = PathBuf::from(&config.project_path).join("agents");
+    let agent_dir = ProjectPath::get_path("agents");
     let paths = fs::read_dir(agent_dir).unwrap();
     let mut agents = Vec::<AgentItem>::new();
 

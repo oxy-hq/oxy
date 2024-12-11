@@ -1,5 +1,4 @@
-use crate::cli::get_config_path;
-use crate::cli::model::{BigQuery, Config, DuckDB, Retrieval, WarehouseType};
+use crate::cli::model::{BigQuery, Config, DuckDB, ProjectPath, Retrieval, WarehouseType};
 use crate::theme::*;
 use include_dir::{include_dir, Dir};
 use std::io::{self, Write};
@@ -184,7 +183,7 @@ fn create_project_structure() -> Result<(), InitError> {
 }
 
 pub fn init() -> Result<(), InitError> {
-    let config_path = get_config_path();
+    let config_path = ProjectPath::get_path("config.yml");
 
     if config_path.exists() {
         println!(
@@ -230,7 +229,6 @@ fn create_config_file(config_path: &Path) -> Result<(), InitError> {
         defaults: Defaults {
             agent: "default".to_string(),
         },
-        project_path: PathBuf::new(),
     };
 
     let yaml =
