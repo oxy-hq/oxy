@@ -190,7 +190,18 @@ pub fn load_config() -> anyhow::Result<Config> {
 }
 
 pub fn parse_config(config_path: &PathBuf) -> anyhow::Result<Config> {
-    let config_str = fs::read_to_string(config_path)?;
+    let config_str = fs::read_to_string(config_path).map_err(|e| match e.kind() {
+        std::io::ErrorKind::NotFound => {
+            anyhow::anyhow!("Config file not found. Are you in the root of your onyx project?")
+        }
+        _ => {
+            anyhow::anyhow!(
+                "Failed to read config file : {}",
+                config_path.to_string_lossy()
+            )
+        }
+    })?;
+
     let result = serde_yaml::from_str::<Config>(&config_str);
     match result {
         Ok(mut config) => {
@@ -199,7 +210,6 @@ pub fn parse_config(config_path: &PathBuf) -> anyhow::Result<Config> {
                 config: config.clone(),
             };
             let validation_result = config.validate_with(&context);
-            drop(context);
             match validation_result {
                 Ok(_) => Ok(config),
                 Err(e) => Err(anyhow::anyhow!("Invalid configuration: \n{}", e)),

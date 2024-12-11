@@ -9,6 +9,7 @@ use super::{anonymizer::base::Anonymizer, toolbox::ToolBox, tools::Tool};
 use crate::theme::*;
 use async_openai::{
     config::{OpenAIConfig, OPENAI_API_BASE},
+    error::OpenAIError,
     types::{
         ChatCompletionRequestAssistantMessageArgs, ChatCompletionRequestMessage,
         ChatCompletionRequestSystemMessageArgs, ChatCompletionRequestToolMessageArgs,
@@ -26,6 +27,7 @@ use serde::Deserialize;
 use serde_json::json;
 
 const MAX_DISPLAY_ROWS: usize = 100;
+const CONTEXT_WINDOW_EXCEEDED_CODE: &str = "string_above_max_length";
 
 #[pyclass(module = "onyx_py")]
 pub struct AgentResult {
@@ -101,7 +103,7 @@ impl<T> OpenAIAgent<T> {
         messages: Vec<ChatCompletionRequestMessage>,
         tools: Vec<ChatCompletionTool>,
         response_format: Option<ResponseFormat>,
-    ) -> anyhow::Result<ChatCompletionResponseMessage> {
+    ) -> Result<ChatCompletionResponseMessage, OpenAIError> {
         let mut request_builder = CreateChatCompletionRequestArgs::default();
         if tools.is_empty() {
             request_builder.model(self.model.clone()).messages(messages);
@@ -211,7 +213,17 @@ where
             };
             let ret_message = self
                 .completion_request(message_with_replies, tools.clone(), response_format)
-                .await?;
+                .await
+                .map_err(|e|  {
+                    if let OpenAIError::ApiError(ref api_error) = e {
+                        if api_error.code == Some(CONTEXT_WINDOW_EXCEEDED_CODE.to_string()) {
+                            return anyhow::anyhow!(
+                                "Context window length exceeded. Shorten the prompt being sent to the LLM."
+                            );
+                        }
+                    }
+                    anyhow::anyhow!("Error in completion request: {}", e)
+                })?;
 
             output = ret_message
                 .content
