@@ -87,7 +87,7 @@ pluralizer = "0.4.0"
 native-tls = { version = "0.2.12", features = ["vendored"] }
 tabled = "0.17.0"
 terminal_size = "0.4.1"
-pyo3 = {version = "0.23.1", features = ["experimental-async", "extension-module"] }
+pyo3 = {version = "0.23.3", features = ["experimental-async", "extension-module"] }
 pyo3-arrow = "0.6.0"
 
 [patch.crates-io]
