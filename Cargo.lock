@@ -5831,7 +5831,7 @@ dependencies = [
 
 [[package]]
 name = "onyx"
-version = "0.1.22"
+version = "0.1.23"
 dependencies = [
  "anyhow",
  "arrow 46.0.0",
