@@ -4,12 +4,11 @@ use std::error::Error;
 use std::fs;
 use std::path::PathBuf;
 
-use crate::config::{get_config_path, parse_config};
+use crate::config::model::ProjectPath;
 
 #[axum::debug_handler]
 pub async fn load_config() -> Result<impl IntoResponse, (StatusCode, String)> {
-    let config_path = get_config_path();
-
+    let config_path = ProjectPath::get_path("config.yml");
     let config_content = fs::read_to_string(config_path).map_err(|err| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -54,14 +53,7 @@ fn list_dir_contents(path: &PathBuf) -> Result<Vec<serde_json::Value>, Box<dyn E
 
 #[axum::debug_handler]
 pub async fn list_project_dir_structure() -> Result<impl IntoResponse, (StatusCode, String)> {
-    let config_path: PathBuf = get_config_path();
-    let config = parse_config(&config_path).map_err(|err| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to parse config: {}", err),
-        )
-    })?;
-    let project_path = PathBuf::from(&config.project_path);
+    let project_path = ProjectPath::get();
     let dir_structure = list_dir_contents(&project_path).map_err(|err| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,

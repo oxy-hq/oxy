@@ -12,7 +12,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use uuid::Uuid;
 
-use crate::config::model::{Warehouse, WarehouseType};
+use crate::config::model::{ProjectPath, Warehouse, WarehouseType};
 
 pub struct Connector {
     config: Warehouse,
@@ -94,8 +94,9 @@ impl Connector {
     pub async fn run_query(&self, query: &str) -> anyhow::Result<String> {
         let file_path = match &self.config.warehouse_type {
             WarehouseType::Bigquery(bigquery) => {
-                self.run_connectorx_query(query, bigquery.key_path.clone())
-                    .await?
+                let key_path =
+                    ProjectPath::get_path(&bigquery.key_path.as_path().to_string_lossy());
+                self.run_connectorx_query(query, key_path).await?
             }
             WarehouseType::DuckDB(_) => self.run_duckdb_query(query).await?,
             _ => {
@@ -145,7 +146,10 @@ impl Connector {
     async fn run_duckdb_query(&self, query: &str) -> anyhow::Result<String> {
         let query = query.to_string();
         let conn = Connection::open_in_memory()?;
-        let dir_set_stmt = format!("SET file_search_path = '{}'", self.config.dataset);
+        let dir_set_stmt = format!(
+            "SET file_search_path = '{}'",
+            ProjectPath::get_path(&self.config.dataset).display()
+        );
         conn.execute(&dir_set_stmt, [])?;
         let mut stmt = conn.prepare(&query)?;
         let arrow_stream = stmt.query_arrow([])?;

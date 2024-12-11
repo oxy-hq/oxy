@@ -5,7 +5,7 @@ pub mod validate;
 use garde::Validate;
 
 use anyhow;
-use model::{AgentConfig, Config, Model, Retrieval, Warehouse, Workflow};
+use model::{AgentConfig, Config, Model, ProjectPath, Retrieval, Warehouse, Workflow};
 
 use dirs::home_dir;
 use parser::{parse_agent_config, parse_workflow_config};
@@ -30,12 +30,6 @@ impl Defaults {
             }
         }
     }
-}
-
-pub fn get_config_path() -> PathBuf {
-    std::env::current_dir()
-        .expect("Could not get current directory")
-        .join("config.yml")
 }
 
 #[derive(Debug)]
@@ -69,24 +63,14 @@ impl Config {
         Ok(())
     }
 
-    pub fn get_agents_dir(&self) -> PathBuf {
-        PathBuf::from(&self.project_path).join("agents")
-    }
-
-    pub fn get_sql_dir(&self) -> PathBuf {
-        PathBuf::from(&self.project_path).join("data")
-    }
-
-    pub fn load_config(
+    pub fn load_agent_config(
         &self,
         agent_file: Option<&PathBuf>,
     ) -> anyhow::Result<(AgentConfig, String)> {
         let agent_file = if let Some(file) = agent_file {
             file
         } else {
-            &self
-                .get_agents_dir()
-                .join(format!("{}.agent.yml", self.defaults.agent))
+            &ProjectPath::get_path(&self.defaults.agent)
         };
 
         if !agent_file.exists() {
@@ -105,7 +89,7 @@ impl Config {
     }
 
     pub fn list_workflows(&self) -> anyhow::Result<Vec<PathBuf>> {
-        let workflow_dir = PathBuf::from(&self.project_path).join("workflows");
+        let workflow_dir = ProjectPath::get_path("workflows");
 
         let mut workflows = vec![];
         for entry in fs::read_dir(workflow_dir)? {
@@ -183,29 +167,18 @@ impl Config {
 }
 
 pub fn load_config() -> anyhow::Result<Config> {
-    let config_path: PathBuf = get_config_path();
+    let config_path: PathBuf = ProjectPath::get_path("config.yml");
     let config = parse_config(&config_path)?;
 
     Ok(config)
 }
 
 pub fn parse_config(config_path: &PathBuf) -> anyhow::Result<Config> {
-    let config_str = fs::read_to_string(config_path).map_err(|e| match e.kind() {
-        std::io::ErrorKind::NotFound => {
-            anyhow::anyhow!("Config file not found. Are you in the root of your onyx project?")
-        }
-        _ => {
-            anyhow::anyhow!(
-                "Failed to read config file : {}",
-                config_path.to_string_lossy()
-            )
-        }
-    })?;
+    let config_str = fs::read_to_string(config_path)?;
 
     let result = serde_yaml::from_str::<Config>(&config_str);
     match result {
-        Ok(mut config) => {
-            config.project_path = std::env::current_dir().expect("Could not get current directory");
+        Ok(config) => {
             let context = ValidationContext {
                 config: config.clone(),
             };

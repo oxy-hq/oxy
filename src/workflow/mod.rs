@@ -4,7 +4,7 @@ use context::Output;
 use executor::WorkflowExecutor;
 use pyo3::prelude::*;
 
-use crate::config::{get_config_path, parse_config};
+use crate::config::load_config;
 
 pub mod context;
 pub mod executor;
@@ -28,12 +28,12 @@ pub struct WorkflowResult {
 }
 
 pub async fn run_workflow(workflow_path: &PathBuf) -> anyhow::Result<WorkflowResult> {
-    let config_path = get_config_path();
-    let config = parse_config(&config_path)?;
+    let config = load_config()?;
     let workflow = config.load_workflow(workflow_path)?;
+
     config.validate_workflow(&workflow)?;
     let mut executor = WorkflowExecutor::default();
-    executor.init(&config).await?;
-    let result = executor.execute(&workflow).await?;
-    Ok(result)
+    executor.init(&config, &workflow).await?;
+    let response = executor.execute(&workflow).await?;
+    Ok(response)
 }

@@ -10,11 +10,13 @@ use minijinja::value::Enumerator;
 use minijinja::{Environment, Value};
 
 use crate::ai::utils::record_batches_to_table;
+use crate::ai::{agent::LLMAgent, from_config};
 use crate::config::model::AgentStep;
 use crate::config::model::Config;
 use crate::config::model::ExecuteSQLStep;
 use crate::config::model::FileFormat;
 use crate::config::model::LoopValues;
+use crate::config::model::ProjectPath;
 use crate::config::model::Step;
 use crate::config::model::StepType;
 use crate::config::model::Warehouse;
@@ -23,10 +25,6 @@ use crate::connector::Connector;
 use crate::utils::print_colored_sql;
 use crate::workflow::context::Output;
 use crate::StyledText;
-use crate::{
-    ai::{agent::LLMAgent, from_config},
-    utils::list_file_stems,
-};
 
 use super::context::ContextBuilder;
 use super::table::J2Table;
@@ -37,22 +35,20 @@ use super::WorkflowResultStep;
 pub struct WorkflowExecutor {
     agents: HashMap<String, Box<dyn LLMAgent + Send + Sync>>,
     warehouses: HashMap<String, Warehouse>,
-    data_path: PathBuf,
 }
 
 impl WorkflowExecutor {
-    pub async fn init(&mut self, config: &Config) -> anyhow::Result<()> {
-        let agent_files = list_file_stems(config.project_path.join("agents").to_str().unwrap())?;
-        for agent_file in agent_files {
-            let (agent_config, agent_name) = config.load_config(Some(&agent_file))?;
+    pub async fn init(&mut self, config: &Config, workflow: &Workflow) -> anyhow::Result<()> {
+        let agent_files = list_agent_files(workflow)?;
+        for (agent_ref, agent_file) in agent_files {
+            let (agent_config, agent_name) = config.load_agent_config(Some(&agent_file))?;
             let agent = from_config(&agent_name, config, &agent_config, &FileFormat::Json).await?;
-            self.agents.insert(agent_name.to_owned(), agent);
+            self.agents.insert(agent_ref.to_owned(), agent);
         }
         for warehouse in &config.warehouses {
             self.warehouses
                 .insert(warehouse.name.clone(), warehouse.clone());
         }
-        self.data_path = config.project_path.join("data");
         Ok(())
     }
 
@@ -96,7 +92,7 @@ impl WorkflowExecutor {
                 }
 
                 let rendered_sql_file = render_template(&execute_sql_step.sql_file, context);
-                let query_file = self.data_path.join(&rendered_sql_file);
+                let query_file = ProjectPath::get_path(&rendered_sql_file);
                 let query = match fs::read_to_string(&query_file) {
                     Ok(query) => {
                         if !variables.is_empty() {
@@ -269,4 +265,35 @@ fn eval_expression(template: &str, context: &Value) -> anyhow::Result<Value> {
         value.as_object().unwrap().repr()
     );
     Ok(value)
+}
+
+fn list_agent_files(workflow: &Workflow) -> anyhow::Result<HashMap<String, PathBuf>> {
+    let mut agent_refs = Vec::new();
+    collect_agent_refs(&workflow.steps, &mut agent_refs);
+
+    let agent_files = agent_refs
+        .into_iter()
+        .map(|agent_ref| {
+            let agent_file = ProjectPath::get_path(&agent_ref);
+            (agent_ref, agent_file)
+        })
+        .collect::<HashMap<String, PathBuf>>();
+
+    Ok(agent_files)
+}
+
+fn collect_agent_refs(steps: &[Step], agent_refs: &mut Vec<String>) {
+    steps.iter().for_each(|step| match &step.step_type {
+        StepType::Agent(agent_step) => {
+            if !agent_refs.contains(&agent_step.agent_ref) {
+                agent_refs.push(agent_step.agent_ref.clone());
+            }
+        }
+        StepType::LoopSequential(loop_step) => {
+            collect_agent_refs(&loop_step.steps, agent_refs);
+        }
+        StepType::ExecuteSQL(_) => {}
+        StepType::Formatter(_) => {}
+        StepType::Unknown => {}
+    });
 }
