@@ -8,7 +8,7 @@ interface ChatFormProps {
     content: string,
     onSubmitQuestionSuccess: () => void
   ) => Promise<void>;
-  formRef: RefObject<HTMLFormElement>;
+  formRef: RefObject<HTMLFormElement | null>;
 }
 
 const handleCreationError = (error: unknown, message: string) => {
@@ -57,4 +57,3 @@ export const useChatForm = ({ onSendChatMessage, formRef }: ChatFormProps) => {
 
   return { pending, handleSubmit, starterRef };
 };
-

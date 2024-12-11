@@ -12,6 +12,9 @@ export default defineConfig({
     }
   },
   plugins: [react()],
-  publicDir: "public"
+  publicDir: "public",
+  build: {
+    emptyOutDir: false
+  }
 });
 
