@@ -20,7 +20,9 @@ export default function AgentList({ agents, isLoading }: { agents?: Agent[]; isL
           gap: "xs"
         })}
       >
-        <Text variant='label16Medium' color="primary">Agents</Text>
+        <Text variant='label16Medium' color='primary'>
+          Agents
+        </Text>
       </div>
 
       <div
@@ -34,13 +36,11 @@ export default function AgentList({ agents, isLoading }: { agents?: Agent[]; isL
         {isLoading &&
           Array(5)
             .fill(null)
-            // eslint-disable-next-line sonarjs/no-array-index-key
             .map((_, index) => <AgentCardSkeleton key={index} />)}
         {agents && (
-          <>{agents.map((agent: Agent) => agent && <AgentCard key={agent.name} agent={agent} />)}</>
+          <>{agents.map((agent: Agent) => agent && <AgentCard key={agent.path} agent={agent} />)}</>
         )}
       </div>
     </div>
   );
 }
-

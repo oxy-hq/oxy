@@ -11,6 +11,7 @@ use uuid::Uuid;
 
 #[derive(Serialize)]
 pub struct ConversationItem {
+    agent: String,
     title: String,
     id: Uuid,
 }
@@ -29,6 +30,7 @@ pub async fn list() -> Json<ListConversationResponse> {
     let mut items: Vec<ConversationItem> = Vec::new();
     for result in results {
         items.push(ConversationItem {
+            agent: result.agent,
             title: result.title,
             id: result.id,
         });

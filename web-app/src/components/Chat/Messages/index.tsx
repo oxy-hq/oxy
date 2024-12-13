@@ -6,6 +6,7 @@ import { css } from "styled-system/css";
 
 import { useToast } from "@/components/ui/Toast";
 import { useChatContextSelector } from "@/contexts/chat";
+import { getAgentNameFromPath } from "@/libs/utils/agent";
 
 import AgentInfo from "./AgentInfo";
 import { ChatScrollAnchor } from "./ChatScrollAnchor";
@@ -18,9 +19,10 @@ const messageListStyle = css({
   gap: "5xl"
 });
 
-type IMessagesProps = { agentName: string };
+type IMessagesProps = { agentPath: string };
 
-function Messages({ agentName }: IMessagesProps) {
+function Messages({ agentPath }: IMessagesProps) {
+  const agentName = getAgentNameFromPath(agentPath);
   const { toast } = useToast();
 
   const { chatState, messages, streamingNode, startingMessageList } = useChatContextSelector(
@@ -45,15 +47,17 @@ function Messages({ agentName }: IMessagesProps) {
     <div className={messageListStyle}>
       <AgentInfo agentName={agentName} />
       <div className={css({ pb: "xl" })}>
-        {messages.sort((a, b) => Number(a.created_at) - Number(b.created_at) ).map((message) => (
-          <Message
-            key={message.id}
-            message={message}
-            streamingNode={streamingNode}
-            agentName={agentName}
-            startingMessageList={startingMessageList}
-          />
-        ))}
+        {messages
+          .sort((a, b) => Number(a.created_at) - Number(b.created_at))
+          .map((message) => (
+            <Message
+              key={message.id}
+              message={message}
+              streamingNode={streamingNode}
+              agentName={agentName}
+              startingMessageList={startingMessageList}
+            />
+          ))}
 
         <ChatScrollAnchor trackVisibility={chatState.status === "streaming"} />
       </div>
@@ -62,4 +66,3 @@ function Messages({ agentName }: IMessagesProps) {
 }
 
 export default memo(Messages);
-

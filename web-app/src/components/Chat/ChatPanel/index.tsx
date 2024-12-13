@@ -4,6 +4,7 @@ import Button from "@/components/ui/Button";
 import Icon from "@/components/ui/Icon";
 import { useChatContextSelector } from "@/contexts/chat";
 import { useEnterSubmit } from "@/hooks/useEnterSubmit";
+import { getAgentNameFromPath } from "@/libs/utils/agent";
 
 import ChatTextArea from "./ChatTextArea";
 import { useChatForm } from "./useChatForm";
@@ -25,10 +26,10 @@ const wrapperStyles = css({
 });
 
 export interface ChatPanelProps {
-  agentName: string;
+  agentPath: string;
 }
 
-function ChatPanel({ agentName }: ChatPanelProps) {
+function ChatPanel({ agentPath }: ChatPanelProps) {
   const { formRef, onKeyDown } = useEnterSubmit();
 
   const { streamingNode, onSendChatMessage, onStop, messages } = useChatContextSelector((s) => ({
@@ -54,12 +55,12 @@ function ChatPanel({ agentName }: ChatPanelProps) {
       )}
 
       <form ref={formRef} onSubmit={handleSubmit} className={formStyles}>
-        <input hidden name='agentName' defaultValue={agentName} />
+        <input hidden name='agentPath' defaultValue={agentPath} />
         <ChatTextArea
           onKeyDown={onKeyDown}
           hasMessage={!!messages.length}
           pending={pending}
-          botName={agentName}
+          botName={getAgentNameFromPath(agentPath)}
         />
       </form>
     </div>
@@ -67,4 +68,3 @@ function ChatPanel({ agentName }: ChatPanelProps) {
 }
 
 export default ChatPanel;
-

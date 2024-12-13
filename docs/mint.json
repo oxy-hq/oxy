@@ -63,9 +63,7 @@
     },
     {
       "group": "Clients",
-      "pages": [
-        "clients/python"
-      ]
+      "pages": ["clients/python"]
     },
     {
       "group": "",
@@ -101,10 +99,7 @@
     },
     {
       "group": "CLI commands",
-      "pages": [
-        "reference/cli-shortcuts",
-        "reference/cli-commands"
-      ]
+      "pages": ["reference/cli-shortcuts", "reference/cli-commands"]
     },
     {
       "group": "Onyx commands",

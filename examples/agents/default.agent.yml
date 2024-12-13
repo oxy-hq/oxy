@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=../json-schemas/agent.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/onyx-hq/onyx-public-releases/refs/heads/main/json-schemas/agent.json
 
 model: "openai-4o-mini"
 retrieval: "default"
@@ -35,7 +35,7 @@ tools:
   - name: retrieval
     type: retrieval
     data:
-      - "."
+      - "data"
       - "default"
   - name: execute_sql
     type: execute_sql

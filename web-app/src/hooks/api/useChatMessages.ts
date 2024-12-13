@@ -5,12 +5,12 @@ import { apiClient } from "@/services/axios";
 
 import queryKeys from "./queryKey";
 
-export const useChatMessages = (agentName = "", enabled = true) => {
+export const useChatMessages = (agentPath = "", enabled = true) => {
   return useQuery({
-    queryKey: queryKeys.conversation.messages(agentName),
+    queryKey: queryKeys.conversation.messages(agentPath),
     queryFn: async () => {
       try {
-        const response = await apiClient.get("/conversation/" + agentName);
+        const response = await apiClient.get("/conversation/" + agentPath);
         return response.data.messages;
       } catch (error) {
         if (axios.isAxiosError(error) && error.response?.status === 404) {
@@ -22,4 +22,3 @@ export const useChatMessages = (agentName = "", enabled = true) => {
     enabled
   });
 };
-

@@ -45,23 +45,22 @@ const chatTextInputWrapperStyles = css({
 });
 
 interface ChatProps {
-  agentName: string;
+  agentPath: string;
 }
 
-export default function Chat({ agentName }: ChatProps) {
-  const { data: chatMessages } = useChatMessages(agentName);
+export default function Chat({ agentPath }: ChatProps) {
+  const { data: chatMessages } = useChatMessages(agentPath);
 
   return (
     <ChatContextProvider defaultMessages={chatMessages ?? []}>
       <div className={chatLayoutStyles}>
         <div className={chatMessagesWrapperStyles}>
-          <Messages agentName={agentName} />
+          <Messages agentPath={agentPath} />
         </div>
         <div className={chatTextInputWrapperStyles}>
-          <ChatPanel agentName={agentName} />
+          <ChatPanel agentPath={agentPath} />
         </div>
       </div>
     </ChatContextProvider>
   );
 }
-

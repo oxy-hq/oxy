@@ -61,9 +61,9 @@ export default function ChatList({ items }: SidebarItemGroupProps) {
   return (
     <div className={cx(scrollableChatListStyles, extraWrapperStyles)} ref={chatListRef}>
       <div ref={parent}>
-        {items.map(({ id, title}) => {
+        {items.map(({ id, title, agent }) => {
           return (
-            <NavLink key={id} to={"/chat/" + title}>
+            <NavLink key={id} to={"/chat/" + btoa(agent)}>
               {({ isActive }) => <SidebarItem key={id} title={title} id={id} isActive={isActive} />}
             </NavLink>
           );
@@ -72,4 +72,3 @@ export default function ChatList({ items }: SidebarItemGroupProps) {
     </div>
   );
 }
-

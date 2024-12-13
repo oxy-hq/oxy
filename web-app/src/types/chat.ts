@@ -5,9 +5,9 @@ export type Conversation = {
 };
 
 export type Agent = {
-  name: string;
   description: string;
   updated_at: Date;
+  path: string;
 };
 
 export type Message = {

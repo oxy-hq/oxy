@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import dayjs from "dayjs";
 
+import { getAgentNameFromPath } from "@/libs/utils/agent";
 import { Message } from "@/types/chat";
 
 import { useChatState } from "./useChatState";
@@ -106,10 +107,14 @@ export const useChatActions = (defaultMessages: Message[] = []) => {
   );
 
   const onSendChatMessage = useCallback(
-    async (agentName: string, content: string, onSubmitQuestionSuccess: () => void) => {
-      await handleChatAction("/ask", { question: content, agent: agentName }, (message) => {
-        handleReceivedMessage(message, onSubmitQuestionSuccess);
-      });
+    async (agentPath: string, content: string, onSubmitQuestionSuccess: () => void) => {
+      await handleChatAction(
+        "/ask",
+        { question: content, agent: agentPath, title: getAgentNameFromPath(agentPath) },
+        (message) => {
+          handleReceivedMessage(message, onSubmitQuestionSuccess);
+        }
+      );
     },
     [handleChatAction, handleReceivedMessage]
   );
@@ -139,4 +144,3 @@ export const useChatActions = (defaultMessages: Message[] = []) => {
     startingMessageList
   };
 };
-

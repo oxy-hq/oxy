@@ -4,6 +4,7 @@ import { css, cx } from "styled-system/css";
 import { hstack, vstack } from "styled-system/patterns";
 
 import Text from "@/components/ui/Typography/Text";
+import { getAgentNameFromPath } from "@/libs/utils/agent";
 import { formatDateToHumanReadable } from "@/libs/utils/date";
 import { Agent } from "@/types/chat";
 
@@ -68,10 +69,11 @@ export function AgentCardSkeleton({ className }: { className?: string }) {
 }
 
 export function AgentCard({ agent }: { agent: Agent }) {
+  const agentName = getAgentNameFromPath(agent.path);
   return (
-    <NavLink to={`/chat/${agent.name}`} className={cardStyles} key={agent.name}>
+    <NavLink to={`/chat/${btoa(agent.path)}`} className={cardStyles} key={agent.path}>
       <AgentAvatar
-        name={agent.name}
+        name={agentName}
         className={css({
           textStyle: "label14Medium",
           color: "text.contrast",
@@ -118,7 +120,7 @@ export function AgentCard({ agent }: { agent: Agent }) {
               }
             })}
           >
-            {agent.name}
+            {agentName}
           </Text>
           <Text
             variant='paragraph14Regular'
@@ -142,4 +144,3 @@ export function AgentCard({ agent }: { agent: Agent }) {
     </NavLink>
   );
 }
-

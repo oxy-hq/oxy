@@ -1,6 +1,7 @@
-import Chat from "@/components/Chat";
 import { useParams } from "react-router-dom";
 import { css } from "styled-system/css";
+
+import Chat from "@/components/Chat";
 
 const contentStyles = css({
   marginTop: {
@@ -38,16 +39,17 @@ const chatStyles = css({
 });
 
 const ChatPage = () => {
-  const { id: agentName } = useParams();
+  const { id: agentPathBase64 } = useParams();
+
+  const agentPath = atob(agentPathBase64 ?? "");
 
   return (
     <div className={contentStyles}>
       <div className={chatStyles}>
-        <Chat agentName={agentName ?? ""} />
+        <Chat agentPath={agentPath} />
       </div>
     </div>
   );
 };
 
 export default ChatPage;
-

@@ -173,7 +173,7 @@ fn load_queries(paths: &Vec<String>) -> Vec<String> {
 }
 
 fn load_queries_for_scope(path: &str) -> Vec<String> {
-    let query_path = &ProjectPath::get_path("data").join(path);
+    let query_path = &ProjectPath::get_path(path);
     log::debug!("Query path: {}; scope: {}", query_path.display(), path);
 
     let mut queries = vec![];
