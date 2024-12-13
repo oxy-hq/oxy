@@ -32,18 +32,18 @@ impl From<io::Error> for InitError {
 // when using CARGO_MANIFEST_DIR with windows path separators
 // TODO: replace with a more robust solution, like using env AGENTS_DIR_PATH
 #[cfg(target_os = "windows")]
-static AGENTS_DIR: Dir = include_dir!("D:\\a\\onyx\\onyx\\agents");
+static AGENTS_DIR: Dir = include_dir!("D:\\a\\onyx\\onyx\\examples\\agents");
 #[cfg(target_os = "windows")]
-static DATA_DIR: Dir = include_dir!("D:\\a\\onyx\\onyx\\data");
+static DATA_DIR: Dir = include_dir!("D:\\a\\onyx\\onyx\\examples\\data");
 #[cfg(target_os = "windows")]
-static WORKFLOWS_DIR: Dir = include_dir!("D:\\a\\onyx\\onyx\\workflows");
+static WORKFLOWS_DIR: Dir = include_dir!("D:\\a\\onyx\\onyx\\examples\\workflows");
 
 #[cfg(not(target_os = "windows"))]
-static AGENTS_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/agents");
+static AGENTS_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/examples/agents");
 #[cfg(not(target_os = "windows"))]
-static DATA_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/data");
+static DATA_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/examples/data");
 #[cfg(not(target_os = "windows"))]
-static WORKFLOWS_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/workflows");
+static WORKFLOWS_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/examples/workflows");
 fn prompt_with_default(prompt: &str, default: &str) -> io::Result<String> {
     print!("{} (default: {}): ", prompt, default);
     io::stdout().flush()?;
@@ -235,9 +235,9 @@ fn create_config_file(config_path: &Path) -> Result<(), InitError> {
         serde_yaml::to_string(&config).map_err(|e| InitError::ExtractionError(e.to_string()))?;
 
     let content = format!(
-        "# yaml-language-server: $schema=https://raw.githubusercontent.com/onyx-hq/onyx-public-releases/refs/heads/main/config.json\n{}",
-        yaml
-    );
+        "# yaml-language-server: $schema=https://raw.githubusercontent.com/onyx-hq/onyx-public-releases/refs/heads/main/json-schemas/config.json\n{}",
+        yaml);
+
     fs::write(config_path, content)?;
 
     println!(

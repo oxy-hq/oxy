@@ -193,55 +193,6 @@ async fn handle_workflow_file(workflow_name: &PathBuf) -> Result<WorkflowResult,
     }
 }
 
-pub async fn run(
-    file: String,
-    warehouse: String,
-    variables: Vec<(String, String)>,
-) -> Result<String, Box<dyn Error>> {
-    let config = load_config()?;
-    let file_path = ProjectPath::get_path("data").join(file);
-
-    // Use specific SQL file from data directory
-    match std::fs::read_to_string(file_path) {
-        Ok(content) => {
-            let wh_config = config.find_warehouse(&warehouse);
-            let mut env = Environment::new();
-            let mut query = content.clone();
-
-            env.add_template("query", &query)?;
-            let tmpl = env.get_template("query").unwrap();
-            let ctx = Value::from({
-                let mut m = BTreeMap::new();
-                for var in variables {
-                    m.insert(var.0.clone(), var.1.clone());
-                }
-                m
-            });
-            query = tmpl.render(ctx)?;
-
-            match wh_config {
-                Ok(wh) => {
-                    print_colored_sql(&query);
-                    let (datasets, schema) = Connector::new(&wh).run_query_and_load(&query).await?;
-                    let batches_display = record_batches_to_table(&datasets, &schema)?;
-                    let json_blob = record_batches_to_json(&datasets)?;
-                    println!("\n\x1b[1;32mResults:\x1b[0m");
-                    println!("{}", batches_display);
-                    Ok(json_blob)
-                }
-                Err(e) => {
-                    eprintln!("Error: Warehouse not found in config");
-                    Err(e.into())
-                }
-            }
-        }
-        Err(e) => {
-            eprintln!("{}", format!("Error reading file: {}", e).error());
-            Err(e.into())
-        }
-    }
-}
-
 pub async fn cli() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
 

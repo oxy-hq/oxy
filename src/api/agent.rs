@@ -1,5 +1,5 @@
 use chrono::prelude::{DateTime, Utc};
-use std::fs;
+use std::path::PathBuf;
 
 use crate::{
     ai::{self, agent::LLMAgent},
@@ -40,6 +40,7 @@ pub struct AskResponse {
 pub struct AskRequest {
     pub question: String,
     pub agent: String,
+    pub title: String,
 }
 
 async fn get_agent(agent_path: &str) -> Box<dyn LLMAgent + Send> {
@@ -59,7 +60,7 @@ pub async fn ask(extract::Json(payload): extract::Json<AskRequest>) -> impl Into
             conversation_id = c.id;
         }
         None => {
-            let new_conversation = create_conversation(&payload.agent).await;
+            let new_conversation = create_conversation(&payload.agent, &payload.title).await;
             conversation_id = new_conversation.id;
         }
     }
@@ -108,8 +109,8 @@ struct Message {
 
 #[derive(Serialize)]
 pub struct AgentItem {
-    name: String,
     updated_at: DateTime<Utc>,
+    path: String,
 }
 
 #[derive(Serialize)]
@@ -118,30 +119,50 @@ pub struct ListAgentResponse {
 }
 
 pub async fn list() -> Json<ListAgentResponse> {
-    let agent_dir = ProjectPath::get_path("agents");
-    let paths = fs::read_dir(agent_dir).unwrap();
-    let mut agents = Vec::<AgentItem>::new();
+    let project_path = ProjectPath::get();
 
-    for path in paths {
-        match path {
-            Ok(e) => {
-                let p = e.path();
-                let file_name: &std::ffi::OsStr = p.file_name().unwrap();
-                if file_name.to_string_lossy().ends_with(".yml") {
-                    let agent_name = p.file_stem().unwrap().to_string_lossy().to_string();
-                    agents.push(AgentItem {
-                        name: agent_name,
-                        updated_at: p.metadata().unwrap().modified().unwrap().into(),
-                    });
-                }
-            }
-            Err(e) => {
-                eprintln!("Error reading agent directory: {}", e);
-                continue;
+    let agent_files = find_agent_files(&project_path);
+    let mut agents = Vec::new();
+
+    for path in agent_files {
+        if let Ok(metadata) = path.metadata() {
+            if let Ok(modified) = metadata.modified() {
+                let relative_path = path
+                    .strip_prefix(&project_path)
+                    .unwrap_or(&path)
+                    .to_path_buf();
+                agents.push(AgentItem {
+                    path: relative_path.to_string_lossy().to_string(),
+                    updated_at: modified.into(),
+                });
             }
         }
     }
 
     agents.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
     Json(ListAgentResponse { agents })
+}
+
+fn find_agent_files(dir: &PathBuf) -> Vec<PathBuf> {
+    let mut agent_files = Vec::new();
+
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                agent_files.extend(find_agent_files(&path));
+            } else if path.is_file()
+                && path.extension().and_then(|s| s.to_str()) == Some("yml")
+                && path
+                    .file_name()
+                    .and_then(|s| s.to_str())
+                    .map(|s| s.ends_with(".agent.yml"))
+                    .unwrap_or(false)
+            {
+                agent_files.push(path);
+            }
+        }
+    }
+
+    agent_files
 }

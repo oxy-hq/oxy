@@ -56,7 +56,7 @@ impl Config {
     }
 
     pub fn validate_workflows(&self) -> anyhow::Result<()> {
-        for workflow_file in self.list_workflows()? {
+        for workflow_file in self.list_workflows(&ProjectPath::get()) {
             let workflow = self.load_workflow(&workflow_file)?;
             self.validate_workflow(&workflow)?;
         }
@@ -88,25 +88,28 @@ impl Config {
         Ok((agent_config, agent_name.to_owned()))
     }
 
-    pub fn list_workflows(&self) -> anyhow::Result<Vec<PathBuf>> {
-        let workflow_dir = ProjectPath::get_path("workflows");
+    pub fn list_workflows(&self, dir: &PathBuf) -> Vec<PathBuf> {
+        let mut workflows_files = Vec::new();
 
-        let mut workflows = vec![];
-        for entry in fs::read_dir(workflow_dir)? {
-            let entry = entry?;
-            let path = entry.path();
-            if path.is_file() {
-                if let Some(file_name) = path.file_name() {
-                    if let Some(file_name_str) = file_name.to_str() {
-                        if file_name_str.ends_with(".workflow.yml") {
-                            workflows.push(path);
-                        }
-                    }
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    workflows_files.extend(self.list_workflows(&path));
+                } else if path.is_file()
+                    && path.extension().and_then(|s| s.to_str()) == Some("yml")
+                    && path
+                        .file_name()
+                        .and_then(|s| s.to_str())
+                        .map(|s| s.ends_with(".workflows.yml"))
+                        .unwrap_or(false)
+                {
+                    workflows_files.push(path);
                 }
             }
         }
 
-        Ok(workflows)
+        workflows_files
     }
 
     pub fn load_workflow(&self, workflow_path: &PathBuf) -> anyhow::Result<Workflow> {

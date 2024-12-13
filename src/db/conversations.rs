@@ -18,15 +18,15 @@ pub async fn get_conversation_by_agent(agent: &str) -> Option<conversations::Mod
     conversations.unwrap()
 }
 
-pub async fn create_conversation(agent_name: &str) -> conversations::Model {
+pub async fn create_conversation(agent_path: &str, title: &str) -> conversations::Model {
     let connection = establish_connection().await;
     let new_conversation = entity::conversations::ActiveModel {
         id: ActiveValue::Set(Uuid::new_v4()),
         created_at: ActiveValue::not_set(),
         updated_at: ActiveValue::not_set(),
         deleted_at: ActiveValue::not_set(),
-        agent: ActiveValue::Set(agent_name.to_string()),
-        title: ActiveValue::Set(agent_name.to_string()),
+        agent: ActiveValue::Set(agent_path.to_string()),
+        title: ActiveValue::Set(title.to_string()),
     };
 
     new_conversation

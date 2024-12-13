@@ -1,11 +1,11 @@
-# yaml-language-server: $schema=../json-schemas/workflow.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/onyx-hq/onyx-public-releases/refs/heads/main/json-schemas/workflow.json
 
 name: survey_responses
 steps:
   - name: intervals
     type: execute_sql
     warehouse: primary_warehouse
-    sql_file: example_intervals.sql
+    sql_file: data/example_intervals.sql
   - name: schedules
     type: loop_sequential
     values: "{{intervals.intervals}}"
@@ -19,7 +19,7 @@ steps:
           - name: table
             type: execute_sql
             warehouse: primary_warehouse
-            sql_file: example_{{schedules.value}}_{{metrics.value}}.sql
+            sql_file: data/example_{{schedules.value}}_{{metrics.value}}.sql
             variables:
               variable_a: "1000"
               variable_b: hello
@@ -29,7 +29,7 @@ steps:
             prompt: |
               Generate a detail {{schedules.value}} report using {{metrics.value}} metrics:
               {{table}}
-            agent_ref: local
+            agent_ref: agents/local.agent.yml
 
       - name: metric_reports
         type: formatter
@@ -39,7 +39,6 @@ steps:
           {{metric.report}}
           -- End of Metric: {{metric.value}} --
           {% endfor %}
-
 
   - name: formatter
     type: formatter
