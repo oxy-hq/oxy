@@ -1,14 +1,14 @@
-# yaml-language-server: $schema=../json-schemas/workflow.json
+# yaml-language-server: $schema=../../json-schemas/workflow.json
 
 name: anonymize_sample
 steps:
   - name: execute
     type: execute_sql
     warehouse: primary_warehouse
-    sql_file: example_anonymize.sql
+    sql_file: data/example_anonymize.sql
   - name: report
     type: agent
-    agent_ref: anon
+    agent_ref: agents/anon.agent.yml
     prompt: |
       Generate "Responses to the survey by Organization" report using the provided data:
       {{execute}}

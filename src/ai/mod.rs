@@ -49,18 +49,12 @@ pub async fn from_config(
     let anonymizer: Option<Box<dyn Anonymizer + Send + Sync>> = match &agent_config.anonymize {
         None => None,
         Some(AnonymizerConfig::FlashText {
-            replacement,
-            keywords_file,
+            source,
             pluralize,
-            case_insensitive,
+            case_sensitive,
         }) => {
-            let mut anonymizer = FlashTextAnonymizer::new(
-                replacement.to_string(),
-                pluralize.to_owned(),
-                case_insensitive.to_owned(),
-            );
-            let resolved_keyword_path = ProjectPath::get_path("data").join(keywords_file);
-            anonymizer.add_keywords_file(&resolved_keyword_path)?;
+            let mut anonymizer = FlashTextAnonymizer::new(pluralize, case_sensitive);
+            anonymizer.add_keywords_file(source)?;
             Some(Box::new(anonymizer))
         }
     };
