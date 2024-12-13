@@ -132,7 +132,6 @@ impl FlashTextAnonymizer {
             if let Some(base_replacement) = self.traverse_trie(ch, &mut ch_indices) {
                 result.push_str(&internal_text[start..match_start]);
                 let mut rep = base_replacement.to_string();
-                rep.push_str(&idx.to_string());
                 start = self.skip_to_word_boundary(
                     &internal_text,
                     match_start + ch.len_utf8(),
