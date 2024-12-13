@@ -139,13 +139,27 @@ pub enum OutputFormat {
 pub enum AnonymizerConfig {
     #[serde(rename = "flash_text")]
     FlashText {
-        #[serde(default = "default_anonymizer_replacement")]
-        replacement: String,
-        keywords_file: PathBuf,
+        #[serde(flatten)]
+        source: FlashTextSourceType,
         #[serde(default = "default_anonymizer_pluralize")]
         pluralize: bool,
-        #[serde(default = "default_case_insensitive")]
-        case_insensitive: bool,
+        #[serde(default = "default_case_sensitive")]
+        case_sensitive: bool,
+    },
+}
+
+#[derive(Serialize, Deserialize, Debug, JsonSchema)]
+#[serde(untagged)]
+pub enum FlashTextSourceType {
+    Keywords {
+        keywords_file: PathBuf,
+        #[serde(default = "default_anonymizer_replacement")]
+        replacement: String,
+    },
+    Mapping {
+        mapping_file: PathBuf,
+        #[serde(default = "default_delimiter")]
+        delimiter: String,
     },
 }
 
@@ -153,11 +167,15 @@ fn default_anonymizer_replacement() -> String {
     "FLASH".to_string()
 }
 
+fn default_delimiter() -> String {
+    ",".to_string()
+}
+
 fn default_anonymizer_pluralize() -> bool {
     false
 }
 
-fn default_case_insensitive() -> bool {
+fn default_case_sensitive() -> bool {
     false
 }
 

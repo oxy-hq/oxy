@@ -89,6 +89,7 @@ tabled = "0.17.0"
 terminal_size = "0.4.1"
 pyo3 = {version = "0.23.3", features = ["experimental-async", "extension-module"] }
 pyo3-arrow = "0.6.0"
+slugify = "0.1.0"
 
 [patch.crates-io]
 esaxx-rs = { git = "https://github.com/thewh1teagle/esaxx-rs.git", branch = "feat/dynamic-msvc-link" } # https://github.com/pykeio/ort/issues/329

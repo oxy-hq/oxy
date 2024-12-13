@@ -53,25 +53,49 @@
       "oneOf": [
         {
           "type": "object",
+          "anyOf": [
+            {
+              "type": "object",
+              "required": [
+                "keywords_file"
+              ],
+              "properties": {
+                "keywords_file": {
+                  "type": "string"
+                },
+                "replacement": {
+                  "default": "FLASH",
+                  "type": "string"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": [
+                "mapping_file"
+              ],
+              "properties": {
+                "delimiter": {
+                  "default": ",",
+                  "type": "string"
+                },
+                "mapping_file": {
+                  "type": "string"
+                }
+              }
+            }
+          ],
           "required": [
-            "keywords_file",
             "type"
           ],
           "properties": {
-            "case_insensitive": {
+            "case_sensitive": {
               "default": false,
               "type": "boolean"
-            },
-            "keywords_file": {
-              "type": "string"
             },
             "pluralize": {
               "default": false,
               "type": "boolean"
-            },
-            "replacement": {
-              "default": "FLASH",
-              "type": "string"
             },
             "type": {
               "type": "string",

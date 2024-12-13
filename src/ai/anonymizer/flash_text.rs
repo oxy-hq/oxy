@@ -2,11 +2,13 @@ use std::{
     collections::HashMap,
     fs::File,
     io::{self, BufRead},
-    path::PathBuf,
 };
 
 use anyhow::Result;
 use pluralizer::pluralize;
+use slugify::slugify;
+
+use crate::config::model::{FlashTextSourceType, ProjectPath};
 
 use super::base::Anonymizer;
 
@@ -14,15 +16,17 @@ use super::base::Anonymizer;
 pub struct TrieNode {
     children: HashMap<char, TrieNode>,
     is_word_end: bool,
-    case_insensitive: bool,
+    case_sensitive: bool,
+    replacement: Option<String>,
 }
 
 impl TrieNode {
-    fn new(case_insensitive: bool) -> Self {
+    fn new(case_sensitive: bool) -> Self {
         TrieNode {
             children: HashMap::new(),
             is_word_end: false,
-            case_insensitive,
+            case_sensitive,
+            replacement: None,
         }
     }
 
@@ -33,14 +37,14 @@ impl TrieNode {
     fn get_or_create_child(&mut self, ch: char) -> &mut TrieNode {
         self.children
             .entry(self.norm_char(ch))
-            .or_insert_with(|| TrieNode::new(self.case_insensitive))
+            .or_insert_with(|| TrieNode::new(self.case_sensitive))
     }
 
     fn norm_char(&self, ch: char) -> char {
-        if self.case_insensitive {
-            ch.to_lowercase().next().unwrap()
-        } else {
+        if self.case_sensitive {
             ch
+        } else {
+            ch.to_lowercase().next().unwrap()
         }
     }
 }
@@ -48,32 +52,49 @@ impl TrieNode {
 #[derive(Debug, Clone)]
 pub struct FlashTextAnonymizer {
     root: TrieNode,
-    replacement: String,
     pluralize: bool,
 }
 
 impl FlashTextAnonymizer {
-    pub fn new(replacement: String, pluralize: bool, case_insensitive: bool) -> Self {
+    pub fn new(pluralize: &bool, case_sensitive: &bool) -> Self {
         FlashTextAnonymizer {
-            root: TrieNode::new(case_insensitive),
-            replacement,
-            pluralize,
+            root: TrieNode::new(*case_sensitive),
+            pluralize: *pluralize,
         }
     }
 
-    pub fn add_keywords_file(&mut self, path: &PathBuf) -> Result<()> {
-        let file = File::open(path)
-            .map_err(|err| anyhow::anyhow!("Failed to open file: {:?}. Error:\n{}", path, err))?;
+    pub fn add_keywords_file(&mut self, source: &FlashTextSourceType) -> Result<()> {
+        let path = match source {
+            FlashTextSourceType::Keywords { keywords_file, .. } => keywords_file,
+            FlashTextSourceType::Mapping { mapping_file, .. } => mapping_file,
+        };
+        let resolved_path = ProjectPath::get().join(path);
+        let file = File::open(&resolved_path).map_err(|err| {
+            anyhow::anyhow!("Failed to open file: {:?}. Error:\n{}", &resolved_path, err)
+        })?;
         io::BufReader::new(file)
             .lines()
-            .try_for_each(|word| -> Result<()> {
-                let word = word?;
-                self.add_keyword(&word)?;
-                if self.pluralize {
-                    let singular_word = pluralize(&word, 1, false);
-                    let plural_word = pluralize(&word, 2, false);
-                    self.add_keyword(&singular_word)?;
-                    self.add_keyword(&plural_word)?;
+            .try_for_each(|raw| -> Result<()> {
+                let raw = raw?;
+                let line = raw.trim();
+                if line.is_empty() {
+                    return Ok(());
+                }
+
+                match source {
+                    FlashTextSourceType::Keywords { replacement, .. } => {
+                        self.add_keyword(&line, replacement)?;
+                    }
+                    FlashTextSourceType::Mapping { delimiter, .. } => {
+                        let mut parts = line.split(delimiter);
+                        let word = parts.next().ok_or_else(|| {
+                            anyhow::anyhow!("Failed to parse line: {}. Error: Empty line", line)
+                        })?;
+                        let replacement = parts.next().ok_or_else(|| {
+                            anyhow::anyhow!("Failed to parse line: {}. Error: keyword and replacement need to be separated by \"{}\"", line, delimiter)
+                        })?;
+                        self.add_keyword(word.trim(), replacement.trim())?;
+                    }
                 }
                 Ok(())
             })?;
@@ -81,13 +102,15 @@ impl FlashTextAnonymizer {
         Ok(())
     }
 
-    pub fn add_keyword(&mut self, word: &str) -> Result<()> {
-        let mut node: &mut TrieNode = &mut self.root;
-
-        for ch in word.chars() {
-            node = node.get_or_create_child(ch);
+    pub fn add_keyword(&mut self, word: &str, replacement: &str) -> Result<()> {
+        if self.pluralize {
+            let singular_word = pluralize(&word, 1, false);
+            let plural_word = pluralize(&word, 2, false);
+            self.add_keyword_internal(&singular_word, &replacement)?;
+            self.add_keyword_internal(&plural_word, &replacement)?;
+        } else {
+            self.add_keyword_internal(word, &replacement)?;
         }
-        node.is_word_end = true;
         Ok(())
     }
 
@@ -105,10 +128,8 @@ impl FlashTextAnonymizer {
         let mut items: HashMap<String, String> = items.unwrap_or_default();
         let mut idx = 0;
 
-        let base_replacement = self.replacement.clone();
-
         while let Some((match_start, ch)) = ch_indices.next() {
-            if let Some(_word) = self.traverse_trie(ch, &mut ch_indices) {
+            if let Some(base_replacement) = self.traverse_trie(ch, &mut ch_indices) {
                 result.push_str(&internal_text[start..match_start]);
                 let mut rep = base_replacement.to_string();
                 rep.push_str(&idx.to_string());
@@ -145,6 +166,16 @@ impl FlashTextAnonymizer {
         Ok((result, items))
     }
 
+    fn add_keyword_internal(&mut self, word: &str, replacement: &str) -> Result<()> {
+        let mut node: &mut TrieNode = &mut self.root;
+        for ch in word.chars() {
+            node = node.get_or_create_child(ch);
+        }
+        node.is_word_end = true;
+        node.replacement = Some(slugify!(replacement, separator = "_").to_uppercase());
+        Ok(())
+    }
+
     fn process_item_value(&self, item_value: &str) -> (String, String) {
         let final_value: String = item_value
             .trim_end_matches(|c: char| !c.is_alphabetic())
@@ -158,11 +189,9 @@ impl FlashTextAnonymizer {
         I: Iterator<Item = (usize, char)>,
     {
         let mut node = self.root.get_child(ch)?;
-        let mut chars = vec![ch];
 
         for (_next_start, next_ch) in ch_indices.by_ref() {
             if let Some(next_node) = node.get_child(next_ch) {
-                chars.push(next_ch);
                 node = next_node;
             } else {
                 break;
@@ -170,7 +199,7 @@ impl FlashTextAnonymizer {
         }
 
         if node.is_word_end {
-            Some(chars.into_iter().collect())
+            node.replacement.clone()
         } else {
             None
         }
