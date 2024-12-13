@@ -31,6 +31,10 @@
     {
       "name": "Onyx Community",
       "url": "community"
+    },
+    {
+      "name": "Reference",
+      "url": "reference"
     }
   ],
   "navigation": [
@@ -50,8 +54,7 @@
             "learn-about-onyx/workflows"
           ]
         },
-        "learn-about-onyx/config",
-        "learn-about-onyx/basic-commands"
+        "learn-about-onyx/config"
       ]
     },
     {
@@ -95,6 +98,17 @@
     {
       "group": "Contributing",
       "pages": ["community/contributing-writing"]
+    },
+    {
+      "group": "CLI commands",
+      "pages": [
+        "reference/cli-shortcuts",
+        "reference/cli-commands"
+      ]
+    },
+    {
+      "group": "Onyx commands",
+      "pages": ["reference/onyx-commands"]
     }
   ],
   "footerSocials": {
