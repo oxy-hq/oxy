@@ -210,6 +210,7 @@ fn write_duckdb_to_ipc(
     if batches.is_empty() {
         debug!("Warning: query returned no results.");
     }
+
     debug!("Schema: {:?}", schema);
     let schema_ref = schema.as_ref();
     let mut writer = FileWriter::try_new(file, schema_ref)?;
