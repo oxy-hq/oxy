@@ -1,25 +1,15 @@
-name: Release
+name: Create build cache
 on:
+  schedule:
+    - cron: "0 0 * * 0" # midnight sunday
   workflow_dispatch:
-  push:
-    tags:
-      - "[0-9]+.[0-9]+.[0-9]+"
-    paths-ignore:
-      - "docs/**"
 env:
   CARGO_TERM_COLOR: always
   MACOSX_DEPLOYMENT_TARGET: "11.0"
 
 jobs:
-  changesets:
-    uses: ./.github/workflows/changesets.yaml
-  compile:
-    concurrency:
-      group: onyx-compile-${{ github.ref_name }}-${{ matrix.job.os }}-${{ matrix.job.target }}
-      cancel-in-progress: true
-    name: Releasing binary version ${{ github.ref_name }} for target ${{ matrix.job.target }}
-    needs: [changesets]
-    if: needs.changesets.outputs.onyx == 'true' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
+  compile-to-save-cache:
+    name: Compile onyx binary to save cache on main branch
     runs-on: ${{ matrix.job.os }}
     strategy:
       fail-fast: false
@@ -102,64 +92,3 @@ jobs:
           else
             cargo build --release --target ${{ matrix.job.target }}
           fi
-
-      #-- Build json schema
-      - name: Generate config schema (once)
-        if: ${{ matrix.job.os == 'ubuntu-latest' }}
-        run: cargo run --release --target ${{ matrix.job.target }} -- gen-config-schema
-
-      #-- Build checksum
-      - name: Create binary checksum
-        run: shasum --algorithm 256 --binary onyx-${{ matrix.job.target }} | tee SHA256SUM-onyx-${{ matrix.job.target }}.txt
-        working-directory: target/${{ matrix.job.target }}/release
-
-      #-- Build python lib
-      - name: Set up Python 3.11
-        id: setup-python
-        uses: actions/setup-python@v5
-        with:
-          python-version: 3.11
-          cache: "pip"
-      - name: Build wheels
-        uses: PyO3/maturin-action@v1
-        with:
-          command: build
-          target: ${{ matrix.job.target }}
-          args: --release --out dist
-          sccache: 'true'
-          # manylinux: auto
-          container: off
-          working-directory: onyx-py
-
-      #-- Upload release artifacts
-      - name: Upload release artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.job.target }}
-          path: |
-            target/**/onyx-*
-            target/**/SHA256SUM-onyx-*
-            json-schemas/*
-            onyx-py/dist/*
-          if-no-files-found: error
-          retention-days: 1
-
-  release:
-    runs-on: ubuntu-latest
-    needs: [compile]
-    steps:
-    - name: Download release assets from artifact
-      uses: actions/download-artifact@v4
-      with:
-        path: artifacts
-    - name: List all artifacts
-      run: ls -R ./artifacts
-    - name: Combine checksums
-      run: cat artifacts/onyx-*-SHA256SUM.txt | tee artifacts/SHA256SUMS.txt
-    - name: Private github release
-      uses: softprops/action-gh-release@v2
-      with:
-        draft: false
-        tag_name: ${{ github.ref_name }}
-        files: |
-          artifacts/*
