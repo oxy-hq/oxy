@@ -83,3 +83,4 @@ db.sqlite
 
 **/node_modules
 .turbo/*
+examples/bigquery-sample.key
