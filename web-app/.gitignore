@@ -27,8 +27,9 @@ styled-system
 styled-system-studio
 
 .env
-*.tsbuildinfo
 .vite
 
 dist/*
 !dist/.gitkeep
+
+tsconfig.app.tsbuildinfo
