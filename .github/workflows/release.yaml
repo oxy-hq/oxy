@@ -83,9 +83,6 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: release-${{ matrix.job.os }}-${{ matrix.job.target }}
-      - name: Update Rust Toolchain Target
-        run: |
-          echo "targets = ['${{matrix.job.target}}']" >> rust-toolchain.toml
       - name: Install cross
         if: matrix.job.cross-compilation
         uses: taiki-e/install-action@v2
