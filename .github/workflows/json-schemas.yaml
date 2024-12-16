@@ -15,13 +15,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Prep Rust
+        uses: dtolnay/rust-toolchain@stable
         with:
-          fetch-depth: 0
-      - name: Prep Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+          components: clippy, rustfmt
+      - name: Prep cargo cache
+        uses: Swatinem/rust-cache@v2
         with:
-          rustflags: "" # temporarily override "-D warnings"
-          cache-key: release-ubuntu-latest-x86_64-unknown-linux-gnu
+          shared-key: release-ubuntu-latest-x86_64-unknown-linux-gnu
       # protobuf is required by lance https://github.com/lancedb/lance/issues/3073
       - name: Install Protoc
         uses: arduino/setup-protoc@v3
