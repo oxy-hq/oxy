@@ -101,16 +101,19 @@ jobs:
           else
             cargo build --release --target ${{ matrix.job.target }}
           fi
+          mv target/${{ matrix.job.target }}/release/onyx artifacts/onyx-${{ matrix.job.target }}
 
       #-- Build json schema
       - name: Generate config schema (once)
         if: ${{ matrix.job.os == 'ubuntu-latest' }}
-        run: cargo run --release --target ${{ matrix.job.target }} -- gen-config-schema
+        run: |
+          cargo run --release --target ${{ matrix.job.target }} -- gen-config-schema
+          mv json-schemas/*.json artifacts/
 
       #-- Build checksum
       - name: Create binary checksum
         run: shasum --algorithm 256 --binary onyx-${{ matrix.job.target }} | tee SHA256SUM-onyx-${{ matrix.job.target }}.txt
-        working-directory: target/${{ matrix.job.target }}/release
+        working-directory: artifacts
 
       #-- Build python lib
       - name: Set up Python 3.11
@@ -129,6 +132,8 @@ jobs:
           # manylinux: auto
           container: off
           working-directory: onyx-py
+      - name: Move wheels
+        run: mv onyx-py/dist/* artifacts/
 
       #-- Upload release artifacts
       - name: Upload release artifacts
@@ -136,10 +141,7 @@ jobs:
         with:
           name: ${{ matrix.job.target }}
           path: |
-            target/**/onyx-*
-            target/**/SHA256SUM-onyx-*
-            json-schemas/*
-            onyx-py/dist/*
+            artifacts/**/*
           if-no-files-found: error
           retention-days: 1
 
@@ -161,4 +163,4 @@ jobs:
         draft: false
         tag_name: ${{ github.ref_name }}
         files: |
-          artifacts/*
+          artifacts/**/*
