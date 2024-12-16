@@ -21,12 +21,8 @@ jobs:
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           rustflags: "" # temporarily override "-D warnings"
-      - name: Install required dependencies
-        shell: bash
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y pkg-config libssl-dev
-        # protobuf is required by lance https://github.com/lancedb/lance/issues/3073
+          cache-key: release-ubuntu-latest-x86_64-unknown-linux-gnu
+      # protobuf is required by lance https://github.com/lancedb/lance/issues/3073
       - name: Install Protoc
         uses: arduino/setup-protoc@v3
         with:
