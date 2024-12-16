@@ -78,9 +78,6 @@ onyx/**/poetry.lock
 .fastembed_cache/
 .env
 
-# db
-db.sqlite
-
 **/node_modules
 .turbo/*
 examples/bigquery-sample.key
