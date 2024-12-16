@@ -65,12 +65,14 @@ jobs:
           pnpm -C web-app build
 
       #-- Build core binary
-      - name: Prep Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+      - name: Prep Rust
+        uses: dtolnay/rust-toolchain@stable
         with:
-          rustflags: "" # temporarily override "-D warnings"
-          target: ${{ matrix.job.target }}
-          cache-key: release-${{ matrix.job.os }}-${{ matrix.job.target }}
+          targets: ${{ matrix.job.target }}
+      - name: Prep cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release-${{ matrix.job.os }}-${{ matrix.job.target }}
       - name: Update Rust Toolchain Target
         run: |
           echo "targets = ['${{matrix.job.target}}']" >> rust-toolchain.toml
