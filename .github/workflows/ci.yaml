@@ -11,8 +11,6 @@ on:
       - main
     paths-ignore:
       - 'docs/**'
-    branches-ignore:
-      - 'release-please--*'
 
 env:
   CARGO_TERM_COLOR: always
@@ -27,6 +25,7 @@ defaults:
 
 jobs:
   changesets:
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'autorelease' ) }}
     uses: ./.github/workflows/changesets.yaml
   fmt:
     name: Onyx fmt
