@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.28](https://github.com/onyx-hq/onyx/compare/0.1.27...0.1.28) (2024-12-17)
+
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+* comment out update json schemas to save bandwidth ([2eb4cca](https://github.com/onyx-hq/onyx/commit/2eb4ccac65a0d14c256dda3511a205023f292732))
+* **main:** release 0.1.28 ([#180](https://github.com/onyx-hq/onyx/issues/180)) ([a4c2ae7](https://github.com/onyx-hq/onyx/commit/a4c2ae7dca08c816c86b5e05629c2abbd23d1a68))
+* **main:** release 0.1.28 ([#185](https://github.com/onyx-hq/onyx/issues/185)) ([c194488](https://github.com/onyx-hq/onyx/commit/c19448875cc8c1812f9f11aacdf2f431e97a8835))
+* **main:** release 0.1.29 ([#186](https://github.com/onyx-hq/onyx/issues/186)) ([a16530a](https://github.com/onyx-hq/onyx/commit/a16530a8180c11fa404ace93fba59e8a28a101dd))
+* **main:** release 0.1.30 ([3eaf806](https://github.com/onyx-hq/onyx/commit/3eaf8060d86f9f64b4e257332caf0eedb2e1a526))
+
+
+### <!-- 11 -->💼 Continuous Integration
+
+* change release please settings ([6af45ba](https://github.com/onyx-hq/onyx/commit/6af45baccfa9346b516f83a92dd7833da316a931))
+* release please bootstrap sha ([09d91a2](https://github.com/onyx-hq/onyx/commit/09d91a2f4b0cd70576ee035bccd34723027a8a41))
+
 ## [0.1.27](https://github.com/onyx-hq/onyx/compare/0.1.26...0.1.27) (2024-12-17)
 
 
