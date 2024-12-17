@@ -1,4 +1,5 @@
 {
+  "bootstrap-sha": "38daa29b536cec13dae5629ebd6da6c38b92397d",
   "packages": {
     ".": {
       "changelog-path": "CHANGELOG.md",
