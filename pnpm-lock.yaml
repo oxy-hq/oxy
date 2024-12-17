@@ -10,7 +10,7 @@ importers:
     devDependencies:
       '@commitlint/cli':
         specifier: ^19.6.0
-        version: 19.6.0(@types/node@20.17.6)(typescript@5.7.2)
+        version: 19.6.0(@types/node@22.10.2)(typescript@5.7.2)
       '@commitlint/config-conventional':
         specifier: ^19.5.0
         version: 19.5.0
@@ -148,8 +148,8 @@ importers:
         specifier: ^2.2.37
         version: 2.2.37
       '@types/node':
-        specifier: ^20.8.0
-        version: 20.17.6
+        specifier: ^22.10.2
+        version: 22.10.2
       '@types/react':
         specifier: ^19.0.1
         version: 19.0.1
@@ -158,7 +158,7 @@ importers:
         version: 19.0.2(@types/react@19.0.1)
       '@vitejs/plugin-react-swc':
         specifier: ^3.5.0
-        version: 3.7.1(vite@6.0.3(@types/node@20.17.6)(jiti@1.21.6)(lightningcss@1.25.1)(yaml@2.6.1))
+        version: 3.7.1(vite@6.0.3(@types/node@22.10.2)(jiti@1.21.6)(lightningcss@1.25.1)(yaml@2.6.1))
       eslint:
         specifier: ^9.13.0
         version: 9.14.0(jiti@1.21.6)
@@ -212,7 +212,7 @@ importers:
         version: 8.14.0(eslint@9.14.0(jiti@1.21.6))(typescript@5.6.3)
       vite:
         specifier: ^6.0.3
-        version: 6.0.3(@types/node@20.17.6)(jiti@1.21.6)(lightningcss@1.25.1)(yaml@2.6.1)
+        version: 6.0.3(@types/node@22.10.2)(jiti@1.21.6)(lightningcss@1.25.1)(yaml@2.6.1)
 
 packages:
 
@@ -1775,8 +1775,8 @@ packages:
   '@types/node@18.19.64':
     resolution: {integrity: sha512-955mDqvO2vFf/oL7V3WiUtiz+BugyX8uVbaT2H8oj3+8dRyH2FLiNdowe7eNqRM7IOIZvzDH76EoAT+gwm6aIQ==}
 
-  '@types/node@20.17.6':
-    resolution: {integrity: sha512-VEI7OdvK2wP7XHnsuXbAJnEpEkF6NjSN45QJlL4VGqZSXsnicpesdTWsg9RISeSdYd3yeRj/y3k5KGjUXYnFwQ==}
+  '@types/node@22.10.2':
+    resolution: {integrity: sha512-Xxr6BBRCAOQixvonOye19wnzyDiUtTeqldOOmj3CkeblonbccA12PFwlufvRdrpjXxqnmUaeiU5EOA+7s5diUQ==}
 
   '@types/normalize-package-data@2.4.4':
     resolution: {integrity: sha512-37i+OaWTh9qeK4LSHPsyRC7NahnGotNuZvjLSgcPzblpHB3rrCJxAOgI5gCdKm7coonsaX1Of0ILiTcnZjbfxA==}
@@ -4217,8 +4217,8 @@ packages:
   undici-types@5.26.5:
     resolution: {integrity: sha512-JlCMO+ehdEIKqlFxk6IfVoAUVmgz7cU7zD/h9XZ0qzeosSHmUJVOzSQvvYSYWXkFXC+IfLKSIffhv0sVZup6pA==}
 
-  undici-types@6.19.8:
-    resolution: {integrity: sha512-ve2KP6f/JnbPBFyobGHuerC9g1FYGn/F8n1LWTwNxCEzd6IfqTwUQcNXgEtmmQ6DlRrC1hrSrBnCZPokRrDHjw==}
+  undici-types@6.20.0:
+    resolution: {integrity: sha512-Ny6QZ2Nju20vw1SRHe3d9jVu6gJ+4e3+MMpqu7pqE5HT6WsTSlce++GQmK5UXS8mzV8DSYHrQH+Xrf2jVcuKNg==}
 
   unicode-canonical-property-names-ecmascript@2.0.1:
     resolution: {integrity: sha512-dA8WbNeb2a6oQzAQ55YlT5vQAWGV9WXOsi3SskE3bcCdM0P4SDd+24zS/OCacdRq5BkdsRj9q3Pg6YyQoxIGqg==}
@@ -5272,11 +5272,11 @@ snapshots:
       style-mod: 4.1.2
       w3c-keyname: 2.2.8
 
-  '@commitlint/cli@19.6.0(@types/node@20.17.6)(typescript@5.7.2)':
+  '@commitlint/cli@19.6.0(@types/node@22.10.2)(typescript@5.7.2)':
     dependencies:
       '@commitlint/format': 19.5.0
       '@commitlint/lint': 19.6.0
-      '@commitlint/load': 19.5.0(@types/node@20.17.6)(typescript@5.7.2)
+      '@commitlint/load': 19.5.0(@types/node@22.10.2)(typescript@5.7.2)
       '@commitlint/read': 19.5.0
       '@commitlint/types': 19.5.0
       tinyexec: 0.3.1
@@ -5323,7 +5323,7 @@ snapshots:
       '@commitlint/rules': 19.6.0
       '@commitlint/types': 19.5.0
 
-  '@commitlint/load@19.5.0(@types/node@20.17.6)(typescript@5.7.2)':
+  '@commitlint/load@19.5.0(@types/node@22.10.2)(typescript@5.7.2)':
     dependencies:
       '@commitlint/config-validator': 19.5.0
       '@commitlint/execute-rule': 19.5.0
@@ -5331,7 +5331,7 @@ snapshots:
       '@commitlint/types': 19.5.0
       chalk: 5.3.0
       cosmiconfig: 9.0.0(typescript@5.7.2)
-      cosmiconfig-typescript-loader: 5.1.0(@types/node@20.17.6)(cosmiconfig@9.0.0(typescript@5.7.2))(typescript@5.7.2)
+      cosmiconfig-typescript-loader: 5.1.0(@types/node@22.10.2)(cosmiconfig@9.0.0(typescript@5.7.2))(typescript@5.7.2)
       lodash.isplainobject: 4.0.6
       lodash.merge: 4.6.2
       lodash.uniq: 4.5.0
@@ -6109,7 +6109,7 @@ snapshots:
 
   '@types/conventional-commits-parser@5.0.0':
     dependencies:
-      '@types/node': 20.17.6
+      '@types/node': 22.10.2
 
   '@types/debug@4.1.12':
     dependencies:
@@ -6137,7 +6137,7 @@ snapshots:
 
   '@types/node-fetch@2.6.12':
     dependencies:
-      '@types/node': 20.17.6
+      '@types/node': 22.10.2
       form-data: 4.0.1
 
   '@types/node@17.0.45': {}
@@ -6146,9 +6146,9 @@ snapshots:
     dependencies:
       undici-types: 5.26.5
 
-  '@types/node@20.17.6':
+  '@types/node@22.10.2':
     dependencies:
-      undici-types: 6.19.8
+      undici-types: 6.20.0
 
   '@types/normalize-package-data@2.4.4': {}
 
@@ -6280,10 +6280,10 @@ snapshots:
 
   '@ungap/structured-clone@1.2.0': {}
 
-  '@vitejs/plugin-react-swc@3.7.1(vite@6.0.3(@types/node@20.17.6)(jiti@1.21.6)(lightningcss@1.25.1)(yaml@2.6.1))':
+  '@vitejs/plugin-react-swc@3.7.1(vite@6.0.3(@types/node@22.10.2)(jiti@1.21.6)(lightningcss@1.25.1)(yaml@2.6.1))':
     dependencies:
       '@swc/core': 1.9.2
-      vite: 6.0.3(@types/node@20.17.6)(jiti@1.21.6)(lightningcss@1.25.1)(yaml@2.6.1)
+      vite: 6.0.3(@types/node@22.10.2)(jiti@1.21.6)(lightningcss@1.25.1)(yaml@2.6.1)
     transitivePeerDependencies:
       - '@swc/helpers'
 
@@ -6665,9 +6665,9 @@ snapshots:
     dependencies:
       browserslist: 4.24.2
 
-  cosmiconfig-typescript-loader@5.1.0(@types/node@20.17.6)(cosmiconfig@9.0.0(typescript@5.7.2))(typescript@5.7.2):
+  cosmiconfig-typescript-loader@5.1.0(@types/node@22.10.2)(cosmiconfig@9.0.0(typescript@5.7.2))(typescript@5.7.2):
     dependencies:
-      '@types/node': 20.17.6
+      '@types/node': 22.10.2
       cosmiconfig: 9.0.0(typescript@5.7.2)
       jiti: 1.21.6
       typescript: 5.7.2
@@ -8981,7 +8981,7 @@ snapshots:
 
   undici-types@5.26.5: {}
 
-  undici-types@6.19.8: {}
+  undici-types@6.20.0: {}
 
   unicode-canonical-property-names-ecmascript@2.0.1: {}
 
@@ -9081,13 +9081,13 @@ snapshots:
       '@types/unist': 3.0.3
       vfile-message: 4.0.2
 
-  vite@6.0.3(@types/node@20.17.6)(jiti@1.21.6)(lightningcss@1.25.1)(yaml@2.6.1):
+  vite@6.0.3(@types/node@22.10.2)(jiti@1.21.6)(lightningcss@1.25.1)(yaml@2.6.1):
     dependencies:
       esbuild: 0.24.0
       postcss: 8.4.49
       rollup: 4.26.0
     optionalDependencies:
-      '@types/node': 20.17.6
+      '@types/node': 22.10.2
       fsevents: 2.3.3
       jiti: 1.21.6
       lightningcss: 1.25.1
