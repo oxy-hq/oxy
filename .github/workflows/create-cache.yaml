@@ -7,6 +7,10 @@ env:
   CARGO_TERM_COLOR: always
   MACOSX_DEPLOYMENT_TARGET: "11.0"
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   compile-to-save-cache:
     name: Compile onyx binary to save cache on main branch

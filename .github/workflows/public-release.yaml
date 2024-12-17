@@ -7,6 +7,10 @@ on:
         required: true
         default: latest
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   public-release:
     runs-on: ubuntu-latest
