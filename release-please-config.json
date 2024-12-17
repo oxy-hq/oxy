@@ -23,5 +23,6 @@
   "skip-github-release": false,
   "include-component-in-tag": false,
   "include-v-in-tag": false,
-  "versioning": "default"
+  "versioning": "default",
+  "draft": true
 }
