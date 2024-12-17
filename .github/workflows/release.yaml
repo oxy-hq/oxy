@@ -4,7 +4,7 @@ on:
     inputs:
       tag:
         description: 'Tag to release'
-        required: false
+        required: true
         default: ''
   push:
     tags:
@@ -20,15 +20,11 @@ defaults:
     shell: bash
 
 jobs:
-  changesets:
-    uses: ./.github/workflows/changesets.yaml
   compile:
     concurrency:
       group: onyx-compile-${{ github.ref_name || inputs.tag }}-${{ matrix.job.os }}-${{ matrix.job.target }}
       cancel-in-progress: true
     name: Releasing binary version ${{ github.ref_name || inputs.tag }} for target ${{ matrix.job.target }}
-    needs: [changesets]
-    if: needs.changesets.outputs.onyx == 'true' || startsWith(github.ref, 'refs/tags/')
     runs-on: ${{ matrix.job.os }}
     strategy:
       fail-fast: false
