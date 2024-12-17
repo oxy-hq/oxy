@@ -1,7 +1,6 @@
 mod init;
 
 use crate::ai::agent::AgentResult;
-use crate::ai::utils::record_batches_to_json;
 use crate::ai::utils::record_batches_to_table;
 use crate::config::*;
 use crate::utils::print_colored_sql;
@@ -398,7 +397,7 @@ async fn handle_sql_file(
     config: &Config,
     variables: &[(String, String)],
 ) -> Result<String, Box<dyn std::error::Error>> {
-    let warehouse = warehouse.ok_or_else(|| "Warehouse is required for SQL files".to_string())?;
+    let warehouse = warehouse.ok_or_else(|| "Warehouse is required for running SQL file. Please provide the warehouse using --warehouse or set a default warehouse in config.yml".to_string())?;
     let content = std::fs::read_to_string(file_path)?;
     let wh_config = config.find_warehouse(&warehouse)?;
 
@@ -489,9 +488,9 @@ pub async fn handle_run_command(
         }
         Some("sql") => {
             let config = load_config()?;
+            let warehouse = run_args.warehouse.or(config.clone().defaults.warehouse);
             let sql_result =
-                handle_sql_file(&file_path, run_args.warehouse, &config, &run_args.variables)
-                    .await?;
+                handle_sql_file(&file_path, warehouse, &config, &run_args.variables).await?;
             Ok(RunResult::Sql(sql_result))
         }
         _ => Err("Invalid file extension. Must be .workflow.yml, .agent.yml, or .sql".into()),

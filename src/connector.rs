@@ -164,9 +164,7 @@ impl Connector {
 
 pub fn load_result(file_path: &str) -> anyhow::Result<(Vec<RecordBatch>, SchemaRef)> {
     let file = File::open(file_path).map_err(|_| {
-        anyhow::Error::msg(format!(
-            "Executed query did not generate a valid output file. If you are using an agent to generate the query, consider giving it a shorter prompt.",
-        ))
+        anyhow::Error::msg("Executed query did not generate a valid output file. If you are using an agent to generate the query, consider giving it a shorter prompt.".to_string())
     })?;
     let file = File::open(file_path)?;
     let reader = FileReader::try_new(file, None)?;

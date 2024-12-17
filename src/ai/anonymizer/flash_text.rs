@@ -83,7 +83,7 @@ impl FlashTextAnonymizer {
 
                 match source {
                     FlashTextSourceType::Keywords { replacement, .. } => {
-                        self.add_keyword(&line, replacement)?;
+                        self.add_keyword(line, replacement)?;
                     }
                     FlashTextSourceType::Mapping { delimiter, .. } => {
                         let mut parts = line.split(delimiter);
@@ -104,12 +104,12 @@ impl FlashTextAnonymizer {
 
     pub fn add_keyword(&mut self, word: &str, replacement: &str) -> Result<()> {
         if self.pluralize {
-            let singular_word = pluralize(&word, 1, false);
-            let plural_word = pluralize(&word, 2, false);
-            self.add_keyword_internal(&singular_word, &replacement)?;
-            self.add_keyword_internal(&plural_word, &replacement)?;
+            let singular_word = pluralize(word, 1, false);
+            let plural_word = pluralize(word, 2, false);
+            self.add_keyword_internal(&singular_word, replacement)?;
+            self.add_keyword_internal(&plural_word, replacement)?;
         } else {
-            self.add_keyword_internal(word, &replacement)?;
+            self.add_keyword_internal(word, replacement)?;
         }
         Ok(())
     }

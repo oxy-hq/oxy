@@ -57,6 +57,14 @@ pub struct Defaults {
     #[garde(length(min = 1))]
     #[garde(custom(validate_agent_exists))]
     pub agent: String,
+    #[garde(length(min = 1))]
+    #[garde(custom(|wh: &Option<String>, ctx: &ValidationContext| {
+        match wh {
+            Some(warehouse) => validate_warehouse_exists(warehouse.as_str(), ctx),
+            None => Ok(()),
+        }
+    }))]
+    pub warehouse: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Validate, Clone, JsonSchema)]
@@ -371,7 +379,7 @@ impl ProjectPath {
             return Self::init();
         }
 
-        return project_path;
+        project_path
     }
 
     pub fn get_path(relative_path: &str) -> PathBuf {
