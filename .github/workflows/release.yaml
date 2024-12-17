@@ -24,7 +24,7 @@ jobs:
     concurrency:
       group: onyx-compile-${{ inputs.tag || github.ref_name }}-${{ matrix.job.os }}-${{ matrix.job.target }}
       cancel-in-progress: true
-    name: Releasing binary version ${{ inputs.tag || github.ref_name }} for target ${{ matrix.job.target }}
+    name: Compile binary version ${{ inputs.tag || github.ref_name }} for target ${{ matrix.job.target }}
     runs-on: ${{ matrix.job.os }}
     strategy:
       fail-fast: false
