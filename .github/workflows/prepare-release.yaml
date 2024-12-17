@@ -50,7 +50,7 @@ jobs:
     concurrency:
       group: prepare-release-${{ github.ref_name }}
       cancel-in-progress: false
-    name: Prepare release PR and changelog for ${{ github.ref_name }}
+    name: Release-please
     runs-on: ubuntu-latest
     steps:
       - uses: actions/create-github-app-token@v1
@@ -70,7 +70,7 @@ jobs:
         with:
           token: ${{ steps.app-token.outputs.token }}
           release-type: rust
-          skip-github-release: true
+          # skip-github-release: true
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
   update-json-schemas:
