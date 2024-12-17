@@ -46,7 +46,7 @@ jobs:
         uses: robinraju/release-downloader@v1
         with:
           preRelease: false
-          tag: ${{ steps.declare-release-tag.outputs.release-tag }}
+          tag: ${{ steps.declare-release-tag.outputs.release_tag }}
           zipBall: false
           token: ${{ steps.app-token.outputs.token }}
           fileName: "*"
