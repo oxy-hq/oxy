@@ -129,7 +129,6 @@ pub struct RunOptions {
 
 impl<'py> FromPyObject<'py> for RunOptions {
     fn extract_bound(ob: &Bound<'py, PyAny>) -> pyo3::PyResult<Self> {
-        println!("Extracting RunOption");
         let warehouse = ob
             .get_item("warehouse")
             .map(|v| v.extract::<Option<String>>().unwrap_or(None))
