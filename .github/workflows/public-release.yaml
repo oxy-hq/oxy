@@ -16,6 +16,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Declare release tag
+        env:
+          GH_TOKEN: ${{ github.token }}
         id: declare-release-tag
         run: |
           if [ "${{ inputs.ref }}" = "latest" ]; then
