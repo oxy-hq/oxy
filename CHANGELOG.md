@@ -2,31 +2,6 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.1.28](https://github.com/onyx-hq/onyx/compare/v0.1.27...0.1.28) (2024-12-17)
-
-
-### <!-- 1 -->🐛 Bug Fixes
-
-* installation script missing arm64 ([07ba05f](https://github.com/onyx-hq/onyx/commit/07ba05fdfdd0d1971cdae9c49c9437a96f700619))
-
-
-### <!-- 7 -->⚙️ Miscellaneous Tasks
-
-* add release-type rust ([39563e6](https://github.com/onyx-hq/onyx/commit/39563e6087db3c790d565a0bf47dc151404472f0))
-* comment out update json schemas to save bandwidth ([2eb4cca](https://github.com/onyx-hq/onyx/commit/2eb4ccac65a0d14c256dda3511a205023f292732))
-* ignore label autorelease when running ci ([f281e0a](https://github.com/onyx-hq/onyx/commit/f281e0a38932746ef023f34e2b130471fb4fc14f))
-* **main:** release 0.1.27 ([#178](https://github.com/onyx-hq/onyx/issues/178)) ([c7347de](https://github.com/onyx-hq/onyx/commit/c7347de36c3da942718cc09791946bd4e5c37931))
-* **main:** release 0.1.27 ([#179](https://github.com/onyx-hq/onyx/issues/179)) ([91779ab](https://github.com/onyx-hq/onyx/commit/91779abcbc62ffcd52c5e60bd8174e7964f8cb44))
-* **main:** release 0.1.28 ([#180](https://github.com/onyx-hq/onyx/issues/180)) ([a4c2ae7](https://github.com/onyx-hq/onyx/commit/a4c2ae7dca08c816c86b5e05629c2abbd23d1a68))
-* match release manifest with current ver ([b5a3db6](https://github.com/onyx-hq/onyx/commit/b5a3db6e54ae9ad49db4e046435e215b375c2184))
-
-
-### <!-- 11 -->💼 Continuous Integration
-
-* change config for release please action ([0d09dc9](https://github.com/onyx-hq/onyx/commit/0d09dc933a92903969983da40096336f28c4fe1d))
-* release please bootstrap sha ([09d91a2](https://github.com/onyx-hq/onyx/commit/09d91a2f4b0cd70576ee035bccd34723027a8a41))
-* update condition for CI to run when autoreleasing ([629846b](https://github.com/onyx-hq/onyx/commit/629846b4d8cea0489d44088f1877160415542839))
-
 ## [0.1.27](https://github.com/onyx-hq/onyx/compare/0.1.26...0.1.27) (2024-12-17)
 
 
