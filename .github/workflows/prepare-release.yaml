@@ -45,12 +45,12 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
   release-pr:
+    needs: [changesets]
+    if: needs.changesets.outputs.onyx == 'true' || github.event_name == 'workflow_dispatch'
     concurrency:
       group: prepare-release-${{ github.ref_name }}
       cancel-in-progress: false
     name: Prepare release PR and changelog for ${{ github.ref_name }}
-    needs: [changesets]
-    if: needs.changesets.outputs.onyx == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/create-github-app-token@v1
@@ -71,3 +71,35 @@ jobs:
           token: ${{ steps.app-token.outputs.token }}
           release-type: rust
           skip-github-release: true
+  update-json-schemas:
+    name: Update JSON Schemas
+    needs: [changesets]
+    if: needs.changesets.outputs.onyx == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: json-schema-${{ github.ref_name }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prep Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - name: Prep cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release-ubuntu-latest-x86_64-unknown-linux-gnu
+      # protobuf is required by lance https://github.com/lancedb/lance/issues/3073
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Update json schemas
+        shell: bash
+        run: |
+          cargo run -- gen-config-schema --check
+      - name: Commit json schemas changes
+        uses: EndBug/add-and-commit@v9 # You can change this to use a specific version.
+        with:
+          add: "json-schemas"
+          message: "Update JSON Schemas"

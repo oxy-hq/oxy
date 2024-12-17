@@ -29,7 +29,10 @@ jobs:
         filters: |
           onyx:
             - "src/**"
-            - "Cargo.toml"
-            - "Cargo.lock"
-            - "README.md"
-            - "LICENSE"
+            - "**/Cargo.toml"
+            - "**/Cargo.lock"
+            - "entity/**"
+            - "migration/**"
+            - "web-app/**"
+            - "pnpm-lock.yaml"
+            - "onyx-py/**"
