@@ -70,7 +70,8 @@ jobs:
         with:
           token: ${{ steps.app-token.outputs.token }}
           release-type: rust
-          # skip-github-release: true
+          include-component-in-tag: false
+          skip-github-release: false
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
   update-json-schemas:
