@@ -166,7 +166,9 @@ jobs:
     - name: List all artifacts
       run: ls -R ./artifacts
     - name: Combine checksums
-      run: cat artifacts/onyx-*-SHA256SUM.txt | tee artifacts/SHA256SUMS.txt
+      run: cat artifacts/SHA256SUM-onyx-*.txt | tee artifacts/SHA256SUMS.txt
+    - name: Ensure binaries are executable
+      run: chmod +x artifacts/onyx-*
     - name: Upload files to github release
       uses: softprops/action-gh-release@v2
       with:
