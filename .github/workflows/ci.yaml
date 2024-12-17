@@ -25,7 +25,7 @@ defaults:
 
 jobs:
   changesets:
-    if: ${{ !contains(github.event.pull_request.labels.*.name, 'autorelease' ) }}
+    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
     uses: ./.github/workflows/changesets.yaml
   fmt:
     name: Onyx fmt
