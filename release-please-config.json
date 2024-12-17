@@ -1,12 +1,9 @@
 {
-  "bootstrap-sha": "38daa29b536cec13dae5629ebd6da6c38b92397d",
   "packages": {
     ".": {
       "changelog-path": "CHANGELOG.md",
       "bump-minor-pre-major": true,
       "bump-patch-for-minor-pre-major": true,
-      "draft": true,
-      "prerelease": false,
       "release-type": "rust"
     }
   },
