@@ -139,6 +139,9 @@ jobs:
       - name: Move wheels
         run: mv onyx-py/dist/* artifacts/
 
+      - name: Copy changelog
+        run: cp CHANGELOG.md artifacts/
+
       #-- Upload release artifacts
       - name: Upload release artifacts
         uses: actions/upload-artifact@v4
@@ -161,7 +164,7 @@ jobs:
       run: ls -R ./artifacts
     - name: Combine checksums
       run: cat artifacts/onyx-*-SHA256SUM.txt | tee artifacts/SHA256SUMS.txt
-    - name: Private github release
+    - name: Upload files to github release
       uses: softprops/action-gh-release@v2
       with:
         draft: false

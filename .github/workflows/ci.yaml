@@ -11,6 +11,8 @@ on:
       - main
     paths-ignore:
       - 'docs/**'
+    branches-ignore:
+      - 'release-please--*'
 
 env:
   CARGO_TERM_COLOR: always
