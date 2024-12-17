@@ -153,9 +153,7 @@ impl Config {
             .iter()
             .find(|w| w.name == warehouse_name)
             .cloned()
-            .ok_or_else(|| {
-                io::Error::new(io::ErrorKind::NotFound, "Default warehouse not found").into()
-            })
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "Warehouse not found").into())
     }
 
     pub fn find_retrieval(&self, retrieval_name: &str) -> anyhow::Result<Retrieval> {

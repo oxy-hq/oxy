@@ -31,7 +31,7 @@ use tools::{ExecuteSQLParams, ExecuteSQLTool, RetrieveParams, RetrieveTool, Tool
 pub async fn setup_agent(
     agent_file: Option<&PathBuf>,
     file_format: &FileFormat,
-) -> anyhow::Result<(Box<dyn LLMAgent + Send + Sync>)> {
+) -> anyhow::Result<Box<dyn LLMAgent + Send + Sync>> {
     let config = load_config()?;
 
     let (agent_config, agent_name) = config.load_agent_config(agent_file)?;
@@ -214,7 +214,7 @@ async fn prepare_contexts(
         };
     }
 
-    return (tool_ctx, oth_ctx, toolbox);
+    (tool_ctx, oth_ctx, toolbox)
 }
 
 fn load_queries(paths: &Vec<String>) -> Vec<String> {

@@ -46,10 +46,9 @@ pub struct AskRequest {
 async fn get_agent(agent_path: &str) -> Box<dyn LLMAgent + Send> {
     let file_path = ProjectPath::get_path(agent_path);
 
-    let agent = ai::setup_agent(Some(&file_path), &FileFormat::Markdown)
+    (ai::setup_agent(Some(&file_path), &FileFormat::Markdown)
         .await
-        .unwrap();
-    agent
+        .unwrap()) as _
 }
 
 pub async fn ask(extract::Json(payload): extract::Json<AskRequest>) -> impl IntoResponse {

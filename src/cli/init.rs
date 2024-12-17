@@ -228,6 +228,7 @@ fn create_config_file(config_path: &Path) -> Result<(), InitError> {
         }],
         defaults: Defaults {
             agent: "default".to_string(),
+            warehouse: Some("primary_warehouse".to_string()),
         },
     };
 
