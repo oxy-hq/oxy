@@ -10,6 +10,10 @@ on:
 
 permissions: read-all
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   changesets:
     runs-on: ubuntu-latest

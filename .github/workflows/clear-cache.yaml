@@ -6,6 +6,10 @@ on:
 permissions:
   actions: write
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   clear-cache:
     runs-on: ubuntu-latest

@@ -5,6 +5,10 @@ on:
     branches:
       - main
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   changesets:
     uses: ./.github/workflows/changesets.yaml
