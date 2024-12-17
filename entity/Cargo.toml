@@ -1,6 +1,6 @@
 [package]
 name = "entity"
-version = "0.2.0"
+version = "0.1.27"
 edition = "2021"
 publish = false
 

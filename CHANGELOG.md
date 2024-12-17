@@ -2,6 +2,60 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.27](https://github.com/onyx-hq/onyx/compare/0.1.26...0.1.27) (2024-12-17)
+
+
+### <!-- 0 -->🚀 Features
+
+* add release please boostrap ([38daa29](https://github.com/onyx-hq/onyx/commit/38daa29b536cec13dae5629ebd6da6c38b92397d))
+* **ENG-1167:** separate out queries from tool context rename as context ([#171](https://github.com/onyx-hq/onyx/issues/171)) ([250c7b9](https://github.com/onyx-hq/onyx/commit/250c7b9a6a0c60ac404401027af5091245c6ec8a))
+* **ENG-1171:** allow for default warehouse argument in configyml ([#174](https://github.com/onyx-hq/onyx/issues/174)) ([2b6b803](https://github.com/onyx-hq/onyx/commit/2b6b803834d923172ab630785a5062dd4d32e9e2))
+* remove action rust lang because it makes caching harder ([#160](https://github.com/onyx-hq/onyx/issues/160)) ([f11c73e](https://github.com/onyx-hq/onyx/commit/f11c73e5f8133b161f77f801ee07c52515b3cfa7))
+* retry  [#158](https://github.com/onyx-hq/onyx/issues/158) automatic release  by combining release-plz and release-please ([#161](https://github.com/onyx-hq/onyx/issues/161)) ([cf333b2](https://github.com/onyx-hq/onyx/commit/cf333b2f4e1d0ccbdcd80a23f80188c596b851c7))
+* support taking in onyx version for instllation script ([a94b7cf](https://github.com/onyx-hq/onyx/commit/a94b7cf1bc595ec6bfdf36b8de66cd517561b037))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* installation script missing arm64 ([07ba05f](https://github.com/onyx-hq/onyx/commit/07ba05fdfdd0d1971cdae9c49c9437a96f700619))
+
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+* add release-type rust ([39563e6](https://github.com/onyx-hq/onyx/commit/39563e6087db3c790d565a0bf47dc151404472f0))
+* add some configs for release-please ([35b88b6](https://github.com/onyx-hq/onyx/commit/35b88b6f6aad5ef89d40cc94aac435e691010cf3))
+* bootstrap releases for path: . ([a497ecd](https://github.com/onyx-hq/onyx/commit/a497ecda9bddc64d148770cac900af65332aa4bd))
+* ignore label autorelease when running ci ([f281e0a](https://github.com/onyx-hq/onyx/commit/f281e0a38932746ef023f34e2b130471fb4fc14f))
+* **main:** release 0.1.27 ([#178](https://github.com/onyx-hq/onyx/issues/178)) ([c7347de](https://github.com/onyx-hq/onyx/commit/c7347de36c3da942718cc09791946bd4e5c37931))
+* **main:** release 0.2.0 ([#173](https://github.com/onyx-hq/onyx/issues/173)) ([a5f60d6](https://github.com/onyx-hq/onyx/commit/a5f60d6ab265fa51351b7c90bc3bfe8ab0f0ed68))
+* match release manifest with current ver ([b5a3db6](https://github.com/onyx-hq/onyx/commit/b5a3db6e54ae9ad49db4e046435e215b375c2184))
+* release please should use draft ([f39231e](https://github.com/onyx-hq/onyx/commit/f39231e38ee713923cb4ef8d89fbfbe514b431b5))
+* remove excessive steps ([dfdd2ad](https://github.com/onyx-hq/onyx/commit/dfdd2adacb73495979815a50e2eac2ce329d2137))
+
+
+### <!-- 10 -->💼 Build System
+
+* **deps-dev:** bump @types/node from 20.17.6 to 22.10.2 ([#164](https://github.com/onyx-hq/onyx/issues/164)) ([6e5ad0f](https://github.com/onyx-hq/onyx/commit/6e5ad0f41e8f2dcbb8860a51fb3eabc012e020cd))
+* **deps-dev:** bump eslint-plugin-react-refresh from 0.4.14 to 0.4.16 ([#163](https://github.com/onyx-hq/onyx/issues/163)) ([a86b1cc](https://github.com/onyx-hq/onyx/commit/a86b1cc3858e60be29a484fa1be4cf7109cba985))
+* **deps-dev:** bump lint-staged from 15.2.10 to 15.2.11 ([#162](https://github.com/onyx-hq/onyx/issues/162)) ([1c44a0d](https://github.com/onyx-hq/onyx/commit/1c44a0d4aae7205376bca9b73e662c21881c273a))
+* **deps:** bump ahooks from 3.8.1 to 3.8.4 ([#166](https://github.com/onyx-hq/onyx/issues/166)) ([693f0ca](https://github.com/onyx-hq/onyx/commit/693f0cafc9891a65b8f89f7fcf3b9e93ab11d841))
+* **deps:** bump async-openai from 0.24.1 to 0.26.0 ([#167](https://github.com/onyx-hq/onyx/issues/167)) ([27806f6](https://github.com/onyx-hq/onyx/commit/27806f6d8b0ecd45818088a163c2cb5c1cea8ffb))
+* **deps:** bump home from 0.5.9 to 0.5.11 ([#168](https://github.com/onyx-hq/onyx/issues/168)) ([adf2ddc](https://github.com/onyx-hq/onyx/commit/adf2ddc49799096500eea46dc44916d2267d0aff))
+
+
+### <!-- 11 -->💼 Continuous Integration
+
+* add tag true ([4e97461](https://github.com/onyx-hq/onyx/commit/4e974619fd51de26ee5dbabd1b42f653f188535b))
+* adjust release-please ([f6eccfc](https://github.com/onyx-hq/onyx/commit/f6eccfc8e47b8e127e5110ba8311a49fd0495c1f))
+* change config for release please action ([0d09dc9](https://github.com/onyx-hq/onyx/commit/0d09dc933a92903969983da40096336f28c4fe1d))
+* change order of runs and unify json schemas into prep release ([f8bb50c](https://github.com/onyx-hq/onyx/commit/f8bb50c2f3a19f0c018f2e90787664ba34432eb4))
+* enable github release for release-please ([99e50c7](https://github.com/onyx-hq/onyx/commit/99e50c74d8500ae2f46a18630329106f7143ac9b))
+* fix path for release artifacts ([42cc93c](https://github.com/onyx-hq/onyx/commit/42cc93c106fb78567c9572f613ff0d3434f71053))
+* ignore ci when running on release branch ([176d43f](https://github.com/onyx-hq/onyx/commit/176d43fd84650ea73fbf068dcd3cd10ab16ee0b8))
+* try to sync configuration of release please with git cliff ([3046031](https://github.com/onyx-hq/onyx/commit/304603102cb3d2037ae6305c6e3567fe98ba65a8))
+* unify into release-please ([cbdbb8c](https://github.com/onyx-hq/onyx/commit/cbdbb8c6ccb980907a222b3837fe04a5c8907337))
+* update condition for CI to run when autoreleasing ([629846b](https://github.com/onyx-hq/onyx/commit/629846b4d8cea0489d44088f1877160415542839))
+
 ## [onyx-v0.1.24] - 2024-12-16
 
 ### 🚀 Features
