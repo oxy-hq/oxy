@@ -2,18 +2,6 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.2.0](https://github.com/onyx-hq/onyx/compare/0.1.25...v0.2.0) (2024-12-17)
-
-
-### Features
-
-* add changelog ([25db152](https://github.com/onyx-hq/onyx/commit/25db152245eccdce829a1d2e6b94ae2e06b68ca4))
-* **ENG-1167:** separate out queries from tool context rename as context ([#171](https://github.com/onyx-hq/onyx/issues/171)) ([250c7b9](https://github.com/onyx-hq/onyx/commit/250c7b9a6a0c60ac404401027af5091245c6ec8a))
-* **ENG-1171:** allow for default warehouse argument in configyml ([#174](https://github.com/onyx-hq/onyx/issues/174)) ([2b6b803](https://github.com/onyx-hq/onyx/commit/2b6b803834d923172ab630785a5062dd4d32e9e2))
-* prep for semantic release automatically ([#158](https://github.com/onyx-hq/onyx/issues/158)) ([d5bfbdf](https://github.com/onyx-hq/onyx/commit/d5bfbdfc7d315043138d016c9194993e653479eb))
-* remove action rust lang because it makes caching harder ([#160](https://github.com/onyx-hq/onyx/issues/160)) ([f11c73e](https://github.com/onyx-hq/onyx/commit/f11c73e5f8133b161f77f801ee07c52515b3cfa7))
-* retry  [#158](https://github.com/onyx-hq/onyx/issues/158) automatic release  by combining release-plz and release-please ([#161](https://github.com/onyx-hq/onyx/issues/161)) ([cf333b2](https://github.com/onyx-hq/onyx/commit/cf333b2f4e1d0ccbdcd80a23f80188c596b851c7))
-
 ## [onyx-v0.1.24] - 2024-12-16
 
 ### 🚀 Features
