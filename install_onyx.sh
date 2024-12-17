@@ -46,7 +46,7 @@ x86_64)
 		TARGET="x86_64-unknown-linux-gnu"
 	fi
 	;;
-aarch64)
+aarch64 | arm64)
 	if [ "$OS" == "darwin" ]; then
 		TARGET="aarch64-apple-darwin"
 	else
