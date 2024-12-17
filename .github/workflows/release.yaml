@@ -105,6 +105,7 @@ jobs:
           else
             cargo build --release --target ${{ matrix.job.target }}
           fi
+          mkdir -p artifacts
           mv target/${{ matrix.job.target }}/release/onyx artifacts/onyx-${{ matrix.job.target }}
 
       #-- Build json schema
