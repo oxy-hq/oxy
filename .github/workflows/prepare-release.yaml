@@ -69,9 +69,6 @@ jobs:
         uses: googleapis/release-please-action@v4
         with:
           token: ${{ steps.app-token.outputs.token }}
-          release-type: rust
-          include-component-in-tag: false
-          skip-github-release: false
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
   update-json-schemas:
