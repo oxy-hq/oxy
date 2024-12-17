@@ -5865,6 +5865,7 @@ dependencies = [
  "fastembed",
  "futures",
  "garde",
+ "glob",
  "hf-hub",
  "home",
  "include_dir",

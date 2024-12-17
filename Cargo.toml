@@ -90,6 +90,7 @@ tabled = "0.17.0"
 terminal_size = "0.4.1"
 pyo3 = {version = "0.23.3", features = ["experimental-async", "extension-module"] }
 pyo3-arrow = "0.6.0"
+glob = "0.3.1"
 slugify = "0.1.0"
 
 [patch.crates-io]

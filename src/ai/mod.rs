@@ -5,15 +5,18 @@ pub mod toolbox;
 pub mod tools;
 pub mod utils;
 
+use glob::glob;
+
 use crate::{
     config::{
         load_config,
         model::{
-            AgentConfig, AnonymizerConfig, Config, FileFormat, Model, ProjectPath, ToolConfig,
+            AgentConfig, AnonymizerConfig, Config, Context, FileFormat, Model, ProjectPath,
+            ToolConfig,
         },
     },
     connector::Connector,
-    union_tools,
+    union_tools, StyledText,
 };
 use agent::{LLMAgent, OpenAIAgent};
 use anonymizer::{base::Anonymizer, flash_text::FlashTextAnonymizer};
@@ -21,7 +24,7 @@ use async_trait::async_trait;
 use minijinja::{context, render, Value};
 use schemars::JsonSchema;
 use serde::Deserialize;
-use std::{fs, path::PathBuf};
+use std::{collections::HashMap, fs, path::PathBuf};
 use toolbox::ToolBox;
 use tools::{ExecuteSQLParams, ExecuteSQLTool, RetrieveParams, RetrieveTool, Tool};
 
@@ -43,9 +46,9 @@ pub async fn from_config(
     file_format: &FileFormat,
 ) -> anyhow::Result<Box<dyn LLMAgent + Send + Sync>> {
     let model = config.find_model(&agent_config.model).unwrap();
-    let mut tools = ToolBox::<MultiTool>::new();
-    let ctx = fill_tools(&mut tools, agent_name, agent_config, config).await;
-    let system_instructions = render!(&agent_config.system_instructions, ctx);
+    let (tools, context, toolbox) = prepare_contexts(agent_config, config).await;
+    let system_instructions =
+        render!(&agent_config.system_instructions, tools => tools, context => context);
     let anonymizer: Option<Box<dyn Anonymizer + Send + Sync>> = match &agent_config.anonymize {
         None => None,
         Some(AnonymizerConfig::FlashText {
@@ -72,7 +75,7 @@ pub async fn from_config(
                 model_ref,
                 None,
                 api_key,
-                tools,
+                toolbox,
                 system_instructions,
                 agent_config.output_format.clone(),
                 anonymizer,
@@ -88,7 +91,7 @@ pub async fn from_config(
             model_ref,
             Some(api_url),
             api_key,
-            tools,
+            toolbox,
             system_instructions,
             agent_config.output_format.clone(),
             anonymizer,
@@ -106,13 +109,66 @@ union_tools!(
     RetrieveParams
 );
 
-async fn fill_tools(
-    toolbox: &mut ToolBox<MultiTool>,
-    agent_name: &str,
+fn list_files_from_pattern(pattern: String) -> Vec<PathBuf> {
+    let paths_rs = glob(pattern.as_str());
+    let mut paths: Vec<PathBuf> = vec![];
+    match paths_rs {
+        Ok(paths_rs) => {
+            for path in paths_rs {
+                match path {
+                    Ok(p) => {
+                        paths.push(p);
+                    }
+                    Err(e) => {
+                        println!("{} {:?}", "Error loading files".warning(), e);
+                    }
+                }
+            }
+        }
+        Err(e) => {
+            println!("{} {:?}", "Error loading files".warning(), e);
+        }
+    }
+
+    paths
+}
+
+fn create_jinja_context(ctxs: &Vec<Context>) -> HashMap<String, Vec<String>> {
+    let mut ctx_map: HashMap<String, Vec<String>> = HashMap::new();
+    for c in ctxs {
+        let mut paths: Vec<PathBuf> = vec![];
+        for src in c.src.clone() {
+            paths.extend(list_files_from_pattern(src));
+        }
+        let mut contents = vec![];
+        for path in paths {
+            match fs::read_to_string(path) {
+                Ok(content) => {
+                    contents.push(content);
+                }
+                Err(e) => {
+                    println!("{} {:?}", "Error reading context".warning(), e);
+                }
+            }
+        }
+
+        ctx_map.insert(c.name.clone(), contents);
+    }
+
+    ctx_map
+}
+
+async fn prepare_contexts(
     agent_config: &AgentConfig,
     config: &Config,
-) -> Value {
+) -> (Value, Value, ToolBox<MultiTool>) {
+    let mut toolbox = ToolBox::<MultiTool>::new();
     let mut tool_ctx = context! {};
+    let mut oth_ctx = context! {};
+    if agent_config.context.is_some() {
+        let ctxs: &Vec<Context> = agent_config.context.as_ref().unwrap();
+        oth_ctx = Value::from(create_jinja_context(ctxs));
+    }
 
     for tool_config in agent_config.tools.as_ref().unwrap() {
         match tool_config {
@@ -127,11 +183,11 @@ async fn fill_tools(
                 let warehouse_info = Connector::new(&warehouse_config)
                     .load_warehouse_info()
                     .await;
-                tool_ctx = context! {
+                oth_ctx = context! {
                     warehouse => warehouse_info,
-                    ..tool_ctx,
+                    ..oth_ctx,
                 };
-                let tool = ExecuteSQLTool {
+                let tool: ExecuteSQLTool = ExecuteSQLTool {
                     config: warehouse_config.clone(),
                     tool_description: description.to_string(),
                     output_format: agent_config.output_format.clone(),
@@ -157,7 +213,8 @@ async fn fill_tools(
             }
         };
     }
-    tool_ctx
+
+    return (tool_ctx, oth_ctx, toolbox);
 }
 
 fn load_queries(paths: &Vec<String>) -> Vec<String> {

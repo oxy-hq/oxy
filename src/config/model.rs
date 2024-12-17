@@ -31,8 +31,15 @@ pub struct Config {
 }
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema)]
+pub struct Context {
+    pub name: String,
+    pub src: Vec<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, JsonSchema)]
 pub struct AgentConfig {
     pub model: String,
+    pub context: Option<Vec<Context>>,
     pub retrieval: Option<String>,
     pub system_instructions: String,
     #[serde(default = "default_tools")]

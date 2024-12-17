@@ -2,6 +2,11 @@
 
 model: "openai-4o-mini"
 retrieval: "default"
+context:
+  - name: queries
+    src: # use explicit filepath
+      - data/*.sql # allow for wildcards, support non-sql file-types.
+      - data/example_intervals.sql # allow for specific files
 system_instructions: |
   ## Instructions
   You are an Data Analyst expert. Your task is to help the user generate and execute sql query to answer user's question.
@@ -14,11 +19,11 @@ system_instructions: |
   - The `sql` should be returned in plain text, not in JSON.
 
   ### You have access to the following warehouses and tables, ONLY use the provided warehouse and tables, columns:
-  **Dataset: {{ ctx.warehouse.name }}**
-  **Dialect: {{ ctx.warehouse.type }}**
+  **Dataset: {{ context.warehouse.name }}**
+  **Dialect: {{ context.warehouse.type }}**
   **Tables:**
   ```
-  {% for table in ctx.warehouse.tables %}
+  {% for table in context.warehouse.tables %}
   {{ table }}
 
   {% endfor %}
@@ -26,7 +31,7 @@ system_instructions: |
 
   ### You can use these queries as hints:
   ```
-  {% for query in ctx.queries %}
+  {% for query in context.queries %}
   {{ query }}
   {% endfor %}
   ```
