@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.29](https://github.com/onyx-hq/onyx/compare/0.1.28...0.1.29) (2024-12-17)
+
+
+### <!-- 11 -->💼 Continuous Integration
+
+* add missing artifacts dir ([d2d929d](https://github.com/onyx-hq/onyx/commit/d2d929dc264560265f07a4e885757c62bb43dcc5))
+* remove draft setting or else tags wont be published ([157e6e1](https://github.com/onyx-hq/onyx/commit/157e6e1f0892e885736c690b4a8f40bae901f763))
+
 ## [0.1.28](https://github.com/onyx-hq/onyx/compare/0.1.27...0.1.28) (2024-12-17)
 
 
