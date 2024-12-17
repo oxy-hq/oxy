@@ -6,8 +6,13 @@ INSTALL_DIR="$HOME/.local/bin"
 # Ensure the install directory exists
 mkdir -p "$INSTALL_DIR"
 
-# Get the latest release tag from GitHub API
-LATEST_TAG=$(curl -s https://api.github.com/repos/$REPO/releases/latest | grep 'tag_name' | cut -d\" -f4)
+# Get the version to install from the environment, default to the latest release tag if not provided
+VERSION=${ONYX_VERSION:-latest}
+
+# Get the latest release tag from GitHub API if version is latest
+if [ "$VERSION" == "latest" ]; then
+  VERSION=$(curl -s https://api.github.com/repos/$REPO/releases/latest | grep 'tag_name' | cut -d\" -f4)
+fi
 
 # Determine the OS and architecture
 OS=$(uname | tr '[:upper:]' '[:lower:]')
@@ -55,7 +60,7 @@ aarch64)
 esac
 
 # Download the release binary
-BINARY_URL="https://github.com/$REPO/releases/download/$LATEST_TAG/onyx-$TARGET"
+BINARY_URL="https://github.com/$REPO/releases/download/$VERSION/onyx-$TARGET"
 curl -L $BINARY_URL -o onyx-$TARGET
 
 # Make the binary executable
@@ -64,4 +69,4 @@ chmod +x onyx-$TARGET
 # Move the binary to the install directory
 mv onyx-$TARGET $INSTALL_DIR/onyx
 
-echo "Onyx version $LATEST_TAG for $TARGET has been installed successfully!"
+echo "Onyx version $VERSION for $TARGET has been installed successfully!"
