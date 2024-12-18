@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.30](https://github.com/onyx-hq/onyx/compare/0.1.29...0.1.30) (2024-12-18)
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* code review ([ffd79d2](https://github.com/onyx-hq/onyx/commit/ffd79d224651205c4b02fa158d4d3169bc5270d5))
+
+
+### <!-- 11 -->💼 Continuous Integration
+
+* add GH_TOKEN environment variable for release tag declaration ([50d1bf1](https://github.com/onyx-hq/onyx/commit/50d1bf13e83cd0e5bd38f9730bca838b1bac1bb5))
+* allow artifacts to be merged ([319df1e](https://github.com/onyx-hq/onyx/commit/319df1eaead508e29de91e2b83c70b5904f837b7))
+* ensure releases are executable ([e50ce4a](https://github.com/onyx-hq/onyx/commit/e50ce4ac839344be20e755d5f3de56341dbc4d69))
+* fix output variable name for release tag in public release workflow ([e6b945b](https://github.com/onyx-hq/onyx/commit/e6b945bbb2ac938fa1eb0b538ef4a66f4c06c17e))
+* make tag input required for release workflow ([8211d44](https://github.com/onyx-hq/onyx/commit/8211d449f4ac63b96f42ffee87f3ea52a6c57324))
+* prioritize tag input over ref name in release workflow ([847642b](https://github.com/onyx-hq/onyx/commit/847642bf3a7cef8582c27a17e02656378a03ef2e))
+* support passing tag to checking out ([03a3366](https://github.com/onyx-hq/onyx/commit/03a336686ae886fd3dab17563a1df1ff578c10b8))
+* support passing tag to manual release ([4b7899e](https://github.com/onyx-hq/onyx/commit/4b7899e1b3bfba1fa21a0cabfd462ee9dc198c14))
+* update job name to clarify binary compilation in release workflow ([a974678](https://github.com/onyx-hq/onyx/commit/a974678c9ed179c2cff4500125d23c2aef74cff4))
+
 ## [0.1.29](https://github.com/onyx-hq/onyx/compare/0.1.28...0.1.29) (2024-12-17)
 
 
