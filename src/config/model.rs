@@ -31,22 +31,89 @@ pub struct Config {
 }
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema)]
-pub struct Context {
+pub struct SemanticModels {
+    pub table: String,
+    pub warehouse: String,
+    pub description: String,
+    pub entities: Vec<Entity>,
+    pub dimensions: Vec<Dimension>,
+    pub measures: Vec<Measure>,
+}
+
+#[derive(Serialize, Deserialize, Debug, JsonSchema)]
+pub struct Entity {
     pub name: String,
-    pub src: Vec<String>,
+    pub description: String,
+    pub sample: Vec<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, JsonSchema)]
+pub struct Dimension {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub synonyms: Option<Vec<String>>,
+    pub sample: Vec<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, JsonSchema)]
+pub struct Measure {
+    pub name: String,
+    pub sql: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema)]
 pub struct AgentConfig {
     pub model: String,
-    pub context: Option<Vec<Context>>,
     pub retrieval: Option<String>,
     pub system_instructions: String,
     #[serde(default = "default_tools")]
     pub tools: Option<Vec<ToolConfig>>,
+    pub context: Option<Vec<AgentContext>>,
     #[serde(default)]
     pub output_format: OutputFormat,
     pub anonymize: Option<AnonymizerConfig>,
+}
+
+#[derive(Debug, Validate, Deserialize, Serialize, Clone, JsonSchema)]
+#[garde(context(ValidationContext))]
+pub struct AgentContext {
+    #[garde(length(min = 1))]
+    pub name: String,
+
+    #[serde(flatten)]
+    #[garde(dive)]
+    #[serde(default)]
+    pub context_type: AgentContextType,
+}
+
+#[derive(Debug, Validate, Deserialize, Serialize, Clone, JsonSchema)]
+#[garde(context(ValidationContext))]
+pub struct FileContext {
+    #[garde(length(min = 1))]
+    pub src: Vec<String>,
+}
+
+#[derive(Debug, Validate, Deserialize, Serialize, Clone, JsonSchema)]
+#[garde(context(ValidationContext))]
+pub struct SemanticModelContext {
+    #[garde(length(min = 1))]
+    pub src: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Validate, Clone, JsonSchema)]
+#[garde(context(ValidationContext))]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum AgentContextType {
+    #[serde(rename = "file")]
+    File(#[garde(dive)] FileContext),
+    #[serde(rename = "semantic_model")]
+    SemanticModel(#[garde(dive)] SemanticModelContext),
+}
+
+impl Default for AgentContextType {
+    fn default() -> Self {
+        AgentContextType::File(FileContext { src: Vec::new() })
+    }
 }
 
 // These are settings stored as strings derived from the config.yml file's defaults section

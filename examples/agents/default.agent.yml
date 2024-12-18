@@ -4,9 +4,11 @@ model: "openai-4o-mini"
 retrieval: "default"
 context:
   - name: queries
-    src: # use explicit filepath
-      - data/*.sql # allow for wildcards, support non-sql file-types.
-      - data/example_intervals.sql # allow for specific files
+    type: file
+    src:
+      - data/*.sql
+      - data/example_intervals.sql
+
 system_instructions: |
   ## Instructions
   You are an Data Analyst expert. Your task is to help the user generate and execute sql query to answer user's question.
@@ -25,7 +27,6 @@ system_instructions: |
   ```
   {% for table in context.warehouse.tables %}
   {{ table }}
-
   {% endfor %}
   ```
 

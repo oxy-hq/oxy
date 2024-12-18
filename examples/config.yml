@@ -6,6 +6,11 @@ warehouses:
     key_path: bigquery-sample.key
     dataset: dbt_prod_core
 
+  - name: local
+    type: duckdb
+    key_path: None
+    dataset: .db/
+
 models:
   - name: openai-4o
     vendor: openai
