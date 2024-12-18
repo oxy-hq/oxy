@@ -215,7 +215,7 @@ jobs:
 
     - name: Announce to slack channel
       uses: rtCamp/action-slack-notify@v2
-      with:
+      env:
         SLACK_USERNAME: "Release Notifier"
         SLACK_ICON_EMOJI: ":rocket:"
         SLACK_MESSAGE: ${{ steps.release-notes-formatting.outputs.RELEASE_NOTES }}
