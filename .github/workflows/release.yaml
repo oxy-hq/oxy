@@ -115,7 +115,7 @@ jobs:
         if: ${{ matrix.job.os == 'ubuntu-latest' }}
         run: |
           cargo run --release --target ${{ matrix.job.target }} -- gen-config-schema
-          mv json-schemas/*.json artifacts/
+          cp -a json-schemas/. artifacts/
 
       #-- Build checksum
       - name: Create binary checksum

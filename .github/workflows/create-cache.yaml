@@ -95,3 +95,16 @@ jobs:
           else
             cargo build --release --target ${{ matrix.job.target }}
           fi
+
+      #-- Build json schema
+      - name: Generate config schema (once)
+        if: ${{ matrix.job.os == 'ubuntu-latest' }}
+        run: |
+          cargo run --release --target ${{ matrix.job.target }} -- gen-config-schema
+      #-- Upload json schema
+      - name: Commit json schemas changes (once)
+        if: ${{ matrix.job.os == 'ubuntu-latest' }}
+        uses: EndBug/add-and-commit@v9 # You can change this to use a specific version.
+        with:
+          add: "json-schemas"
+          message: "[no ci] update JSON Schemas"
