@@ -5,10 +5,12 @@ pub mod validate;
 use garde::Validate;
 
 use anyhow;
-use model::{AgentConfig, Config, Model, ProjectPath, Retrieval, Warehouse, Workflow};
+use model::{
+    AgentConfig, Config, Model, ProjectPath, Retrieval, SemanticModels, Warehouse, Workflow,
+};
 
 use dirs::home_dir;
-use parser::{parse_agent_config, parse_workflow_config};
+use parser::{parse_agent_config, parse_semantic_model_config, parse_workflow_config};
 use serde::Deserialize;
 use std::{fs, io};
 use validate::ValidationContext;
@@ -129,6 +131,22 @@ impl Config {
             parse_workflow_config(workflow_name, &workflow_path.to_string_lossy())?;
 
         Ok(workflow_config)
+    }
+
+    pub fn load_semantic_model(
+        &self,
+        semantic_model_path: &PathBuf,
+    ) -> anyhow::Result<SemanticModels> {
+        if !semantic_model_path.exists() {
+            return Err(anyhow::Error::msg(format!(
+                "Semantic model file not found: {:?}",
+                semantic_model_path
+            )));
+        }
+
+        let semantic_model = parse_semantic_model_config(&semantic_model_path.to_string_lossy())?;
+
+        Ok(semantic_model)
     }
 
     pub fn find_model(&self, model_name: &str) -> anyhow::Result<Model> {

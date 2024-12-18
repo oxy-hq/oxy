@@ -6,13 +6,14 @@ pub mod tools;
 pub mod utils;
 
 use glob::glob;
+use std::{collections::BTreeMap, fs, path::PathBuf};
 
 use crate::{
     config::{
         load_config,
         model::{
-            AgentConfig, AnonymizerConfig, Config, Context, FileFormat, Model, ProjectPath,
-            ToolConfig,
+            AgentConfig, AgentContext, AgentContextType, AnonymizerConfig, Config, FileFormat,
+            Model, ProjectPath, SemanticModelContext, ToolConfig,
         },
     },
     connector::Connector,
@@ -24,7 +25,7 @@ use async_trait::async_trait;
 use minijinja::{context, render, Value};
 use schemars::JsonSchema;
 use serde::Deserialize;
-use std::{collections::HashMap, fs, path::PathBuf};
+use std::collections::HashMap;
 use toolbox::ToolBox;
 use tools::{ExecuteSQLParams, ExecuteSQLTool, RetrieveParams, RetrieveTool, Tool};
 
@@ -109,7 +110,7 @@ union_tools!(
     RetrieveParams
 );
 
-fn list_files_from_pattern(pattern: String) -> Vec<PathBuf> {
+fn list_files_from_pattern(pattern: &String) -> Vec<PathBuf> {
     let paths_rs = glob(pattern.as_str());
     let mut paths: Vec<PathBuf> = vec![];
     match paths_rs {
@@ -133,29 +134,45 @@ fn list_files_from_pattern(pattern: String) -> Vec<PathBuf> {
     paths
 }
 
-fn create_jinja_context(ctxs: &Vec<Context>) -> HashMap<String, Vec<String>> {
-    let mut ctx_map: HashMap<String, Vec<String>> = HashMap::new();
+async fn create_jinja_context(ctxs: &Vec<AgentContext>, config: &Config) -> anyhow::Result<Value> {
+    let mut ctx = context! {};
     for c in ctxs {
-        let mut paths: Vec<PathBuf> = vec![];
-        for src in c.src.clone() {
-            paths.extend(list_files_from_pattern(src));
-        }
-        let mut contents = vec![];
-        for path in paths {
-            match fs::read_to_string(path) {
-                Ok(content) => {
-                    contents.push(content);
+        match &c.context_type {
+            AgentContextType::SemanticModel(semantic_model_context) => {
+                let semantic_model_context =
+                    fill_semantic_model_context(&c.name, semantic_model_context, config).await?;
+                ctx = context! {
+                    ..semantic_model_context,
+                    ..ctx,
                 }
-                Err(e) => {
-                    println!("{} {:?}", "Error reading context".warning(), e);
+            }
+            AgentContextType::File(file_context) => {
+                let mut paths: Vec<PathBuf> = vec![];
+                for src in &file_context.src.clone() {
+                    paths.extend(list_files_from_pattern(src));
+                }
+                let mut contents = vec![];
+                for path in paths {
+                    match fs::read_to_string(path) {
+                        Ok(content) => {
+                            contents.push(content);
+                        }
+                        Err(e) => {
+                            println!("{} {:?}", "Error reading context".warning(), e);
+                        }
+                    }
+                }
+                let mut ctx_map: HashMap<String, Vec<String>> = HashMap::new();
+                ctx_map.insert(c.name.clone(), contents);
+                ctx = context! {
+                    ..Value::from(ctx_map),
+                    ..ctx,
                 }
             }
         }
-
-        ctx_map.insert(c.name.clone(), contents);
     }
 
-    ctx_map
+    Ok(ctx)
 }
 
 async fn prepare_contexts(
@@ -166,8 +183,8 @@ async fn prepare_contexts(
     let mut tool_ctx = context! {};
     let mut oth_ctx = context! {};
     if agent_config.context.is_some() {
-        let ctxs: &Vec<Context> = agent_config.context.as_ref().unwrap();
-        oth_ctx = Value::from(create_jinja_context(ctxs));
+        let ctxs: &Vec<AgentContext> = agent_config.context.as_ref().unwrap();
+        oth_ctx = create_jinja_context(ctxs, config).await.unwrap();
     }
 
     for tool_config in agent_config.tools.as_ref().unwrap() {
@@ -199,22 +216,44 @@ async fn prepare_contexts(
                 description,
                 data,
             } => {
-                // let retrieval = config
-                //    .find_retrieval(agent_config.retrieval.as_ref().unwrap())
-                //     .unwrap();
                 let queries = load_queries(data);
                 tool_ctx = context! {
                     queries => queries,
                     ..tool_ctx,
                 };
-
-                // let tool = RetrieveTool::new(agent_name, name, retrieval, description);
-                // toolbox.add_tool(name.to_string(), tool.into());
             }
         };
     }
 
     (tool_ctx, oth_ctx, toolbox)
+}
+
+async fn fill_semantic_model_context(
+    context_name: &String,
+    semantic_model_context: &SemanticModelContext,
+    config: &Config,
+) -> anyhow::Result<Value> {
+    let path = &ProjectPath::get_path(&semantic_model_context.src);
+    let semantic_model = config.load_semantic_model(path)?;
+    let warehouse: &String = &semantic_model.warehouse;
+    let warehouse_config = config
+        .find_warehouse(warehouse)
+        .unwrap_or_else(|_| panic!("Warehouse {} not found", warehouse));
+
+    let mut semantic_model_ctx = BTreeMap::new();
+    semantic_model_ctx.insert(
+        context_name.to_string(),
+        context! {
+            table => semantic_model.table,
+            warehouse => warehouse_config.clone(),
+            description => semantic_model.description,
+            entities => semantic_model.entities,
+            dimensions => semantic_model.dimensions,
+            measures => semantic_model.measures,
+        },
+    );
+
+    Ok(Value::from(semantic_model_ctx))
 }
 
 fn load_queries(paths: &Vec<String>) -> Vec<String> {
@@ -225,7 +264,6 @@ fn load_queries(paths: &Vec<String>) -> Vec<String> {
         queries.extend(load_queries_for_scope(path));
         log::debug!("Loaded queries");
     }
-
     queries
 }
 

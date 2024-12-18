@@ -1,6 +1,6 @@
 use std::fs;
 
-use super::model::{AgentConfig, TempWorkflow, Workflow};
+use super::model::{AgentConfig, SemanticModels, TempWorkflow, Workflow};
 
 pub fn parse_workflow_config(workflow_name: &str, file_path: &str) -> anyhow::Result<Workflow> {
     let workflow_content = fs::read_to_string(file_path)?;
@@ -18,4 +18,10 @@ pub fn parse_agent_config(file_path: &str) -> anyhow::Result<AgentConfig> {
     let agent_content = fs::read_to_string(file_path)?;
     let agent: AgentConfig = serde_yaml::from_str(&agent_content)?;
     Ok(agent)
+}
+
+pub fn parse_semantic_model_config(file_path: &str) -> anyhow::Result<SemanticModels> {
+    let content = fs::read_to_string(file_path)?;
+    let semantic_models: SemanticModels = serde_yaml::from_str(&content)?;
+    Ok(semantic_models)
 }
