@@ -40,6 +40,12 @@
       "properties": {
         "agent": {
           "type": "string"
+        },
+        "warehouse": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       }
     },

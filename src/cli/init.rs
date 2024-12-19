@@ -95,11 +95,7 @@ fn choose_warehouse_type() -> Result<WarehouseType, InitError> {
                     key_path: PathBuf::from(prompt_with_default("Key path", "bigquery.key")?),
                 }))
             }
-            "2" => {
-                return Ok(WarehouseType::DuckDB(DuckDB {
-                    key_path: PathBuf::new(),
-                }))
-            }
+            "2" => return Ok(WarehouseType::DuckDB(DuckDB {})),
             _ => println!("Invalid choice. Please enter 1 or 2."),
         }
     }

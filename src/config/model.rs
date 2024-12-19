@@ -143,11 +143,7 @@ pub struct BigQuery {
 
 #[derive(Serialize, Deserialize, Debug, Validate, Clone, JsonSchema)]
 #[garde(context(ValidationContext))]
-pub struct DuckDB {
-    #[garde(skip)]
-    #[schemars(skip)]
-    pub key_path: PathBuf,
-}
+pub struct DuckDB {}
 
 #[derive(Serialize, Deserialize, Debug, Validate, Clone, JsonSchema)]
 #[garde(context(ValidationContext))]
