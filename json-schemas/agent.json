@@ -23,7 +23,7 @@
         "null"
       ],
       "items": {
-        "$ref": "#/definitions/Context"
+        "$ref": "#/definitions/AgentContext"
       }
     },
     "model": {
@@ -58,6 +58,58 @@
     }
   },
   "definitions": {
+    "AgentContext": {
+      "type": "object",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "src",
+            "type"
+          ],
+          "properties": {
+            "src": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "file"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "src",
+            "type"
+          ],
+          "properties": {
+            "src": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "semantic_model"
+              ]
+            }
+          }
+        }
+      ],
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        }
+      }
+    },
     "AnonymizerConfig": {
       "oneOf": [
         {
@@ -115,24 +167,6 @@
           }
         }
       ]
-    },
-    "Context": {
-      "type": "object",
-      "required": [
-        "name",
-        "src"
-      ],
-      "properties": {
-        "name": {
-          "type": "string"
-        },
-        "src": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        }
-      }
     },
     "OutputFormat": {
       "type": "string",
