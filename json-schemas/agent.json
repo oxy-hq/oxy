@@ -17,6 +17,15 @@
         }
       ]
     },
+    "context": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "$ref": "#/definitions/Context"
+      }
+    },
     "model": {
       "type": "string"
     },
@@ -106,6 +115,24 @@
           }
         }
       ]
+    },
+    "Context": {
+      "type": "object",
+      "required": [
+        "name",
+        "src"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "src": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
     },
     "OutputFormat": {
       "type": "string",
