@@ -19,9 +19,7 @@ members = [".", "migration", "entity", "onyx-py"]
 
 [dependencies]
 arrow = { version = "^53.3.0", features = ["json"] }
-parquet = "^53.3.0"
 arrow_46 = { version = "^46.0", package = "arrow" }
-parquet_46 = { version = "^46.0", package = "parquet" }
 arrow_52 = { version = "^52.2", package = "arrow" } # LanceDB compatibility
 clap = { version = "4.5.18", features = ["derive"] }
 connectorx = { version = "0.3.3", features = ["dst_arrow", "src_bigquery"] }
