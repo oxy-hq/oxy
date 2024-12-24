@@ -1,15 +1,14 @@
-use std::{fs, path::PathBuf};
-
 use embedding::{Document, LanceDBStore, VectorStore};
-use fastembed::{EmbeddingModel, RerankerModel};
 
-use crate::config::model::{Config, Retrieval};
-use crate::{utils::collect_files_recursively, StyledText};
+use crate::config::model::{Config, ProjectPath, RetrievalTool, ToolConfig};
+use crate::utils::expand_globs;
+use crate::StyledText;
 
 pub mod embedding;
+pub mod reranking;
 
-fn get_documents_from_files(data_path: &str) -> anyhow::Result<Vec<Document>> {
-    let files = collect_files_recursively(data_path, data_path)?;
+fn get_documents_from_files(src: &Vec<String>) -> anyhow::Result<Vec<Document>> {
+    let files = expand_globs(src)?;
     println!("{}", format!("Found: {:?}", files).text());
     let documents = files
         .iter()
@@ -25,61 +24,32 @@ fn get_documents_from_files(data_path: &str) -> anyhow::Result<Vec<Document>> {
     Ok(documents)
 }
 
-pub async fn build_embeddings(config: &Config, data_path: &str) -> anyhow::Result<()> {
-    let agent_dirs = fs::read_dir(data_path)?
-        .map(|entry| entry.unwrap().path())
-        .filter(|path| path.is_dir())
-        .collect::<Vec<PathBuf>>();
-    for agent_dir in agent_dirs {
+pub async fn build_embeddings(config: &Config) -> anyhow::Result<()> {
+    for agent_dir in config.list_agents(&ProjectPath::get()) {
         println!(
             "{}",
             format!("Building embeddings for agent: {:?}", agent_dir).text()
         );
         let (agent, agent_name) = config.load_agent_config(Some(&agent_dir))?;
-        let retrieval = config.find_retrieval(agent.retrieval.as_ref().unwrap())?;
-        let db = get_vector_store(&agent_name, &retrieval)?;
-        let documents = get_documents_from_files(data_path)?;
-        db.embed(&documents).await?;
+
+        for tool in agent.tools {
+            match tool {
+                ToolConfig::Retrieval(retrieval) => {
+                    let db = get_vector_store(&agent_name, &retrieval)?;
+                    let documents = get_documents_from_files(&retrieval.src)?;
+                    db.embed(&documents).await?;
+                }
+                _ => {}
+            }
+        }
     }
     Ok(())
 }
 
-pub async fn search(
-    query: &str,
-    db: &Box<dyn VectorStore + Sync + Send>,
-) -> anyhow::Result<Vec<Document>> {
-    let documents = db.search(query).await?;
-    Ok(documents)
-}
-
 pub fn get_vector_store(
     agent: &str,
-    retrieval: &Retrieval,
+    tool_config: &RetrievalTool,
 ) -> anyhow::Result<Box<dyn VectorStore + Send + Sync>> {
-    let embed_model = embedding_model_from_str(&retrieval.embed_model)?;
-    let rerank_model = rerank_model_from_str(&retrieval.rerank_model)?;
-
-    let db = LanceDBStore::new(
-        format!(".db-{}", agent).as_str(),
-        embed_model,
-        rerank_model,
-        retrieval.top_k,
-        retrieval.factor,
-    );
+    let db = LanceDBStore::with_config(agent, tool_config);
     Ok(Box::new(db))
-}
-
-pub fn embedding_model_from_str(s: &str) -> anyhow::Result<EmbeddingModel> {
-    match s {
-        "bge-small-en-v1.5" => Ok(EmbeddingModel::BGESmallENV15),
-        _ => Err(anyhow::Error::msg(format!("Unknown model: {}", s))),
-    }
-}
-
-pub fn rerank_model_from_str(s: &str) -> anyhow::Result<RerankerModel> {
-    match s {
-        "jina-reranker-v1-turbo-en" => Ok(RerankerModel::JINARerankerV1TurboEn),
-        "jina-reranker-v2-base-multiligual" => Ok(RerankerModel::JINARerankerV2BaseMultiligual),
-        _ => Err(anyhow::Error::msg(format!("Unknown model: {}", s))),
-    }
 }

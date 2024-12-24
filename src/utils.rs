@@ -38,6 +38,29 @@ pub fn collect_files_recursively(dir: &str, base_path: &str) -> anyhow::Result<V
     Ok(manifest.clone())
 }
 
+pub fn expand_globs(paths: &Vec<String>) -> anyhow::Result<Vec<String>> {
+    let mut expanded_paths = Vec::new();
+    for path in paths {
+        let glob = glob::glob(&path).map_err(|err| {
+            anyhow::anyhow!(
+                "Failed to expand glob pattern '{}': {}",
+                path,
+                err.to_string()
+            )
+        })?;
+        for entry in glob {
+            if let Ok(path) = entry {
+                if let Some(path_str) = path.to_str() {
+                    if path.is_file() {
+                        expanded_paths.push(path_str.to_string());
+                    }
+                }
+            }
+        }
+    }
+    Ok(expanded_paths)
+}
+
 pub fn list_file_stems(path: &str) -> anyhow::Result<Vec<PathBuf>> {
     let files = fs::read_dir(path)?
         .map(|entry| entry.unwrap().path())

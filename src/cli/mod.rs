@@ -15,6 +15,7 @@ use minijinja::{Environment, Value};
 use model::AgentConfig;
 use model::FileFormat;
 use model::ProjectPath;
+use model::ToolConfig;
 use model::{Config, Workflow};
 use pyo3::types::PyAnyMethods;
 use pyo3::Bound;
@@ -35,7 +36,7 @@ use crate::ai::setup_agent;
 use crate::api::server;
 use crate::connector::Connector;
 use crate::theme::*;
-use crate::{build, vector_search, BuildOpts};
+use crate::{build, vector_search};
 use tower_serve_static::ServeDir;
 
 use axum::{
@@ -275,21 +276,24 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
         }
         Some(SubCommand::Build) => {
             let config = load_config()?;
-            let data_path = ProjectPath::get_path("data");
-            build(
-                &config,
-                BuildOpts {
-                    force: true,
-                    data_path: data_path.to_str().unwrap().to_string(),
-                },
-            )
-            .await?;
+            build(&config).await?;
         }
         Some(SubCommand::VecSearch(search_args)) => {
             let config = load_config()?;
-            let (agent_config, _) = config.load_agent_config(None)?;
-            let retrieval = config.find_retrieval(&agent_config.retrieval.unwrap())?;
-            vector_search(&config.defaults.agent, &retrieval, &search_args.question).await?;
+            let agent_file = match args.agent {
+                Some(agent) => Some(ProjectPath::get_path(&agent)),
+                None => None,
+            };
+            let (agent, agent_name) = config.load_agent_config(agent_file.as_ref())?;
+
+            for tool in agent.tools {
+                match tool {
+                    ToolConfig::Retrieval(retrieval) => {
+                        vector_search(&agent_name, &retrieval, &search_args.question).await?;
+                    }
+                    _ => {}
+                }
+            }
         }
         Some(SubCommand::Validate) => {
             let result = load_config();

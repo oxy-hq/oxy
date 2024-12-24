@@ -5,9 +5,7 @@ pub mod validate;
 use garde::Validate;
 
 use anyhow;
-use model::{
-    AgentConfig, Config, Model, ProjectPath, Retrieval, SemanticModels, Warehouse, Workflow,
-};
+use model::{AgentConfig, Config, Model, ProjectPath, SemanticModels, Warehouse, Workflow};
 
 use dirs::home_dir;
 use parser::{parse_agent_config, parse_semantic_model_config, parse_workflow_config};
@@ -39,7 +37,6 @@ pub struct ParsedConfig {
     pub agent_config: AgentConfig,
     pub model: Model,
     pub warehouse: Warehouse,
-    pub retrieval: Retrieval,
 }
 
 impl Config {
@@ -90,28 +87,36 @@ impl Config {
         Ok((agent_config, agent_name.to_owned()))
     }
 
-    pub fn list_workflows(&self, dir: &PathBuf) -> Vec<PathBuf> {
-        let mut workflows_files = Vec::new();
+    fn list_by_sub_extension(&self, dir: &PathBuf, sub_extension: &str) -> Vec<PathBuf> {
+        let mut files = Vec::new();
 
         if let Ok(entries) = std::fs::read_dir(dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
                 if path.is_dir() {
-                    workflows_files.extend(self.list_workflows(&path));
+                    files.extend(self.list_by_sub_extension(&path, sub_extension));
                 } else if path.is_file()
                     && path.extension().and_then(|s| s.to_str()) == Some("yml")
                     && path
                         .file_name()
                         .and_then(|s| s.to_str())
-                        .map(|s| s.ends_with(".workflows.yml"))
+                        .map(|s| s.ends_with(format!(".{}.yml", sub_extension).as_str()))
                         .unwrap_or(false)
                 {
-                    workflows_files.push(path);
+                    files.push(path);
                 }
             }
         }
 
-        workflows_files
+        files
+    }
+
+    pub fn list_agents(&self, dir: &PathBuf) -> Vec<PathBuf> {
+        self.list_by_sub_extension(dir, "agent")
+    }
+
+    pub fn list_workflows(&self, dir: &PathBuf) -> Vec<PathBuf> {
+        self.list_by_sub_extension(dir, "workflow")
     }
 
     pub fn load_workflow(&self, workflow_path: &PathBuf) -> anyhow::Result<Workflow> {
@@ -172,16 +177,6 @@ impl Config {
             .find(|w| w.name == warehouse_name)
             .cloned()
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "Warehouse not found").into())
-    }
-
-    pub fn find_retrieval(&self, retrieval_name: &str) -> anyhow::Result<Retrieval> {
-        self.retrievals
-            .iter()
-            .find(|m| m.name == retrieval_name)
-            .cloned()
-            .ok_or_else(|| {
-                io::Error::new(io::ErrorKind::NotFound, "Default retrieval not found").into()
-            })
     }
 }
 
