@@ -190,6 +190,13 @@ pub enum Model {
         model_ref: String,
         #[garde(custom(validate_env_var))]
         key_var: String,
+        #[serde(default = "default_openai_api_url")]
+        #[garde(skip)]
+        api_url: Option<String>,
+        #[garde(skip)]
+        azure_deployment_id: Option<String>,
+        #[garde(skip)]
+        azure_api_version: Option<String>,
     },
     #[serde(rename = "ollama")]
     Ollama {
@@ -202,6 +209,10 @@ pub enum Model {
         #[garde(length(min = 1))]
         api_url: String,
     },
+}
+
+fn default_openai_api_url() -> Option<String> {
+    Some("https://api.openai.com/v1".to_string())
 }
 
 #[derive(Serialize, Deserialize, Default, Clone, Debug, JsonSchema)]

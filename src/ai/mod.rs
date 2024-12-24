@@ -41,7 +41,7 @@ pub async fn setup_agent(
 }
 
 pub async fn from_config(
-    agent_name: &str,
+    _agent_name: &str,
     config: &Config,
     agent_config: &AgentConfig,
     file_format: &FileFormat,
@@ -68,14 +68,19 @@ pub async fn from_config(
             name: _,
             model_ref,
             key_var,
+            api_url,
+            azure_deployment_id,
+            azure_api_version,
         } => {
             let api_key = std::env::var(&key_var).unwrap_or_else(|_| {
                 panic!("OpenAI key not found in environment variable {}", key_var)
             });
             Ok(Box::new(OpenAIAgent::new(
                 model_ref,
-                None,
+                api_url,
                 api_key,
+                azure_deployment_id,
+                azure_api_version,
                 toolbox,
                 system_instructions,
                 agent_config.output_format.clone(),
@@ -92,6 +97,8 @@ pub async fn from_config(
             model_ref,
             Some(api_url),
             api_key,
+            None,
+            None,
             toolbox,
             system_instructions,
             agent_config.output_format.clone(),
@@ -212,8 +219,8 @@ async fn prepare_contexts(
                 toolbox.add_tool(name.to_string(), tool.into());
             }
             ToolConfig::Retrieval {
-                name,
-                description,
+                name: _,
+                description: _,
                 data,
             } => {
                 let queries = load_queries(data);

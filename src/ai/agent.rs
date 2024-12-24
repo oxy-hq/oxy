@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use super::{anonymizer::base::Anonymizer, toolbox::ToolBox, tools::Tool};
 use crate::theme::*;
 use async_openai::{
-    config::{OpenAIConfig, OPENAI_API_BASE},
+    config::{AzureConfig, OpenAIConfig, OPENAI_API_BASE},
     error::OpenAIError,
     types::{
         ChatCompletionRequestAssistantMessageArgs, ChatCompletionRequestMessage,
@@ -57,13 +57,22 @@ pub trait LLMAgent {
     async fn request(&self, input: &str) -> anyhow::Result<AgentResult>;
 }
 
+enum OpenAIClientConfig {
+    Azure(AzureConfig),
+    OpenAI(OpenAIConfig),
+}
+
+enum OpenAIClient {
+    Azure(Client<AzureConfig>),
+    OpenAI(Client<OpenAIConfig>),
+}
+
 pub struct OpenAIAgent<T> {
     tools: ToolBox<T>,
-    client: Client<OpenAIConfig>,
+    client: OpenAIClient,
     model: String,
     system_instruction: String,
     max_tries: u8,
-    // @TODO: Lets clean this up once we finalize the output format
     output_format: OutputFormat,
     anonymizer: Option<Box<dyn Anonymizer + Send + Sync>>,
     file_format: FileFormat,
@@ -74,16 +83,36 @@ impl<T> OpenAIAgent<T> {
         model: String,
         api_url: Option<String>,
         api_key: String,
+        azure_deployment_id: Option<String>,
+        azure_api_version: Option<String>,
         tools: ToolBox<T>,
         system_instruction: String,
         output_format: OutputFormat,
         anonymizer: Option<Box<dyn Anonymizer + Send + Sync>>,
         file_format: FileFormat,
     ) -> Self {
-        let client_config = OpenAIConfig::new()
-            .with_api_key(api_key)
-            .with_api_base(api_url.unwrap_or(OPENAI_API_BASE.to_string()));
-        let client = Client::with_config(client_config);
+        let url = api_url.unwrap_or(OPENAI_API_BASE.to_string());
+        let client_config = if url.contains("azure.com") {
+            OpenAIClientConfig::Azure(
+                AzureConfig::new()
+                    .with_api_key(api_key)
+                    .with_api_base(url)
+                    .with_deployment_id(azure_deployment_id.unwrap())
+                    .with_api_version(azure_api_version.unwrap()),
+            )
+        } else {
+            OpenAIClientConfig::OpenAI(OpenAIConfig::new().with_api_key(api_key).with_api_base(url))
+        };
+
+        let client = match client_config {
+            OpenAIClientConfig::Azure(client_config) => {
+                OpenAIClient::Azure(Client::with_config(client_config))
+            }
+            OpenAIClientConfig::OpenAI(client_config) => {
+                OpenAIClient::OpenAI(Client::with_config(client_config))
+            }
+        };
+
         let max_tries = 5;
 
         OpenAIAgent {
@@ -114,17 +143,16 @@ impl<T> OpenAIAgent<T> {
                 .parallel_tool_calls(false)
                 .messages(messages);
         }
-        if response_format.is_some() {
-            request_builder.response_format(response_format.unwrap());
+        if let Some(format) = response_format {
+            request_builder.response_format(format);
         }
 
         let request = request_builder.build().unwrap();
 
-        let response = self
-            .client
-            .chat() // Get the API "group" (completions, images, etc.) from the client
-            .create(request) // Make the API call in that "group"
-            .await?;
+        let response = match &self.client {
+            OpenAIClient::Azure(client) => client.chat().create(request).await?,
+            OpenAIClient::OpenAI(client) => client.chat().create(request).await?,
+        };
 
         Ok(response.choices[0].message.clone())
     }
@@ -285,10 +313,10 @@ where
         };
         println!("{}", "\nOutput:".primary());
         println!("{}", &parsed_output);
-        return Ok(AgentResult {
+        Ok(AgentResult {
             output: parsed_output,
             steps,
-        });
+        })
     }
 }
 
