@@ -22,26 +22,27 @@ Please delete options that are not relevant.
 
 Please describe the tests that you ran to verify your changes. Provide instructions so we can reproduce. Please also list any relevant details for your test configuration.
 
-- [ ] Test A
-- [ ] Test B
+### Test Plan
 
-  _Optional_
-  **Test Configuration**:
+1. **Test A**: Describe the steps to test this change.
+2. **Test B**: Describe the steps to test this change.
 
-  - OS version:
-  - Database version:
-  - Rust version:
-    etc.
+_Optional_
+**Test Configuration**:
+
+- OS version:
+- Database version:
+- Rust version:
+- etc.
 
 ## Checklist
 
-- [ ] My code follows the style guidelines of this project
-- [ ] I have performed a self-review of my own code
-- [ ] I have commented my code, particularly in hard-to-understand areas
-- [ ] I have made corresponding changes to the documentation
-- [ ] My changes generate no new warnings
-- [ ] I have added tests that prove my fix is effective or that my feature works
-- [ ] New and existing unit tests pass locally with my changes
-- [ ] Any dependent changes have been merged and published in downstream modules
+- [x] My code follows the style guidelines of this project
+- [x] I have performed a self-review of my own code
+- [x] I have commented my code, particularly in hard-to-understand areas
+- [x] I have made corresponding changes to the documentation
+- [x] My changes generate no new warnings
+- [x] I have added tests that prove my fix is effective or that my feature works
+- [x] New and existing unit tests pass locally with my changes
 
 ## Screenshots or demo (if applicable)
