@@ -6,8 +6,7 @@ use std::path::PathBuf;
 
 use crate::config::validate::validate_file_path;
 use crate::config::validate::{
-    validate_agent_exists, validate_embed_model, validate_env_var, validate_rerank_model,
-    validate_warehouse_exists, ValidationContext,
+    validate_agent_exists, validate_env_var, validate_warehouse_exists, ValidationContext,
 };
 use lazy_static::lazy_static;
 use schemars::JsonSchema;
@@ -26,8 +25,6 @@ pub struct Config {
     pub models: Vec<Model>,
     #[garde(dive)]
     pub warehouses: Vec<Warehouse>,
-    #[garde(dive)]
-    pub retrievals: Vec<Retrieval>,
 }
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema)]
@@ -64,10 +61,9 @@ pub struct Measure {
 #[derive(Serialize, Deserialize, Debug, JsonSchema)]
 pub struct AgentConfig {
     pub model: String,
-    pub retrieval: Option<String>,
     pub system_instructions: String,
     #[serde(default = "default_tools")]
-    pub tools: Option<Vec<ToolConfig>>,
+    pub tools: Vec<ToolConfig>,
     pub context: Option<Vec<AgentContext>>,
     #[serde(default)]
     pub output_format: OutputFormat,
@@ -277,27 +273,11 @@ pub enum FileFormat {
     Markdown,
 }
 
-#[derive(Deserialize, Debug, Clone, Validate, Serialize, JsonSchema)]
-#[garde(context(ValidationContext))]
-pub struct Retrieval {
-    #[garde(length(min = 1))]
-    pub name: String,
-    #[garde(custom(validate_embed_model))]
-    pub embed_model: String,
-    #[garde(custom(validate_rerank_model))]
-    pub rerank_model: String,
-    #[garde(skip)]
-    pub top_k: usize,
-    #[garde(skip)]
-    pub factor: usize,
-}
-
 #[derive(Debug, JsonSchema)]
 pub struct ParsedConfig {
     pub agent_config: AgentConfig,
     pub model: Model,
     pub warehouse: Warehouse,
-    pub retrieval: Retrieval,
 }
 
 #[derive(Serialize, Deserialize, Debug, Validate, JsonSchema)]
@@ -394,34 +374,91 @@ pub struct Workflow {
 }
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema)]
-#[serde(tag = "type")]
-pub enum ToolConfig {
-    #[serde(rename = "execute_sql")]
-    ExecuteSQL {
-        name: String,
-        #[serde(default = "default_sql_tool_description")]
-        description: String,
-        warehouse: String,
-    },
-    #[serde(rename = "retrieval")]
-    Retrieval {
-        name: String,
-        #[serde(default = "default_retrieval_tool_description")]
-        description: String,
-        data: Vec<String>,
-    },
+pub struct RetrievalTool {
+    pub name: String,
+    #[serde(default = "default_retrieval_tool_description")]
+    pub description: String,
+    pub src: Vec<String>,
+    #[serde(default = "default_embed_model")]
+    pub embed_model: String,
+    #[serde(default = "default_api_url")]
+    pub api_url: String,
+    pub api_key: Option<String>,
+    #[serde(default = "default_key_var")]
+    pub key_var: String,
+    #[serde(default = "default_retrieval_n_dims")]
+    pub n_dims: usize,
+    #[serde(default = "default_retrieval_top_k")]
+    pub top_k: usize,
+    #[serde(default = "default_retrieval_factor")]
+    pub factor: usize,
 }
 
-fn default_sql_tool_description() -> String {
-    "Execute the SQL query. If the query is invalid, fix it and run again.".to_string()
+impl RetrievalTool {
+    pub fn get_api_key(&self) -> String {
+        match &self.api_key {
+            Some(key) => key.to_string(),
+            None => std::env::var(&self.key_var).unwrap_or_else(|_| {
+                panic!(
+                    "OpenAI key not found in environment variable {}",
+                    self.key_var
+                )
+            }),
+        }
+    }
 }
 
 fn default_retrieval_tool_description() -> String {
     "Retrieve the relevant SQL queries to support query generation.".to_string()
 }
 
-fn default_tools() -> Option<Vec<ToolConfig>> {
-    Some(vec![])
+fn default_embed_model() -> String {
+    "text-embedding-3-small".to_string()
+}
+
+fn default_api_url() -> String {
+    "https://api.openai.com/v1".to_string()
+}
+
+fn default_key_var() -> String {
+    "OPENAI_API_KEY".to_string()
+}
+
+fn default_retrieval_n_dims() -> usize {
+    512
+}
+
+fn default_retrieval_top_k() -> usize {
+    4
+}
+
+fn default_retrieval_factor() -> usize {
+    5
+}
+
+#[derive(Serialize, Deserialize, Debug, JsonSchema)]
+pub struct ExecuteSQLTool {
+    pub name: String,
+    #[serde(default = "default_sql_tool_description")]
+    pub description: String,
+    pub warehouse: String,
+}
+
+fn default_sql_tool_description() -> String {
+    "Execute the SQL query. If the query is invalid, fix it and run again.".to_string()
+}
+
+#[derive(Serialize, Deserialize, Debug, JsonSchema)]
+#[serde(tag = "type")]
+pub enum ToolConfig {
+    #[serde(rename = "execute_sql")]
+    ExecuteSQL(ExecuteSQLTool),
+    #[serde(rename = "retrieval")]
+    Retrieval(RetrievalTool),
+}
+
+fn default_tools() -> Vec<ToolConfig> {
+    vec![]
 }
 
 pub struct ProjectPath;

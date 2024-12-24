@@ -20,7 +20,7 @@ members = [".", "migration", "entity", "onyx-py"]
 [dependencies]
 arrow = { version = "^53.3.0", features = ["json"] }
 arrow_46 = { version = "^46.0", package = "arrow" }
-arrow_52 = { version = "^52.2", package = "arrow" } # LanceDB compatibility
+parquet_46 = { version = "^46.0", package = "parquet" }
 clap = { version = "4.5.18", features = ["derive"] }
 connectorx = { version = "0.3.3", features = ["dst_arrow", "src_bigquery"] }
 dirs = "5.0.1"
@@ -53,11 +53,9 @@ axum-streams = { version = "0.19.0", features = [
 ] }
 anyhow = "1.0.89"
 thiserror = "2.0.7"
-lancedb = { version = "0.11.0", features = ["sentence-transformers"] }
+lancedb = { version = "0.14.0" }
 futures = "0.3.31"
-serde_arrow = { version = "0.12.1", features = ["arrow-52"] }
-hf-hub = "0.3.2"
-fastembed = "4.1.0"
+serde_arrow = { version = "0.12.1", features = ["arrow-53"] }
 tower-http = { version = "0.6.1", features = ["fs", "cors"] }
 home = "0.5"
 sea-orm = { version = "1.1.0", features = [
@@ -90,6 +88,3 @@ pyo3 = {version = "0.23.3", features = ["experimental-async", "extension-module"
 pyo3-arrow = "0.6.0"
 glob = "0.3.1"
 slugify = "0.1.0"
-
-[patch.crates-io]
-esaxx-rs = { git = "https://github.com/onyx-hq/esaxx-rs.git", branch = "feat/dynamic-msvc-link" } # https://github.com/pykeio/ort/issues/329

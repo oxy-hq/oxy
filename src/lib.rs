@@ -7,26 +7,37 @@ pub mod theme;
 pub mod utils;
 pub mod workflow;
 
-use ai::retrieval::{build_embeddings, get_vector_store, search};
+use ai::retrieval::{build_embeddings, get_vector_store};
 use theme::*;
 pub mod config;
 
-use config::model::{Config, Retrieval};
+use config::model::{Config, RetrievalTool};
 
-pub struct BuildOpts {
-    pub force: bool,
-    pub data_path: String,
-}
-
-pub async fn build(config: &Config, opts: BuildOpts) -> anyhow::Result<()> {
+pub async fn build(config: &Config) -> anyhow::Result<()> {
     println!("{}", "Building...".text());
-    build_embeddings(config, &opts.data_path).await?;
+    build_embeddings(config).await?;
     Ok(())
 }
 
-pub async fn vector_search(agent: &str, retrieval: &Retrieval, query: &str) -> anyhow::Result<()> {
-    println!("{}", "Searching...".text());
+pub async fn vector_search(
+    agent: &str,
+    retrieval: &RetrievalTool,
+    query: &str,
+) -> anyhow::Result<()> {
+    println!(
+        "{}",
+        format!(
+            "Searching using agent {} tool {} ...",
+            agent, retrieval.name
+        )
+        .as_str()
+        .text()
+    );
     let db = get_vector_store(agent, retrieval)?;
-    search(query, &db).await?;
+    let documents = db.search(query).await?;
+    for document in documents {
+        println!("{}", format!("{}\n", document.content).text());
+        println!("____________________________________________________");
+    }
     Ok(())
 }

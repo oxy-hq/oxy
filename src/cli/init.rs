@@ -1,4 +1,4 @@
-use crate::cli::model::{BigQuery, Config, DuckDB, ProjectPath, Retrieval, WarehouseType};
+use crate::cli::model::{BigQuery, Config, DuckDB, ProjectPath, WarehouseType};
 use crate::theme::*;
 use include_dir::{include_dir, Dir};
 use std::io::{self, Write};
@@ -236,13 +236,6 @@ fn create_config_file(config_path: &Path) -> Result<(), InitError> {
     let config = Config {
         warehouses,
         models,
-        retrievals: vec![Retrieval {
-            name: "default".to_string(),
-            embed_model: "bge-small-en-v1.5".to_string(),
-            rerank_model: "jina-reranker-v2-base-multiligual".to_string(),
-            top_k: 10,
-            factor: 5,
-        }],
         defaults: Defaults {
             agent: "default".to_string(),
             warehouse: Some("primary_warehouse".to_string()),

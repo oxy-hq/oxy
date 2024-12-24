@@ -1,9 +1,6 @@
 use super::model::{Config, ProjectPath};
-use crate::ai::retrieval::{embedding_model_from_str, rerank_model_from_str};
 use std::{env, fmt::Display, path::PathBuf};
 
-const INVALID_EMBED_MODEL_ERROR: &str = "invalid embedding model";
-const INVALID_RERANK_MODEL_ERROR: &str = "invalid reranking model";
 const FILE_NOT_FOUND_ERROR: &str = "file does not exist";
 const DIR_NOT_FOUND_ERROR: &str = "directory does not exist";
 const ENV_VAR_NOT_FOUND_ERROR: &str = "env var not set";
@@ -51,25 +48,6 @@ pub fn validate_env_var(env_var: &str, _: &ValidationContext) -> garde::Result {
     }
 }
 
-pub fn validate_embed_model(embed_model: &str, _: &ValidationContext) -> garde::Result {
-    let result = embedding_model_from_str(embed_model);
-    match result {
-        Ok(_) => Ok(()),
-        Err(_) => Err(format_error_message(INVALID_EMBED_MODEL_ERROR, embed_model)),
-    }
-}
-
-pub fn validate_rerank_model(rerank_model: &str, _: &ValidationContext) -> garde::Result {
-    let result = rerank_model_from_str(rerank_model);
-    match result {
-        Ok(_) => Ok(()),
-        Err(_) => Err(format_error_message(
-            INVALID_RERANK_MODEL_ERROR,
-            rerank_model,
-        )),
-    }
-}
-
 pub struct ValidationContext {
     pub config: Config,
 }
@@ -88,7 +66,7 @@ pub fn validate_warehouse_exists(
     }
 }
 
-pub fn validate_sql_file(sql_file: &str, context: &ValidationContext) -> garde::Result {
+pub fn validate_sql_file(sql_file: &str, _context: &ValidationContext) -> garde::Result {
     let path = &ProjectPath::get_path(sql_file);
     if !path.exists() {
         return Err(format_error_message(
@@ -99,7 +77,7 @@ pub fn validate_sql_file(sql_file: &str, context: &ValidationContext) -> garde::
     Ok(())
 }
 
-pub fn validate_agent_exists(agent: &str, context: &ValidationContext) -> garde::Result {
+pub fn validate_agent_exists(agent: &str, _context: &ValidationContext) -> garde::Result {
     let path = &ProjectPath::get_path(agent);
     if !path.exists() {
         return Err(format_error_message(

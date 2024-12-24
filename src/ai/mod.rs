@@ -6,7 +6,11 @@ pub mod tools;
 pub mod utils;
 
 use glob::glob;
-use std::{collections::BTreeMap, fs, path::PathBuf};
+use std::{
+    collections::{BTreeMap, HashMap},
+    fs,
+    path::PathBuf,
+};
 
 use crate::{
     config::{
@@ -25,7 +29,6 @@ use async_trait::async_trait;
 use minijinja::{context, render, Value};
 use schemars::JsonSchema;
 use serde::Deserialize;
-use std::collections::HashMap;
 use toolbox::ToolBox;
 use tools::{ExecuteSQLParams, ExecuteSQLTool, RetrieveParams, RetrieveTool, Tool};
 
@@ -41,13 +44,13 @@ pub async fn setup_agent(
 }
 
 pub async fn from_config(
-    _agent_name: &str,
+    agent_name: &str,
     config: &Config,
     agent_config: &AgentConfig,
     file_format: &FileFormat,
 ) -> anyhow::Result<Box<dyn LLMAgent + Send + Sync>> {
     let model = config.find_model(&agent_config.model).unwrap();
-    let (tools, context, toolbox) = prepare_contexts(agent_config, config).await;
+    let (tools, context, toolbox) = prepare_contexts(agent_name, agent_config, config).await;
     let system_instructions =
         render!(&agent_config.system_instructions, tools => tools, context => context);
     let anonymizer: Option<Box<dyn Anonymizer + Send + Sync>> = match &agent_config.anonymize {
@@ -183,6 +186,7 @@ async fn create_jinja_context(ctxs: &Vec<AgentContext>, config: &Config) -> anyh
 }
 
 async fn prepare_contexts(
+    agent_name: &str,
     agent_config: &AgentConfig,
     config: &Config,
 ) -> (Value, Value, ToolBox<MultiTool>) {
@@ -194,16 +198,12 @@ async fn prepare_contexts(
         oth_ctx = create_jinja_context(ctxs, config).await.unwrap();
     }
 
-    for tool_config in agent_config.tools.as_ref().unwrap() {
+    for tool_config in agent_config.tools.iter() {
         match tool_config {
-            ToolConfig::ExecuteSQL {
-                name,
-                description,
-                warehouse,
-            } => {
+            ToolConfig::ExecuteSQL(execute_sql) => {
                 let warehouse_config = config
-                    .find_warehouse(warehouse)
-                    .unwrap_or_else(|_| panic!("Warehouse {} not found", &warehouse));
+                    .find_warehouse(&execute_sql.warehouse)
+                    .unwrap_or_else(|_| panic!("Warehouse {} not found", &execute_sql.warehouse));
                 let warehouse_info = Connector::new(&warehouse_config)
                     .load_warehouse_info()
                     .await;
@@ -213,21 +213,14 @@ async fn prepare_contexts(
                 };
                 let tool: ExecuteSQLTool = ExecuteSQLTool {
                     config: warehouse_config.clone(),
-                    tool_description: description.to_string(),
+                    tool_description: execute_sql.description.to_string(),
                     output_format: agent_config.output_format.clone(),
                 };
-                toolbox.add_tool(name.to_string(), tool.into());
+                toolbox.add_tool(execute_sql.name.to_string(), tool.into());
             }
-            ToolConfig::Retrieval {
-                name: _,
-                description: _,
-                data,
-            } => {
-                let queries = load_queries(data);
-                tool_ctx = context! {
-                    queries => queries,
-                    ..tool_ctx,
-                };
+            ToolConfig::Retrieval(retrieval) => {
+                let tool = RetrieveTool::new(agent_name, retrieval);
+                toolbox.add_tool(retrieval.name.to_string(), tool.into());
             }
         };
     }
@@ -261,32 +254,4 @@ async fn fill_semantic_model_context(
     );
 
     Ok(Value::from(semantic_model_ctx))
-}
-
-fn load_queries(paths: &Vec<String>) -> Vec<String> {
-    let mut queries = vec![];
-
-    for path in paths {
-        log::debug!("Loading queries for path: {}", path);
-        queries.extend(load_queries_for_scope(path));
-        log::debug!("Loaded queries");
-    }
-    queries
-}
-
-fn load_queries_for_scope(path: &str) -> Vec<String> {
-    let query_path = &ProjectPath::get_path(path);
-    log::debug!("Query path: {}; scope: {}", query_path.display(), path);
-
-    let mut queries = vec![];
-    if let Ok(entries) = fs::read_dir(query_path) {
-        log::debug!("Reading queries from path: {}", query_path.display());
-        for entry in entries.flatten() {
-            log::debug!("Reading query: {}", entry.path().display());
-            if let Ok(content) = fs::read_to_string(entry.path()) {
-                queries.push(content);
-            }
-        }
-    }
-    queries
 }

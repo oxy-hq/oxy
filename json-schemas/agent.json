@@ -48,10 +48,7 @@
     },
     "tools": {
       "default": [],
-      "type": [
-        "array",
-        "null"
-      ],
+      "type": "array",
       "items": {
         "$ref": "#/definitions/ToolConfig"
       }
@@ -206,23 +203,59 @@
         {
           "type": "object",
           "required": [
-            "data",
             "name",
+            "src",
             "type"
           ],
           "properties": {
-            "data": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
+            "api_key": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "api_url": {
+              "default": "https://api.openai.com/v1",
+              "type": "string"
             },
             "description": {
               "default": "Retrieve the relevant SQL queries to support query generation.",
               "type": "string"
             },
+            "embed_model": {
+              "default": "text-embedding-3-small",
+              "type": "string"
+            },
+            "factor": {
+              "default": 5,
+              "type": "integer",
+              "format": "uint",
+              "minimum": 0.0
+            },
+            "key_var": {
+              "default": "OPENAI_API_KEY",
+              "type": "string"
+            },
+            "n_dims": {
+              "default": 512,
+              "type": "integer",
+              "format": "uint",
+              "minimum": 0.0
+            },
             "name": {
               "type": "string"
+            },
+            "src": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "top_k": {
+              "default": 4,
+              "type": "integer",
+              "format": "uint",
+              "minimum": 0.0
             },
             "type": {
               "type": "string",

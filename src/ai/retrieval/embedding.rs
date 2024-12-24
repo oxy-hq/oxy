@@ -1,23 +1,36 @@
-use std::{cmp::min, sync::Arc};
+use std::sync::Arc;
 
-use arrow_52::{
-    array::{Array, FixedSizeListArray, RecordBatch, RecordBatchIterator, StringArray},
+use arrow::{
+    array::{
+        Array, FixedSizeListArray, RecordBatch, RecordBatchIterator, RecordBatchReader, StringArray,
+    },
     datatypes::{DataType, Field, Float32Type, Schema},
 };
-use async_trait::async_trait;
-use fastembed::{
-    EmbeddingModel, InitOptions, RerankInitOptions, RerankerModel, TextEmbedding, TextRerank,
+use async_openai::{
+    config::OpenAIConfig,
+    types::{CreateEmbeddingRequestArgs, EmbeddingInput},
+    Client,
 };
-use futures::StreamExt;
+use async_trait::async_trait;
 use lancedb::{
     connect,
     connection::CreateTableMode,
+    index::{
+        scalar::{FtsIndexBuilder, FullTextSearchQuery},
+        vector::IvfHnswPqIndexBuilder,
+        Index,
+    },
     query::{ExecutableQuery, QueryBase},
+    table::OptimizeAction,
     Connection, Table,
 };
 use serde::{Deserialize, Serialize};
 use serde_arrow::from_record_batch;
 use tokio::sync::OnceCell;
+
+use crate::config::model::RetrievalTool;
+
+use super::reranking::ReciprocalRankingFusion;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Document {
@@ -36,61 +49,35 @@ pub trait VectorStore {
 pub struct LanceDBStore {
     uri: String,
     connection: Arc<OnceCell<Connection>>,
-    embed_model: TextEmbedding,
-    rerank_model: TextRerank,
+    client: Client<OpenAIConfig>,
+    embed_model: String,
     n_dims: usize,
     top_k: usize,
     factor: usize,
 }
 
 impl LanceDBStore {
-    pub fn new(
-        uri: &str,
-        embed_model: EmbeddingModel,
-        rerank_model: RerankerModel,
-        top_k: usize,
-        factor: usize,
-    ) -> Self {
-        let connection_cell = Arc::new(tokio::sync::OnceCell::new());
-        let connection_cell_clone = connection_cell.clone();
-        let uri = uri.to_string();
-        let uri_clone = uri.clone();
-
-        tokio::spawn(async move {
-            connection_cell_clone
-                .get_or_init(|| async { Self::lazy_init(&uri).await })
-                .await;
-        });
-
-        let embed_model_clone = &embed_model.clone();
-        let embed_model_info = TextEmbedding::get_model_info(embed_model_clone).unwrap();
-        let embed_model =
-            TextEmbedding::try_new(InitOptions::new(embed_model).with_show_download_progress(true))
-                .unwrap();
-
-        let rerank_model = TextRerank::try_new(
-            RerankInitOptions::new(rerank_model).with_show_download_progress(true),
-        )
-        .unwrap();
+    pub fn with_config(agent_name: &str, tool_config: &RetrievalTool) -> Self {
+        let client = Client::with_config(
+            OpenAIConfig::new()
+                .with_api_key(tool_config.get_api_key())
+                .with_api_base(tool_config.api_url.to_string()),
+        );
         Self {
-            uri: uri_clone,
-            connection: connection_cell,
-            embed_model,
-            rerank_model,
-            n_dims: embed_model_info.dim,
-            top_k,
-            factor,
+            uri: format!(".db-{}-{}", agent_name, tool_config.name),
+            connection: Arc::new(tokio::sync::OnceCell::new()),
+            client,
+            embed_model: tool_config.embed_model.to_string(),
+            n_dims: tool_config.n_dims,
+            top_k: tool_config.top_k,
+            factor: tool_config.factor,
         }
-    }
-
-    async fn lazy_init(uri: &str) -> Connection {
-        connect(uri).execute().await.unwrap()
     }
 
     async fn get_warehouse_metadata_table(&self) -> anyhow::Result<Table> {
         let connection = self
             .connection
-            .get_or_init(|| async { Self::lazy_init(&self.uri).await })
+            .get_or_init(|| async { connect(&self.uri).execute().await.unwrap() })
             .await;
         let table_result = connection.open_table("warehouse_metadata").execute().await;
         let table = match table_result {
@@ -110,14 +97,100 @@ impl LanceDBStore {
                     ),
                 ]));
 
-                connection
+                let table = connection
                     .create_empty_table("warehouse_metadata", schema)
                     .mode(CreateTableMode::exist_ok(|builder| builder))
                     .execute()
-                    .await?
+                    .await?;
+                table
             }
         };
         Ok(table)
+    }
+
+    async fn add_batches(
+        &self,
+        table: &Table,
+        batches: Box<dyn RecordBatchReader + Send>,
+    ) -> anyhow::Result<()> {
+        let mut merge_insert_op = table.merge_insert(&["source_identifier"]);
+        merge_insert_op
+            .when_matched_update_all(None)
+            .when_not_matched_insert_all();
+        merge_insert_op.execute(Box::new(batches)).await?;
+
+        let indices = table.list_indices().await?;
+        let fts_index = indices
+            .iter()
+            .find(|index| index.columns == vec!["content"]);
+        let vector_index = indices
+            .iter()
+            .find(|index| index.columns == vec!["embeddings"]);
+
+        match fts_index {
+            None => {
+                table
+                    .create_index(&["content"], Index::FTS(FtsIndexBuilder::default()))
+                    .execute()
+                    .await?;
+            }
+            Some(_) => {}
+        }
+
+        match vector_index {
+            None => {
+                let num_rows = table.count_rows(None).await?;
+                if num_rows >= 256 {
+                    table
+                        .create_index(
+                            &["embeddings"],
+                            Index::IvfHnswPq(IvfHnswPqIndexBuilder::default()),
+                        )
+                        .execute()
+                        .await?;
+                }
+            }
+            Some(_) => {}
+        }
+
+        let optimization_stats = table.optimize(OptimizeAction::All).await?;
+        log::info!(
+            "Optimization stats:\n- Compaction: {:?} \n- Prune: {:?}\n",
+            &optimization_stats.compaction,
+            &optimization_stats.prune
+        );
+        Ok(())
+    }
+
+    async fn embed_query(&self, query: &str) -> anyhow::Result<Vec<f32>> {
+        let embeddings_request = CreateEmbeddingRequestArgs::default()
+            .model(self.embed_model.clone())
+            .input(EmbeddingInput::String(query.to_string()))
+            .dimensions(self.n_dims as u32)
+            .build()?;
+        let embeddings_response = self.client.embeddings().create(embeddings_request).await?;
+        Ok(embeddings_response.data[0].embedding.clone())
+    }
+
+    async fn embed_documents(
+        &self,
+        documents: &Vec<Document>,
+    ) -> anyhow::Result<Vec<Option<Vec<Option<f32>>>>> {
+        let embedding_contents = documents
+            .iter()
+            .map(|doc| doc.content.clone())
+            .collect::<Vec<String>>();
+        let embeddings_request = CreateEmbeddingRequestArgs::default()
+            .model(self.embed_model.clone())
+            .input(EmbeddingInput::StringArray(embedding_contents))
+            .dimensions(self.n_dims as u32)
+            .build()?;
+        let embeddings_response = self.client.embeddings().create(embeddings_request).await?;
+        Ok(embeddings_response
+            .data
+            .iter()
+            .map(|e| Some(e.embedding.iter().map(|v| Some(v.to_owned())).collect()))
+            .collect())
     }
 }
 
@@ -125,19 +198,7 @@ impl LanceDBStore {
 impl VectorStore for LanceDBStore {
     async fn embed(&self, documents: &Vec<Document>) -> anyhow::Result<()> {
         let table = self.get_warehouse_metadata_table().await?;
-        let schema = Arc::new(Schema::new(vec![
-            Field::new("content", DataType::Utf8, false),
-            Field::new("source_type", DataType::Utf8, false),
-            Field::new("source_identifier", DataType::Utf8, false),
-            Field::new(
-                "embeddings",
-                DataType::FixedSizeList(
-                    Arc::new(Field::new("item", DataType::Float32, true)),
-                    self.n_dims.try_into().unwrap(),
-                ),
-                false,
-            ),
-        ]));
+        let schema = table.schema().await?;
         let contents = Arc::new(StringArray::from_iter_values(
             documents.iter().map(|doc| doc.content.clone()),
         ));
@@ -147,19 +208,9 @@ impl VectorStore for LanceDBStore {
         let source_identifiers = Arc::new(StringArray::from_iter_values(
             documents.iter().map(|doc| doc.source_identifier.clone()),
         ));
+        let embedding_iter = self.embed_documents(documents).await?;
 
-        let embedding_contents = documents
-            .iter()
-            .map(|doc| doc.content.clone())
-            .collect::<Vec<String>>();
-        let embedding_iter = self
-            .embed_model
-            .embed(embedding_contents, None)?
-            .iter()
-            .map(|v| Some(v.iter().map(|f| Some(f.to_owned())).collect::<Vec<_>>()))
-            .collect::<Vec<_>>();
-
-        let embeddings = Arc::new(
+        let embeddings: Arc<FixedSizeListArray> = Arc::new(
             FixedSizeListArray::from_iter_primitive::<Float32Type, _, _>(
                 embedding_iter,
                 self.n_dims.try_into().unwrap(),
@@ -177,54 +228,38 @@ impl VectorStore for LanceDBStore {
             .map(Ok),
             schema.clone(),
         );
-
-        table.add(batches).execute().await?;
-        log::info!("Embedded!");
+        self.add_batches(&table, Box::new(batches)).await?;
+        log::info!("{} documents embedded!", documents.len());
         Ok(())
     }
 
     async fn search(&self, query: &str) -> anyhow::Result<Vec<Document>> {
         log::info!("Embedding search query: {}", query);
-        let query_vector = self.embed_model.embed(vec![query.to_string()], None)?;
+        let query_vector = self.embed_query(query).await?;
 
         if query_vector.is_empty() {
             return Err(anyhow::anyhow!("Failed to generate embeddings for query"));
         }
 
         let table = self.get_warehouse_metadata_table().await?;
-        let vector = query_vector
-            .first()
-            .ok_or_else(|| anyhow::anyhow!("No embedding vector generated"))?;
         let mut results = table
-            .vector_search(vector.to_owned())?
+            .vector_search(query_vector)?
             .limit(self.top_k * self.factor)
+            .with_row_id()
+            .execute()
+            .await?;
+        let mut fts_results = table
+            .query()
+            .full_text_search(FullTextSearchQuery::new(query.to_string()))
+            .limit(self.top_k * self.factor)
+            .with_row_id()
             .execute()
             .await?;
 
-        let rb = results.next().await.unwrap()?;
-        let docs: Vec<Document> = from_record_batch(&rb)?;
-
-        log::info!("Reranking...");
-        let documents = docs
-            .iter()
-            .map(|doc| doc.content.clone())
-            .collect::<Vec<String>>();
-        let results = self
-            .rerank_model
-            .rerank(query.to_string(), documents, true, None)?;
-        let results = results.as_slice();
-        let end = min(results.len(), self.top_k);
-        let results = &results[0..end];
-        for doc in results {
-            let content = doc.document.as_ref().unwrap();
-            log::info!(
-                "Rank: {}\nScore: {}\nContent: {}",
-                doc.index,
-                doc.score,
-                content
-            );
-            log::info!("-----------------");
-        }
+        let record_batch = ReciprocalRankingFusion::default()
+            .rerank(&mut results, &mut fts_results, Some(self.top_k))
+            .await?;
+        let docs: Vec<Document> = from_record_batch(&record_batch)?;
         Ok(docs)
     }
 }

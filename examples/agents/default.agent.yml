@@ -1,7 +1,6 @@
-# yaml-language-server: $schema=https://raw.githubusercontent.com/onyx-hq/onyx-public-releases/refs/heads/main/json-schemas/agent.json
+# yaml-language-server: $schema=../../json-schemas/agent.json
 
 model: "openai-4o-mini"
-retrieval: "default"
 context:
   - name: queries
     type: file
@@ -35,14 +34,22 @@ system_instructions: |
   {% for query in context.queries %}
   {{ query }}
   {% endfor %}
+  ###
+  {{ tools.retrieval }}
   ```
 output_format: file
 tools:
-  - name: retrieval
-    type: retrieval
-    data:
-      - "data"
-      - "default"
   - name: execute_sql
     type: execute_sql
     warehouse: primary_warehouse
+
+  - name: retrieval
+    type: retrieval
+    src:
+      - "data/arguna/*.txt"
+    embed_model: text-embedding-3-small
+    api_url: https://api.openai.com/v1
+    key_var: OPENAI_API_KEY
+    n_dims: 512
+    top_k: 4
+    factor: 5

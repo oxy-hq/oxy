@@ -1,7 +1,7 @@
 use super::Tool;
 use crate::{
     ai::retrieval::{embedding::VectorStore, get_vector_store},
-    config::model::Retrieval,
+    config::model::RetrievalTool as Retrieval,
 };
 use async_trait::async_trait;
 use schemars::JsonSchema;
@@ -19,13 +19,12 @@ pub struct RetrieveTool {
 }
 
 impl RetrieveTool {
-    pub fn new(agent_name: &str, name: &str, retrieval: Retrieval, tool_description: &str) -> Self {
-        let vector_db =
-            get_vector_store(agent_name, &retrieval).expect("Failed to init vector store");
+    pub fn new(agent_name: &str, config: &Retrieval) -> Self {
+        let vector_db = get_vector_store(agent_name, &config).expect("Failed to init vector store");
         RetrieveTool {
-            name: name.to_string(),
+            name: config.name.to_string(),
             vector_db,
-            tool_description: tool_description.to_string(),
+            tool_description: config.description.to_string(),
         }
     }
 }
