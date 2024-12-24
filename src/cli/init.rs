@@ -113,11 +113,29 @@ fn collect_models() -> Result<Vec<Model>, InitError> {
         let model_type = prompt_with_default("Type (1 or 2)", "1")?;
 
         let model = match model_type.as_str() {
-            "1" => Model::OpenAI {
-                name: prompt_with_default("Name", "openai-4")?,
-                model_ref: prompt_with_default("Model reference", "gpt-4")?,
-                key_var: prompt_with_default("Key variable", "OPENAI_API_KEY")?,
-            },
+            "1" => {
+                let api_url = prompt_with_default(
+                    "API URL (leave empty for default OpenAI URL)",
+                    "https://api.openai.com/v1",
+                )?;
+                let (azure_deployment_id, azure_api_version) =
+                    if api_url != "https://api.openai.com/v1" {
+                        (
+                            Some(prompt_with_default("Azure deployment ID", "")?),
+                            Some(prompt_with_default("Azure API version", "")?),
+                        )
+                    } else {
+                        (None, None)
+                    };
+                Model::OpenAI {
+                    name: prompt_with_default("Name", "openai-4")?,
+                    model_ref: prompt_with_default("Model reference", "gpt-4")?,
+                    key_var: prompt_with_default("Key variable", "OPENAI_API_KEY")?,
+                    api_url: Some(api_url),
+                    azure_deployment_id,
+                    azure_api_version,
+                }
+            }
             "2" => Model::Ollama {
                 name: prompt_with_default("Name", "llama3.2")?,
                 model_ref: prompt_with_default("Model reference", "llama3.2:latest")?,
@@ -130,6 +148,9 @@ fn collect_models() -> Result<Vec<Model>, InitError> {
                     name: prompt_with_default("Name", "openai-4")?,
                     model_ref: prompt_with_default("Model reference", "gpt-4")?,
                     key_var: prompt_with_default("Key variable", "OPENAI_API_KEY")?,
+                    api_url: Some(prompt_with_default("API URL", "https://api.openai.com/v1")?),
+                    azure_deployment_id: None,
+                    azure_api_version: None,
                 }
             }
         };

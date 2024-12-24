@@ -20,6 +20,13 @@ models:
     vendor: openai
     model_ref: gpt-4o-mini
     key_var: OPENAI_API_KEY
+  # - name: openai-4o-mini-azure
+  #   vendor: openai
+  #   model_ref: gpt-4o-mini
+  #   api_url: https://tayc-m4w8k0dn-eastus2.cognitiveservices.azure.com
+  #   azure_deployment_id: "gpt-4o-mini"
+  #   azure_api_version: "2024-08-01-preview"
+  #   key_var: OPENAI_AZURE_KEY
   - name: llama3.2
     vendor: ollama
     model_ref: llama3.2:latest
