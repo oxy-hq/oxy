@@ -145,7 +145,7 @@ impl ReciprocalRankingFusion {
                         Some(false)
                     } else {
                         existing.insert(x);
-                        return Some(true);
+                        Some(true)
                     }
                 }
                 None => Some(false),

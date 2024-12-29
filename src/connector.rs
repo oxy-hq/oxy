@@ -13,6 +13,7 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::config::model::{ProjectPath, Warehouse, WarehouseType};
+use crate::errors::OnyxError;
 
 pub struct Connector {
     config: Warehouse,
@@ -49,7 +50,6 @@ impl Connector {
                 "SELECT schema_name FROM INFORMATION_SCHEMA.SCHEMATA".to_owned()
             }
             WarehouseType::DuckDB(_) => "".to_owned(),
-            _ => "".to_owned(),
         };
         if query_string.is_empty() {
             vec![]
@@ -99,12 +99,6 @@ impl Connector {
                 self.run_connectorx_query(query, key_path).await?
             }
             WarehouseType::DuckDB(_) => self.run_duckdb_query(query).await?,
-            _ => {
-                return Err(anyhow::Error::msg(format!(
-                    "Unsupported dialect: {}",
-                    self.config.warehouse_type
-                )))
-            }
         };
         Ok(file_path)
     }
@@ -112,9 +106,13 @@ impl Connector {
     pub async fn run_query_and_load(
         &self,
         query: &str,
-    ) -> anyhow::Result<(Vec<RecordBatch>, SchemaRef)> {
-        let file_path = self.run_query(query).await?;
+    ) -> Result<(Vec<RecordBatch>, SchemaRef), OnyxError> {
+        let file_path = self
+            .run_query(query)
+            .await
+            .map_err(|e| OnyxError::RuntimeError(format!("Error running query: {}", e)))?;
         load_result(&file_path)
+            .map_err(|e| OnyxError::RuntimeError(format!("Error loading query results: {}", e)))
     }
 
     async fn run_connectorx_query(&self, query: &str, key_path: PathBuf) -> anyhow::Result<String> {

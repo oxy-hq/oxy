@@ -28,7 +28,7 @@ use serde::{Deserialize, Serialize};
 use serde_arrow::from_record_batch;
 use tokio::sync::OnceCell;
 
-use crate::config::model::RetrievalTool;
+use crate::{config::model::RetrievalTool, errors::OnyxError};
 
 use super::reranking::ReciprocalRankingFusion;
 
@@ -97,12 +97,11 @@ impl LanceDBStore {
                     ),
                 ]));
 
-                let table = connection
+                connection
                     .create_empty_table("warehouse_metadata", schema)
                     .mode(CreateTableMode::exist_ok(|builder| builder))
                     .execute()
-                    .await?;
-                table
+                    .await?
             }
         };
         Ok(table)
@@ -238,7 +237,9 @@ impl VectorStore for LanceDBStore {
         let query_vector = self.embed_query(query).await?;
 
         if query_vector.is_empty() {
-            return Err(anyhow::anyhow!("Failed to generate embeddings for query"));
+            anyhow::bail!(OnyxError::RuntimeError(
+                "Failed to generate embeddings for query".into()
+            ));
         }
 
         let table = self.get_warehouse_metadata_table().await?;

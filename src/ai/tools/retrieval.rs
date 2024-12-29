@@ -20,7 +20,7 @@ pub struct RetrieveTool {
 
 impl RetrieveTool {
     pub fn new(agent_name: &str, config: &Retrieval) -> Self {
-        let vector_db = get_vector_store(agent_name, &config).expect("Failed to init vector store");
+        let vector_db = get_vector_store(agent_name, config).expect("Failed to init vector store");
         RetrieveTool {
             name: config.name.to_string(),
             vector_db,

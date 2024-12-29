@@ -21,6 +21,7 @@ use crate::{
         },
     },
     connector::Connector,
+    errors::OnyxError,
     union_tools, StyledText,
 };
 use agent::{LLMAgent, OpenAIAgent};
@@ -35,11 +36,13 @@ use tools::{ExecuteSQLParams, ExecuteSQLTool, RetrieveParams, RetrieveTool, Tool
 pub async fn setup_agent(
     agent_file: Option<&PathBuf>,
     file_format: &FileFormat,
-) -> anyhow::Result<Box<dyn LLMAgent + Send + Sync>> {
+) -> Result<Box<dyn LLMAgent + Send + Sync>, OnyxError> {
     let config = load_config()?;
 
     let (agent_config, agent_name) = config.load_agent_config(agent_file)?;
-    let agent = from_config(&agent_name, &config, &agent_config, file_format).await?;
+    let agent = from_config(&agent_name, &config, &agent_config, file_format)
+        .await
+        .map_err(|e| OnyxError::AgentError(format!("Error setting up agent: {}", e)))?;
     Ok(agent)
 }
 
@@ -131,13 +134,13 @@ fn list_files_from_pattern(pattern: &String) -> Vec<PathBuf> {
                         paths.push(p);
                     }
                     Err(e) => {
-                        println!("{} {:?}", "Error loading files".warning(), e);
+                        log::warn!("{} {:?}", "Error loading files", e);
                     }
                 }
             }
         }
         Err(e) => {
-            println!("{} {:?}", "Error loading files".warning(), e);
+            log::warn!("{} {:?}", "Error loading files", e);
         }
     }
 
@@ -168,7 +171,7 @@ async fn create_jinja_context(ctxs: &Vec<AgentContext>, config: &Config) -> anyh
                             contents.push(content);
                         }
                         Err(e) => {
-                            println!("{} {:?}", "Error reading context".warning(), e);
+                            log::warn!("{} {:?}", "Error reading context".warning(), e);
                         }
                     }
                 }
@@ -191,7 +194,7 @@ async fn prepare_contexts(
     config: &Config,
 ) -> (Value, Value, ToolBox<MultiTool>) {
     let mut toolbox = ToolBox::<MultiTool>::new();
-    let mut tool_ctx = context! {};
+    let tool_ctx = context! {};
     let mut oth_ctx = context! {};
     if agent_config.context.is_some() {
         let ctxs: &Vec<AgentContext> = agent_config.context.as_ref().unwrap();

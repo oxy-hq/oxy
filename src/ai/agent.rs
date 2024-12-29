@@ -2,6 +2,7 @@ use crate::{
     ai::utils::{record_batches_to_json, record_batches_to_markdown, record_batches_to_table},
     config::model::{FileFormat, OutputFormat},
     connector::load_result,
+    errors::OnyxError,
 };
 use std::collections::HashMap;
 
@@ -54,7 +55,7 @@ pub struct FilePathOutput {
 
 #[async_trait]
 pub trait LLMAgent {
-    async fn request(&self, input: &str) -> anyhow::Result<AgentResult>;
+    async fn request(&self, input: &str) -> Result<AgentResult, OnyxError>;
 }
 
 enum OpenAIClientConfig {
@@ -182,7 +183,7 @@ impl<T> LLMAgent for OpenAIAgent<T>
 where
     T: Tool + Send + Sync,
 {
-    async fn request(&self, input: &str) -> anyhow::Result<AgentResult> {
+    async fn request(&self, input: &str) -> Result<AgentResult, OnyxError> {
         let system_message = self.system_instruction.to_string();
         debug!("System message: {}", system_message);
         let anonymized_items = HashMap::new();
@@ -199,12 +200,14 @@ where
             ChatCompletionRequestSystemMessageArgs::default()
                 .name("onyx")
                 .content(anonymized_system_message)
-                .build()?
+                .build()
+                .map_err(|e| OnyxError::RuntimeError("Unable to build LLM request".into()))?
                 .into(),
             ChatCompletionRequestUserMessageArgs::default()
                 .name("Human")
                 .content(anonymized_user_message)
-                .build()?
+                .build()
+                .map_err(|e| OnyxError::RuntimeError("Unable to build LLM request".into()))?
                 .into(),
         ];
         let tools = self.tools.to_spec(OpenAIAgent::<T>::spec_serializer);
@@ -245,12 +248,12 @@ where
                 .map_err(|e|  {
                     if let OpenAIError::ApiError(ref api_error) = e {
                         if api_error.code == Some(CONTEXT_WINDOW_EXCEEDED_CODE.to_string()) {
-                            return anyhow::anyhow!(
-                                "Context window length exceeded. Shorten the prompt being sent to the LLM."
+                            return OnyxError::LLMError(
+                                "Context window length exceeded. Shorten the prompt being sent to the LLM.".into()
                             );
                         }
                     }
-                    anyhow::anyhow!("Error in completion request: {}", e)
+                    OnyxError::RuntimeError(format!("Error in completion request: {}", e))
                 })?;
 
             output = ret_message
@@ -273,7 +276,13 @@ where
                         .anonymizer
                         .as_ref()
                         .unwrap()
-                        .anonymize(&tool_ret, Some(contextualize_anonymized_items.clone()))?;
+                        .anonymize(&tool_ret, Some(contextualize_anonymized_items.clone()))
+                        .map_err(|e| {
+                            OnyxError::RuntimeError(format!(
+                                "Error in anonymizing tool output: {}",
+                                e
+                            ))
+                        })?;
                     contextualize_anonymized_items.extend(result.1);
                     tool_ret = result.0;
                 }
@@ -287,7 +296,8 @@ where
                     ChatCompletionRequestToolMessageArgs::default()
                         .tool_call_id(tool.id.clone())
                         .content(tool_ret)
-                        .build()?
+                        .build()
+                        .map_err(|e| OnyxError::RuntimeError("Unable to build LLM request".into()))?
                         .into(),
                 );
             }
@@ -298,7 +308,8 @@ where
             tool_calls.push(
                 ChatCompletionRequestAssistantMessageArgs::default()
                     .tool_calls(tool_call_requests.clone())
-                    .build()?
+                    .build()
+                    .map_err(|e| OnyxError::RuntimeError("Unable to build LLM request".into()))?
                     .into(),
             );
 
@@ -324,13 +335,17 @@ async fn map_output(
     output: &str,
     output_format: &OutputFormat,
     file_format: &FileFormat,
-) -> anyhow::Result<String> {
+) -> Result<String, OnyxError> {
     match output_format {
         OutputFormat::Default => Ok(output.to_string()),
         OutputFormat::File => {
             log::info!("File path: {}", output);
-            let file_output = serde_json::from_str::<FilePathOutput>(output)?;
-            let (batches, schema) = load_result(&file_output.file_path)?;
+            let file_output = serde_json::from_str::<FilePathOutput>(output).map_err(|e| {
+                OnyxError::RuntimeError(format!("Error in parsing output file: {}", e))
+            })?;
+            let (batches, schema) = load_result(&file_output.file_path).map_err(|e| {
+                OnyxError::RuntimeError(format!("Error in loading result file: {}", e))
+            })?;
             let mut dataset = batches;
             let mut truncated = false;
             if !dataset.is_empty() && dataset[0].num_rows() > MAX_DISPLAY_ROWS {
@@ -338,9 +353,18 @@ async fn map_output(
                 truncated = true;
             }
 
-            let batches_display = record_batches_to_table(&dataset, &schema)?;
-            let markdown_table = record_batches_to_markdown(&dataset, &schema)?;
-            let json_blob = record_batches_to_json(&dataset)?;
+            let batches_display = record_batches_to_table(&dataset, &schema).map_err(|e| {
+                OnyxError::RuntimeError(format!("Error in converting record batch to table: {}", e))
+            })?;
+            let markdown_table = record_batches_to_markdown(&dataset, &schema).map_err(|e| {
+                OnyxError::RuntimeError(format!(
+                    "Error in converting record batch to markdown: {}",
+                    e
+                ))
+            })?;
+            let json_blob = record_batches_to_json(&dataset).map_err(|e| {
+                OnyxError::RuntimeError(format!("Error in converting record batch to json: {}", e))
+            })?;
 
             println!(
                 "\n{}",

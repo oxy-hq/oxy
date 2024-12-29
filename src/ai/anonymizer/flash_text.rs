@@ -4,11 +4,13 @@ use std::{
     io::{self, BufRead},
 };
 
-use anyhow::Result;
 use pluralizer::pluralize;
 use slugify::slugify;
 
-use crate::config::model::{FlashTextSourceType, ProjectPath};
+use crate::{
+    config::model::{FlashTextSourceType, ProjectPath},
+    errors::OnyxError,
+};
 
 use super::base::Anonymizer;
 
@@ -63,7 +65,7 @@ impl FlashTextAnonymizer {
         }
     }
 
-    pub fn add_keywords_file(&mut self, source: &FlashTextSourceType) -> Result<()> {
+    pub fn add_keywords_file(&mut self, source: &FlashTextSourceType) -> anyhow::Result<()> {
         let path = match source {
             FlashTextSourceType::Keywords { keywords_file, .. } => keywords_file,
             FlashTextSourceType::Mapping { mapping_file, .. } => mapping_file,
@@ -74,7 +76,7 @@ impl FlashTextAnonymizer {
         })?;
         io::BufReader::new(file)
             .lines()
-            .try_for_each(|raw| -> Result<()> {
+            .try_for_each(|raw| -> anyhow::Result<()> {
                 let raw = raw?;
                 let line = raw.trim();
                 if line.is_empty() {
@@ -102,7 +104,7 @@ impl FlashTextAnonymizer {
         Ok(())
     }
 
-    pub fn add_keyword(&mut self, word: &str, replacement: &str) -> Result<()> {
+    pub fn add_keyword(&mut self, word: &str, replacement: &str) -> anyhow::Result<()> {
         if self.pluralize {
             let singular_word = pluralize(word, 1, false);
             let plural_word = pluralize(word, 2, false);
@@ -118,7 +120,7 @@ impl FlashTextAnonymizer {
         &self,
         text: &str,
         items: Option<HashMap<String, String>>,
-    ) -> Result<(String, HashMap<String, String>)> {
+    ) -> anyhow::Result<(String, HashMap<String, String>)> {
         let mut internal_text = text.to_string();
         internal_text.push_str("  ");
         let mut result = String::new();
@@ -165,7 +167,7 @@ impl FlashTextAnonymizer {
         Ok((result, items))
     }
 
-    fn add_keyword_internal(&mut self, word: &str, replacement: &str) -> Result<()> {
+    fn add_keyword_internal(&mut self, word: &str, replacement: &str) -> anyhow::Result<()> {
         let mut node: &mut TrieNode = &mut self.root;
         for ch in word.chars() {
             node = node.get_or_create_child(ch);
@@ -233,7 +235,8 @@ impl Anonymizer for FlashTextAnonymizer {
         &self,
         text: &str,
         items: Option<HashMap<String, String>>,
-    ) -> Result<(String, HashMap<String, String>)> {
+    ) -> Result<(String, HashMap<String, String>), OnyxError> {
         self.replace_keywords(text, items)
+            .map_err(|err| OnyxError::AnonymizerError(format!("Failed to anonymize text: {}", err)))
     }
 }

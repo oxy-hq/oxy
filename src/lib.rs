@@ -3,6 +3,7 @@ mod api;
 pub mod cli;
 pub mod connector;
 pub mod db;
+pub mod errors;
 pub mod theme;
 pub mod utils;
 pub mod workflow;

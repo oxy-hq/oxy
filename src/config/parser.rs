@@ -1,10 +1,15 @@
 use std::fs;
 
+use crate::errors::OnyxError;
+
 use super::model::{AgentConfig, SemanticModels, TempWorkflow, Workflow};
 
-pub fn parse_workflow_config(workflow_name: &str, file_path: &str) -> anyhow::Result<Workflow> {
-    let workflow_content = fs::read_to_string(file_path)?;
-    let temp_workflow: TempWorkflow = serde_yaml::from_str(&workflow_content)?;
+pub fn parse_workflow_config(workflow_name: &str, file_path: &str) -> Result<Workflow, OnyxError> {
+    let workflow_content = fs::read_to_string(file_path)
+        .map_err(|e| OnyxError::ArgumentError("Couldn't read workflow file".into()))?;
+    let temp_workflow: TempWorkflow = serde_yaml::from_str(&workflow_content).map_err(|e| {
+        OnyxError::ConfigurationError(format!("Couldn't parse workflow file: {}", e))
+    })?;
 
     let workflow = Workflow {
         name: workflow_name.to_string(),
@@ -14,9 +19,11 @@ pub fn parse_workflow_config(workflow_name: &str, file_path: &str) -> anyhow::Re
     Ok(workflow)
 }
 
-pub fn parse_agent_config(file_path: &str) -> anyhow::Result<AgentConfig> {
-    let agent_content = fs::read_to_string(file_path)?;
-    let agent: AgentConfig = serde_yaml::from_str(&agent_content)?;
+pub fn parse_agent_config(file_path: &str) -> Result<AgentConfig, OnyxError> {
+    let agent_content = fs::read_to_string(file_path)
+        .map_err(|e| OnyxError::RuntimeError(format!("Unable to read agent config: {}", e)))?;
+    let agent: AgentConfig = serde_yaml::from_str(&agent_content)
+        .map_err(|e| OnyxError::ConfigurationError("Unable to parse agent configuration".into()))?;
     Ok(agent)
 }
 

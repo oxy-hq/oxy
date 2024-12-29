@@ -33,13 +33,10 @@ pub async fn build_embeddings(config: &Config) -> anyhow::Result<()> {
         let (agent, agent_name) = config.load_agent_config(Some(&agent_dir))?;
 
         for tool in agent.tools {
-            match tool {
-                ToolConfig::Retrieval(retrieval) => {
-                    let db = get_vector_store(&agent_name, &retrieval)?;
-                    let documents = get_documents_from_files(&retrieval.src)?;
-                    db.embed(&documents).await?;
-                }
-                _ => {}
+            if let ToolConfig::Retrieval(retrieval) = tool {
+                let db = get_vector_store(&agent_name, &retrieval)?;
+                let documents = get_documents_from_files(&retrieval.src)?;
+                db.embed(&documents).await?;
             }
         }
     }
