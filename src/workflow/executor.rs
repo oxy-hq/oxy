@@ -22,6 +22,7 @@ use crate::config::model::StepType;
 use crate::config::model::Warehouse;
 use crate::config::model::Workflow;
 use crate::connector::Connector;
+use crate::errors::OnyxError;
 use crate::utils::print_colored_sql;
 use crate::workflow::context::Output;
 use crate::StyledText;
@@ -56,7 +57,7 @@ impl WorkflowExecutor {
         &self,
         agent_step: &AgentStep,
         context: &Value,
-    ) -> anyhow::Result<String> {
+    ) -> Result<String, OnyxError> {
         let agent = self
             .agents
             .get(&agent_step.agent_ref)
@@ -66,7 +67,7 @@ impl WorkflowExecutor {
         let step_output = (|| async { agent.request(&prompt).await })
             .retry(ExponentialBuilder::default().with_max_times(agent_step.retry))
             // Notify when retrying
-            .notify(|err: &anyhow::Error, duration: std::time::Duration| {
+            .notify(|err: &OnyxError, duration: std::time::Duration| {
                 println!("\n\x1b[93mRetrying after {:?} ... \x1b[0m", duration);
                 println!("Reason {:?}", err);
             })
@@ -78,7 +79,7 @@ impl WorkflowExecutor {
         &self,
         execute_sql_step: &ExecuteSQLStep,
         context: &Value,
-    ) -> anyhow::Result<Vec<RecordBatch>> {
+    ) -> Result<Vec<RecordBatch>, OnyxError> {
         let wh_config = self.warehouses.get(&execute_sql_step.warehouse);
         log::info!("SQL Context: {:?}", context);
         match wh_config {
@@ -102,25 +103,27 @@ impl WorkflowExecutor {
                         }
                     }
                     Err(e) => {
-                        return Err(anyhow::anyhow!(
+                        return Err(OnyxError::RuntimeError(format!(
                             "Error reading query file {}: {}",
                             &query_file.display(),
                             e
-                        ));
+                        )));
                     }
                 };
 
                 print_colored_sql(&query);
                 let (datasets, schema) = Connector::new(wh).run_query_and_load(&query).await?;
-                let batches_display = record_batches_to_table(&datasets, &schema)?;
+                let batches_display = record_batches_to_table(&datasets, &schema).map_err(|e| {
+                    OnyxError::ConfigurationError(format!("Error displaying results: {}", e))
+                })?;
                 println!("\n\x1b[1;32mResults:\x1b[0m");
                 println!("{}", batches_display);
                 Ok(datasets)
             }
-            None => Err(anyhow::anyhow!(
+            None => Err(OnyxError::ConfigurationError(format!(
                 "Warehouse {} not found",
                 execute_sql_step.warehouse
-            )),
+            ))),
         }
     }
 
@@ -128,13 +131,13 @@ impl WorkflowExecutor {
         &self,
         steps: &Vec<Step>,
         execution_context: &mut ContextBuilder,
-    ) -> anyhow::Result<Vec<WorkflowResultStep>> {
+    ) -> Result<Vec<WorkflowResultStep>, OnyxError> {
         let mut result_steps: Vec<WorkflowResultStep> = vec![];
         for (i, step) in steps.iter().enumerate() {
             if i == 0 {
                 println!("⏳Starting {}", step.name.text());
             } else {
-                println!("\n⏳Starting {}", step.name.text());
+                println!("⏳Starting {}", step.name.text());
             }
             let template_context = execution_context.build_j2_context();
 
@@ -151,7 +154,9 @@ impl WorkflowExecutor {
                     let step_output = self
                         .execute_sql(execute_sql_step, &template_context)
                         .await?;
-                    let string_result = pretty_format_batches(&step_output)?;
+                    let string_result = pretty_format_batches(&step_output).map_err(|e| {
+                        OnyxError::RuntimeError(format!("Failed to format result: {}", e))
+                    })?;
                     result_steps.push(WorkflowResultStep {
                         name: step.name.clone(),
                         output: string_result.to_string(),
@@ -163,14 +168,20 @@ impl WorkflowExecutor {
                     execution_context.enter_loop_scope(step.name.to_string());
                     match loop_step.values {
                         LoopValues::Template(ref template) => {
-                            let variable = eval_expression(template, &template_context)?;
+                            let variable =
+                                eval_expression(template, &template_context).map_err(|e| {
+                                    OnyxError::RuntimeError(format!(
+                                        "Error evaluating expression: {}",
+                                        e
+                                    ))
+                                })?;
                             log::info!("Loop values: {} {:?}", template, variable);
                             let value_or_none = variable.as_object();
                             if value_or_none.is_none() {
-                                return Err(anyhow::anyhow!(
+                                return Err(OnyxError::RuntimeError(format!(
                                     "Values {} did not resolve to an array",
                                     template,
-                                ));
+                                )));
                             }
                             let value = value_or_none.unwrap();
 
@@ -187,10 +198,10 @@ impl WorkflowExecutor {
                                     }
                                 }
                                 _ => {
-                                    return Err(anyhow::anyhow!(
+                                    return Err(OnyxError::RuntimeError(format!(
                                         "Values {} did not resolve to an array",
                                         template,
-                                    ));
+                                    )));
                                 }
                             }
                         }
@@ -223,14 +234,14 @@ impl WorkflowExecutor {
         Ok(result_steps)
     }
 
-    pub async fn execute(&self, workflow: &Workflow) -> anyhow::Result<WorkflowResult> {
+    pub async fn execute(&self, workflow: &Workflow) -> Result<WorkflowResult, OnyxError> {
         println!("\n⏳Running workflow: {}", workflow.name.text());
         let mut execution_context = ContextBuilder::new();
         let result_steps = self
             .execute_steps(&workflow.steps, &mut execution_context)
             .await?;
         let results = execution_context.get_outputs();
-        log::info!("\n\x1b[1;32mWorkflow output:\n{:?}\x1b[0m", results);
+        println!("\n\x1b[1;32mWorkflow output:\n{:?}\x1b[0m", results);
         Ok(WorkflowResult {
             output: results.clone(),
             steps: result_steps,
@@ -249,7 +260,7 @@ fn eval_expression(template: &str, context: &Value) -> anyhow::Result<Value> {
     let mut env = Environment::new();
     env.add_template(template, template)?;
     let tmpl = env.get_template(template)?;
-    let variables = tmpl.undeclared_variables(true);
+    let variables: std::collections::HashSet<String> = tmpl.undeclared_variables(true);
     if variables.len() != 1 {
         return Err(anyhow::anyhow!(
             "Expected one variable in expression, found {}",
@@ -268,7 +279,7 @@ fn eval_expression(template: &str, context: &Value) -> anyhow::Result<Value> {
 }
 
 fn list_agent_files(workflow: &Workflow) -> anyhow::Result<HashMap<String, PathBuf>> {
-    let mut agent_refs = Vec::new();
+    let mut agent_refs: Vec<String> = Vec::new();
     collect_agent_refs(&workflow.steps, &mut agent_refs);
 
     let agent_files = agent_refs

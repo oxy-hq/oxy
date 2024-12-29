@@ -41,7 +41,7 @@ pub fn collect_files_recursively(dir: &str, base_path: &str) -> anyhow::Result<V
 pub fn expand_globs(paths: &Vec<String>) -> anyhow::Result<Vec<String>> {
     let mut expanded_paths = Vec::new();
     for path in paths {
-        let glob = glob::glob(&path).map_err(|err| {
+        let glob = glob::glob(path).map_err(|err| {
             anyhow::anyhow!(
                 "Failed to expand glob pattern '{}': {}",
                 path,

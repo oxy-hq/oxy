@@ -22,7 +22,7 @@ macro_rules! union_tools {
                     if let $input::$tool_input(t) = self {
                         Ok(t)
                     } else {
-                        Err(anyhow::Error::msg("Could not convert"))
+                        anyhow::bail!(OnyxError::RuntimeError("Could not convert".to_string()))
                     }
                 }
             }
@@ -66,7 +66,7 @@ macro_rules! union_tools {
                             t.call_internal(i).await
                         }
                     ),+
-                    _ => Err(anyhow::Error::msg("Could not convert"))
+                    _ => anyhow::bail!(OnyxError::RuntimeError("Could not convert".to_string()))
                 }
             }
 

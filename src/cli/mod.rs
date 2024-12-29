@@ -3,6 +3,7 @@ mod init;
 use crate::ai::agent::AgentResult;
 use crate::ai::utils::record_batches_to_table;
 use crate::config::*;
+use crate::errors::OnyxError;
 use crate::utils::print_colored_sql;
 use crate::workflow::run_workflow;
 use crate::workflow::WorkflowResult;
@@ -10,7 +11,6 @@ use axum::handler::Handler;
 use clap::builder::ValueParser;
 use clap::CommandFactory;
 use clap::Parser;
-use colored::Colorize;
 use minijinja::{Environment, Value};
 use model::AgentConfig;
 use model::FileFormat;
@@ -24,6 +24,7 @@ use pyo3::IntoPyObject;
 use pyo3::PyAny;
 use pyo3::PyErr;
 use pyo3::Python;
+use std::backtrace;
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::path::PathBuf;
@@ -59,13 +60,12 @@ static DIST: Dir = include_dir!("D:\\a\\onyx\\onyx\\dist");
 static DIST: Dir = include_dir!("$CARGO_MANIFEST_DIR/dist");
 
 type Variable = (String, String);
-fn parse_variable(env: &str) -> Result<Variable, std::io::Error> {
+fn parse_variable(env: &str) -> Result<Variable, OnyxError> {
     if let Some((var, value)) = env.split_once('=') {
         Ok((var.to_owned(), value.to_owned()))
     } else {
-        Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "Invalid variable format",
+        Err(OnyxError::ArgumentError(
+            "Invalid variable format. Must be in the form of VAR=VALUE".to_string(),
         ))
     }
 }
@@ -179,21 +179,27 @@ struct GenConfigSchemaArgs {
     check: bool,
 }
 
-async fn handle_workflow_file(workflow_name: &PathBuf) -> Result<WorkflowResult, Box<dyn Error>> {
+async fn handle_workflow_file(workflow_name: &PathBuf) -> Result<WorkflowResult, OnyxError> {
     match run_workflow(workflow_name).await {
         Ok(r) => {
             println!("{}", "\n✅Workflow executed successfully".success());
             Ok(r)
         }
-        Err(e) => {
-            eprintln!("{}", format!("Error executing workflow: \n{}", e).error());
-            Err(e.into())
-        }
+        Err(e) => Err(e),
     }
 }
 
 pub async fn cli() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
+    use std::panic;
+
+    panic::set_hook(Box::new(move |panic_info| {
+        log::error!(
+            "{}\nTrace:\n{}",
+            panic_info,
+            backtrace::Backtrace::force_capture()
+        );
+    }));
 
     match args.command {
         Some(SubCommand::GenConfigSchema(args)) => {
@@ -280,18 +286,12 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
         }
         Some(SubCommand::VecSearch(search_args)) => {
             let config = load_config()?;
-            let agent_file = match args.agent {
-                Some(agent) => Some(ProjectPath::get_path(&agent)),
-                None => None,
-            };
+            let agent_file = args.agent.map(|agent| ProjectPath::get_path(&agent));
             let (agent, agent_name) = config.load_agent_config(agent_file.as_ref())?;
 
             for tool in agent.tools {
-                match tool {
-                    ToolConfig::Retrieval(retrieval) => {
-                        vector_search(&agent_name, &retrieval, &search_args.question).await?;
-                    }
-                    _ => {}
+                if let ToolConfig::Retrieval(retrieval) = tool {
+                    vector_search(&agent_name, &retrieval, &search_args.question).await?;
                 }
             }
         }
@@ -303,10 +303,10 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                         println!("{}", "Config file is valid".success())
                     }
                     Err(e) => {
-                        eprintln!("{}", e.to_string().error().red());
+                        log::error!("{}", e.to_string());
                     }
                 },
-                Err(e) => eprintln!("{}", e.to_string().error().red()),
+                Err(e) => log::error!("{}", e.to_string()),
             }
         }
         Some(SubCommand::Serve) => {
@@ -314,7 +314,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                 let addr = SocketAddr::from(([127, 0, 0, 1], 3001));
                 println!(
                     "{} {}",
-                    "Axum server running at".text(),
+                    "API server running at".text(),
                     format!("http://{}", addr).secondary()
                 );
                 server::serve(&addr).await;
@@ -352,7 +352,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                 let listener = tokio::net::TcpListener::bind(web_addr).await.unwrap();
                 println!(
                     "{} {}",
-                    "Web app server running at".text(),
+                    "Web app running at".text(),
                     format!("http://{}", web_addr).secondary()
                 );
                 axum::serve(listener, web_app).await.unwrap();
@@ -388,8 +388,10 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
 async fn handle_agent_file(
     file_path: Option<&PathBuf>,
     question: Option<String>,
-) -> Result<AgentResult, Box<dyn std::error::Error>> {
-    let question = question.ok_or_else(|| "Question is required for agent files".to_string())?;
+) -> Result<AgentResult, OnyxError> {
+    let question = question.ok_or_else(|| {
+        OnyxError::ArgumentError("Question is required for agent files".to_string())
+    })?;
     let agent = setup_agent(file_path, &FileFormat::Markdown).await?;
     let result = agent.request(&question).await?;
     Ok(result)
@@ -400,17 +402,21 @@ async fn handle_sql_file(
     warehouse: Option<String>,
     config: &Config,
     variables: &[(String, String)],
-) -> Result<String, Box<dyn std::error::Error>> {
-    let warehouse = warehouse.ok_or_else(|| "Warehouse is required for running SQL file. Please provide the warehouse using --warehouse or set a default warehouse in config.yml".to_string())?;
-    let content = std::fs::read_to_string(file_path)?;
-    let wh_config = config.find_warehouse(&warehouse)?;
+) -> Result<String, OnyxError> {
+    let warehouse = warehouse.ok_or_else(|| OnyxError::ArgumentError("Warehouse is required for running SQL file. Please provide the warehouse using --warehouse or set a default warehouse in config.yml".to_string()))?;
+    let content = std::fs::read_to_string(file_path)
+        .map_err(|e| OnyxError::RuntimeError(format!("Failed to read SQL file: {}", e)))?;
+    let wh_config = config
+        .find_warehouse(&warehouse)
+        .map_err(|e| OnyxError::ArgumentError(format!("Warehouse not found: {}", e)))?;
 
     let mut env = Environment::new();
     let mut query = content.clone();
 
     // Handle variable templating if variables are provided
     if !variables.is_empty() {
-        env.add_template("query", &query)?;
+        env.add_template("query", &query)
+            .map_err(|e| OnyxError::RuntimeError(format!("Failed to parse SQL template: {}", e)))?;
         let tmpl = env.get_template("query").unwrap();
         let ctx = Value::from({
             let mut m = BTreeMap::new();
@@ -419,7 +425,9 @@ async fn handle_sql_file(
             }
             m
         });
-        query = tmpl.render(ctx)?
+        query = tmpl
+            .render(ctx)
+            .map_err(|e| OnyxError::RuntimeError(format!("Failed to render SQL template: {}", e)))?
     }
 
     // Print colored SQL and execute query
@@ -427,7 +435,8 @@ async fn handle_sql_file(
     let (datasets, schema) = Connector::new(&wh_config)
         .run_query_and_load(&query)
         .await?;
-    let batches_display = record_batches_to_table(&datasets, &schema)?;
+    let batches_display = record_batches_to_table(&datasets, &schema)
+        .map_err(|e| OnyxError::RuntimeError(format!("Failed to display query results: {}", e)))?;
     println!("\n\x1b[1;32mResults:\x1b[0m");
     println!("{}", batches_display);
 
@@ -462,16 +471,17 @@ impl<'py> IntoPyObject<'py> for RunResult {
     }
 }
 
-pub async fn handle_run_command(
-    run_args: RunArgs,
-) -> Result<RunResult, Box<dyn std::error::Error>> {
+pub async fn handle_run_command(run_args: RunArgs) -> Result<RunResult, OnyxError> {
     let file = &run_args.file;
 
     let current_dir = std::env::current_dir().expect("Could not get current directory");
 
     let file_path = current_dir.join(file);
     if !file_path.exists() {
-        return Err(format!("Configuration file not found: {:?}", file_path).into());
+        return Err(OnyxError::ConfigurationError(format!(
+            "Configuration file not found: {:?}",
+            file_path
+        )));
     }
 
     let extension = file_path.extension().and_then(std::ffi::OsStr::to_str);
@@ -485,9 +495,9 @@ pub async fn handle_run_command(
                 let agent_result = handle_agent_file(Some(&file_path), run_args.question).await?;
                 return Ok(RunResult::Agent(agent_result));
             } else {
-                return Err(
+                return Err(OnyxError::ArgumentError(
                     "Invalid YAML file. Must be either *.workflow.yml or *.agent.yml".into(),
-                );
+                ));
             }
         }
         Some("sql") => {
@@ -497,6 +507,8 @@ pub async fn handle_run_command(
                 handle_sql_file(&file_path, warehouse, &config, &run_args.variables).await?;
             Ok(RunResult::Sql(sql_result))
         }
-        _ => Err("Invalid file extension. Must be .workflow.yml, .agent.yml, or .sql".into()),
+        _ => Err(OnyxError::ArgumentError(
+            "Invalid file extension. Must be .workflow.yml, .agent.yml, or .sql".into(),
+        )),
     }
 }

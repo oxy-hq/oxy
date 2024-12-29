@@ -1,11 +1,13 @@
 use std::collections::HashMap;
 
+use crate::errors::OnyxError;
+
 pub trait Anonymizer: AnonymizerClone {
     fn anonymize(
         &self,
         text: &str,
         items: Option<HashMap<String, String>>,
-    ) -> anyhow::Result<(String, HashMap<String, String>)>;
+    ) -> Result<(String, HashMap<String, String>), OnyxError>;
 
     fn deanonymize(&self, text: &str, items: &HashMap<String, String>) -> String {
         let mut result = text.to_string();

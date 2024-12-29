@@ -13,6 +13,8 @@ use serde::Deserialize;
 use std::{fs, io};
 use validate::ValidationContext;
 
+use crate::errors::OnyxError;
+
 // These are settings stored as strings derived from the config.yml file's defaults section
 #[derive(Debug, Deserialize)]
 pub struct Defaults {
@@ -46,11 +48,10 @@ impl Config {
         };
         match workflow.validate_with(&context) {
             Ok(_) => Ok(()),
-            Err(e) => Err(anyhow::anyhow!(
+            Err(e) => anyhow::bail!(OnyxError::ConfigurationError(format!(
                 "Invalid workflow: {} \n{}",
-                workflow.name,
-                e
-            )),
+                workflow.name, e
+            ))),
         }
     }
 
@@ -65,7 +66,7 @@ impl Config {
     pub fn load_agent_config(
         &self,
         agent_file: Option<&PathBuf>,
-    ) -> anyhow::Result<(AgentConfig, String)> {
+    ) -> Result<(AgentConfig, String), OnyxError> {
         let agent_file = if let Some(file) = agent_file {
             file
         } else {
@@ -73,7 +74,7 @@ impl Config {
         };
 
         if !agent_file.exists() {
-            return Err(anyhow::Error::msg(format!(
+            return Err(OnyxError::ConfigurationError(format!(
                 "Agent configuration file not found: {:?}",
                 agent_file
             )));
@@ -119,9 +120,9 @@ impl Config {
         self.list_by_sub_extension(dir, "workflow")
     }
 
-    pub fn load_workflow(&self, workflow_path: &PathBuf) -> anyhow::Result<Workflow> {
+    pub fn load_workflow(&self, workflow_path: &PathBuf) -> Result<Workflow, OnyxError> {
         if !workflow_path.exists() {
-            return Err(anyhow::Error::msg(format!(
+            return Err(OnyxError::ArgumentError(format!(
                 "Workflow configuration file not found: {:?}",
                 workflow_path
             )));
@@ -143,7 +144,7 @@ impl Config {
         semantic_model_path: &PathBuf,
     ) -> anyhow::Result<SemanticModels> {
         if !semantic_model_path.exists() {
-            return Err(anyhow::Error::msg(format!(
+            anyhow::bail!(OnyxError::ConfigurationError(format!(
                 "Semantic model file not found: {:?}",
                 semantic_model_path
             )));
@@ -180,15 +181,16 @@ impl Config {
     }
 }
 
-pub fn load_config() -> anyhow::Result<Config> {
+pub fn load_config() -> Result<Config, OnyxError> {
     let config_path: PathBuf = ProjectPath::get_path("config.yml");
     let config = parse_config(&config_path)?;
 
     Ok(config)
 }
 
-pub fn parse_config(config_path: &PathBuf) -> anyhow::Result<Config> {
-    let config_str = fs::read_to_string(config_path)?;
+pub fn parse_config(config_path: &PathBuf) -> Result<Config, OnyxError> {
+    let config_str = fs::read_to_string(config_path)
+        .map_err(|e| OnyxError::ConfigurationError("Unable to read config file".into()))?;
 
     let result = serde_yaml::from_str::<Config>(&config_str);
     match result {
@@ -196,19 +198,21 @@ pub fn parse_config(config_path: &PathBuf) -> anyhow::Result<Config> {
             let context = ValidationContext {
                 config: config.clone(),
             };
-            let validation_result = config.validate_with(&context);
+            let validation_result = config
+                .validate_with(&context)
+                .map_err(|e| OnyxError::ConfigurationError(e.to_string()));
             match validation_result {
                 Ok(_) => Ok(config),
-                Err(e) => Err(anyhow::anyhow!("Invalid configuration: \n{}", e)),
+                Err(e) => Err(e),
             }
         }
         Err(e) => {
             let mut raw_error = e.to_string();
             raw_error = raw_error.replace("usize", "unsigned integer");
-            Err(anyhow::anyhow!(
+            Err(OnyxError::ConfigurationError(format!(
                 "Failed to parse config file:\n{}",
                 raw_error
-            ))
+            )))
         }
     }
 }
