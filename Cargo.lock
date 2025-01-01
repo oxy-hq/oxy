@@ -759,7 +759,7 @@ dependencies = [
  "eventsource-stream",
  "futures",
  "rand",
- "reqwest 0.12.9",
+ "reqwest 0.12.11",
  "reqwest-eventsource",
  "secrecy",
  "serde",
@@ -4301,7 +4301,7 @@ dependencies = [
  "object_store 0.10.2",
  "pin-project",
  "regex",
- "reqwest 0.12.9",
+ "reqwest 0.12.11",
  "serde",
  "serde_json",
  "serde_with",
@@ -5025,7 +5025,7 @@ dependencies = [
  "percent-encoding",
  "quick-xml 0.36.2",
  "rand",
- "reqwest 0.12.9",
+ "reqwest 0.12.11",
  "ring 0.17.8",
  "rustls-pemfile 2.2.0",
  "serde",
@@ -5139,7 +5139,7 @@ dependencies = [
  "pluralizer",
  "pyo3",
  "pyo3-arrow",
- "reqwest 0.12.9",
+ "reqwest 0.12.11",
  "schemars",
  "sea-orm",
  "sea-orm-migration",
@@ -6242,9 +6242,9 @@ dependencies = [
 
 [[package]]
 name = "reqwest"
-version = "0.12.9"
+version = "0.12.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a77c62af46e79de0a562e1a9849205ffcb7fc1238876e9bd743357570e04046f"
+checksum = "7fe060fe50f524be480214aba758c71f99f90ee8c83c5a36b5e9e1d568eb4eb3"
 dependencies = [
  "async-compression",
  "base64 0.22.1",
@@ -6283,6 +6283,7 @@ dependencies = [
  "tokio-native-tls",
  "tokio-rustls 0.26.1",
  "tokio-util",
+ "tower",
  "tower-service",
  "url",
  "wasm-bindgen",
@@ -6304,7 +6305,7 @@ dependencies = [
  "mime",
  "nom",
  "pin-project-lite",
- "reqwest 0.12.9",
+ "reqwest 0.12.11",
  "thiserror 1.0.69",
 ]
 
