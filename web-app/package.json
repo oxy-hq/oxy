@@ -33,7 +33,7 @@
     "localforage": "^1.10.0",
     "match-sorter": "^8.0.0",
     "mdast": "^3.0.0",
-    "openai": "^4.68.2",
+    "openai": "^4.77.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-intersection-observer": "^9.13.1",
