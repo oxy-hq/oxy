@@ -1761,13 +1761,14 @@ dependencies = [
 
 [[package]]
 name = "compact_str"
-version = "0.7.1"
+version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f86b9c4c00838774a6d902ef931eff7470720c51d90c2e32cfe15dc304737b3f"
+checksum = "3b79c4069c6cad78e2e0cdfcbd26275770669fb39fd308a752dc110e83b9af32"
 dependencies = [
  "castaway",
  "cfg-if",
  "itoa",
+ "rustversion",
  "ryu",
  "serde",
  "static_assertions",
@@ -3050,9 +3051,9 @@ dependencies = [
 
 [[package]]
 name = "garde"
-version = "0.20.0"
+version = "0.21.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0a3233677ea1554a48235d81bb59d2a41654969a8e29a1316c48105fd1701693"
+checksum = "1dbf10452e3dbf51033a5035a05762b2653c43bf84d46e96f15bc93beedd426d"
 dependencies = [
  "card-validate",
  "compact_str",
@@ -3069,9 +3070,9 @@ dependencies = [
 
 [[package]]
 name = "garde_derive"
-version = "0.20.0"
+version = "0.21.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8796f322e43105351a7ec35148807b32b5b6058a539656dafe4a5b456d5ca41f"
+checksum = "ccfdbc9c39fad7991686e229c55cf71565eafe73dcb2cf38ddf1d4aa3ca7e176"
 dependencies = [
  "proc-macro2",
  "quote",
