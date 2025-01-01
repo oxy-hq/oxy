@@ -303,10 +303,14 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                         println!("{}", "Config file is valid".success())
                     }
                     Err(e) => {
-                        log::error!("{}", e.to_string());
+                        println!("{}", e.to_string().error());
+                        exit(1)
                     }
                 },
-                Err(e) => log::error!("{}", e.to_string()),
+                Err(e) => {
+                    println!("{}", e.to_string().error());
+                    exit(1)
+                }
             }
         }
         Some(SubCommand::Serve) => {
