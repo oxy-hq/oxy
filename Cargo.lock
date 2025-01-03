@@ -9186,8 +9186,3 @@ dependencies = [
  "cc",
  "pkg-config",
 ]
-
-[[patch.unused]]
-name = "esaxx-rs"
-version = "0.1.10"
-source = "git+https://github.com/onyx-hq/esaxx-rs.git?branch=feat/dynamic-msvc-link#3c8ac57d245ab328f7c71953b7c116a8d1d5498f"
