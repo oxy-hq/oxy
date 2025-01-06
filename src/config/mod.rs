@@ -177,7 +177,13 @@ impl Config {
             .iter()
             .find(|w| w.name == warehouse_name)
             .cloned()
-            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "Warehouse not found").into())
+            .ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::NotFound,
+                    format!("Warehouse {warehouse_name} not found"),
+                )
+                .into()
+            })
     }
 }
 

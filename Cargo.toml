@@ -29,7 +29,7 @@ duckdb = { version = "=1.1.1", features = [
 ] } # 1.0.0 uses arrow 52.2; "bundled" forces duckdb build from source (https://github.com/duckdb/duckdb-rs?tab=readme-ov-file#notes-on-building-duckdb-and-libduckdb-sys)
 env_logger = "0.11"
 log = "0.4"
-minijinja = "2.5.0"
+minijinja = { version = "2.5.0", features = ["loader"] }
 reqwest = { version = "0.12.11", features = ["json"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -84,10 +84,13 @@ pluralizer = "0.4.0"
 native-tls = { version = "0.2.12", features = ["vendored"] }
 tabled = "0.17.0"
 terminal_size = "0.4.1"
-pyo3 = {version = "0.23.3", features = ["experimental-async", "extension-module"] }
+pyo3 = { version = "0.23.3", features = [
+  "experimental-async",
+  "extension-module",
+] }
 pyo3-arrow = "0.6.0"
 glob = "0.3.1"
 slugify = "0.1.0"
-fern = {version = "0.7.1" , features = ["colored"]}
+fern = { version = "0.7.1", features = ["colored"] }
 humantime = "2.1.0"
 human-panic = "2.0.2"

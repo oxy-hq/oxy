@@ -2,12 +2,12 @@ use chrono::prelude::{DateTime, Utc};
 use std::path::PathBuf;
 
 use crate::{
-    ai::{self, agent::LLMAgent},
     config::model::{FileFormat, ProjectPath},
     db::{
         conversations::{create_conversation, get_conversation_by_agent},
         message::save_message,
     },
+    execute::agent::run_agent,
 };
 use async_stream::stream;
 use axum::response::IntoResponse;
@@ -43,14 +43,6 @@ pub struct AskRequest {
     pub title: String,
 }
 
-async fn get_agent(agent_path: &str) -> Box<dyn LLMAgent + Send> {
-    let file_path = ProjectPath::get_path(agent_path);
-
-    (ai::setup_agent(Some(&file_path), &FileFormat::Markdown)
-        .await
-        .unwrap()) as _
-}
-
 pub async fn ask(extract::Json(payload): extract::Json<AskRequest>) -> impl IntoResponse {
     let conversation = get_conversation_by_agent(payload.agent.as_str()).await;
     let conversation_id: Uuid;
@@ -72,8 +64,10 @@ pub async fn ask(extract::Json(payload): extract::Json<AskRequest>) -> impl Into
             created_at: question.created_at,
         };
 
-    let agent = get_agent(&payload.agent).await;
-    let result: String =agent.request(&payload.question).await.unwrap().output;
+    let result: String = run_agent(
+        Some(&ProjectPath::get_path(&payload.agent)),
+        &FileFormat::Markdown,
+        &payload.question).await.unwrap().output;
     let answer = save_message(
         conversation_id,
         &result,

@@ -46,6 +46,12 @@ pub trait VectorStore {
     async fn search(&self, query: &str) -> anyhow::Result<Vec<Document>>;
 }
 
+impl std::fmt::Debug for dyn VectorStore + Send + Sync {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "VectorStore")
+    }
+}
+
 pub struct LanceDBStore {
     uri: String,
     connection: Arc<OnceCell<Connection>>,

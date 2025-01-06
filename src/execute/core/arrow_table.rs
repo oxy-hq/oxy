@@ -7,15 +7,15 @@ use std::fmt;
 use std::{collections::HashMap, fmt::Debug, sync::Arc};
 
 #[derive(Debug, Clone)]
-pub struct J2Table(Vec<RecordBatch>);
+pub struct ArrowTable(pub Vec<RecordBatch>);
 
-impl J2Table {
+impl ArrowTable {
     pub fn new(batches: Vec<RecordBatch>) -> Self {
-        J2Table(batches)
+        ArrowTable(batches)
     }
 }
 
-impl IntoIterator for J2Table {
+impl IntoIterator for ArrowTable {
     type Item = RecordBatch;
     type IntoIter = std::vec::IntoIter<Self::Item>;
 
@@ -24,7 +24,7 @@ impl IntoIterator for J2Table {
     }
 }
 
-impl Object for J2Table {
+impl Object for ArrowTable {
     fn repr(self: &Arc<Self>) -> ObjectRepr {
         ObjectRepr::Iterable
     }
@@ -47,6 +47,7 @@ impl Object for J2Table {
                 values.push(Value::from(formatter.value(idx).to_string()));
             }
         }
+        log::info!("ArrowTable.{} Values: {:?}", key, values);
         Some(Value::from(values))
     }
 
@@ -83,16 +84,6 @@ impl Object for J2Table {
         Self: Sized + 'static,
     {
         match self.repr() {
-            ObjectRepr::Map => {
-                let mut dbg = f.debug_map();
-                for (key, value) in self.try_iter_pairs().into_iter().flatten() {
-                    dbg.entry(&key, &value);
-                }
-                dbg.finish()
-            }
-            // for either sequences or iterables, a length is needed, otherwise we
-            // don't want to risk iteration during printing and fall back to the
-            // debug print.
             ObjectRepr::Seq | ObjectRepr::Iterable if self.enumerator_len().is_some() => {
                 for value in self.try_iter().into_iter().flatten() {
                     let _ = &value.fmt(f);

@@ -15,6 +15,7 @@ pub struct ExecuteSQLParams {
     pub sql: String,
 }
 
+#[derive(Debug)]
 pub struct ExecuteSQLTool {
     pub config: Warehouse,
     pub tool_description: String,

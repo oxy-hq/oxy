@@ -116,7 +116,12 @@ impl Connector {
     }
 
     async fn run_connectorx_query(&self, query: &str, key_path: PathBuf) -> anyhow::Result<String> {
-        let current_dir = std::env::current_dir().expect("Failed to get current directory");
+        let current_dir = std::env::current_dir().map_err(|err| {
+            anyhow::Error::msg(format!(
+                "Failed to get current directory: {}",
+                err.to_string()
+            ))
+        })?;
         let key_path = current_dir.join(&key_path);
         let conn_string = format!(
             "{}://{}",
@@ -127,8 +132,8 @@ impl Connector {
         let result = tokio::task::spawn_blocking(move || {
             let source_conn = SourceConn::try_from(conn_string.as_str())?;
             let queries = &[CXQuery::from(query.as_str())];
-            let destination =
-                get_arrow(&source_conn, None, queries).expect("Run failed at get_arrow.");
+            let destination = get_arrow(&source_conn, None, queries)
+                .map_err(|err| anyhow::Error::msg(format!("Run query failed: {}", err)))?;
             let schema = destination.arrow_schema();
             let result = destination.arrow()?;
             let file_path = format!("/tmp/{}.arrow", Uuid::new_v4());
