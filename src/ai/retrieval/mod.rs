@@ -8,7 +8,7 @@ pub mod embedding;
 pub mod reranking;
 
 fn get_documents_from_files(src: &Vec<String>) -> anyhow::Result<Vec<Document>> {
-    let files = expand_globs(src)?;
+    let files = expand_globs(src, ProjectPath::get())?;
     println!("{}", format!("Found: {:?}", files).text());
     let documents = files
         .iter()

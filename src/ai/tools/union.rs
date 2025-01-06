@@ -3,7 +3,7 @@ macro_rules! union_tools {
     ($union_tool:ident, $input:ident, $($tool:ident, $tool_input:ident),+) => {
         #[derive(Deserialize, JsonSchema)]
         #[serde(untagged)]
-        enum $input {
+        pub enum $input {
             $($tool_input($tool_input)),+
         }
 
@@ -29,7 +29,8 @@ macro_rules! union_tools {
         )+
 
 
-        enum $union_tool {
+        #[derive(Debug)]
+        pub enum $union_tool {
             $($tool($tool)),+
         }
 

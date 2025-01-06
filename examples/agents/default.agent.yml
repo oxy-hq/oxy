@@ -20,11 +20,11 @@ system_instructions: |
   - The `sql` should be returned in plain text, not in JSON.
 
   ### You have access to the following warehouses and tables, ONLY use the provided warehouse and tables, columns:
-  **Dataset: {{ context.warehouse.name }}**
-  **Dialect: {{ context.warehouse.type }}**
+  **Dataset: {{ warehouses.primary_warehouse.name }}**
+  **Dialect: {{ warehouses.primary_warehouse.dialect }}**
   **Tables:**
   ```
-  {% for table in context.warehouse.tables %}
+  {% for table in warehouses.primary_warehouse.tables %}
   {{ table }}
   {% endfor %}
   ```
@@ -46,10 +46,11 @@ tools:
   - name: retrieval
     type: retrieval
     src:
-      - "data/arguna/*.txt"
-    embed_model: text-embedding-3-small
-    api_url: https://api.openai.com/v1
-    key_var: OPENAI_API_KEY
-    n_dims: 512
-    top_k: 4
-    factor: 5
+      - "data/*"
+    # embed_model: text-embedding-3-small
+    # api_url: https://api.openai.com/v1
+    # key_var: OPENAI_API_KEY
+    # api_key: secret
+    # n_dims: 512
+    # top_k: 4
+    # factor: 5

@@ -4,8 +4,9 @@ use crate::ai::agent::AgentResult;
 use crate::ai::utils::record_batches_to_table;
 use crate::config::*;
 use crate::errors::OnyxError;
+use crate::execute::agent::run_agent;
+use crate::execute::workflow::run_workflow;
 use crate::utils::print_colored_sql;
-use crate::workflow::run_workflow;
 use crate::workflow::WorkflowResult;
 use axum::handler::Handler;
 use clap::builder::ValueParser;
@@ -33,7 +34,6 @@ use std::process::Command;
 
 use init::init;
 
-use crate::ai::setup_agent;
 use crate::api::server;
 use crate::connector::Connector;
 use crate::theme::*;
@@ -396,8 +396,7 @@ async fn handle_agent_file(
     let question = question.ok_or_else(|| {
         OnyxError::ArgumentError("Question is required for agent files".to_string())
     })?;
-    let agent = setup_agent(file_path, &FileFormat::Markdown).await?;
-    let result = agent.request(&question).await?;
+    let result = run_agent(file_path, &FileFormat::Markdown, &question).await?;
     Ok(result)
 }
 

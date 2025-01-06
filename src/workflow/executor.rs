@@ -1,310 +1,236 @@
 use std::collections::HashMap;
 use std::fs;
-use std::path::PathBuf;
 
-use arrow::array::RecordBatch;
-use arrow::util::pretty::pretty_format_batches;
 use backon::ExponentialBuilder;
 use backon::Retryable;
 use minijinja::value::Enumerator;
-use minijinja::{Environment, Value};
+use minijinja::Value;
 
 use crate::ai::utils::record_batches_to_table;
-use crate::ai::{agent::LLMAgent, from_config};
+use crate::config::load_config;
 use crate::config::model::AgentStep;
-use crate::config::model::Config;
 use crate::config::model::ExecuteSQLStep;
 use crate::config::model::FileFormat;
+use crate::config::model::FormatterStep;
+use crate::config::model::LoopSequentialStep;
 use crate::config::model::LoopValues;
 use crate::config::model::ProjectPath;
 use crate::config::model::Step;
 use crate::config::model::StepType;
-use crate::config::model::Warehouse;
 use crate::config::model::Workflow;
 use crate::connector::Connector;
 use crate::errors::OnyxError;
+use crate::execute::agent::run_agent;
+use crate::execute::core::arrow_table::ArrowTable;
+use crate::execute::core::value::ContextValue;
+use crate::execute::core::Executable;
+use crate::execute::core::ExecutionContext;
+use crate::execute::core::Write;
 use crate::utils::print_colored_sql;
-use crate::workflow::context::Output;
 use crate::StyledText;
 
-use super::context::ContextBuilder;
-use super::table::J2Table;
-use super::WorkflowResult;
-use super::WorkflowResultStep;
-
-#[derive(Default)]
 pub struct WorkflowExecutor {
-    agents: HashMap<String, Box<dyn LLMAgent + Send + Sync>>,
-    warehouses: HashMap<String, Warehouse>,
+    workflow: Workflow,
 }
 
 impl WorkflowExecutor {
-    pub async fn init(&mut self, config: &Config, workflow: &Workflow) -> anyhow::Result<()> {
-        let agent_files = list_agent_files(workflow)?;
-        for (agent_ref, agent_file) in agent_files {
-            let (agent_config, agent_name) = config.load_agent_config(Some(&agent_file))?;
-            let agent = from_config(&agent_name, config, &agent_config, &FileFormat::Json).await?;
-            self.agents.insert(agent_ref.to_owned(), agent);
+    pub fn new(workflow: Workflow) -> Self {
+        Self { workflow }
+    }
+}
+
+#[async_trait::async_trait]
+impl Executable for WorkflowExecutor {
+    async fn execute(&self, execution_context: &mut ExecutionContext<'_>) -> Result<(), OnyxError> {
+        println!("\n⏳Running workflow: {}", self.workflow.name.text());
+        self.workflow.steps.execute(execution_context).await?;
+        Ok(())
+    }
+}
+
+#[async_trait::async_trait]
+impl Executable for AgentStep {
+    async fn execute(&self, execution_context: &mut ExecutionContext<'_>) -> Result<(), OnyxError> {
+        let agent_file = ProjectPath::get_path(&self.agent_ref);
+        let context = execution_context.get_context();
+        let prompt = execution_context
+            .renderer
+            .render_async(&self.prompt, context)
+            .await?;
+        let step_output =
+            (|| async { run_agent(Some(&agent_file), &FileFormat::Json, &prompt).await })
+                .retry(ExponentialBuilder::default().with_max_times(self.retry))
+                // Notify when retrying
+                .notify(|err: &OnyxError, duration: std::time::Duration| {
+                    println!("\n\x1b[93mRetrying after {:?} ... \x1b[0m", duration);
+                    println!("Reason {:?}", err);
+                })
+                .await?;
+        execution_context.write(ContextValue::Text(step_output.output.to_string()));
+        Ok(())
+    }
+}
+
+#[async_trait::async_trait]
+impl Executable for ExecuteSQLStep {
+    async fn execute(&self, execution_context: &mut ExecutionContext<'_>) -> Result<(), OnyxError> {
+        let context = execution_context.get_context();
+        let config = load_config()?;
+        let wh = &config.find_warehouse(&self.warehouse)?;
+        log::info!("SQL Context: {:?}", context);
+
+        let mut variables = HashMap::new();
+        if let Some(vars) = &self.variables {
+            for (key, value) in vars {
+                let rendered_value = execution_context
+                    .renderer
+                    .render_async(value, Value::from_serialize(&context))
+                    .await?;
+                variables.insert(key.clone(), rendered_value);
+            }
         }
-        for warehouse in &config.warehouses {
-            self.warehouses
-                .insert(warehouse.name.clone(), warehouse.clone());
+
+        let rendered_sql_file = execution_context
+            .renderer
+            .render_async(&self.sql_file, Value::from_serialize(&context))
+            .await?;
+        let query_file = ProjectPath::get_path(&rendered_sql_file);
+        let query = match fs::read_to_string(&query_file) {
+            Ok(query) => {
+                if !variables.is_empty() {
+                    execution_context
+                        .renderer
+                        .render_temp_async(&query, Value::from_serialize(&variables))
+                        .await?
+                } else {
+                    query
+                }
+            }
+            Err(e) => {
+                return Err(OnyxError::RuntimeError(format!(
+                    "Error reading query file {}: {}",
+                    &query_file.display(),
+                    e
+                )));
+            }
+        };
+
+        print_colored_sql(&query);
+        let (datasets, schema) = Connector::new(wh).run_query_and_load(&query).await?;
+        let batches_display = record_batches_to_table(&datasets, &schema).map_err(|e| {
+            OnyxError::ConfigurationError(format!("Error displaying results: {}", e))
+        })?;
+        println!("\n\x1b[1;32mResults:\x1b[0m");
+        println!("{}", batches_display);
+        execution_context.write(ContextValue::Table(ArrowTable::new(datasets)));
+        Ok(())
+    }
+}
+
+#[async_trait::async_trait]
+impl Executable for FormatterStep {
+    async fn execute(&self, execution_context: &mut ExecutionContext<'_>) -> Result<(), OnyxError> {
+        let context = execution_context.get_context();
+        let step_output = execution_context
+            .renderer
+            .render_async(&self.template, context)
+            .await?;
+        println!("{}", "\nOutput:".primary());
+        println!("{}", step_output);
+        execution_context.write(ContextValue::Text(step_output));
+        Ok(())
+    }
+}
+
+#[async_trait::async_trait]
+impl Executable for LoopSequentialStep {
+    async fn execute(&self, execution_context: &mut ExecutionContext<'_>) -> Result<(), OnyxError> {
+        let context = execution_context.get_context();
+        let values = match &self.values {
+            LoopValues::Template(ref template) => {
+                let rendered = execution_context
+                    .renderer
+                    .eval_expression(template, &context)?;
+                let value_or_none = rendered.as_object();
+                if value_or_none.is_none() {
+                    return Err(OnyxError::RuntimeError(format!(
+                        "Values {} did not resolve to an array",
+                        template,
+                    )));
+                }
+                let rendered_value = value_or_none.unwrap();
+
+                match rendered_value.enumerate() {
+                    Enumerator::Seq(length) => {
+                        let mut values = Vec::new();
+                        for idx in 0..length {
+                            let value = rendered_value
+                                .get_value(&Value::from(idx))
+                                .unwrap_or_default();
+                            values.push(value.to_string());
+                        }
+                        values
+                    }
+                    _ => {
+                        return Err(OnyxError::RuntimeError(format!(
+                            "Values {} did not resolve to an array",
+                            template,
+                        )));
+                    }
+                }
+            }
+            LoopValues::Array(ref values) => values.clone(),
+        };
+
+        let mut loop_executor = execution_context.loop_executor();
+        let values: Vec<ContextValue> = values
+            .iter()
+            .map(|v| ContextValue::Text(v.to_string()))
+            .collect();
+        loop_executor.params(&values, &self.steps).await?;
+        loop_executor.finish();
+
+        Ok(())
+    }
+}
+
+#[async_trait::async_trait]
+impl Executable for Step {
+    async fn execute(&self, execution_context: &mut ExecutionContext<'_>) -> Result<(), OnyxError> {
+        println!("\n⏳Starting {}", self.name.text());
+        match &self.step_type {
+            StepType::Agent(agent) => {
+                agent.execute(execution_context).await?;
+            }
+            StepType::ExecuteSQL(execute_sql) => {
+                execute_sql.execute(execution_context).await?;
+            }
+            StepType::Formatter(formatter) => {
+                formatter.execute(execution_context).await?;
+            }
+            StepType::LoopSequential(loop_sequential) => {
+                loop_sequential.execute(execution_context).await?;
+            }
+            StepType::Unknown => {
+                println!("Encountered unknown step type. Skipping.");
+            }
         }
         Ok(())
     }
+}
 
-    async fn execute_agent(
-        &self,
-        agent_step: &AgentStep,
-        context: &Value,
-    ) -> Result<String, OnyxError> {
-        let agent = self
-            .agents
-            .get(&agent_step.agent_ref)
-            .unwrap_or_else(|| panic!("Agent {} not found", agent_step.agent_ref));
-        let prompt = render_template(&agent_step.prompt, context);
-        log::info!("Prompt: {}", &prompt);
-        let step_output = (|| async { agent.request(&prompt).await })
-            .retry(ExponentialBuilder::default().with_max_times(agent_step.retry))
-            // Notify when retrying
-            .notify(|err: &OnyxError, duration: std::time::Duration| {
-                println!("\n\x1b[93mRetrying after {:?} ... \x1b[0m", duration);
-                println!("Reason {:?}", err);
-            })
+#[async_trait::async_trait]
+impl Executable for Vec<Step> {
+    async fn execute(&self, execution_context: &mut ExecutionContext<'_>) -> Result<(), OnyxError> {
+        let mut map_executor = execution_context.map_executor();
+        map_executor
+            .entries(
+                self.iter()
+                    .map(|s| (s.name.clone(), s.clone()))
+                    .collect::<Vec<(String, Step)>>(),
+            )
             .await?;
-        Ok(step_output.output)
+        map_executor.finish();
+        Ok(())
     }
-
-    async fn execute_sql(
-        &self,
-        execute_sql_step: &ExecuteSQLStep,
-        context: &Value,
-    ) -> Result<Vec<RecordBatch>, OnyxError> {
-        let wh_config = self.warehouses.get(&execute_sql_step.warehouse);
-        log::info!("SQL Context: {:?}", context);
-        match wh_config {
-            Some(wh) => {
-                let mut variables = HashMap::new();
-                if let Some(vars) = &execute_sql_step.variables {
-                    for (key, value) in vars {
-                        let rendered_value = render_template(value, context);
-                        variables.insert(key.clone(), rendered_value);
-                    }
-                }
-
-                let rendered_sql_file = render_template(&execute_sql_step.sql_file, context);
-                let query_file = ProjectPath::get_path(&rendered_sql_file);
-                let query = match fs::read_to_string(&query_file) {
-                    Ok(query) => {
-                        if !variables.is_empty() {
-                            render_template(&query, &Value::from_serialize(&variables))
-                        } else {
-                            query
-                        }
-                    }
-                    Err(e) => {
-                        return Err(OnyxError::RuntimeError(format!(
-                            "Error reading query file {}: {}",
-                            &query_file.display(),
-                            e
-                        )));
-                    }
-                };
-
-                print_colored_sql(&query);
-                let (datasets, schema) = Connector::new(wh).run_query_and_load(&query).await?;
-                let batches_display = record_batches_to_table(&datasets, &schema).map_err(|e| {
-                    OnyxError::ConfigurationError(format!("Error displaying results: {}", e))
-                })?;
-                println!("\n\x1b[1;32mResults:\x1b[0m");
-                println!("{}", batches_display);
-                Ok(datasets)
-            }
-            None => Err(OnyxError::ConfigurationError(format!(
-                "Warehouse {} not found",
-                execute_sql_step.warehouse
-            ))),
-        }
-    }
-
-    async fn execute_steps(
-        &self,
-        steps: &Vec<Step>,
-        execution_context: &mut ContextBuilder,
-    ) -> Result<Vec<WorkflowResultStep>, OnyxError> {
-        let mut result_steps: Vec<WorkflowResultStep> = vec![];
-        for (i, step) in steps.iter().enumerate() {
-            if i == 0 {
-                println!("⏳Starting {}", step.name.text());
-            } else {
-                println!("⏳Starting {}", step.name.text());
-            }
-            let template_context = execution_context.build_j2_context();
-
-            match &step.step_type {
-                StepType::Agent(agent_step) => {
-                    let step_output = self.execute_agent(agent_step, &template_context).await?;
-                    result_steps.push(WorkflowResultStep {
-                        name: step.name.clone(),
-                        output: step_output.clone(),
-                    });
-                    execution_context.add_output(step.name.clone(), Output::Single(step_output));
-                }
-                StepType::ExecuteSQL(execute_sql_step) => {
-                    let step_output = self
-                        .execute_sql(execute_sql_step, &template_context)
-                        .await?;
-                    let string_result = pretty_format_batches(&step_output).map_err(|e| {
-                        OnyxError::RuntimeError(format!("Failed to format result: {}", e))
-                    })?;
-                    result_steps.push(WorkflowResultStep {
-                        name: step.name.clone(),
-                        output: string_result.to_string(),
-                    });
-                    execution_context
-                        .add_output(step.name.clone(), Output::Table(J2Table::new(step_output)));
-                }
-                StepType::LoopSequential(loop_step) => {
-                    execution_context.enter_loop_scope(step.name.to_string());
-                    match loop_step.values {
-                        LoopValues::Template(ref template) => {
-                            let variable =
-                                eval_expression(template, &template_context).map_err(|e| {
-                                    OnyxError::RuntimeError(format!(
-                                        "Error evaluating expression: {}",
-                                        e
-                                    ))
-                                })?;
-                            log::info!("Loop values: {} {:?}", template, variable);
-                            let value_or_none = variable.as_object();
-                            if value_or_none.is_none() {
-                                return Err(OnyxError::RuntimeError(format!(
-                                    "Values {} did not resolve to an array",
-                                    template,
-                                )));
-                            }
-                            let value = value_or_none.unwrap();
-
-                            match value.enumerate() {
-                                Enumerator::Seq(length) => {
-                                    for idx in 0..length {
-                                        let value =
-                                            value.get_value(&Value::from(idx)).unwrap_or_default();
-                                        execution_context.update_value(value.to_string());
-                                        Box::pin(
-                                            self.execute_steps(&loop_step.steps, execution_context),
-                                        )
-                                        .await?;
-                                    }
-                                }
-                                _ => {
-                                    return Err(OnyxError::RuntimeError(format!(
-                                        "Values {} did not resolve to an array",
-                                        template,
-                                    )));
-                                }
-                            }
-                        }
-                        LoopValues::Array(ref values) => {
-                            for step_value in values.iter() {
-                                execution_context.update_value(step_value.to_string());
-                                Box::pin(self.execute_steps(&loop_step.steps, execution_context))
-                                    .await?;
-                            }
-                        }
-                    }
-
-                    execution_context.escape_scope();
-                }
-                StepType::Formatter(formatter_step) => {
-                    let step_output = render_template(&formatter_step.template, &template_context);
-                    println!("{}", "\nOutput:".primary());
-                    println!("{}", step_output);
-                    result_steps.push(WorkflowResultStep {
-                        name: step.name.clone(),
-                        output: step_output.clone(),
-                    });
-                    execution_context.add_output(step.name.clone(), Output::Single(step_output));
-                }
-                StepType::Unknown => {
-                    println!("Encountered unknown step type. Skipping.");
-                }
-            }
-        }
-        Ok(result_steps)
-    }
-
-    pub async fn execute(&self, workflow: &Workflow) -> Result<WorkflowResult, OnyxError> {
-        println!("\n⏳Running workflow: {}", workflow.name.text());
-        let mut execution_context = ContextBuilder::new();
-        let result_steps = self
-            .execute_steps(&workflow.steps, &mut execution_context)
-            .await?;
-        let results = execution_context.get_outputs();
-        println!("\n\x1b[1;32mWorkflow output:\n{:?}\x1b[0m", results);
-        Ok(WorkflowResult {
-            output: results.clone(),
-            steps: result_steps,
-        })
-    }
-}
-
-fn render_template(template: &str, context: &Value) -> String {
-    let mut env = Environment::new();
-    env.add_template(template, template).unwrap();
-    let tmpl = env.get_template(template).unwrap();
-    tmpl.render(context).unwrap()
-}
-
-fn eval_expression(template: &str, context: &Value) -> anyhow::Result<Value> {
-    let mut env = Environment::new();
-    env.add_template(template, template)?;
-    let tmpl = env.get_template(template)?;
-    let variables: std::collections::HashSet<String> = tmpl.undeclared_variables(true);
-    if variables.len() != 1 {
-        return Err(anyhow::anyhow!(
-            "Expected one variable in expression, found {}",
-            variables.len()
-        ));
-    }
-    let variable = variables.iter().next().unwrap();
-    let expression = env.compile_expression(variable)?;
-    let value = expression.eval(context)?;
-    log::info!(
-        "Evaluated expression: {} -> {:?}",
-        template,
-        value.as_object().unwrap().repr()
-    );
-    Ok(value)
-}
-
-fn list_agent_files(workflow: &Workflow) -> anyhow::Result<HashMap<String, PathBuf>> {
-    let mut agent_refs: Vec<String> = Vec::new();
-    collect_agent_refs(&workflow.steps, &mut agent_refs);
-
-    let agent_files = agent_refs
-        .into_iter()
-        .map(|agent_ref| {
-            let agent_file = ProjectPath::get_path(&agent_ref);
-            (agent_ref, agent_file)
-        })
-        .collect::<HashMap<String, PathBuf>>();
-
-    Ok(agent_files)
-}
-
-fn collect_agent_refs(steps: &[Step], agent_refs: &mut Vec<String>) {
-    steps.iter().for_each(|step| match &step.step_type {
-        StepType::Agent(agent_step) => {
-            if !agent_refs.contains(&agent_step.agent_ref) {
-                agent_refs.push(agent_step.agent_ref.clone());
-            }
-        }
-        StepType::LoopSequential(loop_step) => {
-            collect_agent_refs(&loop_step.steps, agent_refs);
-        }
-        StepType::ExecuteSQL(_) => {}
-        StepType::Formatter(_) => {}
-        StepType::Unknown => {}
-    });
 }

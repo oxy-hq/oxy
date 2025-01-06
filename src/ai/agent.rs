@@ -3,10 +3,11 @@ use crate::{
     config::model::{FileFormat, OutputFormat},
     connector::load_result,
     errors::OnyxError,
+    execute::core::{value::ContextValue, Executable, ExecutionContext, Write},
 };
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
-use super::{anonymizer::base::Anonymizer, toolbox::ToolBox, tools::Tool};
+use super::{anonymizer::base::Anonymizer, toolbox::ToolBox, MultiTool};
 use crate::theme::*;
 use async_openai::{
     config::{AzureConfig, OpenAIConfig, OPENAI_API_BASE},
@@ -21,7 +22,6 @@ use async_openai::{
     Client,
 };
 use async_trait::async_trait;
-use log::debug;
 use pyo3::pyclass;
 use schemars::{schema_for, JsonSchema};
 use serde::Deserialize;
@@ -47,6 +47,80 @@ pub struct Step {
     output: String,
 }
 
+// @todo: The temporary conversion functions for the AgentResult struct
+// will be removed once we unify the output.
+impl Into<ContextValue> for AgentResult {
+    fn into(self) -> ContextValue {
+        ContextValue::Map(
+            [
+                (
+                    "output".to_string(),
+                    ContextValue::Text(self.output.to_string()),
+                ),
+                (
+                    "steps".to_string(),
+                    ContextValue::Array(
+                        self.steps
+                            .into_iter()
+                            .map(|step| {
+                                ContextValue::Map(
+                                    [
+                                        ("name".to_string(), ContextValue::Text(step.name)),
+                                        ("output".to_string(), ContextValue::Text(step.output)),
+                                    ]
+                                    .iter()
+                                    .collect(),
+                                )
+                            })
+                            .collect::<Vec<ContextValue>>()
+                            .iter()
+                            .collect(),
+                    ),
+                ),
+            ]
+            .iter()
+            .collect(),
+        )
+    }
+}
+
+impl From<ContextValue> for AgentResult {
+    fn from(result: ContextValue) -> Self {
+        match result {
+            ContextValue::Map(map) => {
+                let output = match map.get_value("output").unwrap() {
+                    ContextValue::Text(output) => output.to_string(),
+                    _ => panic!("Expected a text"),
+                };
+                let steps = match map.get_value("steps").unwrap() {
+                    ContextValue::Array(steps) => steps
+                        .0
+                        .iter()
+                        .map(|step| {
+                            let step = match step {
+                                ContextValue::Map(step) => step,
+                                _ => panic!("Expected a map"),
+                            };
+                            let name = match step.get_value("name").unwrap() {
+                                ContextValue::Text(name) => name.to_string(),
+                                _ => panic!("Expected a text"),
+                            };
+                            let output = match step.get_value("output").unwrap() {
+                                ContextValue::Text(output) => output.to_string(),
+                                _ => panic!("Expected a text"),
+                            };
+                            Step { name, output }
+                        })
+                        .collect(),
+                    _ => panic!("Expected an array"),
+                };
+                AgentResult { output, steps }
+            }
+            _ => panic!("Expected a map"),
+        }
+    }
+}
+
 #[derive(Deserialize, Debug, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct FilePathOutput {
@@ -55,7 +129,11 @@ pub struct FilePathOutput {
 
 #[async_trait]
 pub trait LLMAgent {
-    async fn request(&self, input: &str) -> Result<AgentResult, OnyxError>;
+    async fn request(
+        &self,
+        system_instruction: &str,
+        input: &str,
+    ) -> Result<AgentResult, OnyxError>;
 }
 
 enum OpenAIClientConfig {
@@ -68,8 +146,7 @@ enum OpenAIClient {
     OpenAI(Client<OpenAIConfig>),
 }
 
-pub struct OpenAIAgent<T> {
-    tools: ToolBox<T>,
+pub struct OpenAIAgent {
     client: OpenAIClient,
     model: String,
     system_instruction: String,
@@ -77,20 +154,21 @@ pub struct OpenAIAgent<T> {
     output_format: OutputFormat,
     anonymizer: Option<Box<dyn Anonymizer + Send + Sync>>,
     file_format: FileFormat,
+    pub tools: Arc<ToolBox<MultiTool>>,
 }
 
-impl<T> OpenAIAgent<T> {
+impl OpenAIAgent {
     pub fn new(
         model: String,
         api_url: Option<String>,
         api_key: String,
         azure_deployment_id: Option<String>,
         azure_api_version: Option<String>,
-        tools: ToolBox<T>,
         system_instruction: String,
         output_format: OutputFormat,
         anonymizer: Option<Box<dyn Anonymizer + Send + Sync>>,
         file_format: FileFormat,
+        tools: Arc<ToolBox<MultiTool>>,
     ) -> Self {
         let url = api_url.unwrap_or(OPENAI_API_BASE.to_string());
         let client_config = if url.contains("azure.com") {
@@ -118,13 +196,13 @@ impl<T> OpenAIAgent<T> {
 
         OpenAIAgent {
             client,
-            tools,
             model,
             max_tries,
             system_instruction,
             output_format,
             anonymizer,
             file_format,
+            tools,
         }
     }
 
@@ -179,17 +257,13 @@ impl<T> OpenAIAgent<T> {
 }
 
 #[async_trait]
-impl<T> LLMAgent for OpenAIAgent<T>
-where
-    T: Tool + Send + Sync,
-{
-    async fn request(&self, input: &str) -> Result<AgentResult, OnyxError> {
-        let system_message = self.system_instruction.to_string();
-        debug!("System message: {}", system_message);
+impl LLMAgent for OpenAIAgent {
+    async fn request(&self, system_message: &str, input: &str) -> Result<AgentResult, OnyxError> {
+        log::info!("System message: {}", system_message);
         let anonymized_items = HashMap::new();
         let (anonymized_system_message, anonymized_items) = match self.anonymizer {
             Some(ref anonymizer) => anonymizer.anonymize(&system_message, Some(anonymized_items)),
-            None => Ok((system_message.clone(), anonymized_items)),
+            None => Ok((system_message.to_string(), anonymized_items)),
         }?;
         let (anonymized_user_message, anonymized_items) = match self.anonymizer {
             Some(ref anonymizer) => anonymizer.anonymize(input, Some(anonymized_items)),
@@ -201,16 +275,20 @@ where
                 .name("onyx")
                 .content(anonymized_system_message)
                 .build()
-                .map_err(|e| OnyxError::RuntimeError("Unable to build LLM request".into()))?
+                .map_err(|e| {
+                    OnyxError::RuntimeError(format!("Unable to build LLM request: {e}").into())
+                })?
                 .into(),
             ChatCompletionRequestUserMessageArgs::default()
                 .name("Human")
                 .content(anonymized_user_message)
                 .build()
-                .map_err(|e| OnyxError::RuntimeError("Unable to build LLM request".into()))?
+                .map_err(|e| {
+                    OnyxError::RuntimeError(format!("Unable to build LLM request: {e}").into())
+                })?
                 .into(),
         ];
-        let tools = self.tools.to_spec(OpenAIAgent::<T>::spec_serializer);
+        let tools = self.tools.to_spec(OpenAIAgent::spec_serializer);
 
         let mut tries: u8 = 0;
         let mut output = "Something went wrong".to_string();
@@ -269,7 +347,7 @@ where
             for tool in tool_call_requests.clone() {
                 let mut tool_ret: String = self
                     .tools
-                    .run_tool(tool.function.name.clone(), tool.function.arguments.clone())
+                    .run_tool(&tool.function.name, tool.function.arguments.clone())
                     .await;
                 if self.anonymizer.is_some() {
                     let result = self
@@ -297,7 +375,11 @@ where
                         .tool_call_id(tool.id.clone())
                         .content(tool_ret)
                         .build()
-                        .map_err(|e| OnyxError::RuntimeError("Unable to build LLM request".into()))?
+                        .map_err(|e| {
+                            OnyxError::RuntimeError(
+                                format!("Unable to build LLM request: {e}").into(),
+                            )
+                        })?
                         .into(),
                 );
             }
@@ -309,7 +391,9 @@ where
                 ChatCompletionRequestAssistantMessageArgs::default()
                     .tool_calls(tool_call_requests.clone())
                     .build()
-                    .map_err(|e| OnyxError::RuntimeError("Unable to build LLM request".into()))?
+                    .map_err(|e| {
+                        OnyxError::RuntimeError(format!("Unable to build LLM request: {e}").into())
+                    })?
                     .into(),
             );
 
@@ -328,6 +412,23 @@ where
             output: parsed_output,
             steps,
         })
+    }
+}
+
+#[async_trait]
+impl Executable for OpenAIAgent {
+    async fn execute(&self, execution_context: &mut ExecutionContext<'_>) -> Result<(), OnyxError> {
+        let input = execution_context.get_context_str();
+        let context = execution_context.get_context();
+        let system_instruction = execution_context
+            .renderer
+            .render_async(&self.system_instruction, context)
+            .await?;
+        log::info!("System instruction: {}", system_instruction);
+        log::info!("Prompt: {}", input);
+        let result = self.request(&system_instruction, &input).await?;
+        execution_context.write(result.into());
+        Ok(())
     }
 }
 

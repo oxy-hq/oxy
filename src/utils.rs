@@ -1,4 +1,4 @@
-use std::{fs, path::PathBuf};
+use std::path::PathBuf;
 
 use crate::theme::*;
 use syntect::{
@@ -20,31 +20,15 @@ pub fn truncate_with_ellipsis(s: &str, max_width: usize) -> String {
     prefix
 }
 
-pub fn collect_files_recursively(dir: &str, base_path: &str) -> anyhow::Result<Vec<String>> {
-    let manifest: &mut Vec<String> = &mut Vec::new();
-    for entry in fs::read_dir(dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        if path.is_dir() {
-            let mut paths = collect_files_recursively(path.to_str().unwrap(), base_path)?;
-            let paths = paths.as_mut();
-            manifest.append(paths);
-        } else if path.is_file() {
-            if let Some(path_str) = path.to_str() {
-                manifest.push(path_str.to_string());
-            }
-        }
-    }
-    Ok(manifest.clone())
-}
-
-pub fn expand_globs(paths: &Vec<String>) -> anyhow::Result<Vec<String>> {
+pub fn expand_globs(paths: &Vec<String>, cwd: PathBuf) -> anyhow::Result<Vec<String>> {
     let mut expanded_paths = Vec::new();
     for path in paths {
-        let glob = glob::glob(path).map_err(|err| {
+        let path = cwd.join(path);
+        let pattern = path.to_str().unwrap();
+        let glob = glob::glob(pattern).map_err(|err| {
             anyhow::anyhow!(
                 "Failed to expand glob pattern '{}': {}",
-                path,
+                pattern,
                 err.to_string()
             )
         })?;
@@ -59,14 +43,6 @@ pub fn expand_globs(paths: &Vec<String>) -> anyhow::Result<Vec<String>> {
         }
     }
     Ok(expanded_paths)
-}
-
-pub fn list_file_stems(path: &str) -> anyhow::Result<Vec<PathBuf>> {
-    let files = fs::read_dir(path)?
-        .map(|entry| entry.unwrap().path())
-        .filter(|path| path.is_file())
-        .collect::<Vec<PathBuf>>();
-    Ok(files)
 }
 
 pub fn print_colored_sql(sql: &str) {

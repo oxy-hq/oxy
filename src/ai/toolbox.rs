@@ -3,7 +3,7 @@ use crate::utils::truncate_with_ellipsis;
 use serde_json::Value;
 use std::collections::HashMap;
 
-#[derive(Default)]
+#[derive(Debug, Default, Clone)]
 pub struct ToolBox<T> {
     tools: HashMap<String, T>,
 }
@@ -37,8 +37,8 @@ where
         spec
     }
 
-    pub async fn run_tool(&self, name: String, parameters: String) -> String {
-        let tool = self.tools.get(&name);
+    pub async fn run_tool(&self, name: &str, parameters: String) -> String {
+        let tool = self.tools.get(name);
 
         if tool.is_none() {
             return format!("Tool {} not found", name);

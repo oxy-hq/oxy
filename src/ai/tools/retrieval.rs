@@ -12,6 +12,7 @@ pub struct RetrieveParams {
     pub query: String,
 }
 
+#[derive(Debug)]
 pub struct RetrieveTool {
     pub name: String,
     pub vector_db: Box<dyn VectorStore + Send + Sync>,
@@ -38,6 +39,14 @@ impl Tool for RetrieveTool {
     }
     fn description(&self) -> String {
         self.tool_description.clone()
+    }
+    fn validate(&self, parameters: &str) -> anyhow::Result<Self::Input> {
+        match serde_json::from_str::<Self::Input>(parameters) {
+            Ok(params) => Ok(params),
+            Err(_) => Ok(RetrieveParams {
+                query: parameters.to_string(),
+            }),
+        }
     }
     async fn call_internal(&self, parameters: &RetrieveParams) -> anyhow::Result<String> {
         let results = self.vector_db.search(&parameters.query).await;

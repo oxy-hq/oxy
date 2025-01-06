@@ -280,7 +280,7 @@ pub struct ParsedConfig {
     pub warehouse: Warehouse,
 }
 
-#[derive(Serialize, Deserialize, Debug, Validate, JsonSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
 #[garde(context(ValidationContext))]
 pub struct AgentStep {
     #[garde(length(min = 1))]
@@ -292,7 +292,7 @@ pub struct AgentStep {
     pub retry: usize,
 }
 
-#[derive(Serialize, Deserialize, Debug, Validate, JsonSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
 #[garde(context(ValidationContext))]
 pub struct ExecuteSQLStep {
     #[garde(custom(validate_warehouse_exists))]
@@ -306,14 +306,14 @@ pub struct ExecuteSQLStep {
     pub variables: Option<HashMap<String, String>>,
 }
 
-#[derive(Serialize, Deserialize, Debug, JsonSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, JsonSchema)]
 #[serde(untagged)]
 pub enum LoopValues {
     Template(String),
     Array(Vec<String>),
 }
 
-#[derive(Serialize, Deserialize, Debug, Validate, JsonSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
 #[garde(context(ValidationContext))]
 pub struct LoopSequentialStep {
     #[garde(skip)]
@@ -322,14 +322,14 @@ pub struct LoopSequentialStep {
     pub steps: Vec<Step>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Validate, JsonSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
 #[garde(context(ValidationContext))]
 pub struct FormatterStep {
     #[garde(length(min = 1))]
     pub template: String,
 }
 
-#[derive(Serialize, Deserialize, Debug, Validate, JsonSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
 #[garde(context(ValidationContext))]
 #[serde(tag = "type")]
 pub enum StepType {
@@ -350,7 +350,7 @@ pub struct TempWorkflow {
     pub steps: Vec<Step>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Validate, JsonSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
 #[garde(context(ValidationContext))]
 pub struct Step {
     #[garde(length(min = 1))]
