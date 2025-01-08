@@ -1214,7 +1214,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "edca88bc138befd0323b20752846e6587272d3b03b0343c8ea28a6f819e6e71f"
 dependencies = [
  "async-trait",
- "axum-core 0.4.5",
+ "axum-core",
  "axum-macros",
  "bytes",
  "futures-util",
@@ -1224,41 +1224,7 @@ dependencies = [
  "hyper 1.5.2",
  "hyper-util",
  "itoa",
- "matchit 0.7.3",
- "memchr",
- "mime",
- "percent-encoding",
- "pin-project-lite",
- "rustversion",
- "serde",
- "serde_json",
- "serde_path_to_error",
- "serde_urlencoded",
- "sync_wrapper 1.0.2",
- "tokio",
- "tower",
- "tower-layer",
- "tower-service",
- "tracing",
-]
-
-[[package]]
-name = "axum"
-version = "0.8.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6d6fd624c75e18b3b4c6b9caf42b1afe24437daaee904069137d8bab077be8b8"
-dependencies = [
- "axum-core 0.5.0",
- "bytes",
- "form_urlencoded",
- "futures-util",
- "http 1.2.0",
- "http-body 1.0.1",
- "http-body-util",
- "hyper 1.5.2",
- "hyper-util",
- "itoa",
- "matchit 0.8.4",
+ "matchit",
  "memchr",
  "mime",
  "percent-encoding",
@@ -1298,26 +1264,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "axum-core"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "df1362f362fd16024ae199c1970ce98f9661bf5ef94b9808fee734bc3698b733"
-dependencies = [
- "bytes",
- "futures-util",
- "http 1.2.0",
- "http-body 1.0.1",
- "http-body-util",
- "mime",
- "pin-project-lite",
- "rustversion",
- "sync_wrapper 1.0.2",
- "tower-layer",
- "tower-service",
- "tracing",
-]
-
-[[package]]
 name = "axum-macros"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1330,11 +1276,11 @@ dependencies = [
 
 [[package]]
 name = "axum-streams"
-version = "0.20.0"
+version = "0.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7e706938a2f02ac53dac79575d99819fa6285a5eae35b0fa27b959affb80c435"
+checksum = "ef49936ad8fd9750be8bb5c75f64b19bd407027c5c9e89c42e0939122d162d67"
 dependencies = [
- "axum 0.8.1",
+ "axum",
  "bytes",
  "csv",
  "futures",
@@ -4671,12 +4617,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0e7465ac9959cc2b1404e8e2367b43684a6d13790fe23056cc8c6c5a6b7bcb94"
 
 [[package]]
-name = "matchit"
-version = "0.8.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "47e1ffaa40ddd1f3ed91f717a33c8c0ee23fff369e3aa8772b9605cc1d22f4c3"
-
-[[package]]
 name = "matrixmultiply"
 version = "0.3.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5176,7 +5116,7 @@ dependencies = [
  "async-openai",
  "async-stream",
  "async-trait",
- "axum 0.7.9",
+ "axum",
  "axum-streams",
  "backon",
  "chrono",
