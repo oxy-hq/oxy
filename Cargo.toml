@@ -89,7 +89,7 @@ pyo3 = { version = "0.23.3", features = [
   "extension-module",
 ] }
 pyo3-arrow = "0.6.0"
-glob = "0.3.1"
+glob = "0.3.2"
 slugify = "0.1.0"
 fern = { version = "0.7.1", features = ["colored"] }
 humantime = "2.1.0"
