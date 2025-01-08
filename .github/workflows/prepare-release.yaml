@@ -37,7 +37,7 @@ jobs:
   #     - name: Prep cargo cache
   #       uses: Swatinem/rust-cache@v2
   #       with:
-  #         shared-key: release-ubuntu-latest-x86_64-unknown-linux-gnu
+  #         shared-key: debug-ubuntu-latest-x86_64-unknown-linux-gnu
   #     - name: Run release-plz
   #       uses: release-plz/action@v0.5
   #       with:

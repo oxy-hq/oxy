@@ -43,7 +43,7 @@ jobs:
       - name: Prep cargo cache
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: release-ubuntu-latest-x86_64-unknown-linux-gnu
+          shared-key: debug-ubuntu-latest-x86_64-unknown-linux-gnu
       - name: Install required dependencies
         shell: bash
         run: |
@@ -91,13 +91,40 @@ jobs:
       - name: Prep cargo cache
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: release-ubuntu-latest-x86_64-unknown-linux-gnu
+          shared-key: debug-ubuntu-latest-x86_64-unknown-linux-gnu
       # protobuf is required by lance https://github.com/lancedb/lance/issues/3073
       - name: Install Protoc
         uses: arduino/setup-protoc@v3
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Run cargo check
-        run: cargo check --verbose
+        run: cargo check --verbose --locked
       - name: Run cargo clippy
-        run: cargo clippy --verbose
+        run: cargo clippy --verbose --locked
+
+  test:
+    needs: [check]
+    name: Onyx test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prep Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Prep cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: debug-ubuntu-latest-x86_64-unknown-linux-gnu
+      # protobuf is required by lance https://github.com/lancedb/lance/issues/3073
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Run cargo test
+        env:
+          RUST_BACKTRACE: 1
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          BIGQUERY_SAMPLE_KEY: ${{ secrets.BIGQUERY_SAMPLE_KEY }}
+        run: |
+          touch examples/bigquery-sample.key
+          echo $BIGQUERY_SAMPLE_KEY > examples/bigquery-sample.key
+          cargo test --verbose --locked --no-fail-fast -- --nocapture

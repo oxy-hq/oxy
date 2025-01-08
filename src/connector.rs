@@ -117,10 +117,7 @@ impl Connector {
 
     async fn run_connectorx_query(&self, query: &str, key_path: PathBuf) -> anyhow::Result<String> {
         let current_dir = std::env::current_dir().map_err(|err| {
-            anyhow::Error::msg(format!(
-                "Failed to get current directory: {}",
-                err.to_string()
-            ))
+            anyhow::Error::msg(format!("Failed to get current directory: {}", err))
         })?;
         let key_path = current_dir.join(&key_path);
         let conn_string = format!(

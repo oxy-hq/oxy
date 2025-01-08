@@ -22,7 +22,7 @@ steps:
             sql_file: data/example_{{schedules.value}}_{{metrics.value}}.sql
             variables:
               variable_a: "1000"
-              variable_b: hello
+              variable_b: "{{ metrics.value }}"
               variable_c: "{{ metrics.value }}"
           - name: report
             type: agent

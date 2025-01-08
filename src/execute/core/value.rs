@@ -35,7 +35,7 @@ impl<'a> FromIterator<&'a (String, ContextValue)> for Map {
     {
         let mut map = Map::default();
         for (key, value) in iter {
-            map.set_value(&key, value.clone());
+            map.set_value(key, value.clone());
         }
         map
     }
@@ -54,10 +54,7 @@ impl Object for Map {
 
     fn get_value(self: &Arc<Self>, key: &Value) -> Option<Value> {
         let key = key.as_str()?;
-        match self.0.get(key) {
-            Some(value) => Some(value.to_owned().into()),
-            None => None,
-        }
+        self.0.get(key).map(|value| value.to_owned().into())
     }
 }
 
@@ -103,7 +100,7 @@ impl Object for Array {
                     Err(_) => None,
                 }
             }
-            None => return None,
+            None => None,
         }
     }
 
@@ -142,10 +139,7 @@ impl From<ContextValue> for Value {
 impl Object for ContextValue {
     fn get_value(self: &Arc<Self>, key: &Value) -> Option<Value> {
         let key = key.as_str()?;
-        match self.find(key) {
-            Some(value) => Some(value.clone().into()),
-            None => None,
-        }
+        self.find(key).map(|value| value.clone().into())
     }
 
     fn render(self: &Arc<Self>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result

@@ -55,7 +55,7 @@ pub fn from_config(
             Some(Box::new(anonymizer))
         }
     };
-    let toolbox = Arc::new(tools_from_config(&agent_name, config, agent_config));
+    let toolbox = Arc::new(tools_from_config(agent_name, config, agent_config));
 
     match model {
         Model::OpenAI {
@@ -122,7 +122,7 @@ fn tools_from_config(
                 toolbox.add_tool(execute_sql.name.to_string(), tool.into());
             }
             ToolConfig::Retrieval(retrieval) => {
-                let tool = RetrieveTool::new(agent_name, &retrieval);
+                let tool = RetrieveTool::new(agent_name, retrieval);
                 toolbox.add_tool(retrieval.name.to_string(), tool.into());
             }
         };

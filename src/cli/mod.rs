@@ -476,7 +476,7 @@ pub async fn handle_run_command(run_args: RunArgs) -> Result<RunResult, OnyxErro
     let file_path = current_dir.join(file);
     if !file_path.exists() {
         return Err(OnyxError::ConfigurationError(format!(
-            "Configuration file not found: {:?}",
+            "File not found: {:?}",
             file_path
         )));
     }

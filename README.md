@@ -327,3 +327,19 @@ Poetry is a python package manager that we use to manage python dependencies. In
 ```sh
 pip install poetry
 ```
+
+
+## Testing
+Test are running on examples configuration.
+To run all tests, need `bigquery_sample.key` in `examples` directory and `OPENAI_API_KEY` env set.
+```sh
+cargo test
+```
+
+To show test stdout for debugging use `--nocapture`
+```sh
+cargo test -- --nocapture
+```
+
+### Known issues
+- Tests when running in parallel (default) messed up terminal indentation.

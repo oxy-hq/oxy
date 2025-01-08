@@ -103,9 +103,9 @@ jobs:
         shell: bash
         run: |
           if [[ "${{ matrix.job.cross-compilation }}" == "true" ]]; then
-            cross build --release --target ${{ matrix.job.target }}
+            cross build --release --target ${{ matrix.job.target }} --locked
           else
-            cargo build --release --target ${{ matrix.job.target }}
+            cargo build --release --target ${{ matrix.job.target }} --locked
           fi
           mkdir -p artifacts
           mv target/${{ matrix.job.target }}/release/onyx artifacts/onyx-${{ matrix.job.target }}

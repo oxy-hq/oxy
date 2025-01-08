@@ -68,19 +68,19 @@ The release manager should perform regression testing on core features that are 
 
 - **Description**: The `onyx run` command is used to run the Onyx server
 - **Testing plan**:
-  - [ ] Check onyx run with an agent and bigquery by running `onyx run agents/default.agent.yml "how many users are there in the database"`
-  - [ ] Check onyx run with semantic information by running `onyx run agents/semantic_model.agent.yml "how many users are there in the database"`
+  - [x] Check onyx run with an agent and bigquery by running `onyx run agents/default.agent.yml "how many users are there in the database"` *(automated since #219)*
+  - [x] Check onyx run with semantic information by running `onyx run agents/semantic_model.agent.yml "how many users are there in the databse"` *(automated since #219)*
     - [ ] Additionally, check the difference between the two outputs of `onyx run agents/default.agent.yml "how many property_grouping"` and `onyx run agents/semantic_model.agent.yml "how many property_grouping"`
-  - [ ] Check onyx run workflow capabilities by running `onyx run workflows/table_values.workflow.yml` and see if workflow can be run successfully with colored output
-  - [ ] Check onyx anonymization capabilities with workflow by running `onyx run workflows/anonymize.workflow.yml` and see if the workflow can be run successfully with a lot of mentions of `comnpany` and `feedback` while the report name is still `Responses to the survey by organizations`
-  - [ ] Check onyx run workflow capabilities with loops sequential and formatter by running `onyx run workflows/survey_responses.workflow.yml` and see if workflow can be run successfully with colored output
+  - [x] Check onyx run workflow capabilities by running `onyx run workflows/table_values.workflow.yml` and see if workflow can be run successfully with colored output *(automated since #219)*
+  - [x] Check onyx anonymization capabilities with workflow by running `onyx run workflows/anonymize.workflow.yml` and see if the workflow can be run successfully with a lot of mentions of `comnpany` and `feedback` while the report name is still `Responses to the survey by organizations` *(automated since #219)*
+  - [x] Check onyx run workflow capabilities with loops sequential and formatter by running `onyx run workflows/survey_responses.workflow.yml` and see if workflow can be run successfully with colored output *(automated since #219)*
 
 - **Description**: The `onyx serve` command is used to run the Onyx server
-  - [ ] Check onyx serve by running `onyx serve` and see whether the server is running as well as `localhost:3000` is accessible from the browser.
+  - [x] Check onyx serve by running `onyx serve` and see whether the server is running as well as `localhost:3000` is accessible from the browser. *(automated since #219)*
     - [ ] Additionally, perform some chatting in the UI with the same questions to the agents such as `how many users`
 
 - **Description**: The `onyx validate` command is used to validate the configuration file
-  - [ ] Check onyx validate by running `onyx validate` after changing some fields to a wrong key (like `warehouses` to `warehouse`) in `config.yml`
+  - [x] Check onyx validate by running `onyx validate` after changing some fields to a wrong key (like `warehouses` to `warehouse`) in `config.yml` *(automated since #219)*
 
 - **Description**: The `onyx list-tables` and `onyx list-datasets` commands are used to list tables and datasets in the default warehouse
-  - [ ] Check onyx discovery capabilities by running `onyx list-tables` or `onyx list-datasets`
+  - [x] Check onyx discovery capabilities by running `onyx list-tables` or `onyx list-datasets` *(automated since #219)*

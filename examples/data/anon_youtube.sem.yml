@@ -9,7 +9,7 @@ entities:
 
 dimensions:
   - name: month
-    sample: 
+    sample:
       - "2024-08"
   - name: property_grouping
     synonyms:
