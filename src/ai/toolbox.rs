@@ -1,11 +1,19 @@
 use super::tools::Tool;
-use crate::utils::truncate_with_ellipsis;
+use crate::{execute::agent::ToolCall, utils::truncate_with_ellipsis};
 use serde_json::Value;
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    fmt::{Debug, Formatter, Result as FmtResult},
+};
 
-#[derive(Debug, Default, Clone)]
 pub struct ToolBox<T> {
     tools: HashMap<String, T>,
+}
+
+impl<T> Debug for ToolBox<T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        f.debug_struct("ToolBox").finish()
+    }
 }
 
 pub type SpecSerializer<Ret> = fn(String, String, Value) -> Ret;
@@ -37,21 +45,28 @@ where
         spec
     }
 
-    pub async fn run_tool(&self, name: &str, parameters: String) -> String {
+    pub async fn run_tool(&self, name: &str, parameters: String) -> ToolCall {
         let tool = self.tools.get(name);
 
-        if tool.is_none() {
-            return format!("Tool {} not found", name);
-        }
-        let response = tool.unwrap().call(&parameters).await;
-        match response {
-            Ok(result) => truncate_with_ellipsis(&result, 1000),
-            Err(e) => {
-                let err_msg =
-                    truncate_with_ellipsis(&format!("Error executing tool: {:?}", e), 1000);
-                log::info!("{}", err_msg);
-                err_msg
-            }
+        match tool {
+            None => ToolCall {
+                name: name.to_string(),
+                output: format!("Tool {} not found", name),
+                metadata: None,
+            },
+            Some(tool) => match tool.call(&parameters).await {
+                Ok(tool_call) => tool_call,
+                Err(e) => {
+                    let err_msg =
+                        truncate_with_ellipsis(&format!("Error executing tool: {:?}", e), None);
+                    log::info!("{}", err_msg);
+                    ToolCall {
+                        name: name.to_string(),
+                        output: err_msg,
+                        metadata: None,
+                    }
+                }
+            },
         }
     }
 }

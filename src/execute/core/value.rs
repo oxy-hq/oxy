@@ -1,11 +1,15 @@
 use std::{collections::HashMap, sync::Arc};
 
+use super::arrow_table::ArrowTable;
 use minijinja::{
-    value::{Object, ObjectRepr},
+    value::{Enumerator, Object, ObjectRepr},
     Value,
 };
-
-use super::arrow_table::ArrowTable;
+use pyo3::{
+    prelude::*,
+    types::{PyDict, PyList, PyNone, PyString},
+};
+use pyo3_arrow::PyRecordBatch;
 
 pub trait ContextLookup {
     fn find(&self, key: &str) -> Option<&ContextValue>;
@@ -102,6 +106,10 @@ impl Object for Array {
             None => return None,
         }
     }
+
+    fn enumerate(self: &Arc<Self>) -> Enumerator {
+        Enumerator::Values(self.0.iter().map(|v| v.clone().into()).collect())
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -111,12 +119,6 @@ pub enum ContextValue {
     Map(Map),
     Array(Array),
     Table(ArrowTable),
-}
-
-#[derive(Debug, Clone)]
-pub enum Mutation {
-    NewItem { key: String, value: ContextValue },
-    Upsert { key: String, value: ContextValue },
 }
 
 impl Default for ContextValue {
@@ -167,5 +169,50 @@ impl ContextLookup for ContextValue {
             ContextValue::Array(a) => a.find(key),
             _ => None,
         }
+    }
+}
+
+pub fn convert_output_to_python<'py>(py: Python<'py>, output: &ContextValue) -> Bound<'py, PyAny> {
+    match output {
+        ContextValue::Text(s) => {
+            return PyString::new(py, s).into_any();
+        }
+        ContextValue::Map(m) => {
+            let dict = PyDict::new(py);
+            for (k, v) in &m.0 {
+                dict.set_item(k, convert_output_to_python(py, v)).unwrap();
+            }
+            dict.into_any()
+        }
+        ContextValue::Array(a) => {
+            let elements = a.0.iter().map(|v| convert_output_to_python(py, v));
+            let list = PyList::new(py, elements).unwrap();
+            list.into_any()
+        }
+        ContextValue::Table(table) => {
+            let mut record_batchs = vec![];
+            let iterator = table.0.clone().into_iter();
+            for batch in iterator {
+                let rb = PyRecordBatch::new(batch);
+                record_batchs.push(rb.to_pyarrow(py).unwrap());
+            }
+            return PyList::new(py, record_batchs).unwrap().into_any();
+        }
+        _ => {
+            return <pyo3::Bound<'_, PyNone> as Clone>::clone(&PyNone::get(py)).into_any();
+        }
+    }
+}
+
+impl<'py> IntoPyObject<'py> for ContextValue {
+    type Target = PyAny;
+
+    type Output = Bound<'py, Self::Target>;
+
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        let output = convert_output_to_python(py, &self);
+        Ok(output)
     }
 }

@@ -180,13 +180,7 @@ struct GenConfigSchemaArgs {
 }
 
 async fn handle_workflow_file(workflow_name: &PathBuf) -> Result<WorkflowResult, OnyxError> {
-    match run_workflow(workflow_name).await {
-        Ok(r) => {
-            println!("{}", "\n✅Workflow executed successfully".success());
-            Ok(r)
-        }
-        Err(e) => Err(e),
-    }
+    run_workflow(workflow_name).await
 }
 
 pub async fn cli() -> Result<(), Box<dyn Error>> {
@@ -396,7 +390,7 @@ async fn handle_agent_file(
     let question = question.ok_or_else(|| {
         OnyxError::ArgumentError("Question is required for agent files".to_string())
     })?;
-    let result = run_agent(file_path, &FileFormat::Markdown, &question).await?;
+    let result = run_agent(file_path, &FileFormat::Markdown, &question, None).await?;
     Ok(result)
 }
 

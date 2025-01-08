@@ -51,11 +51,20 @@ impl Renderer {
         let env = self.env.clone();
         let template = template.to_string();
         spawn_blocking(move || {
-            let tmpl = env.get_template(&template).unwrap();
-            tmpl.render(context).unwrap()
+            let tmpl = match env.get_template(&template) {
+                Ok(tmpl) => tmpl,
+                Err(err) => {
+                    return Err(OnyxError::ConfigurationError(format!(
+                        "Template \"{template}\" not found: {err}"
+                    )));
+                }
+            };
+            tmpl.render(context).map_err(|err| {
+                OnyxError::RuntimeError(format!("Error rendering template: {:?}", err))
+            })
         })
         .map_err(|err| OnyxError::RuntimeError(format!("Error rendering template: {:?}", err)))
-        .await
+        .await?
     }
 
     pub async fn render_temp_async(
@@ -86,9 +95,9 @@ impl Renderer {
             OnyxError::RuntimeError(format!("Error evaluating expression: {}", err))
         })?;
         log::info!(
-            "Evaluated expression: {} -> {:?} with context: {}",
+            "Evaluated expression: {} -> {:?} with context: {:?}",
             template,
-            value.as_object().unwrap().repr(),
+            value,
             context
         );
         Ok(value)
@@ -142,7 +151,7 @@ impl<'renderer> ListRegister<'renderer> {
     }
 
     pub fn item(&mut self, value: &dyn TemplateRegister) -> Result<&mut Self, OnyxError> {
-        value.register_template(self.renderer).unwrap();
+        value.register_template(self.renderer)?;
         Ok(self)
     }
 }

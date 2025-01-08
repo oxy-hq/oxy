@@ -20,10 +20,14 @@ pub fn parse_workflow_config(workflow_name: &str, file_path: &str) -> Result<Wor
 }
 
 pub fn parse_agent_config(file_path: &str) -> Result<AgentConfig, OnyxError> {
-    let agent_content = fs::read_to_string(file_path)
-        .map_err(|e| OnyxError::RuntimeError(format!("Unable to read agent config: {}", e)))?;
-    let agent: AgentConfig = serde_yaml::from_str(&agent_content)
-        .map_err(|e| OnyxError::ConfigurationError("Unable to parse agent configuration".into()))?;
+    let agent_content = fs::read_to_string(file_path).map_err(|e| {
+        OnyxError::RuntimeError(format!("Unable to read agent {file_path} config: {}", e))
+    })?;
+    let agent: AgentConfig = serde_yaml::from_str(&agent_content).map_err(|e| {
+        OnyxError::ConfigurationError(
+            format!("Unable to parse agent {file_path} configuration {e}").into(),
+        )
+    })?;
     Ok(agent)
 }
 

@@ -13,6 +13,7 @@ use crate::{
         model::{AgentConfig, AnonymizerConfig, Config, FileFormat, Model, ToolConfig},
     },
     errors::OnyxError,
+    execute::agent::ToolCall,
     union_tools,
 };
 use agent::OpenAIAgent;

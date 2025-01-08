@@ -37,12 +37,6 @@
         }
       ]
     },
-    "retrieval": {
-      "type": [
-        "string",
-        "null"
-      ]
-    },
     "system_instructions": {
       "type": "string"
     },

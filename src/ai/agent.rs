@@ -1,14 +1,17 @@
 use crate::{
-    ai::utils::{record_batches_to_json, record_batches_to_markdown, record_batches_to_table},
+    ai::utils::{record_batches_to_json, record_batches_to_markdown},
     config::model::{FileFormat, OutputFormat},
     connector::load_result,
     errors::OnyxError,
-    execute::core::{value::ContextValue, Executable, ExecutionContext, Write},
+    execute::{
+        agent::AgentEvent,
+        core::{value::ContextValue, write::Write, Executable, ExecutionContext},
+    },
+    utils::{format_table_output, truncate_datasets},
 };
 use std::{collections::HashMap, sync::Arc};
 
 use super::{anonymizer::base::Anonymizer, toolbox::ToolBox, MultiTool};
-use crate::theme::*;
 use async_openai::{
     config::{AzureConfig, OpenAIConfig, OPENAI_API_BASE},
     error::OpenAIError,
@@ -27,98 +30,12 @@ use schemars::{schema_for, JsonSchema};
 use serde::Deserialize;
 use serde_json::json;
 
-const MAX_DISPLAY_ROWS: usize = 100;
 const CONTEXT_WINDOW_EXCEEDED_CODE: &str = "string_above_max_length";
 
 #[pyclass(module = "onyx_py")]
 pub struct AgentResult {
     #[pyo3(get)]
-    pub output: String,
-    #[pyo3(get)]
-    pub steps: Vec<Step>,
-}
-
-#[pyclass(module = "onyx_py")]
-#[derive(Clone)]
-pub struct Step {
-    #[pyo3(get)]
-    name: String,
-    #[pyo3(get)]
-    output: String,
-}
-
-// @todo: The temporary conversion functions for the AgentResult struct
-// will be removed once we unify the output.
-impl Into<ContextValue> for AgentResult {
-    fn into(self) -> ContextValue {
-        ContextValue::Map(
-            [
-                (
-                    "output".to_string(),
-                    ContextValue::Text(self.output.to_string()),
-                ),
-                (
-                    "steps".to_string(),
-                    ContextValue::Array(
-                        self.steps
-                            .into_iter()
-                            .map(|step| {
-                                ContextValue::Map(
-                                    [
-                                        ("name".to_string(), ContextValue::Text(step.name)),
-                                        ("output".to_string(), ContextValue::Text(step.output)),
-                                    ]
-                                    .iter()
-                                    .collect(),
-                                )
-                            })
-                            .collect::<Vec<ContextValue>>()
-                            .iter()
-                            .collect(),
-                    ),
-                ),
-            ]
-            .iter()
-            .collect(),
-        )
-    }
-}
-
-impl From<ContextValue> for AgentResult {
-    fn from(result: ContextValue) -> Self {
-        match result {
-            ContextValue::Map(map) => {
-                let output = match map.get_value("output").unwrap() {
-                    ContextValue::Text(output) => output.to_string(),
-                    _ => panic!("Expected a text"),
-                };
-                let steps = match map.get_value("steps").unwrap() {
-                    ContextValue::Array(steps) => steps
-                        .0
-                        .iter()
-                        .map(|step| {
-                            let step = match step {
-                                ContextValue::Map(step) => step,
-                                _ => panic!("Expected a map"),
-                            };
-                            let name = match step.get_value("name").unwrap() {
-                                ContextValue::Text(name) => name.to_string(),
-                                _ => panic!("Expected a text"),
-                            };
-                            let output = match step.get_value("output").unwrap() {
-                                ContextValue::Text(output) => output.to_string(),
-                                _ => panic!("Expected a text"),
-                            };
-                            Step { name, output }
-                        })
-                        .collect(),
-                    _ => panic!("Expected an array"),
-                };
-                AgentResult { output, steps }
-            }
-            _ => panic!("Expected a map"),
-        }
-    }
+    pub output: ContextValue,
 }
 
 #[derive(Deserialize, Debug, JsonSchema)]
@@ -133,7 +50,8 @@ pub trait LLMAgent {
         &self,
         system_instruction: &str,
         input: &str,
-    ) -> Result<AgentResult, OnyxError>;
+        execution_context: &mut ExecutionContext<'_, AgentEvent>,
+    ) -> Result<String, OnyxError>;
 }
 
 enum OpenAIClientConfig {
@@ -258,8 +176,12 @@ impl OpenAIAgent {
 
 #[async_trait]
 impl LLMAgent for OpenAIAgent {
-    async fn request(&self, system_message: &str, input: &str) -> Result<AgentResult, OnyxError> {
-        log::info!("System message: {}", system_message);
+    async fn request(
+        &self,
+        system_message: &str,
+        input: &str,
+        execution_context: &mut ExecutionContext<'_, AgentEvent>,
+    ) -> Result<String, OnyxError> {
         let anonymized_items = HashMap::new();
         let (anonymized_system_message, anonymized_items) = match self.anonymizer {
             Some(ref anonymizer) => anonymizer.anonymize(&system_message, Some(anonymized_items)),
@@ -294,7 +216,6 @@ impl LLMAgent for OpenAIAgent {
         let mut output = "Something went wrong".to_string();
         let mut tool_returns = Vec::<ChatCompletionRequestMessage>::new();
         let mut tool_calls = Vec::<ChatCompletionRequestMessage>::new();
-        let mut steps: Vec<Step> = vec![];
 
         let mut contextualize_anonymized_items = anonymized_items.clone();
         while tries < self.max_tries {
@@ -342,13 +263,15 @@ impl LLMAgent for OpenAIAgent {
             log::info!(
                 "Number of tool calls: {} on {}",
                 &tool_call_requests.len(),
-                tries
+                tries,
             );
             for tool in tool_call_requests.clone() {
-                let mut tool_ret: String = self
+                let tool_call_ret = self
                     .tools
                     .run_tool(&tool.function.name, tool.function.arguments.clone())
                     .await;
+
+                let mut tool_ret = tool_call_ret.get_truncated_output();
                 if self.anonymizer.is_some() {
                     let result = self
                         .anonymizer
@@ -364,12 +287,7 @@ impl LLMAgent for OpenAIAgent {
                     contextualize_anonymized_items.extend(result.1);
                     tool_ret = result.0;
                 }
-
-                steps.push(Step {
-                    name: tool.function.name.clone(),
-                    output: tool_ret.clone(),
-                });
-
+                log::info!("Tool output: {}", tool_ret);
                 tool_returns.push(
                     ChatCompletionRequestToolMessageArgs::default()
                         .tool_call_id(tool.id.clone())
@@ -382,6 +300,7 @@ impl LLMAgent for OpenAIAgent {
                         })?
                         .into(),
                 );
+                execution_context.notify(AgentEvent::ToolCall(tool_call_ret));
             }
 
             if tool_returns.is_empty() {
@@ -406,18 +325,17 @@ impl LLMAgent for OpenAIAgent {
             }
             None => parsed_output,
         };
-        println!("{}", "\nOutput:".primary());
-        println!("{}", &parsed_output);
-        Ok(AgentResult {
-            output: parsed_output,
-            steps,
-        })
+        Ok(parsed_output)
     }
 }
 
 #[async_trait]
-impl Executable for OpenAIAgent {
-    async fn execute(&self, execution_context: &mut ExecutionContext<'_>) -> Result<(), OnyxError> {
+impl Executable<AgentEvent> for OpenAIAgent {
+    async fn execute(
+        &self,
+        execution_context: &mut ExecutionContext<'_, AgentEvent>,
+    ) -> Result<(), OnyxError> {
+        execution_context.notify(AgentEvent::Started);
         let input = execution_context.get_context_str();
         let context = execution_context.get_context();
         let system_instruction = execution_context
@@ -426,8 +344,14 @@ impl Executable for OpenAIAgent {
             .await?;
         log::info!("System instruction: {}", system_instruction);
         log::info!("Prompt: {}", input);
-        let result = self.request(&system_instruction, &input).await?;
-        execution_context.write(result.into());
+        let result = self
+            .request(&system_instruction, &input, execution_context)
+            .await?;
+        let event = AgentEvent::Finished {
+            output: result.clone(),
+        };
+        execution_context.notify(event);
+        execution_context.write(ContextValue::Text(result));
         Ok(())
     }
 }
@@ -447,52 +371,28 @@ async fn map_output(
             let (batches, schema) = load_result(&file_output.file_path).map_err(|e| {
                 OnyxError::RuntimeError(format!("Error in loading result file: {}", e))
             })?;
-            let mut dataset = batches;
-            let mut truncated = false;
-            if !dataset.is_empty() && dataset[0].num_rows() > MAX_DISPLAY_ROWS {
-                dataset = vec![dataset[0].slice(0, MAX_DISPLAY_ROWS)];
-                truncated = true;
-            }
-
-            let batches_display = record_batches_to_table(&dataset, &schema).map_err(|e| {
-                OnyxError::RuntimeError(format!("Error in converting record batch to table: {}", e))
-            })?;
-            let markdown_table = record_batches_to_markdown(&dataset, &schema).map_err(|e| {
-                OnyxError::RuntimeError(format!(
-                    "Error in converting record batch to markdown: {}",
-                    e
-                ))
-            })?;
-            let json_blob = record_batches_to_json(&dataset).map_err(|e| {
-                OnyxError::RuntimeError(format!("Error in converting record batch to json: {}", e))
-            })?;
-
-            println!(
-                "\n{}",
-                format_table_output(&batches_display.to_string(), truncated).text()
-            );
-
+            let (dataset, truncated) = truncate_datasets(batches);
             match file_format {
-                FileFormat::Json => Ok(format_table_output(&json_blob, truncated)),
+                FileFormat::Json => {
+                    let json_blob = record_batches_to_json(&dataset).map_err(|e| {
+                        OnyxError::RuntimeError(format!(
+                            "Error in converting record batch to json: {}",
+                            e
+                        ))
+                    })?;
+                    Ok(format_table_output(&json_blob, truncated))
+                }
                 FileFormat::Markdown => {
+                    let markdown_table =
+                        record_batches_to_markdown(&dataset, &schema).map_err(|e| {
+                            OnyxError::RuntimeError(format!(
+                                "Error in converting record batch to markdown: {}",
+                                e
+                            ))
+                        })?;
                     Ok(format_table_output(&markdown_table.to_string(), truncated))
                 }
             }
         }
-    }
-}
-
-fn format_table_output(table: &str, truncated: bool) -> String {
-    if truncated {
-        format!(
-            "{}\n{}",
-            format!(
-                "Results have been truncated. Showing only the first {} rows.",
-                MAX_DISPLAY_ROWS
-            ),
-            table
-        )
-    } else {
-        table.to_string()
     }
 }

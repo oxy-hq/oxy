@@ -36,6 +36,17 @@ pub async fn build_embeddings(config: &Config) -> anyhow::Result<()> {
             if let ToolConfig::Retrieval(retrieval) = tool {
                 let db = get_vector_store(&agent_name, &retrieval)?;
                 let documents = get_documents_from_files(&retrieval.src)?;
+                if documents.is_empty() {
+                    println!(
+                        "{}",
+                        format!(
+                            "No documents found for agent: {:?} tool: {}",
+                            agent_name, retrieval.name
+                        )
+                        .text()
+                    );
+                    continue;
+                }
                 db.embed(&documents).await?;
             }
         }

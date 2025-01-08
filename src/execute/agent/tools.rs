@@ -24,7 +24,7 @@ impl Object for ToolsContext {
             Some(tool_key) => match Handle::try_current() {
                 Ok(rt) => {
                     let output = rt.block_on(self.tools.run_tool(tool_key, self.prompt.clone()));
-                    Some(Value::from(output))
+                    Some(Value::from(output.get_truncated_output()))
                 }
                 Err(err) => {
                     log::error!("No tokio runtime found: {:?}", err);
