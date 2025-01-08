@@ -71,7 +71,7 @@ pub struct MapExecutor<'context, 'writer: 'context, Event> {
 impl<'context, 'writer: 'context, Event> MapExecutor<'context, 'writer, Event> {
     pub fn new(execution_context: &'context mut ExecutionContext<'writer, Event>) -> Self {
         Self {
-            execution_context: execution_context,
+            execution_context,
             map_state: Default::default(),
         }
     }

@@ -184,7 +184,7 @@ impl LLMAgent for OpenAIAgent {
     ) -> Result<String, OnyxError> {
         let anonymized_items = HashMap::new();
         let (anonymized_system_message, anonymized_items) = match self.anonymizer {
-            Some(ref anonymizer) => anonymizer.anonymize(&system_message, Some(anonymized_items)),
+            Some(ref anonymizer) => anonymizer.anonymize(system_message, Some(anonymized_items)),
             None => Ok((system_message.to_string(), anonymized_items)),
         }?;
         let (anonymized_user_message, anonymized_items) = match self.anonymizer {
@@ -197,17 +197,13 @@ impl LLMAgent for OpenAIAgent {
                 .name("onyx")
                 .content(anonymized_system_message)
                 .build()
-                .map_err(|e| {
-                    OnyxError::RuntimeError(format!("Unable to build LLM request: {e}").into())
-                })?
+                .map_err(|e| OnyxError::RuntimeError(format!("Unable to build LLM request: {e}")))?
                 .into(),
             ChatCompletionRequestUserMessageArgs::default()
                 .name("Human")
                 .content(anonymized_user_message)
                 .build()
-                .map_err(|e| {
-                    OnyxError::RuntimeError(format!("Unable to build LLM request: {e}").into())
-                })?
+                .map_err(|e| OnyxError::RuntimeError(format!("Unable to build LLM request: {e}")))?
                 .into(),
         ];
         let tools = self.tools.to_spec(OpenAIAgent::spec_serializer);
@@ -294,9 +290,7 @@ impl LLMAgent for OpenAIAgent {
                         .content(tool_ret)
                         .build()
                         .map_err(|e| {
-                            OnyxError::RuntimeError(
-                                format!("Unable to build LLM request: {e}").into(),
-                            )
+                            OnyxError::RuntimeError(format!("Unable to build LLM request: {e}"))
                         })?
                         .into(),
                 );
@@ -311,7 +305,7 @@ impl LLMAgent for OpenAIAgent {
                     .tool_calls(tool_call_requests.clone())
                     .build()
                     .map_err(|e| {
-                        OnyxError::RuntimeError(format!("Unable to build LLM request: {e}").into())
+                        OnyxError::RuntimeError(format!("Unable to build LLM request: {e}"))
                     })?
                     .into(),
             );

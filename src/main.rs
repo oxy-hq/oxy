@@ -1,3 +1,4 @@
+use std::process::exit;
 use std::str::FromStr;
 
 use onyx::cli::cli;
@@ -66,6 +67,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Err(e) => {
             log::error!("{}", e);
             eprintln!("{}", format!("{}", e).error());
+            exit(1)
         }
     };
     Ok(())

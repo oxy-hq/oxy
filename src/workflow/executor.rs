@@ -63,6 +63,7 @@ impl Executable<WorkflowEvent> for WorkflowExecutor {
             name: self.workflow.name.clone(),
         });
         self.workflow.steps.execute(execution_context).await?;
+        execution_context.notify(WorkflowEvent::Finished);
         Ok(())
     }
 }

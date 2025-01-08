@@ -41,9 +41,8 @@ impl Object for WarehousesContext {
         match warehouse_key {
             Some(warehouse_key) => {
                 let mut cache = self.cache.lock().unwrap();
-                match cache.get(warehouse_key) {
-                    Some(value) => return Some(value.clone()),
-                    None => {}
+                if let Some(value) = cache.get(warehouse_key) {
+                    return Some(value.clone());
                 }
                 match (self.warehouses.get(warehouse_key), Handle::try_current()) {
                     (Some(warehouse_config), Ok(rt)) => {

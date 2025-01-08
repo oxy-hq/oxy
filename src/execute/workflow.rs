@@ -92,11 +92,8 @@ impl TemplateRegister for &Step {
                 register.field(&formatter.template.as_str())?;
             }
             StepType::LoopSequential(loop_sequential) => {
-                match &loop_sequential.values {
-                    LoopValues::Template(template) => {
-                        register.field(&template.as_str())?;
-                    }
-                    _ => {}
+                if let LoopValues::Template(template) = &loop_sequential.values {
+                    register.field(&template.as_str())?;
                 }
                 register.field(&loop_sequential.steps)?;
             }

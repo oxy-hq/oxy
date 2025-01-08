@@ -16,10 +16,11 @@ use tabled::{
 use terminal_size::{terminal_size, Height as TerminalHeight, Width as TerminalWidth};
 
 fn get_terminal_size() -> (usize, usize) {
-    let (TerminalWidth(width), TerminalHeight(height)) =
-        terminal_size().expect("failed to obtain a terminal size");
-
-    (width as usize, height as usize)
+    let terminal_size = terminal_size();
+    match terminal_size {
+        Some((TerminalWidth(width), TerminalHeight(height))) => (width as usize, height as usize),
+        None => (80, 24),
+    }
 }
 
 fn build_table(headers: &[String], rows: Vec<Vec<String>>) -> Table {
