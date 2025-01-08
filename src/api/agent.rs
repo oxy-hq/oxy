@@ -64,13 +64,13 @@ pub async fn ask(extract::Json(payload): extract::Json<AskRequest>) -> impl Into
             created_at: question.created_at,
         };
 
-    let result: String = run_agent(
+    let result = run_agent(
         Some(&ProjectPath::get_path(&payload.agent)),
         &FileFormat::Markdown,
-        &payload.question).await.unwrap().output;
+        &payload.question, None).await.unwrap().output;
     let answer = save_message(
         conversation_id,
-        &result,
+        &format!("{:?}", result),
         false,
     ).await;
 

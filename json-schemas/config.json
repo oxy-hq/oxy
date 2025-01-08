@@ -5,7 +5,6 @@
   "required": [
     "defaults",
     "models",
-    "retrievals",
     "warehouses"
   ],
   "properties": {
@@ -16,12 +15,6 @@
       "type": "array",
       "items": {
         "$ref": "#/definitions/Model"
-      }
-    },
-    "retrievals": {
-      "type": "array",
-      "items": {
-        "$ref": "#/definitions/Retrieval"
       }
     },
     "warehouses": {
@@ -60,6 +53,25 @@
             "vendor"
           ],
           "properties": {
+            "api_url": {
+              "default": "https://api.openai.com/v1",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "azure_api_version": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "azure_deployment_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
             "key_var": {
               "type": "string"
             },
@@ -108,37 +120,6 @@
           }
         }
       ]
-    },
-    "Retrieval": {
-      "type": "object",
-      "required": [
-        "embed_model",
-        "factor",
-        "name",
-        "rerank_model",
-        "top_k"
-      ],
-      "properties": {
-        "embed_model": {
-          "type": "string"
-        },
-        "factor": {
-          "type": "integer",
-          "format": "uint",
-          "minimum": 0.0
-        },
-        "name": {
-          "type": "string"
-        },
-        "rerank_model": {
-          "type": "string"
-        },
-        "top_k": {
-          "type": "integer",
-          "format": "uint",
-          "minimum": 0.0
-        }
-      }
     },
     "Warehouse": {
       "type": "object",

@@ -55,13 +55,13 @@ macro_rules! union_tools {
                 }
             }
 
-            async fn call(&self, parameters: &str) -> anyhow::Result<String> {
+            async fn call(&self, parameters: &str) -> anyhow::Result<ToolCall> {
                 match self {
                     $($union_tool::$tool(t) => t.call(parameters).await.map_err(|e| e.into())),+
                 }
             }
 
-            async fn call_internal(&self, parameters: &Self::Input) -> anyhow::Result<String> {
+            async fn call_internal(&self, parameters: &Self::Input) -> anyhow::Result<ToolCall> {
                 match (self, parameters) {
                     $(($union_tool::$tool(t), $input::$tool_input(i)) => {
                             t.call_internal(i).await

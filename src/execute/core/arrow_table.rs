@@ -1,13 +1,26 @@
 use arrow::{
     array::RecordBatch,
-    util::display::{ArrayFormatter, FormatOptions},
+    util::{
+        display::{ArrayFormatter, FormatOptions},
+        pretty::pretty_format_batches,
+    },
 };
 use minijinja::value::{Enumerator, Object, ObjectExt, ObjectRepr, Value};
-use std::fmt;
+use std::fmt::{self, Display};
 use std::{collections::HashMap, fmt::Debug, sync::Arc};
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ArrowTable(pub Vec<RecordBatch>);
+
+impl Debug for ArrowTable {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let result = pretty_format_batches(&self.0).map_err(|e| {
+            log::error!("Error formatting ArrowTable: {:?}", e);
+            fmt::Error
+        })?;
+        result.fmt(f)
+    }
+}
 
 impl ArrowTable {
     pub fn new(batches: Vec<RecordBatch>) -> Self {
@@ -86,7 +99,7 @@ impl Object for ArrowTable {
         match self.repr() {
             ObjectRepr::Seq | ObjectRepr::Iterable if self.enumerator_len().is_some() => {
                 for value in self.try_iter().into_iter().flatten() {
-                    let _ = &value.fmt(f);
+                    let _ = &std::fmt::Debug::fmt(&value, f);
                     f.write_str("\n")?;
                 }
                 f.write_str("")

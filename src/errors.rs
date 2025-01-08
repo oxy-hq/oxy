@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, Clone)]
 pub enum OnyxError {
     #[error("Invalid configuration:\n{0}")]
     ConfigurationError(String),

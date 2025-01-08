@@ -2,6 +2,7 @@ use super::Tool;
 use crate::{
     ai::retrieval::{embedding::VectorStore, get_vector_store},
     config::model::RetrievalTool as Retrieval,
+    execute::agent::ToolCall,
 };
 use async_trait::async_trait;
 use schemars::JsonSchema;
@@ -48,13 +49,23 @@ impl Tool for RetrieveTool {
             }),
         }
     }
-    async fn call_internal(&self, parameters: &RetrieveParams) -> anyhow::Result<String> {
+    async fn call_internal(&self, parameters: &RetrieveParams) -> anyhow::Result<ToolCall> {
         let results = self.vector_db.search(&parameters.query).await;
         let mut output = String::new();
-        output.push_str("Queries:\n");
-        for result in results.ok().unwrap() {
-            output.push_str(&format!("{}\n", result.content));
+        match results {
+            Ok(results) => {
+                for result in results {
+                    output.push_str(&format!("{}\n", result.content));
+                }
+            }
+            Err(e) => {
+                log::error!("Error: {e}");
+            }
         }
-        Ok(output)
+        Ok(ToolCall {
+            name: self.name(),
+            output,
+            metadata: None,
+        })
     }
 }

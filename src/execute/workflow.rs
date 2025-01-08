@@ -1,20 +1,65 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, time::Duration};
 
 use minijinja::Value;
 
 use crate::{
     config::{
         load_config,
-        model::{LoopValues, Step, StepType, Workflow},
+        model::{AgentStep, LoopValues, Step, StepType, Workflow},
     },
     errors::OnyxError,
+    utils::print_colored_sql,
     workflow::{executor::WorkflowExecutor, WorkflowResult},
+    StyledText,
 };
 
 use super::{
-    core::{value::ContextValue, Executable, ExecutionContext, OutputCollector},
+    agent::ToolCall,
+    core::{
+        event::{Dispatcher, Handler},
+        write::OutputCollector,
+        Executable, ExecutionContext,
+    },
     renderer::{Renderer, TemplateRegister},
 };
+
+#[derive(Debug, Clone)]
+pub enum WorkflowEvent {
+    // workflow
+    Started {
+        name: String,
+    },
+    Finished,
+
+    // step
+    StepStarted {
+        name: String,
+    },
+    StepUnknown {
+        name: String,
+    },
+    Retry {
+        err: OnyxError,
+        after: Duration,
+    },
+
+    // agent
+    AgentToolCalls {
+        calls: Vec<ToolCall>,
+        step: AgentStep,
+    },
+
+    // sql
+    ExecuteSQL {
+        query: String,
+        output: String,
+    },
+
+    // formatter
+    Formatter {
+        output: String,
+    },
+}
 
 impl TemplateRegister for Workflow {
     fn register_template(&self, renderer: &mut Renderer) -> Result<(), OnyxError> {
@@ -69,6 +114,66 @@ impl TemplateRegister for Vec<Step> {
     }
 }
 
+pub struct WorkflowReceiver;
+
+impl Handler for WorkflowReceiver {
+    type Event = WorkflowEvent;
+
+    fn handle(&self, event: &Self::Event) {
+        match event {
+            WorkflowEvent::Started { name } => {
+                println!("\n⏳Running workflow: {}", name.text());
+            }
+            WorkflowEvent::ExecuteSQL { query, output } => {
+                print_colored_sql(&query);
+                println!("{}", "\nResults:".primary());
+                println!("{}", output);
+            }
+            WorkflowEvent::Formatter { output } => {
+                println!("{}", "\nOutput:".primary());
+                println!("{}", output);
+            }
+            WorkflowEvent::StepStarted { name } => {
+                println!("\n⏳Starting {}", name.text());
+            }
+            WorkflowEvent::StepUnknown { name } => {
+                println!(
+                    "{}",
+                    format!("Encountered unknown step {name}. Skipping.").warning()
+                );
+            }
+            WorkflowEvent::Finished => {
+                println!("{}", "\n✅Workflow executed successfully".success());
+            }
+            WorkflowEvent::Retry { err, after } => {
+                println!("{}", format!("\nRetrying after {:?} ...", after).warning());
+                println!("Reason {:?}", err);
+            }
+            _ => {
+                log::debug!("Unhandled event: {:?}", event);
+            }
+        }
+    }
+}
+
+pub struct WorkflowExporter;
+
+impl Handler for WorkflowExporter {
+    type Event = WorkflowEvent;
+
+    fn handle(&self, event: &Self::Event) {
+        match event {
+            WorkflowEvent::AgentToolCalls { calls: _, step: _ } => {
+                // @TODO: Implement export logic for agent step
+                log::debug!("Agent tool calls: {:?}", event);
+            }
+            _ => {
+                log::debug!("Unhandled event: {:?}", event);
+            }
+        }
+    }
+}
+
 pub async fn run_workflow(workflow_path: &PathBuf) -> Result<WorkflowResult, OnyxError> {
     let config = load_config()?;
     let workflow = config.load_workflow(workflow_path)?;
@@ -78,7 +183,8 @@ pub async fn run_workflow(workflow_path: &PathBuf) -> Result<WorkflowResult, Ony
 
     let mut renderer = Renderer::new();
     renderer.register(&workflow)?;
-    let mut output_collector = OutputCollector::default();
+    let dispatcher = Dispatcher::new(vec![Box::new(WorkflowReceiver), Box::new(WorkflowExporter)]);
+    let mut output_collector = OutputCollector::new(&dispatcher);
     let mut execution_context = ExecutionContext::new(
         Value::UNDEFINED,
         &mut renderer,
@@ -88,27 +194,5 @@ pub async fn run_workflow(workflow_path: &PathBuf) -> Result<WorkflowResult, Ony
     let executor = WorkflowExecutor::new(workflow);
     executor.execute(&mut execution_context).await?;
     let output = output_collector.output.unwrap_or_default();
-    let result = ContextValue::Map(
-        [
-            ("output".to_string(), output.clone()),
-            (
-                "steps".to_string(),
-                ContextValue::Array(
-                    [ContextValue::Map(
-                        [
-                            ("name".to_string(), ContextValue::Text("".to_string())),
-                            ("output".to_string(), ContextValue::Text("".to_string())),
-                        ]
-                        .iter()
-                        .collect(),
-                    )]
-                    .iter()
-                    .collect(),
-                ),
-            ),
-        ]
-        .iter()
-        .collect(),
-    );
-    Ok(result.into())
+    Ok(WorkflowResult { output })
 }

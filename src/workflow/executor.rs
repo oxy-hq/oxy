@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::fs;
+use std::sync::Mutex;
 
 use backon::ExponentialBuilder;
 use backon::Retryable;
@@ -21,13 +22,14 @@ use crate::config::model::Workflow;
 use crate::connector::Connector;
 use crate::errors::OnyxError;
 use crate::execute::agent::run_agent;
+use crate::execute::agent::AgentEvent;
 use crate::execute::core::arrow_table::ArrowTable;
+use crate::execute::core::event::Handler;
 use crate::execute::core::value::ContextValue;
+use crate::execute::core::write::Write;
 use crate::execute::core::Executable;
 use crate::execute::core::ExecutionContext;
-use crate::execute::core::Write;
-use crate::utils::print_colored_sql;
-use crate::StyledText;
+use crate::execute::workflow::WorkflowEvent;
 
 pub struct WorkflowExecutor {
     workflow: Workflow,
@@ -39,41 +41,87 @@ impl WorkflowExecutor {
     }
 }
 
+#[derive(Debug, Default)]
+pub struct EventsCollector {
+    events: Mutex<Vec<AgentEvent>>,
+}
+
+impl Handler for EventsCollector {
+    type Event = AgentEvent;
+    fn handle(&self, event: &Self::Event) {
+        self.events.lock().unwrap().push(event.clone());
+    }
+}
+
 #[async_trait::async_trait]
-impl Executable for WorkflowExecutor {
-    async fn execute(&self, execution_context: &mut ExecutionContext<'_>) -> Result<(), OnyxError> {
-        println!("\n⏳Running workflow: {}", self.workflow.name.text());
+impl Executable<WorkflowEvent> for WorkflowExecutor {
+    async fn execute(
+        &self,
+        execution_context: &mut ExecutionContext<'_, WorkflowEvent>,
+    ) -> Result<(), OnyxError> {
+        execution_context.notify(WorkflowEvent::Started {
+            name: self.workflow.name.clone(),
+        });
         self.workflow.steps.execute(execution_context).await?;
         Ok(())
     }
 }
 
 #[async_trait::async_trait]
-impl Executable for AgentStep {
-    async fn execute(&self, execution_context: &mut ExecutionContext<'_>) -> Result<(), OnyxError> {
+impl Executable<WorkflowEvent> for AgentStep {
+    async fn execute(
+        &self,
+        execution_context: &mut ExecutionContext<'_, WorkflowEvent>,
+    ) -> Result<(), OnyxError> {
         let agent_file = ProjectPath::get_path(&self.agent_ref);
         let context = execution_context.get_context();
         let prompt = execution_context
             .renderer
             .render_async(&self.prompt, context)
             .await?;
-        let step_output =
-            (|| async { run_agent(Some(&agent_file), &FileFormat::Json, &prompt).await })
-                .retry(ExponentialBuilder::default().with_max_times(self.retry))
-                // Notify when retrying
-                .notify(|err: &OnyxError, duration: std::time::Duration| {
-                    println!("\n\x1b[93mRetrying after {:?} ... \x1b[0m", duration);
-                    println!("Reason {:?}", err);
-                })
-                .await?;
-        execution_context.write(ContextValue::Text(step_output.output.to_string()));
+        let collector = EventsCollector::default();
+        let step_output = (|| async {
+            run_agent(
+                Some(&agent_file),
+                &FileFormat::Json,
+                &prompt,
+                Some(&collector),
+            )
+            .await
+        })
+        .retry(ExponentialBuilder::default().with_max_times(self.retry))
+        // Notify when retrying
+        .notify(|err: &OnyxError, duration: std::time::Duration| {
+            execution_context.notify(WorkflowEvent::Retry {
+                err: err.clone(),
+                after: duration,
+            });
+        })
+        .await?;
+        let mut tool_calls = vec![];
+        for event in collector.events.lock().unwrap().iter_mut() {
+            match event {
+                AgentEvent::ToolCall(tool) => {
+                    tool_calls.push(std::mem::take(tool));
+                }
+                _ => {}
+            }
+        }
+        execution_context.notify(WorkflowEvent::AgentToolCalls {
+            calls: tool_calls,
+            step: self.clone(),
+        });
+        execution_context.write(step_output.output);
         Ok(())
     }
 }
 
 #[async_trait::async_trait]
-impl Executable for ExecuteSQLStep {
-    async fn execute(&self, execution_context: &mut ExecutionContext<'_>) -> Result<(), OnyxError> {
+impl Executable<WorkflowEvent> for ExecuteSQLStep {
+    async fn execute(
+        &self,
+        execution_context: &mut ExecutionContext<'_, WorkflowEvent>,
+    ) -> Result<(), OnyxError> {
         let context = execution_context.get_context();
         let config = load_config()?;
         let wh = &config.find_warehouse(&self.warehouse)?;
@@ -115,36 +163,44 @@ impl Executable for ExecuteSQLStep {
             }
         };
 
-        print_colored_sql(&query);
         let (datasets, schema) = Connector::new(wh).run_query_and_load(&query).await?;
         let batches_display = record_batches_to_table(&datasets, &schema).map_err(|e| {
             OnyxError::ConfigurationError(format!("Error displaying results: {}", e))
         })?;
-        println!("\n\x1b[1;32mResults:\x1b[0m");
-        println!("{}", batches_display);
+        execution_context.notify(WorkflowEvent::ExecuteSQL {
+            query,
+            output: batches_display,
+        });
         execution_context.write(ContextValue::Table(ArrowTable::new(datasets)));
         Ok(())
     }
 }
 
 #[async_trait::async_trait]
-impl Executable for FormatterStep {
-    async fn execute(&self, execution_context: &mut ExecutionContext<'_>) -> Result<(), OnyxError> {
+impl Executable<WorkflowEvent> for FormatterStep {
+    async fn execute(
+        &self,
+        execution_context: &mut ExecutionContext<'_, WorkflowEvent>,
+    ) -> Result<(), OnyxError> {
         let context = execution_context.get_context();
         let step_output = execution_context
             .renderer
             .render_async(&self.template, context)
             .await?;
-        println!("{}", "\nOutput:".primary());
-        println!("{}", step_output);
+        execution_context.notify(WorkflowEvent::Formatter {
+            output: step_output.clone(),
+        });
         execution_context.write(ContextValue::Text(step_output));
         Ok(())
     }
 }
 
 #[async_trait::async_trait]
-impl Executable for LoopSequentialStep {
-    async fn execute(&self, execution_context: &mut ExecutionContext<'_>) -> Result<(), OnyxError> {
+impl Executable<WorkflowEvent> for LoopSequentialStep {
+    async fn execute(
+        &self,
+        execution_context: &mut ExecutionContext<'_, WorkflowEvent>,
+    ) -> Result<(), OnyxError> {
         let context = execution_context.get_context();
         let values = match &self.values {
             LoopValues::Template(ref template) => {
@@ -195,9 +251,14 @@ impl Executable for LoopSequentialStep {
 }
 
 #[async_trait::async_trait]
-impl Executable for Step {
-    async fn execute(&self, execution_context: &mut ExecutionContext<'_>) -> Result<(), OnyxError> {
-        println!("\n⏳Starting {}", self.name.text());
+impl Executable<WorkflowEvent> for Step {
+    async fn execute(
+        &self,
+        execution_context: &mut ExecutionContext<'_, WorkflowEvent>,
+    ) -> Result<(), OnyxError> {
+        execution_context.notify(WorkflowEvent::StepStarted {
+            name: self.name.clone(),
+        });
         match &self.step_type {
             StepType::Agent(agent) => {
                 agent.execute(execution_context).await?;
@@ -212,7 +273,9 @@ impl Executable for Step {
                 loop_sequential.execute(execution_context).await?;
             }
             StepType::Unknown => {
-                println!("Encountered unknown step type. Skipping.");
+                execution_context.notify(WorkflowEvent::StepUnknown {
+                    name: self.name.clone(),
+                });
             }
         }
         Ok(())
@@ -220,8 +283,11 @@ impl Executable for Step {
 }
 
 #[async_trait::async_trait]
-impl Executable for Vec<Step> {
-    async fn execute(&self, execution_context: &mut ExecutionContext<'_>) -> Result<(), OnyxError> {
+impl Executable<WorkflowEvent> for Vec<Step> {
+    async fn execute(
+        &self,
+        execution_context: &mut ExecutionContext<'_, WorkflowEvent>,
+    ) -> Result<(), OnyxError> {
         let mut map_executor = execution_context.map_executor();
         map_executor
             .entries(
