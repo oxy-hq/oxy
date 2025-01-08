@@ -126,4 +126,5 @@ jobs:
         uses: EndBug/add-and-commit@v9 # You can change this to use a specific version.
         with:
           add: "json-schemas"
+          commit: --signoff --no-verify
           message: "[no ci] update JSON Schemas"
