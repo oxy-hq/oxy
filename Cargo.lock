@@ -759,7 +759,7 @@ dependencies = [
  "eventsource-stream",
  "futures",
  "rand",
- "reqwest 0.12.11",
+ "reqwest 0.12.12",
  "reqwest-eventsource",
  "secrecy",
  "serde",
@@ -4355,7 +4355,7 @@ dependencies = [
  "object_store 0.10.2",
  "pin-project",
  "regex",
- "reqwest 0.12.11",
+ "reqwest 0.12.12",
  "serde",
  "serde_json",
  "serde_with",
@@ -5093,7 +5093,7 @@ dependencies = [
  "percent-encoding",
  "quick-xml 0.36.2",
  "rand",
- "reqwest 0.12.11",
+ "reqwest 0.12.12",
  "ring 0.17.8",
  "rustls-pemfile 2.2.0",
  "serde",
@@ -5207,7 +5207,7 @@ dependencies = [
  "pluralizer",
  "pyo3",
  "pyo3-arrow",
- "reqwest 0.12.11",
+ "reqwest 0.12.12",
  "schemars",
  "sea-orm",
  "sea-orm-migration",
@@ -6310,9 +6310,9 @@ dependencies = [
 
 [[package]]
 name = "reqwest"
-version = "0.12.11"
+version = "0.12.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7fe060fe50f524be480214aba758c71f99f90ee8c83c5a36b5e9e1d568eb4eb3"
+checksum = "43e734407157c3c2034e0258f5e4473ddb361b1e85f95a66690d67264d7cd1da"
 dependencies = [
  "async-compression",
  "base64 0.22.1",
@@ -6373,7 +6373,7 @@ dependencies = [
  "mime",
  "nom",
  "pin-project-lite",
- "reqwest 0.12.11",
+ "reqwest 0.12.12",
  "thiserror 1.0.69",
 ]
 
