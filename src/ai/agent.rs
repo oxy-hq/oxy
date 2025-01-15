@@ -268,6 +268,7 @@ impl LLMAgent for OpenAIAgent {
                     .await;
 
                 let mut tool_ret = tool_call_ret.get_truncated_output();
+
                 if self.anonymizer.is_some() {
                     let result = self
                         .anonymizer

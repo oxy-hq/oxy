@@ -172,22 +172,7 @@ pub fn load_result(file_path: &str) -> anyhow::Result<(Vec<RecordBatch>, SchemaR
     let batches: Result<Vec<RecordBatch>, ArrowError> = reader.collect();
     let batches = batches?;
 
-    // Delete the temporary file
-    std::fs::remove_file(file_path)?;
-
     Ok((batches, schema))
-}
-
-pub fn copy_result(file_path: &str) -> anyhow::Result<String> {
-    let destination = format!("/tmp/{}.arrow", Uuid::new_v4());
-    std::fs::copy(file_path, &destination)?;
-    match File::open(file_path) {
-        Ok(_) => {}
-        Err(err) => {
-            log::info!("Failed to open file {} for copying: {}", file_path, err);
-        }
-    }
-    Ok(destination)
 }
 
 fn write_connectorx_to_ipc(

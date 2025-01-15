@@ -7,7 +7,7 @@ use tools::ToolsContext;
 use crate::{
     ai::{agent::AgentResult, setup_agent, utils::record_batches_to_table},
     config::model::{AgentConfig, FileFormat},
-    connector::{copy_result, load_result},
+    connector::load_result,
     errors::OnyxError,
     utils::{print_colored_sql, truncate_datasets, truncate_with_ellipsis, MAX_DISPLAY_ROWS},
     StyledText,
@@ -43,15 +43,9 @@ impl ToolMetadata {
             ToolMetadata::ExecuteSQL {
                 sql_query,
                 output_file,
-            } => match copy_result(&output_file) {
-                Ok(destination) => ToolMetadata::ExecuteSQL {
-                    sql_query: sql_query.clone(),
-                    output_file: destination,
-                },
-                Err(_) => ToolMetadata::ExecuteSQL {
-                    sql_query: sql_query.clone(),
-                    output_file: output_file.clone(),
-                },
+            } => ToolMetadata::ExecuteSQL {
+                sql_query: sql_query.clone(),
+                output_file: output_file.clone(),
             },
         }
     }

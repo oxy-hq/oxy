@@ -7,7 +7,6 @@ use backon::Retryable;
 use minijinja::value::Enumerator;
 use minijinja::Value;
 
-use crate::ai::utils::record_batches_to_table;
 use crate::config::load_config;
 use crate::config::model::AgentStep;
 use crate::config::model::ExecuteSQLStep;
@@ -78,7 +77,7 @@ impl Executable<WorkflowEvent> for AgentStep {
         let context = execution_context.get_context();
         let prompt = execution_context
             .renderer
-            .render_async(&self.prompt, context)
+            .render_async(&self.prompt, Value::from_serialize(&context))
             .await?;
         let collector = EventsCollector::default();
         let step_output = (|| async {
@@ -108,9 +107,18 @@ impl Executable<WorkflowEvent> for AgentStep {
                 _ => {}
             }
         }
+
+        let mut export_file_path = String::new();
+        if let Some(export) = &self.export {
+            export_file_path = execution_context
+                .renderer
+                .render_async(&export.path, Value::from_serialize(&context))
+                .await?;
+        }
         execution_context.notify(WorkflowEvent::AgentToolCalls {
             calls: tool_calls,
             step: self.clone(),
+            export_file_path,
         });
         execution_context.write(step_output.output);
         Ok(())
@@ -165,12 +173,21 @@ impl Executable<WorkflowEvent> for ExecuteSQLStep {
         };
 
         let (datasets, schema) = Connector::new(wh).run_query_and_load(&query).await?;
-        let batches_display = record_batches_to_table(&datasets, &schema).map_err(|e| {
-            OnyxError::ConfigurationError(format!("Error displaying results: {}", e))
-        })?;
+
+        let mut export_file_path = String::new();
+        if let Some(export) = &self.export {
+            export_file_path = execution_context
+                .renderer
+                .render_async(&export.path, Value::from_serialize(&context))
+                .await?;
+        }
+
         execution_context.notify(WorkflowEvent::ExecuteSQL {
+            step: self.clone(),
             query,
-            output: batches_display,
+            datasets: datasets.clone(),
+            schema,
+            export_file_path,
         });
         execution_context.write(ContextValue::Table(ArrowTable::new(datasets)));
         Ok(())
@@ -186,10 +203,20 @@ impl Executable<WorkflowEvent> for FormatterStep {
         let context = execution_context.get_context();
         let step_output = execution_context
             .renderer
-            .render_async(&self.template, context)
+            .render_async(&self.template, Value::from_serialize(&context))
             .await?;
+
+        let mut export_file_path = String::new();
+        if let Some(export) = &self.export {
+            export_file_path = execution_context
+                .renderer
+                .render_async(&export.path, Value::from_serialize(&context))
+                .await?;
+        }
         execution_context.notify(WorkflowEvent::Formatter {
+            step: self.clone(),
             output: step_output.clone(),
+            export_file_path,
         });
         execution_context.write(ContextValue::Text(step_output));
         Ok(())

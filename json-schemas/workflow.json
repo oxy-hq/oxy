@@ -18,6 +18,16 @@
     }
   },
   "definitions": {
+    "ExportFormat": {
+      "type": "string",
+      "enum": [
+        "sql",
+        "csv",
+        "json",
+        "txt",
+        "docx"
+      ]
+    },
     "LoopValues": {
       "anyOf": [
         {
@@ -45,6 +55,16 @@
             "agent_ref": {
               "type": "string"
             },
+            "export": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/StepExport"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "prompt": {
               "type": "string"
             },
@@ -70,6 +90,16 @@
             "warehouse"
           ],
           "properties": {
+            "export": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/StepExport"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "sql_file": {
               "type": "string"
             },
@@ -126,6 +156,16 @@
             "type"
           ],
           "properties": {
+            "export": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/StepExport"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "template": {
               "type": "string"
             },
@@ -157,6 +197,21 @@
       ],
       "properties": {
         "name": {
+          "type": "string"
+        }
+      }
+    },
+    "StepExport": {
+      "type": "object",
+      "required": [
+        "format",
+        "path"
+      ],
+      "properties": {
+        "format": {
+          "$ref": "#/definitions/ExportFormat"
+        },
+        "path": {
           "type": "string"
         }
       }

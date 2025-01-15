@@ -1,4 +1,4 @@
-use super::model::{Config, ProjectPath};
+use super::model::{Config, ExportFormat, ProjectPath, StepExport, StepType};
 use std::{env, fmt::Display, path::PathBuf};
 
 const FILE_NOT_FOUND_ERROR: &str = "file does not exist";
@@ -84,6 +84,43 @@ pub fn validate_agent_exists(agent: &str, _context: &ValidationContext) -> garde
             AGENT_NOT_FOUND_ERROR,
             path.as_path().to_string_lossy(),
         ));
+    }
+    Ok(())
+}
+
+pub fn validate_step(step_type: &StepType, _context: &ValidationContext) -> garde::Result {
+    match step_type {
+        StepType::Agent(step) => validate_export(
+            step.export.as_ref(),
+            &[ExportFormat::JSON, ExportFormat::CSV, ExportFormat::SQL],
+            "agent",
+        ),
+        StepType::ExecuteSQL(step) => validate_export(
+            step.export.as_ref(),
+            &[ExportFormat::JSON, ExportFormat::CSV, ExportFormat::SQL],
+            "ExecuteSQL",
+        ),
+        StepType::Formatter(step) => validate_export(
+            step.export.as_ref(),
+            &[ExportFormat::TXT, ExportFormat::DOCX],
+            "Formatter",
+        ),
+        StepType::LoopSequential(_) | StepType::Unknown => Ok(()),
+    }
+}
+
+fn validate_export(
+    export: Option<&StepExport>,
+    allowed_formats: &[ExportFormat],
+    step_name: &str,
+) -> garde::Result {
+    if let Some(export) = export {
+        if !allowed_formats.contains(&export.format) {
+            return Err(garde::Error::new(format!(
+                "Invalid export format: {:?}, only supports {:?} for {} step",
+                export.format, allowed_formats, step_name
+            )));
+        }
     }
     Ok(())
 }
