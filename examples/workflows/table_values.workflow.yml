@@ -16,6 +16,9 @@ steps:
           ---
           Schedule by Interval: {{schedules.value}}
           ---
+        export:
+          path: output/loop_sequential_formatter.docx
+          format: docx
 
   - name: formatter
     type: formatter
@@ -29,3 +32,7 @@ steps:
       {% for schedule in schedules %}
       {{schedule.report}}
       {% endfor %}
+
+    export:
+      path: output/formatter.docx
+      format: docx

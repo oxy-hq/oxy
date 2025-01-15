@@ -6,8 +6,7 @@ retrieval: "default"
 context:
   - name: anon_youtube_model
     type: semantic_model
-    src:
-      - data/anon_youtube.sem.yml
+    src: data/anon_youtube.sem.yml
 
 system_instructions: |
   ## Instructions

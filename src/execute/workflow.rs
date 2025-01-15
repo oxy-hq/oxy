@@ -1,13 +1,16 @@
-use std::{path::PathBuf, time::Duration};
+use std::{path::PathBuf, sync::Arc, time::Duration};
 
+use arrow::{array::RecordBatch, datatypes::Schema};
 use minijinja::Value;
 
 use crate::{
+    ai::utils::record_batches_to_table,
     config::{
         load_config,
-        model::{AgentStep, LoopValues, Step, StepType, Workflow},
+        model::{AgentStep, ExecuteSQLStep, FormatterStep, LoopValues, Step, StepType, Workflow},
     },
     errors::OnyxError,
+    execute::exporter::{export_agent_step, export_execute_sql, export_formatter},
     utils::print_colored_sql,
     workflow::{executor::WorkflowExecutor, WorkflowResult},
     StyledText,
@@ -47,17 +50,23 @@ pub enum WorkflowEvent {
     AgentToolCalls {
         calls: Vec<ToolCall>,
         step: AgentStep,
+        export_file_path: String,
     },
 
     // sql
     ExecuteSQL {
+        step: ExecuteSQLStep,
         query: String,
-        output: String,
+        datasets: Vec<RecordBatch>,
+        schema: Arc<Schema>,
+        export_file_path: String,
     },
 
     // formatter
     Formatter {
+        step: FormatterStep,
         output: String,
+        export_file_path: String,
     },
 }
 
@@ -73,6 +82,9 @@ impl TemplateRegister for &Step {
         match &self.step_type {
             StepType::Agent(agent) => {
                 register.field(&agent.prompt.as_str())?;
+                if let Some(export) = &agent.export {
+                    register.field(&export.path.as_str())?;
+                }
             }
             StepType::ExecuteSQL(execute_sql) => {
                 register.field(&execute_sql.sql_file.as_str())?;
@@ -87,9 +99,15 @@ impl TemplateRegister for &Step {
                     }
                     None => {}
                 }
+                if let Some(export) = &execute_sql.export {
+                    register.field(&export.path.as_str())?;
+                }
             }
             StepType::Formatter(formatter) => {
                 register.field(&formatter.template.as_str())?;
+                if let Some(export) = &formatter.export {
+                    register.field(&export.path.as_str())?;
+                }
             }
             StepType::LoopSequential(loop_sequential) => {
                 if let LoopValues::Template(template) = &loop_sequential.values {
@@ -121,12 +139,31 @@ impl Handler for WorkflowReceiver {
             WorkflowEvent::Started { name } => {
                 println!("\n⏳Running workflow: {}", name.text());
             }
-            WorkflowEvent::ExecuteSQL { query, output } => {
+            WorkflowEvent::ExecuteSQL {
+                step: _,
+                query,
+                datasets,
+                schema,
+                export_file_path: _,
+            } => {
                 print_colored_sql(&query);
+
+                let batches_display = match record_batches_to_table(&datasets, &schema) {
+                    Ok(display) => display,
+                    Err(e) => {
+                        println!("{}", format!("Error displaying results: {}", e).error());
+                        return;
+                    }
+                };
+
                 println!("{}", "\nResults:".primary());
-                println!("{}", output);
+                println!("{}", batches_display);
             }
-            WorkflowEvent::Formatter { output } => {
+            WorkflowEvent::Formatter {
+                step: _,
+                output,
+                export_file_path: _,
+            } => {
                 println!("{}", "\nOutput:".primary());
                 println!("{}", output);
             }
@@ -160,9 +197,35 @@ impl Handler for WorkflowExporter {
 
     fn handle(&self, event: &Self::Event) {
         match event {
-            WorkflowEvent::AgentToolCalls { calls: _, step: _ } => {
-                // @TODO: Implement export logic for agent step
+            WorkflowEvent::AgentToolCalls {
+                calls,
+                step,
+                export_file_path,
+            } => {
+                export_agent_step(step, calls, export_file_path);
                 log::debug!("Agent tool calls: {:?}", event);
+            }
+            WorkflowEvent::ExecuteSQL {
+                step,
+                query,
+                datasets,
+                schema,
+                export_file_path,
+            } => {
+                if let Some(export) = &step.export {
+                    export_execute_sql(export, "", query, schema, datasets, export_file_path);
+                }
+                log::debug!("ExecuteSQL tool calls: {:?}", event);
+            }
+            WorkflowEvent::Formatter {
+                step,
+                output,
+                export_file_path,
+            } => {
+                if let Some(_) = &step.export {
+                    export_formatter(output, export_file_path);
+                }
+                log::debug!("Formatter tool calls: {:?}", event);
             }
             _ => {
                 log::debug!("Unhandled event: {:?}", event);

@@ -6,9 +6,13 @@ steps:
     type: execute_sql
     warehouse: primary_warehouse
     sql_file: data/example_intervals.sql
+    export:
+      format: sql
+      path: output/example_intervals.sql
+
   - name: schedules
     type: loop_sequential
-    values: "{{intervals.intervals}}"
+    values: "{{ intervals.intervals }}"
     steps:
       - name: metrics
         type: loop_sequential
@@ -24,12 +28,18 @@ steps:
               variable_a: "1000"
               variable_b: "{{ metrics.value }}"
               variable_c: "{{ metrics.value }}"
+            export:
+              format: sql
+              path: output/example_{{schedules.value}}_{{metrics.value}}.sql
           - name: report
             type: agent
             prompt: |
               Generate a detail {{schedules.value}} report using {{metrics.value}} metrics:
               {{table}}
             agent_ref: agents/local.agent.yml
+            export:
+              format: sql
+              path: output/agent_{{schedules.value}}_{{metrics.value}}.sql
 
       - name: metric_reports
         type: formatter
@@ -39,6 +49,9 @@ steps:
           {{metric.report}}
           -- End of Metric: {{metric.value}} --
           {% endfor %}
+        export:
+          format: docx
+          path: output/formatter_{{schedules.value}}.docx
 
   - name: formatter
     type: formatter
@@ -55,3 +68,6 @@ steps:
       {{schedule.metric_reports}}
       -- End of Schedule: {{schedule.value}} --
       {% endfor %}
+    export:
+      format: docx
+      path: output/formatter_report.docx

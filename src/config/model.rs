@@ -12,6 +12,8 @@ use lazy_static::lazy_static;
 use schemars::JsonSchema;
 use std::sync::Mutex;
 
+use super::validate::validate_step;
+
 lazy_static! {
     static ref PROJECT_PATH: Mutex<PathBuf> = Mutex::new(PathBuf::new());
 }
@@ -290,6 +292,34 @@ pub struct AgentStep {
     #[serde(default = "default_retry")]
     #[garde(skip)]
     pub retry: usize,
+
+    // #[garde(custom(validate_export_format(self)))]
+    #[garde(dive)]
+    pub export: Option<StepExport>,
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug, Validate, JsonSchema)]
+#[garde(context(ValidationContext))]
+pub enum ExportFormat {
+    #[serde(rename = "sql")]
+    SQL,
+    #[serde(rename = "csv")]
+    CSV,
+    #[serde(rename = "json")]
+    JSON,
+    #[serde(rename = "txt")]
+    TXT,
+    #[serde(rename = "docx")]
+    DOCX,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
+#[garde(context(ValidationContext))]
+pub struct StepExport {
+    #[garde(length(min = 1))]
+    pub path: String,
+    #[garde(dive)]
+    pub format: ExportFormat,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
@@ -304,6 +334,18 @@ pub struct ExecuteSQLStep {
     #[serde(default)]
     #[garde(skip)]
     pub variables: Option<HashMap<String, String>>,
+
+    #[garde(dive)]
+    pub export: Option<StepExport>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
+#[garde(context(ValidationContext))]
+pub struct FormatterStep {
+    #[garde(length(min = 1))]
+    pub template: String,
+    #[garde(dive)]
+    pub export: Option<StepExport>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, JsonSchema)]
@@ -320,13 +362,6 @@ pub struct LoopSequentialStep {
     pub values: LoopValues,
     #[garde(dive)]
     pub steps: Vec<Step>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
-#[garde(context(ValidationContext))]
-pub struct FormatterStep {
-    #[garde(length(min = 1))]
-    pub template: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
@@ -357,6 +392,7 @@ pub struct Step {
     pub name: String,
     #[serde(flatten)]
     #[garde(dive)]
+    #[garde(custom(validate_step))]
     pub step_type: StepType,
 }
 

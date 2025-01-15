@@ -68,6 +68,15 @@ pub fn record_batches_to_markdown(
     schema: &Arc<Schema>,
 ) -> Result<impl Display, ArrowError> {
     let headers: Vec<String> = get_header(schema);
+    let rows = record_batches_to_rows(results)?;
+
+    let mut table = build_table(&headers, rows);
+    table.with(Style::markdown());
+
+    Ok(table.to_string())
+}
+
+pub fn record_batches_to_rows(results: &[RecordBatch]) -> Result<Vec<Vec<String>>, ArrowError> {
     let mut rows = Vec::new();
     for batch in results {
         let formatters = create_formatters(batch)?;
@@ -76,10 +85,7 @@ pub fn record_batches_to_markdown(
         }
     }
 
-    let mut table = build_table(&headers, rows);
-    table.with(Style::markdown());
-
-    Ok(table.to_string())
+    Ok(rows)
 }
 
 pub fn record_batches_to_table(
@@ -141,7 +147,7 @@ pub fn record_batches_to_table(
 pub fn record_batches_to_json(batches: &[RecordBatch]) -> Result<String, ArrowError> {
     // Write the record batches out as JSON
     let buf = Vec::new();
-    let mut writer = arrow_json::LineDelimitedWriter::new(buf);
+    let mut writer = arrow_json::ArrayWriter::new(buf);
 
     // Convert each RecordBatch reference to &RecordBatch
     let batch_refs: Vec<&RecordBatch> = batches.iter().collect();

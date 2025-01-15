@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/onyx-hq/onyx-public-releases/refs/heads/main/json-schemas/workflow.json
+
+name: export_sample
+steps:
+  - name: report
+    type: agent
+    prompt: |
+      Generate a detail report
+    agent_ref: agents/semantic_model.agent.yml
+    export:
+      path: output/export_sample_agent.json
+      format: json
+
+  - name: formatter
+    type: formatter
+    template: |
+      # Debugging
+      Row-based display:
+      {{report}}
+
+    export:
+      path: output/export_sample_formatter.txt
+      format: txt

@@ -5173,6 +5173,7 @@ dependencies = [
  "colored",
  "comfy-table",
  "connectorx",
+ "csv",
  "dirs",
  "dotenvy",
  "duckdb",
