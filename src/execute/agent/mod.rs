@@ -157,7 +157,9 @@ impl Handler for AgentReceiver<'_> {
                         }
                     }
                 }
-                None => todo!(),
+                None => {
+                    log::debug!("Unhandled tool call: {:?}", &tool_call);
+                }
             },
         }
     }
