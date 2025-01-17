@@ -158,7 +158,7 @@ jobs:
       - name: Check broken links
         uses: lycheeverse/lychee-action@v1
         with:
-          args: -v --max-concurrency 1 *.md docs/* --cache --max-cache-age 1d .
+          args: --root-dir . -v --max-concurrency 1 *.md docs/* --cache --max-cache-age 1d .
           fail: true
           token: ${{ secrets.GITHUB_TOKEN }}
       - name: Save lychee cache
