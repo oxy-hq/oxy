@@ -23,9 +23,9 @@ jobs:
           if [ "${{ inputs.ref }}" = "latest" ]; then
             echo "no ref provided, finding latest tag"
             latest_tag=$(gh api "/repos/${{ github.repository }}/releases/latest" --jq .tag_name)
-            echo "release_tag=${latest_tag}" >> $GITHUB_OUTPUT
+            echo "release-tag=${latest_tag}" >> $GITHUB_OUTPUT
           else
-            echo "release_tag=${{ inputs.ref }}" >> $GITHUB_OUTPUT
+            echo "release-tag=${{ inputs.ref }}" >> $GITHUB_OUTPUT
           fi
       - uses: actions/create-github-app-token@v1
         name: Create GitHub App Token
@@ -46,7 +46,7 @@ jobs:
         uses: robinraju/release-downloader@v1
         with:
           preRelease: false
-          tag: ${{ steps.declare-release-tag.outputs.release_tag }}
+          tag: ${{ steps.declare-release-tag.outputs.release-tag }}
           zipBall: false
           token: ${{ steps.app-token.outputs.token }}
           fileName: "*"
