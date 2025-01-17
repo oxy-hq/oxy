@@ -61,8 +61,8 @@ jobs:
         run: |
           git config --global user.name '${{ steps.app-token.outputs.app-slug }}[bot]'
           git config --global user.email '${{ steps.get-user-id.outputs.user-id }}+${{ steps.app-token.outputs.app-slug }}[bot]@users.noreply.github.com>'
-          git tag -a ${{ steps.declare-release-tag.outputs.release-tag }} }} -m "Release ${{ steps.declare-release-tag.outputs.release-tag }} }}"
-          git push --force origin ${{ steps.declare-release-tag.outputs.release-tag }} }}
+          git tag -a ${{ steps.declare-release-tag.outputs.release-tag }} -m "Release ${{ steps.declare-release-tag.outputs.release-tag }}"
+          git push --force origin ${{ steps.declare-release-tag.outputs.release-tag }}
       - name: Public github release
         uses: softprops/action-gh-release@v2
         with:
