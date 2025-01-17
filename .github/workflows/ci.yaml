@@ -27,7 +27,7 @@ defaults:
 
 jobs:
   changesets:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: ${{ !startsWith(github.head_ref, 'release-please--') || github.event_name == 'schedule' }}
     uses: ./.github/workflows/changesets.yaml
   fmt:
     name: Onyx fmt
@@ -135,6 +135,7 @@ jobs:
 
   typos:
     name: Typos
+    needs: [changesets]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -144,6 +145,7 @@ jobs:
 
   links:
     name: Links
+    needs: [changesets]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
