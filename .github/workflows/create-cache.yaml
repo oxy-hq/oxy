@@ -12,25 +12,6 @@ defaults:
     shell: bash
 
 jobs:
-  debug-cache:
-    name: Compile onyx binary to save debug cache on main branch
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Prep Rust
-        uses: dtolnay/rust-toolchain@stable
-      - name: Prep cargo cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: debug-ubuntu-latest-x86_64-unknown-linux-gnu
-      # protobuf is required by lance https://github.com/lancedb/lance/issues/3073
-      - name: Install Protoc
-        uses: arduino/setup-protoc@v3
-        with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Cargo build
-        run: cargo build --locked
-
   release-cache:
     name: Compile onyx binary to save release cache on main branch
     runs-on: ${{ matrix.job.os }}

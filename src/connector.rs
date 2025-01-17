@@ -58,7 +58,7 @@ impl Connector {
             let result_iter = datasets
                 .iter()
                 .flat_map(|batch| as_string_array(batch.column(0)).iter());
-            // datesets
+            // datasets
             result_iter
                 .map(|name| name.map(|s| s.to_string()))
                 .collect::<Option<Vec<String>>>()
