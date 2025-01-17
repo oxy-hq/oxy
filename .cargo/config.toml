@@ -1,2 +1,5 @@
 [env]
 MACOSX_DEPLOYMENT_TARGET = "11.0"
+# need to set this so pyo3 doesn't rebuild every-time
+# https://github.com/PyO3/pyo3/issues/1708
+PYO3_PYTHON="/usr/bin/python3"
