@@ -10,7 +10,7 @@ class Step:
 
 @dataclass
 class AgentResult:
-    ouput: str
+    output: str
     steps: list[Step]
 
 @dataclass

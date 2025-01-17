@@ -69,7 +69,7 @@ The release manager should perform regression testing on core features that are 
 - **Description**: The `onyx run` command is used to run the Onyx server
 - **Testing plan**:
   - [x] Check onyx run with an agent and bigquery by running `onyx run agents/default.agent.yml "how many users are there in the database"` *(automated since #219)*
-  - [x] Check onyx run with semantic information by running `onyx run agents/semantic_model.agent.yml "how many users are there in the databse"` *(automated since #219)*
+  - [x] Check onyx run with semantic information by running `onyx run agents/semantic_model.agent.yml "how many users are there in the database"` *(automated since #219)*
     - [ ] Additionally, check the difference between the two outputs of `onyx run agents/default.agent.yml "how many property_grouping"` and `onyx run agents/semantic_model.agent.yml "how many property_grouping"`
   - [x] Check onyx run workflow capabilities by running `onyx run workflows/table_values.workflow.yml` and see if workflow can be run successfully with colored output *(automated since #219)*
   - [x] Check onyx anonymization capabilities with workflow by running `onyx run workflows/anonymize.workflow.yml` and see if the workflow can be run successfully with a lot of mentions of `comnpany` and `feedback` while the report name is still `Responses to the survey by organizations` *(automated since #219)*

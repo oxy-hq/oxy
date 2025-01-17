@@ -157,7 +157,7 @@ const sidebarResizer = cva({
     height: "100%",
     width: "7px",
     cursor: "col-resize",
-    bg: "trasparent",
+    bg: "transparent",
     display: {
       base: "none",
       xl: "block"
@@ -240,4 +240,3 @@ export {
   collapsedMobileSidebarStyles,
   sidebarHeadStyles
 };
-
