@@ -2,6 +2,76 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.31](https://github.com/onyx-hq/onyx/compare/0.1.30...0.1.31) (2025-01-17)
+
+
+### <!-- 0 -->🚀 Features
+
+* add api url for openai model to support azure openai ([#184](https://github.com/onyx-hq/onyx/issues/184)) ([a1ae734](https://github.com/onyx-hq/onyx/commit/a1ae734a6f47b9689adce826aaf85c727c1adba9))
+* add integration tests ([#219](https://github.com/onyx-hq/onyx/issues/219)) ([e35258f](https://github.com/onyx-hq/onyx/commit/e35258f3d32ad4a4bf8368854690f903a8d61c74))
+* **eng-1173:** Support export argument on workflow steps ([#198](https://github.com/onyx-hq/onyx/issues/198)) ([98b73ab](https://github.com/onyx-hq/onyx/commit/98b73ab6ba63db5b99c12f9a5d54286671daf679))
+* hybrid search ([#192](https://github.com/onyx-hq/onyx/issues/192)) ([019c2e9](https://github.com/onyx-hq/onyx/commit/019c2e95d30db5e737e3672028634a0c5932caec))
+* implement execution progress ([#229](https://github.com/onyx-hq/onyx/issues/229)) ([671d60d](https://github.com/onyx-hq/onyx/commit/671d60d6de14d0cd4f579f6654a2d64331b38dd6))
+* improve logging and error handling ([#209](https://github.com/onyx-hq/onyx/issues/209)) ([bf71df2](https://github.com/onyx-hq/onyx/commit/bf71df23714efe10a59b520e72d03e4f5547e412))
+* refactor context ([#211](https://github.com/onyx-hq/onyx/issues/211)) ([aa30d4a](https://github.com/onyx-hq/onyx/commit/aa30d4aaf0e8779ad4893a74585f16b02d8e31c8))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* add JSON schema validation step to CI workflows ([97d13f1](https://github.com/onyx-hq/onyx/commit/97d13f13be63114f64a481f63f9ae60871893b7d))
+* export panic when execute_sql failed ([#246](https://github.com/onyx-hq/onyx/issues/246)) ([1ce83aa](https://github.com/onyx-hq/onyx/commit/1ce83aadf1002436126206e5019c6227f4b0d403))
+* key_path should not be a required argument when warehouse.type = duckdb ([#193](https://github.com/onyx-hq/onyx/issues/193)) ([b645c9a](https://github.com/onyx-hq/onyx/commit/b645c9acc568071dabfaa1b36b995c04f4c69d7f))
+* update to onyx run syntax ([#212](https://github.com/onyx-hq/onyx/issues/212)) ([b46250c](https://github.com/onyx-hq/onyx/commit/b46250cc838aee6f912cf25d75b6bd4f3217f495))
+* validate result not showed on error ([#213](https://github.com/onyx-hq/onyx/issues/213)) ([ed12f46](https://github.com/onyx-hq/onyx/commit/ed12f4666254b1b12529e5c8506deb4b374a6adb))
+
+
+### <!-- 3 -->📚 Documentation
+
+* add pull request template ([9008ba6](https://github.com/onyx-hq/onyx/commit/9008ba6b9adcf966fbb35a85f32d26cb00b25379))
+* add pull request template ([ae824b6](https://github.com/onyx-hq/onyx/commit/ae824b6a15a7e4d1868241c86ad4bdee09b7ed3f))
+* add release guideline ([#218](https://github.com/onyx-hq/onyx/issues/218)) ([51c1883](https://github.com/onyx-hq/onyx/commit/51c1883f1d2d5337411676bd10320467c78ae33f))
+* refine pull request template by removing unnecessary header ([0979fc2](https://github.com/onyx-hq/onyx/commit/0979fc2f80576de4c8815ab262947d45866fc7b7))
+* update pull request template to enhance test plan and checklist sections ([68821ab](https://github.com/onyx-hq/onyx/commit/68821ab338d8d3807154af606c5e6c1a57b102b9))
+
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+* remove unused dependencies ([#274](https://github.com/onyx-hq/onyx/issues/274)) ([a39c154](https://github.com/onyx-hq/onyx/commit/a39c1542ba801375bda8a3d7aaa76e594245326e))
+* remove unused deps ([#197](https://github.com/onyx-hq/onyx/issues/197)) ([7a8c9da](https://github.com/onyx-hq/onyx/commit/7a8c9daba943134fbe5fe99d58b1789411d249e7))
+* update dependabot schedule ([0b0e685](https://github.com/onyx-hq/onyx/commit/0b0e685177fab573e6c846ec66df20a324023796))
+* update json schemas ([7c1dc57](https://github.com/onyx-hq/onyx/commit/7c1dc574fe46217b8a4bedf4103f34ba023ae9bc))
+
+
+### <!-- 10 -->💼 Build System
+
+* **deps-dev:** bump @types/node from 22.10.2 to 22.10.5 ([#228](https://github.com/onyx-hq/onyx/issues/228)) ([b908026](https://github.com/onyx-hq/onyx/commit/b908026f266373c0cfc2a105f78e3a21654ff9a5))
+* **deps-dev:** bump @vitejs/plugin-react-swc from 3.7.1 to 3.7.2 ([#201](https://github.com/onyx-hq/onyx/issues/201)) ([54e7aad](https://github.com/onyx-hq/onyx/commit/54e7aadf5798d6c67be53ccba014528e9af0ae08))
+* **deps-dev:** bump eslint from 9.14.0 to 9.17.0 ([#225](https://github.com/onyx-hq/onyx/issues/225)) ([9aa0876](https://github.com/onyx-hq/onyx/commit/9aa0876c94a2a784a8c90f485415a6af4859f0e5))
+* **deps-dev:** bump eslint-plugin-react-hooks from 5.1.0-rc-fb9a90fa48-20240614 to 5.1.0 ([#200](https://github.com/onyx-hq/onyx/issues/200)) ([85d7609](https://github.com/onyx-hq/onyx/commit/85d76094d0a79ef832f81cdb2134fc1f2ed0bc62))
+* **deps-dev:** bump eslint-plugin-unicorn from 56.0.0 to 56.0.1 ([#224](https://github.com/onyx-hq/onyx/issues/224)) ([1ea6242](https://github.com/onyx-hq/onyx/commit/1ea62425fe292db027fa898ce3e1ebcb19a0afd7))
+* **deps-dev:** bump husky from 9.1.6 to 9.1.7 ([#227](https://github.com/onyx-hq/onyx/issues/227)) ([a67ac57](https://github.com/onyx-hq/onyx/commit/a67ac579fc44c199eeacf38735e82aff2280e765))
+* **deps-dev:** bump prettier from 3.4.1 to 3.4.2 ([#165](https://github.com/onyx-hq/onyx/issues/165)) ([142ef3a](https://github.com/onyx-hq/onyx/commit/142ef3a79150364a4b1741491c80642ec14af5bf))
+* **deps-dev:** bump the dev-npm-minor-dependencies group across 1 directory with 20 updates ([#234](https://github.com/onyx-hq/onyx/issues/234)) ([c757b0c](https://github.com/onyx-hq/onyx/commit/c757b0ca42ff02c75c9bfdf6759b88e2fa77ed14))
+* **deps-dev:** bump typescript-eslint from 8.14.0 to 8.19.0 ([#214](https://github.com/onyx-hq/onyx/issues/214)) ([c14f972](https://github.com/onyx-hq/onyx/commit/c14f972b13c33a3c2582ca36ac58acf4cbc16b8d))
+* **deps:** bump @radix-ui/react-switch from 1.1.1 to 1.1.2 ([#226](https://github.com/onyx-hq/onyx/issues/226)) ([7d16b82](https://github.com/onyx-hq/onyx/commit/7d16b82dd6369e2cb2413911b950fef4a91037ff))
+* **deps:** bump @uiw/codemirror-themes from 4.23.6 to 4.23.7 ([#199](https://github.com/onyx-hq/onyx/issues/199)) ([0104c08](https://github.com/onyx-hq/onyx/commit/0104c08981d28b4870bece5895fcf0cb44e0e9b4))
+* **deps:** bump async-trait from 0.1.83 to 0.1.85 ([#223](https://github.com/onyx-hq/onyx/issues/223)) ([162a53d](https://github.com/onyx-hq/onyx/commit/162a53d94e700806541aa072071820292eb88ccd))
+* **deps:** bump axum-streams from 0.19.0 to 0.20.0 ([#221](https://github.com/onyx-hq/onyx/issues/221)) ([1e4ef81](https://github.com/onyx-hq/onyx/commit/1e4ef814f864f502249f04946328f7a75fcb89f8))
+* **deps:** bump garde from 0.20.0 to 0.21.0 ([#217](https://github.com/onyx-hq/onyx/issues/217)) ([66e6f04](https://github.com/onyx-hq/onyx/commit/66e6f047c295b9810827fc87ef0ed99655fc2418))
+* **deps:** bump glob from 0.3.1 to 0.3.2 ([#220](https://github.com/onyx-hq/onyx/issues/220)) ([590a7dc](https://github.com/onyx-hq/onyx/commit/590a7dca94cd5b3d6b034f233855a0e3d6a28cef))
+* **deps:** bump openai from 4.72.0 to 4.77.0 ([#203](https://github.com/onyx-hq/onyx/issues/203)) ([b866a8f](https://github.com/onyx-hq/onyx/commit/b866a8fef50065095505b918b88c62eb8668b2ab))
+* **deps:** bump reqwest from 0.12.11 to 0.12.12 ([#222](https://github.com/onyx-hq/onyx/issues/222)) ([5ff60a3](https://github.com/onyx-hq/onyx/commit/5ff60a312052392c7da7ba80cd67fc5963397200))
+* **deps:** bump reqwest from 0.12.9 to 0.12.11 ([#215](https://github.com/onyx-hq/onyx/issues/215)) ([b1e06ea](https://github.com/onyx-hq/onyx/commit/b1e06eac109946ae1bd647dcf4e6ca4dd38bebf1))
+* **deps:** bump serde from 1.0.216 to 1.0.217 ([#216](https://github.com/onyx-hq/onyx/issues/216)) ([13a59b8](https://github.com/onyx-hq/onyx/commit/13a59b87bb1bfc5115b5aedf4f0f692bc6c1cb4b))
+* **deps:** bump thiserror from 1.0.69 to 2.0.7 ([#170](https://github.com/onyx-hq/onyx/issues/170)) ([489b8ac](https://github.com/onyx-hq/onyx/commit/489b8ac4bbd6e5f860b896c5fb17941eaf4f3acb))
+
+
+### <!-- 11 -->💼 Continuous Integration
+
+* add broken link check and typo check ([#276](https://github.com/onyx-hq/onyx/issues/276)) ([e3acf96](https://github.com/onyx-hq/onyx/commit/e3acf962ddb3c51a209a24b9f08c27b24a600e44))
+* change slack action to use env ([d807b43](https://github.com/onyx-hq/onyx/commit/d807b435892915a7f8926cf29e1e224be7d49d35))
+* move generation of config schema to another job ([e2a51a9](https://github.com/onyx-hq/onyx/commit/e2a51a95d28874ddccec873b0ca77da667211b73))
+
 ## [0.1.30](https://github.com/onyx-hq/onyx/compare/0.1.29...0.1.30) (2024-12-18)
 
 

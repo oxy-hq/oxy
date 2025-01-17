@@ -2615,7 +2615,7 @@ dependencies = [
 
 [[package]]
 name = "entity"
-version = "0.1.30"
+version = "0.1.31"
 dependencies = [
  "sea-orm",
 ]
@@ -4635,7 +4635,7 @@ dependencies = [
 
 [[package]]
 name = "migration"
-version = "0.1.30"
+version = "0.1.31"
 dependencies = [
  "async-std",
  "sea-orm-migration",
@@ -5060,7 +5060,7 @@ dependencies = [
 
 [[package]]
 name = "onyx"
-version = "0.1.30"
+version = "0.1.31"
 dependencies = [
  "anyhow",
  "arrow 46.0.0",
@@ -5118,7 +5118,7 @@ dependencies = [
 
 [[package]]
 name = "onyx-py"
-version = "0.1.30"
+version = "0.1.31"
 dependencies = [
  "onyx",
  "pyo3",
