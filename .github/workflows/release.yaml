@@ -5,7 +5,7 @@ on:
       tag:
         description: "Tag to release"
         required: true
-        default: ""
+        default: "main"
   push:
     tags:
       - "[0-9]+.[0-9]+.[0-9]+"
@@ -43,8 +43,8 @@ jobs:
           fetch-depth: 0
           ref: ${{ inputs.tag || github.ref_name }}
 
-      #-- Build frontend
-      - name: Install Node.js
+      #-- Prep node
+      - name: Prep Node
         uses: actions/setup-node@v4
         id: setup-node
         with:
@@ -64,20 +64,15 @@ jobs:
           restore-keys: |
             pnpm-store-${{ matrix.job.os }}-${{ matrix.job.target }}
             pnpm-store-${{ matrix.job.os }}-
-      - name: Cache turbo build setup
-        uses: actions/cache@v4
-        with:
-          path: .turbo
-          key: turbo-${{ matrix.job.os }}-${{ matrix.job.target }}-${{ github.sha }}
-          restore-keys: |
-            turbo-${{ matrix.job.os }}-${{ matrix.job.target }}-
-            turbo-${{ matrix.job.os }}-
-      - name: Build web-app static assets
+      - name: Install dependencies
         run: |
           pnpm install
-          pnpm -C web-app build
 
-      #-- Build core binary
+      #-- Create common artifacts folder
+      - name: Create artifacts folder
+        run: mkdir -p artifacts
+
+      #-- Prep rust
       - name: Prep Rust
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -91,31 +86,21 @@ jobs:
         uses: arduino/setup-protoc@v3
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Cargo build
-        shell: bash
-        run: |
-          cargo build --release --target ${{ matrix.job.target }} --locked
-          mkdir -p artifacts
-          mv target/${{ matrix.job.target }}/release/onyx artifacts/onyx-${{ matrix.job.target }}
 
-      #-- Build json schema
-      - name: Generate config schema (once)
-        if: ${{ matrix.job.os == 'ubuntu-latest' }}
-        run: |
-          cargo run --release --target ${{ matrix.job.target }} -- gen-config-schema
-          cp -a json-schemas/. artifacts/
-
-      #-- Build checksum
-      - name: Create binary checksum
-        run: shasum --algorithm 256 --binary onyx-${{ matrix.job.target }} | tee SHA256SUM-onyx-${{ matrix.job.target }}.txt
-        working-directory: artifacts
-
-      #-- Build tauri
+      #-- Build tauri (and frontend)
       - name: install dependencies (ubuntu only)
-        if: matrix.job.target == 'ubuntu-latest'
+        if: matrix.job.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.0-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+          sudo apt-get install -y libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
       - name: Build tauri
         uses: tauri-apps/tauri-action@v0
         env:
@@ -129,6 +114,25 @@ jobs:
         run: |
           mkdir -p artifacts/tauri-${{ matrix.job.target }}
           mv target/${{ matrix.job.target }}/release/bundle/**/onyx* artifacts/tauri-${{ matrix.job.target }}/
+
+      #-- Build onyx cli binary
+      - name: Build onyx cli
+        shell: bash
+        run: |
+          cargo build --release --target ${{ matrix.job.target }} --locked
+          mv target/${{ matrix.job.target }}/release/onyx artifacts/onyx-${{ matrix.job.target }}
+
+      #-- Build json schema
+      - name: Generate config schema (once)
+        if: ${{ matrix.job.os == 'ubuntu-latest' }}
+        run: |
+          cargo run --release --target ${{ matrix.job.target }} -- gen-config-schema
+          cp -a json-schemas/. artifacts/
+
+      #-- Build checksum
+      - name: Create binary checksum
+        run: shasum --algorithm 256 --binary onyx-${{ matrix.job.target }} | tee SHA256SUM-onyx-${{ matrix.job.target }}.txt
+        working-directory: artifacts
 
       #-- Build python lib
       - name: Set up Python 3.11
@@ -183,6 +187,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           draft: false
+          prerelease: ${{ inputs.tag == 'main' }}
           tag_name: ${{ inputs.tag || github.ref_name }}
           files: |
             artifacts/**/*
