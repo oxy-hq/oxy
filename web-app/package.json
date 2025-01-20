@@ -12,7 +12,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "prepare": "panda codegen",
-        "tauri": "tauri"
+    "tauri": "tauri"
   },
   "dependencies": {
     "@codemirror/lang-python": "^6.1.6",
@@ -45,7 +45,7 @@
     "remark-gfm": "^4.0.0",
     "sort-by": "^1.2.0",
     "zustand": "^5.0.0",
-        "@tauri-apps/api": "^2",
+    "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-opener": "^2"
   },
   "devDependencies": {
@@ -83,3 +83,4 @@
   },
   "packageManager": "pnpm@9.12.1"
 }
+
