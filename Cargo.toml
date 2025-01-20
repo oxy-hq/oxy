@@ -15,7 +15,7 @@ name = "onyx"
 crate-type = ["cdylib", "rlib"]
 
 [workspace]
-members = [".", "migration", "entity", "onyx-py"]
+members = [".", "migration", "entity", "onyx-py", "web-app/src-tauri"]
 
 [dependencies]
 arrow = { version = "^53.3.0", features = ["json"] }
