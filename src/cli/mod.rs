@@ -308,55 +308,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             }
         }
         Some(SubCommand::Serve) => {
-            let server_task = tokio::spawn(async move {
-                let addr = SocketAddr::from(([127, 0, 0, 1], 3001));
-                println!(
-                    "{} {}",
-                    "API server running at".text(),
-                    format!("http://{}", addr).secondary()
-                );
-                server::serve(&addr).await;
-            });
-
-            let web_task = tokio::spawn(async move {
-                let serve_with_fallback = service_fn(move |req: Request<Body>| {
-                    async move {
-                        let res = get_service(ServeDir::new(&DIST))
-                            .call(req, None::<()>)
-                            .await;
-                        if res.status() == StatusCode::NOT_FOUND {
-                            // If 404, fallback to serving index.html
-                            let index_req = Request::builder()
-                                .uri("/index.html")
-                                .body(Body::empty())
-                                .unwrap();
-                            let response = get_service(ServeDir::new(&DIST))
-                                .call(index_req, None::<()>)
-                                .await;
-                            Ok(response)
-                        } else {
-                            Ok(res)
-                        }
-                    }
-                });
-                let fallback_service =
-                    get_service(ServeDir::new(&DIST).append_index_html_on_directories(true));
-
-                let web_app = Router::new()
-                    .nest_service("/", serve_with_fallback)
-                    .fallback_service(fallback_service);
-
-                let web_addr = SocketAddr::from(([127, 0, 0, 1], 3000));
-                let listener = tokio::net::TcpListener::bind(web_addr).await.unwrap();
-                println!(
-                    "{} {}",
-                    "Web app running at".text(),
-                    format!("http://{}", web_addr).secondary()
-                );
-                axum::serve(listener, web_app).await.unwrap();
-            });
-
-            let _ = tokio::try_join!(server_task, web_task);
+            start_server_and_web_app().await;
         }
 
         Some(SubCommand::TestTheme) => {
@@ -508,4 +460,56 @@ pub async fn handle_run_command(run_args: RunArgs) -> Result<RunResult, OnyxErro
             "Invalid file extension. Must be .workflow.yml, .agent.yml, or .sql".into(),
         )),
     }
+}
+
+pub async fn start_server_and_web_app() {
+    let server_task = tokio::spawn(async move {
+        let addr = SocketAddr::from(([127, 0, 0, 1], 3001));
+        println!(
+            "{} {}",
+            "API server running at".text(),
+            format!("http://{}", addr).secondary()
+        );
+        server::serve(&addr).await;
+    });
+
+    let web_task = tokio::spawn(async move {
+        let serve_with_fallback = service_fn(move |req: Request<Body>| {
+            async move {
+                let res = get_service(ServeDir::new(&DIST))
+                    .call(req, None::<()>)
+                    .await;
+                if res.status() == StatusCode::NOT_FOUND {
+                    // If 404, fallback to serving index.html
+                    let index_req = Request::builder()
+                        .uri("/index.html")
+                        .body(Body::empty())
+                        .unwrap();
+                    let response = get_service(ServeDir::new(&DIST))
+                        .call(index_req, None::<()>)
+                        .await;
+                    Ok(response)
+                } else {
+                    Ok(res)
+                }
+            }
+        });
+        let fallback_service =
+            get_service(ServeDir::new(&DIST).append_index_html_on_directories(true));
+
+        let web_app = Router::new()
+            .nest_service("/", serve_with_fallback)
+            .fallback_service(fallback_service);
+
+        let web_addr = SocketAddr::from(([127, 0, 0, 1], 3000));
+        let listener = tokio::net::TcpListener::bind(web_addr).await.unwrap();
+        println!(
+            "{} {}",
+            "Web app running at".text(),
+            format!("http://{}", web_addr).secondary()
+        );
+        axum::serve(listener, web_app).await.unwrap();
+    });
+
+    let _ = tokio::try_join!(server_task, web_task);
 }

@@ -8,6 +8,7 @@
   - [Clone this repository](#clone-this-repository)
   - [Install rust \& node](#install-rust--node)
   - [Build the crate from the repository](#build-the-crate-from-the-repository)
+  - [Run the desktop app](#run-the-desktop-app)
   - [Test the installation](#test-the-installation)
 - [Starting from scratch](#starting-from-scratch)
 - [Basic commands](#basic-commands)
@@ -17,6 +18,8 @@
 - [Contributing](#contributing)
   - [Language dependencies](#language-dependencies)
   - [Extra - install python \& poetry](#extra---install-python--poetry)
+- [Testing](#testing)
+  - [Known issues](#known-issues)
 
 ## The fastest way to build data agents
 
@@ -174,6 +177,16 @@ export OPENAI_API_KEY="<YOUR_KEY_HERE>"
 echo 'export OPENAI_API_KEY="<YOUR_KEY_HERE>"' >> ~/.zshrc
 ```
 
+### Run the desktop app
+
+To run the desktop app, you can use the following command:
+
+```bash
+pnpm -C web-app tauri dev
+```
+
+Follow tauri upstream documents for more commands [with tauri-cli](https://v2.tauri.app/reference/cli/)
+
 ### Test the installation
 
 Inside onyx-sample-repo, run: `onyx` to check that the installation worked.
@@ -328,18 +341,21 @@ Poetry is a python package manager that we use to manage python dependencies. In
 pip install poetry
 ```
 
-
 ## Testing
+
 Test are running on examples configuration.
 To run all tests, need `bigquery_sample.key` in `examples` directory and `OPENAI_API_KEY` env set.
+
 ```sh
 cargo test
 ```
 
 To show test stdout for debugging use `--nocapture`
+
 ```sh
 cargo test -- --nocapture
 ```
 
 ### Known issues
+
 - Tests when running in parallel (default) messed up terminal indentation.
