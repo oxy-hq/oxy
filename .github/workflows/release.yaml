@@ -118,6 +118,8 @@ jobs:
         run: |
           mkdir -p artifacts/tauri-${{ matrix.job.target }}
           mv target/${{ matrix.job.target }}/release/bundle/**/onyx_* artifacts/tauri-${{ matrix.job.target }}/
+      - name: Cleanup tauri build to reduce cache size
+        run: rm -rf target/${{ matrix.job.target }}/release/bundle
 
       #-- Build onyx cli binary
       - name: Build onyx cli
@@ -189,7 +191,7 @@ jobs:
         run: chmod +x artifacts/onyx-*
       - name: Get current time
         id: time
-        run: echo "current_time=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_OUTPUT
+        run: echo "current_time=$(date -u +'-%Y%m%d-%H%M%S')" >> $GITHUB_OUTPUT
       - name: Upload files to github release
         uses: softprops/action-gh-release@v2
         with:
@@ -202,6 +204,7 @@ jobs:
   announce:
     runs-on: ubuntu-latest
     needs: [release]
+    if: ${{ github.event_name != 'workflow_dispatch' }}
     steps: # get release note from github and its version to send to slack channel
       - name: Get release note
         run: |
