@@ -3,9 +3,13 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag to release"
+        description: "Tag or branch to release"
         required: true
-        default: "main"
+        default: ""
+      unique:
+        description: "Unique identifier to append to the release tag/branch"
+        required: false
+        type: boolean
   push:
     tags:
       - "[0-9]+.[0-9]+.[0-9]+"
@@ -113,7 +117,7 @@ jobs:
       - name: Move tauri assets to artifacts
         run: |
           mkdir -p artifacts/tauri-${{ matrix.job.target }}
-          mv target/${{ matrix.job.target }}/release/bundle/**/onyx* artifacts/tauri-${{ matrix.job.target }}/
+          mv target/${{ matrix.job.target }}/release/bundle/**/onyx_* artifacts/tauri-${{ matrix.job.target }}/
 
       #-- Build onyx cli binary
       - name: Build onyx cli
@@ -183,12 +187,15 @@ jobs:
         run: cat artifacts/SHA256SUM-onyx-*.txt | tee artifacts/SHA256SUMS.txt
       - name: Ensure binaries are executable
         run: chmod +x artifacts/onyx-*
+      - name: Get current time
+        id: time
+        run: echo "current_time=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_OUTPUT
       - name: Upload files to github release
         uses: softprops/action-gh-release@v2
         with:
           draft: false
-          prerelease: ${{ inputs.tag == 'main' }}
-          tag_name: ${{ inputs.tag || github.ref_name }}
+          prerelease: ${{ inputs.tag != '' }}
+          tag_name: ${{ inputs.tag || github.ref_name }}${{ inputs.unique && steps.time.outputs.current_time || '' }}
           files: |
             artifacts/**/*
 
