@@ -118,7 +118,7 @@ jobs:
       - name: Move tauri assets to artifacts
         run: |
           mkdir -p artifacts/tauri-${{ matrix.job.target }}
-          mv {${{steps.tauri-build.outputs.artifactPaths}}} artifacts/tauri-${{ matrix.job.target }}/
+          mv {${{join(steps.tauri-build.outputs.artifactPaths, ',')}}} artifacts/tauri-${{ matrix.job.target }}/
       - name: Cleanup tauri build to reduce cache size
         run: rm -rf target/${{ matrix.job.target }}/release/bundle
       #-- Upload release artifacts
