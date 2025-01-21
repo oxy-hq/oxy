@@ -120,7 +120,12 @@ jobs:
           mkdir -p artifacts/tauri-${{ matrix.job.target }}
           artifacts=$(echo '${{ steps.tauri-build.outputs.artifactPaths }}' | jq -r '.[]')
           for artifact in $artifacts; do
-            mv $artifact artifacts/tauri-${{ matrix.job.target }}/
+            if [[ $artifact == *.app ]]; then
+              # github does not support Macos App bundle as artifact
+              ditto -c -k --sequesterRsrc --keepParent "$artifact" "artifacts/tauri-${{ matrix.job.target }}/$(basename "$artifact" .app)-app-${{ matrix.job.target }}.zip"
+            else
+              mv "$artifact" "artifacts/tauri-${{ matrix.job.target }}/"
+            fi
           done
       - name: Cleanup tauri build to reduce cache size
         run: rm -rf target/${{ matrix.job.target }}/release/bundle
