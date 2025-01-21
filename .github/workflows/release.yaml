@@ -128,7 +128,7 @@ jobs:
       - name: Upload release artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.job.target }}
+          name: tauri-${{ matrix.job.target }}
           path: |
             artifacts/**/*
           if-no-files-found: error
@@ -249,7 +249,7 @@ jobs:
       - name: Upload release artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.job.target }}
+          name: cli-${{ matrix.job.target }}
           path: |
             artifacts/**/*
           if-no-files-found: error
