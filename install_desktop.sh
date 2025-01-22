@@ -116,3 +116,11 @@ case "$PACKAGE_TYPE" in
 esac
 
 echo "$APP_NAME has been installed."
+
+# Clean up the downloaded file
+if [ -f "$PACKAGE" ]; then
+    echo "Cleaning up..."
+    rm -f "$PACKAGE"
+else
+    echo "Package file not found, skipping cleanup."
+fi
