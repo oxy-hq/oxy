@@ -41,8 +41,7 @@ tools:
   - name: retrieval
     type: retrieval
     src:
-      - "data"
-      - "default"
+      - "data/*"
   - name: execute_sql
     type: execute_sql
     warehouse: primary_warehouse
