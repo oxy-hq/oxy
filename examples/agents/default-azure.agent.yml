@@ -1,7 +1,6 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/onyx-hq/onyx-public-releases/refs/heads/main/json-schemas/agent.json
 
 model: "openai-4o-mini-azure"
-retrieval: "default"
 context:
   - name: queries
     type: file
