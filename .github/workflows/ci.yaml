@@ -101,7 +101,7 @@ jobs:
           node-version: 20
       - uses: pnpm/action-setup@v4
         with:
-          run_install: true
+          run_install: false
       - name: Get pnpm store directory
         shell: bash
         run: |
@@ -110,9 +110,11 @@ jobs:
         name: Setup pnpm cache
         with:
           path: ${{ env.STORE_PATH }}
-          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          key: pnpm-store-ubuntu-latest-x86_64-unknown-linux-gnu-${{ hashFiles('**/pnpm-lock.yaml') }}
           restore-keys: |
-            ${{ runner.os }}-pnpm-store-
+            pnpm-store-ubuntu-latest-x86_64-unknown-linux-gnu
+      - name: Run pnpm install
+        run: pnpm install
       - name: Run lint-staged
         shell: bash
         run: |
