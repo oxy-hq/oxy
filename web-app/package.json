@@ -81,6 +81,6 @@
     "src/**/*.{html,css,scss,ts,tsx}": "npx prettier --write",
     "src/**/*.{ts,tsx}": "npx eslint"
   },
-  "packageManager": "pnpm@9.12.1"
+  "packageManager": "pnpm@9.15.4"
 }
 

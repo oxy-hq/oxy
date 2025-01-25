@@ -67,7 +67,6 @@ jobs:
           key: pnpm-store-${{ matrix.job.os }}-${{ matrix.job.target }}-${{ hashFiles('**/pnpm-lock.yaml') }}
           restore-keys: |
             pnpm-store-${{ matrix.job.os }}-${{ matrix.job.target }}
-            pnpm-store-${{ matrix.job.os }}-
       - name: Install dependencies
         run: |
           pnpm install
@@ -182,7 +181,6 @@ jobs:
           key: pnpm-store-${{ matrix.job.os }}-${{ matrix.job.target }}-${{ hashFiles('**/pnpm-lock.yaml') }}
           restore-keys: |
             pnpm-store-${{ matrix.job.os }}-${{ matrix.job.target }}
-            pnpm-store-${{ matrix.job.os }}-
       - name: Install dependencies & Build web-app
         run: |
           pnpm install
