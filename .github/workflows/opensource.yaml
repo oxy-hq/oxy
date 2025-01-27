@@ -20,7 +20,12 @@ jobs:
           repositories: |
             onyx-community
             onyx
-      - uses: actions/checkout@v2
+      - name: Get GitHub App User ID
+        id: get-user-id
+        run: echo "user-id=$(gh api "/users/${{ steps.app-token.outputs.app-slug }}[bot]" --jq .id)" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
@@ -31,3 +36,4 @@ jobs:
           sot_repo: onyx-hq/onyx
           destination_repo: onyx-hq/onyx-community
           push_exclude: "web-app/**"
+          committer: "${{ steps.app-token.outputs.app-slug }}[bot] <${{ steps.get-user-id.outputs.user-id }}+${{ steps.app-token.outputs.app-slug }}[bot]@users.noreply.github.com>>"
