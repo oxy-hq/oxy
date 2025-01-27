@@ -68,6 +68,6 @@ tokio-stream = "0.1.16"
 async-stream = "0.3.6"
 chrono = "0.4.38"
 tower-serve-static = "0.1.1"
-tower = "0.5.1"
+tower = "0.5.2"
 garde = {version = "0.20.0", features = ["full"]}
 comfy-table = "7.1.3"
