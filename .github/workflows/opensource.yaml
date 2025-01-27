@@ -1,0 +1,33 @@
+name: Open source onyx in onyx-community
+on:
+  push:
+    branches:
+      - main
+  pull_request_target:
+    branches:
+      - main
+jobs:
+  move-code:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/create-github-app-token@v1
+        name: Create GitHub App Token
+        id: app-token
+        with:
+          app-id: ${{ vars.ARGO_APP_ID }}
+          private-key: ${{ secrets.ARGO_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: |
+            onyx-community
+            onyx
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+      - uses: olivr/copybara-action@v1.2.4
+        with:
+          ssh_key: ${{ secrets.ARGO_APP_PRIVATE_KEY }}
+          access_token: ${{ steps.app-token.outputs.token }}
+          sot_repo: onyx-hq/onyx
+          destination_repo: onyx-hq/onyx-community
+          push_exclude: "web-app/**"
