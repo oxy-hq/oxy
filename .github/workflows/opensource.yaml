@@ -36,4 +36,4 @@ jobs:
           sot_repo: onyx-hq/onyx
           destination_repo: onyx-hq/onyx-community
           push_exclude: "web-app/**"
-          committer: "${{ steps.app-token.outputs.app-slug }}[bot] <${{ steps.get-user-id.outputs.user-id }}+${{ steps.app-token.outputs.app-slug }}[bot]@users.noreply.github.com>>"
+          committer: "${{ steps.app-token.outputs.app-slug }}[bot] <${{ steps.get-user-id.outputs.user-id }}+${{ steps.app-token.outputs.app-slug }}[bot]@users.noreply.github.com>"
