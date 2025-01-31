@@ -6,7 +6,7 @@ use minijinja::{context, Value};
 use value::ContextValue;
 use write::Write;
 
-use crate::errors::OnyxError;
+use crate::{config::model::Config, errors::OnyxError};
 
 use super::renderer::Renderer;
 
@@ -30,6 +30,7 @@ pub struct ExecutionContext<'writer, Event> {
     global_context: &'writer Value,
     writer: &'writer mut (dyn Write<Event> + 'writer),
     pub renderer: &'writer mut Renderer,
+    pub config: Config,
 }
 
 impl<'writer, Event> ExecutionContext<'writer, Event> {
@@ -51,6 +52,7 @@ impl<'writer, Event> ExecutionContext<'writer, Event> {
             global_context: self.global_context,
             renderer: self.renderer,
             context,
+            config: self.config.clone(),
         }
     }
 
@@ -59,6 +61,7 @@ impl<'writer, Event> ExecutionContext<'writer, Event> {
         renderer: &'writer mut Renderer,
         global_context: &'writer Value,
         writer: &'writer mut (dyn Write<Event> + 'writer),
+        config: Config,
     ) -> Self {
         ExecutionContext {
             key: None,
@@ -66,6 +69,7 @@ impl<'writer, Event> ExecutionContext<'writer, Event> {
             global_context,
             writer,
             renderer,
+            config,
         }
     }
 

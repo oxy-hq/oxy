@@ -24,6 +24,7 @@ pub async fn serve(address: &SocketAddr) {
     let _ = Migrator::up(&db, None).await;
 
     let app: Router = Router::new()
+        .route("/set-project-path", post(config::set_project_path))
         .route("/ask", post(agent::ask))
         .route("/agents", get(agent::list))
         .route("/conversations", get(conversations::list))

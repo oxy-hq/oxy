@@ -50,7 +50,7 @@ pub enum WorkflowEvent {
     AgentToolCalls {
         calls: Vec<ToolCall>,
         step: AgentStep,
-        export_file_path: String,
+        export_file_path: PathBuf,
     },
 
     // sql
@@ -59,14 +59,14 @@ pub enum WorkflowEvent {
         query: String,
         datasets: Vec<RecordBatch>,
         schema: Arc<Schema>,
-        export_file_path: String,
+        export_file_path: PathBuf,
     },
 
     // formatter
     Formatter {
         step: FormatterStep,
         output: String,
-        export_file_path: String,
+        export_file_path: PathBuf,
     },
 }
 
@@ -235,7 +235,7 @@ impl Handler for WorkflowExporter {
 }
 
 pub async fn run_workflow(workflow_path: &PathBuf) -> Result<WorkflowResult, OnyxError> {
-    let config = load_config()?;
+    let config = load_config(None)?;
     let workflow = config.load_workflow(workflow_path)?;
     config.validate_workflow(&workflow).map_err(|e| {
         OnyxError::ConfigurationError(format!("Invalid workflow configuration: {}", e))
@@ -250,6 +250,7 @@ pub async fn run_workflow(workflow_path: &PathBuf) -> Result<WorkflowResult, Ony
         &mut renderer,
         &Value::UNDEFINED,
         &mut output_collector,
+        config.clone(),
     );
     let executor = WorkflowExecutor::new(workflow);
     executor.execute(&mut execution_context).await?;

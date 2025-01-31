@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::theme::*;
+use crate::{errors::OnyxError, theme::*};
 use arrow::array::RecordBatch;
 use syntect::{
     easy::HighlightLines,
@@ -85,4 +85,35 @@ pub fn print_colored_sql(sql: &str) {
         print!("{}", escaped);
     }
     println!();
+}
+
+pub fn find_project_path() -> Result<PathBuf, OnyxError> {
+    // if init_path.is_some() {
+    //     let path = PathBuf::from(init_path.unwrap());
+    //     if path.join("config.yml").exists() {
+    //         let mut project_path = PROJECT_PATH.lock().unwrap();
+    //         *project_path = path.clone();
+    //         return Ok(path);
+    //     }
+    //     return Err(OnyxError::ArgumentError(
+    //         "Could not find config.yml".to_string(),
+    //     ));
+    // }
+
+    let mut current_dir = std::env::current_dir().expect("Could not get current directory");
+
+    for _ in 0..10 {
+        let config_path = current_dir.join("config.yml");
+        if config_path.exists() {
+            return Ok(current_dir);
+        }
+
+        if !current_dir.pop() {
+            break;
+        }
+    }
+
+    return Err(OnyxError::ArgumentError(
+        "Could not find config.yml".to_string(),
+    ));
 }

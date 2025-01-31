@@ -6,16 +6,20 @@ use std::{
 use minijinja::value::{Object, ObjectRepr, Value};
 use tokio::runtime::Handle;
 
-use crate::{config::model::Warehouse, connector::Connector};
+use crate::{
+    config::model::{Config, Warehouse},
+    connector::Connector,
+};
 
 #[derive(Debug, Clone)]
 pub struct WarehousesContext {
     warehouses: HashMap<String, Warehouse>,
     cache: Arc<Mutex<HashMap<String, Value>>>,
+    config: Config,
 }
 
 impl WarehousesContext {
-    pub fn new(warehouses: Vec<Warehouse>) -> Self {
+    pub fn new(warehouses: Vec<Warehouse>, config: Config) -> Self {
         let warehouses = warehouses
             .into_iter()
             .map(|w| (w.name.clone(), w))
@@ -23,6 +27,7 @@ impl WarehousesContext {
         WarehousesContext {
             warehouses,
             cache: Arc::new(Mutex::new(HashMap::new())),
+            config,
         }
     }
 
@@ -46,8 +51,9 @@ impl Object for WarehousesContext {
                 }
                 match (self.warehouses.get(warehouse_key), Handle::try_current()) {
                     (Some(warehouse_config), Ok(rt)) => {
-                        let warehouse_info =
-                            rt.block_on(Connector::new(warehouse_config).load_warehouse_info());
+                        let warehouse_info = rt.block_on(
+                            Connector::new(warehouse_config, &self.config).load_warehouse_info(),
+                        );
                         let value = Value::from_serialize(warehouse_info);
                         cache.insert(warehouse_key.to_string(), value.clone());
                         Some(value)

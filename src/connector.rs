@@ -12,11 +12,12 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use uuid::Uuid;
 
-use crate::config::model::{ProjectPath, Warehouse, WarehouseType};
+use crate::config::model::{Config, Warehouse, WarehouseType};
 use crate::errors::OnyxError;
 
 pub struct Connector {
-    config: Warehouse,
+    warehouse_config: Warehouse,
+    config: Config,
 }
 
 #[derive(serde::Serialize, Clone)]
@@ -27,16 +28,17 @@ pub struct WarehouseInfo {
 }
 
 impl Connector {
-    pub fn new(config: &Warehouse) -> Self {
+    pub fn new(warehouse_config: &Warehouse, config: &Config) -> Self {
         Connector {
+            warehouse_config: warehouse_config.clone(),
             config: config.clone(),
         }
     }
 
     pub async fn load_warehouse_info(&self) -> WarehouseInfo {
         let tables = self.get_schemas().await;
-        let name = self.config.dataset.clone();
-        let dialect = self.config.warehouse_type.to_string();
+        let name = self.warehouse_config.dataset.clone();
+        let dialect = self.warehouse_config.warehouse_type.to_string();
         WarehouseInfo {
             name,
             dialect,
@@ -45,7 +47,7 @@ impl Connector {
     }
 
     pub async fn list_datasets(&self) -> Vec<String> {
-        let query_string = match self.config.warehouse_type {
+        let query_string = match self.warehouse_config.warehouse_type {
             WarehouseType::Bigquery(_) => {
                 "SELECT schema_name FROM INFORMATION_SCHEMA.SCHEMATA".to_owned()
             }
@@ -67,10 +69,10 @@ impl Connector {
     }
 
     pub async fn get_schemas(&self) -> Vec<String> {
-        let query_string = match self.config.warehouse_type {
+        let query_string = match self.warehouse_config.warehouse_type {
             WarehouseType::Bigquery(_) => format!(
                 "SELECT ddl FROM `{}`.INFORMATION_SCHEMA.TABLES",
-                self.config.dataset
+                self.warehouse_config.dataset
             )
             .to_owned(),
             WarehouseType::DuckDB(_) => "".to_owned(),
@@ -92,10 +94,9 @@ impl Connector {
     }
 
     pub async fn run_query(&self, query: &str) -> anyhow::Result<String> {
-        let file_path = match &self.config.warehouse_type {
+        let file_path = match &self.warehouse_config.warehouse_type {
             WarehouseType::Bigquery(bigquery) => {
-                let key_path =
-                    ProjectPath::get_path(&bigquery.key_path.as_path().to_string_lossy());
+                let key_path = self.config.project_path.join(&bigquery.key_path);
                 self.run_connectorx_query(query, key_path).await?
             }
             WarehouseType::DuckDB(_) => self.run_duckdb_query(query).await?,
@@ -122,7 +123,7 @@ impl Connector {
         let key_path = current_dir.join(&key_path);
         let conn_string = format!(
             "{}://{}",
-            self.config.warehouse_type,
+            self.warehouse_config.warehouse_type,
             key_path.to_str().unwrap()
         );
         let query = query.to_string(); // convert to owned string for closure
@@ -148,7 +149,10 @@ impl Connector {
         let conn = Connection::open_in_memory()?;
         let dir_set_stmt = format!(
             "SET file_search_path = '{}'",
-            ProjectPath::get_path(&self.config.dataset).display()
+            self.config
+                .project_path
+                .join(&self.warehouse_config.dataset)
+                .display()
         );
         conn.execute(&dir_set_stmt, [])?;
         let mut stmt = conn.prepare(&query)?;

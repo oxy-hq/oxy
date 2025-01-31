@@ -28,7 +28,7 @@ pub fn setup_agent(
     agent_file: Option<&PathBuf>,
     file_format: &FileFormat,
 ) -> Result<(OpenAIAgent, AgentConfig, Config), OnyxError> {
-    let config = load_config()?;
+    let config = load_config(None)?;
 
     let (agent_config, agent_name) = config.load_agent_config(agent_file)?;
     let agent = from_config(&agent_name, &config, &agent_config, file_format)
@@ -50,7 +50,7 @@ pub fn from_config(
             pluralize,
             case_sensitive,
         }) => {
-            let mut anonymizer = FlashTextAnonymizer::new(pluralize, case_sensitive);
+            let mut anonymizer = FlashTextAnonymizer::new(pluralize, case_sensitive, config);
             anonymizer.add_keywords_file(source)?;
             Some(Box::new(anonymizer))
         }
@@ -115,9 +115,10 @@ fn tools_from_config(
                     .find_warehouse(&execute_sql.warehouse)
                     .unwrap_or_else(|_| panic!("Warehouse {} not found", &execute_sql.warehouse));
                 let tool: ExecuteSQLTool = ExecuteSQLTool {
-                    config: warehouse_config.clone(),
+                    warehouse_config: warehouse_config.clone(),
                     tool_description: execute_sql.description.to_string(),
                     output_format: agent_config.output_format.clone(),
+                    config: config.clone(),
                 };
                 toolbox.add_tool(execute_sql.name.to_string(), tool.into());
             }

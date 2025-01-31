@@ -1,4 +1,4 @@
-use super::model::{Config, ExportFormat, ProjectPath, StepExport, StepType};
+use super::model::{Config, ExportFormat, StepExport, StepType};
 use std::{env, fmt::Display, path::PathBuf};
 
 const FILE_NOT_FOUND_ERROR: &str = "file does not exist";
@@ -12,7 +12,7 @@ fn format_error_message(error_message: &str, value: impl Display) -> garde::Erro
     garde::Error::new(format!("{} ({})", error_message, value))
 }
 
-pub fn validate_file_path(path: &PathBuf, _: &ValidationContext) -> garde::Result {
+pub fn validate_file_path(path: &PathBuf, context: &ValidationContext) -> garde::Result {
     if path.is_absolute() || path.components().count() > 1 {
         return Err(format_error_message(
             "File must be in the current directory",
@@ -20,7 +20,7 @@ pub fn validate_file_path(path: &PathBuf, _: &ValidationContext) -> garde::Resul
         ));
     }
 
-    let file_path = ProjectPath::get_path(&path.as_path().to_string_lossy());
+    let file_path = context.config.project_path.join(&path);
 
     if !file_path.exists() {
         return Err(format_error_message(
@@ -66,8 +66,8 @@ pub fn validate_warehouse_exists(
     }
 }
 
-pub fn validate_sql_file(sql_file: &str, _context: &ValidationContext) -> garde::Result {
-    let path = &ProjectPath::get_path(sql_file);
+pub fn validate_sql_file(sql_file: &str, context: &ValidationContext) -> garde::Result {
+    let path = &context.config.project_path.join(sql_file);
     if !path.exists() {
         return Err(format_error_message(
             SQL_FILE_NOT_FOUND_ERROR,
@@ -77,8 +77,8 @@ pub fn validate_sql_file(sql_file: &str, _context: &ValidationContext) -> garde:
     Ok(())
 }
 
-pub fn validate_agent_exists(agent: &str, _context: &ValidationContext) -> garde::Result {
-    let path = &ProjectPath::get_path(agent);
+pub fn validate_agent_exists(agent: &str, context: &ValidationContext) -> garde::Result {
+    let path = &context.config.project_path.join(agent);
     if !path.exists() {
         return Err(format_error_message(
             AGENT_NOT_FOUND_ERROR,

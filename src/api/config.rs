@@ -1,14 +1,21 @@
-use axum::{http::StatusCode, response::IntoResponse, Json};
+use axum::{extract, http::StatusCode, response::IntoResponse, Json};
+use serde::Deserialize;
 use serde_yaml::Value;
 use std::error::Error;
 use std::fs;
 use std::path::PathBuf;
 
-use crate::config::model::ProjectPath;
+use crate::utils::find_project_path;
 
 #[axum::debug_handler]
 pub async fn load_config() -> Result<impl IntoResponse, (StatusCode, String)> {
-    let config_path = ProjectPath::get_path("config.yml");
+    let project_path = find_project_path().map_err(|err| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to find project path: {}", err),
+        )
+    })?;
+    let config_path = project_path.join("config.yaml");
     let config_content = fs::read_to_string(config_path).map_err(|err| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -24,6 +31,18 @@ pub async fn load_config() -> Result<impl IntoResponse, (StatusCode, String)> {
     })?;
 
     Ok(Json(config))
+}
+
+#[derive(Deserialize)]
+pub struct SetProjectPathRequest {
+    pub project_path: String,
+}
+
+#[axum::debug_handler]
+pub async fn set_project_path(
+    extract::Json(payload): extract::Json<SetProjectPathRequest>,
+) -> Result<impl IntoResponse, (StatusCode, String)> {
+    Ok(Json("Project path set"))
 }
 
 fn list_dir_contents(path: &PathBuf) -> Result<Vec<serde_json::Value>, Box<dyn Error>> {
@@ -53,7 +72,12 @@ fn list_dir_contents(path: &PathBuf) -> Result<Vec<serde_json::Value>, Box<dyn E
 
 #[axum::debug_handler]
 pub async fn list_project_dir_structure() -> Result<impl IntoResponse, (StatusCode, String)> {
-    let project_path = ProjectPath::get();
+    let project_path = find_project_path().map_err(|err| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to find project path: {}", err),
+        )
+    })?;
     let dir_structure = list_dir_contents(&project_path).map_err(|err| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,

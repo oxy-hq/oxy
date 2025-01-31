@@ -172,8 +172,11 @@ pub async fn run_agent(
     event_handler: Option<&dyn Handler<Event = AgentEvent>>,
 ) -> Result<AgentResult, OnyxError> {
     let (agent, agent_config, config) = setup_agent(agent_file, file_format)?;
-    let contexts = Contexts::new(agent_config.context.clone().unwrap_or_default());
-    let warehouses = WarehousesContext::new(config.warehouses.clone());
+    let contexts = Contexts::new(
+        agent_config.context.clone().unwrap_or_default(),
+        config.clone(),
+    );
+    let warehouses = WarehousesContext::new(config.warehouses.clone(), config.clone());
     let tools_context = ToolsContext::new(agent.tools.clone(), prompt.to_string());
     let global_context = context! {
         context => Value::from_object(contexts),
@@ -190,6 +193,7 @@ pub async fn run_agent(
         &mut renderer,
         &global_context,
         &mut output_collector,
+        config.clone(),
     );
     agent.execute(&mut execution_context).await?;
     let output = output_collector.output.unwrap_or_default();

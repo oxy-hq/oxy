@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::fs;
+use std::path::PathBuf;
 use std::sync::Mutex;
 
 use backon::ExponentialBuilder;
@@ -14,7 +15,6 @@ use crate::config::model::FileFormat;
 use crate::config::model::FormatterStep;
 use crate::config::model::LoopSequentialStep;
 use crate::config::model::LoopValues;
-use crate::config::model::ProjectPath;
 use crate::config::model::Step;
 use crate::config::model::StepType;
 use crate::config::model::Workflow;
@@ -73,7 +73,7 @@ impl Executable<WorkflowEvent> for AgentStep {
         &self,
         execution_context: &mut ExecutionContext<'_, WorkflowEvent>,
     ) -> Result<(), OnyxError> {
-        let agent_file = ProjectPath::get_path(&self.agent_ref);
+        let agent_file = execution_context.config.project_path.join(&self.agent_ref);
         let context = execution_context.get_context();
         let prompt = execution_context
             .renderer
@@ -108,12 +108,16 @@ impl Executable<WorkflowEvent> for AgentStep {
             }
         }
 
-        let mut export_file_path = String::new();
+        let mut export_file_path = PathBuf::new();
         if let Some(export) = &self.export {
-            export_file_path = execution_context
+            let export_file_path_str = execution_context
                 .renderer
                 .render_async(&export.path, Value::from_serialize(&context))
                 .await?;
+            export_file_path = execution_context
+                .config
+                .project_path
+                .join(export_file_path_str);
         }
         execution_context.notify(WorkflowEvent::AgentToolCalls {
             calls: tool_calls,
@@ -132,7 +136,7 @@ impl Executable<WorkflowEvent> for ExecuteSQLStep {
         execution_context: &mut ExecutionContext<'_, WorkflowEvent>,
     ) -> Result<(), OnyxError> {
         let context = execution_context.get_context();
-        let config = load_config()?;
+        let config = load_config(None)?;
         let wh = &config.find_warehouse(&self.warehouse)?;
         log::info!("SQL Context: {:?}", context);
 
@@ -151,7 +155,7 @@ impl Executable<WorkflowEvent> for ExecuteSQLStep {
             .renderer
             .render_async(&self.sql_file, Value::from_serialize(&context))
             .await?;
-        let query_file = ProjectPath::get_path(&rendered_sql_file);
+        let query_file = config.project_path.join(&rendered_sql_file);
         let query = match fs::read_to_string(&query_file) {
             Ok(query) => {
                 if !variables.is_empty() {
@@ -172,14 +176,19 @@ impl Executable<WorkflowEvent> for ExecuteSQLStep {
             }
         };
 
-        let (datasets, schema) = Connector::new(wh).run_query_and_load(&query).await?;
-
-        let mut export_file_path = String::new();
+        let (datasets, schema) = Connector::new(wh, &config)
+            .run_query_and_load(&query)
+            .await?;
+        let mut export_file_path = PathBuf::new();
         if let Some(export) = &self.export {
-            export_file_path = execution_context
+            let export_file_path_str = execution_context
                 .renderer
                 .render_async(&export.path, Value::from_serialize(&context))
                 .await?;
+            export_file_path = execution_context
+                .config
+                .project_path
+                .join(export_file_path_str);
         }
 
         execution_context.notify(WorkflowEvent::ExecuteSQL {
@@ -206,13 +215,18 @@ impl Executable<WorkflowEvent> for FormatterStep {
             .render_async(&self.template, Value::from_serialize(&context))
             .await?;
 
-        let mut export_file_path = String::new();
+        let mut export_file_path = PathBuf::new();
         if let Some(export) = &self.export {
-            export_file_path = execution_context
+            let export_file_path_str = execution_context
                 .renderer
                 .render_async(&export.path, Value::from_serialize(&context))
                 .await?;
+            export_file_path = execution_context
+                .config
+                .project_path
+                .join(export_file_path_str);
         }
+
         execution_context.notify(WorkflowEvent::Formatter {
             step: self.clone(),
             output: step_output.clone(),

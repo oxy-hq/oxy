@@ -15,7 +15,6 @@ use clap::Parser;
 use minijinja::{Environment, Value};
 use model::AgentConfig;
 use model::FileFormat;
-use model::ProjectPath;
 use model::ToolConfig;
 use model::{Config, Workflow};
 use pyo3::types::PyAnyMethods;
@@ -254,18 +253,18 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             Err(e) => eprintln!("{}", format!("Initialization failed: {}", e).error()),
         },
         Some(SubCommand::ListTables) => {
-            let config = load_config()?;
+            let config = load_config(None)?;
             for warehouse in &config.warehouses {
-                let tables = Connector::new(warehouse).get_schemas().await;
+                let tables = Connector::new(warehouse, &config).get_schemas().await;
                 for table in tables {
                     println!("{}", table.text());
                 }
             }
         }
         Some(SubCommand::ListDatasets) => {
-            let config = load_config()?;
+            let config = load_config(None)?;
             for warehouse in &config.warehouses {
-                let datasets = Connector::new(warehouse).list_datasets().await;
+                let datasets = Connector::new(warehouse, &config).list_datasets().await;
                 for dataset in datasets {
                     println!("{}", dataset.text());
                 }
@@ -275,12 +274,12 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             handle_run_command(run_args).await?;
         }
         Some(SubCommand::Build) => {
-            let config = load_config()?;
+            let config = load_config(None)?;
             build(&config).await?;
         }
         Some(SubCommand::VecSearch(search_args)) => {
-            let config = load_config()?;
-            let agent_file = args.agent.map(|agent| ProjectPath::get_path(&agent));
+            let config = load_config(None)?;
+            let agent_file = args.agent.map(|agent| config.project_path.join(&agent));
             let (agent, agent_name) = config.load_agent_config(agent_file.as_ref())?;
 
             for tool in agent.tools {
@@ -290,7 +289,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             }
         }
         Some(SubCommand::Validate) => {
-            let result = load_config();
+            let result = load_config(None);
             match result {
                 Ok(config) => match config.validate_workflows() {
                     Ok(_) => {
@@ -381,7 +380,7 @@ async fn handle_sql_file(
 
     // Print colored SQL and execute query
     print_colored_sql(&query);
-    let (datasets, schema) = Connector::new(&wh_config)
+    let (datasets, schema) = Connector::new(&wh_config, &config)
         .run_query_and_load(&query)
         .await?;
     let batches_display = record_batches_to_table(&datasets, &schema)
@@ -450,7 +449,7 @@ pub async fn handle_run_command(run_args: RunArgs) -> Result<RunResult, OnyxErro
             }
         }
         Some("sql") => {
-            let config = load_config()?;
+            let config = load_config(None)?;
             let warehouse = run_args.warehouse.or(config.clone().defaults.warehouse);
             let sql_result =
                 handle_sql_file(&file_path, warehouse, &config, &run_args.variables).await?;
