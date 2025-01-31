@@ -20,7 +20,26 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": null,
+      "capabilities": [
+        {
+          "identifier": "main-user-files-write",
+          "description": "This capability allows the `main` window on macOS and Windows access to `filesystem` write related commands and `dialog` commands to enable programmatic access to files selected by the user.",
+          "windows": [
+            "main"
+          ],
+          "permissions": [
+            "core:default",
+            "dialog:allow-open",
+            "fs:default",
+            {
+              "identifier": "fs:allow-exists",
+              "allow": [{ "path": "$HOME/*" }]
+            }
+          ],
+          "platforms": ["macOS","windows"]
+        }
+      ]
     }
   },
   "bundle": {
@@ -34,4 +53,5 @@
       "icons/icon.ico"
     ]
   }
+  
 }

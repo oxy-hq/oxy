@@ -27,3 +27,5 @@ log = "0.4"
 tauri = { version = "2.0.3", features = ["config-json5"] }
 tauri-plugin-log = "2.0.0-rc"
 tokio = { version = "1.41", features = ["full"] }
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"

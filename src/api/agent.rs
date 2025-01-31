@@ -2,12 +2,13 @@ use chrono::prelude::{DateTime, Utc};
 use std::path::PathBuf;
 
 use crate::{
-    config::model::{FileFormat, ProjectPath},
+    config::model::FileFormat,
     db::{
         conversations::{create_conversation, get_conversation_by_agent},
         message::save_message,
     },
     execute::agent::run_agent,
+    utils::find_project_path,
 };
 use async_stream::stream;
 use axum::response::IntoResponse;
@@ -64,8 +65,11 @@ pub async fn ask(extract::Json(payload): extract::Json<AskRequest>) -> impl Into
             created_at: question.created_at,
         };
 
+    let project_path = find_project_path().unwrap();
+    let agent_path= project_path.join(&payload.agent);
+
     let result = run_agent(
-        Some(&ProjectPath::get_path(&payload.agent)),
+        Some(&agent_path),
         &FileFormat::Markdown,
         &payload.question, None).await.unwrap().output;
     let answer = save_message(
@@ -112,7 +116,7 @@ pub struct ListAgentResponse {
 }
 
 pub async fn list() -> Json<ListAgentResponse> {
-    let project_path = ProjectPath::get();
+    let project_path = find_project_path().unwrap();
 
     let agent_files = find_agent_files(&project_path);
     let mut agents = Vec::new();

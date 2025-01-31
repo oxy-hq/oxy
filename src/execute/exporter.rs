@@ -8,7 +8,6 @@ use crate::ai::utils::record_batches_to_json;
 use crate::ai::utils::record_batches_to_rows;
 use crate::config::model::AgentStep;
 use crate::config::model::ExportFormat;
-use crate::config::model::ProjectPath;
 use crate::config::model::StepExport;
 use crate::connector::load_result;
 use crate::errors::OnyxError;
@@ -22,7 +21,7 @@ use csv::Writer;
 pub fn export_agent_step(
     agent_step: &AgentStep,
     step_output: &Vec<ToolCall>,
-    export_file_path: &String,
+    export_file_path: &PathBuf,
 ) {
     if let Some(export) = &agent_step.export {
         let mut has_execute_sql_step = false;
@@ -55,7 +54,7 @@ pub fn export_execute_sql(
     sql: &str,
     schema: &Arc<Schema>,
     datasets: &[RecordBatch],
-    export_file_path: &String,
+    export_file_path: &PathBuf,
 ) {
     match get_file_directories(export_file_path) {
         Ok(file_path) => {
@@ -97,10 +96,9 @@ pub fn export_execute_sql(
     }
 }
 
-fn get_file_directories(file_path: &String) -> Result<PathBuf, OnyxError> {
-    let file_path = ProjectPath::get_path(&file_path);
+fn get_file_directories(file_path: &PathBuf) -> Result<PathBuf, OnyxError> {
     let _ = create_parent_dirs(&file_path);
-    Ok(file_path)
+    Ok(file_path.clone())
 }
 
 fn create_parent_dirs(path: &Path) -> std::io::Result<()> {
@@ -144,7 +142,7 @@ fn export_json(
     Ok(())
 }
 
-pub fn export_formatter(step_output: &str, export_file_path: &String) {
+pub fn export_formatter(step_output: &str, export_file_path: &PathBuf) {
     match get_file_directories(export_file_path) {
         Ok(file_path) => {
             let mut file = File::create(&file_path).expect("Failed to create file");
@@ -159,7 +157,8 @@ pub fn export_formatter(step_output: &str, export_file_path: &String) {
             "{}",
             format!(
                 "Error creating directories for path '{}': {}",
-                export_file_path, e
+                export_file_path.display(),
+                e
             )
             .warning()
         ),

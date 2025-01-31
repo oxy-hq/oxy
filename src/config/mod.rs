@@ -5,7 +5,7 @@ pub mod validate;
 use garde::Validate;
 
 use anyhow;
-use model::{AgentConfig, Config, Model, ProjectPath, SemanticModels, Warehouse, Workflow};
+use model::{AgentConfig, Config, Model, SemanticModels, Warehouse, Workflow};
 
 use dirs::home_dir;
 use parser::{parse_agent_config, parse_semantic_model_config, parse_workflow_config};
@@ -13,7 +13,7 @@ use serde::Deserialize;
 use std::{fs, io};
 use validate::ValidationContext;
 
-use crate::errors::OnyxError;
+use crate::{errors::OnyxError, utils::find_project_path};
 
 // These are settings stored as strings derived from the config.yml file's defaults section
 #[derive(Debug, Deserialize)]
@@ -56,7 +56,7 @@ impl Config {
     }
 
     pub fn validate_workflows(&self) -> anyhow::Result<()> {
-        for workflow_file in self.list_workflows(&ProjectPath::get()) {
+        for workflow_file in self.list_workflows(&self.project_path) {
             let workflow = self.load_workflow(&workflow_file)?;
             self.validate_workflow(&workflow)?;
         }
@@ -70,7 +70,7 @@ impl Config {
         let agent_file = if let Some(file) = agent_file {
             file
         } else {
-            &ProjectPath::get_path(&self.defaults.agent)
+            &self.project_path.join(&self.defaults.agent)
         };
 
         if !agent_file.exists() {
@@ -187,20 +187,22 @@ impl Config {
     }
 }
 
-pub fn load_config() -> Result<Config, OnyxError> {
-    let config_path: PathBuf = ProjectPath::get_path("config.yml");
-    let config = parse_config(&config_path)?;
+pub fn load_config(project_path: Option<PathBuf>) -> Result<Config, OnyxError> {
+    let root = project_path.unwrap_or(find_project_path()?);
+    let config_path: PathBuf = root.join("config.yml");
+    let config = parse_config(&config_path, root)?;
 
     Ok(config)
 }
 
-pub fn parse_config(config_path: &PathBuf) -> Result<Config, OnyxError> {
+pub fn parse_config(config_path: &PathBuf, project_path: PathBuf) -> Result<Config, OnyxError> {
     let config_str = fs::read_to_string(config_path)
         .map_err(|e| OnyxError::ConfigurationError("Unable to read config file".into()))?;
 
     let result = serde_yaml::from_str::<Config>(&config_str);
     match result {
-        Ok(config) => {
+        Ok(mut config) => {
+            config.project_path = project_path;
             let context = ValidationContext {
                 config: config.clone(),
             };

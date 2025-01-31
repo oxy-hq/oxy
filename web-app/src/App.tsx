@@ -4,7 +4,9 @@ import { css } from "styled-system/css";
 import LeftSidebar from "@/components/LeftSidebar";
 import MobileTopBar from "@/components/MobileTopBar";
 import ChatPage from "@/pages/chat";
-import HomePage from "@/pages/home";
+
+// import HomePage from "@/pages/home";
+import ProjectPath from "./pages/project-path";
 
 const layoutWrapperStyles = css({
   display: "flex",
@@ -23,8 +25,9 @@ function App() {
         <MobileTopBar />
         <LeftSidebar />
         <Routes>
-          <Route path='/' element={<HomePage />} />
+          <Route path='/' element={<ProjectPath />} />
           <Route path='/chat/:id' element={<ChatPage />} />
+          <Route path='/init' element={<ProjectPath />} />
           <Route path='*' element={<Navigate to='/' />} />
         </Routes>
       </div>
@@ -33,4 +36,3 @@ function App() {
 }
 
 export default App;
-

@@ -1,5 +1,6 @@
-use crate::cli::model::{BigQuery, Config, DuckDB, ProjectPath, WarehouseType};
+use crate::cli::model::{BigQuery, Config, DuckDB, WarehouseType};
 use crate::theme::*;
+use crate::utils::find_project_path;
 use include_dir::{include_dir, Dir};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -11,6 +12,7 @@ use super::model::{Defaults, Model, Warehouse};
 pub enum InitError {
     IoError(io::Error),
     ExtractionError(String),
+    ProjectPathNotFound(String),
 }
 
 impl fmt::Display for InitError {
@@ -18,6 +20,7 @@ impl fmt::Display for InitError {
         match self {
             InitError::IoError(err) => write!(f, "IO error: {}", err),
             InitError::ExtractionError(err) => write!(f, "Extraction error: {}", err),
+            InitError::ProjectPathNotFound(err) => write!(f, "Project path not found: {}", err),
         }
     }
 }
@@ -200,7 +203,9 @@ fn create_project_structure() -> Result<(), InitError> {
 }
 
 pub fn init() -> Result<(), InitError> {
-    let config_path = ProjectPath::get_path("config.yml");
+    let project_path =
+        find_project_path().map_err(|e| InitError::ProjectPathNotFound(e.to_string()))?;
+    let config_path = project_path.join("config.yml");
 
     if config_path.exists() {
         println!(
@@ -240,6 +245,7 @@ fn create_config_file(config_path: &Path) -> Result<(), InitError> {
             agent: "default".to_string(),
             warehouse: Some("primary_warehouse".to_string()),
         },
+        project_path: PathBuf::new(),
     };
 
     let yaml =

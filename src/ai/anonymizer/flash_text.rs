@@ -8,7 +8,7 @@ use pluralizer::pluralize;
 use slugify::slugify;
 
 use crate::{
-    config::model::{FlashTextSourceType, ProjectPath},
+    config::model::{Config, FlashTextSourceType},
     errors::OnyxError,
 };
 
@@ -55,13 +55,15 @@ impl TrieNode {
 pub struct FlashTextAnonymizer {
     root: TrieNode,
     pluralize: bool,
+    config: Config,
 }
 
 impl FlashTextAnonymizer {
-    pub fn new(pluralize: &bool, case_sensitive: &bool) -> Self {
+    pub fn new(pluralize: &bool, case_sensitive: &bool, config: &Config) -> Self {
         FlashTextAnonymizer {
             root: TrieNode::new(*case_sensitive),
             pluralize: *pluralize,
+            config: config.clone(),
         }
     }
 
@@ -70,7 +72,7 @@ impl FlashTextAnonymizer {
             FlashTextSourceType::Keywords { keywords_file, .. } => keywords_file,
             FlashTextSourceType::Mapping { mapping_file, .. } => mapping_file,
         };
-        let resolved_path = ProjectPath::get().join(path);
+        let resolved_path = self.config.project_path.join(path);
         let file = File::open(&resolved_path).map_err(|err| {
             anyhow::anyhow!("Failed to open file: {:?}. Error:\n{}", &resolved_path, err)
         })?;

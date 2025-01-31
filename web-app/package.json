@@ -25,6 +25,10 @@
     "@radix-ui/react-switch": "^1.1.2",
     "@radix-ui/react-toast": "^1.2.4",
     "@tanstack/react-query": "^5.64.2",
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-dialog": "^2.2.0",
+    "@tauri-apps/plugin-fs": "^2.2.0",
+    "@tauri-apps/plugin-opener": "^2",
     "@uiw/codemirror-themes": "^4.23.7",
     "@uiw/react-codemirror": "^4.23.7",
     "ahooks": "^3.8.4",
@@ -44,15 +48,13 @@
     "remark-directive": "^3.0.0",
     "remark-gfm": "^4.0.0",
     "sort-by": "^1.2.0",
-    "zustand": "^5.0.3",
-    "@tauri-apps/api": "^2",
-    "@tauri-apps/plugin-opener": "^2"
+    "zustand": "^5.0.3"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2",
     "@eslint/js": "^9.18.0",
     "@ianvs/prettier-plugin-sort-imports": "^4.4.1",
     "@pandacss/dev": "^0.51.1",
+    "@tauri-apps/cli": "^2",
     "@types/invariant": "^2.2.37",
     "@types/node": "^22.10.6",
     "@types/react": "^19.0.6",
@@ -83,4 +85,3 @@
   },
   "packageManager": "pnpm@9.15.4"
 }
-

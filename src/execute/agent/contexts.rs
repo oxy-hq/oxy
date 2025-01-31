@@ -3,7 +3,7 @@ use std::{collections::HashMap, fs, sync::Arc};
 use minijinja::value::{Object, ObjectRepr, Value};
 
 use crate::{
-    config::model::{AgentContext, AgentContextType, ProjectPath, SemanticModels},
+    config::model::{AgentContext, AgentContextType, Config, SemanticModels},
     utils::expand_globs,
     StyledText,
 };
@@ -11,12 +11,13 @@ use crate::{
 #[derive(Debug, Clone)]
 pub struct Contexts {
     contexts: HashMap<String, AgentContext>,
+    config: Config,
 }
 
 impl Contexts {
-    pub fn new(contexts: Vec<AgentContext>) -> Self {
+    pub fn new(contexts: Vec<AgentContext>, config: Config) -> Self {
         let contexts = contexts.into_iter().map(|c| (c.name.clone(), c)).collect();
-        Contexts { contexts }
+        Contexts { contexts, config }
     }
 }
 
@@ -31,7 +32,7 @@ impl Object for Contexts {
             Some(key) => match self.contexts.get(key) {
                 Some(context) => match &context.context_type {
                     AgentContextType::File(file_context) => {
-                        match expand_globs(&file_context.src, ProjectPath::get()) {
+                        match expand_globs(&file_context.src, self.config.project_path.clone()) {
                             Ok(paths) => {
                                 let mut contents = vec![];
                                 for path in paths {
@@ -58,7 +59,7 @@ impl Object for Contexts {
                         }
                     }
                     AgentContextType::SemanticModel(semantic_model_context) => {
-                        let path = ProjectPath::get();
+                        let path = self.config.project_path.clone();
                         let semantic_model_path = path.join(&semantic_model_context.src);
                         match fs::read_to_string(semantic_model_path) {
                             Ok(content) => match serde_yaml::from_str::<SemanticModels>(&content) {

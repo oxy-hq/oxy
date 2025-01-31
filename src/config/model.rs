@@ -8,15 +8,9 @@ use crate::config::validate::validate_file_path;
 use crate::config::validate::{
     validate_agent_exists, validate_env_var, validate_warehouse_exists, ValidationContext,
 };
-use lazy_static::lazy_static;
 use schemars::JsonSchema;
-use std::sync::Mutex;
 
 use super::validate::validate_step;
-
-lazy_static! {
-    static ref PROJECT_PATH: Mutex<PathBuf> = Mutex::new(PathBuf::new());
-}
 
 #[derive(Serialize, Deserialize, Validate, Debug, Clone, JsonSchema)]
 #[garde(context(ValidationContext))]
@@ -27,6 +21,11 @@ pub struct Config {
     pub models: Vec<Model>,
     #[garde(dive)]
     pub warehouses: Vec<Warehouse>,
+
+    #[serde(skip)]
+    #[garde(skip)]
+    #[schemars(skip)]
+    pub project_path: PathBuf,
 }
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema)]
@@ -495,42 +494,4 @@ pub enum ToolConfig {
 
 fn default_tools() -> Vec<ToolConfig> {
     vec![]
-}
-
-pub struct ProjectPath;
-
-impl ProjectPath {
-    fn init() -> PathBuf {
-        let mut current_dir = std::env::current_dir().expect("Could not get current directory");
-
-        for _ in 0..10 {
-            let config_path = current_dir.join("config.yml");
-            if config_path.exists() {
-                let mut project_path = PROJECT_PATH.lock().unwrap();
-                *project_path = current_dir.clone();
-
-                return current_dir;
-            }
-
-            if !current_dir.pop() {
-                break;
-            }
-        }
-
-        panic!("Could not find config.yml");
-    }
-
-    pub fn get() -> PathBuf {
-        let project_path = PROJECT_PATH.lock().unwrap().clone();
-        if project_path.as_os_str().is_empty() {
-            return Self::init();
-        }
-
-        project_path
-    }
-
-    pub fn get_path(relative_path: &str) -> PathBuf {
-        let project_root = Self::get();
-        project_root.join(relative_path)
-    }
 }
