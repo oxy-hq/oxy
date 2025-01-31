@@ -118,7 +118,11 @@ jobs:
       - name: Run lint-staged
         shell: bash
         run: |
-          pnpm lint-staged --diff="origin/${{ github.base_ref }}...origin/${{ github.head_ref }}"
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            pnpm lint-staged --diff="$(git rev-list -n1 --before='1 week ago' HEAD)...HEAD"
+          else
+            pnpm lint-staged --diff="origin/${{ github.base_ref }}...origin/${{ github.head_ref }}"
+          fi
 
   check:
     needs: [fmt, changesets, links, typos]
