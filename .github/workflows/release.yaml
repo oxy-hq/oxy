@@ -84,6 +84,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: build-tauri-${{ matrix.job.os }}-${{ matrix.job.target }}
+          cache-all-crates: "true"
       # protobuf is required by lance https://github.com/lancedb/lance/issues/3073
       - name: Install Protoc
         uses: arduino/setup-protoc@v3
@@ -199,6 +200,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: build-cli-${{ matrix.job.os }}-${{ matrix.job.target }}
+          cache-all-crates: "true"
       # protobuf is required by lance https://github.com/lancedb/lance/issues/3073
       - name: Install Protoc
         uses: arduino/setup-protoc@v3
