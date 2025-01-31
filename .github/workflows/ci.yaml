@@ -84,6 +84,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: debug-ubuntu-latest-x86_64-unknown-linux-gnu
+          cache-all-crates: "true"
       - name: Install required dependencies
         shell: bash
         run: |
@@ -138,6 +139,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: debug-ubuntu-latest-x86_64-unknown-linux-gnu
+          cache-all-crates: "true"
       # protobuf is required by lance https://github.com/lancedb/lance/issues/3073
       - name: Install Protoc
         uses: arduino/setup-protoc@v3
@@ -160,6 +162,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: debug-ubuntu-latest-x86_64-unknown-linux-gnu
+          cache-all-crates: "true"
       # protobuf is required by lance https://github.com/lancedb/lance/issues/3073
       - name: Install Protoc
         uses: arduino/setup-protoc@v3

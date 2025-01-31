@@ -38,6 +38,7 @@ jobs:
   #       uses: Swatinem/rust-cache@v2
   #       with:
   #         shared-key: debug-ubuntu-latest-x86_64-unknown-linux-gnu
+  #         cache-all-crates: "true"
   #     - name: Run release-plz
   #       uses: release-plz/action@v0.5
   #       with:
