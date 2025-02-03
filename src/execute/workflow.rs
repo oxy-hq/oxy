@@ -4,7 +4,7 @@ use arrow::{array::RecordBatch, datatypes::Schema};
 use minijinja::Value;
 
 use crate::{
-    ai::utils::record_batches_to_table,
+    ai::{agent::AgentResult, utils::record_batches_to_table},
     config::{
         load_config,
         model::{AgentStep, ExecuteSQLStep, FormatterStep, LoopValues, Step, StepType, Workflow},
@@ -12,7 +12,7 @@ use crate::{
     errors::OnyxError,
     execute::exporter::{export_agent_step, export_execute_sql, export_formatter},
     utils::print_colored_sql,
-    workflow::{executor::WorkflowExecutor, WorkflowResult},
+    workflow::{cache::write_agent_cache, executor::WorkflowExecutor, WorkflowResult},
     StyledText,
 };
 
@@ -68,6 +68,12 @@ pub enum WorkflowEvent {
         output: String,
         export_file_path: PathBuf,
     },
+
+    // agent
+    CacheAgentResult {
+        result: AgentResult,
+        file_path: PathBuf,
+    },
 }
 
 impl TemplateRegister for Workflow {
@@ -84,6 +90,10 @@ impl TemplateRegister for &Step {
                 register.field(&agent.prompt.as_str())?;
                 if let Some(export) = &agent.export {
                     register.field(&export.path.as_str())?;
+                }
+
+                if let Some(cache) = &agent.cache {
+                    register.field(&cache.path.as_str())?;
                 }
             }
             StepType::ExecuteSQL(execute_sql) => {
@@ -234,6 +244,25 @@ impl Handler for WorkflowExporter {
     }
 }
 
+pub struct WorkflowCacheStep;
+
+impl Handler for WorkflowCacheStep {
+    type Event = WorkflowEvent;
+
+    fn handle(&self, event: &Self::Event) {
+        match event {
+            WorkflowEvent::CacheAgentResult { result, file_path } => {
+                write_agent_cache(file_path, result);
+                log::debug!("Cache agent result: {:?}", event);
+            }
+
+            _ => {
+                log::debug!("Unhandled event: {:?}", event);
+            }
+        }
+    }
+}
+
 pub async fn run_workflow(workflow_path: &PathBuf) -> Result<WorkflowResult, OnyxError> {
     let config = load_config(None)?;
     let workflow = config.load_workflow(workflow_path)?;
@@ -243,7 +272,11 @@ pub async fn run_workflow(workflow_path: &PathBuf) -> Result<WorkflowResult, Ony
 
     let mut renderer = Renderer::new();
     renderer.register(&workflow)?;
-    let dispatcher = Dispatcher::new(vec![Box::new(WorkflowReceiver), Box::new(WorkflowExporter)]);
+    let dispatcher = Dispatcher::new(vec![
+        Box::new(WorkflowReceiver),
+        Box::new(WorkflowExporter),
+        Box::new(WorkflowCacheStep),
+    ]);
     let mut output_collector = OutputCollector::new(&dispatcher);
     let mut execution_context = ExecutionContext::new(
         Value::UNDEFINED,

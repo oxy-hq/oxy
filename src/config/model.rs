@@ -292,9 +292,11 @@ pub struct AgentStep {
     #[garde(skip)]
     pub retry: usize,
 
-    // #[garde(custom(validate_export_format(self)))]
     #[garde(dive)]
     pub export: Option<StepExport>,
+
+    #[garde(dive)]
+    pub cache: Option<StepCache>,
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug, Validate, JsonSchema)]
@@ -319,6 +321,13 @@ pub struct StepExport {
     pub path: String,
     #[garde(dive)]
     pub format: ExportFormat,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
+#[garde(context(ValidationContext))]
+pub struct StepCache {
+    #[garde(length(min = 1))]
+    pub path: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]

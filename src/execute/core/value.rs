@@ -10,12 +10,13 @@ use pyo3::{
     types::{PyDict, PyList, PyNone, PyString},
 };
 use pyo3_arrow::PyRecordBatch;
+use serde::{Deserialize, Serialize};
 
 pub trait ContextLookup {
     fn find(&self, key: &str) -> Option<&ContextValue>;
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct Map(pub HashMap<String, ContextValue>);
 
 impl Map {
@@ -58,7 +59,7 @@ impl Object for Map {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct Array(pub Vec<ContextValue>);
 
 impl<'a> FromIterator<&'a ContextValue> for Array {
@@ -109,7 +110,7 @@ impl Object for Array {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum ContextValue {
     None,
     Text(String),

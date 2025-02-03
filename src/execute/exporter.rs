@@ -96,7 +96,7 @@ pub fn export_execute_sql(
     }
 }
 
-fn get_file_directories(file_path: &PathBuf) -> Result<PathBuf, OnyxError> {
+pub fn get_file_directories(file_path: &PathBuf) -> Result<PathBuf, OnyxError> {
     let _ = create_parent_dirs(&file_path);
     Ok(file_path.clone())
 }

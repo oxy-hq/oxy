@@ -27,11 +27,12 @@ use async_openai::{
 use async_trait::async_trait;
 use pyo3::pyclass;
 use schemars::{schema_for, JsonSchema};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 const CONTEXT_WINDOW_EXCEEDED_CODE: &str = "string_above_max_length";
 
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[pyclass(module = "onyx_py")]
 pub struct AgentResult {
     #[pyo3(get)]
@@ -214,6 +215,7 @@ impl LLMAgent for OpenAIAgent {
         let mut tool_calls = Vec::<ChatCompletionRequestMessage>::new();
 
         let mut contextualize_anonymized_items = anonymized_items.clone();
+
         while tries < self.max_tries {
             let message_with_replies =
                 [messages.clone(), tool_calls.clone(), tool_returns.clone()].concat();
@@ -333,6 +335,7 @@ impl Executable<AgentEvent> for OpenAIAgent {
         execution_context.notify(AgentEvent::Started);
         let input = execution_context.get_context_str();
         let context = execution_context.get_context();
+
         let system_instruction = execution_context
             .renderer
             .render_async(&self.system_instruction, context)
