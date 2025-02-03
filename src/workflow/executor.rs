@@ -29,6 +29,8 @@ use crate::execute::core::write::Write;
 use crate::execute::core::Executable;
 use crate::execute::core::ExecutionContext;
 use crate::execute::workflow::WorkflowEvent;
+use crate::workflow::cache::get_agent_cache;
+use crate::StyledText;
 
 pub struct WorkflowExecutor {
     workflow: Workflow,
@@ -80,6 +82,7 @@ impl Executable<WorkflowEvent> for AgentStep {
             .render_async(&self.prompt, Value::from_serialize(&context))
             .await?;
         let collector = EventsCollector::default();
+
         let step_output = (|| async {
             run_agent(
                 Some(&agent_file),
@@ -119,11 +122,30 @@ impl Executable<WorkflowEvent> for AgentStep {
                 .project_path
                 .join(export_file_path_str);
         }
+
         execution_context.notify(WorkflowEvent::AgentToolCalls {
             calls: tool_calls,
             step: self.clone(),
             export_file_path,
         });
+
+        if let Some(cache) = &self.cache {
+            let cache_file_path_str = execution_context
+                .renderer
+                .render_async(&cache.path, Value::from_serialize(&context))
+                .await?;
+
+            let cache_file_path = execution_context
+                .config
+                .project_path
+                .join(cache_file_path_str);
+
+            execution_context.notify(WorkflowEvent::CacheAgentResult {
+                result: step_output.clone(),
+                file_path: cache_file_path,
+            });
+        }
+
         execution_context.write(step_output.output);
         Ok(())
     }
@@ -303,7 +325,18 @@ impl Executable<WorkflowEvent> for Step {
         });
         match &self.step_type {
             StepType::Agent(agent) => {
-                agent.execute(execution_context).await?;
+                let cache_result = get_agent_cache(
+                    &execution_context.config.project_path.clone(),
+                    agent.cache.clone(),
+                    execution_context,
+                )
+                .await?;
+                if let Some(result) = cache_result {
+                    execution_context.write(result.output);
+                    println!("{}", "Cache detected. Using cache.".primary());
+                } else {
+                    agent.execute(execution_context).await?;
+                }
             }
             StepType::ExecuteSQL(execute_sql) => {
                 execute_sql.execute(execution_context).await?;

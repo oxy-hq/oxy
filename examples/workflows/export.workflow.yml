@@ -7,9 +7,8 @@ steps:
     prompt: |
       Generate a detail report
     agent_ref: agents/semantic_model.agent.yml
-    export:
-      path: output/export_sample_agent.json
-      format: json
+    cache:
+      path: output/cache/export_sample_agent.sql
 
   - name: formatter
     type: formatter
@@ -21,3 +20,43 @@ steps:
     export:
       path: output/export_sample_formatter.txt
       format: txt
+    
+  - name: intervals
+    type: execute_sql
+    warehouse: primary_warehouse
+    sql_file: data/example_intervals.sql
+    export:
+      format: sql
+      path: output/example_intervals.sql
+
+  - name: schedules
+    type: loop_sequential
+    values: "{{ intervals.intervals }}"
+    steps:
+      - name: metrics
+        type: loop_sequential
+        values:
+          - "responses"
+          - "rejected"
+        steps:
+          - name: report
+            type: agent
+            prompt: |
+              Generate a detail {{schedules.value}} report using {{metrics.value}} metrics:
+              {{table}}
+            agent_ref: agents/local.agent.yml
+            export:
+              format: sql
+              path: output/agent_{{schedules.value}}_{{metrics.value}}.sql
+
+      - name: metric_reports
+        type: formatter
+        template: |
+          {% for metric in metrics %}
+          -- Metric: {{metric.value}} --
+          {{metric.report}}
+          -- End of Metric: {{metric.value}} --
+          {% endfor %}
+        export:
+          format: docx
+          path: output/formatter_{{schedules.value}}.docx

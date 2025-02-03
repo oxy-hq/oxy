@@ -1,0 +1,29 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/onyx-hq/onyx-public-releases/refs/heads/main/json-schemas/workflow.json
+
+name: cache_sample
+steps:
+  - name: property_grouping
+    type: execute_sql
+    warehouse: local
+    sql_file: data/example_property_grouping.sql
+
+  - name: groupings
+    type: loop_sequential
+    values: "{{ property_grouping.property_grouping }}"
+    steps:
+      - name: report
+        type: agent
+        prompt: |
+              Generate a detail {{groupings.value}} report
+        agent_ref: agents/semantic_model.agent.yml
+        cache:
+          path: output/cache/groupings_{{groupings.value}}_report_agent.json
+
+  - name: grouping_reports
+    type: formatter
+    template: |
+          {% for grouping in groupings %}
+          -- Property Grouping: {{ grouping.value }} --
+          {{ grouping.report }}
+          -- End of Property Grouping: {{ grouping.value }} --
+          {% endfor %}
