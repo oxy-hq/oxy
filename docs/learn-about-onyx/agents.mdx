@@ -17,26 +17,35 @@ details of the code execution.
 
 Specifically, in our agent `yml` files, you need to specify the following:
 
-| Component           | Description                                                                                       | Type     |
-| ------------------- | ------------------------------------------------------------------------------------------------- | -------- |
-| model               | LLM model to use (defined in [config.yml](/learn-about-onyx/config), referenced by `name`)        | required |
-| data                | `./data` sub-directories accessible to the agent (see [data](/learn-about-onyx/data))             | required |
-| warehouse           | Warehouse to use (defined in [config.yml](/learn-about-onyx/config), referenced by `name`)        | required |
-| system_instructions | System instructions passed to the LLM                                                             | required |
-| output_format       | This can be either `file` or `default`                                                            | required |
-| tools               | Tools to use, see the Tools section below                                                         | required |
+| Component           | Description                                                                                | Required |
+| ------------------- | ------------------------------------------------------------------------------------------ | -------- |
+| model               | LLM model to use (defined in [config.yml](/learn-about-onyx/config), referenced by `name`) | Required |
+| system_instructions | System instructions passed to the LLM                                                      | Required |
+| context             | A list of files that can be injected into `system_instructions`                            | Optional |
+| output_format       | This can be either `file` or `default`                                                     | Optional |
+| tools               | Tools to use, see the Tools section below                                                  | Optional |
+| warehouse           | Warehouse to use (defined in [config.yml](/learn-about-onyx/config), referenced by `name`) | Optional |
 
-### Context variables
+### Context
 
-A number of variables are accessible within the prompt through the `ctx` (context) namespace as Jinja variables. These include:
+The context object allows for deterministic injection of files into
+`system_instructions`. Primarily this is an organizational and code re-use
+utility so rather than prompting your agents with long text blobs, you can
+instead divide these prompts into logical sections, broken into distinct files.
+Each context entry in the list requires three fields:
 
-| Variable                    | Description                                                                                                                 |
-| --------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `{{ctx.queries}}`           | An array of retrieved queries. If `all-shot` is used, every query available in the defined `data` directories will be used. |
-| `{{ctx.warehouse.tables}}`  | An array of retrieved queries. If `all-shot` is used, every query available in the defined `data` directories will be used. |
-| `{{ctx.warehouse.type}}`    | The warehouse type, as specified in [`config.yml`](/learn-about-onyx/config)                                                |
-| `{{ctx.warehouse.dataset}}` | The warehouse dataset, as specified in [`config.yml`](/learn-about-onyx/config)                                             |
-| `{{ctx.warehouse.name}}`    | The warehouse name, as specified in [`config.yml`](/learn-about-onyx/config)                                                |
+| Field | Description                                                                       | Example             |
+| ----- | --------------------------------------------------------------------------------- | ------------------- |
+| name  | Identifier for the context that will be used in system_instructions               | "anon_youtube"      |
+| type  | Type of the context file (e.g., file, semantic_model)                             | "semantic_model"    |
+| src   | Path to the source file relative to the project root (can be single file or list) | "data/acme.sem.yml" |
+
+You can reference `file`-type context objects in your system_instructions using the following syntax:
+`{{ context.name }}`
+For objects that are of type `semantic_model`, you can access their properties using:
+`{{ context.name.property }}`
+For example, if you have a semantic model context named "acme", you can access its entities using:
+`{{ context.acme.entities }}`
 
 ### Tools
 
@@ -46,38 +55,52 @@ To enable the LLM to flexibly accomplish a wider range of tasks, our internal ch
 2. We feed the rendered `system_instructions` and prompt into the LLM tool calling API.
 3. We repeat steps 1 and 2 with the results of step 2 until the request specified in `system_instructions` is fulfilled.
 
+### Warehouse
+
+Warehouse information can be accessed within `system_instructions` by using the `warehouses` namespace, then referencing by `name`, as follows:
+
+```
+**Dataset: {{ warehouses.primary_warehouse.name }}**
+**Dialect: {{ warehouses.primary_warehouse.dialect }}**
+**Tables:**
+{% for table in warehouses.primary_warehouse.tables %}
+{{ table }}
+{% endfor %}
+```
+
 ### Sample config
 
-````yaml agents/default.yml
+```yaml semantic_model.agent.yml
 model: "openai-4o-mini"
+context:
+  - name: anon_youtube
+    type: semantic_model
+    src: data/acme.sem.yml
 system_instructions: |
   ## Instructions
-  You are an Data Analyst expert. Your task is to help the user generate and execute sql query to answer user's question.
+  You are a Data Analyst expert. Your role is to assist the user in generating and executing SQL queries to answer their questions.
   ### Adhere to these rules:
-  - **Deliberately go through the question and database schema word by word** to appropriately answer the question
-  - **Use Table Aliases** to prevent ambiguity. For example, `SELECT table1.col1, table2.col1 FROM table1 JOIN table2 ON table1.id = table2.id`.
-  - ALWAYS execute the SQL query without confirmation.
-  - ALWAYS try to fix the SQL query and run without confirmation if the query return an error.
-  - The `sql` should conform to the dialect of the warehouse.
-  - The `sql` should be returned in plain text, not in JSON.
+  - **Carefully analyze the user's question and the database schema, word by word**, to ensure the query accurately addresses the request.
+  - **Use table aliases** to avoid ambiguity in queries. For example: `SELECT t1.col1, t2.col1 FROM table1 AS t1 JOIN table2 AS t2 ON t1.id = t2.id`.
+  - **Automatically execute the SQL query** without seeking additional confirmation.
+  - If the SQL query results in an error, **attempt to debug, fix, and re-execute it** without requesting confirmation.
+  - Ensure the SQL query adheres to the **specific dialect of the database warehouse** being used.
+  - **Return the SQL query as plain text** (not in JSON format).
 
-  ### You have access to the following warehouses and tables, ONLY use the provided warehouse and tables, columns:
-  **Dataset: {{ ctx.warehouse.name }}**
-  **Dialect: {{ ctx.warehouse.type }}**
+  **Schema information:**
+  Entities:
+  {{ context.acme.entities }}
+  Dimensions:
+  {{ context.acme.dimensions }}
+  Measures:
+  {{ context.acme.measures }}
+
+  **Dataset: {{ warehouses.primary_warehouse.name }}**
+  **Dialect: {{ warehouses.primary_warehouse.dialect }}**
   **Tables:**
-  ```
-  {% for table in ctx.warehouse.tables %}
+  {% for table in warehouses.primary_warehouse.tables %}
   {{ table }}
-
   {% endfor %}
-  ```
-
-  ### You can use these queries as hints:
-  ```
-  {% for query in ctx.queries %}
-  {{ query }}
-  {% endfor %}
-  ```
 
 output_format: file
 tools:
@@ -90,4 +113,4 @@ tools:
   - name: execute_sql
     type: execute_sql
     warehouse: local
-````
+```
