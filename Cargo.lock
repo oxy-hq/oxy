@@ -6480,6 +6480,7 @@ version = "0.1.31"
 dependencies = [
  "onyx",
  "pyo3",
+ "pyo3-build-config",
  "tokio",
 ]
 
