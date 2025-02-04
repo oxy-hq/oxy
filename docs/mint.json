@@ -51,6 +51,7 @@
           "pages": [
             "learn-about-onyx/agents",
             "learn-about-onyx/data",
+            "learn-about-onyx/semantic-model",
             "learn-about-onyx/workflows"
           ]
         },
