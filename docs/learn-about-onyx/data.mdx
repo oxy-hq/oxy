@@ -1,26 +1,43 @@
 ---
 title: "Data"
-description: "Raw semantic source material that your agents have access to"
+description: "How to supply your agent with additional context"
 ---
 
-The `data/` directory stores semantic information that agents can access by
-specifying the `data` parameter within the agent config. Any set of
-subdirectories within `data` can be provided therein, giving the agent access
-to any SQL folders within the given paths (and that directory only -- we do not
-recurse through any nested directories).
+## Prompt injection with `context`
 
-### Structuring semantic information
+Any additional context you'd like to provide to your LLM can be added in adding
+the `context` section to your `.agent.yml` file, as shown below:
 
-Each sub-directory should be populated with SQL queries with the `.sql`
-extension -- these SQL queries will be fed to the LLM as examples of queries to
-generate. For the time being, only SQL queries are accepted, but in the future,
-we will provide the ability to fill each directory with a wider range of
-semantic entities and formulas.
+```
+context:
+  - name: files
+    type: file
+    src:
+      - "*.txt"
+```
 
-At the top of these files, you should generally add a comment that describes
-what the query does (we call this "front matter" internally). While we
-currently only support all-shot retrieval (pulling in all queries in a
-directory), in the future, this front matter will be used for retrieval.
+This means that SQL files can be added to your onyx repository as plain `.sql`
+files, then supplied to the agent using the `context` object.
+
+```
+context:
+  - name: queries
+    type: file
+    src:
+      - "*.sql"
+```
+
+You can then reference these within the `system_instructions` using Jinja, as follows:
+```
+{{ context.queries }}
+```
+where `queries` references the `name` given in the `context` field.
+
+## Best practices for SQL
+
+For SQL queries, in particular, at the top of these files, you should generally
+add a comment that describes what the query does (we call this "front matter"
+internally).
 
 <Warning>
   The accepted format of this front matter will likely change in the future.
@@ -37,11 +54,5 @@ select
 from 'user_events.csv';
 ```
 
-
-### Best practices
-
-We suggest organizing the `data/` directory in a way that reflects your org
-structure. Place queries in directories based on the broadest user group that
-might use said query - for example, company-wide queries go in the root `data/`
-directory, while team-specific queries belong in their respective team
-subdirectories.
+## Retrieval configuration
+TODO

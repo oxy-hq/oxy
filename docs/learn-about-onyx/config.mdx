@@ -8,11 +8,6 @@ you'll use to define three entities, specified as the following top-level keys:
 
 1. `warehouses`: warehouse/database connections
 2. `models`: foundation model connections
-3. `retrievals`: specifications for how retrieval should be done
-
-Beside these, there is a final namespace, `defaults`, where you can specify
-`agent`, which specifies the default agent that will be invoked with all
-`onyx` CLI commands.
 
 A sample `config.yml` file is shown below:
 
@@ -37,13 +32,6 @@ models:
     model_ref: llama3.2:latest
     api_url: http://localhost:11434/v1
     api_key: secret
-
-retrievals:
-  - name: default
-    embed_model: "bge-small-en-v1.5"
-    rerank_model: "jina-reranker-v2-base-multiligual"
-    top_k: 10
-    factor: 5
 
 defaults:
   agent: default
