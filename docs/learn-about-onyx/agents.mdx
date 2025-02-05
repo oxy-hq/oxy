@@ -9,7 +9,7 @@ the data agent and the agent configs that define them are at the heart of onyx.
 Typically, to prompt engineer a _data_ agent (an agent that can reason around
 data), you need a heavily manual workflow involving database schema ingestion,
 LLM prompting and step chaining/iteration, and SQL query retrieval and
-injection. Our `agent.yml` files abstract away much of this complexity,
+injection. Our `.agent.yml` files abstract away much of this complexity,
 allowing you to focus more on the _logic_ of the prompted LLM rather than the
 details of the code execution.
 
@@ -46,6 +46,8 @@ For objects that are of type `semantic_model`, you can access their properties u
 `{{ context.name.property }}`
 For example, if you have a semantic model context named "acme", you can access its entities using:
 `{{ context.acme.entities }}`
+
+We encourage saving any pertinent SQL files and injecting these in
 
 ### Tools
 
