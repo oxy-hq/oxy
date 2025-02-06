@@ -293,6 +293,8 @@ jobs:
     if: ${{ github.event_name != 'workflow_dispatch' }}
     steps: # get release note from github and its version to send to slack channel
       - name: Get release note
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           touch RELEASE_NOTES
           gh release view ${{ inputs.tag || github.ref_name }} --json body --jq .body >> RELEASE_NOTES
