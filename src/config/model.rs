@@ -207,11 +207,6 @@ pub enum Model {
         api_url: String,
     },
 }
-
-fn default_openai_api_url() -> Option<String> {
-    Some("https://api.openai.com/v1".to_string())
-}
-
 #[derive(Serialize, Deserialize, Default, Clone, Debug, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum OutputFormat {
@@ -247,22 +242,6 @@ pub enum FlashTextSourceType {
         #[serde(default = "default_delimiter")]
         delimiter: String,
     },
-}
-
-fn default_anonymizer_replacement() -> String {
-    "FLASH".to_string()
-}
-
-fn default_delimiter() -> String {
-    ",".to_string()
-}
-
-fn default_anonymizer_pluralize() -> bool {
-    false
-}
-
-fn default_case_sensitive() -> bool {
-    false
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default, JsonSchema)]
@@ -326,6 +305,9 @@ pub struct StepExport {
 #[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
 #[garde(context(ValidationContext))]
 pub struct StepCache {
+    #[serde(default = "default_cache_enabled")]
+    #[garde(skip)]
+    pub enabled: bool,
     #[garde(length(min = 1))]
     pub path: String,
 }
@@ -404,10 +386,6 @@ pub struct Step {
     pub step_type: StepType,
 }
 
-fn default_retry() -> usize {
-    1
-}
-
 #[derive(Serialize, Deserialize, Debug, Validate, JsonSchema)]
 #[garde(context(ValidationContext))]
 pub struct Workflow {
@@ -452,6 +430,47 @@ impl RetrievalTool {
     }
 }
 
+#[derive(Serialize, Deserialize, Debug, JsonSchema)]
+pub struct ExecuteSQLTool {
+    pub name: String,
+    #[serde(default = "default_sql_tool_description")]
+    pub description: String,
+    pub warehouse: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, JsonSchema)]
+#[serde(tag = "type")]
+pub enum ToolConfig {
+    #[serde(rename = "execute_sql")]
+    ExecuteSQL(ExecuteSQLTool),
+    #[serde(rename = "retrieval")]
+    Retrieval(RetrievalTool),
+}
+
+fn default_openai_api_url() -> Option<String> {
+    Some("https://api.openai.com/v1".to_string())
+}
+
+fn default_anonymizer_replacement() -> String {
+    "FLASH".to_string()
+}
+
+fn default_delimiter() -> String {
+    ",".to_string()
+}
+
+fn default_anonymizer_pluralize() -> bool {
+    false
+}
+
+fn default_case_sensitive() -> bool {
+    false
+}
+
+fn default_retry() -> usize {
+    1
+}
+
 fn default_retrieval_tool_description() -> String {
     "Retrieve the relevant SQL queries to support query generation.".to_string()
 }
@@ -480,27 +499,14 @@ fn default_retrieval_factor() -> usize {
     5
 }
 
-#[derive(Serialize, Deserialize, Debug, JsonSchema)]
-pub struct ExecuteSQLTool {
-    pub name: String,
-    #[serde(default = "default_sql_tool_description")]
-    pub description: String,
-    pub warehouse: String,
-}
-
 fn default_sql_tool_description() -> String {
     "Execute the SQL query. If the query is invalid, fix it and run again.".to_string()
 }
 
-#[derive(Serialize, Deserialize, Debug, JsonSchema)]
-#[serde(tag = "type")]
-pub enum ToolConfig {
-    #[serde(rename = "execute_sql")]
-    ExecuteSQL(ExecuteSQLTool),
-    #[serde(rename = "retrieval")]
-    Retrieval(RetrievalTool),
-}
-
 fn default_tools() -> Vec<ToolConfig> {
     vec![]
+}
+
+fn default_cache_enabled() -> bool {
+    false
 }

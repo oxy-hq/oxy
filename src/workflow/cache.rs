@@ -28,7 +28,11 @@ pub async fn get_agent_cache(
     step_cache: Option<StepCache>,
     execution_context: &mut ExecutionContext<'_, WorkflowEvent>,
 ) -> Result<Option<AgentResult>, OnyxError> {
-    if let Some(cache) = step_cache {
+    let Some(cache) = step_cache else {
+        return Ok(None);
+    };
+
+    if cache.enabled {
         let cache_file_path = render_cache_path(execution_context, &cache.path).await?;
         let cache_output = std::fs::read_to_string(project_path.join(cache_file_path)).ok();
         if let Some(json) = cache_output {
