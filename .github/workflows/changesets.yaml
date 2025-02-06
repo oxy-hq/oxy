@@ -28,11 +28,8 @@ jobs:
           base: ${{ github.ref_name }}
           filters: |
             onyx:
-              - "src/**"
+              - "crates/**"
               - "**/Cargo.toml"
               - "**/Cargo.lock"
-              - "entity/**"
-              - "migration/**"
               - "web-app/**"
               - "pnpm-lock.yaml"
-              - "onyx-py/**"
