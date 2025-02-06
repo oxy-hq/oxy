@@ -1,14 +1,40 @@
 {
   "packages": {
-    ".": {
-      "changelog-path": "CHANGELOG.md",
-      "bump-minor-pre-major": true,
-      "bump-patch-for-minor-pre-major": true,
-      "release-type": "rust"
+    "crates/onyx-core": {
+      "component": "onyx-core"
+    },
+    "crates/onyx-desktop": {
+      "component": "onyx-desktop"
+    },
+    "crates/onyx-py": {
+      "component": "onyx-py"
+    },
+    "crates/migration": {
+      "component": "migration"
+    },
+    "crates/entity": {
+      "component": "entity"
     }
   },
-  "plugins": ["cargo-workspace"],
-  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "bump-minor-pre-major": true,
+  "bump-patch-for-minor-pre-major": true,
+  "plugins": [
+    {
+      "type": "cargo-workspace",
+      "merge": false
+    },
+    {
+      "type": "linked-versions",
+      "groupName": "onyx",
+      "components": [
+        "crates/onyx-core",
+        "crates/onyx-desktop",
+        "crates/onyx-py",
+        "crates/migration",
+        "crates/entity"
+      ]
+    }
+  ],
   "changelog-sections": [
     {
       "type": "feat",

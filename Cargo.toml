@@ -24,7 +24,8 @@ sea-orm-migration = { version = "1.1.0", features = [
 ] }
 
 [workspace.package]
-version = "0.1.32"
+# TODO: turn this on when https://github.com/googleapis/release-please/issues number 2111 is fixed
+# version = "0.1.32"
 edition = "2021"
 publish = false
 description = "Onyx"
