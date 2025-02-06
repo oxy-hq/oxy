@@ -1,0 +1,1 @@
+#![cfg_attr(any(), rustfmt::skip)]

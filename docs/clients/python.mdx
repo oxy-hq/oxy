@@ -7,8 +7,9 @@ description: "Python client for Onyx"
 <Step title="Installation">
 
 Install from git:
+
 ```bash
-pip install git+ssh://git@github.com/onyx-hq/onyx.git#subdirectory=onyx-py 
+pip install git+ssh://git@github.com/onyx-hq/onyx.git#subdirectory=crates/onyx-py
 ```
 
 </Step>
@@ -19,6 +20,8 @@ from onyx_py import ask, run, execute
 print(ask("this month's revenue?"))
 print(run("example_anonymize.sql"))
 print(execute("survey_responses"))
+
 ```
 </Step>
 </Steps>
+```

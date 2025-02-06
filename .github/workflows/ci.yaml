@@ -10,9 +10,9 @@ on:
     branches:
       - main
     paths-ignore:
-      - 'docs/**'
+      - "docs/**"
   schedule:
-    - cron: '0 0 * * 0'
+    - cron: "0 0 * * 0"
 
 env:
   CARGO_TERM_COLOR: always
@@ -83,7 +83,7 @@ jobs:
       - name: Prep cargo cache
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: debug-ubuntu-latest-x86_64-unknown-linux-gnu
+          shared-key: fmt-ubuntu-latest-x86_64-unknown-linux-gnu
           cache-all-crates: "true"
       - name: Install required dependencies
         shell: bash
@@ -138,7 +138,7 @@ jobs:
       - name: Prep cargo cache
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: debug-ubuntu-latest-x86_64-unknown-linux-gnu
+          shared-key: check-ubuntu-latest-x86_64-unknown-linux-gnu
           cache-all-crates: "true"
       # protobuf is required by lance https://github.com/lancedb/lance/issues/3073
       - name: Install Protoc
@@ -161,7 +161,7 @@ jobs:
       - name: Prep cargo cache
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: debug-ubuntu-latest-x86_64-unknown-linux-gnu
+          shared-key: test-ubuntu-latest-x86_64-unknown-linux-gnu
           cache-all-crates: "true"
       # protobuf is required by lance https://github.com/lancedb/lance/issues/3073
       - name: Install Protoc

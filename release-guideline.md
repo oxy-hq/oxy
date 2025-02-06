@@ -42,7 +42,7 @@ The duties of the release manager include:
   - These pull requests should have higher priority than other tasks, and should be merged before changes that are not related to the release
 - The release manager merges the Release Pull Request into the main branch once all feedbacks have been addressed
 - The release manager retests the release and verifies that the issues have been resolved
-**Public release**:
+  **Public release**:
 - The release manager will trigger the [public release workflow](https://github.com/onyx-hq/onyx/actions/workflows/public-release.yaml) by clicking on "Run workflow" in the Actions tab
 - After the public release workflow has completed, the release manager will verify that the release has been successfully deployed by visiting [onyx-public-releases](https://github.com/onyx-hq/onyx-public-releases/releases)
 - A new release should be ready there and marked as `draft`. The release manager will verify that the release notes and assets are correct and then publish the release by editing the release and clicking on "Publish release"
@@ -60,6 +60,7 @@ The release manager should perform regression testing on core features that are 
 ### Core features
 
 - **Testing requirements**:
+
   - Inside the project directory, `cd examples` to change working directory to the examples directory
   - The version that needs to be tested should be installed or built locally with `cargo build --release`
   - OPENAI_API_KEY should be set in the environment variables
@@ -68,19 +69,22 @@ The release manager should perform regression testing on core features that are 
 
 - **Description**: The `onyx run` command is used to run the Onyx server
 - **Testing plan**:
-  - [x] Check onyx run with an agent and bigquery by running `onyx run agents/default.agent.yml "how many users are there in the database"` *(automated since #219)*
-  - [x] Check onyx run with semantic information by running `onyx run agents/semantic_model.agent.yml "how many users are there in the database"` *(automated since #219)*
+
+  - [x] Check onyx run with an agent and bigquery by running `onyx run agents/default.agent.yml "how many users are there in the database"` _(automated since #219)_
+  - [x] Check onyx run with semantic information by running `onyx run agents/semantic_model.agent.yml "how many users are there in the database"` _(automated since #219)_
     - [ ] Additionally, check the difference between the two outputs of `onyx run agents/default.agent.yml "how many property_grouping"` and `onyx run agents/semantic_model.agent.yml "how many property_grouping"`
-  - [x] Check onyx run workflow capabilities by running `onyx run workflows/table_values.workflow.yml` and see if workflow can be run successfully with colored output *(automated since #219)*
-  - [x] Check onyx anonymization capabilities with workflow by running `onyx run workflows/anonymize.workflow.yml` and see if the workflow can be run successfully with a lot of mentions of `comnpany` and `feedback` while the report name is still `Responses to the survey by organizations` *(automated since #219)*
-  - [x] Check onyx run workflow capabilities with loops sequential and formatter by running `onyx run workflows/survey_responses.workflow.yml` and see if workflow can be run successfully with colored output *(automated since #219)*
+  - [x] Check onyx run workflow capabilities by running `onyx run workflows/table_values.workflow.yml` and see if workflow can be run successfully with colored output _(automated since #219)_
+  - [x] Check onyx anonymization capabilities with workflow by running `onyx run workflows/anonymize.workflow.yml` and see if the workflow can be run successfully with a lot of mentions of `comnpany` and `feedback` while the report name is still `Responses to the survey by organizations` _(automated since #219)_
+  - [x] Check onyx run workflow capabilities with loops sequential and formatter by running `onyx run workflows/survey_responses.workflow.yml` and see if workflow can be run successfully with colored output _(automated since #219)_
 
 - **Description**: The `onyx serve` command is used to run the Onyx server
-  - [x] Check onyx serve by running `onyx serve` and see whether the server is running as well as `localhost:3000` is accessible from the browser. *(automated since #219)*
+
+  - [x] Check onyx serve by running `onyx serve` and see whether the server is running as well as `localhost:3000` is accessible from the browser. _(automated since #219)_
     - [ ] Additionally, perform some chatting in the UI with the same questions to the agents such as `how many users`
 
 - **Description**: The `onyx validate` command is used to validate the configuration file
-  - [x] Check onyx validate by running `onyx validate` after changing some fields to a wrong key (like `warehouses` to `warehouse`) in `config.yml` *(automated since #219)*
+
+  - [x] Check onyx validate by running `onyx validate` after changing some fields to a wrong key (like `warehouses` to `warehouse`) in `config.yml` _(automated since #219)_
 
 - **Description**: The `onyx list-tables` and `onyx list-datasets` commands are used to list tables and datasets in the default warehouse
-  - [x] Check onyx discovery capabilities by running `onyx list-tables` or `onyx list-datasets` *(automated since #219)*
+  - [x] Check onyx discovery capabilities by running `onyx list-tables` or `onyx list-datasets` _(automated since #219)_

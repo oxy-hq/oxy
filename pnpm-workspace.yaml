@@ -1,3 +1,3 @@
 packages:
-- "web-app"
-- "src"
+  - "web-app"
+  - "crates/onyx-core/src"

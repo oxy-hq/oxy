@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       ref:
-        description: 'private version to release'
+        description: "private version to release"
         required: true
         default: latest
 

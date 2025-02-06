@@ -21,18 +21,18 @@ jobs:
       changes: ${{ steps.changes.outputs.changes }}
       onyx: ${{ steps.changes.outputs.onyx }}
     steps:
-    - uses: actions/checkout@v4
-    - uses: dorny/paths-filter@v3
-      id: changes
-      with:
-        base: ${{ github.ref_name }}
-        filters: |
-          onyx:
-            - "src/**"
-            - "**/Cargo.toml"
-            - "**/Cargo.lock"
-            - "entity/**"
-            - "migration/**"
-            - "web-app/**"
-            - "pnpm-lock.yaml"
-            - "onyx-py/**"
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: changes
+        with:
+          base: ${{ github.ref_name }}
+          filters: |
+            onyx:
+              - "src/**"
+              - "**/Cargo.toml"
+              - "**/Cargo.lock"
+              - "entity/**"
+              - "migration/**"
+              - "web-app/**"
+              - "pnpm-lock.yaml"
+              - "onyx-py/**"
