@@ -19,10 +19,10 @@ const Header = () => {
   return (
     <div className={hstack({ justify: "space-between" })}>
       <div className={vstack({ gap: "xs", alignItems: "start" })}>
-        <Text variant='headline20Semibold' color='primary'>
+        <Text variant="headline20Semibold" color="primary">
           Onyx Workspace
         </Text>
-        <Text variant='paragraph16Regular' color='secondary'>
+        <Text variant="paragraph16Regular" color="secondary">
           {getGreeting()}
         </Text>
       </div>
@@ -32,19 +32,23 @@ const Header = () => {
           rowGap: "xs",
           flexWrap: "wrap",
           md: {
-            flexWrap: "nowrap"
-          }
+            flexWrap: "nowrap",
+          },
         })}
       >
         <Button
-          variant='filled'
-          size='large'
-          content='iconText'
+          variant="filled"
+          size="large"
+          content="iconText"
           onClick={() => {
-            window.open("https://docs.onyxint.ai/welcome", "_blank", "noopener");
+            window.open(
+              "https://docs.onyxint.ai/welcome",
+              "_blank",
+              "noopener",
+            );
           }}
         >
-          <Icon asset='knowledge' />
+          <Icon asset="knowledge" />
           Docs
         </Button>
       </div>
@@ -53,4 +57,3 @@ const Header = () => {
 };
 
 export default Header;
-

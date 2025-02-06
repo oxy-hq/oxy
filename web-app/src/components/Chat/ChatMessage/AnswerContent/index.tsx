@@ -25,15 +25,15 @@ const markdownStyles = sva({
       flexDirection: "column",
       "& > ol": {
         paddingInlineStart: "4xl",
-        listStyleType: "decimal"
+        listStyleType: "decimal",
       },
       "& > ul": {
         paddingInlineStart: "4xl",
-        listStyleType: "disc"
+        listStyleType: "disc",
       },
       "& > ol > li > p": {
-        display: "inline"
-      }
+        display: "inline",
+      },
     }),
     tableWrap: {
       rounded: "minimal",
@@ -43,14 +43,14 @@ const markdownStyles = sva({
       "&::-webkit-scrollbar": {
         bg: "transparent",
         borderTop: "1px solid token(colors.border.primary)",
-        height: "22px"
+        height: "22px",
       },
       "&::-webkit-scrollbar-thumb": {
         bg: "token(colors.border.primary)",
         backgroundClip: "content-box",
         border: "8px solid transparent",
-        borderRadius: "100px"
-      }
+        borderRadius: "100px",
+      },
     },
     table: {
       rounded: "minimal",
@@ -58,10 +58,10 @@ const markdownStyles = sva({
       borderColor: "border.primary",
       borderCollapse: "collapse",
       borderStyle: "hidden",
-      width: "100%"
+      width: "100%",
     },
     thead: {
-      backgroundColor: "surface.secondary"
+      backgroundColor: "surface.secondary",
     },
     th: {
       minW: "140px",
@@ -70,7 +70,7 @@ const markdownStyles = sva({
       pr: "md",
       pt: "sm",
       pb: "sm",
-      textAlign: "start !important"
+      textAlign: "start !important",
     },
     td: {
       minW: "140px",
@@ -82,9 +82,9 @@ const markdownStyles = sva({
       textAlign: "start !important",
       borderWidth: "1px",
       borderColor: "border.primary",
-      borderCollapse: "collapse"
-    }
-  }
+      borderCollapse: "collapse",
+    },
+  },
 });
 
 const extendedComponents: ExtendedComponents = {
@@ -142,4 +142,3 @@ function AnswerContent({ content, className }: Props) {
 }
 
 export default memo(AnswerContent);
-

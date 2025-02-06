@@ -16,7 +16,7 @@ const messageListStyle = css({
   display: "flex",
   flexDir: "column",
   width: "100%",
-  gap: "5xl"
+  gap: "5xl",
 });
 
 type IMessagesProps = { agentPath: string };
@@ -25,20 +25,19 @@ function Messages({ agentPath }: IMessagesProps) {
   const agentName = getAgentNameFromPath(agentPath);
   const { toast } = useToast();
 
-  const { chatState, messages, streamingNode, startingMessageList } = useChatContextSelector(
-    (s) => ({
+  const { chatState, messages, streamingNode, startingMessageList } =
+    useChatContextSelector((s) => ({
       streamingNode: s.streamingNode,
       chatState: s.chatState,
       messages: s.messages,
-      startingMessageList: s.startingMessageList
-    })
-  );
+      startingMessageList: s.startingMessageList,
+    }));
 
   useEffect(() => {
     if (chatState.status === "error") {
       toast({
         title: "Error",
-        description: chatState.errorMessage
+        description: chatState.errorMessage,
       });
     }
   }, [chatState, toast]);

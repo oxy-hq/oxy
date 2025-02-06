@@ -10,7 +10,7 @@ import {
   TextAreaRootElement,
   TextAreaRootProps,
   TextAreaSlotElement,
-  TextAreaSlotProps
+  TextAreaSlotProps,
 } from "./types";
 
 const textAreaStyles = cva({
@@ -28,8 +28,8 @@ const textAreaStyles = cva({
     overflow: "hidden",
     height: {
       base: "38px",
-      sm: "36px"
-    }
+      sm: "36px",
+    },
   },
   variants: {
     variant: {
@@ -37,14 +37,14 @@ const textAreaStyles = cva({
         color: "text.primary",
         textStyle: {
           base: "paragraph16Regular",
-          sm: "paragraph14Regular"
+          sm: "paragraph14Regular",
         },
         _placeholder: {
-          color: "text.secondary"
-        }
-      }
-    }
-  }
+          color: "text.secondary",
+        },
+      },
+    },
+  },
 });
 
 const textAreaRootStyles = cva({
@@ -55,20 +55,20 @@ const textAreaRootStyles = cva({
     cursor: "text",
     backgroundColor: "surface.primary",
     w: "100%",
-    pl: "xs"
+    pl: "xs",
   },
   variants: {
     variant: {
       default: {
         gap: "sm",
-        borderRadius: "full"
-      }
-    }
-  }
+        borderRadius: "full",
+      },
+    },
+  },
 });
 
 const textAreaSlotStyles = css({
-  zIndex: 1
+  zIndex: 1,
 });
 
 const TextAreaRoot = React.forwardRef<TextAreaRootElement, TextAreaRootProps>(
@@ -84,10 +84,12 @@ const TextAreaRoot = React.forwardRef<TextAreaRootElement, TextAreaRootProps>(
         {...rootProps}
         className={cx(textAreaRootStyles({ variant }), className)}
       >
-        <TextAreaContext.Provider value={value}>{children}</TextAreaContext.Provider>
+        <TextAreaContext.Provider value={value}>
+          {children}
+        </TextAreaContext.Provider>
       </div>
     );
-  }
+  },
 );
 
 const TextArea = React.forwardRef<TextAreaElement, TextAreaProps>(
@@ -110,17 +112,26 @@ const TextArea = React.forwardRef<TextAreaElement, TextAreaProps>(
       />
     );
 
-    return hasRoot ? textArea : <TextAreaRoot variant={variant}>{textArea}</TextAreaRoot>;
-  }
+    return hasRoot ? (
+      textArea
+    ) : (
+      <TextAreaRoot variant={variant}>{textArea}</TextAreaRoot>
+    );
+  },
 );
 
 const TextAreaSlot = React.forwardRef<TextAreaSlotElement, TextAreaSlotProps>(
   function TextAreaSlot(props, forwardedRef) {
     const { className, ...slotProps } = props;
 
-    return <div ref={forwardedRef} {...slotProps} className={cx(textAreaSlotStyles, className)} />;
-  }
+    return (
+      <div
+        ref={forwardedRef}
+        {...slotProps}
+        className={cx(textAreaSlotStyles, className)}
+      />
+    );
+  },
 );
 
 export { TextArea, TextAreaSlot, TextAreaRoot };
-

@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "identifier": "ai.onyxint",
   "build": {
-    "frontendDist": "../dist",
+    "frontendDist": "../../web-app/dist",
     "devUrl": "http://localhost:5173",
     "beforeDevCommand": "pnpm dev",
     "beforeBuildCommand": "pnpm build"
@@ -25,9 +25,7 @@
         {
           "identifier": "main-user-files-write",
           "description": "This capability allows the `main` window on macOS and Windows access to `filesystem` write related commands and `dialog` commands to enable programmatic access to files selected by the user.",
-          "windows": [
-            "main"
-          ],
+          "windows": ["main"],
           "permissions": [
             "core:default",
             "dialog:allow-open",
@@ -37,7 +35,7 @@
               "allow": [{ "path": "$HOME/*" }]
             }
           ],
-          "platforms": ["macOS","windows"]
+          "platforms": ["macOS", "windows"]
         }
       ]
     }
@@ -53,5 +51,4 @@
       "icons/icon.ico"
     ]
   }
-  
 }

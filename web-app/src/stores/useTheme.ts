@@ -10,13 +10,12 @@ const useTheme = create<ThemeState>()(
   persist(
     (set) => ({
       theme: "light",
-      setTheme: (theme: string) => set({ theme })
+      setTheme: (theme: string) => set({ theme }),
     }),
     {
-      name: "theme-storage"
-    }
-  )
+      name: "theme-storage",
+    },
+  ),
 );
 
 export default useTheme;
-

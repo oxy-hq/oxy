@@ -15,9 +15,8 @@ export default tseslint.config(
     ignores: [
       "dist",
       "logs",
-      ".prettierrc.cjs",
+      ".prettierrc.js",
       "node_modules",
-      "dist",
       "dist-ssr",
       "*.local",
       ".vscode/*",
@@ -28,14 +27,20 @@ export default tseslint.config(
       "*.ntvs*",
       "*.njsproj",
       "*.sln",
-      "*.sw?"
-    ]
+      "*.sw?",
+      "**/styled-system/**",
+      "target",
+    ],
   },
   {
-    extends: [js.configs.recommended, ...tseslint.configs.recommended, prettier],
+    extends: [
+      js.configs.recommended,
+      ...tseslint.configs.recommended,
+      prettier,
+    ],
     languageOptions: {
       ecmaVersion: 2020,
-      globals: globals.browser
+      globals: globals.browser,
     },
     plugins: {
       "react-hooks": reactHooks,
@@ -44,19 +49,23 @@ export default tseslint.config(
       unicorn: eslintPluginUnicorn,
       "jsx-a11y": jsxA11y,
       sonarjs,
-      "@typescript-eslint": tseslint.plugin
+      "@typescript-eslint": tseslint.plugin,
     },
     rules: {
       ...reactHooks.configs.recommended.rules,
-      "react-refresh/only-export-components": ["warn", { allowConstantExport: true }],
+      "react-refresh/only-export-components": [
+        "warn",
+        { allowConstantExport: true },
+      ],
       ...sonarjs.configs.recommended.rules,
-      "sonarjs/mouse-events-a11y": "off"
+      "sonarjs/mouse-events-a11y": "off",
+      "sonarjs/todo-tag": "off",
     },
     settings: {
       react: {
-        version: "detect"
-      }
-    }
+        version: "detect",
+      },
+    },
   },
-  pluginPromise.configs["flat/recommended"]
+  pluginPromise.configs["flat/recommended"],
 );

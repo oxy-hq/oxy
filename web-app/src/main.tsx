@@ -17,7 +17,12 @@ const AppWrapper = () => {
   const { theme } = useTheme();
 
   return (
-    <div className={`root`} lang='en' data-theme-variant='new' data-theme={theme}>
+    <div
+      className={`root`}
+      lang="en"
+      data-theme-variant="new"
+      data-theme={theme}
+    >
       <StrictMode>
         <QueryClientProvider client={queryClient}>
           <App />
@@ -30,4 +35,3 @@ const AppWrapper = () => {
 };
 
 createRoot(document.getElementById("root")!).render(<AppWrapper />); // Render AppWrapper
-

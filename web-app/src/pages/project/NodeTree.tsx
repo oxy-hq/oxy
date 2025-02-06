@@ -6,7 +6,7 @@ import DirTree from "./DirTree";
 const NodeTree = ({
   node,
   isLast,
-  prefix = ""
+  prefix = "",
 }: {
   node: Dir;
   isLast?: boolean;
@@ -28,7 +28,10 @@ const NodeTree = ({
         </span>
       )}
       {isOpen && node.children && (
-        <DirTree nodes={node.children} prefix={prefix + (isLast ? "    " : "│   ")} />
+        <DirTree
+          nodes={node.children}
+          prefix={prefix + (isLast ? "    " : "│   ")}
+        />
       )}
     </li>
   );

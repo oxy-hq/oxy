@@ -16,7 +16,7 @@ const ignoreDir = [
   ".DS_Store",
   ".gitignore",
   ".git",
-  "README.md"
+  "README.md",
 ];
 
 const ProjectPath: React.FC = () => {
@@ -63,7 +63,7 @@ const ProjectPath: React.FC = () => {
       const selected = await open({
         directory: true,
         multiple: false,
-        title: "Select Project Folder"
+        title: "Select Project Folder",
       });
 
       if (selected) {
@@ -85,7 +85,7 @@ const ProjectPath: React.FC = () => {
     <div>
       <form>
         {/* <input webkitdirectory='' type='file' onChange={handleFolderSelect} /> */}
-        <button type='button' onClick={handleFolderSelect}>
+        <button type="button" onClick={handleFolderSelect}>
           Select Folder
         </button>
 
@@ -111,7 +111,7 @@ const DirTree = ({ dirEntry, path }: { dirEntry: DirEntry; path: string }) => {
     <li
       className={css({
         display: "flex",
-        flexDirection: "column"
+        flexDirection: "column",
       })}
       key={dirEntry.name}
     >
@@ -120,7 +120,7 @@ const DirTree = ({ dirEntry, path }: { dirEntry: DirEntry; path: string }) => {
           display: "flex",
           flexDirection: "row",
           padding: "sm",
-          gap: "sm"
+          gap: "sm",
         })}
         onClick={async (e) => {
           e.preventDefault();
@@ -132,17 +132,21 @@ const DirTree = ({ dirEntry, path }: { dirEntry: DirEntry; path: string }) => {
           setOpen(!open);
         }}
       >
-        {dirEntry.isDirectory && <Icon asset={open ? "chevron_down" : "chevron_right"} />}
+        {dirEntry.isDirectory && (
+          <Icon asset={open ? "chevron_down" : "chevron_right"} />
+        )}
 
-        {dirEntry.isFile && <Icon asset='file' />}
-        {dirEntry.isDirectory && <Icon asset={open ? "folder_open" : "folder"} />}
+        {dirEntry.isFile && <Icon asset="file" />}
+        {dirEntry.isDirectory && (
+          <Icon asset={open ? "folder_open" : "folder"} />
+        )}
         {dirEntry.name}
       </div>
 
       {open && dirEntry.isDirectory && (
         <ul
           className={css({
-            marginLeft: "30px"
+            marginLeft: "30px",
           })}
         >
           {dirChildren.map((child) => (

@@ -18,14 +18,18 @@ const wrapperStyles = css({
   display: "flex",
   flexDirection: "column",
   height: "100%",
-  gap: "xxs"
+  gap: "xxs",
 });
 
 const skeletonStyles = css({
-  paddingRight: "2xl"
+  paddingRight: "2xl",
 });
 
-export default function ChatGroupContent({ isMobile, chats, isLoading }: SidebarItemGroupProps) {
+export default function ChatGroupContent({
+  isMobile,
+  chats,
+  isLoading,
+}: SidebarItemGroupProps) {
   if (isLoading) {
     return <Skeleton className={skeletonStyles} lineCount={5} />;
   }
@@ -36,9 +40,8 @@ export default function ChatGroupContent({ isMobile, chats, isLoading }: Sidebar
 
   return (
     <div className={wrapperStyles}>
-      <Section section='Agents' isActive={!!chats.length} />
+      <Section section="Agents" isActive={!!chats.length} />
       <ChatList items={chats} isMobile={isMobile} />
     </div>
   );
 }
-

@@ -1,6 +1,8 @@
 const getReaderFromResponse = async (response: Response) => {
   if (!response.ok) {
-    throw new Error((await response.text()) || "Failed to fetch the chat response.");
+    throw new Error(
+      (await response.text()) || "Failed to fetch the chat response.",
+    );
   }
 
   if (!response.body) {
@@ -12,7 +14,7 @@ const getReaderFromResponse = async (response: Response) => {
 
 export const readMessageFromStreamData = async <T>(
   response: Response,
-  onReadStream: (message: T) => void
+  onReadStream: (message: T) => void,
 ) => {
   const reader = await getReaderFromResponse(response);
   for await (const line of makeTextLineIterator(reader)) {
@@ -44,7 +46,8 @@ async function* makeTextLineIterator(reader: ReadableStreamDefaultReader) {
       }
       const remainder = chunk.substr(startIndex);
       ({ value: chunk, done: readerDone } = await reader.read());
-      chunk = remainder + (chunk ? utf8Decoder.decode(chunk, { stream: true }) : "");
+      chunk =
+        remainder + (chunk ? utf8Decoder.decode(chunk, { stream: true }) : "");
       startIndex = re.lastIndex = 0;
       continue;
     }
@@ -56,4 +59,3 @@ async function* makeTextLineIterator(reader: ReadableStreamDefaultReader) {
     yield chunk.substr(startIndex);
   }
 }
-

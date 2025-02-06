@@ -20,22 +20,23 @@ const itemStyles = css({
   "&[data-active=true]": {
     bg: "background.primary",
     // border and shadow
-    shadow: "inset 0 0 0 1px token(colors.border.primary), token(shadows.primary)",
+    shadow:
+      "inset 0 0 0 1px token(colors.border.primary), token(shadows.primary)",
     _hover: {
-      bgColor: "surface.primary"
-    }
+      bgColor: "surface.primary",
+    },
   },
   "&[data-focus=true]": {
-    bgColor: "surface.tertiary"
+    bgColor: "surface.tertiary",
   },
   "&[data-menu-open=true]": {
-    bgColor: "surface.tertiary"
+    bgColor: "surface.tertiary",
   },
   xl: {
     _hover: {
-      bgColor: "surface.tertiary"
-    }
-  }
+      bgColor: "surface.tertiary",
+    },
+  },
 });
 
 const contentStyles = css({
@@ -45,15 +46,15 @@ const contentStyles = css({
   minW: "0",
   flex: 1,
   py: "sm",
-  pl: "sm"
+  pl: "sm",
 });
 
 const iconStyles = css({
-  flexShrink: 0
+  flexShrink: 0,
 });
 
 const textStyles = css({
-  truncate: true
+  truncate: true,
 });
 
 interface SidebarItemProps {
@@ -62,7 +63,10 @@ interface SidebarItemProps {
   title: string;
 }
 
-export default function SidebarItem({ isActive = false, title = "Untitled" }: SidebarItemProps) {
+export default function SidebarItem({
+  isActive = false,
+  title = "Untitled",
+}: SidebarItemProps) {
   const { close: closeSideBar } = useSidebarState();
 
   const onItemClick = () => {
@@ -70,15 +74,22 @@ export default function SidebarItem({ isActive = false, title = "Untitled" }: Si
   };
 
   return (
-    <div data-functional className={cx(itemStyles, "group")} data-active={isActive}>
-      <div onClick={onItemClick} aria-selected={isActive} className={contentStyles}>
-        <Icon className={iconStyles} asset='question' />
+    <div
+      data-functional
+      className={cx(itemStyles, "group")}
+      data-active={isActive}
+    >
+      <div
+        onClick={onItemClick}
+        aria-selected={isActive}
+        className={contentStyles}
+      >
+        <Icon className={iconStyles} asset="question" />
 
-        <Text className={textStyles} variant='label14Regular' color='light'>
+        <Text className={textStyles} variant="label14Regular" color="light">
           {title}
         </Text>
       </div>
     </div>
   );
 }
-

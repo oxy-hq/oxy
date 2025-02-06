@@ -17,13 +17,15 @@ const Project: React.FC = () => {
   const {
     data: dirTree,
     isLoading,
-    error
+    error,
   } = useQuery({
     queryKey: ["projectDir"],
     queryFn: async () => {
-      const response = await apiClient.get("http://127.0.0.1:3001/load-project-structure");
+      const response = await apiClient.get(
+        "http://127.0.0.1:3001/load-project-structure",
+      );
       return response.data;
-    }
+    },
   });
 
   if (isLoading) return <p>Loading...</p>;
@@ -37,4 +39,3 @@ const Project: React.FC = () => {
 };
 
 export default Project;
-

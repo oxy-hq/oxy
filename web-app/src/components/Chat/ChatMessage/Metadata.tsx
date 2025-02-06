@@ -1,23 +1,23 @@
 import { css } from "styled-system/css";
 import { hstack } from "styled-system/patterns";
 
+import AgentAvatar from "@/components/ui/AgentAvatar";
 import Text from "@/components/ui/Typography/Text";
 import { formatDate } from "@/libs/utils/date";
-import AgentAvatar from "@/components/ui/AgentAvatar";
 
 const timeStyles = css({
-  color: "text.secondary"
+  color: "text.secondary",
 });
 
 const containerStyles = hstack({
   gap: "sm",
-  color: "text.light"
+  color: "text.light",
 });
 
 const linkStyles = css({
   _hover: {
-    textDecorationLine: "underline"
-  }
+    textDecorationLine: "underline",
+  },
 });
 
 type Props = {
@@ -37,17 +37,17 @@ function Metadata({ time, agentName }: Props) {
           color: "text.contrast",
           width: 20!,
           height: 20!,
-          bg: "surface.contrast"
+          bg: "surface.contrast",
         })}
       />
       <div className={hstack({ gap: "sm" })}>
-        <Text className={linkStyles} variant='label14Medium'>
+        <Text className={linkStyles} variant="label14Medium">
           {agentName || "Agent"}
         </Text>
       </div>
 
       {time && (
-        <Text className={timeStyles} variant='label14Regular'>
+        <Text className={timeStyles} variant="label14Regular">
           {formatDate(time, HOUR_FORMAT)}
         </Text>
       )}
@@ -56,4 +56,3 @@ function Metadata({ time, agentName }: Props) {
 }
 
 export default Metadata;
-

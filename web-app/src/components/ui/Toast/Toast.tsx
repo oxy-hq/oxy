@@ -17,14 +17,18 @@ const toastViewportStyles = css({
   top: "auto",
   bottom: 0,
   right: 0,
-  maxHeight: "100vh"
+  maxHeight: "100vh",
 });
 
 const ToastViewport = React.forwardRef<
   React.ElementRef<typeof ToastPrimitives.Viewport>,
   React.ComponentPropsWithoutRef<typeof ToastPrimitives.Viewport>
 >(({ className, ...props }, ref) => (
-  <ToastPrimitives.Viewport ref={ref} className={cx(toastViewportStyles, className)} {...props} />
+  <ToastPrimitives.Viewport
+    ref={ref}
+    className={cx(toastViewportStyles, className)}
+    {...props}
+  />
 ));
 ToastViewport.displayName = ToastPrimitives.Viewport.displayName;
 
@@ -42,18 +46,18 @@ const toastStyles = css({
   transitionDuration: "300ms",
   "&[data-swipe=move]": {
     transform: "translateX(var(--radix-toast-swipe-move-x))",
-    transition: "none"
+    transition: "none",
   },
   "&[data-swipe=cancel]": { transform: "translateX(0)" },
   "&[data-swipe=end]": {
-    animation: "toastHide 100ms ease-in"
+    animation: "toastHide 100ms ease-in",
   },
   "&[data-state=closed]": {
-    animation: "toastHide 200ms ease-in"
+    animation: "toastHide 200ms ease-in",
   },
   "&[data-state=open]": {
-    animation: "toastShow 200ms ease-out"
-  }
+    animation: "toastShow 200ms ease-out",
+  },
 });
 
 const Toast = React.forwardRef<
@@ -78,27 +82,35 @@ Toast.displayName = ToastPrimitives.Root.displayName;
 
 const titleStyles = css({
   color: "text.contrast",
-  textStyle: "label14Regular"
+  textStyle: "label14Regular",
 });
 
 const ToastTitle = React.forwardRef<
   React.ElementRef<typeof ToastPrimitives.Title>,
   React.ComponentPropsWithoutRef<typeof ToastPrimitives.Title>
 >(({ className, ...props }, ref) => (
-  <ToastPrimitives.Title ref={ref} className={cx(titleStyles, className)} {...props} />
+  <ToastPrimitives.Title
+    ref={ref}
+    className={cx(titleStyles, className)}
+    {...props}
+  />
 ));
 ToastTitle.displayName = ToastPrimitives.Title.displayName;
 
 const descriptionStyles = css({
   color: "text.less-contrast",
-  textStyle: "label14Regular"
+  textStyle: "label14Regular",
 });
 
 const ToastDescription = React.forwardRef<
   React.ElementRef<typeof ToastPrimitives.Description>,
   React.ComponentPropsWithoutRef<typeof ToastPrimitives.Description>
 >(({ className, ...props }, ref) => (
-  <ToastPrimitives.Description ref={ref} className={cx(descriptionStyles, className)} {...props} />
+  <ToastPrimitives.Description
+    ref={ref}
+    className={cx(descriptionStyles, className)}
+    {...props}
+  />
 ));
 ToastDescription.displayName = ToastPrimitives.Description.displayName;
 
@@ -115,6 +127,5 @@ export {
   ToastTitle,
   ToastDescription,
   ToastClose,
-  ToastAction
+  ToastAction,
 };
-

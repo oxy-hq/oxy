@@ -11,16 +11,16 @@ const wrapStyle = css({
   display: "flex",
   flexDir: "column",
   width: "100%",
-  gap: "xl"
+  gap: "xl",
 });
 
 const timeStyles = css({
-  color: "text.secondary"
+  color: "text.secondary",
 });
 
 const dateWrapperStyle = css({
   display: "flex",
-  justifyContent: "center"
+  justifyContent: "center",
 });
 
 interface MessageProps {
@@ -30,12 +30,17 @@ interface MessageProps {
   startingMessageList: string[];
 }
 
-function Message({ message, streamingNode, agentName, startingMessageList }: MessageProps) {
+function Message({
+  message,
+  streamingNode,
+  agentName,
+  startingMessageList,
+}: MessageProps) {
   const renderDateOfMessage = () => {
     if (startingMessageList.includes(message.id)) {
       const timeFormat = formatStartingDate(message.created_at);
       return (
-        <Text className={timeStyles} variant='label14Regular'>
+        <Text className={timeStyles} variant="label14Regular">
           {timeFormat}
         </Text>
       );
@@ -60,4 +65,3 @@ function Message({ message, streamingNode, agentName, startingMessageList }: Mes
 }
 
 export default Message;
-

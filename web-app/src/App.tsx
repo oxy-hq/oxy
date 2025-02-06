@@ -1,4 +1,9 @@
-import { Navigate, Route, BrowserRouter as Router, Routes } from "react-router-dom";
+import {
+  Navigate,
+  Route,
+  BrowserRouter as Router,
+  Routes,
+} from "react-router-dom";
 import { css } from "styled-system/css";
 
 import LeftSidebar from "@/components/LeftSidebar";
@@ -15,7 +20,7 @@ const layoutWrapperStyles = css({
   width: "100%",
   maxW: "100dvw",
   alignItems: "stretch",
-  h: "100dvh"
+  h: "100dvh",
 });
 
 function App() {
@@ -25,10 +30,10 @@ function App() {
         <MobileTopBar />
         <LeftSidebar />
         <Routes>
-          <Route path='/' element={<ProjectPath />} />
-          <Route path='/chat/:id' element={<ChatPage />} />
-          <Route path='/init' element={<ProjectPath />} />
-          <Route path='*' element={<Navigate to='/' />} />
+          <Route path="/" element={<ProjectPath />} />
+          <Route path="/chat/:id" element={<ChatPage />} />
+          <Route path="/init" element={<ProjectPath />} />
+          <Route path="*" element={<Navigate to="/" />} />
         </Routes>
       </div>
     </Router>

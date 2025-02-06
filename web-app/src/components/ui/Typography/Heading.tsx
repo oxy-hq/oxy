@@ -1,15 +1,16 @@
 import React from "react";
-import { cx, cva, RecipeVariantProps } from "styled-system/css";
+
 import { Slot } from "@radix-ui/react-slot";
+import { cva, cx, RecipeVariantProps } from "styled-system/css";
 
 const headingStyles = cva({
   variants: {
     variant: {
       headline20Medium: {
-        textStyle: "headline20Medium"
-      }
-    }
-  }
+        textStyle: "headline20Medium",
+      },
+    },
+  },
 });
 
 export type HeadingProps = {
@@ -40,7 +41,7 @@ const Heading = React.forwardRef<HeadingElement, HeadingProps>(
         {asChild ? children : <Tag>{children}</Tag>}
       </Slot>
     );
-  }
+  },
 );
 
 Heading.displayName = "Text";

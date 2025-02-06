@@ -1,12 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 
-import queryKeys from "./queryKey";
 import { apiClient } from "@/services/axios";
+
+import queryKeys from "./queryKey";
 
 export default function useAgents(
   enabled = true,
   refetchOnWindowFocus = true,
-  refetchOnMount: boolean | "always" = false
+  refetchOnMount: boolean | "always" = false,
 ) {
   return useQuery({
     queryKey: queryKeys.agent.list(),
@@ -16,7 +17,6 @@ export default function useAgents(
     },
     enabled,
     refetchOnWindowFocus: refetchOnWindowFocus,
-    refetchOnMount
+    refetchOnMount,
   });
 }
-

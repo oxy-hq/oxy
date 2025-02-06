@@ -21,7 +21,7 @@ export default defineConfig({
     light: "[data-theme=light] &",
     dark: "[data-theme=dark] &",
     oldTheme: "[data-theme-variant=old] &",
-    newTheme: "[data-theme-variant=new] &"
+    newTheme: "[data-theme-variant=new] &",
   },
 
   jsxFramework: "react",
@@ -30,6 +30,6 @@ export default defineConfig({
 
   utilities: {
     // @ts-expect-error Using `var()` declarations in utils is supported but not typed
-    extend: extendedUtils
-  }
+    extend: extendedUtils,
+  },
 });

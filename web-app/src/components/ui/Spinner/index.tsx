@@ -6,7 +6,7 @@ const spinnerStyles = css({
   borderRadius: "50%",
   border: "4px solid token(colors.surface.secondary)",
   borderRightColor: "border.secondary",
-  animation: "rotate 1s infinite linear"
+  animation: "rotate 1s infinite linear",
 });
 
 interface Props {

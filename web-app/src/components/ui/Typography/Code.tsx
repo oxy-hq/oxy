@@ -1,15 +1,16 @@
 import React from "react";
-import { cva, cx, RecipeVariantProps } from "styled-system/css";
+
 import { Slot } from "@radix-ui/react-slot";
+import { cva, cx, RecipeVariantProps } from "styled-system/css";
 
 const codeStyles = cva({
   variants: {
     variant: {
       code14Regular: {
-        textStyle: "code14Regular"
-      }
-    }
-  }
+        textStyle: "code14Regular",
+      },
+    },
+  },
 });
 
 export type CodeProps = {

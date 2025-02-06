@@ -19,6 +19,6 @@ export const useChatMessages = (agentPath = "", enabled = true) => {
         throw error;
       }
     },
-    enabled
+    enabled,
   });
 };

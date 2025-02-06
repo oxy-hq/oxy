@@ -1,4 +1,10 @@
-import React, { createContext, Dispatch, ReactNode, useContext, useMemo } from "react";
+import React, {
+  createContext,
+  Dispatch,
+  ReactNode,
+  useContext,
+  useMemo,
+} from "react";
 
 import invariant from "invariant";
 
@@ -13,7 +19,7 @@ interface IChatContextProps {
   onSendChatMessage: (
     agentName: string,
     content: string,
-    onSubmitQuestionSuccess: () => void
+    onSubmitQuestionSuccess: () => void,
   ) => Promise<void>;
   onStop: () => void;
   chatState: ChatState;
@@ -26,7 +32,7 @@ const ChatContext = createContext<IChatContextProps | undefined>(undefined);
 
 export function ChatContextProvider({
   children,
-  defaultMessages
+  defaultMessages,
 }: {
   children: ReactNode;
   defaultMessages?: Message[];
@@ -40,7 +46,7 @@ export function ChatContextProvider({
     chatState,
     updateMessage,
     onResetDefaultMessages,
-    startingMessageList
+    startingMessageList,
   } = useChatActions(defaultMessages);
 
   const value = useMemo(
@@ -53,7 +59,7 @@ export function ChatContextProvider({
       updateMessage,
       chatState,
       onResetDefaultMessages,
-      startingMessageList
+      startingMessageList,
     }),
     [
       messages,
@@ -64,22 +70,24 @@ export function ChatContextProvider({
       updateMessage,
       chatState,
       onResetDefaultMessages,
-      startingMessageList
-    ]
+      startingMessageList,
+    ],
   );
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;
 }
 
 export function useChatContextSelector<TSelected>(
-  selector: (context: IChatContextProps) => TSelected
+  selector: (context: IChatContextProps) => TSelected,
 ): TSelected {
   const context = useContext(ChatContext);
 
-  invariant(context, "`useChatContextSelector` must be used within a `ChatContextProvider`");
+  invariant(
+    context,
+    "`useChatContextSelector` must be used within a `ChatContextProvider`",
+  );
 
   const selectedValues = useMemo(() => selector(context), [selector, context]);
 
   return selectedValues;
 }
-

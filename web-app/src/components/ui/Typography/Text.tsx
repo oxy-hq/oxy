@@ -1,75 +1,76 @@
 import React from "react";
-import { cx, cva, RecipeVariantProps } from "styled-system/css";
+
 import { Slot } from "@radix-ui/react-slot";
+import { cva, cx, RecipeVariantProps } from "styled-system/css";
 
 const textStyles = cva({
   variants: {
     variant: {
       code12Regular: {
-        textStyle: "code14Regular"
+        textStyle: "code14Regular",
       },
       label16Medium: {
-        textStyle: "label16Medium"
+        textStyle: "label16Medium",
       },
       label16Regular: {
-        textStyle: "label16Regular"
+        textStyle: "label16Regular",
       },
       label14Medium: {
-        textStyle: "label14Medium"
+        textStyle: "label14Medium",
       },
       label14Regular: {
-        textStyle: "label14Regular"
+        textStyle: "label14Regular",
       },
       label12Regular: {
-        textStyle: "label12Regular"
+        textStyle: "label12Regular",
       },
       label12Medium: {
-        textStyle: "label12Medium"
+        textStyle: "label12Medium",
       },
       paragraph10Regular: {
-        textStyle: "paragraph10Regular"
+        textStyle: "paragraph10Regular",
       },
       paragraph12Regular: {
-        textStyle: "paragraph12Regular"
+        textStyle: "paragraph12Regular",
       },
       paragraph14Regular: {
-        textStyle: "paragraph14Regular"
+        textStyle: "paragraph14Regular",
       },
       paragraph16Regular: {
-        textStyle: "paragraph16Regular"
+        textStyle: "paragraph16Regular",
       },
       paragraph16Medium: {
-        textStyle: "paragraph16Medium"
+        textStyle: "paragraph16Medium",
       },
       label18Medium: {
-        textStyle: "label18Medium"
+        textStyle: "label18Medium",
       },
       headline20Medium: {
-        textStyle: "headline20Medium"
+        textStyle: "headline20Medium",
       },
       headline24Semibold: {
-        textStyle: "headline24Semibold"
+        textStyle: "headline24Semibold",
       },
       headline20Semibold: {
-        textStyle: "headline20Semibold"
-      }
+        textStyle: "headline20Semibold",
+      },
     },
     color: {
       unset: {},
       primary: {
-        color: "text.primary"
+        color: "text.primary",
       },
       secondary: {
-        color: "text.secondary"
+        color: "text.secondary",
       },
       light: {
-        color: "text.light"
+        color: "text.light",
       },
       lessContrast: {
-        color: "text.less-contrast"
-      }
-    }
-  }
+        color: "text.less-contrast",
+      },
+    },
+  },
 });
 
 export type TextProps = {

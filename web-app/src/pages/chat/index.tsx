@@ -6,36 +6,36 @@ import Chat from "@/components/Chat";
 const contentStyles = css({
   marginTop: {
     base: "52px",
-    sm: "md"
+    sm: "md",
   },
   display: "flex",
   flex: "1",
   minW: "0",
   my: {
     base: "none",
-    sm: "md"
+    sm: "md",
   },
   mr: {
     base: "none",
-    sm: "md"
+    sm: "md",
   },
   border: {
     base: "none",
-    sm: "1px solid token(colors.border.primary)"
+    sm: "1px solid token(colors.border.primary)",
   },
   borderRadius: {
     base: "none",
-    sm: "full"
+    sm: "full",
   },
   overflow: "hidden",
-  backgroundColor: "background.primary"
+  backgroundColor: "background.primary",
 });
 
 const chatStyles = css({
   display: "flex",
   flex: "1",
   flexDir: "column",
-  overflow: "hidden"
+  overflow: "hidden",
 });
 
 const ChatPage = () => {

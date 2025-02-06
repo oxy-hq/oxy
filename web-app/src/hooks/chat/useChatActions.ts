@@ -39,7 +39,8 @@ const updateOrPushMessageById = (message: Message, messages: Message[]) => {
 };
 
 export const useChatActions = (defaultMessages: Message[] = []) => {
-  const { fetchStreamWithAbort, clearAbortController } = useFetchStreamWithAbort();
+  const { fetchStreamWithAbort, clearAbortController } =
+    useFetchStreamWithAbort();
   const { chatState, setChatStatus, setChatError } = useChatState();
   const [messages, setMessages] = useState<Message[]>(defaultMessages);
   const streamingNode = useRef<{ id: string; content: string } | null>(null);
@@ -49,7 +50,10 @@ export const useChatActions = (defaultMessages: Message[] = []) => {
   }, [defaultMessages]);
 
   // startingMessage is the first message of the date
-  const startingMessageList = useMemo(() => getStartingMessageList(messages), [messages]);
+  const startingMessageList = useMemo(
+    () => getStartingMessageList(messages),
+    [messages],
+  );
 
   const onResetDefaultMessages = useCallback(
     (defaultMessages: Message[]) => {
@@ -57,20 +61,20 @@ export const useChatActions = (defaultMessages: Message[] = []) => {
       setChatStatus("idle");
       streamingNode.current = null;
     },
-    [setChatStatus]
+    [setChatStatus],
   );
 
   const handleChatAction = useCallback(
     async (
       apiEndpoint: string,
       body: Record<string, unknown>,
-      onReadStream: (message: Message) => void
+      onReadStream: (message: Message) => void,
     ) => {
       setChatStatus("loading");
       try {
         await fetchStreamWithAbort(apiEndpoint, onReadStream, {
           method: "POST",
-          body: JSON.stringify(body)
+          body: JSON.stringify(body),
         });
 
         setChatStatus("success");
@@ -82,7 +86,7 @@ export const useChatActions = (defaultMessages: Message[] = []) => {
         streamingNode.current = null;
       }
     },
-    [clearAbortController, fetchStreamWithAbort, setChatError, setChatStatus]
+    [clearAbortController, fetchStreamWithAbort, setChatError, setChatStatus],
   );
 
   const handleReceivedMessage = useCallback(
@@ -93,7 +97,7 @@ export const useChatActions = (defaultMessages: Message[] = []) => {
       if (!message.is_human && streamingNode.current?.id !== message.id) {
         streamingNode.current = {
           id: message.id,
-          content: ""
+          content: "",
         };
         setChatStatus("streaming");
       }
@@ -101,29 +105,41 @@ export const useChatActions = (defaultMessages: Message[] = []) => {
         streamingNode.current.content += message.content;
         message.content = streamingNode.current.content;
       }
-      setMessages((prevMessages) => updateOrPushMessageById(message, prevMessages));
+      setMessages((prevMessages) =>
+        updateOrPushMessageById(message, prevMessages),
+      );
     },
-    [setMessages, streamingNode, setChatStatus]
+    [setMessages, streamingNode, setChatStatus],
   );
 
   const onSendChatMessage = useCallback(
-    async (agentPath: string, content: string, onSubmitQuestionSuccess: () => void) => {
+    async (
+      agentPath: string,
+      content: string,
+      onSubmitQuestionSuccess: () => void,
+    ) => {
       await handleChatAction(
         "/ask",
-        { question: content, agent: agentPath, title: getAgentNameFromPath(agentPath) },
+        {
+          question: content,
+          agent: agentPath,
+          title: getAgentNameFromPath(agentPath),
+        },
         (message) => {
           handleReceivedMessage(message, onSubmitQuestionSuccess);
-        }
+        },
       );
     },
-    [handleChatAction, handleReceivedMessage]
+    [handleChatAction, handleReceivedMessage],
   );
 
   const updateMessage = useCallback(
     (message: Message) => {
-      setMessages((prevMessages) => updateOrPushMessageById(message, prevMessages));
+      setMessages((prevMessages) =>
+        updateOrPushMessageById(message, prevMessages),
+      );
     },
-    [setMessages]
+    [setMessages],
   );
 
   const onStop = useCallback(() => {
@@ -141,6 +157,6 @@ export const useChatActions = (defaultMessages: Message[] = []) => {
     chatState,
     updateMessage,
     onResetDefaultMessages,
-    startingMessageList
+    startingMessageList,
   };
 };

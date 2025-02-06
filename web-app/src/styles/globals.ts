@@ -6,7 +6,7 @@ export const globalCss = defineGlobalStyles({
     width: "100%",
     padding: "0px",
     margin: "0px",
-    position: "fixed"
+    position: "fixed",
   },
   body: {
     height: "100%",
@@ -15,7 +15,7 @@ export const globalCss = defineGlobalStyles({
     bg: "background.secondary",
     position: "fixed",
     cursor: "default",
-    display: "flex"
+    display: "flex",
   },
   ".root": {
     width: "100%",
@@ -25,6 +25,6 @@ export const globalCss = defineGlobalStyles({
     bg: "background.secondary",
     position: "fixed",
     cursor: "default",
-    display: "flex"
-  }
+    display: "flex",
+  },
 });

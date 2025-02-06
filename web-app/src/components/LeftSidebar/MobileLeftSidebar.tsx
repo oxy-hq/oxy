@@ -6,18 +6,25 @@ import {
   collapsedMobileSidebarStyles,
   mobileSidebarStyles,
   mobileSidebarWrapperStyles,
-  sidebarMobileBackdropStyles
+  sidebarMobileBackdropStyles,
 } from "./Leftsidebar.styles";
 import LeftSidebarContent from "./LeftSidebarContent";
 
 export default function MobileLeftSidebar() {
-  const { state: sidebarState, toggle: toggleSidebar } = useSidebarState((state) => state);
+  const { state: sidebarState, toggle: toggleSidebar } = useSidebarState(
+    (state) => state,
+  );
 
   return (
     <div className={mobileSidebarWrapperStyles}>
       <div className={collapsedMobileSidebarStyles}>
-        <Button onClick={toggleSidebar} content='icon' variant='outline' size='large'>
-          <Icon asset='menu' />
+        <Button
+          onClick={toggleSidebar}
+          content="icon"
+          variant="outline"
+          size="large"
+        >
+          <Icon asset="menu" />
         </Button>
       </div>
       <div
@@ -31,10 +38,9 @@ export default function MobileLeftSidebar() {
         onClick={toggleSidebar}
         tabIndex={0}
         className={sidebarMobileBackdropStyles({
-          state: sidebarState
+          state: sidebarState,
         })}
       />
     </div>
   );
 }
-

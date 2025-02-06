@@ -6,16 +6,16 @@ interface SidebarState {
   close: () => void;
 }
 
-const useSidebarState = create<SidebarState>(set => ({
+const useSidebarState = create<SidebarState>((set) => ({
   state: "closed",
   close: () =>
     set(() => ({
-      state: "closed"
+      state: "closed",
     })),
   toggle: () =>
-    set(state => ({
-      state: state.state === "open" ? "closed" : "open"
-    }))
+    set((state) => ({
+      state: state.state === "open" ? "closed" : "open",
+    })),
 }));
 
 export default useSidebarState;

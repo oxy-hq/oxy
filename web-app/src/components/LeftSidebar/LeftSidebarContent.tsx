@@ -12,7 +12,7 @@ import {
   mainSidebarContentStyles,
   sidebarHeadStyles,
   sidebarInnerStyles,
-  sidebarNavigationItems
+  sidebarNavigationItems,
 } from "./Leftsidebar.styles";
 
 interface SidebarProps {
@@ -23,7 +23,7 @@ const bottomActionsStyles = css({
   display: "flex",
   gap: "xs",
   flexDirection: "column",
-  pr: "md"
+  pr: "md",
 });
 
 export default function LeftSidebarContent({ isMobile }: SidebarProps) {
@@ -31,33 +31,33 @@ export default function LeftSidebarContent({ isMobile }: SidebarProps) {
 
   const isDarkMode = theme === "dark";
 
-  const onCheckedChange = (checked: boolean)=>{
-    if(checked){
-      setTheme("dark")
-    }else{
-      setTheme("light")
+  const onCheckedChange = (checked: boolean) => {
+    if (checked) {
+      setTheme("dark");
+    } else {
+      setTheme("light");
     }
-  }
+  };
 
   return (
     <aside className={sidebarInnerStyles}>
       <div className={mainSidebarContentStyles}>
         <NavLink
-          to='/'
+          to="/"
           className={css({
             px: "sm",
-            py: "xs"
+            py: "xs",
           })}
         >
           <AgentWithBg width={81} />
         </NavLink>
 
         <div className={sidebarHeadStyles}>
-          <NavLink to='/'>
+          <NavLink to="/">
             {({ isActive }) => (
               <ActionButton
-                iconAsset='home'
-                text='Home'
+                iconAsset="home"
+                text="Home"
                 variant={isActive ? "secondary" : "dark"}
               />
             )}
@@ -69,9 +69,13 @@ export default function LeftSidebarContent({ isMobile }: SidebarProps) {
       </div>
 
       <div className={bottomActionsStyles}>
-        <ToggleButton checked={isDarkMode} iconAsset='dark_mode' text='Dark Mode' onCheckedChange={onCheckedChange} />
+        <ToggleButton
+          checked={isDarkMode}
+          iconAsset="dark_mode"
+          text="Dark Mode"
+          onCheckedChange={onCheckedChange}
+        />
       </div>
     </aside>
   );
 }
-

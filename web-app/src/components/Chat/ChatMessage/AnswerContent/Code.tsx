@@ -15,7 +15,7 @@ export const getLangs = (name?: SupportedLanguages) => {
 
   const langs: Record<SupportedLanguages, () => LanguageSupport> = {
     python,
-    sql
+    sql,
   };
   return langs[name] || python;
 };
@@ -26,7 +26,7 @@ const containerStyles = css({
   // border
   shadow: "0 0 0 1px token(colors.border.primary)",
   borderColor: "border.primary",
-  bg: "surface.primary"
+  bg: "surface.primary",
 });
 
 type Props = {
@@ -39,7 +39,7 @@ const theme = createTheme({
   settings: {
     background: "var(--color-surface-primary)",
     foreground: "var(--color-text-primary)",
-    fontFamily: "var(--font-family-geist-mono)"
+    fontFamily: "var(--font-family-geist-mono)",
   },
   styles: [
     { tag: t.comment, color: "var(--colors-code-comments)" },
@@ -49,8 +49,8 @@ const theme = createTheme({
     { tag: t.moduleKeyword, color: "var(--colors-code-keywords)" },
     { tag: t.keyword, color: "var(--colors-code-keywords)" },
     { tag: t.number, color: "var(--colors-code-numerical-values)" },
-    { tag: t.function(t.propertyName), color: "var(--colors-code-types)" }
-  ]
+    { tag: t.function(t.propertyName), color: "var(--colors-code-types)" },
+  ],
 });
 
 // memoize to prevent rerendering
@@ -65,7 +65,7 @@ const CodePreview = memo(function Code(props: Props) {
         basicSetup={{
           lineNumbers: false,
           foldGutter: false,
-          highlightActiveLine: false
+          highlightActiveLine: false,
         }}
         theme={theme}
         readOnly
@@ -87,4 +87,3 @@ export default function CodeContainer(props: ComponentProps<"code">) {
   }
   return null;
 }
-

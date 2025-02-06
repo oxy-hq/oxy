@@ -5,22 +5,28 @@ import { Agent } from "@/types/chat";
 import Text from "../ui/Typography/Text";
 import { AgentCard, AgentCardSkeleton } from "./AgentCard";
 
-export default function AgentList({ agents, isLoading }: { agents?: Agent[]; isLoading: boolean }) {
+export default function AgentList({
+  agents,
+  isLoading,
+}: {
+  agents?: Agent[];
+  isLoading: boolean;
+}) {
   return (
     <div
       className={vstack({
         alignItems: "start",
         gap: "xl",
         width: "100%",
-        overflow: "hidden"
+        overflow: "hidden",
       })}
     >
       <div
         className={hstack({
-          gap: "xs"
+          gap: "xs",
         })}
       >
-        <Text variant='label16Medium' color='primary'>
+        <Text variant="label16Medium" color="primary">
           Agents
         </Text>
       </div>
@@ -30,7 +36,7 @@ export default function AgentList({ agents, isLoading }: { agents?: Agent[]; isL
           gap: "lg",
           width: "100%",
           overflow: "auto",
-          customScrollbar: true
+          customScrollbar: true,
         })}
       >
         {isLoading &&
@@ -38,7 +44,12 @@ export default function AgentList({ agents, isLoading }: { agents?: Agent[]; isL
             .fill(null)
             .map((_, index) => <AgentCardSkeleton key={index} />)}
         {agents && (
-          <>{agents.map((agent: Agent) => agent && <AgentCard key={agent.path} agent={agent} />)}</>
+          <>
+            {agents.map(
+              (agent: Agent) =>
+                agent && <AgentCard key={agent.path} agent={agent} />,
+            )}
+          </>
         )}
       </div>
     </div>

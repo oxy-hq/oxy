@@ -9,7 +9,7 @@ const containerStyles = css({
   alignItems: "center",
   overflow: "hidden",
   flexShrink: 0,
-  borderRadius: "full"
+  borderRadius: "full",
 });
 
 type Props = {
@@ -24,4 +24,3 @@ export default function AgentAvatar({ name = "", className }: Props) {
     </RadixAvatar.Root>
   );
 }
-

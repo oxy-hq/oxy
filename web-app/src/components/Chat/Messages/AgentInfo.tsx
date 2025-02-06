@@ -1,23 +1,24 @@
-import AgentAvatar from "@/components/ui/AgentAvatar";
-import Text from "@/components/ui/Typography/Text";
 import { css } from "styled-system/css";
 import { hstack, vstack } from "styled-system/patterns";
+
+import AgentAvatar from "@/components/ui/AgentAvatar";
+import Text from "@/components/ui/Typography/Text";
 
 const avatarHeaderStyle = vstack({
   gap: "xl",
   pt: {
     base: "60px",
-    smDown: "5xl"
+    smDown: "5xl",
   },
   maxW: "360px",
   alignSelf: "center",
-  flex: 1
+  flex: 1,
 });
 
 const linkStyles = css({
   _hover: {
-    textDecorationLine: "underline"
-  }
+    textDecorationLine: "underline",
+  },
 });
 
 export default function AgentInfo({ agentName }: { agentName: string }) {
@@ -30,22 +31,26 @@ export default function AgentInfo({ agentName }: { agentName: string }) {
           color: "text.contrast",
           width: 70!,
           height: 70!,
-          bg: "surface.contrast"
+          bg: "surface.contrast",
         })}
       />
       <div className={vstack({ gap: "md", textAlign: "center" })}>
         <div className={vstack({ gap: "xs" })}>
           <div
             className={hstack({
-              gap: "sm"
+              gap: "sm",
             })}
           >
-            <Text variant='headline20Medium' color='primary' className={linkStyles}>
+            <Text
+              variant="headline20Medium"
+              color="primary"
+              className={linkStyles}
+            >
               {agentName}
             </Text>
           </div>
 
-          <Text variant='label14Regular' color='secondary'>
+          <Text variant="label14Regular" color="secondary">
             Default data agent
           </Text>
         </div>
@@ -53,4 +58,3 @@ export default function AgentInfo({ agentName }: { agentName: string }) {
     </div>
   );
 }
-

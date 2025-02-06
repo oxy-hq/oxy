@@ -1,7 +1,9 @@
-import { forwardRef, ForwardedRef } from "react";
+import { ForwardedRef, forwardRef } from "react";
+
+import type { RecipeVariantProps } from "styled-system/css";
 
 import invariant from "invariant";
-import { cva, cx, type RecipeVariantProps } from "styled-system/css";
+import { cva, cx } from "styled-system/css";
 
 import { SVG_DICTIONARY, SvgAssets } from "./Dictionary";
 
@@ -18,31 +20,31 @@ const iconStyles = cva({
     display: "inline-flex",
     alignItems: "center",
     color: "inherit",
-    flexShrink: "0"
+    flexShrink: "0",
   },
   variants: {
     size: {
       small: {
         width: `${SMALL_ICON_SIZE}px`,
-        height: `${SMALL_ICON_SIZE}px`
+        height: `${SMALL_ICON_SIZE}px`,
       },
       default: {
         width: `${DEFAULT_ICON_SIZE}px`,
-        height: `${DEFAULT_ICON_SIZE}px`
+        height: `${DEFAULT_ICON_SIZE}px`,
       },
       fromIcon: {
         width: "100%",
-        height: "100%"
-      }
-    }
-  }
+        height: "100%",
+      },
+    },
+  },
 });
 
 export type ButtonProps = IconProps & RecipeVariantProps<typeof iconStyles>;
 
 const Icon = forwardRef(function IconWithRef(
   { size = "default", asset, className, ...props }: ButtonProps,
-  iconRef: ForwardedRef<HTMLDivElement>
+  iconRef: ForwardedRef<HTMLDivElement>,
 ) {
   if (!SVG_DICTIONARY[asset]) {
     invariant(false, `Icon ${asset} does not exists`);

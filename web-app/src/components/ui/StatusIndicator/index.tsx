@@ -10,14 +10,14 @@ const containerStyles = css({
   justifyContent: "center",
   alignItems: "center",
   w: "md",
-  h: "md"
+  h: "md",
 });
 
 const iconContainerStyles = css({
   display: "flex",
   w: "8px",
   h: "8px",
-  color: "background.primary"
+  color: "background.primary",
 });
 
 const statusIndicatorStyles = cva({
@@ -25,61 +25,63 @@ const statusIndicatorStyles = cva({
     display: "flex",
     justifyContent: "center",
     alignItems: "center",
-    borderRadius: "full"
+    borderRadius: "full",
   },
   variants: {
     status: {
       success: {
-        backgroundColor: "token(colors.text.success)"
+        backgroundColor: "token(colors.text.success)",
       },
       error: {
-        backgroundColor: "token(colors.text.error)"
+        backgroundColor: "token(colors.text.error)",
       },
       process: {
-        backgroundColor: "token(colors.text.progress)"
-      }
+        backgroundColor: "token(colors.text.progress)",
+      },
     },
     type: {
       default: {
         w: "6px",
-        h: "6px"
+        h: "6px",
       },
       icon: {
         w: "12px",
-        h: "12px"
-      }
-    }
+        h: "12px",
+      },
+    },
   },
   compoundVariants: [
     {
       status: "success",
       type: "default",
       css: {
-        filter: "drop-shadow(0px 0px 4px rgba(30, 155, 112, 0.40))"
-      }
+        filter: "drop-shadow(0px 0px 4px rgba(30, 155, 112, 0.40))",
+      },
     },
     {
       status: "error",
       type: "default",
       css: {
-        filter: "drop-shadow(0px 0px 4px rgba(192, 68, 56, 0.40))"
-      }
+        filter: "drop-shadow(0px 0px 4px rgba(192, 68, 56, 0.40))",
+      },
     },
     {
       status: "process",
       type: "default",
       css: {
-        filter: "drop-shadow(0px 0px 4px rgba(237, 129, 50, 0.40))"
-      }
-    }
-  ]
+        filter: "drop-shadow(0px 0px 4px rgba(237, 129, 50, 0.40))",
+      },
+    },
+  ],
 });
 
 type StyleProps = NonNullable<RecipeVariantProps<typeof statusIndicatorStyles>>;
 
-export const iconMap: Partial<Record<NonNullable<StyleProps["status"]>, SvgAssets>> = {
+export const iconMap: Partial<
+  Record<NonNullable<StyleProps["status"]>, SvgAssets>
+> = {
   success: "check",
-  error: "close"
+  error: "close",
 };
 
 function StatusIndicator({ status = "success", type = "default" }: StyleProps) {
@@ -90,7 +92,7 @@ function StatusIndicator({ status = "success", type = "default" }: StyleProps) {
       <div className={statusIndicatorStyles({ status, type })}>
         {type === "icon" && iconAsset && (
           <span className={iconContainerStyles}>
-            <Icon size='fromIcon' asset={iconAsset} />
+            <Icon size="fromIcon" asset={iconAsset} />
           </span>
         )}
       </div>
@@ -99,4 +101,3 @@ function StatusIndicator({ status = "success", type = "default" }: StyleProps) {
 }
 
 export default StatusIndicator;
-

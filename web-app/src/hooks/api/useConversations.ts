@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+
 import { apiClient } from "@/services/axios";
 
 import queryKeys from "./queryKey";
@@ -10,7 +11,6 @@ export const useConversations = (enabled = true) => {
       const response = await apiClient.get("/conversations");
       return response.data.conversations;
     },
-    enabled
+    enabled,
   });
 };
-

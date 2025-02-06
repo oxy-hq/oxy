@@ -1,27 +1,28 @@
 "use client";
+
+import { ToastClose } from "@radix-ui/react-toast";
 import { css } from "styled-system/css";
 import { stack } from "styled-system/patterns";
 
+import StatusIndicator from "../StatusIndicator";
 import {
   Toast,
   ToastDescription,
   ToastProvider,
   ToastTitle,
-  ToastViewport
+  ToastViewport,
 } from "./Toast";
 import { useToast } from "./useToast";
-import { ToastClose } from "@radix-ui/react-toast";
-import StatusIndicator from "../StatusIndicator";
 
 const headerStyles = stack({
   w: "300px",
-  gap: "xs"
+  gap: "xs",
 });
 
 const containerStyles = css({
   display: "flex",
   flexDirection: "row",
-  gap: "xs"
+  gap: "xs",
 });
 
 // This is to make the close button cover the entire toast
@@ -31,7 +32,7 @@ const closeStyles = css({
   top: "0",
   right: "0",
   bottom: "0",
-  left: "0"
+  left: "0",
 });
 
 export default function Toaster() {

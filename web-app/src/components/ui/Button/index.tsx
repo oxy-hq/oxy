@@ -5,7 +5,6 @@ import React from "react";
 import type { RecipeVariantProps } from "styled-system/css";
 
 import { Slot } from "@radix-ui/react-slot";
-
 import { cva, cx } from "styled-system/css";
 
 const buttonStyles = cva({
@@ -16,23 +15,23 @@ const buttonStyles = cva({
     cursor: "pointer",
     outline: "none",
     _disabled: {
-      pointerEvents: "none"
-    }
+      pointerEvents: "none",
+    },
   },
   variants: {
     size: {
       small: {
         borderRadius: "minimal",
-        maxH: "lg"
+        maxH: "lg",
       },
       medium: {
         borderRadius: "minimal",
-        maxH: "2xl"
+        maxH: "2xl",
       },
       large: {
         borderRadius: "rounded",
-        maxH: "4xl"
-      }
+        maxH: "4xl",
+      },
     },
     variant: {
       primary: {
@@ -41,37 +40,37 @@ const buttonStyles = cva({
         _hover: {
           bg: {
             base: "dark-grey.opacity",
-            _newTheme: "dark-grey-new.opacity"
-          }
+            _newTheme: "dark-grey-new.opacity",
+          },
         },
         _disabled: {
           bg: "surface.contrast",
           color: "text.contrast",
-          opacity: "0.2"
-        }
+          opacity: "0.2",
+        },
       },
       filled: {
         bg: "surface.secondary",
         color: "text.light",
         _hover: {
           bg: "surface.tertiary",
-          color: "text.primary"
+          color: "text.primary",
         },
         _disabled: {
           bg: "surface.primary",
-          color: "text.disabled"
-        }
+          color: "text.disabled",
+        },
       },
       negative: {
         bg: "error.default",
         color: "text.contrast",
         _hover: {
-          bg: "error.hover"
+          bg: "error.hover",
         },
         _disabled: {
           bg: "error.background",
-          color: "text.contrast"
-        }
+          color: "text.contrast",
+        },
       },
       outline: {
         color: "text.light",
@@ -79,51 +78,51 @@ const buttonStyles = cva({
         boxShadow: "inset 0 0 0 1px token(colors.border.primary)",
         _hover: {
           bg: "surface.secondary",
-          color: "text.light"
+          color: "text.light",
         },
         _disabled: {
           bg: "surface.primary",
-          color: "text.disabled"
-        }
+          color: "text.disabled",
+        },
       },
       ghost: {
         bg: "transparent",
         color: "text.secondary",
         _hover: {
           bg: "surface.secondary",
-          color: "text.light"
+          color: "text.light",
         },
         _disabled: {
-          color: "text.disabled"
+          color: "text.disabled",
         },
         // Used for context menus
         "&[data-state=open]": {
           bg: "surface.secondary",
-          color: "text.light"
-        }
+          color: "text.light",
+        },
       },
       transparent: {
         bg: "transparent",
         color: "text.secondary",
         _hover: {
           bg: "surface.primary",
-          color: "text.light"
+          color: "text.light",
         },
         _disabled: {
-          color: "text.disabled"
+          color: "text.disabled",
         },
         // Used for context menus
         "&[data-state=open]": {
           bg: "surface.secondary",
-          color: "text.light"
-        }
-      }
+          color: "text.light",
+        },
+      },
     },
     content: {
       icon: {},
       text: {},
-      iconText: {}
-    }
+      iconText: {},
+    },
   },
   compoundVariants: [
     {
@@ -131,16 +130,16 @@ const buttonStyles = cva({
       content: "text",
       css: {
         p: "sm",
-        textStyle: "label12Regular"
-      }
+        textStyle: "label12Regular",
+      },
     },
     {
       size: "small",
       content: "icon",
       css: {
         p: "xs",
-        maxW: "lg"
-      }
+        maxW: "lg",
+      },
     },
     {
       size: "small",
@@ -150,24 +149,24 @@ const buttonStyles = cva({
         pl: "sm",
         pr: "md",
         textStyle: "label12Regular",
-        gap: "xs"
-      }
+        gap: "xs",
+      },
     },
     {
       size: "medium",
       content: "text",
       css: {
         p: "sm",
-        textStyle: "label12Regular"
-      }
+        textStyle: "label12Regular",
+      },
     },
     {
       size: "medium",
       content: "icon",
       css: {
         p: "xs",
-        maxW: "2xl"
-      }
+        maxW: "2xl",
+      },
     },
     {
       size: "medium",
@@ -177,8 +176,8 @@ const buttonStyles = cva({
         pl: "sm",
         pr: "md",
         textStyle: "label12Regular",
-        gap: "xs"
-      }
+        gap: "xs",
+      },
     },
     {
       size: "large",
@@ -187,16 +186,16 @@ const buttonStyles = cva({
         textStyle: "label14Regular",
         py: "sm",
         px: "lg",
-        height: "4xl"
-      }
+        height: "4xl",
+      },
     },
     {
       size: "large",
       content: "icon",
       css: {
         p: "sm",
-        maxW: "4xl"
-      }
+        maxW: "4xl",
+      },
     },
     {
       size: "large",
@@ -206,10 +205,10 @@ const buttonStyles = cva({
         pl: "md",
         pr: "lg",
         textStyle: "label14Regular",
-        gap: "sm"
-      }
-    }
-  ]
+        gap: "sm",
+      },
+    },
+  ],
 });
 
 export type ButtonVariantProps = RecipeVariantProps<typeof buttonStyles>;
@@ -230,7 +229,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       disabled,
       ...props
     },
-    ref
+    ref,
   ) => {
     const Comp = asChild ? Slot : "button";
     return (
@@ -243,10 +242,9 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         {...props}
       />
     );
-  }
+  },
 );
 
 Button.displayName = "Button";
 
 export default Button;
-

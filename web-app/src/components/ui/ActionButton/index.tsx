@@ -24,20 +24,20 @@ const buttonStyles = cva({
     padding: "sm",
     color: "text.light",
     gap: "sm",
-    w: "100%"
+    w: "100%",
   },
   variants: {
     variant: {
       light: {
         _hover: {
-          bgColor: "surface.secondary"
-        }
+          bgColor: "surface.secondary",
+        },
       },
       dark: {
         color: "text.light",
         _hover: {
-          bgColor: "surface.tertiary"
-        }
+          bgColor: "surface.tertiary",
+        },
       },
       secondary: {
         color: "text.primary",
@@ -48,30 +48,30 @@ const buttonStyles = cva({
         shadow: "inset 0 0 0 1px var(--border-color), var(--shadow-primary)",
         _hover: {
           // border
-          shadow: "inset 0 0 0 1px var(--border-color)"
-        }
-      }
+          shadow: "inset 0 0 0 1px var(--border-color)",
+        },
+      },
     },
     kind: {
       button: {
-        justifyContent: "space-between"
+        justifyContent: "space-between",
       },
       toggle: {
-        justifyContent: "space-between"
-      }
-    }
-  }
+        justifyContent: "space-between",
+      },
+    },
+  },
 });
 
 const shortcutStyles = css({
   color: "text.secondary",
-  textStyle: "paragraph12Regular"
+  textStyle: "paragraph12Regular",
 });
 
 const contentStyles = css({
   display: "inline-flex",
   alignItems: "center",
-  gap: "sm"
+  gap: "sm",
 });
 
 type BaseProps = {
@@ -88,7 +88,10 @@ type ActionButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> &
   ButtonVariantProps &
   BaseProps;
 
-export const ActionButton = React.forwardRef<HTMLButtonElement, ActionButtonProps>(
+export const ActionButton = React.forwardRef<
+  HTMLButtonElement,
+  ActionButtonProps
+>(
   (
     {
       iconAsset,
@@ -100,7 +103,7 @@ export const ActionButton = React.forwardRef<HTMLButtonElement, ActionButtonProp
       actionKey,
       ...props
     },
-    ref
+    ref,
   ) => {
     let shortcut = actionKey;
     if (modifierKeys && modifierKeys.length > 0) {
@@ -116,12 +119,12 @@ export const ActionButton = React.forwardRef<HTMLButtonElement, ActionButtonProp
       >
         <div className={contentStyles}>
           {!!iconAsset && <Icon asset={iconAsset} />}
-          <Text variant='label14Regular'>{text}</Text>
+          <Text variant="label14Regular">{text}</Text>
         </div>
         {shortcut && <span className={shortcutStyles}>{shortcut}</span>}
       </button>
     );
-  }
+  },
 );
 
 ActionButton.displayName = "Button";
@@ -131,7 +134,7 @@ export function ToggleButton({
   text,
   className,
   checked,
-  onCheckedChange
+  onCheckedChange,
 }: BaseProps & {
   checked: boolean;
   onCheckedChange?: (checked: boolean) => void;
@@ -141,16 +144,18 @@ export function ToggleButton({
   };
   return (
     <div
-      className={cx(buttonStyles({ variant: "light", kind: "toggle" }), className)}
+      className={cx(
+        buttonStyles({ variant: "light", kind: "toggle" }),
+        className,
+      )}
       onClick={handleClick}
       aria-label={text}
     >
       <div className={contentStyles}>
         {!!iconAsset && <Icon asset={iconAsset} />}
-        <Text variant='label14Regular'>{text}</Text>
+        <Text variant="label14Regular">{text}</Text>
       </div>
       <Switch checked={checked} />
     </div>
   );
 }
-

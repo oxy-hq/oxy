@@ -1,4 +1,5 @@
 import { css } from "styled-system/css";
+
 import Text from "../../ui/Typography/Text";
 
 type Props = {
@@ -11,9 +12,9 @@ const containerStyles = css({
   justifyContent: "flex-end",
   maxW: {
     base: "350px",
-    sm: "720px"
+    sm: "720px",
   },
-  marginX: "auto"
+  marginX: "auto",
 });
 
 const textWrapperStyles = css({
@@ -22,12 +23,12 @@ const textWrapperStyles = css({
   borderRadius: "rounded",
   bg: "surface.secondary",
   width: "fit-content",
-  alignSelf: "flex-end"
+  alignSelf: "flex-end",
 });
 
 const contentStyles = css({
   color: "text.light",
-  wordBreak: "break-word"
+  wordBreak: "break-word",
 });
 
 function Question({ content }: Props) {

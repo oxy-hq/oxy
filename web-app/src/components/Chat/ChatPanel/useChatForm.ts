@@ -9,7 +9,7 @@ interface ChatFormProps {
   onSendChatMessage: (
     agentName: string,
     content: string,
-    onSubmitQuestionSuccess: () => void
+    onSubmitQuestionSuccess: () => void,
   ) => Promise<void>;
   formRef: RefObject<HTMLFormElement | null>;
 }
@@ -18,7 +18,7 @@ const handleCreationError = (error: unknown, message: string) => {
   console.error("error", error);
   toast({
     title: "Error",
-    description: message
+    description: message,
   });
 };
 
@@ -51,7 +51,9 @@ export const useChatForm = ({ onSendChatMessage, formRef }: ChatFormProps) => {
         });
         queryClient.invalidateQueries({
           predicate: (query) =>
-            queryKeys.conversation.all.every((key) => query.queryKey.includes(key))
+            queryKeys.conversation.all.every((key) =>
+              query.queryKey.includes(key),
+            ),
         });
       } catch (error) {
         handleCreationError(error, "Error creating message");
@@ -60,7 +62,7 @@ export const useChatForm = ({ onSendChatMessage, formRef }: ChatFormProps) => {
       setPending(false);
       isSubmittingRef.current = false;
     },
-    [formRef, onSendChatMessage, queryClient]
+    [formRef, onSendChatMessage, queryClient],
   );
 
   return { pending, handleSubmit, starterRef };

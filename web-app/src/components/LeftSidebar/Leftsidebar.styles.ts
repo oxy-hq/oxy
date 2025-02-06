@@ -5,37 +5,37 @@ export const DEFAULT_SIDEBAR_WIDTH = 230;
 const dynamicSidebarWidthHandler = css({
   display: {
     base: "none",
-    sm: "block"
+    sm: "block",
   },
   width: {
     sm: "60px",
-    xl: "244px"
-  }
+    xl: "244px",
+  },
 });
 
 const desktopSidebarWrapperStyles = css({
   display: {
     base: "none",
-    xl: "block"
-  }
+    xl: "block",
+  },
 });
 
 const mobileSidebarWrapperStyles = css({
   display: {
     base: "block",
-    xl: "none"
-  }
+    xl: "none",
+  },
 });
 
 const collapsedMobileSidebarStyles = css({
   padding: "md",
   display: {
     base: "none",
-    sm: "flex"
+    sm: "flex",
   },
   flexDirection: "column",
   height: "100%",
-  gap: "sm"
+  gap: "sm",
 });
 
 const sidebarMobileBackdropStyles = cva({
@@ -49,7 +49,7 @@ const sidebarMobileBackdropStyles = cva({
     width: "100%",
     height: "100%",
     bg: "background.opacity",
-    zIndex: "99"
+    zIndex: "99",
   },
   variants: {
     state: {
@@ -57,20 +57,20 @@ const sidebarMobileBackdropStyles = cva({
         base: {
           visibility: "visible",
           opacity: "1",
-          transition: "opacity 0.2s ease-in-out"
+          transition: "opacity 0.2s ease-in-out",
         },
-        sm: {}
+        sm: {},
       },
       closed: {
         base: {
           visibility: "hidden",
           opacity: "0",
-          transition: "opacity 0.2s ease-in-out"
+          transition: "opacity 0.2s ease-in-out",
         },
-        sm: {}
-      }
-    }
-  }
+        sm: {},
+      },
+    },
+  },
 });
 
 const mobileSidebarStyles = cva({
@@ -84,19 +84,19 @@ const mobileSidebarStyles = cva({
     transition: "transform 0.2s ease-in-out",
     w: {
       base: "80%",
-      sm: "230px"
-    }
+      sm: "230px",
+    },
   },
   variants: {
     state: {
       open: {
-        transform: "translateX(0)"
+        transform: "translateX(0)",
       },
       closed: {
-        transform: "translateX(-100%)"
-      }
-    }
-  }
+        transform: "translateX(-100%)",
+      },
+    },
+  },
 });
 
 const sidebarStyles = css({
@@ -104,7 +104,7 @@ const sidebarStyles = css({
   top: "0",
   bottom: "0",
   left: "0",
-  zIndex: "100"
+  zIndex: "100",
 });
 
 const sidebarCollapsedStyles = cva({
@@ -113,18 +113,18 @@ const sidebarCollapsedStyles = cva({
     display: "flex",
     flexDirection: "column",
     height: "100%",
-    gap: "sm"
+    gap: "sm",
   },
   variants: {
     state: {
       open: {
-        display: "none"
+        display: "none",
       },
       closed: {
-        display: "flex"
-      }
-    }
-  }
+        display: "flex",
+      },
+    },
+  },
 });
 
 const sidebarInnerStyles = css({
@@ -135,7 +135,7 @@ const sidebarInnerStyles = css({
   height: "100%",
   padding: "md",
   paddingRight: "none !important",
-  justifyContent: "space-between"
+  justifyContent: "space-between",
 });
 
 const sidebarNavigationItems = css({
@@ -147,7 +147,7 @@ const sidebarNavigationItems = css({
   flexGrow: 1,
   mt: "xl",
   pb: "2px",
-  customScrollbar: true
+  customScrollbar: true,
 });
 
 const sidebarResizer = cva({
@@ -160,21 +160,21 @@ const sidebarResizer = cva({
     bg: "transparent",
     display: {
       base: "none",
-      xl: "block"
-    }
+      xl: "block",
+    },
   },
   variants: {
     variant: {
       "no-header": {
         top: "0",
-        py: "2xl"
+        py: "2xl",
       },
       "with-header": {
         py: "48px",
-        top: "22px"
-      }
-    }
-  }
+        top: "22px",
+      },
+    },
+  },
 });
 
 const sidebarHandler = css({
@@ -186,26 +186,26 @@ const sidebarHandler = css({
     top: "0",
     right: "3.5px",
     height: "100%",
-    width: "1px"
+    width: "1px",
   },
   _hover: {
     _before: {
-      bg: "border.light"
-    }
-  }
+      bg: "border.light",
+    },
+  },
 });
 
 const profileSkeletonStyles = css({
   display: "flex",
   flex: 1,
   gap: "sm",
-  alignItems: "center"
+  alignItems: "center",
 });
 
 const bottomActionsStyles = css({
   display: "flex",
   flexDirection: "column",
-  gap: "xs"
+  gap: "xs",
 });
 
 const mainSidebarContentStyles = css({
@@ -213,13 +213,13 @@ const mainSidebarContentStyles = css({
   flexDirection: "column",
   gap: "lg",
   my: "-1px",
-  marginRight: "md"
+  marginRight: "md",
 });
 
 const sidebarHeadStyles = css({
   display: "flex",
   flexDirection: "column",
-  gap: "xxs"
+  gap: "xxs",
 });
 
 export {
@@ -238,5 +238,5 @@ export {
   desktopSidebarWrapperStyles,
   mobileSidebarWrapperStyles,
   collapsedMobileSidebarStyles,
-  sidebarHeadStyles
+  sidebarHeadStyles,
 };

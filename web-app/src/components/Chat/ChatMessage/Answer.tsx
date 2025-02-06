@@ -21,26 +21,26 @@ const containerStyles = css({
   justifyContent: "flex-start",
   maxW: {
     base: "350px",
-    sm: "720px"
+    sm: "720px",
   },
-  marginX: "auto"
+  marginX: "auto",
 });
 
 const answerWrapStyle = stack({
   gap: "xl",
   flexDirection: "column",
-  w: "100%"
+  w: "100%",
 });
 
 const headerStyle = css({
   display: "flex",
   alignItems: "center",
-  justifyContent: "space-between"
+  justifyContent: "space-between",
 });
 
 const loadingStyles = css({
   marginLeft: "sm",
-  marginTop: "xs"
+  marginTop: "xs",
 });
 
 function Answer({ message, isStreaming, agentName }: Props) {
@@ -76,4 +76,3 @@ function arePropsEqual(oldProps: Props, newProps: Props) {
     oldProps.isStreaming === newProps.isStreaming
   );
 }
-

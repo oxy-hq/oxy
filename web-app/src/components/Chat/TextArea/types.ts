@@ -1,4 +1,5 @@
 import React from "react";
+
 import { TextareaAutosizeProps } from "react-textarea-autosize";
 
 type TextAreaOwnProps = {
@@ -17,6 +18,7 @@ export interface TextAreaRootProps
     TextAreaOwnProps {}
 
 export type TextAreaSlotElement = React.ElementRef<"div">;
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface TextAreaSlotProps extends React.ComponentPropsWithRef<"div"> {}
 
 export type TextAreaContextValue = TextAreaProps;

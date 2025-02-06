@@ -13,7 +13,7 @@ const homeStyles = css({
   pt: "5xl",
   pb: "xl",
   px: "60px",
-  gap: "5xl"
+  gap: "5xl",
 });
 
 const Home = () => {
@@ -27,4 +27,3 @@ const Home = () => {
 };
 
 export default Home;
-

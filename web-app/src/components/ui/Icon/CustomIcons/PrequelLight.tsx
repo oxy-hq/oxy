@@ -1,4 +1,5 @@
 import { forwardRef } from "react";
+
 import { css } from "styled-system/css";
 
 export interface IconProps extends React.SVGAttributes<SVGElement> {
@@ -21,7 +22,7 @@ export const PrequelLight = forwardRef<SVGSVGElement, IconProps>(
         <g filter="url(#filter0_i_105_4631)">
           <path
             className={css({
-              fill: "surface.secondary"
+              fill: "surface.secondary",
             })}
             fillRule="evenodd"
             clipRule="evenodd"
@@ -67,7 +68,7 @@ export const PrequelLight = forwardRef<SVGSVGElement, IconProps>(
         </defs>
       </svg>
     );
-  }
+  },
 );
 
 PrequelLight.displayName = "PrequelLight";

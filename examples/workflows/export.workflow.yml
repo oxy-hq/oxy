@@ -20,7 +20,7 @@ steps:
     export:
       path: output/export_sample_formatter.txt
       format: txt
-    
+
   - name: intervals
     type: execute_sql
     warehouse: primary_warehouse

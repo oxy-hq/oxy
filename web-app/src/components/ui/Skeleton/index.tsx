@@ -1,24 +1,24 @@
-import { sva, RecipeVariantProps, cva, cx } from "styled-system/css";
+import { cva, cx, RecipeVariantProps, sva } from "styled-system/css";
 
 const skeletonAvatarStyles = cva({
   base: {
     rightSlideAnimation: true,
-    flexShrink: "0"
+    flexShrink: "0",
   },
   variants: {
     size: {
       default: {
         w: "3xl",
         h: "3xl",
-        borderRadius: "rounded"
+        borderRadius: "rounded",
       },
       small: {
         w: "lg",
         h: "lg",
-        borderRadius: "minimal"
-      }
-    }
-  }
+        borderRadius: "minimal",
+      },
+    },
+  },
 });
 
 const skeletonStyles = sva({
@@ -27,12 +27,12 @@ const skeletonStyles = sva({
     root: {
       width: "100%",
       display: "flex",
-      flexDirection: "column"
+      flexDirection: "column",
     },
     line: {
       rightSlideAnimation: true,
-      width: "100%"
-    }
+      width: "100%",
+    },
   },
   variants: {
     size: {
@@ -40,28 +40,28 @@ const skeletonStyles = sva({
         root: {},
         line: {
           h: "lg",
-          margin: "sm"
-        }
+          margin: "sm",
+        },
       },
       small: {
         root: {
-          gap: "xs"
+          gap: "xs",
         },
         line: {
           height: "xs",
-          margin: "none"
-        }
+          margin: "none",
+        },
       },
       large: {
         root: {
-          gap: "sm"
+          gap: "sm",
         },
         line: {
-          height: "56px"
-        }
-      }
-    }
-  }
+          height: "56px",
+        },
+      },
+    },
+  },
 });
 
 type SkeletonStyledProps = RecipeVariantProps<typeof skeletonStyles>;
@@ -75,10 +75,10 @@ type SkeletonLoaderProps = SkeletonStyledProps & {
   lineClassName?: string;
 };
 
-type SkeletonAvatarProps = object
+type SkeletonAvatarProps = object;
 
 export function SkeletonAvatar({
-  size = "default"
+  size = "default",
 }: SkeletonAvatarProps & SkeletonAvatarStyledProps) {
   return <div className={skeletonAvatarStyles({ size })} />;
 }
@@ -87,14 +87,13 @@ export default function Skeleton({
   lineCount = 5,
   size = "default",
   className,
-  lineClassName
+  lineClassName,
 }: SkeletonLoaderProps) {
   const styles = skeletonStyles({ size });
 
   return (
     <div className={cx(styles.root, className)}>
       {[...Array(lineCount)].map((_, index) => (
-        // eslint-disable-next-line sonarjs/no-array-index-key
         <div key={index} className={cx(styles.line, lineClassName)}></div>
       ))}
     </div>

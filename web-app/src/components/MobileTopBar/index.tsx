@@ -1,37 +1,40 @@
 "use client";
 
+import { useEffect, useRef } from "react";
+
 import { css } from "styled-system/css";
+
+import useSidebarState from "@/stores/useSidebarState";
+
 import Button from "../ui/Button";
 import Icon from "../ui/Icon";
-import useSidebarState from "@/stores/useSidebarState";
-import { useEffect, useRef } from "react";
 
 const wrapperStyles = css({
   display: {
     base: "block",
-    sm: "none"
+    sm: "none",
   },
   width: "100%",
   px: "xl",
   py: "sm",
   position: "fixed",
-  top: 0, 
-  left: 0, 
-  right: 0, 
+  top: 0,
+  left: 0,
+  right: 0,
   zIndex: 98,
-  bg: "background.primary"
+  bg: "background.primary",
 });
 
 const navbarWrapperStyles = css({
   display: "flex",
   flexDir: "row",
   justifyContent: "space-between",
-  alignItems: "center"
+  alignItems: "center",
 });
 
 export default function MobileTopBar() {
   const topBarRef = useRef<HTMLDivElement | null>(null);
-  const toggleSidebar = useSidebarState(state => state.toggle);
+  const toggleSidebar = useSidebarState((state) => state.toggle);
 
   useEffect(() => {
     const handleResize = () => {

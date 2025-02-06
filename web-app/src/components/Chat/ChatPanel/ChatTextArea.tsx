@@ -2,15 +2,16 @@
 
 import { useEffect, useRef } from "react";
 
+import { css } from "styled-system/css";
+
 import Button from "@/components/ui/Button";
 import Icon from "@/components/ui/Icon";
 import Spinner from "@/components/ui/Spinner";
-import { css } from "styled-system/css";
 
 import { TextArea, TextAreaRoot } from "../TextArea";
 
 const textAreaRootStyles = css({
-  transition: "box-shadow 0.2s ease-in-out"
+  transition: "box-shadow 0.2s ease-in-out",
 });
 
 const containerStyles = css({
@@ -18,7 +19,7 @@ const containerStyles = css({
   shadow: "0 0 0 1px token(colors.border.primary), token(shadows.primary)",
   _focusWithin: {
     // border and shadow
-    shadow: "0 0 0 1px token(colors.border.primary), token(shadows.secondary)"
+    shadow: "0 0 0 1px token(colors.border.primary), token(shadows.secondary)",
   },
   borderRadius: "full",
   width: "100%",
@@ -32,7 +33,7 @@ const containerStyles = css({
   pl: "lg",
   justifyContent: "space-between",
   alignItems: "center",
-  transition: "box-shadow 0.2s ease-in-out"
+  transition: "box-shadow 0.2s ease-in-out",
 });
 
 export interface ChatTextAreaProps {
@@ -46,7 +47,7 @@ export default function ChatTextArea({
   onKeyDown,
   pending,
   botName = "Onyx AI",
-  disabled = false
+  disabled = false,
 }: ChatTextAreaProps) {
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -60,29 +61,28 @@ export default function ChatTextArea({
 
   return (
     <div className={containerStyles}>
-      <TextAreaRoot variant='default' className={textAreaRootStyles}>
+      <TextAreaRoot variant="default" className={textAreaRootStyles}>
         <TextArea
           ref={inputRef}
-          name='content'
+          name="content"
           placeholder={placeholder}
           disabled={pending || disabled}
           onKeyDown={onKeyDown}
           className={css({
-            height: "20px!"
+            height: "20px!",
           })}
           autoFocus
         />
       </TextAreaRoot>
       <Button
-        size='large'
-        content='icon'
-        variant='outline'
-        type='submit'
+        size="large"
+        content="icon"
+        variant="outline"
+        type="submit"
         disabled={pending || disabled}
       >
-        {pending ? <Spinner /> : <Icon asset='arrow_up' />}
+        {pending ? <Spinner /> : <Icon asset="arrow_up" />}
       </Button>
     </div>
   );
 }
-

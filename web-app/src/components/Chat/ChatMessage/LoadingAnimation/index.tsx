@@ -13,7 +13,7 @@ const dotFlashingStyles = css({
     content: '""',
     display: "inline-block",
     position: "absolute",
-    top: "0"
+    top: "0",
   },
   "&::before": {
     left: "-6px",
@@ -22,7 +22,7 @@ const dotFlashingStyles = css({
     borderRadius: "2px",
     backgroundColor: "{colors.light-grey.3}",
     animation: "dotFlashing 1s infinite alternate",
-    animationDelay: "0s"
+    animationDelay: "0s",
   },
   "&::after": {
     left: "6px",
@@ -31,8 +31,8 @@ const dotFlashingStyles = css({
     borderRadius: "2px",
     backgroundColor: "{colors.light-grey.3}",
     animation: "dotFlashing 1s infinite alternate",
-    animationDelay: "1s"
-  }
+    animationDelay: "1s",
+  },
 });
 
 function LoadingAnimation() {

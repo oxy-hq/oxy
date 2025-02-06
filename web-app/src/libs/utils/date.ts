@@ -11,7 +11,9 @@ dayjs.extend(duration);
  * @returns boolean - True if the string is a valid date, false otherwise.
  */
 export function isDate(date: string) {
-  return new Date(date).toString() !== "Invalid Date" && !isNaN(Date.parse(date));
+  return (
+    new Date(date).toString() !== "Invalid Date" && !isNaN(Date.parse(date))
+  );
 }
 
 export function formatDate(date: Date, format: string) {
@@ -48,4 +50,3 @@ export function formatStartingDate(date?: Date) {
 
   return dayjs(date).format("dddd, MMMM D");
 }
-

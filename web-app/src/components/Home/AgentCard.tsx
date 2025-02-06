@@ -18,7 +18,7 @@ const cardStyles = css({
   borderRadius: "rounded",
   pr: "md",
   _hover: {
-    bg: "background.opacity"
+    bg: "background.opacity",
   },
   flexDirection: "column",
   height: "auto",
@@ -28,8 +28,8 @@ const cardStyles = css({
     height: "59px",
     pr: "sm",
     py: "xxs",
-    pl: "xxs"
-  }
+    pl: "xxs",
+  },
 });
 
 const skeletonStyles = css({
@@ -38,8 +38,8 @@ const skeletonStyles = css({
   overflow: "hidden",
   "@media (max-width: 768px)": {
     width: "45px!",
-    height: "45px!"
-  }
+    height: "45px!",
+  },
 });
 
 export function AgentCardSkeleton({ className }: { className?: string }) {
@@ -50,19 +50,23 @@ export function AgentCardSkeleton({ className }: { className?: string }) {
           skeletonStyles,
           css({
             width: 55,
-            height: 55
-          })
+            height: 55,
+          }),
         )}
       />
       <div
         className={vstack({
           justifyContent: "space-between",
           alignItems: "start",
-          flex: 1
+          flex: 1,
         })}
       >
-        <div className={cx(skeletonStyles, css({ width: "50%", height: 17 }))} />
-        <div className={cx(skeletonStyles, css({ width: "100%", height: 17 }))} />
+        <div
+          className={cx(skeletonStyles, css({ width: "50%", height: 17 }))}
+        />
+        <div
+          className={cx(skeletonStyles, css({ width: "100%", height: 17 }))}
+        />
       </div>
     </div>
   );
@@ -71,7 +75,11 @@ export function AgentCardSkeleton({ className }: { className?: string }) {
 export function AgentCard({ agent }: { agent: Agent }) {
   const agentName = getAgentNameFromPath(agent.path);
   return (
-    <NavLink to={`/chat/${btoa(agent.path)}`} className={cardStyles} key={agent.path}>
+    <NavLink
+      to={`/chat/${btoa(agent.path)}`}
+      className={cardStyles}
+      key={agent.path}
+    >
       <AgentAvatar
         name={agentName}
         className={css({
@@ -79,7 +87,7 @@ export function AgentCard({ agent }: { agent: Agent }) {
           color: "text.contrast",
           width: 55!,
           height: 55!,
-          bg: "surface.contrast"
+          bg: "surface.contrast",
         })}
       />
       <div
@@ -91,8 +99,8 @@ export function AgentCard({ agent }: { agent: Agent }) {
           sm: {
             justifyContent: "space-between",
             alignItems: "center",
-            flexDirection: "row"
-          }
+            flexDirection: "row",
+          },
         })}
       >
         <div
@@ -103,42 +111,43 @@ export function AgentCard({ agent }: { agent: Agent }) {
             minW: 0,
             w: "100%",
             sm: {
-              w: "unset"
-            }
+              w: "unset",
+            },
           })}
         >
           <Text
-            variant='label14Medium'
-            color='primary'
+            variant="label14Medium"
+            color="primary"
             className={css({
               overflow: "hidden",
               textOverflow: "ellipsis",
               whiteSpace: "nowrap",
               display: "block",
               _hover: {
-                textDecoration: "underline"
-              }
+                textDecoration: "underline",
+              },
             })}
           >
             {agentName}
           </Text>
           <Text
-            variant='paragraph14Regular'
+            variant="paragraph14Regular"
             className={css({
               overflow: "hidden",
               textOverflow: "ellipsis",
               whiteSpace: "nowrap",
               display: "block",
-              w: "100%"
+              w: "100%",
             })}
-            color='secondary'
+            color="secondary"
           >
             {agent.description}
           </Text>
         </div>
 
-        <Text variant='paragraph12Regular' color='secondary'>
-          Updated {formatDateToHumanReadable(dayjs(agent.updated_at).format())} ago
+        <Text variant="paragraph12Regular" color="secondary">
+          Updated {formatDateToHumanReadable(dayjs(agent.updated_at).format())}{" "}
+          ago
         </Text>
       </div>
     </NavLink>

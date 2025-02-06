@@ -1,11 +1,12 @@
+import { css, cx } from "styled-system/css";
+
 import Icon from ".";
 import { SvgAssets } from "./Dictionary";
-import { css, cx } from "styled-system/css";
 
 const frameStyles = css({
   w: "lg",
   h: "lg",
-  p: "xxs"
+  p: "xxs",
 });
 
 const iconWrapperStyles = css({
@@ -13,12 +14,12 @@ const iconWrapperStyles = css({
   justifyContent: "center",
   alignItems: "center",
   w: "md",
-  h: "md"
+  h: "md",
 });
 
 export default function LogoFrame({
   logo,
-  className
+  className,
 }: {
   logo: SvgAssets;
   className?: string;

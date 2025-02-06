@@ -5,7 +5,7 @@ import Home from "@/components/Home";
 const contentStyles = css({
   marginTop: {
     base: "52px",
-    sm: "none"
+    sm: "none",
   },
   display: "flex",
   flex: "1",
@@ -14,7 +14,7 @@ const contentStyles = css({
   backgroundColor: "background.primary",
   boxShadow: "secondary",
   borderLeft: "1px solid",
-  borderColor: "border.primary"
+  borderColor: "border.primary",
 });
 
 const HomePage = () => {
@@ -26,4 +26,3 @@ const HomePage = () => {
 };
 
 export default HomePage;
-

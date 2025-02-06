@@ -28,9 +28,11 @@ context:
 ```
 
 You can then reference these within the `system_instructions` using Jinja, as follows:
+
 ```
 {{ context.queries }}
 ```
+
 where `queries` references the `name` given in the `context` field.
 
 ## Best practices for SQL
@@ -50,9 +52,10 @@ internally).
 
 select
   min(PARSE_DATE('%Y-%m', month)) as min_date,
-  max(PARSE_DATE('%Y-%m', month)) as max_date 
+  max(PARSE_DATE('%Y-%m', month)) as max_date
 from 'user_events.csv';
 ```
 
 ## Retrieval configuration
+
 TODO

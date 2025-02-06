@@ -13,7 +13,7 @@ const formStyles = css({
   maxW: "720px",
   mx: "auto",
   display: "flex",
-  width: "100%"
+  width: "100%",
 });
 
 const wrapperStyles = css({
@@ -22,7 +22,7 @@ const wrapperStyles = css({
   flexDirection: "column",
   gap: "md",
   alignItems: "center",
-  justifyContent: "end"
+  justifyContent: "end",
 });
 
 export interface ChatPanelProps {
@@ -32,16 +32,17 @@ export interface ChatPanelProps {
 function ChatPanel({ agentPath }: ChatPanelProps) {
   const { formRef, onKeyDown } = useEnterSubmit();
 
-  const { streamingNode, onSendChatMessage, onStop, messages } = useChatContextSelector((s) => ({
-    streamingNode: s.streamingNode,
-    onSendChatMessage: s.onSendChatMessage,
-    onStop: s.onStop,
-    messages: s.messages
-  }));
+  const { streamingNode, onSendChatMessage, onStop, messages } =
+    useChatContextSelector((s) => ({
+      streamingNode: s.streamingNode,
+      onSendChatMessage: s.onSendChatMessage,
+      onStop: s.onStop,
+      messages: s.messages,
+    }));
 
   const { pending, handleSubmit } = useChatForm({
     onSendChatMessage,
-    formRef
+    formRef,
   });
 
   const shouldShowStopButton = streamingNode !== null;
@@ -49,13 +50,18 @@ function ChatPanel({ agentPath }: ChatPanelProps) {
   return (
     <div className={wrapperStyles}>
       {shouldShowStopButton && (
-        <Button onClick={onStop} content='iconText' variant='outline' size='large'>
-          <Icon asset='close' /> Stop generating
+        <Button
+          onClick={onStop}
+          content="iconText"
+          variant="outline"
+          size="large"
+        >
+          <Icon asset="close" /> Stop generating
         </Button>
       )}
 
       <form ref={formRef} onSubmit={handleSubmit} className={formStyles}>
-        <input hidden name='agentPath' defaultValue={agentPath} />
+        <input hidden name="agentPath" defaultValue={agentPath} />
         <ChatTextArea
           onKeyDown={onKeyDown}
           hasMessage={!!messages.length}

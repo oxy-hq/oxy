@@ -1,0 +1,78 @@
+[package]
+name = "onyx"
+version.workspace = true
+authors.workspace = true
+description.workspace = true
+documentation.workspace = true
+publish.workspace = true
+edition.workspace = true
+
+[dependencies]
+anyhow = "1.0.89"
+arrow = { version = "^53.3.0", features = ["json"] }
+arrow_46 = { version = "^46.0", package = "arrow" }
+assert_cmd = "2.0.16"
+async-openai = "0.26.0"
+async-stream = "0.3.6"
+async-trait = "0.1.85"
+axum = { version = "0.7.9", features = ["macros"] }
+axum-streams = { version = "0.19.0", features = [
+  "json",
+  "csv",
+  "protobuf",
+  "text",
+] }
+backon = "1.3.0"
+base64 = "0.21"
+chrono = "0.4.39"
+clap = { version = "4.5.18", features = ["derive"] }
+colored = "2.1.0"
+connectorx = { version = "0.3.3", features = ["dst_arrow", "src_bigquery"] }
+csv = "1.3.1"
+dirs = "5.0.1"
+duckdb = { version = "=1.1.1", features = [
+  "bundled",
+] } # 1.0.0 uses arrow 52.2; "bundled" forces duckdb build from source (https://github.com/duckdb/duckdb-rs?tab=readme-ov-file#notes-on-building-duckdb-and-libduckdb-sys)
+entity = { path = "../entity" }
+fern = { version = "0.7.1", features = ["colored"] }
+futures = "0.3.31"
+garde = { version = "0.21.0", features = ["full"] }
+glob = "0.3.2"
+home = "0.5"
+human-panic = "2.0.2"
+humantime = "2.1.0"
+include_dir = "0.7"
+lancedb = { version = "0.14.0" }
+lazy_static = "1.4.0"
+log = "0.4"
+migration = { path = "../migration" }
+minijinja = { version = "2.5.0", features = ["loader"] }
+pluralizer = "0.4.0"
+predicates = "3.1.3"
+pyo3 = { version = "=0.23.3", features = [
+  "experimental-async",
+  "extension-module",
+] } # 0.23.4 causes a bug with pyo3-arrow
+pyo3-arrow = "0.6.0"
+schemars = "0.8.21"
+sea-orm = { workspace = true }
+serde = { version = "1.0", features = ["derive"] }
+serde_arrow = { version = "0.12.1", features = ["arrow-53"] }
+serde_json = "1.0"
+serde_yaml = "0.9"
+slugify = "0.1.0"
+syntect = "5.0"
+tabled = "0.17.0"
+terminal-light = "1.7.0"
+terminal_size = "0.4.1"
+thiserror = "2.0.9"
+tokio = { workspace = true }
+tower = "0.5.1"
+tower-http = { version = "0.6.1", features = ["fs", "cors"] }
+tower-serve-static = "0.1.1"
+uuid = { version = "1.11.0", features = ["v4", "serde"] }
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+name = "onyx"
+crate-type = ["cdylib", "rlib"]

@@ -112,7 +112,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           args: --target ${{ matrix.job.target }}
-          projectPath: web-app
+          projectPath: crates/onyx-desktop
           appName: onyx
           appVersion: ${{ inputs.tag || github.ref_name }}
       - name: Move tauri assets to artifacts
@@ -211,7 +211,7 @@ jobs:
       - name: Build onyx cli
         shell: bash
         run: |
-          cargo build --release --target ${{ matrix.job.target }} --locked
+          cargo build --release --target ${{ matrix.job.target }}
           mv target/${{ matrix.job.target }}/release/onyx artifacts/onyx-${{ matrix.job.target }}
 
       #-- Build json schema
@@ -220,6 +220,7 @@ jobs:
         run: |
           cargo run --release --target ${{ matrix.job.target }} -- gen-config-schema
           cp -a json-schemas/. artifacts/
+          cp Cargo.lock artifacts/
 
       #-- Build checksum
       - name: Create binary checksum
@@ -242,9 +243,9 @@ jobs:
           sccache: "true"
           # manylinux: auto
           container: off
-          working-directory: onyx-py
+          working-directory: crates/onyx-py
       - name: Move wheels
-        run: mv onyx-py/dist/* artifacts/
+        run: mv crates/onyx-py/dist/* artifacts/
 
       - name: Copy changelog (once)
         if: ${{ matrix.job.os == 'ubuntu-latest' }}

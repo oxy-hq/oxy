@@ -44,7 +44,7 @@ const SystemPage: React.FC<SystemPageProps> = ({ data }) => {
   const containerStyle = css({
     maxW: "4xl",
     mx: "auto",
-    zIndex: "2"
+    zIndex: "2",
   });
 
   const cardStyle = css({
@@ -55,21 +55,21 @@ const SystemPage: React.FC<SystemPageProps> = ({ data }) => {
     bg: "token(colors.background)",
     display: "flex",
     flexDirection: "column",
-    gap: "3"
+    gap: "3",
   });
 
   const headerStyle = css({
     pb: "2",
     mb: "2",
     borderBottom: "1px solid token(colors.primary)",
-    fontSize: "sm"
+    fontSize: "sm",
   });
 
   const sectionStyle = css({
     fontSize: "sm",
     border: "1px solid token(colors.primary)",
     borderRadius: "md",
-    p: "3"
+    p: "3",
   });
 
   const titleStyle = css({ color: "token(colors.primary)" });
@@ -80,13 +80,13 @@ const SystemPage: React.FC<SystemPageProps> = ({ data }) => {
     color: "token(colors.lightGray)",
     borderBottom: "1px solid token(colors.primary)",
     pb: "2",
-    mb: "2"
+    mb: "2",
   });
 
   const footerStyle = css({
     textAlign: "center",
     fontSize: "xs",
-    color: "rgba(0, 255, 0, 0.7)"
+    color: "rgba(0, 255, 0, 0.7)",
   });
 
   return (
@@ -153,4 +153,3 @@ const SystemPage: React.FC<SystemPageProps> = ({ data }) => {
 };
 
 export default SystemPage;
-

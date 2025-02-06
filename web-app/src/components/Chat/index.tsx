@@ -14,7 +14,7 @@ const chatLayoutStyles = css({
   flex: "1",
   width: "100%",
   overflow: "hidden",
-  justifyContent: "space-between"
+  justifyContent: "space-between",
 });
 
 const chatMessagesWrapperStyles = css({
@@ -27,9 +27,9 @@ const chatMessagesWrapperStyles = css({
   px: "xl",
   smDown: {
     mt: "none",
-    px: "md"
+    px: "md",
   },
-  flexDir: "column-reverse"
+  flexDir: "column-reverse",
 });
 
 const chatTextInputWrapperStyles = css({
@@ -41,7 +41,7 @@ const chatTextInputWrapperStyles = css({
   gap: "sm",
   px: "xl",
   mt: "xs",
-  mb: "xl"
+  mb: "xl",
 });
 
 interface ChatProps {

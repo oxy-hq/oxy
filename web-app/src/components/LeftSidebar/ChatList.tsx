@@ -20,22 +20,23 @@ const scrollableChatListStyles = css({
   flexDirection: "column",
   gap: "xxs",
   "&::-webkit-scrollbar": {
-    display: "none"
+    display: "none",
   },
   "&:hover::-webkit-scrollbar": {
-    display: "block"
-  }
+    display: "block",
+  },
 });
 
 const extraScrollableChatListStyles = css({
   "&:hover": {
-    paddingRight: "6px"
-  }
+    paddingRight: "6px",
+  },
 });
 
 export default function ChatList({ items }: SidebarItemGroupProps) {
   const [parent] = useAutoAnimate({ duration: 400 });
-  const [shouldShowScrollbar, setShouldShowScrollbar] = useState<boolean>(false);
+  const [shouldShowScrollbar, setShouldShowScrollbar] =
+    useState<boolean>(false);
   const chatListRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -51,20 +52,35 @@ export default function ChatList({ items }: SidebarItemGroupProps) {
   }, [chatListRef]);
 
   const handleHoverElement = () => {
-    if (Number(chatListRef.current?.scrollHeight) > Number(chatListRef.current?.clientHeight)) {
+    if (
+      Number(chatListRef.current?.scrollHeight) >
+      Number(chatListRef.current?.clientHeight)
+    ) {
       setShouldShowScrollbar(true);
     }
   };
 
-  const extraWrapperStyles = shouldShowScrollbar ? extraScrollableChatListStyles : null;
+  const extraWrapperStyles = shouldShowScrollbar
+    ? extraScrollableChatListStyles
+    : null;
 
   return (
-    <div className={cx(scrollableChatListStyles, extraWrapperStyles)} ref={chatListRef}>
+    <div
+      className={cx(scrollableChatListStyles, extraWrapperStyles)}
+      ref={chatListRef}
+    >
       <div ref={parent}>
         {items.map(({ id, title, agent }) => {
           return (
             <NavLink key={id} to={"/chat/" + btoa(agent)}>
-              {({ isActive }) => <SidebarItem key={id} title={title} id={id} isActive={isActive} />}
+              {({ isActive }) => (
+                <SidebarItem
+                  key={id}
+                  title={title}
+                  id={id}
+                  isActive={isActive}
+                />
+              )}
             </NavLink>
           );
         })}

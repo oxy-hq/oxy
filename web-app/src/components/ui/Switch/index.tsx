@@ -1,8 +1,9 @@
 "use client";
 
 import * as React from "react";
+
 import * as SwitchPrimitives from "@radix-ui/react-switch";
-import { cx, css } from "styled-system/css";
+import { css, cx } from "styled-system/css";
 
 const rootStyles = css({
   w: "36px",
@@ -16,14 +17,14 @@ const rootStyles = css({
   "&[data-state=checked]": {
     bgColor: "surface.contrast",
     // border
-    shadow: "0 0 0 1px token(colors.surface.contrast)"
+    shadow: "0 0 0 1px token(colors.surface.contrast)",
   },
   _disabled: {
     bgColor: "surface.secondary",
     // border
     shadow: "0 0 0 1px token(colors.surface.secondary)",
-    cursor: "not-allowed"
-  }
+    cursor: "not-allowed",
+  },
 });
 
 const thumbStyles = css({
@@ -38,11 +39,11 @@ const thumbStyles = css({
   pointerEvents: "none",
   "&[data-state=checked]": {
     transform: "translateX(17px)",
-    bgColor: "text.contrast"
+    bgColor: "text.contrast",
   },
   _disabled: {
-    bgColor: "surface.tertiary"
-  }
+    bgColor: "surface.tertiary",
+  },
 });
 
 const Switch = React.forwardRef<

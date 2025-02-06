@@ -17,7 +17,11 @@ export const useFetchStreamWithAbort = () => {
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const fetchStreamWithAbort = useCallback(
-    async <T>(url: string, onReadStream: (message: Message<T>) => void, options: RequestInit) => {
+    async <T>(
+      url: string,
+      onReadStream: (message: Message<T>) => void,
+      options: RequestInit,
+    ) => {
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }
@@ -25,7 +29,7 @@ export const useFetchStreamWithAbort = () => {
       abortControllerRef.current = new AbortController();
       options.signal = abortControllerRef.current.signal;
       options.headers = {
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
       };
 
       try {
@@ -37,7 +41,7 @@ export const useFetchStreamWithAbort = () => {
         handleErrorWithAbort(error);
       }
     },
-    []
+    [],
   );
 
   const clearAbortController = useCallback(() => {
@@ -49,4 +53,3 @@ export const useFetchStreamWithAbort = () => {
 
   return { fetchStreamWithAbort, clearAbortController, abortControllerRef };
 };
-

@@ -13,17 +13,17 @@ export const extendedUtils = {
           height: "6px",
           width: "6px",
           background: "transparent",
-          borderRadius: token("radii.full")
+          borderRadius: token("radii.full"),
         },
         "&::-webkit-scrollbar-thumb": {
           background: token("colors.border.primary"),
-          borderRadius: token("radii.full")
+          borderRadius: token("radii.full"),
         },
         "&::-webkit-scrollbar-track": {
-          background: "transparent"
-        }
+          background: "transparent",
+        },
       };
-    }
+    },
   },
   rightSlideAnimation: {
     className: "rightSlideAnimation",
@@ -62,9 +62,9 @@ export const extendedUtils = {
           animationDuration: "var(--animation-duration)",
           animationDirection: "var(--animation-direction)",
           animationTimingFunction: "ease-in-out",
-          animationIterationCount: "infinite"
-        }
+          animationIterationCount: "infinite",
+        },
       };
-    }
-  }
+    },
+  },
 };
