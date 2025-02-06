@@ -40,33 +40,6 @@ jobs:
       - name: Check typos
         uses: crate-ci/typos@master
 
-  links:
-    name: Links
-    if: github.event.pull_request.draft != true
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Restore lychee cache
-        id: restore-cache
-        uses: actions/cache/restore@v4
-        with:
-          path: .lycheecache
-          key: cache-lychee-${{ github.sha }}
-          restore-keys: cache-lychee-
-      - name: Check broken links
-        uses: lycheeverse/lychee-action@v2
-        with:
-          args: --root-dir ${{ github.workspace }} -v --exclude-path CHANGELOG.md --format detailed --cache --max-cache-age 1d .
-          fail: false
-          token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Save lychee cache
-        uses: actions/cache/save@v4
-        if: always()
-        with:
-          path: .lycheecache
-          key: ${{ steps.restore-cache.outputs.cache-primary-key }}
-
   fmt:
     name: Onyx fmt
     needs: [changesets]
@@ -126,7 +99,7 @@ jobs:
           fi
 
   check:
-    needs: [fmt, changesets, links, typos]
+    needs: [fmt, changesets, typos]
     name: Onyx check
     runs-on: ubuntu-latest
     steps:

@@ -249,7 +249,7 @@ jobs:
 
       - name: Copy changelog (once)
         if: ${{ matrix.job.os == 'ubuntu-latest' }}
-        run: cp CHANGELOG.md artifacts/
+        run: cp crates/onyx-core/CHANGELOG.md artifacts/
 
       #-- Upload release artifacts
       - name: Upload release artifacts
