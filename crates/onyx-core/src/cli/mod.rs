@@ -54,7 +54,7 @@ use tower::service_fn;
 // when using CARGO_MANIFEST_DIR with windows path separators
 // TODO: replace with a more robust solution, like using env DIST_DIR_PATH
 #[cfg(target_os = "windows")]
-static DIST: Dir = include_dir!("D:\\a\\onyx\\onyx\\dist");
+static DIST: Dir = include_dir!("D:\\a\\onyx\\onyx\\crates\\onyx-core\\dist");
 #[cfg(not(target_os = "windows"))]
 static DIST: Dir = include_dir!("$CARGO_MANIFEST_DIR/dist");
 
