@@ -2,6 +2,76 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.32](https://github.com/onyx-hq/onyx/compare/0.1.31...0.1.32) (2025-02-06)
+
+
+### <!-- 0 -->🚀 Features
+
+* add enabled key under cache key ([#322](https://github.com/onyx-hq/onyx/issues/322)) ([9fa7f20](https://github.com/onyx-hq/onyx/commit/9fa7f2076010874b88a3106f7521cb1811a01fcb))
+* add installation script for Onyx with support for Linux and macOS ([#284](https://github.com/onyx-hq/onyx/issues/284)) ([5f1a41c](https://github.com/onyx-hq/onyx/commit/5f1a41c0adf64aefb64df3048ef9f946565e5324))
+* apply copybara to publish an opensource version of onyx ([#293](https://github.com/onyx-hq/onyx/issues/293)) ([14bfc69](https://github.com/onyx-hq/onyx/commit/14bfc699d34a121123aa5c2d96dbb9bbf7c4b415))
+* create project selection and view project file tree ([#283](https://github.com/onyx-hq/onyx/issues/283)) ([8ee471b](https://github.com/onyx-hq/onyx/commit/8ee471b2a24f697c51e92332931f8ba02c6445f6))
+* eng-1175 Create desktop app with Tauri ([#233](https://github.com/onyx-hq/onyx/issues/233)) ([a4a5d98](https://github.com/onyx-hq/onyx/commit/a4a5d9806beb312deeead7f548694a6166090427))
+* enhance GitHub Actions workflow to retrieve GitHub App User ID and update checkout action ([6251638](https://github.com/onyx-hq/onyx/commit/6251638e2c6140ca4d86799e8923a16537ec88b2))
+* include some build args to ensure onyxpy build succeed with cargo build ([dabe175](https://github.com/onyx-hq/onyx/commit/dabe175581e40defbad00ee5fdac5ad9c33aefc8))
+* rename app to onyx-desktop and update dependencies in Cargo files ([3cf5cd3](https://github.com/onyx-hq/onyx/commit/3cf5cd30f80ce582045e2cd97d6dfb38c62198cf))
+* support caching for generated queries inside workflows ([#290](https://github.com/onyx-hq/onyx/issues/290)) ([f66b869](https://github.com/onyx-hq/onyx/commit/f66b86993ea92eee8b8a683350b57599b7f76cde))
+* update to new filesystem format, and use new positioning ([#323](https://github.com/onyx-hq/onyx/issues/323)) ([234a0ac](https://github.com/onyx-hq/onyx/commit/234a0ac802665f15b3189a187399b4abc502f2c5))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* correct committer format in GitHub Actions workflow for opensource publishing ([477ba94](https://github.com/onyx-hq/onyx/commit/477ba94bda42ddbd3ce115d2a8ba52c5ec94f2e6))
+* correct syntax for moving tauri assets in release workflow ([939f37f](https://github.com/onyx-hq/onyx/commit/939f37fe9b523105ee178058c7ef037163d84036))
+* enable caching for all Rust crates in CI workflows ([7043f76](https://github.com/onyx-hq/onyx/commit/7043f76a0e9f7b3704d2ee397599ff97f3b6f06b))
+* prefix artifact names with 'tauri-' and 'cli-' in release workflow ([caa5332](https://github.com/onyx-hq/onyx/commit/caa5332a5468b9aef27a7e6a47889fef1279b405))
+* update lint-staged command to handle scheduled events differently ([2887a3b](https://github.com/onyx-hq/onyx/commit/2887a3b70ebb6a872901185684add2fd0ec67cfe))
+* update SSH key reference in GitHub Actions workflow for Copybara ([69e6280](https://github.com/onyx-hq/onyx/commit/69e628034dc46e56f547a593d5f997b7b92211ce))
+* update tauri asset movement in release workflow for correct handling ([c75a3a7](https://github.com/onyx-hq/onyx/commit/c75a3a70e3858a5c75f3a1027c5cb0b056dd68a7))
+
+
+### <!-- 3 -->📚 Documentation
+
+* update agents and semantic model documentation with configuration and usage examples ([#303](https://github.com/onyx-hq/onyx/issues/303)) ([ace309f](https://github.com/onyx-hq/onyx/commit/ace309f42edf40a8cf26e1970158c06ca801c9bb))
+
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+* increase lts version for node ([e56d458](https://github.com/onyx-hq/onyx/commit/e56d45834c900c9ae95ce0e16a856181669eb28f))
+* remove commit-msg hook dependency on app web ([cd29134](https://github.com/onyx-hq/onyx/commit/cd29134727c1c281f9e8b9b96952126c0a295b85))
+* rename install-desktop.sh to install_desktop.sh and add cleanup logic ([18ffe13](https://github.com/onyx-hq/onyx/commit/18ffe13b4fe812661f26f6ecf15ab2800c4a44c9))
+* update example ([bd9f4ff](https://github.com/onyx-hq/onyx/commit/bd9f4ff2768743b6a8d7d33cfca58c534e092a4c))
+* update example ([4b37490](https://github.com/onyx-hq/onyx/commit/4b3749050cb8023e491b24d916e0efe476e2d899))
+* update examples ([be9ab6c](https://github.com/onyx-hq/onyx/commit/be9ab6c5fb051c856e0736dd824e4f6079e0f2d0))
+
+
+### <!-- 2 -->🚜 Refactor
+
+* remove create-cache workflow and update release workflow for tauri and CLI builds ([b7fd7de](https://github.com/onyx-hq/onyx/commit/b7fd7dede3ab353db52516058e73f7bbcd49d076))
+
+
+### <!-- 10 -->💼 Build System
+
+* **deps-dev:** bump eslint-config-prettier from 9.1.0 to 10.0.1 in the dev-npm-major-dependencies group ([#281](https://github.com/onyx-hq/onyx/issues/281)) ([f5b77cc](https://github.com/onyx-hq/onyx/commit/f5b77cc62da376ccf755a9f24a859f95e0744bb4))
+* **deps-dev:** bump vite from 5.4.10 to 5.4.12 in /web-app in the npm_and_yarn group across 1 directory ([#286](https://github.com/onyx-hq/onyx/issues/286)) ([cb8f810](https://github.com/onyx-hq/onyx/commit/cb8f810129d6676565cee95126c5a1fb84b1a3ca))
+* **deps-dev:** bump vite from 5.4.10 to 5.4.12 in /web-app in the npm_and_yarn group across 1 directory ([#292](https://github.com/onyx-hq/onyx/issues/292)) ([00d6fc8](https://github.com/onyx-hq/onyx/commit/00d6fc8033178a195483586233a3525ce55be5cd))
+* **deps-dev:** bump vite from 5.4.14 to 6.0.11 in the dev-npm-major-dependencies group ([#295](https://github.com/onyx-hq/onyx/issues/295)) ([a58a680](https://github.com/onyx-hq/onyx/commit/a58a680e6745302d1439ee7797d79259301063b4))
+* **deps:** bump openssl from 0.10.68 to 0.10.70 in the cargo group across 1 directory ([#316](https://github.com/onyx-hq/onyx/issues/316)) ([fea241c](https://github.com/onyx-hq/onyx/commit/fea241c12e9f56a63337681d38cffb4fb14373f1))
+* **deps:** bump react-router-dom from 6.28.0 to 7.1.3 in the prod-npm-major-dependencies group ([#280](https://github.com/onyx-hq/onyx/issues/280)) ([4181393](https://github.com/onyx-hq/onyx/commit/418139327dabc73b61c4b1da1581c4b243a07155))
+* **deps:** bump react-router-dom from 6.28.0 to 7.1.5 in the prod-npm-major-dependencies group across 1 directory ([#317](https://github.com/onyx-hq/onyx/issues/317)) ([35ee016](https://github.com/onyx-hq/onyx/commit/35ee0164dfca851454f61e4c632be88fb670e66f))
+* **deps:** bump the npm_and_yarn group with 2 updates ([#285](https://github.com/onyx-hq/onyx/issues/285)) ([d1c2632](https://github.com/onyx-hq/onyx/commit/d1c263213a338898251d80632818c12898635a8d))
+* **deps:** bump the prod-npm-minor-dependencies group with 13 updates ([#278](https://github.com/onyx-hq/onyx/issues/278)) ([ff84a42](https://github.com/onyx-hq/onyx/commit/ff84a428e150d0d107cf700280df08a4281465ff))
+* **deps:** update pnpm to version 9.15.4 in package.json files ([d74164e](https://github.com/onyx-hq/onyx/commit/d74164e4d7a2123abdee37873ecb4252f3699ef5))
+
+
+### <!-- 11 -->💼 Continuous Integration
+
+* enhance release workflow with unique identifier and improved tag description ([b5e4049](https://github.com/onyx-hq/onyx/commit/b5e404986cf0e486065868828bbc5ea400576bb2))
+* fix output variable naming in public release workflow ([4af4798](https://github.com/onyx-hq/onyx/commit/4af47986eff820c1e7cc44f305221687b9203ab2))
+* fix syntax error in public release workflow for tagging ([94de907](https://github.com/onyx-hq/onyx/commit/94de9078fe4cd84ed5ea489c696ecc5d5ca61d9c))
+* update release workflow and fix formatting in package.json ([5bbcccd](https://github.com/onyx-hq/onyx/commit/5bbcccd9c0c76cb624dc7210e1ae40620868f000))
+* update release workflow to create RELEASE_NOTES file before appending release notes ([8857f3c](https://github.com/onyx-hq/onyx/commit/8857f3ca0fa176e420b7643c91b98109228189e5))
+
 ## [0.1.31](https://github.com/onyx-hq/onyx/compare/0.1.30...0.1.31) (2025-01-17)
 
 
