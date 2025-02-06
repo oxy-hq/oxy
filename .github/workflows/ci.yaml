@@ -2,20 +2,20 @@ name: CI check
 
 on:
   pull_request:
-    types:
-      - opened
-      - reopened
-      - synchronize
-      - ready_for_review
     branches:
       - main
     paths-ignore:
       - "docs/**"
-  schedule:
-    - cron: "0 0 * * 0"
+  push:
+    branches:
+      - main
+      - trigger-ci-workflow
+    paths-ignore:
+      - "docs/**"
 
 env:
   CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -27,8 +27,9 @@ defaults:
 
 jobs:
   changesets:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') || github.event_name == 'schedule' }}
+    if: ${{ github.event_name != 'pull_request' || (!startsWith(github.head_ref, 'release-please--') && !github.event.pull_request.draft) }}
     uses: ./.github/workflows/changesets.yaml
+    name: Changesets
 
   typos:
     name: Typos
@@ -41,9 +42,9 @@ jobs:
         uses: crate-ci/typos@master
 
   fmt:
-    name: Onyx fmt
-    needs: [changesets]
-    if: needs.changesets.outputs.onyx == 'true' && github.event.pull_request.draft != true
+    name: Format codes
+    needs: [changesets, typos]
+    if: needs.changesets.outputs.onyx == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -55,14 +56,6 @@ jobs:
           components: clippy, rustfmt
       - name: Prep cargo cache
         uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: fmt-ubuntu-latest-x86_64-unknown-linux-gnu
-          cache-all-crates: "true"
-      - name: Install required dependencies
-        shell: bash
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y pkg-config libssl-dev
         # protobuf is required by lance https://github.com/lancedb/lance/issues/3073
       - name: Install Protoc
         uses: arduino/setup-protoc@v3
@@ -92,15 +85,15 @@ jobs:
       - name: Run lint-staged
         shell: bash
         run: |
-          if [ "${{ github.event_name }}" = "schedule" ]; then
-            pnpm lint-staged --diff="$(git rev-list -n1 --before='1 week ago' HEAD)...HEAD"
-          else
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             pnpm lint-staged --diff="origin/${{ github.base_ref }}...origin/${{ github.head_ref }}"
+          elif [[ "${{ github.event_name }}" == "push" ]]; then
+            pnpm lint-staged --diff="${{ github.event.before }}...${{ github.event.after }}"
           fi
 
-  check:
-    needs: [fmt, changesets, typos]
-    name: Onyx check
+  lint:
+    needs: [fmt]
+    name: Lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -110,22 +103,21 @@ jobs:
           components: clippy, rustfmt
       - name: Prep cargo cache
         uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: check-ubuntu-latest-x86_64-unknown-linux-gnu
-          cache-all-crates: "true"
       # protobuf is required by lance https://github.com/lancedb/lance/issues/3073
       - name: Install Protoc
         uses: arduino/setup-protoc@v3
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Run cargo check
-        run: cargo check --verbose --locked
+        run: cargo check --verbose --workspace
       - name: Run cargo clippy
-        run: cargo clippy --verbose --locked
+        run: cargo clippy --verbose --workspace
+      - name: Check json schemas
+        run: cargo run -- gen-config-schema --check
 
   test:
-    needs: [check]
-    name: Onyx test
+    needs: [fmt]
+    name: Test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -133,9 +125,6 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: Prep cargo cache
         uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: test-ubuntu-latest-x86_64-unknown-linux-gnu
-          cache-all-crates: "true"
       # protobuf is required by lance https://github.com/lancedb/lance/issues/3073
       - name: Install Protoc
         uses: arduino/setup-protoc@v3
@@ -149,6 +138,5 @@ jobs:
         run: |
           touch examples/bigquery-sample.key
           echo $BIGQUERY_SAMPLE_KEY > examples/bigquery-sample.key
-          cargo test --verbose --locked --no-fail-fast -- --nocapture
-      - name: Check json schemas
-        run: cargo run -- gen-config-schema --check
+          cargo test --verbose --no-fail-fast -- --nocapture
+
