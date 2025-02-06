@@ -1,5 +1,6 @@
 <p align="center"><img src="docs/readme-banner.png"/></p>
 
+
 - [The fastest way to build data agents](#the-fastest-way-to-build-data-agents)
   - [What is a data agent?](#what-is-a-data-agent)
   - [Onyx core vision](#onyx-core-vision)
