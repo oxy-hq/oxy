@@ -55,6 +55,16 @@
             "agent_ref": {
               "type": "string"
             },
+            "cache": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/StepCache"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "export": {
               "anyOf": [
                 {
@@ -197,6 +207,21 @@
       ],
       "properties": {
         "name": {
+          "type": "string"
+        }
+      }
+    },
+    "StepCache": {
+      "type": "object",
+      "required": [
+        "path"
+      ],
+      "properties": {
+        "enabled": {
+          "default": false,
+          "type": "boolean"
+        },
+        "path": {
           "type": "string"
         }
       }

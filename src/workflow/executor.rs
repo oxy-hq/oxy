@@ -129,7 +129,12 @@ impl Executable<WorkflowEvent> for AgentStep {
             export_file_path,
         });
 
-        if let Some(cache) = &self.cache {
+        let Some(cache) = &self.cache else {
+            execution_context.write(step_output.output);
+            return Ok(());
+        };
+
+        if cache.enabled {
             let cache_file_path_str = execution_context
                 .renderer
                 .render_async(&cache.path, Value::from_serialize(&context))
@@ -145,7 +150,6 @@ impl Executable<WorkflowEvent> for AgentStep {
                 file_path: cache_file_path,
             });
         }
-
         execution_context.write(step_output.output);
         Ok(())
     }

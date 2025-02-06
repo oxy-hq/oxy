@@ -14,16 +14,17 @@ steps:
       - name: report
         type: agent
         prompt: |
-              Generate a detail {{groupings.value}} report
+          Generate a detail {{groupings.value}} report
         agent_ref: agents/semantic_model.agent.yml
         cache:
+          enabled: true
           path: output/cache/groupings_{{groupings.value}}_report_agent.json
 
   - name: grouping_reports
     type: formatter
     template: |
-          {% for grouping in groupings %}
-          -- Property Grouping: {{ grouping.value }} --
-          {{ grouping.report }}
-          -- End of Property Grouping: {{ grouping.value }} --
-          {% endfor %}
+      {% for grouping in groupings %}
+      -- Property Grouping: {{ grouping.value }} --
+      {{ grouping.report }}
+      -- End of Property Grouping: {{ grouping.value }} --
+      {% endfor %}
