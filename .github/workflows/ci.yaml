@@ -121,9 +121,9 @@ jobs:
             libayatana-appindicator3-dev \
             librsvg2-dev
       - name: Run cargo check
-        run: cargo check --verbose --workspace
+        run: cargo check --verbose
       - name: Run cargo clippy
-        run: cargo clippy --verbose --workspace
+        run: cargo clippy --verbose
       - name: Check json schemas
         run: cargo run -- gen-config-schema --check
 
