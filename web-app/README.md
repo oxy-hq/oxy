@@ -102,6 +102,7 @@ To get started with this project, follow these steps:
 3. Install dependencies: `pnpm install`
 4. Start the development server: `pnpm dev`
 
+
 ## Available Scripts
 
 - `pnpm dev`: Starts the development server
@@ -109,6 +110,7 @@ To get started with this project, follow these steps:
 - `pnpm lint`: Runs ESLint
 - `pnpm format`: Runs Prettier
 - `pnpm typecheck`: Runs TypeScript type checking
+
 
 ## Configuration
 
