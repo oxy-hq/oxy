@@ -2,18 +2,19 @@
 
 This project combines cutting-edge technologies to create a powerful, efficient, and developer-friendly web application development environment.
 
-- [Features and Rationale](#features-and-rationale)
-  - [Core Technologies](#core-technologies)
-  - [UI and Styling](#ui-and-styling)
-  - [Code Quality and Consistency](#code-quality-and-consistency)
-  - [Git Workflow and Commit Quality](#git-workflow-and-commit-quality)
-  - [State Management and Data Fetching](#state-management-and-data-fetching)
-  - [Routing](#routing)
-- [Prerequisites](#prerequisites)
-- [Getting Started](#getting-started)
-- [Available Scripts](#available-scripts)
-- [Configuration](#configuration)
-- [Learn More](#learn-more)
+- [Vite + React + TypeScript + SWC](#vite--react--typescript--swc)
+  - [Features and Rationale](#features-and-rationale)
+    - [Core Technologies](#core-technologies)
+    - [UI and Styling](#ui-and-styling)
+    - [Code Quality and Consistency](#code-quality-and-consistency)
+    - [Git Workflow and Commit Quality](#git-workflow-and-commit-quality)
+    - [State Management and Data Fetching](#state-management-and-data-fetching)
+    - [Routing](#routing)
+  - [Prerequisites](#prerequisites)
+  - [Getting Started](#getting-started)
+  - [Available Scripts](#available-scripts)
+  - [Configuration](#configuration)
+  - [Learn More](#learn-more)
 
 ## Features and Rationale
 
