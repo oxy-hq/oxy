@@ -124,6 +124,8 @@ jobs:
         run: cargo check --verbose --workspace
       - name: Run cargo clippy
         run: cargo clippy --verbose --workspace
+      - name: Cleanup tauri build to reduce cache size
+        run: rm -rf target/debug/bundle
 
   test:
     needs: [fmt]
