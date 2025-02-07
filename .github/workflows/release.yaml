@@ -293,6 +293,11 @@ jobs:
     needs: [release]
     if: ${{ github.event_name != 'workflow_dispatch' }}
     steps: # get release note from github and its version to send to slack channel
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.tag || github.ref_name }}
       - name: Get release note
         env:
           GH_TOKEN: ${{ github.token }}
