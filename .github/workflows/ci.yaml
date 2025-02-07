@@ -121,11 +121,9 @@ jobs:
             libayatana-appindicator3-dev \
             librsvg2-dev
       - name: Run cargo check
-        run: cargo check --verbose
+        run: cargo check --verbose --workspace
       - name: Run cargo clippy
-        run: cargo clippy --verbose
-      - name: Check json schemas
-        run: cargo run -- gen-config-schema --check
+        run: cargo clippy --verbose --workspace
 
   test:
     needs: [fmt]
@@ -151,4 +149,5 @@ jobs:
           touch examples/bigquery-sample.key
           echo $BIGQUERY_SAMPLE_KEY > examples/bigquery-sample.key
           cargo test --verbose --no-fail-fast -- --nocapture
-
+      - name: Check json schemas
+        run: cargo run -- gen-config-schema --check
