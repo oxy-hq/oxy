@@ -10,7 +10,9 @@ use std::{path::PathBuf, sync::Arc};
 use crate::{
     config::{
         load_config,
-        model::{AgentConfig, AnonymizerConfig, Config, FileFormat, Model, ToolConfig},
+        model::{
+            AgentConfig, AnonymizerConfig, Config, FileFormat, Model, OutputFormat, ToolConfig,
+        },
     },
     errors::OnyxError,
     execute::agent::ToolCall,
@@ -36,7 +38,21 @@ pub fn setup_agent(
     Ok((agent, agent_config, config))
 }
 
-pub fn from_config(
+pub fn setup_eval_agent(prompt: &str, model: &str) -> Result<OpenAIAgent, OnyxError> {
+    let config = load_config(None)?;
+    let model = config.find_model(model)?;
+    let agent = build_agent(
+        &model,
+        &FileFormat::Json,
+        &OutputFormat::Default,
+        prompt,
+        Arc::new(ToolBox::new()),
+        None,
+    );
+    Ok(agent)
+}
+
+fn from_config(
     agent_name: &str,
     config: &Config,
     agent_config: &AgentConfig,
@@ -56,7 +72,25 @@ pub fn from_config(
         }
     };
     let toolbox = Arc::new(tools_from_config(agent_name, config, agent_config));
+    let agent = build_agent(
+        &model,
+        file_format,
+        &agent_config.output_format,
+        &agent_config.system_instructions,
+        toolbox,
+        anonymizer,
+    );
+    Ok(agent)
+}
 
+fn build_agent(
+    model: &Model,
+    file_format: &FileFormat,
+    output_format: &OutputFormat,
+    system_instructions: &str,
+    tools: Arc<ToolBox<MultiTool>>,
+    anonymizer: Option<Box<dyn Anonymizer + Send + Sync>>,
+) -> OpenAIAgent {
     match model {
         Model::OpenAI {
             name: _,
@@ -69,36 +103,36 @@ pub fn from_config(
             let api_key = std::env::var(&key_var).unwrap_or_else(|_| {
                 panic!("OpenAI key not found in environment variable {}", key_var)
             });
-            Ok(OpenAIAgent::new(
-                model_ref,
-                api_url,
+            OpenAIAgent::new(
+                model_ref.to_string(),
+                api_url.clone(),
                 api_key,
-                azure_deployment_id,
-                azure_api_version,
-                agent_config.system_instructions.to_string(),
-                agent_config.output_format.clone(),
+                azure_deployment_id.clone(),
+                azure_api_version.clone(),
+                system_instructions.to_string(),
+                output_format.clone(),
                 anonymizer,
                 file_format.clone(),
-                toolbox.clone(),
-            ))
+                tools,
+            )
         }
         Model::Ollama {
             name: _,
             model_ref,
             api_key,
             api_url,
-        } => Ok(OpenAIAgent::new(
-            model_ref,
-            Some(api_url),
-            api_key,
+        } => OpenAIAgent::new(
+            model_ref.to_string(),
+            Some(api_url.clone()),
+            api_key.clone(),
             None,
             None,
-            agent_config.system_instructions.to_string(),
-            agent_config.output_format.clone(),
+            system_instructions.to_string(),
+            output_format.clone(),
             anonymizer,
             file_format.clone(),
-            toolbox.clone(),
-        )),
+            tools,
+        ),
     }
 }
 

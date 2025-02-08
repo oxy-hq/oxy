@@ -43,6 +43,8 @@ home = "0.5"
 human-panic = "2.0.2"
 humantime = "2.1.0"
 include_dir = "0.7"
+indoc = "2.0.5"
+itertools = "0.14.0"
 lancedb = { version = "0.14.0" }
 lazy_static = "1.4.0"
 log = "0.4"
@@ -62,6 +64,7 @@ serde_arrow = { version = "0.12.1", features = ["arrow-53"] }
 serde_json = "1.0"
 serde_yaml = "0.9"
 slugify = "0.1.0"
+sqlparse = "0.3.3"
 syntect = "5.0"
 tabled = "0.17.0"
 terminal-light = "1.7.0"
@@ -71,7 +74,9 @@ tokio = { workspace = true }
 tower = "0.5.1"
 tower-http = { version = "0.6.1", features = ["fs", "cors"] }
 tower-serve-static = "0.1.1"
+tqdm = "0.7.0"
 uuid = { version = "1.11.0", features = ["v4", "serde"] }
+void = "1.0.2"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [lib]

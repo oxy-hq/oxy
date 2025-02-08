@@ -10,5 +10,20 @@ steps:
     type: agent
     agent_ref: agents/anon.agent.yml
     prompt: |
-      Generate "Responses to the survey by Organization" report using the provided data:
+      Generate "Responses to the survey by Organization" report using the provided data.
+      The data include total responses by organization and the survey questions.
+
+      [BEGIN DATA]
       {{execute}}
+      [END DATA]
+
+      - Then generate a concise report using the following template:
+
+      Total responses: <total_responses>
+      Organization: <organization>
+      Analysis: <compare the different response types>
+
+      - Analysis should only focus on the response types differentiation without further judgment.
+
+tests:
+  - eval_type: consistency

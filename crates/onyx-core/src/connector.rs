@@ -108,10 +108,9 @@ impl Connector {
         &self,
         query: &str,
     ) -> Result<(Vec<RecordBatch>, SchemaRef), OnyxError> {
-        let file_path = self
-            .run_query(query)
-            .await
-            .map_err(|e| OnyxError::RuntimeError(format!("Error running query: {}", e)))?;
+        let file_path = self.run_query(query).await.map_err(|e| {
+            OnyxError::RuntimeError(format!("Error running query '{}' : {}", query, e))
+        })?;
         load_result(&file_path)
             .map_err(|e| OnyxError::RuntimeError(format!("Error loading query results: {}", e)))
     }

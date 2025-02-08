@@ -34,13 +34,6 @@ impl Defaults {
     }
 }
 
-#[derive(Debug)]
-pub struct ParsedConfig {
-    pub agent_config: AgentConfig,
-    pub model: Model,
-    pub warehouse: Warehouse,
-}
-
 impl Config {
     pub fn validate_workflow(&self, workflow: &Workflow) -> anyhow::Result<()> {
         let context = ValidationContext {
@@ -153,6 +146,13 @@ impl Config {
         let semantic_model = parse_semantic_model_config(&semantic_model_path.to_string_lossy())?;
 
         Ok(semantic_model)
+    }
+
+    pub fn default_model(&self) -> Option<String> {
+        self.models.first().map(|m| match m {
+            Model::OpenAI { name, .. } => name.clone(),
+            Model::Ollama { name, .. } => name.clone(),
+        })
     }
 
     pub fn find_model(&self, model_name: &str) -> anyhow::Result<Model> {

@@ -14,6 +14,7 @@ pub fn parse_workflow_config(workflow_name: &str, file_path: &str) -> Result<Wor
     let workflow = Workflow {
         name: workflow_name.to_string(),
         steps: temp_workflow.steps,
+        tests: temp_workflow.tests,
     };
 
     Ok(workflow)

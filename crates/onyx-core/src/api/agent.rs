@@ -71,7 +71,7 @@ pub async fn ask(extract::Json(payload): extract::Json<AskRequest>) -> impl Into
     let result = run_agent(
         Some(&agent_path),
         &FileFormat::Markdown,
-        &payload.question, None).await.unwrap().output;
+        Some(payload.question)).await.unwrap().output;
     let answer = save_message(
         conversation_id,
         &format!("{:?}", result),

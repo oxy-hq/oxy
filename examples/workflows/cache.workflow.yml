@@ -11,14 +11,30 @@ steps:
     type: loop_sequential
     values: "{{ property_grouping.property_grouping }}"
     steps:
-      - name: report
+      - name: sql
         type: agent
         prompt: |
-          Generate a detail {{groupings.value}} report
-        agent_ref: agents/semantic_model.agent.yml
+          Generate a SQL to support {{groupings.value}} report generation.
+        agent_ref: agents/sql.agent.yml
         cache:
           enabled: true
-          path: output/cache/groupings_{{groupings.value}}_report_agent.json
+          path: output/cache/groupings_{{groupings.value}}_query.sql
+      - name: execute_sql
+        type: execute_sql
+        warehouse: local
+        sql_query: "{{sql}}"
+      - name: report
+        type: agent
+        agent_ref: agents/local.agent.yml
+        prompt: |
+          Generate a report for {{groupings.value}}.
+          Using following data:
+          [BEGIN DATA]
+          {{execute_sql}}
+          [END DATA]
+        cache:
+          enabled: true
+          path: output/cache/groupings_{{groupings.value}}_report.json
 
   - name: grouping_reports
     type: formatter

@@ -1,14 +1,15 @@
 use std::fmt::{Debug, Formatter};
 
 use async_trait::async_trait;
-use executor::{LoopExecutor, MapExecutor};
-use minijinja::{context, Value};
+use event::{consume, Handler};
+use executor::{ChildExecutor, LoopExecutor, MapExecutor};
+use tokio::sync::mpsc::Sender;
 use value::ContextValue;
-use write::Write;
+use write::{OutputCollector, Write};
 
 use crate::{config::model::Config, errors::OnyxError};
 
-use super::renderer::Renderer;
+use super::renderer::{Renderer, TemplateRegister};
 
 pub mod arrow_table;
 pub mod event;
@@ -17,71 +18,49 @@ pub mod value;
 pub mod write;
 
 #[async_trait]
-pub trait Executable<Event>: Send + Sync {
+pub trait Executable<Input, Event>: Send + Sync {
     async fn execute(
         &self,
         execution_context: &mut ExecutionContext<'_, Event>,
+        input: Input,
     ) -> Result<(), OnyxError>;
 }
 
 pub struct ExecutionContext<'writer, Event> {
-    key: Option<String>,
-    context: Value,
-    global_context: &'writer Value,
-    writer: &'writer mut (dyn Write<Event> + 'writer),
-    pub renderer: &'writer mut Renderer,
+    writer: &'writer mut (dyn Write + Send + Sync + 'writer),
+    sender: Sender<Event>,
+    pub renderer: Renderer,
     pub config: Config,
 }
 
-impl<'writer, Event> ExecutionContext<'writer, Event> {
-    fn wrap<'current, 'wrapped, F>(
-        &'current mut self,
-        wrap: F,
-        key: Option<String>,
-        context: Value,
-    ) -> ExecutionContext<'wrapped, Event>
-    where
-        'current: 'wrapped,
-        F: FnOnce(
-            &'current mut (dyn Write<Event> + 'current),
-        ) -> &'wrapped mut (dyn Write<Event> + 'wrapped),
-    {
-        ExecutionContext {
-            key,
-            writer: wrap(self.writer),
-            global_context: self.global_context,
-            renderer: self.renderer,
-            context,
-            config: self.config.clone(),
-        }
-    }
-
+impl<'writer, Event> ExecutionContext<'writer, Event>
+where
+    Event: Send + 'static,
+{
     pub fn new(
-        context: Value,
-        renderer: &'writer mut Renderer,
-        global_context: &'writer Value,
-        writer: &'writer mut (dyn Write<Event> + 'writer),
+        renderer: Renderer,
+        writer: &'writer mut (dyn Write + Send + Sync + 'writer),
         config: Config,
+        sender: Sender<Event>,
     ) -> Self {
         ExecutionContext {
-            key: None,
-            context,
-            global_context,
             writer,
             renderer,
             config,
+            sender,
         }
     }
 
-    pub fn get_context(&self) -> Value {
-        context! {
-          ..Value::from_serialize(self.global_context),
-          ..Value::from_serialize(&self.context),
+    pub fn from_parts(
+        parts: ExecutionContextParts<Event>,
+        writer: &'writer mut (dyn Write + Send + Sync + 'writer),
+    ) -> Self {
+        ExecutionContext {
+            writer,
+            renderer: parts.renderer,
+            config: parts.config,
+            sender: parts.sender,
         }
-    }
-
-    pub fn get_context_str(&self) -> String {
-        self.context.to_string()
     }
 
     pub fn map_executor<'context>(&'context mut self) -> MapExecutor<'context, 'writer, Event> {
@@ -91,23 +70,89 @@ impl<'writer, Event> ExecutionContext<'writer, Event> {
     pub fn loop_executor<'context>(&'context mut self) -> LoopExecutor<'context, 'writer, Event> {
         LoopExecutor::new(self)
     }
+
+    pub fn child_executor<'context>(&'context mut self) -> ChildExecutor<'context, 'writer, Event> {
+        ChildExecutor::new(self)
+    }
+
+    pub async fn notify(&self, event: Event) -> Result<(), OnyxError> {
+        self.sender.send(event).await?;
+        Ok(())
+    }
+
+    pub fn clone_parts(&self) -> ExecutionContextParts<Event> {
+        ExecutionContextParts {
+            sender: self.sender.clone(),
+            renderer: self.renderer.clone(),
+            config: self.config.clone(),
+        }
+    }
+
+    pub fn get_sender(&self) -> Sender<Event> {
+        self.sender.clone()
+    }
 }
 
-impl<T> Write<T> for ExecutionContext<'_, T> {
+impl<Event> Write for ExecutionContext<'_, Event> {
     fn write(&mut self, value: ContextValue) {
         self.writer.write(value);
     }
+}
 
-    fn notify(&self, event: T) {
-        self.writer.notify(event);
+impl<Event> Debug for ExecutionContext<'_, Event> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ExecutionContext").finish()
     }
 }
 
-impl<T> Debug for ExecutionContext<'_, T> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ExecutionContext")
-            .field("key", &self.key)
-            .field("context", &self.context)
-            .finish()
+#[derive(Debug)]
+pub struct ExecutionContextParts<Event> {
+    pub sender: Sender<Event>,
+    pub renderer: Renderer,
+    pub config: Config,
+}
+
+impl<Event> ExecutionContextParts<Event> {
+    pub fn with_renderer(&mut self, renderer: Renderer) -> &mut Self {
+        self.renderer = renderer;
+        self
     }
+
+    pub fn with_sender<NewEvent>(
+        self,
+        sender: Sender<NewEvent>,
+    ) -> ExecutionContextParts<NewEvent> {
+        ExecutionContextParts {
+            sender,
+            renderer: self.renderer,
+            config: self.config,
+        }
+    }
+}
+
+pub async fn run<Input, Event>(
+    executable: &dyn Executable<Input, Event>,
+    input: Input,
+    config: Config,
+    global_context: minijinja::Value,
+    template_register: Option<&dyn TemplateRegister>,
+    handler: impl Handler<Event = Event> + 'static,
+) -> Result<ContextValue, OnyxError>
+where
+    Event: Send + 'static,
+{
+    let (tx, rx) = tokio::sync::mpsc::channel(100);
+    let mut output_collector = OutputCollector::new();
+    let events_handle = consume(rx, handler);
+    {
+        let renderer = match template_register {
+            Some(template_register) => Renderer::from_template(global_context, template_register)?,
+            None => Renderer::new(global_context),
+        };
+        let mut execution_context =
+            ExecutionContext::new(renderer, &mut output_collector, config, tx);
+        executable.execute(&mut execution_context, input).await?;
+    }
+    events_handle.await?;
+    Ok(output_collector.output)
 }

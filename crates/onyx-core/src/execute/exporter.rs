@@ -20,7 +20,7 @@ use csv::Writer;
 
 pub fn export_agent_step(
     agent_step: &AgentStep,
-    step_output: &Vec<ToolCall>,
+    step_output: &[&ToolCall],
     export_file_path: &PathBuf,
 ) {
     if let Some(export) = &agent_step.export {

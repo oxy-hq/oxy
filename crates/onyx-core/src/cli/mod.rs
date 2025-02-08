@@ -5,6 +5,7 @@ use crate::ai::utils::record_batches_to_table;
 use crate::config::*;
 use crate::errors::OnyxError;
 use crate::execute::agent::run_agent;
+use crate::execute::eval::run_eval;
 use crate::execute::workflow::run_workflow;
 use crate::utils::print_colored_sql;
 use crate::workflow::WorkflowResult;
@@ -98,6 +99,7 @@ enum SubCommand {
     /// Search through SQL in your project path. Run them against the associated warehouse on
     /// selection.
     Run(RunArgs),
+    Test(TestArgs),
     Build,
     VecSearch(VecSearchArgs),
     Validate,
@@ -117,6 +119,13 @@ pub struct RunArgs {
     variables: Vec<(String, String)>,
 
     question: Option<String>,
+}
+
+#[derive(Parser, Debug)]
+pub struct TestArgs {
+    file: String,
+    #[clap(long, short = 'v')]
+    verbose: bool,
 }
 
 #[derive(Clone)]
@@ -273,6 +282,9 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
         Some(SubCommand::Run(run_args)) => {
             handle_run_command(run_args).await?;
         }
+        Some(SubCommand::Test(test_args)) => {
+            handle_test_command(test_args).await?;
+        }
         Some(SubCommand::Build) => {
             let config = load_config(None)?;
             build(&config).await?;
@@ -341,7 +353,7 @@ async fn handle_agent_file(
     let question = question.ok_or_else(|| {
         OnyxError::ArgumentError("Question is required for agent files".to_string())
     })?;
-    let result = run_agent(file_path, &FileFormat::Markdown, &question, None).await?;
+    let result = run_agent(file_path, &FileFormat::Markdown, Some(question)).await?;
     Ok(result)
 }
 
@@ -461,6 +473,20 @@ pub async fn handle_run_command(run_args: RunArgs) -> Result<RunResult, OnyxErro
     }
 }
 
+pub async fn handle_test_command(test_args: TestArgs) -> Result<(), OnyxError> {
+    let file = &test_args.file;
+
+    let current_dir = std::env::current_dir().expect("Could not get current directory");
+
+    let file_path = current_dir.join(file);
+    if !file_path.exists() {
+        return Err(OnyxError::ConfigurationError(format!(
+            "File not found: {:?}",
+            file_path
+        )));
+    }
+    run_eval(file_path, test_args.verbose).await
+}
 pub async fn start_server_and_web_app() {
     let server_task = tokio::spawn(async move {
         let addr = SocketAddr::from(([127, 0, 0, 1], 3001));
