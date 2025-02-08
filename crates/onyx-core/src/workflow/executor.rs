@@ -1,14 +1,10 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
-use std::sync::Mutex;
 
-use backon::ExponentialBuilder;
-use backon::Retryable;
-use minijinja::value::Enumerator;
+use minijinja::value::Kwargs;
 use minijinja::Value;
 
-use crate::config::load_config;
 use crate::config::model::AgentStep;
 use crate::config::model::ExecuteSQLStep;
 use crate::config::model::FileFormat;
@@ -18,17 +14,19 @@ use crate::config::model::LoopValues;
 use crate::config::model::Step;
 use crate::config::model::StepType;
 use crate::config::model::Workflow;
+use crate::config::model::SQL;
 use crate::connector::Connector;
 use crate::errors::OnyxError;
-use crate::execute::agent::run_agent;
-use crate::execute::agent::AgentEvent;
+use crate::execute::agent::build_agent;
+use crate::execute::agent::AgentInput;
 use crate::execute::core::arrow_table::ArrowTable;
-use crate::execute::core::event::Handler;
 use crate::execute::core::value::ContextValue;
 use crate::execute::core::write::Write;
 use crate::execute::core::Executable;
 use crate::execute::core::ExecutionContext;
+use crate::execute::workflow::LoopInput;
 use crate::execute::workflow::WorkflowEvent;
+use crate::execute::workflow::WorkflowInput;
 use crate::workflow::cache::get_agent_cache;
 use crate::StyledText;
 
@@ -42,319 +40,308 @@ impl WorkflowExecutor {
     }
 }
 
-#[derive(Debug, Default)]
-pub struct EventsCollector {
-    events: Mutex<Vec<AgentEvent>>,
-}
-
-impl Handler for EventsCollector {
-    type Event = AgentEvent;
-    fn handle(&self, event: &Self::Event) {
-        self.events.lock().unwrap().push(event.clone());
-    }
-}
-
 #[async_trait::async_trait]
-impl Executable<WorkflowEvent> for WorkflowExecutor {
+impl Executable<WorkflowInput, WorkflowEvent> for WorkflowExecutor {
     async fn execute(
         &self,
         execution_context: &mut ExecutionContext<'_, WorkflowEvent>,
+        _input: WorkflowInput,
     ) -> Result<(), OnyxError> {
-        execution_context.notify(WorkflowEvent::Started {
-            name: self.workflow.name.clone(),
-        });
-        self.workflow.steps.execute(execution_context).await?;
-        execution_context.notify(WorkflowEvent::Finished);
+        execution_context
+            .notify(WorkflowEvent::Started {
+                name: self.workflow.name.clone(),
+            })
+            .await?;
+        self.workflow
+            .steps
+            .execute(execution_context, ContextValue::None)
+            .await?;
+        execution_context.notify(WorkflowEvent::Finished).await?;
         Ok(())
     }
 }
 
 #[async_trait::async_trait]
-impl Executable<WorkflowEvent> for AgentStep {
+impl Executable<WorkflowInput, WorkflowEvent> for AgentStep {
     async fn execute(
         &self,
         execution_context: &mut ExecutionContext<'_, WorkflowEvent>,
+        _input: WorkflowInput,
     ) -> Result<(), OnyxError> {
         let agent_file = execution_context.config.project_path.join(&self.agent_ref);
-        let context = execution_context.get_context();
-        let prompt = execution_context
-            .renderer
-            .render_async(&self.prompt, Value::from_serialize(&context))
-            .await?;
-        let collector = EventsCollector::default();
-
-        let step_output = (|| async {
-            run_agent(
-                Some(&agent_file),
-                &FileFormat::Json,
-                &prompt,
-                Some(&collector),
-            )
-            .await
-        })
-        .retry(ExponentialBuilder::default().with_max_times(self.retry))
-        // Notify when retrying
-        .notify(|err: &OnyxError, duration: std::time::Duration| {
-            execution_context.notify(WorkflowEvent::Retry {
-                err: err.clone(),
-                after: duration,
-            });
-        })
-        .await?;
-        let mut tool_calls = vec![];
-        for event in collector.events.lock().unwrap().iter_mut() {
-            match event {
-                AgentEvent::ToolCall(tool) => {
-                    tool_calls.push(std::mem::take(tool));
+        let prompt = execution_context.renderer.render(&self.prompt)?;
+        let export_file_path = match &self.export {
+            Some(export) => match execution_context.renderer.render(&export.path) {
+                Ok(path) => Some(execution_context.config.project_path.join(path)),
+                Err(e) => {
+                    return Err(e);
                 }
-                _ => {}
-            }
-        }
-
-        let mut export_file_path = PathBuf::new();
-        if let Some(export) = &self.export {
-            let export_file_path_str = execution_context
-                .renderer
-                .render_async(&export.path, Value::from_serialize(&context))
-                .await?;
-            export_file_path = execution_context
-                .config
-                .project_path
-                .join(export_file_path_str);
-        }
-
-        execution_context.notify(WorkflowEvent::AgentToolCalls {
-            calls: tool_calls,
-            step: self.clone(),
-            export_file_path,
-        });
-
-        let Some(cache) = &self.cache else {
-            execution_context.write(step_output.output);
-            return Ok(());
+            },
+            None => None,
         };
+        let mut agent_executor = execution_context.child_executor();
+        let (agent, agent_config, global_context, _) =
+            build_agent(Some(&agent_file), &FileFormat::Json, Some(prompt.clone()))?;
+        let step = self.clone();
+        let map_agent_event = move |event| WorkflowEvent::Agent {
+            orig: event,
+            step: step.clone(),
+            export_file_path: export_file_path.clone(),
+        };
+        agent_executor
+            .execute(
+                &agent,
+                AgentInput {
+                    prompt: Some(prompt),
+                    system_instructions: agent_config.system_instructions.clone(),
+                },
+                map_agent_event,
+                global_context,
+                Default::default(),
+                &agent_config,
+            )
+            .await?;
+        let step_output = agent_executor.finish();
 
-        if cache.enabled {
-            let cache_file_path_str = execution_context
-                .renderer
-                .render_async(&cache.path, Value::from_serialize(&context))
-                .await?;
+        match &self.cache {
+            Some(cache) => {
+                if cache.enabled {
+                    let cache_file_path_str =
+                        execution_context.renderer.render_async(&cache.path).await?;
 
-            let cache_file_path = execution_context
-                .config
-                .project_path
-                .join(cache_file_path_str);
+                    let cache_file_path = execution_context
+                        .config
+                        .project_path
+                        .join(cache_file_path_str);
 
-            execution_context.notify(WorkflowEvent::CacheAgentResult {
-                result: step_output.clone(),
-                file_path: cache_file_path,
-            });
+                    execution_context
+                        .notify(WorkflowEvent::CacheAgentResult {
+                            result: step_output,
+                            file_path: cache_file_path,
+                        })
+                        .await?;
+                }
+            }
+            None => {}
         }
-        execution_context.write(step_output.output);
         Ok(())
     }
 }
 
 #[async_trait::async_trait]
-impl Executable<WorkflowEvent> for ExecuteSQLStep {
+impl Executable<WorkflowInput, WorkflowEvent> for ExecuteSQLStep {
     async fn execute(
         &self,
         execution_context: &mut ExecutionContext<'_, WorkflowEvent>,
+        _input: WorkflowInput,
     ) -> Result<(), OnyxError> {
-        let context = execution_context.get_context();
-        let config = load_config(None)?;
-        let wh = &config.find_warehouse(&self.warehouse)?;
-        log::info!("SQL Context: {:?}", context);
+        let wh = execution_context.config.find_warehouse(&self.warehouse)?;
 
         let mut variables = HashMap::new();
         if let Some(vars) = &self.variables {
             for (key, value) in vars {
-                let rendered_value = execution_context
-                    .renderer
-                    .render_async(value, Value::from_serialize(&context))
-                    .await?;
+                let rendered_value = execution_context.renderer.render(value)?;
                 variables.insert(key.clone(), rendered_value);
             }
         }
 
-        let rendered_sql_file = execution_context
-            .renderer
-            .render_async(&self.sql_file, Value::from_serialize(&context))
-            .await?;
-        let query_file = config.project_path.join(&rendered_sql_file);
-        let query = match fs::read_to_string(&query_file) {
-            Ok(query) => {
+        let query = match &self.sql {
+            SQL::Query { sql_query } => {
+                let query = execution_context.renderer.render(sql_query)?;
                 if !variables.is_empty() {
                     execution_context
                         .renderer
-                        .render_temp_async(&query, Value::from_serialize(&variables))
-                        .await?
+                        .render_once(&query, Value::from_serialize(&variables))?
                 } else {
                     query
                 }
             }
-            Err(e) => {
-                return Err(OnyxError::RuntimeError(format!(
-                    "Error reading query file {}: {}",
-                    &query_file.display(),
-                    e
-                )));
+            SQL::File { sql_file } => {
+                let rendered_sql_file = execution_context.renderer.render(sql_file)?;
+                let query_file = execution_context
+                    .config
+                    .project_path
+                    .join(&rendered_sql_file);
+                match fs::read_to_string(&query_file) {
+                    Ok(query) => {
+                        if !variables.is_empty() {
+                            execution_context
+                                .renderer
+                                .render_once(&query, Value::from_serialize(&variables))?
+                        } else {
+                            query
+                        }
+                    }
+                    Err(e) => {
+                        return Err(OnyxError::RuntimeError(format!(
+                            "Error reading query file {}: {}",
+                            &query_file.display(),
+                            e
+                        )));
+                    }
+                }
             }
         };
 
-        let (datasets, schema) = Connector::new(wh, &config)
+        let (datasets, schema) = Connector::new(&wh, &execution_context.config)
             .run_query_and_load(&query)
             .await?;
         let mut export_file_path = PathBuf::new();
         if let Some(export) = &self.export {
-            let export_file_path_str = execution_context
-                .renderer
-                .render_async(&export.path, Value::from_serialize(&context))
-                .await?;
+            let relative_export_file_path = execution_context.renderer.render(&export.path)?;
             export_file_path = execution_context
                 .config
                 .project_path
-                .join(export_file_path_str);
+                .join(relative_export_file_path);
         }
 
-        execution_context.notify(WorkflowEvent::ExecuteSQL {
-            step: self.clone(),
-            query,
-            datasets: datasets.clone(),
-            schema,
-            export_file_path,
-        });
+        execution_context
+            .notify(WorkflowEvent::ExecuteSQL {
+                step: self.clone(),
+                query,
+                datasets: datasets.clone(),
+                schema,
+                export_file_path,
+            })
+            .await?;
         execution_context.write(ContextValue::Table(ArrowTable::new(datasets)));
         Ok(())
     }
 }
 
 #[async_trait::async_trait]
-impl Executable<WorkflowEvent> for FormatterStep {
+impl Executable<WorkflowInput, WorkflowEvent> for FormatterStep {
     async fn execute(
         &self,
         execution_context: &mut ExecutionContext<'_, WorkflowEvent>,
+        _input: WorkflowInput,
     ) -> Result<(), OnyxError> {
-        let context = execution_context.get_context();
-        let step_output = execution_context
-            .renderer
-            .render_async(&self.template, Value::from_serialize(&context))
-            .await?;
+        let step_output = execution_context.renderer.render(&self.template)?;
 
         let mut export_file_path = PathBuf::new();
         if let Some(export) = &self.export {
-            let export_file_path_str = execution_context
-                .renderer
-                .render_async(&export.path, Value::from_serialize(&context))
-                .await?;
+            let relative_export_file_path = execution_context.renderer.render(&export.path)?;
             export_file_path = execution_context
                 .config
                 .project_path
-                .join(export_file_path_str);
+                .join(relative_export_file_path);
         }
 
-        execution_context.notify(WorkflowEvent::Formatter {
-            step: self.clone(),
-            output: step_output.clone(),
-            export_file_path,
-        });
+        execution_context
+            .notify(WorkflowEvent::Formatter {
+                step: self.clone(),
+                output: step_output.clone(),
+                export_file_path,
+            })
+            .await?;
         execution_context.write(ContextValue::Text(step_output));
         Ok(())
     }
 }
 
 #[async_trait::async_trait]
-impl Executable<WorkflowEvent> for LoopSequentialStep {
+impl Executable<LoopInput, WorkflowEvent> for LoopSequentialStep {
     async fn execute(
         &self,
         execution_context: &mut ExecutionContext<'_, WorkflowEvent>,
+        input: LoopInput,
     ) -> Result<(), OnyxError> {
-        let context = execution_context.get_context();
+        let LoopInput { name } = input;
         let values = match &self.values {
             LoopValues::Template(ref template) => {
-                let rendered = execution_context
-                    .renderer
-                    .eval_expression(template, &context)?;
-                let value_or_none = rendered.as_object();
-                if value_or_none.is_none() {
-                    return Err(OnyxError::RuntimeError(format!(
-                        "Values {} did not resolve to an array",
-                        template,
-                    )));
-                }
-                let rendered_value = value_or_none.unwrap();
-
-                match rendered_value.enumerate() {
-                    Enumerator::Seq(length) => {
-                        let mut values = Vec::new();
-                        for idx in 0..length {
-                            let value = rendered_value
-                                .get_value(&Value::from(idx))
-                                .unwrap_or_default();
-                            values.push(value.to_string());
-                        }
-                        values
-                    }
-                    _ => {
-                        return Err(OnyxError::RuntimeError(format!(
-                            "Values {} did not resolve to an array",
-                            template,
-                        )));
-                    }
-                }
+                execution_context.renderer.eval_enumerate(template)?
             }
             LoopValues::Array(ref values) => values.clone(),
         };
 
         let mut loop_executor = execution_context.loop_executor();
-        let values: Vec<ContextValue> = values
+        let mut values: Vec<ContextValue> = values
             .iter()
             .map(|v| ContextValue::Text(v.to_string()))
             .collect();
-        loop_executor.params(&values, &self.steps).await?;
-        loop_executor.finish();
+        loop_executor
+            .params(
+                &mut values,
+                &self.steps,
+                |param| {
+                    Value::from(Kwargs::from_iter([(
+                        name.clone(),
+                        Value::from(Kwargs::from_iter([(
+                            "value",
+                            Value::from_object(param.clone()),
+                        )])),
+                    )]))
+                },
+                self.concurrency,
+                Some(|| {}),
+            )
+            .await?;
+        loop_executor.finish()?;
 
         Ok(())
     }
 }
 
 #[async_trait::async_trait]
-impl Executable<WorkflowEvent> for Step {
+impl Executable<Step, WorkflowEvent> for Step {
     async fn execute(
         &self,
         execution_context: &mut ExecutionContext<'_, WorkflowEvent>,
+        _input: Step,
     ) -> Result<(), OnyxError> {
-        execution_context.notify(WorkflowEvent::StepStarted {
-            name: self.name.clone(),
-        });
+        execution_context
+            .notify(WorkflowEvent::StepStarted {
+                name: self.name.clone(),
+            })
+            .await?;
         match &self.step_type {
             StepType::Agent(agent) => {
-                let cache_result = get_agent_cache(
-                    &execution_context.config.project_path.clone(),
-                    agent.cache.clone(),
-                    execution_context,
-                )
-                .await?;
-                if let Some(result) = cache_result {
-                    execution_context.write(result.output);
+                let cache_result = match &agent.cache {
+                    Some(cache) => match cache.enabled {
+                        true => {
+                            let cached_file_path =
+                                execution_context.renderer.render(&cache.path)?;
+                            get_agent_cache(
+                                &execution_context.config.project_path.clone(),
+                                &cached_file_path,
+                            )
+                        }
+                        false => None,
+                    },
+                    None => None,
+                };
+
+                if let Some(cache_result) = cache_result {
+                    execution_context.write(cache_result);
                     println!("{}", "Cache detected. Using cache.".primary());
                 } else {
-                    agent.execute(execution_context).await?;
+                    agent.execute(execution_context, WorkflowInput).await?;
                 }
             }
             StepType::ExecuteSQL(execute_sql) => {
-                execute_sql.execute(execution_context).await?;
+                execute_sql
+                    .execute(execution_context, WorkflowInput)
+                    .await?;
             }
             StepType::Formatter(formatter) => {
-                formatter.execute(execution_context).await?;
+                formatter.execute(execution_context, WorkflowInput).await?;
             }
             StepType::LoopSequential(loop_sequential) => {
-                loop_sequential.execute(execution_context).await?;
+                loop_sequential
+                    .execute(
+                        execution_context,
+                        LoopInput {
+                            name: self.name.clone(),
+                        },
+                    )
+                    .await?;
             }
             StepType::Unknown => {
-                execution_context.notify(WorkflowEvent::StepUnknown {
-                    name: self.name.clone(),
-                });
+                execution_context
+                    .notify(WorkflowEvent::StepUnknown {
+                        name: self.name.clone(),
+                    })
+                    .await?;
             }
         }
         Ok(())
@@ -362,17 +349,19 @@ impl Executable<WorkflowEvent> for Step {
 }
 
 #[async_trait::async_trait]
-impl Executable<WorkflowEvent> for Vec<Step> {
+impl Executable<ContextValue, WorkflowEvent> for Vec<Step> {
     async fn execute(
         &self,
         execution_context: &mut ExecutionContext<'_, WorkflowEvent>,
+        input: ContextValue,
     ) -> Result<(), OnyxError> {
         let mut map_executor = execution_context.map_executor();
+        map_executor.prefill("value", input);
         map_executor
             .entries(
                 self.iter()
-                    .map(|s| (s.name.clone(), s.clone()))
-                    .collect::<Vec<(String, Step)>>(),
+                    .map(|s| (s.name.clone(), s.clone(), s.clone()))
+                    .collect::<Vec<(String, Step, Step)>>(),
             )
             .await?;
         map_executor.finish();

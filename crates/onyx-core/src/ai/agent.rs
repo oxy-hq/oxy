@@ -4,8 +4,12 @@ use crate::{
     connector::load_result,
     errors::OnyxError,
     execute::{
-        agent::AgentEvent,
-        core::{value::ContextValue, write::Write, Executable, ExecutionContext},
+        agent::{AgentEvent, AgentInput},
+        core::{
+            value::{AgentOutput, ContextValue},
+            write::Write,
+            Executable, ExecutionContext,
+        },
     },
     utils::{format_table_output, truncate_datasets},
 };
@@ -49,8 +53,8 @@ pub struct FilePathOutput {
 pub trait LLMAgent {
     async fn request(
         &self,
-        system_instruction: &str,
         input: &str,
+        system_message: &str,
         execution_context: &mut ExecutionContext<'_, AgentEvent>,
     ) -> Result<String, OnyxError>;
 }
@@ -125,12 +129,29 @@ impl OpenAIAgent {
         }
     }
 
+    pub async fn simple_request(&self, system_instruction: String) -> Result<String, OnyxError> {
+        let messages = vec![ChatCompletionRequestSystemMessageArgs::default()
+            .name("onyx")
+            .content(system_instruction)
+            .build()
+            .map_err(|e| OnyxError::RuntimeError(format!("Unable to build LLM request: {e}")))?
+            .into()];
+        let response = self.completion_request(messages, vec![], None).await?;
+        log::info!("Response: {:?}", response);
+        match response.content {
+            Some(content) => Ok(content),
+            None => Err(OnyxError::RuntimeError(
+                "Empty response from OpenAI".to_string(),
+            )),
+        }
+    }
+
     async fn completion_request(
         &self,
         messages: Vec<ChatCompletionRequestMessage>,
         tools: Vec<ChatCompletionTool>,
         response_format: Option<ResponseFormat>,
-    ) -> Result<ChatCompletionResponseMessage, OpenAIError> {
+    ) -> Result<ChatCompletionResponseMessage, OnyxError> {
         let mut request_builder = CreateChatCompletionRequestArgs::default();
         if tools.is_empty() {
             request_builder.model(self.model.clone()).messages(messages);
@@ -147,10 +168,21 @@ impl OpenAIAgent {
 
         let request = request_builder.build().unwrap();
 
-        let response = match &self.client {
-            OpenAIClient::Azure(client) => client.chat().create(request).await?,
-            OpenAIClient::OpenAI(client) => client.chat().create(request).await?,
+        let result = match &self.client {
+            OpenAIClient::Azure(client) => client.chat().create(request).await,
+            OpenAIClient::OpenAI(client) => client.chat().create(request).await,
         };
+        let response = result.map_err(|e| {
+            if let OpenAIError::ApiError(ref api_error) = e {
+                if api_error.code == Some(CONTEXT_WINDOW_EXCEEDED_CODE.to_string()) {
+                    return OnyxError::LLMError(
+                        "Context window length exceeded. Shorten the prompt being sent to the LLM."
+                            .into(),
+                    );
+                }
+            }
+            OnyxError::RuntimeError(format!("Error in completion request: {}", e))
+        })?;
 
         Ok(response.choices[0].message.clone())
     }
@@ -179,8 +211,8 @@ impl OpenAIAgent {
 impl LLMAgent for OpenAIAgent {
     async fn request(
         &self,
-        system_message: &str,
         input: &str,
+        system_message: &str,
         execution_context: &mut ExecutionContext<'_, AgentEvent>,
     ) -> Result<String, OnyxError> {
         let anonymized_items = HashMap::new();
@@ -193,20 +225,25 @@ impl LLMAgent for OpenAIAgent {
             None => Ok((input.to_string(), anonymized_items)),
         }?;
 
-        let messages: Vec<ChatCompletionRequestMessage> = vec![
-            ChatCompletionRequestSystemMessageArgs::default()
+        let mut messages: Vec<ChatCompletionRequestMessage> =
+            vec![ChatCompletionRequestSystemMessageArgs::default()
                 .name("onyx")
                 .content(anonymized_system_message)
                 .build()
                 .map_err(|e| OnyxError::RuntimeError(format!("Unable to build LLM request: {e}")))?
-                .into(),
-            ChatCompletionRequestUserMessageArgs::default()
-                .name("Human")
-                .content(anonymized_user_message)
-                .build()
-                .map_err(|e| OnyxError::RuntimeError(format!("Unable to build LLM request: {e}")))?
-                .into(),
-        ];
+                .into()];
+
+        if !input.is_empty() {
+            messages.push(
+                ChatCompletionRequestUserMessageArgs::default()
+                    .content(anonymized_user_message)
+                    .build()
+                    .map_err(|e| {
+                        OnyxError::RuntimeError(format!("Unable to build LLM request: {e}"))
+                    })?
+                    .into(),
+            );
+        }
         let tools = self.tools.to_spec(OpenAIAgent::spec_serializer);
 
         let mut tries: u8 = 0;
@@ -241,22 +278,11 @@ impl LLMAgent for OpenAIAgent {
             };
             let ret_message = self
                 .completion_request(message_with_replies, tools.clone(), response_format)
-                .await
-                .map_err(|e|  {
-                    if let OpenAIError::ApiError(ref api_error) = e {
-                        if api_error.code == Some(CONTEXT_WINDOW_EXCEEDED_CODE.to_string()) {
-                            return OnyxError::LLMError(
-                                "Context window length exceeded. Shorten the prompt being sent to the LLM.".into()
-                            );
-                        }
-                    }
-                    OnyxError::RuntimeError(format!("Error in completion request: {}", e))
-                })?;
+                .await?;
 
             output = ret_message
                 .content
-                .unwrap_or("Empty response from OpenAI".to_string())
-                .clone();
+                .unwrap_or("Empty response from OpenAI".to_string());
             let tool_call_requests = ret_message.tool_calls.unwrap_or_default();
             log::info!(
                 "Number of tool calls: {} on {}",
@@ -297,7 +323,9 @@ impl LLMAgent for OpenAIAgent {
                         })?
                         .into(),
                 );
-                execution_context.notify(AgentEvent::ToolCall(tool_call_ret));
+                execution_context
+                    .notify(AgentEvent::ToolCall(tool_call_ret))
+                    .await?;
             }
 
             if tool_returns.is_empty() {
@@ -327,29 +355,30 @@ impl LLMAgent for OpenAIAgent {
 }
 
 #[async_trait]
-impl Executable<AgentEvent> for OpenAIAgent {
+impl Executable<AgentInput, AgentEvent> for OpenAIAgent {
     async fn execute(
         &self,
         execution_context: &mut ExecutionContext<'_, AgentEvent>,
+        input: AgentInput,
     ) -> Result<(), OnyxError> {
-        execution_context.notify(AgentEvent::Started);
-        let input = execution_context.get_context_str();
-        let context = execution_context.get_context();
-
+        execution_context.notify(AgentEvent::Started).await?;
+        log::info!("AgentInput: {:?}", input);
         let system_instruction = execution_context
             .renderer
-            .render_async(&self.system_instruction, context)
+            .render_async(&self.system_instruction)
             .await?;
-        log::info!("System instruction: {}", system_instruction);
-        log::info!("Prompt: {}", input);
+        let input = input.prompt.unwrap_or_default();
         let result = self
-            .request(&system_instruction, &input, execution_context)
+            .request(&input, &system_instruction, execution_context)
             .await?;
         let event = AgentEvent::Finished {
             output: result.clone(),
         };
-        execution_context.notify(event);
-        execution_context.write(ContextValue::Text(result));
+        execution_context.notify(event).await?;
+        execution_context.write(ContextValue::Agent(AgentOutput {
+            output: Box::new(ContextValue::Text(result)),
+            prompt: input,
+        }));
         Ok(())
     }
 }

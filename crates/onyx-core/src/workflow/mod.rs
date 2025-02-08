@@ -7,6 +7,7 @@ pub mod executor;
 pub mod cache;
 
 #[pyclass(module = "onyx_py")]
+#[derive(Debug)]
 pub struct WorkflowResult {
     #[pyo3(get)]
     pub output: ContextValue,

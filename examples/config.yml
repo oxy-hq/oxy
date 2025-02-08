@@ -12,13 +12,13 @@ warehouses:
     dataset: .db/
 
 models:
-  - name: openai-4o
-    vendor: openai
-    model_ref: gpt-4o
-    key_var: OPENAI_API_KEY
   - name: openai-4o-mini
     vendor: openai
     model_ref: gpt-4o-mini
+    key_var: OPENAI_API_KEY
+  - name: openai-4o
+    vendor: openai
+    model_ref: gpt-4o
     key_var: OPENAI_API_KEY
   # - name: openai-4o-mini-azure
   #   vendor: openai

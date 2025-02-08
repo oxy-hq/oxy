@@ -1,51 +1,43 @@
+use sqlparse::{FormatOption, Formatter};
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
 
-use minijinja::Value;
-
-use crate::execute::core::ExecutionContext;
+use crate::execute::core::value::ContextValue;
 use crate::execute::exporter::get_file_directories;
-use crate::execute::workflow::WorkflowEvent;
 use crate::StyledText;
-use crate::{ai::agent::AgentResult, config::model::StepCache, errors::OnyxError};
 
-async fn render_cache_path(
-    execution_context: &mut ExecutionContext<'_, WorkflowEvent>,
-    cache_path: &str,
-) -> Result<String, OnyxError> {
-    execution_context
-        .renderer
-        .render_async(
-            cache_path,
-            Value::from_serialize(&execution_context.get_context()),
-        )
-        .await
-}
-
-pub async fn get_agent_cache(
-    project_path: &PathBuf,
-    step_cache: Option<StepCache>,
-    execution_context: &mut ExecutionContext<'_, WorkflowEvent>,
-) -> Result<Option<AgentResult>, OnyxError> {
-    let Some(cache) = step_cache else {
-        return Ok(None);
-    };
-
-    if cache.enabled {
-        let cache_file_path = render_cache_path(execution_context, &cache.path).await?;
-        let cache_output = std::fs::read_to_string(project_path.join(cache_file_path)).ok();
-        if let Some(json) = cache_output {
-            let cache_result_output = serde_json::from_str::<AgentResult>(&json).map_err(|e| {
-                OnyxError::RuntimeError(format!("Error in parsing cache file: {}", e))
-            })?;
-            return Ok(Some(cache_result_output));
+pub fn get_agent_cache(project_path: &PathBuf, cache_file_path: &str) -> Option<ContextValue> {
+    match std::fs::read_to_string(project_path.join(cache_file_path)) {
+        Ok(json) => {
+            if cache_file_path.ends_with(".sql") {
+                return Some(ContextValue::Text(json));
+            }
+            match serde_json::from_str::<ContextValue>(&json) {
+                Ok(value) => Some(value),
+                Err(e) => {
+                    println!(
+                        "{}",
+                        format!(
+                            "Ignored cache. Error deserializing cache file '{}'",
+                            cache_file_path
+                        )
+                        .warning()
+                    );
+                    log::error!(
+                        "Error deserializing cache file '{}': {}",
+                        cache_file_path,
+                        e
+                    );
+                    None
+                }
+            }
         }
+        Err(_) => None,
     }
-    Ok(None)
 }
 
-pub fn write_agent_cache(path: &PathBuf, result: &AgentResult) {
+pub fn write_agent_cache(path: &PathBuf, result: &ContextValue) {
     match get_file_directories(path) {
         Ok(file_path) => {
             let mut file = match File::create(&file_path) {
@@ -64,14 +56,19 @@ pub fn write_agent_cache(path: &PathBuf, result: &AgentResult) {
                     return;
                 }
             };
-            let _ = file
-                .write_all(serde_json::to_string(&result).unwrap().as_bytes())
-                .map_err(|e| {
-                    println!(
-                        "{}",
-                        format!("Error writing to cache file: {}", e).warning()
-                    );
-                });
+            let buf = match file_path.extension().map(|ext| ext.to_str().unwrap()) {
+                Some("sql") => format_sql(format!("{}", result).as_str())
+                    .as_bytes()
+                    .to_vec(),
+                _ => serde_json::to_string(result).unwrap().as_bytes().to_vec(),
+            };
+
+            let _ = file.write_all(buf.as_slice()).map_err(|e| {
+                println!(
+                    "{}",
+                    format!("Error writing to cache file: {}", e).warning()
+                );
+            });
         }
         Err(e) => println!(
             "{}",
@@ -83,4 +80,12 @@ pub fn write_agent_cache(path: &PathBuf, result: &AgentResult) {
             .warning()
         ),
     }
+}
+
+fn format_sql(sql: &str) -> String {
+    let mut f = Formatter::default();
+    let mut formatter = FormatOption::default();
+    formatter.reindent = true;
+
+    f.format(sql, &mut formatter)
 }

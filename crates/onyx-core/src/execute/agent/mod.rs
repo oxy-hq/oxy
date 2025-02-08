@@ -5,8 +5,12 @@ use minijinja::{context, Value};
 use tools::ToolsContext;
 
 use crate::{
-    ai::{agent::AgentResult, setup_agent, utils::record_batches_to_table},
-    config::model::{AgentConfig, FileFormat},
+    ai::{
+        agent::{AgentResult, OpenAIAgent},
+        setup_agent,
+        utils::record_batches_to_table,
+    },
+    config::model::{AgentConfig, Config, FileFormat},
     connector::load_result,
     errors::OnyxError,
     utils::{print_colored_sql, truncate_datasets, truncate_with_ellipsis, MAX_DISPLAY_ROWS},
@@ -14,7 +18,7 @@ use crate::{
 };
 
 use super::{
-    core::{event::Handler, write::OutputCollector, Executable, ExecutionContext},
+    core::{event::Handler, run},
     renderer::{Renderer, TemplateRegister},
     warehouses::WarehousesContext,
 };
@@ -79,44 +83,18 @@ pub enum AgentEvent {
     Finished { output: String },
 }
 
-impl AgentEvent {
-    pub fn propagate(&self, handler: &dyn Handler<Event = AgentEvent>) {
-        match self {
-            AgentEvent::ToolCall(tool_call) => match &tool_call.metadata {
-                Some(metadata) => match metadata {
-                    ToolMetadata::ExecuteSQL { .. } => {
-                        handler.handle(&AgentEvent::ToolCall(
-                            tool_call.with_metadata(metadata.copy()),
-                        ));
-                    }
-                },
-                _ => {
-                    log::debug!("Unhandled tool event: {:?}", &tool_call.name);
-                }
-            },
-            _ => {}
-        }
-    }
+#[derive(Debug, Clone)]
+pub struct AgentInput {
+    pub prompt: Option<String>,
+    pub system_instructions: String,
 }
 
-pub struct AgentReceiver<'handler> {
-    handler: Option<&'handler (dyn Handler<Event = AgentEvent> + 'handler)>,
-}
+pub struct AgentReceiver;
 
-impl<'handler> AgentReceiver<'handler> {
-    pub fn new(handler: Option<&'handler (dyn Handler<Event = AgentEvent> + 'handler)>) -> Self {
-        Self { handler: handler }
-    }
-}
-
-impl Handler for AgentReceiver<'_> {
+impl Handler for AgentReceiver {
     type Event = AgentEvent;
 
     fn handle(&self, event: &Self::Event) {
-        if let Some(handler) = self.handler {
-            let _ = &event.propagate(handler);
-        }
-
         match &event {
             AgentEvent::Started => {}
             AgentEvent::Finished { output } => {
@@ -165,37 +143,44 @@ impl Handler for AgentReceiver<'_> {
     }
 }
 
-pub async fn run_agent(
+pub fn build_agent(
     agent_file: Option<&PathBuf>,
     file_format: &FileFormat,
-    prompt: &str,
-    event_handler: Option<&dyn Handler<Event = AgentEvent>>,
-) -> Result<AgentResult, OnyxError> {
+    prompt: Option<String>,
+) -> Result<(OpenAIAgent, AgentConfig, Value, Config), OnyxError> {
     let (agent, agent_config, config) = setup_agent(agent_file, file_format)?;
     let contexts = Contexts::new(
         agent_config.context.clone().unwrap_or_default(),
         config.clone(),
     );
     let warehouses = WarehousesContext::new(config.warehouses.clone(), config.clone());
-    let tools_context = ToolsContext::new(agent.tools.clone(), prompt.to_string());
+    let tools_context = ToolsContext::new(agent.tools.clone(), prompt.unwrap_or_default());
     let global_context = context! {
         context => Value::from_object(contexts),
         warehouses => Value::from_object(warehouses),
         tools => Value::from_object(tools_context),
     };
-    let mut renderer = Renderer::new();
-    renderer.register(&agent_config)?;
-    let agent_receiver = AgentReceiver::new(event_handler);
+    Ok((agent, agent_config, global_context, config))
+}
 
-    let mut output_collector = OutputCollector::new(&agent_receiver);
-    let mut execution_context = ExecutionContext::new(
-        Value::from_safe_string(prompt.to_string()),
-        &mut renderer,
-        &global_context,
-        &mut output_collector,
-        config.clone(),
-    );
-    agent.execute(&mut execution_context).await?;
-    let output = output_collector.output.unwrap_or_default();
+pub async fn run_agent(
+    agent_file: Option<&PathBuf>,
+    file_format: &FileFormat,
+    prompt: Option<String>,
+) -> Result<AgentResult, OnyxError> {
+    let (agent, agent_config, global_context, config) =
+        build_agent(agent_file, file_format, prompt.clone())?;
+    let output = run(
+        &agent,
+        AgentInput {
+            prompt,
+            system_instructions: agent_config.system_instructions.clone(),
+        },
+        config,
+        global_context,
+        Some(&agent_config),
+        AgentReceiver,
+    )
+    .await?;
     Ok(AgentResult { output })
 }
