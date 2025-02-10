@@ -3,6 +3,5 @@
   "crates/onyx-desktop": "0.1.33",
   "crates/onyx-py": "0.1.33",
   "crates/migration": "0.1.33",
-  "crates/entity": "0.1.33",
-  "web-app": "0.1.33"
+  "crates/entity": "0.1.33"
 }
