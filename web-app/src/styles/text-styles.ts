@@ -197,4 +197,15 @@ export const textStyles = defineTextStyles({
       lineHeight: "17px",
     },
   },
+
+  bodyBaseMedium: {
+    description: "Body Base Medium",
+    value: {
+      fontFamily: "Inter",
+      fontSize: "14px",
+      fontStyle: "normal",
+      fontWeight: 500,
+      lineHeight: "17px",
+    },
+  },
 });

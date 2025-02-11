@@ -62,6 +62,9 @@ const textStyles = cva({
       bodyBaseRegular: {
         textStyle: "bodyBaseRegular",
       },
+      bodyBaseMedium: {
+        textStyle: "bodyBaseMedium",
+      },
     },
     color: {
       unset: {},

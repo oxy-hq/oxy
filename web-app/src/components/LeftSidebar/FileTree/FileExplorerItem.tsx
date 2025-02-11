@@ -16,6 +16,7 @@ import FileExplorerView from "./FileExplorerView";
 import { useFileTree } from "./FileTreeContext";
 import MoreDropdown from "./MoreDropdown";
 import RenameInput from "./RenameInput";
+import { useNavigate } from "react-router-dom";
 
 const styles = {
   fileItem: css({
@@ -92,6 +93,7 @@ const FileExplorerItem = ({
   const [dirChildren, setDirChildren] = useState<DirEntry[]>([]);
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
   const [isRenaming, setIsRenaming] = useState(false);
+  const navigate = useNavigate();
 
   const isDirectory = entry.isDirectory;
   const { focusedPath, setFocusedPath } = useFileTree();
@@ -115,6 +117,12 @@ const FileExplorerItem = ({
 
   const handleClick = async (e: React.MouseEvent) => {
     e.stopPropagation();
+    if (entry.isFile && entry.name.endsWith(".workflow.yml")) {
+      // navigate to workflow page
+      const filePathBase64 = btoa(`${path}/${entry.name}`);
+      navigate(`/workflow/${filePathBase64}`);
+    }
+
     if (isDirectory) {
       setFocusedPath(fullPath);
       await toggleExpanded(!isExpanded);

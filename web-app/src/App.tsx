@@ -6,8 +6,10 @@ import {
 } from "react-router-dom";
 import { css } from "styled-system/css";
 
+import "@xyflow/react/dist/style.css";
 import WithSidebarLayout from "@/components/WithSidebarLayout";
 import ChatPage from "@/pages/chat";
+import WorkflowPage from "./pages/worflow";
 
 import ProtectedRoute from "./components/ProtectedRoute";
 import { TooltipProvider } from "./components/ui/Tooltip";
@@ -18,11 +20,8 @@ const TOOLTIP_DELAY_DURATION = 3;
 
 const layoutWrapperStyles = css({
   display: "flex",
-  flex: "1",
   flexDirection: "row",
-  width: "100%",
-  maxW: "100dvw",
-  alignItems: "stretch",
+  width: "100dvw",
   h: "100dvh",
 });
 
@@ -42,6 +41,7 @@ function App() {
             >
               <Route path="/" element={<EmptyPage />} />
               <Route path="/chat/:id" element={<ChatPage />} />
+              <Route path="/workflow/:pathb64" element={<WorkflowPage />} />
             </Route>
             <Route path="*" element={<Navigate to="/" />} />
           </Routes>
