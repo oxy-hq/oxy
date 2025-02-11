@@ -2,10 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "AgentConfig",
   "type": "object",
-  "required": [
-    "model",
-    "system_instructions"
-  ],
+  "required": ["model", "system_instructions"],
   "properties": {
     "anonymize": {
       "anyOf": [
@@ -18,10 +15,7 @@
       ]
     },
     "context": {
-      "type": [
-        "array",
-        "null"
-      ],
+      "type": ["array", "null"],
       "items": {
         "$ref": "#/definitions/AgentContext"
       }
@@ -61,10 +55,7 @@
       "oneOf": [
         {
           "type": "object",
-          "required": [
-            "src",
-            "type"
-          ],
+          "required": ["src", "type"],
           "properties": {
             "src": {
               "type": "array",
@@ -74,34 +65,25 @@
             },
             "type": {
               "type": "string",
-              "enum": [
-                "file"
-              ]
+              "enum": ["file"]
             }
           }
         },
         {
           "type": "object",
-          "required": [
-            "src",
-            "type"
-          ],
+          "required": ["src", "type"],
           "properties": {
             "src": {
               "type": "string"
             },
             "type": {
               "type": "string",
-              "enum": [
-                "semantic_model"
-              ]
+              "enum": ["semantic_model"]
             }
           }
         }
       ],
-      "required": [
-        "name"
-      ],
+      "required": ["name"],
       "properties": {
         "name": {
           "type": "string"
@@ -115,9 +97,7 @@
           "anyOf": [
             {
               "type": "object",
-              "required": [
-                "keywords_file"
-              ],
+              "required": ["keywords_file"],
               "properties": {
                 "keywords_file": {
                   "type": "string"
@@ -130,9 +110,7 @@
             },
             {
               "type": "object",
-              "required": [
-                "mapping_file"
-              ],
+              "required": ["mapping_file"],
               "properties": {
                 "delimiter": {
                   "default": ",",
@@ -144,9 +122,7 @@
               }
             }
           ],
-          "required": [
-            "type"
-          ],
+          "required": ["type"],
           "properties": {
             "case_sensitive": {
               "default": false,
@@ -158,9 +134,7 @@
             },
             "type": {
               "type": "string",
-              "enum": [
-                "flash_text"
-              ]
+              "enum": ["flash_text"]
             }
           }
         }
@@ -170,9 +144,7 @@
       "oneOf": [
         {
           "type": "object",
-          "required": [
-            "eval_type"
-          ],
+          "required": ["eval_type"],
           "properties": {
             "concurrency": {
               "default": 10,
@@ -182,15 +154,10 @@
             },
             "eval_type": {
               "type": "string",
-              "enum": [
-                "consistency"
-              ]
+              "enum": ["consistency"]
             },
             "model_ref": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": ["string", "null"]
             },
             "n": {
               "default": 10,
@@ -214,16 +181,10 @@
               }
             },
             "task_description": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": ["string", "null"]
             },
             "task_ref": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": ["string", "null"]
             }
           }
         }
@@ -231,20 +192,13 @@
     },
     "OutputFormat": {
       "type": "string",
-      "enum": [
-        "default",
-        "file"
-      ]
+      "enum": ["default", "file"]
     },
     "ToolConfig": {
       "oneOf": [
         {
           "type": "object",
-          "required": [
-            "name",
-            "type",
-            "warehouse"
-          ],
+          "required": ["name", "type", "warehouse"],
           "properties": {
             "description": {
               "default": "Execute the SQL query. If the query is invalid, fix it and run again.",
@@ -255,9 +209,7 @@
             },
             "type": {
               "type": "string",
-              "enum": [
-                "execute_sql"
-              ]
+              "enum": ["execute_sql"]
             },
             "warehouse": {
               "type": "string"
@@ -266,17 +218,10 @@
         },
         {
           "type": "object",
-          "required": [
-            "name",
-            "src",
-            "type"
-          ],
+          "required": ["name", "src", "type"],
           "properties": {
             "api_key": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": ["string", "null"]
             },
             "api_url": {
               "default": "https://api.openai.com/v1",
@@ -323,9 +268,7 @@
             },
             "type": {
               "type": "string",
-              "enum": [
-                "retrieval"
-              ]
+              "enum": ["retrieval"]
             }
           }
         }

@@ -13,8 +13,8 @@
     "windows": [
       {
         "title": "onyx",
-        "width": 800,
-        "height": 600,
+        "width": 1280,
+        "height": 720,
         "resizable": true,
         "fullscreen": false
       }
@@ -31,8 +31,37 @@
             "dialog:allow-open",
             "fs:default",
             {
+              "all": true,
               "identifier": "fs:allow-exists",
-              "allow": [{ "path": "$HOME/*" }]
+              "allow": [
+                { "path": "$HOME/**/*" },
+                { "path": "$HOME/**/.*/**" },
+                { "path": "$HOME/**/.*" }
+              ]
+            },
+            {
+              "identifier": "fs:allow-app-read-recursive",
+              "allow": [
+                { "path": "$HOME/**/*" },
+                { "path": "$HOME/**/.*/**" },
+                { "path": "$HOME/**/.*" }
+              ]
+            },
+            {
+              "identifier": "fs:allow-app-write",
+              "allow": [
+                { "path": "$HOME/**/*" },
+                { "path": "$HOME/**/.*/**" },
+                { "path": "$HOME/**/.*" }
+              ]
+            },
+            {
+              "identifier": "fs:allow-app-write-recursive",
+              "allow": [
+                { "path": "$HOME/**/*" },
+                { "path": "$HOME/**/.*/**" },
+                { "path": "$HOME/**/.*" }
+              ]
             }
           ],
           "platforms": ["macOS", "windows"]

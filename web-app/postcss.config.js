@@ -1,3 +1,5 @@
-export const plugins = {
-  "@pandacss/dev/postcss": {},
+export default {
+  plugins: {
+    "@pandacss/dev/postcss": {},
+  },
 };
