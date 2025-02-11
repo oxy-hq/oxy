@@ -9,7 +9,7 @@ import { cva, cx } from "styled-system/css";
 
 const buttonStyles = cva({
   base: {
-    textStyle: "label12Regular",
+    textStyle: "buttonRegular",
     display: "inline-flex",
     alignItems: "center",
     cursor: "pointer",
@@ -22,31 +22,27 @@ const buttonStyles = cva({
     size: {
       small: {
         borderRadius: "minimal",
-        maxH: "lg",
+        maxH: "24px",
       },
       medium: {
-        borderRadius: "minimal",
-        maxH: "2xl",
+        borderRadius: "borderRadius",
+        maxH: "30px",
       },
       large: {
-        borderRadius: "rounded",
+        borderRadius: "borderRadius",
         maxH: "4xl",
       },
     },
     variant: {
       primary: {
-        bg: "surface.contrast",
-        color: "text.contrast",
+        bg: "brand.primary.colorPrimary",
+        color: "neutral.text.solidTextColor",
         _hover: {
-          bg: {
-            base: "dark-grey.opacity",
-            _newTheme: "dark-grey-new.opacity",
-          },
+          bg: "brand.primary.colorPrimaryHover",
         },
         _disabled: {
-          bg: "surface.contrast",
-          color: "text.contrast",
-          opacity: "0.2",
+          bg: "neutral.bg.colorBgContainerDisabled",
+          color: "neutral.text.colorTextDisabled",
         },
       },
       filled: {
@@ -117,6 +113,36 @@ const buttonStyles = cva({
           color: "text.light",
         },
       },
+      text: {
+        bg: "transparent",
+        color: "neutral.text.colorTextSecondary",
+        _hover: {
+          bg: "neutral.bg.colorBgTextHover",
+          color: "neutral.text.colorText",
+        },
+        _disabled: {
+          color: "neutral.text.colorTextDisabled",
+        },
+        // Used for context menus
+        "&[data-state=open]": {
+          bg: "neutral.bg.colorBgTextHover",
+          color: "neutral.text.colorText",
+        },
+      },
+      default: {
+        bg: "neutral.bg.colorBgContainer",
+        color: "neutral.text.colorTextTertiary",
+        // outline
+        boxShadow: "inset 0 0 0 1px token(colors.neutral.border.colorBorder)",
+        _hover: {
+          bg: "neutral.bg.colorBgHover",
+          color: "neutral.text.colorTextSecondary",
+        },
+        _disabled: {
+          bg: "neutral.bg.colorBgContainerDisabled",
+          color: "neutral.text.colorTextDisabled",
+        },
+      },
     },
     content: {
       icon: {},
@@ -146,10 +172,9 @@ const buttonStyles = cva({
       content: "iconText",
       css: {
         py: "xs",
-        pl: "sm",
-        pr: "md",
-        textStyle: "label12Regular",
-        gap: "xs",
+        px: "sm",
+        textStyle: "buttonRegular",
+        gap: "gap.gapXXS",
       },
     },
     {
@@ -172,11 +197,9 @@ const buttonStyles = cva({
       size: "medium",
       content: "iconText",
       css: {
-        py: "sm",
-        pl: "sm",
-        pr: "md",
+        p: "8px",
         textStyle: "label12Regular",
-        gap: "xs",
+        gap: "gap.gapXXS",
       },
     },
     {
@@ -222,7 +245,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   (
     {
       className,
-      variant = "filled",
+      variant = "default",
       size = "medium",
       content = "text",
       asChild = false,

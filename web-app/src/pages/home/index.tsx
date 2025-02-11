@@ -11,7 +11,7 @@ const contentStyles = css({
   flex: "1",
   minW: "0",
   overflow: "hidden",
-  backgroundColor: "background.primary",
+  backgroundColor: "background.secondary",
   boxShadow: "secondary",
   borderLeft: "1px solid",
   borderColor: "border.primary",

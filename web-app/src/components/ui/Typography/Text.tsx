@@ -54,6 +54,14 @@ const textStyles = cva({
       headline20Semibold: {
         textStyle: "headline20Semibold",
       },
+
+      // new
+      buttonRegular: {
+        textStyle: "buttonRegular",
+      },
+      bodyBaseRegular: {
+        textStyle: "bodyBaseRegular",
+      },
     },
     color: {
       unset: {},

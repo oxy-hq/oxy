@@ -1,32 +1,28 @@
 "use client";
 
-import { NavLink } from "react-router-dom";
 import { css } from "styled-system/css";
 
 import useTheme from "@/stores/useTheme";
 
-import { ActionButton, ToggleButton } from "../ui/ActionButton";
+import { ToggleButton } from "../ui/ActionButton";
 import { AgentWithBg } from "../ui/Icon/CustomIcons/AgentWithBg";
-import ChatGroup from "./ChatGroup";
+import FileTree from "./FileTree";
+import { FileTreeProvider } from "./FileTree/FileTreeContext";
 import {
   mainSidebarContentStyles,
-  sidebarHeadStyles,
   sidebarInnerStyles,
   sidebarNavigationItems,
 } from "./Leftsidebar.styles";
 
-interface SidebarProps {
-  isMobile?: boolean;
-}
-
 const bottomActionsStyles = css({
   display: "flex",
+
   gap: "xs",
   flexDirection: "column",
   pr: "md",
 });
 
-export default function LeftSidebarContent({ isMobile }: SidebarProps) {
+export default function LeftSidebarContent() {
   const { theme, setTheme } = useTheme();
 
   const isDarkMode = theme === "dark";
@@ -42,30 +38,12 @@ export default function LeftSidebarContent({ isMobile }: SidebarProps) {
   return (
     <aside className={sidebarInnerStyles}>
       <div className={mainSidebarContentStyles}>
-        <NavLink
-          to="/"
-          className={css({
-            px: "sm",
-            py: "xs",
-          })}
-        >
-          <AgentWithBg width={81} />
-        </NavLink>
-
-        <div className={sidebarHeadStyles}>
-          <NavLink to="/">
-            {({ isActive }) => (
-              <ActionButton
-                iconAsset="home"
-                text="Home"
-                variant={isActive ? "secondary" : "dark"}
-              />
-            )}
-          </NavLink>
-        </div>
+        <AgentWithBg width={24} />
       </div>
       <div className={sidebarNavigationItems}>
-        <ChatGroup isMobile={isMobile} />
+        <FileTreeProvider>
+          <FileTree />
+        </FileTreeProvider>
       </div>
 
       <div className={bottomActionsStyles}>

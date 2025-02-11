@@ -12,10 +12,6 @@ pub fn run() {
                 )?;
             }
 
-            tauri::async_runtime::spawn(async {
-                onyx::cli::start_server_and_web_app().await;
-            });
-
             Ok(())
         })
         .run(tauri::generate_context!())

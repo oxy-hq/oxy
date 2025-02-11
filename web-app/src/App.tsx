@@ -6,12 +6,15 @@ import {
 } from "react-router-dom";
 import { css } from "styled-system/css";
 
-import LeftSidebar from "@/components/LeftSidebar";
-import MobileTopBar from "@/components/MobileTopBar";
+import WithSidebarLayout from "@/components/WithSidebarLayout";
 import ChatPage from "@/pages/chat";
 
-// import HomePage from "@/pages/home";
-import ProjectPath from "./pages/project-path";
+import ProtectedRoute from "./components/ProtectedRoute";
+import { TooltipProvider } from "./components/ui/Tooltip";
+import EmptyPage from "./pages/empty";
+import Init from "./pages/init";
+
+const TOOLTIP_DELAY_DURATION = 3;
 
 const layoutWrapperStyles = css({
   display: "flex",
@@ -27,14 +30,22 @@ function App() {
   return (
     <Router>
       <div className={layoutWrapperStyles}>
-        <MobileTopBar />
-        <LeftSidebar />
-        <Routes>
-          <Route path="/" element={<ProjectPath />} />
-          <Route path="/chat/:id" element={<ChatPage />} />
-          <Route path="/init" element={<ProjectPath />} />
-          <Route path="*" element={<Navigate to="/" />} />
-        </Routes>
+        <TooltipProvider delayDuration={TOOLTIP_DELAY_DURATION}>
+          <Routes>
+            <Route path="/init" element={<Init />} />
+            <Route
+              element={
+                <ProtectedRoute>
+                  <WithSidebarLayout />
+                </ProtectedRoute>
+              }
+            >
+              <Route path="/" element={<EmptyPage />} />
+              <Route path="/chat/:id" element={<ChatPage />} />
+            </Route>
+            <Route path="*" element={<Navigate to="/" />} />
+          </Routes>
+        </TooltipProvider>
       </div>
     </Router>
   );

@@ -174,4 +174,27 @@ export const textStyles = defineTextStyles({
       letterSpacing: "-0.4px",
     },
   },
+
+  // new
+  buttonRegular: {
+    description: "Button regular",
+    value: {
+      fontFamily: "Inter",
+      fontSize: "14px",
+      fontStyle: "normal",
+      fontWeight: 500,
+      lineHeight: "17px",
+    },
+  },
+
+  bodyBaseRegular: {
+    description: "Body Base Regular",
+    value: {
+      fontFamily: "Inter",
+      fontSize: "14px",
+      fontStyle: "normal",
+      fontWeight: 400,
+      lineHeight: "17px",
+    },
+  },
 });

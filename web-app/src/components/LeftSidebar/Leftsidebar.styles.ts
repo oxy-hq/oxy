@@ -1,6 +1,6 @@
 import { css, cva } from "styled-system/css";
 
-export const DEFAULT_SIDEBAR_WIDTH = 230;
+export const DEFAULT_SIDEBAR_WIDTH = 330;
 
 const dynamicSidebarWidthHandler = css({
   display: {
@@ -18,6 +18,7 @@ const desktopSidebarWrapperStyles = css({
     base: "none",
     xl: "block",
   },
+  bg: "background.primary",
 });
 
 const mobileSidebarWrapperStyles = css({
@@ -25,6 +26,7 @@ const mobileSidebarWrapperStyles = css({
     base: "block",
     xl: "none",
   },
+  bg: "background.primary",
 });
 
 const collapsedMobileSidebarStyles = css({
@@ -80,7 +82,7 @@ const mobileSidebarStyles = cva({
     bottom: "0",
     left: "0",
     zIndex: "100",
-    bg: "background.secondary",
+    bg: "background.primary",
     transition: "transform 0.2s ease-in-out",
     w: {
       base: "80%",
@@ -133,9 +135,8 @@ const sidebarInnerStyles = css({
   flexDirection: "column",
   flexGrow: 0,
   height: "100%",
-  padding: "md",
-  paddingRight: "none !important",
   justifyContent: "space-between",
+  gap: "xs",
 });
 
 const sidebarNavigationItems = css({
@@ -145,9 +146,9 @@ const sidebarNavigationItems = css({
   overflowY: "auto",
   overflowX: "hidden",
   flexGrow: 1,
-  mt: "xl",
   pb: "2px",
   customScrollbar: true,
+  px: "lg",
 });
 
 const sidebarResizer = cva({
@@ -210,10 +211,9 @@ const bottomActionsStyles = css({
 
 const mainSidebarContentStyles = css({
   display: "flex",
-  flexDirection: "column",
-  gap: "lg",
-  my: "-1px",
-  marginRight: "md",
+  alignItems: "center",
+  px: "lg",
+  h: "56px",
 });
 
 const sidebarHeadStyles = css({

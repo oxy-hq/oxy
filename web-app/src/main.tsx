@@ -18,6 +18,7 @@ const AppWrapper = () => {
 
   return (
     <div
+      id="app-root"
       className={`root`}
       lang="en"
       data-theme-variant="new"
