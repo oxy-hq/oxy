@@ -23,14 +23,9 @@ switch ($arch) {
     }
 }
 
-# Get the latest release tag from GitHub API
-$repo = "onyx-hq/onyx"
-$latestTagUrl = "https://api.github.com/repos/$repo/releases/latest"
-$latestTagResponse = Invoke-RestMethod -Uri $latestTagUrl -Headers @{ "User-Agent" = "PowerShell" }
-$latestTag = $latestTagResponse.tag_name
 
 # Download the release binary
-$binaryUrl = "https://github.com/$repo/releases/download/$latestTag/onyx-$target.exe"
+$binaryUrl = "https://github.com/$repo/releases/download/latest/onyx-$target.exe"
 $outputPath = "$InstallDir\onyx.exe"
 
 if (Test-Path -Path $outputPath) {
