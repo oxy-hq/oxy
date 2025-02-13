@@ -106,8 +106,8 @@ impl Handler for AgentReceiver {
                     sql_query,
                     output_file,
                 }) => {
-                    print_colored_sql(&sql_query);
-                    match load_result(&output_file) {
+                    print_colored_sql(sql_query);
+                    match load_result(output_file) {
                         Ok((batches, schema)) => {
                             let (batches, truncated) = truncate_datasets(batches);
                             match record_batches_to_table(&batches, &schema) {

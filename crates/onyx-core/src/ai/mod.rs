@@ -100,7 +100,7 @@ fn build_agent(
             azure_deployment_id,
             azure_api_version,
         } => {
-            let api_key = std::env::var(&key_var).unwrap_or_else(|_| {
+            let api_key = std::env::var(key_var).unwrap_or_else(|_| {
                 panic!("OpenAI key not found in environment variable {}", key_var)
             });
             OpenAIAgent::new(

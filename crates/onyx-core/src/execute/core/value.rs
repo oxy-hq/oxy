@@ -44,7 +44,7 @@ impl<'a> FromIterator<&'a (String, ContextValue)> for Map {
 
 impl ContextLookup for Map {
     fn find(&self, key: &str) -> Option<ContextValue> {
-        self.0.get(key).map(|value| value.clone())
+        self.0.get(key).cloned()
     }
 }
 
@@ -69,14 +69,13 @@ impl Array {
                 .iter()
                 .map(|v| v.find(key))
                 .filter(|v| v.is_some())
-                .map(|v| {
+                .flat_map(|v| {
                     let output = v.unwrap();
                     match output {
                         ContextValue::Array(a) => a.0,
                         _ => vec![output],
                     }
                 })
-                .flatten()
                 .collect(),
         )
     }
@@ -229,9 +228,7 @@ impl ContextLookup for ContextValue {
 
 pub fn convert_output_to_python<'py>(py: Python<'py>, output: &ContextValue) -> Bound<'py, PyAny> {
     match output {
-        ContextValue::Text(s) => {
-            return PyString::new(py, s).into_any();
-        }
+        ContextValue::Text(s) => PyString::new(py, s).into_any(),
         ContextValue::Map(m) => {
             let dict = PyDict::new(py);
             for (k, v) in &m.0 {
@@ -251,11 +248,9 @@ pub fn convert_output_to_python<'py>(py: Python<'py>, output: &ContextValue) -> 
                 let rb = PyRecordBatch::new(batch);
                 record_batchs.push(rb.to_pyarrow(py).unwrap());
             }
-            return PyList::new(py, record_batchs).unwrap().into_any();
+            PyList::new(py, record_batchs).unwrap().into_any()
         }
-        _ => {
-            return <pyo3::Bound<'_, PyNone> as Clone>::clone(&PyNone::get(py)).into_any();
-        }
+        _ => <pyo3::Bound<'_, PyNone> as Clone>::clone(&PyNone::get(py)).into_any(),
     }
 }
 

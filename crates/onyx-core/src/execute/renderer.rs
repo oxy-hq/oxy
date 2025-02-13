@@ -67,7 +67,7 @@ impl Renderer {
         item.register_template(self)
     }
 
-    pub fn child_register<'child>(&'child mut self) -> ChildRegister<'child> {
+    pub fn child_register(&mut self) -> ChildRegister<'_> {
         ChildRegister::new(self)
     }
 
@@ -158,12 +158,10 @@ impl Renderer {
                 }
                 Ok(values)
             }
-            _ => {
-                return Err(OnyxError::RuntimeError(format!(
-                    "Values {} did not resolve to an array",
-                    template,
-                )));
-            }
+            _ => Err(OnyxError::RuntimeError(format!(
+                "Values {} did not resolve to an array",
+                template,
+            ))),
         }
     }
 

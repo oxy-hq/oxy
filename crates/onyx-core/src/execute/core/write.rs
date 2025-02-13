@@ -8,6 +8,12 @@ pub struct OutputCollector {
     pub output: ContextValue,
 }
 
+impl Default for OutputCollector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl OutputCollector {
     pub fn new() -> Self {
         Self {

@@ -64,17 +64,11 @@ pub struct TargetWorkflow {
 impl TargetWorkflow {
     pub fn last_step_ref_internal(&self, steps: &[Step]) -> Vec<String> {
         let mut task_ref = vec![];
-        match steps.last() {
-            Some(step) => {
-                task_ref.push(step.name.clone());
-                match &step.step_type {
-                    StepType::LoopSequential(loop_values) => {
-                        task_ref.extend(self.last_step_ref_internal(&loop_values.steps))
-                    }
-                    _ => {}
-                }
+        if let Some(step) = steps.last() {
+            task_ref.push(step.name.clone());
+            if let StepType::LoopSequential(loop_values) = &step.step_type {
+                task_ref.extend(self.last_step_ref_internal(&loop_values.steps))
             }
-            None => {}
         }
         task_ref
     }
@@ -256,9 +250,9 @@ impl Executable<Target, EvalEvent> for Consistency {
         let sample_size = self.n;
         let mut outputs = {
             let mut loop_executor = execution_context.loop_executor();
-            let mut inputs = (0..sample_size.clone()).map(|_| ()).collect::<Vec<_>>();
+            let mut inputs = (0..sample_size).map(|_| ()).collect::<Vec<_>>();
             log::info!("Inputs: {:?}", inputs.len());
-            let output_progress = Arc::new(Mutex::new(pbar(Some(sample_size.clone()))));
+            let output_progress = Arc::new(Mutex::new(pbar(Some(sample_size))));
             let progress_tracker = || {
                 if let Ok(mut output_progress) = output_progress.lock() {
                     if let Err(err) = output_progress.update(1) {
@@ -271,21 +265,18 @@ impl Executable<Target, EvalEvent> for Consistency {
                     &mut inputs,
                     &input,
                     |_| Value::UNDEFINED,
-                    self.concurrency.clone(),
+                    self.concurrency,
                     Some(progress_tracker),
                 )
                 .await?;
             loop_executor.eject()?
         };
-        match input {
-            Target::Workflow(workflow) => {
-                let task_ref = match &self.task_ref {
-                    Some(task_ref) => task_ref.to_string(),
-                    None => workflow.last_step_ref()?,
-                };
-                outputs = Array(outputs).nested_project(&task_ref);
-            }
-            _ => {}
+        if let Target::Workflow(workflow) = input {
+            let task_ref = match &self.task_ref {
+                Some(task_ref) => task_ref.to_string(),
+                None => workflow.last_step_ref()?,
+            };
+            outputs = Array(outputs).nested_project(&task_ref);
         }
         log::info!("Outputs: {:?}", outputs);
 
@@ -379,7 +370,7 @@ impl Consistency {
         };
         response.trim().lines().fold(record, |mut record, part| {
             record.cot.push_str(&record.choice);
-            record.cot.push_str("\n");
+            record.cot.push('\n');
             record.choice = part.trim().to_string();
             record.score = self.scores.get(part.trim()).unwrap_or(&0.0).to_owned();
             record

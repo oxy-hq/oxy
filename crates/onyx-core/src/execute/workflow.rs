@@ -117,16 +117,13 @@ impl TemplateRegister for &Step {
                     SQL::File { sql_file } => sql_file,
                 };
                 register.entry(&sql.as_str())?;
-                match &execute_sql.variables {
-                    Some(variables) => {
-                        register.entries(
-                            variables
-                                .iter()
-                                .map(|(_key, value)| value.as_str())
-                                .collect::<Vec<&str>>(),
-                        )?;
-                    }
-                    None => {}
+                if let Some(variables) = &execute_sql.variables {
+                    register.entries(
+                        variables
+                            .iter()
+                            .map(|(_key, value)| value.as_str())
+                            .collect::<Vec<&str>>(),
+                    )?;
                 }
                 if let Some(export) = &execute_sql.export {
                     register.entry(&export.path.as_str())?;
@@ -175,9 +172,9 @@ impl Handler for WorkflowReceiver {
                 schema,
                 export_file_path: _,
             } => {
-                print_colored_sql(&query);
+                print_colored_sql(query);
 
-                let batches_display = match record_batches_to_table(&datasets, &schema) {
+                let batches_display = match record_batches_to_table(datasets, schema) {
                     Ok(display) => display,
                     Err(e) => {
                         println!("{}", format!("Error displaying results: {}", e).error());
@@ -235,13 +232,10 @@ impl Handler for WorkflowExporter {
                 export_file_path,
             } => {
                 log::debug!("Agent tool calls: {:?}", event);
-                match event {
-                    AgentEvent::ToolCall(tool_call) => {
-                        if let Some(export_file_path) = export_file_path {
-                            export_agent_step(step, &[tool_call], export_file_path);
-                        }
+                if let AgentEvent::ToolCall(tool_call) = event {
+                    if let Some(export_file_path) = export_file_path {
+                        export_agent_step(step, &[tool_call], export_file_path);
                     }
-                    _ => {}
                 }
             }
             WorkflowEvent::ExecuteSQL {
@@ -261,7 +255,7 @@ impl Handler for WorkflowExporter {
                 output,
                 export_file_path,
             } => {
-                if let Some(_) = &step.export {
+                if step.export.is_some() {
                     export_formatter(output, export_file_path);
                 }
                 log::debug!("Formatter tool calls: {:?}", event);

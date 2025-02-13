@@ -64,11 +64,11 @@ impl<'de> Deserialize<'de> for ArrowTable {
 
         // Deserialize the bytes into RecordBatches using Arrow StreamReader
         let cursor = Cursor::new(bytes);
-        let mut reader = StreamReader::try_new(cursor, None)
+        let reader = StreamReader::try_new(cursor, None)
             .map_err(|e| serde::de::Error::custom(format!("Arrow StreamReader error: {}", e)))?;
 
         let mut batches = Vec::new();
-        while let Some(batch) = reader.next() {
+        for batch in reader {
             batches.push(batch.map_err(|e| {
                 serde::de::Error::custom(format!("Failed to read RecordBatch: {}", e))
             })?);

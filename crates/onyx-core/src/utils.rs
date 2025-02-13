@@ -113,7 +113,7 @@ pub fn find_project_path() -> Result<PathBuf, OnyxError> {
         }
     }
 
-    return Err(OnyxError::ArgumentError(
+    Err(OnyxError::ArgumentError(
         "Could not find config.yml".to_string(),
-    ));
+    ))
 }
