@@ -17,7 +17,7 @@ use super::validate::validate_step;
 #[garde(context(ValidationContext))]
 pub struct Config {
     #[garde(dive)]
-    pub defaults: Defaults,
+    pub defaults: Option<Defaults>,
     #[garde(dive)]
     pub models: Vec<Model>,
     #[garde(dive)]
@@ -121,9 +121,6 @@ impl Default for AgentContextType {
 #[garde(context(ValidationContext))]
 // #[garde(context(Config as ctx))]
 pub struct Defaults {
-    #[garde(length(min = 1))]
-    #[garde(custom(validate_agent_exists))]
-    pub agent: String,
     #[garde(length(min = 1))]
     #[garde(custom(|wh: &Option<String>, ctx: &ValidationContext| {
         match wh {

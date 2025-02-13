@@ -5,4 +5,3 @@ type Props = {
 export const NodeContainer = ({ children }: Props) => {
   return <div>{children}</div>;
 };
-

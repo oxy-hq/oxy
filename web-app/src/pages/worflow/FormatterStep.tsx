@@ -1,7 +1,6 @@
-import { StepData} from ".";
+import { StepData } from ".";
 import { StepContainer } from "./StepContainer";
 import { StepHeader } from "./StepHeader";
-
 
 type Props = {
   step: StepData;

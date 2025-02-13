@@ -22,4 +22,3 @@ export function StepItem({ step }: Props) {
     return <AgentStep step={step} />;
   }
 }
-

@@ -13,4 +13,3 @@ export function ExecuteSqlStep({ step }: Props) {
     </StepContainer>
   );
 }
-

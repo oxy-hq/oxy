@@ -18,7 +18,6 @@ use crate::{errors::OnyxError, utils::find_project_path};
 // These are settings stored as strings derived from the config.yml file's defaults section
 #[derive(Debug, Deserialize)]
 pub struct Defaults {
-    pub agent: String,
     pub project_path: PathBuf,
 }
 
@@ -60,12 +59,7 @@ impl Config {
         &self,
         agent_file: Option<&PathBuf>,
     ) -> Result<(AgentConfig, String), OnyxError> {
-        let agent_file = if let Some(file) = agent_file {
-            file
-        } else {
-            &self.project_path.join(&self.defaults.agent)
-        };
-
+        let agent_file = agent_file.unwrap();
         if !agent_file.exists() {
             return Err(OnyxError::ConfigurationError(format!(
                 "Agent configuration file not found: {:?}",

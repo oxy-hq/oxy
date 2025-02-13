@@ -17,7 +17,6 @@ interface Model {
 }
 
 interface Defaults {
-  agent: string;
   project_path: string;
 }
 

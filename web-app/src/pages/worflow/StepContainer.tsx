@@ -1,4 +1,3 @@
-
 type Props = {
   children: React.ReactNode;
 };
@@ -13,7 +12,7 @@ export const StepContainer = ({ children }: Props) => {
         borderRadius: "10px",
         border: "1px solid #D4D4D4",
         background: "#FBFBFB",
-        padding: "4px"
+        padding: "4px",
       }}
     >
       {children}

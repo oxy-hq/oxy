@@ -32,22 +32,22 @@ export function StepNode({ data, isConnectable }: Props) {
     <div key={data.id}>
       <NodeContainer>
         <Handle
-          type='target'
+          type="target"
           position={Position.Top}
           isConnectable={isConnectable}
           style={{
             visibility: "hidden",
-            top: "3px"
+            top: "3px",
           }}
         />
         <StepItem step={data.step} />
         <Handle
-          type='source'
+          type="source"
           position={Position.Bottom}
           isConnectable={isConnectable}
           style={{
             visibility: "hidden",
-            bottom: "1px"
+            bottom: "1px",
           }}
         />
       </NodeContainer>
