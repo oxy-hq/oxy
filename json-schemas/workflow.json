@@ -2,7 +2,10 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "Workflow",
   "type": "object",
-  "required": ["name", "steps"],
+  "required": [
+    "name",
+    "steps"
+  ],
   "properties": {
     "name": {
       "type": "string"
@@ -26,7 +29,9 @@
       "oneOf": [
         {
           "type": "object",
-          "required": ["eval_type"],
+          "required": [
+            "eval_type"
+          ],
           "properties": {
             "concurrency": {
               "default": 10,
@@ -36,10 +41,15 @@
             },
             "eval_type": {
               "type": "string",
-              "enum": ["consistency"]
+              "enum": [
+                "consistency"
+              ]
             },
             "model_ref": {
-              "type": ["string", "null"]
+              "type": [
+                "string",
+                "null"
+              ]
             },
             "n": {
               "default": 10,
@@ -63,10 +73,16 @@
               }
             },
             "task_description": {
-              "type": ["string", "null"]
+              "type": [
+                "string",
+                "null"
+              ]
             },
             "task_ref": {
-              "type": ["string", "null"]
+              "type": [
+                "string",
+                "null"
+              ]
             }
           }
         }
@@ -74,7 +90,13 @@
     },
     "ExportFormat": {
       "type": "string",
-      "enum": ["sql", "csv", "json", "txt", "docx"]
+      "enum": [
+        "sql",
+        "csv",
+        "json",
+        "txt",
+        "docx"
+      ]
     },
     "LoopValues": {
       "anyOf": [
@@ -94,7 +116,11 @@
       "oneOf": [
         {
           "type": "object",
-          "required": ["agent_ref", "prompt", "type"],
+          "required": [
+            "agent_ref",
+            "prompt",
+            "type"
+          ],
           "properties": {
             "agent_ref": {
               "type": "string"
@@ -130,7 +156,9 @@
             },
             "type": {
               "type": "string",
-              "enum": ["agent"]
+              "enum": [
+                "agent"
+              ]
             }
           }
         },
@@ -139,7 +167,9 @@
           "anyOf": [
             {
               "type": "object",
-              "required": ["sql_file"],
+              "required": [
+                "sql_file"
+              ],
               "properties": {
                 "sql_file": {
                   "type": "string"
@@ -148,7 +178,9 @@
             },
             {
               "type": "object",
-              "required": ["sql_query"],
+              "required": [
+                "sql_query"
+              ],
               "properties": {
                 "sql_query": {
                   "type": "string"
@@ -156,7 +188,10 @@
               }
             }
           ],
-          "required": ["type", "warehouse"],
+          "required": [
+            "type",
+            "warehouse"
+          ],
           "properties": {
             "export": {
               "anyOf": [
@@ -170,11 +205,16 @@
             },
             "type": {
               "type": "string",
-              "enum": ["execute_sql"]
+              "enum": [
+                "execute_sql"
+              ]
             },
             "variables": {
               "default": null,
-              "type": ["object", "null"],
+              "type": [
+                "object",
+                "null"
+              ],
               "additionalProperties": {
                 "type": "string"
               }
@@ -186,7 +226,11 @@
         },
         {
           "type": "object",
-          "required": ["steps", "type", "values"],
+          "required": [
+            "steps",
+            "type",
+            "values"
+          ],
           "properties": {
             "concurrency": {
               "default": 1,
@@ -202,7 +246,9 @@
             },
             "type": {
               "type": "string",
-              "enum": ["loop_sequential"]
+              "enum": [
+                "loop_sequential"
+              ]
             },
             "values": {
               "$ref": "#/definitions/LoopValues"
@@ -211,7 +257,10 @@
         },
         {
           "type": "object",
-          "required": ["template", "type"],
+          "required": [
+            "template",
+            "type"
+          ],
           "properties": {
             "export": {
               "anyOf": [
@@ -228,22 +277,30 @@
             },
             "type": {
               "type": "string",
-              "enum": ["formatter"]
+              "enum": [
+                "formatter"
+              ]
             }
           }
         },
         {
           "type": "object",
-          "required": ["type"],
+          "required": [
+            "type"
+          ],
           "properties": {
             "type": {
               "type": "string",
-              "enum": ["Unknown"]
+              "enum": [
+                "Unknown"
+              ]
             }
           }
         }
       ],
-      "required": ["name"],
+      "required": [
+        "name"
+      ],
       "properties": {
         "name": {
           "type": "string"
@@ -252,7 +309,9 @@
     },
     "StepCache": {
       "type": "object",
-      "required": ["path"],
+      "required": [
+        "path"
+      ],
       "properties": {
         "enabled": {
           "default": false,
@@ -265,7 +324,10 @@
     },
     "StepExport": {
       "type": "object",
-      "required": ["format", "path"],
+      "required": [
+        "format",
+        "path"
+      ],
       "properties": {
         "format": {
           "$ref": "#/definitions/ExportFormat"

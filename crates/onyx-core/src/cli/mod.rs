@@ -462,7 +462,19 @@ pub async fn handle_run_command(run_args: RunArgs) -> Result<RunResult, OnyxErro
         }
         Some("sql") => {
             let config = load_config(None)?;
-            let warehouse = run_args.warehouse.or(config.clone().defaults.warehouse);
+            let mut warehouse = None;
+            warehouse = run_args.warehouse.or_else(|| {
+                config
+                    .defaults
+                    .as_ref()
+                    .and_then(|defaults| defaults.warehouse.clone())
+            });
+
+            if warehouse.is_none() {
+                return Err(OnyxError::ArgumentError(
+                    "Warehouse is required for running SQL file. Please provide the warehouse using --warehouse or set a default warehouse in config.yml".into(),
+                ));
+            }
             let sql_result =
                 handle_sql_file(&file_path, warehouse, &config, &run_args.variables).await?;
             Ok(RunResult::Sql(sql_result))

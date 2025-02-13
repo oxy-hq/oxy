@@ -256,10 +256,9 @@ fn create_config_file(config_path: &Path) -> Result<(), InitError> {
     let config = Config {
         warehouses,
         models,
-        defaults: Defaults {
-            agent: "default".to_string(),
+        defaults: Some(Defaults {
             warehouse: Some("primary_warehouse".to_string()),
-        },
+        }),
         project_path: PathBuf::new(),
     };
 
