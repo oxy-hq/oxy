@@ -1,7 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2.0.0-rc",
   "productName": "onyx",
-  "version": "0.1.0",
   "identifier": "ai.onyxint",
   "build": {
     "frontendDist": "../../web-app/dist",

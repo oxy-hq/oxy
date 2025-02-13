@@ -113,8 +113,6 @@ jobs:
         with:
           args: --target ${{ matrix.job.target }}
           projectPath: crates/onyx-desktop
-          appName: onyx
-          appVersion: ${{ inputs.tag || github.ref_name }}
       - name: Move tauri assets to artifacts
         run: |
           mkdir -p artifacts/tauri-${{ matrix.job.target }}
@@ -124,7 +122,9 @@ jobs:
               # github does not support Macos App bundle as artifact
               ditto -c -k --sequesterRsrc --keepParent "$artifact" "artifacts/tauri-${{ matrix.job.target }}/$(basename "$artifact" .app)-app-${{ matrix.job.target }}.zip"
             else
-              mv "$artifact" "artifacts/tauri-${{ matrix.job.target }}/"
+              base_name=$(basename "$artifact")
+              new_name=$(echo "$base_name" | sed -E 's/_[0-9]+\.[0-9]+\.[0-9]+//') # remove version number from artifact name
+              mv "$artifact" "artifacts/tauri-${{ matrix.job.target }}/$new_name"
             fi
           done
       - name: Cleanup tauri build to reduce cache size
