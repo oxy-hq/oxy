@@ -103,26 +103,23 @@ impl Executable<WorkflowInput, WorkflowEvent> for AgentStep {
             .await?;
         let step_output = agent_executor.finish();
 
-        match &self.cache {
-            Some(cache) => {
-                if cache.enabled {
-                    let cache_file_path_str =
-                        execution_context.renderer.render_async(&cache.path).await?;
+        if let Some(cache) = &self.cache {
+            if cache.enabled {
+                let cache_file_path_str =
+                    execution_context.renderer.render_async(&cache.path).await?;
 
-                    let cache_file_path = execution_context
-                        .config
-                        .project_path
-                        .join(cache_file_path_str);
+                let cache_file_path = execution_context
+                    .config
+                    .project_path
+                    .join(cache_file_path_str);
 
-                    execution_context
-                        .notify(WorkflowEvent::CacheAgentResult {
-                            result: step_output,
-                            file_path: cache_file_path,
-                        })
-                        .await?;
-                }
+                execution_context
+                    .notify(WorkflowEvent::CacheAgentResult {
+                        result: step_output,
+                        file_path: cache_file_path,
+                    })
+                    .await?;
             }
-            None => {}
         }
         Ok(())
     }

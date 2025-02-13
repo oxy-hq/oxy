@@ -20,7 +20,7 @@ pub fn validate_file_path(path: &PathBuf, context: &ValidationContext) -> garde:
         ));
     }
 
-    let file_path = context.config.project_path.join(&path);
+    let file_path = context.config.project_path.join(path);
 
     if !file_path.exists() {
         return Err(format_error_message(

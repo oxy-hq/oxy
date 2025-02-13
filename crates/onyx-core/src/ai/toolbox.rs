@@ -18,6 +18,12 @@ impl<T> Debug for ToolBox<T> {
 
 pub type SpecSerializer<Ret> = fn(String, String, Value) -> Ret;
 
+impl<T> Default for ToolBox<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T> ToolBox<T> {
     pub fn new() -> Self {
         ToolBox {

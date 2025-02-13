@@ -93,7 +93,7 @@ pub async fn ask(extract::Json(payload): extract::Json<AskRequest>) -> impl Into
         yield msg;
     }
     };
-    return StreamBodyAs::json_nl(s);
+    StreamBodyAs::json_nl(s)
 }
 
 #[derive(Serialize)]

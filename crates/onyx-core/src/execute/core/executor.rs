@@ -135,7 +135,7 @@ where
     ) -> Result<(), OnyxError>
     where
         F: Fn(&I) -> Value,
-        T: Fn() -> () + Copy,
+        T: Fn() + Copy,
     {
         let results = stream! {
             for param in params.drain(..) {

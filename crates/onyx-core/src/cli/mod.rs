@@ -94,17 +94,26 @@ struct Args {
 enum SubCommand {
     /// Initialize a repository as an onyx project. Also creates a ~/.config/onyx/config.yaml file if it doesn't exist
     Init,
+    /// List datasets in warehouse
     ListDatasets,
+    /// List tables in warehouse
     ListTables,
     /// Search through SQL in your project path. Run them against the associated warehouse on
     /// selection.
     Run(RunArgs),
+    /// Run testing on a workflow file to get consistency metrics
     Test(TestArgs),
+    /// Build embeddings for hybrid search
     Build,
+    /// Perform vector search
     VecSearch(VecSearchArgs),
+    /// Validate the config file
     Validate,
+    /// Start the API server and serve the frontend web app
     Serve,
+    /// Test theme for terminal output
     TestTheme,
+    /// Generate JSON schemas for config files
     GenConfigSchema(GenConfigSchemaArgs),
 }
 
@@ -392,7 +401,7 @@ async fn handle_sql_file(
 
     // Print colored SQL and execute query
     print_colored_sql(&query);
-    let (datasets, schema) = Connector::new(&wh_config, &config)
+    let (datasets, schema) = Connector::new(&wh_config, config)
         .run_query_and_load(&query)
         .await?;
     let batches_display = record_batches_to_table(&datasets, &schema)
