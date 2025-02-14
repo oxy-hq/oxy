@@ -144,17 +144,33 @@ fn tools_from_config(
     let mut toolbox = ToolBox::new();
     for tool_config in agent_config.tools.iter() {
         match tool_config {
-            ToolConfig::ExecuteSQL(execute_sql) => {
+            ToolConfig::ExecuteSQL(sql_tool) => {
                 let warehouse_config = config
-                    .find_warehouse(&execute_sql.warehouse)
-                    .unwrap_or_else(|_| panic!("Warehouse {} not found", &execute_sql.warehouse));
+                    .find_warehouse(&sql_tool.warehouse)
+                    .unwrap_or_else(|_| panic!("Warehouse {} not found", &sql_tool.warehouse));
                 let tool: ExecuteSQLTool = ExecuteSQLTool {
                     warehouse_config: warehouse_config.clone(),
-                    tool_description: execute_sql.description.to_string(),
+                    tool_name: sql_tool.name.to_string(),
+                    tool_description: sql_tool.description.to_string(),
                     output_format: agent_config.output_format.clone(),
                     config: config.clone(),
+                    validate_mode: false,
                 };
-                toolbox.add_tool(execute_sql.name.to_string(), tool.into());
+                toolbox.add_tool(sql_tool.name.to_string(), tool.into());
+            }
+            ToolConfig::ValidateSQL(sql_tool) => {
+                let warehouse_config = config
+                    .find_warehouse(&sql_tool.warehouse)
+                    .unwrap_or_else(|_| panic!("Warehouse {} not found", &sql_tool.warehouse));
+                let tool: ExecuteSQLTool = ExecuteSQLTool {
+                    warehouse_config: warehouse_config.clone(),
+                    tool_name: sql_tool.name.to_string(),
+                    tool_description: sql_tool.description.to_string(),
+                    output_format: agent_config.output_format.clone(),
+                    config: config.clone(),
+                    validate_mode: true,
+                };
+                toolbox.add_tool(sql_tool.name.to_string(), tool.into());
             }
             ToolConfig::Retrieval(retrieval) => {
                 let tool = RetrieveTool::new(agent_name, retrieval);

@@ -343,6 +343,13 @@ impl LLMAgent for OpenAIAgent {
 
             tries += 1;
         }
+
+        if !tool_calls.is_empty() {
+            return Err(OnyxError::AgentError(
+                "Failed to resolve tool calls. Max tries exceeded".to_string(),
+            ));
+        }
+
         let mut parsed_output = map_output(&output, &self.output_format, &self.file_format).await?;
         parsed_output = match self.anonymizer {
             Some(ref anonymizer) => {

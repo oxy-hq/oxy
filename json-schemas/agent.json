@@ -268,6 +268,32 @@
           "type": "object",
           "required": [
             "name",
+            "type",
+            "warehouse"
+          ],
+          "properties": {
+            "description": {
+              "default": "Validate the SQL query. If the query is invalid, fix it and run again.",
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "validate_sql"
+              ]
+            },
+            "warehouse": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "name",
             "src",
             "type"
           ],

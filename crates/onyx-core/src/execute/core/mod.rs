@@ -1,6 +1,7 @@
 use std::fmt::{Debug, Formatter};
 
 use async_trait::async_trait;
+use cache::CacheExecutor;
 use event::{consume, Handler};
 use executor::{ChildExecutor, LoopExecutor, MapExecutor};
 use tokio::sync::mpsc::Sender;
@@ -12,6 +13,7 @@ use crate::{config::model::Config, errors::OnyxError};
 use super::renderer::{Renderer, TemplateRegister};
 
 pub mod arrow_table;
+pub mod cache;
 pub mod event;
 pub mod executor;
 pub mod value;
@@ -73,6 +75,10 @@ where
 
     pub fn child_executor<'context>(&'context mut self) -> ChildExecutor<'context, 'writer, Event> {
         ChildExecutor::new(self)
+    }
+
+    pub fn cache_executor<'context>(&'context mut self) -> CacheExecutor<'context, 'writer, Event> {
+        CacheExecutor::new(self)
     }
 
     pub async fn notify(&self, event: Event) -> Result<(), OnyxError> {

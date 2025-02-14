@@ -41,20 +41,6 @@ pub enum ToolMetadata {
     },
 }
 
-impl ToolMetadata {
-    pub fn copy(&self) -> Self {
-        match self {
-            ToolMetadata::ExecuteSQL {
-                sql_query,
-                output_file,
-            } => ToolMetadata::ExecuteSQL {
-                sql_query: sql_query.clone(),
-                output_file: output_file.clone(),
-            },
-        }
-    }
-}
-
 #[derive(Debug, Clone, Default)]
 pub struct ToolCall {
     pub name: String,

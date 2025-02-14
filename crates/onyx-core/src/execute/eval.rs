@@ -34,6 +34,10 @@ use super::{
 pub enum EvalEvent {
     Started,
     GeneratingOutputs,
+    SomeOutputsFailed {
+        failed_count: u32,
+        err: String,
+    },
     EvaluatingRecords,
     Finished {
         metrics: Metrics,
@@ -169,7 +173,7 @@ impl Executable<(), EvalEvent> for TargetWorkflow {
         let mut child_executor = execution_context.child_executor();
         let map_event = |event| EvalEvent::Workflow(event);
         let workflow_executor = WorkflowExecutor::new(workflow.clone());
-        child_executor
+        let res = child_executor
             .execute(
                 &workflow_executor,
                 self.input.clone(),
@@ -178,9 +182,9 @@ impl Executable<(), EvalEvent> for TargetWorkflow {
                 Value::UNDEFINED,
                 workflow,
             )
-            .await?;
+            .await;
         child_executor.finish();
-        Ok(())
+        res
     }
 }
 
@@ -248,7 +252,7 @@ impl Executable<Target, EvalEvent> for Consistency {
             .notify(EvalEvent::GeneratingOutputs)
             .await?;
         let sample_size = self.n;
-        let mut outputs = {
+        let outputs = {
             let mut loop_executor = execution_context.loop_executor();
             let mut inputs = (0..sample_size).map(|_| ()).collect::<Vec<_>>();
             log::info!("Inputs: {:?}", inputs.len());
@@ -260,7 +264,7 @@ impl Executable<Target, EvalEvent> for Consistency {
                     }
                 }
             };
-            loop_executor
+            let res = loop_executor
                 .params(
                     &mut inputs,
                     &input,
@@ -268,16 +272,34 @@ impl Executable<Target, EvalEvent> for Consistency {
                     self.concurrency,
                     Some(progress_tracker),
                 )
-                .await?;
-            loop_executor.eject()?
+                .await;
+            let mut outputs = loop_executor.eject()?;
+
+            match input {
+                Target::Workflow(workflow) => {
+                    let task_ref = match &self.task_ref {
+                        Some(task_ref) => task_ref.to_string(),
+                        None => workflow.last_step_ref()?,
+                    };
+                    outputs = Array(outputs).nested_project(&task_ref);
+                }
+                _ => {}
+            }
+
+            if sample_size > outputs.len() {
+                if let Err(err) = res {
+                    execution_context
+                        .notify(EvalEvent::SomeOutputsFailed {
+                            failed_count: sample_size as u32 - outputs.len() as u32,
+                            err: err.to_string(),
+                        })
+                        .await?;
+                }
+            }
+
+            outputs
         };
-        if let Target::Workflow(workflow) = input {
-            let task_ref = match &self.task_ref {
-                Some(task_ref) => task_ref.to_string(),
-                None => workflow.last_step_ref()?,
-            };
-            outputs = Array(outputs).nested_project(&task_ref);
-        }
+
         log::info!("Outputs: {:?}", outputs);
 
         let model_ref = match &self.model_ref {
@@ -311,9 +333,15 @@ impl Executable<Target, EvalEvent> for Consistency {
                 }
             },
         };
+
         execution_context
             .notify(EvalEvent::EvaluatingRecords)
             .await?;
+        if outputs.len() < 2 {
+            return Err(OnyxError::RuntimeError(
+                "The number of successfully generated outputs must be greater than 2.".to_string(),
+            ));
+        }
 
         let (metrics, records) = {
             let prompts = outputs
@@ -408,6 +436,12 @@ impl Handler for EvalReceiver {
             }
             EvalEvent::GeneratingOutputs => {
                 println!("🔄Generating outputs");
+            }
+            EvalEvent::SomeOutputsFailed { failed_count, err } => {
+                println!(
+                    "{}",
+                    format!("Failed to generate {} outputs:\n{}", failed_count, err).warning()
+                );
             }
             EvalEvent::EvaluatingRecords => {
                 println!("🔄Evaluating records");

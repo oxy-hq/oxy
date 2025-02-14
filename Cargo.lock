@@ -6485,7 +6485,7 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "slugify",
- "sqlparse",
+ "sqlformat 0.3.5",
  "syntect",
  "tabled",
  "terminal-light",
@@ -9103,12 +9103,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "sqlparse"
-version = "0.3.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fc11927ebc24f581ce891b2a8eb76d8ac0ab7552511f767201755ac01411d063"
+name = "sqlformat"
+version = "0.3.5"
+source = "git+https://github.com/shssoichiro/sqlformat-rs.git?rev=80255c7#80255c79682166b997318259562defdef33601ce"
 dependencies = [
- "regex",
+ "unicode_categories",
+ "winnow 0.7.2",
 ]
 
 [[package]]
@@ -9190,7 +9190,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "smallvec",
- "sqlformat",
+ "sqlformat 0.2.6",
  "thiserror 1.0.69",
  "time",
  "tokio",
@@ -11693,6 +11693,15 @@ name = "winnow"
 version = "0.6.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "36c1fec1a2bb5866f07c25f68c26e565c4c200aebb96d7e55710c19d3e8ac49b"
+dependencies = [
+ "memchr",
+]
+
+[[package]]
+name = "winnow"
+version = "0.7.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "59690dea168f2198d1a3b0cac23b8063efcd11012f10ae4698f284808c8ef603"
 dependencies = [
  "memchr",
 ]

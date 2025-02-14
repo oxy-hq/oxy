@@ -161,9 +161,25 @@ where
         .collect::<Vec<_>>()
         .await;
 
-        for result in results {
-            result?;
+        log::info!(
+            "LoopExecutor: collected results {}",
+            results.iter().fold(0, |acc, r| acc + r.is_ok() as i32)
+        );
+
+        let errs = results
+            .into_iter()
+            .filter_map(|r| r.err())
+            .collect::<Vec<OnyxError>>();
+        if !errs.is_empty() {
+            return Err(OnyxError::RuntimeError(format!(
+                "----------\n{}\n----------",
+                errs.iter()
+                    .map(|e| e.to_string())
+                    .collect::<Vec<String>>()
+                    .join("\n**********\n")
+            )));
         }
+
         Ok(())
     }
 
@@ -253,9 +269,7 @@ where
         Ok(())
     }
 
-    pub fn finish(self) -> ContextValue {
-        let value = self.child_state.result.clone();
+    pub fn finish(self) {
         self.execution_context.write(self.child_state.result);
-        value
     }
 }
