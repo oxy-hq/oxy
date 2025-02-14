@@ -20,6 +20,7 @@ use crate::errors::OnyxError;
 use crate::execute::agent::build_agent;
 use crate::execute::agent::AgentInput;
 use crate::execute::core::arrow_table::ArrowTable;
+use crate::execute::core::cache::Cacheable;
 use crate::execute::core::value::ContextValue;
 use crate::execute::core::write::Write;
 use crate::execute::core::Executable;
@@ -27,8 +28,9 @@ use crate::execute::core::ExecutionContext;
 use crate::execute::workflow::LoopInput;
 use crate::execute::workflow::WorkflowEvent;
 use crate::execute::workflow::WorkflowInput;
-use crate::workflow::cache::get_agent_cache;
-use crate::StyledText;
+
+use super::cache::AgentCache;
+use super::cache::FileCache;
 
 pub struct WorkflowExecutor {
     workflow: Workflow,
@@ -101,26 +103,7 @@ impl Executable<WorkflowInput, WorkflowEvent> for AgentStep {
                 &agent_config,
             )
             .await?;
-        let step_output = agent_executor.finish();
-
-        if let Some(cache) = &self.cache {
-            if cache.enabled {
-                let cache_file_path_str =
-                    execution_context.renderer.render_async(&cache.path).await?;
-
-                let cache_file_path = execution_context
-                    .config
-                    .project_path
-                    .join(cache_file_path_str);
-
-                execution_context
-                    .notify(WorkflowEvent::CacheAgentResult {
-                        result: step_output,
-                        file_path: cache_file_path,
-                    })
-                    .await?;
-            }
-        }
+        agent_executor.finish();
         Ok(())
     }
 }
@@ -256,7 +239,7 @@ impl Executable<LoopInput, WorkflowEvent> for LoopSequentialStep {
             .iter()
             .map(|v| ContextValue::Text(v.to_string()))
             .collect();
-        loop_executor
+        let res = loop_executor
             .params(
                 &mut values,
                 &self.steps,
@@ -272,48 +255,65 @@ impl Executable<LoopInput, WorkflowEvent> for LoopSequentialStep {
                 self.concurrency,
                 Some(|| {}),
             )
-            .await?;
+            .await;
         loop_executor.finish()?;
+        res
+    }
+}
 
-        Ok(())
+impl Cacheable<(), WorkflowEvent> for Step {
+    fn cache_key(
+        &self,
+        execution_context: &mut ExecutionContext<'_, WorkflowEvent>,
+        _input: &(),
+    ) -> Option<String> {
+        match &self.cache {
+            Some(cache) => {
+                if !cache.enabled {
+                    return None;
+                }
+
+                if let Ok(cache_key) = execution_context.renderer.render(&cache.path) {
+                    let file_key = execution_context.config.project_path.join(&cache_key);
+                    Some(file_key.to_string_lossy().to_string())
+                } else {
+                    None
+                }
+            }
+            None => None,
+        }
+    }
+
+    fn hit_event(&self, key: &str) -> Option<WorkflowEvent> {
+        Some(WorkflowEvent::CacheHit {
+            path: key.to_string(),
+        })
+    }
+
+    fn write_event(&self, key: &str) -> Option<WorkflowEvent> {
+        Some(WorkflowEvent::CacheWrite {
+            path: key.to_string(),
+        })
+    }
+
+    fn write_event_failed(&self, key: &str, err: OnyxError) -> Option<WorkflowEvent> {
+        Some(WorkflowEvent::CacheWriteFailed {
+            path: key.to_string(),
+            err,
+        })
     }
 }
 
 #[async_trait::async_trait]
-impl Executable<Step, WorkflowEvent> for Step {
+impl Executable<(), WorkflowEvent> for Step {
     async fn execute(
         &self,
         execution_context: &mut ExecutionContext<'_, WorkflowEvent>,
-        _input: Step,
+        _input: (),
     ) -> Result<(), OnyxError> {
-        execution_context
-            .notify(WorkflowEvent::StepStarted {
-                name: self.name.clone(),
-            })
-            .await?;
         match &self.step_type {
             StepType::Agent(agent) => {
-                let cache_result = match &agent.cache {
-                    Some(cache) => match cache.enabled {
-                        true => {
-                            let cached_file_path =
-                                execution_context.renderer.render(&cache.path)?;
-                            get_agent_cache(
-                                &execution_context.config.project_path.clone(),
-                                &cached_file_path,
-                            )
-                        }
-                        false => None,
-                    },
-                    None => None,
-                };
-
-                if let Some(cache_result) = cache_result {
-                    execution_context.write(cache_result);
-                    println!("{}", "Cache detected. Using cache.".primary());
-                } else {
-                    agent.execute(execution_context, WorkflowInput).await?;
-                }
+                agent.execute(execution_context, WorkflowInput).await?;
             }
             StepType::ExecuteSQL(execute_sql) => {
                 execute_sql
@@ -345,6 +345,34 @@ impl Executable<Step, WorkflowEvent> for Step {
     }
 }
 
+struct StepExecutor;
+
+#[async_trait::async_trait]
+impl Executable<Step, WorkflowEvent> for StepExecutor {
+    async fn execute(
+        &self,
+        execution_context: &mut ExecutionContext<'_, WorkflowEvent>,
+        input: Step,
+    ) -> Result<(), OnyxError> {
+        execution_context
+            .notify(WorkflowEvent::StepStarted {
+                name: input.name.clone(),
+            })
+            .await?;
+        let mut cache_executor = execution_context.cache_executor();
+        let res = match &input.step_type {
+            StepType::Agent(_agent) => {
+                cache_executor
+                    .execute(&input, &input, (), &AgentCache::new(input.name.to_string()))
+                    .await
+            }
+            _ => cache_executor.execute(&input, &input, (), &FileCache).await,
+        };
+        cache_executor.finish();
+        res
+    }
+}
+
 #[async_trait::async_trait]
 impl Executable<ContextValue, WorkflowEvent> for Vec<Step> {
     async fn execute(
@@ -354,14 +382,14 @@ impl Executable<ContextValue, WorkflowEvent> for Vec<Step> {
     ) -> Result<(), OnyxError> {
         let mut map_executor = execution_context.map_executor();
         map_executor.prefill("value", input);
-        map_executor
+        let res = map_executor
             .entries(
                 self.iter()
-                    .map(|s| (s.name.clone(), s.clone(), s.clone()))
-                    .collect::<Vec<(String, Step, Step)>>(),
+                    .map(|s| (s.name.clone(), StepExecutor, s.clone()))
+                    .collect::<Vec<(_, _, _)>>(),
             )
-            .await?;
+            .await;
         map_executor.finish();
-        Ok(())
+        res
     }
 }

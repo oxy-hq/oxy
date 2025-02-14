@@ -14,7 +14,7 @@ use crate::{
     errors::OnyxError,
     execute::exporter::{export_agent_step, export_execute_sql, export_formatter},
     utils::print_colored_sql,
-    workflow::{cache::write_agent_cache, executor::WorkflowExecutor, WorkflowResult},
+    workflow::{executor::WorkflowExecutor, WorkflowResult},
     StyledText,
 };
 
@@ -23,7 +23,6 @@ use super::{
     core::{
         event::{Dispatcher, Handler},
         run,
-        value::ContextValue,
     },
     renderer::{Renderer, TemplateRegister},
 };
@@ -54,6 +53,16 @@ pub enum WorkflowEvent {
         err: OnyxError,
         after: Duration,
     },
+    CacheHit {
+        path: String,
+    },
+    CacheWrite {
+        path: String,
+    },
+    CacheWriteFailed {
+        path: String,
+        err: OnyxError,
+    },
 
     // export
     Export {
@@ -83,12 +92,6 @@ pub enum WorkflowEvent {
         output: String,
         export_file_path: PathBuf,
     },
-
-    // agent
-    CacheAgentResult {
-        result: ContextValue,
-        file_path: PathBuf,
-    },
 }
 
 impl TemplateRegister for Workflow {
@@ -100,15 +103,16 @@ impl TemplateRegister for Workflow {
 impl TemplateRegister for &Step {
     fn register_template(&self, renderer: &mut Renderer) -> Result<(), OnyxError> {
         let mut register = renderer.child_register();
+
+        if let Some(cache) = &self.cache {
+            register.entry(&cache.path.as_str())?;
+        }
+
         match &self.step_type {
             StepType::Agent(agent) => {
                 register.entry(&agent.prompt.as_str())?;
                 if let Some(export) = &agent.export {
                     register.entry(&export.path.as_str())?;
-                }
-
-                if let Some(cache) = &agent.cache {
-                    register.entry(&cache.path.as_str())?;
                 }
             }
             StepType::ExecuteSQL(execute_sql) => {
@@ -196,6 +200,18 @@ impl Handler for WorkflowReceiver {
             WorkflowEvent::StepStarted { name } => {
                 println!("\n⏳Starting {}", name.text());
             }
+            WorkflowEvent::CacheHit { .. } => {
+                println!("{}", "Cache detected. Using cache.".primary());
+            }
+            WorkflowEvent::CacheWrite { path } => {
+                println!("{}", format!("Cache written to {}", path).primary());
+            }
+            WorkflowEvent::CacheWriteFailed { path, err } => {
+                println!(
+                    "{}",
+                    format!("Failed to write cache to {}: {}", path, err).error()
+                );
+            }
             WorkflowEvent::StepUnknown { name } => {
                 println!(
                     "{}",
@@ -267,25 +283,6 @@ impl Handler for WorkflowExporter {
     }
 }
 
-pub struct WorkflowCacheStep;
-
-impl Handler for WorkflowCacheStep {
-    type Event = WorkflowEvent;
-
-    fn handle(&self, event: &Self::Event) {
-        match event {
-            WorkflowEvent::CacheAgentResult { result, file_path } => {
-                write_agent_cache(file_path, result);
-                log::debug!("Cache agent result: {:?}", event);
-            }
-
-            _ => {
-                log::debug!("Unhandled event: {:?}", event);
-            }
-        }
-    }
-}
-
 pub async fn run_workflow(workflow_path: &PathBuf) -> Result<WorkflowResult, OnyxError> {
     let config = load_config(None)?;
     let workflow = config.load_workflow(workflow_path)?;
@@ -293,11 +290,7 @@ pub async fn run_workflow(workflow_path: &PathBuf) -> Result<WorkflowResult, Ony
         OnyxError::ConfigurationError(format!("Invalid workflow configuration: {}", e))
     })?;
 
-    let dispatcher = Dispatcher::new(vec![
-        Box::new(WorkflowReceiver),
-        Box::new(WorkflowExporter),
-        Box::new(WorkflowCacheStep),
-    ]);
+    let dispatcher = Dispatcher::new(vec![Box::new(WorkflowReceiver), Box::new(WorkflowExporter)]);
     let executor = WorkflowExecutor::new(workflow.clone());
     let output = run(
         &executor,

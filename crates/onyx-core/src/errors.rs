@@ -19,6 +19,8 @@ pub enum OnyxError {
     AnonymizerError(String),
     #[error("Serializer error:\n{0}")]
     SerializerError(String),
+    #[error("IO error:\n{0}")]
+    IOError(String),
 }
 
 impl From<Box<dyn std::error::Error>> for OnyxError {

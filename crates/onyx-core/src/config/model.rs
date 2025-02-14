@@ -266,9 +266,6 @@ pub struct AgentStep {
 
     #[garde(dive)]
     pub export: Option<StepExport>,
-
-    #[garde(dive)]
-    pub cache: Option<StepCache>,
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug, Validate, JsonSchema)]
@@ -397,6 +394,8 @@ pub struct Step {
     #[garde(dive)]
     #[garde(custom(validate_step))]
     pub step_type: StepType,
+    #[garde(dive)]
+    pub cache: Option<StepCache>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Validate, JsonSchema, Clone)]
@@ -486,10 +485,20 @@ pub struct ExecuteSQLTool {
 }
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
+pub struct ValidateSQLTool {
+    pub name: String,
+    #[serde(default = "default_validate_sql_tool_description")]
+    pub description: String,
+    pub warehouse: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
 #[serde(tag = "type")]
 pub enum ToolConfig {
     #[serde(rename = "execute_sql")]
     ExecuteSQL(ExecuteSQLTool),
+    #[serde(rename = "validate_sql")]
+    ValidateSQL(ValidateSQLTool),
     #[serde(rename = "retrieval")]
     Retrieval(RetrievalTool),
 }
@@ -548,6 +557,10 @@ fn default_retrieval_factor() -> usize {
 
 fn default_sql_tool_description() -> String {
     "Execute the SQL query. If the query is invalid, fix it and run again.".to_string()
+}
+
+fn default_validate_sql_tool_description() -> String {
+    "Validate the SQL query. If the query is invalid, fix it and run again.".to_string()
 }
 
 fn default_tools() -> Vec<ToolConfig> {
