@@ -141,7 +141,6 @@ const SystemPage: React.FC<SystemPageProps> = ({ data }) => {
         <div className={sectionStyle}>
           <h2 className={titleStyle}>Defaults</h2>
           <p className={listItemStyle}>
-            <strong>Agent:</strong> {data.defaults.agent} <br />
             <strong>Project Path:</strong> {data.defaults.project_path}
           </p>
         </div>

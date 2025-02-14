@@ -31,7 +31,7 @@ export default function MobileLeftSidebar() {
         className={mobileSidebarStyles({ state: sidebarState })}
         onMouseDown={(e) => e.preventDefault()}
       >
-        <LeftSidebarContent isMobile />
+        <LeftSidebarContent />
       </div>
 
       <div
