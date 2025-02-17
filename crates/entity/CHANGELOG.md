@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.35](https://github.com/onyx-hq/onyx/compare/0.1.34...0.1.35) (2025-02-17)
+
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+* synchronise version ([9568e9b](https://github.com/onyx-hq/onyx/commit/9568e9b59cd831d32c7f75d43a715e50f167b364))
+
 ## [0.1.34](https://github.com/onyx-hq/onyx/compare/0.1.33...0.1.34) (2025-02-14)
 
 ### <!-- 1 -->🐛 Bug Fixes

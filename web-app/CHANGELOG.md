@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.35](https://github.com/onyx-hq/onyx/compare/0.1.34...0.1.35) (2025-02-17)
+
+
+### <!-- 0 -->🚀 Features
+
+* [#305](https://github.com/onyx-hq/onyx/issues/305) Chat UI for Agent ([#346](https://github.com/onyx-hq/onyx/issues/346)) ([0530f4c](https://github.com/onyx-hq/onyx/commit/0530f4c9a5317f4d8c2fcc5f955799a91f676f4e))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* lint errors ([#353](https://github.com/onyx-hq/onyx/issues/353)) ([0fa870f](https://github.com/onyx-hq/onyx/commit/0fa870ff68fc5cf984ed316f813450ce94256dd8))
+* remove unnecessary props and clean up default display in system config ([58d2b4a](https://github.com/onyx-hq/onyx/commit/58d2b4ac107895fe98d8dc35d1f3af26ed7a425e))
+
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+* synchronise version ([9568e9b](https://github.com/onyx-hq/onyx/commit/9568e9b59cd831d32c7f75d43a715e50f167b364))
+
 ## [0.1.34](https://github.com/onyx-hq/onyx/compare/0.1.33...0.1.34) (2025-02-14)
 
 ### <!-- 1 -->🐛 Bug Fixes
