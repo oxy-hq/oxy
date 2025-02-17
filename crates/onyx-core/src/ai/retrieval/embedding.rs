@@ -14,7 +14,7 @@ use async_openai::{
 use async_trait::async_trait;
 use lancedb::{
     connect,
-    connection::CreateTableMode,
+    database::CreateTableMode,
     index::{
         scalar::{FtsIndexBuilder, FullTextSearchQuery},
         vector::IvfHnswPqIndexBuilder,

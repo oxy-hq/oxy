@@ -11,7 +11,6 @@ edition.workspace = true
 [dependencies]
 anyhow = "1.0.89"
 arrow = { version = "^53.3.0", features = ["json"] }
-arrow_46 = { version = "^46.0", package = "arrow" }
 assert_cmd = "2.0.16"
 async-openai = "0.26.0"
 async-stream = "0.3.6"
@@ -27,7 +26,7 @@ base64 = "0.21"
 chrono = "0.4.39"
 clap = { version = "4.5.18", features = ["derive"] }
 colored = "2.1.0"
-connectorx = { version = "0.3.3", features = ["dst_arrow", "src_bigquery"] }
+connectorx = { version = "0.4.1", features = ["dst_arrow", "src_bigquery"] }
 csv = "1.3.1"
 dirs = "5.0.1"
 duckdb = { version = "=1.1.1", features = [
@@ -45,7 +44,7 @@ humantime = "2.1.0"
 include_dir = "0.7"
 indoc = "2.0.5"
 itertools = "0.14.0"
-lancedb = { version = "0.14.0" }
+lancedb = "0.16.0"
 lazy_static = "1.4.0"
 log = "0.4"
 migration = { path = "../migration" }
