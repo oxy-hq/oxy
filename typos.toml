@@ -4,3 +4,8 @@
 extend-ignore-re = [
   "\\[[[:xdigit:]]{7}\\]\\(https://github.com/onyx-hq/onyx/commit/[[:xdigit:]]{40}\\)",
 ]
+
+[files]
+extend-exclude = [
+  "CHANGELOG.md",
+]
