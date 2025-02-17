@@ -6459,6 +6459,7 @@ dependencies = [
  "itertools 0.14.0",
  "lancedb",
  "lazy_static",
+ "libduckdb-sys",
  "log",
  "migration",
  "minijinja",
