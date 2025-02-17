@@ -1,10 +1,11 @@
 pub mod ai;
-mod api;
+pub mod api;
 pub mod cli;
 pub mod connector;
 pub mod db;
 pub mod errors;
 pub mod execute;
+pub mod service;
 pub mod theme;
 pub mod utils;
 pub mod workflow;

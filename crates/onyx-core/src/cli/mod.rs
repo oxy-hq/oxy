@@ -362,7 +362,8 @@ async fn handle_agent_file(
     let question = question.ok_or_else(|| {
         OnyxError::ArgumentError("Question is required for agent files".to_string())
     })?;
-    let result = run_agent(file_path, &FileFormat::Markdown, Some(question)).await?;
+    let config = load_config(None)?;
+    let result = run_agent(file_path, &FileFormat::Markdown, Some(question), &config).await?;
     Ok(result)
 }
 

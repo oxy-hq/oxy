@@ -70,7 +70,8 @@ impl Executable<WorkflowInput, WorkflowEvent> for AgentStep {
         execution_context: &mut ExecutionContext<'_, WorkflowEvent>,
         _input: WorkflowInput,
     ) -> Result<(), OnyxError> {
-        let agent_file = execution_context.config.project_path.join(&self.agent_ref);
+        let config = execution_context.config.clone();
+        let agent_file = config.project_path.join(&self.agent_ref);
         let prompt = execution_context.renderer.render(&self.prompt)?;
         let export_file_path = match &self.export {
             Some(export) => match execution_context.renderer.render(&export.path) {
@@ -82,8 +83,12 @@ impl Executable<WorkflowInput, WorkflowEvent> for AgentStep {
             None => None,
         };
         let mut agent_executor = execution_context.child_executor();
-        let (agent, agent_config, global_context, _) =
-            build_agent(Some(&agent_file), &FileFormat::Json, Some(prompt.clone()))?;
+        let (agent, agent_config, global_context) = build_agent(
+            Some(&agent_file),
+            &FileFormat::Json,
+            Some(prompt.clone()),
+            &config,
+        )?;
         let step = self.clone();
         let map_agent_event = move |event| WorkflowEvent::Agent {
             orig: event,

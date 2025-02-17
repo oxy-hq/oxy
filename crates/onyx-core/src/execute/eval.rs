@@ -200,12 +200,14 @@ impl Executable<(), EvalEvent> for TargetAgent {
                 "Task description is required".to_string(),
             ));
         }
-        let agent_file = execution_context.config.project_path.join(&self.agent_ref);
+        let config = execution_context.config.clone();
+        let agent_file = config.project_path.join(&self.agent_ref);
         let mut agent_executor = execution_context.child_executor();
-        let (agent, agent_config, global_context, _) = build_agent(
+        let (agent, agent_config, global_context) = build_agent(
             Some(&agent_file),
             &FileFormat::Json,
             self.input.prompt.clone(),
+            &config,
         )?;
 
         let map_event = |event| EvalEvent::Agent(event);

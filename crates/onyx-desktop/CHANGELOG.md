@@ -4,11 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [0.1.34](https://github.com/onyx-hq/onyx/compare/0.1.33...0.1.34) (2025-02-14)
 
-
 ### <!-- 0 -->🚀 Features
 
-* add download component to our docs ([#345](https://github.com/onyx-hq/onyx/issues/345)) ([f8eac07](https://github.com/onyx-hq/onyx/commit/f8eac07f97d37673942953165f9e4dfa742b8ed5))
-* build file tree extended functionalities ([#311](https://github.com/onyx-hq/onyx/issues/311)) ([4638861](https://github.com/onyx-hq/onyx/commit/46388611a404bc1647e5e7591181e683b9b32438))
+- add download component to our docs ([#345](https://github.com/onyx-hq/onyx/issues/345)) ([f8eac07](https://github.com/onyx-hq/onyx/commit/f8eac07f97d37673942953165f9e4dfa742b8ed5))
+- build file tree extended functionalities ([#311](https://github.com/onyx-hq/onyx/issues/311)) ([4638861](https://github.com/onyx-hq/onyx/commit/46388611a404bc1647e5e7591181e683b9b32438))
 
 ## [0.1.33](https://github.com/onyx-hq/onyx/compare/0.1.32...0.1.33) (2025-02-06)
 

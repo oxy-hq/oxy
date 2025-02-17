@@ -19,6 +19,8 @@ tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
 tauri-plugin-log = "2.0.0-rc"
 tokio = { version = "1.41", features = ["full"] }
+futures = "0.3"
+tauri-plugin-store = "2"
 
 [build-dependencies]
 tauri-build = { version = "2.0.1", features = ["config-json5"] }

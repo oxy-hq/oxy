@@ -133,8 +133,9 @@ pub fn build_agent(
     agent_file: Option<&PathBuf>,
     file_format: &FileFormat,
     prompt: Option<String>,
-) -> Result<(OpenAIAgent, AgentConfig, Value, Config), OnyxError> {
-    let (agent, agent_config, config) = setup_agent(agent_file, file_format)?;
+    config: &Config,
+) -> Result<(OpenAIAgent, AgentConfig, Value), OnyxError> {
+    let (agent, agent_config) = setup_agent(agent_file, file_format, config)?;
     let contexts = Contexts::new(
         agent_config.context.clone().unwrap_or_default(),
         config.clone(),
@@ -146,23 +147,26 @@ pub fn build_agent(
         warehouses => Value::from_object(warehouses),
         tools => Value::from_object(tools_context),
     };
-    Ok((agent, agent_config, global_context, config))
+    Ok((agent, agent_config, global_context))
 }
 
 pub async fn run_agent(
     agent_file: Option<&PathBuf>,
     file_format: &FileFormat,
     prompt: Option<String>,
+    config: &Config,
 ) -> Result<AgentResult, OnyxError> {
-    let (agent, agent_config, global_context, config) =
-        build_agent(agent_file, file_format, prompt.clone())?;
+    let (agent, agent_config, global_context) =
+        build_agent(agent_file, file_format, prompt.clone(), config)?;
+
+    println!("run_agent:");
     let output = run(
         &agent,
         AgentInput {
             prompt,
             system_instructions: agent_config.system_instructions.clone(),
         },
-        config,
+        config.clone(),
         global_context,
         Some(&agent_config),
         AgentReceiver,
