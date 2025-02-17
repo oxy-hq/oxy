@@ -4,15 +4,16 @@ import Text from "@/components/ui/Typography/Text";
 
 import { StepData } from ".";
 import { css } from "styled-system/css";
+import { SvgAssets } from "@/components/ui/Icon/Dictionary";
 
-const stepNameMap = {
+const stepNameMap: Record<string, string> = {
   execute_sql: "SQL",
   loop_sequential: "Loop sequential",
   formatter: "Formatter",
   agent: "Agent",
 };
 
-const stepIconMap = {
+const stepIconMap: Record<string, SvgAssets> = {
   execute_sql: "code",
   loop_sequential: "arrow_reload",
   formatter: "placeholder",
@@ -32,8 +33,8 @@ export const StepHeader = ({
   expanded,
   onExpandClick,
 }: Props) => {
-  const stepName = stepNameMap[step.type];
-  const stepIcon = stepIconMap[step.type];
+  const stepName = stepNameMap[step.type as keyof typeof stepNameMap];
+  const stepIcon = stepIconMap[step.type as keyof typeof stepIconMap];
   return (
     <div
       className={css({

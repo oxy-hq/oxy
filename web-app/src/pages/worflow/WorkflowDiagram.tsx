@@ -108,8 +108,8 @@ const getLayoutedElements = async (nodes: Node[], edges: Edge[]) => {
           "elk.algorithm": "layered",
           "elk.direction": "DOWN",
           "elk.padding": `[top=${topPadding}, left=${contentPadding}, bottom=${contentPadding + nodePadding}, right=${contentPadding}]`,
-          "elk.spacing.nodeNode": distanceBetweenNodes,
-          "elk.layered.spacing.nodeNodeBetweenLayers": distanceBetweenNodes,
+          "elk.spacing.nodeNode": `${distanceBetweenNodes}`,
+          "elk.layered.spacing.nodeNodeBetweenLayers": `${distanceBetweenNodes}`,
         },
         children: buildChildren(childNodes),
         parentId: node.parentId,
@@ -186,6 +186,9 @@ const buildNodes = (
         height: 0,
       },
       hidden: false,
+      width: 0,
+      height: 0,
+      children: [],
     };
     if (step.type === "loop_sequential") {
       const { nodes: loopNodes, edges: loopEdges } = buildNodes(

@@ -30,6 +30,7 @@ export type Node = {
   data: NodeData;
   width: number;
   height: number;
+  children: Node[];
 };
 
 export type Edge = {
@@ -96,7 +97,7 @@ const useDiagram = create<DiagramState>((set, get) => ({
       const nodeIds = new Set(ids);
       const newNodes = state.nodes.map((node) => {
         // Check if the node or its parent is in the Set
-        if (nodeIds.has(node.id) || nodeIds.has(node.parentId)) {
+        if (nodeIds.has(node.id) || nodeIds.has(node.parentId!)) {
           // Add the node's ID to the Set to handle its children
           nodeIds.add(node.id);
           // Return a new node object with updated hidden property

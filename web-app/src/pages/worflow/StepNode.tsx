@@ -9,25 +9,14 @@ export type NodeData = {
   id: string;
 };
 
-type NodeType = {
-  id: string;
-  data: NodeData;
-  position: {
-    x: number;
-    y: number;
+type Props = NodeProps & {
+  data: {
+    step: StepData;
+    id: string;
   };
-  type: string;
 };
 
-type Props = NodeProps<NodeType>;
-
 export function StepNode({ data, isConnectable }: Props) {
-  // return <div key={data.id} style={{
-  //   border: "1px solid #000",
-  //   // backgroundColor: "#fff",
-  //   width: "100%",
-  //   height: "100%"
-  // }}></div>
   return (
     <div key={data.id}>
       <NodeContainer>
