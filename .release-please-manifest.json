@@ -1,8 +1,8 @@
 {
-  "crates/onyx-core": "0.1.34",
-  "crates/onyx-desktop": "0.1.34",
-  "crates/onyx-py": "0.1.34",
-  "crates/migration": "0.1.34",
-  "crates/entity": "0.1.34",
-  "web-app": "0.1.34"
+  "crates/onyx-core": "0.1.35",
+  "crates/onyx-desktop": "0.1.35",
+  "crates/onyx-py": "0.1.35",
+  "crates/migration": "0.1.35",
+  "crates/entity": "0.1.35",
+  "web-app": "0.1.35"
 }

@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.35](https://github.com/onyx-hq/onyx/compare/0.1.34...0.1.35) (2025-02-17)
+
+
+### <!-- 0 -->🚀 Features
+
+* [#305](https://github.com/onyx-hq/onyx/issues/305) Chat UI for Agent ([#346](https://github.com/onyx-hq/onyx/issues/346)) ([0530f4c](https://github.com/onyx-hq/onyx/commit/0530f4c9a5317f4d8c2fcc5f955799a91f676f4e))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* lock duckdb version ([#350](https://github.com/onyx-hq/onyx/issues/350)) ([0fe2d10](https://github.com/onyx-hq/onyx/commit/0fe2d10ada984f37e6cf96b0be8e0aa8af082013))
+
+
+### <!-- 2 -->🚜 Refactor
+
+* unify arrow version and error handling inside connector ([#349](https://github.com/onyx-hq/onyx/issues/349)) ([17b0b03](https://github.com/onyx-hq/onyx/commit/17b0b037218770d8d2d699d7f4c85314c81d700a))
+
 ## [0.1.34](https://github.com/onyx-hq/onyx/compare/0.1.33...0.1.34) (2025-02-14)
 
 ### <!-- 1 -->🐛 Bug Fixes

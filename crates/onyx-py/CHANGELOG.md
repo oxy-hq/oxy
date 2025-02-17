@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.35](https://github.com/onyx-hq/onyx/compare/0.1.34...0.1.35) (2025-02-17)
+
+
+### <!-- 0 -->🚀 Features
+
+* [#305](https://github.com/onyx-hq/onyx/issues/305) Chat UI for Agent ([#346](https://github.com/onyx-hq/onyx/issues/346)) ([0530f4c](https://github.com/onyx-hq/onyx/commit/0530f4c9a5317f4d8c2fcc5f955799a91f676f4e))
+
 ## [0.1.33](https://github.com/onyx-hq/onyx/compare/0.1.32...0.1.33) (2025-02-06)
 
 ### <!-- 0 -->🚀 Features
