@@ -5,7 +5,7 @@ import { memo } from "react";
 import Markdown, { ExtendedComponents } from "react-markdown";
 import directive from "remark-directive";
 import remarkGfm from "remark-gfm";
-import { cx, sva } from "styled-system/css";
+import { css, cx, sva } from "styled-system/css";
 import { stack } from "styled-system/patterns";
 
 import CodeContainer from "./Code";
@@ -14,6 +14,12 @@ type Props = {
   content: string;
   className?: string;
 };
+
+const wrapperStyles = css({
+  borderRadius: "borderRadiusXL",
+  bg: "neutral.fill.colorFillTertiary",
+  p: "padding.paddingSM",
+});
 
 const markdownStyles = sva({
   slots: ["root", "ol", "ul", "table", "thead", "th", "td", "tableWrap"],
@@ -38,15 +44,15 @@ const markdownStyles = sva({
     tableWrap: {
       rounded: "minimal",
       borderWidth: "1px",
-      borderColor: "border.primary",
+      borderColor: "neutral.text.colorTextSecondary",
       overflow: "auto",
       "&::-webkit-scrollbar": {
         bg: "transparent",
-        borderTop: "1px solid token(colors.border.primary)",
+        borderTop: "1px solid token(colors.neutral.text.colorTextSecondary)",
         height: "22px",
       },
       "&::-webkit-scrollbar-thumb": {
-        bg: "token(colors.border.primary)",
+        bg: "neutral.text.colorTextSecondary",
         backgroundClip: "content-box",
         border: "8px solid transparent",
         borderRadius: "100px",
@@ -55,7 +61,7 @@ const markdownStyles = sva({
     table: {
       rounded: "minimal",
       borderWidth: "1px",
-      borderColor: "border.primary",
+      borderColor: "neutral.text.colorTextSecondary",
       borderCollapse: "collapse",
       borderStyle: "hidden",
       width: "100%",
@@ -81,7 +87,7 @@ const markdownStyles = sva({
       pb: "sm",
       textAlign: "start !important",
       borderWidth: "1px",
-      borderColor: "border.primary",
+      borderColor: "neutral.text.colorTextSecondary",
       borderCollapse: "collapse",
     },
   },
@@ -129,7 +135,7 @@ const extendedComponents: ExtendedComponents = {
 function AnswerContent({ content, className }: Props) {
   const classes = markdownStyles();
   return (
-    <div>
+    <div className={wrapperStyles}>
       <Markdown
         className={cx(classes.root, className)}
         remarkPlugins={[directive, remarkGfm]}

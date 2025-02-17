@@ -182,7 +182,13 @@ impl Config {
 }
 
 pub fn load_config(project_path: Option<PathBuf>) -> Result<Config, OnyxError> {
-    let root = project_path.unwrap_or(find_project_path()?);
+    let root = project_path.unwrap_or_else(|| {
+        find_project_path()
+            .map_err(|e| {
+                OnyxError::ConfigurationError(format!("Failed to find project path: {}", e))
+            })
+            .unwrap()
+    });
     let config_path: PathBuf = root.join("config.yml");
     let config = parse_config(&config_path, root)?;
 

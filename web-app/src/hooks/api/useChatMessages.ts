@@ -1,22 +1,21 @@
-import { useQuery } from "@tanstack/react-query";
-import axios from "axios";
-
-import { apiClient } from "@/services/axios";
-
+import { useQuery, UseQueryResult } from "@tanstack/react-query";
+import { service } from "@/services/service";
 import queryKeys from "./queryKey";
+import { Message } from "@/types/chat";
 
-export const useChatMessages = (agentPath = "", enabled = true) => {
+export const useChatMessages = (
+  agentPath = "",
+  enabled = true,
+): UseQueryResult<Message[]> => {
   return useQuery({
     queryKey: queryKeys.conversation.messages(agentPath),
     queryFn: async () => {
       try {
-        const response = await apiClient.get("/conversation/" + agentPath);
-        return response.data.messages;
+        const res = await service.listChatMessages(agentPath);
+        return res;
       } catch (error) {
-        if (axios.isAxiosError(error) && error.response?.status === 404) {
-          return [];
-        }
-        throw error;
+        console.error(error);
+        return [];
       }
     },
     enabled,

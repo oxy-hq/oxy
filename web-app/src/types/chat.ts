@@ -16,3 +16,13 @@ export type Message = {
   content: string;
   is_human: boolean;
 };
+
+export type ChatRequest = {
+  agent: string;
+  question: string;
+  title: string;
+  memory: Message[];
+  project_path: string;
+};
+
+export type ChatType = "chat" | "preview";

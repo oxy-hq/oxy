@@ -16,6 +16,7 @@ const wrapStyle = css({
 
 const timeStyles = css({
   color: "text.secondary",
+  py: "padding.paddingSM",
 });
 
 const dateWrapperStyle = css({

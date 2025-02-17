@@ -19,6 +19,7 @@ interface IChatContextProps {
   onSendChatMessage: (
     agentName: string,
     content: string,
+    projectPath: string,
     onSubmitQuestionSuccess: () => void,
   ) => Promise<void>;
   onStop: () => void;

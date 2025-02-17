@@ -29,13 +29,12 @@ use tools::{ExecuteSQLParams, ExecuteSQLTool, RetrieveParams, RetrieveTool, Tool
 pub fn setup_agent(
     agent_file: Option<&PathBuf>,
     file_format: &FileFormat,
-) -> Result<(OpenAIAgent, AgentConfig, Config), OnyxError> {
-    let config = load_config(None)?;
-
+    config: &Config,
+) -> Result<(OpenAIAgent, AgentConfig), OnyxError> {
     let (agent_config, agent_name) = config.load_agent_config(agent_file)?;
     let agent = from_config(&agent_name, &config, &agent_config, file_format)
         .map_err(|e| OnyxError::AgentError(format!("Error setting up agent: {}", e)))?;
-    Ok((agent, agent_config, config))
+    Ok((agent, agent_config))
 }
 
 pub fn setup_eval_agent(prompt: &str, model: &str) -> Result<OpenAIAgent, OnyxError> {

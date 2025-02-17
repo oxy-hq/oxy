@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dayjs from "dayjs";
 
 import { getAgentNameFromPath } from "@/libs/utils/agent";
-import { Message } from "@/types/chat";
+import { ChatRequest, ChatType, Message } from "@/types/chat";
 
 import { useChatState } from "./useChatState";
 import { useFetchStreamWithAbort } from "./useFetchStreamWithAbort";
@@ -66,17 +66,13 @@ export const useChatActions = (defaultMessages: Message[] = []) => {
 
   const handleChatAction = useCallback(
     async (
-      apiEndpoint: string,
-      body: Record<string, unknown>,
+      type: ChatType,
+      request: ChatRequest,
       onReadStream: (message: Message) => void,
     ) => {
       setChatStatus("loading");
       try {
-        await fetchStreamWithAbort(apiEndpoint, onReadStream, {
-          method: "POST",
-          body: JSON.stringify(body),
-        });
-
+        await fetchStreamWithAbort(type, onReadStream, request);
         setChatStatus("success");
       } catch (error) {
         setChatError("Failed to perform chat action.");
@@ -116,14 +112,17 @@ export const useChatActions = (defaultMessages: Message[] = []) => {
     async (
       agentPath: string,
       content: string,
+      projectPath: string,
       onSubmitQuestionSuccess: () => void,
     ) => {
       await handleChatAction(
-        "/ask",
+        "chat",
         {
           question: content,
           agent: agentPath,
           title: getAgentNameFromPath(agentPath),
+          memory: [],
+          project_path: projectPath,
         },
         (message) => {
           handleReceivedMessage(message, onSubmitQuestionSuccess);

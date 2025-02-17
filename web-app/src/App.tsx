@@ -8,14 +8,14 @@ import { css } from "styled-system/css";
 
 import "@xyflow/react/dist/style.css";
 import WithSidebarLayout from "@/components/WithSidebarLayout";
-import ChatPage from "@/pages/chat";
 import WorkflowPage from "./pages/worflow";
 
 import ProtectedRoute from "./components/ProtectedRoute";
 import { TooltipProvider } from "./components/ui/Tooltip";
 import EmptyPage from "./pages/empty";
 import Init from "./pages/init";
-
+import AgentPage from "./pages/agent";
+import FilePage from "./pages/file";
 const TOOLTIP_DELAY_DURATION = 3;
 
 const layoutWrapperStyles = css({
@@ -40,8 +40,9 @@ function App() {
               }
             >
               <Route path="/" element={<EmptyPage />} />
-              <Route path="/chat/:id" element={<ChatPage />} />
               <Route path="/workflow/:pathb64" element={<WorkflowPage />} />
+              <Route path="/agent/:pathb64" element={<AgentPage />} />
+              <Route path="/file/:pathb64" element={<FilePage />} />
             </Route>
             <Route path="*" element={<Navigate to="/" />} />
           </Routes>

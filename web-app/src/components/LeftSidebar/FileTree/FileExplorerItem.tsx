@@ -121,6 +121,20 @@ const FileExplorerItem = ({
       // navigate to workflow page
       const filePathBase64 = btoa(`${path}/${entry.name}`);
       navigate(`/workflow/${filePathBase64}`);
+      return;
+    }
+
+    if (entry.isFile && entry.name.endsWith(".agent.yml")) {
+      // navigate to agent page
+      const filePathBase64 = btoa(`${path}/${entry.name}`);
+      navigate(`/agent/${filePathBase64}`);
+      return;
+    }
+
+    if (entry.isFile) {
+      const filePathBase64 = btoa(`${path}/${entry.name}`);
+      navigate(`/file/${filePathBase64}`);
+      return;
     }
 
     if (isDirectory) {

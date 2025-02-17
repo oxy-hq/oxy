@@ -21,13 +21,13 @@ const textWrapperStyles = css({
   paddingX: "md",
   paddingY: "sm",
   borderRadius: "rounded",
-  bg: "surface.secondary",
+  bg: "base.neutral.950",
   width: "fit-content",
   alignSelf: "flex-end",
 });
 
 const contentStyles = css({
-  color: "text.light",
+  color: "base.neutral.50",
   wordBreak: "break-word",
 });
 

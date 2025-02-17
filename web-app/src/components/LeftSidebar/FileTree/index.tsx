@@ -26,7 +26,11 @@ const headerStyles = css({
   gap: "sm",
 });
 
-const FileTree = () => {
+const FileTree = ({
+  openOpenAIAPIKeyModal,
+}: {
+  openOpenAIAPIKeyModal: () => void;
+}) => {
   const { projectPath } = useProjectPath();
   const [dirChildren, setDirChildren] = useState<DirEntry[]>([]);
   const { focusedPath } = useFileTree();
@@ -68,6 +72,13 @@ const FileTree = () => {
           </Button>
           <Button content="icon" variant="ghost" onClick={handleCreateFile}>
             <Icon asset="file_add" />
+          </Button>
+          <Button
+            content="icon"
+            variant="ghost"
+            onClick={openOpenAIAPIKeyModal}
+          >
+            <Icon asset="settings" />
           </Button>
         </div>
       </div>

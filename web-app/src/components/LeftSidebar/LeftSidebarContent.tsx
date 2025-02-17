@@ -1,10 +1,5 @@
 "use client";
 
-import { css } from "styled-system/css";
-
-import useTheme from "@/stores/useTheme";
-
-import { ToggleButton } from "../ui/ActionButton";
 import { AgentWithBg } from "../ui/Icon/CustomIcons/AgentWithBg";
 import FileTree from "./FileTree";
 import { FileTreeProvider } from "./FileTree/FileTreeContext";
@@ -13,46 +8,27 @@ import {
   sidebarInnerStyles,
   sidebarNavigationItems,
 } from "./Leftsidebar.styles";
-
-const bottomActionsStyles = css({
-  display: "flex",
-
-  gap: "xs",
-  flexDirection: "column",
-  pr: "md",
-});
+import { useState } from "react";
+import OpenAIAPIKeyModal from "./OpenAIAPIKeyModal";
 
 export default function LeftSidebarContent() {
-  const { theme, setTheme } = useTheme();
-
-  const isDarkMode = theme === "dark";
-
-  const onCheckedChange = (checked: boolean) => {
-    if (checked) {
-      setTheme("dark");
-    } else {
-      setTheme("light");
-    }
-  };
+  const [openOpenAIAPIKeyModal, setOpenOpenAIAPIKeyModal] = useState(false);
 
   return (
     <aside className={sidebarInnerStyles}>
+      <OpenAIAPIKeyModal
+        open={openOpenAIAPIKeyModal}
+        setOpen={setOpenOpenAIAPIKeyModal}
+      />
       <div className={mainSidebarContentStyles}>
         <AgentWithBg width={24} />
       </div>
       <div className={sidebarNavigationItems}>
         <FileTreeProvider>
-          <FileTree />
+          <FileTree
+            openOpenAIAPIKeyModal={() => setOpenOpenAIAPIKeyModal(true)}
+          />
         </FileTreeProvider>
-      </div>
-
-      <div className={bottomActionsStyles}>
-        <ToggleButton
-          checked={isDarkMode}
-          iconAsset="dark_mode"
-          text="Dark Mode"
-          onCheckedChange={onCheckedChange}
-        />
       </div>
     </aside>
   );

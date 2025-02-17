@@ -9,11 +9,12 @@
     "beforeBuildCommand": "pnpm build"
   },
   "app": {
+    "withGlobalTauri": true,
     "windows": [
       {
         "title": "onyx",
         "width": 1280,
-        "height": 720,
+        "height": 1000,
         "resizable": true,
         "fullscreen": false
       }

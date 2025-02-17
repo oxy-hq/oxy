@@ -1,7 +1,6 @@
 import { useCallback, useRef } from "react";
-
-import { readMessageFromStreamData } from "@/libs/utils/stream";
-import { apiBaseURL } from "@/services/env";
+import { ChatRequest, ChatType, Message } from "@/types/chat";
+import { service } from "@/services/service";
 
 const handleErrorWithAbort = (error: unknown) => {
   if ((error as Error).name === "AbortError") {
@@ -11,32 +10,28 @@ const handleErrorWithAbort = (error: unknown) => {
   throw error;
 };
 
-type Message<T> = T;
-
 export const useFetchStreamWithAbort = () => {
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const fetchStreamWithAbort = useCallback(
-    async <T>(
-      url: string,
-      onReadStream: (message: Message<T>) => void,
-      options: RequestInit,
+    async (
+      type: ChatType,
+      onReadStream: (message: Message) => void,
+      request: ChatRequest,
     ) => {
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }
 
       abortControllerRef.current = new AbortController();
-      options.signal = abortControllerRef.current.signal;
-      options.headers = {
-        "Content-Type": "application/json",
-      };
 
       try {
-        const response = await fetch(apiBaseURL + url, options);
-        if (response) {
-          await readMessageFromStreamData(response, onReadStream);
-        }
+        await service.chat(
+          type,
+          request,
+          onReadStream,
+          abortControllerRef.current.signal,
+        );
       } catch (error) {
         handleErrorWithAbort(error);
       }

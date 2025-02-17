@@ -10,7 +10,19 @@ import { css } from "styled-system/css";
 
 export type SupportedLanguages = "python" | "sql";
 
-export const getLangs = (name?: SupportedLanguages) => {
+export const getLangs = (name?: SupportedLanguages, codeContent?: string) => {
+  if (!name && codeContent) {
+    // Simple heuristic to detect language based on code content
+    if (codeContent.includes("def ") || codeContent.includes("import ")) {
+      name = "python";
+    } else if (
+      codeContent.includes("SELECT ") ||
+      codeContent.includes("FROM ")
+    ) {
+      name = "sql";
+    }
+  }
+
   if (!name) return python;
 
   const langs: Record<SupportedLanguages, () => LanguageSupport> = {
@@ -56,7 +68,7 @@ const theme = createTheme({
 // memoize to prevent rerendering
 const CodePreview = memo(function Code(props: Props) {
   const { value, lang } = props;
-  const language = getLangs(lang);
+  const language = getLangs(lang, value);
   return (
     <div className={containerStyles}>
       <CodeMirror
