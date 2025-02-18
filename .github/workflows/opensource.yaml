@@ -42,8 +42,7 @@ jobs:
             crates/onyx-core/dist
             pnpm-lock.yaml
             pnpm-workspace.yaml
-          push_include: >-
-            **
+            release-guideline.md
           pr_move: |-
             crates/onyx-desktop/src/lib.rs||oss/lib.rs||**
             pnpm-lock.yaml||oss/pnpm-lock.yaml||**
