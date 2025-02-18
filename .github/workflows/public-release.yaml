@@ -71,7 +71,7 @@ jobs:
           repository: onyx-hq/onyx-public-releases
           files: |
             release-assets/*
-          body_path: release-assets/CHANGELOG.md
+          # body_path: release-assets/CHANGELOG.md
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
       - name: Upload json schemas
