@@ -38,6 +38,6 @@ jobs:
           sot_branch: ${{ github.ref_name }}
           destination_repo: onyx-hq/onyx-community
           destination_branch: ${{ github.ref_name }}
-          push_exclude: "web-app/src/** web-app/public/** crates/onyx-desktop/src/**"
+          push_exclude: ${{ github.event_name == 'push' && 'web-app/src/** web-app/public/** crates/onyx-desktop/src/**' || '' }}
           push_move: ${{ github.event_name == 'push' && 'crates/onyx-desktop/opensource||crates/onyx-desktop/src||**' || '' }}
           committer: "${{ steps.app-token.outputs.app-slug }}[bot] <${{ steps.get-user-id.outputs.user-id }}+${{ steps.app-token.outputs.app-slug }}[bot]@users.noreply.github.com>"
