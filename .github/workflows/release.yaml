@@ -216,7 +216,7 @@ jobs:
 
       #-- Build json schema
       - name: Generate config schema (once)
-        if: ${{ matrix.job.os == 'ubuntu-latest' }}
+        if: ${{ matrix.job.target == 'aarch64-apple-darwin' }}
         run: |
           cargo run --release --target ${{ matrix.job.target }} -- gen-config-schema
           cp -a json-schemas/. artifacts/
@@ -248,7 +248,7 @@ jobs:
         run: mv crates/onyx-py/dist/* artifacts/
 
       - name: Copy changelog (once)
-        if: ${{ matrix.job.os == 'ubuntu-latest' }}
+        if: ${{ matrix.job.target == 'aarch64-apple-darwin' }}
         run: cp crates/onyx-core/CHANGELOG.md artifacts/
 
       #-- Upload release artifacts
