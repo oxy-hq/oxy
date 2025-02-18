@@ -38,5 +38,5 @@ jobs:
           destination_repo: onyx-hq/onyx-community
           push_exclude: 'web-app/src/** web-app/public/** crates/onyx-desktop/src/**'
           push_move: 'crates/onyx-desktop/opensource||crates/onyx-desktop/src||**'
-          pr_exclude: 'web-app/src/** web-app/public/** crates/onyx-desktop/src/**'
+          pr_exclude: 'web-app/src/** web-app/public/** crates/onyx-desktop/src/** crates/onyx-desktop/opensource/**'
           committer: "${{ steps.app-token.outputs.app-slug }}[bot] <${{ steps.get-user-id.outputs.user-id }}+${{ steps.app-token.outputs.app-slug }}[bot]@users.noreply.github.com>"
