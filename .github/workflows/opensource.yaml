@@ -30,7 +30,7 @@ jobs:
         with:
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
-      - uses: olivr/copybara-action@v1.2.4
+      - uses: luong-komorebi/copybara-action@ft/sync-pull-request-title
         with:
           ssh_key: ${{ secrets.ONYX_SSH_KEY }}
           access_token: ${{ steps.app-token.outputs.token }}
