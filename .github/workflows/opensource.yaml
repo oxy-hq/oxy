@@ -41,8 +41,10 @@ jobs:
             crates/onyx-desktop/src/**
             pnpm-lock.yaml
             pnpm-workspace.yaml
+          push_include: >-
+            **
+            web-app/dist/**
           pr_move: |-
             crates/onyx-desktop/src/lib.rs||oss/lib.rs||**
             pnpm-lock.yaml||oss/pnpm-lock.yaml||**
-            web-app/dist/**||oss/dist/**||**
           committer: "${{ steps.app-token.outputs.app-slug }}[bot] <${{ steps.get-user-id.outputs.user-id }}+${{ steps.app-token.outputs.app-slug }}[bot]@users.noreply.github.com>"
