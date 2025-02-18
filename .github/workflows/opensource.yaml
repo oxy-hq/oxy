@@ -39,6 +39,7 @@ jobs:
           push_exclude: >-
             web-app/**
             crates/onyx-desktop/src/**
+            crates/onyx-core/dist
             pnpm-lock.yaml
             pnpm-workspace.yaml
           push_include: >-
