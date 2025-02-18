@@ -35,9 +35,7 @@ jobs:
           ssh_key: ${{ secrets.ONYX_SSH_KEY }}
           access_token: ${{ steps.app-token.outputs.token }}
           sot_repo: onyx-hq/onyx
-          sot_branch: ${{ github.ref_name }}
           destination_repo: onyx-hq/onyx-community
-          destination_branch: ${{ github.ref_name }}
           push_exclude: 'web-app/src/** web-app/public/** crates/onyx-desktop/src/**'
           push_move: 'crates/onyx-desktop/opensource||crates/onyx-desktop/src||**'
           pr_exclude: 'web-app/src/** web-app/public/** crates/onyx-desktop/src/**'
