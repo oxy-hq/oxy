@@ -1,4 +1,3 @@
-use arrow::datatypes::FieldRef;
 use arrow::{
     array::RecordBatch,
     util::{
@@ -6,10 +5,9 @@ use arrow::{
         pretty::pretty_format_batches,
     },
 };
-use base64;
+use base64::{self, engine::general_purpose, Engine};
 use minijinja::value::{Enumerator, Object, ObjectExt, ObjectRepr, Value};
-use serde::{Deserialize, Deserializer};
-use serde_arrow::{schema::SchemaLike, to_record_batch};
+use serde::Deserialize;
 use std::fmt::{self, Display};
 use std::{collections::HashMap, fmt::Debug, sync::Arc};
 
@@ -47,7 +45,7 @@ impl Serialize for ArrowTable {
         }
 
         // Serialize the IPC buffer as a Base64 string
-        let encoded = base64::encode(buffer);
+        let encoded = general_purpose::STANDARD.encode(buffer);
         serializer.serialize_str(&encoded)
     }
 }
@@ -60,16 +58,17 @@ impl<'de> Deserialize<'de> for ArrowTable {
         let encoded: String = Deserialize::deserialize(deserializer)?;
 
         // Decode the Base64 string to bytes
-        let bytes = base64::decode(&encoded)
+        let bytes = general_purpose::STANDARD
+            .decode(&encoded)
             .map_err(|e| serde::de::Error::custom(format!("Base64 decode error: {}", e)))?;
 
         // Deserialize the bytes into RecordBatches using Arrow StreamReader
         let cursor = Cursor::new(bytes);
-        let mut reader = StreamReader::try_new(cursor, None)
+        let reader = StreamReader::try_new(cursor, None)
             .map_err(|e| serde::de::Error::custom(format!("Arrow StreamReader error: {}", e)))?;
 
         let mut batches = Vec::new();
-        while let Some(batch) = reader.next() {
+        for batch in reader {
             batches.push(batch.map_err(|e| {
                 serde::de::Error::custom(format!("Failed to read RecordBatch: {}", e))
             })?);

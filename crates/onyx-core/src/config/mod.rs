@@ -18,7 +18,6 @@ use crate::{errors::OnyxError, utils::find_project_path};
 // These are settings stored as strings derived from the config.yml file's defaults section
 #[derive(Debug, Deserialize)]
 pub struct Defaults {
-    pub agent: String,
     pub project_path: PathBuf,
 }
 
@@ -32,13 +31,6 @@ impl Defaults {
             }
         }
     }
-}
-
-#[derive(Debug)]
-pub struct ParsedConfig {
-    pub agent_config: AgentConfig,
-    pub model: Model,
-    pub warehouse: Warehouse,
 }
 
 impl Config {
@@ -67,12 +59,7 @@ impl Config {
         &self,
         agent_file: Option<&PathBuf>,
     ) -> Result<(AgentConfig, String), OnyxError> {
-        let agent_file = if let Some(file) = agent_file {
-            file
-        } else {
-            &self.project_path.join(&self.defaults.agent)
-        };
-
+        let agent_file = agent_file.unwrap();
         if !agent_file.exists() {
             return Err(OnyxError::ConfigurationError(format!(
                 "Agent configuration file not found: {:?}",
@@ -155,6 +142,13 @@ impl Config {
         Ok(semantic_model)
     }
 
+    pub fn default_model(&self) -> Option<String> {
+        self.models.first().map(|m| match m {
+            Model::OpenAI { name, .. } => name.clone(),
+            Model::Ollama { name, .. } => name.clone(),
+        })
+    }
+
     pub fn find_model(&self, model_name: &str) -> anyhow::Result<Model> {
         self.models
             .iter()
@@ -188,7 +182,13 @@ impl Config {
 }
 
 pub fn load_config(project_path: Option<PathBuf>) -> Result<Config, OnyxError> {
-    let root = project_path.unwrap_or(find_project_path()?);
+    let root = project_path.unwrap_or_else(|| {
+        find_project_path()
+            .map_err(|e| {
+                OnyxError::ConfigurationError(format!("Failed to find project path: {}", e))
+            })
+            .unwrap()
+    });
     let config_path: PathBuf = root.join("config.yml");
     let config = parse_config(&config_path, root)?;
 

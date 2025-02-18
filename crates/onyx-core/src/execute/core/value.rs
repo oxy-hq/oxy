@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, fmt::Display, sync::Arc};
 
 use super::arrow_table::ArrowTable;
 use minijinja::{
@@ -13,7 +13,7 @@ use pyo3_arrow::PyRecordBatch;
 use serde::{Deserialize, Serialize};
 
 pub trait ContextLookup {
-    fn find(&self, key: &str) -> Option<&ContextValue>;
+    fn find(&self, key: &str) -> Option<ContextValue>;
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
@@ -43,8 +43,8 @@ impl<'a> FromIterator<&'a (String, ContextValue)> for Map {
 }
 
 impl ContextLookup for Map {
-    fn find(&self, key: &str) -> Option<&ContextValue> {
-        self.0.get(key)
+    fn find(&self, key: &str) -> Option<ContextValue> {
+        self.0.get(key).cloned()
     }
 }
 
@@ -62,6 +62,42 @@ impl Object for Map {
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct Array(pub Vec<ContextValue>);
 
+impl Array {
+    pub fn project(&self, key: &str) -> Array {
+        Array(
+            self.0
+                .iter()
+                .map(|v| v.find(key))
+                .filter(|v| v.is_some())
+                .flat_map(|v| {
+                    let output = v.unwrap();
+                    match output {
+                        ContextValue::Array(a) => a.0,
+                        _ => vec![output],
+                    }
+                })
+                .collect(),
+        )
+    }
+
+    pub fn nested_project(&self, keys: &str) -> Vec<ContextValue> {
+        let mut keys_iter = keys.split('.');
+        let first_key = keys_iter.next().unwrap();
+        let mut output = self.project(first_key);
+        log::info!(
+            "Array.nested_project: {:?} -> {:?}, key: {}",
+            self,
+            output,
+            first_key
+        );
+
+        for key in keys_iter {
+            output = output.project(key);
+        }
+        output.0
+    }
+}
+
 impl<'a> FromIterator<&'a ContextValue> for Array {
     fn from_iter<T>(iter: T) -> Self
     where
@@ -76,11 +112,12 @@ impl<'a> FromIterator<&'a ContextValue> for Array {
 }
 
 impl ContextLookup for Array {
-    fn find(&self, key: &str) -> Option<&ContextValue> {
-        match self.0.last() {
-            Some(last) => last.find(key),
-            None => None,
+    fn find(&self, key: &str) -> Option<ContextValue> {
+        let values = self.project(key);
+        if values.0.is_empty() {
+            return None;
         }
+        Some(ContextValue::Array(values))
     }
 }
 
@@ -111,12 +148,32 @@ impl Object for Array {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct AgentOutput {
+    pub prompt: String,
+    pub output: Box<ContextValue>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum ContextValue {
     None,
     Text(String),
     Map(Map),
     Array(Array),
     Table(ArrowTable),
+    Agent(AgentOutput),
+}
+
+impl Display for ContextValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ContextValue::None => write!(f, ""),
+            ContextValue::Text(s) => write!(f, "{}", s),
+            ContextValue::Map(m) => write!(f, "{:?}", m),
+            ContextValue::Array(a) => write!(f, "{:?}", a),
+            ContextValue::Table(t) => write!(f, "{:?}", t),
+            ContextValue::Agent(a) => write!(f, "{}", a.output),
+        }
+    }
 }
 
 impl Default for ContextValue {
@@ -133,6 +190,7 @@ impl From<ContextValue> for Value {
             ContextValue::Map(m) => Value::from_object(m),
             ContextValue::Array(a) => Value::from_object(a),
             ContextValue::Table(t) => Value::from_object(t),
+            ContextValue::Agent(a) => Value::from_object(*a.output),
         }
     }
 }
@@ -153,12 +211,13 @@ impl Object for ContextValue {
             ContextValue::Map(m) => Arc::new(m).render(f),
             ContextValue::Array(a) => Arc::new(a).render(f),
             ContextValue::Table(t) => Arc::new(t).render(f),
+            ContextValue::Agent(a) => Arc::new(*a.output).render(f),
         }
     }
 }
 
 impl ContextLookup for ContextValue {
-    fn find(&self, key: &str) -> Option<&ContextValue> {
+    fn find(&self, key: &str) -> Option<ContextValue> {
         match self {
             ContextValue::Map(m) => m.find(key),
             ContextValue::Array(a) => a.find(key),
@@ -169,9 +228,7 @@ impl ContextLookup for ContextValue {
 
 pub fn convert_output_to_python<'py>(py: Python<'py>, output: &ContextValue) -> Bound<'py, PyAny> {
     match output {
-        ContextValue::Text(s) => {
-            return PyString::new(py, s).into_any();
-        }
+        ContextValue::Text(s) => PyString::new(py, s).into_any(),
         ContextValue::Map(m) => {
             let dict = PyDict::new(py);
             for (k, v) in &m.0 {
@@ -191,11 +248,9 @@ pub fn convert_output_to_python<'py>(py: Python<'py>, output: &ContextValue) -> 
                 let rb = PyRecordBatch::new(batch);
                 record_batchs.push(rb.to_pyarrow(py).unwrap());
             }
-            return PyList::new(py, record_batchs).unwrap().into_any();
+            PyList::new(py, record_batchs).unwrap().into_any()
         }
-        _ => {
-            return <pyo3::Bound<'_, PyNone> as Clone>::clone(&PyNone::get(py)).into_any();
-        }
+        _ => <pyo3::Bound<'_, PyNone> as Clone>::clone(&PyNone::get(py)).into_any(),
     }
 }
 

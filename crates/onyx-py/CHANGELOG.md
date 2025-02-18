@@ -2,18 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.1.33](https://github.com/onyx-hq/onyx/compare/0.1.32...0.1.33) (2025-02-06)
+## [0.1.35](https://github.com/onyx-hq/onyx/compare/0.1.34...0.1.35) (2025-02-17)
 
 
 ### <!-- 0 -->🚀 Features
 
-* re-organize everything to prep for opensource ([#296](https://github.com/onyx-hq/onyx/issues/296)) ([094bfb1](https://github.com/onyx-hq/onyx/commit/094bfb1490f37dc828bfbd43887c2024eb7eae7d))
+* [#305](https://github.com/onyx-hq/onyx/issues/305) Chat UI for Agent ([#346](https://github.com/onyx-hq/onyx/issues/346)) ([0530f4c](https://github.com/onyx-hq/onyx/commit/0530f4c9a5317f4d8c2fcc5f955799a91f676f4e))
 
+## [0.1.33](https://github.com/onyx-hq/onyx/compare/0.1.32...0.1.33) (2025-02-06)
+
+### <!-- 0 -->🚀 Features
+
+- re-organize everything to prep for opensource ([#296](https://github.com/onyx-hq/onyx/issues/296)) ([094bfb1](https://github.com/onyx-hq/onyx/commit/094bfb1490f37dc828bfbd43887c2024eb7eae7d))
 
 ### <!-- 1 -->🐛 Bug Fixes
 
-* workaround for release please issue ([213d3a1](https://github.com/onyx-hq/onyx/commit/213d3a175307b70eafeeba18e2e4718f3035d100))
-* workaround for release please issue ([a685f57](https://github.com/onyx-hq/onyx/commit/a685f57e25f8e8e198dd3fb035e4a161e796c5de))
+- workaround for release please issue ([213d3a1](https://github.com/onyx-hq/onyx/commit/213d3a175307b70eafeeba18e2e4718f3035d100))
+- workaround for release please issue ([a685f57](https://github.com/onyx-hq/onyx/commit/a685f57e25f8e8e198dd3fb035e4a161e796c5de))
 
 ## [0.1.32](https://github.com/onyx-hq/onyx/compare/0.1.31...0.1.32) (2025-02-06)
 

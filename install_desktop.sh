@@ -9,11 +9,6 @@ REPO="onyx-hq/onyx-public-releases"
 # Get the version to install from the environment, default to the latest release tag if not provided
 VERSION=${ONYX_VERSION:-latest}
 
-# Get the latest release tag from GitHub API if version is latest
-if [ "$VERSION" == "latest" ]; then
-  VERSION=$(curl -s https://api.github.com/repos/$REPO/releases/latest | grep 'tag_name' | cut -d\" -f4)
-fi
-
 # Ensure the install directory exists
 mkdir -p "$INSTALL_DIR"
 
@@ -52,10 +47,10 @@ case "$OS" in
         fi
         case "$ARCH" in
             x86_64)
-                PACKAGE="${APP_NAME}_${VERSION}_amd64.${PACKAGE_TYPE}"
+                PACKAGE="${APP_NAME}_amd64.${PACKAGE_TYPE}"
                 ;;
             aarch64)
-                PACKAGE="${APP_NAME}_${VERSION}_aarch64.${PACKAGE_TYPE}"
+                PACKAGE="${APP_NAME}_aarch64.${PACKAGE_TYPE}"
                 ;;
             *)
                 echo "Unsupported architecture: $ARCH"
@@ -66,10 +61,10 @@ case "$OS" in
     Darwin)
         case "$ARCH" in
             x86_64)
-                PACKAGE="${APP_NAME}_${VERSION}_amd64.dmg"
+                PACKAGE="${APP_NAME}_amd64.dmg"
                 ;;
             arm64)
-                PACKAGE="${APP_NAME}_${VERSION}_aarch64.dmg"
+                PACKAGE="${APP_NAME}_aarch64.dmg"
                 ;;
             *)
                 echo "Unsupported architecture: $ARCH"

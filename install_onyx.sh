@@ -9,11 +9,6 @@ mkdir -p "$INSTALL_DIR"
 # Get the version to install from the environment, default to the latest release tag if not provided
 VERSION=${ONYX_VERSION:-latest}
 
-# Get the latest release tag from GitHub API if version is latest
-if [ "$VERSION" == "latest" ]; then
-  VERSION=$(curl -s https://api.github.com/repos/$REPO/releases/latest | grep 'tag_name' | cut -d\" -f4)
-fi
-
 # Determine the OS and architecture
 OS=$(uname | tr '[:upper:]' '[:lower:]')
 ARCH=$(uname -m)

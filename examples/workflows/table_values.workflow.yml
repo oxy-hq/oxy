@@ -36,3 +36,8 @@ steps:
     export:
       path: output/formatter.docx
       format: docx
+
+tests:
+  - name: consistency
+    eval_type: consistency
+    task_description: "Display different table format"

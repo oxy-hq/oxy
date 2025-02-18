@@ -4,27 +4,35 @@ use arrow::{array::RecordBatch, datatypes::Schema};
 use minijinja::Value;
 
 use crate::{
-    ai::{agent::AgentResult, utils::record_batches_to_table},
+    ai::utils::record_batches_to_table,
     config::{
         load_config,
-        model::{AgentStep, ExecuteSQLStep, FormatterStep, LoopValues, Step, StepType, Workflow},
+        model::{
+            AgentStep, ExecuteSQLStep, FormatterStep, LoopValues, Step, StepType, Workflow, SQL,
+        },
     },
     errors::OnyxError,
     execute::exporter::{export_agent_step, export_execute_sql, export_formatter},
     utils::print_colored_sql,
-    workflow::{cache::write_agent_cache, executor::WorkflowExecutor, WorkflowResult},
+    workflow::{executor::WorkflowExecutor, WorkflowResult},
     StyledText,
 };
 
 use super::{
-    agent::ToolCall,
+    agent::{AgentEvent, AgentReceiver},
     core::{
         event::{Dispatcher, Handler},
-        write::OutputCollector,
-        Executable, ExecutionContext,
+        run,
     },
     renderer::{Renderer, TemplateRegister},
 };
+
+#[derive(Debug, Clone)]
+pub struct WorkflowInput;
+
+pub struct LoopInput {
+    pub name: String,
+}
 
 #[derive(Debug, Clone)]
 pub enum WorkflowEvent {
@@ -45,12 +53,28 @@ pub enum WorkflowEvent {
         err: OnyxError,
         after: Duration,
     },
+    CacheHit {
+        path: String,
+    },
+    CacheWrite {
+        path: String,
+    },
+    CacheWriteFailed {
+        path: String,
+        err: OnyxError,
+    },
+
+    // export
+    Export {
+        export_file_path: PathBuf,
+        step: StepType,
+    },
 
     // agent
-    AgentToolCalls {
-        calls: Vec<ToolCall>,
+    Agent {
+        orig: AgentEvent,
         step: AgentStep,
-        export_file_path: PathBuf,
+        export_file_path: Option<PathBuf>,
     },
 
     // sql
@@ -68,12 +92,6 @@ pub enum WorkflowEvent {
         output: String,
         export_file_path: PathBuf,
     },
-
-    // agent
-    CacheAgentResult {
-        result: AgentResult,
-        file_path: PathBuf,
-    },
 }
 
 impl TemplateRegister for Workflow {
@@ -84,46 +102,48 @@ impl TemplateRegister for Workflow {
 
 impl TemplateRegister for &Step {
     fn register_template(&self, renderer: &mut Renderer) -> Result<(), OnyxError> {
-        let mut register = renderer.struct_register();
+        let mut register = renderer.child_register();
+
+        if let Some(cache) = &self.cache {
+            register.entry(&cache.path.as_str())?;
+        }
+
         match &self.step_type {
             StepType::Agent(agent) => {
-                register.field(&agent.prompt.as_str())?;
+                register.entry(&agent.prompt.as_str())?;
                 if let Some(export) = &agent.export {
-                    register.field(&export.path.as_str())?;
-                }
-
-                if let Some(cache) = &agent.cache {
-                    register.field(&cache.path.as_str())?;
+                    register.entry(&export.path.as_str())?;
                 }
             }
             StepType::ExecuteSQL(execute_sql) => {
-                register.field(&execute_sql.sql_file.as_str())?;
-                match &execute_sql.variables {
-                    Some(variables) => {
-                        register.fields(
-                            variables
-                                .iter()
-                                .map(|(_key, value)| value.as_str())
-                                .collect::<Vec<&str>>(),
-                        )?;
-                    }
-                    None => {}
+                let sql = match &execute_sql.sql {
+                    SQL::Query { sql_query } => sql_query,
+                    SQL::File { sql_file } => sql_file,
+                };
+                register.entry(&sql.as_str())?;
+                if let Some(variables) = &execute_sql.variables {
+                    register.entries(
+                        variables
+                            .iter()
+                            .map(|(_key, value)| value.as_str())
+                            .collect::<Vec<&str>>(),
+                    )?;
                 }
                 if let Some(export) = &execute_sql.export {
-                    register.field(&export.path.as_str())?;
+                    register.entry(&export.path.as_str())?;
                 }
             }
             StepType::Formatter(formatter) => {
-                register.field(&formatter.template.as_str())?;
+                register.entry(&formatter.template.as_str())?;
                 if let Some(export) = &formatter.export {
-                    register.field(&export.path.as_str())?;
+                    register.entry(&export.path.as_str())?;
                 }
             }
             StepType::LoopSequential(loop_sequential) => {
                 if let LoopValues::Template(template) = &loop_sequential.values {
-                    register.field(&template.as_str())?;
+                    register.entry(&template.as_str())?;
                 }
-                register.field(&loop_sequential.steps)?;
+                register.entry(&loop_sequential.steps)?;
             }
             _ => {}
         }
@@ -133,8 +153,8 @@ impl TemplateRegister for &Step {
 
 impl TemplateRegister for Vec<Step> {
     fn register_template(&self, renderer: &mut Renderer) -> Result<(), OnyxError> {
-        let mut list_register = renderer.list_register();
-        list_register.items(self)?;
+        let mut child_register = renderer.child_register();
+        child_register.entries(self)?;
         Ok(())
     }
 }
@@ -156,9 +176,9 @@ impl Handler for WorkflowReceiver {
                 schema,
                 export_file_path: _,
             } => {
-                print_colored_sql(&query);
+                print_colored_sql(query);
 
-                let batches_display = match record_batches_to_table(&datasets, &schema) {
+                let batches_display = match record_batches_to_table(datasets, schema) {
                     Ok(display) => display,
                     Err(e) => {
                         println!("{}", format!("Error displaying results: {}", e).error());
@@ -180,6 +200,18 @@ impl Handler for WorkflowReceiver {
             WorkflowEvent::StepStarted { name } => {
                 println!("\n⏳Starting {}", name.text());
             }
+            WorkflowEvent::CacheHit { .. } => {
+                println!("{}", "Cache detected. Using cache.".primary());
+            }
+            WorkflowEvent::CacheWrite { path } => {
+                println!("{}", format!("Cache written to {}", path).primary());
+            }
+            WorkflowEvent::CacheWriteFailed { path, err } => {
+                println!(
+                    "{}",
+                    format!("Failed to write cache to {}: {}", path, err).error()
+                );
+            }
             WorkflowEvent::StepUnknown { name } => {
                 println!(
                     "{}",
@@ -192,6 +224,9 @@ impl Handler for WorkflowReceiver {
             WorkflowEvent::Retry { err, after } => {
                 println!("{}", format!("\nRetrying after {:?} ...", after).warning());
                 println!("Reason {:?}", err);
+            }
+            WorkflowEvent::Agent { orig, .. } => {
+                AgentReceiver.handle(orig);
             }
             _ => {
                 log::debug!("Unhandled event: {:?}", event);
@@ -207,13 +242,17 @@ impl Handler for WorkflowExporter {
 
     fn handle(&self, event: &Self::Event) {
         match event {
-            WorkflowEvent::AgentToolCalls {
-                calls,
+            WorkflowEvent::Agent {
+                orig: event,
                 step,
                 export_file_path,
             } => {
-                export_agent_step(step, calls, export_file_path);
                 log::debug!("Agent tool calls: {:?}", event);
+                if let AgentEvent::ToolCall(tool_call) = event {
+                    if let Some(export_file_path) = export_file_path {
+                        export_agent_step(step, &[tool_call], export_file_path);
+                    }
+                }
             }
             WorkflowEvent::ExecuteSQL {
                 step,
@@ -232,30 +271,11 @@ impl Handler for WorkflowExporter {
                 output,
                 export_file_path,
             } => {
-                if let Some(_) = &step.export {
+                if step.export.is_some() {
                     export_formatter(output, export_file_path);
                 }
                 log::debug!("Formatter tool calls: {:?}", event);
             }
-            _ => {
-                log::debug!("Unhandled event: {:?}", event);
-            }
-        }
-    }
-}
-
-pub struct WorkflowCacheStep;
-
-impl Handler for WorkflowCacheStep {
-    type Event = WorkflowEvent;
-
-    fn handle(&self, event: &Self::Event) {
-        match event {
-            WorkflowEvent::CacheAgentResult { result, file_path } => {
-                write_agent_cache(file_path, result);
-                log::debug!("Cache agent result: {:?}", event);
-            }
-
             _ => {
                 log::debug!("Unhandled event: {:?}", event);
             }
@@ -270,23 +290,16 @@ pub async fn run_workflow(workflow_path: &PathBuf) -> Result<WorkflowResult, Ony
         OnyxError::ConfigurationError(format!("Invalid workflow configuration: {}", e))
     })?;
 
-    let mut renderer = Renderer::new();
-    renderer.register(&workflow)?;
-    let dispatcher = Dispatcher::new(vec![
-        Box::new(WorkflowReceiver),
-        Box::new(WorkflowExporter),
-        Box::new(WorkflowCacheStep),
-    ]);
-    let mut output_collector = OutputCollector::new(&dispatcher);
-    let mut execution_context = ExecutionContext::new(
+    let dispatcher = Dispatcher::new(vec![Box::new(WorkflowReceiver), Box::new(WorkflowExporter)]);
+    let executor = WorkflowExecutor::new(workflow.clone());
+    let output = run(
+        &executor,
+        WorkflowInput,
+        config,
         Value::UNDEFINED,
-        &mut renderer,
-        &Value::UNDEFINED,
-        &mut output_collector,
-        config.clone(),
-    );
-    let executor = WorkflowExecutor::new(workflow);
-    executor.execute(&mut execution_context).await?;
-    let output = output_collector.output.unwrap_or_default();
+        Some(&workflow),
+        dispatcher,
+    )
+    .await?;
     Ok(WorkflowResult { output })
 }

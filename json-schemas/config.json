@@ -3,13 +3,19 @@
   "title": "Config",
   "type": "object",
   "required": [
-    "defaults",
     "models",
     "warehouses"
   ],
   "properties": {
     "defaults": {
-      "$ref": "#/definitions/Defaults"
+      "anyOf": [
+        {
+          "$ref": "#/definitions/Defaults"
+        },
+        {
+          "type": "null"
+        }
+      ]
     },
     "models": {
       "type": "array",
@@ -27,13 +33,7 @@
   "definitions": {
     "Defaults": {
       "type": "object",
-      "required": [
-        "agent"
-      ],
       "properties": {
-        "agent": {
-          "type": "string"
-        },
         "warehouse": {
           "type": [
             "string",

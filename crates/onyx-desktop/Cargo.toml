@@ -1,6 +1,6 @@
 [package]
 name = "onyx-desktop"
-version = "0.1.33" # TODO: remove this when https://github.com/googleapis/release-please/issues number 2111 is fixed
+version = "0.1.35" # TODO: remove this when https://github.com/googleapis/release-please/issues number 2111 is fixed
 # version.workspace = true
 authors.workspace = true
 description.workspace = true
@@ -19,6 +19,8 @@ tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
 tauri-plugin-log = "2.0.0-rc"
 tokio = { version = "1.41", features = ["full"] }
+futures = "0.3"
+tauri-plugin-store = "2"
 
 [build-dependencies]
 tauri-build = { version = "2.0.1", features = ["config-json5"] }

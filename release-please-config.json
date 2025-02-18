@@ -19,6 +19,10 @@
     "crates/entity": {
       "release-type": "rust",
       "component": "entity"
+    },
+    "web-app": {
+      "release-type": "node",
+      "component": "web-app"
     }
   },
   "bump-minor-pre-major": true,
@@ -29,6 +33,10 @@
       "merge": false
     },
     {
+      "type": "node-workspace",
+      "merge": false
+    },
+    {
       "type": "linked-versions",
       "groupName": "onyx",
       "components": [
@@ -36,7 +44,8 @@
         "onyx-desktop",
         "onyx-py",
         "migration",
-        "entity"
+        "entity",
+        "web-app"
       ]
     }
   ],

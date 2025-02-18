@@ -14,6 +14,7 @@ pub fn parse_workflow_config(workflow_name: &str, file_path: &str) -> Result<Wor
     let workflow = Workflow {
         name: workflow_name.to_string(),
         steps: temp_workflow.steps,
+        tests: temp_workflow.tests,
     };
 
     Ok(workflow)
@@ -24,9 +25,9 @@ pub fn parse_agent_config(file_path: &str) -> Result<AgentConfig, OnyxError> {
         OnyxError::RuntimeError(format!("Unable to read agent {file_path} config: {}", e))
     })?;
     let agent: AgentConfig = serde_yaml::from_str(&agent_content).map_err(|e| {
-        OnyxError::ConfigurationError(
-            format!("Unable to parse agent {file_path} configuration {e}").into(),
-        )
+        OnyxError::ConfigurationError(format!(
+            "Unable to parse agent {file_path} configuration {e}"
+        ))
     })?;
     Ok(agent)
 }

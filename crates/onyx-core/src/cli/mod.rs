@@ -5,6 +5,7 @@ use crate::ai::utils::record_batches_to_table;
 use crate::config::*;
 use crate::errors::OnyxError;
 use crate::execute::agent::run_agent;
+use crate::execute::eval::run_eval;
 use crate::execute::workflow::run_workflow;
 use crate::utils::print_colored_sql;
 use crate::workflow::WorkflowResult;
@@ -93,16 +94,26 @@ struct Args {
 enum SubCommand {
     /// Initialize a repository as an onyx project. Also creates a ~/.config/onyx/config.yaml file if it doesn't exist
     Init,
+    /// List datasets in warehouse
     ListDatasets,
+    /// List tables in warehouse
     ListTables,
     /// Search through SQL in your project path. Run them against the associated warehouse on
     /// selection.
     Run(RunArgs),
+    /// Run testing on a workflow file to get consistency metrics
+    Test(TestArgs),
+    /// Build embeddings for hybrid search
     Build,
+    /// Perform vector search
     VecSearch(VecSearchArgs),
+    /// Validate the config file
     Validate,
+    /// Start the API server and serve the frontend web app
     Serve,
+    /// Test theme for terminal output
     TestTheme,
+    /// Generate JSON schemas for config files
     GenConfigSchema(GenConfigSchemaArgs),
 }
 
@@ -117,6 +128,13 @@ pub struct RunArgs {
     variables: Vec<(String, String)>,
 
     question: Option<String>,
+}
+
+#[derive(Parser, Debug)]
+pub struct TestArgs {
+    file: String,
+    #[clap(long, short = 'v')]
+    verbose: bool,
 }
 
 #[derive(Clone)]
@@ -273,6 +291,9 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
         Some(SubCommand::Run(run_args)) => {
             handle_run_command(run_args).await?;
         }
+        Some(SubCommand::Test(test_args)) => {
+            handle_test_command(test_args).await?;
+        }
         Some(SubCommand::Build) => {
             let config = load_config(None)?;
             build(&config).await?;
@@ -341,7 +362,8 @@ async fn handle_agent_file(
     let question = question.ok_or_else(|| {
         OnyxError::ArgumentError("Question is required for agent files".to_string())
     })?;
-    let result = run_agent(file_path, &FileFormat::Markdown, &question, None).await?;
+    let config = load_config(None)?;
+    let result = run_agent(file_path, &FileFormat::Markdown, Some(question), &config).await?;
     Ok(result)
 }
 
@@ -380,7 +402,7 @@ async fn handle_sql_file(
 
     // Print colored SQL and execute query
     print_colored_sql(&query);
-    let (datasets, schema) = Connector::new(&wh_config, &config)
+    let (datasets, schema) = Connector::new(&wh_config, config)
         .run_query_and_load(&query)
         .await?;
     let batches_display = record_batches_to_table(&datasets, &schema)
@@ -450,7 +472,19 @@ pub async fn handle_run_command(run_args: RunArgs) -> Result<RunResult, OnyxErro
         }
         Some("sql") => {
             let config = load_config(None)?;
-            let warehouse = run_args.warehouse.or(config.clone().defaults.warehouse);
+            let mut warehouse = None;
+            warehouse = run_args.warehouse.or_else(|| {
+                config
+                    .defaults
+                    .as_ref()
+                    .and_then(|defaults| defaults.warehouse.clone())
+            });
+
+            if warehouse.is_none() {
+                return Err(OnyxError::ArgumentError(
+                    "Warehouse is required for running SQL file. Please provide the warehouse using --warehouse or set a default warehouse in config.yml".into(),
+                ));
+            }
             let sql_result =
                 handle_sql_file(&file_path, warehouse, &config, &run_args.variables).await?;
             Ok(RunResult::Sql(sql_result))
@@ -461,6 +495,20 @@ pub async fn handle_run_command(run_args: RunArgs) -> Result<RunResult, OnyxErro
     }
 }
 
+pub async fn handle_test_command(test_args: TestArgs) -> Result<(), OnyxError> {
+    let file = &test_args.file;
+
+    let current_dir = std::env::current_dir().expect("Could not get current directory");
+
+    let file_path = current_dir.join(file);
+    if !file_path.exists() {
+        return Err(OnyxError::ConfigurationError(format!(
+            "File not found: {:?}",
+            file_path
+        )));
+    }
+    run_eval(file_path, test_args.verbose).await
+}
 pub async fn start_server_and_web_app() {
     let server_task = tokio::spawn(async move {
         let addr = SocketAddr::from(([127, 0, 0, 1], 3001));

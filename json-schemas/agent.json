@@ -40,6 +40,13 @@
     "system_instructions": {
       "type": "string"
     },
+    "tests": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Eval"
+      }
+    },
     "tools": {
       "default": [],
       "type": "array",
@@ -159,6 +166,69 @@
         }
       ]
     },
+    "Eval": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "eval_type"
+          ],
+          "properties": {
+            "concurrency": {
+              "default": 10,
+              "type": "integer",
+              "format": "uint",
+              "minimum": 0.0
+            },
+            "eval_type": {
+              "type": "string",
+              "enum": [
+                "consistency"
+              ]
+            },
+            "model_ref": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "n": {
+              "default": 10,
+              "type": "integer",
+              "format": "uint",
+              "minimum": 0.0
+            },
+            "prompt": {
+              "default": "You are comparing a pair of submitted answers on a given question. Here is the data:\n[BEGIN DATA]\n************\n[Question]: {{ task_description }}\n************\n[Submission 1]: {{submission_1}}\n************\n[Submission 2]: {{submission_2}}\n************\n[END DATA]\n\nCompare the factual content of the submitted answers. Ignore any differences in style, grammar, punctuation. Answer the question by selecting one of the following options:\nA. The submitted answers are either a superset or contains each other and is fully consistent with it.\nB. There is a disagreement between the submitted answers.\n\n- First, highlight the disagreements between the two submissions.\nFollowing is the syntax to highlight the differences:\n\n(1) <factual_content>\n+++ <submission_1_factual_content_diff>\n--- <submission_2_factual_content_diff>\n\n[BEGIN EXAMPLE]\nHere are the key differences between the two submissions:\n(1) Capital of France\n+++ Paris\n--- France\n[END EXAMPLE]\n\n- Then reason about the highlighted differences. The submitted answers may either be a subset or superset of each other, or it may conflict. Determine which case applies.\n- At the end, print only a single choice from AB (without quotes or brackets or punctuation) on its own line corresponding to the correct answer. e.g A\n\nReasoning:\n",
+              "type": "string"
+            },
+            "scores": {
+              "default": {
+                "A": 1.0,
+                "B": 0.0
+              },
+              "type": "object",
+              "additionalProperties": {
+                "type": "number",
+                "format": "float"
+              }
+            },
+            "task_description": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "task_ref": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      ]
+    },
     "OutputFormat": {
       "type": "string",
       "enum": [
@@ -187,6 +257,32 @@
               "type": "string",
               "enum": [
                 "execute_sql"
+              ]
+            },
+            "warehouse": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "name",
+            "type",
+            "warehouse"
+          ],
+          "properties": {
+            "description": {
+              "default": "Validate the SQL query. If the query is invalid, fix it and run again.",
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "validate_sql"
               ]
             },
             "warehouse": {

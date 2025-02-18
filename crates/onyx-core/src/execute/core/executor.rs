@@ -1,8 +1,13 @@
-use minijinja::{context, value::Kwargs, Value};
+use std::sync::{Arc, RwLock};
 
-use crate::errors::OnyxError;
+use async_stream::stream;
+use futures::StreamExt;
+use minijinja::Value;
+
+use crate::{errors::OnyxError, execute::renderer::TemplateRegister};
 
 use super::{
+    event::propagate,
     value::{Array, ContextValue, Map},
     Executable, ExecutionContext, Write,
 };
@@ -12,43 +17,12 @@ struct MapAdapterState {
     result: Map,
 }
 
-struct MapAdapter<'writer, 'state, Event> {
+struct MapAdapter<'state> {
     key: String,
-    writer: &'writer mut (dyn Write<Event> + 'writer),
     state: &'state mut MapAdapterState,
 }
 
-impl<'writer, 'state, Event> MapAdapter<'writer, 'state, Event> {
-    fn wrap<'slot, 'context: 'writer + 'slot>(
-        execution_context: &'context mut ExecutionContext<'_, Event>,
-        slot: &'slot mut Option<Self>,
-        map_state: &'state mut MapAdapterState,
-        key: &str,
-    ) -> ExecutionContext<'slot, Event> {
-        let current = context! {
-          ..Value::from_serialize(execution_context.context.clone()),
-          ..Value::from_object(map_state.result.to_owned()),
-        };
-        log::info!(
-            "MapAdapter.wrap{key} with context: {:?}, Current result: {:?}",
-            current,
-            map_state.result
-        );
-        execution_context.wrap(
-            move |writer| {
-                slot.insert(MapAdapter {
-                    state: map_state,
-                    writer,
-                    key: key.to_string(),
-                })
-            },
-            Some(key.to_string()),
-            current,
-        )
-    }
-}
-
-impl<Event> Write<Event> for MapAdapter<'_, '_, Event> {
+impl Write for MapAdapter<'_> {
     fn write(&mut self, value: ContextValue) {
         log::info!(
             "MapAdapter.write to key `{}` with value: {:?}",
@@ -57,18 +31,17 @@ impl<Event> Write<Event> for MapAdapter<'_, '_, Event> {
         );
         self.state.result.set_value(&self.key, value.clone());
     }
-
-    fn notify(&self, event: Event) {
-        self.writer.notify(event);
-    }
 }
 
 pub struct MapExecutor<'context, 'writer: 'context, Event> {
-    pub execution_context: &'context mut ExecutionContext<'writer, Event>,
+    execution_context: &'context mut ExecutionContext<'writer, Event>,
     map_state: MapAdapterState,
 }
 
-impl<'context, 'writer: 'context, Event> MapExecutor<'context, 'writer, Event> {
+impl<'context, 'writer: 'context, Event> MapExecutor<'context, 'writer, Event>
+where
+    Event: Send + 'static,
+{
     pub fn new(execution_context: &'context mut ExecutionContext<'writer, Event>) -> Self {
         Self {
             execution_context,
@@ -76,32 +49,46 @@ impl<'context, 'writer: 'context, Event> MapExecutor<'context, 'writer, Event> {
         }
     }
 
-    pub async fn entries<E, I>(&mut self, entries: I) -> Result<(), OnyxError>
+    pub async fn entries<I, E, IT>(&mut self, entries: IT) -> Result<(), OnyxError>
     where
-        E: Executable<Event>,
-        I: IntoIterator<Item = (String, E)>,
+        E: Executable<I, Event>,
+        IT: IntoIterator<Item = (String, E, I)>,
     {
-        for (key, entry) in entries {
-            self.entry(&key, &entry).await?;
+        for (key, entry, input) in entries {
+            self.entry(&key, &entry, input).await?;
         }
         Ok(())
     }
 
-    pub async fn entry(
+    pub async fn entry<I>(
         &mut self,
         key: &str,
-        entry: &dyn Executable<Event>,
+        entry: &dyn Executable<I, Event>,
+        input: I,
     ) -> Result<(), OnyxError> {
-        let mut slot = None;
-        let mut state =
-            MapAdapter::wrap(self.execution_context, &mut slot, &mut self.map_state, key);
-        entry.execute(&mut state).await?;
+        let mut parts = self.execution_context.clone_parts();
+        let current_output = self.map_state.result.to_owned();
+        parts.with_renderer(
+            self.execution_context
+                .renderer
+                .wrap(Value::from_object(current_output)),
+        );
+        let mut map_adapter = MapAdapter {
+            key: key.to_string(),
+            state: &mut self.map_state,
+        };
+        let mut execution_context = ExecutionContext::from_parts(parts, &mut map_adapter);
+        entry.execute(&mut execution_context, input).await?;
         Ok(())
     }
 
-    pub fn finish(&mut self) {
+    pub fn prefill(&mut self, key: &str, value: ContextValue) {
+        self.map_state.result.set_value(key, value);
+    }
+
+    pub fn finish(self) {
         self.execution_context
-            .write(ContextValue::Map(self.map_state.result.to_owned()));
+            .write(ContextValue::Map(self.map_state.result));
     }
 }
 
@@ -110,87 +97,179 @@ pub struct LoopAdapterState {
     result: Vec<ContextValue>,
 }
 
-pub struct LoopAdapter<'writer, 'state, Event> {
-    writer: &'writer mut (dyn Write<Event> + 'writer),
-    state: &'state mut LoopAdapterState,
+pub struct LoopAdapter {
+    state: Arc<RwLock<LoopAdapterState>>,
 }
 
-impl<'writer, 'state, Event> LoopAdapter<'writer, 'state, Event> {
-    fn wrap<'slot, 'context: 'writer + 'slot>(
-        execution_context: &'context mut ExecutionContext<'_, Event>,
-        slot: &'slot mut Option<Self>,
-        loop_state: &'state mut LoopAdapterState,
-        input: &ContextValue,
-    ) -> ExecutionContext<'slot, Event> {
-        let name = &execution_context.key.clone().unwrap_or_default();
-        let current = context! {
-          ..Value::from_serialize(&execution_context.context),
-          ..Value::from(Kwargs::from_iter([
-            (name.to_string(), Value::from(Kwargs::from_iter([
-              ("value", input.clone().into())
-            ]))),
-          ])),
-        };
-        log::info!("LoopAdapter.wrap with context: {:?}", current);
-        execution_context.wrap(
-            move |writer| {
-                slot.insert(LoopAdapter {
-                    writer,
-                    state: loop_state,
-                })
-            },
-            Some(name.to_string()),
-            current,
-        )
-    }
-}
-
-impl<Event> Write<Event> for LoopAdapter<'_, '_, Event> {
+impl Write for LoopAdapter {
     fn write(&mut self, value: ContextValue) {
-        self.state.result.push(value);
-    }
-
-    fn notify(&self, event: Event) {
-        self.writer.notify(event);
+        self.state.write().unwrap().result.push(value);
     }
 }
 
 pub struct LoopExecutor<'context, 'writer: 'context, Event> {
     execution_context: &'context mut ExecutionContext<'writer, Event>,
-    loop_state: LoopAdapterState,
+    loop_state: Arc<RwLock<LoopAdapterState>>,
 }
 
-impl<'context, 'writer: 'context, Event> LoopExecutor<'context, 'writer, Event> {
+impl<'context, 'writer: 'context, Event> LoopExecutor<'context, 'writer, Event>
+where
+    Event: Send + 'static,
+{
     pub fn new(execution_context: &'context mut ExecutionContext<'writer, Event>) -> Self {
         Self {
             execution_context,
-            loop_state: LoopAdapterState {
+            loop_state: Arc::new(RwLock::new(LoopAdapterState {
+                result: Default::default(),
+            })),
+        }
+    }
+
+    pub async fn params<I, F, T>(
+        &mut self,
+        params: &mut Vec<I>,
+        entry: &dyn Executable<I, Event>,
+        context_map: F,
+        concurrency: usize,
+        progress_tracker: Option<T>,
+    ) -> Result<(), OnyxError>
+    where
+        F: Fn(&I) -> Value,
+        T: Fn() + Copy,
+    {
+        let results = stream! {
+            for param in params.drain(..) {
+                let loop_state = self.loop_state.clone();
+                let mut parts = self.execution_context.clone_parts();
+                parts.with_renderer(
+                    self.execution_context.renderer.wrap(context_map(&param))
+                );
+
+                yield async move {
+                    let mut loop_adapter = LoopAdapter { state: loop_state };
+                    let mut loop_context =
+                        ExecutionContext::from_parts(parts, &mut loop_adapter);
+                    let output = entry.execute(&mut loop_context, param).await;
+                    if let Some(progress_tracker) = progress_tracker {
+                        progress_tracker();
+                    }
+                    output
+                };
+            }
+        }
+        .buffered(concurrency)
+        .collect::<Vec<_>>()
+        .await;
+
+        log::info!(
+            "LoopExecutor: collected results {}",
+            results.iter().fold(0, |acc, r| acc + r.is_ok() as i32)
+        );
+
+        let errs = results
+            .into_iter()
+            .filter_map(|r| r.err())
+            .collect::<Vec<OnyxError>>();
+        if !errs.is_empty() {
+            return Err(OnyxError::RuntimeError(format!(
+                "----------\n{}\n----------",
+                errs.iter()
+                    .map(|e| e.to_string())
+                    .collect::<Vec<String>>()
+                    .join("\n**********\n")
+            )));
+        }
+
+        Ok(())
+    }
+
+    pub fn finish(self) -> Result<(), OnyxError> {
+        let lock = Arc::try_unwrap(self.loop_state)
+            .map_err(|_| OnyxError::RuntimeError("Failed to eject value from loop".to_string()))?;
+        let inner = lock.into_inner()?;
+        self.execution_context
+            .write(ContextValue::Array(Array(inner.result)));
+        Ok(())
+    }
+
+    pub fn eject(self) -> Result<Vec<ContextValue>, OnyxError> {
+        let lock = Arc::try_unwrap(self.loop_state)
+            .map_err(|_| OnyxError::RuntimeError("Failed to eject value from loop".to_string()))?;
+        let inner = lock.into_inner()?;
+        Ok(inner.result)
+    }
+}
+
+pub struct ChildAdapterState {
+    result: ContextValue,
+}
+
+pub struct ChildAdapter<'state> {
+    state: &'state mut ChildAdapterState,
+}
+
+impl Write for ChildAdapter<'_> {
+    fn write(&mut self, value: ContextValue) {
+        self.state.result = value;
+    }
+}
+
+pub struct ChildExecutor<'context, 'writer: 'context, Event> {
+    execution_context: &'context mut ExecutionContext<'writer, Event>,
+    child_state: ChildAdapterState,
+}
+
+impl<'context, 'writer: 'context, Event> ChildExecutor<'context, 'writer, Event>
+where
+    Event: Send + 'static,
+{
+    pub fn new(execution_context: &'context mut ExecutionContext<'writer, Event>) -> Self {
+        Self {
+            execution_context,
+            child_state: ChildAdapterState {
                 result: Default::default(),
             },
         }
     }
 
-    pub async fn params(
-        &mut self,
-        params: &Vec<ContextValue>,
-        entry: &dyn Executable<Event>,
-    ) -> Result<(), OnyxError> {
-        for param in params {
-            let mut slot = None;
-            let mut loop_context = LoopAdapter::wrap(
-                self.execution_context,
-                &mut slot,
-                &mut self.loop_state,
-                param,
+    pub async fn execute<'executor, I, F, ChildEvent: 'executor>(
+        &'executor mut self,
+        entry: &dyn Executable<I, ChildEvent>,
+        input: I,
+        map_event: F,
+        global_context: Value,
+        context: Value,
+        template: &'executor dyn TemplateRegister,
+    ) -> Result<(), OnyxError>
+    where
+        F: Fn(ChildEvent) -> Event + Send + 'static,
+        ChildEvent: Send + 'static,
+    {
+        let (child_sender, child_receiver) = tokio::sync::mpsc::channel::<ChildEvent>(10);
+        let parent_sender = self.execution_context.get_sender();
+        let propagate_handle = propagate(child_receiver, parent_sender, map_event);
+        {
+            let mut parts = self.execution_context.clone_parts();
+            parts.with_renderer(
+                self.execution_context
+                    .renderer
+                    .switch_context(global_context, context),
             );
-            entry.execute(&mut loop_context).await?;
+            let parts = parts.with_sender(child_sender);
+            let mut child_adapter = ChildAdapter {
+                state: &mut self.child_state,
+            };
+            let mut child_context = ExecutionContext::from_parts(parts, &mut child_adapter);
+            child_context.renderer.register(template)?;
+            entry.execute(&mut child_context, input).await?;
         }
+        propagate_handle
+            .await
+            .map_err(|err| OnyxError::RuntimeError(err.to_string()))?;
         Ok(())
     }
 
-    pub fn finish(&mut self) {
-        self.execution_context.write(ContextValue::Array(Array(
-            self.loop_state.result.to_owned(),
-        )));
+    pub fn finish(self) {
+        self.execution_context.write(self.child_state.result);
     }
 }

@@ -15,9 +15,79 @@
       "items": {
         "$ref": "#/definitions/Step"
       }
+    },
+    "tests": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Eval"
+      }
     }
   },
   "definitions": {
+    "Eval": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "eval_type"
+          ],
+          "properties": {
+            "concurrency": {
+              "default": 10,
+              "type": "integer",
+              "format": "uint",
+              "minimum": 0.0
+            },
+            "eval_type": {
+              "type": "string",
+              "enum": [
+                "consistency"
+              ]
+            },
+            "model_ref": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "n": {
+              "default": 10,
+              "type": "integer",
+              "format": "uint",
+              "minimum": 0.0
+            },
+            "prompt": {
+              "default": "You are comparing a pair of submitted answers on a given question. Here is the data:\n[BEGIN DATA]\n************\n[Question]: {{ task_description }}\n************\n[Submission 1]: {{submission_1}}\n************\n[Submission 2]: {{submission_2}}\n************\n[END DATA]\n\nCompare the factual content of the submitted answers. Ignore any differences in style, grammar, punctuation. Answer the question by selecting one of the following options:\nA. The submitted answers are either a superset or contains each other and is fully consistent with it.\nB. There is a disagreement between the submitted answers.\n\n- First, highlight the disagreements between the two submissions.\nFollowing is the syntax to highlight the differences:\n\n(1) <factual_content>\n+++ <submission_1_factual_content_diff>\n--- <submission_2_factual_content_diff>\n\n[BEGIN EXAMPLE]\nHere are the key differences between the two submissions:\n(1) Capital of France\n+++ Paris\n--- France\n[END EXAMPLE]\n\n- Then reason about the highlighted differences. The submitted answers may either be a subset or superset of each other, or it may conflict. Determine which case applies.\n- At the end, print only a single choice from AB (without quotes or brackets or punctuation) on its own line corresponding to the correct answer. e.g A\n\nReasoning:\n",
+              "type": "string"
+            },
+            "scores": {
+              "default": {
+                "A": 1.0,
+                "B": 0.0
+              },
+              "type": "object",
+              "additionalProperties": {
+                "type": "number",
+                "format": "float"
+              }
+            },
+            "task_description": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "task_ref": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      ]
+    },
     "ExportFormat": {
       "type": "string",
       "enum": [
@@ -55,16 +125,6 @@
             "agent_ref": {
               "type": "string"
             },
-            "cache": {
-              "anyOf": [
-                {
-                  "$ref": "#/definitions/StepCache"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
             "export": {
               "anyOf": [
                 {
@@ -94,8 +154,31 @@
         },
         {
           "type": "object",
+          "anyOf": [
+            {
+              "type": "object",
+              "required": [
+                "sql_file"
+              ],
+              "properties": {
+                "sql_file": {
+                  "type": "string"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": [
+                "sql_query"
+              ],
+              "properties": {
+                "sql_query": {
+                  "type": "string"
+                }
+              }
+            }
+          ],
           "required": [
-            "sql_file",
             "type",
             "warehouse"
           ],
@@ -109,9 +192,6 @@
                   "type": "null"
                 }
               ]
-            },
-            "sql_file": {
-              "type": "string"
             },
             "type": {
               "type": "string",
@@ -142,6 +222,12 @@
             "values"
           ],
           "properties": {
+            "concurrency": {
+              "default": 1,
+              "type": "integer",
+              "format": "uint",
+              "minimum": 0.0
+            },
             "steps": {
               "type": "array",
               "items": {
@@ -206,6 +292,16 @@
         "name"
       ],
       "properties": {
+        "cache": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/StepCache"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "name": {
           "type": "string"
         }

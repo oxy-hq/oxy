@@ -8,19 +8,17 @@
 - [Compile from source](#compile-from-source)
   - [Clone this repository](#clone-this-repository)
   - [Install rust \& node](#install-rust--node)
-  - [Build the crate from the repository](#build-the-crate-from-the-repository)
+  - [Install project dependencies](#install-project-dependencies)
+  - [Test your installation](#test-your-installation)
+  - [Other commands](#other-commands)
   - [Run the desktop app](#run-the-desktop-app)
-  - [Test the installation](#test-the-installation)
-- [Starting from scratch](#starting-from-scratch)
-- [Basic commands](#basic-commands)
-- [The data directory](#the-data-directory)
-- [Agent definition (`agent.yml` configuration)](#agent-definition-agentyml-configuration)
-- [Local LLM](#local-llm)
-- [Contributing](#contributing)
-  - [Language dependencies](#language-dependencies)
-  - [Extra - install python \& poetry](#extra---install-python--poetry)
-- [Testing](#testing)
+  - [Integration Testing](#integration-testing)
   - [Known issues](#known-issues)
+- [Advanced setup after installation](#advanced-setup-after-installation)
+  - [The data directory](#the-data-directory)
+  - [Agent definition (`agent.yml` configuration)](#agent-definition-agentyml-configuration)
+  - [Local LLM](#local-llm)
+- [Onyx py requirements](#onyx-py-requirements)
 
 ## The fastest way to build data agents
 
@@ -66,15 +64,14 @@ powershell -Command "& { iwr -useb https://raw.githubusercontent.com/onyx-hq/ony
 ```sh
 git clone git@github.com:onyx-hq/onyx.git
 cd onyx
-
-cd ../  # Move up a directory to ensure that the sample repo is not nested within the onyx repo
-git clone git@github.com:onyx-hq/onyx-sample-repo.git
-cd onyx-sample-repo
 ```
 
 ### Install rust & node
 
-The best way to manage rust is with rustup. Install rust by following the official guide [here](https://www.rust-lang.org/tools/install).
+| :zap:        **you are responsible for your own setup if you decide to not follow the instructions below.**   |
+|-----------------------------------------|
+
+Install rust by following the official guide [here](https://www.rust-lang.org/tools/install).
 
 ```sh
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
@@ -102,8 +99,9 @@ case "$current_shell" in
 esac
 ```
 
-Node is used for `onyx serve` command. You can install it by following the official guide [here](https://nodejs.org/en/download/).
-We recommend using version 20, but you can use any version that is compatible with the project.
+Install node by following the official guide [here](https://nodejs.org/en/download/) or using mise.
+We recommend using LTS version.
+We recommend using mise to install node and manage versions, to isolate the node environment from the system.
 
 ```sh
 # Using mise is a recommended way to install node and manage versions
@@ -125,74 +123,92 @@ esac
 mise install
 ```
 
-After nodejs is installed, install project dependencies:
+### Install project dependencies
+
+After rust and nodejs are installed, install project dependencies:
 
 ```sh
 corepack enable && corepack prepare --activate
 pnpm install
-```
 
-### Build the crate from the repository
-
-Inside onyx
-
-```sh
-# this will build everything, incl the frontend for onyx serve
-pnpm run build
-
-# after the first build, you can use this to build faster
 # this will just build the CLI
-cargo build --release
+cargo build
 
 # this will just build the frontend
 pnpm -C web-app build
+
+# a shortcut for building both the CLI and the frontend
+# pnpm build
 ```
 
-After building, you can install the binary to your path:
+> **Important:** Ensure you have the necessary keys and environment variables set up before running your first query.
+
+### Test your installation
+
+Download our bigquery key in [1password](https://hyperquery.1password.com/app#/lwrm73rxzjvbhi5hl3ludt2xcu/AllItems/lwrm73rxzjvbhi5hl3ludt2xcumv67bpwhm4f55j6e5k4y5jjnwa) and save it into `examples/bigquery-sample.key`
+
+Inside 1password, find the `OPENAI_API_KEY` and set it in your environment:
 
 ```sh
-# Install the binary to your path
-cp target/release/onyx /usr/local/bin/onyx
+# consider adding this to mise or your local shell to persist it
+export OPENAI_API_KEY=sk-...
 ```
 
-Then, copy the `config.yml` file into `~/.config/onyx/`:
+Run your first query:
 
 ```sh
-mkdir -p ~/.config/onyx && cp example.yml ~/.config/onyx/config.yml
+onyx run agents/default.agent.yml "how many users"
 ```
 
-You'll have to modify the location of `warehouse.key_path` to be the location of your BigQuery service key (you can find credentials in [1password](https://hyperquery.1password.com/app#/lwrm73rxzjvbhi5hl3ludt2xcu/AllItems/lwrm73rxzjvbhi5hl3ludt2xcumv67bpwhm4f55j6e5k4y5jjnwa) for our Hyperquery data - or make your own). and modify the `project_path` to onyx-sample-repo
+Try other commands:
 
 ```sh
-# Modify the location of the key_path in the config.yml file
-open ~/.config/onyx/config.yml
+onyx --help
 ```
 
-Set the `OPENAI_API_KEY` environmental variable to an API key from OpenAI. You can create an API key [here](https://platform.openai.com/api-keys). Once you create one, you can save it by adding the following line to your `~/.bashrc` or `~/.zshrc` file:
+### Other commands
 
-```sh
-export OPENAI_API_KEY="<YOUR_KEY_HERE>"
+Please checkout the docs folder for more commands and examples.
 
-# save it into zshrc
-# so that the next time you open a terminal, it will be available
-echo 'export OPENAI_API_KEY="<YOUR_KEY_HERE>"' >> ~/.zshrc
-```
+Also, update the docs folder with usability docs and keep this README lean.
 
 ### Run the desktop app
 
 To run the desktop app, you can use the following command:
 
 ```bash
-pnpm -C web-app tauri dev
+pnpm tauri dev
 ```
 
 Follow tauri upstream documents for more commands [with tauri-cli](https://v2.tauri.app/reference/cli/)
 
-### Test the installation
+### Integration Testing
 
-Inside onyx-sample-repo, run: `onyx` to check that the installation worked.
+Test are running on examples configuration.
+To run all tests, need `bigquery_sample.key` in `examples` directory and `OPENAI_API_KEY` env set.
 
-## Starting from scratch
+```sh
+cargo test
+```
+
+To show test stdout for debugging use `--nocapture`
+
+```sh
+cargo test -- --nocapture
+```
+
+### Known issues
+
+- Tests when running in parallel (default) messed up terminal indentation.
+
+---
+
+> [!WARNING]  
+> You can stop here and get to work with `onyx` as it is. The following steps are for advanced users who want to set up a new repository and configure agents.
+
+---
+
+## Advanced setup after installation
 
 Start by initializing a new repository with onyx:
 
@@ -202,41 +218,9 @@ onyx init  # Initialize a folder as an onyx project
 
 This will construct a scaffolding within the current working directory with the necessary directories and a `default` agent for you to start working with.
 
-This will also initialize a global config file in `~/.config/onyx/config.yml` (if it doesn't already exist). You should populate this with information with your warehouse credentials and LLM preferences.
-
 Put some SQL queries into the `data` directory to seed the engine.
 
-## Basic commands
-
 An important aspect of `onyx` is the concept of `scope` -- the subset of the `data` directory that is available to an `agent`. By default, `onyx` comes with a way to access both the _narrowest_ scope (that of a single query) and the _widest_ scope (the entire `data` directory).
-
-To access SQL-level scope, you can run:
-
-```bash
-onyx search  # Search through your SQL queries and execute them on selection
-```
-
-which will execute the selected query.
-
-To access the org-wide scope, you can ask questions of the `default` LLM, which will source from the `data` base directory (scope: `all`) by default.
-
-```bash
-onyx ask "How many users do we have?"  # Ask a question of the default agent
-```
-
-If you want to access a specific agent (for either `search` or `ask`), you can do so by specifying the agent name (removing the `.yml` extension) as an argument.
-
-```bash
-onyx ask --agent=default "How many users do we have?"  # Ask a question of the specific agent `default.yaml`
-```
-
-To embed files from <project_root>/data/\*\* into vector store you can use `onyx build`. We're downloading model from huggingface hub so you may need to login using:
-
-```bash
-huggingface-cli login
-```
-
-or simply copy your plaintext token into `$HOME/.cache/huggingface/token` file. And then run build to index the data.
 
 ```bash
 onyx build
@@ -248,17 +232,17 @@ Then verify using
 onyx vec-search "Hello Embedding"
 ```
 
-## The data directory
+### The data directory
 
 The `data` directory contains two important objects: `.sql` files, which are SQL definitions of business entities, and folders, which can be used to segment the queries and give the agents a natural sense of scope (they will have access to specific folder(s)).
 
 The `.sql` files have front-matter (TODO: define what the front-matter should look like, and build it into the code).
 
-## Agent definition (`agent.yml` configuration)
+### Agent definition (`agent.yml` configuration)
 
 TODO: for now, see the `agents/default.yml` file in this repo or in the `onyx-sample-repo` directory.
 
-## Local LLM
+### Local LLM
 
 - To start local LLM inference you can download and install `ollama`
 - Add model config into `config.yml` file:
@@ -277,36 +261,9 @@ model: ollama-local
 
 - Local LLM agent needs to support tools.
 
-## Contributing
-
-### Language dependencies
-
-Need to install node and rust (_find instruction above_). Right now, Python is not being used, but the `build.rs` file contains some hint for scaffolding if you want to incorporate Python. In general, we will follow the principle that everything should be in rust where possible for `onyx`. But this is obviously not possible for a number of integrations and data-specific tasks.
-
-### Extra - install python & poetry
+## Onyx py requirements
 
 Ensure that the right python version is in your path (onyx uses python3.11.6). There are many ways to install python, here we recommend a few ways:
-
-```sh
-# Using asdf is best for amd64
-brew install asdf
-
-case $SHELL in
-  *bash)
-    echo -e "\n. $(brew --prefix asdf)/asdf.sh" >> ~/.bashrc
-    source ~/.bashrc
-    ;;
-  *zsh)
-    echo -e "\n. $(brew --prefix asdf)/asdf.sh" >> ~/.zshrc
-    source ~/.zshrc
-    ;;
-esac
-
-asdf plugin add python
-asdf install python 3.11.6
-
-asdf global python 3.11.6
-```
 
 ```sh
 # Using mise is the best for any architecture
@@ -341,22 +298,3 @@ Poetry is a python package manager that we use to manage python dependencies. In
 ```sh
 pip install poetry
 ```
-
-## Testing
-
-Test are running on examples configuration.
-To run all tests, need `bigquery_sample.key` in `examples` directory and `OPENAI_API_KEY` env set.
-
-```sh
-cargo test
-```
-
-To show test stdout for debugging use `--nocapture`
-
-```sh
-cargo test -- --nocapture
-```
-
-### Known issues
-
-- Tests when running in parallel (default) messed up terminal indentation.

@@ -14,7 +14,7 @@ use async_openai::{
 use async_trait::async_trait;
 use lancedb::{
     connect,
-    connection::CreateTableMode,
+    database::CreateTableMode,
     index::{
         scalar::{FtsIndexBuilder, FullTextSearchQuery},
         vector::IvfHnswPqIndexBuilder,
@@ -132,30 +132,24 @@ impl LanceDBStore {
             .iter()
             .find(|index| index.columns == vec!["embeddings"]);
 
-        match fts_index {
-            None => {
+        if fts_index.is_none() {
+            table
+                .create_index(&["content"], Index::FTS(FtsIndexBuilder::default()))
+                .execute()
+                .await?;
+        }
+
+        if vector_index.is_none() {
+            let num_rows = table.count_rows(None).await?;
+            if num_rows >= 256 {
                 table
-                    .create_index(&["content"], Index::FTS(FtsIndexBuilder::default()))
+                    .create_index(
+                        &["embeddings"],
+                        Index::IvfHnswPq(IvfHnswPqIndexBuilder::default()),
+                    )
                     .execute()
                     .await?;
             }
-            Some(_) => {}
-        }
-
-        match vector_index {
-            None => {
-                let num_rows = table.count_rows(None).await?;
-                if num_rows >= 256 {
-                    table
-                        .create_index(
-                            &["embeddings"],
-                            Index::IvfHnswPq(IvfHnswPqIndexBuilder::default()),
-                        )
-                        .execute()
-                        .await?;
-                }
-            }
-            Some(_) => {}
         }
 
         let optimization_stats = table.optimize(OptimizeAction::All).await?;

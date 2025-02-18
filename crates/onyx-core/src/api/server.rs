@@ -1,6 +1,5 @@
 use crate::api::agent;
-use crate::api::config;
-use crate::api::conversations;
+use crate::api::message;
 use crate::db::client::get_db_directory;
 use axum::routing::{get, post};
 use axum::Router;
@@ -24,16 +23,8 @@ pub async fn serve(address: &SocketAddr) {
     let _ = Migrator::up(&db, None).await;
 
     let app: Router = Router::new()
-        .route("/set-project-path", post(config::set_project_path))
         .route("/ask", post(agent::ask))
-        .route("/agents", get(agent::list))
-        .route("/conversations", get(conversations::list))
-        .route("/load-config", get(config::load_config))
-        .route("/conversation/:agent", get(conversations::get))
-        .route(
-            "/load-project-structure",
-            get(config::list_project_dir_structure),
-        );
+        .route("/messages/:agent", get(message::get_messages));
 
     let listener = tokio::net::TcpListener::bind(address).await.unwrap();
     axum::serve(listener, app.layer(cors)).await.unwrap();

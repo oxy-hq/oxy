@@ -1,28 +1,29 @@
-use super::{event::Handler, value::ContextValue};
+use super::value::ContextValue;
 
-pub trait Write<Event>: Send + Sync {
+pub trait Write {
     fn write(&mut self, value: ContextValue);
-    fn notify(&self, event: Event);
 }
 
-pub struct OutputCollector<'handler, Event> {
-    pub output: Option<ContextValue>,
-    handler: &'handler (dyn Handler<Event = Event> + 'handler),
+pub struct OutputCollector {
+    pub output: ContextValue,
 }
 
-impl<'handler, Event> OutputCollector<'handler, Event> {
-    pub fn new(handler: &'handler (dyn Handler<Event = Event> + 'handler)) -> Self {
+impl Default for OutputCollector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl OutputCollector {
+    pub fn new() -> Self {
         Self {
-            output: None,
-            handler,
+            output: ContextValue::None,
         }
     }
 }
-impl<Event> Write<Event> for OutputCollector<'_, Event> {
+
+impl Write for OutputCollector {
     fn write(&mut self, value: ContextValue) {
-        self.output = Some(value);
-    }
-    fn notify(&self, event: Event) {
-        self.handler.handle(&event);
+        self.output = value;
     }
 }

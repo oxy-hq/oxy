@@ -2,18 +2,46 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.1.33](https://github.com/onyx-hq/onyx/compare/0.1.32...0.1.33) (2025-02-06)
+## [0.1.35](https://github.com/onyx-hq/onyx/compare/0.1.34...0.1.35) (2025-02-17)
 
 
 ### <!-- 0 -->🚀 Features
 
-* re-organize everything to prep for opensource ([#296](https://github.com/onyx-hq/onyx/issues/296)) ([094bfb1](https://github.com/onyx-hq/onyx/commit/094bfb1490f37dc828bfbd43887c2024eb7eae7d))
+* [#305](https://github.com/onyx-hq/onyx/issues/305) Chat UI for Agent ([#346](https://github.com/onyx-hq/onyx/issues/346)) ([0530f4c](https://github.com/onyx-hq/onyx/commit/0530f4c9a5317f4d8c2fcc5f955799a91f676f4e))
 
 
 ### <!-- 1 -->🐛 Bug Fixes
 
-* workaround for release please issue ([213d3a1](https://github.com/onyx-hq/onyx/commit/213d3a175307b70eafeeba18e2e4718f3035d100))
-* workaround for release please issue ([a685f57](https://github.com/onyx-hq/onyx/commit/a685f57e25f8e8e198dd3fb035e4a161e796c5de))
+* lock duckdb version ([#350](https://github.com/onyx-hq/onyx/issues/350)) ([0fe2d10](https://github.com/onyx-hq/onyx/commit/0fe2d10ada984f37e6cf96b0be8e0aa8af082013))
+
+
+### <!-- 2 -->🚜 Refactor
+
+* unify arrow version and error handling inside connector ([#349](https://github.com/onyx-hq/onyx/issues/349)) ([17b0b03](https://github.com/onyx-hq/onyx/commit/17b0b037218770d8d2d699d7f4c85314c81d700a))
+
+## [0.1.34](https://github.com/onyx-hq/onyx/compare/0.1.33...0.1.34) (2025-02-14)
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- handle onyx init when no config is found ([#340](https://github.com/onyx-hq/onyx/issues/340)) ([5eae6e2](https://github.com/onyx-hq/onyx/commit/5eae6e247059d055708c928b0347363c555a6e55))
+- refactor cache into executor ([#337](https://github.com/onyx-hq/onyx/issues/337)) ([69e5557](https://github.com/onyx-hq/onyx/commit/69e555744808917828c764ae918964a2ce660bac))
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+- housekeeping the docs and run cargo clippy fix for all codes ([#342](https://github.com/onyx-hq/onyx/issues/342)) ([f3c59ea](https://github.com/onyx-hq/onyx/commit/f3c59ea9c88e7fbfca823aff3f9dbbc649f7b84d))
+- remove default agents config, make defaults optional ([#336](https://github.com/onyx-hq/onyx/issues/336)) ([7bbc79e](https://github.com/onyx-hq/onyx/commit/7bbc79e0701c6a97cfb3963c626f8851367f9d63))
+- remove unused dependencies ([67bf83a](https://github.com/onyx-hq/onyx/commit/67bf83a8b008c3cfc5a521be92e222a59231c7ac))
+
+## [0.1.33](https://github.com/onyx-hq/onyx/compare/0.1.32...0.1.33) (2025-02-06)
+
+### <!-- 0 -->🚀 Features
+
+- re-organize everything to prep for opensource ([#296](https://github.com/onyx-hq/onyx/issues/296)) ([094bfb1](https://github.com/onyx-hq/onyx/commit/094bfb1490f37dc828bfbd43887c2024eb7eae7d))
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- workaround for release please issue ([213d3a1](https://github.com/onyx-hq/onyx/commit/213d3a175307b70eafeeba18e2e4718f3035d100))
+- workaround for release please issue ([a685f57](https://github.com/onyx-hq/onyx/commit/a685f57e25f8e8e198dd3fb035e4a161e796c5de))
 
 ## [0.1.32](https://github.com/onyx-hq/onyx/compare/0.1.31...0.1.32) (2025-02-06)
 

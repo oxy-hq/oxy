@@ -1,4 +1,5 @@
 use garde::Validate;
+use indoc::indoc;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
@@ -16,7 +17,7 @@ use super::validate::validate_step;
 #[garde(context(ValidationContext))]
 pub struct Config {
     #[garde(dive)]
-    pub defaults: Defaults,
+    pub defaults: Option<Defaults>,
     #[garde(dive)]
     pub models: Vec<Model>,
     #[garde(dive)]
@@ -59,7 +60,7 @@ pub struct Measure {
     pub sql: String,
 }
 
-#[derive(Serialize, Deserialize, Debug, JsonSchema)]
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
 pub struct AgentConfig {
     pub model: String,
     pub system_instructions: String,
@@ -69,6 +70,8 @@ pub struct AgentConfig {
     #[serde(default)]
     pub output_format: OutputFormat,
     pub anonymize: Option<AnonymizerConfig>,
+    #[serde(default)]
+    pub tests: Vec<Eval>,
 }
 
 #[derive(Debug, Validate, Deserialize, Serialize, Clone, JsonSchema)]
@@ -118,9 +121,6 @@ impl Default for AgentContextType {
 #[garde(context(ValidationContext))]
 // #[garde(context(Config as ctx))]
 pub struct Defaults {
-    #[garde(length(min = 1))]
-    #[garde(custom(validate_agent_exists))]
-    pub agent: String,
     #[garde(length(min = 1))]
     #[garde(custom(|wh: &Option<String>, ctx: &ValidationContext| {
         match wh {
@@ -215,7 +215,7 @@ pub enum OutputFormat {
     File,
 }
 
-#[derive(Serialize, Deserialize, Debug, JsonSchema)]
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
 #[serde(tag = "type")]
 pub enum AnonymizerConfig {
     #[serde(rename = "flash_text")]
@@ -229,7 +229,7 @@ pub enum AnonymizerConfig {
     },
 }
 
-#[derive(Serialize, Deserialize, Debug, JsonSchema)]
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
 #[serde(untagged)]
 pub enum FlashTextSourceType {
     Keywords {
@@ -253,13 +253,6 @@ pub enum FileFormat {
     Markdown,
 }
 
-#[derive(Debug, JsonSchema)]
-pub struct ParsedConfig {
-    pub agent_config: AgentConfig,
-    pub model: Model,
-    pub warehouse: Warehouse,
-}
-
 #[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
 #[garde(context(ValidationContext))]
 pub struct AgentStep {
@@ -273,9 +266,6 @@ pub struct AgentStep {
 
     #[garde(dive)]
     pub export: Option<StepExport>,
-
-    #[garde(dive)]
-    pub cache: Option<StepCache>,
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug, Validate, JsonSchema)]
@@ -314,13 +304,28 @@ pub struct StepCache {
 
 #[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
 #[garde(context(ValidationContext))]
+#[serde(untagged)]
+pub enum SQL {
+    File {
+        #[garde(length(min = 1))]
+        sql_file: String,
+    },
+    Query {
+        #[garde(length(min = 1))]
+        sql_query: String,
+    },
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
+#[garde(context(ValidationContext))]
 pub struct ExecuteSQLStep {
     #[garde(custom(validate_warehouse_exists))]
     pub warehouse: String,
     // #[garde(custom(validate_sql_file))]
     // Skipping validation for now to allow sql file templating
-    #[garde(length(min = 1))]
-    pub sql_file: String,
+    #[garde(dive)]
+    #[serde(flatten)]
+    pub sql: SQL,
     #[serde(default)]
     #[garde(skip)]
     pub variables: Option<HashMap<String, String>>,
@@ -352,6 +357,9 @@ pub struct LoopSequentialStep {
     pub values: LoopValues,
     #[garde(dive)]
     pub steps: Vec<Step>,
+    #[garde(skip)]
+    #[serde(default = "default_loop_concurrency")]
+    pub concurrency: usize,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
@@ -373,6 +381,8 @@ pub enum StepType {
 #[derive(Deserialize, JsonSchema)]
 pub struct TempWorkflow {
     pub steps: Vec<Step>,
+    #[serde(default = "default_tests")]
+    pub tests: Vec<Eval>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
@@ -384,18 +394,54 @@ pub struct Step {
     #[garde(dive)]
     #[garde(custom(validate_step))]
     pub step_type: StepType,
+    #[garde(dive)]
+    pub cache: Option<StepCache>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Validate, JsonSchema)]
+#[derive(Serialize, Deserialize, Debug, Validate, JsonSchema, Clone)]
+#[serde(tag = "eval_type")]
+#[garde(context(ValidationContext))]
+pub enum Eval {
+    #[serde(rename = "consistency")]
+    Consistency(#[garde(dive)] Consistency),
+}
+
+#[derive(Serialize, Deserialize, Debug, Validate, JsonSchema, Clone)]
+#[garde(context(ValidationContext))]
+pub struct Consistency {
+    #[garde(length(min = 1))]
+    #[serde(default = "default_consistency_prompt")]
+    pub prompt: String,
+    #[garde(length(min = 1))]
+    pub model_ref: Option<String>,
+    #[garde(skip)]
+    #[serde(default = "default_n")]
+    pub n: usize,
+    #[garde(length(min = 1))]
+    pub task_description: Option<String>,
+    #[garde(skip)]
+    pub task_ref: Option<String>,
+    #[garde(skip)]
+    #[serde(default = "default_scores")]
+    pub scores: HashMap<String, f32>,
+    #[garde(skip)]
+    #[serde(default = "default_consistency_concurrency")]
+    pub concurrency: usize,
+}
+
+#[derive(Serialize, Deserialize, Debug, Validate, JsonSchema, Clone)]
 #[garde(context(ValidationContext))]
 pub struct Workflow {
     #[garde(length(min = 1))]
     pub name: String,
     #[garde(dive)]
     pub steps: Vec<Step>,
+    #[garde(skip)]
+    #[serde(default = "default_tests")]
+    pub tests: Vec<Eval>,
 }
 
-#[derive(Serialize, Deserialize, Debug, JsonSchema)]
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
 pub struct RetrievalTool {
     pub name: String,
     #[serde(default = "default_retrieval_tool_description")]
@@ -430,7 +476,7 @@ impl RetrievalTool {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, JsonSchema)]
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
 pub struct ExecuteSQLTool {
     pub name: String,
     #[serde(default = "default_sql_tool_description")]
@@ -438,11 +484,21 @@ pub struct ExecuteSQLTool {
     pub warehouse: String,
 }
 
-#[derive(Serialize, Deserialize, Debug, JsonSchema)]
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
+pub struct ValidateSQLTool {
+    pub name: String,
+    #[serde(default = "default_validate_sql_tool_description")]
+    pub description: String,
+    pub warehouse: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
 #[serde(tag = "type")]
 pub enum ToolConfig {
     #[serde(rename = "execute_sql")]
     ExecuteSQL(ExecuteSQLTool),
+    #[serde(rename = "validate_sql")]
+    ValidateSQL(ValidateSQLTool),
     #[serde(rename = "retrieval")]
     Retrieval(RetrievalTool),
 }
@@ -503,10 +559,72 @@ fn default_sql_tool_description() -> String {
     "Execute the SQL query. If the query is invalid, fix it and run again.".to_string()
 }
 
+fn default_validate_sql_tool_description() -> String {
+    "Validate the SQL query. If the query is invalid, fix it and run again.".to_string()
+}
+
 fn default_tools() -> Vec<ToolConfig> {
     vec![]
 }
 
 fn default_cache_enabled() -> bool {
     false
+}
+
+fn default_scores() -> HashMap<String, f32> {
+    HashMap::from_iter([("A".to_string(), 1.0), ("B".to_string(), 0.0)])
+}
+
+fn default_n() -> usize {
+    10
+}
+
+fn default_consistency_prompt() -> String {
+    indoc! {"
+    You are comparing a pair of submitted answers on a given question. Here is the data:
+    [BEGIN DATA]
+    ************
+    [Question]: {{ task_description }}
+    ************
+    [Submission 1]: {{submission_1}}
+    ************
+    [Submission 2]: {{submission_2}}
+    ************
+    [END DATA]
+
+    Compare the factual content of the submitted answers. Ignore any differences in style, grammar, punctuation. Answer the question by selecting one of the following options:
+    A. The submitted answers are either a superset or contains each other and is fully consistent with it.
+    B. There is a disagreement between the submitted answers.
+
+    - First, highlight the disagreements between the two submissions.
+    Following is the syntax to highlight the differences:
+
+    (1) <factual_content>
+    +++ <submission_1_factual_content_diff>
+    --- <submission_2_factual_content_diff>
+
+    [BEGIN EXAMPLE]
+    Here are the key differences between the two submissions:
+    (1) Capital of France
+    +++ Paris
+    --- France
+    [END EXAMPLE]
+
+    - Then reason about the highlighted differences. The submitted answers may either be a subset or superset of each other, or it may conflict. Determine which case applies.
+    - At the end, print only a single choice from AB (without quotes or brackets or punctuation) on its own line corresponding to the correct answer. e.g A
+
+    Reasoning:
+    "}.to_string()
+}
+
+fn default_tests() -> Vec<Eval> {
+    vec![]
+}
+
+fn default_loop_concurrency() -> usize {
+    1
+}
+
+fn default_consistency_concurrency() -> usize {
+    10
 }

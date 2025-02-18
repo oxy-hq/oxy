@@ -38,8 +38,8 @@ jobs:
             target: x86_64-apple-darwin
           - os: macos-latest
             target: aarch64-apple-darwin
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
+          # - os: ubuntu-latest
+          #   target: x86_64-unknown-linux-gnu
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -113,8 +113,6 @@ jobs:
         with:
           args: --target ${{ matrix.job.target }}
           projectPath: crates/onyx-desktop
-          appName: onyx
-          appVersion: ${{ inputs.tag || github.ref_name }}
       - name: Move tauri assets to artifacts
         run: |
           mkdir -p artifacts/tauri-${{ matrix.job.target }}
@@ -124,7 +122,9 @@ jobs:
               # github does not support Macos App bundle as artifact
               ditto -c -k --sequesterRsrc --keepParent "$artifact" "artifacts/tauri-${{ matrix.job.target }}/$(basename "$artifact" .app)-app-${{ matrix.job.target }}.zip"
             else
-              mv "$artifact" "artifacts/tauri-${{ matrix.job.target }}/"
+              base_name=$(basename "$artifact")
+              new_name=$(echo "$base_name" | sed -E 's/_[0-9]+\.[0-9]+\.[0-9]+//') # remove version number from artifact name
+              mv "$artifact" "artifacts/tauri-${{ matrix.job.target }}/$new_name"
             fi
           done
       - name: Cleanup tauri build to reduce cache size
@@ -153,8 +153,8 @@ jobs:
             target: x86_64-apple-darwin
           - os: macos-latest
             target: aarch64-apple-darwin
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
+          # - os: ubuntu-latest
+          #   target: x86_64-unknown-linux-gnu
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -293,6 +293,11 @@ jobs:
     needs: [release]
     if: ${{ github.event_name != 'workflow_dispatch' }}
     steps: # get release note from github and its version to send to slack channel
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.tag || github.ref_name }}
       - name: Get release note
         env:
           GH_TOKEN: ${{ github.token }}

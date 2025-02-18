@@ -1,7 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2.0.0-rc",
   "productName": "onyx",
-  "version": "0.1.0",
   "identifier": "ai.onyxint",
   "build": {
     "frontendDist": "../../web-app/dist",
@@ -10,11 +9,12 @@
     "beforeBuildCommand": "pnpm build"
   },
   "app": {
+    "withGlobalTauri": true,
     "windows": [
       {
         "title": "onyx",
-        "width": 800,
-        "height": 600,
+        "width": 1280,
+        "height": 1000,
         "resizable": true,
         "fullscreen": false
       }
@@ -31,8 +31,37 @@
             "dialog:allow-open",
             "fs:default",
             {
+              "all": true,
               "identifier": "fs:allow-exists",
-              "allow": [{ "path": "$HOME/*" }]
+              "allow": [
+                { "path": "$HOME/**/*" },
+                { "path": "$HOME/**/.*/**" },
+                { "path": "$HOME/**/.*" }
+              ]
+            },
+            {
+              "identifier": "fs:allow-app-read-recursive",
+              "allow": [
+                { "path": "$HOME/**/*" },
+                { "path": "$HOME/**/.*/**" },
+                { "path": "$HOME/**/.*" }
+              ]
+            },
+            {
+              "identifier": "fs:allow-app-write",
+              "allow": [
+                { "path": "$HOME/**/*" },
+                { "path": "$HOME/**/.*/**" },
+                { "path": "$HOME/**/.*" }
+              ]
+            },
+            {
+              "identifier": "fs:allow-app-write-recursive",
+              "allow": [
+                { "path": "$HOME/**/*" },
+                { "path": "$HOME/**/.*/**" },
+                { "path": "$HOME/**/.*" }
+              ]
             }
           ],
           "platforms": ["macOS", "windows"]
@@ -49,6 +78,9 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "macOS": {
+      "signingIdentity": "-"
+    }
   }
 }

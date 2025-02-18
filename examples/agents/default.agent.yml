@@ -57,3 +57,7 @@ tools:
     # n_dims: 512
     # top_k: 4
     # factor: 5
+
+tests:
+  - eval_type: consistency
+    task_description: "how many users are there in the database?"

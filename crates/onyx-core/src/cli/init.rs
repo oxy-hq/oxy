@@ -12,7 +12,6 @@ use super::model::{Defaults, Model, Warehouse};
 pub enum InitError {
     IoError(io::Error),
     ExtractionError(String),
-    ProjectPathNotFound(String),
 }
 
 impl fmt::Display for InitError {
@@ -20,7 +19,6 @@ impl fmt::Display for InitError {
         match self {
             InitError::IoError(err) => write!(f, "IO error: {}", err),
             InitError::ExtractionError(err) => write!(f, "Extraction error: {}", err),
-            InitError::ProjectPathNotFound(err) => write!(f, "Project path not found: {}", err),
         }
     }
 }
@@ -203,20 +201,37 @@ fn create_project_structure() -> Result<(), InitError> {
 }
 
 pub fn init() -> Result<(), InitError> {
-    let project_path =
-        find_project_path().map_err(|e| InitError::ProjectPathNotFound(e.to_string()))?;
-    let config_path = project_path.join("config.yml");
-
-    if config_path.exists() {
+    let project_path = find_project_path().unwrap_or_else(|_| {
         println!(
             "{}",
-            format!(
-                "config.yml found in {}. Only initializing current directory.",
-                config_path.display().to_string().secondary()
-            )
-            .text()
+            "Project path not found. Using current directory.".warning()
         );
-    } else {
+        PathBuf::new()
+    });
+
+    let config_path =
+        if project_path.as_os_str().is_empty() || !project_path.join("config.yml").exists() {
+            println!(
+                "{}",
+                "Project path is empty or config.yml does not exist. Using current directory."
+                    .warning()
+            );
+            std::env::current_dir()
+                .map_err(InitError::IoError)?
+                .join("config.yml")
+        } else {
+            println!(
+                "{}",
+                format!(
+                    "config.yml found in {}. Only initializing current directory.",
+                    project_path.display().to_string().secondary()
+                )
+                .text()
+            );
+            project_path.join("config.yml")
+        };
+
+    if !config_path.exists() {
         create_config_file(&config_path)?;
     }
 
@@ -241,10 +256,9 @@ fn create_config_file(config_path: &Path) -> Result<(), InitError> {
     let config = Config {
         warehouses,
         models,
-        defaults: Defaults {
-            agent: "default".to_string(),
+        defaults: Some(Defaults {
             warehouse: Some("primary_warehouse".to_string()),
-        },
+        }),
         project_path: PathBuf::new(),
     };
 
