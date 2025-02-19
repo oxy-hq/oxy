@@ -1,8 +1,8 @@
 <p align="center"><img src="docs/readme-banner.png"/></p>
 
 <p align="center">
-  <a href="https://github.com/onyx-hq/onyx-core/actions/workflows/ci.yaml">
-    <img src="https://github.com/onyx-hq/onyx-core/actions/workflows/ci.yaml/badge.svg" alt="CI Status">
+  <a href="https://github.com/onyx-hq/onyx/actions/workflows/ci.yaml">
+    <img src="https://github.com/onyx-hq/onyx/actions/workflows/ci.yaml/badge.svg" alt="CI Status">
   </a>
 </p>
 
