@@ -1,4 +1,4 @@
-name: Open source onyx in onyx-community
+name: Open source onyx
 on:
   push:
     branches:
@@ -9,7 +9,7 @@ on:
 jobs:
   move-code:
     runs-on: ubuntu-latest
-    if: ${{ (github.event_name == 'push' && github.repository == 'onyx-hq/onyx') || (github.event_name == 'pull_request_target' && github.repository == 'onyx-hq/onyx-community') }}
+    if: ${{ (github.event_name == 'push' && github.repository == 'onyx-hq/onyx') || (github.event_name == 'pull_request_target' && github.repository == 'onyx-hq/onyx-core') }}
     steps:
       - uses: actions/create-github-app-token@v1
         name: Create GitHub App Token
@@ -19,7 +19,7 @@ jobs:
           private-key: ${{ secrets.ARGO_APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
           repositories: |
-            onyx-community
+            onyx-core
             onyx
       - name: Get GitHub App User ID
         id: get-user-id
@@ -35,7 +35,7 @@ jobs:
           ssh_key: ${{ secrets.ONYX_SSH_KEY }}
           access_token: ${{ steps.app-token.outputs.token }}
           sot_repo: onyx-hq/onyx
-          destination_repo: onyx-hq/onyx-community
+          destination_repo: onyx-hq/onyx-core
           push_exclude: >-
             web-app/**
             crates/onyx-desktop/src/**
