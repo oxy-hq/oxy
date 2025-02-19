@@ -26,6 +26,7 @@ pub async fn vector_search(
     agent: &str,
     retrieval: &RetrievalTool,
     query: &str,
+    config: &Config,
 ) -> anyhow::Result<()> {
     println!(
         "{}",
@@ -36,7 +37,7 @@ pub async fn vector_search(
         .as_str()
         .text()
     );
-    let db = get_vector_store(agent, retrieval)?;
+    let db = get_vector_store(agent, retrieval, config)?;
     let documents = db.search(query).await?;
     for document in documents {
         println!("{}", format!("{}\n", document.content).text());
