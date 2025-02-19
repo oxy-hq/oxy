@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.36](https://github.com/onyx-hq/onyx/compare/0.1.35...0.1.36) (2025-02-19)
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* correct pr_exclude pattern and add pr_move conditions in GitHub Actions workflow ([5410813](https://github.com/onyx-hq/onyx/commit/54108138d59b09c7e8587b46f2c48c53476b5b04))
+* update pr_exclude conditions in GitHub Actions workflow and add opensource folder to .gitignore ([3214366](https://github.com/onyx-hq/onyx/commit/3214366a32180ece96bf0bb404daeab906afbd8a))
+
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+* enable oss version to run ci and hide more files ([611fb54](https://github.com/onyx-hq/onyx/commit/611fb5469d793722f89b6a8fc595a5b3e9c54f85))
+
 ## [0.1.35](https://github.com/onyx-hq/onyx/compare/0.1.34...0.1.35) (2025-02-17)
 
 

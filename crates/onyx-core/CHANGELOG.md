@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.36](https://github.com/onyx-hq/onyx/compare/0.1.35...0.1.36) (2025-02-19)
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* emojis with variant selector break tabled ([#370](https://github.com/onyx-hq/onyx/issues/370)) ([86c4686](https://github.com/onyx-hq/onyx/commit/86c46864f52aad7a209e93462838f5149a272300))
+
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+* lock libduckdb sys ([38d5a70](https://github.com/onyx-hq/onyx/commit/38d5a703be3174dacc3591a4fb8d273272b41bd8))
+
 ## [0.1.35](https://github.com/onyx-hq/onyx/compare/0.1.34...0.1.35) (2025-02-17)
 
 
