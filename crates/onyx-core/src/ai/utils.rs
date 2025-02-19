@@ -59,8 +59,13 @@ fn create_formatters(batch: &RecordBatch) -> Result<Vec<ArrayFormatter<'_>>, Arr
 fn format_row(formatters: &[ArrayFormatter], row: usize) -> Vec<String> {
     formatters
         .iter()
-        .map(|f| f.value(row).to_string())
+        .map(|f| clean_text(&f.value(row).to_string()))
         .collect()
+}
+
+pub fn clean_text(text: &str) -> String {
+    // Tabled doesn't calculate the width of emojis correctly when using variant selector, so we need to remove them
+    text.replace("\u{fe0f}", "")
 }
 
 pub fn record_batches_to_markdown(
@@ -84,7 +89,6 @@ pub fn record_batches_to_rows(results: &[RecordBatch]) -> Result<Vec<Vec<String>
             rows.push(format_row(&formatters, row));
         }
     }
-
     Ok(rows)
 }
 
@@ -110,7 +114,7 @@ pub fn record_batches_to_table(
             None
         })
         .collect::<Vec<String>>();
-
+    log::debug!("Displayed columns: {:?}", displayed_headers);
     let mut rows = Vec::new();
     for batch in results {
         let formatters = create_formatters(batch)?
