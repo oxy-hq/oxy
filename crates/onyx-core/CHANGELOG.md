@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.37](https://github.com/onyx-hq/onyx/compare/0.1.36...0.1.37) (2025-02-19)
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* [#373](https://github.com/onyx-hq/onyx/issues/373) chat with agent ([#374](https://github.com/onyx-hq/onyx/issues/374)) ([b2bf835](https://github.com/onyx-hq/onyx/commit/b2bf835a3fb2da4dae0ba1a6532bcde5400d0ed2))
+
 ## [0.1.36](https://github.com/onyx-hq/onyx/compare/0.1.35...0.1.36) (2025-02-19)
 
 
