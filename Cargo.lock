@@ -6149,7 +6149,7 @@ dependencies = [
 
 [[package]]
 name = "onyx"
-version = "0.1.36"
+version = "0.1.37"
 dependencies = [
  "anyhow",
  "arrow",
@@ -6211,7 +6211,7 @@ dependencies = [
 
 [[package]]
 name = "onyx-desktop"
-version = "0.1.36"
+version = "0.1.37"
 dependencies = [
  "futures",
  "log",
@@ -6229,7 +6229,7 @@ dependencies = [
 
 [[package]]
 name = "onyx-py"
-version = "0.1.36"
+version = "0.1.37"
 dependencies = [
  "onyx",
  "pyo3",
