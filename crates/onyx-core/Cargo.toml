@@ -32,7 +32,7 @@ dirs = "5.0.1"
 duckdb = { version = "=1.1.1", features = [
   "bundled",
 ] }
-libduckdb-sys = "1.1.1"  # lock version to avoid breaking changes, such as https://github.com/duckdb/duckdb-rs/issues number 436
+libduckdb-sys = "=1.1.1"  # lock version to avoid breaking changes, such as https://github.com/duckdb/duckdb-rs/issues number 436
 entity = { path = "../entity" }
 fern = { version = "0.7.1", features = ["colored"] }
 futures = "0.3.31"
