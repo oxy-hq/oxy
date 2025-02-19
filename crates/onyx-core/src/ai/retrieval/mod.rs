@@ -34,7 +34,7 @@ pub async fn build_embeddings(config: &Config) -> anyhow::Result<()> {
 
         for tool in agent.tools {
             if let ToolConfig::Retrieval(retrieval) = tool {
-                let db = get_vector_store(&agent_name, &retrieval)?;
+                let db = get_vector_store(&agent_name, &retrieval, config)?;
                 let documents = get_documents_from_files(&retrieval.src, config)?;
                 if documents.is_empty() {
                     println!(
@@ -57,7 +57,8 @@ pub async fn build_embeddings(config: &Config) -> anyhow::Result<()> {
 pub fn get_vector_store(
     agent: &str,
     tool_config: &RetrievalTool,
+    config: &Config,
 ) -> anyhow::Result<Box<dyn VectorStore + Send + Sync>> {
-    let db = LanceDBStore::with_config(agent, tool_config);
+    let db = LanceDBStore::with_config(agent, tool_config, config);
     Ok(Box::new(db))
 }

@@ -172,7 +172,7 @@ fn tools_from_config(
                 toolbox.add_tool(sql_tool.name.to_string(), tool.into());
             }
             ToolConfig::Retrieval(retrieval) => {
-                let tool = RetrieveTool::new(agent_name, retrieval);
+                let tool = RetrieveTool::new(agent_name, retrieval, config);
                 toolbox.add_tool(retrieval.name.to_string(), tool.into());
             }
         };

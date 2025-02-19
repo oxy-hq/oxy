@@ -28,7 +28,10 @@ use serde::{Deserialize, Serialize};
 use serde_arrow::from_record_batch;
 use tokio::sync::OnceCell;
 
-use crate::{config::model::RetrievalTool, errors::OnyxError};
+use crate::{
+    config::model::{Config, RetrievalTool},
+    errors::OnyxError,
+};
 
 use super::reranking::ReciprocalRankingFusion;
 
@@ -63,14 +66,18 @@ pub struct LanceDBStore {
 }
 
 impl LanceDBStore {
-    pub fn with_config(agent_name: &str, tool_config: &RetrievalTool) -> Self {
+    pub fn with_config(agent_name: &str, tool_config: &RetrievalTool, config: &Config) -> Self {
         let client = Client::with_config(
             OpenAIConfig::new()
                 .with_api_key(tool_config.get_api_key())
                 .with_api_base(tool_config.api_url.to_string()),
         );
+        let db_path = config
+            .project_path
+            .join(format!(".db-{}-{}", agent_name, tool_config.name));
+        println!("db_path: {}", db_path.display().to_string());
         Self {
-            uri: format!(".db-{}-{}", agent_name, tool_config.name),
+            uri: db_path.display().to_string(),
             connection: Arc::new(tokio::sync::OnceCell::new()),
             client,
             embed_model: tool_config.embed_model.to_string(),

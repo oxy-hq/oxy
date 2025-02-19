@@ -305,7 +305,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
 
             for tool in agent.tools {
                 if let ToolConfig::Retrieval(retrieval) = tool {
-                    vector_search(&agent_name, &retrieval, &search_args.question).await?;
+                    vector_search(&agent_name, &retrieval, &search_args.question, &config).await?;
                 }
             }
         }
