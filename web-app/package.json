@@ -69,5 +69,5 @@
     "vite": "^6.1.0"
   },
   "packageManager": "pnpm@9.15.4",
-  "version": "0.1.35"
+  "version": "0.1.36"
 }

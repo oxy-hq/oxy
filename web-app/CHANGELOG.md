@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.36](https://github.com/onyx-hq/onyx/compare/0.1.35...0.1.36) (2025-02-19)
+
+
+### <!-- 10 -->💼 Build System
+
+* **deps-dev:** bump the dev-npm-minor-dependencies group across 1 directory with 4 updates ([#366](https://github.com/onyx-hq/onyx/issues/366)) ([60df1ac](https://github.com/onyx-hq/onyx/commit/60df1ac986987566946299c94d4032a2d581c47b))
+* **deps:** bump @tanstack/react-query from 5.66.0 to 5.66.5 in the prod-npm-minor-dependencies group ([#358](https://github.com/onyx-hq/onyx/issues/358)) ([a7383d4](https://github.com/onyx-hq/onyx/commit/a7383d4f87f3a344f8154e5f476c9d748f62dfad))
+
 ## [0.1.35](https://github.com/onyx-hq/onyx/compare/0.1.34...0.1.35) (2025-02-17)
 
 
