@@ -19,6 +19,10 @@
     "crates/entity": {
       "release-type": "rust",
       "component": "entity"
+    },
+    "web-app": {
+      "release-type": "node",
+      "component": "web-app"
     }
   },
   "bump-minor-pre-major": true,
@@ -26,11 +30,11 @@
   "plugins": [
     {
       "type": "cargo-workspace",
-      "merge": false
+      "updateAllPackages": true
     },
     {
       "type": "node-workspace",
-      "merge": false
+      "updateAllPackages": true
     },
     {
       "type": "linked-versions",
@@ -107,7 +111,7 @@
     }
   ],
   "skip-github-release": false,
-  "include-component-in-tag": true,
+  "include-component-in-tag": false,
   "include-v-in-tag": false,
   "versioning": "default"
 }
