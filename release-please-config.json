@@ -64,34 +64,6 @@
     {
       "type": "revert",
       "section": "<!-- 9 -->◀️ Revert"
-    },
-    {
-      "type": "docs",
-      "section": "<!-- 3 -->📚 Documentation"
-    },
-    {
-      "type": "style",
-      "section": "<!-- 5 -->🎨 Styling"
-    },
-    {
-      "type": "chore",
-      "section": "<!-- 7 -->⚙️ Miscellaneous Tasks"
-    },
-    {
-      "type": "refactor",
-      "section": "<!-- 2 -->🚜 Refactor"
-    },
-    {
-      "type": "test",
-      "section": "<!-- 6 -->🧪 Testing"
-    },
-    {
-      "type": "build",
-      "section": "<!-- 10 -->💼 Build System"
-    },
-    {
-      "type": "ci",
-      "section": "<!-- 11 -->💼 Continuous Integration"
     }
   ],
   "skip-github-release": false,
