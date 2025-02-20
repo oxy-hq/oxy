@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 
 
+## [0.1.38](https://github.com/onyx-hq/onyx/compare/0.1.37...0.1.38) (2025-02-20)
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* [#376](https://github.com/onyx-hq/onyx/issues/376) fix issue where the released desktop version cannot connect to the database ([#377](https://github.com/onyx-hq/onyx/issues/377)) ([0ae8a74](https://github.com/onyx-hq/onyx/commit/0ae8a74ffa3d821796605f07e7e2f84ca4354537))
+
 ## [0.1.36](https://github.com/onyx-hq/onyx/compare/0.1.35...0.1.36) (2025-02-19)
 
 
