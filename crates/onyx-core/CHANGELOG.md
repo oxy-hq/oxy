@@ -2,6 +2,32 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.38](https://github.com/onyx-hq/onyx/compare/onyx-core-v0.1.38...onyx-core-0.1.38) (2025-02-20)
+
+
+### <!-- 0 -->🚀 Features
+
+* [#305](https://github.com/onyx-hq/onyx/issues/305) Chat UI for Agent ([#346](https://github.com/onyx-hq/onyx/issues/346)) ([0530f4c](https://github.com/onyx-hq/onyx/commit/0530f4c9a5317f4d8c2fcc5f955799a91f676f4e))
+* re-organize everything to prep for opensource ([#296](https://github.com/onyx-hq/onyx/issues/296)) ([094bfb1](https://github.com/onyx-hq/onyx/commit/094bfb1490f37dc828bfbd43887c2024eb7eae7d))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* [#373](https://github.com/onyx-hq/onyx/issues/373) chat with agent ([#374](https://github.com/onyx-hq/onyx/issues/374)) ([b2bf835](https://github.com/onyx-hq/onyx/commit/b2bf835a3fb2da4dae0ba1a6532bcde5400d0ed2))
+* emojis with variant selector break tabled ([#370](https://github.com/onyx-hq/onyx/issues/370)) ([86c4686](https://github.com/onyx-hq/onyx/commit/86c46864f52aad7a209e93462838f5149a272300))
+* handle onyx init when no config is found ([#340](https://github.com/onyx-hq/onyx/issues/340)) ([5eae6e2](https://github.com/onyx-hq/onyx/commit/5eae6e247059d055708c928b0347363c555a6e55))
+* lock duckdb version ([#350](https://github.com/onyx-hq/onyx/issues/350)) ([0fe2d10](https://github.com/onyx-hq/onyx/commit/0fe2d10ada984f37e6cf96b0be8e0aa8af082013))
+* refactor cache into executor ([#337](https://github.com/onyx-hq/onyx/issues/337)) ([69e5557](https://github.com/onyx-hq/onyx/commit/69e555744808917828c764ae918964a2ce660bac))
+* update Windows DIST path to correct directory ([bc01c4b](https://github.com/onyx-hq/onyx/commit/bc01c4bc4a29077382074ba6ae50c7cc2fbc721c))
+* workaround for release please issue ([213d3a1](https://github.com/onyx-hq/onyx/commit/213d3a175307b70eafeeba18e2e4718f3035d100))
+* workaround for release please issue ([a685f57](https://github.com/onyx-hq/onyx/commit/a685f57e25f8e8e198dd3fb035e4a161e796c5de))
+
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+* release 0.1.38 ([49c44f2](https://github.com/onyx-hq/onyx/commit/49c44f28d912de43c7042ff0768427d1243faff3))
+* release 0.1.38 ([b10bc5c](https://github.com/onyx-hq/onyx/commit/b10bc5c4d5d677cc2235d36135c8329e582da75a))
+
 ## [0.1.37](https://github.com/onyx-hq/onyx/compare/0.1.36...0.1.37) (2025-02-19)
 
 
