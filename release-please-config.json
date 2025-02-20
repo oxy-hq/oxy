@@ -47,23 +47,63 @@
   "changelog-sections": [
     {
       "type": "feat",
-      "section": "<!-- 0 -->🚀 Features"
+      "section": "<!-- 0 -->🚀 Features",
+      "hidden": false
     },
     {
       "type": "feature",
-      "section": "<!-- 0 -->🚀 Features"
+      "section": "<!-- 0 -->🚀 Features",
+      "hidden": false
     },
     {
       "type": "fix",
-      "section": "<!-- 1 -->🐛 Bug Fixes"
+      "section": "<!-- 1 -->🐛 Bug Fixes",
+      "hidden": false
     },
     {
       "type": "perf",
-      "section": "<!-- 4 -->⚡ Performance"
+      "section": "<!-- 4 -->⚡ Performance",
+      "hidden": false
     },
     {
       "type": "revert",
-      "section": "<!-- 9 -->◀️ Revert"
+      "section": "<!-- 9 -->◀️ Revert",
+      "hidden": true
+    },
+    {
+      "type": "docs",
+      "section": "<!-- 3 -->📚 Documentation",
+      "hidden": true
+    },
+    {
+      "type": "style",
+      "section": "<!-- 5 -->🎨 Styling",
+      "hidden": true
+    },
+    {
+      "type": "chore",
+      "section": "<!-- 7 -->⚙️ Miscellaneous Tasks",
+      "hidden": true
+    },
+    {
+      "type": "refactor",
+      "section": "<!-- 2 -->🚜 Refactor",
+      "hidden": true
+    },
+    {
+      "type": "test",
+      "section": "<!-- 6 -->🧪 Testing",
+      "hidden": true
+    },
+    {
+      "type": "build",
+      "section": "<!-- 10 -->💼 Build System",
+      "hidden": true
+    },
+    {
+      "type": "ci",
+      "section": "<!-- 11 -->💼 Continuous Integration",
+      "hidden": true
     }
   ],
   "skip-github-release": false,
