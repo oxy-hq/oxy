@@ -2,34 +2,28 @@
 
 All notable changes to this project will be documented in this file.
 
-
-
-## [0.1.38](https://github.com/onyx-hq/onyx/compare/0.1.37...0.1.38) (2025-02-20)
-
+## [0.1.37](https://github.com/onyx-hq/onyx/compare/0.1.36...0.1.37) (2025-02-19)
 
 ### <!-- 1 -->🐛 Bug Fixes
 
-* [#376](https://github.com/onyx-hq/onyx/issues/376) fix issue where the released desktop version cannot connect to the database ([#377](https://github.com/onyx-hq/onyx/issues/377)) ([0ae8a74](https://github.com/onyx-hq/onyx/commit/0ae8a74ffa3d821796605f07e7e2f84ca4354537))
+- [#373](https://github.com/onyx-hq/onyx/issues/373) chat with agent ([#374](https://github.com/onyx-hq/onyx/issues/374)) ([b2bf835](https://github.com/onyx-hq/onyx/commit/b2bf835a3fb2da4dae0ba1a6532bcde5400d0ed2))
 
 ## [0.1.36](https://github.com/onyx-hq/onyx/compare/0.1.35...0.1.36) (2025-02-19)
 
-
 ### <!-- 1 -->🐛 Bug Fixes
 
-* correct pr_exclude pattern and add pr_move conditions in GitHub Actions workflow ([5410813](https://github.com/onyx-hq/onyx/commit/54108138d59b09c7e8587b46f2c48c53476b5b04))
-* update pr_exclude conditions in GitHub Actions workflow and add opensource folder to .gitignore ([3214366](https://github.com/onyx-hq/onyx/commit/3214366a32180ece96bf0bb404daeab906afbd8a))
-
+- correct pr_exclude pattern and add pr_move conditions in GitHub Actions workflow ([5410813](https://github.com/onyx-hq/onyx/commit/54108138d59b09c7e8587b46f2c48c53476b5b04))
+- update pr_exclude conditions in GitHub Actions workflow and add opensource folder to .gitignore ([3214366](https://github.com/onyx-hq/onyx/commit/3214366a32180ece96bf0bb404daeab906afbd8a))
 
 ### <!-- 7 -->⚙️ Miscellaneous Tasks
 
-* enable oss version to run ci and hide more files ([611fb54](https://github.com/onyx-hq/onyx/commit/611fb5469d793722f89b6a8fc595a5b3e9c54f85))
+- enable oss version to run ci and hide more files ([611fb54](https://github.com/onyx-hq/onyx/commit/611fb5469d793722f89b6a8fc595a5b3e9c54f85))
 
 ## [0.1.35](https://github.com/onyx-hq/onyx/compare/0.1.34...0.1.35) (2025-02-17)
 
-
 ### <!-- 0 -->🚀 Features
 
-* [#305](https://github.com/onyx-hq/onyx/issues/305) Chat UI for Agent ([#346](https://github.com/onyx-hq/onyx/issues/346)) ([0530f4c](https://github.com/onyx-hq/onyx/commit/0530f4c9a5317f4d8c2fcc5f955799a91f676f4e))
+- [#305](https://github.com/onyx-hq/onyx/issues/305) Chat UI for Agent ([#346](https://github.com/onyx-hq/onyx/issues/346)) ([0530f4c](https://github.com/onyx-hq/onyx/commit/0530f4c9a5317f4d8c2fcc5f955799a91f676f4e))
 
 ## [0.1.34](https://github.com/onyx-hq/onyx/compare/0.1.33...0.1.34) (2025-02-14)
 
