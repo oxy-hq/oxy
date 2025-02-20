@@ -6215,6 +6215,7 @@ version = "0.1.37"
 dependencies = [
  "futures",
  "log",
+ "migration",
  "onyx",
  "serde",
  "serde_json",

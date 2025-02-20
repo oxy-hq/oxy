@@ -1,4 +1,8 @@
 use command::{ask, get_openai_api_key, list_chat_messages, set_openai_api_key};
+use migration::Migrator;
+use migration::MigratorTrait;
+use onyx::db::client;
+use std::fs;
 
 mod command;
 
@@ -16,6 +20,13 @@ pub fn run() {
                         .build(),
                 )?;
             }
+            tauri::async_runtime::block_on(async move {
+                // create db directory if not exists
+                let _ = fs::create_dir_all(client::get_db_directory());
+                let db = client::establish_connection().await;
+                // migrate db
+                let _ = Migrator::up(&db, None).await;
+            });
 
             Ok(())
         })
