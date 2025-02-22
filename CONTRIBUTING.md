@@ -6,20 +6,20 @@ Thank you for your interest in contributing to Onyx! We welcome contributions fr
 
 ### Reporting Issues
 
-If you encounter any issues or bugs, please report them by creating a new issue in the [GitHub Issues](https://github.com/onyx-hq/onyx-core/issues) section. Provide as much detail as possible, including steps to reproduce the issue and any relevant logs or screenshots.
+If you encounter any issues or bugs, please report them by creating a new issue in the [GitHub Issues](https://github.com/onyx-hq/onyx/issues) section. Provide as much detail as possible, including steps to reproduce the issue and any relevant logs or screenshots.
 
 ### Feature Requests
 
-We are always looking to improve Onyx. If you have a feature request, please open a new issue in the [GitHub Issues](https://github.com/onyx-hq/onyx-core/issues) section and label it as a feature request. Describe the feature in detail and explain why it would be beneficial.
+We are always looking to improve Onyx. If you have a feature request, please open a new issue in the [GitHub Issues](https://github.com/onyx-hq/onyx/issues) section and label it as a feature request. Describe the feature in detail and explain why it would be beneficial.
 
 ### Code Contributions
 
-1. **Fork the Repository**: Fork the [Onyx repository](https://github.com/onyx-hq/onyx-core) to your GitHub account.
+1. **Fork the Repository**: Fork the [Onyx repository](https://github.com/onyx-hq/onyx) to your GitHub account.
 
 2. **Clone the Repository**: Clone your forked repository to your local machine.
 
     ```bash
-    git clone https://github.com/<your-username>/onyx-core.git
+    git clone https://github.com/<your-username>/onyx.git
     cd onyx
     ```
 

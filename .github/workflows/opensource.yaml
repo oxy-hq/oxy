@@ -9,7 +9,7 @@ on:
 jobs:
   move-code:
     runs-on: ubuntu-latest
-    if: ${{ (github.event_name == 'push' && github.repository == 'onyx-hq/onyx') || (github.event_name == 'pull_request_target' && github.repository == 'onyx-hq/onyx-core') }}
+    if: ${{ (github.event_name == 'push' && github.repository == 'onyx-hq/onyx-internal') || (github.event_name == 'pull_request_target' && github.repository == 'onyx-hq/onyx') }}
     steps:
       - uses: actions/create-github-app-token@v1
         name: Create GitHub App Token
@@ -19,7 +19,7 @@ jobs:
           private-key: ${{ secrets.ARGO_APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
           repositories: |
-            onyx-core
+            onyx-internal
             onyx
       - name: Get GitHub App User ID
         id: get-user-id
@@ -34,8 +34,8 @@ jobs:
         with:
           ssh_key: ${{ secrets.ONYX_SSH_KEY }}
           access_token: ${{ steps.app-token.outputs.token }}
-          sot_repo: onyx-hq/onyx
-          destination_repo: onyx-hq/onyx-core
+          sot_repo: onyx-hq/onyx-internal
+          destination_repo: onyx-hq/onyx
           push_exclude: >-
             web-app/**
             crates/onyx-desktop/src/**
