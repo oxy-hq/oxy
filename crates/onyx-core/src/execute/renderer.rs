@@ -199,7 +199,7 @@ impl Renderer {
             .map_err(|err| OnyxError::RuntimeError(format!("Error rendering template: {:?}", err)))
     }
 
-    fn get_context(&self) -> Value {
+    pub fn get_context(&self) -> Value {
         context! {
           ..Value::from_serialize(self.global_context.to_owned()),
           ..Value::from_serialize(&self.current_context),

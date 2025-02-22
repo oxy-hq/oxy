@@ -3,7 +3,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use minijinja::value::Kwargs;
-use minijinja::Value;
+use minijinja::{context, Value};
 
 use crate::config::model::AgentStep;
 use crate::config::model::ExecuteSQLStep;
@@ -149,13 +149,16 @@ impl Executable<WorkflowInput, WorkflowEvent> for ExecuteSQLStep {
                     .join(&rendered_sql_file);
                 match fs::read_to_string(&query_file) {
                     Ok(query) => {
-                        if !variables.is_empty() {
-                            execution_context
-                                .renderer
-                                .render_once(&query, Value::from_serialize(&variables))?
+                        let context = if variables.is_empty() {
+                            execution_context.renderer.get_context()
                         } else {
-                            query
-                        }
+                            context! {
+                                ..execution_context.renderer.get_context(),
+                                ..Value::from_serialize(&variables)
+                            }
+                        };
+
+                        execution_context.renderer.render_once(&query, context)?
                     }
                     Err(e) => {
                         return Err(OnyxError::RuntimeError(format!(

@@ -1,0 +1,64 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/onyx-hq/onyx-public-releases/refs/heads/main/json-schemas/workflow.json
+
+name: survey_responses
+steps:
+  - name: intervals
+    type: execute_sql
+    warehouse: primary_warehouse
+    sql_file: data/example_intervals.sql
+    export:
+      format: sql
+      path: output/example_intervals.sql
+
+  - name: schedules
+    type: loop_sequential
+    values: "{{ intervals.intervals }}"
+    steps:
+      - name: metrics
+        type: loop_sequential
+        values:
+          - "responses"
+          - "rejected"
+        steps:
+          - name: table
+            type: execute_sql
+            warehouse: primary_warehouse
+            sql_file: data/example_execute_sql.sql
+            variables:
+              variable_a: "1000"
+              variable_b: "{{ metrics.value }}"
+              variable_c: "{{ metrics.value }}"
+            export:
+              format: sql
+              path: output/example_execute_sql.sql
+
+      - name: metric_reports
+        type: formatter
+        template: |
+          {% for metric in metrics %}
+          -- Metric: {{metric.value}} --
+          {{metric.report}}
+          -- End of Metric: {{metric.value}} --
+          {% endfor %}
+        export:
+          format: docx
+          path: output/formatter_{{schedules.value}}.docx
+
+  - name: formatter
+    type: formatter
+    template: |
+      # Debugging
+      Row-based display:
+      {{intervals}}
+      Column-based display:
+      {{intervals.intervals}}
+
+      # Survey Responses Report
+      {% for schedule in schedules %}
+      -- Schedule: {{schedule.value}} --
+      {{schedule.metric_reports}}
+      -- End of Schedule: {{schedule.value}} --
+      {% endfor %}
+    export:
+      format: docx
+      path: output/formatter_report.docx
