@@ -2,7 +2,7 @@
 
 [type.md]
 extend-ignore-re = [
-  "\\[[[:xdigit:]]{7}\\]\\(https://github.com/onyx-hq/onyx/commit/[[:xdigit:]]{40}\\)",
+  "\\[[[:xdigit:]]{7}\\]\\(https://github.com/onyx-hq/onyx(-internal)?/commit/[[:xdigit:]]{40}\\)",
 ]
 
 [files]

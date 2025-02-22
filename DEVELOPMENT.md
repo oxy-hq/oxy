@@ -18,13 +18,6 @@ git clone git@github.com:onyx-hq/onyx.git
 cd onyx
 ```
 
-If you work on the open-source version, use `onyx-core` instead of `onyx`:
-
-```sh
-git clone git@github.com:onyx-hq/onyx-core.git onyx
-cd onyx
-```
-
 ## Install Rust & Node
 
 | :zap:        **You are responsible for your own setup if you decide to not follow the instructions below.**   |
