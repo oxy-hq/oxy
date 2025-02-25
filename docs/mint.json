@@ -40,27 +40,23 @@
   "navigation": [
     {
       "group": "Get Started",
-      "pages": ["welcome", "introduction", "quickstart"]
+      "pages": ["welcome", "quickstart"]
     },
     {
       "group": "Learn about Onyx",
       "pages": [
-        "learn-about-onyx/overview",
         {
           "group": "Core concepts",
           "pages": [
             "learn-about-onyx/agents",
             "learn-about-onyx/data",
             "learn-about-onyx/semantic-model",
+            "learn-about-onyx/testing",
             "learn-about-onyx/workflows"
           ]
         },
         "learn-about-onyx/config"
       ]
-    },
-    {
-      "group": "Build with Onyx",
-      "pages": ["build-with-onyx/development"]
     },
     {
       "group": "Clients",
