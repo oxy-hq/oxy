@@ -1,4 +1,4 @@
-use command::{ask, get_openai_api_key, list_chat_messages, set_openai_api_key};
+use command::{ask, ask_preview, get_openai_api_key, list_chat_messages, set_openai_api_key};
 use migration::Migrator;
 use migration::MigratorTrait;
 use onyx::db::client;
@@ -33,6 +33,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             list_chat_messages,
             ask,
+            ask_preview,
             get_openai_api_key,
             set_openai_api_key,
         ])

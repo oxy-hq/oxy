@@ -176,6 +176,17 @@ export const textStyles = defineTextStyles({
   },
 
   // new
+  tabBase: {
+    description: "Tab Base",
+    value: {
+      fontFamily: "Inter",
+      fontSize: "12px",
+      fontStyle: "normal",
+      fontWeight: 500,
+      lineHeight: "120%",
+    },
+  },
+
   buttonRegular: {
     description: "Button regular",
     value: {
@@ -206,6 +217,17 @@ export const textStyles = defineTextStyles({
       fontStyle: "normal",
       fontWeight: 500,
       lineHeight: "17px",
+    },
+  },
+
+  headingH4: {
+    description: "Heading H4",
+    value: {
+      fontFamily: "Inter",
+      fontSize: "20px",
+      fontStyle: "normal",
+      fontWeight: 500,
+      lineHeight: "28px",
     },
   },
 });

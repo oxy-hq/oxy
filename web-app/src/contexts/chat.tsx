@@ -34,9 +34,11 @@ const ChatContext = createContext<IChatContextProps | undefined>(undefined);
 export function ChatContextProvider({
   children,
   defaultMessages,
+  preview,
 }: {
   children: ReactNode;
   defaultMessages?: Message[];
+  preview?: boolean;
 }) {
   const {
     messages,
@@ -48,7 +50,7 @@ export function ChatContextProvider({
     updateMessage,
     onResetDefaultMessages,
     startingMessageList,
-  } = useChatActions(defaultMessages);
+  } = useChatActions(defaultMessages, preview);
 
   const value = useMemo(
     () => ({

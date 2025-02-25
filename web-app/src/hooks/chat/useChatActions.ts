@@ -38,7 +38,10 @@ const updateOrPushMessageById = (message: Message, messages: Message[]) => {
   return [...newMessages, message];
 };
 
-export const useChatActions = (defaultMessages: Message[] = []) => {
+export const useChatActions = (
+  defaultMessages: Message[] = [],
+  preview = false,
+) => {
   const { fetchStreamWithAbort, clearAbortController } =
     useFetchStreamWithAbort();
   const { chatState, setChatStatus, setChatError } = useChatState();
@@ -116,7 +119,7 @@ export const useChatActions = (defaultMessages: Message[] = []) => {
       onSubmitQuestionSuccess: () => void,
     ) => {
       await handleChatAction(
-        "chat",
+        preview ? "preview" : "chat",
         {
           question: content,
           agent: agentPath,
@@ -129,7 +132,7 @@ export const useChatActions = (defaultMessages: Message[] = []) => {
         },
       );
     },
-    [handleChatAction, handleReceivedMessage],
+    [handleChatAction, handleReceivedMessage, preview],
   );
 
   const updateMessage = useCallback(

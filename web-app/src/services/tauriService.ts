@@ -54,15 +54,16 @@ export const tauriService: Service = {
         abortSignal.addEventListener("abort", handleAbort);
       }
 
-      invoke(type === "chat" ? "ask" : "preview", { request, onEvent }).catch(
-        (error) => {
-          if (abortSignal.aborted) {
-            handleAbort();
-          } else {
-            reject(error);
-          }
-        },
-      );
+      invoke(type === "chat" ? "ask" : "ask_preview", {
+        request,
+        onEvent,
+      }).catch((error) => {
+        if (abortSignal.aborted) {
+          handleAbort();
+        } else {
+          reject(error);
+        }
+      });
     });
   },
 };

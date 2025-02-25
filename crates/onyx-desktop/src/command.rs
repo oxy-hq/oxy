@@ -91,3 +91,16 @@ pub async fn ask(request: AskRequest, on_event: Channel<MessageEvent>) -> Result
     on_event.send(MessageEvent::OnComplete).unwrap();
     Ok(())
 }
+
+#[tauri::command]
+pub async fn ask_preview(request: AskRequest, on_event: Channel<MessageEvent>) -> Result<(), ()> {
+    let res = onyx::service::agent::ask_preview(request).await;
+    let mut stream = Box::pin(res);
+    while let Some(value) = stream.next().await {
+        on_event
+            .send(MessageEvent::OnMessage { message: value })
+            .unwrap();
+    }
+    on_event.send(MessageEvent::OnComplete).unwrap();
+    Ok(())
+}

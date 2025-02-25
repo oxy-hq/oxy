@@ -46,13 +46,17 @@ const chatTextInputWrapperStyles = css({
 
 interface ChatProps {
   agentPath: string;
+  preview?: boolean;
 }
 
-export default function Chat({ agentPath }: ChatProps) {
+export default function Chat({ agentPath, preview = false }: ChatProps) {
   const { data: chatMessages } = useChatMessages(agentPath);
 
   return (
-    <ChatContextProvider defaultMessages={chatMessages ?? []}>
+    <ChatContextProvider
+      defaultMessages={preview ? [] : (chatMessages ?? [])}
+      preview={preview}
+    >
       <div className={chatLayoutStyles}>
         <div className={chatMessagesWrapperStyles}>
           <Messages agentPath={agentPath} />

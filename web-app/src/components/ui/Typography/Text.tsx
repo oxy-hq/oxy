@@ -56,6 +56,9 @@ const textStyles = cva({
       },
 
       // new
+      tabBase: {
+        textStyle: "tabBase",
+      },
       buttonRegular: {
         textStyle: "buttonRegular",
       },
@@ -64,6 +67,9 @@ const textStyles = cva({
       },
       bodyBaseMedium: {
         textStyle: "bodyBaseMedium",
+      },
+      headingH4: {
+        textStyle: "headingH4",
       },
     },
     color: {
