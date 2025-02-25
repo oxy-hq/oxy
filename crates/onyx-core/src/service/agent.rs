@@ -17,11 +17,18 @@ use std::time::Duration;
 use uuid::Uuid;
 
 #[derive(Deserialize)]
+pub struct Memory {
+    pub content: String,
+    pub is_human: bool,
+}
+
+#[derive(Deserialize)]
 pub struct AskRequest {
     pub question: String,
     pub agent: String,
     pub title: String,
     pub project_path: String,
+    pub memory: Vec<Memory>,
 }
 
 #[derive(Serialize, Clone)]
@@ -85,6 +92,56 @@ pub async fn ask(payload: AskRequest) -> impl Stream<Item = Message> {
             id: answer.id,
             is_human: answer.is_human,
             created_at: answer.created_at,
+        }
+    }).collect::<Vec<_>>();
+
+    for msg in msgs {
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        yield msg;
+    }
+    };
+
+    stream
+}
+
+pub async fn ask_preview(payload: AskRequest) -> impl Stream<Item = Message> {
+    let stream = stream! {
+        yield Message {
+            content: payload.question.clone(),
+            id: Uuid::new_v4(),
+            is_human: true,
+            created_at: chrono::offset::Utc::now().into(),
+        };
+
+    let project_path = PathBuf::from(payload.project_path.clone());
+    let agent_path= project_path.join(&payload.agent);
+    let config = load_config(Some(project_path)).unwrap();
+
+    let result = match run_agent(
+        Some(&agent_path),
+        &FileFormat::Markdown,
+        Some(payload.question),
+        &config,
+    ).await {
+        Ok(output) => output.output.to_string(),
+        Err(e) => format!("Error running agent: {}", e),
+    };
+
+    let answer_id = Uuid::new_v4();
+    let answer_created_at = chrono::offset::Utc::now().into();
+
+    let chunks = result.chars()
+    .collect::<Vec<_>>()
+    .chunks(3)
+    .map(|chunk| chunk.iter().collect::<String>())
+    .collect::<Vec<_>>();
+
+    let msgs = chunks.into_iter().map(|chunk| {
+        Message {
+            content: chunk.to_string(),
+            id: answer_id,
+            is_human: false,
+            created_at: answer_created_at,
         }
     }).collect::<Vec<_>>();
 
