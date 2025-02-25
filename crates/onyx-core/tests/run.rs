@@ -20,31 +20,31 @@ pub mod run {
     fn run_example_sql_file_ok() {
         let mut cmd = setup_command();
         cmd.arg("data/example_intervals.sql")
-            .arg("--warehouse")
-            .arg("primary_warehouse")
+            .arg("--database")
+            .arg("primary_database")
             .assert()
             .success();
     }
 
     #[test]
-    fn run_sql_file_failed_if_warehouse_not_provided() {
+    fn run_sql_file_failed_if_database_not_provided() {
         let mut cmd = setup_command();
         let result = cmd.arg("data/example_intervals.sql").assert().failure();
         let output = String::from_utf8(result.get_output().stderr.clone()).unwrap();
-        assert!(output.contains("Warehouse is required for running SQL file. Please provide the warehouse using --warehouse or set a default warehouse in config.yml"));
+        assert!(output.contains("Database is required for running SQL file. Please provide the database using --database or set a default database in config.yml"));
     }
 
     #[test]
-    fn run_sql_file_failed_if_warehouse_not_exist() {
+    fn run_sql_file_failed_if_database_not_exist() {
         let mut cmd = setup_command();
         let result = cmd
             .arg("data/example_intervals.sql")
-            .arg("--warehouse")
+            .arg("--database")
             .arg("test")
             .assert()
             .failure();
         let output = String::from_utf8(result.get_output().stderr.clone()).unwrap();
-        assert!(output.contains("Warehouse not found"));
+        assert!(output.contains("Database not found"));
     }
 
     #[test]
@@ -52,8 +52,8 @@ pub mod run {
         let mut cmd = setup_command();
         let result = cmd
             .arg("data/example_weekly_rejected.sql")
-            .arg("--warehouse")
-            .arg("primary_warehouse")
+            .arg("--database")
+            .arg("primary_database")
             .arg("-v")
             .arg("variable_a=1")
             .arg("variable_b=testalias")

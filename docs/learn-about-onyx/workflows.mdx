@@ -3,29 +3,29 @@ title: "Workflows"
 description: How to define workflows
 ---
 
-A workflow is a series of tasks (`steps`) executed sequentially. Each `step`
+A workflow is a series of tasks (`tasks`) executed sequentially. Each `task`
 can be either a deterministic command (such as `execute_sql`, in which a named
-sql query is executed) or an agent given a prompt. These steps are composed by
+sql query is executed) or an agent given a prompt. These tasks are composed by
 passing results from one agent to the input of another -- the output of each
-step can be accessed with Jinja as `{{ name_of_step }}`.
+task can be accessed with Jinja as `{{ name_of_task }}`.
 
 ## Workflow components
 
-Workflows are DAGs comprised of `steps`. Each step has a few common properties:
+Workflows are DAGs comprised of `tasks`. Each task has a few common properties:
 
 | Component | Description                                                                  | Type     |
 | --------- | ---------------------------------------------------------------------------- | -------- |
-| name      | Identifier for the step. Output of the step can be referenced as `{{name}}`. | required |
-| type      | The tool to use for this step. See the following section for possible types. | required |
+| name      | Identifier for the task. Output of the task can be referenced as `{{name}}`. | required |
+| type      | The tool to use for this task. See the following section for possible types. | required |
 
-Specific step types have additional property requirements.
+Specific task types have additional property requirements.
 
 ### `type: agent`
 
 | Component | Description                                                                       | Type                       |
 | --------- | --------------------------------------------------------------------------------- | -------------------------- |
 | agent_ref | The agent to use within the `agents` directory, referenced by the agent's `name`. | required for `type: agent` |
-| prompt    | The input prompt passed to the agent for this step.                               | required for `type: agent` |
+| prompt    | The input prompt passed to the agent for this task.                               | required for `type: agent` |
 
 ### `type: execute_sql`
 
@@ -34,11 +34,11 @@ Executes a SQL query referenced by filename.
 | Component | Description                                              | Type     |
 | --------- | -------------------------------------------------------- | -------- |
 | sql_file  | The sql file within the `data` directory to execute      | required |
-| warehouse | The name of the `warehouse` to execute the query against | required |
+| database  | The name of the `database` to execute the query against  | required |
 
 ### `type: formatter`
 
-Formats the provided `template` using the outputs of other `steps`, then passes
+Formats the provided `template` using the outputs of other `tasks`, then passes
 the rendered template as output.
 
 | Component | Description                                       | Type     |
@@ -49,19 +49,19 @@ the rendered template as output.
 
 | Component | Description                                                                 | Type     |
 | --------- | --------------------------------------------------------------------------- | -------- |
-| values    | Values to iterate over for each `step` in the current step's `steps` array. | required |
-| steps     | Defines the steps to execute for each `value`.                              | required |
+| values    | Values to iterate over for each `task` in the current task's `tasks` array. | required |
+| tasks     | Defines the tasks to execute for each `value`.                              | required |
 
-`values` are accessed within the `steps` of the `loop_sequential` step as
-`<name>.value`, where `<name>` is the name of the step. A sample partial config
+`values` are accessed within the `tasks` of the `loop_sequential` task as
+`<name>.value`, where `<name>` is the name of the task. A sample partial config
 is shown below:
 
 ```yaml
-steps:
+tasks:
   - name: loop_through_animals
     type: loop_sequential
     values: ["whale", "dolphin", "shark"]
-    steps:
+    tasks:
       - name: get_number_of_animals
         type: agent
         agent_ref: default
@@ -69,10 +69,10 @@ steps:
           Get the number of {{ loop_through_animals.value }}s in the ocean.
 ```
 
-This is often combined with the `type: formatter` step, which can loop through
+This is often combined with the `type: formatter` task, which can loop through
 the resulting outputs and form them into a single string. The output from a
 `loop_sequential` is an array of dictionaries for each `value`, where the keys
-for each element of each dictionary is named according to the `step`'s' `name`
+for each element of each dictionary is named according to the `task`'s' `name`
 field. These can be accessed by using Jinja, by looping through the `{{
 <loop_name> }}` variable (`{{ loop_through_animals }}` above).
 
@@ -90,13 +90,13 @@ An example of this behavior is shown below:
 ## Examples
 
 ```yaml workflows/monthly_report.yml
-steps:
+tasks:
   - name: raw_sql_calculation
     type: execute_sql
     sql_file: month_over_month_overall_performance.sql # A sql file to execute deterministically
-  - name: month_over_month_metrics # An identifier for the step. Results can be referenced by jinja-wrapping this name
+  - name: month_over_month_metrics # An identifier for the task. Results can be referenced by jinja-wrapping this name
     type: agent
-    agent_ref: default # The agent .yml file to use for this step
+    agent_ref: default # The agent .yml file to use for this task
     prompt: Calculate month-over-month performance of views and clicks for the entire ad portfolio. # The prompt given to the agent
   - name: monthly_report
     type: agent

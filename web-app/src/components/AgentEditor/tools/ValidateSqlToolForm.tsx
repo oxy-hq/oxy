@@ -23,7 +23,7 @@ const ValidateSqlToolForm = ({
     defaultValues: value ?? {
       type: "validate_sql",
       name: "",
-      warehouse: "",
+      database: "",
       description:
         "Validate the SQL query. If the query is invalid, fix it and run again.",
     },
@@ -51,14 +51,14 @@ const ValidateSqlToolForm = ({
         </FormField>
 
         <FormField
-          name="warehouse"
-          errorMessage={errors.warehouse?.message}
-          label="Warehouse *"
+          name="database"
+          errorMessage={errors.database?.message}
+          label="Database *"
         >
           {() => (
             <TextFieldInput
-              {...register("warehouse", {
-                required: "Warehouse is required",
+              {...register("database", {
+                required: "Database is required",
               })}
             />
           )}

@@ -24,7 +24,7 @@ const ExecuteSqlToolForm = ({
     defaultValues: value ?? {
       type: "execute_sql",
       name: "",
-      warehouse: "",
+      database: "",
       description:
         "Execute the SQL query. If the query is invalid, fix it and run again.",
     },
@@ -52,14 +52,14 @@ const ExecuteSqlToolForm = ({
         </FormField>
 
         <FormField
-          name="warehouse"
-          errorMessage={errors.warehouse?.message}
-          label="Warehouse *"
+          name="database"
+          errorMessage={errors.database?.message}
+          label="Database *"
         >
           {() => (
             <TextFieldInput
-              {...register("warehouse", {
-                required: "Warehouse is required",
+              {...register("database", {
+                required: "Database is required",
               })}
             />
           )}

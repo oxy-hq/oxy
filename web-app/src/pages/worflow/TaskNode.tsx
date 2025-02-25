@@ -1,22 +1,22 @@
 import { Handle, NodeProps, Position } from "@xyflow/react";
 
-import { StepData } from ".";
+import { TaskData } from ".";
 import { NodeContainer } from "./NodeContainer";
-import { StepItem } from "./StepItem";
+import { TaskItem } from "./TaskItem";
 
 export type NodeData = {
-  step: StepData;
+  task: TaskData;
   id: string;
 };
 
 type Props = NodeProps & {
   data: {
-    step: StepData;
+    task: TaskData;
     id: string;
   };
 };
 
-export function StepNode({ data, isConnectable }: Props) {
+export function TaskNode({ data, isConnectable }: Props) {
   return (
     <div key={data.id}>
       <NodeContainer>
@@ -29,7 +29,7 @@ export function StepNode({ data, isConnectable }: Props) {
             top: "3px",
           }}
         />
-        <StepItem step={data.step} />
+        <TaskItem task={data.task} />
         <Handle
           type="source"
           position={Position.Bottom}

@@ -8,11 +8,11 @@ use crate::{
     config::{
         load_config,
         model::{
-            AgentStep, ExecuteSQLStep, FormatterStep, LoopValues, Step, StepType, Workflow, SQL,
+            AgentTask, ExecuteSQLTask, FormatterTask, LoopValues, Task, TaskType, Workflow, SQL,
         },
     },
     errors::OnyxError,
-    execute::exporter::{export_agent_step, export_execute_sql, export_formatter},
+    execute::exporter::{export_agent_task, export_execute_sql, export_formatter},
     utils::print_colored_sql,
     workflow::{executor::WorkflowExecutor, WorkflowResult},
     StyledText,
@@ -42,11 +42,11 @@ pub enum WorkflowEvent {
     },
     Finished,
 
-    // step
-    StepStarted {
+    // task
+    TaskStarted {
         name: String,
     },
-    StepUnknown {
+    TaskUnknown {
         name: String,
     },
     Retry {
@@ -67,19 +67,19 @@ pub enum WorkflowEvent {
     // export
     Export {
         export_file_path: PathBuf,
-        step: StepType,
+        task: TaskType,
     },
 
     // agent
     Agent {
         orig: AgentEvent,
-        step: AgentStep,
+        task: AgentTask,
         export_file_path: Option<PathBuf>,
     },
 
     // sql
     ExecuteSQL {
-        step: ExecuteSQLStep,
+        task: ExecuteSQLTask,
         query: String,
         datasets: Vec<RecordBatch>,
         schema: Arc<Schema>,
@@ -88,7 +88,7 @@ pub enum WorkflowEvent {
 
     // formatter
     Formatter {
-        step: FormatterStep,
+        task: FormatterTask,
         output: String,
         export_file_path: PathBuf,
     },
@@ -96,11 +96,11 @@ pub enum WorkflowEvent {
 
 impl TemplateRegister for Workflow {
     fn register_template(&self, renderer: &mut Renderer) -> Result<(), OnyxError> {
-        renderer.register(&self.steps)
+        renderer.register(&self.tasks)
     }
 }
 
-impl TemplateRegister for &Step {
+impl TemplateRegister for &Task {
     fn register_template(&self, renderer: &mut Renderer) -> Result<(), OnyxError> {
         let mut register = renderer.child_register();
 
@@ -108,14 +108,14 @@ impl TemplateRegister for &Step {
             register.entry(&cache.path.as_str())?;
         }
 
-        match &self.step_type {
-            StepType::Agent(agent) => {
+        match &self.task_type {
+            TaskType::Agent(agent) => {
                 register.entry(&agent.prompt.as_str())?;
                 if let Some(export) = &agent.export {
                     register.entry(&export.path.as_str())?;
                 }
             }
-            StepType::ExecuteSQL(execute_sql) => {
+            TaskType::ExecuteSQL(execute_sql) => {
                 let sql = match &execute_sql.sql {
                     SQL::Query { sql_query } => sql_query,
                     SQL::File { sql_file } => sql_file,
@@ -133,17 +133,17 @@ impl TemplateRegister for &Step {
                     register.entry(&export.path.as_str())?;
                 }
             }
-            StepType::Formatter(formatter) => {
+            TaskType::Formatter(formatter) => {
                 register.entry(&formatter.template.as_str())?;
                 if let Some(export) = &formatter.export {
                     register.entry(&export.path.as_str())?;
                 }
             }
-            StepType::LoopSequential(loop_sequential) => {
+            TaskType::LoopSequential(loop_sequential) => {
                 if let LoopValues::Template(template) = &loop_sequential.values {
                     register.entry(&template.as_str())?;
                 }
-                register.entry(&loop_sequential.steps)?;
+                register.entry(&loop_sequential.tasks)?;
             }
             _ => {}
         }
@@ -151,7 +151,7 @@ impl TemplateRegister for &Step {
     }
 }
 
-impl TemplateRegister for Vec<Step> {
+impl TemplateRegister for Vec<Task> {
     fn register_template(&self, renderer: &mut Renderer) -> Result<(), OnyxError> {
         let mut child_register = renderer.child_register();
         child_register.entries(self)?;
@@ -170,7 +170,7 @@ impl Handler for WorkflowReceiver {
                 println!("\n⏳Running workflow: {}", name.text());
             }
             WorkflowEvent::ExecuteSQL {
-                step: _,
+                task: _,
                 query,
                 datasets,
                 schema,
@@ -190,14 +190,14 @@ impl Handler for WorkflowReceiver {
                 println!("{}", batches_display);
             }
             WorkflowEvent::Formatter {
-                step: _,
+                task: _,
                 output,
                 export_file_path: _,
             } => {
                 println!("{}", "\nOutput:".primary());
                 println!("{}", output);
             }
-            WorkflowEvent::StepStarted { name } => {
+            WorkflowEvent::TaskStarted { name } => {
                 println!("\n⏳Starting {}", name.text());
             }
             WorkflowEvent::CacheHit { .. } => {
@@ -212,10 +212,10 @@ impl Handler for WorkflowReceiver {
                     format!("Failed to write cache to {}: {}", path, err).error()
                 );
             }
-            WorkflowEvent::StepUnknown { name } => {
+            WorkflowEvent::TaskUnknown { name } => {
                 println!(
                     "{}",
-                    format!("Encountered unknown step {name}. Skipping.").warning()
+                    format!("Encountered unknown task {name}. Skipping.").warning()
                 );
             }
             WorkflowEvent::Finished => {
@@ -244,34 +244,34 @@ impl Handler for WorkflowExporter {
         match event {
             WorkflowEvent::Agent {
                 orig: event,
-                step,
+                task,
                 export_file_path,
             } => {
                 log::debug!("Agent tool calls: {:?}", event);
                 if let AgentEvent::ToolCall(tool_call) = event {
                     if let Some(export_file_path) = export_file_path {
-                        export_agent_step(step, &[tool_call], export_file_path);
+                        export_agent_task(task, &[tool_call], export_file_path);
                     }
                 }
             }
             WorkflowEvent::ExecuteSQL {
-                step,
+                task,
                 query,
                 datasets,
                 schema,
                 export_file_path,
             } => {
-                if let Some(export) = &step.export {
+                if let Some(export) = &task.export {
                     export_execute_sql(export, "", query, schema, datasets, export_file_path);
                 }
                 log::debug!("ExecuteSQL tool calls: {:?}", event);
             }
             WorkflowEvent::Formatter {
-                step,
+                task,
                 output,
                 export_file_path,
             } => {
-                if step.export.is_some() {
+                if task.export.is_some() {
                     export_formatter(output, export_file_path);
                 }
                 log::debug!("Formatter tool calls: {:?}", event);

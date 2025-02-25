@@ -12,16 +12,16 @@ onyx run path/to/agent.agent.yml "How many users do we have?"
 
 ### Run queries
 
-Run a raw query on target warehouse
+Run a raw query on target database
 
 ```bash
-onyx run example_monthly_rejected.sql --warehouse=primary_warehouse
+onyx run example_monthly_rejected.sql --database=primary_database
 ```
 
 Run a query rendered from a Jinja template
 
 ```bash
-onyx run example_weekly_rejected.sql --warehouse=primary_warehouse -v variable_a=1 variable_b=a variable_c=\*
+onyx run example_weekly_rejected.sql --database=primary_database -v variable_a=1 variable_b=a variable_c=\*
 ```
 
 ### Workflow usage

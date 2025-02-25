@@ -29,14 +29,14 @@ type OutputFormat = "default" | "file";
 export interface ExecuteSqlTool {
   type: "execute_sql";
   name: string;
-  warehouse: string;
+  database: string;
   description?: string; // default: "Execute the SQL query. If the query is invalid, fix it and run again."
 }
 
 export interface ValidateSqlTool {
   type: "validate_sql";
   name: string;
-  warehouse: string;
+  database: string;
   description?: string; // default: "Validate the SQL query. If the query is invalid, fix it and run again."
 }
 

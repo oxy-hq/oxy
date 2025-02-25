@@ -11,7 +11,7 @@ use crate::{
     ai::setup_eval_agent,
     config::{
         load_config,
-        model::{Consistency, Eval, FileFormat, Step, StepType, Workflow},
+        model::{Consistency, Eval, FileFormat, Task, TaskType, Workflow},
     },
     errors::OnyxError,
     workflow::executor::WorkflowExecutor,
@@ -66,22 +66,22 @@ pub struct TargetWorkflow {
 }
 
 impl TargetWorkflow {
-    pub fn last_step_ref_internal(&self, steps: &[Step]) -> Vec<String> {
+    pub fn last_task_ref_internal(&self, tasks: &[Task]) -> Vec<String> {
         let mut task_ref = vec![];
-        if let Some(step) = steps.last() {
-            task_ref.push(step.name.clone());
-            if let StepType::LoopSequential(loop_values) = &step.step_type {
-                task_ref.extend(self.last_step_ref_internal(&loop_values.steps))
+        if let Some(task) = tasks.last() {
+            task_ref.push(task.name.clone());
+            if let TaskType::LoopSequential(loop_values) = &task.task_type {
+                task_ref.extend(self.last_task_ref_internal(&loop_values.tasks))
             }
         }
         task_ref
     }
 
-    pub fn last_step_ref(&self) -> Result<String, OnyxError> {
-        let task_ref = self.last_step_ref_internal(&self.workflow.steps);
+    pub fn last_task_ref(&self) -> Result<String, OnyxError> {
+        let task_ref = self.last_task_ref_internal(&self.workflow.tasks);
         if task_ref.is_empty() {
             return Err(OnyxError::ConfigurationError(
-                "No steps found in the workflow".to_string(),
+                "No tasks found in the workflow".to_string(),
             ));
         }
         Ok(task_ref.join("."))
@@ -280,7 +280,7 @@ impl Executable<Target, EvalEvent> for Consistency {
             if let Target::Workflow(workflow) = input {
                 let task_ref = match &self.task_ref {
                     Some(task_ref) => task_ref.to_string(),
-                    None => workflow.last_step_ref()?,
+                    None => workflow.last_task_ref()?,
                 };
                 outputs = Array(outputs).nested_project(&task_ref);
             }

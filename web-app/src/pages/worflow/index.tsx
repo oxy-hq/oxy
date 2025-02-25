@@ -12,7 +12,7 @@ import { ReactFlowProvider } from "@xyflow/react";
 
 export type Workflow = {
   name: string;
-  steps: StepData[];
+  tasks: TaskData[];
 };
 
 const WorkflowPage: React.FC = () => {
@@ -49,13 +49,13 @@ const WorkflowPage: React.FC = () => {
         <Text variant="bodyBaseMedium">{relativePath}</Text>
       </div>
       <ReactFlowProvider>
-        <WorkflowDiagram steps={workflow.steps} />
+        <WorkflowDiagram tasks={workflow.tasks} />
       </ReactFlowProvider>
     </div>
   );
 };
 
-export type StepData = {
+export type TaskData = {
   id: string;
   name: string;
   type: string;

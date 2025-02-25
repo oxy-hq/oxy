@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-import { NodeData } from "@/pages/worflow/StepNode";
+import { NodeData } from "@/pages/worflow/TaskNode";
 
 export type LayoutedNode = {
   id: string;

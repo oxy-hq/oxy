@@ -152,9 +152,6 @@ importers:
       '@tauri-apps/plugin-store':
         specifier: ^2.2.0
         version: 2.2.0
-      '@types/lodash':
-        specifier: ^4.17.15
-        version: 4.17.15
       '@uiw/codemirror-themes':
         specifier: ^4.23.8
         version: 4.23.8(@codemirror/language@6.10.8)(@codemirror/state@6.5.2)(@codemirror/view@6.36.2)
@@ -234,6 +231,9 @@ importers:
       '@types/invariant':
         specifier: ^2.2.37
         version: 2.2.37
+      '@types/lodash':
+        specifier: ^4.17.15
+        version: 4.17.15
       '@types/node':
         specifier: ^22.13.5
         version: 22.13.5

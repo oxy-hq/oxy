@@ -84,7 +84,7 @@ The release manager should perform regression testing on core features that are 
 
 - **Description**: The `onyx validate` command is used to validate the configuration file
 
-  - [x] Check onyx validate by running `onyx validate` after changing some fields to a wrong key (like `warehouses` to `warehouse`) in `config.yml` _(automated since #219)_
+  - [x] Check onyx validate by running `onyx validate` after changing some fields to a wrong key (like `databases` to `database`) in `config.yml` _(automated since #219)_
 
-- **Description**: The `onyx list-tables` and `onyx list-datasets` commands are used to list tables and datasets in the default warehouse
+- **Description**: The `onyx list-tables` and `onyx list-datasets` commands are used to list tables and datasets in the default database
   - [x] Check onyx discovery capabilities by running `onyx list-tables` or `onyx list-datasets` _(automated since #219)_

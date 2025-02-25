@@ -6,9 +6,9 @@ use std::sync::Arc;
 
 use crate::ai::utils::record_batches_to_json;
 use crate::ai::utils::record_batches_to_rows;
-use crate::config::model::AgentStep;
+use crate::config::model::AgentTask;
 use crate::config::model::ExportFormat;
-use crate::config::model::StepExport;
+use crate::config::model::TaskExport;
 use crate::connector::load_result;
 use crate::errors::OnyxError;
 use crate::execute::agent::ToolCall;
@@ -18,14 +18,14 @@ use arrow::array::RecordBatch;
 use arrow::datatypes::Schema;
 use csv::Writer;
 
-pub fn export_agent_step(
-    agent_step: &AgentStep,
-    step_output: &[&ToolCall],
+pub fn export_agent_task(
+    agent_task: &AgentTask,
+    task_output: &[&ToolCall],
     export_file_path: &PathBuf,
 ) {
-    if let Some(export) = &agent_step.export {
-        let mut has_execute_sql_step = false;
-        for output in step_output {
+    if let Some(export) = &agent_task.export {
+        let mut has_execute_sql_task = false;
+        for output in task_output {
             if let Some(ToolMetadata::ExecuteSQL {
                 sql_query,
                 output_file,
@@ -35,21 +35,21 @@ pub fn export_agent_step(
                 let (datasets, schema) =
                     load_result(&result_file_path).expect("error to load result");
                 let sql = sql_query.clone();
-                let prompt = &agent_step.prompt;
+                let prompt = &agent_task.prompt;
 
                 export_execute_sql(export, prompt, &sql, &schema, &datasets, export_file_path);
-                has_execute_sql_step = true;
+                has_execute_sql_task = true;
             }
         }
 
-        if !has_execute_sql_step {
+        if !has_execute_sql_task {
             println!("{}", "Warning: Export failed. This agent does not generate sql, so can not export anything.".warning());
         }
     }
 }
 
 pub fn export_execute_sql(
-    step_export: &StepExport,
+    task_export: &TaskExport,
     prompt: &str,
     sql: &str,
     schema: &Arc<Schema>,
@@ -58,7 +58,7 @@ pub fn export_execute_sql(
 ) {
     match get_file_directories(export_file_path) {
         Ok(file_path) => {
-            let result = match step_export.format {
+            let result = match task_export.format {
                 ExportFormat::SQL => export_sql(&file_path, prompt, sql),
                 ExportFormat::CSV => export_csv(&file_path, schema, datasets),
                 ExportFormat::JSON => export_json(&file_path, datasets),
@@ -77,7 +77,7 @@ pub fn export_execute_sql(
                     "{}",
                     format!(
                         "Error exporting to {:?} for path '{}': {:?}",
-                        step_export.format,
+                        task_export.format,
                         file_path.display(),
                         e
                     )
@@ -89,7 +89,7 @@ pub fn export_execute_sql(
             "{}",
             format!(
                 "Error creating directories for path '{}': {}",
-                step_export.path, e
+                task_export.path, e
             )
             .warning()
         ),
@@ -148,11 +148,11 @@ fn export_json(
     Ok(())
 }
 
-pub fn export_formatter(step_output: &str, export_file_path: &PathBuf) {
+pub fn export_formatter(task_output: &str, export_file_path: &PathBuf) {
     match get_file_directories(export_file_path) {
         Ok(file_path) => {
             let mut file = File::create(&file_path).expect("Failed to create file");
-            file.write_all(step_output.as_bytes())
+            file.write_all(task_output.as_bytes())
                 .expect("Failed to write to file");
             println!(
                 "{}",

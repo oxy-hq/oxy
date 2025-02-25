@@ -87,12 +87,12 @@ impl LanceDBStore {
         }
     }
 
-    async fn get_warehouse_metadata_table(&self) -> anyhow::Result<Table> {
+    async fn get_database_metadata_table(&self) -> anyhow::Result<Table> {
         let connection = self
             .connection
             .get_or_init(|| async { connect(&self.uri).execute().await.unwrap() })
             .await;
-        let table_result = connection.open_table("warehouse_metadata").execute().await;
+        let table_result = connection.open_table("database_metadata").execute().await;
         let table = match table_result {
             Ok(table) => table,
             Err(_) => {
@@ -111,7 +111,7 @@ impl LanceDBStore {
                 ]));
 
                 connection
-                    .create_empty_table("warehouse_metadata", schema)
+                    .create_empty_table("database_metadata", schema)
                     .mode(CreateTableMode::exist_ok(|builder| builder))
                     .execute()
                     .await?
@@ -203,7 +203,7 @@ impl LanceDBStore {
 #[async_trait]
 impl VectorStore for LanceDBStore {
     async fn embed(&self, documents: &Vec<Document>) -> anyhow::Result<()> {
-        let table = self.get_warehouse_metadata_table().await?;
+        let table = self.get_database_metadata_table().await?;
         let schema = table.schema().await?;
         let contents = Arc::new(StringArray::from_iter_values(
             documents.iter().map(|doc| doc.content.clone()),
@@ -249,7 +249,7 @@ impl VectorStore for LanceDBStore {
             ));
         }
 
-        let table = self.get_warehouse_metadata_table().await?;
+        let table = self.get_database_metadata_table().await?;
         let mut results = table
             .vector_search(query_vector)?
             .limit(self.top_k * self.factor)

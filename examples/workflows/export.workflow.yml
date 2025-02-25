@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/onyx-hq/onyx-public-releases/refs/heads/main/json-schemas/workflow.json
 
 name: export_sample
-steps:
+tasks:
   - name: report
     type: agent
     prompt: |
@@ -23,7 +23,7 @@ steps:
 
   - name: intervals
     type: execute_sql
-    warehouse: primary_warehouse
+    database: primary_database
     sql_file: data/example_intervals.sql
     export:
       format: sql
@@ -32,13 +32,13 @@ steps:
   - name: schedules
     type: loop_sequential
     values: "{{ intervals.intervals }}"
-    steps:
+    tasks:
       - name: metrics
         type: loop_sequential
         values:
           - "responses"
           - "rejected"
-        steps:
+        tasks:
           - name: report
             type: agent
             prompt: |

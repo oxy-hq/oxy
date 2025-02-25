@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/onyx-hq/onyx-public-releases/refs/heads/main/json-schemas/config.json
 
-warehouses:
-  - name: primary_warehouse
+databases:
+  - name: primary_database
     type: bigquery
     key_path: bigquery-sample.key
     dataset: dbt_prod_core

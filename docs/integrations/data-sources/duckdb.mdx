@@ -2,7 +2,7 @@
 title: DuckDB
 ---
 
-A `duckdb` warehouse entry can be added by specifying `type: duckdb` in your
+A `duckdb` database entry can be added by specifying `type: duckdb` in your
 [`~/.config/onyx/config.yml` file](/learn-about-onyx/config). The `dataset`
 field should point to the directory where your data is stored. We run `SET
 file_search_path = '{}'` within duckdb against the path you provide before any
@@ -11,7 +11,7 @@ query.
 # Sample config entry
 
 ```yaml
-warehouses:
+databases:
   - name: local
     type: duckdb
     dataset: /Users/robertyi/repos/onyx-kelihi/.db/

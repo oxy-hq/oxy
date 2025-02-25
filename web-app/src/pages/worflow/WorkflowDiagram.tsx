@@ -21,7 +21,7 @@ import {
   normalNodeHeight,
   smallestNodeWidth,
 } from "./constants";
-import { StepNode } from "./StepNode";
+import { TaskNode } from "./TaskNode";
 
 const elk = new ELK();
 
@@ -156,7 +156,7 @@ const getLayoutedElements = async (nodes: Node[], edges: Edge[]) => {
 };
 
 const buildNodes = (
-  steps: StepData[],
+  tasks: TaskData[],
   parentId: string | undefined = undefined,
   level = 0,
 ) => {
@@ -166,7 +166,7 @@ const buildNodes = (
   }
   let edges: Edge[] = [];
   let nodes: Node[] = [];
-  steps.map((step, index) => {
+  tasks.map((task, index) => {
     let id;
     if (idPrefix) {
       id = `${idPrefix}-${index}`;
@@ -177,10 +177,10 @@ const buildNodes = (
     // else {
     const node: Node = {
       id,
-      data: { step: { ...step, id: id }, id },
-      type: step.type,
+      data: { task: { ...task, id: id }, id },
+      type: task.type,
       parentId,
-      name: step.name,
+      name: task.name,
       size: {
         width: 0,
         height: 0,
@@ -190,9 +190,9 @@ const buildNodes = (
       height: 0,
       children: [],
     };
-    if (step.type === "loop_sequential") {
+    if (task.type === "loop_sequential") {
       const { nodes: loopNodes, edges: loopEdges } = buildNodes(
-        step.steps!,
+        task.tasks!,
         id,
         level + 1,
       );
@@ -222,29 +222,29 @@ const buildNodes = (
 };
 
 const nodeTypes = {
-  execute_sql: StepNode,
-  loop_sequential: StepNode,
-  formatter: StepNode,
-  agent: StepNode,
+  execute_sql: TaskNode,
+  loop_sequential: TaskNode,
+  formatter: TaskNode,
+  agent: TaskNode,
 };
 
-export type StepData = {
+export type TaskData = {
   id: string;
   name: string;
   type: string;
-  steps?: StepData[];
+  tasks?: TaskData[];
 };
 
-const WorkflowDiagram = ({ steps }: { steps: StepData[] }) => {
+const WorkflowDiagram = ({ tasks }: { tasks: TaskData[] }) => {
   const setNodes = useDiagram((state) => state.setNodes);
   const setEdges = useDiagram((state) => state.setEdges);
   const setLayoutedNodes = useDiagram((state) => state.setLayoutedNodes);
   const layoutedNodes = useDiagram((state) => state.layoutedNodes);
   useEffect(() => {
-    const { nodes, edges } = buildNodes(steps);
+    const { nodes, edges } = buildNodes(tasks);
     setNodes(nodes);
     setEdges(edges);
-  }, [steps]);
+  }, [tasks]);
   const nodes = useDiagram((state) => state.nodes);
   const edges = useDiagram((state) => state.edges);
   useEffect(() => {

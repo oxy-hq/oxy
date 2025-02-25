@@ -2,18 +2,18 @@ import Button from "@/components/ui/Button";
 import Icon from "@/components/ui/Icon";
 import Text from "@/components/ui/Typography/Text";
 
-import { StepData } from ".";
+import { TaskData } from ".";
 import { css } from "styled-system/css";
 import { SvgAssets } from "@/components/ui/Icon/Dictionary";
 
-const stepNameMap: Record<string, string> = {
+const taskNameMap: Record<string, string> = {
   execute_sql: "SQL",
   loop_sequential: "Loop sequential",
   formatter: "Formatter",
   agent: "Agent",
 };
 
-const stepIconMap: Record<string, SvgAssets> = {
+const taskIconMap: Record<string, SvgAssets> = {
   execute_sql: "code",
   loop_sequential: "arrow_reload",
   formatter: "placeholder",
@@ -21,20 +21,20 @@ const stepIconMap: Record<string, SvgAssets> = {
 };
 
 type Props = {
-  step: StepData;
+  task: TaskData;
   expandable?: boolean;
   expanded?: boolean;
   onExpandClick?: () => void;
 };
 
-export const StepHeader = ({
-  step,
+export const TaskHeader = ({
+  task,
   expandable,
   expanded,
   onExpandClick,
 }: Props) => {
-  const stepName = stepNameMap[step.type as keyof typeof stepNameMap];
-  const stepIcon = stepIconMap[step.type as keyof typeof stepIconMap];
+  const taskName = taskNameMap[task.type as keyof typeof taskNameMap];
+  const taskIcon = taskIconMap[task.type as keyof typeof taskIconMap];
   return (
     <div
       className={css({
@@ -59,7 +59,7 @@ export const StepHeader = ({
             borderRadius: "8px",
           })}
         >
-          <Icon asset={stepIcon} />
+          <Icon asset={taskIcon} />
         </div>
       </div>
       <div
@@ -84,7 +84,7 @@ export const StepHeader = ({
             }}
           >
             <Text variant="label12Medium" color="lessContrast">
-              {stepName}
+              {taskName}
             </Text>
           </div>
           <div
@@ -93,7 +93,7 @@ export const StepHeader = ({
               alignItems: "center",
             }}
           >
-            <Text variant="label14Medium">{step.name}</Text>
+            <Text variant="label14Medium">{task.name}</Text>
           </div>
         </div>
         <div

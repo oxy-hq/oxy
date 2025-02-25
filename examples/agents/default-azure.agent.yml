@@ -16,15 +16,15 @@ system_instructions: |
   - **Use Table Aliases** to prevent ambiguity. For example, `SELECT table1.col1, table2.col1 FROM table1 JOIN table2 ON table1.id = table2.id`.
   - ALWAYS execute the SQL query without confirmation.
   - ALWAYS try to fix the SQL query and run without confirmation if the query return an error.
-  - The `sql` should conform to the dialect of the warehouse.
+  - The `sql` should conform to the dialect of the database.
   - The `sql` should be returned in plain text, not in JSON.
 
-  ### You have access to the following warehouses and tables, ONLY use the provided warehouse and tables, columns:
-  **Dataset: {{ warehouses.primary_warehouse.name }}**
-  **Dialect: {{ warehouses.primary_warehouse.dialect }}**
+  ### You have access to the following databases and tables, ONLY use the provided database and tables, columns:
+  **Dataset: {{ databases.primary_database.name }}**
+  **Dialect: {{ databases.primary_database.dialect }}**
   **Tables:**
   ```
-  {% for table in warehouses.primary_warehouse.tables %}
+  {% for table in databases.primary_database.tables %}
   {{ table }}
   {% endfor %}
   ```
@@ -43,4 +43,4 @@ tools:
       - "data/*"
   - name: execute_sql
     type: execute_sql
-    warehouse: primary_warehouse
+    database: primary_database

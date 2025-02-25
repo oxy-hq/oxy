@@ -4,17 +4,17 @@ from typing import TypedDict
 from pyarrow import RecordBatch
 
 @dataclass
-class Step:
+class Task:
     name: str
     output: str
 
 @dataclass
 class AgentResult:
     output: str
-    steps: list[Step]
+    tasks: list[Task]
 
 @dataclass
-class WorkflowResultStep:
+class WorkflowResultTask:
     ...
 
 
@@ -23,12 +23,12 @@ WorkflowOutput = str | dict[str, WorkflowOutput] | list[WorkflowOutput] | list[R
 @dataclass
 class WorkflowResult:
     output: WorkflowOutput
-    steps: WorkflowResultStep
+    tasks: WorkflowResultTask
 
 class RunOptions(TypedDict):
     question: str | None
     variables: list[tuple[str, str]] | None
-    warehouse: str | None
+    database: str | None
 
 RunOutput = str | AgentResult | WorkflowResult
 

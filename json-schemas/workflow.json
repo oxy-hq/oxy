@@ -4,16 +4,16 @@
   "type": "object",
   "required": [
     "name",
-    "steps"
+    "tasks"
   ],
   "properties": {
     "name": {
       "type": "string"
     },
-    "steps": {
+    "tasks": {
       "type": "array",
       "items": {
-        "$ref": "#/definitions/Step"
+        "$ref": "#/definitions/Task"
       }
     },
     "tests": {
@@ -111,7 +111,7 @@
         }
       ]
     },
-    "Step": {
+    "Task": {
       "type": "object",
       "oneOf": [
         {
@@ -128,7 +128,7 @@
             "export": {
               "anyOf": [
                 {
-                  "$ref": "#/definitions/StepExport"
+                  "$ref": "#/definitions/TaskExport"
                 },
                 {
                   "type": "null"
@@ -179,14 +179,17 @@
             }
           ],
           "required": [
-            "type",
-            "warehouse"
+            "database",
+            "type"
           ],
           "properties": {
+            "database": {
+              "type": "string"
+            },
             "export": {
               "anyOf": [
                 {
-                  "$ref": "#/definitions/StepExport"
+                  "$ref": "#/definitions/TaskExport"
                 },
                 {
                   "type": "null"
@@ -208,16 +211,13 @@
               "additionalProperties": {
                 "type": "string"
               }
-            },
-            "warehouse": {
-              "type": "string"
             }
           }
         },
         {
           "type": "object",
           "required": [
-            "steps",
+            "tasks",
             "type",
             "values"
           ],
@@ -228,10 +228,10 @@
               "format": "uint",
               "minimum": 0.0
             },
-            "steps": {
+            "tasks": {
               "type": "array",
               "items": {
-                "$ref": "#/definitions/Step"
+                "$ref": "#/definitions/Task"
               }
             },
             "type": {
@@ -255,7 +255,7 @@
             "export": {
               "anyOf": [
                 {
-                  "$ref": "#/definitions/StepExport"
+                  "$ref": "#/definitions/TaskExport"
                 },
                 {
                   "type": "null"
@@ -295,7 +295,7 @@
         "cache": {
           "anyOf": [
             {
-              "$ref": "#/definitions/StepCache"
+              "$ref": "#/definitions/TaskCache"
             },
             {
               "type": "null"
@@ -307,7 +307,7 @@
         }
       }
     },
-    "StepCache": {
+    "TaskCache": {
       "type": "object",
       "required": [
         "path"
@@ -322,7 +322,7 @@
         }
       }
     },
-    "StepExport": {
+    "TaskExport": {
       "type": "object",
       "required": [
         "format",

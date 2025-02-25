@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/onyx-hq/onyx-public-releases/refs/heads/main/json-schemas/config.json
 
-warehouses:
+databases:
   - name: duck
     type: duckdb
     dataset: duckdb_sample
@@ -19,4 +19,4 @@ retrievals:
     top_k: 10
     factor: 5
 defaults:
-  warehouse: primary_warehouse
+  database: primary_database

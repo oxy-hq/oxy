@@ -2,7 +2,7 @@ import React from "react";
 
 import { css } from "styled-system/css";
 
-interface Warehouse {
+interface Database {
   name: string;
   type: string;
   key_path: string;
@@ -29,7 +29,7 @@ interface Retrieval {
 }
 
 export interface SystemData {
-  warehouses: Warehouse[];
+  databases: Database[];
   models: Model[];
   defaults: Defaults;
   retrievals: Retrieval[];
@@ -96,14 +96,14 @@ const SystemPage: React.FC<SystemPageProps> = ({ data }) => {
         </div>
 
         <div className={sectionStyle}>
-          <h2 className={titleStyle}>Warehouses</h2>
+          <h2 className={titleStyle}>Databases</h2>
           <ul>
-            {data.warehouses.map((warehouse, index) => (
-              <li key={index + warehouse.key_path} className={listItemStyle}>
-                <strong>Name:</strong> {warehouse.name} <br />
-                <strong>Type:</strong> {warehouse.type} <br />
-                <strong>Key Path:</strong> {warehouse.key_path} <br />
-                <strong>Dataset:</strong> {warehouse.dataset}
+            {data.databases.map((database, index) => (
+              <li key={index + database.key_path} className={listItemStyle}>
+                <strong>Name:</strong> {database.name} <br />
+                <strong>Type:</strong> {database.type} <br />
+                <strong>Key Path:</strong> {database.key_path} <br />
+                <strong>Dataset:</strong> {database.dataset}
               </li>
             ))}
           </ul>

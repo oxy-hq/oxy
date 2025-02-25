@@ -2,7 +2,7 @@ type Props = {
   children: React.ReactNode;
 };
 
-export const StepContainer = ({ children }: Props) => {
+export const TaskContainer = ({ children }: Props) => {
   return (
     <div
       style={{

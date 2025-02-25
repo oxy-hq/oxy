@@ -4,29 +4,29 @@ import { Divider } from "styled-system/jsx";
 
 import useDiagram from "@/stores/useDiagram";
 
-import { StepData } from ".";
+import { TaskData } from ".";
 import {
   contentPaddingHeight,
   distanceBetweenHeaderAndContent,
   headerHeight,
 } from "./constants";
-import { StepContainer } from "./StepContainer";
-import { StepHeader } from "./StepHeader";
+import { TaskContainer } from "./TaskContainer";
+import { TaskHeader } from "./TaskHeader";
 
 type Props = {
-  step: StepData;
+  task: TaskData;
 };
 
-export function LoopSequentialStep({ step }: Props) {
+export function LoopSequentialTask({ task }: Props) {
   const layoutedNodes = useDiagram((state) => state.layoutedNodes);
   const setNodeVisibility = useDiagram((state) => state.setNodeVisibility);
   const nodes = useDiagram((state) => state.nodes);
   const [expanded, setExpanded] = useState(true);
 
-  const node = layoutedNodes.find((n) => n.id === step.id);
+  const node = layoutedNodes.find((n) => n.id === task.id);
   const onExpandClick = () => {
     const children = nodes
-      .filter((n) => n.parentId === step.id)
+      .filter((n) => n.parentId === task.id)
       .map((n) => n.id);
     setNodeVisibility(children, !expanded);
     setExpanded(!expanded);
@@ -36,9 +36,9 @@ export function LoopSequentialStep({ step }: Props) {
     headerHeight + distanceBetweenHeaderAndContent + contentPaddingHeight;
   const childSpace = node.size.height - usedHeight;
   return (
-    <StepContainer>
-      <StepHeader
-        step={step}
+    <TaskContainer>
+      <TaskHeader
+        task={task}
         expandable
         expanded={expanded}
         onExpandClick={onExpandClick}
@@ -57,6 +57,6 @@ export function LoopSequentialStep({ step }: Props) {
           ></div>
         </>
       )}
-    </StepContainer>
+    </TaskContainer>
   );
 }

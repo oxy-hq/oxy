@@ -19,8 +19,8 @@ use crate::{
 
 use super::{
     core::{event::Handler, run},
+    databases::DatabasesContext,
     renderer::{Renderer, TemplateRegister},
-    warehouses::WarehousesContext,
 };
 
 pub mod contexts;
@@ -140,11 +140,11 @@ pub fn build_agent(
         agent_config.context.clone().unwrap_or_default(),
         config.clone(),
     );
-    let warehouses = WarehousesContext::new(config.warehouses.clone(), config.clone());
+    let databases = DatabasesContext::new(config.databases.clone(), config.clone());
     let tools_context = ToolsContext::new(agent.tools.clone(), prompt.unwrap_or_default());
     let global_context = context! {
         context => Value::from_object(contexts),
-        warehouses => Value::from_object(warehouses),
+        databases => Value::from_object(databases),
         tools => Value::from_object(tools_context),
     };
     Ok((agent, agent_config, global_context))

@@ -17,7 +17,7 @@ const ToolField = () => {
   });
 
   return (
-    <div className={vstack({ gap: "sm", alignItems: "strech" })}>
+    <div className={vstack({ gap: "sm", alignItems: "stretch" })}>
       <div className={hstack({ justifyContent: "space-between" })}>
         <Text variant="label14Medium" color="primary">
           Tools
