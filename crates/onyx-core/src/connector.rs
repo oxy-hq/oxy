@@ -143,7 +143,7 @@ impl Connector {
             let source_conn = SourceConn::try_from(conn_string.as_str())
                 .map_err(|err| connector_internal_error(CREATE_CONN, &err))?;
             let queries = &[CXQuery::from(query.as_str())];
-            let destination = get_arrow(&source_conn, None, queries)
+            let destination = get_arrow(&source_conn, None, queries, None)
                 .map_err(|err| connector_internal_error(EXECUTE_QUERY, &err))?;
             let schema = destination.arrow_schema();
             let file_path = format!("/tmp/{}.arrow", Uuid::new_v4());

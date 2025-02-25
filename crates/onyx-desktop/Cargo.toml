@@ -15,16 +15,16 @@ migration = { path = "../migration" }
 serde = { version = "1.0", features = ["derive"] }
 
 serde_json = "1.0"
-tauri = { version = "2.0.3", features = ["config-json5"] }
+tauri = { version = "2.2.5", features = ["config-json5"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
-tauri-plugin-log = "2.0.0-rc"
-tokio = { version = "1.41", features = ["full"] }
+tauri-plugin-log = "2.2.2"
+tokio = { version = "1.43", features = ["full"] }
 futures = "0.3"
 tauri-plugin-store = "2"
 
 [build-dependencies]
-tauri-build = { version = "2.0.1", features = ["config-json5"] }
+tauri-build = { version = "2.0.5", features = ["config-json5"] }
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]
