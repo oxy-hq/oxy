@@ -32,30 +32,21 @@ To execute a workflow, you can run:
 onyx run path/to/workflow_name.workflow.yml
 ```
 
-### Frontend client
-
-If you'd like to run a local instance of a web-client, you can run `onyx
-serve`, which will stand up a lightweight API server and web application.
-
-# Work-in-progress
-
-<Warning>The functionality in this section is not yet operational.</Warning>
-
 ### Embedding management
 
-To embed files from `<project_root>/data/**` into vector store you can use `onyx build`. We're downloading model from huggingface hub so you may need to login using:
+To embed files from into a local vector store you can use `onyx build`. We're downloading our models from huggingface hub so you may need to login using:
 
 ```bash
 huggingface-cli login
 ```
 
-or simply copy your plaintext token into `$HOME/.cache/huggingface/token` file. And then run build to index the data.
+or simply copy your plaintext token into `$HOME/.cache/huggingface/token` file, then run `onyx build` to index the data.
 
 ```bash
 onyx build
 ```
 
-Then verify using
+The generated embeddings can be verified using
 
 ```bash
 onyx vec-search "Hello Embedding"

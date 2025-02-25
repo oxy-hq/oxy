@@ -13,7 +13,7 @@ injection. Our `.agent.yml` files abstract away much of this complexity,
 allowing you to focus more on the _logic_ of the prompted LLM rather than the
 details of the code execution.
 
-## Agent components
+# Agent components
 
 Specifically, in our agent `yml` files, you need to specify the following:
 
@@ -22,11 +22,10 @@ Specifically, in our agent `yml` files, you need to specify the following:
 | model               | LLM model to use (defined in [config.yml](/learn-about-onyx/config), referenced by `name`) | Required |
 | system_instructions | System instructions passed to the LLM                                                      | Required |
 | context             | A list of files that can be injected into `system_instructions`                            | Optional |
-| output_format       | This can be either `file` or `default`                                                     | Optional |
 | tools               | Tools to use, see the Tools section below                                                  | Optional |
 | database            | Database to use (defined in [config.yml](/learn-about-onyx/config), referenced by `name`)  | Optional |
 
-### Context
+## Context
 
 The context object allows for deterministic injection of files into
 `system_instructions`. Primarily this is an organizational and code re-use
@@ -47,9 +46,30 @@ For objects that are of type `semantic_model`, you can access their properties u
 For example, if you have a semantic model context named "acme", you can access its entities using:
 `{{ context.acme.entities }}`
 
-We encourage saving any pertinent SQL files and injecting these in
+For smaller projects, we encourage saving any pertinent SQL files and injecting
+these in as context objects, rather than opting for leveraging retrieval to
+pull in relevant sources. We find that this tends to provide much more
+deterministic outputs.
 
-### Tools
+This can be accomplished by adding the following section to an `.agent.yml file`:
+
+```yaml
+context:
+  - name: queries
+    type: file
+    src:
+      - "*.sql"
+```
+
+which can then be referenced within `system_instructions` as follows:
+
+```yaml
+prompt: |
+  Here are some queries you can use:
+  {{ context.queries }}
+```
+
+## Tools
 
 To enable the LLM to flexibly accomplish a wider range of tasks, our internal chain logic is as follows:
 
@@ -57,7 +77,77 @@ To enable the LLM to flexibly accomplish a wider range of tasks, our internal ch
 2. We feed the rendered `system_instructions` and prompt into the LLM tool calling API.
 3. We repeat steps 1 and 2 with the results of step 2 until the request specified in `system_instructions` is fulfilled.
 
-### Database
+To improve the capacity of the LLM to accomplish specific tasks, you can add a
+`tools` section with specific tools that can be used by the agent. The following tools are available:
+
+### type: `execute_sql` / `validate_sql`
+
+There are two kinds of sql-writing tools -- `execute_sql`, which will execute
+the sql and return the results to the LLM, and `validate_sql`, which will
+attempt to write queries until the query successful executes, sending only the
+query itself back to the LLM (not the result set).
+
+Both can be configured by specifying a `warehouse` to connect to, as shown below:
+
+```yaml
+  - name: execute_sql  # any name you'd like
+    type: execute_sql
+    warehouse: primary_warehouse
+```
+
+```yaml
+  - name: validate_sql  # any name you'd like 
+    type: validate_sql
+    warehouse: primary_warehouse
+```
+
+### type: `retrieval`
+
+While we generally recommend avoid using retrieval (and instead using
+`context`) to avoid injecting additional nondeterminism into the system, we do
+support in-process retrieval against embeddings. The `retrieval` tool spins up
+an in-process vector db and can be configured as follows:
+
+```yaml
+  - name: retrieval
+    type: retrieval
+    src:
+      - "data/*"
+```
+
+where `src` specifies the directory that will be searched through and embedded.
+
+To use this tool, embeddings must be built before any `onyx run` command. To
+learn about how to build embeddings, see [Embedding
+management](/reference/onyx-commands#embedding-management). In short, you'll
+need to log into the huggingface CLI, then build embeddings using the following
+command:
+
+```yaml
+onyx build
+```
+
+Additional parameters can be supplied as follows:
+
+```yaml
+  - name: retrieval
+    type: retrieval
+    src:
+      - "data/*"
+    # embed_model: text-embedding-3-small
+    # api_url: https://api.openai.com/v1
+    # key_var: OPENAI_API_KEY
+    # api_key: secret
+    # n_dims: 512
+    # top_k: 4
+    # factor: 5
+```
+
+<Warning>
+  The accepted format of these parameters will likely change in the future.
+</Warning>
+
+## Database
 
 Database information can be accessed within `system_instructions` by using the `databases` namespace, then referencing by `name`, as follows:
 
@@ -70,7 +160,7 @@ Database information can be accessed within `system_instructions` by using the `
 {% endfor %}
 ```
 
-### Sample config
+## Sample config
 
 ```yaml semantic_model.agent.yml
 model: "openai-4o-mini"
@@ -104,14 +194,14 @@ system_instructions: |
   {{ table }}
   {% endfor %}
 
-output_format: file
+  You can use the following queries as hints:
+  {{ tools.retrieval }}
+
 tools:
   - name: retrieval
     type: retrieval
-    retrieval_type: all-shot
-    data:
-      - "."
-      - "default"
+    src:
+      - "data/*"
   - name: execute_sql
     type: execute_sql
     database: local

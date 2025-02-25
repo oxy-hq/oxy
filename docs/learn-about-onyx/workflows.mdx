@@ -120,9 +120,6 @@ a few key differences:
   yaml, the DAG definition is entirely separate from the execution engine
   (usually Python), while other Python-based systems keep these tightly coupled
   and so ultimately become difficult to build and maintain.
-- **Workflows are only executable, not interactive.** Workflows are designed to
-  be deterministic pipelines with data agents baked in as functional components,
-  not agentic interfaces for chat.
 
 These choices generally reduce the flexibility of Onyx when compared to say,
 `langchain` or `llama_index`, but they also dramatically reduce the complexity
