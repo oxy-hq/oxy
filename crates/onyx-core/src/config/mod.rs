@@ -5,7 +5,7 @@ pub mod validate;
 use garde::Validate;
 
 use anyhow;
-use model::{AgentConfig, Config, Model, SemanticModels, Warehouse, Workflow};
+use model::{AgentConfig, Config, Database, Model, SemanticModels, Workflow};
 
 use dirs::home_dir;
 use parser::{parse_agent_config, parse_semantic_model_config, parse_workflow_config};
@@ -166,15 +166,15 @@ impl Config {
             })
     }
 
-    pub fn find_warehouse(&self, warehouse_name: &str) -> anyhow::Result<Warehouse> {
-        self.warehouses
+    pub fn find_database(&self, database_name: &str) -> anyhow::Result<Database> {
+        self.databases
             .iter()
-            .find(|w| w.name == warehouse_name)
+            .find(|w| w.name == database_name)
             .cloned()
             .ok_or_else(|| {
                 io::Error::new(
                     io::ErrorKind::NotFound,
-                    format!("Warehouse {warehouse_name} not found"),
+                    format!("Database {database_name} not found"),
                 )
                 .into()
             })

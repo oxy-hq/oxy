@@ -1,5 +1,5 @@
 table: content_level_monthly_stats_fruits_veggies.csv
-warehouse: local
+database: local
 description: Lorem ipsum
 
 entities:

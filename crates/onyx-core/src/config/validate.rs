@@ -1,11 +1,11 @@
-use super::model::{Config, ExportFormat, StepExport, StepType};
+use super::model::{Config, ExportFormat, TaskExport, TaskType};
 use std::{env, fmt::Display, path::PathBuf};
 
 const FILE_NOT_FOUND_ERROR: &str = "file does not exist";
 const DIR_NOT_FOUND_ERROR: &str = "directory does not exist";
 const ENV_VAR_NOT_FOUND_ERROR: &str = "env var not set";
 const SQL_FILE_NOT_FOUND_ERROR: &str = "sql file not found";
-const WAREHOUSE_NOT_FOUND_ERROR: &str = "warehouse not found";
+const DATABASE_NOT_FOUND_ERROR: &str = "database not found";
 const AGENT_NOT_FOUND_ERROR: &str = "agent not found";
 
 fn format_error_message(error_message: &str, value: impl Display) -> garde::Error {
@@ -52,16 +52,13 @@ pub struct ValidationContext {
     pub config: Config,
 }
 
-pub fn validate_warehouse_exists(
-    warehouse_name: &str,
-    context: &ValidationContext,
-) -> garde::Result {
-    let warehouse = context.config.find_warehouse(warehouse_name);
-    match warehouse {
+pub fn validate_database_exists(database_name: &str, context: &ValidationContext) -> garde::Result {
+    let database = context.config.find_database(database_name);
+    match database {
         Ok(_) => Ok(()),
         Err(_) => Err(format_error_message(
-            WAREHOUSE_NOT_FOUND_ERROR,
-            warehouse_name,
+            DATABASE_NOT_FOUND_ERROR,
+            database_name,
         )),
     }
 }
@@ -88,37 +85,37 @@ pub fn validate_agent_exists(agent: &str, context: &ValidationContext) -> garde:
     Ok(())
 }
 
-pub fn validate_step(step_type: &StepType, _context: &ValidationContext) -> garde::Result {
-    match step_type {
-        StepType::Agent(step) => validate_export(
-            step.export.as_ref(),
+pub fn validate_task(task_type: &TaskType, _context: &ValidationContext) -> garde::Result {
+    match task_type {
+        TaskType::Agent(task) => validate_export(
+            task.export.as_ref(),
             &[ExportFormat::JSON, ExportFormat::CSV, ExportFormat::SQL],
             "agent",
         ),
-        StepType::ExecuteSQL(step) => validate_export(
-            step.export.as_ref(),
+        TaskType::ExecuteSQL(task) => validate_export(
+            task.export.as_ref(),
             &[ExportFormat::JSON, ExportFormat::CSV, ExportFormat::SQL],
             "ExecuteSQL",
         ),
-        StepType::Formatter(step) => validate_export(
-            step.export.as_ref(),
+        TaskType::Formatter(task) => validate_export(
+            task.export.as_ref(),
             &[ExportFormat::TXT, ExportFormat::DOCX],
             "Formatter",
         ),
-        StepType::LoopSequential(_) | StepType::Unknown => Ok(()),
+        TaskType::LoopSequential(_) | TaskType::Unknown => Ok(()),
     }
 }
 
 fn validate_export(
-    export: Option<&StepExport>,
+    export: Option<&TaskExport>,
     allowed_formats: &[ExportFormat],
-    step_name: &str,
+    task_name: &str,
 ) -> garde::Result {
     if let Some(export) = export {
         if !allowed_formats.contains(&export.format) {
             return Err(garde::Error::new(format!(
-                "Invalid export format: {:?}, only supports {:?} for {} step",
-                export.format, allowed_formats, step_name
+                "Invalid export format: {:?}, only supports {:?} for {} task",
+                export.format, allowed_formats, task_name
             )));
         }
     }

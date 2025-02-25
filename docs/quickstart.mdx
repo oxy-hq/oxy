@@ -93,8 +93,8 @@ Onyx supports both Mac and Windows.
           <img class="rounded-md" src="/images/config-screenshot.jpeg" alt="config" />
         The `config.yml` file will look like this:
         ```yaml config.yml
-        warehouses:
-        - name: primary_warehouse
+        databases:
+        - name: primary_database
           type: bigquery
           key_path: /path/to/key #replace
           dataset: dbt_prod_core
@@ -119,7 +119,7 @@ Onyx supports both Mac and Windows.
         Here is a working example with actual paths:
 
         ```yaml config.yml
-        warehouses:
+        databases:
           - name: bigquery
             type: bigquery
             key_path: /Users/sampleuser/.config/onyx/project-dataset-XXXXXXXXXX.json

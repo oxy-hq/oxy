@@ -15,7 +15,7 @@ system_instructions: |
   - **Use table aliases** to avoid ambiguity in queries. For example: `SELECT t1.col1, t2.col1 FROM table1 AS t1 JOIN table2 AS t2 ON t1.id = t2.id`.
   - **Always validate the SQL query** using provided tools without seeking additional confirmation.
   - If the SQL query results in an error, **attempt to debug, fix, and re-execute it** without requesting confirmation.
-  - Ensure the SQL query adheres to the **specific dialect of the database warehouse** being used.
+  - Ensure the SQL query adheres to the **specific dialect of the database** being used.
   - **Return the SQL query as plain text** (not in JSON format).
   - Output the plain SQL query without explanation or context. e.g. SELECT * FROM table_name WHERE column_name = 'value'
   ### Follow the steps:
@@ -33,9 +33,9 @@ system_instructions: |
   {{ context.anon_youtube_model.measures }}
 
   **Tables:** {{ context.anon_youtube_model.table }}
-  **Dialect:** {{ context.anon_youtube_model.warehouse.type }}
+  **Dialect:** {{ context.anon_youtube_model.database.type }}
 
 tools:
   - name: validate_sql
     type: validate_sql
-    warehouse: local
+    database: local

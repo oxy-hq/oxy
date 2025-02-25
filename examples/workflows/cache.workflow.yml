@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/onyx-hq/onyx-public-releases/refs/heads/main/json-schemas/workflow.json
 
 name: cache_sample
-steps:
+tasks:
   - name: sql
     type: agent
     prompt: |
@@ -14,16 +14,16 @@ steps:
 
   - name: property_grouping
     type: execute_sql
-    warehouse: local
+    database: local
     sql_file: data/example_property_grouping.sql
 
   - name: groupings
     type: loop_sequential
     values: "{{ property_grouping.property_grouping }}"
-    steps:
+    tasks:
       - name: execute_sql
         type: execute_sql
-        warehouse: local
+        database: local
         sql_query: "{{sql}}"
         variables:
           grouping_value: "{{groupings.value}}"

@@ -6,14 +6,14 @@ description: How to configure your `~/.config/onyx/config.yml` file
 The `config.yml` file at the root of your repository is the configuration file
 you'll use to define three entities, specified as the following top-level keys:
 
-1. `warehouses`: warehouse/database connections
+1. `databases`: database connections
 2. `models`: foundation model connections
 
 A sample `config.yml` file is shown below:
 
 ```yaml
-warehouses:
-  - name: primary-warehouse
+databases:
+  - name: primary-database
     type: bigquery
     key_path: /path/to/keyfile
     dataset: kelihi

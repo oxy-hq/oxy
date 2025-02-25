@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use uuid::Uuid;
 
-use crate::config::model::{Config, Warehouse, WarehouseType};
+use crate::config::model::{Config, Database, DatabaseType};
 
 const GET_CURRENT_DIR: &str = "Failed to get current directory";
 const CREATE_CONN: &str = "Failed to open connection";
@@ -31,30 +31,30 @@ fn connector_internal_error(message: &str, e: &impl std::fmt::Display) -> anyhow
 }
 
 pub struct Connector {
-    warehouse_config: Warehouse,
+    database_config: Database,
     config: Config,
 }
 
 #[derive(serde::Serialize, Clone)]
-pub struct WarehouseInfo {
+pub struct DatabaseInfo {
     name: String,
     dialect: String,
     tables: Vec<String>,
 }
 
 impl Connector {
-    pub fn new(warehouse_config: &Warehouse, config: &Config) -> Self {
+    pub fn new(database_config: &Database, config: &Config) -> Self {
         Connector {
-            warehouse_config: warehouse_config.clone(),
+            database_config: database_config.clone(),
             config: config.clone(),
         }
     }
 
-    pub async fn load_warehouse_info(&self) -> WarehouseInfo {
+    pub async fn load_database_info(&self) -> DatabaseInfo {
         let tables = self.get_schemas().await;
-        let name = self.warehouse_config.dataset.clone();
-        let dialect = self.warehouse_config.warehouse_type.to_string();
-        WarehouseInfo {
+        let name = self.database_config.dataset.clone();
+        let dialect = self.database_config.database_type.to_string();
+        DatabaseInfo {
             name,
             dialect,
             tables,
@@ -62,11 +62,11 @@ impl Connector {
     }
 
     pub async fn list_datasets(&self) -> Vec<String> {
-        let query_string = match self.warehouse_config.warehouse_type {
-            WarehouseType::Bigquery(_) => {
+        let query_string = match self.database_config.database_type {
+            DatabaseType::Bigquery(_) => {
                 "SELECT schema_name FROM INFORMATION_SCHEMA.SCHEMATA".to_owned()
             }
-            WarehouseType::DuckDB(_) => "".to_owned(),
+            DatabaseType::DuckDB(_) => "".to_owned(),
         };
         self.run_query_and_collect(query_string)
             .await
@@ -74,12 +74,12 @@ impl Connector {
     }
 
     pub async fn get_schemas(&self) -> Vec<String> {
-        let query_string = match self.warehouse_config.warehouse_type {
-            WarehouseType::Bigquery(_) => format!(
+        let query_string = match self.database_config.database_type {
+            DatabaseType::Bigquery(_) => format!(
                 "SELECT ddl FROM `{}`.INFORMATION_SCHEMA.TABLES",
-                self.warehouse_config.dataset
+                self.database_config.dataset
             ),
-            WarehouseType::DuckDB(_) => "".to_owned(),
+            DatabaseType::DuckDB(_) => "".to_owned(),
             _ => "".to_owned(),
         };
         self.run_query_and_collect(query_string)
@@ -104,12 +104,12 @@ impl Connector {
     }
 
     pub async fn run_query(&self, query: &str) -> anyhow::Result<String> {
-        match &self.warehouse_config.warehouse_type {
-            WarehouseType::Bigquery(bigquery) => {
+        match &self.database_config.database_type {
+            DatabaseType::Bigquery(bigquery) => {
                 let key_path = self.config.project_path.join(&bigquery.key_path);
                 self.run_connectorx_query(query, key_path).await
             }
-            WarehouseType::DuckDB(_) => self.run_duckdb_query(query).await,
+            DatabaseType::DuckDB(_) => self.run_duckdb_query(query).await,
         }
     }
 
@@ -127,7 +127,7 @@ impl Connector {
         let key_path = current_dir.join(&key_path);
         let conn_string = format!(
             "{}://{}",
-            self.warehouse_config.warehouse_type,
+            self.database_config.database_type,
             key_path.to_str().unwrap()
         );
         self.run_query_with_connectorx(conn_string, query.to_string())
@@ -169,7 +169,7 @@ impl Connector {
             "SET file_search_path = '{}'",
             self.config
                 .project_path
-                .join(&self.warehouse_config.dataset)
+                .join(&self.database_config.dataset)
                 .display()
         );
         conn.execute(&dir_set_stmt, [])

@@ -7,11 +7,11 @@ use std::path::PathBuf;
 
 use crate::config::validate::validate_file_path;
 use crate::config::validate::{
-    validate_agent_exists, validate_env_var, validate_warehouse_exists, ValidationContext,
+    validate_agent_exists, validate_database_exists, validate_env_var, ValidationContext,
 };
 use schemars::JsonSchema;
 
-use super::validate::validate_step;
+use super::validate::validate_task;
 
 #[derive(Serialize, Deserialize, Validate, Debug, Clone, JsonSchema)]
 #[garde(context(ValidationContext))]
@@ -21,7 +21,7 @@ pub struct Config {
     #[garde(dive)]
     pub models: Vec<Model>,
     #[garde(dive)]
-    pub warehouses: Vec<Warehouse>,
+    pub databases: Vec<Database>,
 
     #[serde(skip)]
     #[garde(skip)]
@@ -32,7 +32,7 @@ pub struct Config {
 #[derive(Serialize, Deserialize, Debug, JsonSchema)]
 pub struct SemanticModels {
     pub table: String,
-    pub warehouse: String,
+    pub database: String,
     pub description: String,
     pub entities: Vec<Entity>,
     pub dimensions: Vec<Dimension>,
@@ -124,11 +124,11 @@ pub struct Defaults {
     #[garde(length(min = 1))]
     #[garde(custom(|wh: &Option<String>, ctx: &ValidationContext| {
         match wh {
-            Some(warehouse) => validate_warehouse_exists(warehouse.as_str(), ctx),
+            Some(database) => validate_database_exists(database.as_str(), ctx),
             None => Ok(()),
         }
     }))]
-    pub warehouse: Option<String>,
+    pub database: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Validate, Clone, JsonSchema)]
@@ -145,25 +145,25 @@ pub struct DuckDB {}
 #[derive(Serialize, Deserialize, Debug, Validate, Clone, JsonSchema)]
 #[garde(context(ValidationContext))]
 #[serde(tag = "type")]
-pub enum WarehouseType {
+pub enum DatabaseType {
     #[serde(rename = "bigquery")]
     Bigquery(#[garde(dive)] BigQuery),
     #[serde(rename = "duckdb")]
     DuckDB(#[garde(dive)] DuckDB),
 }
 
-impl fmt::Display for WarehouseType {
+impl fmt::Display for DatabaseType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            WarehouseType::Bigquery(_) => write!(f, "bigquery"),
-            WarehouseType::DuckDB(_) => write!(f, "duckdb"),
+            DatabaseType::Bigquery(_) => write!(f, "bigquery"),
+            DatabaseType::DuckDB(_) => write!(f, "duckdb"),
         }
     }
 }
 
 #[derive(Serialize, Deserialize, Debug, Validate, Clone, JsonSchema)]
 #[garde(context(ValidationContext))]
-pub struct Warehouse {
+pub struct Database {
     #[garde(length(min = 1))]
     pub name: String,
 
@@ -172,7 +172,7 @@ pub struct Warehouse {
 
     #[serde(flatten)]
     #[garde(dive)]
-    pub warehouse_type: WarehouseType,
+    pub database_type: DatabaseType,
 }
 
 #[derive(Deserialize, Debug, Clone, Validate, Serialize, JsonSchema)]
@@ -255,7 +255,7 @@ pub enum FileFormat {
 
 #[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
 #[garde(context(ValidationContext))]
-pub struct AgentStep {
+pub struct AgentTask {
     #[garde(length(min = 1))]
     pub prompt: String,
     #[garde(custom(validate_agent_exists))]
@@ -265,7 +265,7 @@ pub struct AgentStep {
     pub retry: usize,
 
     #[garde(dive)]
-    pub export: Option<StepExport>,
+    pub export: Option<TaskExport>,
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug, Validate, JsonSchema)]
@@ -285,7 +285,7 @@ pub enum ExportFormat {
 
 #[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
 #[garde(context(ValidationContext))]
-pub struct StepExport {
+pub struct TaskExport {
     #[garde(length(min = 1))]
     pub path: String,
     #[garde(dive)]
@@ -294,7 +294,7 @@ pub struct StepExport {
 
 #[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
 #[garde(context(ValidationContext))]
-pub struct StepCache {
+pub struct TaskCache {
     #[serde(default = "default_cache_enabled")]
     #[garde(skip)]
     pub enabled: bool,
@@ -318,9 +318,9 @@ pub enum SQL {
 
 #[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
 #[garde(context(ValidationContext))]
-pub struct ExecuteSQLStep {
-    #[garde(custom(validate_warehouse_exists))]
-    pub warehouse: String,
+pub struct ExecuteSQLTask {
+    #[garde(custom(validate_database_exists))]
+    pub database: String,
     // #[garde(custom(validate_sql_file))]
     // Skipping validation for now to allow sql file templating
     #[garde(dive)]
@@ -331,16 +331,16 @@ pub struct ExecuteSQLStep {
     pub variables: Option<HashMap<String, String>>,
 
     #[garde(dive)]
-    pub export: Option<StepExport>,
+    pub export: Option<TaskExport>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
 #[garde(context(ValidationContext))]
-pub struct FormatterStep {
+pub struct FormatterTask {
     #[garde(length(min = 1))]
     pub template: String,
     #[garde(dive)]
-    pub export: Option<StepExport>,
+    pub export: Option<TaskExport>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, JsonSchema)]
@@ -352,11 +352,11 @@ pub enum LoopValues {
 
 #[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
 #[garde(context(ValidationContext))]
-pub struct LoopSequentialStep {
+pub struct LoopSequentialTask {
     #[garde(skip)]
     pub values: LoopValues,
     #[garde(dive)]
-    pub steps: Vec<Step>,
+    pub tasks: Vec<Task>,
     #[garde(skip)]
     #[serde(default = "default_loop_concurrency")]
     pub concurrency: usize,
@@ -365,37 +365,37 @@ pub struct LoopSequentialStep {
 #[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
 #[garde(context(ValidationContext))]
 #[serde(tag = "type")]
-pub enum StepType {
+pub enum TaskType {
     #[serde(rename = "agent")]
-    Agent(#[garde(dive)] AgentStep),
+    Agent(#[garde(dive)] AgentTask),
     #[serde(rename = "execute_sql")]
-    ExecuteSQL(#[garde(dive)] ExecuteSQLStep),
+    ExecuteSQL(#[garde(dive)] ExecuteSQLTask),
     #[serde(rename = "loop_sequential")]
-    LoopSequential(#[garde(dive)] LoopSequentialStep),
+    LoopSequential(#[garde(dive)] LoopSequentialTask),
     #[serde(rename = "formatter")]
-    Formatter(#[garde(dive)] FormatterStep),
+    Formatter(#[garde(dive)] FormatterTask),
     #[serde(other)]
     Unknown,
 }
 
 #[derive(Deserialize, JsonSchema)]
 pub struct TempWorkflow {
-    pub steps: Vec<Step>,
+    pub tasks: Vec<Task>,
     #[serde(default = "default_tests")]
     pub tests: Vec<Eval>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
 #[garde(context(ValidationContext))]
-pub struct Step {
+pub struct Task {
     #[garde(length(min = 1))]
     pub name: String,
     #[serde(flatten)]
     #[garde(dive)]
-    #[garde(custom(validate_step))]
-    pub step_type: StepType,
+    #[garde(custom(validate_task))]
+    pub task_type: TaskType,
     #[garde(dive)]
-    pub cache: Option<StepCache>,
+    pub cache: Option<TaskCache>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Validate, JsonSchema, Clone)]
@@ -435,7 +435,7 @@ pub struct Workflow {
     #[garde(length(min = 1))]
     pub name: String,
     #[garde(dive)]
-    pub steps: Vec<Step>,
+    pub tasks: Vec<Task>,
     #[garde(skip)]
     #[serde(default = "default_tests")]
     pub tests: Vec<Eval>,
@@ -481,7 +481,7 @@ pub struct ExecuteSQLTool {
     pub name: String,
     #[serde(default = "default_sql_tool_description")]
     pub description: String,
-    pub warehouse: String,
+    pub database: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
@@ -489,7 +489,7 @@ pub struct ValidateSQLTool {
     pub name: String,
     #[serde(default = "default_validate_sql_tool_description")]
     pub description: String,
-    pub warehouse: String,
+    pub database: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]

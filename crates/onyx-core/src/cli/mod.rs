@@ -94,11 +94,11 @@ struct Args {
 enum SubCommand {
     /// Initialize a repository as an onyx project. Also creates a ~/.config/onyx/config.yaml file if it doesn't exist
     Init,
-    /// List datasets in warehouse
+    /// List datasets in database
     ListDatasets,
-    /// List tables in warehouse
+    /// List tables in database
     ListTables,
-    /// Search through SQL in your project path. Run them against the associated warehouse on
+    /// Search through SQL in your project path. Run them against the associated database on
     /// selection.
     Run(RunArgs),
     /// Run testing on a workflow file to get consistency metrics
@@ -122,7 +122,7 @@ pub struct RunArgs {
     file: String,
 
     #[clap(long)]
-    warehouse: Option<String>,
+    database: Option<String>,
 
     #[clap(long, short = 'v', value_parser=ValueParser::new(parse_variable), num_args = 1..)]
     variables: Vec<(String, String)>,
@@ -139,15 +139,15 @@ pub struct TestArgs {
 
 #[derive(Clone)]
 pub struct RunOptions {
-    warehouse: Option<String>,
+    database: Option<String>,
     variables: Option<Vec<(String, String)>>,
     question: Option<String>,
 }
 
 impl<'py> FromPyObject<'py> for RunOptions {
     fn extract_bound(ob: &Bound<'py, PyAny>) -> pyo3::PyResult<Self> {
-        let warehouse = ob
-            .get_item("warehouse")
+        let database = ob
+            .get_item("database")
             .map(|v| v.extract::<Option<String>>().unwrap_or(None))
             .unwrap_or(None);
         let variables = ob
@@ -159,7 +159,7 @@ impl<'py> FromPyObject<'py> for RunOptions {
             .map(|v| v.extract::<Option<String>>().unwrap_or(None))
             .unwrap_or(None);
         Ok(RunOptions {
-            warehouse,
+            database,
             variables,
             question,
         })
@@ -171,13 +171,13 @@ impl RunArgs {
         match options {
             Some(options) => Self {
                 file,
-                warehouse: options.warehouse,
+                database: options.database,
                 variables: options.variables.unwrap_or(vec![]),
                 question: options.question,
             },
             None => Self {
                 file,
-                warehouse: None,
+                database: None,
                 variables: vec![],
                 question: None,
             },
@@ -272,8 +272,8 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
         },
         Some(SubCommand::ListTables) => {
             let config = load_config(None)?;
-            for warehouse in &config.warehouses {
-                let tables = Connector::new(warehouse, &config).get_schemas().await;
+            for database in &config.databases {
+                let tables = Connector::new(database, &config).get_schemas().await;
                 for table in tables {
                     println!("{}", table.text());
                 }
@@ -281,8 +281,8 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
         }
         Some(SubCommand::ListDatasets) => {
             let config = load_config(None)?;
-            for warehouse in &config.warehouses {
-                let datasets = Connector::new(warehouse, &config).list_datasets().await;
+            for database in &config.databases {
+                let datasets = Connector::new(database, &config).list_datasets().await;
                 for dataset in datasets {
                     println!("{}", dataset.text());
                 }
@@ -369,16 +369,16 @@ async fn handle_agent_file(
 
 async fn handle_sql_file(
     file_path: &PathBuf,
-    warehouse: Option<String>,
+    database: Option<String>,
     config: &Config,
     variables: &[(String, String)],
 ) -> Result<String, OnyxError> {
-    let warehouse = warehouse.ok_or_else(|| OnyxError::ArgumentError("Warehouse is required for running SQL file. Please provide the warehouse using --warehouse or set a default warehouse in config.yml".to_string()))?;
+    let database = database.ok_or_else(|| OnyxError::ArgumentError("Database is required for running SQL file. Please provide the database using --database or set a default database in config.yml".to_string()))?;
     let content = std::fs::read_to_string(file_path)
         .map_err(|e| OnyxError::RuntimeError(format!("Failed to read SQL file: {}", e)))?;
     let wh_config = config
-        .find_warehouse(&warehouse)
-        .map_err(|e| OnyxError::ArgumentError(format!("Warehouse not found: {}", e)))?;
+        .find_database(&database)
+        .map_err(|e| OnyxError::ArgumentError(format!("Database not found: {}", e)))?;
 
     let mut env = Environment::new();
     let mut query = content.clone();
@@ -472,21 +472,21 @@ pub async fn handle_run_command(run_args: RunArgs) -> Result<RunResult, OnyxErro
         }
         Some("sql") => {
             let config = load_config(None)?;
-            let mut warehouse = None;
-            warehouse = run_args.warehouse.or_else(|| {
+            let mut database = None;
+            database = run_args.database.or_else(|| {
                 config
                     .defaults
                     .as_ref()
-                    .and_then(|defaults| defaults.warehouse.clone())
+                    .and_then(|defaults| defaults.database.clone())
             });
 
-            if warehouse.is_none() {
+            if database.is_none() {
                 return Err(OnyxError::ArgumentError(
-                    "Warehouse is required for running SQL file. Please provide the warehouse using --warehouse or set a default warehouse in config.yml".into(),
+                    "Database is required for running SQL file. Please provide the database using --database or set a default database in config.yml".into(),
                 ));
             }
             let sql_result =
-                handle_sql_file(&file_path, warehouse, &config, &run_args.variables).await?;
+                handle_sql_file(&file_path, database, &config, &run_args.variables).await?;
             Ok(RunResult::Sql(sql_result))
         }
         _ => Err(OnyxError::ArgumentError(

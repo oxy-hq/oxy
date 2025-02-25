@@ -1,4 +1,4 @@
-use crate::cli::model::{BigQuery, Config, DuckDB, WarehouseType};
+use crate::cli::model::{BigQuery, Config, DatabaseType, DuckDB};
 use crate::theme::*;
 use crate::utils::find_project_path;
 use include_dir::{include_dir, Dir};
@@ -6,7 +6,7 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::{fmt, fs};
 
-use super::model::{Defaults, Model, Warehouse};
+use super::model::{Database, Defaults, Model};
 
 #[derive(Debug)]
 pub enum InitError {
@@ -58,33 +58,33 @@ fn prompt_with_default(prompt: &str, default: &str) -> io::Result<String> {
     })
 }
 
-fn collect_warehouses() -> Result<Vec<Warehouse>, InitError> {
-    let mut warehouses = Vec::new();
+fn collect_databases() -> Result<Vec<Database>, InitError> {
+    let mut databases = Vec::new();
 
     loop {
-        println!("\nWarehouse {}:", warehouses.len() + 1);
+        println!("\nDatabase {}:", databases.len() + 1);
 
-        let name = prompt_with_default("Name", "warehouse-1")?;
-        let warehouse_type = choose_warehouse_type()?;
+        let name = prompt_with_default("Name", "database-1")?;
+        let database_type = choose_database_type()?;
 
-        let warehouse = Warehouse {
+        let database = Database {
             name: name.clone(),
-            warehouse_type,
+            database_type,
             dataset: prompt_with_default("Dataset", "dbt_prod_core")?,
         };
 
-        warehouses.push(warehouse);
+        databases.push(database);
 
-        if !prompt_continue("Add another warehouse")? {
+        if !prompt_continue("Add another database")? {
             break;
         }
     }
 
-    Ok(warehouses)
+    Ok(databases)
 }
 
-fn choose_warehouse_type() -> Result<WarehouseType, InitError> {
-    println!("Choose warehouse type:");
+fn choose_database_type() -> Result<DatabaseType, InitError> {
+    println!("Choose database type:");
     println!("1. BigQuery");
     println!("2. DuckDB");
 
@@ -92,11 +92,11 @@ fn choose_warehouse_type() -> Result<WarehouseType, InitError> {
         let choice = prompt_with_default("Type (1 or 2)", "1")?;
         match choice.trim() {
             "1" => {
-                return Ok(WarehouseType::Bigquery(BigQuery {
+                return Ok(DatabaseType::Bigquery(BigQuery {
                     key_path: PathBuf::from(prompt_with_default("Key path", "bigquery.key")?),
                 }))
             }
-            "2" => return Ok(WarehouseType::DuckDB(DuckDB {})),
+            "2" => return Ok(DatabaseType::DuckDB(DuckDB {})),
             _ => println!("Invalid choice. Please enter 1 or 2."),
         }
     }
@@ -247,17 +247,17 @@ fn create_config_file(config_path: &Path) -> Result<(), InitError> {
         fs::create_dir_all(parent)?;
     }
 
-    println!("Please enter information for your warehouses:");
-    let warehouses = collect_warehouses()?;
+    println!("Please enter information for your databases:");
+    let databases = collect_databases()?;
 
     println!("\nPlease enter information for your models:");
     let models = collect_models()?;
 
     let config = Config {
-        warehouses,
+        databases,
         models,
         defaults: Some(Defaults {
-            warehouse: Some("primary_warehouse".to_string()),
+            database: Some("primary_database".to_string()),
         }),
         project_path: PathBuf::new(),
     };

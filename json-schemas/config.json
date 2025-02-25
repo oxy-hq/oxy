@@ -3,10 +3,16 @@
   "title": "Config",
   "type": "object",
   "required": [
-    "models",
-    "warehouses"
+    "databases",
+    "models"
   ],
   "properties": {
+    "databases": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Database"
+      }
+    },
     "defaults": {
       "anyOf": [
         {
@@ -22,19 +28,62 @@
       "items": {
         "$ref": "#/definitions/Model"
       }
-    },
-    "warehouses": {
-      "type": "array",
-      "items": {
-        "$ref": "#/definitions/Warehouse"
-      }
     }
   },
   "definitions": {
+    "Database": {
+      "type": "object",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "key_path",
+            "type"
+          ],
+          "properties": {
+            "key_path": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "bigquery"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "duckdb"
+              ]
+            }
+          }
+        }
+      ],
+      "required": [
+        "dataset",
+        "name"
+      ],
+      "properties": {
+        "dataset": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      }
+    },
     "Defaults": {
       "type": "object",
       "properties": {
-        "warehouse": {
+        "database": {
           "type": [
             "string",
             "null"
@@ -120,55 +169,6 @@
           }
         }
       ]
-    },
-    "Warehouse": {
-      "type": "object",
-      "oneOf": [
-        {
-          "type": "object",
-          "required": [
-            "key_path",
-            "type"
-          ],
-          "properties": {
-            "key_path": {
-              "type": "string"
-            },
-            "type": {
-              "type": "string",
-              "enum": [
-                "bigquery"
-              ]
-            }
-          }
-        },
-        {
-          "type": "object",
-          "required": [
-            "type"
-          ],
-          "properties": {
-            "type": {
-              "type": "string",
-              "enum": [
-                "duckdb"
-              ]
-            }
-          }
-        }
-      ],
-      "required": [
-        "dataset",
-        "name"
-      ],
-      "properties": {
-        "dataset": {
-          "type": "string"
-        },
-        "name": {
-          "type": "string"
-        }
-      }
     }
   }
 }

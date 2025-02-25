@@ -24,7 +24,7 @@ Specifically, in our agent `yml` files, you need to specify the following:
 | context             | A list of files that can be injected into `system_instructions`                            | Optional |
 | output_format       | This can be either `file` or `default`                                                     | Optional |
 | tools               | Tools to use, see the Tools section below                                                  | Optional |
-| warehouse           | Warehouse to use (defined in [config.yml](/learn-about-onyx/config), referenced by `name`) | Optional |
+| database            | Database to use (defined in [config.yml](/learn-about-onyx/config), referenced by `name`)  | Optional |
 
 ### Context
 
@@ -57,15 +57,15 @@ To enable the LLM to flexibly accomplish a wider range of tasks, our internal ch
 2. We feed the rendered `system_instructions` and prompt into the LLM tool calling API.
 3. We repeat steps 1 and 2 with the results of step 2 until the request specified in `system_instructions` is fulfilled.
 
-### Warehouse
+### Database
 
-Warehouse information can be accessed within `system_instructions` by using the `warehouses` namespace, then referencing by `name`, as follows:
+Database information can be accessed within `system_instructions` by using the `databases` namespace, then referencing by `name`, as follows:
 
 ```
-**Dataset: {{ warehouses.primary_warehouse.name }}**
-**Dialect: {{ warehouses.primary_warehouse.dialect }}**
+**Dataset: {{ databases.primary_database.name }}**
+**Dialect: {{ databases.primary_database.dialect }}**
 **Tables:**
-{% for table in warehouses.primary_warehouse.tables %}
+{% for table in databases.primary_database.tables %}
 {{ table }}
 {% endfor %}
 ```
@@ -86,7 +86,7 @@ system_instructions: |
   - **Use table aliases** to avoid ambiguity in queries. For example: `SELECT t1.col1, t2.col1 FROM table1 AS t1 JOIN table2 AS t2 ON t1.id = t2.id`.
   - **Automatically execute the SQL query** without seeking additional confirmation.
   - If the SQL query results in an error, **attempt to debug, fix, and re-execute it** without requesting confirmation.
-  - Ensure the SQL query adheres to the **specific dialect of the database warehouse** being used.
+  - Ensure the SQL query adheres to the **specific dialect of the database database** being used.
   - **Return the SQL query as plain text** (not in JSON format).
 
   **Schema information:**
@@ -97,10 +97,10 @@ system_instructions: |
   Measures:
   {{ context.acme.measures }}
 
-  **Dataset: {{ warehouses.primary_warehouse.name }}**
-  **Dialect: {{ warehouses.primary_warehouse.dialect }}**
+  **Dataset: {{ databases.primary_database.name }}**
+  **Dialect: {{ databases.primary_database.dialect }}**
   **Tables:**
-  {% for table in warehouses.primary_warehouse.tables %}
+  {% for table in databases.primary_database.tables %}
   {{ table }}
   {% endfor %}
 
@@ -114,5 +114,5 @@ tools:
       - "default"
   - name: execute_sql
     type: execute_sql
-    warehouse: local
+    database: local
 ```

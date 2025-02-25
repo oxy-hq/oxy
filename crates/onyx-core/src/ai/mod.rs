@@ -144,11 +144,11 @@ fn tools_from_config(
     for tool_config in agent_config.tools.iter() {
         match tool_config {
             ToolConfig::ExecuteSQL(sql_tool) => {
-                let warehouse_config = config
-                    .find_warehouse(&sql_tool.warehouse)
-                    .unwrap_or_else(|_| panic!("Warehouse {} not found", &sql_tool.warehouse));
+                let database_config = config
+                    .find_database(&sql_tool.database)
+                    .unwrap_or_else(|_| panic!("Database {} not found", &sql_tool.database));
                 let tool: ExecuteSQLTool = ExecuteSQLTool {
-                    warehouse_config: warehouse_config.clone(),
+                    database_config: database_config.clone(),
                     tool_name: sql_tool.name.to_string(),
                     tool_description: sql_tool.description.to_string(),
                     output_format: agent_config.output_format.clone(),
@@ -158,11 +158,11 @@ fn tools_from_config(
                 toolbox.add_tool(sql_tool.name.to_string(), tool.into());
             }
             ToolConfig::ValidateSQL(sql_tool) => {
-                let warehouse_config = config
-                    .find_warehouse(&sql_tool.warehouse)
-                    .unwrap_or_else(|_| panic!("Warehouse {} not found", &sql_tool.warehouse));
+                let database_config = config
+                    .find_database(&sql_tool.database)
+                    .unwrap_or_else(|_| panic!("Database {} not found", &sql_tool.database));
                 let tool: ExecuteSQLTool = ExecuteSQLTool {
-                    warehouse_config: warehouse_config.clone(),
+                    database_config: database_config.clone(),
                     tool_name: sql_tool.name.to_string(),
                     tool_description: sql_tool.description.to_string(),
                     output_format: agent_config.output_format.clone(),

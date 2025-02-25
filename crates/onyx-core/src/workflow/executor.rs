@@ -5,14 +5,14 @@ use std::path::PathBuf;
 use minijinja::value::Kwargs;
 use minijinja::{context, Value};
 
-use crate::config::model::AgentStep;
-use crate::config::model::ExecuteSQLStep;
+use crate::config::model::AgentTask;
+use crate::config::model::ExecuteSQLTask;
 use crate::config::model::FileFormat;
-use crate::config::model::FormatterStep;
-use crate::config::model::LoopSequentialStep;
+use crate::config::model::FormatterTask;
+use crate::config::model::LoopSequentialTask;
 use crate::config::model::LoopValues;
-use crate::config::model::Step;
-use crate::config::model::StepType;
+use crate::config::model::Task;
+use crate::config::model::TaskType;
 use crate::config::model::Workflow;
 use crate::config::model::SQL;
 use crate::connector::Connector;
@@ -55,7 +55,7 @@ impl Executable<WorkflowInput, WorkflowEvent> for WorkflowExecutor {
             })
             .await?;
         self.workflow
-            .steps
+            .tasks
             .execute(execution_context, ContextValue::None)
             .await?;
         execution_context.notify(WorkflowEvent::Finished).await?;
@@ -64,7 +64,7 @@ impl Executable<WorkflowInput, WorkflowEvent> for WorkflowExecutor {
 }
 
 #[async_trait::async_trait]
-impl Executable<WorkflowInput, WorkflowEvent> for AgentStep {
+impl Executable<WorkflowInput, WorkflowEvent> for AgentTask {
     async fn execute(
         &self,
         execution_context: &mut ExecutionContext<'_, WorkflowEvent>,
@@ -89,10 +89,10 @@ impl Executable<WorkflowInput, WorkflowEvent> for AgentStep {
             Some(prompt.clone()),
             &config,
         )?;
-        let step = self.clone();
+        let task = self.clone();
         let map_agent_event = move |event| WorkflowEvent::Agent {
             orig: event,
-            step: step.clone(),
+            task: task.clone(),
             export_file_path: export_file_path.clone(),
         };
         agent_executor
@@ -114,13 +114,13 @@ impl Executable<WorkflowInput, WorkflowEvent> for AgentStep {
 }
 
 #[async_trait::async_trait]
-impl Executable<WorkflowInput, WorkflowEvent> for ExecuteSQLStep {
+impl Executable<WorkflowInput, WorkflowEvent> for ExecuteSQLTask {
     async fn execute(
         &self,
         execution_context: &mut ExecutionContext<'_, WorkflowEvent>,
         _input: WorkflowInput,
     ) -> Result<(), OnyxError> {
-        let wh = execution_context.config.find_warehouse(&self.warehouse)?;
+        let wh = execution_context.config.find_database(&self.database)?;
 
         let mut variables = HashMap::new();
         if let Some(vars) = &self.variables {
@@ -185,7 +185,7 @@ impl Executable<WorkflowInput, WorkflowEvent> for ExecuteSQLStep {
 
         execution_context
             .notify(WorkflowEvent::ExecuteSQL {
-                step: self.clone(),
+                task: self.clone(),
                 query,
                 datasets: datasets.clone(),
                 schema,
@@ -198,13 +198,13 @@ impl Executable<WorkflowInput, WorkflowEvent> for ExecuteSQLStep {
 }
 
 #[async_trait::async_trait]
-impl Executable<WorkflowInput, WorkflowEvent> for FormatterStep {
+impl Executable<WorkflowInput, WorkflowEvent> for FormatterTask {
     async fn execute(
         &self,
         execution_context: &mut ExecutionContext<'_, WorkflowEvent>,
         _input: WorkflowInput,
     ) -> Result<(), OnyxError> {
-        let step_output = execution_context.renderer.render(&self.template)?;
+        let task_output = execution_context.renderer.render(&self.template)?;
 
         let mut export_file_path = PathBuf::new();
         if let Some(export) = &self.export {
@@ -217,18 +217,18 @@ impl Executable<WorkflowInput, WorkflowEvent> for FormatterStep {
 
         execution_context
             .notify(WorkflowEvent::Formatter {
-                step: self.clone(),
-                output: step_output.clone(),
+                task: self.clone(),
+                output: task_output.clone(),
                 export_file_path,
             })
             .await?;
-        execution_context.write(ContextValue::Text(step_output));
+        execution_context.write(ContextValue::Text(task_output));
         Ok(())
     }
 }
 
 #[async_trait::async_trait]
-impl Executable<LoopInput, WorkflowEvent> for LoopSequentialStep {
+impl Executable<LoopInput, WorkflowEvent> for LoopSequentialTask {
     async fn execute(
         &self,
         execution_context: &mut ExecutionContext<'_, WorkflowEvent>,
@@ -250,7 +250,7 @@ impl Executable<LoopInput, WorkflowEvent> for LoopSequentialStep {
         let res = loop_executor
             .params(
                 &mut values,
-                &self.steps,
+                &self.tasks,
                 |param| {
                     Value::from(Kwargs::from_iter([(
                         name.clone(),
@@ -269,7 +269,7 @@ impl Executable<LoopInput, WorkflowEvent> for LoopSequentialStep {
     }
 }
 
-impl Cacheable<(), WorkflowEvent> for Step {
+impl Cacheable<(), WorkflowEvent> for Task {
     fn cache_key(
         &self,
         execution_context: &mut ExecutionContext<'_, WorkflowEvent>,
@@ -313,25 +313,25 @@ impl Cacheable<(), WorkflowEvent> for Step {
 }
 
 #[async_trait::async_trait]
-impl Executable<(), WorkflowEvent> for Step {
+impl Executable<(), WorkflowEvent> for Task {
     async fn execute(
         &self,
         execution_context: &mut ExecutionContext<'_, WorkflowEvent>,
         _input: (),
     ) -> Result<(), OnyxError> {
-        match &self.step_type {
-            StepType::Agent(agent) => {
+        match &self.task_type {
+            TaskType::Agent(agent) => {
                 agent.execute(execution_context, WorkflowInput).await?;
             }
-            StepType::ExecuteSQL(execute_sql) => {
+            TaskType::ExecuteSQL(execute_sql) => {
                 execute_sql
                     .execute(execution_context, WorkflowInput)
                     .await?;
             }
-            StepType::Formatter(formatter) => {
+            TaskType::Formatter(formatter) => {
                 formatter.execute(execution_context, WorkflowInput).await?;
             }
-            StepType::LoopSequential(loop_sequential) => {
+            TaskType::LoopSequential(loop_sequential) => {
                 loop_sequential
                     .execute(
                         execution_context,
@@ -341,9 +341,9 @@ impl Executable<(), WorkflowEvent> for Step {
                     )
                     .await?;
             }
-            StepType::Unknown => {
+            TaskType::Unknown => {
                 execution_context
-                    .notify(WorkflowEvent::StepUnknown {
+                    .notify(WorkflowEvent::TaskUnknown {
                         name: self.name.clone(),
                     })
                     .await?;
@@ -353,23 +353,23 @@ impl Executable<(), WorkflowEvent> for Step {
     }
 }
 
-struct StepExecutor;
+struct TaskExecutor;
 
 #[async_trait::async_trait]
-impl Executable<Step, WorkflowEvent> for StepExecutor {
+impl Executable<Task, WorkflowEvent> for TaskExecutor {
     async fn execute(
         &self,
         execution_context: &mut ExecutionContext<'_, WorkflowEvent>,
-        input: Step,
+        input: Task,
     ) -> Result<(), OnyxError> {
         execution_context
-            .notify(WorkflowEvent::StepStarted {
+            .notify(WorkflowEvent::TaskStarted {
                 name: input.name.clone(),
             })
             .await?;
         let mut cache_executor = execution_context.cache_executor();
-        let res = match &input.step_type {
-            StepType::Agent(_agent) => {
+        let res = match &input.task_type {
+            TaskType::Agent(_agent) => {
                 cache_executor
                     .execute(&input, &input, (), &AgentCache::new(input.name.to_string()))
                     .await
@@ -382,7 +382,7 @@ impl Executable<Step, WorkflowEvent> for StepExecutor {
 }
 
 #[async_trait::async_trait]
-impl Executable<ContextValue, WorkflowEvent> for Vec<Step> {
+impl Executable<ContextValue, WorkflowEvent> for Vec<Task> {
     async fn execute(
         &self,
         execution_context: &mut ExecutionContext<'_, WorkflowEvent>,
@@ -393,7 +393,7 @@ impl Executable<ContextValue, WorkflowEvent> for Vec<Step> {
         let res = map_executor
             .entries(
                 self.iter()
-                    .map(|s| (s.name.clone(), StepExecutor, s.clone()))
+                    .map(|s| (s.name.clone(), TaskExecutor, s.clone()))
                     .collect::<Vec<(_, _, _)>>(),
             )
             .await;
