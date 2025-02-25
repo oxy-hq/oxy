@@ -29,24 +29,24 @@ export const selectFieldStyles = sva({
 
         _hover: {
           // border
-          shadow: "0 0 0 1px token(colors.border.primary)"
-        }
-      }
+          shadow: "0 0 0 1px token(colors.border.primary)",
+        },
+      },
     },
     icon: {
       "[role=select-trigger]:where(:not([data-placeholder])) &": {
-        color: "text.secondary"
+        color: "text.secondary",
       },
       "[role=select-trigger]:where(:focus):where(:not([disabled])) &": {
-        color: "text.primary"
+        color: "text.primary",
       },
       "[role=select-trigger]:where([data-state=open]):where(:not([disabled])) &":
         {
-          color: "text.primary"
+          color: "text.primary",
         },
       "[role=select-trigger]:where([disabled]) &": {
-        color: "text.secondary"
-      }
+        color: "text.secondary",
+      },
     },
 
     content: {
@@ -61,12 +61,12 @@ export const selectFieldStyles = sva({
       minW: "var(--radix-select-trigger-width)",
       padding: "sm",
       // TODO: Confirm with design if this is the max height for select options container
-      maxH: "240px"
+      maxH: "240px",
     },
     viewport: {
       width: "100%",
       display: "flex",
-      flexDir: "column"
+      flexDir: "column",
     },
     item: {
       display: "flex",
@@ -80,15 +80,15 @@ export const selectFieldStyles = sva({
       cursor: "pointer",
       color: "text.light",
       _hover: {
-        bg: "surface.secondary"
+        bg: "surface.secondary",
       },
       "&[data-highlighted]": {
-        bg: "surface.secondary"
+        bg: "surface.secondary",
       },
       "&[data-state=checked]": {
-        bg: "surface.secondary"
-      }
-    }
+        bg: "surface.secondary",
+      },
+    },
   },
   variants: {
     state: {
@@ -98,21 +98,21 @@ export const selectFieldStyles = sva({
           "&[data-placeholder]": {
             color: "text.secondary",
             "&[data-state=open]": {
-              color: "text.primary"
-            }
+              color: "text.primary",
+            },
           },
 
           "&[data-state=open]": {
-            shadow: "var(--default-border-shadow)"
+            shadow: "var(--default-border-shadow)",
           },
           _hover: {
-            shadow: "var(--default-border-shadow)"
+            shadow: "var(--default-border-shadow)",
           },
           _focus: {
             shadow: "var(--default-border-shadow)",
-            color: "text.primary"
-          }
-        }
+            color: "text.primary",
+          },
+        },
       },
       error: {
         trigger: {
@@ -121,22 +121,22 @@ export const selectFieldStyles = sva({
           shadow: "0 0 0 1px token(colors.border.error), token(shadows.error)",
           bg: "background.secondary",
           "&[data-state=open]": {
-            shadow: "var(--default-border-shadow)"
+            shadow: "var(--default-border-shadow)",
           },
           "&[data-state=closed]": {
-            bg: "background.secondary"
+            bg: "background.secondary",
           },
           _focus: {
-            color: "text.primary"
-          }
+            color: "text.primary",
+          },
         },
         icon: {
           color: "text.primary",
           "[role=select-trigger]:where([disabled]) &": {
-            color: "text.secondary"
-          }
-        }
-      }
-    }
-  }
+            color: "text.secondary",
+          },
+        },
+      },
+    },
+  },
 });

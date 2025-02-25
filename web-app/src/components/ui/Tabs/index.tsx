@@ -1,4 +1,10 @@
-import { ReactNode, useState, createContext, useContext, useEffect } from "react";
+import {
+  ReactNode,
+  useState,
+  createContext,
+  useContext,
+  useEffect,
+} from "react";
 import { css, cx } from "styled-system/css";
 import Text from "@/components/ui/Typography/Text";
 
@@ -102,9 +108,7 @@ export const Tabs = ({ children, defaultValue, onChange }: TabsProps) => {
   }, [selectedTab, onChange]);
 
   return (
-    <TabsContext.Provider
-      value={{ selectedTab, setSelectedTab }}
-    >
+    <TabsContext.Provider value={{ selectedTab, setSelectedTab }}>
       {children}
     </TabsContext.Provider>
   );

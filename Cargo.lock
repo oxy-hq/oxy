@@ -6238,6 +6238,7 @@ dependencies = [
  "log",
  "migration",
  "minijinja",
+ "once_cell",
  "pluralizer",
  "predicates",
  "pyo3",

@@ -75,7 +75,7 @@ impl LanceDBStore {
         let db_path = config
             .project_path
             .join(format!(".db-{}-{}", agent_name, tool_config.name));
-        println!("db_path: {}", db_path.display().to_string());
+        println!("db_path: {}", db_path.display());
         Self {
             uri: db_path.display().to_string(),
             connection: Arc::new(tokio::sync::OnceCell::new()),

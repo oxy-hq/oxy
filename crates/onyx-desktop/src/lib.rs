@@ -2,7 +2,6 @@ use command::{ask, ask_preview, get_openai_api_key, list_chat_messages, set_open
 use migration::Migrator;
 use migration::MigratorTrait;
 use onyx::db::client;
-use std::fs;
 
 mod command;
 
@@ -12,17 +11,30 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(
+            tauri_plugin_log::Builder::new()
+                .target(tauri_plugin_log::Target::new(
+                    tauri_plugin_log::TargetKind::Webview,
+                ))
+                .target(tauri_plugin_log::Target::new(
+                    tauri_plugin_log::TargetKind::Stdout,
+                ))
+                .target(tauri_plugin_log::Target::new(
+                    tauri_plugin_log::TargetKind::Folder {
+                        path: std::path::PathBuf::from(client::get_state_dir()),
+                        file_name: Some("onyx-desktop".to_string()),
+                    },
+                ))
+                .level(if cfg!(debug_assertions) {
+                    log::LevelFilter::Debug
+                } else {
+                    log::LevelFilter::Info
+                })
+                .build(),
+        )
         .setup(|app| {
-            if cfg!(debug_assertions) {
-                app.handle().plugin(
-                    tauri_plugin_log::Builder::default()
-                        .level(log::LevelFilter::Info)
-                        .build(),
-                )?;
-            }
             tauri::async_runtime::block_on(async move {
                 // create db directory if not exists
-                let _ = fs::create_dir_all(client::get_db_directory());
                 let db = client::establish_connection().await;
                 // migrate db
                 let _ = Migrator::up(&db, None).await;

@@ -18,10 +18,10 @@ const checkboxStyles = css({
   bg: "surface.primary",
   "&[data-state=checked]": {
     bg: "surface.contrast",
-    color: "text.contrast"
+    color: "text.contrast",
   },
 
-  flexShrink: 0
+  flexShrink: 0,
 });
 
 const checkedStyled = css({ width: "8px!", height: "6px!" });
@@ -35,7 +35,7 @@ interface CheckBoxProps {
 const CheckBox = React.forwardRef<HTMLInputElement, CheckBoxProps>(
   (
     { children, value, onChange, ...props }: PropsWithChildren<CheckBoxProps>,
-    ref
+    ref,
   ) => {
     return (
       <div
@@ -48,8 +48,8 @@ const CheckBox = React.forwardRef<HTMLInputElement, CheckBoxProps>(
           height: "3xl",
           borderRadius: "rounded",
           "&:hover": {
-            backgroundColor: "surface.secondary"
-          }
+            backgroundColor: "surface.secondary",
+          },
         })}
         onClick={() => {
           onChange(!value);
@@ -58,16 +58,11 @@ const CheckBox = React.forwardRef<HTMLInputElement, CheckBoxProps>(
         <div data-state={value ? "checked" : ""} className={checkboxStyles}>
           {value && <Icon asset="checkbox" className={checkedStyled} />}
         </div>
-        <input
-          {...props}
-          type="checkbox"
-          hidden
-          ref={ref}
-        />
+        <input {...props} type="checkbox" hidden ref={ref} />
         {children}
       </div>
     );
-  }
+  },
 );
 
 CheckBox.displayName = "CheckBox";

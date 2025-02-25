@@ -9,6 +9,7 @@
     "fs:default",
     "store:default",
     "core:app:default",
-    "core:window:default"
+    "core:window:default",
+    "log:default"
   ]
 }

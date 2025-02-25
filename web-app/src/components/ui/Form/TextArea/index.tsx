@@ -2,7 +2,7 @@
 
 import React from "react";
 import TextAreaAutosize, {
-  TextareaAutosizeProps
+  TextareaAutosizeProps,
 } from "react-textarea-autosize";
 
 import { cx, cva, RecipeVariantProps, css } from "styled-system/css";
@@ -22,31 +22,31 @@ const textAreaStyles = cva({
       // border
       shadow: "inset 0px 0px 0px 1px token(colors.border.primary)",
       bg: "background.primary",
-      color: "text.secondary"
-    }
+      color: "text.secondary",
+    },
   },
   variants: {
     state: {
       default: {
         bg: "surface.secondary",
         _placeholder: {
-          color: "text.secondary"
+          color: "text.secondary",
         },
         _hover: {
           // border
-          shadow: "inset 0px 0px 0px 1px token(colors.border.light)"
+          shadow: "inset 0px 0px 0px 1px token(colors.border.light)",
         },
         _disabled: {
           color: "text.secondary",
           _hover: {
             // border
-            shadow: "inset 0 0 0 1px token(colors.border.primary)"
-          }
+            shadow: "inset 0 0 0 1px token(colors.border.primary)",
+          },
         },
         _focus: {
           // border
-          shadow: "inset 0 0 0 1px token(colors.border.light)"
-        }
+          shadow: "inset 0 0 0 1px token(colors.border.light)",
+        },
       },
       error: {
         bg: "background.secondary",
@@ -56,11 +56,11 @@ const textAreaStyles = cva({
         _focus: {
           // border
           shadow: "inset 0 0 0 1px token(colors.border.light)",
-          bg: "surface.secondary"
-        }
-      }
-    }
-  }
+          bg: "surface.secondary",
+        },
+      },
+    },
+  },
 });
 
 type TextAreaStyledProps = RecipeVariantProps<typeof textAreaStyles>;
@@ -80,13 +80,13 @@ const Textarea = React.forwardRef<HTMLTextAreaElement, TextAreaProps>(
           className,
           css({
             customScrollbar: true,
-          })
+          }),
         )}
         ref={ref}
         {...props}
       />
     );
-  }
+  },
 );
 
 Textarea.displayName = "Textarea";
