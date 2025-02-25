@@ -5,7 +5,7 @@ import { memo } from "react";
 import Markdown, { ExtendedComponents } from "react-markdown";
 import directive from "remark-directive";
 import remarkGfm from "remark-gfm";
-import { css, cx, sva } from "styled-system/css";
+import { css, sva } from "styled-system/css";
 import { stack } from "styled-system/patterns";
 
 import CodeContainer from "./Code";
@@ -132,17 +132,18 @@ const extendedComponents: ExtendedComponents = {
 };
 
 // Basic component, need to override default styles
-function AnswerContent({ content, className }: Props) {
+function AnswerContent({ content }: Props) {
   const classes = markdownStyles();
   return (
     <div className={wrapperStyles}>
-      <Markdown
-        className={cx(classes.root, className)}
-        remarkPlugins={[directive, remarkGfm]}
-        components={extendedComponents}
-      >
-        {content}
-      </Markdown>
+      <div className={classes.root}>
+        <Markdown
+          remarkPlugins={[directive, remarkGfm]}
+          components={extendedComponents}
+        >
+          {content}
+        </Markdown>
+      </div>
     </div>
   );
 }
