@@ -32,7 +32,7 @@ pub fn setup_agent(
     config: &Config,
 ) -> Result<(OpenAIAgent, AgentConfig), OnyxError> {
     let (agent_config, agent_name) = config.load_agent_config(agent_file)?;
-    let agent = from_config(&agent_name, &config, &agent_config, file_format)
+    let agent = from_config(&agent_name, config, &agent_config, file_format)
         .map_err(|e| OnyxError::AgentError(format!("Error setting up agent: {}", e)))?;
     Ok((agent, agent_config))
 }

@@ -9,7 +9,7 @@ publish.workspace = true
 edition.workspace = true
 
 [dependencies]
-log = "0.4"
+log = { workspace = true }
 onyx = { path = "../onyx-core" }
 migration = { path = "../migration" }
 serde = { version = "1.0", features = ["derive"] }

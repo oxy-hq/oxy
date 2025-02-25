@@ -277,15 +277,12 @@ impl Executable<Target, EvalEvent> for Consistency {
                 .await;
             let mut outputs = loop_executor.eject()?;
 
-            match input {
-                Target::Workflow(workflow) => {
-                    let task_ref = match &self.task_ref {
-                        Some(task_ref) => task_ref.to_string(),
-                        None => workflow.last_step_ref()?,
-                    };
-                    outputs = Array(outputs).nested_project(&task_ref);
-                }
-                _ => {}
+            if let Target::Workflow(workflow) = input {
+                let task_ref = match &self.task_ref {
+                    Some(task_ref) => task_ref.to_string(),
+                    None => workflow.last_step_ref()?,
+                };
+                outputs = Array(outputs).nested_project(&task_ref);
             }
 
             if sample_size > outputs.len() {

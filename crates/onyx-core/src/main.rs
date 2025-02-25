@@ -6,11 +6,14 @@ mod theme;
 use fern::colors::{Color, ColoredLevelConfig};
 use human_panic::setup_panic;
 use human_panic::Metadata;
+use onyx::db::client;
 use onyx::theme::StyledText;
 
 fn init_logging() -> Result<(), fern::InitError> {
     // allow override stdout log level with RUST_LOG env var
     let stdout_log_level = std::env::var("RUST_LOG").unwrap_or_else(|_| "off".to_string());
+
+    let log_file_path = std::path::Path::new(&client::get_state_dir()).join("onyx.log");
 
     fern::Dispatch::new()
         .chain(
@@ -26,7 +29,7 @@ fn init_logging() -> Result<(), fern::InitError> {
                     ))
                 })
                 .level(log::LevelFilter::Trace)
-                .chain(fern::log_file("onyx.log")?),
+                .chain(fern::log_file(log_file_path)?),
         )
         .chain(
             // log only onyx logs to stdout
