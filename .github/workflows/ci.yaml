@@ -125,7 +125,7 @@ jobs:
       - name: Run cargo clippy
         run: cargo clippy --verbose --workspace --fix
       - name: Cleanup tauri build to reduce cache size
-        run: rm -rf target/debug/libonyx_desktop.*
+        run: rm -rf target/debug/**/libonyx_desktop.*
 
   test:
     needs: [fmt]
