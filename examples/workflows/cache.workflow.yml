@@ -50,5 +50,5 @@ tasks:
       {% endfor %}
 
 tests:
-  - eval_type: consistency
+  - type: consistency
     task_ref: sql

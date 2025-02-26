@@ -6,13 +6,13 @@ description: How to write tests
 Tests are a core part of onyx. Tests can be written either as a part of
 `agents` or `workflows`.
 
-At present, we support a single type of test, `eval_type: consistency`, which
+At present, we support a single type of test, `type: consistency`, which
 measures the consistency between two results. Within agents, this can be
 implemented as follows:
 
 ```yaml
 tests:
-  - eval_type: consistency
+  - type: consistency
     n: 5  # number of runs to test
     task_description: "how many users do we have?"
 ```
@@ -28,7 +28,7 @@ value should be provided, as shown below:
 
 ```yaml
 tests:
-  - eval_type: consistency
+  - type: consistency
     task_ref: task_name
     n: 5  # number of runs to test
 ```

@@ -413,7 +413,7 @@ pub struct Task {
 }
 
 #[derive(Serialize, Deserialize, Debug, Validate, JsonSchema, Clone)]
-#[serde(tag = "eval_type")]
+#[serde(tag = "type")]
 #[garde(context(ValidationContext))]
 pub enum Eval {
     #[serde(rename = "consistency")]
