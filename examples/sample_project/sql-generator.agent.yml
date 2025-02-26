@@ -1,0 +1,24 @@
+model: "openai-4o"
+
+context:
+  - name: queries
+    type: file
+    src:
+      - "*.sql"
+
+system_instructions: |
+  You are a data analyst. Your task is to answer the question provided by writing and executing a SQL query to that end.
+  Dialect: {{ warehouses.local.dialect }}
+
+  Some queries to use:
+  {{ context.queries }}
+
+tools:
+  - name: execute_sql
+    type: execute_sql
+    warehouse: local
+
+tests:
+  - eval_type: consistency
+    n: 10
+    task_description: "What is the capital of France?"
