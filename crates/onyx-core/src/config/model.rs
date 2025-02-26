@@ -21,6 +21,7 @@ pub struct Config {
     #[garde(dive)]
     pub models: Vec<Model>,
     #[garde(dive)]
+    #[serde(alias = "warehouses")]
     pub databases: Vec<Database>,
 
     #[serde(skip)]
@@ -398,9 +399,9 @@ pub enum TaskType {
     #[serde(other)]
     Unknown,
 }
-
 #[derive(Deserialize, JsonSchema)]
 pub struct TempWorkflow {
+    #[serde(alias = "steps")]
     pub tasks: Vec<Task>,
     pub variables: Option<HashMap<String, String>>,
     #[serde(default = "default_tests")]
@@ -451,11 +452,12 @@ pub struct Consistency {
     pub concurrency: usize,
 }
 
-#[derive(Serialize, Deserialize, Debug, Validate, JsonSchema, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
 #[garde(context(ValidationContext))]
 pub struct Workflow {
     #[garde(length(min = 1))]
     pub name: String,
+    #[serde(alias = "steps")]
     #[garde(dive)]
     pub tasks: Vec<Task>,
     #[garde(skip)]
