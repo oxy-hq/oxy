@@ -1,0 +1,6 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/onyx-hq/onyx-public-releases/refs/heads/main/json-schemas/agent.json
+
+name: local
+model: "openai-4o-mini"
+system_instructions: |
+  You are a personal assistant.

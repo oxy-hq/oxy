@@ -343,6 +343,17 @@ pub struct FormatterTask {
     pub export: Option<TaskExport>,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
+#[garde(context(ValidationContext))]
+pub struct WorkflowTask {
+    #[garde(skip)]
+    pub src: PathBuf,
+    #[garde(skip)]
+    pub variables: Option<HashMap<String, String>>,
+    #[garde(dive)]
+    pub export: Option<TaskExport>,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, JsonSchema)]
 #[serde(untagged)]
 pub enum LoopValues {
@@ -374,6 +385,8 @@ pub enum TaskType {
     LoopSequential(#[garde(dive)] LoopSequentialTask),
     #[serde(rename = "formatter")]
     Formatter(#[garde(dive)] FormatterTask),
+    #[serde(rename = "workflow")]
+    Workflow(#[garde(dive)] WorkflowTask),
     #[serde(other)]
     Unknown,
 }
@@ -381,6 +394,7 @@ pub enum TaskType {
 #[derive(Deserialize, JsonSchema)]
 pub struct TempWorkflow {
     pub tasks: Vec<Task>,
+    pub variables: Option<HashMap<String, String>>,
     #[serde(default = "default_tests")]
     pub tests: Vec<Eval>,
 }
@@ -439,6 +453,9 @@ pub struct Workflow {
     #[garde(skip)]
     #[serde(default = "default_tests")]
     pub tests: Vec<Eval>,
+
+    #[garde(skip)]
+    pub variables: Option<HashMap<String, String>>,
 }
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]

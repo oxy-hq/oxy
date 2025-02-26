@@ -8,7 +8,8 @@ use crate::{
     config::{
         load_config,
         model::{
-            AgentTask, ExecuteSQLTask, FormatterTask, LoopValues, Task, TaskType, Workflow, SQL,
+            AgentTask, ExecuteSQLTask, FormatterTask, LoopValues, Task, TaskType, Workflow,
+            WorkflowTask, SQL,
         },
     },
     errors::OnyxError,
@@ -91,6 +92,9 @@ pub enum WorkflowEvent {
         task: FormatterTask,
         output: String,
         export_file_path: PathBuf,
+    },
+    SubWorkflow {
+        step: WorkflowTask,
     },
 }
 
@@ -228,6 +232,9 @@ impl Handler for WorkflowReceiver {
             WorkflowEvent::Agent { orig, .. } => {
                 AgentReceiver.handle(orig);
             }
+            WorkflowEvent::SubWorkflow { step } => {
+                println!("\n⏳Subworkflow executed successfully");
+            }
             _ => {
                 log::debug!("Unhandled event: {:?}", event);
             }
@@ -276,6 +283,9 @@ impl Handler for WorkflowExporter {
                 }
                 log::debug!("Formatter tool calls: {:?}", event);
             }
+            WorkflowEvent::SubWorkflow { step } => {
+                log::debug!("SubWorkflow tool calls: {:?}", step);
+            }
             _ => {
                 log::debug!("Unhandled event: {:?}", event);
             }
@@ -292,11 +302,12 @@ pub async fn run_workflow(workflow_path: &PathBuf) -> Result<WorkflowResult, Ony
 
     let dispatcher = Dispatcher::new(vec![Box::new(WorkflowReceiver), Box::new(WorkflowExporter)]);
     let executor = WorkflowExecutor::new(workflow.clone());
+    let ctx = Value::from_serialize(&workflow.variables);
     let output = run(
         &executor,
         WorkflowInput,
         config,
-        Value::UNDEFINED,
+        ctx,
         Some(&workflow),
         dispatcher,
     )

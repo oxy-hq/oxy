@@ -1,0 +1,16 @@
+
+# yaml-language-server: $schema=https://raw.githubusercontent.com/onyx-hq/onyx-public-releases/refs/heads/main/json-schemas/workflow.json
+
+name: orange_sales
+tasks:
+  - name: report
+    src: workflows/fruit_sales_report.workflow.yml
+    type: workflow
+    variables: 
+      fruit: orange
+
+  - name: report
+    type: formatter
+    template: | 
+      Sales report for orange:
+      {{ report.report }}

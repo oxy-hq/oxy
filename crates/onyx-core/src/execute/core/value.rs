@@ -1,5 +1,7 @@
 use std::{collections::HashMap, fmt::Display, sync::Arc};
 
+use std::fmt::Debug;
+
 use super::arrow_table::ArrowTable;
 use minijinja::{
     value::{Enumerator, Object, ObjectRepr},

@@ -103,6 +103,7 @@ pub fn validate_task(task_type: &TaskType, _context: &ValidationContext) -> gard
             "Formatter",
         ),
         TaskType::LoopSequential(_) | TaskType::Unknown => Ok(()),
+        TaskType::Workflow(_) | TaskType::Unknown => Ok(()),
     }
 }
 
