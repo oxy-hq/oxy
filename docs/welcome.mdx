@@ -4,30 +4,35 @@ description: "The framework for agentic analytics"
 sidebarTitle: "Overview"
 ---
 
-**Onyx** is a lightweight, declarative framework for agentic analytics.
-**Agentic analytics** applies software development lifecycle principles to
-AI-driven data analysis. Just as traditional software follows a
-build-test-deploy pipeline, agentic analytics establishes a structured workflow
-for AI agents, involving agent creation, prompt testing, and production
-deployment.
+**Onyx** is an open-source framework for agentic analytics. It is declarative by design and written in Rust. Onyx is built with the following product principles in mind: open-source, performant, code-native, declarative, composable, and secure.&#x20;
 
-<img
-  class="rounded-md"
-  height="100"
-  noZoom
-  src="/images/onyx-lifecycle.jpg"
-  alt="banner"
-/>
+**Agentic analytics** applies software development lifecycle principles to AI-driven data analytics.&#x20;
 
-Specifically, this process is implemented as follows:
+Just as traditional software follows a build-test-deploy pipeline, agentic analytics establishes a structured workflow for data agents, involving agent creation, prompt testing, and production deployment.&#x20;
 
-- **Agent Configuration**: Define agents using `.agent.yml` files that specify their instructions. Provide context through `.sql` and `.sem.yml` files that supply queries and semantic information, respectively.
-- **Workflow Development**: Create `.workflow.yml` files to orchestrate multi-step processes. Chain validated agents and tasks together into reusable, production-ready automations.
-- **Testing Framework**: Add test cases directly to `.agent.yml` or `.workflow.yml` files. Execute tests using the `onyx test` command.
+<img height="100" alt="banner" class="rounded-md" src="/images/onyx-lifecycle.jpg" />
 
-You can run individual agents with `onyx run path/to/agent_name.agent.yml "question"` or execute complete workflows using `onyx run path/to/workflow_name.workflow.yml`.
+Specifically, this process is implemented as follows:&#x20;
+
+* **Agent Configuration**: Define agents using `.agent.yml` files that specify their instructions. Provide context through `.sql` and `.sem.yml` files that supply queries and semantic information, respectively.
+
+* **Workflow Development**: Create `.workflow.yml` files to orchestrate multi-step processes. Chain validated agents and tasks together into reusable, production-ready automations.&#x20;
+
+* **Testing Framework**: Add test cases directly to `.agent.yml` or `.workflow.yml` files. Execute tests using the `onyx test` command.
+
+You can run individual agents with `onyx run path/to/agent_name.agent.yml "question"` or execute complete workflows using `onyx run path/to/workflow_name.workflow.yml`.&#x20;
 
 ## Resources
+
+### Get started
+
+If you’re new to Onyx, start here to learn the essentials.
+
+<CardGroup cols={3}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart" />
+
+  <Card title="Basic Onyx commands" icon="command" href="/reference/onyx-commands" />
+</CardGroup>
 
 ### Developer Basics
 
@@ -36,25 +41,17 @@ If you're new to development, these resources will help you get started.
 <CardGroup cols={3}>
   <Card title="Workstation Setup" icon="laptop" href="/basics/workstation">
     {" "}
+
     for Windows users
   </Card>
+
   <Card title="CLI Commands" icon="terminal" href="/reference/cli-commands" />
+
   <Card title="CLI Shortcuts" icon="keyboard" href="/reference/cli-shortcuts" />
+
   <Card title="Github Basics" icon="github" href="/basics/github">
     {" "}
+
     Learn the basics of Github
   </Card>
-</CardGroup>
-
-### Get started
-
-If you’re new to Onyx, start here to learn the essentials.
-
-<CardGroup cols={3}>
-  <Card title="Quickstart" icon="rocket" href="/quickstart" />
-  <Card
-    title="Basic Onyx commands"
-    icon="command"
-    href="/reference/onyx-commands"
-  />
 </CardGroup>
