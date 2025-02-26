@@ -22,6 +22,15 @@
       "items": {
         "$ref": "#/definitions/Eval"
       }
+    },
+    "variables": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": {
+        "type": "string"
+      }
     }
   },
   "definitions": {
@@ -270,6 +279,43 @@
               "enum": [
                 "formatter"
               ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "src",
+            "type"
+          ],
+          "properties": {
+            "export": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/TaskExport"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "src": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "workflow"
+              ]
+            },
+            "variables": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "additionalProperties": {
+                "type": "string"
+              }
             }
           }
         },

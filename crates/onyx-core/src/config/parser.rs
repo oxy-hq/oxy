@@ -15,6 +15,7 @@ pub fn parse_workflow_config(workflow_name: &str, file_path: &str) -> Result<Wor
         name: workflow_name.to_string(),
         tasks: temp_workflow.tasks,
         tests: temp_workflow.tests,
+        variables: temp_workflow.variables,
     };
 
     Ok(workflow)

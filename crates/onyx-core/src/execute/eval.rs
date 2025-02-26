@@ -171,7 +171,7 @@ impl Executable<(), EvalEvent> for TargetWorkflow {
     ) -> Result<(), OnyxError> {
         let workflow = &self.workflow;
         let mut child_executor = execution_context.child_executor();
-        let map_event = |event| EvalEvent::Workflow(event);
+        let map_event = EvalEvent::Workflow;
         let workflow_executor = WorkflowExecutor::new(workflow.clone());
         let res = child_executor
             .execute(
@@ -210,7 +210,7 @@ impl Executable<(), EvalEvent> for TargetAgent {
             &config,
         )?;
 
-        let map_event = |event| EvalEvent::Agent(event);
+        let map_event = EvalEvent::Agent;
         agent_executor
             .execute(
                 &agent,

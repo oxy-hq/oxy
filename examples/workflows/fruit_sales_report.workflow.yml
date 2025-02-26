@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/onyx-hq/onyx-public-releases/refs/heads/main/json-schemas/workflow.json
+
+name: fruit_sales_report
+variables:
+  fruit: apple
+tasks:
+  - name: query_data
+    type: execute_sql
+    database: primary_database
+    sql_file: data/fruit_sales.sql
+  
+  - name: report
+    type: agent
+    agent_ref: agents/local.agent.yml
+    prompt: |
+      Tell me the for {{ fruit }} compare to other fruits.
+      Given the sales data:
+      {{ query_data }}

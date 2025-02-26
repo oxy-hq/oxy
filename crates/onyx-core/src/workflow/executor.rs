@@ -5,7 +5,6 @@ use std::path::PathBuf;
 use minijinja::value::Kwargs;
 use minijinja::{context, Value};
 
-use crate::config::model::AgentTask;
 use crate::config::model::ExecuteSQLTask;
 use crate::config::model::FileFormat;
 use crate::config::model::FormatterTask;
@@ -15,19 +14,21 @@ use crate::config::model::Task;
 use crate::config::model::TaskType;
 use crate::config::model::Workflow;
 use crate::config::model::SQL;
+use crate::config::model::{AgentTask, WorkflowTask};
 use crate::connector::Connector;
 use crate::errors::OnyxError;
 use crate::execute::agent::build_agent;
 use crate::execute::agent::AgentInput;
 use crate::execute::core::arrow_table::ArrowTable;
 use crate::execute::core::cache::Cacheable;
+use crate::execute::core::event::Dispatcher;
 use crate::execute::core::value::ContextValue;
 use crate::execute::core::write::Write;
-use crate::execute::core::Executable;
 use crate::execute::core::ExecutionContext;
-use crate::execute::workflow::LoopInput;
+use crate::execute::core::{run, Executable};
 use crate::execute::workflow::WorkflowEvent;
 use crate::execute::workflow::WorkflowInput;
+use crate::execute::workflow::{LoopInput, WorkflowExporter, WorkflowReceiver};
 
 use super::cache::AgentCache;
 use super::cache::FileCache;
@@ -228,6 +229,47 @@ impl Executable<WorkflowInput, WorkflowEvent> for FormatterTask {
 }
 
 #[async_trait::async_trait]
+impl Executable<WorkflowInput, WorkflowEvent> for WorkflowTask {
+    async fn execute(
+        &self,
+        execution_context: &mut ExecutionContext<'_, WorkflowEvent>,
+        _input: WorkflowInput,
+    ) -> Result<(), OnyxError> {
+        let workflow = execution_context.config.load_workflow(&self.src)?;
+        let dispatcher =
+            Dispatcher::new(vec![Box::new(WorkflowReceiver), Box::new(WorkflowExporter)]);
+        let executor = WorkflowExecutor::new(workflow.clone());
+        let default_variables = workflow.variables.clone();
+        let variables = if let Some(vars) = &self.variables {
+            vars.clone()
+        } else {
+            HashMap::new()
+        };
+        let ctx = context! {
+            ..Value::from_serialize(&variables),
+            ..Value::from_serialize(&default_variables),
+        };
+
+        let output = run(
+            &executor,
+            WorkflowInput,
+            execution_context.config.clone(),
+            ctx,
+            Some(&workflow),
+            dispatcher,
+        )
+        .await?;
+
+        execution_context
+            .notify(WorkflowEvent::SubWorkflow { step: self.clone() })
+            .await?;
+
+        execution_context.write(output);
+        Ok(())
+    }
+}
+
+#[async_trait::async_trait]
 impl Executable<LoopInput, WorkflowEvent> for LoopSequentialTask {
     async fn execute(
         &self,
@@ -330,6 +372,9 @@ impl Executable<(), WorkflowEvent> for Task {
             }
             TaskType::Formatter(formatter) => {
                 formatter.execute(execution_context, WorkflowInput).await?;
+            }
+            TaskType::Workflow(workflow) => {
+                workflow.execute(execution_context, WorkflowInput).await?;
             }
             TaskType::LoopSequential(loop_sequential) => {
                 loop_sequential

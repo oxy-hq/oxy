@@ -81,7 +81,8 @@ impl Renderer {
     }
 
     pub fn render(&self, template: &str) -> Result<String, OnyxError> {
-        self.render_sync_internal(template, self.get_context())
+        let ctx = self.get_context();
+        self.render_sync_internal(template, ctx)
     }
 
     pub fn render_once(&mut self, template: &str, context: Value) -> Result<String, OnyxError> {
