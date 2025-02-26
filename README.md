@@ -1,11 +1,5 @@
 <p align="center"><img src="docs/readme-banner.png"/></p>
 
-<p align="center">
-  <a href="https://github.com/onyx-hq/onyx/actions/workflows/ci.yaml">
-    <img src="https://github.com/onyx-hq/onyx/actions/workflows/ci.yaml/badge.svg" alt="CI Status">
-  </a>
-</p>
-
 ## The framework for agentic analytics
 
 Onyx is an open-source framework for agentic analytics. It is declarative by design and written in Rust. Onyx is built with the following product principles in mind: open-source, performant, code-native, declarative, composable, and secure. 
