@@ -33,45 +33,45 @@ impl Theme {
     fn dark() -> Self {
         Theme {
             primary: Color::TrueColor {
-                r: 112,
-                g: 237,
-                b: 153,
-            }, // green
-            secondary: Color::TrueColor {
-                r: 97,
-                g: 154,
-                b: 234,
-            }, // blue
-            tertiary: Color::TrueColor {
-                r: 172,
-                g: 106,
-                b: 237,
-            }, // purple
-            success: Color::TrueColor {
-                r: 112,
-                g: 237,
-                b: 153,
-            }, // green
-            warning: Color::TrueColor {
-                r: 242,
-                g: 231,
+                r: 98,
+                g: 186,
                 b: 129,
-            }, // yellow
+            }, // muted green
+            secondary: Color::TrueColor {
+                r: 89,
+                g: 134,
+                b: 189,
+            }, // muted blue
+            tertiary: Color::TrueColor {
+                r: 147,
+                g: 108,
+                b: 184,
+            }, // muted purple
+            success: Color::TrueColor {
+                r: 98,
+                g: 186,
+                b: 129,
+            }, // muted green
+            warning: Color::TrueColor {
+                r: 189,
+                g: 179,
+                b: 112,
+            }, // muted yellow
             error: Color::TrueColor {
-                r: 234,
-                g: 106,
-                b: 109,
-            }, // red
+                r: 184,
+                g: 108,
+                b: 110,
+            }, // muted red
             info: Color::TrueColor {
-                r: 75,
-                g: 220,
-                b: 222,
-            }, // emerald
+                r: 82,
+                g: 172,
+                b: 173,
+            }, // muted emerald
             text: Color::TrueColor {
-                r: 246,
-                g: 246,
-                b: 245,
-            }, // white
+                r: 220,
+                g: 220,
+                b: 218,
+            }, // slightly muted white
         }
     }
 

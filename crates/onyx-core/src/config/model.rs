@@ -122,13 +122,21 @@ impl Default for AgentContextType {
 // #[garde(context(Config as ctx))]
 pub struct Defaults {
     #[garde(length(min = 1))]
-    #[garde(custom(|wh: &Option<String>, ctx: &ValidationContext| {
-        match wh {
+    #[garde(custom(|db: &Option<String>, ctx: &ValidationContext| {
+        match db {
             Some(database) => validate_database_exists(database.as_str(), ctx),
             None => Ok(()),
         }
     }))]
     pub database: Option<String>,
+    #[garde(length(min = 1))]
+    #[garde(custom(|ag: &Option<String>, ctx: &ValidationContext| {
+        match ag {
+            Some(agent) => validate_agent_exists(agent.as_str(), ctx),
+            None => Ok(()),
+        }
+    }))]
+    pub agent: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Validate, Clone, JsonSchema)]
