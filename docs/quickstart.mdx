@@ -33,32 +33,39 @@ Once you have your terminal set up, follow the steps below:
     ```
 
     Upon successful installation, you should see the message "Onyx has been installed successfully."
+
     <img class="rounded-md" src="/images/installation-success.jpeg" alt="installation successful" />
 
     <Info>
       For transparency, you can review the [installation script's source code](https://github.com/onyx-hq/onyx-public-releases/blob/main/install_onyx.sh).
     </Info>
-    <Accordion title="Verify Your Installation (Optional)">
 
+    <Accordion title="Verify Your Installation (Optional)">
       After the installation is complete, you may verify that it was successful by running:
+
       ```sh
       onyx --version
       ```
+
       and a configuration file is created at `~/.config/onyx/config.yml` by running:
+
       ```sh
       cat ~/.config/onyx/config.yml
       # should output something
       ```
     </Accordion>
-
   </Step>
+
   <Step title="Create a sample repository">
     In order to get started with a base agent set up, run the following command in an empty directory where you want to store your project:
+
     ```sh
     onyx init
     ```
+
     This command will generate the main onyx configuration file (located at `~/.config/onyx/config.yml`) as well as a sample agent file.
   </Step>
+
   <Step title="Connect onyx to OpenAI">
     For the model, we recommend using OpenAI's gpt-4o. For alternative models, please refer to our integration documentation, [here](/integrations/overview).
 
@@ -85,6 +92,5 @@ Congrats! You're ready to start using Onyx now.
     ```sh
     onyx --help
     ```
-
   </Accordion>
 </AccordionGroup>
