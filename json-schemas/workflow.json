@@ -39,7 +39,7 @@
         {
           "type": "object",
           "required": [
-            "eval_type"
+            "type"
           ],
           "properties": {
             "concurrency": {
@@ -47,12 +47,6 @@
               "type": "integer",
               "format": "uint",
               "minimum": 0.0
-            },
-            "eval_type": {
-              "type": "string",
-              "enum": [
-                "consistency"
-              ]
             },
             "model_ref": {
               "type": [
@@ -91,6 +85,12 @@
               "type": [
                 "string",
                 "null"
+              ]
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "consistency"
               ]
             }
           }

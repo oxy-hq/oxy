@@ -37,5 +37,5 @@ tools:
     database: local
 
 tests:
-  - eval_type: consistency
+  - type: consistency
     task_description: "how many users are there in the database?"

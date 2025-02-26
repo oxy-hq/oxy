@@ -26,4 +26,4 @@ tasks:
       - Analysis should only focus on the response types differentiation without further judgment.
 
 tests:
-  - eval_type: consistency
+  - type: consistency

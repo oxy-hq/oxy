@@ -39,5 +39,5 @@ tasks:
 
 tests:
   - name: consistency
-    eval_type: consistency
+    type: consistency
     task_description: "Display different table format"
