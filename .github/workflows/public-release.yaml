@@ -36,7 +36,7 @@ jobs:
           owner: ${{ github.repository_owner }}
           repositories: |
             onyx-public-releases
-            onyx
+            onyx-internal
       - name: Checkout Public Release repo
         uses: actions/checkout@v4
         with:
