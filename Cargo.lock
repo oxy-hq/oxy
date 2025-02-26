@@ -2895,7 +2895,7 @@ checksum = "a3d8a32ae18130a3c84dd492d4215c3d913c3b07c6b63c2eb3eb7ff1101ab7bf"
 
 [[package]]
 name = "entity"
-version = "0.2.6"
+version = "0.1.38"
 dependencies = [
  "sea-orm",
 ]
@@ -5417,7 +5417,7 @@ dependencies = [
 
 [[package]]
 name = "migration"
-version = "0.2.6"
+version = "0.1.38"
 dependencies = [
  "async-std",
  "sea-orm-migration",
@@ -6203,7 +6203,7 @@ dependencies = [
 
 [[package]]
 name = "onyx"
-version = "0.2.6"
+version = "0.1.38"
 dependencies = [
  "anyhow",
  "arrow",
@@ -6266,7 +6266,7 @@ dependencies = [
 
 [[package]]
 name = "onyx-desktop"
-version = "0.2.6"
+version = "0.1.38"
 dependencies = [
  "futures",
  "log",
@@ -6285,7 +6285,7 @@ dependencies = [
 
 [[package]]
 name = "onyx-py"
-version = "0.2.6"
+version = "0.1.38"
 dependencies = [
  "onyx",
  "pyo3",

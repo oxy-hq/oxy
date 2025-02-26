@@ -8,10 +8,7 @@ on:
       changes:
         value: ${{ jobs.changesets.outputs.changes }}
 
-permissions:
-  contents: write
-  actions: read
-  pull-requests: read
+permissions: read-all
 
 defaults:
   run:

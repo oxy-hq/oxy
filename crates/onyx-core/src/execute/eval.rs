@@ -413,14 +413,15 @@ impl Consistency {
         Metrics::Accuracy(accuracy)
     }
 }
+
 #[derive(Debug)]
 pub struct EvalReceiver {
-    quiet: bool,
+    verbose: bool,
 }
 
 impl EvalReceiver {
-    pub fn new(quiet: bool) -> Self {
-        EvalReceiver { quiet }
+    pub fn new(verbose: bool) -> Self {
+        EvalReceiver { verbose }
     }
 }
 
@@ -449,7 +450,7 @@ impl Handler for EvalReceiver {
                     "{}",
                     format!("✅Eval finished with metrics: {:?}", metrics).primary()
                 );
-                if !self.quiet {
+                if self.verbose {
                     let mut is_header_printed = false;
                     for record in records {
                         if record.score < 1.0 {
@@ -478,7 +479,7 @@ impl Handler for EvalReceiver {
     }
 }
 
-pub async fn run_eval(path: PathBuf, quiet: bool) -> Result<(), OnyxError> {
+pub async fn run_eval(path: PathBuf, verbose: bool) -> Result<(), OnyxError> {
     let config = load_config(None)?;
     let eval_inputs = match path.to_str().unwrap_or_default() {
         workflow_path if workflow_path.ends_with(".workflow.yml") => {
@@ -533,7 +534,7 @@ pub async fn run_eval(path: PathBuf, quiet: bool) -> Result<(), OnyxError> {
         config,
         Value::UNDEFINED,
         None,
-        EvalReceiver { quiet },
+        EvalReceiver { verbose },
     )
     .await?;
     Ok(())

@@ -133,8 +133,8 @@ pub struct RunArgs {
 #[derive(Parser, Debug)]
 pub struct TestArgs {
     file: String,
-    #[clap(long, short = 'q', default_value_t = false)]
-    quiet: bool,
+    #[clap(long, short = 'v')]
+    verbose: bool,
 }
 
 #[derive(Clone)]
@@ -507,7 +507,7 @@ pub async fn handle_test_command(test_args: TestArgs) -> Result<(), OnyxError> {
             file_path
         )));
     }
-    run_eval(file_path, test_args.quiet).await
+    run_eval(file_path, test_args.verbose).await
 }
 pub async fn start_server_and_web_app() {
     let server_task = tokio::spawn(async move {

@@ -1,5 +1,5 @@
 
-# yaml-language-server: $schema=https://raw.githubusercontent.com/onyx-hq/onyx/refs/heads/main/json-schemas/workflow.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/onyx-hq/onyx-public-releases/refs/heads/main/json-schemas/workflow.json
 
 name: orange_sales
 tasks:

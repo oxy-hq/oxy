@@ -6,61 +6,6 @@ All notable changes to this project will be documented in this file.
 
 
 
-
-
-## [0.2.6](https://github.com/onyx-hq/onyx-internal/compare/0.2.5...0.2.6) (2025-02-28)
-
-
-### <!-- 7 -->⚙️ Miscellaneous Tasks
-
-* release 0.2.6 ([287c407](https://github.com/onyx-hq/onyx-internal/commit/287c407d1869e747980fcf091b6efd52c80aa367))
-
-## [0.2.5](https://github.com/onyx-hq/onyx-internal/compare/0.2.4...0.2.5) (2025-02-28)
-
-
-### <!-- 7 -->⚙️ Miscellaneous Tasks
-
-* release 0.2.4 ([87205b0](https://github.com/onyx-hq/onyx-internal/commit/87205b0f972bac196d01bebe762372e5b32f1c77))
-
-## [0.2.4](https://github.com/onyx-hq/onyx-internal/compare/0.2.3...0.2.4) (2025-02-28)
-
-
-### <!-- 7 -->⚙️ Miscellaneous Tasks
-
-* release 0.2.4 ([1420779](https://github.com/onyx-hq/onyx-internal/commit/142077966cd20ad4038b4fe924b5de7024b57432))
-
-## [0.2.3](https://github.com/onyx-hq/onyx-internal/compare/0.2.2...0.2.3) (2025-02-27)
-
-
-### <!-- 7 -->⚙️ Miscellaneous Tasks
-
-* release 0.2.3 ([819fbc6](https://github.com/onyx-hq/onyx-internal/commit/819fbc62255a00e0feefbbe01486a5561e4f7740))
-
-## [0.2.2](https://github.com/onyx-hq/onyx-internal/compare/0.2.1...0.2.2) (2025-02-27)
-
-
-### <!-- 7 -->⚙️ Miscellaneous Tasks
-
-* release 0.2.2 ([2283d12](https://github.com/onyx-hq/onyx-internal/commit/2283d12daf74580619dde508d96b72a639ae654c))
-
-## [0.2.1](https://github.com/onyx-hq/onyx-internal/compare/0.2.0...0.2.1) (2025-02-27)
-
-
-### <!-- 7 -->⚙️ Miscellaneous Tasks
-
-* release 0.2.1 ([a7e51d0](https://github.com/onyx-hq/onyx-internal/commit/a7e51d0d2abbab301e55d34db12668edc46c344b))
-
-## [0.2.0](https://github.com/onyx-hq/onyx-internal/compare/0.1.38...0.2.0) (2025-02-27)
-
-
-### ⚠ BREAKING CHANGES
-
-* change naming of some primites (steps, warehouses -> tasks, databases) ([#401](https://github.com/onyx-hq/onyx-internal/issues/401))
-
-### <!-- 2 -->🚜 Refactor
-
-* change naming of some primites (steps, warehouses -&gt; tasks, databases) ([#401](https://github.com/onyx-hq/onyx-internal/issues/401)) ([7705d6f](https://github.com/onyx-hq/onyx-internal/commit/7705d6fb8f30b0c2b2cc26f3910b95aefec0e80d))
-
 ## [0.1.38](https://github.com/onyx-hq/onyx/compare/onyx-py-v0.1.38...onyx-py-0.1.38) (2025-02-20)
 
 
