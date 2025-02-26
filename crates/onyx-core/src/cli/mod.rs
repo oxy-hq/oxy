@@ -267,7 +267,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             }
         }
         Some(SubCommand::Init) => match init() {
-            Ok(_) => println!("{}", "Initialization complete".success()),
+            Ok(_) => println!("{}", "Initialization complete.".success()),
             Err(e) => eprintln!("{}", format!("Initialization failed: {}", e).error()),
         },
         Some(SubCommand::ListTables) => {
