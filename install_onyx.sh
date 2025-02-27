@@ -1,6 +1,6 @@
 #!/bin/bash
 
-REPO="onyx-hq/onyx-public-releases"
+REPO="onyx-hq/onyx"
 INSTALL_DIR="$HOME/.local/bin"
 
 # Ensure the install directory exists

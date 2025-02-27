@@ -1,86 +1,144 @@
-name: Public Release
+name: Release
 on:
   workflow_dispatch:
     inputs:
-      ref:
-        description: "private version to release"
+      tag:
+        description: "Tag or branch to release"
         required: true
-        default: latest
+        default: ""
+env:
+  CARGO_TERM_COLOR: always
+  MACOSX_DEPLOYMENT_TARGET: "11.0"
 
 defaults:
   run:
     shell: bash
 
+permissions:
+  contents: write
+  actions: read
+
 jobs:
-  public-release:
-    runs-on: ubuntu-latest
+  build-cli:
+    concurrency:
+      group: onyx-build-cli-${{ inputs.tag }}-${{ matrix.job.os }}-${{ matrix.job.target }}
+      cancel-in-progress: true
+    name: Build CLI version ${{ inputs.tag }} for target ${{ matrix.job.target }}
+    runs-on: ${{ matrix.job.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        job:
+          - os: macos-13
+            target: x86_64-apple-darwin
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
     steps:
-      - name: Declare release tag
-        env:
-          GH_TOKEN: ${{ github.token }}
-        id: declare-release-tag
-        run: |
-          if [ "${{ inputs.ref }}" = "latest" ]; then
-            echo "no ref provided, finding latest tag"
-            latest_tag=$(gh api "/repos/${{ github.repository }}/releases/latest" --jq .tag_name)
-            echo "release-tag=${latest_tag}" >> $GITHUB_OUTPUT
-          else
-            echo "release-tag=${{ inputs.ref }}" >> $GITHUB_OUTPUT
-          fi
-      - uses: actions/create-github-app-token@v1
-        name: Create GitHub App Token
-        id: app-token
-        with:
-          app-id: ${{ vars.ARGO_APP_ID }}
-          private-key: ${{ secrets.ARGO_APP_PRIVATE_KEY }}
-          owner: ${{ github.repository_owner }}
-          repositories: |
-            onyx-public-releases
-            onyx-internal
-      - name: Checkout Public Release repo
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          repository: onyx-hq/onyx-public-releases
-          token: ${{ steps.app-token.outputs.token }}
-      - name: Download release assets from GitHub
-        uses: robinraju/release-downloader@v1
+          fetch-depth: 0
+          ref: ${{ inputs.tag }}
+
+      #-- Create common artifacts folder
+      - name: Create artifacts folder
+        run: mkdir -p artifacts
+
+      #-- Prep rust
+      - name: Prep Rust
+        uses: dtolnay/rust-toolchain@stable
         with:
-          preRelease: false
-          tag: ${{ steps.declare-release-tag.outputs.release-tag }}
-          zipBall: false
-          token: ${{ steps.app-token.outputs.token }}
-          fileName: "*"
-          extract: false
-          out-file-path: release-assets
-      - name: Get GitHub App User ID
-        id: get-user-id
-        run: echo "user-id=$(gh api "/users/${{ steps.app-token.outputs.app-slug }}[bot]" --jq .id)" >> "$GITHUB_OUTPUT"
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-      - name: Tag the release
+          targets: ${{ matrix.job.target }}
+      - name: Prep cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: build-cli-${{ matrix.job.os }}-${{ matrix.job.target }}
+          cache-all-crates: "true"
+      # protobuf is required by lance https://github.com/lancedb/lance/issues/3073
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      #-- Build onyx cli binary
+      - name: Build onyx cli
+        shell: bash
         run: |
-          git config --global user.name '${{ steps.app-token.outputs.app-slug }}[bot]'
-          git config --global user.email '${{ steps.get-user-id.outputs.user-id }}+${{ steps.app-token.outputs.app-slug }}[bot]@users.noreply.github.com>'
-          git tag -a ${{ steps.declare-release-tag.outputs.release-tag }} -m "Release ${{ steps.declare-release-tag.outputs.release-tag }}"
-          git push --force origin ${{ steps.declare-release-tag.outputs.release-tag }}
-      - name: Public github release
+          cargo build --release --target ${{ matrix.job.target }}
+          mv target/${{ matrix.job.target }}/release/onyx artifacts/onyx-${{ matrix.job.target }}
+
+      #-- Build json schema
+      - name: Generate config schema (once)
+        if: ${{ matrix.job.target == 'aarch64-apple-darwin' }}
+        run: |
+          cargo run --release --target ${{ matrix.job.target }} -- gen-config-schema
+          cp -a json-schemas/. artifacts/
+          cp Cargo.lock artifacts/
+
+      #-- Build checksum
+      - name: Create binary checksum
+        run: shasum --algorithm 256 --binary onyx-${{ matrix.job.target }} | tee SHA256SUM-onyx-${{ matrix.job.target }}.txt
+        working-directory: artifacts
+
+      #-- Build python lib
+      - name: Set up Python 3.11
+        id: setup-python
+        uses: actions/setup-python@v5
+        with:
+          python-version: 3.11
+          cache: "pip"
+      - name: Build wheels
+        uses: PyO3/maturin-action@v1
+        with:
+          command: build
+          target: ${{ matrix.job.target }}
+          args: --release --out dist
+          sccache: "true"
+          # manylinux: auto
+          container: off
+          working-directory: crates/onyx-py
+      - name: Move wheels
+        run: mv crates/onyx-py/dist/* artifacts/
+
+      - name: Copy changelog (once)
+        if: ${{ matrix.job.target == 'aarch64-apple-darwin' }}
+        run: cp crates/onyx-core/CHANGELOG.md artifacts/
+
+      #-- Upload release artifacts
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: cli-${{ matrix.job.target }}
+          path: |
+            artifacts/**/*
+          if-no-files-found: error
+          retention-days: 1
+
+  release:
+    runs-on: ubuntu-latest
+    needs: [build-cli]
+    steps:
+      - name: Download release assets from artifact
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: List all artifacts
+        run: ls -R ./artifacts
+      - name: Combine checksums
+        run: cat artifacts/SHA256SUM-onyx-*.txt | tee artifacts/SHA256SUMS.txt
+      - name: Ensure binaries are executable
+        run: chmod +x artifacts/onyx-*
+      - name: Get current time
+        id: time
+        run: echo "current_time=$(date -u +'-%Y%m%d-%H%M%S')" >> $GITHUB_OUTPUT
+      - name: Upload files to github release
         uses: softprops/action-gh-release@v2
         with:
           draft: true
-          tag_name: ${{ steps.declare-release-tag.outputs.release-tag }}
-          repository: onyx-hq/onyx-public-releases
+          prerelease: true
+          tag_name: ${{ inputs.tag }}
           files: |
-            release-assets/*
-          body_path: release-assets/CHANGELOG.md
-        env:
-          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
-      - name: Upload json schemas
-        run: |
-          mv release-assets/*.json json-schemas/
-          if [ -n "$(git status json-schemas/*.json --porcelain)" ]; then
-            git add json-schemas/*.json
-            git commit -m "chore: update json schemas"
-            git push origin HEAD
-          else
-            echo "No changes to commit"
-          fi
+            artifacts/**/*
