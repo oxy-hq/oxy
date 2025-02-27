@@ -8,6 +8,13 @@ All notable changes to this project will be documented in this file.
 
 
 
+## [0.2.3](https://github.com/onyx-hq/onyx-internal/compare/0.2.2...0.2.3) (2025-02-27)
+
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+* release 0.2.3 ([819fbc6](https://github.com/onyx-hq/onyx-internal/commit/819fbc62255a00e0feefbbe01486a5561e4f7740))
+
 ## [0.2.2](https://github.com/onyx-hq/onyx-internal/compare/0.2.1...0.2.2) (2025-02-27)
 
 
