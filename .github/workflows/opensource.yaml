@@ -42,6 +42,8 @@ jobs:
         with:
           ssh_key: ${{ secrets.ONYX_SSH_KEY }}
           access_token: ${{ steps.app-token.outputs.token }}
+          sot_branch: ${{ github.ref_name }}
+          destination_branch: ${{ github.ref_name }}
           sot_repo: onyx-hq/onyx-internal
           destination_repo: onyx-hq/onyx
           push_exclude: >-
