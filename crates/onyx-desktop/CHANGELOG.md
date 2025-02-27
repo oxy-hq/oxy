@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 
 
+## [0.1.39](https://github.com/onyx-hq/onyx-internal/compare/0.1.38...0.1.39) (2025-02-27)
+
+
+### <!-- 0 -->🚀 Features
+
+* [#308](https://github.com/onyx-hq/onyx-internal/issues/308) Render Agent yaml config to desktop app UI ([#372](https://github.com/onyx-hq/onyx-internal/issues/372)) ([b171dbb](https://github.com/onyx-hq/onyx-internal/commit/b171dbbd5333efb9100f0c18f69e1f7d16b49e5a))
+
 ## [0.1.38](https://github.com/onyx-hq/onyx/compare/onyx-desktop-v0.1.38...onyx-desktop-0.1.38) (2025-02-20)
 
 

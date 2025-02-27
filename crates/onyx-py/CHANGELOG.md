@@ -6,6 +6,17 @@ All notable changes to this project will be documented in this file.
 
 
 
+## [0.2.0](https://github.com/onyx-hq/onyx-internal/compare/0.1.38...0.2.0) (2025-02-27)
+
+
+### ⚠ BREAKING CHANGES
+
+* change naming of some primites (steps, warehouses -> tasks, databases) ([#401](https://github.com/onyx-hq/onyx-internal/issues/401))
+
+### <!-- 2 -->🚜 Refactor
+
+* change naming of some primites (steps, warehouses -&gt; tasks, databases) ([#401](https://github.com/onyx-hq/onyx-internal/issues/401)) ([7705d6f](https://github.com/onyx-hq/onyx-internal/commit/7705d6fb8f30b0c2b2cc26f3910b95aefec0e80d))
+
 ## [0.1.38](https://github.com/onyx-hq/onyx/compare/onyx-py-v0.1.38...onyx-py-0.1.38) (2025-02-20)
 
 
