@@ -20,8 +20,8 @@ jobs:
     name: Release-please
     runs-on: ubuntu-latest
     outputs:
-      release-created: ${{ steps.release-please.outputs.release-created }}
-      release-version: ${{ steps.release-please.outputs.major }}.${{ steps.release-please.outputs.minor }}.${{ steps.release-please.outputs.patch }}
+      release_created: ${{ steps.release-please.outputs.release_created }}
+      release_version: ${{ steps.release-please.outputs.major }}.${{ steps.release-please.outputs.minor }}.${{ steps.release-please.outputs.patch }}
     steps:
       - uses: actions/create-github-app-token@v1
         name: Create GitHub App Token
@@ -46,7 +46,7 @@ jobs:
 
   release-public:
     needs: [release-private]
-    if: needs.release-private.outputs.release-created == 'true'
+    if: needs.release-private.outputs.release_created == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/create-github-app-token@v1
@@ -84,5 +84,5 @@ jobs:
         run: |
           git config --global user.name "${{ steps.app-token.outputs.app-slug }}[bot]"
           git config --global user.email "${{ steps.get-user-id.outputs.user-id }}+${{ steps.app-token.outputs.app-slug }}[bot]@users.noreply.github.com"
-          git tag ${{ needs.release-private.outputs.release-version }}
-          git push origin ${{ needs.release-private.outputs.release-version }}
+          git tag ${{ needs.release-private.outputs.release_version }}
+          git push origin ${{ needs.release-private.outputs.release_version }}
