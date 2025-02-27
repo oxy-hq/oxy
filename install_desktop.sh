@@ -4,7 +4,7 @@ set -e
 
 APP_NAME="onyx"
 INSTALL_DIR="$HOME/.local/bin"
-REPO="onyx-hq/onyx-public-releases"
+REPO="onyx-hq/onyx"
 
 # Get the version to install from the environment, default to the latest release tag if not provided
 VERSION=${ONYX_VERSION:-latest}

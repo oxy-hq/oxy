@@ -23,6 +23,10 @@ defaults:
   run:
     shell: bash
 
+permissions:
+  contents: write
+  actions: read
+
 jobs:
   build-tauri:
     concurrency:

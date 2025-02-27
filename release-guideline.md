@@ -44,7 +44,7 @@ The duties of the release manager include:
 - The release manager retests the release and verifies that the issues have been resolved
   **Public release**:
 - The release manager will trigger the [public release workflow](https://github.com/onyx-hq/onyx/actions/workflows/public-release.yaml) by clicking on "Run workflow" in the Actions tab
-- After the public release workflow has completed, the release manager will verify that the release has been successfully deployed by visiting [onyx-public-releases](https://github.com/onyx-hq/onyx-public-releases/releases)
+- After the public release workflow has completed, the release manager will verify that the release has been successfully deployed by visiting [onyx-public-releases](https://github.com/onyx-hq/onyx/releases)
 - A new release should be ready there and marked as `draft`. The release manager will verify that the release notes and assets are correct and then publish the release by editing the release and clicking on "Publish release"
 
 ## Test plan
