@@ -3,6 +3,9 @@ name: Branches Cleaner
 on:
   schedule:
     - cron: "0 0 * * *"
+permissions:
+  contents: write
+  actions: read
 
 jobs:
   cleanup-branches:
