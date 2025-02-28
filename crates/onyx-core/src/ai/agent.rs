@@ -181,7 +181,7 @@ impl OpenAIAgent {
                     );
                 }
             }
-            OnyxError::RuntimeError(format!("Error in completion request: {}", e))
+            OnyxError::RuntimeError(format!("Error in completion request: {:?}", e))
         })?;
 
         Ok(response.choices[0].message.clone())

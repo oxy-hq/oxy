@@ -159,7 +159,6 @@ pub async fn run_agent(
     let (agent, agent_config, global_context) =
         build_agent(agent_file, file_format, prompt.clone(), config)?;
 
-    println!("run_agent:");
     let output = run(
         &agent,
         AgentInput {
