@@ -20,8 +20,8 @@ jobs:
     name: Release-please
     runs-on: ubuntu-latest
     outputs:
-      release_created: ${{ steps.release-please.outputs.release_created }}
-      release_version: ${{ steps.release-please.outputs.major }}.${{ steps.release-please.outputs.minor }}.${{ steps.release-please.outputs.patch }}
+      release_created: ${{ steps.release-please.outputs['crates/onyx-core--release_created'] }}
+      release_version: ${{ steps.release-please.outputs['crates/onyx-core--major'] }}.${{ steps.release-please.outputs['crates/onyx-core--minor'] }}.${{ steps.release-please.outputs['crates/onyx-core--patch'] }}
     steps:
       - uses: actions/create-github-app-token@v1
         name: Create GitHub App Token
@@ -67,7 +67,7 @@ jobs:
         uses: lewagon/wait-on-check-action@v1.3.4
         with:
           ref: ${{ github.ref }}
-          check-name: 'Open source onyx'
+          check-name: "Open source onyx"
           repo-token: ${{ steps.app-token.outputs.token }}
           wait-interval: 20
       - name: Checkout oss repository
