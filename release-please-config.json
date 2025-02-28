@@ -1,4 +1,5 @@
 {
+  "commit-search-depth": "1000",
   "packages": {
     "crates/onyx-core": {
       "release-type": "rust",
