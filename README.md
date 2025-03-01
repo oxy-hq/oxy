@@ -5,7 +5,7 @@
 Onyx is an open-source framework for agentic analytics. It is declarative by design and written in Rust. Onyx is built with the following product principles in mind: open-source, performant, code-native, declarative, composable, and secure.
 
 Agentic analytics applies software development lifecycle principles to AI-driven data analytics.
-Just as traditional software follows a build-test-deploy pipeline, agentic analytics establishes a structured workflow for data agents, involving agent creation, prompt testing, and production deployment.  
+Just as traditional software follows a build-test-deploy pipeline, agentic analytics establishes a structured workflow for data agents, involving agent creation, prompt testing, and production deployment.
 
 To learn more, read our [docs](https://docs.onyxint.ai).
 
@@ -23,10 +23,14 @@ And to initialize a repo, run the following in the directory you want to instant
 onyx init
 ```
 
-At this point, you should have a rudimentary onyx instance set up. To test this out, you can run the following from the root of the directory:
+At this point, you should have a rudimentary onyx instance set up. To test this out, you can run the following commands from the root of the directory:
 
 ```bash
-onyx run sql-generator.agent.yml "what is the capital of France?"
+onyx run sql-generator.agent.yml "On how many nights did I get good sleep in the last year?"  # ask a question to the sample agent
+onyx test sql-generator.agent.yml  # runs all defined tests against the sql-generator agent
+
+onyx run report-generator.workflow.yml  # execute the sample workflow
+onyx test report-generator.workflow.yml  # run all defined tests against the workflow
 ```
 
 See our [docs](https://docs.onyxint.ai) on how to modify the agent file, seed it with context, run tests, and create workflows.

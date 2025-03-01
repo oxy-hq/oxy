@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/onyx-hq/onyx-public-releases/refs/heads/main/json-schemas/config.json
+defaults:
+  database: local
+  agent: sql-generator.agent.yml
+models:
+- vendor: openai
+  name: openai-4o
+  model_ref: gpt-4o
+  key_var: OPENAI_API_KEY
+  api_url: https://api.openai.com/v1
+  azure_deployment_id: null
+  azure_api_version: null
+databases:
+- name: local
+  dataset: .db/
+  type: duckdb

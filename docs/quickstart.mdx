@@ -63,7 +63,8 @@ Once you have your terminal set up, follow the steps below:
     onyx init
     ```
 
-    This command will generate the main onyx configuration file (located at `~/.config/onyx/config.yml`) as well as a sample agent file.
+    This command will generate the main onyx configuration file (located at `~/.config/onyx/config.yml`), a sample agent file, a sample workflow file, some data, and a sample semantic layer file.
+    If you use all the configuration defaults, you should be able to run the agent and workflow against the sample data out-of-the-box.
   </Step>
 
   <Step title="Connect onyx to OpenAI">
@@ -75,22 +76,13 @@ Once you have your terminal set up, follow the steps below:
 
 ### All Done
 
-Congrats! You're ready to start using Onyx now.
+Congrats! You're ready to start using Onyx now. If you haven't changed the configuration defaults, you should be able to run the following commands to test out onyx against some sample sleep data:
 
-<AccordionGroup>
-  <Accordion title="Using the CLI (Recommended)">
-    You can use the `run` subcommand to ask questions to your agents:
+```bash
+onyx run sql-generator.agent.yml "On how many nights did I get good sleep in the last year?"  # ask a question to the sample agent
+onyx test sql-generator.agent.yml  # runs all defined tests against the sql-generator agent
 
-    ```sh
-    onyx run path/to/sql-generator.agent.yml "Who is the most engaged customer?"
-    ```
+onyx run report-generator.workflow.yml  # execute the sample workflow
+onyx test report-generator.workflow.yml  # run all defined tests against the workflow
+```
 
-    and receive a response from your agents. There are other subcommands you can
-    use to interact with your agents, and you can explore them by
-    running:
-
-    ```sh
-    onyx --help
-    ```
-  </Accordion>
-</AccordionGroup>
