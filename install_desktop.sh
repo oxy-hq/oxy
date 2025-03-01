@@ -80,7 +80,12 @@ esac
 
 # Download the app package
 echo "Downloading $PACKAGE..."
-RELEASE_URL="https://github.com/$REPO/releases/download/$VERSION"
+if [ "$VERSION" == "latest" ]; then
+    RELEASE_URL="https://github.com/$REPO/releases/latest/download"
+else
+    RELEASE_URL="https://github.com/$REPO/releases/download/$VERSION"
+fi
+
 curl -L -o "$PACKAGE" "$RELEASE_URL/$PACKAGE"
 
 # Handle macOS DMG file
