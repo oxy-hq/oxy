@@ -61,7 +61,7 @@ fn init_logging() -> Result<(), fern::InitError> {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     setup_panic!(Metadata::new(env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"))
         .authors("Robert Yi <robert@onyxint.ai>") // temporarily using Robert email here, TODO: replace by support email
-        .homepage("github.com/onyx-hq/onyx-public-releases")
+        .homepage("github.com/onyx-hq/onyx")
         .support("- For support, please email robert@onyxint.ai or contact us directly via Slack if you have access to a shared channel.")
     );
     init_logging()?;
