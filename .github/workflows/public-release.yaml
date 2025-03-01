@@ -6,6 +6,11 @@ on:
         description: "Tag or branch to release"
         required: true
         default: ""
+  push:
+    tags:
+      - "[0-9]+.[0-9]+.[0-9]+"
+    paths-ignore:
+      - "docs/**"
 env:
   CARGO_TERM_COLOR: always
   MACOSX_DEPLOYMENT_TARGET: "11.0"
@@ -143,7 +148,7 @@ jobs:
       - name: Upload files to github release
         uses: softprops/action-gh-release@v2
         with:
-          draft: true
+          draft: false
           prerelease: true
           tag_name: ${{ inputs.tag }}
           body_path: CHANGELOG.md
