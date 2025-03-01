@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/onyx-hq/onyx-internal/compare/0.1.0...0.1.1) (2025-03-01)
+
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+* release 0.1.1 ([7f760a5](https://github.com/onyx-hq/onyx-internal/commit/7f760a5294f0896bc3295c7ec66a502131e3b5e5))
+
 ## [0.1.0](https://github.com/onyx-hq/onyx-internal/compare/v0.1.0...0.1.0) (2025-02-28)
 
 
