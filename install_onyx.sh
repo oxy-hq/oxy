@@ -55,7 +55,12 @@ aarch64 | arm64)
 esac
 
 # Download the release binary
-BINARY_URL="https://github.com/$REPO/releases/download/$VERSION/onyx-$TARGET"
+if [ "$VERSION" == "latest" ]; then
+	BINARY_URL="https://github.com/$REPO/releases/latest/download/onyx-$TARGET"
+else
+	BINARY_URL="https://github.com/$REPO/releases/download/$VERSION/onyx-$TARGET"
+fi
+
 curl -L $BINARY_URL -o onyx-$TARGET
 
 # Make the binary executable
