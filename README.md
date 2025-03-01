@@ -17,6 +17,29 @@ To install Onyx from binary, run the following command (Mac, Linux, WSL):
 bash <(curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/onyx-hq/onyx/refs/heads/main/install_onyx.sh)
 ```
 
+<details>
+<summary>Alternative Installation Methods</summary>
+
+#### Using Homebrew (macOS only)
+
+```bash
+brew install onyx-hq/onyx/onyx
+```
+
+#### Installing a Specific Version
+
+```bash
+ONYX_VERSION="0.1.0" bash <(curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/onyx-hq/onyx/refs/heads/main/install_onyx.sh)
+```
+
+</details>
+
+To verify the installation, run:
+
+```bash
+onyx --version
+```
+
 And to initialize a repo, run the following in the directory you want to instantiate as an onyx repository:
 
 ```bash
