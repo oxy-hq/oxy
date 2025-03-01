@@ -1,0 +1,92 @@
+table: "sleeps.csv"
+database: "local"
+description: |
+  "Sleep cycle metrics capturing detailed sleep patterns, phases, and quality indicators."
+
+entities: []
+dimensions:
+  - name: "Cycle start time"
+    description: "Timestamp when the sleep cycle recording began."
+    sample:
+      - "2025-02-03 22:33:01"
+  - name: "Cycle end time"
+    description: "Timestamp when the sleep cycle recording ended."
+    sample:
+      - ""
+  - name: "Cycle timezone"
+    description: "Timezone offset from UTC for the recorded sleep cycle."
+    sample:
+      - "UTC-08:00"
+  - name: "Sleep onset"
+    description: "Timestamp when the person fell asleep."
+    sample:
+      - "2025-02-03 22:33:01"
+  - name: "Wake onset"
+    description: "Timestamp when the person woke up."
+    sample:
+      - "2025-02-04 06:47:48"
+  - name: "Nap"
+    description: "Boolean indicating whether this sleep period was classified as a nap."
+    sample:
+      - "false"
+measures:
+  - name: "Sleep performance %"
+    description: "Overall quality score of the sleep cycle as a percentage."
+    sql: "Sleep performance %"
+    sample:
+      - "77"
+  - name: "Respiratory rate (rpm)"
+    description: "Average respiratory rate during sleep in breaths per minute."
+    sql: "Respiratory rate (rpm)"
+    sample:
+      - "15.9"
+  - name: "Asleep duration (min)"
+    description: "Total time spent asleep in minutes."
+    sql: "Asleep duration (min)"
+    sample:
+      - "425"
+  - name: "In bed duration (min)"
+    description: "Total time spent in bed in minutes."
+    sql: "In bed duration (min)"
+    sample:
+      - "487"
+  - name: "Light sleep duration (min)"
+    description: "Time spent in light sleep phase in minutes."
+    sql: "Light sleep duration (min)"
+    sample:
+      - "259"
+  - name: "Deep (SWS) duration (min)"
+    description: "Time spent in deep sleep (slow-wave sleep) phase in minutes."
+    sql: "Deep (SWS) duration (min)"
+    sample:
+      - "99"
+  - name: "REM duration (min)"
+    description: "Time spent in REM sleep phase in minutes."
+    sql: "REM duration (min)"
+    sample:
+      - "67"
+  - name: "Awake duration (min)"
+    description: "Time spent awake during the sleep cycle in minutes."
+    sql: "Awake duration (min)"
+    sample:
+      - "62"
+  - name: "Sleep need (min)"
+    description: "Estimated amount of sleep needed in minutes."
+    sql: "Sleep need (min)"
+    sample:
+      - "554"
+  - name: "Sleep debt (min)"
+    description: "Accumulated sleep deficit in minutes."
+    sql: "Sleep debt (min)"
+    sample:
+      - "56"
+  - name: "Sleep efficiency %"
+    description: "Percentage of time in bed that was spent asleep."
+    sql: "Sleep efficiency %"
+    sample:
+      - "87"
+  - name: "Sleep consistency %"
+    description: "Consistency of sleep schedule as a percentage."
+    sql: "Sleep consistency %"
+    sample:
+      - "93"
