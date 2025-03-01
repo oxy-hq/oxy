@@ -131,14 +131,20 @@ jobs:
         run: cat artifacts/SHA256SUM-onyx-*.txt | tee artifacts/SHA256SUMS.txt
       - name: Ensure binaries are executable
         run: chmod +x artifacts/onyx-*
-      - name: Get current time
-        id: time
-        run: echo "current_time=$(date -u +'-%Y%m%d-%H%M%S')" >> $GITHUB_OUTPUT
+
+      - name: Generate release notes
+        run: |
+          echo "# Changelog" > CHANGELOG.md
+          awk '/^## \[/{flag=0} /^## \[${{ inputs.tag }}\]/{flag=1} flag' artifacts/CHANGELOG.md >> CHANGELOG.md
+          echo "" >> CHANGELOG.md
+          echo "## Checksums" >> CHANGELOG.md
+          cat artifacts/SHA256SUMS.txt >> CHANGELOG.md
+
       - name: Upload files to github release
         uses: softprops/action-gh-release@v2
         with:
           draft: true
           prerelease: true
           tag_name: ${{ inputs.tag }}
-          files: |
-            artifacts/**/*
+          body_path: CHANGELOG.md
+          files: artifacts/**/*
