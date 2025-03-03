@@ -61,15 +61,9 @@ fn collect_databases() -> Result<Vec<Database>, InitError> {
     loop {
         let name = prompt_with_default("Name", "local", None)?;
         let database_type = choose_database_type()?;
-
         let database = Database {
-            name: name.clone(),
+            name,
             database_type,
-            dataset: prompt_with_default(
-                "Dataset",
-                ".db/",
-                Some("(For duckdb, enter the directory where your files are located.\n  For other warehouses, this is the schema.)"),
-            )?,
         };
 
         databases.push(database);
@@ -90,10 +84,19 @@ fn choose_database_type() -> Result<DatabaseType, InitError> {
     loop {
         let choice = prompt_with_default("Type (1 or 2)", "1", None)?;
         match choice.trim() {
-            "1" => return Ok(DatabaseType::DuckDB(DuckDB {})),
+            "1" => {
+                return Ok(DatabaseType::DuckDB(DuckDB {
+                    file_search_path: prompt_with_default(
+                        "File search path",
+                        ".db/",
+                        Some("Enter the directory where your files are located."),
+                    )?,
+                }))
+            }
             "2" => {
                 return Ok(DatabaseType::Bigquery(BigQuery {
                     key_path: PathBuf::from(prompt_with_default("Key path", "bigquery.key", None)?),
+                    dataset: prompt_with_default("Dataset", "bigquery-public-data", None)?,
                 }))
             }
             _ => println!("  Invalid choice. Please enter 1 or 2."),

@@ -9,7 +9,7 @@ tasks:
       Use the {{"{{grouping_value}}"}} as a parameter.
     agent_ref: agents/sql.agent.yml
     cache:
-      enabled: false
+      enabled: true
       path: output/cache/groupings_query.sql
 
   - name: property_grouping
@@ -37,7 +37,7 @@ tasks:
           {{execute_sql}}
           [END DATA]
         cache:
-          enabled: false
+          enabled: true
           path: output/cache/groupings_{{groupings.value}}_report.json
 
   - name: grouping_reports

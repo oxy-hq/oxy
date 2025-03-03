@@ -3,6 +3,9 @@ pub mod model;
 mod parser;
 pub mod validate;
 use garde::Validate;
+mod builder;
+mod manager;
+mod storage;
 
 use anyhow;
 use model::{AgentConfig, Config, Database, Model, SemanticModels, Workflow};
@@ -14,6 +17,9 @@ use std::{fs, io};
 use validate::ValidationContext;
 
 use crate::{errors::OnyxError, utils::find_project_path};
+
+pub use builder::ConfigBuilder;
+pub use manager::ConfigManager;
 
 // These are settings stored as strings derived from the config.yml file's defaults section
 #[derive(Debug, Deserialize)]

@@ -10,10 +10,11 @@ use tqdm::pbar;
 use crate::{
     ai::setup_eval_agent,
     config::{
-        load_config,
         model::{Consistency, Eval, FileFormat, Task, TaskType, Workflow},
+        ConfigBuilder,
     },
     errors::OnyxError,
+    utils::find_project_path,
     workflow::executor::WorkflowExecutor,
     StyledText,
 };
@@ -201,14 +202,14 @@ impl Executable<(), EvalEvent> for TargetAgent {
             ));
         }
         let config = execution_context.config.clone();
-        let agent_file = config.project_path.join(&self.agent_ref);
         let mut agent_executor = execution_context.child_executor();
         let (agent, agent_config, global_context) = build_agent(
-            Some(&agent_file),
+            &self.agent_ref,
             &FileFormat::Json,
             self.input.prompt.clone(),
-            &config,
-        )?;
+            config,
+        )
+        .await?;
 
         let map_event = EvalEvent::Agent;
         agent_executor
@@ -302,7 +303,7 @@ impl Executable<Target, EvalEvent> for Consistency {
         log::info!("Outputs: {:?}", outputs);
 
         let model_ref = match &self.model_ref {
-            Some(model_ref) => model_ref.to_string(),
+            Some(model_ref) => model_ref,
             None => match execution_context.config.default_model() {
                 Some(model_ref) => model_ref,
                 None => {
@@ -312,7 +313,7 @@ impl Executable<Target, EvalEvent> for Consistency {
                 }
             },
         };
-        let agent = setup_eval_agent(&self.prompt, &model_ref)?;
+        let agent = setup_eval_agent(&self.prompt, model_ref)?;
         let agent_ref = &agent;
         let task_description = match &self.task_description {
             Some(task_description) => task_description.to_string(),
@@ -479,13 +480,13 @@ impl Handler for EvalReceiver {
 }
 
 pub async fn run_eval(path: PathBuf, quiet: bool) -> Result<(), OnyxError> {
-    let config = load_config(None)?;
+    let config = ConfigBuilder::new()
+        .with_project_path(find_project_path()?)?
+        .build()
+        .await?;
     let eval_inputs = match path.to_str().unwrap_or_default() {
         workflow_path if workflow_path.ends_with(".workflow.yml") => {
-            let workflow = config.load_workflow(&path)?;
-            config.validate_workflow(&workflow).map_err(|e| {
-                OnyxError::ConfigurationError(format!("Invalid workflow configuration: {}", e))
-            })?;
+            let workflow = config.resolve_workflow(&path).await?;
             workflow
                 .tests
                 .clone()
@@ -500,7 +501,7 @@ pub async fn run_eval(path: PathBuf, quiet: bool) -> Result<(), OnyxError> {
                 .collect::<Vec<_>>()
         }
         agent_path if agent_path.ends_with(".agent.yml") => {
-            let (agent, _) = config.load_agent_config(Some(&path))?;
+            let agent = config.resolve_agent(&path).await?;
             agent
                 .tests
                 .clone()
@@ -530,7 +531,7 @@ pub async fn run_eval(path: PathBuf, quiet: bool) -> Result<(), OnyxError> {
     run(
         &executor,
         eval_inputs,
-        config,
+        Arc::new(config),
         Value::UNDEFINED,
         None,
         EvalReceiver { quiet },

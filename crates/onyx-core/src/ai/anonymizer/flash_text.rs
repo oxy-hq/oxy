@@ -7,10 +7,7 @@ use std::{
 use pluralizer::pluralize;
 use slugify::slugify;
 
-use crate::{
-    config::model::{Config, FlashTextSourceType},
-    errors::OnyxError,
-};
+use crate::{config::model::FlashTextSourceType, errors::OnyxError};
 
 use super::base::Anonymizer;
 
@@ -55,27 +52,23 @@ impl TrieNode {
 pub struct FlashTextAnonymizer {
     root: TrieNode,
     pluralize: bool,
-    config: Config,
 }
 
 impl FlashTextAnonymizer {
-    pub fn new(pluralize: &bool, case_sensitive: &bool, config: &Config) -> Self {
+    pub fn new(pluralize: &bool, case_sensitive: &bool) -> Self {
         FlashTextAnonymizer {
             root: TrieNode::new(*case_sensitive),
             pluralize: *pluralize,
-            config: config.clone(),
         }
     }
 
-    pub fn add_keywords_file(&mut self, source: &FlashTextSourceType) -> anyhow::Result<()> {
-        let path = match source {
-            FlashTextSourceType::Keywords { keywords_file, .. } => keywords_file,
-            FlashTextSourceType::Mapping { mapping_file, .. } => mapping_file,
-        };
-        let resolved_path = self.config.project_path.join(path);
-        let file = File::open(&resolved_path).map_err(|err| {
-            anyhow::anyhow!("Failed to open file: {:?}. Error:\n{}", &resolved_path, err)
-        })?;
+    pub fn add_keywords_file(
+        &mut self,
+        source: &FlashTextSourceType,
+        path: &str,
+    ) -> anyhow::Result<()> {
+        let file = File::open(path)
+            .map_err(|err| anyhow::anyhow!("Failed to open file: {:?}. Error:\n{}", path, err))?;
         io::BufReader::new(file)
             .lines()
             .try_for_each(|raw| -> anyhow::Result<()> {
@@ -128,9 +121,7 @@ impl FlashTextAnonymizer {
         let mut result = String::new();
         let mut ch_indices = internal_text.char_indices();
         let mut start = 0;
-
         let mut items: HashMap<String, String> = items.unwrap_or_default();
-        let mut idx = 0;
 
         while let Some((match_start, ch)) = ch_indices.next() {
             if let Some(base_replacement) = self.traverse_trie(ch, &mut ch_indices) {
@@ -150,7 +141,6 @@ impl FlashTextAnonymizer {
                     }
                     None => {
                         items.insert(rep.to_string(), item_value);
-                        idx += 1;
                     }
                 }
 

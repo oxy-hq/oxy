@@ -47,31 +47,6 @@ pub fn format_table_output(table: &str, truncated: bool) -> String {
     }
 }
 
-pub fn expand_globs(paths: &Vec<String>, cwd: PathBuf) -> anyhow::Result<Vec<String>> {
-    let mut expanded_paths = Vec::new();
-    for path in paths {
-        let path = cwd.join(path);
-        let pattern = path.to_str().unwrap();
-        let glob = glob::glob(pattern).map_err(|err| {
-            anyhow::anyhow!(
-                "Failed to expand glob pattern '{}': {}",
-                pattern,
-                err.to_string()
-            )
-        })?;
-        for entry in glob {
-            if let Ok(path) = entry {
-                if let Some(path_str) = path.to_str() {
-                    if path.is_file() {
-                        expanded_paths.push(path_str.to_string());
-                    }
-                }
-            }
-        }
-    }
-    Ok(expanded_paths)
-}
-
 pub fn print_colored_sql(sql: &str) {
     println!("{}", "\nSQL query:".primary());
     let ps = SyntaxSet::load_defaults_newlines();

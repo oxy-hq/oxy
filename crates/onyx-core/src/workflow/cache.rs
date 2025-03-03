@@ -91,7 +91,7 @@ impl Cache for AgentCache {
     fn read(&self, key: &str) -> Option<ContextValue> {
         let maybe_sql = self.file_cache.read_str(key)?;
         if !key.ends_with(".sql") {
-            self.file_cache.deserialize(&maybe_sql);
+            return self.file_cache.deserialize(&maybe_sql);
         }
 
         if let Some(cache_key) = self.compute_cache_key(key) {

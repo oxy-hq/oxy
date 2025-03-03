@@ -7,8 +7,9 @@ pub trait Cache: Sync {
     fn write(&self, key: &str, value: &ContextValue) -> Result<(), OnyxError>;
 }
 
+#[async_trait::async_trait]
 pub trait Cacheable<Input, Event>: Executable<Input, Event> {
-    fn cache_key(
+    async fn cache_key(
         &self,
         execution_context: &mut ExecutionContext<'_, Event>,
         input: &Input,
@@ -69,7 +70,7 @@ where
         let mut cache_context =
             ExecutionContext::from_parts(self.execution_context.clone_parts(), &mut cache_adapter);
 
-        if let Some(key) = cacheable.cache_key(&mut cache_context, &input) {
+        if let Some(key) = cacheable.cache_key(&mut cache_context, &input).await {
             if let Some(cached_value) = cache.read(&key) {
                 cache_adapter.write(cached_value);
                 if let Some(on_hit) = cacheable.hit_event(&key) {

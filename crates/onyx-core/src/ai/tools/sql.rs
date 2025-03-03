@@ -1,7 +1,7 @@
 use super::Tool;
 use crate::{
     ai::utils::record_batches_to_markdown,
-    config::model::{Config, Database, OutputFormat},
+    config::model::OutputFormat,
     connector::{load_result, Connector},
     execute::agent::{ToolCall, ToolMetadata},
 };
@@ -16,11 +16,10 @@ pub struct ExecuteSQLParams {
 
 #[derive(Debug)]
 pub struct ExecuteSQLTool {
-    pub database_config: Database,
     pub tool_name: String,
     pub tool_description: String,
     pub output_format: OutputFormat,
-    pub config: Config,
+    pub connector: Connector,
     pub validate_mode: bool,
 }
 
@@ -42,10 +41,10 @@ impl Tool for ExecuteSQLTool {
     }
 
     async fn call_internal(&self, parameters: &ExecuteSQLParams) -> anyhow::Result<ToolCall> {
-        let connector = Connector::new(&self.database_config, &self.config);
         let (output, metadata) = match self.validate_mode {
             true => {
-                let (dataset, schema) = connector
+                let (dataset, schema) = self
+                    .connector
                     .run_query_and_load(&format!("EXPLAIN ({})", &parameters.sql))
                     .await?;
                 log::info!("Validate mode");
@@ -54,7 +53,7 @@ impl Tool for ExecuteSQLTool {
                 (true.to_string(), None)
             }
             false => {
-                let file_path = connector.run_query(&parameters.sql).await?;
+                let file_path = self.connector.run_query(&parameters.sql).await?;
                 let output = match self.output_format {
                     OutputFormat::Default => {
                         let (datasets, schema) = load_result(&file_path)?;

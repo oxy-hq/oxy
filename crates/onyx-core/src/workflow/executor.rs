@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::fs;
-use std::path::PathBuf;
 
 use minijinja::value::Kwargs;
 use minijinja::{context, Value};
@@ -72,11 +71,10 @@ impl Executable<WorkflowInput, WorkflowEvent> for AgentTask {
         _input: WorkflowInput,
     ) -> Result<(), OnyxError> {
         let config = execution_context.config.clone();
-        let agent_file = config.project_path.join(&self.agent_ref);
         let prompt = execution_context.renderer.render(&self.prompt)?;
         let export_file_path = match &self.export {
             Some(export) => match execution_context.renderer.render(&export.path) {
-                Ok(path) => Some(execution_context.config.project_path.join(path)),
+                Ok(path) => Some(execution_context.config.resolve_file(path).await?),
                 Err(e) => {
                     return Err(e);
                 }
@@ -85,11 +83,12 @@ impl Executable<WorkflowInput, WorkflowEvent> for AgentTask {
         };
         let mut agent_executor = execution_context.child_executor();
         let (agent, agent_config, global_context) = build_agent(
-            Some(&agent_file),
+            &self.agent_ref,
             &FileFormat::Json,
             Some(prompt.clone()),
-            &config,
-        )?;
+            config,
+        )
+        .await?;
         let task = self.clone();
         let map_agent_event = move |event| WorkflowEvent::Agent {
             orig: event,
@@ -121,8 +120,6 @@ impl Executable<WorkflowInput, WorkflowEvent> for ExecuteSQLTask {
         execution_context: &mut ExecutionContext<'_, WorkflowEvent>,
         _input: WorkflowInput,
     ) -> Result<(), OnyxError> {
-        let wh = execution_context.config.find_database(&self.database)?;
-
         let mut variables = HashMap::new();
         if let Some(vars) = &self.variables {
             for (key, value) in vars {
@@ -146,8 +143,8 @@ impl Executable<WorkflowInput, WorkflowEvent> for ExecuteSQLTask {
                 let rendered_sql_file = execution_context.renderer.render(sql_file)?;
                 let query_file = execution_context
                     .config
-                    .project_path
-                    .join(&rendered_sql_file);
+                    .resolve_file(&rendered_sql_file)
+                    .await?;
                 match fs::read_to_string(&query_file) {
                     Ok(query) => {
                         let context = if variables.is_empty() {
@@ -164,24 +161,25 @@ impl Executable<WorkflowInput, WorkflowEvent> for ExecuteSQLTask {
                     Err(e) => {
                         return Err(OnyxError::RuntimeError(format!(
                             "Error reading query file {}: {}",
-                            &query_file.display(),
-                            e
+                            &query_file, e
                         )));
                     }
                 }
             }
         };
 
-        let (datasets, schema) = Connector::new(&wh, &execution_context.config)
-            .run_query_and_load(&query)
-            .await?;
-        let mut export_file_path = PathBuf::new();
+        let (datasets, schema) =
+            Connector::from_database(&self.database, execution_context.config.as_ref())
+                .await?
+                .run_query_and_load(&query)
+                .await?;
+        let mut export_file_path = String::new();
         if let Some(export) = &self.export {
             let relative_export_file_path = execution_context.renderer.render(&export.path)?;
             export_file_path = execution_context
                 .config
-                .project_path
-                .join(relative_export_file_path);
+                .resolve_file(relative_export_file_path)
+                .await?;
         }
 
         execution_context
@@ -207,13 +205,13 @@ impl Executable<WorkflowInput, WorkflowEvent> for FormatterTask {
     ) -> Result<(), OnyxError> {
         let task_output = execution_context.renderer.render(&self.template)?;
 
-        let mut export_file_path = PathBuf::new();
+        let mut export_file_path = String::new();
         if let Some(export) = &self.export {
             let relative_export_file_path = execution_context.renderer.render(&export.path)?;
             export_file_path = execution_context
                 .config
-                .project_path
-                .join(relative_export_file_path);
+                .resolve_file(relative_export_file_path)
+                .await?;
         }
 
         execution_context
@@ -235,7 +233,7 @@ impl Executable<WorkflowInput, WorkflowEvent> for WorkflowTask {
         execution_context: &mut ExecutionContext<'_, WorkflowEvent>,
         _input: WorkflowInput,
     ) -> Result<(), OnyxError> {
-        let workflow = execution_context.config.load_workflow(&self.src)?;
+        let workflow = execution_context.config.resolve_workflow(&self.src).await?;
         let dispatcher =
             Dispatcher::new(vec![Box::new(WorkflowReceiver), Box::new(WorkflowExporter)]);
         let executor = WorkflowExecutor::new(workflow.clone());
@@ -311,8 +309,9 @@ impl Executable<LoopInput, WorkflowEvent> for LoopSequentialTask {
     }
 }
 
+#[async_trait::async_trait]
 impl Cacheable<(), WorkflowEvent> for Task {
-    fn cache_key(
+    async fn cache_key(
         &self,
         execution_context: &mut ExecutionContext<'_, WorkflowEvent>,
         _input: &(),
@@ -324,8 +323,12 @@ impl Cacheable<(), WorkflowEvent> for Task {
                 }
 
                 if let Ok(cache_key) = execution_context.renderer.render(&cache.path) {
-                    let file_key = execution_context.config.project_path.join(&cache_key);
-                    Some(file_key.to_string_lossy().to_string())
+                    let file_key = execution_context
+                        .config
+                        .resolve_file(&cache_key)
+                        .await
+                        .ok()?;
+                    Some(file_key)
                 } else {
                     None
                 }

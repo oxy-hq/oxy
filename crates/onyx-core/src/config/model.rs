@@ -2,7 +2,6 @@ use garde::Validate;
 use indoc::indoc;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::fmt;
 use std::path::PathBuf;
 
 use crate::config::validate::validate_file_path;
@@ -63,6 +62,9 @@ pub struct Measure {
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
 pub struct AgentConfig {
+    #[serde(skip)]
+    #[schemars(skip)]
+    pub name: String,
     pub model: String,
     pub system_instructions: String,
     #[serde(default = "default_tools")]
@@ -145,11 +147,17 @@ pub struct Defaults {
 pub struct BigQuery {
     #[garde(custom(validate_file_path))]
     pub key_path: PathBuf,
+    #[garde(length(min = 1))]
+    pub dataset: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, Validate, Clone, JsonSchema)]
 #[garde(context(ValidationContext))]
-pub struct DuckDB {}
+pub struct DuckDB {
+    #[serde(alias = "dataset", rename = "dataset")]
+    #[garde(length(min = 1))]
+    pub file_search_path: String,
+}
 
 #[derive(Serialize, Deserialize, Debug, Validate, Clone, JsonSchema)]
 #[garde(context(ValidationContext))]
@@ -161,27 +169,31 @@ pub enum DatabaseType {
     DuckDB(#[garde(dive)] DuckDB),
 }
 
-impl fmt::Display for DatabaseType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            DatabaseType::Bigquery(_) => write!(f, "bigquery"),
-            DatabaseType::DuckDB(_) => write!(f, "duckdb"),
-        }
-    }
-}
-
 #[derive(Serialize, Deserialize, Debug, Validate, Clone, JsonSchema)]
 #[garde(context(ValidationContext))]
 pub struct Database {
     #[garde(length(min = 1))]
     pub name: String,
 
-    #[garde(length(min = 1))]
-    pub dataset: String,
-
     #[serde(flatten)]
     #[garde(dive)]
     pub database_type: DatabaseType,
+}
+
+impl Database {
+    pub fn db_name(&self) -> String {
+        match &self.database_type {
+            DatabaseType::Bigquery(bq) => bq.dataset.to_owned(),
+            DatabaseType::DuckDB(ddb) => ddb.file_search_path.to_owned(),
+        }
+    }
+
+    pub fn dialect(&self) -> String {
+        match &self.database_type {
+            DatabaseType::Bigquery(_) => "bigquery".to_string(),
+            DatabaseType::DuckDB(_) => "duckdb".to_string(),
+        }
+    }
 }
 
 #[derive(Deserialize, Debug, Clone, Validate, Serialize, JsonSchema)]
@@ -455,7 +467,9 @@ pub struct Consistency {
 #[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
 #[garde(context(ValidationContext))]
 pub struct Workflow {
-    #[garde(length(min = 1))]
+    #[serde(skip)]
+    #[schemars(skip)]
+    #[garde(skip)]
     pub name: String,
     #[serde(alias = "steps")]
     #[garde(dive)]
