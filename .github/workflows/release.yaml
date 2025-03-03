@@ -73,7 +73,7 @@ jobs:
             pnpm-store-${{ matrix.job.os }}-${{ matrix.job.target }}
       - name: Install dependencies
         run: |
-          pnpm install
+          pnpm install --prefer-frozen-lockfile
 
       #-- Create common artifacts folder
       - name: Create artifacts folder
@@ -230,7 +230,7 @@ jobs:
             pnpm-store-${{ matrix.job.os }}-${{ matrix.job.target }}
       - name: Install dependencies & Build web-app
         run: |
-          pnpm install
+          pnpm install --prefer-frozen-lockfile
           pnpm -C web-app build
 
       #-- Create common artifacts folder

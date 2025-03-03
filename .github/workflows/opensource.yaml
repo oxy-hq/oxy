@@ -53,6 +53,5 @@ jobs:
             release-guideline.md
           pr_move: |-
             crates/onyx-desktop/src/lib.rs||oss/lib.rs||**
-            pnpm-lock.yaml||oss/pnpm-lock.yaml||**
             crates/onyx-core/dist||oss/dist||**
           committer: "${{ steps.app-token.outputs.app-slug }}[bot] <${{ steps.get-user-id.outputs.user-id }}+${{ steps.app-token.outputs.app-slug }}[bot]@users.noreply.github.com>"

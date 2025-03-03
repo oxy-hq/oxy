@@ -87,7 +87,7 @@ jobs:
           restore-keys: |
             pnpm-store-ubuntu-latest-x86_64-unknown-linux-gnu
       - name: Run pnpm install
-        run: pnpm install
+        run: pnpm install --prefer-frozen-lockfile
       - name: Run lint-staged
         shell: bash
         run: |
