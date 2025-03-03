@@ -1,21 +1,24 @@
 use std::{collections::HashMap, fs, sync::Arc};
 
 use minijinja::value::{Object, ObjectRepr, Value};
+use tokio::runtime::Handle;
 
 use crate::{
-    config::model::{AgentContext, AgentContextType, Config, SemanticModels},
-    utils::expand_globs,
+    config::{
+        model::{AgentContext, AgentContextType, SemanticModels},
+        ConfigManager,
+    },
     StyledText,
 };
 
 #[derive(Debug, Clone)]
 pub struct Contexts {
     contexts: HashMap<String, AgentContext>,
-    config: Config,
+    config: Arc<ConfigManager>,
 }
 
 impl Contexts {
-    pub fn new(contexts: Vec<AgentContext>, config: Config) -> Self {
+    pub fn new(contexts: Vec<AgentContext>, config: Arc<ConfigManager>) -> Self {
         let contexts = contexts.into_iter().map(|c| (c.name.clone(), c)).collect();
         Contexts { contexts, config }
     }
@@ -32,7 +35,8 @@ impl Object for Contexts {
             Some(key) => match self.contexts.get(key) {
                 Some(context) => match &context.context_type {
                     AgentContextType::File(file_context) => {
-                        match expand_globs(&file_context.src, self.config.project_path.clone()) {
+                        let rt = Handle::try_current().ok()?;
+                        match rt.block_on(self.config.resolve_glob(&file_context.src)) {
                             Ok(paths) => {
                                 let mut contents = vec![];
                                 for path in paths {
@@ -59,8 +63,10 @@ impl Object for Contexts {
                         }
                     }
                     AgentContextType::SemanticModel(semantic_model_context) => {
-                        let path = self.config.project_path.clone();
-                        let semantic_model_path = path.join(&semantic_model_context.src);
+                        let rt = Handle::try_current().ok()?;
+                        let semantic_model_path = rt
+                            .block_on(self.config.resolve_file(&semantic_model_context.src))
+                            .ok()?;
                         match fs::read_to_string(semantic_model_path) {
                             Ok(content) => match serde_yaml::from_str::<SemanticModels>(&content) {
                                 Ok(semantic_model) => Some(Value::from_serialize(semantic_model)),

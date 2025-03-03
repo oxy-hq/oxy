@@ -5,11 +5,12 @@ use connectorx::prelude::{get_arrow, CXQuery, SourceConn};
 use duckdb::Connection;
 use log::debug;
 use std::fs::File;
-use std::path::PathBuf;
 use std::sync::Arc;
 use uuid::Uuid;
 
-use crate::config::model::{Config, Database, DatabaseType};
+use crate::config::model::DatabaseType;
+use crate::config::ConfigManager;
+use crate::errors::OnyxError;
 
 const GET_CURRENT_DIR: &str = "Failed to get current directory";
 const CREATE_CONN: &str = "Failed to open connection";
@@ -25,120 +26,104 @@ const PREPARE_DUCKDB_STMT: &str = "Failed to prepare DuckDB statement";
 // arrow errors
 const LOAD_ARROW_RESULT: &str = "Failed to load arrow result";
 
-fn connector_internal_error(message: &str, e: &impl std::fmt::Display) -> anyhow::Error {
+fn connector_internal_error(message: &str, e: &impl std::fmt::Display) -> OnyxError {
     log::error!("{}: {}", message, e);
-    anyhow::Error::msg(format!("{}: {}", message, e))
+    OnyxError::DBError(format!("{}: {}", message, e))
 }
 
-pub struct Connector {
-    database_config: Database,
-    config: Config,
-}
-
-#[derive(serde::Serialize, Clone)]
-pub struct DatabaseInfo {
-    name: String,
-    dialect: String,
-    tables: Vec<String>,
-}
-
-impl Connector {
-    pub fn new(database_config: &Database, config: &Config) -> Self {
-        Connector {
-            database_config: database_config.clone(),
-            config: config.clone(),
-        }
-    }
-
-    pub async fn load_database_info(&self) -> DatabaseInfo {
-        let tables = self.get_schemas().await;
-        let name = self.database_config.dataset.clone();
-        let dialect = self.database_config.database_type.to_string();
-        DatabaseInfo {
-            name,
-            dialect,
-            tables,
-        }
-    }
-
-    pub async fn list_datasets(&self) -> Vec<String> {
-        let query_string = match self.database_config.database_type {
-            DatabaseType::Bigquery(_) => {
-                "SELECT schema_name FROM INFORMATION_SCHEMA.SCHEMATA".to_owned()
-            }
-            DatabaseType::DuckDB(_) => "".to_owned(),
-        };
-        self.run_query_and_collect(query_string)
-            .await
-            .unwrap_or_default()
-    }
-
-    pub async fn get_schemas(&self) -> Vec<String> {
-        let query_string = match self.database_config.database_type {
-            DatabaseType::Bigquery(_) => format!(
-                "SELECT ddl FROM `{}`.INFORMATION_SCHEMA.TABLES",
-                self.database_config.dataset
-            ),
-            DatabaseType::DuckDB(_) => "".to_owned(),
-            _ => "".to_owned(),
-        };
-        self.run_query_and_collect(query_string)
-            .await
-            .unwrap_or_default()
-    }
-
-    async fn run_query_and_collect(&self, query_string: String) -> Option<Vec<String>> {
-        if query_string.is_empty() {
-            return None;
-        }
-        let (datasets, _) = self.run_query_and_load(&query_string).await.ok()?;
-        let result_iter = datasets
-            .iter()
-            .flat_map(|batch| as_string_array(batch.column(0)).iter());
-        Some(
-            result_iter
-                .map(|name| name.map(|s| s.to_string()))
-                .collect::<Option<Vec<String>>>()
-                .unwrap_or_default(),
-        )
-    }
-
-    pub async fn run_query(&self, query: &str) -> anyhow::Result<String> {
-        match &self.database_config.database_type {
-            DatabaseType::Bigquery(bigquery) => {
-                let key_path = self.config.project_path.join(&bigquery.key_path);
-                self.run_connectorx_query(query, key_path).await
-            }
-            DatabaseType::DuckDB(_) => self.run_duckdb_query(query).await,
-        }
-    }
-
-    pub async fn run_query_and_load(
+#[enum_dispatch::enum_dispatch]
+trait Engine {
+    async fn run_query(&self, query: &str) -> Result<String, OnyxError>;
+    async fn load_database_info(&self) -> Result<DatabaseInfo, OnyxError>;
+    async fn run_query_and_load(
         &self,
         query: &str,
-    ) -> anyhow::Result<(Vec<RecordBatch>, SchemaRef)> {
+    ) -> Result<(Vec<RecordBatch>, SchemaRef), OnyxError> {
         let file_path = self.run_query(query).await?;
         load_result(&file_path).map_err(|e| connector_internal_error(LOAD_RESULT, &e))
     }
+}
 
-    async fn run_connectorx_query(&self, query: &str, key_path: PathBuf) -> anyhow::Result<String> {
-        let current_dir = std::env::current_dir()
-            .map_err(|err| connector_internal_error(GET_CURRENT_DIR, &err))?;
-        let key_path = current_dir.join(&key_path);
-        let conn_string = format!(
-            "{}://{}",
-            self.database_config.database_type,
-            key_path.to_str().unwrap()
-        );
-        self.run_query_with_connectorx(conn_string, query.to_string())
-            .await
+#[enum_dispatch::enum_dispatch(Engine)]
+#[derive(Debug)]
+enum EngineType {
+    DuckDB,
+    ConnectorX,
+}
+
+#[derive(Debug)]
+struct DuckDB {
+    file_search_path: String,
+}
+
+impl Engine for DuckDB {
+    async fn run_query(&self, query: &str) -> Result<String, OnyxError> {
+        let query = query.to_string();
+        let conn = Connection::open_in_memory()
+            .map_err(|err| connector_internal_error(CREATE_CONN, &err))?;
+        let dir_set_stmt = format!("SET file_search_path = '{}'", &self.file_search_path);
+        conn.execute(&dir_set_stmt, [])
+            .map_err(|err| connector_internal_error(SET_FILE_SEARCH_PATH, &err))?;
+        let mut stmt = conn
+            .prepare(&query)
+            .map_err(|err| connector_internal_error(PREPARE_DUCKDB_STMT, &err))?;
+        let arrow_stream = stmt
+            .query_arrow([])
+            .map_err(|err| connector_internal_error(EXECUTE_QUERY, &err))?;
+        let schema = arrow_stream.get_schema();
+        let arrow_chunks = arrow_stream.collect();
+        debug!("Query results: {:?}", arrow_chunks);
+        let file_path = format!("/tmp/{}.arrow", Uuid::new_v4());
+        write_to_ipc(&arrow_chunks, &file_path, &schema)
+            .map_err(|err| connector_internal_error(WRITE_RESULT, &err))?;
+        Ok(file_path)
     }
 
-    async fn run_query_with_connectorx(
-        &self,
-        conn_string: String,
-        query: String,
-    ) -> anyhow::Result<String> {
+    async fn load_database_info(&self) -> Result<DatabaseInfo, OnyxError> {
+        Ok(DatabaseInfo {
+            name: self.file_search_path.to_string(),
+            dialect: "duckdb".to_string(),
+            tables: vec![],
+        })
+    }
+}
+
+#[derive(Debug)]
+pub struct ConnectorX {
+    dialect: String,
+    db_path: String,
+    db_name: String,
+}
+
+impl ConnectorX {
+    pub async fn get_schemas(&self) -> Result<Vec<String>, OnyxError> {
+        let query_string = match self.dialect.as_str() {
+            "bigquery" => {
+                format!(
+                    "SELECT ddl FROM `{}`.INFORMATION_SCHEMA.TABLES",
+                    self.db_name
+                )
+            }
+            _ => Err(OnyxError::DBError(format!(
+                "Unsupported dialect: {}",
+                self.dialect
+            )))?,
+        };
+        let (datasets, _) = self.run_query_and_load(&query_string).await?;
+        let result_iter = datasets
+            .iter()
+            .flat_map(|batch| as_string_array(batch.column(0)).iter());
+        Ok(result_iter
+            .map(|name| name.map(|s| s.to_string()))
+            .collect::<Option<Vec<String>>>()
+            .unwrap_or_default())
+    }
+}
+
+impl Engine for ConnectorX {
+    async fn run_query(&self, query: &str) -> Result<String, OnyxError> {
+        let conn_string = format!("{}://{}", self.dialect, self.db_path);
+        let query = query.to_string();
         let result = tokio::task::spawn_blocking(move || {
             let source_conn = SourceConn::try_from(conn_string.as_str())
                 .map_err(|err| connector_internal_error(CREATE_CONN, &err))?;
@@ -161,32 +146,64 @@ impl Connector {
         Ok(result)
     }
 
-    async fn run_duckdb_query(&self, query: &str) -> anyhow::Result<String> {
-        let query = query.to_string();
-        let conn = Connection::open_in_memory()
-            .map_err(|err| connector_internal_error(CREATE_CONN, &err))?;
-        let dir_set_stmt = format!(
-            "SET file_search_path = '{}'",
-            self.config
-                .project_path
-                .join(&self.database_config.dataset)
-                .display()
-        );
-        conn.execute(&dir_set_stmt, [])
-            .map_err(|err| connector_internal_error(SET_FILE_SEARCH_PATH, &err))?;
-        let mut stmt = conn
-            .prepare(&query)
-            .map_err(|err| connector_internal_error(PREPARE_DUCKDB_STMT, &err))?;
-        let arrow_stream = stmt
-            .query_arrow([])
-            .map_err(|err| connector_internal_error(EXECUTE_QUERY, &err))?;
-        let schema = arrow_stream.get_schema();
-        let arrow_chunks = arrow_stream.collect();
-        debug!("Query results: {:?}", arrow_chunks);
-        let file_path = format!("/tmp/{}.arrow", Uuid::new_v4());
-        write_to_ipc(&arrow_chunks, &file_path, &schema)
-            .map_err(|err| connector_internal_error(WRITE_RESULT, &err))?;
-        Ok(file_path)
+    async fn load_database_info(&self) -> Result<DatabaseInfo, OnyxError> {
+        Ok(DatabaseInfo {
+            name: self.db_name.to_string(),
+            dialect: self.dialect.to_string(),
+            tables: self.get_schemas().await?,
+        })
+    }
+}
+
+#[derive(Debug)]
+pub struct Connector {
+    engine: EngineType,
+}
+
+#[derive(serde::Serialize, Clone)]
+pub struct DatabaseInfo {
+    name: String,
+    dialect: String,
+    tables: Vec<String>,
+}
+
+impl Connector {
+    pub async fn from_database(
+        database_ref: &str,
+        config_manager: &ConfigManager,
+    ) -> Result<Self, OnyxError> {
+        let database = config_manager.resolve_database(database_ref)?;
+        let engine = match &database.database_type {
+            DatabaseType::Bigquery(bigquery) => {
+                let key_path = config_manager.resolve_file(&bigquery.key_path).await?;
+                EngineType::ConnectorX(ConnectorX {
+                    dialect: database.dialect(),
+                    db_path: key_path,
+                    db_name: bigquery.dataset.clone(),
+                })
+            }
+            DatabaseType::DuckDB(duckdb) => EngineType::DuckDB(DuckDB {
+                file_search_path: config_manager
+                    .resolve_file(&duckdb.file_search_path)
+                    .await?,
+            }),
+        };
+        Ok(Connector { engine })
+    }
+
+    pub async fn database_info(&self) -> Result<DatabaseInfo, OnyxError> {
+        self.engine.load_database_info().await
+    }
+
+    pub async fn run_query(&self, query: &str) -> Result<String, OnyxError> {
+        self.engine.run_query(query).await
+    }
+
+    pub async fn run_query_and_load(
+        &self,
+        query: &str,
+    ) -> Result<(Vec<RecordBatch>, SchemaRef), OnyxError> {
+        self.engine.run_query_and_load(query).await
     }
 }
 

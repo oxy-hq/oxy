@@ -6,15 +6,15 @@ use minijinja::Value;
 use crate::{
     ai::utils::record_batches_to_table,
     config::{
-        load_config,
         model::{
             AgentTask, ExecuteSQLTask, FormatterTask, LoopValues, Task, TaskType, Workflow,
             WorkflowTask, SQL,
         },
+        ConfigBuilder,
     },
     errors::OnyxError,
     execute::exporter::{export_agent_task, export_execute_sql, export_formatter},
-    utils::print_colored_sql,
+    utils::{find_project_path, print_colored_sql},
     workflow::{executor::WorkflowExecutor, WorkflowResult},
     StyledText,
 };
@@ -75,7 +75,7 @@ pub enum WorkflowEvent {
     Agent {
         orig: AgentEvent,
         task: AgentTask,
-        export_file_path: Option<PathBuf>,
+        export_file_path: Option<String>,
     },
 
     // sql
@@ -84,14 +84,14 @@ pub enum WorkflowEvent {
         query: String,
         datasets: Vec<RecordBatch>,
         schema: Arc<Schema>,
-        export_file_path: PathBuf,
+        export_file_path: String,
     },
 
     // formatter
     Formatter {
         task: FormatterTask,
         output: String,
-        export_file_path: PathBuf,
+        export_file_path: String,
     },
     SubWorkflow {
         step: WorkflowTask,
@@ -294,19 +294,18 @@ impl Handler for WorkflowExporter {
 }
 
 pub async fn run_workflow(workflow_path: &PathBuf) -> Result<WorkflowResult, OnyxError> {
-    let config = load_config(None)?;
-    let workflow = config.load_workflow(workflow_path)?;
-    config.validate_workflow(&workflow).map_err(|e| {
-        OnyxError::ConfigurationError(format!("Invalid workflow configuration: {}", e))
-    })?;
-
+    let config = ConfigBuilder::new()
+        .with_project_path(find_project_path()?)?
+        .build()
+        .await?;
+    let workflow = config.resolve_workflow(workflow_path).await?;
     let dispatcher = Dispatcher::new(vec![Box::new(WorkflowReceiver), Box::new(WorkflowExporter)]);
     let executor = WorkflowExecutor::new(workflow.clone());
     let ctx = Value::from_serialize(&workflow.variables);
     let output = run(
         &executor,
         WorkflowInput,
-        config,
+        Arc::new(config),
         ctx,
         Some(&workflow),
         dispatcher,

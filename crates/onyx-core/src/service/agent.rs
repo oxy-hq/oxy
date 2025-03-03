@@ -1,6 +1,7 @@
 use std::path::PathBuf;
+use std::sync::Arc;
 
-use crate::config::load_config;
+use crate::config::ConfigBuilder;
 use crate::{
     config::model::FileFormat,
     db::{
@@ -62,13 +63,18 @@ pub async fn ask(payload: AskRequest) -> impl Stream<Item = Message> {
 
     let project_path = PathBuf::from(payload.project_path.clone());
     let agent_path= project_path.join(&payload.agent);
-    let config = load_config(Some(project_path)).unwrap();
+    let config = ConfigBuilder::new()
+        .with_project_path(project_path)
+        .unwrap()
+        .build()
+        .await
+        .unwrap();
 
     let result = match run_agent(
-        Some(&agent_path),
+        &agent_path,
         &FileFormat::Markdown,
         Some(payload.question),
-        &config,
+        Arc::new(config),
     ).await {
         Ok(output) => output.output.to_string(),
         Err(e) => format!("Error running agent: {}", e),
@@ -115,13 +121,18 @@ pub async fn ask_preview(payload: AskRequest) -> impl Stream<Item = Message> {
 
     let project_path = PathBuf::from(payload.project_path.clone());
     let agent_path= project_path.join(&payload.agent);
-    let config = load_config(Some(project_path)).unwrap();
+    let config = ConfigBuilder::new()
+        .with_project_path(project_path)
+        .unwrap()
+        .build()
+        .await
+        .unwrap();
 
     let result = match run_agent(
-        Some(&agent_path),
+        &agent_path,
         &FileFormat::Markdown,
         Some(payload.question),
-        &config,
+        Arc::new(config),
     ).await {
         Ok(output) => output.output.to_string(),
         Err(e) => format!("Error running agent: {}", e),

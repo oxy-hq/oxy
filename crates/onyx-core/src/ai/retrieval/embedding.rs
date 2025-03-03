@@ -22,16 +22,13 @@ use lancedb::{
     },
     query::{ExecutableQuery, QueryBase},
     table::OptimizeAction,
-    Connection, Table,
+    Connection, Error, Table,
 };
 use serde::{Deserialize, Serialize};
 use serde_arrow::from_record_batch;
 use tokio::sync::OnceCell;
 
-use crate::{
-    config::model::{Config, RetrievalTool},
-    errors::OnyxError,
-};
+use crate::{config::model::RetrievalTool, errors::OnyxError};
 
 use super::reranking::ReciprocalRankingFusion;
 
@@ -66,18 +63,15 @@ pub struct LanceDBStore {
 }
 
 impl LanceDBStore {
-    pub fn with_config(agent_name: &str, tool_config: &RetrievalTool, config: &Config) -> Self {
+    pub fn with_config(tool_config: &RetrievalTool, db_path: &str) -> Self {
         let client = Client::with_config(
             OpenAIConfig::new()
                 .with_api_key(tool_config.get_api_key())
                 .with_api_base(tool_config.api_url.to_string()),
         );
-        let db_path = config
-            .project_path
-            .join(format!(".db-{}-{}", agent_name, tool_config.name));
-        println!("db_path: {}", db_path.display());
+        println!("db_path: {}", db_path);
         Self {
-            uri: db_path.display().to_string(),
+            uri: db_path.to_string(),
             connection: Arc::new(tokio::sync::OnceCell::new()),
             client,
             embed_model: tool_config.embed_model.to_string(),
@@ -95,27 +89,30 @@ impl LanceDBStore {
         let table_result = connection.open_table("database_metadata").execute().await;
         let table = match table_result {
             Ok(table) => table,
-            Err(_) => {
-                let schema = Arc::new(Schema::new(vec![
-                    Field::new("content", DataType::Utf8, false),
-                    Field::new("source_type", DataType::Utf8, false),
-                    Field::new("source_identifier", DataType::Utf8, false),
-                    Field::new(
-                        "embeddings",
-                        DataType::FixedSizeList(
-                            Arc::new(Field::new("item", DataType::Float32, true)),
-                            self.n_dims.try_into().unwrap(),
+            Err(err) => match err {
+                Error::TableNotFound { name } => {
+                    let schema = Arc::new(Schema::new(vec![
+                        Field::new("content", DataType::Utf8, false),
+                        Field::new("source_type", DataType::Utf8, false),
+                        Field::new("source_identifier", DataType::Utf8, false),
+                        Field::new(
+                            "embeddings",
+                            DataType::FixedSizeList(
+                                Arc::new(Field::new("item", DataType::Float32, true)),
+                                self.n_dims.try_into().unwrap(),
+                            ),
+                            false,
                         ),
-                        false,
-                    ),
-                ]));
+                    ]));
 
-                connection
-                    .create_empty_table("database_metadata", schema)
-                    .mode(CreateTableMode::exist_ok(|builder| builder))
-                    .execute()
-                    .await?
-            }
+                    connection
+                        .create_empty_table(name, schema)
+                        .mode(CreateTableMode::exist_ok(|builder| builder))
+                        .execute()
+                        .await?
+                }
+                _ => return Err(err.into()),
+            },
         };
         Ok(table)
     }

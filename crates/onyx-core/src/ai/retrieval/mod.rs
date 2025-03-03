@@ -1,14 +1,18 @@
 use embedding::{Document, LanceDBStore, VectorStore};
 
-use crate::config::model::{Config, RetrievalTool, ToolConfig};
-use crate::utils::expand_globs;
+use crate::config::model::{RetrievalTool, ToolConfig};
+use crate::config::ConfigManager;
+use crate::errors::OnyxError;
 use crate::StyledText;
 
 pub mod embedding;
 pub mod reranking;
 
-fn get_documents_from_files(src: &Vec<String>, config: &Config) -> anyhow::Result<Vec<Document>> {
-    let files = expand_globs(src, config.project_path.clone())?;
+async fn get_documents_from_files(
+    src: &Vec<String>,
+    config: &ConfigManager,
+) -> anyhow::Result<Vec<Document>> {
+    let files = config.resolve_glob(src).await?;
     println!("{}", format!("Found: {:?}", files).text());
     let documents = files
         .iter()
@@ -24,24 +28,27 @@ fn get_documents_from_files(src: &Vec<String>, config: &Config) -> anyhow::Resul
     Ok(documents)
 }
 
-pub async fn build_embeddings(config: &Config) -> anyhow::Result<()> {
-    for agent_dir in config.list_agents(&config.project_path) {
+pub async fn build_embeddings(config: &ConfigManager) -> Result<(), OnyxError> {
+    for agent_dir in config.list_agents().await? {
         println!(
             "{}",
             format!("Building embeddings for agent: {:?}", agent_dir).text()
         );
-        let (agent, agent_name) = config.load_agent_config(Some(&agent_dir))?;
+        let agent = config.resolve_agent(&agent_dir).await?;
 
         for tool in agent.tools {
             if let ToolConfig::Retrieval(retrieval) = tool {
-                let db = get_vector_store(&agent_name, &retrieval, config)?;
-                let documents = get_documents_from_files(&retrieval.src, config)?;
+                let db_path = config
+                    .resolve_file(format!(".db-{}-{}", &agent.name, retrieval.name))
+                    .await?;
+                let db = get_vector_store(&retrieval, &db_path)?;
+                let documents = get_documents_from_files(&retrieval.src, config).await?;
                 if documents.is_empty() {
                     println!(
                         "{}",
                         format!(
                             "No documents found for agent: {:?} tool: {}",
-                            agent_name, retrieval.name
+                            &agent.name, retrieval.name
                         )
                         .text()
                     );
@@ -55,10 +62,9 @@ pub async fn build_embeddings(config: &Config) -> anyhow::Result<()> {
 }
 
 pub fn get_vector_store(
-    agent: &str,
     tool_config: &RetrievalTool,
-    config: &Config,
+    db_path: &str,
 ) -> anyhow::Result<Box<dyn VectorStore + Send + Sync>> {
-    let db = LanceDBStore::with_config(agent, tool_config, config);
+    let db = LanceDBStore::with_config(tool_config, db_path);
     Ok(Box::new(db))
 }

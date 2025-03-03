@@ -1,4 +1,7 @@
-use std::path::PathBuf;
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use contexts::Contexts;
 use minijinja::{context, Value};
@@ -10,7 +13,10 @@ use crate::{
         setup_agent,
         utils::record_batches_to_table,
     },
-    config::model::{AgentConfig, Config, FileFormat},
+    config::{
+        model::{AgentConfig, FileFormat},
+        ConfigManager,
+    },
     connector::load_result,
     errors::OnyxError,
     utils::{print_colored_sql, truncate_datasets, truncate_with_ellipsis, MAX_DISPLAY_ROWS},
@@ -129,18 +135,18 @@ impl Handler for AgentReceiver {
     }
 }
 
-pub fn build_agent(
-    agent_file: Option<&PathBuf>,
+pub async fn build_agent<P: AsRef<Path>>(
+    agent_file: P,
     file_format: &FileFormat,
     prompt: Option<String>,
-    config: &Config,
+    config: Arc<ConfigManager>,
 ) -> Result<(OpenAIAgent, AgentConfig, Value), OnyxError> {
-    let (agent, agent_config) = setup_agent(agent_file, file_format, config)?;
+    let (agent, agent_config) = setup_agent(agent_file, file_format, config.clone()).await?;
     let contexts = Contexts::new(
         agent_config.context.clone().unwrap_or_default(),
         config.clone(),
     );
-    let databases = DatabasesContext::new(config.databases.clone(), config.clone());
+    let databases = DatabasesContext::new(config);
     let tools_context = ToolsContext::new(agent.tools.clone(), prompt.unwrap_or_default());
     let global_context = context! {
         context => Value::from_object(contexts),
@@ -151,13 +157,13 @@ pub fn build_agent(
 }
 
 pub async fn run_agent(
-    agent_file: Option<&PathBuf>,
+    agent_file: &PathBuf,
     file_format: &FileFormat,
     prompt: Option<String>,
-    config: &Config,
+    config: Arc<ConfigManager>,
 ) -> Result<AgentResult, OnyxError> {
     let (agent, agent_config, global_context) =
-        build_agent(agent_file, file_format, prompt.clone(), config)?;
+        build_agent(agent_file, file_format, prompt.clone(), config.clone()).await?;
 
     let output = run(
         &agent,

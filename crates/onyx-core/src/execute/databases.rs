@@ -6,30 +6,20 @@ use std::{
 use minijinja::value::{Object, ObjectRepr, Value};
 use tokio::runtime::Handle;
 
-use crate::{
-    config::model::{Config, Database},
-    connector::Connector,
-};
+use crate::{config::ConfigManager, connector::Connector};
 
 #[derive(Debug, Clone)]
 pub struct DatabasesContext {
-    databases: HashMap<String, Database>,
     cache: Arc<Mutex<HashMap<String, Value>>>,
-    config: Config,
+    config: Arc<ConfigManager>,
 }
 
 impl DatabasesContext {
-    pub fn new(databases: Vec<Database>, config: Config) -> Self {
-        let databases = databases.into_iter().map(|w| (w.name.clone(), w)).collect();
+    pub fn new(config: Arc<ConfigManager>) -> Self {
         DatabasesContext {
-            databases,
             cache: Arc::new(Mutex::new(HashMap::new())),
             config,
         }
-    }
-
-    pub fn find(&self, name: &str) -> Option<&Database> {
-        self.databases.get(name)
     }
 }
 
@@ -46,17 +36,18 @@ impl Object for DatabasesContext {
                 if let Some(value) = cache.get(database_key) {
                     return Some(value.clone());
                 }
-                match (self.databases.get(database_key), Handle::try_current()) {
-                    (Some(database_config), Ok(rt)) => {
-                        let database_info = rt.block_on(
-                            Connector::new(database_config, &self.config).load_database_info(),
-                        );
+                match Handle::try_current() {
+                    Ok(rt) => {
+                        let connector = rt
+                            .block_on(Connector::from_database(database_key, &self.config))
+                            .ok()?;
+                        let database_info = rt.block_on(connector.database_info()).ok()?;
                         let value = Value::from_serialize(database_info);
                         cache.insert(database_key.to_string(), value.clone());
                         Some(value)
                     }
                     _ => {
-                        log::error!("No tokio runtime found or database not found");
+                        log::error!("No tokio runtime found");
                         None
                     }
                 }

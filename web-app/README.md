@@ -138,6 +138,3 @@ To learn more about the technologies used in this project, check out the followi
 - [React Query Documentation](https://react-query.tanstack.com/)
 - [Zustand Documentation](https://github.com/pmndrs/zustand)
 - [React Router 6 Documentation](https://reactrouter.com/)
-
-
-

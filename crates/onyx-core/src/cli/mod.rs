@@ -7,6 +7,7 @@ use crate::errors::OnyxError;
 use crate::execute::agent::run_agent;
 use crate::execute::eval::run_eval;
 use crate::execute::workflow::run_workflow;
+use crate::utils::find_project_path;
 use crate::utils::print_colored_sql;
 use crate::workflow::WorkflowResult;
 use axum::handler::Handler;
@@ -94,10 +95,6 @@ struct Args {
 enum SubCommand {
     /// Initialize a repository as an onyx project. Also creates a ~/.config/onyx/config.yaml file if it doesn't exist
     Init,
-    /// List datasets in database
-    ListDatasets,
-    /// List tables in database
-    ListTables,
     /// Search through SQL in your project path. Run them against the associated database on
     /// selection.
     Run(RunArgs),
@@ -270,24 +267,6 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             Ok(_) => println!("{}", "Initialization complete.".success()),
             Err(e) => eprintln!("{}", format!("Initialization failed: {}", e).error()),
         },
-        Some(SubCommand::ListTables) => {
-            let config = load_config(None)?;
-            for database in &config.databases {
-                let tables = Connector::new(database, &config).get_schemas().await;
-                for table in tables {
-                    println!("{}", table.text());
-                }
-            }
-        }
-        Some(SubCommand::ListDatasets) => {
-            let config = load_config(None)?;
-            for database in &config.databases {
-                let datasets = Connector::new(database, &config).list_datasets().await;
-                for dataset in datasets {
-                    println!("{}", dataset.text());
-                }
-            }
-        }
         Some(SubCommand::Run(run_args)) => {
             handle_run_command(run_args).await?;
         }
@@ -295,17 +274,22 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             handle_test_command(test_args).await?;
         }
         Some(SubCommand::Build) => {
-            let config = load_config(None)?;
+            let config = ConfigBuilder::new()
+                .with_project_path(&find_project_path()?)?
+                .build()
+                .await?;
             build(&config).await?;
         }
         Some(SubCommand::VecSearch(search_args)) => {
-            let config = load_config(None)?;
-            let agent_file = args.agent.map(|agent| config.project_path.join(&agent));
-            let (agent, agent_name) = config.load_agent_config(agent_file.as_ref())?;
+            let config = ConfigBuilder::new()
+                .with_project_path(&find_project_path()?)?
+                .build()
+                .await?;
+            let agent = config.resolve_agent(args.agent.unwrap()).await?;
 
             for tool in agent.tools {
                 if let ToolConfig::Retrieval(retrieval) = tool {
-                    vector_search(&agent_name, &retrieval, &search_args.question, &config).await?;
+                    vector_search(&agent.name, &retrieval, &search_args.question, &config).await?;
                 }
             }
         }
@@ -356,30 +340,32 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
 }
 
 async fn handle_agent_file(
-    file_path: Option<&PathBuf>,
+    file_path: &PathBuf,
     question: Option<String>,
 ) -> Result<AgentResult, OnyxError> {
     let question = question.ok_or_else(|| {
         OnyxError::ArgumentError("Question is required for agent files".to_string())
     })?;
-    let config = load_config(None)?;
-    let result = run_agent(file_path, &FileFormat::Markdown, Some(question), &config).await?;
+    let project_path = find_project_path()?;
+    let config = std::sync::Arc::new(
+        ConfigBuilder::new()
+            .with_project_path(&project_path)?
+            .build()
+            .await?,
+    );
+    let result = run_agent(file_path, &FileFormat::Markdown, Some(question), config).await?;
     Ok(result)
 }
 
 async fn handle_sql_file(
     file_path: &PathBuf,
     database: Option<String>,
-    config: &Config,
+    config: &ConfigManager,
     variables: &[(String, String)],
 ) -> Result<String, OnyxError> {
     let database = database.ok_or_else(|| OnyxError::ArgumentError("Database is required for running SQL file. Please provide the database using --database or set a default database in config.yml".to_string()))?;
     let content = std::fs::read_to_string(file_path)
         .map_err(|e| OnyxError::RuntimeError(format!("Failed to read SQL file: {}", e)))?;
-    let wh_config = config
-        .find_database(&database)
-        .map_err(|e| OnyxError::ArgumentError(format!("Database not found: {}", e)))?;
-
     let mut env = Environment::new();
     let mut query = content.clone();
 
@@ -402,7 +388,8 @@ async fn handle_sql_file(
 
     // Print colored SQL and execute query
     print_colored_sql(&query);
-    let (datasets, schema) = Connector::new(&wh_config, config)
+    let (datasets, schema) = Connector::from_database(&database, config)
+        .await?
         .run_query_and_load(&query)
         .await?;
     let batches_display = record_batches_to_table(&datasets, &schema)
@@ -462,7 +449,7 @@ pub async fn handle_run_command(run_args: RunArgs) -> Result<RunResult, OnyxErro
                 let workflow_result = handle_workflow_file(&file_path).await?;
                 Ok(RunResult::Workflow(workflow_result))
             } else if file.ends_with(".agent.yml") {
-                let agent_result = handle_agent_file(Some(&file_path), run_args.question).await?;
+                let agent_result = handle_agent_file(&file_path, run_args.question).await?;
                 return Ok(RunResult::Agent(agent_result));
             } else {
                 return Err(OnyxError::ArgumentError(
@@ -471,14 +458,13 @@ pub async fn handle_run_command(run_args: RunArgs) -> Result<RunResult, OnyxErro
             }
         }
         Some("sql") => {
-            let config = load_config(None)?;
-            let mut database = None;
-            database = run_args.database.or_else(|| {
-                config
-                    .defaults
-                    .as_ref()
-                    .and_then(|defaults| defaults.database.clone())
-            });
+            let config = ConfigBuilder::new()
+                .with_project_path(&find_project_path()?)?
+                .build()
+                .await?;
+            let database = run_args
+                .database
+                .or_else(|| config.default_database_ref().map(|w| w.clone()));
 
             if database.is_none() {
                 return Err(OnyxError::ArgumentError(

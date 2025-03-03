@@ -5,15 +5,18 @@ pub mod toolbox;
 pub mod tools;
 pub mod utils;
 
-use std::{path::PathBuf, sync::Arc};
+use std::{path::Path, sync::Arc};
 
 use crate::{
     config::{
         load_config,
         model::{
-            AgentConfig, AnonymizerConfig, Config, FileFormat, Model, OutputFormat, ToolConfig,
+            AgentConfig, AnonymizerConfig, FileFormat, FlashTextSourceType, Model, OutputFormat,
+            ToolConfig,
         },
+        ConfigManager,
     },
+    connector::Connector,
     errors::OnyxError,
     execute::agent::ToolCall,
     union_tools,
@@ -21,18 +24,20 @@ use crate::{
 use agent::OpenAIAgent;
 use anonymizer::{base::Anonymizer, flash_text::FlashTextAnonymizer};
 use async_trait::async_trait;
+use retrieval::get_vector_store;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use toolbox::ToolBox;
 use tools::{ExecuteSQLParams, ExecuteSQLTool, RetrieveParams, RetrieveTool, Tool};
 
-pub fn setup_agent(
-    agent_file: Option<&PathBuf>,
+pub async fn setup_agent<P: AsRef<Path>>(
+    agent_file: P,
     file_format: &FileFormat,
-    config: &Config,
+    config: Arc<ConfigManager>,
 ) -> Result<(OpenAIAgent, AgentConfig), OnyxError> {
-    let (agent_config, agent_name) = config.load_agent_config(agent_file)?;
-    let agent = from_config(&agent_name, config, &agent_config, file_format)
+    let agent_config = config.resolve_agent(agent_file).await?;
+    let agent = from_config(&config, &agent_config, file_format)
+        .await
         .map_err(|e| OnyxError::AgentError(format!("Error setting up agent: {}", e)))?;
     Ok((agent, agent_config))
 }
@@ -51,13 +56,12 @@ pub fn setup_eval_agent(prompt: &str, model: &str) -> Result<OpenAIAgent, OnyxEr
     Ok(agent)
 }
 
-fn from_config(
-    agent_name: &str,
-    config: &Config,
+async fn from_config(
+    config: &ConfigManager,
     agent_config: &AgentConfig,
     file_format: &FileFormat,
-) -> anyhow::Result<OpenAIAgent> {
-    let model = config.find_model(&agent_config.model).unwrap();
+) -> Result<OpenAIAgent, OnyxError> {
+    let model = config.resolve_model(&agent_config.model)?;
     let anonymizer: Option<Box<dyn Anonymizer + Send + Sync>> = match &agent_config.anonymize {
         None => None,
         Some(AnonymizerConfig::FlashText {
@@ -65,12 +69,17 @@ fn from_config(
             pluralize,
             case_sensitive,
         }) => {
-            let mut anonymizer = FlashTextAnonymizer::new(pluralize, case_sensitive, config);
-            anonymizer.add_keywords_file(source)?;
+            let mut anonymizer = FlashTextAnonymizer::new(pluralize, case_sensitive);
+            let path = match &source {
+                FlashTextSourceType::Keywords { keywords_file, .. } => keywords_file,
+                FlashTextSourceType::Mapping { mapping_file, .. } => mapping_file,
+            };
+            let resolved_path = config.resolve_file(path).await?;
+            anonymizer.add_keywords_file(source, &resolved_path)?;
             Some(Box::new(anonymizer))
         }
     };
-    let toolbox = Arc::new(tools_from_config(agent_name, config, agent_config));
+    let toolbox = Arc::new(tools_from_config(config, agent_config).await?);
     let agent = build_agent(
         &model,
         file_format,
@@ -135,49 +144,46 @@ fn build_agent(
     }
 }
 
-fn tools_from_config(
-    agent_name: &str,
-    config: &Config,
+async fn tools_from_config(
+    config: &ConfigManager,
     agent_config: &AgentConfig,
-) -> ToolBox<MultiTool> {
+) -> Result<ToolBox<MultiTool>, OnyxError> {
     let mut toolbox = ToolBox::new();
     for tool_config in agent_config.tools.iter() {
         match tool_config {
             ToolConfig::ExecuteSQL(sql_tool) => {
-                let database_config = config
-                    .find_database(&sql_tool.database)
-                    .unwrap_or_else(|_| panic!("Database {} not found", &sql_tool.database));
+                let connector = Connector::from_database(&sql_tool.database, config).await?;
                 let tool: ExecuteSQLTool = ExecuteSQLTool {
-                    database_config: database_config.clone(),
                     tool_name: sql_tool.name.to_string(),
                     tool_description: sql_tool.description.to_string(),
+                    connector,
                     output_format: agent_config.output_format.clone(),
-                    config: config.clone(),
                     validate_mode: false,
                 };
                 toolbox.add_tool(sql_tool.name.to_string(), tool.into());
             }
             ToolConfig::ValidateSQL(sql_tool) => {
-                let database_config = config
-                    .find_database(&sql_tool.database)
-                    .unwrap_or_else(|_| panic!("Database {} not found", &sql_tool.database));
+                let connector = Connector::from_database(&sql_tool.database, config).await?;
                 let tool: ExecuteSQLTool = ExecuteSQLTool {
-                    database_config: database_config.clone(),
                     tool_name: sql_tool.name.to_string(),
                     tool_description: sql_tool.description.to_string(),
+                    connector,
                     output_format: agent_config.output_format.clone(),
-                    config: config.clone(),
                     validate_mode: true,
                 };
                 toolbox.add_tool(sql_tool.name.to_string(), tool.into());
             }
             ToolConfig::Retrieval(retrieval) => {
-                let tool = RetrieveTool::new(agent_name, retrieval, config);
+                let db_path = config
+                    .resolve_file(format!(".db-{}-{}", agent_config.name, retrieval.name))
+                    .await?;
+                let vector_db = get_vector_store(retrieval, &db_path)?;
+                let tool = RetrieveTool::new(retrieval, vector_db);
                 toolbox.add_tool(retrieval.name.to_string(), tool.into());
             }
         };
     }
-    toolbox
+    Ok(toolbox)
 }
 
 union_tools!(

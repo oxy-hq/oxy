@@ -14,9 +14,9 @@ use ai::retrieval::{build_embeddings, get_vector_store};
 use theme::*;
 pub mod config;
 
-use config::model::{Config, RetrievalTool};
+use config::{model::RetrievalTool, ConfigManager};
 
-pub async fn build(config: &Config) -> anyhow::Result<()> {
+pub async fn build(config: &ConfigManager) -> anyhow::Result<()> {
     println!("{}", "Building...".text());
     build_embeddings(config).await?;
     Ok(())
@@ -26,7 +26,7 @@ pub async fn vector_search(
     agent: &str,
     retrieval: &RetrievalTool,
     query: &str,
-    config: &Config,
+    config: &ConfigManager,
 ) -> anyhow::Result<()> {
     println!(
         "{}",
@@ -37,7 +37,10 @@ pub async fn vector_search(
         .as_str()
         .text()
     );
-    let db = get_vector_store(agent, retrieval, config)?;
+    let db_path = config
+        .resolve_file(format!(".db-{}-{}", agent, retrieval.name))
+        .await?;
+    let db = get_vector_store(retrieval, &db_path)?;
     let documents = db.search(query).await?;
     for document in documents {
         println!("{}", format!("{}\n", document.content).text());

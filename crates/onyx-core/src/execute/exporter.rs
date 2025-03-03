@@ -1,7 +1,6 @@
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::ai::utils::record_batches_to_json;
@@ -18,10 +17,10 @@ use arrow::array::RecordBatch;
 use arrow::datatypes::Schema;
 use csv::Writer;
 
-pub fn export_agent_task(
+pub fn export_agent_task<P: AsRef<Path>>(
     agent_task: &AgentTask,
     task_output: &[&ToolCall],
-    export_file_path: &PathBuf,
+    export_file_path: P,
 ) {
     if let Some(export) = &agent_task.export {
         let mut has_execute_sql_task = false;
@@ -37,7 +36,14 @@ pub fn export_agent_task(
                 let sql = sql_query.clone();
                 let prompt = &agent_task.prompt;
 
-                export_execute_sql(export, prompt, &sql, &schema, &datasets, export_file_path);
+                export_execute_sql(
+                    export,
+                    prompt,
+                    &sql,
+                    &schema,
+                    &datasets,
+                    export_file_path.as_ref(),
+                );
                 has_execute_sql_task = true;
             }
         }
@@ -48,13 +54,13 @@ pub fn export_agent_task(
     }
 }
 
-pub fn export_execute_sql(
+pub fn export_execute_sql<P: AsRef<Path>>(
     task_export: &TaskExport,
     prompt: &str,
     sql: &str,
     schema: &Arc<Schema>,
     datasets: &[RecordBatch],
-    export_file_path: &PathBuf,
+    export_file_path: P,
 ) {
     match get_file_directories(export_file_path) {
         Ok(file_path) => {
@@ -71,14 +77,14 @@ pub fn export_execute_sql(
             match result {
                 Ok(_) => println!(
                     "{}",
-                    format!("Exported to {:?}", file_path.display()).success()
+                    format!("Exported to {:?}", file_path.as_ref().display()).success()
                 ),
                 Err(e) => println!(
                     "{}",
                     format!(
                         "Error exporting to {:?} for path '{}': {:?}",
                         task_export.format,
-                        file_path.display(),
+                        file_path.as_ref().display(),
                         e
                     )
                     .warning()
@@ -96,25 +102,29 @@ pub fn export_execute_sql(
     }
 }
 
-pub fn get_file_directories(file_path: &PathBuf) -> Result<PathBuf, OnyxError> {
-    create_parent_dirs(file_path).map_err(|e| {
+pub fn get_file_directories<P: AsRef<Path>>(file_path: P) -> Result<P, OnyxError> {
+    create_parent_dirs(&file_path).map_err(|e| {
         OnyxError::IOError(format!(
             "Error creating directories for path '{}': {}",
-            file_path.display(),
+            file_path.as_ref().display(),
             e
         ))
     })?;
-    Ok(file_path.clone())
+    Ok(file_path)
 }
 
-fn create_parent_dirs(path: &Path) -> std::io::Result<()> {
-    if let Some(parent) = path.parent() {
+fn create_parent_dirs<P: AsRef<Path>>(path: P) -> std::io::Result<()> {
+    if let Some(parent) = path.as_ref().parent() {
         std::fs::create_dir_all(parent)?;
     }
     Ok(())
 }
 
-fn export_sql(file_path: &Path, prompt: &str, sql: &str) -> Result<(), Box<dyn std::error::Error>> {
+fn export_sql<P: AsRef<Path>>(
+    file_path: P,
+    prompt: &str,
+    sql: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
     let mut file = File::create(file_path)?;
     if !prompt.is_empty() {
         writeln!(file, "-- Prompt: {}\n", prompt)?;
@@ -123,8 +133,8 @@ fn export_sql(file_path: &Path, prompt: &str, sql: &str) -> Result<(), Box<dyn s
     Ok(())
 }
 
-fn export_csv(
-    file_path: &Path,
+fn export_csv<P: AsRef<Path>>(
+    file_path: P,
     schema: &Arc<Schema>,
     datasets: &[RecordBatch],
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -139,8 +149,8 @@ fn export_csv(
     Ok(())
 }
 
-fn export_json(
-    file_path: &Path,
+fn export_json<P: AsRef<Path>>(
+    file_path: P,
     datasets: &[RecordBatch],
 ) -> Result<(), Box<dyn std::error::Error>> {
     let json_data = record_batches_to_json(datasets)?;
@@ -148,8 +158,8 @@ fn export_json(
     Ok(())
 }
 
-pub fn export_formatter(task_output: &str, export_file_path: &PathBuf) {
-    match get_file_directories(export_file_path) {
+pub fn export_formatter<P: AsRef<Path>>(task_output: &str, export_file_path: P) {
+    match get_file_directories(export_file_path.as_ref()) {
         Ok(file_path) => {
             let mut file = File::create(&file_path).expect("Failed to create file");
             file.write_all(task_output.as_bytes())
@@ -163,7 +173,7 @@ pub fn export_formatter(task_output: &str, export_file_path: &PathBuf) {
             "{}",
             format!(
                 "Error creating directories for path '{}': {}",
-                export_file_path.display(),
+                export_file_path.as_ref().display(),
                 e
             )
             .warning()

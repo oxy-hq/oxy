@@ -21,6 +21,8 @@ pub enum OnyxError {
     SerializerError(String),
     #[error("IO error:\n{0}")]
     IOError(String),
+    #[error("DB error:\n{0}")]
+    DBError(String),
 }
 
 impl From<Box<dyn std::error::Error>> for OnyxError {

@@ -1,4 +1,7 @@
-use std::fmt::{Debug, Formatter};
+use std::{
+    fmt::{Debug, Formatter},
+    sync::Arc,
+};
 
 use async_trait::async_trait;
 use cache::CacheExecutor;
@@ -8,7 +11,7 @@ use tokio::sync::mpsc::Sender;
 use value::ContextValue;
 use write::{OutputCollector, Write};
 
-use crate::{config::model::Config, errors::OnyxError};
+use crate::{config::ConfigManager, errors::OnyxError};
 
 use super::renderer::{Renderer, TemplateRegister};
 
@@ -32,7 +35,7 @@ pub struct ExecutionContext<'writer, Event> {
     writer: &'writer mut (dyn Write + Send + Sync + 'writer),
     sender: Sender<Event>,
     pub renderer: Renderer,
-    pub config: Config,
+    pub config: Arc<ConfigManager>,
 }
 
 impl<'writer, Event> ExecutionContext<'writer, Event>
@@ -42,7 +45,7 @@ where
     pub fn new(
         renderer: Renderer,
         writer: &'writer mut (dyn Write + Send + Sync + 'writer),
-        config: Config,
+        config: Arc<ConfigManager>,
         sender: Sender<Event>,
     ) -> Self {
         ExecutionContext {
@@ -115,7 +118,7 @@ impl<Event> Debug for ExecutionContext<'_, Event> {
 pub struct ExecutionContextParts<Event> {
     pub sender: Sender<Event>,
     pub renderer: Renderer,
-    pub config: Config,
+    pub config: Arc<ConfigManager>,
 }
 
 impl<Event> ExecutionContextParts<Event> {
@@ -139,7 +142,7 @@ impl<Event> ExecutionContextParts<Event> {
 pub async fn run<Input, Event>(
     executable: &dyn Executable<Input, Event>,
     input: Input,
-    config: Config,
+    config: Arc<ConfigManager>,
     global_context: minijinja::Value,
     template_register: Option<&dyn TemplateRegister>,
     handler: impl Handler<Event = Event> + 'static,

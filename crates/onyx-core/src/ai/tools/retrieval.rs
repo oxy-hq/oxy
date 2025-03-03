@@ -1,7 +1,6 @@
 use super::Tool;
 use crate::{
-    ai::retrieval::{embedding::VectorStore, get_vector_store},
-    config::model::{Config, RetrievalTool as Retrieval},
+    ai::retrieval::embedding::VectorStore, config::model::RetrievalTool as Retrieval,
     execute::agent::ToolCall,
 };
 use async_trait::async_trait;
@@ -21,9 +20,7 @@ pub struct RetrieveTool {
 }
 
 impl RetrieveTool {
-    pub fn new(agent_name: &str, retrieval: &Retrieval, config: &Config) -> Self {
-        let vector_db =
-            get_vector_store(agent_name, retrieval, config).expect("Failed to init vector store");
+    pub fn new(retrieval: &Retrieval, vector_db: Box<dyn VectorStore + Send + Sync>) -> Self {
         RetrieveTool {
             name: retrieval.name.to_string(),
             vector_db,
