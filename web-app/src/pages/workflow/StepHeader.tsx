@@ -2,39 +2,29 @@ import Button from "@/components/ui/Button";
 import Icon from "@/components/ui/Icon";
 import Text from "@/components/ui/Typography/Text";
 
-import { TaskData } from ".";
 import { css } from "styled-system/css";
-import { SvgAssets } from "@/components/ui/Icon/Dictionary";
-
-const taskNameMap: Record<string, string> = {
-  execute_sql: "SQL",
-  loop_sequential: "Loop sequential",
-  formatter: "Formatter",
-  agent: "Agent",
-};
-
-const taskIconMap: Record<string, SvgAssets> = {
-  execute_sql: "code",
-  loop_sequential: "arrow_reload",
-  formatter: "placeholder",
-  agent: "agent",
-};
+import useWorkflow, { TaskConfigWithId } from "@/stores/useWorkflow";
+import { taskIconMap, taskNameMap } from "./utils";
 
 type Props = {
-  task: TaskData;
+  task: TaskConfigWithId;
   expandable?: boolean;
   expanded?: boolean;
   onExpandClick?: () => void;
 };
 
-export const TaskHeader = ({
+export const StepHeader = ({
   task,
   expandable,
   expanded,
   onExpandClick,
 }: Props) => {
-  const taskName = taskNameMap[task.type as keyof typeof taskNameMap];
-  const taskIcon = taskIconMap[task.type as keyof typeof taskIconMap];
+  const taskName = taskNameMap[task.type];
+  const taskIcon = taskIconMap[task.type];
+  const setSelectedNodeId = useWorkflow((state) => state.setSelectedNodeId);
+  const onMoreClick = () => {
+    setSelectedNodeId(task.id);
+  };
   return (
     <div
       className={css({
@@ -105,7 +95,9 @@ export const TaskHeader = ({
         >
           {expandable && (
             <Button
-              style={{ padding: 0 }}
+              className={css({
+                padding: "padding.paddingXXS",
+              })}
               variant="ghost"
               size="small"
               onClick={onExpandClick}
@@ -113,7 +105,16 @@ export const TaskHeader = ({
               <Icon asset={expanded ? "collapse" : "expand"} />
             </Button>
           )}
-          <Icon asset="more_vertical" />
+          <Button
+            className={css({
+              padding: "padding.paddingXXS",
+            })}
+            variant="ghost"
+            size="small"
+            onClick={onMoreClick}
+          >
+            <Icon asset="more_vertical" />
+          </Button>
         </div>
       </div>
     </div>

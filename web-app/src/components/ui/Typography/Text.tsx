@@ -68,6 +68,43 @@ const textStyles = cva({
       bodyBaseMedium: {
         textStyle: "bodyBaseMedium",
       },
+      panelTitleRegular: {
+        textStyle: "panelTitleRegular",
+      },
+      body: {
+        fontFamily: "Inter",
+      },
+      panelTitle: {
+        fontFamily: "Inter",
+        fontSize: "14px",
+        fontStyle: "normal",
+        lineHeight: "17px",
+      },
+      button: {
+        fontFamily: "Instrument Sans",
+        fontSize: "14px",
+        fontStyle: "normal",
+        fontWeight: 500,
+        lineHeight: "150%",
+      },
+    },
+    size: {
+      small: {
+        fontSize: "12px",
+        lineHeight: "14px",
+      },
+      base: {
+        fontSize: "14px",
+        lineHeight: "17px",
+      },
+    },
+    weight: {
+      regular: {
+        fontWeight: 400,
+      },
+      medium: {
+        fontWeight: 500,
+      },
       headingH4: {
         textStyle: "headingH4",
       },
@@ -88,6 +125,22 @@ const textStyles = cva({
       },
     },
   },
+  compoundVariants: [
+    {
+      variant: "panelTitle",
+      weight: "regular",
+      css: {
+        fontWeight: 600,
+      },
+    },
+    {
+      variant: "button",
+      weight: "regular",
+      css: {
+        fontWeight: 500,
+      },
+    },
+  ],
 });
 
 export type TextProps = {
@@ -113,7 +166,7 @@ const Text = React.forwardRef<TextElement, TextProps>((props, forwardedRef) => {
     <Slot
       {...textProps}
       ref={forwardedRef}
-      className={cx(textStyles({ variant, color }), className)}
+      className={cx(textStyles({ variant, color, ...textProps }), className)}
     >
       {asChild ? children : <Tag>{children}</Tag>}
     </Slot>

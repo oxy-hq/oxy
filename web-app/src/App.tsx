@@ -8,7 +8,7 @@ import { css } from "styled-system/css";
 
 import "@xyflow/react/dist/style.css";
 import WithSidebarLayout from "@/components/WithSidebarLayout";
-import WorkflowPage from "./pages/worflow";
+import WorkflowPage from "./pages/workflow";
 
 import ProtectedRoute from "./components/ProtectedRoute";
 import { TooltipProvider } from "./components/ui/Tooltip";
@@ -16,6 +16,7 @@ import EmptyPage from "./pages/empty";
 import Init from "./pages/init";
 import FilePage from "./pages/file";
 import AgentPageWrapper from "./pages/agent";
+
 const TOOLTIP_DELAY_DURATION = 3;
 
 const layoutWrapperStyles = css({

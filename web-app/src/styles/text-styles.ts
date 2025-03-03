@@ -219,7 +219,16 @@ export const textStyles = defineTextStyles({
       lineHeight: "17px",
     },
   },
-
+  panelTitleRegular: {
+    description: "Panel Title Regular",
+    value: {
+      fontFamily: "Inter",
+      fontSize: "14px",
+      fontStyle: "normal",
+      fontWeight: 600,
+      lineHeight: "17px",
+    },
+  },
   headingH4: {
     description: "Heading H4",
     value: {

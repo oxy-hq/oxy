@@ -8,7 +8,13 @@ import {
 } from "@xyflow/react";
 import ELK, { ElkNode } from "elkjs/lib/elk.bundled.js";
 
-import useDiagram, { Edge, LayoutedNode, Node } from "@/stores/useDiagram";
+import useWorkflow, {
+  Edge,
+  LayoutedNode,
+  Node,
+  TaskConfig,
+  TaskType,
+} from "@/stores/useWorkflow";
 
 import { ConnectionLine } from "./ConnectionLine";
 import {
@@ -17,11 +23,15 @@ import {
   distanceBetweenHeaderAndContent,
   distanceBetweenNodes,
   headerHeight,
+  minNodeWidth,
+  nodeBorder,
+  nodeBorderHeight,
   nodePadding,
   normalNodeHeight,
+  paddingHeight,
   smallestNodeWidth,
 } from "./constants";
-import { TaskNode } from "./TaskNode";
+import { StepNode } from "./StepNode";
 
 const elk = new ELK();
 
@@ -43,7 +53,7 @@ function calculateNodesSize(nodes: Node[]): Node[] {
       .filter((n) => n.parentId === node.id)
       .filter((n) => !n.hidden);
     let totalHeight = 0;
-    let maxWidth = 200;
+    let maxWidth = minNodeWidth;
     children.forEach((child, index) => {
       if (child.size.width === 0) computeSize(child);
       maxWidth = Math.max(maxWidth, child.size.width);
@@ -57,9 +67,9 @@ function calculateNodesSize(nodes: Node[]): Node[] {
     });
     let width = maxWidth;
     if (children.length > 0) {
-      width += 2 * contentPadding;
+      width += 2 * contentPadding + 2 * nodePadding + 2 * nodeBorder;
     }
-    let height = totalHeight + normalNodeHeight;
+    let height = totalHeight + headerHeight + paddingHeight + nodeBorderHeight;
     if (children.length > 0) {
       height += distanceBetweenHeaderAndContent + contentPaddingHeight;
     }
@@ -84,7 +94,7 @@ function calculateNodesSize(nodes: Node[]): Node[] {
       node.width = maxWidth;
     });
 
-  return newNodes.sort((a, b) => a.id.length - b.id.length);
+  return newNodes;
 }
 
 const getLayoutedElements = async (nodes: Node[], edges: Edge[]) => {
@@ -96,7 +106,8 @@ const getLayoutedElements = async (nodes: Node[], edges: Edge[]) => {
       const childNodes = nodes.filter(
         (n) => n.parentId === node.id && !n.hidden,
       );
-      let topPadding = headerHeight + nodePadding;
+      let topPadding = headerHeight + nodePadding + nodeBorder;
+      const padding = contentPadding + nodePadding + nodeBorder;
       if (childNodes.length > 0) {
         topPadding += distanceBetweenHeaderAndContent + contentPadding;
       }
@@ -107,9 +118,9 @@ const getLayoutedElements = async (nodes: Node[], edges: Edge[]) => {
         layoutOptions: {
           "elk.algorithm": "layered",
           "elk.direction": "DOWN",
-          "elk.padding": `[top=${topPadding}, left=${contentPadding}, bottom=${contentPadding + nodePadding}, right=${contentPadding}]`,
-          "elk.spacing.nodeNode": `${distanceBetweenNodes}`,
-          "elk.layered.spacing.nodeNodeBetweenLayers": `${distanceBetweenNodes}`,
+          "elk.padding": `[top=${topPadding}, left=${padding}, bottom=${padding}, right=${padding}]`,
+          "elk.spacing.nodeNode": distanceBetweenNodes,
+          "elk.layered.spacing.nodeNodeBetweenLayers": distanceBetweenNodes,
         },
         children: buildChildren(childNodes),
         parentId: node.parentId,
@@ -156,28 +167,25 @@ const getLayoutedElements = async (nodes: Node[], edges: Edge[]) => {
 };
 
 const buildNodes = (
-  tasks: TaskData[],
+  tasks: TaskConfig[],
   parentId: string | undefined = undefined,
   level = 0,
 ) => {
-  let idPrefix = null;
-  if (parentId) {
-    idPrefix = parentId;
-  }
   let edges: Edge[] = [];
   let nodes: Node[] = [];
   tasks.map((task, index) => {
-    let id;
-    if (idPrefix) {
-      id = `${idPrefix}-${index}`;
-    } else {
-      id = index.toString();
-    }
+    const id = task.id;
 
     // else {
     const node: Node = {
       id,
-      data: { task: { ...task, id: id }, id },
+      data: {
+        task: { ...task, id: id },
+        id,
+        index,
+        canMoveDown: index < tasks.length - 1,
+        canMoveUp: index > 0,
+      },
       type: task.type,
       parentId,
       name: task.name,
@@ -186,13 +194,10 @@ const buildNodes = (
         height: 0,
       },
       hidden: false,
-      width: 0,
-      height: 0,
-      children: [],
     };
-    if (task.type === "loop_sequential") {
+    if (task.type === TaskType.LOOP_SEQUENTIAL) {
       const { nodes: loopNodes, edges: loopEdges } = buildNodes(
-        task.tasks!,
+        task.tasks,
         id,
         level + 1,
       );
@@ -201,18 +206,12 @@ const buildNodes = (
     }
     nodes.push(node);
     if (index > 0) {
-      let prevId;
-      if (idPrefix) {
-        prevId = `${idPrefix}-${index - 1}`;
-      } else {
-        prevId = (index - 1).toString();
-      }
+      const prevId = tasks[index - 1].id;
       edges.push({
         id: `${prevId}-${id}`,
         source: prevId,
         target: id,
       });
-      // }
     }
   });
   edges = edges.sort((a, b) => {
@@ -222,31 +221,24 @@ const buildNodes = (
 };
 
 const nodeTypes = {
-  execute_sql: TaskNode,
-  loop_sequential: TaskNode,
-  formatter: TaskNode,
-  agent: TaskNode,
+  execute_sql: StepNode,
+  loop_sequential: StepNode,
+  formatter: StepNode,
+  agent: StepNode,
 };
 
-export type TaskData = {
-  id: string;
-  name: string;
-  type: string;
-  tasks?: TaskData[];
-};
-
-const WorkflowDiagram = ({ tasks }: { tasks: TaskData[] }) => {
-  const setNodes = useDiagram((state) => state.setNodes);
-  const setEdges = useDiagram((state) => state.setEdges);
-  const setLayoutedNodes = useDiagram((state) => state.setLayoutedNodes);
-  const layoutedNodes = useDiagram((state) => state.layoutedNodes);
+const WorkflowDiagram = ({ tasks }: { tasks: TaskConfig[] }) => {
+  const setNodes = useWorkflow((state) => state.setNodes);
+  const setEdges = useWorkflow((state) => state.setEdges);
+  const setLayoutedNodes = useWorkflow((state) => state.setLayoutedNodes);
+  const layoutedNodes = useWorkflow((state) => state.layoutedNodes);
   useEffect(() => {
     const { nodes, edges } = buildNodes(tasks);
     setNodes(nodes);
     setEdges(edges);
-  }, [tasks]);
-  const nodes = useDiagram((state) => state.nodes);
-  const edges = useDiagram((state) => state.edges);
+  }, [tasks, setNodes, setEdges]);
+  const nodes = useWorkflow((state) => state.nodes);
+  const edges = useWorkflow((state) => state.edges);
   useEffect(() => {
     const getLayout = async () => {
       const nodesWithSize = calculateNodesSize(nodes);
@@ -254,7 +246,7 @@ const WorkflowDiagram = ({ tasks }: { tasks: TaskData[] }) => {
       setLayoutedNodes(lnodes);
     };
     getLayout();
-  }, [nodes, edges]);
+  }, [nodes, edges, setLayoutedNodes]);
   const reactFlowInstance = useReactFlow(); // Access React Flow instance
   const reactFlowWrapper = useRef(null);
 

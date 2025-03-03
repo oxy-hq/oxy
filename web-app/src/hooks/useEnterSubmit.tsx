@@ -1,15 +1,14 @@
-import { useRef } from "react";
+import { useRef, type RefObject } from "react";
 
-import type { RefObject } from "react";
-
+// TODO: Write unit tests for this hook
 export function useEnterSubmit(): {
-  formRef: RefObject<HTMLFormElement | null>;
+  formRef: RefObject<HTMLFormElement>;
   onKeyDown: (event: React.KeyboardEvent<HTMLTextAreaElement>) => void;
 } {
   const formRef = useRef<HTMLFormElement>(null);
 
   const handleKeyDown = (
-    event: React.KeyboardEvent<HTMLTextAreaElement>,
+    event: React.KeyboardEvent<HTMLTextAreaElement>
   ): void => {
     if (
       event.key === "Enter" &&

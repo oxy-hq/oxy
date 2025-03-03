@@ -9,7 +9,7 @@ export interface ChatState {
 export const useChatState = () => {
   const [chatState, setChatState] = useState<ChatState>({
     status: "idle",
-    errorMessage: null,
+    errorMessage: null
   });
 
   const setChatStatus = (status: ChatState["status"]) => {
@@ -17,7 +17,7 @@ export const useChatState = () => {
       setChatState({ errorMessage: null, status });
       return;
     }
-    setChatState((prev) => ({ ...prev, status }));
+    setChatState(prev => ({ ...prev, status }));
   };
 
   const setChatError = (errorMessage: string) => {

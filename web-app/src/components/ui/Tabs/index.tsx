@@ -86,6 +86,7 @@ export const Tab = ({ children, value }: TabProps) => {
     <button
       className={cx(isSelected && selectedTabStyles, tabStyles)}
       onClick={() => setSelectedTab(value)}
+      type="button"
     >
       <Text variant="tabBase">{children}</Text>
     </button>

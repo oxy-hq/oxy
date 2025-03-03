@@ -1,0 +1,12 @@
+export const distanceBetweenNodes = 20;
+export const distanceBetweenHeaderAndContent = 8;
+export const contentPadding = 8;
+export const contentPaddingHeight = contentPadding * 2;
+export const nodePadding = 8;
+export const paddingHeight = nodePadding * 2;
+export const headerHeight = 40;
+export const smallestNodeWidth = 200;
+export const nodeBorder = 1;
+export const nodeBorderHeight = nodeBorder * 2;
+export const normalNodeHeight = headerHeight + paddingHeight + nodeBorderHeight;
+export const minNodeWidth = 220;

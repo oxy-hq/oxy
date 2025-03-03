@@ -1,8 +1,11 @@
+import { nodePadding } from "./constants";
+
 type Props = {
   children: React.ReactNode;
+  selected?: boolean;
 };
 
-export const TaskContainer = ({ children }: Props) => {
+export const StepContainer = ({ children, selected }: Props) => {
   return (
     <div
       style={{
@@ -11,8 +14,8 @@ export const TaskContainer = ({ children }: Props) => {
         gap: "8px",
         borderRadius: "10px",
         border: "1px solid #D4D4D4",
-        background: "#FBFBFB",
-        padding: "4px",
+        backgroundColor: selected ? "#E5E7EB" : "#FFF",
+        padding: `${nodePadding}px`,
       }}
     >
       {children}
