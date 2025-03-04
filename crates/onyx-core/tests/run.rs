@@ -44,7 +44,7 @@ pub mod run {
             .assert()
             .failure();
         let output = String::from_utf8(result.get_output().stderr.clone()).unwrap();
-        assert!(output.contains("Database not found"));
+        assert!(output.contains("Database 'test' not found in config"));
     }
 
     #[test]

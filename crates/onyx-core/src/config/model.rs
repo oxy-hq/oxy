@@ -20,7 +20,6 @@ pub struct Config {
     #[garde(dive)]
     pub models: Vec<Model>,
     #[garde(dive)]
-    #[serde(alias = "warehouses")]
     pub databases: Vec<Database>,
 
     #[serde(skip)]
@@ -413,7 +412,6 @@ pub enum TaskType {
 }
 #[derive(Deserialize, JsonSchema)]
 pub struct TempWorkflow {
-    #[serde(alias = "steps")]
     pub tasks: Vec<Task>,
     pub variables: Option<HashMap<String, String>>,
     #[serde(default = "default_tests")]
@@ -471,7 +469,6 @@ pub struct Workflow {
     #[schemars(skip)]
     #[garde(skip)]
     pub name: String,
-    #[serde(alias = "steps")]
     #[garde(dive)]
     pub tasks: Vec<Task>,
     #[garde(skip)]
