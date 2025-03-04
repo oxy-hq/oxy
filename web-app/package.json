@@ -66,14 +66,14 @@
   "devDependencies": {
     "@pandacss/dev": "^0.53.0",
     "@types/invariant": "^2.2.37",
-    "@types/node": "^22.13.5",
+    "@types/node": "^22.13.9",
     "@types/react": "^19.0.10",
     "@types/react-dom": "^19.0.4",
     "@types/react-window": "^1.8.8",
     "@vitejs/plugin-react-swc": "^3.8.0",
     "@types/lodash": "^4.17.15",
     "i": "^0.3.7",
-    "typescript": "^5.7.3",
+    "typescript": "^5.8.2",
     "vite": "^6.1.1"
   },
   "packageManager": "pnpm@9.15.4"
