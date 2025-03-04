@@ -34,10 +34,10 @@ impl From<io::Error> for InitError {
 // when using CARGO_MANIFEST_DIR with windows path separators
 // TODO: replace with a more robust solution, like using env AGENTS_DIR_PATH
 #[cfg(target_os = "windows")]
-static PROJECT_DIR: Dir = include_dir!("D:\\a\\onyx\\onyx\\examples\\sample_project");
+static PROJECT_DIR: Dir = include_dir!("D:\\a\\onyx\\onyx\\sample_project");
 
 #[cfg(not(target_os = "windows"))]
-static PROJECT_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/examples/sample_project");
+static PROJECT_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/sample_project");
 fn prompt_with_default(prompt: &str, default: &str, info: Option<&str>) -> io::Result<String> {
     match info {
         Some(info) => println!("\n  {}", info.info()),
