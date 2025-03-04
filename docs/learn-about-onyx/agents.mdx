@@ -88,18 +88,18 @@ the sql and return the results to the LLM, and `validate_sql`, which will
 attempt to write queries until the query successful executes, sending only the
 query itself back to the LLM (not the result set).
 
-Both can be configured by specifying a `warehouse` to connect to, as shown below:
+Both can be configured by specifying a `database` to connect to, as shown below:
 
 ```yaml
   - name: execute_sql  # any name you'd like
     type: execute_sql
-    warehouse: primary_warehouse
+    database: primary_database
 ```
 
 ```yaml
   - name: validate_sql  # any name you'd like 
     type: validate_sql
-    warehouse: primary_warehouse
+    database: primary_database
 ```
 
 ### type: `retrieval`

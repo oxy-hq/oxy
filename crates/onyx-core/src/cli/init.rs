@@ -245,7 +245,7 @@ fn create_config_file(config_path: &Path) -> Result<(), InitError> {
     println!("{}", "\nMODEL CONFIGURATION:".tertiary());
     let models = collect_models()?;
 
-    // Create defaults before moving warehouses
+    // Create defaults before moving databases
     let default_database = databases.first().unwrap().name.clone();
 
     let config = Config {
