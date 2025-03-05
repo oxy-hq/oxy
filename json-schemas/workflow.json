@@ -3,13 +3,9 @@
   "title": "Workflow",
   "type": "object",
   "required": [
-    "name",
     "tasks"
   ],
   "properties": {
-    "name": {
-      "type": "string"
-    },
     "tasks": {
       "type": "array",
       "items": {

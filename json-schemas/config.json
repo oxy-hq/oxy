@@ -37,10 +37,14 @@
         {
           "type": "object",
           "required": [
+            "dataset",
             "key_path",
             "type"
           ],
           "properties": {
+            "dataset": {
+              "type": "string"
+            },
             "key_path": {
               "type": "string"
             },
@@ -55,9 +59,13 @@
         {
           "type": "object",
           "required": [
+            "dataset",
             "type"
           ],
           "properties": {
+            "dataset": {
+              "type": "string"
+            },
             "type": {
               "type": "string",
               "enum": [
@@ -68,13 +76,9 @@
         }
       ],
       "required": [
-        "dataset",
         "name"
       ],
       "properties": {
-        "dataset": {
-          "type": "string"
-        },
         "name": {
           "type": "string"
         }
@@ -83,6 +87,12 @@
     "Defaults": {
       "type": "object",
       "properties": {
+        "agent": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "database": {
           "type": [
             "string",
