@@ -55,7 +55,7 @@
     "react-router-dom": "^7.2.0",
     "react-textarea-autosize": "^8.5.7",
     "react-window": "^1.8.11",
-    "remark-directive": "^3.0.1",
+    "remark-directive": "^4.0.0",
     "remark-gfm": "^4.0.1",
     "sort-by": "^1.2.0",
     "yaml": "^2.7.0",
