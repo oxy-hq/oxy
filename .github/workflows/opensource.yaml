@@ -46,11 +46,11 @@ jobs:
           destination_repo: onyx-hq/onyx
           push_exclude: >-
             web-app/**
+            internal-docs/**
             crates/onyx-desktop/src/**
             crates/onyx-core/dist
             pnpm-lock.yaml
             pnpm-workspace.yaml
-            release-guideline.md
           pr_move: |-
             crates/onyx-desktop/src/lib.rs||oss/lib.rs||**
             crates/onyx-core/dist||oss/dist||**
