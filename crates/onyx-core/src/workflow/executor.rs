@@ -18,6 +18,7 @@ use crate::connector::Connector;
 use crate::errors::OnyxError;
 use crate::execute::agent::build_agent;
 use crate::execute::agent::AgentInput;
+use crate::execute::consensus::ConsensusExecutor;
 use crate::execute::core::arrow_table::ArrowTable;
 use crate::execute::core::cache::Cacheable;
 use crate::execute::core::event::Dispatcher;
@@ -234,8 +235,10 @@ impl Executable<WorkflowInput, WorkflowEvent> for WorkflowTask {
         _input: WorkflowInput,
     ) -> Result<(), OnyxError> {
         let workflow = execution_context.config.resolve_workflow(&self.src).await?;
-        let dispatcher =
-            Dispatcher::new(vec![Box::new(WorkflowReceiver), Box::new(WorkflowExporter)]);
+        let dispatcher = Dispatcher::new(vec![
+            Box::new(WorkflowReceiver::new()),
+            Box::new(WorkflowExporter),
+        ]);
         let executor = WorkflowExecutor::new(workflow.clone());
         let default_variables = workflow.variables.clone();
         let variables = if let Some(vars) = &self.variables {
@@ -302,6 +305,7 @@ impl Executable<LoopInput, WorkflowEvent> for LoopSequentialTask {
                 },
                 self.concurrency,
                 Some(|| {}),
+                None,
             )
             .await;
         loop_executor.finish()?;
@@ -366,7 +370,19 @@ impl Executable<(), WorkflowEvent> for Task {
     ) -> Result<(), OnyxError> {
         match &self.task_type {
             TaskType::Agent(agent) => {
-                agent.execute(execution_context, WorkflowInput).await?;
+                if agent.consensus_run > 1 {
+                    let mut consensus_executor = ConsensusExecutor::new();
+                    consensus_executor
+                        .execute(
+                            execution_context,
+                            agent,
+                            agent.prompt.clone(),
+                            agent.consensus_run,
+                        )
+                        .await?;
+                } else {
+                    agent.execute(execution_context, WorkflowInput).await?;
+                }
             }
             TaskType::ExecuteSQL(execute_sql) => {
                 execute_sql

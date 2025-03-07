@@ -5,11 +5,11 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue
+  SelectValue,
 } from ".";
 
 const meta: Meta<typeof Select> = {
-  component: Select
+  component: Select,
 };
 
 export default meta;
@@ -17,9 +17,9 @@ type Story = StoryObj<typeof Select>;
 
 export const DefaultWithNoValue: Story = {
   argTypes: {
-    disabled: { control: "boolean", defaultValue: false }
+    disabled: { control: "boolean", defaultValue: false },
   },
-  render: args => (
+  render: (args) => (
     <Select {...args}>
       <SelectTrigger>
         <SelectValue placeholder="Select a fruit" />
@@ -48,14 +48,14 @@ export const DefaultWithNoValue: Story = {
         <SelectItem value="blackcurrant">Blackcurrant</SelectItem>
       </SelectContent>
     </Select>
-  )
+  ),
 };
 
 export const DefaultWithValue: Story = {
   args: {
-    value: "banana"
+    value: "banana",
   },
-  render: args => (
+  render: (args) => (
     <Select {...args}>
       <SelectTrigger>
         <SelectValue placeholder="Select a fruit" />
@@ -68,18 +68,18 @@ export const DefaultWithValue: Story = {
         <SelectItem value="pineapple">Pineapple</SelectItem>
       </SelectContent>
     </Select>
-  )
+  ),
 };
 
 export const WithError: Story = {
   argTypes: {
-    disabled: { control: "boolean", defaultValue: false }
+    disabled: { control: "boolean", defaultValue: false },
   },
   args: {
     state: "error",
-    disabled: false
+    disabled: false,
   },
-  render: args => (
+  render: (args) => (
     <Select {...args}>
       <SelectTrigger>
         <SelectValue placeholder="Select a fruit" />
@@ -92,5 +92,5 @@ export const WithError: Story = {
         <SelectItem value="pineapple">Pineapple</SelectItem>
       </SelectContent>
     </Select>
-  )
+  ),
 };

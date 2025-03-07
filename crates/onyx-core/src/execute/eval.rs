@@ -274,6 +274,7 @@ impl Executable<Target, EvalEvent> for Consistency {
                     |_| Value::UNDEFINED,
                     self.concurrency,
                     Some(progress_tracker),
+                    None,
                 )
                 .await;
             let mut outputs = loop_executor.eject()?;

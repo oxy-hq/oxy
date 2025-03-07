@@ -69,7 +69,7 @@ impl LanceDBStore {
                 .with_api_key(tool_config.get_api_key())
                 .with_api_base(tool_config.api_url.to_string()),
         );
-        println!("db_path: {}", db_path);
+
         Self {
             uri: db_path.to_string(),
             connection: Arc::new(tokio::sync::OnceCell::new()),

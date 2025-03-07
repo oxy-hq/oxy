@@ -12,19 +12,23 @@ const ExportSection: React.FC = () => {
   const exp = watch("export");
 
   return (
-    <div className={css({
-      "_hover": {
-        "& .removeButton": {
-          visibility: "initial",
-        }
-      }
-    })}>
-      <div className={css({
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-        padding: "16px"
-      })}>
+    <div
+      className={css({
+        _hover: {
+          "& .removeButton": {
+            visibility: "initial",
+          },
+        },
+      })}
+    >
+      <div
+        className={css({
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          padding: "16px",
+        })}
+      >
         <Text variant="paragraph14Regular">Export</Text>
         <Button
           variant="ghost"
@@ -40,15 +44,23 @@ const ExportSection: React.FC = () => {
           <Icon asset="add" />
         </Button>
         {exp && (
-          <Button variant="ghost" type="button" className={cx(css({
-            visibility: "hidden",
-            padding: "0 8px",
-            borderRadius: "4px",
-            border: "1px solid",
-          }), "removeButton")}
+          <Button
+            variant="ghost"
+            type="button"
+            className={cx(
+              css({
+                visibility: "hidden",
+                padding: "0 8px",
+                borderRadius: "4px",
+                border: "1px solid",
+              }),
+              "removeButton",
+            )}
             onClick={() => setValue("export", undefined)}
           >
-            <Text variant="button" weight="regular" >Remove</Text>
+            <Text variant="button" weight="regular">
+              Remove
+            </Text>
           </Button>
         )}
       </div>
@@ -64,7 +76,6 @@ const ExportSection: React.FC = () => {
           <ExportFormatSelect />
           <ExportPathInput />
         </div>
-
       )}
     </div>
   );

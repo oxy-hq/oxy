@@ -23,24 +23,34 @@ const listAgents = async (projectPath: string) => {
       }
     }
     return paths;
-  }
+  };
 
   const rs = await processEntries(entries, projectPath);
-  const rsRelative = rs.map((path: string) => path.replace(projectPath, "")).map((path: string) => path.replace(/^\//, ""));
+  const rsRelative = rs
+    .map((path: string) => path.replace(projectPath, ""))
+    .map((path: string) => path.replace(/^\//, ""));
   return rsRelative;
-}
+};
 
 export const AgentRefSelect = ({ ...props }) => {
   const projectPath = useProjectPath((state) => state.projectPath);
   const [agents, setAgents] = useState<string[]>([]);
   useEffect(() => {
-    listAgents(projectPath).then(agents => {
-      return setAgents(agents);
-    }).catch(() => {
-      setAgents([]);
-    });
+    listAgents(projectPath)
+      .then((agents) => {
+        return setAgents(agents);
+      })
+      .catch(() => {
+        setAgents([]);
+      });
   }, [projectPath]);
-  const options = agents?.map(agent => ({ label: agent, value: agent })) || [];
-  return <DropdownField options={options} {...props} label="Agent reference">
-  </DropdownField>
-}
+  const options =
+    agents?.map((agent) => ({ label: agent, value: agent })) || [];
+  return (
+    <DropdownField
+      options={options}
+      {...props}
+      label="Agent reference"
+    ></DropdownField>
+  );
+};

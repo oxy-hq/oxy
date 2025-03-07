@@ -6,7 +6,11 @@ interface TextAreaFieldProps {
   placeholder?: string;
 }
 
-export const TextAreaField: React.FC<TextAreaFieldProps> = ({ label, placeholder, ...props }) => {
+export const TextAreaField: React.FC<TextAreaFieldProps> = ({
+  label,
+  placeholder,
+  ...props
+}) => {
   return (
     <div
       className={css({ display: "flex", flexDirection: "column", gap: "10px" })}

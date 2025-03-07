@@ -50,7 +50,7 @@ const Select: React.FC<SelectProps> = ({ options, className, ...props }) => {
               "&:focus": {
                 "--default-border-shadow": "none",
                 boxShadow: "none",
-              }
+              },
             })}
           >
             <Text variant="body" size="base" weight="regular">

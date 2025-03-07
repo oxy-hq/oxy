@@ -1,7 +1,9 @@
 import { css } from "styled-system/css";
 import Text from "@/components/ui/Typography/Text";
 
-const ExportFieldLabel: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+const ExportFieldLabel: React.FC<{ children: React.ReactNode }> = ({
+  children,
+}) => {
   return (
     <Text
       variant="body"

@@ -9,50 +9,50 @@ const meta: Meta<typeof TextFieldInput> = {
   argTypes: {
     disabled: {
       control: {
-        type: "boolean"
-      }
+        type: "boolean",
+      },
     },
     state: {
       control: {
         type: "select",
-        options: ["default", "error"]
-      }
+        options: ["default", "error"],
+      },
     },
     placeholder: {
       control: {
-        type: "text"
-      }
-    }
+        type: "text",
+      },
+    },
   },
   args: {
     disabled: false,
-    placeholder: "Write here..."
-  }
+    placeholder: "Write here...",
+  },
 };
 
 export default meta;
 type Story = StoryObj<typeof TextFieldInput>;
 
 export const DefaultWithValue: Story = {
-  render: args => <TextFieldInput {...args} defaultValue="Hello world" />
+  render: (args) => <TextFieldInput {...args} defaultValue="Hello world" />,
 };
 
 export const DefaultNoValue: Story = {
-  render: args => <TextFieldInput {...args} />
+  render: (args) => <TextFieldInput {...args} />,
 };
 
 export const WithError: Story = {
   args: {
-    state: "error"
+    state: "error",
   },
-  render: args => <TextFieldInput {...args} defaultValue="Error here" />
+  render: (args) => <TextFieldInput {...args} defaultValue="Error here" />,
 };
 
 export const Link: Story = {
   args: {
-    state: "default"
+    state: "default",
   },
-  render: args => (
+  render: (args) => (
     <TextFieldRoot slotVariant="link">
       <TextFieldSlot>
         <Text as="p" variant="label14Regular">
@@ -65,5 +65,5 @@ export const Link: Story = {
         defaultValue="Hello world"
       />
     </TextFieldRoot>
-  )
+  ),
 };

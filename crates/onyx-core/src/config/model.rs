@@ -284,6 +284,10 @@ pub struct AgentTask {
     #[garde(skip)]
     pub retry: usize,
 
+    #[serde(default = "default_consensus_run")]
+    #[garde(skip)]
+    pub consensus_run: usize,
+
     #[garde(dive)]
     pub export: Option<TaskExport>,
 }
@@ -562,6 +566,10 @@ fn default_case_sensitive() -> bool {
 }
 
 fn default_retry() -> usize {
+    1
+}
+
+fn default_consensus_run() -> usize {
     1
 }
 

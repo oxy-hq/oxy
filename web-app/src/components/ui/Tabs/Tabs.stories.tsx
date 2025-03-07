@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from "@storybook/react";
 import { TabsRoot, TabsList, TabsTrigger, TabsContent } from ".";
 
 const meta: Meta<typeof TabsRoot> = {
-  component: TabsRoot
+  component: TabsRoot,
 };
 
 export default meta;
@@ -31,5 +31,5 @@ export const Default: Story = {
       <TabsContent value="tab3">Tab 3 content</TabsContent>
       <TabsContent value="tab4">Tab 3 content</TabsContent>
     </TabsRoot>
-  )
+  ),
 };

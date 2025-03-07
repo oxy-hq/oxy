@@ -3,7 +3,7 @@ import React from "react";
 type Ref<T> = React.Ref<T>;
 
 function useMergedRefs<T>(ref1: Ref<T>, ref2: Ref<T>): Ref<T> {
-  return node => {
+  return (node) => {
     if (typeof ref1 === "function") {
       ref1(node);
     } else if (ref1) {

@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/onyx-hq/onyx-public-releases/refs/heads/main/json-schemas/workflow.json
+
+name: anonymize_sample
+steps:
+  - name: execute
+    type: execute_sql
+    warehouse: primary_warehouse
+    sql_file: data/example_anonymize.sql
+    database: primary_database
+  - name: report
+    type: agent
+    consensus_run: 5
+    agent_ref: agents/default.agent.yml
+    prompt: |
+      how many users?
+    

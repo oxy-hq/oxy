@@ -21,6 +21,7 @@ use crate::{
 
 use super::{
     agent::{AgentEvent, AgentReceiver},
+    consensus::{ConsensusEvent, ConsensusReceiver},
     core::{
         event::{Dispatcher, Handler},
         run,
@@ -76,6 +77,11 @@ pub enum WorkflowEvent {
         orig: AgentEvent,
         task: AgentTask,
         export_file_path: Option<String>,
+    },
+
+    // consensus
+    Consensus {
+        orig: ConsensusEvent,
     },
 
     // sql
@@ -163,7 +169,17 @@ impl TemplateRegister for Vec<Task> {
     }
 }
 
-pub struct WorkflowReceiver;
+pub struct WorkflowReceiver {
+    consensus_receiver: ConsensusReceiver,
+}
+
+impl WorkflowReceiver {
+    pub fn new() -> Self {
+        Self {
+            consensus_receiver: ConsensusReceiver::new(),
+        }
+    }
+}
 
 impl Handler for WorkflowReceiver {
     type Event = WorkflowEvent;
@@ -232,6 +248,9 @@ impl Handler for WorkflowReceiver {
             WorkflowEvent::Agent { orig, .. } => {
                 AgentReceiver.handle(orig);
             }
+            WorkflowEvent::Consensus { orig, .. } => {
+                self.consensus_receiver.handle(orig);
+            }
             WorkflowEvent::SubWorkflow { step } => {
                 println!("\n⏳Subworkflow executed successfully");
             }
@@ -299,7 +318,10 @@ pub async fn run_workflow(workflow_path: &PathBuf) -> Result<WorkflowResult, Ony
         .build()
         .await?;
     let workflow = config.resolve_workflow(workflow_path).await?;
-    let dispatcher = Dispatcher::new(vec![Box::new(WorkflowReceiver), Box::new(WorkflowExporter)]);
+    let dispatcher = Dispatcher::new(vec![
+        Box::new(WorkflowReceiver::new()),
+        Box::new(WorkflowExporter),
+    ]);
     let executor = WorkflowExecutor::new(workflow.clone());
     let ctx = Value::from_serialize(&workflow.variables);
     let output = run(
