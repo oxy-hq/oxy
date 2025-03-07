@@ -5,10 +5,6 @@
       "release-type": "rust",
       "component": "onyx-core"
     },
-    "crates/onyx-desktop": {
-      "release-type": "rust",
-      "component": "onyx-desktop"
-    },
     "crates/onyx-py": {
       "release-type": "rust",
       "component": "onyx-py"
@@ -37,8 +33,7 @@
         "onyx-core",
         "onyx-py",
         "migration",
-        "entity",
-        "onyx-desktop"
+        "entity"
       ]
     }
   ],

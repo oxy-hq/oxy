@@ -6,7 +6,6 @@
   - [Install Project Dependencies](#install-project-dependencies)
   - [Test Your Installation](#test-your-installation)
   - [Other Commands](#other-commands)
-  - [Run the Desktop App](#run-the-desktop-app)
   - [Integration Testing](#integration-testing)
   - [Known Issues](#known-issues)
   - [Onyx Py Requirements](#onyx-py-requirements)
@@ -123,16 +122,6 @@ onyx --help
 Please check out the docs folder for more commands and examples.
 
 Also, update the docs folder with usability docs and keep this README lean.
-
-## Run the Desktop App
-
-To run the desktop app, you can use the following command:
-
-```bash
-pnpm tauri dev
-```
-
-Follow Tauri upstream documents for more commands [with tauri-cli](https://v2.tauri.app/reference/cli/)
 
 ## Integration Testing
 
