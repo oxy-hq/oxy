@@ -161,7 +161,7 @@ fn export_json<P: AsRef<Path>>(
 pub fn export_formatter<P: AsRef<Path>>(task_output: &str, export_file_path: P) {
     match get_file_directories(export_file_path.as_ref()) {
         Ok(file_path) => {
-            let mut file = File::create(&file_path).expect("Failed to create file");
+            let mut file = File::create(file_path).expect("Failed to create file");
             file.write_all(task_output.as_bytes())
                 .expect("Failed to write to file");
             println!(

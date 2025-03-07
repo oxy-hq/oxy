@@ -11,6 +11,10 @@ databases:
     key_path: None
     dataset: .db/
 
+  - name: postgres
+    type: postgres
+    connection_string_file: postgres_connection_string.txt
+
 models:
   - name: openai-4o-mini
     vendor: openai

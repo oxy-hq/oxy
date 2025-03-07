@@ -38,7 +38,6 @@
           "type": "object",
           "required": [
             "dataset",
-            "key_path",
             "type"
           ],
           "properties": {
@@ -46,7 +45,10 @@
               "type": "string"
             },
             "key_path": {
-              "type": "string"
+              "type": [
+                "string",
+                "null"
+              ]
             },
             "type": {
               "type": "string",
@@ -70,6 +72,56 @@
               "type": "string",
               "enum": [
                 "duckdb"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "connection_string_file": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "database": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "host": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "password_file": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "port": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "postgres"
+              ]
+            },
+            "user": {
+              "type": [
+                "string",
+                "null"
               ]
             }
           }
