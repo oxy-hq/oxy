@@ -1,5 +1,6 @@
 import { resolve } from "path";
 
+import tailwindcss from "@tailwindcss/vite"
 import react from "@vitejs/plugin-react-swc";
 import { defineConfig } from "vite";
 const host = process.env.TAURI_DEV_HOST;
@@ -12,7 +13,7 @@ export default defineConfig({
       "styled-system": resolve(__dirname, "./styled-system"),
     },
   },
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
   publicDir: "public",
   // prevent vite from obscuring rust errors
   clearScreen: false,

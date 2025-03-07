@@ -1,3 +1,5 @@
+import "./fonts/font-face.css";
+import "./app.css";
 import {
   Navigate,
   Route,
@@ -16,6 +18,7 @@ import EmptyPage from "./pages/empty";
 import Init from "./pages/init";
 import FilePage from "./pages/file";
 import AgentPageWrapper from "./pages/agent";
+import Toaster from "./components/ui/Toast/Toaster.tsx";
 
 const TOOLTIP_DELAY_DURATION = 3;
 
@@ -48,6 +51,7 @@ function App() {
             <Route path="*" element={<Navigate to="/" />} />
           </Routes>
         </TooltipProvider>
+        <Toaster />
       </div>
     </Router>
   );
