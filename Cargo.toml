@@ -2,7 +2,6 @@
 # TODO: switch back to default-members = ["crates/*"] once we migrated from release-please
 members = [
   "crates/onyx-core",
-  "crates/onyx-desktop",
   "crates/onyx-py",
   "crates/migration",
   "crates/entity",
