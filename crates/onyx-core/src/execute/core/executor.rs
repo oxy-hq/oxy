@@ -3,6 +3,7 @@ use std::sync::{Arc, RwLock};
 use async_stream::stream;
 use futures::StreamExt;
 use minijinja::Value;
+use tokio::sync::mpsc::Sender;
 
 use crate::{errors::OnyxError, execute::renderer::TemplateRegister};
 
@@ -94,16 +95,17 @@ where
 
 #[derive(Debug, Default)]
 pub struct LoopAdapterState {
-    result: Vec<ContextValue>,
+    result: Vec<(usize, ContextValue)>,
 }
 
 pub struct LoopAdapter {
     state: Arc<RwLock<LoopAdapterState>>,
+    index: usize,
 }
 
 impl Write for LoopAdapter {
     fn write(&mut self, value: ContextValue) {
-        self.state.write().unwrap().result.push(value);
+        self.state.write().unwrap().result.push((self.index, value));
     }
 }
 
@@ -132,26 +134,56 @@ where
         context_map: F,
         concurrency: usize,
         progress_tracker: Option<T>,
+        event_sender: Option<Sender<(usize, Event)>>,
     ) -> Result<(), OnyxError>
     where
         F: Fn(&I) -> Value,
         T: Fn() + Copy,
     {
+        let mut result_indices: Vec<usize> = Vec::new();
+
         let results = stream! {
-            for param in params.drain(..) {
+            for (index, param) in params.drain(..).enumerate() {
                 let loop_state = self.loop_state.clone();
                 let mut parts = self.execution_context.clone_parts();
                 parts.with_renderer(
                     self.execution_context.renderer.wrap(context_map(&param))
                 );
 
+                if let Some(event_sender) = &event_sender {
+                    log::debug!("Using event_sender for index: {}", index);
+                    let index_clone = index;
+                    let event_sender_clone = event_sender.clone();
+
+                    let (sender, mut receiver) = tokio::sync::mpsc::channel::<Event>(100);
+
+
+                    tokio::spawn(async move {
+                        while let Some(event) = receiver.recv().await {
+                            if let Err(e) = event_sender_clone.send((index_clone, event)).await {
+                                log::error!("Failed to send indexed event: {}", e);
+                                break;
+                            }
+                        }
+                    });
+
+                    parts = parts.with_sender(sender);
+                }
+
+                result_indices.push(index);
+
                 yield async move {
-                    let mut loop_adapter = LoopAdapter { state: loop_state };
+                    let mut loop_adapter = LoopAdapter {
+                        state: loop_state,
+                        index,
+                    };
                     let mut loop_context =
                         ExecutionContext::from_parts(parts, &mut loop_adapter);
+
                     let output = entry.execute(&mut loop_context, param).await;
+
                     if let Some(progress_tracker) = progress_tracker {
-                        progress_tracker();
+                         progress_tracker();
                     }
                     output
                 };
@@ -170,6 +202,7 @@ where
             .into_iter()
             .filter_map(|r| r.err())
             .collect::<Vec<OnyxError>>();
+
         if !errs.is_empty() {
             return Err(OnyxError::RuntimeError(format!(
                 "----------\n{}\n----------",
@@ -187,12 +220,20 @@ where
         let lock = Arc::try_unwrap(self.loop_state)
             .map_err(|_| OnyxError::RuntimeError("Failed to eject value from loop".to_string()))?;
         let inner = lock.into_inner()?;
-        self.execution_context
-            .write(ContextValue::Array(Array(inner.result)));
+        self.execution_context.write(ContextValue::Array(Array(
+            inner.result.iter().map(|(_, v)| v.clone()).collect(),
+        )));
         Ok(())
     }
 
     pub fn eject(self) -> Result<Vec<ContextValue>, OnyxError> {
+        let lock = Arc::try_unwrap(self.loop_state)
+            .map_err(|_| OnyxError::RuntimeError("Failed to eject value from loop".to_string()))?;
+        let inner = lock.into_inner()?;
+        Ok(inner.result.iter().map(|(_, v)| v.clone()).collect())
+    }
+
+    pub fn eject_results(self) -> Result<Vec<(usize, ContextValue)>, OnyxError> {
         let lock = Arc::try_unwrap(self.loop_state)
             .map_err(|_| OnyxError::RuntimeError("Failed to eject value from loop".to_string()))?;
         let inner = lock.into_inner()?;

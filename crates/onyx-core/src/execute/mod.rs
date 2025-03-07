@@ -1,4 +1,5 @@
 pub mod agent;
+pub mod consensus;
 pub mod core;
 pub mod databases;
 pub mod eval;
