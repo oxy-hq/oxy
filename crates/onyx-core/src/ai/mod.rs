@@ -81,7 +81,7 @@ async fn from_config(
     };
     let toolbox = Arc::new(tools_from_config(config, agent_config).await?);
     let agent = build_agent(
-        &model,
+        model,
         file_format,
         &agent_config.output_format,
         &agent_config.system_instructions,

@@ -464,7 +464,7 @@ pub async fn handle_run_command(run_args: RunArgs) -> Result<RunResult, OnyxErro
                 .await?;
             let database = run_args
                 .database
-                .or_else(|| config.default_database_ref().map(|w| w.clone()));
+                .or_else(|| config.default_database_ref().cloned());
 
             if database.is_none() {
                 return Err(OnyxError::ArgumentError(

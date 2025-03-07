@@ -2,6 +2,7 @@ use garde::Validate;
 use indoc::indoc;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fmt;
 use std::path::PathBuf;
 
 use crate::config::validate::validate_file_path;
@@ -145,7 +146,7 @@ pub struct Defaults {
 #[garde(context(ValidationContext))]
 pub struct BigQuery {
     #[garde(custom(validate_file_path))]
-    pub key_path: PathBuf,
+    pub key_path: Option<PathBuf>,
     #[garde(length(min = 1))]
     pub dataset: String,
 }
@@ -158,6 +159,23 @@ pub struct DuckDB {
     pub file_search_path: String,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
+#[garde(context(ValidationContext))]
+pub struct Postgres {
+    #[garde(custom(validate_file_path))]
+    pub connection_string_file: Option<PathBuf>,
+    #[garde(length(min = 1))]
+    pub host: Option<String>,
+    #[garde(length(min = 1))]
+    pub port: Option<String>,
+    #[garde(length(min = 1))]
+    pub user: Option<String>,
+    #[garde(custom(validate_file_path))]
+    pub password_file: Option<PathBuf>,
+    #[garde(length(min = 1))]
+    pub database: Option<String>,
+}
+
 #[derive(Serialize, Deserialize, Debug, Validate, Clone, JsonSchema)]
 #[garde(context(ValidationContext))]
 #[serde(tag = "type")]
@@ -166,6 +184,18 @@ pub enum DatabaseType {
     Bigquery(#[garde(dive)] BigQuery),
     #[serde(rename = "duckdb")]
     DuckDB(#[garde(dive)] DuckDB),
+    #[serde(rename = "postgres")]
+    Postgres(#[garde(dive)] Postgres),
+}
+
+impl fmt::Display for DatabaseType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            DatabaseType::Bigquery(_) => write!(f, "bigquery"),
+            DatabaseType::DuckDB(_) => write!(f, "duckdb"),
+            DatabaseType::Postgres(_) => write!(f, "postgres"),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Validate, Clone, JsonSchema)]
@@ -184,6 +214,30 @@ impl Database {
         match &self.database_type {
             DatabaseType::Bigquery(bq) => bq.dataset.to_owned(),
             DatabaseType::DuckDB(ddb) => ddb.file_search_path.to_owned(),
+            DatabaseType::Postgres(pg) => {
+                let conn_string = if let Some(file_path) = &pg.connection_string_file {
+                    std::fs::read_to_string(file_path)
+                        .unwrap_or_default()
+                        .trim()
+                        .to_string()
+                } else {
+                    let password = std::fs::read_to_string(
+                        pg.password_file.as_ref().unwrap_or(&PathBuf::new()),
+                    )
+                    .unwrap_or_default()
+                    .trim()
+                    .to_string();
+                    format!(
+                        "{}:{}@{}:{}/{}",
+                        pg.user.clone().unwrap_or_default(),
+                        password,
+                        pg.host.clone().unwrap_or_default(),
+                        pg.port.clone().unwrap_or_default(),
+                        pg.database.clone().unwrap_or_default()
+                    )
+                };
+                conn_string
+            }
         }
     }
 
@@ -191,6 +245,7 @@ impl Database {
         match &self.database_type {
             DatabaseType::Bigquery(_) => "bigquery".to_string(),
             DatabaseType::DuckDB(_) => "duckdb".to_string(),
+            DatabaseType::Postgres(_) => "postgres".to_string(),
         }
     }
 }

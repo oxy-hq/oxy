@@ -1,32 +1,36 @@
 use super::model::{Config, ExportFormat, TaskExport, TaskType};
 use std::{env, fmt::Display, path::PathBuf};
 
-const FILE_NOT_FOUND_ERROR: &str = "file does not exist";
-const DIR_NOT_FOUND_ERROR: &str = "directory does not exist";
-const ENV_VAR_NOT_FOUND_ERROR: &str = "env var not set";
-const SQL_FILE_NOT_FOUND_ERROR: &str = "sql file not found";
-const DATABASE_NOT_FOUND_ERROR: &str = "database not found";
-const AGENT_NOT_FOUND_ERROR: &str = "agent not found";
+const FILE_NOT_FOUND_ERROR: &str = "File does not exist";
+const FILE_SAME_DIR_ERROR: &str = "File must be in the same directory as the config file";
+const DIR_NOT_FOUND_ERROR: &str = "Directory does not exist";
+const ENV_VAR_NOT_FOUND_ERROR: &str = "Env var not set";
+const SQL_FILE_NOT_FOUND_ERROR: &str = "Sql file not found";
+const DATABASE_NOT_FOUND_ERROR: &str = "Database not found";
+const AGENT_NOT_FOUND_ERROR: &str = "Agent not found";
+const INVALID_EXPORT_FORMAT_ERROR: &str = "Invalid export format";
 
 fn format_error_message(error_message: &str, value: impl Display) -> garde::Error {
     garde::Error::new(format!("{} ({})", error_message, value))
 }
 
-pub fn validate_file_path(path: &PathBuf, context: &ValidationContext) -> garde::Result {
-    if path.is_absolute() || path.components().count() > 1 {
-        return Err(format_error_message(
-            "File must be in the current directory",
-            path.as_path().to_string_lossy(),
-        ));
-    }
+pub fn validate_file_path(path: &Option<PathBuf>, context: &ValidationContext) -> garde::Result {
+    if let Some(path) = path {
+        if path.is_absolute() || path.components().count() > 1 {
+            return Err(format_error_message(
+                FILE_SAME_DIR_ERROR,
+                path.to_string_lossy(),
+            ));
+        }
 
-    let file_path = context.config.project_path.join(path);
+        let file_path = context.config.project_path.join(path);
 
-    if !file_path.exists() {
-        return Err(format_error_message(
-            FILE_NOT_FOUND_ERROR,
-            file_path.as_path().to_string_lossy(),
-        ));
+        if !file_path.exists() {
+            return Err(format_error_message(
+                FILE_NOT_FOUND_ERROR,
+                file_path.to_string_lossy(),
+            ));
+        }
     }
     Ok(())
 }
@@ -115,8 +119,8 @@ fn validate_export(
     if let Some(export) = export {
         if !allowed_formats.contains(&export.format) {
             return Err(garde::Error::new(format!(
-                "Invalid export format: {:?}, only supports {:?} for {} task",
-                export.format, allowed_formats, task_name
+                "{}: {:?}, only supports {:?} for {} task",
+                INVALID_EXPORT_FORMAT_ERROR, export.format, allowed_formats, task_name
             )));
         }
     }

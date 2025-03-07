@@ -11,6 +11,12 @@ pub struct ConfigBuilder {
     storage: Option<ConfigSource>,
 }
 
+impl Default for ConfigBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ConfigBuilder {
     pub fn new() -> Self {
         Self { storage: None }

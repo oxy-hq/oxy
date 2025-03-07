@@ -1,5 +1,5 @@
 use crate::cli::model::{BigQuery, Config, DatabaseType, DuckDB};
-use crate::theme::*;
+use crate::config::model::Postgres;
 use crate::utils::find_project_path;
 use include_dir::{include_dir, Dir};
 use std::io::{self, Write};
@@ -15,11 +15,17 @@ pub enum InitError {
     ExtractionError(String),
 }
 
+const IO_ERROR: &str = "IO error";
+const EXTRACTION_ERROR: &str = "Extraction error";
+const INVALID_CHOICE: &str = "Invalid choice. Please enter a valid number.";
+const REQUIRED_FIELDS_ERROR: &str =
+    "All fields are required when connection string is not specified.";
+
 impl fmt::Display for InitError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            InitError::IoError(err) => write!(f, "IO error: {}", err),
-            InitError::ExtractionError(err) => write!(f, "Extraction error: {}", err),
+            InitError::IoError(err) => write!(f, "{}: {}", IO_ERROR, err),
+            InitError::ExtractionError(err) => write!(f, "{}: {}", EXTRACTION_ERROR, err),
         }
     }
 }
@@ -39,9 +45,8 @@ static PROJECT_DIR: Dir = include_dir!("D:\\a\\onyx\\onyx\\sample_project");
 #[cfg(not(target_os = "windows"))]
 static PROJECT_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/sample_project");
 fn prompt_with_default(prompt: &str, default: &str, info: Option<&str>) -> io::Result<String> {
-    match info {
-        Some(info) => println!("\n  {}", info.info()),
-        None => (),
+    if let Some(info) = info {
+        println!("\n  {}", info.info())
     }
     print!("  {} (default: {}): ", prompt, default);
     io::stdout().flush()?;
@@ -77,12 +82,13 @@ fn collect_databases() -> Result<Vec<Database>, InitError> {
 }
 
 fn choose_database_type() -> Result<DatabaseType, InitError> {
-    println!("  Choose database type:");
-    println!("    1. DuckDB");
-    println!("    2. BigQuery");
+    println!("\tChoose database type:");
+    println!("\t\t1. DuckDB");
+    println!("\t\t2. BigQuery");
+    println!("\t\t3. Postgres");
 
     loop {
-        let choice = prompt_with_default("Type (1 or 2)", "1", None)?;
+        let choice = prompt_with_default("Type (1 or 2 or ..<number>..)", "1", None)?;
         match choice.trim() {
             "1" => {
                 return Ok(DatabaseType::DuckDB(DuckDB {
@@ -95,11 +101,65 @@ fn choose_database_type() -> Result<DatabaseType, InitError> {
             }
             "2" => {
                 return Ok(DatabaseType::Bigquery(BigQuery {
-                    key_path: PathBuf::from(prompt_with_default("Key path", "bigquery.key", None)?),
+                    key_path: Some(PathBuf::from(prompt_with_default(
+                        "Key path",
+                        "bigquery.key",
+                        None,
+                    )?)),
                     dataset: prompt_with_default("Dataset", "bigquery-public-data", None)?,
                 }))
             }
-            _ => println!("  Invalid choice. Please enter 1 or 2."),
+            "3" => {
+                let use_connection_string_file = prompt_with_default(
+                    "Use connection string file? (y/N)",
+                    "N",
+                    Some("If 'N', you will be prompted for individual connection parameters."),
+                )?;
+                if use_connection_string_file.to_lowercase() == "y" {
+                    let postgres_connection_string_file = PathBuf::from(prompt_with_default(
+                        "Connection string file",
+                        "postgres_connection_string.txt",
+                        None,
+                    )?);
+
+                    return Ok(DatabaseType::Postgres(Postgres {
+                        connection_string_file: Some(postgres_connection_string_file),
+                        host: None,
+                        port: None,
+                        user: None,
+                        password_file: None,
+                        database: None,
+                    }));
+                } else {
+                    let host = prompt_with_default("Host", "localhost", None)?;
+                    let port = prompt_with_default("Port", "5432", None)?;
+                    let user = prompt_with_default("User", "postgres", None)?;
+                    let password_file =
+                        PathBuf::from(prompt_with_default("Password file", "password.txt", None)?);
+                    let database = prompt_with_default("Database", "postgres", None)?;
+
+                    if host.is_empty()
+                        || port.is_empty()
+                        || user.is_empty()
+                        || password_file.to_str().unwrap().is_empty()
+                        || database.is_empty()
+                    {
+                        return Err(InitError::ExtractionError(
+                            REQUIRED_FIELDS_ERROR.to_string(),
+                        ));
+                    }
+
+                    return Ok(DatabaseType::Postgres(Postgres {
+                        connection_string_file: None,
+                        host: Some(host),
+                        port: Some(port),
+                        user: Some(user),
+                        password_file: Some(password_file),
+                        database: Some(database),
+                    }));
+                }
+            }
+            _ => println!("  {}", INVALID_CHOICE),
         }
     }
 }
@@ -198,6 +258,30 @@ fn create_project_structure() -> Result<(), InitError> {
     Ok(())
 }
 
+fn ignore_sensitive_files(project_path: &Path, files: &[&Path]) -> Result<(), InitError> {
+    let gitignore_path = project_path.join(".gitignore");
+    let mut content = String::new();
+
+    if gitignore_path.exists() {
+        content = fs::read_to_string(&gitignore_path)?;
+    }
+
+    for file in files {
+        content.push_str(&format!("{}\n", file.display()));
+    }
+
+    fs::write(&gitignore_path, content)?;
+    println!(
+        "{}",
+        format!(
+            "Updated .gitignore in {}",
+            gitignore_path.display().to_string().secondary()
+        )
+        .text()
+    );
+    Ok(())
+}
+
 pub fn init() -> Result<(), InitError> {
     let project_path = find_project_path().unwrap_or_else(|_| {
         println!(
@@ -229,7 +313,7 @@ pub fn init() -> Result<(), InitError> {
     }
 
     create_project_structure()?;
-    println!("{}", "Project sample files loaded successfully.");
+    println!("Project sample files loaded successfully.");
 
     Ok(())
 }
@@ -238,6 +322,7 @@ fn create_config_file(config_path: &Path) -> Result<(), InitError> {
     if let Some(parent) = config_path.parent() {
         fs::create_dir_all(parent)?;
     }
+    let mut sensitive_files = Vec::new();
 
     println!("{}", "\nDATABASE SETTINGS:".tertiary());
     let databases = collect_databases()?;
@@ -249,7 +334,7 @@ fn create_config_file(config_path: &Path) -> Result<(), InitError> {
     let default_database = databases.first().unwrap().name.clone();
 
     let config = Config {
-        databases,
+        databases: databases.clone(),
         models,
         defaults: Some(Defaults {
             database: Some(default_database),
@@ -266,6 +351,18 @@ fn create_config_file(config_path: &Path) -> Result<(), InitError> {
         yaml);
 
     fs::write(config_path, content)?;
+
+    for database in &databases {
+        if let DatabaseType::Postgres(postgres) = &database.database_type {
+            if let Some(password_file) = &postgres.password_file {
+                sensitive_files.push(password_file.as_path());
+            }
+            if let Some(connection_string_file) = &postgres.connection_string_file {
+                sensitive_files.push(connection_string_file.as_path());
+            }
+        }
+    }
+    ignore_sensitive_files(&config.project_path, &sensitive_files)?;
 
     println!(
         "{}",
