@@ -155,4 +155,4 @@ jobs:
           echo $BIGQUERY_SAMPLE_KEY > examples/bigquery-sample.key
           cargo test --verbose --no-fail-fast -- --nocapture
       - name: Check json schemas
-        run: cargo run -- gen-config-schema --check
+        run: ./target/debug/onyx gen-config-schema --check
