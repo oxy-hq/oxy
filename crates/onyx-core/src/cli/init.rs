@@ -86,6 +86,7 @@ fn choose_database_type() -> Result<DatabaseType, InitError> {
     println!("\t\t1. DuckDB");
     println!("\t\t2. BigQuery");
     println!("\t\t3. Postgres");
+    println!("\t\t4. Redshift");
 
     loop {
         let choice = prompt_with_default("Type (1 or 2 or ..<number>..)", "1", None)?;
@@ -110,57 +111,92 @@ fn choose_database_type() -> Result<DatabaseType, InitError> {
                 }))
             }
             "3" => {
-                let use_connection_string_file = prompt_with_default(
-                    "Use connection string file? (y/N)",
-                    "N",
-                    Some("If 'N', you will be prompted for individual connection parameters."),
-                )?;
-                if use_connection_string_file.to_lowercase() == "y" {
-                    let postgres_connection_string_file = PathBuf::from(prompt_with_default(
-                        "Connection string file",
-                        "postgres_connection_string.txt",
-                        None,
-                    )?);
-
-                    return Ok(DatabaseType::Postgres(Postgres {
-                        connection_string_file: Some(postgres_connection_string_file),
-                        host: None,
-                        port: None,
-                        user: None,
-                        password_file: None,
-                        database: None,
-                    }));
-                } else {
-                    let host = prompt_with_default("Host", "localhost", None)?;
-                    let port = prompt_with_default("Port", "5432", None)?;
-                    let user = prompt_with_default("User", "postgres", None)?;
-                    let password_file =
-                        PathBuf::from(prompt_with_default("Password file", "password.txt", None)?);
-                    let database = prompt_with_default("Database", "postgres", None)?;
-
-                    if host.is_empty()
-                        || port.is_empty()
-                        || user.is_empty()
-                        || password_file.to_str().unwrap().is_empty()
-                        || database.is_empty()
-                    {
-                        return Err(InitError::ExtractionError(
-                            REQUIRED_FIELDS_ERROR.to_string(),
-                        ));
-                    }
-
-                    return Ok(DatabaseType::Postgres(Postgres {
-                        connection_string_file: None,
-                        host: Some(host),
-                        port: Some(port),
-                        user: Some(user),
-                        password_file: Some(password_file),
-                        database: Some(database),
-                    }));
-                }
+                return Ok(DatabaseType::Postgres(collect_postgres_or_redshift_config(
+                    "postgres",
+                )?));
+            }
+            "4" => {
+                return Ok(DatabaseType::Postgres(collect_postgres_or_redshift_config(
+                    "redshift",
+                )?));
             }
             _ => println!("  {}", INVALID_CHOICE),
         }
+    }
+}
+
+fn collect_postgres_or_redshift_config(db_type: &str) -> Result<Postgres, InitError> {
+    let use_connection_string_file = prompt_with_default(
+        "Use connection string file? (y/N)",
+        "N",
+        Some("If 'N', you will be prompted for individual connection parameters."),
+    )?;
+    if use_connection_string_file.to_lowercase() == "y" {
+        let connection_string_file = PathBuf::from(prompt_with_default(
+            "Connection string file",
+            &format!("{}_connection_string.txt", db_type),
+            None,
+        )?);
+
+        Ok(Postgres {
+            connection_string_file: Some(connection_string_file),
+            host: None,
+            port: None,
+            user: None,
+            password_file: None,
+            database: None,
+        })
+    } else {
+        let host = prompt_with_default("Host", "localhost", None)?;
+        let port = prompt_with_default(
+            "Port",
+            if db_type == "postgres" {
+                "5432"
+            } else {
+                "5439"
+            },
+            None,
+        )?;
+        let user = prompt_with_default(
+            "User",
+            if db_type == "postgres" {
+                "postgres"
+            } else {
+                "awsuser"
+            },
+            None,
+        )?;
+        let password_file =
+            PathBuf::from(prompt_with_default("Password file", "password.txt", None)?);
+        let database = prompt_with_default(
+            "Database",
+            if db_type == "postgres" {
+                "postgres"
+            } else {
+                "dev"
+            },
+            None,
+        )?;
+
+        if host.is_empty()
+            || port.is_empty()
+            || user.is_empty()
+            || password_file.to_str().unwrap().is_empty()
+            || database.is_empty()
+        {
+            return Err(InitError::ExtractionError(
+                REQUIRED_FIELDS_ERROR.to_string(),
+            ));
+        }
+
+        Ok(Postgres {
+            connection_string_file: None,
+            host: Some(host),
+            port: Some(port),
+            user: Some(user),
+            password_file: Some(password_file),
+            database: Some(database),
+        })
     }
 }
 
