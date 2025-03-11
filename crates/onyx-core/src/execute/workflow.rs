@@ -173,6 +173,12 @@ pub struct WorkflowReceiver {
     consensus_receiver: ConsensusReceiver,
 }
 
+impl Default for WorkflowReceiver {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl WorkflowReceiver {
     pub fn new() -> Self {
         Self {

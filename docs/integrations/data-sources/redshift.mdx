@@ -1,0 +1,43 @@
+# Redshift Integration
+
+This tutorial will guide you through the steps to integrate Redshift with your project. Note that the password and connection string should be stored inside a file for security reasons. Please don't hardcode the password or connection string in your code and don't check the password file into version control.
+
+## Step 1: Create the Password File
+
+Create a file to store your Redshift password. For example, create a file named `password.txt` and add your password to it.
+
+```sh
+echo "your_password" > path/to/password.txt
+```
+
+## Step 2: Configure Redshift in `config.yml`
+
+Add the Redshift configuration to your `config.yml` file. You can either use a connection string or specify individual connection parameters. Ensure that the password is stored in a separate file.
+
+```yaml
+databases:
+  - name: my_redshift_db
+    type: redshift
+    host: "localhost"
+    port: "5439"
+    user: "awsuser"
+    password_file: "path/to/password.txt"
+    database: "my_database"
+```
+
+## Alternatives: Create the Connection String File
+
+If you prefer using a connection string, create a file to store your Redshift connection string. For example, create a file named `connection_string.txt` and add your connection string to it.
+
+```sh
+echo "redshift://awsuser:your_password@localhost:5439/my_database" > path/to/connection_string.txt
+```
+
+After which you can configure Redshift with the connection string file in your `config.yml` file.
+
+```yaml
+databases:
+  - name: my_redshift_db
+    type: redshift
+    connection_string_file: "path/to/connection_string.txt"
+```

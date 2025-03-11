@@ -130,6 +130,12 @@
             "agent_ref": {
               "type": "string"
             },
+            "consensus_run": {
+              "default": 1,
+              "type": "integer",
+              "format": "uint",
+              "minimum": 0.0
+            },
             "export": {
               "anyOf": [
                 {

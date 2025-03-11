@@ -125,6 +125,56 @@
               ]
             }
           }
+        },
+        {
+          "type": "object",
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "connection_string_file": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "database": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "host": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "password_file": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "port": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "redshift"
+              ]
+            },
+            "user": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
         }
       ],
       "required": [

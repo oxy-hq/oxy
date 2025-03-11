@@ -63,7 +63,6 @@ pub struct Measure {
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
 pub struct AgentConfig {
     #[serde(skip)]
-    #[schemars(skip)]
     pub name: String,
     pub model: String,
     pub system_instructions: String,
@@ -159,22 +158,29 @@ pub struct DuckDB {
     pub file_search_path: String,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
-#[garde(context(ValidationContext))]
-pub struct Postgres {
-    #[garde(custom(validate_file_path))]
-    pub connection_string_file: Option<PathBuf>,
-    #[garde(length(min = 1))]
-    pub host: Option<String>,
-    #[garde(length(min = 1))]
-    pub port: Option<String>,
-    #[garde(length(min = 1))]
-    pub user: Option<String>,
-    #[garde(custom(validate_file_path))]
-    pub password_file: Option<PathBuf>,
-    #[garde(length(min = 1))]
-    pub database: Option<String>,
+macro_rules! define_postgres_family_config {
+    ($name:ident) => {
+        #[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
+        #[garde(context(ValidationContext))]
+        pub struct $name {
+            #[garde(custom(validate_file_path))]
+            pub connection_string_file: Option<PathBuf>,
+            #[garde(length(min = 1))]
+            pub host: Option<String>,
+            #[garde(length(min = 1))]
+            pub port: Option<String>,
+            #[garde(length(min = 1))]
+            pub user: Option<String>,
+            #[garde(custom(validate_file_path))]
+            pub password_file: Option<PathBuf>,
+            #[garde(length(min = 1))]
+            pub database: Option<String>,
+        }
+    };
 }
+
+define_postgres_family_config!(Postgres);
+define_postgres_family_config!(Redshift);
 
 #[derive(Serialize, Deserialize, Debug, Validate, Clone, JsonSchema)]
 #[garde(context(ValidationContext))]
@@ -186,6 +192,8 @@ pub enum DatabaseType {
     DuckDB(#[garde(dive)] DuckDB),
     #[serde(rename = "postgres")]
     Postgres(#[garde(dive)] Postgres),
+    #[serde(rename = "redshift")]
+    Redshift(#[garde(dive)] Redshift),
 }
 
 impl fmt::Display for DatabaseType {
@@ -194,6 +202,7 @@ impl fmt::Display for DatabaseType {
             DatabaseType::Bigquery(_) => write!(f, "bigquery"),
             DatabaseType::DuckDB(_) => write!(f, "duckdb"),
             DatabaseType::Postgres(_) => write!(f, "postgres"),
+            DatabaseType::Redshift(_) => write!(f, "redshift"),
         }
     }
 }
@@ -210,34 +219,73 @@ pub struct Database {
 }
 
 impl Database {
+    pub fn postgres_family_conn_string(database: &Self) -> String {
+        if let Some(cs_file) = match &database.database_type {
+            DatabaseType::Postgres(pg) => &pg.connection_string_file,
+            DatabaseType::Redshift(rs) => &rs.connection_string_file,
+            _ => unreachable!(),
+        } {
+            let mut conn_string_no_dialect = std::fs::read_to_string(cs_file)
+                .unwrap_or_else(|err| {
+                    panic!("Failed to read connection string file: {}", err);
+                })
+                .trim()
+                .to_string();
+            if conn_string_no_dialect.starts_with("postgres://") {
+                conn_string_no_dialect = conn_string_no_dialect.replacen("postgres://", "", 1);
+            } else if conn_string_no_dialect.starts_with("postgresql://") {
+                conn_string_no_dialect = conn_string_no_dialect.replacen("postgresql://", "", 1);
+            } else if conn_string_no_dialect.starts_with("redshift://") {
+                conn_string_no_dialect = conn_string_no_dialect.replacen("redshift://", "", 1);
+            }
+            conn_string_no_dialect
+        } else {
+            let (user, password_file, host, port, database) = match &database.database_type {
+                DatabaseType::Postgres(pg) => (
+                    &pg.user,
+                    &pg.password_file,
+                    &pg.host,
+                    &pg.port,
+                    &pg.database,
+                ),
+                DatabaseType::Redshift(rs) => (
+                    &rs.user,
+                    &rs.password_file,
+                    &rs.host,
+                    &rs.port,
+                    &rs.database,
+                ),
+                _ => unreachable!(),
+            };
+            let password =
+                std::fs::read_to_string(password_file.as_ref().unwrap_or(&PathBuf::new()))
+                    .unwrap_or_default()
+                    .trim()
+                    .to_string();
+            format!(
+                "{}:{}@{}:{}/{}",
+                user.clone().unwrap_or_default(),
+                password,
+                host.clone().unwrap_or_default(),
+                port.clone().unwrap_or_default(),
+                database.clone().unwrap_or_default()
+            )
+        }
+    }
+
+    pub fn postgres_family_db_name(database: &Self) -> String {
+        let conn_string = Self::postgres_family_conn_string(database);
+        let params: Vec<&str> = conn_string.split('@').collect();
+        let db_params: Vec<&str> = params[1].split('/').collect();
+        db_params[1].to_string()
+    }
+
     pub fn db_name(&self) -> String {
         match &self.database_type {
             DatabaseType::Bigquery(bq) => bq.dataset.to_owned(),
             DatabaseType::DuckDB(ddb) => ddb.file_search_path.to_owned(),
-            DatabaseType::Postgres(pg) => {
-                let conn_string = if let Some(file_path) = &pg.connection_string_file {
-                    std::fs::read_to_string(file_path)
-                        .unwrap_or_default()
-                        .trim()
-                        .to_string()
-                } else {
-                    let password = std::fs::read_to_string(
-                        pg.password_file.as_ref().unwrap_or(&PathBuf::new()),
-                    )
-                    .unwrap_or_default()
-                    .trim()
-                    .to_string();
-                    format!(
-                        "{}:{}@{}:{}/{}",
-                        pg.user.clone().unwrap_or_default(),
-                        password,
-                        pg.host.clone().unwrap_or_default(),
-                        pg.port.clone().unwrap_or_default(),
-                        pg.database.clone().unwrap_or_default()
-                    )
-                };
-                conn_string
-            }
+            DatabaseType::Postgres(_pg) => Self::postgres_family_db_name(self),
+            DatabaseType::Redshift(_rs) => Self::postgres_family_db_name(self),
         }
     }
 
@@ -246,6 +294,7 @@ impl Database {
             DatabaseType::Bigquery(_) => "bigquery".to_string(),
             DatabaseType::DuckDB(_) => "duckdb".to_string(),
             DatabaseType::Postgres(_) => "postgres".to_string(),
+            DatabaseType::Redshift(_) => "redshift".to_string(),
         }
     }
 }

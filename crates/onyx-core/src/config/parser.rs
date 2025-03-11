@@ -6,7 +6,7 @@ use super::model::{AgentConfig, SemanticModels, TempWorkflow, Workflow};
 
 pub fn parse_workflow_config(workflow_name: &str, file_path: &str) -> Result<Workflow, OnyxError> {
     let workflow_content = fs::read_to_string(file_path)
-        .map_err(|e| OnyxError::ArgumentError("Couldn't read workflow file".into()))?;
+        .map_err(|e| OnyxError::ArgumentError(format!("Couldn't read workflow file: {}", e)))?;
     let temp_workflow: TempWorkflow = serde_yaml::from_str(&workflow_content).map_err(|e| {
         OnyxError::ConfigurationError(format!("Couldn't parse workflow file: {}", e))
     })?;

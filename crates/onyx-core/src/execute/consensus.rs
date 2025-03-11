@@ -32,6 +32,12 @@ pub struct ConsensusReceiver {
     output_progress: Arc<RwLock<Option<Arc<Mutex<Pbar>>>>>,
 }
 
+impl Default for ConsensusReceiver {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ConsensusReceiver {
     pub fn new() -> Self {
         Self {
@@ -108,6 +114,12 @@ impl Write for ConsensusAdapter<'_> {
 pub struct ConsensusExecutor {
     consensus_state: ConsensusAdapterState,
     collected_events: Vec<WorkflowEvent>,
+}
+
+impl Default for ConsensusExecutor {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ConsensusExecutor {
@@ -239,9 +251,7 @@ impl ConsensusExecutor {
                     submission_2 => submissions[1],
                     task_description => task_description,
                 };
-                execution_context
-                    .renderer
-                    .render_once(&PROMPT, context.into())
+                execution_context.renderer.render_once(PROMPT, context)
             })
             .collect::<Result<Vec<String>, _>>()?;
 
@@ -274,7 +284,7 @@ impl ConsensusExecutor {
             .config
             .default_model()
             .ok_or_else(|| OnyxError::ConfigurationError("No default model found".to_string()))?;
-        let agent = setup_eval_agent(&PROMPT, &model_ref)?;
+        let agent = setup_eval_agent(PROMPT, model_ref)?;
 
         let consistency_counts = Arc::new(Mutex::new(HashMap::<usize, i32>::new()));
         let context_sender = execution_context.get_sender();

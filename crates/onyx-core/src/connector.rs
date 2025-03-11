@@ -5,11 +5,10 @@ use connectorx::prelude::{get_arrow, CXQuery, SourceConn};
 use duckdb::Connection;
 use log::debug;
 use std::fs::File;
-use std::path::PathBuf;
 use std::sync::Arc;
 use uuid::Uuid;
 
-use crate::config::model::DatabaseType;
+use crate::config::model::{Database, DatabaseType};
 use crate::config::ConfigManager;
 use crate::errors::OnyxError;
 
@@ -198,38 +197,20 @@ impl Connector {
                     .resolve_file(&duckdb.file_search_path)
                     .await?,
             }),
-            DatabaseType::Postgres(postgres) => {
-                let conn_string = if let Some(cs_file) = &postgres.connection_string_file {
-                    let mut conn_string_no_dialect = std::fs::read_to_string(cs_file)
-                        .map_err(|err| connector_internal_error(CREATE_CONN, &err))?
-                        .trim()
-                        .to_string();
-                    if conn_string_no_dialect.starts_with("postgres://") {
-                        conn_string_no_dialect =
-                            conn_string_no_dialect.replacen("postgres://", "", 1);
-                    } else if conn_string_no_dialect.starts_with("postgresql://") {
-                        conn_string_no_dialect =
-                            conn_string_no_dialect.replacen("postgresql://", "", 1);
-                    }
-                    conn_string_no_dialect
-                } else {
-                    format!(
-                        "{}:{}@{}:{}/{}",
-                        postgres.user.clone().unwrap_or_default(),
-                        std::fs::read_to_string(
-                            postgres.password_file.as_ref().unwrap_or(&PathBuf::new())
-                        )
-                        .unwrap_or_default()
-                        .trim(),
-                        postgres.host.clone().unwrap_or_default(),
-                        postgres.port.clone().unwrap_or_default(),
-                        postgres.database.clone().unwrap_or_default()
-                    )
-                };
+            DatabaseType::Postgres(_pg) => {
+                let conn_string = Database::postgres_family_conn_string(database);
                 EngineType::ConnectorX(ConnectorX {
                     dialect: database.dialect(),
                     db_path: conn_string,
-                    db_name: postgres.database.clone().unwrap_or_default(),
+                    db_name: Database::postgres_family_db_name(database),
+                })
+            }
+            DatabaseType::Redshift(_rs) => {
+                let conn_string = Database::postgres_family_conn_string(database);
+                EngineType::ConnectorX(ConnectorX {
+                    dialect: database.dialect(),
+                    db_path: conn_string,
+                    db_name: Database::postgres_family_db_name(database),
                 })
             }
         };
