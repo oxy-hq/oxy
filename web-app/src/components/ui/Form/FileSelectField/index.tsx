@@ -5,7 +5,13 @@ import { cx, RecipeVariantProps, sva, css } from "styled-system/css";
 import useMergedRefs from "@/hooks/utils/useMergedRefs";
 import Text from "@/components/ui/Typography/Text";
 import Icon from "@/components/ui/Icon";
-import { open } from "@tauri-apps/plugin-dialog";
+
+const openFileDialog = async (basePath: string) => {
+  const [handle] = await window.showOpenFilePicker({
+    startIn: basePath,
+  });
+  return handle.name;
+};
 
 const removeIconButton = css({
   cursor: "pointer",
@@ -149,12 +155,10 @@ const FileSelectField = React.forwardRef<
   };
 
   const handleClick = () => {
-    open({ multiple: false, defaultPath: basePath })
+    openFileDialog(basePath)
       .then((result) => {
         if (!result) return;
-        const relativePath = (result as string)
-          .replace(basePath, "")
-          .replace(/^\//, "");
+        const relativePath = result.replace(basePath, "").replace(/^\//, "");
         setFileName(relativePath);
         if (onChange) {
           onChange({

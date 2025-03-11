@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 
-import { rename } from "@tauri-apps/plugin-fs";
 import { css } from "styled-system/css";
 
 import { useFileTree } from "./FileTreeContext";
@@ -67,9 +66,19 @@ const RenameInput = ({
       }
 
       try {
-        const oldPath = `${path}/${initialName}`;
         const newPath = `${path}/${newName}`;
-        await rename(oldPath, newPath);
+        await window.showDirectoryPicker().then(async (dirHandle) => {
+          const fileHandle = await dirHandle.getFileHandle(initialName);
+          const file = await fileHandle.getFile();
+          const newFileHandle = await dirHandle.getFileHandle(newName, {
+            create: true,
+          });
+          const writable = await newFileHandle.createWritable();
+          await writable.write(await file.arrayBuffer());
+          await writable.close();
+          await dirHandle.removeEntry(initialName);
+          return true;
+        });
         refreshFolder?.();
         setIsRenaming(false);
         setFocusedPath(newPath);

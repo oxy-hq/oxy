@@ -1,9 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-
-import { join } from "@tauri-apps/api/path";
-import { mkdir } from "@tauri-apps/plugin-fs";
+import { join } from "path";
 import { css } from "styled-system/css";
-
 import Icon from "../../ui/Icon";
 import { useFileTree } from "./FileTreeContext";
 
@@ -60,8 +57,11 @@ const CreateFolderInput = ({
   ) => {
     if (e.key === "Enter" && newFolderName.trim()) {
       try {
-        const newFolderPath = await join(path, newFolderName);
-        await mkdir(newFolderPath);
+        const newFolderPath = join(path, newFolderName);
+        await window.showDirectoryPicker().then(async (dirHandle) => {
+          await dirHandle.getDirectoryHandle(newFolderName, { create: true });
+          return true;
+        });
         setIsCreatingFolder(false);
         refreshFolder?.();
         setFocusedPath(newFolderPath);

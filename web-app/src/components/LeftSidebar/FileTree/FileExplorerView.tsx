@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 
-import { DirEntry } from "@tauri-apps/plugin-fs";
 import { css } from "styled-system/css";
 
 import CreateFileInput from "./CreateFiIeInput";

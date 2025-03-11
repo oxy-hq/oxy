@@ -1,7 +1,6 @@
 import { ChatRequest, ChatType, Message } from "@/types/chat";
 
 import { apiService } from "./apiService";
-import { tauriService } from "./tauriService";
 
 export interface Service {
   listChatMessages(agentPath: string): Promise<Message[]>;
@@ -15,12 +14,4 @@ export interface Service {
   ): Promise<void>;
 }
 
-declare global {
-  interface Window {
-    __TAURI__: unknown;
-  }
-}
-
-const isTauri = !!window.__TAURI__;
-
-export const service = isTauri ? tauriService : apiService;
+export const service = apiService;

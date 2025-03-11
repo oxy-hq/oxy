@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 
-import { readTextFile } from "@tauri-apps/plugin-fs";
 import { useParams } from "react-router-dom";
 import { parse } from "yaml";
 
@@ -23,7 +22,8 @@ const WorkflowPage: React.FC = () => {
   const [workflow, setWorkflow] = useState<Workflow | null>(null);
   useEffect(() => {
     const fetchWorkflow = async () => {
-      const workflow = await readTextFile(path);
+      const response = await fetch(path);
+      const workflow = await response.text();
       setWorkflow(parse(workflow));
     };
     fetchWorkflow();

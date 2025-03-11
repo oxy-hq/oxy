@@ -3,7 +3,7 @@ import Text from "@/components/ui/Typography/Text";
 import { useCallback, useEffect, useMemo } from "react";
 import { useState } from "react";
 import { AgentConfig } from "./type";
-import { readTextFile, writeTextFile } from "@tauri-apps/plugin-fs";
+import { Volume } from "memfs";
 import yaml from "yaml";
 import { parse } from "yaml";
 import FormField from "../ui/Form/FormField";
@@ -55,7 +55,8 @@ const AgentEditor = ({ path }: { path: string }) => {
   useEffect(() => {
     const fetchAgent = async () => {
       setLoading(true);
-      const agent = await readTextFile(path);
+      const vol = new Volume();
+      const agent = vol.readFileSync(path, "utf-8");
       const parsedAgent = parse(agent);
       setAgent(parsedAgent);
       reset(parsedAgent);
@@ -73,7 +74,8 @@ const AgentEditor = ({ path }: { path: string }) => {
       if (updatedAgent.tools && updatedAgent.tools.length === 0) {
         updatedAgent.tools = undefined;
       }
-      writeTextFile(path, yaml.stringify(updatedAgent));
+      const vol = new Volume();
+      vol.writeFileSync(path, yaml.stringify(updatedAgent), "utf-8");
     })();
   }, [path, handleSubmit, agent]);
 

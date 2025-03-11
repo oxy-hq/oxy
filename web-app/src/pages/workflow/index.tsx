@@ -1,6 +1,13 @@
 import { useEffect, useMemo } from "react";
 
-import { readTextFile } from "@tauri-apps/plugin-fs";
+const readTextFile = async (path: string) => {
+  const [handle] = await window.showOpenFilePicker({
+    suggestedName: path,
+  });
+  const file = await handle.getFile();
+  return await file.text();
+};
+
 import { v4 as uuidv4 } from "uuid";
 
 import { useParams } from "react-router-dom";

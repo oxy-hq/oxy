@@ -1,6 +1,5 @@
 import React from "react";
 
-import { open } from "@tauri-apps/plugin-dialog";
 import { useNavigate } from "react-router-dom";
 import { css } from "styled-system/css";
 
@@ -25,17 +24,19 @@ const Init: React.FC = () => {
 
   const handleFolderSelect = async () => {
     try {
-      const selected = await open({
-        directory: true,
-        multiple: false,
-        title: "Select Project Folder",
-      });
-
-      if (selected) {
-        const folderPath = Array.isArray(selected) ? selected[0] : selected;
-        setProjectPath(folderPath);
-        navigate("/");
-      }
+      const input = document.createElement("input");
+      input.type = "file";
+      input.webkitdirectory = true;
+      input.onchange = (e) => {
+        const folderPath = (
+          e.target as HTMLInputElement
+        ).files?.[0].webkitRelativePath.split("/")[0];
+        if (folderPath) {
+          setProjectPath(folderPath);
+          navigate("/");
+        }
+      };
+      input.click();
     } catch (error) {
       console.error("Error selecting folder:", error);
       toast({

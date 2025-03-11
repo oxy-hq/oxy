@@ -1,12 +1,5 @@
 import { useCallback, useState } from "react";
 
-import {
-  create,
-  DirEntry,
-  mkdir,
-  readDir,
-  remove,
-} from "@tauri-apps/plugin-fs";
 import { css, cx } from "styled-system/css";
 
 import Text from "@/components/ui/Typography/Text";
@@ -101,9 +94,13 @@ const FileExplorerItem = ({
 
   const fetchDirChildren = useCallback(async () => {
     if (!isDirectory) return;
-    const dirEntries = await readDir(fullPath);
-    setDirChildren(dirEntries);
-  }, [fullPath, isDirectory]);
+    const dirHandle = await window.showDirectoryPicker();
+    const entries = [];
+    for await (const entry of dirHandle.values()) {
+      entries.push(entry);
+    }
+    setDirChildren(entries);
+  }, [isDirectory]);
 
   const toggleExpanded = useCallback(
     async (value: boolean) => {
@@ -144,20 +141,25 @@ const FileExplorerItem = ({
   };
 
   const handleDelete = async () => {
-    await remove(fullPath, { recursive: true });
+    const dirHandle = await window.showDirectoryPicker();
+    const fileHandle = await dirHandle.getFileHandle(entry.name);
+    await fileHandle.remove();
     refreshFolder?.();
   };
 
   const handleDuplicate = async () => {
     const newFileName = `${entry.name}_copy`;
-    const newFilePath = `${path}/${newFileName}`;
 
     try {
-      if (isDirectory) {
-        await mkdir(newFilePath);
-      } else {
-        await create(newFilePath);
-      }
+      const dirHandle = await window.showDirectoryPicker();
+      const fileHandle = await dirHandle.getFileHandle(entry.name);
+      const newFileHandle = await dirHandle.getFileHandle(newFileName, {
+        create: true,
+      });
+      const file = await fileHandle.getFile();
+      const writable = await newFileHandle.createWritable();
+      await writable.write(file);
+      await writable.close();
       refreshFolder?.();
     } catch (error) {
       console.error(`Failed to duplicate ${entry.name}:`, error);

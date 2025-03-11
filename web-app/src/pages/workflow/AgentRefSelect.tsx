@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { DirEntry, readDir } from "@tauri-apps/plugin-fs";
+import { Volume } from "memfs";
 import useProjectPath from "@/stores/useProjectPath";
 import DropdownField from "./DropdownField";
 
@@ -7,13 +7,14 @@ import DropdownField from "./DropdownField";
 // return list of relative paths
 // if not found, return empty list
 const listAgents = async (projectPath: string) => {
-  const entries = await readDir(projectPath);
-  const processEntries = async (entries: DirEntry[], path: string) => {
+  const vol = new Volume();
+  const entries = vol.readdirSync(projectPath, { withFileTypes: true });
+  const processEntries = async (entries: Dirent[], path: string) => {
     let paths: string[] = [];
     for (const entry of entries) {
       const entryPath = path + "/" + entry.name;
-      if (entry.isDirectory) {
-        const children = await readDir(entryPath);
+      if (entry.isDirectory()) {
+        const children = vol.readdirSync(entryPath, { withFileTypes: true });
         const childRs = await processEntries(children, entryPath);
         paths = paths.concat(childRs);
       } else {

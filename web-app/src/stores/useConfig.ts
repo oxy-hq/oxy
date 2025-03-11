@@ -1,7 +1,14 @@
 import { create } from "zustand";
 import useProjectPath from "./useProjectPath";
-import { readTextFile } from "@tauri-apps/plugin-fs";
 import { parse } from "yaml";
+
+const readTextFile = async (path: string) => {
+  const [handle] = await window.showOpenFilePicker({
+    suggestedName: path,
+  });
+  const file = await handle.getFile();
+  return await file.text();
+};
 
 export type Database = {
   name: string;

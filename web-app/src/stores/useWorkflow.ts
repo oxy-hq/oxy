@@ -2,7 +2,14 @@ import { create } from "zustand";
 import yaml from "yaml";
 import debounce from "debounce";
 
-import { writeTextFile } from "@tauri-apps/plugin-fs";
+const writeTextFile = async (path: string, content: string) => {
+  const handle = await window.showSaveFilePicker({
+    suggestedName: path,
+  });
+  const writable = await handle.createWritable();
+  await writable.write(content);
+  await writable.close();
+};
 
 export type NodeData = {
   task: TaskConfigWithId;

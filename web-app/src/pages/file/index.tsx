@@ -4,7 +4,14 @@ import { Highlight, themes } from "prism-react-renderer";
 import { FixedSizeList } from "react-window";
 import Text from "@/components/ui/Typography/Text";
 import useProjectPath from "@/stores/useProjectPath";
-import { readTextFile } from "@tauri-apps/plugin-fs";
+
+const readTextFile = async (path: string) => {
+  const [handle] = await window.showOpenFilePicker({
+    suggestedName: path,
+  });
+  const file = await handle.getFile();
+  return await file.text();
+};
 import { useCallback, useEffect, useState, useMemo, useRef } from "react";
 
 const styles = {

@@ -1,9 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-
-import { join } from "@tauri-apps/api/path";
-import { create } from "@tauri-apps/plugin-fs";
+import { Volume } from "memfs";
 import { css } from "styled-system/css";
-
 import Icon from "../../ui/Icon";
 
 const newFolderInputStyles = css({
@@ -56,8 +53,9 @@ const CreateFileInput = ({
   const handleCreateFile = async (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter" && newFileName.trim()) {
       try {
-        const newFilePath = await join(path, newFileName);
-        await create(newFilePath);
+        const vol = new Volume();
+        const newFilePath = `${path}/${newFileName}`;
+        vol.writeFileSync(newFilePath, "");
         setIsCreatingFile(false);
         refreshFolder?.();
       } catch (error) {

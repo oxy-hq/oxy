@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { DirEntry, readDir } from "@tauri-apps/plugin-fs";
 import { css } from "styled-system/css";
 
 import Button from "@/components/ui/Button";
@@ -36,8 +35,12 @@ const FileTree = ({
   const { focusedPath } = useFileTree();
 
   const fetchDirChildren = useCallback(async () => {
-    const dirE = await readDir(projectPath);
-    setDirChildren(dirE);
+    const dirHandle = await window.showDirectoryPicker();
+    const entries = [];
+    for await (const entry of dirHandle.values()) {
+      entries.push(entry);
+    }
+    setDirChildren(entries);
   }, [projectPath]);
 
   useEffect(() => {
