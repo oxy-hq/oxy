@@ -1,10 +1,8 @@
-import Button from "@/components/ui/Button";
-import Icon from "@/components/ui/Icon";
-import Text from "@/components/ui/Typography/Text";
-
-import { css } from "styled-system/css";
 import useWorkflow, { TaskConfigWithId } from "@/stores/useWorkflow";
 import { taskIconMap, taskNameMap } from "./utils";
+import { DynamicIcon } from "lucide-react/dynamic";
+import { headerHeight } from "./constants";
+import { Button } from "@/components/ui/shadcn/button";
 
 type Props = {
   task: TaskConfigWithId;
@@ -13,7 +11,7 @@ type Props = {
   onExpandClick?: () => void;
 };
 
-export const StepHeader = ({
+export const TaskHeader = ({
   task,
   expandable,
   expanded,
@@ -27,93 +25,45 @@ export const StepHeader = ({
   };
   return (
     <div
-      className={css({
-        gap: "sm",
-        alignItems: "center",
-        display: "flex",
-      })}
+      className="gap-2 items-center flex w-full min-w-0"
+      style={{
+        height: headerHeight,
+      }}
     >
-      <div
-        className={css({
-          display: "flex",
-          alignItems: "center",
-        })}
-      >
-        <div
-          className={css({
-            display: "flex",
-            alignContent: "center",
-            justifyContent: "center",
-            padding: "10px",
-            background: "#F5F5F5",
-            borderRadius: "8px",
-          })}
-        >
-          <Icon asset={taskIcon} />
+      <div className="flex items-center min-w-0">
+        <div className="flex items-center justify-center p-2 bg-gray-100 rounded-md">
+          <DynamicIcon name={taskIcon} />
         </div>
       </div>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          flex: 1,
-        }}
-      >
-        <div
-          style={{
-            flex: 1,
-            display: "flex",
-            flexDirection: "column",
-            gap: "4px",
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-            }}
-          >
-            <Text variant="label12Medium" color="lessContrast">
-              {taskName}
-            </Text>
+      <div className="flex items-center flex-1 min-w-0">
+        <div className="flex flex-col gap-1 flex-1 min-w-0">
+          <div className="flex items-center">
+            <span className="text-sm text-gray-500 truncate">{taskName}</span>
           </div>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-            }}
-          >
-            <Text variant="label14Medium">{task.name}</Text>
+          <div className="flex items-center min-w-0">
+            <span className="text-sm truncate min-w-0">{task.name}</span>
           </div>
         </div>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "flex-start",
-            height: "100%",
-          }}
-        >
+        <div className="flex items-center h-full justify-start">
           {expandable && (
             <Button
-              className={css({
-                padding: "padding.paddingXXS",
-              })}
+              className="p-1 ps-1 pe-1"
               variant="ghost"
-              size="small"
               onClick={onExpandClick}
             >
-              <Icon asset={expanded ? "collapse" : "expand"} />
+              <DynamicIcon
+                size={14}
+                name={expanded ? "minimize-2" : "maximize-2"}
+              />
             </Button>
           )}
           <Button
-            className={css({
-              padding: "padding.paddingXXS",
-            })}
+            className="p-1 ps-1 pe-1"
             variant="ghost"
-            size="small"
+            content="text"
             onClick={onMoreClick}
           >
-            <Icon asset="more_vertical" />
+            <DynamicIcon size={14} name="ellipsis-vertical" />
           </Button>
         </div>
       </div>

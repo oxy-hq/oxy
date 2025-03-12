@@ -11,7 +11,7 @@ import {
   paddingHeight,
 } from "./constants";
 import { StepContainer } from "./StepContainer";
-import { StepHeader } from "./StepHeader";
+import { TaskHeader } from "./TaskHeader.tsx";
 import { css } from "styled-system/css";
 
 type Props = {
@@ -45,7 +45,7 @@ export function LoopSequentialStep({ task }: Props) {
   const childSpace = node.size.height - usedHeight;
   return (
     <StepContainer selected={selected}>
-      <StepHeader
+      <TaskHeader
         task={task}
         expandable={expandable}
         expanded={expanded}

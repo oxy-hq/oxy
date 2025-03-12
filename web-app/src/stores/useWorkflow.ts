@@ -1,15 +1,7 @@
 import { create } from "zustand";
-import yaml from "yaml";
 import debounce from "debounce";
 
-const writeTextFile = async (path: string, content: string) => {
-  const handle = await window.showSaveFilePicker({
-    suggestedName: path,
-  });
-  const writable = await handle.createWritable();
-  await writable.write(content);
-  await writable.close();
-};
+import { LogItem } from "@/hooks/api/runWorkflow";
 
 export type NodeData = {
   task: TaskConfigWithId;
@@ -100,6 +92,12 @@ interface WorkflowState {
   moveTaskDown: (id: string) => void;
   getAllParentIds: (id: string) => Set<string>;
   removeTask: (id: string) => void;
+  running: boolean;
+  setRunning: (running: boolean) => void;
+  logs: LogItem[];
+  runWorkflow: () => void;
+  setLogs: (logs: LogItem[]) => void;
+  appendLog: (log: LogItem) => void;
 }
 
 const findAndUpdateTask = (
@@ -165,6 +163,16 @@ const findAndMoveTaskUp = (
 };
 
 const useWorkflow = create<WorkflowState>((set, get) => ({
+  setLogs: (logs) => set({ logs }),
+  appendLog: (log) => set((state) => ({ logs: [...state.logs, log] })),
+  running: false,
+  setRunning: (running) => set({ running }),
+  logs: [],
+  runWorkflow: async () => {
+    set({ running: true });
+
+    set({ running: false });
+  },
   removeTask: (id) => {
     const findAndRemove = (
       tasks: TaskConfigWithId[],
@@ -224,7 +232,8 @@ const useWorkflow = create<WorkflowState>((set, get) => ({
       ...workflowWithoutPath,
       tasks: removeTaskIds(workflow.tasks),
     };
-    await writeTextFile(path, yaml.stringify(dataToSave));
+    //TODO: save the config
+    console.log("dataToSave", path, dataToSave);
   }, 500),
   updateTask: (id, data) => {
     set((state) => {
@@ -309,6 +318,7 @@ export enum TaskType {
   FORMATTER = "formatter",
   AGENT = "agent",
   LOOP_SEQUENTIAL = "loop_sequential",
+  WORKFLOW = "workflow",
 }
 
 export type BaseTaskConfig = {

@@ -4,9 +4,17 @@ use std::{
 };
 
 use contexts::Contexts;
+use garde::rules::AsStr;
 use minijinja::{context, Value};
 use tools::ToolsContext;
 
+use super::{
+    core::{event::Handler, run},
+    databases::DatabasesContext,
+    renderer::{Renderer, TemplateRegister},
+    workflow::WorkflowLogger,
+};
+use crate::execute::workflow::WorkflowCLILogger;
 use crate::{
     ai::{
         agent::{AgentResult, OpenAIAgent},
@@ -21,12 +29,6 @@ use crate::{
     errors::OnyxError,
     utils::{print_colored_sql, truncate_datasets, truncate_with_ellipsis, MAX_DISPLAY_ROWS},
     StyledText,
-};
-
-use super::{
-    core::{event::Handler, run},
-    databases::DatabasesContext,
-    renderer::{Renderer, TemplateRegister},
 };
 
 pub mod contexts;
@@ -81,7 +83,9 @@ pub struct AgentInput {
     pub system_instructions: String,
 }
 
-pub struct AgentReceiver;
+pub struct AgentReceiver {
+    pub logger: Box<dyn WorkflowLogger>,
+}
 
 impl Handler for AgentReceiver {
     type Event = AgentEvent;
@@ -90,8 +94,7 @@ impl Handler for AgentReceiver {
         match &event {
             AgentEvent::Started => {}
             AgentEvent::Finished { output } => {
-                println!("{}", "\nOutput:".primary());
-                println!("{}", output);
+                self.logger.log_agent_finished(output);
             }
             AgentEvent::ToolCall(tool_call) => match &tool_call.metadata {
                 Some(ToolMetadata::ExecuteSQL {
@@ -174,7 +177,9 @@ pub async fn run_agent(
         config.clone(),
         global_context,
         Some(&agent_config),
-        AgentReceiver,
+        AgentReceiver {
+            logger: Box::new(WorkflowCLILogger),
+        },
     )
     .await?;
     Ok(AgentResult { output })

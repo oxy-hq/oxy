@@ -8,15 +8,10 @@ type Props = {
 export const StepContainer = ({ children, selected }: Props) => {
   return (
     <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: "8px",
-        borderRadius: "10px",
-        border: "1px solid #D4D4D4",
-        backgroundColor: selected ? "#E5E7EB" : "#FFF",
-        padding: `${nodePadding}px`,
-      }}
+      className={`flex flex-col gap-2 rounded-[10px] border border-neutral-300 ${
+        selected ? 'bg-gray-200' : 'bg-white'
+      }`}
+      style={{ padding: `${nodePadding}px` }}
     >
       {children}
     </div>

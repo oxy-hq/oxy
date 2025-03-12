@@ -6,7 +6,7 @@ type Props = {
   task: TaskConfigWithId;
 };
 
-export function ExecuteSqlStep({ task }: Props) {
+export function WorkflowStep({ task }: Props) {
   const selectedNodeId = useWorkflow((state) => state.selectedNodeId);
   const selected = selectedNodeId === task.id;
   return (

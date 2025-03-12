@@ -28,7 +28,7 @@ use crate::execute::core::ExecutionContext;
 use crate::execute::core::{run, Executable};
 use crate::execute::workflow::WorkflowEvent;
 use crate::execute::workflow::WorkflowInput;
-use crate::execute::workflow::{LoopInput, WorkflowExporter, WorkflowReceiver};
+use crate::execute::workflow::{LoopInput, PassthroughHandler};
 
 use super::cache::AgentCache;
 use super::cache::FileCache;
@@ -235,10 +235,9 @@ impl Executable<WorkflowInput, WorkflowEvent> for WorkflowTask {
         _input: WorkflowInput,
     ) -> Result<(), OnyxError> {
         let workflow = execution_context.config.resolve_workflow(&self.src).await?;
-        let dispatcher = Dispatcher::new(vec![
-            Box::new(WorkflowReceiver::new()),
-            Box::new(WorkflowExporter),
-        ]);
+        let dispatcher = Dispatcher::new(vec![Box::new(PassthroughHandler::new(
+            execution_context.get_sender(),
+        ))]);
         let executor = WorkflowExecutor::new(workflow.clone());
         let default_variables = workflow.variables.clone();
         let variables = if let Some(vars) = &self.variables {

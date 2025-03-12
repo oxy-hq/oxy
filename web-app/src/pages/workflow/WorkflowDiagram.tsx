@@ -225,6 +225,7 @@ const nodeTypes = {
   loop_sequential: StepNode,
   formatter: StepNode,
   agent: StepNode,
+  workflow: StepNode,
 };
 
 const WorkflowDiagram = ({ tasks }: { tasks: TaskConfig[] }) => {
@@ -256,11 +257,12 @@ const WorkflowDiagram = ({ tasks }: { tasks: TaskConfig[] }) => {
     }
   }, [reactFlowInstance]);
   return (
-    <div style={{ width: "100%", height: "100%" }} ref={reactFlowWrapper}>
+    <div className="w-full h-full" ref={reactFlowWrapper}>
       <ReactFlow
         nodes={layoutedNodes}
         edges={edges}
         nodeTypes={nodeTypes}
+        proOptions={{hideAttribution: true}}
         connectionLineComponent={ConnectionLine}
         connectionLineContainerStyle={{
           backgroundColor: "#D4D4D4",

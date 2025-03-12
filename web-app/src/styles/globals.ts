@@ -27,4 +27,24 @@ export const globalCss = defineGlobalStyles({
     cursor: "default",
     display: "flex",
   },
+  ".markdown": {
+    "*": {
+      all: "revert",
+    },
+    "tr": {
+      border: "1px solid",
+      padding: "0.5rem",
+    },
+    "th": {
+      border: "1px solid",
+      padding: "0.5rem",
+    },
+    "td": {
+      border: "1px solid",
+      padding: "0.5rem",
+    },
+    "table": {
+      borderCollapse: "collapse",
+    }
+  },
 });

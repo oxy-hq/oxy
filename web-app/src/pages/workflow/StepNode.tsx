@@ -26,20 +26,14 @@ export function StepNode({ data, isConnectable }: Props) {
           type="target"
           position={Position.Top}
           isConnectable={isConnectable}
-          style={{
-            visibility: "hidden",
-            top: "3px",
-          }}
+          className="invisible top-0.75"
         />
         <StepItem task={data.task} />
         <Handle
           type="source"
           position={Position.Bottom}
           isConnectable={isConnectable}
-          style={{
-            visibility: "hidden",
-            bottom: "1px",
-          }}
+          className="invisible bottom-0.25"
         />
       </NodeContainer>
     </div>

@@ -1,30 +1,25 @@
-import { useEffect, useMemo } from "react";
-
-const readTextFile = async (path: string) => {
-  const [handle] = await window.showOpenFilePicker({
-    suggestedName: path,
-  });
-  const file = await handle.getFile();
-  return await file.text();
-};
+import { useEffect, useMemo, useRef } from "react";
 
 import { v4 as uuidv4 } from "uuid";
 
 import { useParams } from "react-router-dom";
-import { parse } from "yaml";
 
 import WorkflowDiagram from "./WorkflowDiagram";
-import { css } from "styled-system/css";
 import useProjectPath from "@/stores/useProjectPath";
-import Text from "@/components/ui/Typography/Text";
 import { ReactFlowProvider } from "@xyflow/react";
 import useWorkflow, {
   TaskConfig,
-  WorkflowConfig,
   TaskType,
   TaskConfigWithId,
 } from "@/stores/useWorkflow";
 import RightSidebar from "./RightSidebar";
+import { useMutation } from "@tanstack/react-query";
+import runWorkflow from "@/hooks/api/runWorkflow";
+import React from "react";
+import WorkflowPageHeader from "./WorkflowPageHeader";
+import WorkflowOutput from "./WorkflowOutput";
+import useWorkflowConfig from "@/hooks/api/useWorkflowConfig.ts";
+import useWorkflowLogs from "@/hooks/api/useWorkflowLogs";
 
 const addTaskId = (tasks: TaskConfig[]): TaskConfigWithId[] => {
   return tasks.map((task) => {
@@ -46,63 +41,85 @@ const WorkflowPage: React.FC = () => {
   const projectPath = useProjectPath((state) => state.projectPath);
   const relativePath = path.replace(projectPath, "").replace(/^\//, "");
   const workflow = useWorkflow((state) => state.workflow);
+  const setLogs = useWorkflow((state) => state.setLogs);
+  const [showOutput, setShowOutput] = React.useState(false);
+  const logs = useWorkflow((state) => state.logs);
   const setWorkflow = useWorkflow((state) => state.setWorkflow);
+  const outputEnd = useRef<HTMLDivElement | null>(null);
+  const scrollToBottom = () => {
+    outputEnd.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  const { data: logsData } = useWorkflowLogs(relativePath);
+
+  useEffect(() => {
+    setLogs(logsData || []);
+  }, [logsData, setLogs]);
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [logs]);
   const setSelectedNodeId = useWorkflow((state) => state.setSelectedNodeId);
   useEffect(() => {
     setSelectedNodeId(null);
   }, [setSelectedNodeId]);
+  const { data: workflowConfig } = useWorkflowConfig(path);
   useEffect(() => {
-    const fetchWorkflow = async () => {
-      const workflowText = await readTextFile(path);
-      const workflowObj = parse(workflowText) as WorkflowConfig;
-      const tasks = addTaskId(workflowObj.tasks);
-      const workflow = { ...workflowObj, tasks, path };
+    if (workflowConfig) {
+      const tasks = addTaskId(workflowConfig.tasks);
+      const workflow = { ...workflowConfig, tasks, path };
       setWorkflow(workflow);
-    };
+      setSelectedNodeId(null);
+    }
+  }, [workflowConfig, setWorkflow, path, setSelectedNodeId]);
+  const appendLog = useWorkflow((state) => state.appendLog);
+  const run = useMutation({
+    mutationFn: runWorkflow,
+    onMutate: () => {
+      setLogs([]);
+    },
+    onSuccess: async (data) => {
+      if (!data) return;
+      for await (const logItem of data) {
+        appendLog(logItem);
+      }
+    },
+  });
+  const handleRun = async () => {
+    setShowOutput(true);
+    run.mutate({ projectPath, workflowPath: relativePath });
+  };
 
-    fetchWorkflow();
-    setSelectedNodeId(null);
-  }, [path, setSelectedNodeId, setWorkflow]);
+  const toggleOutput = () => {
+    setShowOutput(!showOutput);
+  };
 
   if (workflow === null) {
     return <div>Loading...</div>;
   }
 
   return (
-    <div
-      className={css({
-        width: "100%",
-        height: "100%",
-      })}
-    >
-      <div
-        className={css({
-          padding: "sm",
-          border: "1px solid",
-          borderColor: "neutral.border.colorBorderSecondary",
-          backgroundColor: "neutral.bg.colorBg",
-        })}
-      >
-        <Text variant="bodyBaseMedium">{relativePath}</Text>
-      </div>
-      <div
-        className={css({
-          display: "flex",
-          height: "100%",
-        })}
-      >
-        <div
-          className={css({
-            flex: 1,
-            height: "100%",
-          })}
-        >
+    <div className="w-full h-full flex flex-col">
+      <WorkflowPageHeader
+        path={path}
+        onRun={handleRun}
+        isRunning={run.isPending}
+      />
+      <div className="flex h-full flex-1 flex-col w-full">
+        <div className="flex-1 h-full w-full">
           <ReactFlowProvider>
             <WorkflowDiagram tasks={workflow.tasks} />
           </ReactFlowProvider>
         </div>
         <RightSidebar key={pathb64} />
       </div>
+      <WorkflowOutput
+        logs={logs}
+        showOutput={showOutput}
+        toggleOutput={toggleOutput}
+        isPending={run.isPending}
+        outputEnd={outputEnd}
+      />
     </div>
   );
 };

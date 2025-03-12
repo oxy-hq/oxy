@@ -12,6 +12,8 @@ import { SidebarProvider } from "./components/ui/shadcn/sidebar";
 import NewThread from "./pages/serve/new";
 import Threads from "./pages/serve/threads";
 import Thread from "./pages/serve/thread";
+import WorkflowPage from "./pages/workflow";
+import "@xyflow/react/dist/style.css";
 
 function ServeApp() {
   return (
@@ -25,6 +27,7 @@ function ServeApp() {
               <Route path="/threads" element={<Threads />} />
               <Route path="/new" element={<NewThread />} />
               <Route path="/threads/:threadId" element={<Thread />} />
+              <Route path="/workflows/:pathb64" element={<WorkflowPage />} />
             </Route>
             <Route path="*" element={<Navigate to="/" />} />
           </Routes>

@@ -49,17 +49,23 @@ pub fn format_table_output(table: &str, truncated: bool) -> String {
 
 pub fn print_colored_sql(sql: &str) {
     println!("{}", "\nSQL query:".primary());
+    println!("{}", get_colored_sql(sql));
+    println!();
+}
+
+pub fn get_colored_sql(sql: &str) -> String {
     let ps = SyntaxSet::load_defaults_newlines();
     let ts = ThemeSet::load_defaults();
     let syntax = ps.find_syntax_by_extension("sql").unwrap();
     let mut h = HighlightLines::new(syntax, &ts.themes["base16-ocean.dark"]);
 
+    let mut colored_sql = String::new();
     for line in LinesWithEndings::from(sql) {
         let ranges: Vec<(Style, &str)> = h.highlight_line(line, &ps).unwrap();
         let escaped = as_24_bit_terminal_escaped(&ranges[..], false);
-        print!("{}", escaped);
+        colored_sql.push_str(&escaped);
     }
-    println!();
+    colored_sql
 }
 
 pub fn find_project_path() -> Result<PathBuf, OnyxError> {

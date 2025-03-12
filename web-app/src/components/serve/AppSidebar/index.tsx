@@ -1,4 +1,4 @@
-import { Home, MessageSquarePlus, MessagesSquare } from "lucide-react";
+import { Home, MessageSquarePlus, MessagesSquare, Workflow } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import {
   Sidebar as ShadcnSidebar,
@@ -13,12 +13,15 @@ import {
   SidebarMenuSubButton,
   SidebarMenuSubItem,
 } from "@/components/ui/shadcn/sidebar";
+import useWorkflows from "@/hooks/api/useWorkflows";
+import Spinner from "@/components/ui/Spinner";
 
 export function AppSidebar() {
   const location = useLocation();
   const isHome = location.pathname === "/";
   const isThreads = location.pathname === "/threads";
   const isNew = location.pathname === "/new";
+  const { data: workflows, isPending: isWorkflowsLoading } = useWorkflows();
   return (
     <ShadcnSidebar className="p-2">
       <SidebarHeader>
@@ -75,6 +78,36 @@ export function AppSidebar() {
                     </SidebarMenuSubButton>
                   </SidebarMenuSubItem>
                 </SidebarMenuSub>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild isActive={isThreads}>
+                  <Link to="/workflows">
+                    <Workflow />
+                    <span>Workflows</span>
+                  </Link>
+                </SidebarMenuButton>
+                {isWorkflowsLoading ? <SidebarMenuSub>
+                  <Spinner/>
+                </SidebarMenuSub>: <>
+                    <SidebarMenuSub>
+                        {workflows?.map(
+                            workflow => {
+                                const pathb64 = btoa(workflow.path)
+                                const workflowUri = `/workflows/${pathb64}`
+                                return <SidebarMenuSubItem>
+                                    <SidebarMenuSubButton
+                                        asChild
+                                        isActive={location.pathname === workflowUri}
+                                    >
+                                        <Link to={workflowUri}>
+                                            <span>{workflow.name}</span>
+                                        </Link>
+                                    </SidebarMenuSubButton>
+                                </SidebarMenuSubItem>
+                            }
+                        )}
+                    </SidebarMenuSub>
+                </>}
               </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>

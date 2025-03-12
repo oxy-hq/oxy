@@ -130,4 +130,25 @@
   [role="button"]:not([disabled]) {
     cursor: pointer;
   }
+
+  .markdown {
+    * {
+      all: revert;
+    }
+    tr {
+      border: 1px solid;
+      padding: 0.5rem;
+    }
+    th {
+      border: 1px solid;
+      padding: 0.5rem;
+    }
+    td {
+      border: 1px solid;
+      padding: 0.5rem;
+    }
+    table {
+      border-collapse: collapse;
+    }
+  }
 }

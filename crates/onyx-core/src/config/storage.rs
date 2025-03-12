@@ -23,6 +23,7 @@ pub(super) trait ConfigStorage {
     async fn fs_link<P: AsRef<Path>>(&self, file_ref: P) -> Result<String, OnyxError>;
     async fn glob<P: AsRef<Path>>(&self, path: P) -> Result<Vec<String>, OnyxError>;
     async fn list_agents(&self) -> Result<Vec<PathBuf>, OnyxError>;
+    async fn list_workflows(&self) -> Result<Vec<PathBuf>, OnyxError>;
 }
 
 #[derive(Debug)]
@@ -150,5 +151,9 @@ impl ConfigStorage for LocalSource {
 
     async fn list_agents(&self) -> Result<Vec<PathBuf>, OnyxError> {
         Ok(self.list_by_sub_extension(None, "agent"))
+    }
+
+    async fn list_workflows(&self) -> Result<Vec<PathBuf>, OnyxError> {
+        Ok(self.list_by_sub_extension(None, "workflow"))
     }
 }

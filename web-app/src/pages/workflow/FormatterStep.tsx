@@ -1,6 +1,6 @@
 import useWorkflow, { TaskConfigWithId } from "@/stores/useWorkflow";
 import { StepContainer } from "./StepContainer";
-import { StepHeader } from "./StepHeader";
+import { TaskHeader } from "./TaskHeader.tsx";
 
 type Props = {
   task: TaskConfigWithId;
@@ -11,7 +11,7 @@ export function FormatterStep({ task }: Props) {
   const selected = selectedNodeId === task.id;
   return (
     <StepContainer selected={selected}>
-      <StepHeader task={task} />
+      <TaskHeader task={task} />
     </StepContainer>
   );
 }

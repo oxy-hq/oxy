@@ -8,7 +8,6 @@ import {
 } from "react-router-dom";
 import { css } from "styled-system/css";
 
-import "@xyflow/react/dist/style.css";
 import WithSidebarLayout from "@/components/WithSidebarLayout";
 import WorkflowPage from "./pages/workflow";
 
