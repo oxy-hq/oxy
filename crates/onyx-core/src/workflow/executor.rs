@@ -240,11 +240,19 @@ impl Executable<WorkflowInput, WorkflowEvent> for WorkflowTask {
         ))]);
         let executor = WorkflowExecutor::new(workflow.clone());
         let default_variables = workflow.variables.clone();
-        let variables = if let Some(vars) = &self.variables {
-            vars.clone()
-        } else {
-            HashMap::new()
-        };
+
+        // render variables before passing them to the sub workflow
+        let mut variables = HashMap::new();
+        if let Some(vars) = &self.variables {
+            let ctx = execution_context.renderer.get_context();
+            let mut renderer = execution_context.renderer.clone();
+            for (key, value) in vars {
+                let rendered_value = renderer.render_once(value, ctx.clone())?;
+                let rendered_key = renderer.render_once(key, ctx.clone())?;
+                variables.insert(rendered_key, rendered_value);
+            }
+        }
+
         let ctx = context! {
             ..Value::from_serialize(&variables),
             ..Value::from_serialize(&default_variables),
