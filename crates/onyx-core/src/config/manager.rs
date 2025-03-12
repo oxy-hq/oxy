@@ -1,11 +1,10 @@
 use std::path::{Path, PathBuf};
 
-use crate::errors::OnyxError;
-
 use super::{
     model::{AgentConfig, Config, Database, Model, Workflow},
     storage::{ConfigSource, ConfigStorage},
 };
+use crate::errors::OnyxError;
 
 #[derive(Debug)]
 pub struct ConfigManager {
@@ -91,5 +90,9 @@ impl ConfigManager {
 
     pub async fn list_agents(&self) -> Result<Vec<PathBuf>, OnyxError> {
         self.storage.list_agents().await
+    }
+
+    pub async fn list_workflows(&self) -> Result<Vec<PathBuf>, OnyxError> {
+        self.storage.list_workflows().await
     }
 }

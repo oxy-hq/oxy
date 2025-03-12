@@ -8,6 +8,8 @@ use std::net::SocketAddr;
 use tokio;
 use tower_http::cors::{Any, CorsLayer};
 
+use super::workflow;
+
 pub async fn serve(address: &SocketAddr) {
     let cors = CorsLayer::new()
         .allow_origin(Any)
@@ -20,7 +22,11 @@ pub async fn serve(address: &SocketAddr) {
 
     let app: Router = Router::new()
         .route("/ask", post(agent::ask))
-        .route("/messages/:agent", get(message::get_messages));
+        .route("/messages/:agent", get(message::get_messages))
+        .route("/workflows", get(workflow::list))
+        .route("/workflows/:pathb64", get(workflow::get))
+        .route("/workflows/:pathb64/logs", get(workflow::get_logs))
+        .route("/workflows/:pathb64/run", post(workflow::run_workflow));
 
     let listener = tokio::net::TcpListener::bind(address).await.unwrap();
     axum::serve(listener, app.layer(cors)).await.unwrap();
