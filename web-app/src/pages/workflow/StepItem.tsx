@@ -23,7 +23,7 @@ export function StepItem({ task }: Props) {
     return <AgentStep task={task} />;
   }
 
-  if(task.type === "workflow") {
+  if (task.type === "workflow") {
     return <WorkflowStep task={task} />;
   }
 }

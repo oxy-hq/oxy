@@ -262,7 +262,7 @@ const WorkflowDiagram = ({ tasks }: { tasks: TaskConfig[] }) => {
         nodes={layoutedNodes}
         edges={edges}
         nodeTypes={nodeTypes}
-        proOptions={{hideAttribution: true}}
+        proOptions={{ hideAttribution: true }}
         connectionLineComponent={ConnectionLine}
         connectionLineContainerStyle={{
           backgroundColor: "#D4D4D4",

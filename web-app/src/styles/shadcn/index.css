@@ -41,6 +41,10 @@
   --sidebar-accent-foreground: hsl(240 5.9% 10%);
   --sidebar-border: hsl(220 13% 91%);
   --sidebar-ring: hsl(217.2 91.2% 59.8%);
+
+  --code-primary: rgba(171, 178, 191, 1);
+
+  --accent-main-000: rgba(48, 92, 197, 1);
 }
 
 .dark {
@@ -78,6 +82,10 @@
   --sidebar-accent-foreground: hsl(240 4.8% 95.9%);
   --sidebar-border: hsl(240 3.7% 15.9%);
   --sidebar-ring: hsl(217.2 91.2% 59.8%);
+
+  --code-primary: rgba(171, 178, 191, 1);
+
+  --accent-main-000: rgba(58, 113, 214, 1);
 }
 
 @theme inline {
@@ -117,6 +125,10 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+
+  --color-code-primary: var(--code-primary);
+
+  --color-accent-main-000: var(--accent-main-000);
 }
 
 @layer base {
@@ -151,4 +163,53 @@
       border-collapse: collapse;
     }
   }
+}
+
+html,
+body {
+  overflow: hidden;
+  width: 100%;
+  padding: 0px;
+  margin: 0px;
+  position: fixed;
+}
+body {
+  height: 100%;
+  margin: 0px;
+  min-height: 100dvh;
+  position: fixed;
+  cursor: default;
+  display: flex;
+}
+
+.root {
+  width: 100%;
+  height: 100%;
+  margin: 0px;
+  min-height: 100dvh;
+  position: fixed;
+  cursor: default;
+  display: flex;
+}
+
+.customScrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: var(--sidebar-border) var(--sidebar-background);
+  -webkit-overflow-scrolling: touch;
+}
+
+.customScrollbar::-webkit-scrollbar {
+  height: 6px;
+  width: 6px;
+  background: transparent;
+  border-radius: 9999px;
+}
+
+.customScrollbar::-webkit-scrollbar-thumb {
+  background: var(--sidebar-border);
+  border-radius: 9999px;
+}
+
+.customScrollbar::-webkit-scrollbar-track {
+  background: transparent;
 }

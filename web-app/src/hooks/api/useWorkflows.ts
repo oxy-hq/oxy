@@ -5,7 +5,7 @@ import { apiClient } from "@/services/axios";
 type WorkflowItem = {
   name: string;
   path: string;
-}
+};
 
 const fetchWorkflows = async () => {
   const { data } = await apiClient.get("/workflows");

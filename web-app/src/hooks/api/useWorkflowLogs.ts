@@ -4,8 +4,10 @@ import { apiClient } from "@/services/axios";
 import { LogItem } from "./runWorkflow";
 
 const fetchWorkflowLogs = async (relativePath: string) => {
-    const pathb64 = btoa(relativePath)
-    const {data} = await apiClient.get(`/workflows/${encodeURIComponent(pathb64)}/logs`)
+  const pathb64 = btoa(relativePath);
+  const { data } = await apiClient.get(
+    `/workflows/${encodeURIComponent(pathb64)}/logs`,
+  );
   return data.logs as LogItem[];
 };
 

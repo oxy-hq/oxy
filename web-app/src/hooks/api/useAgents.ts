@@ -1,8 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 
-import { apiClient } from "@/services/axios";
-
 import queryKeys from "./queryKey";
+import { service } from "@/services/service";
 
 export default function useAgents(
   enabled = true,
@@ -11,10 +10,7 @@ export default function useAgents(
 ) {
   return useQuery({
     queryKey: queryKeys.agent.list(),
-    queryFn: async () => {
-      const response = await apiClient.get("/agents");
-      return response.data.agents;
-    },
+    queryFn: service.listAgents,
     enabled,
     refetchOnWindowFocus: refetchOnWindowFocus,
     refetchOnMount,

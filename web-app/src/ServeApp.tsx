@@ -8,8 +8,8 @@ import {
 
 import Home from "@/pages/serve/home";
 import { AppSidebar } from "@/components/serve/AppSidebar";
+import { Toaster as ShadcnToaster } from "@/components/ui/shadcn/sonner";
 import { SidebarProvider } from "./components/ui/shadcn/sidebar";
-import NewThread from "./pages/serve/new";
 import Threads from "./pages/serve/threads";
 import Thread from "./pages/serve/thread";
 import WorkflowPage from "./pages/workflow";
@@ -25,7 +25,6 @@ function ServeApp() {
             <Route>
               <Route path="/" element={<Home />} />
               <Route path="/threads" element={<Threads />} />
-              <Route path="/new" element={<NewThread />} />
               <Route path="/threads/:threadId" element={<Thread />} />
               <Route path="/workflows/:pathb64" element={<WorkflowPage />} />
             </Route>
@@ -33,6 +32,7 @@ function ServeApp() {
           </Routes>
         </main>
       </SidebarProvider>
+      <ShadcnToaster />
     </Router>
   );
 }

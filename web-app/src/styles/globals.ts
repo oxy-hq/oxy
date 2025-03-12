@@ -31,20 +31,20 @@ export const globalCss = defineGlobalStyles({
     "*": {
       all: "revert",
     },
-    "tr": {
+    tr: {
       border: "1px solid",
       padding: "0.5rem",
     },
-    "th": {
+    th: {
       border: "1px solid",
       padding: "0.5rem",
     },
-    "td": {
+    td: {
       border: "1px solid",
       padding: "0.5rem",
     },
-    "table": {
+    table: {
       borderCollapse: "collapse",
-    }
+    },
   },
 });
