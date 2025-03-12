@@ -174,12 +174,13 @@ impl Executable<(), EvalEvent> for TargetWorkflow {
         let mut child_executor = execution_context.child_executor();
         let map_event = EvalEvent::Workflow;
         let workflow_executor = WorkflowExecutor::new(workflow.clone());
+        let ctx = Value::from_serialize(&workflow.variables);
         let res = child_executor
             .execute(
                 &workflow_executor,
                 self.input.clone(),
                 map_event,
-                Value::UNDEFINED,
+                ctx,
                 Value::UNDEFINED,
                 workflow,
             )
