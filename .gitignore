@@ -89,3 +89,4 @@ artifacts/
 
 # example data 
 example_postgres_data.sql
+.qodo
