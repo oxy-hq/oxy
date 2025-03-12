@@ -9,8 +9,7 @@
     "lint:ts": "tsc --noEmit",
     "preview": "vite preview",
     "format": "prettier --write .",
-    "format:check": "prettier --check .",
-    "prepare": "panda codegen"
+    "format:check": "prettier --check ."
   },
   "dependencies": {
     "@codemirror/lang-python": "^6.1.7",
@@ -45,9 +44,9 @@
     "highlight.js": "^11.11.1",
     "invariant": "^2.2.4",
     "lodash": "^4.17.21",
-    "next-themes": "^0.4.5",
     "lucide-react": "^0.479.0",
     "memfs": "^4.17.0",
+    "next-themes": "^0.4.5",
     "prism-react-renderer": "^2.4.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
@@ -72,12 +71,12 @@
     "zustand": "^5.0.3"
   },
   "devDependencies": {
-    "@pandacss/dev": "^0.53.0",
     "@types/invariant": "^2.2.37",
     "@types/lodash": "^4.17.15",
     "@types/node": "^22.13.10",
     "@types/react": "^19.0.10",
     "@types/react-dom": "^19.0.4",
+    "@types/react-syntax-highlighter": "^15.5.13",
     "@types/react-window": "^1.8.8",
     "@vitejs/plugin-react-swc": "^3.8.0",
     "i": "^0.3.7",

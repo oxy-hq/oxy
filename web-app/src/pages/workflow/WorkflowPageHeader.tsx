@@ -1,6 +1,4 @@
 import React from "react";
-import useProjectPath from "@/stores/useProjectPath";
-import Text from "@/components/ui/Typography/Text";
 import { Button } from "@/components/ui/shadcn/button";
 import { LoaderCircle } from "lucide-react";
 
@@ -15,11 +13,10 @@ const WorkflowPageHeader: React.FC<WorkflowPageHeaderProps> = ({
   onRun,
   isRunning,
 }) => {
-  const projectPath = useProjectPath((state) => state.projectPath);
-  const relativePath = path.replace(projectPath, "").replace(/^\//, "");
+  const relativePath = path;
   return (
     <div className="p-2 border border-neutral-200 bg-white flex justify-between items-center">
-      <Text variant="bodyBaseMedium">{relativePath}</Text>
+      <span className="text-sm font-medium">{relativePath}</span>
       <Button
         onClick={onRun}
         disabled={isRunning}

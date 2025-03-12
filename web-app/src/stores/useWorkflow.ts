@@ -16,6 +16,7 @@ export type TaskConfigWithId = (
   | FormatterTaskConfig
   | AgentTaskConfig
   | LoopSequentialTaskConfigWithId
+  | WorkflowTaskConfig
 ) & { id: string };
 
 export type WorkflowConfigWithPath = Omit<WorkflowConfig, "tasks"> & {
@@ -346,6 +347,10 @@ export type AgentTaskConfig = BaseTaskConfig & {
   agent_ref: string;
 };
 
+export type WorkflowTaskConfig = BaseTaskConfig & {
+  type: TaskType.WORKFLOW;
+};
+
 export type LoopSequentialTaskConfig = BaseTaskConfig & {
   type: TaskType.LOOP_SEQUENTIAL;
   tasks: TaskConfig[];
@@ -370,6 +375,7 @@ export type TaskConfig =
   | ExecuteSqlTaskConfig
   | FormatterTaskConfig
   | AgentTaskConfig
-  | LoopSequentialTaskConfig;
+  | LoopSequentialTaskConfig
+  | WorkflowTaskConfig;
 
 export default useWorkflow;

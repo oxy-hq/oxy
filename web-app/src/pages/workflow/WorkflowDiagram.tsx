@@ -12,7 +12,7 @@ import useWorkflow, {
   Edge,
   LayoutedNode,
   Node,
-  TaskConfig,
+  TaskConfigWithId,
   TaskType,
 } from "@/stores/useWorkflow";
 
@@ -119,8 +119,8 @@ const getLayoutedElements = async (nodes: Node[], edges: Edge[]) => {
           "elk.algorithm": "layered",
           "elk.direction": "DOWN",
           "elk.padding": `[top=${topPadding}, left=${padding}, bottom=${padding}, right=${padding}]`,
-          "elk.spacing.nodeNode": distanceBetweenNodes,
-          "elk.layered.spacing.nodeNodeBetweenLayers": distanceBetweenNodes,
+          "elk.spacing.nodeNode": `${distanceBetweenNodes}`,
+          "elk.layered.spacing.nodeNodeBetweenLayers": `${distanceBetweenNodes}`,
         },
         children: buildChildren(childNodes),
         parentId: node.parentId,
@@ -167,7 +167,7 @@ const getLayoutedElements = async (nodes: Node[], edges: Edge[]) => {
 };
 
 const buildNodes = (
-  tasks: TaskConfig[],
+  tasks: TaskConfigWithId[],
   parentId: string | undefined = undefined,
   level = 0,
 ) => {
@@ -194,6 +194,9 @@ const buildNodes = (
         height: 0,
       },
       hidden: false,
+      width: 0,
+      height: 0,
+      children: [],
     };
     if (task.type === TaskType.LOOP_SEQUENTIAL) {
       const { nodes: loopNodes, edges: loopEdges } = buildNodes(
@@ -226,9 +229,9 @@ const nodeTypes = {
   formatter: StepNode,
   agent: StepNode,
   workflow: StepNode,
-};
+} as const;
 
-const WorkflowDiagram = ({ tasks }: { tasks: TaskConfig[] }) => {
+const WorkflowDiagram = ({ tasks }: { tasks: TaskConfigWithId[] }) => {
   const setNodes = useWorkflow((state) => state.setNodes);
   const setEdges = useWorkflow((state) => state.setEdges);
   const setLayoutedNodes = useWorkflow((state) => state.setLayoutedNodes);

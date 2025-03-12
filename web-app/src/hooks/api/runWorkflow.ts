@@ -8,7 +8,10 @@ export type LogItem = {
   log_type: LogType;
 };
 
-async function* logItemGenerator(reader, decoder) {
+async function* logItemGenerator(
+  reader: ReadableStreamDefaultReader<Uint8Array<ArrayBufferLike>>,
+  decoder: TextDecoder,
+) {
   let buffer = "";
   while (true) {
     const { value, done } = await reader.read();
@@ -31,7 +34,7 @@ async function* logItemGenerator(reader, decoder) {
   }
 }
 
-async function runWorkflow({ workflowPath, projectPath }) {
+async function runWorkflow({ workflowPath }: { workflowPath: string }) {
   const pathBase64 = btoa(workflowPath);
   const apiPath = `${apiBaseURL}/workflows/${encodeURIComponent(pathBase64)}/run`;
   const response = await fetch(apiPath, {
@@ -39,7 +42,6 @@ async function runWorkflow({ workflowPath, projectPath }) {
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ project_path: projectPath }),
   });
   const reader = response.body?.getReader();
   if (!reader) {

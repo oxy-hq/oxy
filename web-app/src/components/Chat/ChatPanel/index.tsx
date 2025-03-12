@@ -1,76 +1,60 @@
-import { css } from "styled-system/css";
-
-import Button from "@/components/ui/Button";
-import Icon from "@/components/ui/Icon";
-import { useChatContextSelector } from "@/contexts/chat";
+import { Button } from "@/components/ui/shadcn/button";
+import { Textarea } from "@/components/ui/shadcn/textarea";
+import useThreadMutation from "@/hooks/api/useThreadMutation";
 import { useEnterSubmit } from "@/hooks/useEnterSubmit";
-import { getAgentNameFromPath } from "@/libs/utils/agent";
+import { cx } from "class-variance-authority";
+import { ArrowRight, Loader2 } from "lucide-react";
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import AgentsDropdown, { Agent } from "./AgentsDropdown";
 
-import ChatTextArea from "./ChatTextArea";
-import { useChatForm } from "./useChatForm";
-
-const formStyles = css({
-  maxW: "720px",
-  mx: "auto",
-  display: "flex",
-  width: "100%",
-});
-
-const wrapperStyles = css({
-  width: "100%",
-  display: "flex",
-  flexDirection: "column",
-  gap: "md",
-  alignItems: "center",
-  justifyContent: "end",
-});
-
-export interface ChatPanelProps {
-  agentPath: string;
-}
-
-function ChatPanel({ agentPath }: ChatPanelProps) {
+const ChatPanel = () => {
+  const navigate = useNavigate();
+  const { mutate: createThread, isPending } = useThreadMutation((data) => {
+    navigate(`/threads/${data.id}`);
+  });
+  const [agent, setAgent] = useState<Agent | null>(null);
+  const [message, setMessage] = useState("");
   const { formRef, onKeyDown } = useEnterSubmit();
 
-  const { streamingNode, onSendChatMessage, onStop, messages } =
-    useChatContextSelector((s) => ({
-      streamingNode: s.streamingNode,
-      onSendChatMessage: s.onSendChatMessage,
-      onStop: s.onStop,
-      messages: s.messages,
-    }));
-
-  const { pending, handleSubmit } = useChatForm({
-    onSendChatMessage,
-    formRef,
-  });
-
-  const shouldShowStopButton = streamingNode !== null;
+  const handleFormSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    createThread({
+      title: message,
+      agent: agent?.id ?? "",
+      question: message,
+    });
+  };
 
   return (
-    <div className={wrapperStyles}>
-      {shouldShowStopButton && (
-        <Button
-          onClick={onStop}
-          content="iconText"
-          variant="outline"
-          size="large"
-        >
-          <Icon asset="close" /> Stop generating
+    <form
+      ref={formRef}
+      onSubmit={handleFormSubmit}
+      className="w-full max-w-[672px] flex p-2 flex-col gap-1 shadow-sm rounded-md border-2"
+    >
+      <Textarea
+        disabled={isPending}
+        name="question"
+        autoFocus
+        onKeyDown={onKeyDown}
+        value={message}
+        onChange={(e) => setMessage(e.target.value)}
+        className={cx(
+          "border-none shadow-none",
+          "hover:border-none focus-visible:border-none focus-visible:shadow-none",
+          "focus-visible:ring-0 focus-visible:ring-offset-0",
+          "outline-none resize-none",
+        )}
+        placeholder={`Ask the ${agent?.name} agent a question`}
+      />
+      <div className="flex justify-between">
+        <AgentsDropdown onSelect={setAgent} agent={agent} />
+        <Button disabled={!message || isPending || !agent} type="submit">
+          {isPending ? <Loader2 className="animate-spin" /> : <ArrowRight />}
         </Button>
-      )}
-
-      <form ref={formRef} onSubmit={handleSubmit} className={formStyles}>
-        <input hidden name="agentPath" defaultValue={agentPath} />
-        <ChatTextArea
-          onKeyDown={onKeyDown}
-          hasMessage={!!messages.length}
-          pending={pending}
-          botName={getAgentNameFromPath(agentPath)}
-        />
-      </form>
-    </div>
+      </div>
+    </form>
   );
-}
+};
 
 export default ChatPanel;

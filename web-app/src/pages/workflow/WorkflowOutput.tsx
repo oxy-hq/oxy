@@ -1,5 +1,4 @@
 import React from "react";
-import { cx } from "styled-system/css";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import directive from "remark-directive";
@@ -9,6 +8,7 @@ import { LoaderIcon } from "lucide-react";
 import { LogItem, LogType } from "@/hooks/api/runWorkflow";
 import { Button } from "@/components/ui/shadcn/button";
 import dayjs from "dayjs";
+import { cx } from "class-variance-authority";
 
 interface WorkflowOutputProps {
   showOutput: boolean;
@@ -49,11 +49,7 @@ const WorkflowOutput: React.FC<WorkflowOutputProps> = ({
           </Button>
         </div>
         {showOutput && (
-          <div
-            className={cx(
-              "max-h-75 min-h-50 overflow-scroll scrollbar-thin break-all p-1",
-            )}
-          >
+          <div className="max-h-75 min-h-50 overflow-scroll scrollbar-thin break-all p-1">
             <div>
               {logs.map((log, index) => {
                 console.log(log);

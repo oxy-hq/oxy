@@ -12,7 +12,6 @@ import {
 } from "./constants";
 import { StepContainer } from "./StepContainer";
 import { TaskHeader } from "./TaskHeader.tsx";
-import { css } from "styled-system/css";
 
 type Props = {
   task: TaskConfigWithId;
@@ -53,16 +52,7 @@ export function LoopSequentialStep({ task }: Props) {
       />
       {expandable && expanded && (
         <>
-          <div
-            style={{ height: `${childSpace}px` }}
-            className={css({
-              width: "100%",
-              display: "flex",
-              flexDirection: "column",
-              borderRadius: "md",
-              backgroundColor: "neutral.bg.colorBgEditor",
-            })}
-          ></div>
+          <div style={{ height: `${childSpace}px` }}></div>
         </>
       )}
     </StepContainer>

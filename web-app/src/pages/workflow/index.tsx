@@ -1,25 +1,23 @@
-import { useEffect, useMemo, useRef } from "react";
+import React, { useEffect, useMemo, useRef } from "react";
 
 import { v4 as uuidv4 } from "uuid";
 
 import { useParams } from "react-router-dom";
 
-import WorkflowDiagram from "./WorkflowDiagram";
-import useProjectPath from "@/stores/useProjectPath";
 import { ReactFlowProvider } from "@xyflow/react";
 import useWorkflow, {
   TaskConfig,
   TaskType,
   TaskConfigWithId,
 } from "@/stores/useWorkflow";
-import RightSidebar from "./RightSidebar";
 import { useMutation } from "@tanstack/react-query";
 import runWorkflow from "@/hooks/api/runWorkflow";
-import React from "react";
-import WorkflowPageHeader from "./WorkflowPageHeader";
-import WorkflowOutput from "./WorkflowOutput";
 import useWorkflowConfig from "@/hooks/api/useWorkflowConfig.ts";
 import useWorkflowLogs from "@/hooks/api/useWorkflowLogs";
+
+import WorkflowDiagram from "./WorkflowDiagram";
+import WorkflowPageHeader from "./WorkflowPageHeader";
+import WorkflowOutput from "./WorkflowOutput";
 
 const addTaskId = (tasks: TaskConfig[]): TaskConfigWithId[] => {
   return tasks.map((task) => {
@@ -38,8 +36,7 @@ const addTaskId = (tasks: TaskConfig[]): TaskConfigWithId[] => {
 const WorkflowPage: React.FC = () => {
   const pathb64 = useParams<{ pathb64: string }>().pathb64!;
   const path = useMemo(() => atob(pathb64), [pathb64]);
-  const projectPath = useProjectPath((state) => state.projectPath);
-  const relativePath = path.replace(projectPath, "").replace(/^\//, "");
+  const relativePath = path;
   const workflow = useWorkflow((state) => state.workflow);
   const setLogs = useWorkflow((state) => state.setLogs);
   const [showOutput, setShowOutput] = React.useState(false);
@@ -87,7 +84,7 @@ const WorkflowPage: React.FC = () => {
   });
   const handleRun = async () => {
     setShowOutput(true);
-    run.mutate({ projectPath, workflowPath: relativePath });
+    run.mutate({ workflowPath: relativePath });
   };
 
   const toggleOutput = () => {
@@ -111,7 +108,6 @@ const WorkflowPage: React.FC = () => {
             <WorkflowDiagram tasks={workflow.tasks} />
           </ReactFlowProvider>
         </div>
-        <RightSidebar key={pathb64} />
       </div>
       <WorkflowOutput
         logs={logs}
@@ -122,6 +118,12 @@ const WorkflowPage: React.FC = () => {
       />
     </div>
   );
+};
+
+export type StepData = {
+  id: string;
+  name: string;
+  type: string;
 };
 
 export default WorkflowPage;

@@ -1,6 +1,5 @@
 import React, { ReactNode } from "react";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import { css } from "styled-system/css";
 
 type CodeBlockProps = {
   children?: ReactNode;
@@ -11,16 +10,13 @@ const CodeBlock: React.FC<CodeBlockProps> = ({ children, className }) => {
   const match = /language-(\w+)/.exec(className || "");
   return match ? (
     <SyntaxHighlighter
-      className={css({
-        border: "1px solid #E5E7EB",
-        borderRadius: "4px",
-      })}
+      className="border border-gray-200 rounded"
       language={match[1]}
       PreTag="div"
       lineProps={{ style: { wordBreak: "break-all", whiteSpace: "pre-wrap" } }}
       wrapLines={true}
     >
-      {children}
+      {String(children)}
     </SyntaxHighlighter>
   ) : (
     <code className={className}>{children}</code>

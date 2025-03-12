@@ -1,57 +1,38 @@
-import "./fonts/font-face.css";
-import "./app.css";
+import "@/styles/shadcn/index.css";
 import {
   Navigate,
   Route,
   BrowserRouter as Router,
   Routes,
 } from "react-router-dom";
-import { css } from "styled-system/css";
 
-import WithSidebarLayout from "@/components/WithSidebarLayout";
+import Home from "@/pages/home";
+import { AppSidebar } from "@/components/AppSidebar";
+import { Toaster as ShadcnToaster } from "@/components/ui/shadcn/sonner";
+import { SidebarProvider } from "./components/ui/shadcn/sidebar";
+import Threads from "./pages/threads";
+import Thread from "./pages/thread";
 import WorkflowPage from "./pages/workflow";
-
-import ProtectedRoute from "./components/ProtectedRoute";
-import { TooltipProvider } from "./components/ui/Tooltip";
-import EmptyPage from "./pages/empty";
-import Init from "./pages/init";
-import FilePage from "./pages/file";
-import AgentPageWrapper from "./pages/agent";
-import Toaster from "./components/ui/Toast/Toaster.tsx";
-
-const TOOLTIP_DELAY_DURATION = 3;
-
-const layoutWrapperStyles = css({
-  display: "flex",
-  flexDirection: "row",
-  width: "100dvw",
-  h: "100dvh",
-});
+import "@xyflow/react/dist/style.css";
 
 function App() {
   return (
     <Router>
-      <div className={layoutWrapperStyles}>
-        <TooltipProvider delayDuration={TOOLTIP_DELAY_DURATION}>
+      <SidebarProvider>
+        <AppSidebar />
+        <main className="bg-background w-full rounded-xl my-2 mr-2 shadow-[0px_1px_3px_0px_rgba(0,0,0,0.10),0px_1px_2px_0px_rgba(0,0,0,0.06)]">
           <Routes>
-            <Route path="/init" element={<Init />} />
-            <Route
-              element={
-                <ProtectedRoute>
-                  <WithSidebarLayout />
-                </ProtectedRoute>
-              }
-            >
-              <Route path="/" element={<EmptyPage />} />
-              <Route path="/workflow/:pathb64" element={<WorkflowPage />} />
-              <Route path="/agent/:pathb64" element={<AgentPageWrapper />} />
-              <Route path="/file/:pathb64" element={<FilePage />} />
+            <Route>
+              <Route path="/" element={<Home />} />
+              <Route path="/threads" element={<Threads />} />
+              <Route path="/threads/:threadId" element={<Thread />} />
+              <Route path="/workflows/:pathb64" element={<WorkflowPage />} />
             </Route>
             <Route path="*" element={<Navigate to="/" />} />
           </Routes>
-        </TooltipProvider>
-        <Toaster />
-      </div>
+        </main>
+      </SidebarProvider>
+      <ShadcnToaster />
     </Router>
   );
 }

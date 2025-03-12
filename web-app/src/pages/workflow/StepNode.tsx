@@ -2,7 +2,7 @@ import { Handle, NodeProps, Position } from "@xyflow/react";
 
 import { NodeContainer } from "./NodeContainer";
 import { StepItem } from "./StepItem";
-import useWorkflow, { NodeData } from "@/stores/useWorkflow";
+import { NodeData } from "@/stores/useWorkflow";
 
 type NodeType = {
   id: string;
@@ -12,16 +12,20 @@ type NodeType = {
     y: number;
   };
   type: string;
+  parentId?: string;
+  width?: number;
+  height?: number;
+  sourcePosition?: Position;
+  targetPosition?: Position;
+  dragHandle?: string;
 };
 
 type Props = NodeProps<NodeType>;
 
 export function StepNode({ data, isConnectable }: Props) {
-  const selectedNodeId = useWorkflow((state) => state.selectedNodeId);
-  const selected = selectedNodeId === data.id;
   return (
     <div key={data.id}>
-      <NodeContainer selected={selected}>
+      <NodeContainer>
         <Handle
           type="target"
           position={Position.Top}
