@@ -3,14 +3,25 @@
 
 name: orange_sales
 tasks:
-  - name: report
+  - name: random_fruit
+    type: execute_sql
+    sql_query: |
+      SELECT fruit
+      FROM (
+        SELECT fruit FROM (VALUES ('apple'), ('orange'), ('banana'), ('kiwi')) AS fruits(fruit)
+        ORDER BY RANDOM()
+      ) AS shuffled
+      LIMIT 1;
+    database: local
+
+  - name: subworkflow
     src: workflows/fruit_sales_report.workflow.yml
     type: workflow
     variables: 
-      fruit: orange
+      fruit: "{{ random_fruit.fruit }}"
 
   - name: report
     type: formatter
     template: | 
       Sales report for orange:
-      {{ report.report }}
+      {{ subworkflow.report }}
