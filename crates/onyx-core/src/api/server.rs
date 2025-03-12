@@ -1,5 +1,6 @@
 use crate::api::agent;
 use crate::api::message;
+use crate::api::thread;
 use axum::routing::{get, post};
 use axum::Router;
 use migration::Migrator;
@@ -23,6 +24,11 @@ pub async fn serve(address: &SocketAddr) {
     let app: Router = Router::new()
         .route("/ask", post(agent::ask))
         .route("/messages/:agent", get(message::get_messages))
+        .route("/agents", get(agent::get_agents))
+        .route("/threads", get(thread::get_threads))
+        .route("/threads/:id", get(thread::get_thread))
+        .route("/threads/:id/ask", get(thread::ask_thread))
+        .route("/threads", post(thread::create_thread))
         .route("/workflows", get(workflow::list))
         .route("/workflows/:pathb64", get(workflow::get))
         .route("/workflows/:pathb64/logs", get(workflow::get_logs))
