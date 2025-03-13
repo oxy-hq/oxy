@@ -465,7 +465,11 @@ impl Handler for EvalReceiver {
                                 .cot
                                 .replace("---", &format!("{}", "---".error()))
                                 .replace("+++", &format!("{}", "+++".success()));
-                            println!("Choice {}:\n\n{}", &record.choice.warning(), &reason);
+
+                            if record.choice.trim() == "B" {
+                                println!("{}", "Inconsistent result detected.".warning());
+                            }
+                            println!("{}", &reason);
                             println!("**********\n");
                         }
                     }
