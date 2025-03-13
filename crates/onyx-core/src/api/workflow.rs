@@ -3,12 +3,9 @@ use std::path::PathBuf;
 use std::fs::File;
 use std::sync::Arc;
 use std::sync::Mutex;
-use tokio_stream::StreamExt;
-use tokio_util::io::ReaderStream;
 
 use crate::config::model::Workflow;
-use crate::config::{load_config, ConfigBuilder};
-use crate::errors::OnyxError;
+use crate::config::ConfigBuilder;
 use crate::execute::core::event::Dispatcher;
 use crate::execute::core::run;
 use crate::execute::workflow::LogItem;
@@ -18,13 +15,12 @@ use crate::execute::workflow::{
 use crate::service::workflow::get_workflow;
 use crate::utils::find_project_path;
 use crate::workflow::executor::WorkflowExecutor;
-use axum::extract::{self, Json, Path};
+use axum::extract::{self, Path};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum_streams::StreamBodyAs;
-use futures::Stream;
 use minijinja::Value;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::fs::OpenOptions;
 use tokio::sync::mpsc;
 
@@ -85,10 +81,7 @@ pub async fn get_logs(
     }
 }
 
-pub async fn run_workflow(
-    Path(pathb64): Path<String>,
-    Json(payload): Json<RunPayload>,
-) -> impl IntoResponse {
+pub async fn run_workflow(Path(pathb64): Path<String>) -> impl IntoResponse {
     let decoded_path = base64::decode(pathb64).unwrap();
     let path = String::from_utf8(decoded_path).unwrap();
     let project_path = find_project_path().unwrap();
@@ -136,12 +129,6 @@ pub async fn run_workflow(
     use tokio_stream::wrappers::ReceiverStream;
     let stream = ReceiverStream::new(receiver);
     return StreamBodyAs::json_nl(stream);
-}
-
-// Define a struct to represent the request payload
-#[derive(Deserialize)]
-pub struct RunPayload {
-    project_path: String,
 }
 
 #[derive(Serialize)]
