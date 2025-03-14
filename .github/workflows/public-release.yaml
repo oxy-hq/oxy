@@ -66,6 +66,10 @@ jobs:
         uses: arduino/setup-protoc@v3
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
+      # cleanup disk space
+      - name: Free Disk Space (Ubuntu)
+        if: ${{ matrix.job.os == 'ubuntu-latest' }}
+        uses: jlumbroso/free-disk-space@main
 
       #-- Build oxy cli binary
       - name: Build oxy cli
