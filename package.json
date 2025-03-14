@@ -34,5 +34,5 @@
     "typescript-eslint": "^8.26.1"
   },
   "name": "onyx",
-  "packageManager": "pnpm@10.6.2"
+  "packageManager": "pnpm@10.6.3"
 }
