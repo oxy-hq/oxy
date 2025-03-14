@@ -1,8 +1,7 @@
-***
-
+---
 title: "Workflows"
 description: How to define workflows
-------------------------------------
+---
 
 A workflow is a series of tasks (`tasks`) executed sequentially. Each `task`
 can be either a deterministic command (such as `execute_sql`, in which a named
@@ -163,7 +162,9 @@ variables:
 Each entry of `variables` should be specified as a key-value pair, and these
 variables can be referenced within task fields by name using Jinja as follows:
 
+```yaml
     {{ brand }}
+```
 
 # Examples
 
@@ -185,7 +186,7 @@ tasks:
       {{month_over_month_metrics}}
 ```
 
-## Workflows vs. chains
+# Workflows vs. chains
 
 A workflow is similar to a "chain" in the prompt engineering parlance, but with
 a few key differences:
