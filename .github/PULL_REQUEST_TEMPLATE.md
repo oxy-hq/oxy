@@ -1,4 +1,5 @@
 <!-- markdownlint-disable MD041 -->
+
 <!-- Remove any sections that are not relevant. If you are not sure about any section, please ask.
 Otherwise, please fill out the sections below. -->
 
@@ -9,7 +10,9 @@ Otherwise, please fill out the sections below. -->
 <!-- ### Motivation and Context -->
 
 <!--- If suggesting a new feature or change, please discuss it in an issue first -->
+
 <!--- If fixing a bug, there should be an issue describing it with steps to reproduce -->
+
 <!--- Please link to the issue here: Fixes # (issue)
 
 <!-- ### Screenshots or demo (if applicable) -->
@@ -37,10 +40,10 @@ _Optional_
 
 ## Checklist
 
-- [x] My code follows the style guidelines of this project
-- [x] I have performed a self-review of my own code
-- [x] I have commented my code, particularly in hard-to-understand areas
-- [x] I have made corresponding changes to the documentation
-- [x] My changes generate no new warnings
-- [x] I have added tests that prove my fix is effective or that my feature works
-- [x] New and existing unit tests pass locally with my changes
+- \[x] My code follows the style guidelines of this project
+- \[x] I have performed a self-review of my own code
+- \[x] I have commented my code, particularly in hard-to-understand areas
+- \[x] I have made corresponding changes to the documentation
+- \[x] My changes generate no new warnings
+- \[x] I have added tests that prove my fix is effective or that my feature works
+- \[x] New and existing unit tests pass locally with my changes

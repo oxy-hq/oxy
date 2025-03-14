@@ -2,7 +2,7 @@
 
 - [Development](#development)
   - [Clone This Repository](#clone-this-repository)
-  - [Install Rust \& Node](#install-rust--node)
+  - [Install Rust & Node](#install-rust--node)
   - [Install Project Dependencies](#install-project-dependencies)
   - [Test Your Installation](#test-your-installation)
   - [Other Commands](#other-commands)

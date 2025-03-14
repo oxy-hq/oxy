@@ -18,30 +18,30 @@ We are always looking to improve Onyx. If you have a feature request, please ope
 
 2. **Clone the Repository**: Clone your forked repository to your local machine.
 
-    ```bash
-    git clone https://github.com/<your-username>/onyx.git
-    cd onyx
-    ```
+   ```bash
+   git clone https://github.com/<your-username>/onyx.git
+   cd onyx
+   ```
 
 3. **Create a Branch**: Create a new branch for your feature or bugfix.
 
-    ```bash
-    git checkout -b feature/your-feature-name
-    ```
+   ```bash
+   git checkout -b feature/your-feature-name
+   ```
 
 4. **Make Changes**: Make your changes to the codebase. Ensure that your code follows the project's coding standards and includes appropriate tests.
 
 5. **Commit Changes**: Commit your changes with a clear and concise commit message following the [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) specification.
 
-    ```bash
-    git commit -m "feat: add feature description"
-    ```
+   ```bash
+   git commit -m "feat: add feature description"
+   ```
 
 6. **Push Changes**: Push your changes to your forked repository.
 
-    ```bash
-    git push origin feature/your-feature-name
-    ```
+   ```bash
+   git push origin feature/your-feature-name
+   ```
 
 7. **Create a Pull Request**: Open a pull request from your branch to the `main` branch of the original repository. Provide a detailed description of your changes and any relevant information.
 
