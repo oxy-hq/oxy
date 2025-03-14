@@ -1,11 +1,11 @@
 import remarkPresetLintConsistent from "remark-preset-lint-consistent";
 import remarkPresetLintRecommended from "remark-preset-lint-recommended";
-
+import remarkGfm from "remark-gfm";
 const remarkConfig = {
   plugins: [
     remarkPresetLintConsistent, // Check that markdown is consistent.
     remarkPresetLintRecommended, // Few recommended rules.
-    // Generate a table of contents in `## Contents`
+    remarkGfm,
   ],
   settings: {
     bullet: "-",
