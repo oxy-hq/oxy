@@ -19,8 +19,8 @@ cd onyx
 
 ## Install Rust & Node
 
-| :zap:        **You are responsible for your own setup if you decide to not follow the instructions below.**   |
-|---------------------------------------------------------------------------------------------------------------|
+| :zap:        **You are responsible for your own setup if you decide to not follow the instructions below.** |
+| ----------------------------------------------------------------------------------------------------------- |
 
 Install Rust by following the official guide [here](https://www.rust-lang.org/tools/install).
 
