@@ -1,7 +1,8 @@
----
+***
+
 title: "Workflows"
 description: How to define workflows
----
+------------------------------------
 
 A workflow is a series of tasks (`tasks`) executed sequentially. Each `task`
 can be either a deterministic command (such as `execute_sql`, in which a named
@@ -24,7 +25,7 @@ Specific task types have additional property requirements.
 
 | Component | Description                                                                       | Type                       |
 | --------- | --------------------------------------------------------------------------------- | -------------------------- |
-| agent_ref | The agent to use within the `agents` directory, referenced by the agent's `name`. | required for `type: agent` |
+| agent\_ref | The agent to use within the `agents` directory, referenced by the agent's `name`. | required for `type: agent` |
 | prompt    | The input prompt passed to the agent for this task.                               | required for `type: agent` |
 
 ## `type: execute_sql`
@@ -33,7 +34,7 @@ Executes a SQL query referenced by filename.
 
 | Component | Description                                              | Type     |
 | --------- | -------------------------------------------------------- | -------- |
-| sql_file  | The sql file within the `data` directory to execute      | required |
+| sql\_file  | The sql file within the `data` directory to execute      | required |
 | database  | The name of the `database` to execute the query against  | required |
 
 ## `type: formatter`
@@ -68,7 +69,9 @@ tasks:
         prompt: |
           Get the number of {{ loop_through_animals.value }}s in the ocean.
 ```
+
 ### Seeding `values` with query results
+
 The `values` can be seeded with the output from a previous `execute_sql` step,
 as follows:
 
@@ -87,12 +90,12 @@ as follows:
 ```
 
 ### Formatting loop outputs
+
 Loops are also often combined with the `type: formatter` task, which can loop through
 the resulting outputs and form them into a single string. The output from a
 `loop_sequential` is an array of dictionaries for each `value`, where the keys
 for each element of each dictionary is named according to the `task`'s' `name`
-field. These can be accessed by using Jinja, by looping through the `{{
-<loop_name> }}` variable (`{{ loop_through_animals }}` above).
+field. These can be accessed by using Jinja, by looping through the `{{ <loop_name> }}` variable (`{{ loop_through_animals }}` above).
 
 An example of this behavior is shown below:
 
@@ -150,7 +153,7 @@ workflow task into a loop, as follows:
 It's often the case that you may want to parameterize a workflow -- for
 example, if you are trying to build an automated analysis, and want this to be
 modular with respect to the date. We enable this behavior through the use of
-the `variables` key. 
+the `variables` key.
 
 ```yaml
 variables:
@@ -160,9 +163,7 @@ variables:
 Each entry of `variables` should be specified as a key-value pair, and these
 variables can be referenced within task fields by name using Jinja as follows:
 
-```
-{{ brand }}
-```
+    {{ brand }}
 
 # Examples
 
@@ -189,14 +190,14 @@ tasks:
 A workflow is similar to a "chain" in the prompt engineering parlance, but with
 a few key differences:
 
-- **Workflows are DAGs.** Whereas chains can become arbitrarily complex with
-  arbitrarily nested loops, complex reply logic, and opaque branching structures,
-  workflows are DAGs, which enforce a clearer, more predictable flow from input
-  to output.
-- **Workflows separate logic from execution.** Because workflows are written in
-  yaml, the DAG definition is entirely separate from the execution engine
-  (usually Python), while other Python-based systems keep these tightly coupled
-  and so ultimately become difficult to build and maintain.
+*   **Workflows are DAGs.** Whereas chains can become arbitrarily complex with
+    arbitrarily nested loops, complex reply logic, and opaque branching structures,
+    workflows are DAGs, which enforce a clearer, more predictable flow from input
+    to output.
+*   **Workflows separate logic from execution.** Because workflows are written in
+    yaml, the DAG definition is entirely separate from the execution engine
+    (usually Python), while other Python-based systems keep these tightly coupled
+    and so ultimately become difficult to build and maintain.
 
 These choices generally reduce the flexibility of Onyx when compared to say,
 `langchain` or `llama_index`, but they also dramatically reduce the complexity

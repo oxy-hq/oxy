@@ -3,5 +3,8 @@ export default {
   "**/*.{ts,tsx}": ["bash -c 'pnpm turbo lint:ts'"],
   "**/*.rs": ["cargo fmt --all --check -- "],
   "**/!(json-schemas)/*.{html,json,css,scss,md,mdx}": ["prettier -w"],
-  "**/*.{md, mdx}": ["markdownlint --fix"],
+  "**/*.{mdx,md}": [
+    "eslint --fix",
+    "remark --output --ignore-path .remarkignore --",
+  ],
 };

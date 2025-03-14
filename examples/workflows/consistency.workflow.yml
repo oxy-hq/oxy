@@ -13,4 +13,3 @@ tasks:
     agent_ref: agents/default.agent.yml
     prompt: |
       how many users?
-    

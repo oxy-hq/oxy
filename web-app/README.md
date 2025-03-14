@@ -99,7 +99,9 @@ To get started with this project, follow these steps:
    If you need to update or switch Node versions, we recommend using [nvm](https://github.com/nvm-sh/nvm) or [volta](https://volta.sh/).
 
 2. Clone the repository
+
 3. Install dependencies: `pnpm install`
+
 4. Start the development server: `pnpm dev`
 
 ## Available Scripts
