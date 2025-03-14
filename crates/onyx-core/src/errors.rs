@@ -1,5 +1,7 @@
 use std::sync::PoisonError;
 
+use axum::http::StatusCode;
+use base64::DecodeError;
 use thiserror::Error;
 use tokio::{sync::mpsc::error::SendError, task::JoinError};
 
@@ -64,5 +66,21 @@ impl<Event> From<SendError<Event>> for OnyxError {
 impl From<JoinError> for OnyxError {
     fn from(error: JoinError) -> Self {
         OnyxError::RuntimeError(format!("Failed to join task: {error}"))
+    }
+}
+
+impl From<OnyxError> for StatusCode {
+    fn from(error: OnyxError) -> Self {
+        match error {
+            OnyxError::ConfigurationError(_) => StatusCode::BAD_REQUEST,
+            OnyxError::ArgumentError(_) => StatusCode::BAD_REQUEST,
+            OnyxError::RuntimeError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            OnyxError::LLMError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            OnyxError::AgentError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            OnyxError::AnonymizerError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            OnyxError::SerializerError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            OnyxError::IOError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            OnyxError::DBError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        }
     }
 }

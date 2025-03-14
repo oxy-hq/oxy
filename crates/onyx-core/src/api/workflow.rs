@@ -1,3 +1,4 @@
+use base64::prelude::*;
 use std::path::PathBuf;
 
 use std::fs::File;
@@ -5,21 +6,15 @@ use std::sync::Arc;
 use std::sync::Mutex;
 
 use crate::config::model::Workflow;
-use crate::config::ConfigBuilder;
-use crate::execute::core::event::Dispatcher;
-use crate::execute::core::run;
 use crate::execute::workflow::LogItem;
-use crate::execute::workflow::{
-    WorkflowAPILogger, WorkflowExporter, WorkflowInput, WorkflowReceiver,
-};
+use crate::execute::workflow::WorkflowAPILogger;
+use crate::service::workflow as service;
 use crate::service::workflow::get_workflow;
 use crate::utils::find_project_path;
-use crate::workflow::executor::WorkflowExecutor;
 use axum::extract::{self, Path};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum_streams::StreamBodyAs;
-use minijinja::Value;
 use serde::Serialize;
 use std::fs::OpenOptions;
 use tokio::sync::mpsc;
@@ -42,11 +37,17 @@ pub async fn list() -> impl IntoResponse {
 pub async fn get(
     Path(pathb64): Path<String>,
 ) -> Result<extract::Json<GetWorkflowResponse>, StatusCode> {
-    let decoded_path = base64::decode(pathb64).unwrap();
-    let path = String::from_utf8(decoded_path).unwrap();
+    let decoded_path = BASE64_STANDARD.decode(pathb64).map_err(|e| {
+        log::info!("{:?}", e);
+        StatusCode::BAD_REQUEST
+    })?;
+    let path = String::from_utf8(decoded_path).map_err(|e| {
+        log::info!("{:?}", e);
+        StatusCode::BAD_REQUEST
+    })?;
     match get_workflow(PathBuf::from(path)).await {
         Ok(workflow) => Ok(extract::Json(GetWorkflowResponse { data: workflow })),
-        Err(e) => Err(StatusCode::NOT_FOUND),
+        Err(_) => Err(StatusCode::NOT_FOUND),
     }
 }
 
@@ -58,44 +59,25 @@ pub struct GetLogsResponse {
 pub async fn get_logs(
     Path(pathb64): Path<String>,
 ) -> Result<extract::Json<GetLogsResponse>, StatusCode> {
-    let decoded_path = base64::decode(pathb64).unwrap();
-    let path = String::from_utf8(decoded_path).unwrap();
-    let project_path = find_project_path().unwrap();
-    let full_workflow_path = project_path.join(&PathBuf::from(path));
-    let full_workflow_path_b64: String = base64::encode(full_workflow_path.to_str().unwrap());
-    let log_file_path = format!("/var/tmp/onyx-{}.log.json", full_workflow_path_b64);
-    println!("{:?}", log_file_path);
-    let content = std::fs::read_to_string(log_file_path);
-    println!("{:?}", content);
-    match content {
-        Ok(content) => {
-            let mut logs: Vec<LogItem> = vec![];
-            let lines = content.lines();
-            for line in lines {
-                let log_item: LogItem = serde_json::from_str(line).unwrap();
-                logs.push(log_item);
-            }
-            return Ok(extract::Json(GetLogsResponse { logs }));
-        }
-        Err(_) => return Err(StatusCode::NOT_FOUND),
-    }
+    let path = PathBuf::from(
+        String::from_utf8(BASE64_STANDARD.decode(pathb64).map_err(|e| {
+            log::info!("{:?}", e);
+            StatusCode::BAD_REQUEST
+        })?)
+        .map_err(|e| {
+            log::info!("{:?}", e);
+            StatusCode::BAD_REQUEST
+        })?,
+    );
+    let logs = service::get_workflow_logs(&path).await?;
+    return Ok(extract::Json(GetLogsResponse { logs }));
 }
 
-pub async fn run_workflow(Path(pathb64): Path<String>) -> impl IntoResponse {
-    let decoded_path = base64::decode(pathb64).unwrap();
-    let path = String::from_utf8(decoded_path).unwrap();
-    let project_path = find_project_path().unwrap();
-
-    let config = ConfigBuilder::new()
-        .with_project_path(find_project_path().unwrap())
-        .unwrap()
-        .build()
-        .await
-        .unwrap();
-    let full_workflow_path = project_path.join(&PathBuf::from(path));
-    let workflow = config.resolve_workflow(&full_workflow_path).await.unwrap();
-
-    let full_workflow_path_b64: String = base64::encode(full_workflow_path.to_str().unwrap());
+pub async fn build_workflow_api_logger(
+    full_workflow_path: &PathBuf,
+) -> (WorkflowAPILogger, mpsc::Receiver<LogItem>) {
+    let full_workflow_path_b64: String =
+        BASE64_STANDARD.encode(full_workflow_path.to_str().unwrap());
     // Create a channel to send logs to the client
     let (sender, receiver) = mpsc::channel(100);
     let log_file_path = format!("/var/tmp/onyx-{}.log.json", full_workflow_path_b64);
@@ -104,31 +86,34 @@ pub async fn run_workflow(Path(pathb64): Path<String>) -> impl IntoResponse {
         .write(true)
         .append(true)
         .open(log_file_path)
+        .map_err(|e| {
+            log::error!("{:?}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })
         .unwrap();
-    let pipe_logger: WorkflowAPILogger =
+    let api_logger: WorkflowAPILogger =
         WorkflowAPILogger::new(sender, Some(Arc::new(Mutex::new(file))));
+    return (api_logger, receiver);
+}
 
-    let dispatcher = Dispatcher::new(vec![
-        Box::new(WorkflowReceiver::new(Box::new(pipe_logger))),
-        Box::new(WorkflowExporter),
-    ]);
-    let executor = WorkflowExecutor::new(workflow.clone());
-    let ctx = Value::from_serialize(&workflow.variables);
-    tokio::spawn(async move {
-        run(
-            &executor,
-            WorkflowInput,
-            Arc::new(config),
-            ctx,
-            Some(&workflow),
-            dispatcher,
-        )
-        .await
-        .unwrap();
-    });
+pub async fn run_workflow(Path(pathb64): Path<String>) -> Result<impl IntoResponse, StatusCode> {
+    let decoded_path = BASE64_STANDARD.decode(pathb64).map_err(|e| {
+        log::info!("{:?}", e);
+        StatusCode::BAD_REQUEST
+    })?;
+    let path = PathBuf::from(String::from_utf8(decoded_path).map_err(|e| {
+        log::info!("{:?}", e);
+        StatusCode::BAD_REQUEST
+    })?);
+    let project_path = find_project_path()?;
+
+    let full_workflow_path = project_path.join(&path);
+    let (logger, receiver) = build_workflow_api_logger(&full_workflow_path).await;
+    service::run_workflow(&path, Box::new(logger)).await?;
+
     use tokio_stream::wrappers::ReceiverStream;
     let stream = ReceiverStream::new(receiver);
-    return StreamBodyAs::json_nl(stream);
+    return Ok(StreamBodyAs::json_nl(stream));
 }
 
 #[derive(Serialize)]
