@@ -213,3 +213,7 @@ body {
 .customScrollbar::-webkit-scrollbar-track {
   background: transparent;
 }
+
+.react-flow__edges {
+  z-index: 1;
+}
