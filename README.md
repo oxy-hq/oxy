@@ -9,6 +9,8 @@ Just as traditional software follows a build-test-deploy pipeline, agentic analy
 
 To learn more, read our [docs](https://docs.onyxint.ai).
 
+https://github.com/user-attachments/assets/bf9cbe23-9732-4217-a912-e66bfd9ee10d
+
 ### Quickstart
 
 To install Onyx from binary, run the following command (Mac, Linux, WSL):
