@@ -4,6 +4,7 @@ use std::{
 };
 
 use contexts::Contexts;
+use garde::rules::AsStr;
 use minijinja::{context, Value};
 use tools::ToolsContext;
 
