@@ -16,7 +16,7 @@ To learn more, read our [docs](https://docs.oxy.tech).
 To install Oxy from binary, run the following command (Mac, Linux, WSL):
 
 ```bash
-bash <(curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/oxy-hq/oxy/refs/heads/main/install_oxy.sh)
+bash <(curl --proto '=https' --tlsv1.2 -LsSf https://get.oxy.tech)
 ```
 
 <details>
