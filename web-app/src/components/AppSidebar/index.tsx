@@ -80,10 +80,10 @@ export function AppSidebar() {
               </SidebarMenuItem>
               <SidebarMenuItem>
                 <SidebarMenuButton asChild isActive={isThreads}>
-                  <Link to="/workflows">
+                  <div>
                     <Workflow />
                     <span>Workflows</span>
-                  </Link>
+                  </div>
                 </SidebarMenuButton>
                 <SidebarMenuSub>
                   {workflows?.map((workflow) => {

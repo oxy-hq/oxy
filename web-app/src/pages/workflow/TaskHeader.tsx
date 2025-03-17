@@ -1,4 +1,4 @@
-import useWorkflow, { TaskConfigWithId } from "@/stores/useWorkflow";
+import { TaskConfigWithId } from "@/stores/useWorkflow";
 import { taskIconMap, taskNameMap } from "./utils";
 import { DynamicIcon } from "lucide-react/dynamic";
 import { headerHeight } from "./constants";
@@ -19,10 +19,6 @@ export const TaskHeader = ({
 }: Props) => {
   const taskName = taskNameMap[task.type];
   const taskIcon = taskIconMap[task.type];
-  const setSelectedNodeId = useWorkflow((state) => state.setSelectedNodeId);
-  const onMoreClick = () => {
-    setSelectedNodeId(task.id);
-  };
   return (
     <div
       className="gap-2 items-center flex w-full min-w-0"
@@ -57,14 +53,6 @@ export const TaskHeader = ({
               />
             </Button>
           )}
-          <Button
-            className="p-1 ps-1 pe-1"
-            variant="ghost"
-            content="text"
-            onClick={onMoreClick}
-          >
-            <DynamicIcon size={14} name="ellipsis-vertical" />
-          </Button>
         </div>
       </div>
     </div>

@@ -16,7 +16,6 @@ import useWorkflow, {
   TaskType,
 } from "@/stores/useWorkflow";
 
-import { ConnectionLine } from "./ConnectionLine";
 import {
   contentPadding,
   contentPaddingHeight,
@@ -101,7 +100,7 @@ const getLayoutedElements = async (nodes: Node[], edges: Edge[]) => {
   const flatNodes: Node[] = [];
   const buildChildren = (ns: Node[]): ElkNode[] => {
     if (!ns) return [];
-    return ns.map((node) => {
+    const layoutedNodes = ns.map((node) => {
       flatNodes.push(node);
       const childNodes = nodes.filter(
         (n) => n.parentId === node.id && !n.hidden,
@@ -126,6 +125,7 @@ const getLayoutedElements = async (nodes: Node[], edges: Edge[]) => {
         parentId: node.parentId,
       };
     });
+    return layoutedNodes;
   };
 
   const children = buildChildren(
@@ -243,6 +243,9 @@ const WorkflowDiagram = ({ tasks }: { tasks: TaskConfigWithId[] }) => {
   }, [tasks, setNodes, setEdges]);
   const nodes = useWorkflow((state) => state.nodes);
   const edges = useWorkflow((state) => state.edges);
+  const reactFlowInstance = useReactFlow(); // Access React Flow instance
+  const reactFlowWrapper = useRef(null);
+
   useEffect(() => {
     const getLayout = async () => {
       const nodesWithSize = calculateNodesSize(nodes);
@@ -251,14 +254,19 @@ const WorkflowDiagram = ({ tasks }: { tasks: TaskConfigWithId[] }) => {
     };
     getLayout();
   }, [nodes, edges, setLayoutedNodes]);
-  const reactFlowInstance = useReactFlow(); // Access React Flow instance
-  const reactFlowWrapper = useRef(null);
 
   useEffect(() => {
     if (reactFlowInstance) {
-      reactFlowInstance.fitView(); // Automatically centers and fits the graph
+      setTimeout(() => {
+        reactFlowInstance.fitView({
+          nodes: layoutedNodes,
+          maxZoom: 1,
+          minZoom: 0.1,
+          duration: 0,
+        });
+      }, 10);
     }
-  }, [reactFlowInstance]);
+  }, [reactFlowInstance, layoutedNodes]);
   return (
     <div className="w-full h-full" ref={reactFlowWrapper}>
       <ReactFlow
@@ -266,10 +274,6 @@ const WorkflowDiagram = ({ tasks }: { tasks: TaskConfigWithId[] }) => {
         edges={edges}
         nodeTypes={nodeTypes}
         proOptions={{ hideAttribution: true }}
-        connectionLineComponent={ConnectionLine}
-        connectionLineContainerStyle={{
-          backgroundColor: "#D4D4D4",
-        }}
         fitView
       >
         <Background color="#ccc" variant={BackgroundVariant.Dots} />
