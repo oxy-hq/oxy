@@ -33,7 +33,7 @@ export function AppSidebar() {
     <ShadcnSidebar className="p-2">
       <SidebarHeader>
         <div className="p-2">
-          <img src="/onyx-logo.svg" alt="Onyx" />
+          <img src="/oxy-logo.svg" alt="Oxy" />
         </div>
       </SidebarHeader>
       <SidebarContent>
