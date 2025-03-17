@@ -3,7 +3,7 @@
   "logo": {
     "dark": "/logo/dark.svg",
     "light": "/logo/light.svg",
-    "href": "https://www.oxyint.ai/"
+    "href": "https://www.oxy.tech/"
   },
   "favicon": "favicon.svg",
   "background": {
@@ -104,7 +104,7 @@
     }
   ],
   "footerSocials": {
-    "x": "https://x.com/oxyint_ai",
+    "x": "https://x.com/oxy_ai",
     "github": "https://github.com/oxy-hq,
     "linkedin": "https://www.linkedin.com/company/oxy-hq"
   }

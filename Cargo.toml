@@ -29,8 +29,8 @@ log = { version = "0.4" }
 edition = "2021"
 publish = false
 description = "Oxy"
-authors = ["Oxyint engineers"]
-documentation = "https://docs.oxyint.ai"
+authors = ["oxy engineers"]
+documentation = "https://docs.oxy.tech"
 
 [profile.dev]
 opt-level = 1

@@ -7,9 +7,9 @@ Oxy is an open-source framework for agentic analytics. It is declarative by desi
 Agentic analytics applies software development lifecycle principles to AI-driven data analytics.
 Just as traditional software follows a build-test-deploy pipeline, agentic analytics establishes a structured workflow for data agents, involving agent creation, prompt testing, and production deployment.
 
-To learn more, read our [docs](https://docs.oxyint.ai).
+To learn more, read our [docs](https://docs.oxy.tech).
 
-https://github.com/user-attachments/assets/2b8bbc7d-8c08-4b64-a4db-03f795125feb
+<https://github.com/user-attachments/assets/4b1efa5c-6b1b-4606-a47f-c9dac68cffad>
 
 ### Quickstart
 
@@ -42,4 +42,4 @@ To verify the installation, run:
 oxy --version
 ```
 
-See our [docs](https://docs.oxyint.ai) on how to modify the agent file, seed it with context, run tests, and create workflows.
+See our [docs](https://docs.oxy.tech) on how to modify the agent file, seed it with context, run tests, and create workflows.
