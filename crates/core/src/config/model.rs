@@ -7,7 +7,7 @@ use std::path::PathBuf;
 
 use crate::config::validate::validate_file_path;
 use crate::config::validate::{
-    validate_agent_exists, validate_database_exists, validate_env_var, ValidationContext,
+    ValidationContext, validate_agent_exists, validate_database_exists, validate_env_var,
 };
 use schemars::JsonSchema;
 

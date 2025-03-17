@@ -2,30 +2,30 @@ use std::collections::HashMap;
 use std::fs;
 
 use minijinja::value::Kwargs;
-use minijinja::{context, Value};
+use minijinja::{Value, context};
 
 use crate::config::model::ExecuteSQLTask;
 use crate::config::model::FileFormat;
 use crate::config::model::FormatterTask;
 use crate::config::model::LoopSequentialTask;
 use crate::config::model::LoopValues;
+use crate::config::model::SQL;
 use crate::config::model::Task;
 use crate::config::model::TaskType;
 use crate::config::model::Workflow;
-use crate::config::model::SQL;
 use crate::config::model::{AgentTask, WorkflowTask};
 use crate::connector::Connector;
 use crate::errors::OxyError;
-use crate::execute::agent::build_agent;
 use crate::execute::agent::AgentInput;
+use crate::execute::agent::build_agent;
 use crate::execute::consistency::ConsistencyExecutor;
+use crate::execute::core::ExecutionContext;
 use crate::execute::core::arrow_table::ArrowTable;
 use crate::execute::core::cache::Cacheable;
 use crate::execute::core::event::Dispatcher;
 use crate::execute::core::value::ContextValue;
 use crate::execute::core::write::Write;
-use crate::execute::core::ExecutionContext;
-use crate::execute::core::{run, Executable};
+use crate::execute::core::{Executable, run};
 use crate::execute::workflow::WorkflowEvent;
 use crate::execute::workflow::WorkflowInput;
 use crate::execute::workflow::{LoopInput, PassthroughHandler};
@@ -286,10 +286,10 @@ impl Executable<LoopInput, WorkflowEvent> for LoopSequentialTask {
     ) -> Result<(), OxyError> {
         let LoopInput { name } = input;
         let values = match &self.values {
-            LoopValues::Template(ref template) => {
+            LoopValues::Template(template) => {
                 execution_context.renderer.eval_enumerate(template)?
             }
-            LoopValues::Array(ref values) => values.clone(),
+            LoopValues::Array(values) => values.clone(),
         };
 
         let mut loop_executor = execution_context.loop_executor();

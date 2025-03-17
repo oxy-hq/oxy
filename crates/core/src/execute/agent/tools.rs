@@ -3,7 +3,7 @@ use std::sync::Arc;
 use minijinja::value::{Object, Value};
 use tokio::runtime::Handle;
 
-use crate::ai::{toolbox::ToolBox, MultiTool};
+use crate::ai::{MultiTool, toolbox::ToolBox};
 
 #[derive(Debug, Clone)]
 pub struct ToolsContext {

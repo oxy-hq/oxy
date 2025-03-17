@@ -7,20 +7,20 @@ use serde::Deserialize;
 use serde::Serialize;
 
 use crate::{
+    StyledText,
     ai::utils::{record_batches_to_markdown, record_batches_to_table},
     config::{
-        model::{
-            AgentTask, ExecuteSQLTask, FormatterTask, LoopValues, Task, TaskType, Workflow,
-            WorkflowTask, SQL,
-        },
         ConfigBuilder,
+        model::{
+            AgentTask, ExecuteSQLTask, FormatterTask, LoopValues, SQL, Task, TaskType, Workflow,
+            WorkflowTask,
+        },
     },
     connector::load_result,
     errors::OxyError,
     execute::exporter::{export_agent_task, export_execute_sql, export_formatter},
-    utils::{find_project_path, print_colored_sql, truncate_datasets, MAX_DISPLAY_ROWS},
-    workflow::{executor::WorkflowExecutor, WorkflowResult},
-    StyledText,
+    utils::{MAX_DISPLAY_ROWS, find_project_path, print_colored_sql, truncate_datasets},
+    workflow::{WorkflowResult, executor::WorkflowExecutor},
 };
 
 use super::{

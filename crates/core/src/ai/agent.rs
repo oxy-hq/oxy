@@ -6,18 +6,19 @@ use crate::{
     execute::{
         agent::{AgentEvent, AgentInput},
         core::{
+            Executable, ExecutionContext,
             value::{AgentOutput, ContextValue},
             write::Write,
-            Executable, ExecutionContext,
         },
     },
     utils::{format_table_output, truncate_datasets},
 };
 use std::{collections::HashMap, sync::Arc};
 
-use super::{anonymizer::base::Anonymizer, toolbox::ToolBox, MultiTool};
+use super::{MultiTool, anonymizer::base::Anonymizer, toolbox::ToolBox};
 use async_openai::{
-    config::{AzureConfig, OpenAIConfig, OPENAI_API_BASE},
+    Client,
+    config::{AzureConfig, OPENAI_API_BASE, OpenAIConfig},
     error::OpenAIError,
     types::{
         ChatCompletionRequestAssistantMessageArgs, ChatCompletionRequestMessage,
@@ -26,11 +27,10 @@ use async_openai::{
         ChatCompletionToolArgs, ChatCompletionToolType, CreateChatCompletionRequestArgs,
         FunctionObjectArgs, ResponseFormat, ResponseFormatJsonSchema,
     },
-    Client,
 };
 use async_trait::async_trait;
 use pyo3::pyclass;
-use schemars::{schema_for, JsonSchema};
+use schemars::{JsonSchema, schema_for};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -130,12 +130,14 @@ impl OpenAIAgent {
     }
 
     pub async fn simple_request(&self, system_instruction: String) -> Result<String, OxyError> {
-        let messages = vec![ChatCompletionRequestSystemMessageArgs::default()
-            .name("oxy")
-            .content(system_instruction)
-            .build()
-            .map_err(|e| OxyError::RuntimeError(format!("Unable to build LLM request: {e}")))?
-            .into()];
+        let messages = vec![
+            ChatCompletionRequestSystemMessageArgs::default()
+                .name("oxy")
+                .content(system_instruction)
+                .build()
+                .map_err(|e| OxyError::RuntimeError(format!("Unable to build LLM request: {e}")))?
+                .into(),
+        ];
         let response = self.completion_request(messages, vec![], None).await?;
         log::info!("Response: {:?}", response);
         match response.content {
@@ -225,13 +227,14 @@ impl LLMAgent for OpenAIAgent {
             None => Ok((input.to_string(), anonymized_items)),
         }?;
 
-        let mut messages: Vec<ChatCompletionRequestMessage> =
-            vec![ChatCompletionRequestSystemMessageArgs::default()
+        let mut messages: Vec<ChatCompletionRequestMessage> = vec![
+            ChatCompletionRequestSystemMessageArgs::default()
                 .name("oxy")
                 .content(anonymized_system_message)
                 .build()
                 .map_err(|e| OxyError::RuntimeError(format!("Unable to build LLM request: {e}")))?
-                .into()];
+                .into(),
+        ];
 
         if !input.is_empty() {
             messages.push(

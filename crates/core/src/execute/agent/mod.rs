@@ -4,7 +4,7 @@ use std::{
 };
 
 use contexts::Contexts;
-use minijinja::{context, Value};
+use minijinja::{Value, context};
 use tools::ToolsContext;
 
 use super::{
@@ -15,19 +15,19 @@ use super::{
 };
 use crate::execute::workflow::WorkflowCLILogger;
 use crate::{
+    StyledText,
     ai::{
         agent::{AgentResult, OpenAIAgent},
         setup_agent,
         utils::record_batches_to_table,
     },
     config::{
-        model::{AgentConfig, FileFormat},
         ConfigManager,
+        model::{AgentConfig, FileFormat},
     },
     connector::load_result,
     errors::OxyError,
-    utils::{print_colored_sql, truncate_datasets, truncate_with_ellipsis, MAX_DISPLAY_ROWS},
-    StyledText,
+    utils::{MAX_DISPLAY_ROWS, print_colored_sql, truncate_datasets, truncate_with_ellipsis},
 };
 
 pub mod contexts;

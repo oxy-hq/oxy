@@ -1,11 +1,11 @@
 use crate::db::client::establish_connection;
 use entity::messages;
 use entity::prelude::Messages;
-use sea_orm::entity::*;
 use sea_orm::ActiveValue;
 use sea_orm::EntityTrait;
 use sea_orm::QueryFilter;
 use sea_orm::QueryOrder;
+use sea_orm::entity::*;
 use sea_orm::{ActiveModelTrait, DbErr};
 use uuid::Uuid;
 

@@ -15,10 +15,10 @@ use crate::{
 };
 
 use super::core::{
-    event::Handler, value::ContextValue, write::Write, Executable, ExecutionContext,
+    Executable, ExecutionContext, event::Handler, value::ContextValue, write::Write,
 };
 
-use tqdm::{pbar, Pbar};
+use tqdm::{Pbar, pbar};
 
 #[derive(Debug, Clone)]
 pub enum ConsistencyEvent {

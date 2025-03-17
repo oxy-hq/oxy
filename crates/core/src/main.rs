@@ -4,8 +4,8 @@ use std::str::FromStr;
 use oxy::cli::cli;
 mod theme;
 use fern::colors::{Color, ColoredLevelConfig};
-use human_panic::setup_panic;
 use human_panic::Metadata;
+use human_panic::setup_panic;
 use oxy::db::client;
 use oxy::theme::StyledText;
 

@@ -1,7 +1,7 @@
 use crate::cli::model::{BigQuery, Config, DatabaseType, DuckDB};
 use crate::config::model::Postgres;
 use crate::utils::find_project_path;
-use include_dir::{include_dir, Dir};
+use include_dir::{Dir, include_dir};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::{fmt, fs};
@@ -98,7 +98,7 @@ fn choose_database_type() -> Result<DatabaseType, InitError> {
                         ".db/",
                         Some("Enter the directory where your files are located."),
                     )?,
-                }))
+                }));
             }
             "2" => {
                 return Ok(DatabaseType::Bigquery(BigQuery {
@@ -108,7 +108,7 @@ fn choose_database_type() -> Result<DatabaseType, InitError> {
                         None,
                     )?)),
                     dataset: prompt_with_default("Dataset", "bigquery-public-data", None)?,
-                }))
+                }));
             }
             "3" => {
                 return Ok(DatabaseType::Postgres(collect_postgres_or_redshift_config(
@@ -384,7 +384,8 @@ fn create_config_file(config_path: &Path) -> Result<(), InitError> {
 
     let content = format!(
         "# yaml-language-server: $schema=https://raw.githubusercontent.com/oxy-hq/oxy/refs/heads/main/json-schemas/config.json\n{}",
-        yaml);
+        yaml
+    );
 
     fs::write(config_path, content)?;
 

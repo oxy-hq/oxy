@@ -9,12 +9,11 @@ use std::{path::Path, sync::Arc};
 
 use crate::{
     config::{
-        load_config,
+        ConfigManager, load_config,
         model::{
             AgentConfig, AnonymizerConfig, FileFormat, FlashTextSourceType, Model, OutputFormat,
             ToolConfig,
         },
-        ConfigManager,
     },
     connector::Connector,
     errors::OxyError,

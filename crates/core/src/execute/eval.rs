@@ -1,6 +1,6 @@
 use futures::future::try_join_all;
 use itertools::Itertools;
-use minijinja::{value::Kwargs, Value};
+use minijinja::{Value, value::Kwargs};
 use std::{
     path::PathBuf,
     sync::{Arc, Mutex},
@@ -8,24 +8,24 @@ use std::{
 use tqdm::pbar;
 
 use crate::{
+    StyledText,
     ai::setup_eval_agent,
     config::{
-        model::{Consistency, Eval, FileFormat, Task, TaskType, Workflow},
         ConfigBuilder,
+        model::{Consistency, Eval, FileFormat, Task, TaskType, Workflow},
     },
     errors::OxyError,
     utils::find_project_path,
     workflow::executor::WorkflowExecutor,
-    StyledText,
 };
 
 use super::{
-    agent::{build_agent, AgentEvent, AgentInput},
+    agent::{AgentEvent, AgentInput, build_agent},
     core::{
+        Executable, ExecutionContext,
         event::Handler,
         run,
         value::{Array, ContextValue},
-        Executable, ExecutionContext,
     },
     renderer::{Renderer, TemplateRegister},
     workflow::{WorkflowEvent, WorkflowInput},

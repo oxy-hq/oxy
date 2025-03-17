@@ -7,22 +7,21 @@ use arrow::{
     datatypes::{DataType, Field, Float32Type, Schema},
 };
 use async_openai::{
+    Client,
     config::OpenAIConfig,
     types::{CreateEmbeddingRequestArgs, EmbeddingInput},
-    Client,
 };
 use async_trait::async_trait;
 use lancedb::{
-    connect,
+    Connection, Error, Table, connect,
     database::CreateTableMode,
     index::{
+        Index,
         scalar::{FtsIndexBuilder, FullTextSearchQuery},
         vector::IvfHnswPqIndexBuilder,
-        Index,
     },
     query::{ExecutableQuery, QueryBase},
     table::OptimizeAction,
-    Connection, Error, Table,
 };
 use serde::{Deserialize, Serialize};
 use serde_arrow::from_record_batch;
@@ -222,11 +221,13 @@ impl VectorStore for LanceDBStore {
         log::info!("Total: {:?}", &embeddings.len());
 
         let batches = RecordBatchIterator::new(
-            vec![RecordBatch::try_new(
-                schema.clone(),
-                vec![contents, source_types, source_identifiers, embeddings],
-            )
-            .unwrap()]
+            vec![
+                RecordBatch::try_new(
+                    schema.clone(),
+                    vec![contents, source_types, source_identifiers, embeddings],
+                )
+                .unwrap(),
+            ]
             .into_iter()
             .map(Ok),
             schema.clone(),
