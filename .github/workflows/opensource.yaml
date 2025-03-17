@@ -45,11 +45,7 @@ jobs:
           sot_repo: onyx-hq/onyx-internal
           destination_repo: onyx-hq/onyx
           push_exclude: >-
-            web-app/**
             internal-docs/**
-            crates/onyx-core/dist
-            pnpm-lock.yaml
-            pnpm-workspace.yaml
-          pr_move: |-
-            crates/onyx-core/dist||oss/dist||**
+          # pr_move: |-
+          #   crates/onyx-core/dist||oss/dist||**
           committer: "${{ steps.app-token.outputs.app-slug }}[bot] <${{ steps.get-user-id.outputs.user-id }}+${{ steps.app-token.outputs.app-slug }}[bot]@users.noreply.github.com>"
