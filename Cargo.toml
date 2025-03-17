@@ -26,7 +26,8 @@ log = { version = "0.4" }
 [workspace.package]
 # TODO: turn this on when https://github.com/googleapis/release-please/issues number 2111 is fixed
 # version = "0.1.32"
-edition = "2021"
+edition = "2024"
+rust-version = "1.85.0"
 publish = false
 description = "Oxy"
 authors = ["oxy engineers"]
