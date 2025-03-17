@@ -2,7 +2,7 @@ use super::Tool;
 use crate::{
     ai::utils::record_batches_to_markdown,
     config::model::OutputFormat,
-    connector::{load_result, Connector},
+    connector::{Connector, load_result},
     execute::agent::{ToolCall, ToolMetadata},
 };
 use async_trait::async_trait;

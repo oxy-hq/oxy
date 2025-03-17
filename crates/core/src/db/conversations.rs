@@ -1,11 +1,11 @@
 use crate::db::client::establish_connection;
 use entity::conversations::{self};
 use entity::prelude::*;
-use sea_orm::entity::*;
 use sea_orm::ActiveModelTrait;
 use sea_orm::ActiveValue;
 use sea_orm::EntityTrait;
 use sea_orm::QueryFilter;
+use sea_orm::entity::*;
 use uuid::Uuid;
 
 pub async fn get_conversation_by_agent(agent: &str) -> Option<conversations::Model> {

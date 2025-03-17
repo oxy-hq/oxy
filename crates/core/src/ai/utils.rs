@@ -7,13 +7,13 @@ use arrow::{
 };
 use std::fmt::Display;
 use std::sync::Arc;
-use tabled::settings::Panel;
 use tabled::Table;
+use tabled::settings::Panel;
 use tabled::{
     builder::Builder,
-    settings::{peaker::Priority, Settings, Style, Width},
+    settings::{Settings, Style, Width, peaker::Priority},
 };
-use terminal_size::{terminal_size, Height as TerminalHeight, Width as TerminalWidth};
+use terminal_size::{Height as TerminalHeight, Width as TerminalWidth, terminal_size};
 
 fn get_terminal_size() -> (usize, usize) {
     let terminal_size = terminal_size();

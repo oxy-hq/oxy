@@ -5,7 +5,7 @@ use arrow::{
         pretty::pretty_format_batches,
     },
 };
-use base64::{self, engine::general_purpose, Engine};
+use base64::{self, Engine, engine::general_purpose};
 use minijinja::value::{Enumerator, Object, ObjectExt, ObjectRepr, Value};
 use serde::Deserialize;
 use std::fmt::{self, Display};

@@ -110,7 +110,7 @@ pub async fn ask_thread(Path(id): Path<String>) -> impl IntoResponse {
                         content: format!("Thread with ID {} not found", id),
                         is_error: true,
                     };
-                })
+                });
             }
             Err(e) => {
                 return StreamBodyAs::json_nl(stream! {
@@ -118,7 +118,7 @@ pub async fn ask_thread(Path(id): Path<String>) -> impl IntoResponse {
                         content: format!("Database error: {}", e),
                         is_error: true,
                     };
-                })
+                });
             }
         },
         Err(_) => {
@@ -127,7 +127,7 @@ pub async fn ask_thread(Path(id): Path<String>) -> impl IntoResponse {
                     content: format!("Invalid UUID format: {}", id),
                     is_error: true,
                 };
-            })
+            });
         }
     };
 
@@ -148,7 +148,7 @@ pub async fn ask_thread(Path(id): Path<String>) -> impl IntoResponse {
                     content: format!("Failed to find project path: {}", e),
                     is_error: true,
                 };
-            })
+            });
         }
     };
 
@@ -160,7 +160,7 @@ pub async fn ask_thread(Path(id): Path<String>) -> impl IntoResponse {
                     content: format!("Failed to build config: {}", e),
                     is_error: true,
                 };
-            })
+            });
         }
     };
 
@@ -172,7 +172,7 @@ pub async fn ask_thread(Path(id): Path<String>) -> impl IntoResponse {
                     content: format!("Failed to build config: {}", e),
                     is_error: true,
                 };
-            })
+            });
         }
     };
 
@@ -191,7 +191,7 @@ pub async fn ask_thread(Path(id): Path<String>) -> impl IntoResponse {
                     content: format!("Error running agent: {}", e),
                     is_error: true,
                 };
-            })
+            });
         }
     };
 

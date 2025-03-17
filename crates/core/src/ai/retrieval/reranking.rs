@@ -1,6 +1,6 @@
 use arrow::{
     array::{Array, ArrayRef, BooleanArray, Float32Array, RecordBatch, UInt64Array},
-    compute::{concat_batches, filter_record_batch, sort_to_indices, take, SortOptions},
+    compute::{SortOptions, concat_batches, filter_record_batch, sort_to_indices, take},
     datatypes::{DataType, Field, Schema},
 };
 use futures::StreamExt;

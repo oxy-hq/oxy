@@ -4,7 +4,7 @@ use std::{
 };
 
 use futures::TryFutureExt;
-use minijinja::{context, value::Enumerator, Environment, Value};
+use minijinja::{Environment, Value, context, value::Enumerator};
 use tokio::task::spawn_blocking;
 
 use crate::errors::OxyError;

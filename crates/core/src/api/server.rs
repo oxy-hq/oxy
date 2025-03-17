@@ -1,8 +1,8 @@
 use crate::api::agent;
 use crate::api::message;
 use crate::api::thread;
-use axum::routing::{get, post};
 use axum::Router;
+use axum::routing::{get, post};
 use migration::Migrator;
 use migration::MigratorTrait;
 use std::net::SocketAddr;

@@ -3,6 +3,7 @@ use std::io::Write;
 use std::path::Path;
 use std::sync::Arc;
 
+use crate::StyledText;
 use crate::ai::utils::record_batches_to_json;
 use crate::ai::utils::record_batches_to_rows;
 use crate::config::model::AgentTask;
@@ -12,7 +13,6 @@ use crate::connector::load_result;
 use crate::errors::OxyError;
 use crate::execute::agent::ToolCall;
 use crate::execute::agent::ToolMetadata;
-use crate::StyledText;
 use arrow::array::RecordBatch;
 use arrow::datatypes::Schema;
 use csv::Writer;

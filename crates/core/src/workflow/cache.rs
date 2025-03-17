@@ -1,5 +1,5 @@
 use slugify::slugify;
-use sqlformat::{format, FormatOptions, QueryParams};
+use sqlformat::{FormatOptions, QueryParams, format};
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;

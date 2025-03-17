@@ -4,8 +4,8 @@ use std::fmt::Debug;
 
 use super::arrow_table::ArrowTable;
 use minijinja::{
-    value::{Enumerator, Object, ObjectRepr},
     Value,
+    value::{Enumerator, Object, ObjectRepr},
 };
 use pyo3::{
     prelude::*,

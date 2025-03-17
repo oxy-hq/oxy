@@ -14,7 +14,7 @@ use ai::retrieval::{build_embeddings, get_vector_store};
 use theme::*;
 pub mod config;
 
-use config::{model::RetrievalTool, ConfigManager};
+use config::{ConfigManager, model::RetrievalTool};
 
 pub async fn build(config: &ConfigManager) -> anyhow::Result<()> {
     println!("{}", "Building...".text());

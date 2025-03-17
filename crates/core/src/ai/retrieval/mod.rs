@@ -1,9 +1,9 @@
 use embedding::{Document, LanceDBStore, VectorStore};
 
-use crate::config::model::{RetrievalTool, ToolConfig};
-use crate::config::ConfigManager;
-use crate::errors::OxyError;
 use crate::StyledText;
+use crate::config::ConfigManager;
+use crate::config::model::{RetrievalTool, ToolConfig};
+use crate::errors::OxyError;
 
 pub mod embedding;
 pub mod reranking;

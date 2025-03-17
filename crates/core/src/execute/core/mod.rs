@@ -5,7 +5,7 @@ use std::{
 
 use async_trait::async_trait;
 use cache::CacheExecutor;
-use event::{consume, Handler};
+use event::{Handler, consume};
 use executor::{ChildExecutor, LoopExecutor, MapExecutor};
 use tokio::sync::mpsc::Sender;
 use value::ContextValue;

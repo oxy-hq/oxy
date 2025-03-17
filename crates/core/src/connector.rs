@@ -1,15 +1,15 @@
 use arrow::datatypes::{Schema, SchemaRef};
 use arrow::ipc::{reader::FileReader, writer::FileWriter};
 use arrow::{array::as_string_array, error::ArrowError, record_batch::RecordBatch};
-use connectorx::prelude::{get_arrow, CXQuery, SourceConn};
+use connectorx::prelude::{CXQuery, SourceConn, get_arrow};
 use duckdb::Connection;
 use log::debug;
 use std::fs::File;
 use std::sync::Arc;
 use uuid::Uuid;
 
-use crate::config::model::{Database, DatabaseType};
 use crate::config::ConfigManager;
+use crate::config::model::{Database, DatabaseType};
 use crate::errors::OxyError;
 
 const CREATE_CONN: &str = "Failed to open connection";

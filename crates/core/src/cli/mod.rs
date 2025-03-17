@@ -11,27 +11,27 @@ use crate::utils::find_project_path;
 use crate::utils::print_colored_sql;
 use crate::workflow::WorkflowResult;
 use axum::handler::Handler;
-use clap::builder::ValueParser;
 use clap::CommandFactory;
 use clap::Parser;
+use clap::builder::ValueParser;
 use minijinja::{Environment, Value};
 use model::AgentConfig;
 use model::FileFormat;
 use model::ToolConfig;
 use model::{Config, Workflow};
-use pyo3::types::PyAnyMethods;
 use pyo3::Bound;
 use pyo3::FromPyObject;
 use pyo3::IntoPyObject;
 use pyo3::PyAny;
 use pyo3::PyErr;
 use pyo3::Python;
+use pyo3::types::PyAnyMethods;
 use std::backtrace;
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::path::PathBuf;
-use std::process::exit;
 use std::process::Command;
+use std::process::exit;
 
 use init::init;
 
@@ -42,13 +42,13 @@ use crate::{build, vector_search};
 use tower_serve_static::ServeDir;
 
 use axum::{
+    Router,
     body::Body,
     http::{Request, StatusCode},
     routing::get_service,
-    Router,
 };
 
-use include_dir::{include_dir, Dir};
+use include_dir::{Dir, include_dir};
 use std::net::SocketAddr;
 use tower::service_fn;
 
@@ -257,7 +257,9 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                 for file in schema_files {
                     if changed_files.contains(&file) {
                         eprintln!("Unexpected changes were found in schema files.");
-                        eprintln!("Please review these changes and update the schema generation code by `cargo run gen-config-schema.`");
+                        eprintln!(
+                            "Please review these changes and update the schema generation code by `cargo run gen-config-schema.`"
+                        );
                         exit(1)
                     }
                 }

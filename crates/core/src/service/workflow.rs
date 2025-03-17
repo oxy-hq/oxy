@@ -1,10 +1,10 @@
-use base64::{prelude::BASE64_STANDARD, Engine};
+use base64::{Engine, prelude::BASE64_STANDARD};
 use minijinja::Value;
 use serde::Serialize;
 use std::{path::PathBuf, sync::Arc};
 
 use crate::{
-    config::{model::Workflow, ConfigBuilder},
+    config::{ConfigBuilder, model::Workflow},
     errors::OxyError,
     execute::{
         core::{event::Dispatcher, run},

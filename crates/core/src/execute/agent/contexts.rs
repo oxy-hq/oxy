@@ -4,11 +4,11 @@ use minijinja::value::{Object, ObjectRepr, Value};
 use tokio::runtime::Handle;
 
 use crate::{
-    config::{
-        model::{AgentContext, AgentContextType, SemanticModels},
-        ConfigManager,
-    },
     StyledText,
+    config::{
+        ConfigManager,
+        model::{AgentContext, AgentContextType, SemanticModels},
+    },
 };
 
 #[derive(Debug, Clone)]
