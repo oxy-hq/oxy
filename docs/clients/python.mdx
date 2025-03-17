@@ -1,6 +1,6 @@
 ---
 title: "Python"
-description: "Python client for Onyx"
+description: "Python client for Oxy"
 ---
 
 <Steps>
@@ -9,13 +9,13 @@ description: "Python client for Onyx"
 Install from git:
 
 ```bash
-pip install git+ssh://git@github.com/onyx-hq/onyx.git#subdirectory=crates/onyx-py
+pip install git+ssh://git@github.com/oxyhq/ooxyit#subdirectory=crates/oxoxy
 ```
 
 </Step>
 <Step title="Usage">
 ```py
-from onyx_py import ask, run, execute
+from oxypy import ask, run, execute
 
 print(ask("this month's revenue?"))
 print(run("example_anonymize.sql"))

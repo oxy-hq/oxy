@@ -1,19 +1,19 @@
 ---
 title: "Quickstart"
-description: "Let's learn how to start using onyx"
+description: "Let's learn how to start using oxy"
 ---
 
 import DownloadButton from "/snippets/download.mdx";
 
 ### Overview
 
-In this quickstart guide, we will install onyx and bootstrap a simple setup
+In this quickstart guide, we will install oxy and bootstrap a simple setup
 that uses DuckDB as warehouse and OpenAI as LLM provider. For this walkthrough,
 you'll need an OpenAI API key and access to a terminal.
 
-### Install and configure onyx
+### Install and configure oxy
 
-Onyx supports both Mac and Windows. To get started with onyx, you will need to
+Oxy supports both Mac and Windows. To get started with oxy, you will need to
 work within the terminal. For Mac users, we recommend using
 [iTerm2](https://iterm2.com/) as it offers better features, customization
 options, and more frequent updates as compared to the stock Mac terminal. Other
@@ -25,32 +25,32 @@ for`Ubuntu` in the Microsoft store).
 Once you have your terminal set up, follow the steps below:
 
 <Steps>
-  <Step title="Install onyx">
-    Install onyx by running the following within your Mac/Linux/WSL terminal:
+  <Step title="Install oxy">
+    Install oxy by running the following within your Mac/Linux/WSL terminal:
 
     ```bash
-    bash <(curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/onyx-hq/onyx/refs/heads/main/install_onyx.sh)
+    bash <(curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/oxy-hq/oxy/refs/heads/main/install_oxy.sh)
     ```
 
-    Upon successful installation, you should see the message "Onyx has been installed successfully."
+    Upon successful installation, you should see the message "Oxy has been installed successfully."
 
     <img class="rounded-md" src="/images/installation-success.jpeg" alt="installation successful" />
 
     <Info>
-      For transparency, you can review the [installation script's source code](https://github.com/onyx-hq/onyx/blob/main/install_onyx.sh).
+      For transparency, you can review the [installation script's source code](https://github.com/oxy-hqoxy/blob/main/install_oxy.sh).
     </Info>
 
     <Accordion title="Verify Your Installation (Optional)">
       After the installation is complete, you may verify that it was successful by running:
 
       ```sh
-      onyx --version
+      oxy --version
       ```
 
-      and a configuration file is created at `~/.config/onyx/config.yml` by running:
+      and a configuration file is created at `~/.config/oxy/config.yml` by running:
 
       ```sh
-      cat ~/.config/onyx/config.yml
+      cat ~/.config/oxy/config.yml
       # should output something
       ```
     </Accordion>
@@ -60,14 +60,14 @@ Once you have your terminal set up, follow the steps below:
     In order to get started with a base agent set up, run the following command in an empty directory where you want to store your project:
 
     ```sh
-    onyx init
+    oxy init
     ```
 
-    This command will generate the main onyx configuration file (located at `~/.config/onyx/config.yml`), a sample agent file, a sample workflow file, some data, and a sample semantic layer file.
+    This command will generate the main oxy configuration file (located at `~/.config/oxy/config.yml`), a sample agent file, a sample workflow file, some data, and a sample semantic layer file.
     If you use all the configuration defaults, you should be able to run the agent and workflow against the sample data out-of-the-box.
   </Step>
 
-  <Step title="Connect onyx to OpenAI">
+  <Step title="Connect oxy to OpenAI">
     For the model, we recommend using OpenAI's gpt-4o. For alternative models, please refer to our integration documentation, [here](/integrations/overview).
 
     Replace `OPENAI_API_KEY` with your actual OpenAI API key.
@@ -76,13 +76,13 @@ Once you have your terminal set up, follow the steps below:
 
 ### All Done
 
-Congrats! You're ready to start using Onyx now. If you haven't changed the configuration defaults, you should be able to run the following commands to test out onyx against some sample sleep data:
+Congrats! You're ready to start using Oxy now. If you haven't changed the configuration defaults, you should be able to run the following commands to test out oxy against some sample sleep data:
 
 ```bash
-onyx run sql-generator.agent.yml "On how many nights did I get good sleep in the last year?"  # ask a question to the sample agent
-onyx test sql-generator.agent.yml  # runs all defined tests against the sql-generator agent
+oxy run sql-generator.agent.yml "On how many nights did I get good sleep in the last year?"  # ask a question to the sample agent
+oxy test sql-generator.agent.yml  # runs all defined tests against the sql-generator agent
 
-onyx run report-generator.workflow.yml  # execute the sample workflow
-onyx test report-generator.workflow.yml  # run all defined tests against the workflow
+oxy run report-generator.workflow.yml  # execute the sample workflow
+oxy test report-generator.workflow.yml  # run all defined tests against the workflow
 ```
 
