@@ -130,7 +130,7 @@
             "agent_ref": {
               "type": "string"
             },
-            "consensus_run": {
+            "consistency_run": {
               "default": 1,
               "type": "integer",
               "format": "uint",

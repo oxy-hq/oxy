@@ -25,7 +25,7 @@ use crate::{
 
 use super::{
     agent::{AgentEvent, AgentReceiver, ToolCall, ToolMetadata},
-    consensus::{ConsensusEvent, ConsensusReceiver},
+    consistency::{ConsistencyEvent, ConsistencyReceiver},
     core::{
         event::{Dispatcher, Handler},
         run,
@@ -83,9 +83,9 @@ pub enum WorkflowEvent {
         export_file_path: Option<String>,
     },
 
-    // consensus
-    Consensus {
-        orig: ConsensusEvent,
+    // consistency
+    Consistency {
+        orig: ConsistencyEvent,
     },
 
     // sql
@@ -174,14 +174,14 @@ impl TemplateRegister for Vec<Task> {
 }
 
 pub struct WorkflowReceiver {
-    consensus_receiver: ConsensusReceiver,
+    consistency_receiver: ConsistencyReceiver,
     pub logger: Box<dyn WorkflowLogger>,
 }
 
 impl WorkflowReceiver {
     pub fn new(logger: Box<dyn WorkflowLogger>) -> Self {
         Self {
-            consensus_receiver: ConsensusReceiver::new(),
+            consistency_receiver: ConsistencyReceiver::new(),
             logger,
         }
     }
@@ -363,7 +363,7 @@ impl WorkflowLogger for WorkflowAPILogger {
                 );
                 self.log(item)
             }
-            WorkflowEvent::Consensus { .. } => {}
+            WorkflowEvent::Consistency { .. } => {}
         }
     }
 
@@ -524,7 +524,7 @@ impl WorkflowLogger for WorkflowCLILogger {
             WorkflowEvent::SubWorkflow { step } => {
                 println!("\n⏳Subworkflow executed successfully");
             }
-            WorkflowEvent::Consensus { .. } => {}
+            WorkflowEvent::Consistency { .. } => {}
         }
     }
 

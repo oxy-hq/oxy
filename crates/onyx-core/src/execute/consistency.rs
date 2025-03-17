@@ -21,24 +21,24 @@ use super::core::{
 use tqdm::{pbar, Pbar};
 
 #[derive(Debug, Clone)]
-pub enum ConsensusEvent {
+pub enum ConsistencyEvent {
     StartedProgress { total: usize, title: String },
     Progress { progress: usize },
     EndProgress,
     LowConsistencyDetected { consistency: f64 },
 }
 
-pub struct ConsensusReceiver {
+pub struct ConsistencyReceiver {
     output_progress: Arc<RwLock<Option<Arc<Mutex<Pbar>>>>>,
 }
 
-impl Default for ConsensusReceiver {
+impl Default for ConsistencyReceiver {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl ConsensusReceiver {
+impl ConsistencyReceiver {
     pub fn new() -> Self {
         Self {
             output_progress: Arc::new(RwLock::new(None)),
@@ -46,12 +46,12 @@ impl ConsensusReceiver {
     }
 }
 
-impl Handler for ConsensusReceiver {
-    type Event = ConsensusEvent;
+impl Handler for ConsistencyReceiver {
+    type Event = ConsistencyEvent;
 
     fn handle(&self, event: &Self::Event) {
         match &event {
-            ConsensusEvent::StartedProgress { total, title } => {
+            ConsistencyEvent::StartedProgress { total, title } => {
                 println!("{}", title.primary());
                 match self.output_progress.write() {
                     Ok(mut progress) => {
@@ -63,7 +63,7 @@ impl Handler for ConsensusReceiver {
                 }
             }
 
-            ConsensusEvent::Progress { progress } => match self.output_progress.read() {
+            ConsistencyEvent::Progress { progress } => match self.output_progress.read() {
                 Ok(progress_guard) => match progress_guard.as_ref() {
                     Some(output_progress) => match output_progress.lock() {
                         Ok(mut progress_bar) => {
@@ -77,13 +77,13 @@ impl Handler for ConsensusReceiver {
                 },
                 Err(err) => log::error!("Failed to acquire read lock for progress bar: {}", err),
             },
-            ConsensusEvent::EndProgress => match self.output_progress.write() {
+            ConsistencyEvent::EndProgress => match self.output_progress.write() {
                 Ok(mut progress) => {
                     *progress = None;
                 }
                 Err(err) => log::error!("Failed to acquire write lock for progress bar: {}", err),
             },
-            ConsensusEvent::LowConsistencyDetected { consistency } => {
+            ConsistencyEvent::LowConsistencyDetected { consistency } => {
                 println!(
                     "{}",
                     format!(
@@ -97,35 +97,35 @@ impl Handler for ConsensusReceiver {
 }
 
 #[derive(Clone)]
-pub struct ConsensusAdapterState {
+pub struct ConsistencyAdapterState {
     result: ContextValue,
 }
 
-pub struct ConsensusAdapter<'state> {
-    state: &'state mut ConsensusAdapterState,
+pub struct ConsistencyAdapter<'state> {
+    state: &'state mut ConsistencyAdapterState,
 }
 
-impl Write for ConsensusAdapter<'_> {
+impl Write for ConsistencyAdapter<'_> {
     fn write(&mut self, value: ContextValue) {
         self.state.result = value;
     }
 }
 
-pub struct ConsensusExecutor {
-    consensus_state: ConsensusAdapterState,
+pub struct ConsistencyExecutor {
+    consistency_state: ConsistencyAdapterState,
     collected_events: Vec<WorkflowEvent>,
 }
 
-impl Default for ConsensusExecutor {
+impl Default for ConsistencyExecutor {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl ConsensusExecutor {
+impl ConsistencyExecutor {
     pub fn new() -> Self {
         Self {
-            consensus_state: ConsensusAdapterState {
+            consistency_state: ConsistencyAdapterState {
                 result: Default::default(),
             },
             collected_events: Vec::new(),
@@ -170,16 +170,16 @@ impl ConsensusExecutor {
         sample_size: usize,
         event_sender: Sender<(usize, WorkflowEvent)>,
     ) -> Result<Vec<(usize, ContextValue)>, OnyxError> {
-        let mut consensus_adapter = ConsensusAdapter {
-            state: &mut self.consensus_state,
+        let mut consistency_adapter = ConsistencyAdapter {
+            state: &mut self.consistency_state,
         };
 
         let parts = execution_context.clone_parts();
-        let mut context = ExecutionContext::from_parts(parts, &mut consensus_adapter);
+        let mut context = ExecutionContext::from_parts(parts, &mut consistency_adapter);
 
         execution_context
-            .notify(WorkflowEvent::Consensus {
-                orig: ConsensusEvent::StartedProgress {
+            .notify(WorkflowEvent::Consistency {
+                orig: ConsistencyEvent::StartedProgress {
                     total: sample_size,
                     title: "🔄Generating outputs".to_string(),
                 },
@@ -195,8 +195,8 @@ impl ConsensusExecutor {
             let progress_tracker = || {
                 let _ = execution_context
                     .get_sender()
-                    .try_send(WorkflowEvent::Consensus {
-                        orig: ConsensusEvent::Progress { progress: 1 },
+                    .try_send(WorkflowEvent::Consistency {
+                        orig: ConsistencyEvent::Progress { progress: 1 },
                     });
             };
 
@@ -214,8 +214,8 @@ impl ConsensusExecutor {
             let outputs = loop_executor.eject_results()?;
 
             execution_context
-                .notify(WorkflowEvent::Consensus {
-                    orig: ConsensusEvent::EndProgress,
+                .notify(WorkflowEvent::Consistency {
+                    orig: ConsistencyEvent::EndProgress,
                 })
                 .await?;
 
@@ -272,8 +272,8 @@ impl ConsensusExecutor {
         comparison_pairs: &[(usize, usize)],
     ) -> Result<HashMap<usize, i32>, OnyxError> {
         execution_context
-            .notify(WorkflowEvent::Consensus {
-                orig: ConsensusEvent::StartedProgress {
+            .notify(WorkflowEvent::Consistency {
+                orig: ConsistencyEvent::StartedProgress {
                     total: prompts.len(),
                     title: "🔄Evaluating records".to_string(),
                 },
@@ -300,11 +300,11 @@ impl ConsensusExecutor {
 
                 async move {
                     let output = item.await;
-                    let _ = context_sender.try_send(WorkflowEvent::Consensus {
-                        orig: ConsensusEvent::Progress { progress: 1 },
+                    let _ = context_sender.try_send(WorkflowEvent::Consistency {
+                        orig: ConsistencyEvent::Progress { progress: 1 },
                     });
 
-                    let result = parse_consensus_response(&output.unwrap());
+                    let result = parse_consistency_response(&output.unwrap());
 
                     if result == "A" {
                         let (i1, i2) = comparison_pairs[i];
@@ -319,8 +319,8 @@ impl ConsensusExecutor {
         futures::future::join_all(futures).await;
 
         execution_context
-            .notify(WorkflowEvent::Consensus {
-                orig: ConsensusEvent::EndProgress,
+            .notify(WorkflowEvent::Consistency {
+                orig: ConsistencyEvent::EndProgress,
             })
             .await?;
 
@@ -364,8 +364,8 @@ impl ConsensusExecutor {
 
         if highest_consistency < 0.25 {
             execution_context
-                .notify(WorkflowEvent::Consensus {
-                    orig: ConsensusEvent::LowConsistencyDetected {
+                .notify(WorkflowEvent::Consistency {
+                    orig: ConsistencyEvent::LowConsistencyDetected {
                         consistency: highest_consistency,
                     },
                 })
@@ -373,10 +373,10 @@ impl ConsensusExecutor {
         }
 
         if let Some(output) = most_consistent_output {
-            self.consensus_state.result = output.1;
+            self.consistency_state.result = output.1;
         }
 
-        execution_context.write(self.consensus_state.result.clone());
+        execution_context.write(self.consistency_state.result.clone());
 
         for event in self.collected_events.clone() {
             execution_context.notify(event).await?;
@@ -422,7 +422,7 @@ const PROMPT: &str = indoc! {"
     Reasoning:
 "};
 
-fn parse_consensus_response(response: &str) -> String {
+fn parse_consistency_response(response: &str) -> String {
     for line in response.lines().rev() {
         let trimmed = line.trim();
         if trimmed == "A" || trimmed == "B" {
