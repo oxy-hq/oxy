@@ -18,7 +18,7 @@ use crate::connector::Connector;
 use crate::errors::OnyxError;
 use crate::execute::agent::build_agent;
 use crate::execute::agent::AgentInput;
-use crate::execute::consensus::ConsensusExecutor;
+use crate::execute::consistency::ConsistencyExecutor;
 use crate::execute::core::arrow_table::ArrowTable;
 use crate::execute::core::cache::Cacheable;
 use crate::execute::core::event::Dispatcher;
@@ -377,14 +377,14 @@ impl Executable<(), WorkflowEvent> for Task {
     ) -> Result<(), OnyxError> {
         match &self.task_type {
             TaskType::Agent(agent) => {
-                if agent.consensus_run > 1 {
-                    let mut consensus_executor = ConsensusExecutor::new();
-                    consensus_executor
+                if agent.consistency_run > 1 {
+                    let mut consistency_executor = ConsistencyExecutor::new();
+                    consistency_executor
                         .execute(
                             execution_context,
                             agent,
                             agent.prompt.clone(),
-                            agent.consensus_run,
+                            agent.consistency_run,
                         )
                         .await?;
                 } else {

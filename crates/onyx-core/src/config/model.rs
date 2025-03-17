@@ -388,9 +388,9 @@ pub struct AgentTask {
     #[garde(skip)]
     pub retry: usize,
 
-    #[serde(default = "default_consensus_run")]
+    #[serde(default = "default_consistency_run")]
     #[garde(skip)]
-    pub consensus_run: usize,
+    pub consistency_run: usize,
 
     #[garde(dive)]
     pub export: Option<TaskExport>,
@@ -673,7 +673,7 @@ fn default_retry() -> usize {
     1
 }
 
-fn default_consensus_run() -> usize {
+fn default_consistency_run() -> usize {
     1
 }
 
