@@ -1,13 +1,13 @@
 [workspace]
 # TODO: switch back to default-members = ["crates/*"] once we migrated from release-please
 members = [
-  "crates/onyx-core",
-  "crates/onyx-py",
+  "crates/core",
+  "crates/py",
   "crates/migration",
   "crates/entity",
 ]
 
-default-members = ["crates/onyx-core"]
+default-members = ["crates/core"]
 resolver = "2"
 
 [workspace.dependencies]
@@ -28,9 +28,9 @@ log = { version = "0.4" }
 # version = "0.1.32"
 edition = "2021"
 publish = false
-description = "Onyx"
-authors = ["Onyxint engineers"]
-documentation = "https://docs.onyxint.ai"
+description = "Oxy"
+authors = ["Oxyint engineers"]
+documentation = "https://docs.oxyint.ai"
 
 [profile.dev]
 opt-level = 1

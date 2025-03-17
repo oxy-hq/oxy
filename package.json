@@ -38,6 +38,6 @@
     "typescript": "^5.8.2",
     "typescript-eslint": "^8.26.1"
   },
-  "name": "onyx",
+  "name": "oxy",
   "packageManager": "pnpm@10.6.3"
 }

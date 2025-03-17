@@ -2,12 +2,12 @@
 
 set -e
 
-APP_NAME="onyx"
+APP_NAME="oxy"
 INSTALL_DIR="$HOME/.local/bin"
-REPO="onyx-hq/onyx"
+REPO="oxy-hq/oxy"
 
 # Get the version to install from the environment, default to the latest release tag if not provided
-VERSION=${ONYX_VERSION:-latest}
+VERSION=${OXY_VERSION:-latest}
 
 # Ensure the install directory exists
 mkdir -p "$INSTALL_DIR"

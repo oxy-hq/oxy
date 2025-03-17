@@ -1,13 +1,13 @@
 {
   "commit-search-depth": "1000",
   "packages": {
-    "crates/onyx-core": {
+    "crates/core": {
       "release-type": "rust",
-      "component": "onyx-core"
+      "component": "core"
     },
-    "crates/onyx-py": {
+    "crates/py": {
       "release-type": "rust",
-      "component": "onyx-py"
+      "component": "py"
     },
     "crates/migration": {
       "release-type": "rust",
@@ -28,10 +28,10 @@
     },
     {
       "type": "linked-versions",
-      "groupName": "onyx",
+      "groupName": "oxy",
       "components": [
-        "onyx-core",
-        "onyx-py",
+        "core",
+        "py",
         "migration",
         "entity"
       ]

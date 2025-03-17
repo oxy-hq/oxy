@@ -1,4 +1,4 @@
-name: Open source onyx
+name: Open source oxy
 on:
   push:
     branches:
@@ -15,7 +15,7 @@ permissions:
 jobs:
   move-code:
     runs-on: ubuntu-latest
-    if: ${{ (github.event_name == 'push' && github.repository == 'onyx-hq/onyx-internal') || (github.event_name == 'pull_request_target' && github.repository == 'onyx-hq/onyx') }}
+    if: ${{ (github.event_name == 'push' && github.repository == 'oxy-hq/oxy-internal') || (github.event_name == 'pull_request_target' && github.repository == 'oxy-hq/oxy') }}
     steps:
       - uses: actions/create-github-app-token@v1
         name: Create GitHub App Token
@@ -25,8 +25,8 @@ jobs:
           private-key: ${{ secrets.ARGO_APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
           repositories: |
-            onyx-internal
-            onyx
+            oxy-internal
+            oxy
       - name: Get GitHub App User ID
         id: get-user-id
         run: echo "user-id=$(gh api "/users/${{ steps.app-token.outputs.app-slug }}[bot]" --jq .id)" >> "$GITHUB_OUTPUT"
@@ -38,14 +38,14 @@ jobs:
           token: ${{ steps.app-token.outputs.token }}
       - uses: luong-komorebi/copybara-action@ft/sync-pull-request-title
         with:
-          ssh_key: ${{ secrets.ONYX_SSH_KEY }}
+          ssh_key: ${{ secrets.OXY_SSH_KEY }}
           access_token: ${{ steps.app-token.outputs.token }}
           sot_branch: ${{ github.ref_name }}
           destination_branch: ${{ github.ref_name }}
-          sot_repo: onyx-hq/onyx-internal
-          destination_repo: onyx-hq/onyx
+          sot_repo: oxy-hq/oxy-internal
+          destination_repo: oxy-hq/oxy
           push_exclude: >-
             internal-docs/**
           # pr_move: |-
-          #   crates/onyx-core/dist||oss/dist||**
+          #   crates/core/dist||oss/dist||**
           committer: "${{ steps.app-token.outputs.app-slug }}[bot] <${{ steps.get-user-id.outputs.user-id }}+${{ steps.app-token.outputs.app-slug }}[bot]@users.noreply.github.com>"

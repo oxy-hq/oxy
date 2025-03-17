@@ -1,0 +1,11 @@
+{
+  "private": true,
+  "scripts": {
+    "lint": "cargo clippy",
+    "format": "cargo fmt"
+  },
+  "dependencies": {
+    "oxy-web": "workspace:*"
+  },
+  "name": "oxy-backend"
+}
