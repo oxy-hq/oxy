@@ -69,7 +69,7 @@ const Thread = () => {
           {!isLoading && answer && (
             <div className="p-6 rounded-xl bg-base-card border border-base-border shadow-sm flex flex-col gap-2 ">
               <div className="flex gap-1 items-center h-12 justify-start">
-                <img className="w-[24px] h-[24px]" src="/logo.svg" alt="Oxy />
+                <img className="w-[24px] h-[24px]" src="/logo.svg" alt="Oxy" />
                 <p className="text-xl text-card-foreground font-semibold">
                   Answer
                 </p>
