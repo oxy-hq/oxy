@@ -113,8 +113,8 @@ pub async fn get_workflow_logs(path: &PathBuf) -> Result<Vec<LogItem>, OnyxError
                 let log_item: LogItem = serde_json::from_str(line).unwrap();
                 logs.push(log_item);
             }
-            return Ok(logs);
+            Ok(logs)
         }
-        Err(_) => return Ok(vec![]),
+        Err(_) => Ok(vec![]),
     }
 }

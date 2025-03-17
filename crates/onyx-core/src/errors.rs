@@ -1,7 +1,6 @@
 use std::sync::PoisonError;
 
 use axum::http::StatusCode;
-use base64::DecodeError;
 use thiserror::Error;
 use tokio::{sync::mpsc::error::SendError, task::JoinError};
 

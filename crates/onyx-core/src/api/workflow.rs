@@ -70,7 +70,7 @@ pub async fn get_logs(
         })?,
     );
     let logs = service::get_workflow_logs(&path).await?;
-    return Ok(extract::Json(GetLogsResponse { logs }));
+    Ok(extract::Json(GetLogsResponse { logs }))
 }
 
 pub async fn build_workflow_api_logger(
@@ -83,7 +83,6 @@ pub async fn build_workflow_api_logger(
     let log_file_path = format!("/var/tmp/onyx-{}.log.json", full_workflow_path_b64);
     File::create(log_file_path.clone()).unwrap();
     let file = OpenOptions::new()
-        .write(true)
         .append(true)
         .open(log_file_path)
         .map_err(|e| {
@@ -93,7 +92,7 @@ pub async fn build_workflow_api_logger(
         .unwrap();
     let api_logger: WorkflowAPILogger =
         WorkflowAPILogger::new(sender, Some(Arc::new(Mutex::new(file))));
-    return (api_logger, receiver);
+    (api_logger, receiver)
 }
 
 pub async fn run_workflow(Path(pathb64): Path<String>) -> Result<impl IntoResponse, StatusCode> {
@@ -113,7 +112,7 @@ pub async fn run_workflow(Path(pathb64): Path<String>) -> Result<impl IntoRespon
 
     use tokio_stream::wrappers::ReceiverStream;
     let stream = ReceiverStream::new(receiver);
-    return Ok(StreamBodyAs::json_nl(stream));
+    Ok(StreamBodyAs::json_nl(stream))
 }
 
 #[derive(Serialize)]
