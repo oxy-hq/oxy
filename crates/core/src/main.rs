@@ -60,9 +60,9 @@ fn init_logging() -> Result<(), fern::InitError> {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     setup_panic!(Metadata::new(env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"))
-        .authors("Robert Yi <robert@oxyint.ai>") // temporarily using Robert email here, TODO: replace by support email
+        .authors("Robert Yi <robert@oxy.tech>") // temporarily using Robert email here, TODO: replace by support email
         .homepage("github.com/oxy-hq/oxy")
-        .support("- For support, please email robert@oxyint.ai or contact us directly via Slack if you have access to a shared channel.")
+        .support("- For support, please email robert@oxy.tech or contact us directly via Slack if you have access to a shared channel.")
     );
     init_logging()?;
     match cli().await {
