@@ -8,13 +8,13 @@
   - [Other Commands](#other-commands)
   - [Integration Testing](#integration-testing)
   - [Known Issues](#known-issues)
-  - [Onyx Py Requirements](#onyx-py-requirements)
+  - [Oxy Py Requirements](#oxy-py-requirements)
 
 ## Clone This Repository
 
 ```sh
-git clone git@github.com:onyx-hq/onyx.git
-cd onyx
+git clone git@github.com:oxyhq/ooxyit
+cd oxy
 ```
 
 ## Install Rust & Node
@@ -108,13 +108,13 @@ export OPENAI_API_KEY=sk-...
 Run your first query:
 
 ```sh
-onyx run agents/default.agent.yml "how many users"
+oxyrun agents/default.agent.yml "how many users"
 ```
 
 Try other commands:
 
 ```sh
-onyx --help
+oxy--help
 ```
 
 ## Other Commands
@@ -142,9 +142,9 @@ cargo test -- --nocapture
 
 - Tests when running in parallel (default) messed up terminal indentation.
 
-## Onyx Py Requirements
+## OxyPy Requirements
 
-Ensure that the right Python version is in your path (onyx uses python3.11.6). There are many ways to install Python, here we recommend a few ways:
+Ensure that the right Python version is in your path (oxyuses python3.11.6). There are many ways to install Python, here we recommend a few ways:
 
 ```sh
 # Using mise is the best for any architecture

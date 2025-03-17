@@ -62,14 +62,14 @@ const Thread = () => {
 
           {isLoading && (
             <div className="flex gap-1 ju">
-              <img className="w-8 h-8" src="/onyx-loading.gif" />
+              <img className="w-8 h-8" src="/oxy-loading.gif" />
               <p className="text-muted-foreground">Agent is thinking...</p>
             </div>
           )}
           {!isLoading && answer && (
             <div className="p-6 rounded-xl bg-base-card border border-base-border shadow-sm flex flex-col gap-2 ">
               <div className="flex gap-1 items-center h-12 justify-start">
-                <img className="w-[24px] h-[24px]" src="/logo.svg" alt="Onyx" />
+                <img className="w-[24px] h-[24px]" src="/logo.svg" alt="Oxy />
                 <p className="text-xl text-card-foreground font-semibold">
                   Answer
                 </p>

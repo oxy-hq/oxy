@@ -3,7 +3,7 @@
 ## title: DuckDB
 
 A `duckdb` database entry can be added by specifying `type: duckdb` in your
-[`~/.config/onyx/config.yml` file](/learn-about-onyx/config). The `dataset`
+[`~/.config/oxy/config.yml` file](/learn-about-oxy/config). The `dataset`
 field should point to the directory where your data is stored. We run `SET
 file_search_path = '{}'` within duckdb against the path you provide before any
 query.
@@ -14,5 +14,5 @@ query.
 databases:
   - name: local
     type: duckdb
-    dataset: /Users/robertyi/repos/onyx-kelihi/.db/
+    dataset: /Users/robertyi/repos/oxykelihi/.db/
 ```

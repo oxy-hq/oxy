@@ -1,9 +1,9 @@
 {
-  "name": "Onyx",
+  "name": "Oxy",
   "logo": {
     "dark": "/logo/dark.svg",
     "light": "/logo/light.svg",
-    "href": "https://www.onyxint.ai/"
+    "href": "https://www.oxyint.ai/"
   },
   "favicon": "favicon.svg",
   "background": {
@@ -21,7 +21,7 @@
   },
   "topbarCtaButton": {
     "type": "github",
-    "url": "https://github.com/onyx-hq/onyx"
+    "url": "https://github.com/oxy-hq/oxy"
   },
   "tabs": [
     {
@@ -29,7 +29,7 @@
       "url": "integrations"
     },
     {
-      "name": "Onyx Community",
+      "name": "Oxy Community",
       "url": "community"
     },
     {
@@ -43,19 +43,19 @@
       "pages": ["welcome", "quickstart"]
     },
     {
-      "group": "Learn about Onyx",
+      "group": "Learn about Oxy",
       "pages": [
         {
           "group": "Core concepts",
           "pages": [
-            "learn-about-onyx/agents",
-            "learn-about-onyx/data",
-            "learn-about-onyx/semantic-model",
-            "learn-about-onyx/testing",
-            "learn-about-onyx/workflows"
+            "learn-about-oxy/agents",
+            "learn-about-oxy/data",
+            "learn-about-oxy/semantic-model",
+            "learn-about-oxy/testing",
+            "learn-about-oxy/workflows"
           ]
         },
-        "learn-about-onyx/config"
+        "learn-about-oxy/config"
       ]
     },
     {
@@ -99,13 +99,13 @@
       "pages": ["reference/cli-shortcuts", "reference/cli-commands"]
     },
     {
-      "group": "Onyx commands",
-      "pages": ["reference/onyx-commands"]
+      "group": "Oxy commands",
+      "pages": ["reference/oxy-commands"]
     }
   ],
   "footerSocials": {
-    "x": "https://x.com/onyxint_ai",
-    "github": "https://github.com/onyx-hq",
-    "linkedin": "https://www.linkedin.com/company/onyx-hq/"
+    "x": "https://x.com/oxyint_ai",
+    "github": "https://github.com/oxy-hq,
+    "linkedin": "https://www.linkedin.com/company/oxy-hq"
   }
 }
