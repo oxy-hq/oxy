@@ -9,7 +9,7 @@ Just as traditional software follows a build-test-deploy pipeline, agentic analy
 
 To learn more, read our [docs](https://docs.onyxint.ai).
 
-https://github.com/user-attachments/assets/bf9cbe23-9732-4217-a912-e66bfd9ee10d
+https://github.com/user-attachments/assets/4b1efa5c-6b1b-4606-a47f-c9dac68cffad
 
 ### Quickstart
 
@@ -40,22 +40,6 @@ To verify the installation, run:
 
 ```bash
 onyx --version
-```
-
-And to initialize a repo, run the following in the directory you want to instantiate as an onyx repository:
-
-```bash
-onyx init
-```
-
-At this point, you should have a rudimentary onyx instance set up. To test this out, you can run the following commands from the root of the directory:
-
-```bash
-onyx run sql-generator.agent.yml "On how many nights did I get good sleep in the last year?"  # ask a question to the sample agent
-onyx test sql-generator.agent.yml  # runs all defined tests against the sql-generator agent
-
-onyx run report-generator.workflow.yml  # execute the sample workflow
-onyx test report-generator.workflow.yml  # run all defined tests against the workflow
 ```
 
 See our [docs](https://docs.onyxint.ai) on how to modify the agent file, seed it with context, run tests, and create workflows.
