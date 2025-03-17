@@ -213,7 +213,7 @@ impl LogItem {
         Self {
             content,
             timestamp: Utc::now(),
-            log_type,
+            log_type: log_type,
         }
     }
 }
@@ -258,10 +258,10 @@ impl WorkflowLogger for WorkflowAPILogger {
     }
 
     fn clone(&self) -> Box<dyn WorkflowLogger> {
-        Box::new(WorkflowAPILogger {
+        return Box::new(WorkflowAPILogger {
             sender: self.sender.clone(),
             writer: self.writer.clone(),
-        })
+        });
     }
 
     fn log_execution_result(&self, query: &str, schema: &Arc<Schema>, datasets: &Vec<RecordBatch>) {
@@ -429,7 +429,7 @@ impl WorkflowLogger for WorkflowCLILogger {
     }
 
     fn clone(&self) -> Box<dyn WorkflowLogger> {
-        Box::new(WorkflowCLILogger)
+        return Box::new(WorkflowCLILogger);
     }
 
     fn log_execution_result(&self, query: &str, schema: &Arc<Schema>, datasets: &Vec<RecordBatch>) {
