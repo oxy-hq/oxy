@@ -11,13 +11,13 @@ default-members = ["crates/onyx-core"]
 resolver = "2"
 
 [workspace.dependencies]
-tokio = { version = "1.43", features = ["full"] }
-sea-orm = { version = "1.1.6", features = [
+tokio = { version = "1.44", features = ["full"] }
+sea-orm = { version = "1.1.7", features = [
   "sqlx-sqlite",
   "runtime-tokio-rustls",
   "macros",
 ] }
-sea-orm-migration = { version = "1.1.6", features = [
+sea-orm-migration = { version = "1.1.7", features = [
   "sqlx-sqlite",
   "runtime-tokio-rustls",
 ] }
