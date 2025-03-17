@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=https://raw.githubusercontent.com/onyx-hq/onyx/refs/heads/main/json-schemas/workflow.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/oxy-hq/oxy/refs/heads/main/json-schemas/workflow.json
 
 name: export_sample
 tasks:

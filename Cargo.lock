@@ -4808,82 +4808,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "onyx"
-version = "0.1.1"
-dependencies = [
- "anyhow",
- "arrow",
- "assert_cmd",
- "async-openai",
- "async-stream",
- "async-trait",
- "axum",
- "axum-streams",
- "base64 0.21.7",
- "chrono",
- "clap",
- "colored",
- "connectorx",
- "csv",
- "dirs",
- "duckdb",
- "entity",
- "enum_dispatch",
- "fern",
- "futures",
- "garde",
- "glob",
- "home",
- "human-panic",
- "humantime",
- "include_dir",
- "indoc",
- "itertools 0.14.0",
- "lancedb",
- "lazy_static",
- "libduckdb-sys",
- "log",
- "migration",
- "minijinja",
- "once_cell",
- "pluralizer",
- "predicates",
- "pyo3",
- "pyo3-arrow",
- "schemars",
- "sea-orm",
- "serde",
- "serde_arrow",
- "serde_json",
- "serde_yaml",
- "slugify",
- "sqlformat",
- "syntect",
- "tabled",
- "terminal-light",
- "terminal_size",
- "thiserror 2.0.12",
- "tokio",
- "tokio-stream",
- "tokio-util",
- "tower",
- "tower-http",
- "tower-serve-static",
- "tqdm",
- "uuid 1.16.0",
-]
-
-[[package]]
-name = "onyx-py"
-version = "0.1.1"
-dependencies = [
- "onyx",
- "pyo3",
- "pyo3-build-config",
- "tokio",
-]
-
-[[package]]
 name = "openssl"
 version = "0.10.71"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5015,6 +4939,72 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6ff55baddef9e4ad00f88b6c743a2a8062d4c6ade126c2a528644b8e444d52ce"
 dependencies = [
  "stable_deref_trait",
+]
+
+[[package]]
+name = "oxy"
+version = "0.1.1"
+dependencies = [
+ "anyhow",
+ "arrow",
+ "assert_cmd",
+ "async-openai",
+ "async-stream",
+ "async-trait",
+ "axum",
+ "axum-streams",
+ "base64 0.21.7",
+ "chrono",
+ "clap",
+ "colored",
+ "connectorx",
+ "csv",
+ "dirs",
+ "duckdb",
+ "entity",
+ "enum_dispatch",
+ "fern",
+ "futures",
+ "garde",
+ "glob",
+ "home",
+ "human-panic",
+ "humantime",
+ "include_dir",
+ "indoc",
+ "itertools 0.14.0",
+ "lancedb",
+ "lazy_static",
+ "libduckdb-sys",
+ "log",
+ "migration",
+ "minijinja",
+ "once_cell",
+ "pluralizer",
+ "predicates",
+ "pyo3",
+ "pyo3-arrow",
+ "schemars",
+ "sea-orm",
+ "serde",
+ "serde_arrow",
+ "serde_json",
+ "serde_yaml",
+ "slugify",
+ "sqlformat",
+ "syntect",
+ "tabled",
+ "terminal-light",
+ "terminal_size",
+ "thiserror 2.0.12",
+ "tokio",
+ "tokio-stream",
+ "tokio-util",
+ "tower",
+ "tower-http",
+ "tower-serve-static",
+ "tqdm",
+ "uuid 1.16.0",
 ]
 
 [[package]]
@@ -5564,6 +5554,16 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 1.0.109",
+]
+
+[[package]]
+name = "py"
+version = "0.1.1"
+dependencies = [
+ "oxy",
+ "pyo3",
+ "pyo3-build-config",
+ "tokio",
 ]
 
 [[package]]

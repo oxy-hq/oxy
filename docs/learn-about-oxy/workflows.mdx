@@ -1,0 +1,207 @@
+---
+title: "Workflows"
+description: How to define workflows
+---
+
+A workflow is a series of tasks (`tasks`) executed sequentially. Each `task`
+can be either a deterministic command (such as `execute_sql`, in which a named
+sql query is executed) or an agent given a prompt. These tasks are composed by
+passing results from one agent to the input of another -- the output of each
+task can be accessed with Jinja as `{{ name_of_task }}`.
+
+# Workflow components
+
+Workflows are DAGs comprised of `tasks`. Each task has a few common properties:
+
+| Component | Description                                                                  | Type     |
+| --------- | ---------------------------------------------------------------------------- | -------- |
+| name      | Identifier for the task. Output of the task can be referenced as `{{name}}`. | required |
+| type      | The tool to use for this task. See the following section for possible types. | required |
+
+Specific task types have additional property requirements.
+
+## `type: agent`
+
+| Component | Description                                                                       | Type                       |
+| --------- | --------------------------------------------------------------------------------- | -------------------------- |
+| agent\_ref | The agent to use within the `agents` directory, referenced by the agent's `name`. | required for `type: agent` |
+| prompt    | The input prompt passed to the agent for this task.                               | required for `type: agent` |
+
+## `type: execute_sql`
+
+Executes a SQL query referenced by filename.
+
+| Component | Description                                              | Type     |
+| --------- | -------------------------------------------------------- | -------- |
+| sql\_file  | The sql file within the `data` directory to execute      | required |
+| database  | The name of the `database` to execute the query against  | required |
+
+## `type: formatter`
+
+Formats the provided `template` using the outputs of other `tasks`, then passes
+the rendered template as output.
+
+| Component | Description                                       | Type     |
+| --------- | ------------------------------------------------- | -------- |
+| template  | The template to be rendered and passed as output. | required |
+
+## `type: loop_sequential`
+
+| Component | Description                                                                 | Type     |
+| --------- | --------------------------------------------------------------------------- | -------- |
+| values    | Values to iterate over for each `task` in the current task's `tasks` array. | required |
+| tasks     | Defines the tasks to execute for each `value`.                              | required |
+
+`values` are accessed within the `tasks` of the `loop_sequential` task as
+`<name>.value`, where `<name>` is the name of the task. A sample partial config
+is shown below:
+
+```yaml
+tasks:
+  - name: loop_through_animals
+    type: loop_sequential
+    values: ["whale", "dolphin", "shark"]
+    tasks:
+      - name: get_number_of_animals
+        type: agent
+        agent_ref: default
+        prompt: |
+          Get the number of {{ loop_through_animals.value }}s in the ocean.
+```
+
+### Seeding `values` with query results
+
+The `values` can be seeded with the output from a previous `execute_sql` step,
+as follows:
+
+```yaml
+  - name: get_all_animals
+    type: execute_sql
+    sql_file: outputs/cache/get_all_animals.sql
+    database: local
+
+  # Loop over every animal
+  - name: loop_through_animals
+    type loop_sequential
+    values: "{{ get_all_animals.animal_name }}"  # `animal_name` is the column name to loop over
+    tasks:
+      ...
+```
+
+### Formatting loop outputs
+
+Loops are also often combined with the `type: formatter` task, which can loop through
+the resulting outputs and form them into a single string. The output from a
+`loop_sequential` is an array of dictionaries for each `value`, where the keys
+for each element of each dictionary is named according to the `task`'s' `name`
+field. These can be accessed by using Jinja, by looping through the `{{ <loop_name> }}` variable (`{{ loop_through_animals }}` above).
+
+An example of this behavior is shown below:
+
+```yaml
+- name: format_animal_report
+  type: formatter
+  template: |
+    {% for animal in loop_through_animals %}
+    {{ animal.get_number_of_animals }}
+    {% endfor %}
+```
+
+### Concurrency
+
+Concurrency can be added to the loop by using the `concurrency` key, with the
+value specifying the number of concurrent threads to use.
+
+```yaml
+- name: loop_through_animals
+  type: loop_sequential
+  concurrency: 5
+  values: ...
+  tasks:
+    ...
+```
+
+## `type: workflow`
+
+| Component | Description                                                                           | Type     |
+| --------- | ------------------------------------------------------------------------------------- | -------- |
+| src       | Path to the workflow yml file to execute. Relative to the root of the oxy directory. | required |
+| variables | Variables that are passed through, overriding the sub-workflow's variables.           | optional |
+
+Allows a sub-workflow to be executed. It's recommended to use this to break up
+complex workflows into smaller, easily testable chunks. The `variables` key
+here allows for parameterization of these workflows by overriding the
+workflow-level variables. This can be particularly useful when embedding a
+workflow task into a loop, as follows:
+
+```yaml
+  - name: loop_brands
+    type: loop_sequential
+    values: ["brand1", "brand2"]
+    concurrency: 10
+    tasks:
+      - name: brand_stats
+        type: workflow
+        src: brand_stats.workflow.yml
+        variables:
+          brand_rollup: "{{ loop_brands.value }}"
+```
+
+# Variables
+
+It's often the case that you may want to parameterize a workflow -- for
+example, if you are trying to build an automated analysis, and want this to be
+modular with respect to the date. We enable this behavior through the use of
+the `variables` key.
+
+```yaml
+variables:
+  brand: Underbelly
+```
+
+Each entry of `variables` should be specified as a key-value pair, and these
+variables can be referenced within task fields by name using Jinja as follows:
+
+```yaml
+    {{ brand }}
+```
+
+# Examples
+
+```yaml workflows/monthly_report.yml
+tasks:
+  - name: raw_sql_calculation
+    type: execute_sql
+    sql_file: month_over_month_overall_performance.sql # A sql file to execute deterministically
+  - name: month_over_month_metrics # An identifier for the task. Results can be referenced by jinja-wrapping this name
+    type: agent
+    agent_ref: default # The agent .yml file to use for this task
+    prompt: Calculate month-over-month performance of views and clicks for the entire ad portfolio. # The prompt given to the agent
+  - name: monthly_report
+    type: agent
+    agent_ref: local
+    prompt: |
+      Create a report using the provided data that looks as follows:
+      The overall portfolio brought in X views and Y clicks in MM/YYYY, up A% and B%, respectively.
+      {{month_over_month_metrics}}
+```
+
+# Workflows vs. chains
+
+A workflow is similar to a "chain" in the prompt engineering parlance, but with
+a few key differences:
+
+*   **Workflows are DAGs.** Whereas chains can become arbitrarily complex with
+    arbitrarily nested loops, complex reply logic, and opaque branching structures,
+    workflows are DAGs, which enforce a clearer, more predictable flow from input
+    to output.
+*   **Workflows separate logic from execution.** Because workflows are written in
+    yaml, the DAG definition is entirely separate from the execution engine
+    (usually Python), while other Python-based systems keep these tightly coupled
+    and so ultimately become difficult to build and maintain.
+
+These choices generally reduce the flexibility of Oxy when compared to say,
+`langchain` or `llama_index`, but they also dramatically reduce the complexity
+of the system. You can think of Oxy's `workflow` paradigm as a domain-specific
+chain-builder for data workflows, where most (if not all) tasks simply pass
+results around between different agents.

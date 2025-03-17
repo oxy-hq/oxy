@@ -1,0 +1,50 @@
+---
+title: "Testing"
+description: How to write tests
+---
+
+Tests are a core part of oxy. Tests can be written either as a part of
+`agents` or `workflows`.
+
+At present, we support a single type of test, `type: consistency`, which
+measures the consistency between two results. Within agents, this can be
+implemented as follows:
+
+```yaml
+tests:
+  - type: consistency
+    n: 5  # number of runs to test
+    task_description: "how many users do we have?"
+```
+
+The `task_description` field is the question that you want to test the LLM's
+performance on (note: we don't call this `prompt` because we are nesting this
+`task_description` within a separate prompt that runs the evaluation, so
+`prompt` in this situation would be ambiguous). `n` indicates the number of
+times to run the agent to produce a response to the `task_description` request.
+ 
+For workflows, `task_description` is not required, but instead a `task_ref`
+value should be provided, as shown below:
+
+```yaml
+tests:
+  - type: consistency
+    task_ref: task_name
+    n: 5  # number of runs to test
+```
+
+The `task_ref` field indicates the `task` name that is to be tested. No
+`task_description` is required because the given `prompt` will be used for
+evaluation.
+
+These tests can be run by running either, for an agent:
+
+```sh
+oxy test agent-name.agent.yml
+```
+
+Or, for a workflow:
+
+```sh
+oxy test workflow-name.workflow.yml
+```

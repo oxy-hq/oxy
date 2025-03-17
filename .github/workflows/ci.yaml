@@ -55,7 +55,7 @@ jobs:
   fmt:
     name: Format codes
     needs: [changesets, typos]
-    if: needs.changesets.outputs.onyx == 'true'
+    if: needs.changesets.outputs.oxy == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -155,4 +155,4 @@ jobs:
           echo $BIGQUERY_SAMPLE_KEY > examples/bigquery-sample.key
           cargo test --verbose --no-fail-fast -- --nocapture
       - name: Check json schemas
-        run: ./target/debug/onyx gen-config-schema --check
+        run: ./target/debug/oxy gen-config-schema --check

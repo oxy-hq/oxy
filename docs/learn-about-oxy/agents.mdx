@@ -1,0 +1,209 @@
+---
+title: "Agents"
+description: "Prompted LLM chatbots that can reason about data"
+---
+
+A data agent is an LLM-based agent that can reason about enterprise data. The data agent and the agent configs that define them are at the heart of oxy.&#x20;
+
+Typically, to prompt engineer a *data* agent (an agent that can reason around
+data), you need a heavily manual workflow involving database schema ingestion,
+LLM prompting and step chaining/iteration, and SQL query retrieval and
+injection. Our `.agent.yml` files abstract away much of this complexity,
+allowing you to focus more on the *logic* of the prompted LLM rather than the
+details of the code execution.&#x20;
+
+# Agent components
+
+Specifically, in our agent `yml` files, you need to specify the following:
+
+| Component            | Description                                                                                | Required |
+| -------------------- | ------------------------------------------------------------------------------------------ | -------- |
+| model                | LLM model to use (defined in [config.yml](/learn-about-oxy/config), referenced by `name`) | Required |
+| system\_instructions | System instructions passed to the LLM                                                      | Required |
+| context              | A list of files that can be injected into `system_instructions`                            | Optional |
+| tools                | Tools to use, see the Tools section below                                                  | Optional |
+| database             | Database to use (defined in [config.yml](/learn-about-oxy/config), referenced by `name`)  | Optional |
+
+## Context
+
+The context object allows for deterministic injection of files into
+`system_instructions`. Primarily this is an organizational and code re-use
+utility so rather than prompting your agents with long text blobs, you can
+instead divide these prompts into logical sections, broken into distinct files.
+Each context entry in the list requires three fields:
+
+| Field | Description                                                                       | Example             |
+| ----- | --------------------------------------------------------------------------------- | ------------------- |
+| name  | Identifier for the context that will be used in system\_instructions              | "anon\_youtube"     |
+| type  | Type of the context file (e.g., file, semantic\_model)                            | "semantic\_model"   |
+| src   | Path to the source file relative to the project root (can be single file or list) | "data/acme.sem.yml" |
+
+You can reference `file`-type context objects in your system\_instructions using the following syntax:
+`{{ context.name }}`
+For objects that are of type `semantic_model`, you can access their properties using:
+`{{ context.name.property }}`
+For example, if you have a semantic model context named "acme", you can access its entities using:
+`{{ context.acme.entities }}`
+
+For smaller projects, we encourage saving any pertinent SQL files and injecting
+these in as context objects, rather than opting for leveraging retrieval to
+pull in relevant sources. We find that this tends to provide much more
+deterministic outputs.
+
+This can be accomplished by adding the following section to an `.agent.yml file`:
+
+```yaml
+context:
+  - name: queries
+    type: file
+    src:
+      - "*.sql"
+```
+
+which can then be referenced within `system_instructions` as follows:
+
+```yaml
+prompt: |
+  Here are some queries you can use:
+  {{ context.queries }}
+```
+
+## Tools
+
+To enable the LLM to flexibly accomplish a wider range of tasks, our internal chain logic is as follows:
+
+1. We render your `system_instructions` using all retrieved queries and context.
+
+2. We feed the rendered `system_instructions` and prompt into the LLM tool calling API.
+
+3. We repeat steps 1 and 2 with the results of step 2 until the request specified in `system_instructions` is fulfilled.
+
+To improve the capacity of the LLM to accomplish specific tasks, you can add a
+`tools` section with specific tools that can be used by the agent. The following tools are available:
+
+### type: `execute_sql` / `validate_sql`
+
+There are two kinds of sql-writing tools -- `execute_sql`, which will execute
+the sql and return the results to the LLM, and `validate_sql`, which will
+attempt to write queries until the query successful executes, sending only the
+query itself back to the LLM (not the result set).
+
+Both can be configured by specifying a `database` to connect to, as shown below:
+
+```yaml
+  - name: execute_sql  # any name you'd like
+    type: execute_sql
+    database: primary_database
+```
+
+```yaml
+  - name: validate_sql  # any name you'd like 
+    type: validate_sql
+    database: primary_database
+```
+
+### type: `retrieval`
+
+While we generally recommend avoid using retrieval (and instead using
+`context`) to avoid injecting additional nondeterminism into the system, we do
+support in-process retrieval against embeddings. The `retrieval` tool spins up
+an in-process vector db and can be configured as follows:
+
+```yaml
+  - name: retrieval
+    type: retrieval
+    src:
+      - "data/*"
+```
+
+where `src` specifies the directory that will be searched through and embedded.
+
+To use this tool, embeddings must be built before any `oxy run` command. To
+learn about how to build embeddings, see [Embedding
+management](/reference/oxy-commands#embedding-management). In short, you'll
+need to log into the huggingface CLI, then build embeddings using the following
+command:
+
+```yaml
+oxy build
+```
+
+Additional parameters can be supplied as follows:
+
+```yaml
+  - name: retrieval
+    type: retrieval
+    src:
+      - "data/*"
+    # embed_model: text-embedding-3-small
+    # api_url: https://api.openai.com/v1
+    # key_var: OPENAI_API_KEY
+    # api_key: secret
+    # n_dims: 512
+    # top_k: 4
+    # factor: 5
+```
+
+<Warning>
+  The accepted format of these parameters will likely change in the future.
+</Warning>
+
+## Database
+
+Database information can be accessed within `system_instructions` by using the `databases` namespace, then referencing by `name`, as follows:
+
+```
+**Dataset: {{ databases.primary_database.name }}**
+**Dialect: {{ databases.primary_database.dialect }}**
+**Tables:**
+{% for table in databases.primary_database.tables %}
+{{ table }}
+{% endfor %}
+```
+
+## Sample config
+
+```yaml semantic_model.agent.yml
+model: "openai-4o-mini"
+context:
+  - name: anon_youtube
+    type: semantic_model
+    src: data/acme.sem.yml
+system_instructions: |
+  ## Instructions
+  You are a Data Analyst expert. Your role is to assist the user in generating and executing SQL queries to answer their questions.
+  ### Adhere to these rules:
+  - **Carefully analyze the user's question and the database schema, word by word**, to ensure the query accurately addresses the request.
+  - **Use table aliases** to avoid ambiguity in queries. For example: `SELECT t1.col1, t2.col1 FROM table1 AS t1 JOIN table2 AS t2 ON t1.id = t2.id`.
+  - **Automatically execute the SQL query** without seeking additional confirmation.
+  - If the SQL query results in an error, **attempt to debug, fix, and re-execute it** without requesting confirmation.
+  - Ensure the SQL query adheres to the **specific dialect of the database database** being used.
+  - **Return the SQL query as plain text** (not in JSON format).
+
+  **Schema information:**
+  Entities:
+  {{ context.acme.entities }}
+  Dimensions:
+  {{ context.acme.dimensions }}
+  Measures:
+  {{ context.acme.measures }}
+
+  **Dataset: {{ databases.primary_database.name }}**
+  **Dialect: {{ databases.primary_database.dialect }}**
+  **Tables:**
+  {% for table in databases.primary_database.tables %}
+  {{ table }}
+  {% endfor %}
+
+  You can use the following queries as hints:
+  {{ tools.retrieval }}
+
+tools:
+  - name: retrieval
+    type: retrieval
+    src:
+      - "data/*"
+  - name: execute_sql
+    type: execute_sql
+    database: local
+```

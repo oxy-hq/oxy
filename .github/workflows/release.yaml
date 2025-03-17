@@ -30,7 +30,7 @@ permissions:
 jobs:
   build-cli:
     concurrency:
-      group: onyx-build-cli-${{ inputs.tag || github.ref_name }}-${{ matrix.job.os }}-${{ matrix.job.target }}
+      group: oxy-build-cli-${{ inputs.tag || github.ref_name }}-${{ matrix.job.os }}-${{ matrix.job.target }}
       cancel-in-progress: true
     name: Build CLI version ${{ inputs.tag || github.ref_name }} for target ${{ matrix.job.target }}
     runs-on: ${{ matrix.job.os }}
@@ -98,12 +98,12 @@ jobs:
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
-      #-- Build onyx cli binary
-      - name: Build onyx cli
+      #-- Build oxy cli binary
+      - name: Build oxy cli
         shell: bash
         run: |
           cargo build --release --target ${{ matrix.job.target }}
-          mv target/${{ matrix.job.target }}/release/onyx artifacts/onyx-${{ matrix.job.target }}
+          mv target/${{ matrix.job.target }}/release/oxy artifacts/oxy-${{ matrix.job.target }}
 
       #-- Build json schema
       - name: Generate config schema (once)
@@ -115,7 +115,7 @@ jobs:
 
       #-- Build checksum
       - name: Create binary checksum
-        run: shasum --algorithm 256 --binary onyx-${{ matrix.job.target }} | tee SHA256SUM-onyx-${{ matrix.job.target }}.txt
+        run: shasum --algorithm 256 --binary oxy-${{ matrix.job.target }} | tee SHA256SUM-oxy-${{ matrix.job.target }}.txt
         working-directory: artifacts
 
       #-- Build python lib
@@ -134,13 +134,13 @@ jobs:
           sccache: "true"
           # manylinux: auto
           container: off
-          working-directory: crates/onyx-py
+          working-directory: crates/py
       - name: Move wheels
-        run: mv crates/onyx-py/dist/* artifacts/
+        run: mv crates/py/dist/* artifacts/
 
       - name: Copy changelog (once)
         if: ${{ matrix.job.target == 'aarch64-apple-darwin' }}
-        run: cp crates/onyx-core/CHANGELOG.md artifacts/
+        run: cp crates/core/CHANGELOG.md artifacts/
 
       #-- Upload release artifacts
       - name: Upload release artifacts
@@ -164,9 +164,9 @@ jobs:
       - name: List all artifacts
         run: ls -R ./artifacts
       - name: Combine checksums
-        run: cat artifacts/SHA256SUM-onyx-*.txt | tee artifacts/SHA256SUMS.txt
+        run: cat artifacts/SHA256SUM-oxy-*.txt | tee artifacts/SHA256SUMS.txt
       - name: Ensure binaries are executable
-        run: chmod +x artifacts/onyx-*
+        run: chmod +x artifacts/oxy-*
       - name: Get current time
         id: time
         run: echo "current_time=$(date -u +'-%Y%m%d-%H%M%S')" >> $GITHUB_OUTPUT

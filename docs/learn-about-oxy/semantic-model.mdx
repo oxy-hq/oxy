@@ -1,0 +1,76 @@
+---
+title: "Semantic Model"
+---
+
+## Overview
+
+A semantic model is a conceptual representation of data that defines business
+terms, metrics, relationships, and rules in a way that makes sense to business
+users. It's essentially a blueprint that maps raw data into business-friendly
+concepts. Think of it like translating technical database schemas into business
+terminology.
+
+### Organization and Formatting Rules
+
+- A semantic model should be organized under the `data` folder.
+- Use the `.sem.yml` extension to distinguish it from other files in the `data` folder. e.g. `finance.sem.yml`
+
+## Core Components
+
+Let's take a look at Semantic model components:
+
+| Component        | Description                                                     | Required |
+| ---------------- | --------------------------------------------------------------- | -------- |
+| table definition | Specifies the source table                                      | Required |
+| entities         | Represents unique identifiers that define the grain of analysis | Required |
+| dimensions       | Defines attributes used to slice and filter data                | Required |
+| measures         | Defines business metrics with specific aggregation rules        | Required |
+
+## Sample semantic model config
+
+The following example displays a complete configuration:
+
+```yaml data/anon_youtube.sem.yml
+table: content_level_monthly_stats_fruits_veggies.csv
+database: local
+description: Lorem ipsum
+
+entities:
+  - name: content_id
+    description: content_id
+    sample: [1, 2, 3, 4]
+
+dimensions:
+  - name: month
+    sample:
+      - "2024-08"
+  - name: property_grouping
+    synonyms:
+      - "property_grouping"
+    sample:
+      - "Fruit"
+      - "Vegetable"
+
+measures:
+  - name: count_content_id
+    sql: sum(distinct content_id)
+```
+
+## How to enable use of semantic model in agents
+
+For agents to utilize the semantic model, you need to include the semantic model in the `context` section of your agent config.
+
+```yaml
+context:
+  - name: anon_youtube_model
+    type: semantic_model
+    src: data/anon_youtube.sem.yml
+```
+
+For more information, refer to context objects in the [Agents](/learn-about-oxy/agents#context) documentation.
+
+### Related docs
+
+<CardGroup cols={2}>
+  <Card title="Agents" icon="robot" href="/learn-about-oxy/agents"></Card>
+</CardGroup>

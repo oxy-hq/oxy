@@ -71,9 +71,9 @@ docs/_build/
 .python-version
 
 # Poetry
-onyx/**/poetry.lock
+oxy/**/poetry.lock
 
-# Onyx
+# Oxy
 .db-*/
 .fastembed_cache/
 .env

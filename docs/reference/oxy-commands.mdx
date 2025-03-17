@@ -1,0 +1,53 @@
+---
+title: Oxy commands
+---
+
+### Agent interaction
+
+Once you have your agents, config, and data configured, you can ask this agent questions by running `oxy run path/to/agent.agent.yml "<prompt>"`, as shown below:
+
+```bash
+oxy run path/to/agent.agent.yml "How many users do we have?"
+```
+
+### Run queries
+
+Run a raw query on target database
+
+```bash
+oxy run example_monthly_rejected.sql --database=primary_database
+```
+
+Run a query rendered from a Jinja template
+
+```bash
+oxy run example_weekly_rejected.sql --database=primary_database -v variable_a=1 variable_b=a variable_c=\*
+```
+
+### Workflow usage
+
+To execute a workflow, you can run:
+
+```bash
+oxy run path/to/workflow_name.workflow.yml
+```
+
+### Embedding management
+
+To embed files from into a local vector store you can use `oxy build`. We're downloading our models from huggingface hub so you may need to login using:
+
+```bash
+huggingface-cli login
+```
+
+or simply copy your plaintext token into `$HOME/.cache/huggingface/token` file, then run `oxy build` to index the data.
+
+```bash
+oxy build
+```
+
+The generated embeddings can be verified using
+
+```bash
+oxy vec-search "Hello Embedding"
+```

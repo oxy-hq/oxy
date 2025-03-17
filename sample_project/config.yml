@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=https://raw.githubusercontent.com/onyx-hq/onyx/refs/heads/main/json-schemas/config.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/oxy-hq/oxy/refs/heads/main/json-schemas/config.json
 defaults:
   database: local
   agent: sql-generator.agent.yml

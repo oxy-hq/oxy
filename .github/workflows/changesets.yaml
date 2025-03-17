@@ -3,8 +3,8 @@ name: Changesets
 on:
   workflow_call:
     outputs:
-      onyx:
-        value: ${{ jobs.changesets.outputs.onyx }}
+      oxy:
+        value: ${{ jobs.changesets.outputs.oxy }}
       changes:
         value: ${{ jobs.changesets.outputs.changes }}
 
@@ -22,7 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       changes: ${{ steps.changes.outputs.changes }}
-      onyx: ${{ steps.changes.outputs.onyx }}
+      oxy: ${{ steps.changes.outputs.oxy }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -30,7 +30,7 @@ jobs:
         with:
           base: ${{ github.ref_name }}
           filters: |
-            onyx:
+            oxy:
               - "crates/**"
               - "**/Cargo.toml"
               - "**/Cargo.lock"
