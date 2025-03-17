@@ -55,6 +55,3 @@ oxy --version
 See our [docs](https://docs.oxy.tech) on how to modify the agent file, seed it with context, run tests, and create workflows.
 
 
-## License
-
-Released under [AGPL](/LICENSE) by [@oxy-hq](https://github.com/oxy-hq).
