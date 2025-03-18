@@ -142,6 +142,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Collect Workflow Telemetry
+        uses: catchpoint/workflow-telemetry-action@v2
+        with:
+          proc_trace_sys_enable: true
+          comment_on_pr: false
+          theme: dark
       - name: Prep Rust
         uses: dtolnay/rust-toolchain@stable
       - name: Prep cargo cache
