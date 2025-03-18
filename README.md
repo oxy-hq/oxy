@@ -19,7 +19,7 @@ Just as traditional software follows a build-test-deploy pipeline, agentic analy
 
 To learn more, read our [docs](https://docs.oxy.tech).
 
-https://github.com/user-attachments/assets/c236fe40-3c8c-4f21-ae03-adfe13ace196
+https://github.com/user-attachments/assets/40ce54c6-810a-4843-ace1-0e57c0d2ae71
 
 ### Quickstart
 
