@@ -25,6 +25,7 @@ permissions:
 
 jobs:
   build-cli:
+    if: github.repository == 'oxy-hq/oxy'
     concurrency:
       group: public-oxy-build-cli-${{ inputs.tag }}-${{ matrix.job.os }}-${{ matrix.job.target }}
       cancel-in-progress: true
