@@ -6,6 +6,7 @@ on:
 permissions:
   contents: write
   actions: read
+  pull-requests: read
 
 jobs:
   cleanup-branches:
