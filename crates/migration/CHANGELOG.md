@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2](https://github.com/oxy-hq/oxy-internal/compare/0.1.1...0.1.2) (2025-03-18)
+
+
+### <!-- 0 -->🚀 Features
+
+* [#442](https://github.com/oxy-hq/oxy-internal/issues/442) implement chat & agent components ([#443](https://github.com/oxy-hq/oxy-internal/issues/443)) ([471b22d](https://github.com/oxy-hq/oxy-internal/commit/471b22de2a08ea101dfdb6c8bfa60172da7693d8))
+
 ## [0.1.1](https://github.com/oxy-hq/oxy-internal/compare/0.1.0...0.1.1) (2025-03-01)
 
 ### <!-- 7 -->⚙️ Miscellaneous Tasks
