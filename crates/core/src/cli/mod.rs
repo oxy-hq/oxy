@@ -324,10 +324,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             println!("{}", "success".success());
             println!("{}", "warning".warning());
             eprintln!("{}", "error".error());
-            println!(
-                "{}",
-                "https://github.com/oxy-hq/oxy-sample-repo/".secondary()
-            );
+            println!("{}", "https://github.com/oxy-hq/oxy/".secondary());
             println!("{}", "-region".tertiary());
             println!("{}", "Viewing repository".info());
             println!("{}", "text".text());
