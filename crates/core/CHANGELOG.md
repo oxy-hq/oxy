@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.3](https://github.com/oxy-hq/oxy-internal/compare/0.1.2...0.1.3) (2025-03-18)
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* agent sql execution is not logged ([#494](https://github.com/oxy-hq/oxy-internal/issues/494)) ([5e703e9](https://github.com/oxy-hq/oxy-internal/commit/5e703e9ecbe3ad4babf78b39b914f28241ac8d61))
+
 ## [0.1.2](https://github.com/oxy-hq/oxy-internal/compare/0.1.1...0.1.2) (2025-03-18)
 
 ## [0.1.1](https://github.com/oxy-hq/oxy-internal/compare/0.1.0...0.1.1) (2025-03-01)
