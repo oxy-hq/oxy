@@ -26,7 +26,7 @@ permissions:
 jobs:
   build-cli:
     concurrency:
-      group: oxy-build-cli-${{ inputs.tag }}-${{ matrix.job.os }}-${{ matrix.job.target }}
+      group: public-oxy-build-cli-${{ inputs.tag }}-${{ matrix.job.os }}-${{ matrix.job.target }}
       cancel-in-progress: true
     name: Build CLI version ${{ inputs.tag }} for target ${{ matrix.job.target }}
     runs-on: ${{ matrix.job.os }}
