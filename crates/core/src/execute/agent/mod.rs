@@ -15,19 +15,16 @@ use super::{
 };
 use crate::execute::workflow::WorkflowCLILogger;
 use crate::{
-    StyledText,
     ai::{
         agent::{AgentResult, OpenAIAgent},
         setup_agent,
-        utils::record_batches_to_table,
     },
     config::{
         ConfigManager,
         model::{AgentConfig, FileFormat},
     },
-    connector::load_result,
     errors::OxyError,
-    utils::{MAX_DISPLAY_ROWS, print_colored_sql, truncate_datasets, truncate_with_ellipsis},
+    utils::truncate_with_ellipsis,
 };
 
 pub mod contexts;
@@ -95,44 +92,9 @@ impl Handler for AgentReceiver {
             AgentEvent::Finished { output } => {
                 self.logger.log_agent_finished(output);
             }
-            AgentEvent::ToolCall(tool_call) => match &tool_call.metadata {
-                Some(ToolMetadata::ExecuteSQL {
-                    sql_query,
-                    output_file,
-                }) => {
-                    print_colored_sql(sql_query);
-                    match load_result(output_file) {
-                        Ok((batches, schema)) => {
-                            let (batches, truncated) = truncate_datasets(batches);
-                            match record_batches_to_table(&batches, &schema) {
-                                Ok(table) => {
-                                    println!("{}", "\nResult:".primary());
-                                    println!("{}", table);
-                                    if truncated {
-                                        println!("{}", format!(
-                                                "Results have been truncated. Showing only the first {} rows.",
-                                                MAX_DISPLAY_ROWS
-                                            ).warning());
-                                    }
-                                }
-                                Err(e) => {
-                                    eprintln!(
-                                        "{}",
-                                        format!("Error in converting record batch to table: {}", e)
-                                            .error()
-                                    );
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            eprintln!("{}", format!("Error loading result: {}", e).error());
-                        }
-                    }
-                }
-                None => {
-                    log::debug!("Unhandled tool call: {:?}", &tool_call);
-                }
-            },
+            AgentEvent::ToolCall(tool_call) => {
+                self.logger.log_agent_tool_call(tool_call);
+            }
         }
     }
 }

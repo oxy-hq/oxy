@@ -387,7 +387,7 @@ impl WorkflowLogger for WorkflowAPILogger {
                     match load_result(&output_file) {
                         Ok((batches, schema)) => {
                             let (batches, truncated) = truncate_datasets(batches);
-                            match record_batches_to_table(&batches, &schema) {
+                            match record_batches_to_markdown(&batches, &schema) {
                                 Ok(table) => {
                                     self.log(LogItem::new(
                                         format!("Result:\n\n{}", table),
@@ -402,7 +402,10 @@ impl WorkflowLogger for WorkflowAPILogger {
                                 }
                                 Err(e) => {
                                     self.log(LogItem::new(
-                                        format!("Error in converting record batch to table: {}", e),
+                                        format!(
+                                            "Error in converting record batch to markdown: {}",
+                                            e
+                                        ),
                                         LogType::Error,
                                     ));
                                 }
