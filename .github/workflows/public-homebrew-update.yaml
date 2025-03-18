@@ -1,5 +1,8 @@
 name: Public Homebrew Update
 
+permissions:
+  contents: write
+
 on:
   release:
     types: [created, released, published]
