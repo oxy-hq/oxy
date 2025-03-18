@@ -35,7 +35,7 @@ bash <(curl --proto '=https' --tlsv1.2 -LsSf https://get.oxy.tech)
 #### Using Homebrew (macOS only)
 
 ```bash
-brew install oxy-hqoxy/oxy
+brew install oxy-hq/oxy/oxy
 ```
 
 #### Installing a Specific Version
