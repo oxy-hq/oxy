@@ -1,0 +1,36 @@
+name: Public Homebrew Update
+
+on:
+  release:
+    types: [created]
+
+jobs:
+  dispatch-event:
+    runs-on: ubuntu-latest
+    if: github.repository == 'oxy-hq/oxy' && github.event.release.draft == false && github.event.release.prerelease == false
+    steps:
+      - name: Check if release is latest
+        id: check-latest
+        run: |
+          latest_release=$(
+            curl -L \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer ${{ github.token }}" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              https://api.github.com/repos/${{ github.repository }}/releases/latest \
+              | jq -r '.tag_name'
+          )
+          if [[ "${{ github.event.release.tag_name }}" == "$latest_release" ]]; then
+            echo "latest=true" >> $GITHUB_OUTPUT
+          else
+            echo "This release is not the latest. Skipping Homebrew update."
+            echo "latest=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Trigger repository_dispatch
+        if: steps.check-latest.outputs.latest == 'true'
+        run: |
+          curl -X POST -H "Accept: application/vnd.github.v3+json" \
+          -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+          https://api.github.com/repos/oxy-hq/homebrew-oxy/dispatches \
+          -d '{"event_type":"onyx_release"}'
