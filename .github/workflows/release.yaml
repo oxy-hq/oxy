@@ -53,6 +53,31 @@ jobs:
           fetch-depth: 0
           ref: ${{ inputs.tag || github.ref_name }}
 
+      #-- Create common artifacts folder
+      - name: Create artifacts folder
+        run: mkdir -p artifacts
+
+      # cleanup disk space
+      - name: Free Disk Space (Ubuntu)
+        if: ${{ matrix.job.os == 'ubuntu-latest' }}
+        uses: jlumbroso/free-disk-space@main
+
+      #-- Prep rust
+      - name: Prep Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.job.target }}
+      - name: Prep cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: build-cli-${{ matrix.job.os }}-${{ matrix.job.target }}
+          cache-all-crates: "true"
+      # protobuf is required by lance https://github.com/lancedb/lance/issues/3073
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
       #-- Prep node
       - name: Prep Node
         uses: actions/setup-node@v4
@@ -74,33 +99,11 @@ jobs:
           restore-keys: |
             pnpm-store-${{ matrix.job.os }}-${{ matrix.job.target }}
       - name: Install dependencies & Build web-app
+        env:
+          NODE_OPTIONS: "--max_old_space_size=4096"
         run: |
           pnpm install --prefer-frozen-lockfile
           pnpm -C web-app build
-
-      #-- Create common artifacts folder
-      - name: Create artifacts folder
-        run: mkdir -p artifacts
-
-      #-- Prep rust
-      - name: Prep Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.job.target }}
-      - name: Prep cargo cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: build-cli-${{ matrix.job.os }}-${{ matrix.job.target }}
-          cache-all-crates: "true"
-      # protobuf is required by lance https://github.com/lancedb/lance/issues/3073
-      - name: Install Protoc
-        uses: arduino/setup-protoc@v3
-        with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-      # cleanup disk space
-      - name: Free Disk Space (Ubuntu)
-        if: ${{ matrix.job.os == 'ubuntu-latest' }}
-        uses: jlumbroso/free-disk-space@main
 
       #-- Build oxy cli binary
       - name: Build oxy cli
