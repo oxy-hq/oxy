@@ -36,7 +36,7 @@ export function AppSidebar() {
           <img src="/oxy-logo.svg" alt="Oxy" />
         </div>
       </SidebarHeader>
-      <SidebarContent>
+      <SidebarContent className="customScrollbar">
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>

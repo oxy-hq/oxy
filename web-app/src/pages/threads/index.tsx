@@ -7,16 +7,19 @@ import { Skeleton } from "@/components/ui/shadcn/skeleton";
 import { ThreadItem } from "@/types/chat";
 import { Button } from "@/components/ui/shadcn/button";
 import AnswerContent from "@/components/AnswerContent";
+import PageHeader from "@/components/PageHeader";
 
 const Threads = () => {
   const { data: threads, isLoading } = useThreads();
 
   return (
     <div className="py-4 gap-8 flex flex-col h-full">
-      <div className=" px-4 flex gap-[10px] items-center pt-10 pb-2 border-b border-border max-w-[742px] w-full mx-auto">
-        <MessagesSquare className="w-9 h-9" strokeWidth={1} />
-        <h1 className="text-3xl font-semibold">Threads</h1>
-      </div>
+      <PageHeader className="flex-col border-b border-border max-w-[742px] w-full mx-auto">
+        <div className="px-2 flex gap-[10px] items-center pt-8">
+          <MessagesSquare className="w-9 h-9 min-w-9 min-h-9" strokeWidth={1} />
+          <h1 className="text-3xl font-semibold">Threads</h1>
+        </div>
+      </PageHeader>
 
       <div className="overflow-y-auto customScrollbar">
         <div className="max-w-[742px] px-4 w-full mx-auto flex flex-col gap-6">
