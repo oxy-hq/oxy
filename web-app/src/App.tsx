@@ -11,7 +11,7 @@ import { AppSidebar } from "@/components/AppSidebar";
 import { Toaster as ShadcnToaster } from "@/components/ui/shadcn/sonner";
 import { SidebarProvider } from "./components/ui/shadcn/sidebar";
 import Threads from "./pages/threads";
-import Thread from "./pages/thread";
+import ThreadPage from "./pages/thread";
 import WorkflowPage from "./pages/workflow";
 import "@xyflow/react/dist/style.css";
 
@@ -25,7 +25,7 @@ function App() {
             <Route>
               <Route path="/" element={<Home />} />
               <Route path="/threads" element={<Threads />} />
-              <Route path="/threads/:threadId" element={<Thread />} />
+              <Route path="/threads/:threadId" element={<ThreadPage />} />
               <Route path="/workflows/:pathb64" element={<WorkflowPage />} />
             </Route>
             <Route path="*" element={<Navigate to="/" />} />

@@ -7,6 +7,7 @@ import { service } from "@/services/service";
 import AnswerContent from "@/components/AnswerContent";
 import { useQueryClient } from "@tanstack/react-query";
 import queryKeys from "@/hooks/api/queryKey";
+import PageHeader from "@/components/PageHeader";
 
 const Thread = () => {
   const { threadId } = useParams();
@@ -22,7 +23,6 @@ const Thread = () => {
         // eslint-disable-next-line promise/catch-or-return
         service
           .ask(threadId ?? "", (answer) => {
-            console.log(answer);
             setAnswerStream((pre) =>
               pre ? pre + answer.content : answer.content,
             );
@@ -42,17 +42,19 @@ const Thread = () => {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="border-b-1 border-border p-4 flex items-center justify-center">
-        <div className="flex gap-1 items-center text-muted-foreground">
-          <Bot className="w-4 h-4" />
-          <p className="text-sm">{thread?.agent}</p>
-        </div>
-        <div className="px-4 h-full flex items-stretch">
-          <Separator orientation="vertical" />
-        </div>
+      <PageHeader className="border-b-1 border-border items-center">
+        <div className="p-2 flex items-center justify-center flex-1 h-full">
+          <div className="flex gap-1 items-center text-muted-foreground">
+            <Bot className="w-4 h-4 min-w-4 min-h-4" />
+            <p className="text-sm break-all">{thread?.agent}</p>
+          </div>
+          <div className="px-4 h-full flex items-stretch">
+            <Separator orientation="vertical" />
+          </div>
 
-        <p className="text-sm text-base-foreground">{thread?.title}</p>
-      </div>
+          <p className="text-sm text-base-foreground">{thread?.title}</p>
+        </div>
+      </PageHeader>
 
       <div className="overflow-y-auto customScrollbar">
         <div className="flex-1 max-w-[742px] px-4 mx-auto pb-4">
@@ -84,4 +86,9 @@ const Thread = () => {
   );
 };
 
-export default Thread;
+const ThreadPage = () => {
+  const { threadId } = useParams();
+  return <Thread key={threadId} />;
+};
+
+export default ThreadPage;
