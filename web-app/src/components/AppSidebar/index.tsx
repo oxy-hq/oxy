@@ -79,7 +79,7 @@ export function AppSidebar() {
                 </SidebarMenuSub>
               </SidebarMenuItem>
               <SidebarMenuItem>
-                <SidebarMenuButton asChild isActive={isThreads}>
+                <SidebarMenuButton asChild>
                   <div>
                     <Workflow />
                     <span>Workflows</span>
