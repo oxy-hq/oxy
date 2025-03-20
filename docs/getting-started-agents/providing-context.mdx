@@ -1,0 +1,88 @@
+---
+title: Providing additional context
+---
+
+<Note>
+To learn more about different context types, check out our dedicated [context section](/learn-about-oxy/context).
+</Note>
+
+Now that you have something rudimentary working, you'll want to augment your
+agent with richer context. We suggest doing this in one of two ways:
+
+1. Adding queries.
+2. Adding semantic models.
+
+# Adding queries as context
+
+The cleanest way to add queries as context is to create a dedicated directory
+for your queries, then use a wild-card (`*.sql`) to slurp them all up into a
+`context` object, as follows:
+
+```yaml
+context:
+  - name: queries
+    type: file
+    src:
+      - "*.sql"
+```
+
+We suggest adding a comment at the top of each query explaining what the query
+is for, so the LLM has this context. The resulting queries can then be injected
+into your `system_instructions` using Jinja, as follows:
+
+```yaml
+system_instructions: |
+  You are a data analyst. Write and execute SQL to answer the given question.
+
+  {{ context.schema_information }}
+
+  # Queries
+  {{ context.queries }}
+```
+
+# Adding semantic models as context
+
+Sometimes you don't need a full set of queries, but simply some snippets of SQL
+that represent metric calculations, dimension calculations, etc. -- something
+minimal to bridge business logic to query logic.
+
+In these situations, building a semantic model is a good choice. Each semantic
+model has three required fields: `measures`, `dimensions`, and `entities`.
+`measures` are special, in that they require a `sql` field to run. The other
+objects only require a `name` field, though a few other fields (of note:
+`sample` (an array of sample data), `description` (a plaintext description of
+the column), `synonyms` (an array of synonyms for the column)). We suggest
+using the column name as `name`.
+
+A sample semantic model is shown below:
+
+```yaml
+entities:
+  - name: content_id
+    description: content_id
+    sample: [1, 2, 3, 4]
+
+dimensions:
+  - name: month
+    sample:
+      - "2024-08"
+  - name: property_grouping
+    synonyms:
+      - "property_grouping"
+    sample:
+      - "Fruit"
+      - "Vegetable"
+
+measures:
+  - name: count_content_id
+    sql: sum(distinct content_id)
+```
+
+You can learn more about semantic models in our dedicated [semantic models
+section](learn-about-oxy/semantic-model).
+
+At this point, your agent should be generally good to go, and you have the
+basic tools required to improve the agent when you encounter issues. To start
+familiarizing yourself with how to iterate on your agent more robustly, check
+out the next step of our guide, [how to test your
+agent](how-to-test-your-agent).

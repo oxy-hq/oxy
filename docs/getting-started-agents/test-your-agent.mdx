@@ -1,0 +1,44 @@
+---
+title: Test your agent
+---
+
+Now that you have an agent working, you need to write tests to ensure that the
+quality of your answers don't degrade as you add additional context.
+
+To add a test to your agent, you can add the following to your `.agent.yml` file.
+
+```yaml
+tests:
+  - type: consistency
+    n: 10
+    task_description: "how many nights did I get high quality sleep?"
+```
+
+You can add as many tests as you'd like, for as many prompts as you like. For example:
+
+```yaml
+tests:
+  - type: consistency
+    n: 10
+    task_description: "how many nights did I get high quality sleep?"
+  - type: consistency
+    n: 10
+    task_description: "how many hours do I sleep on average?"
+  - type: consistency
+    n: 10
+    task_description: "what day do I typically get the most sleep?"
+```
+
+You can then run these tests using the following command:
+
+```bash
+oxy test my-agent.agent.yml
+```
+
+This will generate a final accuracy score and surface any consistency errors
+that the LLM detects.
+
+<img height="300" class="rounded-md" src="/images/test-run.png" />
+
+At this point, you have a working agent as well as the ability to modify and
+test this agent. Congratulations!

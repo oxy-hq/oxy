@@ -40,7 +40,19 @@
   "navigation": [
     {
       "group": "Get Started",
-      "pages": ["welcome", "quickstart"]
+      "pages": [
+        "welcome",
+        "quickstart",
+        {
+          "group": "Getting started with agents",
+          "pages": [
+            "getting-started-agents/set-up-project",
+            "getting-started-agents/creating-your-first-agent",
+            "getting-started-agents/providing-context",
+            "getting-started-agents/how-to-test-your-agent"
+          ]
+        }
+      ]
     },
     {
       "group": "Learn about Oxy",
@@ -49,7 +61,7 @@
           "group": "Core concepts",
           "pages": [
             "learn-about-oxy/agents",
-            "learn-about-oxy/data",
+            "learn-about-oxy/context",
             "learn-about-oxy/semantic-model",
             "learn-about-oxy/testing",
             "learn-about-oxy/workflows"
