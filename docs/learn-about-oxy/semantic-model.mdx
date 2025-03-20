@@ -21,10 +21,27 @@ Let's take a look at Semantic model components:
 
 | Component        | Description                                                     | Required |
 | ---------------- | --------------------------------------------------------------- | -------- |
-| table definition | Specifies the source table                                      | Required |
+| table            | Specifies the source table                                      | Required |
+| database         | The database that the table is used within                      | Required |
+| description      | A description of the table                                      | Required |
 | entities         | Represents unique identifiers that define the grain of analysis | Required |
 | dimensions       | Defines attributes used to slice and filter data                | Required |
 | measures         | Defines business metrics with specific aggregation rules        | Required |
+
+Within the `entities`, `dimensions`, and `measures` keys, the following fields are allowed:
+
+| Component        | Description                                                     | Required |
+| ---------------- | --------------------------------------------------------------- | -------- |
+| name             | Column name                                                     | Required |
+| description      | Description of the column                                       | Optional |
+| synonyms         | Synonyms for this column                                        | Optional |
+| sample           | A sample of values for this column                              | Optional |
+
+Moreover, for the `measures` key, the following fields attributes are available:
+
+| Component        | Description                                                     | Required |
+| ---------------- | --------------------------------------------------------------- | -------- |
+| sql | Snippet of SQL that defines the calculation. For pre-aggregated data, this can just be a column name. | Required |
 
 ## Sample semantic model config
 
