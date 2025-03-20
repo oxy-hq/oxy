@@ -156,6 +156,12 @@ pub struct AgentOutput {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ConsistencyOutput {
+    pub value: Box<ContextValue>,
+    pub score: f64,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum ContextValue {
     None,
     Text(String),
@@ -163,6 +169,7 @@ pub enum ContextValue {
     Array(Array),
     Table(ArrowTable),
     Agent(AgentOutput),
+    Consistency(ConsistencyOutput),
 }
 
 impl Display for ContextValue {
@@ -174,6 +181,21 @@ impl Display for ContextValue {
             ContextValue::Array(a) => write!(f, "{:?}", a),
             ContextValue::Table(t) => write!(f, "{:?}", t),
             ContextValue::Agent(a) => write!(f, "{}", a.output),
+            ContextValue::Consistency(c) => write!(f, "{}", c.value),
+        }
+    }
+}
+
+impl Object for ConsistencyOutput {
+    fn repr(self: &Arc<Self>) -> ObjectRepr {
+        ObjectRepr::Map
+    }
+
+    fn get_value(self: &Arc<Self>, key: &Value) -> Option<Value> {
+        match key.as_str()? {
+            "value" => Some(Value::from_object(*self.value.clone())),
+            "score" => Some(Value::from(self.score)),
+            _ => None,
         }
     }
 }
@@ -193,6 +215,7 @@ impl From<ContextValue> for Value {
             ContextValue::Array(a) => Value::from_object(a),
             ContextValue::Table(t) => Value::from_object(t),
             ContextValue::Agent(a) => Value::from_object(*a.output),
+            ContextValue::Consistency(c) => Value::from_object(c),
         }
     }
 }
@@ -214,6 +237,7 @@ impl Object for ContextValue {
             ContextValue::Array(a) => Arc::new(a).render(f),
             ContextValue::Table(t) => Arc::new(t).render(f),
             ContextValue::Agent(a) => Arc::new(*a.output).render(f),
+            ContextValue::Consistency(c) => Arc::new(*c.value).render(f),
         }
     }
 }

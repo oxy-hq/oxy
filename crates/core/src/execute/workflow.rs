@@ -611,6 +611,9 @@ impl Handler for WorkflowReceiver {
                 .handle(orig);
             }
             WorkflowEvent::SubWorkflow { step } => {}
+            WorkflowEvent::Consistency { orig, .. } => {
+                self.consistency_receiver.handle(orig);
+            }
             _ => {
                 log::debug!("Unhandled event: {:?}", event);
             }
