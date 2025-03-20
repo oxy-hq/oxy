@@ -15,7 +15,10 @@ use crate::{
 };
 
 use super::core::{
-    Executable, ExecutionContext, event::Handler, value::ContextValue, write::Write,
+    Executable, ExecutionContext,
+    event::Handler,
+    value::{ConsistencyOutput, ContextValue},
+    write::Write,
 };
 
 use tqdm::{Pbar, pbar};
@@ -376,7 +379,10 @@ impl ConsistencyExecutor {
             self.consistency_state.result = output.1;
         }
 
-        execution_context.write(self.consistency_state.result.clone());
+        execution_context.write(ContextValue::Consistency(ConsistencyOutput {
+            value: Box::new(self.consistency_state.result.clone()),
+            score: highest_consistency,
+        }));
 
         for event in self.collected_events.clone() {
             execution_context.notify(event).await?;
