@@ -28,6 +28,7 @@ pub fn export_agent_task<P: AsRef<Path>>(
             if let Some(ToolMetadata::ExecuteSQL {
                 sql_query,
                 output_file,
+                ..
             }) = &output.metadata
             {
                 let result_file_path = output_file.clone();

@@ -1,6 +1,6 @@
 use std::{
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{Arc, Mutex},
 };
 
 use contexts::Contexts;
@@ -13,11 +13,11 @@ use super::{
     renderer::{Renderer, TemplateRegister},
     workflow::WorkflowLogger,
 };
-use crate::execute::workflow::WorkflowCLILogger;
 use crate::{
     ai::{
         agent::{AgentResult, OpenAIAgent},
         setup_agent,
+        utils::record_batches_to_2d_array,
     },
     config::{
         ConfigManager,
@@ -25,6 +25,9 @@ use crate::{
     },
     errors::OxyError,
     utils::truncate_with_ellipsis,
+};
+use crate::{
+    connector::load_result, execute::workflow::WorkflowCLILogger, utils::truncate_datasets,
 };
 
 pub mod contexts;
@@ -37,15 +40,31 @@ impl TemplateRegister for AgentConfig {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
 pub enum ToolMetadata {
     ExecuteSQL {
         sql_query: String,
+        database: String,
         output_file: String,
     },
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum AgentReference {
+    SqlQuery(SqlQueryReference),
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SqlQueryReference {
+    pub sql_query: String,
+    pub database: String,
+    pub result: Vec<Vec<String>>,
+    pub is_result_truncated: bool,
+}
+
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct ToolCall {
     pub name: String,
     pub output: String,
@@ -81,6 +100,28 @@ pub struct AgentInput {
 
 pub struct AgentReceiver {
     pub logger: Box<dyn WorkflowLogger>,
+    pub references_collector: Option<Arc<Mutex<ReferenceCollector>>>,
+}
+
+impl AgentReceiver {
+    pub fn new(logger: Box<dyn WorkflowLogger>) -> Self {
+        AgentReceiver {
+            logger,
+            references_collector: None,
+        }
+    }
+
+    pub fn references(&self) -> Option<Vec<AgentReference>> {
+        if self.references_collector.is_none() {
+            return None;
+        }
+        return Some(
+            self.references_collector
+                .as_ref()
+                .map(|collector| collector.lock().unwrap().references.clone())
+                .unwrap_or_default(),
+        );
+    }
 }
 
 impl Handler for AgentReceiver {
@@ -94,6 +135,14 @@ impl Handler for AgentReceiver {
             }
             AgentEvent::ToolCall(tool_call) => {
                 self.logger.log_agent_tool_call(tool_call);
+                match &self.references_collector {
+                    Some(collector) => {
+                        if let Ok(mut collector) = collector.lock() {
+                            collector.collect(tool_call.clone());
+                        }
+                    }
+                    None => {}
+                }
             }
         }
     }
@@ -120,6 +169,43 @@ pub async fn build_agent<P: AsRef<Path>>(
     Ok((agent, agent_config, global_context))
 }
 
+pub struct ReferenceCollector {
+    pub references: Vec<AgentReference>,
+}
+
+impl ReferenceCollector {
+    pub fn new() -> Self {
+        ReferenceCollector { references: vec![] }
+    }
+
+    pub fn collect(&mut self, tool_call: ToolCall) {
+        match tool_call.metadata {
+            Some(ToolMetadata::ExecuteSQL {
+                sql_query,
+                database,
+                output_file,
+            }) => match load_result(&output_file) {
+                Err(_) => {
+                    return;
+                }
+                Ok((datasets, schema)) => {
+                    let (truncated_results, truncated) = truncate_datasets(datasets.clone());
+                    let formatted_results =
+                        record_batches_to_2d_array(&truncated_results, &schema).unwrap_or(vec![]);
+                    let reference = SqlQueryReference {
+                        sql_query,
+                        database,
+                        result: formatted_results,
+                        is_result_truncated: truncated,
+                    };
+                    self.references.push(AgentReference::SqlQuery(reference));
+                }
+            },
+            None => {}
+        }
+    }
+}
+
 pub async fn run_agent(
     agent_file: &PathBuf,
     file_format: &FileFormat,
@@ -129,6 +215,14 @@ pub async fn run_agent(
     let (agent, agent_config, global_context) =
         build_agent(agent_file, file_format, prompt.clone(), config.clone()).await?;
 
+    use std::sync::{Arc, Mutex};
+
+    let references_collector = Arc::new(Mutex::new(ReferenceCollector::new()));
+
+    let handler = AgentReceiver {
+        logger: Box::new(WorkflowCLILogger),
+        references_collector: Some(Arc::clone(&references_collector)),
+    };
     let output = run(
         &agent,
         AgentInput {
@@ -138,10 +232,11 @@ pub async fn run_agent(
         config.clone(),
         global_context,
         Some(&agent_config),
-        AgentReceiver {
-            logger: Box::new(WorkflowCLILogger),
-        },
+        handler,
     )
     .await?;
-    Ok(AgentResult { output })
+    let references = references_collector
+        .lock()
+        .map_or(vec![], |guard| guard.references.clone());
+    Ok(AgentResult { output, references })
 }

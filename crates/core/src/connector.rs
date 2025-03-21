@@ -161,6 +161,7 @@ impl Engine for ConnectorX {
 #[derive(Debug)]
 pub struct Connector {
     engine: EngineType,
+    pub database_ref: String,
 }
 
 #[derive(serde::Serialize, Clone)]
@@ -214,7 +215,10 @@ impl Connector {
                 })
             }
         };
-        Ok(Connector { engine })
+        Ok(Connector {
+            engine,
+            database_ref: database_ref.to_string(),
+        })
     }
 
     pub async fn database_info(&self) -> Result<DatabaseInfo, OxyError> {

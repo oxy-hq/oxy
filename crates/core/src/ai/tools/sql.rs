@@ -1,11 +1,13 @@
 use super::Tool;
 use crate::{
-    ai::utils::record_batches_to_markdown,
+    ai::utils::{record_batches_to_2d_array, record_batches_to_markdown},
     config::model::OutputFormat,
     connector::{Connector, load_result},
     execute::agent::{ToolCall, ToolMetadata},
+    utils::truncate_datasets,
 };
 use async_trait::async_trait;
+use connectorx::data_order;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
@@ -54,9 +56,10 @@ impl Tool for ExecuteSQLTool {
             }
             false => {
                 let file_path = self.connector.run_query(&parameters.sql).await?;
+                let (datasets, schema) = load_result(&file_path)?;
+                let (truncated_results, truncated) = truncate_datasets(datasets.clone());
                 let output = match self.output_format {
                     OutputFormat::Default => {
-                        let (datasets, schema) = load_result(&file_path)?;
                         let markdown_table = record_batches_to_markdown(&datasets, &schema)?;
                         markdown_table.to_string()
                     }
@@ -67,6 +70,7 @@ impl Tool for ExecuteSQLTool {
                     Some(ToolMetadata::ExecuteSQL {
                         sql_query: parameters.sql.to_string(),
                         output_file: file_path,
+                        database: self.connector.database_ref.clone(),
                     }),
                 )
             }

@@ -4,7 +4,7 @@ use crate::{
     connector::load_result,
     errors::OxyError,
     execute::{
-        agent::{AgentEvent, AgentInput},
+        agent::{AgentEvent, AgentInput, AgentReference, ToolCall},
         core::{
             Executable, ExecutionContext,
             value::{AgentOutput, ContextValue},
@@ -41,6 +41,7 @@ const CONTEXT_WINDOW_EXCEEDED_CODE: &str = "string_above_max_length";
 pub struct AgentResult {
     #[pyo3(get)]
     pub output: ContextValue,
+    pub references: Vec<AgentReference>,
 }
 
 #[derive(Deserialize, Debug, JsonSchema)]

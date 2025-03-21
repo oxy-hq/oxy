@@ -8,6 +8,7 @@ import AnswerContent from "@/components/AnswerContent";
 import { useQueryClient } from "@tanstack/react-query";
 import queryKeys from "@/hooks/api/queryKey";
 import PageHeader from "@/components/PageHeader";
+import References from "./References";
 
 const Thread = () => {
   const { threadId } = useParams();
@@ -58,7 +59,7 @@ const Thread = () => {
 
       <div className="overflow-y-auto customScrollbar">
         <div className="flex-1 max-w-[742px] px-4 mx-auto pb-4">
-          <div className="pt-8 pb-6 text-3xl font-bold text-base-foreground">
+          <div className="pt-8 pb-6 text-3xl font-semibold text-base-foreground">
             {thread?.question}
           </div>
 
@@ -80,6 +81,11 @@ const Thread = () => {
               <AnswerContent content={answer} />
             </div>
           )}
+          <div className="mt-2 flex">
+            {thread?.references && (
+              <References references={thread?.references} />
+            )}
+          </div>
         </div>
       </div>
     </div>

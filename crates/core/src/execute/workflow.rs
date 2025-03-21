@@ -378,6 +378,7 @@ impl WorkflowLogger for WorkflowAPILogger {
                 ToolMetadata::ExecuteSQL {
                     sql_query,
                     output_file,
+                    ..
                 } => {
                     let sql_item = LogItem::new(
                         format!("SQL Query: \n\n```sql\n{}\n```", sql_query),
@@ -541,6 +542,7 @@ impl WorkflowLogger for WorkflowCLILogger {
             Some(ToolMetadata::ExecuteSQL {
                 sql_query,
                 output_file,
+                ..
             }) => {
                 print_colored_sql(sql_query);
                 match load_result(output_file) {
@@ -607,6 +609,7 @@ impl Handler for WorkflowReceiver {
             WorkflowEvent::Agent { orig, .. } => {
                 AgentReceiver {
                     logger: self.logger.clone(),
+                    references_collector: None,
                 }
                 .handle(orig);
             }
