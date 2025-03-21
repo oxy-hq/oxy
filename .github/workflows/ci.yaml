@@ -22,7 +22,7 @@ on:
 permissions:
   contents: write
   actions: read
-  pull-requests: read
+  pull-requests: write
 
 env:
   CARGO_TERM_COLOR: always
