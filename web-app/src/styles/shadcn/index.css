@@ -45,6 +45,7 @@
   --code-primary: rgba(171, 178, 191, 1);
 
   --accent-main-000: rgba(48, 92, 197, 1);
+  --font-sans: "Inter", sans-serif;
 }
 
 .dark {

@@ -1,5 +1,6 @@
 use crate::config::ConfigBuilder;
 use crate::db::client::establish_connection;
+use crate::execute::agent::{AgentReference, ToolCall};
 use crate::utils::find_project_path;
 use async_stream::stream;
 use axum::extract::{self, Path};
@@ -23,6 +24,7 @@ pub struct ThreadItem {
     pub answer: String,
     pub agent: String,
     pub created_at: DateTimeWithTimeZone,
+    pub references: Vec<AgentReference>,
 }
 
 #[derive(Deserialize)]
@@ -51,6 +53,7 @@ pub async fn get_threads() -> Result<extract::Json<Vec<ThreadItem>>, StatusCode>
             answer: t.answer.clone(),
             agent: t.agent.clone(),
             created_at: t.created_at,
+            references: serde_json::from_str(&t.references).unwrap(),
         })
         .collect();
     Ok(extract::Json(thread_items))
@@ -70,6 +73,7 @@ pub async fn get_thread(Path(id): Path<String>) -> Result<extract::Json<ThreadIt
         answer: thread.answer,
         agent: thread.agent,
         created_at: thread.created_at,
+        references: serde_json::from_str(&thread.references).unwrap(),
     };
     Ok(extract::Json(thread_item))
 }
@@ -85,6 +89,7 @@ pub async fn create_thread(
         question: ActiveValue::Set(thread_request.question),
         answer: ActiveValue::Set("".to_string()),
         agent: ActiveValue::Set(thread_request.agent),
+        references: ActiveValue::Set("[]".to_string()),
     };
     let thread = new_thread.insert(&connection).await;
     let thread = thread.unwrap();
@@ -95,6 +100,7 @@ pub async fn create_thread(
         answer: thread.answer,
         agent: thread.agent,
         created_at: thread.created_at,
+        references: serde_json::from_str(&thread.references).unwrap(),
     };
     Ok(extract::Json(thread_item))
 }
@@ -184,7 +190,7 @@ pub async fn ask_thread(Path(id): Path<String>) -> impl IntoResponse {
     )
     .await
     {
-        Ok(output) => output.output.to_string(),
+        Ok(output) => output,
         Err(e) => {
             return StreamBodyAs::json_nl(stream! {
                 yield AnswerStream {
@@ -196,7 +202,8 @@ pub async fn ask_thread(Path(id): Path<String>) -> impl IntoResponse {
     };
 
     let mut thread_model: entity::threads::ActiveModel = thread.into();
-    thread_model.answer = ActiveValue::Set(result.clone());
+    thread_model.answer = ActiveValue::Set(result.output.to_string());
+    thread_model.references = ActiveValue::Set(serde_json::to_string(&result.references).unwrap());
     if let Err(e) = thread_model.update(&connection).await {
         return StreamBodyAs::json_nl(stream! {
             yield AnswerStream {
@@ -207,7 +214,7 @@ pub async fn ask_thread(Path(id): Path<String>) -> impl IntoResponse {
     }
 
     let s = stream! {
-        for c in result.chars() {
+        for c in result.output.to_string().chars() {
             tokio::time::sleep(Duration::from_millis(5)).await;
             yield AnswerStream {
                 content: c.to_string(),

@@ -181,7 +181,7 @@ type MarkdownContentProps = {
   content: string;
 };
 
-const MarkdownContent = ({ content }: MarkdownContentProps) => {
+export const MarkdownContent = ({ content }: MarkdownContentProps) => {
   return (
     <div className="markdown">
       <Markdown
