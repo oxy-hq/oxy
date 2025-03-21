@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useCallback, useEffect } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import directive from "remark-directive";
@@ -7,6 +7,7 @@ import { DynamicIcon } from "lucide-react/dynamic";
 import { LoaderIcon } from "lucide-react";
 import { LogItem, LogType } from "@/hooks/api/runWorkflow";
 import { Button } from "@/components/ui/shadcn/button";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import dayjs from "dayjs";
 import { cx } from "class-variance-authority";
 
@@ -14,7 +15,6 @@ interface WorkflowOutputProps {
   showOutput: boolean;
   toggleOutput: () => void;
   isPending: boolean;
-  outputEnd: React.RefObject<HTMLDivElement | null>;
   logs: LogItem[];
 }
 
@@ -22,9 +22,47 @@ const WorkflowOutput: React.FC<WorkflowOutputProps> = ({
   showOutput,
   toggleOutput,
   isPending,
-  outputEnd,
   logs,
 }) => {
+  const parentRef = React.useRef<HTMLDivElement | null>(null);
+  const estimateSize = (index: number) => {
+    const log = logs[index];
+    const lineNumbers = log.content
+      .split("\n\n")
+      .map((line) => line.split("\n").length)
+      .reduce((a, b) => a + b, 0);
+    if (lineNumbers > 1) {
+      return 20 * lineNumbers + 20;
+    }
+    return 33;
+  };
+  const logsVirtualizer = useVirtualizer({
+    count: logs.length,
+    getScrollElement: () => parentRef.current,
+    overscan: 20,
+    estimateSize: estimateSize,
+    enabled: true,
+  });
+  const scrollToBottom = useCallback(() => {
+    logsVirtualizer.scrollToIndex(logs.length - 1, {
+      // smooth behavior is not currently working properly for dynamic sized list
+      // behavior: "smooth",
+      align: "start",
+    });
+  }, [logsVirtualizer, logs]);
+  useEffect(() => {
+    scrollToBottom();
+    // sometimes the virtualizer takes a while to calculate the size
+    // so we need to scroll multiple times just in case
+    requestAnimationFrame(() => {
+      scrollToBottom();
+      requestAnimationFrame(() => {
+        scrollToBottom();
+      });
+    });
+  }, [logs, logsVirtualizer, scrollToBottom]);
+  const items = logsVirtualizer.getVirtualItems();
+
   return (
     logs.length > 0 && (
       <div
@@ -49,28 +87,51 @@ const WorkflowOutput: React.FC<WorkflowOutputProps> = ({
           </Button>
         </div>
         {showOutput && (
-          <div className="max-h-75 min-h-50 overflow-scroll scrollbar-thin break-all p-1">
-            <div>
-              {logs.map((log, index) => {
-                console.log(log);
-                return (
-                  <OutputItem
-                    key={index}
-                    content={log.content}
-                    timestamp={dayjs(log.timestamp).format(
-                      "ddd YYYY-MM-DD H:mm:ss",
-                    )}
-                    logType={log.log_type}
-                  />
-                );
-              })}
+          <div
+            ref={parentRef}
+            className="h-75 relative overflow-y-auto scrollbar-thin break-all p-1 contain-strict"
+          >
+            <div
+              style={{
+                height: logsVirtualizer.getTotalSize(),
+                width: "100%",
+                position: "relative",
+              }}
+            >
+              <div
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  width: "100%",
+                  transform: `translateY(${items[0]?.start ?? 0}px)`,
+                }}
+              >
+                {items.map((item) => {
+                  const log = logs[item.index];
+                  return (
+                    <div
+                      key={item.index}
+                      data-index={item.index}
+                      ref={logsVirtualizer.measureElement}
+                    >
+                      <OutputItem
+                        content={log.content}
+                        timestamp={dayjs(log.timestamp).format(
+                          "ddd YYYY-MM-DD H:mm:ss",
+                        )}
+                        logType={log.log_type}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
             </div>
             {isPending && (
-              <div className="mt-2 flex justify-center">
+              <div className="p-2 flex justify-center">
                 <LoaderIcon className="animate-spin" />
               </div>
             )}
-            <div ref={outputEnd} />
           </div>
         )}
       </div>

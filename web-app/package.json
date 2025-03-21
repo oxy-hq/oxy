@@ -68,7 +68,8 @@
     "xterm": "5.3.0",
     "xterm-addon-fit": "0.8.0",
     "yaml": "^2.7.0",
-    "zustand": "^5.0.3"
+    "zustand": "^5.0.3",
+    "@tanstack/react-virtual": "3.13.4"
   },
   "devDependencies": {
     "@types/invariant": "^2.2.37",
