@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef } from "react";
+import React, { useEffect, useMemo } from "react";
 
 import { v4 as uuidv4 } from "uuid";
 
@@ -11,13 +11,14 @@ import useWorkflow, {
   TaskConfigWithId,
 } from "@/stores/useWorkflow";
 import { useMutation } from "@tanstack/react-query";
-import runWorkflow from "@/hooks/api/runWorkflow";
+import runWorkflow, { LogItem } from "@/hooks/api/runWorkflow";
 import useWorkflowConfig from "@/hooks/api/useWorkflowConfig.ts";
 import useWorkflowLogs from "@/hooks/api/useWorkflowLogs";
 
 import WorkflowDiagram from "./WorkflowDiagram";
 import WorkflowPageHeader from "./WorkflowPageHeader";
 import WorkflowOutput from "./WorkflowOutput";
+import { throttle } from "lodash";
 
 const addTaskId = (tasks: TaskConfig[]): TaskConfigWithId[] => {
   return tasks.map((task) => {
@@ -42,10 +43,6 @@ const WorkflowPage: React.FC = () => {
   const [showOutput, setShowOutput] = React.useState(false);
   const logs = useWorkflow((state) => state.logs);
   const setWorkflow = useWorkflow((state) => state.setWorkflow);
-  const outputEnd = useRef<HTMLDivElement | null>(null);
-  const scrollToBottom = () => {
-    outputEnd.current?.scrollIntoView({ behavior: "smooth" });
-  };
 
   const { data: logsData } = useWorkflowLogs(relativePath);
 
@@ -53,9 +50,6 @@ const WorkflowPage: React.FC = () => {
     setLogs(logsData || []);
   }, [logsData, setLogs]);
 
-  useEffect(() => {
-    scrollToBottom();
-  }, [logs]);
   const setSelectedNodeId = useWorkflow((state) => state.setSelectedNodeId);
   useEffect(() => {
     setSelectedNodeId(null);
@@ -69,7 +63,8 @@ const WorkflowPage: React.FC = () => {
       setSelectedNodeId(null);
     }
   }, [workflowConfig, setWorkflow, path, setSelectedNodeId]);
-  const appendLog = useWorkflow((state) => state.appendLog);
+  const appendLogs = useWorkflow((state) => state.appendLogs);
+
   const run = useMutation({
     mutationFn: runWorkflow,
     onMutate: () => {
@@ -77,8 +72,20 @@ const WorkflowPage: React.FC = () => {
     },
     onSuccess: async (data) => {
       if (!data) return;
+      let buffer: LogItem[] = [];
+      const flushLogs = throttle(
+        () => {
+          const logsToAppend = [...buffer];
+          appendLogs(logsToAppend);
+          buffer = [];
+        },
+        500,
+        { leading: true, trailing: true },
+      );
+
       for await (const logItem of data) {
-        appendLog(logItem);
+        buffer.push(logItem);
+        flushLogs();
       }
     },
   });
@@ -114,7 +121,6 @@ const WorkflowPage: React.FC = () => {
         showOutput={showOutput}
         toggleOutput={toggleOutput}
         isPending={run.isPending}
-        outputEnd={outputEnd}
       />
     </div>
   );

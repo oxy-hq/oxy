@@ -99,6 +99,7 @@ interface WorkflowState {
   runWorkflow: () => void;
   setLogs: (logs: LogItem[]) => void;
   appendLog: (log: LogItem) => void;
+  appendLogs: (logs: LogItem[]) => void;
 }
 
 const findAndUpdateTask = (
@@ -312,6 +313,9 @@ const useWorkflow = create<WorkflowState>((set, get) => ({
   getSelectedNode() {
     return get().nodes.find((node) => node.id === get().selectedNodeId) || null;
   },
+  appendLogs: (logs) => {
+    set((state) => ({ logs: [...state.logs, ...logs] }));
+  }
 }));
 
 export enum TaskType {
