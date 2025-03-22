@@ -2,5 +2,6 @@
   "crates/core": "0.1.4",
   "crates/py": "0.1.4",
   "crates/migration": "0.1.4",
-  "crates/entity": "0.1.4"
+  "crates/entity": "0.1.4",
+  "web-app": "0.1.4"
 }
