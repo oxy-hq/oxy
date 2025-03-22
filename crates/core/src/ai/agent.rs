@@ -4,7 +4,7 @@ use crate::{
     connector::load_result,
     errors::OxyError,
     execute::{
-        agent::{AgentEvent, AgentInput, AgentReference, ToolCall},
+        agent::{AgentEvent, AgentInput, AgentReference},
         core::{
             Executable, ExecutionContext,
             value::{AgentOutput, ContextValue},

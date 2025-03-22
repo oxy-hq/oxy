@@ -1,1 +1,0 @@
-postgresql://testuser:testpassword@localhost:5432/testdb

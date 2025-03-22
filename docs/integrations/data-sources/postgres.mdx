@@ -2,8 +2,7 @@
 title: Postgres
 ---
 
-
-This tutorial will guide you through connecting to PostgreSQL with Oxy. Note that the password and connection string should be stored inside a file for security reasons. Please don't hardcode the password or connection string in your code and don't check the password file into version control.
+This tutorial will guide you through connecting to PostgreSQL with Oxy. Note that the password should be stored inside a file for security reasons. Please don't hardcode the password in your code and don't check the password file into version control.
 
 ## Step 1: Create the Password File
 
@@ -15,7 +14,7 @@ echo "your_password" > path/to/password.txt
 
 ## Step 2: Configure PostgreSQL in `config.yml`
 
-Add the PostgreSQL configuration to your `config.yml` file. You can either use a connection string or specify individual connection parameters. Ensure that the password is stored in a separate file.
+Add the PostgreSQL configuration to your `config.yml` file. Use the following parameters:
 
 ```yaml
 databases:
@@ -26,21 +25,4 @@ databases:
     user: "postgres"
     password_file: "path/to/password.txt"
     database: "my_database"
-```
-
-## Alternatives: Create the Connection String File
-
-If you prefer using a connection string, create a file to store your PostgreSQL connection string. For example, create a file named `connection_string.txt` and add your connection string to it.
-
-```sh
-echo "postgresql://postgres:your_password@localhost:5432/my_database" > path/to/connection_string.txt
-```
-
-After which you can configure PostgreSQL with the connection string file in your `config.yml` file.
-
-```yaml
-databases:
-  - name: my_postgres_db
-    type: postgres
-    connection_string_file: "path/to/connection_string.txt"
 ```

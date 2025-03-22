@@ -1,7 +1,10 @@
 use crate::cli::model::{BigQuery, Config, DatabaseType, DuckDB};
-use crate::config::model::Postgres;
+use crate::config::model::{ClickHouse, Mysql, Postgres, Redshift};
 use crate::utils::find_project_path;
 use include_dir::{Dir, include_dir};
+use serde::Serialize;
+use serde::de::DeserializeOwned;
+use serde_json::Value;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::{fmt, fs};
@@ -81,16 +84,139 @@ fn collect_databases() -> Result<Vec<Database>, InitError> {
     Ok(databases)
 }
 
+fn collect_postgres_conf() -> Result<DatabaseType, InitError> {
+    let host = prompt_with_default("Host", "localhost", None)?;
+    let port = prompt_with_default("Port", "5432", None)?;
+    let user = prompt_with_default("User", "postgres", None)?;
+    let password_file = PathBuf::from(prompt_with_default("Password file", "password.txt", None)?);
+    let password = fs::read_to_string(&password_file)
+        .map_err(|_| InitError::ExtractionError("Failed to read password file".to_string()))?
+        .trim()
+        .to_string();
+    let database = prompt_with_default("Database", "postgres", None)?;
+
+    if host.is_empty()
+        || port.is_empty()
+        || user.is_empty()
+        || password.is_empty()
+        || database.is_empty()
+    {
+        return Err(InitError::ExtractionError(
+            REQUIRED_FIELDS_ERROR.to_string(),
+        ));
+    }
+
+    Ok(DatabaseType::Postgres(Postgres {
+        host: Some(host),
+        port: Some(port),
+        user: Some(user),
+        password: Some(password),
+        database: Some(database),
+        password_file: Some(password_file.clone()), // Added missing field
+    }))
+}
+
+fn collect_redshift_conf() -> Result<DatabaseType, InitError> {
+    let host = prompt_with_default("Host", "localhost", None)?;
+    let port = prompt_with_default("Port", "5439", None)?;
+    let user = prompt_with_default("User", "awsuser", None)?;
+    let password_file = PathBuf::from(prompt_with_default("Password file", "password.txt", None)?);
+    let password = fs::read_to_string(&password_file)
+        .map_err(|_| InitError::ExtractionError("Failed to read password file".to_string()))?
+        .trim()
+        .to_string();
+    let database = prompt_with_default("Database", "dev", None)?;
+
+    if host.is_empty()
+        || port.is_empty()
+        || user.is_empty()
+        || password.is_empty()
+        || database.is_empty()
+    {
+        return Err(InitError::ExtractionError(
+            REQUIRED_FIELDS_ERROR.to_string(),
+        ));
+    }
+
+    Ok(DatabaseType::Redshift(Redshift {
+        host: Some(host),
+        port: Some(port),
+        user: Some(user),
+        password: Some(password),
+        database: Some(database),
+        password_file: Some(password_file.clone()), // Added missing field
+    }))
+}
+
+fn collect_mysql_conf() -> Result<DatabaseType, InitError> {
+    let host = prompt_with_default("Host", "localhost", None)?;
+    let port = prompt_with_default("Port", "3306", None)?;
+    let user = prompt_with_default("User", "root", None)?;
+    let password_file = PathBuf::from(prompt_with_default("Password file", "password.txt", None)?);
+    let password = fs::read_to_string(&password_file)
+        .map_err(|_| InitError::ExtractionError("Failed to read password file".to_string()))?
+        .trim()
+        .to_string();
+    let database = prompt_with_default("Database", "default", None)?;
+
+    if host.is_empty()
+        || port.is_empty()
+        || user.is_empty()
+        || password.is_empty()
+        || database.is_empty()
+    {
+        return Err(InitError::ExtractionError(
+            REQUIRED_FIELDS_ERROR.to_string(),
+        ));
+    }
+
+    Ok(DatabaseType::Mysql(Mysql {
+        host: Some(host),
+        port: Some(port),
+        user: Some(user),
+        password: Some(password),
+        database: Some(database),
+        password_file: Some(password_file), // Added missing field
+    }))
+}
+
+fn collect_clickhouse_conf() -> Result<DatabaseType, InitError> {
+    let host = prompt_with_default("Host", "localhost", None)?;
+    let user = prompt_with_default("User", "default", None)?;
+    let password_file = PathBuf::from(prompt_with_default("Password file", "password.txt", None)?);
+    let password = fs::read_to_string(&password_file)
+        .map_err(|_| InitError::ExtractionError("Failed to read password file".to_string()))?
+        .trim()
+        .to_string();
+    let database = prompt_with_default("Database", "default", None)?;
+
+    if host.is_empty() || user.is_empty() || password.is_empty() || database.is_empty() {
+        return Err(InitError::ExtractionError(
+            REQUIRED_FIELDS_ERROR.to_string(),
+        ));
+    }
+
+    Ok(DatabaseType::ClickHouse(ClickHouse {
+        host,
+        user,
+        password: Some(password),
+        database,
+        password_file: Some(password_file),
+    }))
+}
+
 fn choose_database_type() -> Result<DatabaseType, InitError> {
     println!("\tChoose database type:");
     println!("\t\t1. DuckDB");
     println!("\t\t2. BigQuery");
     println!("\t\t3. Postgres");
     println!("\t\t4. Redshift");
+    println!("\t\t5. Mysql");
+    println!("\t\t6. ClickHouse");
 
     loop {
         let choice = prompt_with_default("Type (1 or 2 or ..<number>..)", "1", None)?;
-        match choice.trim() {
+        let _ = match choice.trim() {
             "1" => {
                 return Ok(DatabaseType::DuckDB(DuckDB {
                     file_search_path: prompt_with_default(
@@ -110,93 +236,29 @@ fn choose_database_type() -> Result<DatabaseType, InitError> {
                     dataset: prompt_with_default("Dataset", "bigquery-public-data", None)?,
                 }));
             }
-            "3" => {
-                return Ok(DatabaseType::Postgres(collect_postgres_or_redshift_config(
-                    "postgres",
-                )?));
-            }
-            "4" => {
-                return Ok(DatabaseType::Postgres(collect_postgres_or_redshift_config(
-                    "redshift",
-                )?));
-            }
-            _ => println!("  {}", INVALID_CHOICE),
-        }
+            "3" => collect_postgres_conf(),
+            "4" => collect_redshift_conf(),
+            "5" => collect_mysql_conf(),
+            "6" => collect_clickhouse_conf(),
+            _ => Err(InitError::ExtractionError(INVALID_CHOICE.to_string())),
+        };
     }
 }
 
-fn collect_postgres_or_redshift_config(db_type: &str) -> Result<Postgres, InitError> {
-    let use_connection_string_file = prompt_with_default(
-        "Use connection string file? (y/N)",
-        "N",
-        Some("If 'N', you will be prompted for individual connection parameters."),
-    )?;
-    if use_connection_string_file.to_lowercase() == "y" {
-        let connection_string_file = PathBuf::from(prompt_with_default(
-            "Connection string file",
-            &format!("{}_connection_string.txt", db_type),
-            None,
-        )?);
+trait ConfigFieldAccess {
+    fn set_field(&mut self, field_name: &str, value: Value);
+}
 
-        Ok(Postgres {
-            connection_string_file: Some(connection_string_file),
-            host: None,
-            port: None,
-            user: None,
-            password_file: None,
-            database: None,
-        })
-    } else {
-        let host = prompt_with_default("Host", "localhost", None)?;
-        let port = prompt_with_default(
-            "Port",
-            if db_type == "postgres" {
-                "5432"
-            } else {
-                "5439"
-            },
-            None,
-        )?;
-        let user = prompt_with_default(
-            "User",
-            if db_type == "postgres" {
-                "postgres"
-            } else {
-                "awsuser"
-            },
-            None,
-        )?;
-        let password_file =
-            PathBuf::from(prompt_with_default("Password file", "password.txt", None)?);
-        let database = prompt_with_default(
-            "Database",
-            if db_type == "postgres" {
-                "postgres"
-            } else {
-                "dev"
-            },
-            None,
-        )?;
-
-        if host.is_empty()
-            || port.is_empty()
-            || user.is_empty()
-            || password_file.to_str().unwrap().is_empty()
-            || database.is_empty()
-        {
-            return Err(InitError::ExtractionError(
-                REQUIRED_FIELDS_ERROR.to_string(),
-            ));
+impl<T> ConfigFieldAccess for T
+where
+    T: Serialize + DeserializeOwned + Default,
+{
+    fn set_field(&mut self, field_name: &str, value: Value) {
+        let mut serialized = serde_json::to_value(&*self).unwrap_or_default();
+        if let Some(obj) = serialized.as_object_mut() {
+            obj.insert(field_name.to_string(), value);
         }
-
-        Ok(Postgres {
-            connection_string_file: None,
-            host: Some(host),
-            port: Some(port),
-            user: Some(user),
-            password_file: Some(password_file),
-            database: Some(database),
-        })
+        *self = serde_json::from_value(serialized).unwrap_or_default();
     }
 }
 
@@ -388,15 +450,24 @@ fn create_config_file(config_path: &Path) -> Result<(), InitError> {
     );
 
     fs::write(config_path, content)?;
-
     for database in &databases {
-        if let DatabaseType::Postgres(postgres) = &database.database_type {
-            if let Some(password_file) = &postgres.password_file {
-                sensitive_files.push(password_file.as_path());
+        match &database.database_type {
+            DatabaseType::Postgres(postgres) => {
+                if let Some(password) = &postgres.password {
+                    sensitive_files.push(Path::new(password));
+                }
             }
-            if let Some(connection_string_file) = &postgres.connection_string_file {
-                sensitive_files.push(connection_string_file.as_path());
+            DatabaseType::Mysql(mysql) => {
+                if let Some(password_file) = &mysql.password_file {
+                    sensitive_files.push(password_file.as_path());
+                }
             }
+            DatabaseType::Redshift(redshift) => {
+                if let Some(password_file) = &redshift.password_file {
+                    sensitive_files.push(password_file.as_path());
+                }
+            }
+            _ => {}
         }
     }
     ignore_sensitive_files(&config.project_path, &sensitive_files)?;

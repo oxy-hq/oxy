@@ -83,30 +83,35 @@
           ],
           "properties": {
             "connection_string_file": {
+              "default": null,
               "type": [
                 "string",
                 "null"
               ]
             },
             "database": {
+              "default": null,
               "type": [
                 "string",
                 "null"
               ]
             },
             "host": {
+              "default": null,
               "type": [
                 "string",
                 "null"
               ]
             },
             "password_file": {
+              "default": null,
               "type": [
                 "string",
                 "null"
               ]
             },
             "port": {
+              "default": null,
               "type": [
                 "string",
                 "null"
@@ -119,6 +124,7 @@
               ]
             },
             "user": {
+              "default": null,
               "type": [
                 "string",
                 "null"
@@ -133,30 +139,35 @@
           ],
           "properties": {
             "connection_string_file": {
+              "default": null,
               "type": [
                 "string",
                 "null"
               ]
             },
             "database": {
+              "default": null,
               "type": [
                 "string",
                 "null"
               ]
             },
             "host": {
+              "default": null,
               "type": [
                 "string",
                 "null"
               ]
             },
             "password_file": {
+              "default": null,
               "type": [
                 "string",
                 "null"
               ]
             },
             "port": {
+              "default": null,
               "type": [
                 "string",
                 "null"
@@ -169,6 +180,119 @@
               ]
             },
             "user": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "connection_string_file": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "database": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "host": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "password_file": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "port": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "mysql"
+              ]
+            },
+            "user": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "connection_string_file": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "database": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "host": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "password_file": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "port": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "clickhouse"
+              ]
+            },
+            "user": {
+              "default": null,
               "type": [
                 "string",
                 "null"

@@ -5,7 +5,7 @@ context:
   - name: queries
     type: file
     src:
-      - pg_hackernews/*.sql
+      - mysql_customers/*.sql
 
 system_instructions: |
   ## Instructions
@@ -19,11 +19,11 @@ system_instructions: |
   - The `sql` should be returned in plain text, not in JSON.
 
   ### You have access to the following databases and tables, ONLY use the provided database and tables, columns:
-  **Dataset: {{ databases.postgres.name }}**
-  **Dialect: {{ databases.postgres.dialect }}**
+  # **Dataset: {{ databases.mysql.name }}**
+  # **Dialect: {{ databases.mysql.dialect }}**
   **Tables:**
   ```
-  {% for table in databases.postgres.tables %}
+  {% for table in databases.mysql.tables %}
   {{ table }}
   {% endfor %}
   ```
@@ -43,8 +43,8 @@ output_format: file
 tools:
   - name: execute_sql
     type: execute_sql
-    database: postgres
+    database: mysql
   - name: retrieval
     type: retrieval
     src:
-      - pg_hackernews/*.sql
+      - mysql_customers/*.sql

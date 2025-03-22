@@ -1,0 +1,28 @@
+---
+title: Mysql
+---
+
+This tutorial will guide you through connecting to Mysql with Oxy. Note that the password should be stored in a file for security reasons.
+
+## Step 1: Create the Password File
+
+Create a file to store your Mysql password. For example, create a file named `password.txt` and add your password to it.
+
+```sh
+echo "your_password" > path/to/password.txt
+```
+
+## Step 2: Configure Mysql in `config.yml`
+
+Add the Mysql configuration to your `config.yml` file. Use the following parameters:
+
+```yaml
+databases:
+  - name: my_mysql_db
+    type: mysql
+    host: "localhost"
+    port: "3306"
+    user: "root"
+    password_file: "path/to/password.txt"
+    database: "default"
+```

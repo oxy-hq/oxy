@@ -8,4 +8,5 @@ extend-ignore-re = [
 [files]
 extend-exclude = [
   "CHANGELOG.md",
+  "entrypoints/**/*.sql"
 ]

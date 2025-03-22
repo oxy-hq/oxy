@@ -1,6 +1,7 @@
 use arrow::datatypes::{Schema, SchemaRef};
 use arrow::ipc::{reader::FileReader, writer::FileWriter};
 use arrow::{array::as_string_array, error::ArrowError, record_batch::RecordBatch};
+use clickhouse::Client;
 use connectorx::prelude::{CXQuery, SourceConn, get_arrow};
 use duckdb::Connection;
 use log::debug;
@@ -9,7 +10,7 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::config::ConfigManager;
-use crate::config::model::{Database, DatabaseType};
+use crate::config::model::{ClickHouse as ConfigClickHouse, DatabaseType};
 use crate::errors::OxyError;
 
 const CREATE_CONN: &str = "Failed to open connection";
@@ -48,6 +49,67 @@ trait Engine {
 enum EngineType {
     DuckDB,
     ConnectorX,
+    ClickHouse,
+}
+
+use std::io::Cursor;
+
+#[derive(Debug)]
+pub struct ClickHouse {
+    pub config: ConfigClickHouse,
+}
+
+impl ClickHouse {
+    pub async fn get_schemas(&self) -> Result<Vec<String>, OxyError> {
+        let query_string = "SELECT name FROM system.tables WHERE database = currentDatabase()";
+        let rs = self.run_query_and_load(query_string).await;
+        let (datasets, _) = self.run_query_and_load(query_string).await?;
+        let result_iter = datasets
+            .iter()
+            .flat_map(|batch| as_string_array(batch.column(0)).iter());
+        Ok(result_iter
+            .map(|name| name.map(|s| s.to_string()))
+            .collect::<Option<Vec<String>>>()
+            .unwrap_or_default())
+    }
+}
+
+impl Engine for ClickHouse {
+    async fn run_query(&self, query: &str) -> Result<String, OxyError> {
+        let client = Client::default()
+            .with_url(self.config.host.clone())
+            .with_user(self.config.user.clone())
+            .with_password(self.config.get_password().unwrap_or_default())
+            .with_database(self.config.database.clone());
+
+        let mut cursor = client.query(query).fetch_bytes("arrow").unwrap();
+        let chunks = cursor.collect().await;
+        match chunks {
+            Ok(chunks) => {
+                let cursor = Cursor::new(chunks);
+                let reader = FileReader::try_new(cursor, None).unwrap();
+                let batches: Vec<RecordBatch> = reader
+                    .map(|result| result.map_err(|e| connector_internal_error(LOAD_RESULT, &e)))
+                    .collect::<Result<_, _>>()?;
+
+                let schema = batches[0].schema();
+
+                let file_path = format!("/tmp/{}.arrow", Uuid::new_v4());
+                write_to_ipc(&batches, &file_path, &schema)
+                    .map_err(|err| connector_internal_error(WRITE_RESULT, &err))?;
+                Ok(file_path)
+            }
+            Err(e) => Err(OxyError::DBError(format!("Error fetching data: {}", e)))?,
+        }
+    }
+
+    async fn load_database_info(&self) -> Result<DatabaseInfo, OxyError> {
+        Ok(DatabaseInfo {
+            name: self.config.database.clone(),
+            dialect: "clickhouse".to_string(),
+            tables: self.get_schemas().await?,
+        })
+    }
 }
 
 #[derive(Debug)]
@@ -92,6 +154,7 @@ pub struct ConnectorX {
     dialect: String,
     db_path: String,
     db_name: String,
+    protocol: String,
 }
 
 impl ConnectorX {
@@ -105,6 +168,10 @@ impl ConnectorX {
             }
             "postgres" => {
                 "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'"
+                    .to_string()
+            }
+            "mysql" => {
+                "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE()"
                     .to_string()
             }
             _ => Err(OxyError::DBError(format!(
@@ -127,9 +194,12 @@ impl Engine for ConnectorX {
     async fn run_query(&self, query: &str) -> Result<String, OxyError> {
         let conn_string = format!("{}://{}", self.dialect, self.db_path);
         let query = query.to_string();
+        let protocol = self.protocol.clone();
         let result = tokio::task::spawn_blocking(move || {
-            let source_conn = SourceConn::try_from(conn_string.as_str())
+            let mut source_conn = SourceConn::try_from(conn_string.as_str())
                 .map_err(|err| connector_internal_error(CREATE_CONN, &err))?;
+
+            source_conn.set_protocol(protocol.as_str());
             let queries = &[CXQuery::from(query.as_str())];
             let destination = get_arrow(&source_conn, None, queries, None)
                 .map_err(|err| connector_internal_error(EXECUTE_QUERY, &err))?;
@@ -177,6 +247,17 @@ impl Connector {
         config_manager: &ConfigManager,
     ) -> Result<Self, OxyError> {
         let database = config_manager.resolve_database(database_ref)?;
+
+        let create_connectorx_engine =
+            |dialect: String, host: String, db_name: String, protocol: String| {
+                EngineType::ConnectorX(ConnectorX {
+                    dialect,
+                    db_path: host,
+                    db_name,
+                    protocol,
+                })
+            };
+
         let engine = match &database.database_type {
             DatabaseType::Bigquery(bigquery) => {
                 let key_path = config_manager
@@ -187,32 +268,56 @@ impl Connector {
                             .ok_or(OxyError::DBError("Key path not set".to_string()))?,
                     )
                     .await?;
-                EngineType::ConnectorX(ConnectorX {
-                    dialect: database.dialect(),
-                    db_path: key_path,
-                    db_name: bigquery.dataset.clone(),
-                })
+                create_connectorx_engine(
+                    database.dialect(),
+                    key_path,
+                    bigquery.dataset.clone(),
+                    database.protocol(),
+                )
             }
             DatabaseType::DuckDB(duckdb) => EngineType::DuckDB(DuckDB {
                 file_search_path: config_manager
                     .resolve_file(&duckdb.file_search_path)
                     .await?,
             }),
-            DatabaseType::Postgres(_pg) => {
-                let conn_string = Database::postgres_family_conn_string(database);
-                EngineType::ConnectorX(ConnectorX {
-                    dialect: database.dialect(),
-                    db_path: conn_string,
-                    db_name: Database::postgres_family_db_name(database),
-                })
+            DatabaseType::Postgres(pg) => {
+                let db_name = pg.database.clone().unwrap_or_default();
+                let db_path = format!(
+                    "{}:{}@{}:{}/{}",
+                    pg.user.clone().unwrap_or_default(),
+                    pg.get_password().unwrap_or_default(),
+                    pg.host.clone().unwrap_or_default(),
+                    pg.port.clone().unwrap_or_default(),
+                    db_name,
+                );
+                create_connectorx_engine(database.dialect(), db_path, db_name, database.protocol())
             }
-            DatabaseType::Redshift(_rs) => {
-                let conn_string = Database::postgres_family_conn_string(database);
-                EngineType::ConnectorX(ConnectorX {
-                    dialect: database.dialect(),
-                    db_path: conn_string,
-                    db_name: Database::postgres_family_db_name(database),
-                })
+            DatabaseType::Redshift(rs) => {
+                let db_name = rs.database.clone().unwrap_or_default();
+                let db_path = format!(
+                    "{}:{}@{}:{}/{}",
+                    rs.user.clone().unwrap_or_default(),
+                    rs.get_password().unwrap_or_default(),
+                    rs.host.clone().unwrap_or_default(),
+                    rs.port.clone().unwrap_or_default(),
+                    db_name
+                );
+                create_connectorx_engine(database.dialect(), db_path, db_name, database.protocol())
+            }
+            DatabaseType::Mysql(my) => {
+                let db_name = my.database.clone().unwrap_or_default();
+                let db_path = format!(
+                    "{}:{}@{}:{}/{}",
+                    my.user.clone().unwrap_or_default(),
+                    my.get_password().unwrap_or_default(),
+                    my.host.clone().unwrap_or_default(),
+                    my.port.clone().unwrap_or_default(),
+                    db_name
+                );
+                create_connectorx_engine(database.dialect(), db_path, db_name, database.protocol())
+            }
+            DatabaseType::ClickHouse(ch) => {
+                EngineType::ClickHouse(ClickHouse { config: ch.clone() })
             }
         };
         Ok(Connector {

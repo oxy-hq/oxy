@@ -112,15 +112,13 @@ impl AgentReceiver {
     }
 
     pub fn references(&self) -> Option<Vec<AgentReference>> {
-        if self.references_collector.is_none() {
-            return None;
-        }
-        return Some(
+        self.references_collector.as_ref()?;
+        Some(
             self.references_collector
                 .as_ref()
                 .map(|collector| collector.lock().unwrap().references.clone())
                 .unwrap_or_default(),
-        );
+        )
     }
 }
 
@@ -135,13 +133,10 @@ impl Handler for AgentReceiver {
             }
             AgentEvent::ToolCall(tool_call) => {
                 self.logger.log_agent_tool_call(tool_call);
-                match &self.references_collector {
-                    Some(collector) => {
-                        if let Ok(mut collector) = collector.lock() {
-                            collector.collect(tool_call.clone());
-                        }
+                if let Some(collector) = &self.references_collector {
+                    if let Ok(mut collector) = collector.lock() {
+                        collector.collect(tool_call.clone());
                     }
-                    None => {}
                 }
             }
         }
@@ -173,6 +168,12 @@ pub struct ReferenceCollector {
     pub references: Vec<AgentReference>,
 }
 
+impl Default for ReferenceCollector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ReferenceCollector {
     pub fn new() -> Self {
         ReferenceCollector { references: vec![] }
@@ -185,13 +186,11 @@ impl ReferenceCollector {
                 database,
                 output_file,
             }) => match load_result(&output_file) {
-                Err(_) => {
-                    return;
-                }
+                Err(_) => {}
                 Ok((datasets, schema)) => {
                     let (truncated_results, truncated) = truncate_datasets(datasets.clone());
                     let formatted_results =
-                        record_batches_to_2d_array(&truncated_results, &schema).unwrap_or(vec![]);
+                        record_batches_to_2d_array(&truncated_results, &schema).unwrap_or_default();
                     let reference = SqlQueryReference {
                         sql_query,
                         database,

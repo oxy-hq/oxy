@@ -1,6 +1,6 @@
 use crate::config::ConfigBuilder;
 use crate::db::client::establish_connection;
-use crate::execute::agent::{AgentReference, ToolCall};
+use crate::execute::agent::AgentReference;
 use crate::utils::find_project_path;
 use async_stream::stream;
 use axum::extract::{self, Path};
