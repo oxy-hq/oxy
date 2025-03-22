@@ -60,7 +60,164 @@ pub struct Measure {
     pub sql: String,
 }
 
-#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone, Validate, Default)]
+#[garde(context(ValidationContext))]
+pub struct Postgres {
+    #[garde(length(min = 1))]
+    #[serde(default)]
+    pub host: Option<String>,
+    #[garde(length(min = 1))]
+    #[serde(default)]
+    pub port: Option<String>,
+    #[garde(length(min = 1))]
+    #[serde(default)]
+    pub user: Option<String>,
+    #[garde(skip)]
+    #[schemars(skip)]
+    #[serde(default)]
+    pub password: Option<String>,
+    #[garde(custom(validate_file_path))]
+    #[serde(default)]
+    pub password_file: Option<PathBuf>,
+    #[garde(length(min = 1))]
+    #[serde(default)]
+    pub database: Option<String>,
+}
+
+impl Postgres {
+    pub fn get_password(&self) -> Option<String> {
+        if let Some(password) = &self.password {
+            if !password.is_empty() {
+                return Some(password.clone());
+            }
+        }
+        if let Some(password_file) = &self.password_file {
+            return std::fs::read_to_string(password_file)
+                .ok()
+                .map(|s| s.trim().to_string());
+        }
+        None
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone, Validate, Default)]
+#[garde(context(ValidationContext))]
+pub struct Redshift {
+    #[garde(length(min = 1))]
+    #[serde(default)]
+    pub host: Option<String>,
+    #[garde(length(min = 1))]
+    #[serde(default)]
+    pub port: Option<String>,
+    #[garde(length(min = 1))]
+    #[serde(default)]
+    pub user: Option<String>,
+    #[garde(skip)]
+    #[schemars(skip)]
+    #[serde(default)]
+    pub password: Option<String>,
+    #[garde(custom(validate_file_path))]
+    #[serde(default)]
+    pub password_file: Option<PathBuf>,
+    #[garde(length(min = 1))]
+    #[serde(default)]
+    pub database: Option<String>,
+}
+
+impl Redshift {
+    pub fn get_password(&self) -> Option<String> {
+        if let Some(password) = &self.password {
+            if !password.is_empty() {
+                return Some(password.clone());
+            }
+        }
+        if let Some(password_file) = &self.password_file {
+            return std::fs::read_to_string(password_file)
+                .ok()
+                .map(|s| s.trim().to_string());
+        }
+        None
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone, Validate, Default)]
+#[garde(context(ValidationContext))]
+pub struct Mysql {
+    #[garde(length(min = 1))]
+    #[serde(default)]
+    pub host: Option<String>,
+    #[garde(length(min = 1))]
+    #[serde(default)]
+    pub port: Option<String>,
+    #[garde(length(min = 1))]
+    #[serde(default)]
+    pub user: Option<String>,
+    #[garde(skip)]
+    #[schemars(skip)]
+    #[serde(default)]
+    pub password: Option<String>,
+    #[garde(custom(validate_file_path))]
+    #[serde(default)]
+    pub password_file: Option<PathBuf>,
+    #[garde(length(min = 1))]
+    #[serde(default)]
+    pub database: Option<String>,
+}
+
+impl Mysql {
+    pub fn get_password(&self) -> Option<String> {
+        if let Some(password) = &self.password {
+            if !password.is_empty() {
+                return Some(password.clone());
+            }
+        }
+        if let Some(password_file) = &self.password_file {
+            return std::fs::read_to_string(password_file)
+                .ok()
+                .map(|s| s.trim().to_string());
+        }
+        None
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone, Validate, Default)]
+#[garde(context(ValidationContext))]
+pub struct ClickHouse {
+    #[serde(default)]
+    #[garde(length(min = 1))]
+    pub host: String,
+    #[serde(default)]
+    #[garde(length(min = 1))]
+    pub user: String,
+    #[serde(default)]
+    #[garde(skip)]
+    #[schemars(skip)]
+    pub password: Option<String>,
+    #[serde(default)]
+    #[garde(custom(validate_file_path))]
+    pub password_file: Option<PathBuf>,
+    #[serde(default)]
+    #[garde(length(min = 1))]
+    pub database: String,
+}
+
+impl ClickHouse {
+    pub fn get_password(&self) -> Option<String> {
+        if let Some(password) = &self.password {
+            if !password.is_empty() {
+                return Some(password.clone());
+            }
+        }
+        if let Some(password_file) = &self.password_file {
+            return std::fs::read_to_string(password_file)
+                .ok()
+                .map(|s| s.trim().to_string());
+        }
+        None
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, JsonSchema)]
 pub struct AgentConfig {
     #[serde(skip)]
     pub name: String,
@@ -121,7 +278,6 @@ impl Default for AgentContextType {
 // These are settings stored as strings derived from the config.yml file's defaults section
 #[derive(Debug, Validate, Deserialize, Serialize, Clone, JsonSchema)]
 #[garde(context(ValidationContext))]
-// #[garde(context(Config as ctx))]
 pub struct Defaults {
     #[garde(length(min = 1))]
     #[garde(custom(|db: &Option<String>, ctx: &ValidationContext| {
@@ -158,30 +314,6 @@ pub struct DuckDB {
     pub file_search_path: String,
 }
 
-macro_rules! define_postgres_family_config {
-    ($name:ident) => {
-        #[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
-        #[garde(context(ValidationContext))]
-        pub struct $name {
-            #[garde(custom(validate_file_path))]
-            pub connection_string_file: Option<PathBuf>,
-            #[garde(length(min = 1))]
-            pub host: Option<String>,
-            #[garde(length(min = 1))]
-            pub port: Option<String>,
-            #[garde(length(min = 1))]
-            pub user: Option<String>,
-            #[garde(custom(validate_file_path))]
-            pub password_file: Option<PathBuf>,
-            #[garde(length(min = 1))]
-            pub database: Option<String>,
-        }
-    };
-}
-
-define_postgres_family_config!(Postgres);
-define_postgres_family_config!(Redshift);
-
 #[derive(Serialize, Deserialize, Debug, Validate, Clone, JsonSchema)]
 #[garde(context(ValidationContext))]
 #[serde(tag = "type")]
@@ -194,6 +326,10 @@ pub enum DatabaseType {
     Postgres(#[garde(dive)] Postgres),
     #[serde(rename = "redshift")]
     Redshift(#[garde(dive)] Redshift),
+    #[serde(rename = "mysql")]
+    Mysql(#[garde(dive)] Mysql),
+    #[serde(rename = "clickhouse")]
+    ClickHouse(#[garde(dive)] ClickHouse),
 }
 
 impl fmt::Display for DatabaseType {
@@ -203,6 +339,8 @@ impl fmt::Display for DatabaseType {
             DatabaseType::DuckDB(_) => write!(f, "duckdb"),
             DatabaseType::Postgres(_) => write!(f, "postgres"),
             DatabaseType::Redshift(_) => write!(f, "redshift"),
+            DatabaseType::Mysql(_) => write!(f, "mysql"),
+            DatabaseType::ClickHouse(_) => write!(f, "clickhouse"),
         }
     }
 }
@@ -219,82 +357,35 @@ pub struct Database {
 }
 
 impl Database {
-    pub fn postgres_family_conn_string(database: &Self) -> String {
-        if let Some(cs_file) = match &database.database_type {
-            DatabaseType::Postgres(pg) => &pg.connection_string_file,
-            DatabaseType::Redshift(rs) => &rs.connection_string_file,
-            _ => unreachable!(),
-        } {
-            let mut conn_string_no_dialect = std::fs::read_to_string(cs_file)
-                .unwrap_or_else(|err| {
-                    panic!("Failed to read connection string file: {}", err);
-                })
-                .trim()
-                .to_string();
-            if conn_string_no_dialect.starts_with("postgres://") {
-                conn_string_no_dialect = conn_string_no_dialect.replacen("postgres://", "", 1);
-            } else if conn_string_no_dialect.starts_with("postgresql://") {
-                conn_string_no_dialect = conn_string_no_dialect.replacen("postgresql://", "", 1);
-            } else if conn_string_no_dialect.starts_with("redshift://") {
-                conn_string_no_dialect = conn_string_no_dialect.replacen("redshift://", "", 1);
-            }
-            conn_string_no_dialect
-        } else {
-            let (user, password_file, host, port, database) = match &database.database_type {
-                DatabaseType::Postgres(pg) => (
-                    &pg.user,
-                    &pg.password_file,
-                    &pg.host,
-                    &pg.port,
-                    &pg.database,
-                ),
-                DatabaseType::Redshift(rs) => (
-                    &rs.user,
-                    &rs.password_file,
-                    &rs.host,
-                    &rs.port,
-                    &rs.database,
-                ),
-                _ => unreachable!(),
-            };
-            let password =
-                std::fs::read_to_string(password_file.as_ref().unwrap_or(&PathBuf::new()))
-                    .unwrap_or_default()
-                    .trim()
-                    .to_string();
-            format!(
-                "{}:{}@{}:{}/{}",
-                user.clone().unwrap_or_default(),
-                password,
-                host.clone().unwrap_or_default(),
-                port.clone().unwrap_or_default(),
-                database.clone().unwrap_or_default()
-            )
-        }
-    }
-
-    pub fn postgres_family_db_name(database: &Self) -> String {
-        let conn_string = Self::postgres_family_conn_string(database);
-        let params: Vec<&str> = conn_string.split('@').collect();
-        let db_params: Vec<&str> = params[1].split('/').collect();
-        db_params[1].to_string()
-    }
-
     pub fn db_name(&self) -> String {
         match &self.database_type {
-            DatabaseType::Bigquery(bq) => bq.dataset.to_owned(),
-            DatabaseType::DuckDB(ddb) => ddb.file_search_path.to_owned(),
-            DatabaseType::Postgres(_pg) => Self::postgres_family_db_name(self),
-            DatabaseType::Redshift(_rs) => Self::postgres_family_db_name(self),
+            DatabaseType::Bigquery(bq) => bq.dataset.clone(),
+            DatabaseType::DuckDB(ddb) => ddb.file_search_path.clone(),
+            DatabaseType::Postgres(pg) => pg.database.clone().unwrap_or_default(),
+            DatabaseType::Redshift(rs) => rs.database.clone().unwrap_or_default(),
+            DatabaseType::Mysql(my) => my.database.clone().unwrap_or_default(),
+            DatabaseType::ClickHouse(ch) => ch.database.clone(),
         }
     }
 
     pub fn dialect(&self) -> String {
         match &self.database_type {
-            DatabaseType::Bigquery(_) => "bigquery".to_string(),
-            DatabaseType::DuckDB(_) => "duckdb".to_string(),
-            DatabaseType::Postgres(_) => "postgres".to_string(),
-            DatabaseType::Redshift(_) => "redshift".to_string(),
+            DatabaseType::Bigquery(_) => "bigquery".to_owned(),
+            DatabaseType::DuckDB(_) => "duckdb".to_owned(),
+            DatabaseType::Postgres(_) => "postgres".to_owned(),
+            DatabaseType::Redshift(_) => "postgres".to_owned(),
+            DatabaseType::Mysql(_) => "mysql".to_owned(),
+            DatabaseType::ClickHouse(_) => "clickhouse".to_string(),
+        }
+    }
+
+    pub fn protocol(&self) -> String {
+        match &self.database_type {
+            DatabaseType::Bigquery(_) => "binary".to_owned(),
+            DatabaseType::Postgres(_) => "binary".to_owned(),
+            DatabaseType::Redshift(_) => "cursor".to_owned(),
+            DatabaseType::Mysql(_) => "binary".to_owned(),
+            _ => "".to_owned(),
         }
     }
 }
@@ -449,8 +540,6 @@ pub enum SQL {
 pub struct ExecuteSQLTask {
     #[garde(custom(validate_database_exists))]
     pub database: String,
-    // #[garde(custom(validate_sql_file))]
-    // Skipping validation for now to allow sql file templating
     #[garde(dive)]
     #[serde(flatten)]
     pub sql: SQL,
@@ -579,10 +668,9 @@ pub struct Workflow {
     pub name: String,
     #[garde(dive)]
     pub tasks: Vec<Task>,
-    #[garde(skip)]
     #[serde(default = "default_tests")]
+    #[garde(dive)]
     pub tests: Vec<Eval>,
-
     #[garde(skip)]
     pub variables: Option<HashMap<String, String>>,
 }

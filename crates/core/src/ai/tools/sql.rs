@@ -1,13 +1,12 @@
 use super::Tool;
 use crate::{
-    ai::utils::{record_batches_to_2d_array, record_batches_to_markdown},
+    ai::utils::record_batches_to_markdown,
     config::model::OutputFormat,
     connector::{Connector, load_result},
     execute::agent::{ToolCall, ToolMetadata},
     utils::truncate_datasets,
 };
 use async_trait::async_trait;
-use connectorx::data_order;
 use schemars::JsonSchema;
 use serde::Deserialize;
 

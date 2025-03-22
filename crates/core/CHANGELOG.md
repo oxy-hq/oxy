@@ -2,17 +2,15 @@
 
 ## [0.1.4](https://github.com/oxy-hq/oxy-internal/compare/0.1.3...0.1.4) (2025-03-21)
 
-
 ### <!-- 0 -->🚀 Features
 
-* add sql query reference to agent answer ([#502](https://github.com/oxy-hq/oxy-internal/issues/502)) ([ce55c54](https://github.com/oxy-hq/oxy-internal/commit/ce55c541b1d60f88226c701898dec657847982d2))
+- add sql query reference to agent answer ([#502](https://github.com/oxy-hq/oxy-internal/issues/502)) ([ce55c54](https://github.com/oxy-hq/oxy-internal/commit/ce55c541b1d60f88226c701898dec657847982d2))
 
 ## [0.1.3](https://github.com/oxy-hq/oxy-internal/compare/0.1.2...0.1.3) (2025-03-18)
 
-
 ### <!-- 1 -->🐛 Bug Fixes
 
-* agent sql execution is not logged ([#494](https://github.com/oxy-hq/oxy-internal/issues/494)) ([5e703e9](https://github.com/oxy-hq/oxy-internal/commit/5e703e9ecbe3ad4babf78b39b914f28241ac8d61))
+- agent sql execution is not logged ([#494](https://github.com/oxy-hq/oxy-internal/issues/494)) ([5e703e9](https://github.com/oxy-hq/oxy-internal/commit/5e703e9ecbe3ad4babf78b39b914f28241ac8d61))
 
 ## [0.1.2](https://github.com/oxy-hq/oxy-internal/compare/0.1.1...0.1.2) (2025-03-18)
 

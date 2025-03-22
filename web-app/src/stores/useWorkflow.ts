@@ -315,7 +315,7 @@ const useWorkflow = create<WorkflowState>((set, get) => ({
   },
   appendLogs: (logs) => {
     set((state) => ({ logs: [...state.logs, ...logs] }));
-  }
+  },
 }));
 
 export enum TaskType {

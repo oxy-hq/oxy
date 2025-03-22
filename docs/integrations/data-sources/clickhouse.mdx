@@ -1,0 +1,27 @@
+---
+title: ClickHouse
+---
+
+This tutorial will guide you through connecting to ClickHouse with Oxy. Note that the password should be stored in a file for security reasons.
+
+## Step 1: Create the Password File
+
+Create a file to store your ClickHouse password. For example, create a file named `clickhouse_password.txt` and add your password to it.
+
+```sh
+echo "your_password" > path/to/clickhouse_password.txt
+```
+
+## Step 2: Configure ClickHouse in `config.yml`
+
+Add the ClickHouse configuration to your `config.yml` file. Use the following parameters:
+
+```yaml
+databases:
+  - name: my_clickhouse_db
+    type: clickhouse
+    host: "localhost"
+    user: "default"
+    password_file: "path/to/clickhouse_password.txt"
+    database: "default"
+```
