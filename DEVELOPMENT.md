@@ -2,13 +2,14 @@
 
 - [Development](#development)
   - [Clone This Repository](#clone-this-repository)
-  - [Install Rust & Node](#install-rust--node)
+  - [Install Rust \& Node](#install-rust--node)
   - [Install Project Dependencies](#install-project-dependencies)
   - [Test Your Installation](#test-your-installation)
   - [Other Commands](#other-commands)
   - [Integration Testing](#integration-testing)
+    - [Manual Testing Oxy Integration with Different Databases](#manual-testing-oxy-integration-with-different-databases)
   - [Known Issues](#known-issues)
-  - [Oxy Py Requirements](#oxy-py-requirements)
+  - [OxyPy Requirements](#oxypy-requirements)
 
 ## Clone This Repository
 
@@ -137,6 +138,36 @@ To show test stdout for debugging use `--nocapture`
 ```sh
 cargo test -- --nocapture
 ```
+
+### Manual Testing Oxy Integration with Different Databases
+
+We use Docker Compose to spin up database containers to create and supply test data. Ensure Docker and Docker Compose are installed on your system.
+
+1. Start the required database containers:
+
+   ```sh
+   docker-compose up -d
+   ```
+
+2. Verify the containers are running:
+
+   ```sh
+   docker ps
+   ```
+
+3. Inside `examples` folder, you will find an agent for each database. Run the agent with the following command:
+
+   ```sh
+   cargo run -- run agents/<database>.agent.yml
+   ```
+
+   Replace `<database>` with the database you want to test.
+
+4. To stop the containers after testing:
+
+   ```sh
+   docker-compose down
+   ```
 
 ## Known Issues
 
