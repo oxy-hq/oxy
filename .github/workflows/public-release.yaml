@@ -27,9 +27,9 @@ jobs:
   build-cli:
     if: github.repository == 'oxy-hq/oxy'
     concurrency:
-      group: public-oxy-build-cli-${{ inputs.tag }}-${{ matrix.job.os }}-${{ matrix.job.target }}
+      group: public-oxy-build-cli-${{ inputs.tag || github.ref_name  }}-${{ matrix.job.os }}-${{ matrix.job.target }}
       cancel-in-progress: true
-    name: Build CLI version ${{ inputs.tag }} for target ${{ matrix.job.target }}
+    name: Build CLI version ${{ inputs.tag || github.ref_name  }} for target ${{ matrix.job.target }}
     runs-on: ${{ matrix.job.os }}
     strategy:
       fail-fast: false
@@ -46,7 +46,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          ref: ${{ inputs.tag }}
+          ref: ${{ inputs.tag || github.ref_name  }}
 
       #-- Create common artifacts folder
       - name: Create artifacts folder
@@ -139,9 +139,22 @@ jobs:
       - name: Move wheels
         run: mv crates/py/dist/* artifacts/
 
-      - name: Copy changelog (once)
+      - name: Copy backend changelog (once)
         if: ${{ matrix.job.target == 'aarch64-apple-darwin' }}
-        run: cp crates/core/CHANGELOG.md artifacts/
+        run: cp crates/core/CHANGELOG.md artifacts/backend-CHANGELOG.md
+
+      - name: Copy frontend changelog (once)
+        if: ${{ matrix.job.target == 'aarch64-apple-darwin' }}
+        run: cp web-app/CHANGELOG.md artifacts/frontend-CHANGELOG.md
+
+      - name: Unify release-please changelog (once)
+        if: ${{ matrix.job.target == 'aarch64-apple-darwin' }}
+        run: |
+          echo "# Changelog" > artifacts/CHANGELOG.md
+          awk '/^## \[/{flag=0} /^## \[${{ inputs.tag || github.ref_name  }}\]/{flag=1} flag' artifacts/backend-CHANGELOG.md >> artifacts/CHANGELOG.md
+          echo "" >> artifacts/CHANGELOG.md
+          echo "## Frontend" >> artifacts/CHANGELOG.md
+          cat artifacts/frontend-CHANGELOG.md >> artifacts/CHANGELOG.md
 
       #-- Upload release artifacts
       - name: Upload release artifacts
@@ -169,19 +182,11 @@ jobs:
       - name: Ensure binaries are executable
         run: chmod +x artifacts/oxy-*
 
-      - name: Generate release notes
-        run: |
-          echo "# Changelog" > CHANGELOG.md
-          awk '/^## \[/{flag=0} /^## \[${{ inputs.tag }}\]/{flag=1} flag' artifacts/CHANGELOG.md >> CHANGELOG.md
-          echo "" >> CHANGELOG.md
-          echo "## Checksums" >> CHANGELOG.md
-          cat artifacts/SHA256SUMS.txt >> CHANGELOG.md
-
       - name: Upload files to github release
         uses: softprops/action-gh-release@v2
         with:
           draft: false
           prerelease: true
-          tag_name: ${{ inputs.tag }}
-          body_path: CHANGELOG.md
+          tag_name: ${{ inputs.tag || github.ref_name  }}
+          body_path: artifacts/CHANGELOG.md
           files: artifacts/**/*
