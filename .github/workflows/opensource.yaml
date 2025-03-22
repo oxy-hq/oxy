@@ -48,5 +48,4 @@ jobs:
             internal-docs/**
           # pr_move: |-
           #   crates/core/dist||oss/dist||**
-          copybara_options: --force --init-history
           committer: "${{ steps.app-token.outputs.app-slug }}[bot] <${{ steps.get-user-id.outputs.user-id }}+${{ steps.app-token.outputs.app-slug }}[bot]@users.noreply.github.com>"
