@@ -15,13 +15,13 @@ type ResultTableProps = {
 
 export const QueryResultTable = ({ result, isTruncated }: ResultTableProps) => {
   return (
-    <div className="max-h-80 overflow-y-scroll scroll w-full">
-      <Table>
+    <div className="max-h-80 bg-white overflow-y-scroll scroll">
+      <Table className="w-[reset]">
         <TableHeader>
           <TableRow>
             {result[0].map((col, index) => (
               <TableHead
-                className="text-muted-foreground font-medium"
+                className="text-muted-foreground font-medium min-w-32"
                 key={index}
               >
                 {col}

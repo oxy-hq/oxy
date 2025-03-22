@@ -3,11 +3,13 @@ import {
   DialogContent,
   DialogTrigger,
 } from "@/components/ui/shadcn/dialog";
-import { Code } from "lucide-react";
+import { Code, X } from "lucide-react";
 import { SqlQueryReference } from "@/types/chat";
 import CodeBlock from "@/components/CodeBlock";
 import { ReferenceItemContainer } from "./ReferenceItemContainer";
 import { QueryResultTable } from "./QueryResultTable";
+import { Button } from "@/components/ui/shadcn/button";
+import { useState } from "react";
 
 export type QueryReferenceProps = {
   reference: SqlQueryReference;
@@ -15,12 +17,13 @@ export type QueryReferenceProps = {
 
 export const QueryReference = ({ reference }: QueryReferenceProps) => {
   const metadata = reference;
+  const [isOpen, setIsOpen] = useState(false);
   return (
     <>
-      <Dialog>
+      <Dialog open={isOpen} onOpenChange={setIsOpen}>
         <DialogTrigger>
-          <ReferenceItemContainer>
-            <div className="p-4 gap-4 w-50 flex flex-col items-center justify-center overflow-hidden text-muted-foreground">
+          <ReferenceItemContainer isOpen={isOpen}>
+            <div className="px-4 py-2 gap-2 w-50 flex flex-col items-center justify-center overflow-hidden text-muted-foreground">
               <div className="flex text-sm items-center gap-2 justify-start w-full">
                 <Code size={16} />
                 <span className="truncate">QUERY</span>
@@ -31,17 +34,31 @@ export const QueryReference = ({ reference }: QueryReferenceProps) => {
             </div>
           </ReferenceItemContainer>
         </DialogTrigger>
-        <DialogContent className="[&>button]:hidden p-2 break-all">
+        <DialogContent
+          showOverlay={false}
+          className="[&>button]:hidden break-all p-0"
+        >
           <div className="text-sm">
-            <div className="flex items-center gap-2 justify-start w-full">
-              <Code size={16} />
-              <span className="truncate">Query</span>
+            <div className="flex items-center justify-between pl-4 pr-2 py-2">
+              <div className="flex items-center gap-1 justify-start w-full">
+                <div className="p-2 flex items-center justify-center">
+                  <Code size={16} />
+                </div>
+                <span className="truncate">Query</span>
+              </div>
+              <Button variant="ghost" onClick={() => setIsOpen(false)}>
+                <X />
+              </Button>
             </div>
-            <CodeBlock className="language-sql">{metadata.sql_query}</CodeBlock>
-            <QueryResultTable
-              result={metadata.result}
-              isTruncated={metadata.is_result_truncated}
-            />
+            <div className="p-4 pt-0 flex flex-col gap-4">
+              <CodeBlock className="language-sql !m-0">
+                {metadata.sql_query}
+              </CodeBlock>
+              <QueryResultTable
+                result={metadata.result}
+                isTruncated={metadata.is_result_truncated}
+              />
+            </div>
           </div>
         </DialogContent>
       </Dialog>

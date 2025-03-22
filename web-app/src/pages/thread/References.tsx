@@ -7,7 +7,7 @@ type ReferencesProps = {
 
 const References = ({ references }: ReferencesProps) => {
   return (
-    <div className="gap-4 flex overflow-x-auto font-sans">
+    <div className="gap-2 flex overflow-x-auto font-sans">
       {references.map((reference, index) => (
         <ReferenceItem key={index} reference={reference} />
       ))}

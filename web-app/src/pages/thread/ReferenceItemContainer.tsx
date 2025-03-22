@@ -1,12 +1,20 @@
+import { cn } from "@/libs/shadcn/utils";
+
 type ReferenceItemContainerProps = {
   children: React.ReactNode;
+  isOpen: boolean;
 };
 
 export const ReferenceItemContainer = ({
   children,
+  isOpen,
 }: ReferenceItemContainerProps) => {
   return (
-    <div className="bg-sidebar-accent hover:bg-input border rounded-md">
+    <div
+      className={cn("bg-sidebar-accent hover:bg-input border rounded-md", {
+        "bg-input": isOpen,
+      })}
+    >
       {children}
     </div>
   );
