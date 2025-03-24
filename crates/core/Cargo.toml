@@ -47,6 +47,7 @@ include_dir = "0.7"
 indoc = "2.0.6"
 itertools = "0.14.0"
 lancedb = "0.16.0"
+lzma-sys = { version = "*", features = ["static"] } # improve build time for lancedb
 lazy_static = "1.5.0"
 log = { workspace = true }
 migration = { path = "../migration" }
