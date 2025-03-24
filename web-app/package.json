@@ -74,15 +74,15 @@
   "devDependencies": {
     "@types/invariant": "^2.2.37",
     "@types/lodash": "^4.17.15",
-    "@types/node": "^22.13.10",
-    "@types/react": "^19.0.11",
+    "@types/node": "^22.13.13",
+    "@types/react": "^19.0.12",
     "@types/react-dom": "^19.0.4",
     "@types/react-syntax-highlighter": "^15.5.13",
     "@types/react-window": "^1.8.8",
-    "@vitejs/plugin-react-swc": "^3.8.0",
+    "@vitejs/plugin-react-swc": "^3.8.1",
     "i": "^0.3.7",
     "typescript": "^5.8.2",
-    "vite": "^6.2.2",
+    "vite": "^6.2.3",
     "vite-plugin-node-polyfills": "^0.23.0"
   }
 }
