@@ -12,7 +12,8 @@ rust-version.workspace = true
 [dependencies]
 anyhow = "1.0.97"
 # arrow version has to comply with duckdb version
-arrow = { version = "*", default-features = false, features = ["json"] }
+# upgrading arrow needs to comply with duckdb and pyo3-arrow and lancedb version
+arrow = { version = "53", default-features = false, features = ["json"] }
 assert_cmd = "2.0.16"
 async-openai = "0.26.0"
 async-stream = "0.3.6"
