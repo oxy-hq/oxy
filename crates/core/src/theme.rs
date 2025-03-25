@@ -1,6 +1,6 @@
 use colored::*;
-use lazy_static::lazy_static;
-use std::sync::Mutex;
+use once_cell::sync::Lazy;
+use std::sync::RwLock;
 
 #[derive(Debug, Clone)]
 struct Theme {
@@ -25,9 +25,7 @@ struct ThemeManager {
     mode: ThemeMode,
 }
 
-lazy_static! {
-    static ref THEME_MANAGER: Mutex<ThemeManager> = Mutex::new(ThemeManager::new());
-}
+static THEME_MANAGER: Lazy<RwLock<ThemeManager>> = Lazy::new(|| RwLock::new(ThemeManager::new()));
 
 impl Theme {
     fn dark() -> Self {
@@ -165,7 +163,7 @@ impl ThemeManager {
             .unwrap_or(false)
     }
 
-    fn get_instance() -> &'static Mutex<ThemeManager> {
+    fn get_instance() -> &'static RwLock<ThemeManager> {
         &THEME_MANAGER
     }
 
@@ -179,7 +177,7 @@ impl ThemeManager {
 }
 
 pub fn get_current_theme_mode() -> ThemeMode {
-    ThemeManager::get_instance().lock().unwrap().mode.clone()
+    ThemeManager::get_instance().read().unwrap().mode.clone()
 }
 
 pub fn detect_true_color_support() -> bool {
@@ -188,7 +186,7 @@ pub fn detect_true_color_support() -> bool {
 
 pub fn switch_theme(mode: ThemeMode) {
     ThemeManager::get_instance()
-        .lock()
+        .write()
         .unwrap()
         .switch_theme(mode);
 }
@@ -206,42 +204,42 @@ pub trait StyledText {
 
 impl StyledText for &str {
     fn primary(self) -> ColoredString {
-        let theme_manager = ThemeManager::get_instance().lock().unwrap();
+        let theme_manager = ThemeManager::get_instance().read().unwrap();
         self.color(theme_manager.current_theme.primary)
     }
 
     fn secondary(self) -> ColoredString {
-        let theme_manager = ThemeManager::get_instance().lock().unwrap();
+        let theme_manager = ThemeManager::get_instance().read().unwrap();
         self.color(theme_manager.current_theme.secondary)
     }
 
     fn tertiary(self) -> ColoredString {
-        let theme_manager = ThemeManager::get_instance().lock().unwrap();
+        let theme_manager = ThemeManager::get_instance().read().unwrap();
         self.color(theme_manager.current_theme.tertiary)
     }
 
     fn success(self) -> ColoredString {
-        let theme_manager = ThemeManager::get_instance().lock().unwrap();
+        let theme_manager = ThemeManager::get_instance().read().unwrap();
         self.color(theme_manager.current_theme.success)
     }
 
     fn warning(self) -> ColoredString {
-        let theme_manager = ThemeManager::get_instance().lock().unwrap();
+        let theme_manager = ThemeManager::get_instance().read().unwrap();
         self.color(theme_manager.current_theme.warning)
     }
 
     fn error(self) -> ColoredString {
-        let theme_manager = ThemeManager::get_instance().lock().unwrap();
+        let theme_manager = ThemeManager::get_instance().read().unwrap();
         self.color(theme_manager.current_theme.error)
     }
 
     fn info(self) -> ColoredString {
-        let theme_manager = ThemeManager::get_instance().lock().unwrap();
+        let theme_manager = ThemeManager::get_instance().read().unwrap();
         self.color(theme_manager.current_theme.info)
     }
 
     fn text(self) -> ColoredString {
-        let theme_manager = ThemeManager::get_instance().lock().unwrap();
+        let theme_manager = ThemeManager::get_instance().read().unwrap();
         self.color(theme_manager.current_theme.text)
     }
 }
