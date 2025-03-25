@@ -1658,6 +1658,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "console"
+version = "0.15.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "054ccb5b10f9f2cbf51eb355ca1d05c2d279ce1804688d0db74b4733a5aeafd8"
+dependencies = [
+ "encode_unicode",
+ "libc",
+ "once_cell",
+ "unicode-width",
+ "windows-sys 0.59.0",
+]
+
+[[package]]
 name = "const-oid"
 version = "0.9.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2533,6 +2546,12 @@ checksum = "b7914353092ddf589ad78f25c5c1c21b7f80b0ff8621e7c814c3485b5306da9d"
 dependencies = [
  "serde",
 ]
+
+[[package]]
+name = "encode_unicode"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "34aa73646ffb006b8f5147f3dc182bd4bcb190227ce861fc4a4844bf8e3cb2c0"
 
 [[package]]
 name = "encoding_rs"
@@ -3472,6 +3491,7 @@ dependencies = [
  "tokio",
  "tokio-rustls 0.26.1",
  "tower-service",
+ "webpki-roots 0.26.8",
 ]
 
 [[package]]
@@ -3725,6 +3745,19 @@ dependencies = [
  "equivalent",
  "hashbrown 0.15.2",
  "serde",
+]
+
+[[package]]
+name = "indicatif"
+version = "0.17.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "183b3088984b400f4cfac3620d5e076c84da5364016b4f49473de574b2586235"
+dependencies = [
+ "console",
+ "number_prefix",
+ "portable-atomic",
+ "unicode-width",
+ "web-time",
 ]
 
 [[package]]
@@ -5073,6 +5106,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "number_prefix"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "830b246a0e5f20af87141b25c173cd1b609bd7779a4617d6ec582abaf90870f3"
+
+[[package]]
 name = "numpy"
 version = "0.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5349,6 +5388,7 @@ dependencies = [
  "pyo3-arrow",
  "schemars",
  "sea-orm",
+ "self_update",
  "serde",
  "serde_arrow",
  "serde_json",
@@ -6394,6 +6434,7 @@ dependencies = [
  "base64 0.22.1",
  "bytes",
  "encoding_rs",
+ "futures-channel",
  "futures-core",
  "futures-util",
  "h2 0.4.8",
@@ -6434,6 +6475,7 @@ dependencies = [
  "wasm-bindgen-futures",
  "wasm-streams",
  "web-sys",
+ "webpki-roots 0.26.8",
  "windows-registry",
 ]
 
@@ -7064,10 +7106,40 @@ dependencies = [
 ]
 
 [[package]]
+name = "self-replace"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "03ec815b5eab420ab893f63393878d89c90fdd94c0bcc44c07abb8ad95552fb7"
+dependencies = [
+ "fastrand",
+ "tempfile",
+ "windows-sys 0.52.0",
+]
+
+[[package]]
 name = "self_cell"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2fdfc24bc566f839a2da4c4295b82db7d25a24253867d5c64355abb5799bdbe"
+
+[[package]]
+name = "self_update"
+version = "0.42.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d832c086ece0dacc29fb2947bb4219b8f6e12fe9e40b7108f9e57c4224e47b5c"
+dependencies = [
+ "hyper 1.6.0",
+ "indicatif",
+ "log",
+ "quick-xml 0.37.2",
+ "regex",
+ "reqwest 0.12.12",
+ "self-replace",
+ "semver",
+ "serde_json",
+ "tempfile",
+ "urlencoding",
+]
 
 [[package]]
 name = "semver"
