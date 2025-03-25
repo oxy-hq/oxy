@@ -92,7 +92,7 @@
         },
         {
           "group": "Cloud-based models",
-          "pages": ["integrations/models/openai"]
+          "pages": ["integrations/models/openai", "integrations/models/gemini"]
         }
       ]
     },

@@ -20,7 +20,7 @@ use crate::{
     execute::agent::ToolCall,
     union_tools,
 };
-use agent::OpenAIAgent;
+use agent::{OpenAIAgent, OpenAIClientProvider};
 use anonymizer::{base::Anonymizer, flash_text::FlashTextAnonymizer};
 use async_trait::async_trait;
 use retrieval::get_vector_store;
@@ -28,6 +28,8 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use toolbox::ToolBox;
 use tools::{ExecuteSQLParams, ExecuteSQLTool, RetrieveParams, RetrieveTool, Tool};
+
+const GEMINI_API_URL: &str = "https://generativelanguage.googleapis.com/v1beta/openai";
 
 pub async fn setup_agent<P: AsRef<Path>>(
     agent_file: P,
@@ -121,6 +123,32 @@ fn build_agent(
                 anonymizer,
                 file_format.clone(),
                 tools,
+                OpenAIClientProvider::OpenAI,
+            )
+        }
+        Model::Gemini {
+            name: _,
+            model_ref,
+            key_var,
+        } => {
+            let api_key = std::env::var(key_var).unwrap_or_else(|_| {
+                panic!(
+                    "Gemini API key not found in environment variable {}",
+                    key_var
+                )
+            });
+            OpenAIAgent::new(
+                model_ref.to_string(),
+                Some(GEMINI_API_URL.to_string()),
+                api_key,
+                None,
+                None,
+                system_instructions.to_string(),
+                output_format.clone(),
+                anonymizer,
+                file_format.clone(),
+                tools,
+                OpenAIClientProvider::Gemini,
             )
         }
         Model::Ollama {
@@ -139,6 +167,7 @@ fn build_agent(
             anonymizer,
             file_format.clone(),
             tools,
+            OpenAIClientProvider::OpenAI,
         ),
     }
 }

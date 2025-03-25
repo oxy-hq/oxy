@@ -299,9 +299,13 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             let result = load_config(None);
             match result {
                 Ok(config) => match config.validate_workflows() {
-                    Ok(_) => {
-                        println!("{}", "Config file is valid".success())
-                    }
+                    Ok(_) => match config.validate_agents() {
+                        Ok(_) => println!("{}", "Config file is valid".success()),
+                        Err(e) => {
+                            println!("{}", e.to_string().error());
+                            exit(1)
+                        }
+                    },
                     Err(e) => {
                         println!("{}", e.to_string().error());
                         exit(1)

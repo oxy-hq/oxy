@@ -15,7 +15,7 @@ anyhow = "1.0.97"
 # upgrading arrow needs to comply with duckdb and pyo3-arrow and lancedb version
 arrow = { version = "53", default-features = false, features = ["json"] }
 assert_cmd = "2.0.16"
-async-openai = "0.26.0"
+async-openai = {version = "0.28.0", features = ["byot"]}
 async-stream = "0.3.6"
 async-trait = "0.1.88"
 axum = { version = "0.7.9", features = ["macros"] }

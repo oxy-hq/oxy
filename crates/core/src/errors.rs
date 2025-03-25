@@ -1,5 +1,6 @@
 use std::sync::PoisonError;
 
+use async_openai::error::OpenAIError;
 use axum::http::StatusCode;
 use thiserror::Error;
 use tokio::{sync::mpsc::error::SendError, task::JoinError};
@@ -81,5 +82,21 @@ impl From<OxyError> for StatusCode {
             OxyError::IOError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             OxyError::DBError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
+    }
+}
+
+const CONTEXT_WINDOW_EXCEEDED_CODE: &str = "string_above_max_length";
+
+impl From<OpenAIError> for OxyError {
+    fn from(value: OpenAIError) -> Self {
+        if let OpenAIError::ApiError(ref api_error) = value {
+            if api_error.code == Some(CONTEXT_WINDOW_EXCEEDED_CODE.to_string()) {
+                return OxyError::LLMError(
+                    "Context window length exceeded. Shorten the prompt being sent to the LLM."
+                        .into(),
+                );
+            }
+        }
+        OxyError::RuntimeError(format!("Error in completion request: {:?}", value))
     }
 }
