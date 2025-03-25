@@ -112,6 +112,8 @@ enum SubCommand {
     TestTheme,
     /// Generate JSON schemas for config files
     GenConfigSchema(GenConfigSchemaArgs),
+    /// Update the CLI to the latest version
+    SelfUpdate,
 }
 
 #[derive(Parser, Debug)]
@@ -320,7 +322,13 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
         Some(SubCommand::Serve) => {
             start_server_and_web_app().await;
         }
-
+        Some(SubCommand::SelfUpdate) => {
+            if let Err(e) = handle_check_for_updates().await {
+                log::error!("Failed to update: {}", e);
+                eprintln!("{}", format!("Failed to update: {}", e).error());
+                exit(1);
+            }
+        }
         Some(SubCommand::TestTheme) => {
             println!("Initial theme mode: {:?}", get_current_theme_mode());
             println!("True color support: {:?}", detect_true_color_support());
@@ -548,4 +556,40 @@ pub async fn start_server_and_web_app() {
     });
 
     let _ = tokio::try_join!(server_task, web_task);
+}
+
+async fn handle_check_for_updates() -> Result<(), OxyError> {
+    println!("{}", "Checking for updates...".info());
+
+    let target = format!(
+        "{}-{}-{}",
+        std::env::consts::ARCH,
+        std::env::consts::OS,
+        std::env::consts::FAMILY
+    );
+
+    let status = tokio::task::spawn_blocking(move || {
+        self_update::backends::github::Update::configure()
+            .repo_owner("oxy-hq")
+            .repo_name("oxy")
+            .bin_name(&format!("oxy-{}", target))
+            .show_download_progress(true)
+            .current_version(self_update::cargo_crate_version!())
+            .build()
+            .map_err(|e| OxyError::RuntimeError(format!("Update configuration failed: {}", e)))?
+            .update()
+            .map_err(|e| OxyError::RuntimeError(format!("Update failed: {}", e)))
+    })
+    .await
+    .map_err(|e| OxyError::RuntimeError(format!("Task join error: {}", e)))??;
+
+    if status.updated() {
+        println!(
+            "{}",
+            "Update successful! Restart the application.".success()
+        );
+    } else {
+        println!("{}", "No updates available.".info());
+    }
+    Ok(())
 }
