@@ -2,6 +2,7 @@ use crate::api::agent;
 use crate::api::message;
 use crate::api::thread;
 use axum::Router;
+use axum::routing::delete;
 use axum::routing::{get, post};
 use migration::Migrator;
 use migration::MigratorTrait;
@@ -29,6 +30,7 @@ pub async fn serve(address: &SocketAddr) {
         .route("/threads/:id", get(thread::get_thread))
         .route("/threads/:id/ask", get(thread::ask_thread))
         .route("/threads", post(thread::create_thread))
+        .route("/threads/:id", delete(thread::delete_thread))
         .route("/workflows", get(workflow::list))
         .route("/workflows/:pathb64", get(workflow::get))
         .route("/workflows/:pathb64/logs", get(workflow::get_logs))
