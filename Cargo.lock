@@ -5335,7 +5335,6 @@ dependencies = [
  "indoc",
  "itertools 0.14.0",
  "lancedb",
- "lazy_static",
  "libduckdb-sys",
  "log",
  "lzma-sys",
@@ -5550,7 +5549,7 @@ dependencies = [
  "fnv",
  "nom",
  "once_cell",
- "quick-xml 0.36.2",
+ "quick-xml 0.37.2",
  "regex",
  "regex-cache",
  "serde",
@@ -5644,11 +5643,11 @@ dependencies = [
 
 [[package]]
 name = "pluralizer"
-version = "0.4.0"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "35e4616e94b67b8b61846ea69d4bf041a62147d569d16f437689229e2677d38c"
+checksum = "4b3eba432a00a1f6c16f39147847a870e94e2e9b992759b503e330efec778cbe"
 dependencies = [
- "lazy_static",
+ "once_cell",
  "regex",
 ]
 
@@ -6030,15 +6029,6 @@ name = "quick-xml"
 version = "0.32.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1d3a6e5838b60e0e8fa7a43f22ade549a37d61f8bdbe636d0d7816191de969c2"
-dependencies = [
- "memchr",
-]
-
-[[package]]
-name = "quick-xml"
-version = "0.36.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f7649a7b4df05aed9ea7ec6f628c67c9953a43869b8bc50929569b2999d443fe"
 dependencies = [
  "memchr",
 ]
