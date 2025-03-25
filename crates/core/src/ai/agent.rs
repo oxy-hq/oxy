@@ -19,13 +19,13 @@ use super::{MultiTool, anonymizer::base::Anonymizer, toolbox::ToolBox};
 use async_openai::{
     Client,
     config::{AzureConfig, OPENAI_API_BASE, OpenAIConfig},
-    error::OpenAIError,
     types::{
-        ChatCompletionRequestAssistantMessageArgs, ChatCompletionRequestMessage,
+        ChatChoice, ChatCompletionRequestAssistantMessageArgs, ChatCompletionRequestMessage,
         ChatCompletionRequestSystemMessageArgs, ChatCompletionRequestToolMessageArgs,
         ChatCompletionRequestUserMessageArgs, ChatCompletionResponseMessage, ChatCompletionTool,
-        ChatCompletionToolArgs, ChatCompletionToolType, CreateChatCompletionRequestArgs,
-        FunctionObjectArgs, ResponseFormat, ResponseFormatJsonSchema,
+        ChatCompletionToolArgs, ChatCompletionToolChoiceOption, ChatCompletionToolType,
+        CompletionUsage, CreateChatCompletionRequestArgs, FunctionObjectArgs, ResponseFormat,
+        ResponseFormatJsonSchema, ServiceTierResponse,
     },
 };
 use async_trait::async_trait;
@@ -33,8 +33,6 @@ use pyo3::pyclass;
 use schemars::{JsonSchema, schema_for};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-
-const CONTEXT_WINDOW_EXCEEDED_CODE: &str = "string_above_max_length";
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[pyclass(module = "oxy_py")]
@@ -70,6 +68,11 @@ enum OpenAIClient {
     OpenAI(Client<OpenAIConfig>),
 }
 
+pub enum OpenAIClientProvider {
+    OpenAI,
+    Gemini,
+}
+
 pub struct OpenAIAgent {
     client: OpenAIClient,
     model: String,
@@ -79,6 +82,19 @@ pub struct OpenAIAgent {
     anonymizer: Option<Box<dyn Anonymizer + Send + Sync>>,
     file_format: FileFormat,
     pub tools: Arc<ToolBox<MultiTool>>,
+    provider: OpenAIClientProvider,
+}
+
+// response from gemini does not have `id` so we need to use custom type
+#[derive(Debug, Deserialize, Serialize)]
+pub struct GeminiCreateChatCompletionResponse {
+    pub choices: Vec<ChatChoice>,
+    pub created: u32,
+    pub model: String,
+    pub service_tier: Option<ServiceTierResponse>,
+    pub system_fingerprint: Option<String>,
+    pub object: String,
+    pub usage: Option<CompletionUsage>,
 }
 
 impl OpenAIAgent {
@@ -93,6 +109,7 @@ impl OpenAIAgent {
         anonymizer: Option<Box<dyn Anonymizer + Send + Sync>>,
         file_format: FileFormat,
         tools: Arc<ToolBox<MultiTool>>,
+        provider: OpenAIClientProvider,
     ) -> Self {
         let url = api_url.unwrap_or(OPENAI_API_BASE.to_string());
         let client_config = if url.contains("azure.com") {
@@ -127,6 +144,7 @@ impl OpenAIAgent {
             anonymizer,
             file_format,
             tools,
+            provider,
         }
     }
 
@@ -169,25 +187,28 @@ impl OpenAIAgent {
             request_builder.response_format(format);
         }
 
-        let request = request_builder.build().unwrap();
+        let mut request = request_builder.build().unwrap();
 
-        let result = match &self.client {
-            OpenAIClient::Azure(client) => client.chat().create(request).await,
-            OpenAIClient::OpenAI(client) => client.chat().create(request).await,
-        };
-        let response = result.map_err(|e| {
-            if let OpenAIError::ApiError(ref api_error) = e {
-                if api_error.code == Some(CONTEXT_WINDOW_EXCEEDED_CODE.to_string()) {
-                    return OxyError::LLMError(
-                        "Context window length exceeded. Shorten the prompt being sent to the LLM."
-                            .into(),
-                    );
-                }
+        match &self.client {
+            OpenAIClient::Azure(client) => {
+                let rs = client.chat().create(request).await?;
+                return Ok(rs.choices[0].message.clone());
             }
-            OxyError::RuntimeError(format!("Error in completion request: {:?}", e))
-        })?;
+            OpenAIClient::OpenAI(client) => match self.provider {
+                OpenAIClientProvider::OpenAI => {
+                    let rs = client.chat().create(request).await?;
 
-        Ok(response.choices[0].message.clone())
+                    return Ok(rs.choices[0].message.clone());
+                }
+                OpenAIClientProvider::Gemini => {
+                    request.tool_choice = Some(ChatCompletionToolChoiceOption::Auto);
+                    let rs: GeminiCreateChatCompletionResponse =
+                        client.chat().create_byot(request).await?;
+
+                    return Ok(rs.choices[0].message.clone());
+                }
+            },
+        };
     }
 
     fn spec_serializer(

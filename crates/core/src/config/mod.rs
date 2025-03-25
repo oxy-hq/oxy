@@ -14,7 +14,7 @@ use dirs::home_dir;
 use parser::{parse_agent_config, parse_semantic_model_config, parse_workflow_config};
 use serde::Deserialize;
 use std::{fs, io};
-use validate::ValidationContext;
+use validate::{AgentValidationContext, ValidationContext};
 
 use crate::{errors::OxyError, utils::find_project_path};
 
@@ -53,10 +53,32 @@ impl Config {
         }
     }
 
+    pub fn validate_agent(&self, agent: &AgentConfig, path: String) -> anyhow::Result<()> {
+        let context = AgentValidationContext {
+            config: self.clone(),
+            agent_config: agent.clone(),
+        };
+        match agent.validate_with(&context) {
+            Ok(_) => Ok(()),
+            Err(e) => anyhow::bail!(OxyError::ConfigurationError(format!(
+                "Invalid agent: {} \n{}",
+                path, e
+            ))),
+        }
+    }
+
     pub fn validate_workflows(&self) -> anyhow::Result<()> {
         for workflow_file in self.list_workflows(&self.project_path) {
             let workflow = self.load_workflow(&workflow_file)?;
             self.validate_workflow(&workflow)?;
+        }
+        Ok(())
+    }
+
+    pub fn validate_agents(&self) -> anyhow::Result<()> {
+        for agent in self.list_agents(&self.project_path) {
+            let agent = self.load_agent_config(Some(&agent))?;
+            self.validate_agent(&agent.0, agent.1)?;
         }
         Ok(())
     }
@@ -152,6 +174,7 @@ impl Config {
         self.models.first().map(|m| match m {
             Model::OpenAI { name, .. } => name.clone(),
             Model::Ollama { name, .. } => name.clone(),
+            Model::Gemini { name, .. } => name.clone(),
         })
     }
 
@@ -162,14 +185,13 @@ impl Config {
                 match match m {
                     Model::OpenAI { name, .. } => name,
                     Model::Ollama { name, .. } => name,
+                    Model::Gemini { name, .. } => name,
                 } {
                     name => name == model_name,
                 }
             })
             .cloned()
-            .ok_or_else(|| {
-                io::Error::new(io::ErrorKind::NotFound, "Default model not found").into()
-            })
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "Model not found").into())
     }
 
     pub fn find_database(&self, database_name: &str) -> anyhow::Result<Database> {

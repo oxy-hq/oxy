@@ -82,13 +82,6 @@
             "type"
           ],
           "properties": {
-            "connection_string_file": {
-              "default": null,
-              "type": [
-                "string",
-                "null"
-              ]
-            },
             "database": {
               "default": null,
               "type": [
@@ -138,13 +131,6 @@
             "type"
           ],
           "properties": {
-            "connection_string_file": {
-              "default": null,
-              "type": [
-                "string",
-                "null"
-              ]
-            },
             "database": {
               "default": null,
               "type": [
@@ -194,13 +180,6 @@
             "type"
           ],
           "properties": {
-            "connection_string_file": {
-              "default": null,
-              "type": [
-                "string",
-                "null"
-              ]
-            },
             "database": {
               "default": null,
               "type": [
@@ -250,35 +229,15 @@
             "type"
           ],
           "properties": {
-            "connection_string_file": {
-              "default": null,
-              "type": [
-                "string",
-                "null"
-              ]
-            },
             "database": {
-              "default": null,
-              "type": [
-                "string",
-                "null"
-              ]
+              "default": "",
+              "type": "string"
             },
             "host": {
-              "default": null,
-              "type": [
-                "string",
-                "null"
-              ]
+              "default": "",
+              "type": "string"
             },
             "password_file": {
-              "default": null,
-              "type": [
-                "string",
-                "null"
-              ]
-            },
-            "port": {
               "default": null,
               "type": [
                 "string",
@@ -292,11 +251,8 @@
               ]
             },
             "user": {
-              "default": null,
-              "type": [
-                "string",
-                "null"
-              ]
+              "default": "",
+              "type": "string"
             }
           }
         }
@@ -370,6 +326,32 @@
               "type": "string",
               "enum": [
                 "openai"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "key_var",
+            "model_ref",
+            "name",
+            "vendor"
+          ],
+          "properties": {
+            "key_var": {
+              "type": "string"
+            },
+            "model_ref": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "vendor": {
+              "type": "string",
+              "enum": [
+                "gemini"
               ]
             }
           }

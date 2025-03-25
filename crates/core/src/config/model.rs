@@ -11,7 +11,9 @@ use crate::config::validate::{
 };
 use schemars::JsonSchema;
 
-use super::validate::validate_task;
+use super::validate::{
+    AgentValidationContext, validate_model, validate_output_format, validate_task,
+};
 
 #[derive(Serialize, Deserialize, Validate, Debug, Clone, JsonSchema)]
 #[garde(context(ValidationContext))]
@@ -217,19 +219,30 @@ impl ClickHouse {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, JsonSchema)]
+pub fn validate_agent_config() {}
+
+#[derive(Serialize, Deserialize, Debug, Clone, JsonSchema, Validate)]
+#[garde(context(AgentValidationContext))]
 pub struct AgentConfig {
     #[serde(skip)]
+    #[garde(skip)]
     pub name: String,
+    #[garde(custom(validate_model))]
     pub model: String,
+    #[garde(length(min = 1))]
     pub system_instructions: String,
     #[serde(default = "default_tools")]
+    #[garde(skip)]
     pub tools: Vec<ToolConfig>,
+    #[garde(skip)]
     pub context: Option<Vec<AgentContext>>,
     #[serde(default)]
+    #[garde(custom(validate_output_format))]
     pub output_format: OutputFormat,
+    #[garde(skip)]
     pub anonymize: Option<AnonymizerConfig>,
     #[serde(default)]
+    #[garde(skip)]
     pub tests: Vec<Eval>,
 }
 
@@ -409,6 +422,15 @@ pub enum Model {
         azure_deployment_id: Option<String>,
         #[garde(skip)]
         azure_api_version: Option<String>,
+    },
+    #[serde(rename = "gemini")]
+    Gemini {
+        #[garde(length(min = 1))]
+        name: String,
+        #[garde(length(min = 1))]
+        model_ref: String,
+        #[garde(custom(validate_env_var))]
+        key_var: String,
     },
     #[serde(rename = "ollama")]
     Ollama {
