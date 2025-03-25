@@ -105,6 +105,22 @@ pub async fn create_thread(
     Ok(extract::Json(thread_item))
 }
 
+pub async fn delete_thread(Path(id): Path<String>) -> Result<StatusCode, StatusCode> {
+    let connection = establish_connection().await;
+    let thread = Threads::find_by_id(Uuid::parse_str(&id).unwrap())
+        .one(&connection)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    if let Some(thread) = thread {
+        let active_thread: entity::threads::ActiveModel = thread.into();
+        active_thread
+            .delete(&connection)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    }
+    Ok(StatusCode::OK)
+}
+
 pub async fn ask_thread(Path(id): Path<String>) -> impl IntoResponse {
     let connection = establish_connection().await;
     let thread = match Uuid::parse_str(&id) {
