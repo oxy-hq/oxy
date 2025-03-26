@@ -13,6 +13,10 @@ export const apiService: Service = {
     const response = await apiClient.delete("/threads/" + threadId);
     return response.data;
   },
+  async deleteAllThread() {
+    const response = await apiClient.delete("/threads");
+    return response.data;
+  },
   async getThread(threadId: string) {
     const response = await apiClient.get("/threads/" + threadId);
     return response.data;

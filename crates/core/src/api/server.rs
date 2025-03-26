@@ -31,6 +31,7 @@ pub async fn serve(address: &SocketAddr) {
         .route("/threads/:id/ask", get(thread::ask_thread))
         .route("/threads", post(thread::create_thread))
         .route("/threads/:id", delete(thread::delete_thread))
+        .route("/threads", delete(thread::delete_all_threads))
         .route("/workflows", get(workflow::list))
         .route("/workflows/:pathb64", get(workflow::get))
         .route("/workflows/:pathb64/logs", get(workflow::get_logs))

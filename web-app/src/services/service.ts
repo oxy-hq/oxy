@@ -6,6 +6,7 @@ export interface Service {
   listThreads(): Promise<ThreadItem[]>;
   createThread(request: ThreadCreateRequest): Promise<ThreadItem>;
   deleteThread(threadId: string): Promise<void>;
+  deleteAllThread(): Promise<void>;
   getThread(threadId: string): Promise<ThreadItem>;
   listAgents(): Promise<string[]>;
 
