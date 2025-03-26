@@ -32,6 +32,10 @@ publish = false
 description = "Oxy"
 authors = ["oxy engineers"]
 documentation = "https://docs.oxy.tech"
+exclude = [
+  "examples",
+]
+
 
 [profile.dev]
 opt-level = 1

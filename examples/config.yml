@@ -10,13 +10,21 @@ databases:
     type: duckdb
     key_path: None
     dataset: .db/
+  
+  - name: snowflake
+    type: snowflake
+    account: jla01554
+    username: jeffthebest
+    password_var: SNOWFLAKE_PASSWORD
+    warehouse: COMPUTE_WH
+    database: DEMO_DB
 
   - name: postgres
     type: postgres
     host: "localhost"
     port: "5432"
     user: "admin"
-    password_file: "example_password_file.txt"
+    password_var: POSTGRES_PASSWORD
     database: "default"
 
   - name: mysql
@@ -24,14 +32,14 @@ databases:
     host: "localhost"
     port: "3306"
     user: "admin"
-    password_file: "example_password_file.txt"
+    password_var: MYSQL_PASSWORD
     database: "default"
 
   - name: clickhouse
     type: clickhouse
     host: http://localhost:8123
     user: default
-    password: ""
+    password_var: CLICKHOUSE_PASSWORD
     database: default
 
 models:

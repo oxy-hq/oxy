@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use colored::*;
 use once_cell::sync::Lazy;
 use std::sync::RwLock;

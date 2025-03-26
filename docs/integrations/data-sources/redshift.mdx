@@ -2,27 +2,57 @@
 title: Redshift
 ---
 
-This tutorial will guide you connecting to a Redshift instance within Oxy. Note that the password should be stored inside a file for security reasons. Please don't hardcode the password in your code and don't check your password file into version control.
+This guide explains how to connect to Amazon Redshift with Oxy. Redshift is a fully managed, petabyte-scale data warehouse service in the cloud.
 
-## Step 1: Create the Password File
+## Configuration Options
 
-Create a file to store your Redshift password. For example, create a file named `password.txt` and add your password to it.
-
-```sh
-echo "your_password" > path/to/password.txt
-```
-
-## Step 2: Configure Redshift in `config.yml`
-
-Add the Redshift configuration to your `config.yml` file. Use the following parameters:
+Add your Redshift configuration to `config.yml`. Here are all available parameters:
 
 ```yaml
 databases:
-  - name: my_redshift_db
+  - name: my_redshift_db     # Unique identifier for this connection
     type: redshift
-    host: "localhost"
-    port: "5439"
-    user: "awsuser"
-    password_file: "path/to/password.txt"
-    database: "my_database"
+    host: "cluster.xxxxx.region.redshift.amazonaws.com"  # Redshift endpoint
+    port: 5439              # Redshift port (default: 5439)
+    user: "awsuser"         # Master username
+    password_var: "RS_PWD"  # Environment variable containing password
+    database: "dev"         # Database name
 ```
+
+
+## Example Configurations
+<Steps>
+<Step title="Prepare password environment variable">
+Export the environment variable:
+```sh
+export RS_PWD=<your password>
+```
+Or put it in `.env` file:
+```sh
+echo RS_PWD=<your password> >> .env
+```
+</Step>
+
+<Step title="Add Redshift configuration">
+```yaml
+databases:
+  - name: rs_analytics
+    type: redshift
+    host: "my-cluster.xxxxx.us-east-1.redshift.amazonaws.com"
+    port: 5439
+    user: "awsuser"
+    password_var: "RS_PWD"
+    database: "analytics"
+```
+</Step>
+</Steps>
+
+## Troubleshooting
+
+- Check cluster status in AWS Console
+- View query history in Redshift console
+- Common issues:
+  - VPC/Security group misconfiguration
+  - IAM permission issues
+  - Connection timeout due to workload management
+  - Query performance problems

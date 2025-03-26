@@ -2,26 +2,52 @@
 title: ClickHouse
 ---
 
-This tutorial will guide you through connecting to ClickHouse with Oxy. Note that the password should be stored in a file for security reasons.
+This guide explains how to connect to ClickHouse with Oxy. ClickHouse is an open-source column-oriented DBMS for real-time analytics.
 
-## Step 1: Create the Password File
+## Configuration Options
 
-Create a file to store your ClickHouse password. For example, create a file named `clickhouse_password.txt` and add your password to it.
-
-```sh
-echo "your_password" > path/to/clickhouse_password.txt
-```
-
-## Step 2: Configure ClickHouse in `config.yml`
-
-Add the ClickHouse configuration to your `config.yml` file. Use the following parameters:
+Add your ClickHouse configuration to `config.yml`. Here are all available parameters:
 
 ```yaml
 databases:
-  - name: my_clickhouse_db
+  - name: my_clickhouse_db    # Unique identifier for this connection
+    type: clickhouse
+    host: "localhost"         # ClickHouse server hostname or IP
+    user: "default"          # Username for authentication
+    password: <password>      # Direct password (not recommended)
+    password_var: "CH_PWD"   # Environment variable containing password (recommended)
+    database: "default"      # Database name to connect to
+```
+
+## Example Configurations
+<Steps>
+<Step title="Prepare password environment variable">
+Export the environment variable:
+```sh
+export CH_PWD=<your password>
+```
+Or put it in `.env` file:
+```sh
+echo CH_PWD=<your password> >> .env
+```
+</Step>
+
+<Step title="Add ClickHouse configuration">
+```yaml
+databases:
+  - name: local_ch
     type: clickhouse
     host: "localhost"
     user: "default"
-    password_file: "path/to/clickhouse_password.txt"
-    database: "default"
+    password_var: "CH_PWD"
+    database: "analytics"
 ```
+</Step>
+</Steps>
+
+## Troubleshooting
+
+- Verify server status: `clickhouse-client --query "SELECT 1"`
+- Check system logs: `/var/log/clickhouse-server/`
+- Common ports: 8123 (HTTP), 9000 (TCP), 9009 (replication)
+- Monitor server metrics: `system.metrics` table

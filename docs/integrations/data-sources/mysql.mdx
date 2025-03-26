@@ -1,28 +1,55 @@
 ---
-title: Mysql
+title: MySQL
 ---
 
-This tutorial will guide you through connecting to Mysql with Oxy. Note that the password should be stored in a file for security reasons.
+This guide explains how to connect to MySQL databases with Oxy. MySQL is one of the world's most popular open-source relational database management systems.
 
-## Step 1: Create the Password File
+## Configuration Options
 
-Create a file to store your Mysql password. For example, create a file named `password.txt` and add your password to it.
-
-```sh
-echo "your_password" > path/to/password.txt
-```
-
-## Step 2: Configure Mysql in `config.yml`
-
-Add the Mysql configuration to your `config.yml` file. Use the following parameters:
+Add your MySQL configuration to `config.yml`. Here are all available parameters:
 
 ```yaml
 databases:
-  - name: my_mysql_db
+  - name: my_mysql_db       # Unique identifier for this connection
+    type: mysql
+    host: "localhost"       # MySQL server hostname or IP
+    port: "3306"           # Port number (default: 3306)
+    user: "root"           # Username for authentication
+    password: <password>    # Direct password (not recommended)
+    password_var: "MYSQL_PWD" # Environment variable containing password (recommended)
+    database: "default"    # Database name to connect to
+```
+
+## Example Configurations
+<Steps>
+<Step title="Prepare password environment variable">
+Export the environment variable:
+```sh
+export MYSQL_PWD=<your password>
+```
+Or put it in `.env` file:
+```sh
+echo MYSQL_PWD=<your password> >> .env
+```
+</Step>
+
+<Step title="Add MySQL configuration">
+```yaml
+databases:
+  - name: local_db
     type: mysql
     host: "localhost"
     port: "3306"
-    user: "root"
-    password_file: "path/to/password.txt"
-    database: "default"
+    user: "dev_user"
+    password_var: "MYSQL_PWD"
+    database: "development"
 ```
+</Step>
+</Steps>
+
+## Troubleshooting
+
+- Verify MySQL server is running: `mysqladmin ping`
+- Check connectivity: `mysql -h hostname -u username -p`
+- Common ports: 3306 (default), 33060 (X Protocol)
+- Ensure user has proper permissions: `SHOW GRANTS`

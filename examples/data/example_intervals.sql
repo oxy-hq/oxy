@@ -1,7 +1,7 @@
 WITH responses AS (
-    SELECT "monthly" as intervals
+    SELECT 'monthly' as intervals
     UNION ALL
-    SELECT "weekly" as intervals
+    SELECT 'weekly' as intervals
 )
 SELECT
   intervals

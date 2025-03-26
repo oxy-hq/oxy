@@ -79,6 +79,48 @@
         {
           "type": "object",
           "required": [
+            "account",
+            "password",
+            "type",
+            "username",
+            "warehouse"
+          ],
+          "properties": {
+            "account": {
+              "type": "string"
+            },
+            "database": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "password": {
+              "type": "string"
+            },
+            "role": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "snowflake"
+              ]
+            },
+            "username": {
+              "type": "string"
+            },
+            "warehouse": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
             "type"
           ],
           "properties": {

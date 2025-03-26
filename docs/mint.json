@@ -81,7 +81,10 @@
         "integrations/data-sources/bigquery",
         "integrations/data-sources/duckdb",
         "integrations/data-sources/postgres",
-        "integrations/data-sources/redshift"
+        "integrations/data-sources/redshift",
+        "integrations/data-sources/mysql",
+        "integrations/data-sources/clickhouse",
+        "integrations/data-sources/snowflake"
       ]
     },
     {
