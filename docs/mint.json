@@ -64,7 +64,8 @@
             "learn-about-oxy/context",
             "learn-about-oxy/semantic-model",
             "learn-about-oxy/testing",
-            "learn-about-oxy/workflows"
+            "learn-about-oxy/workflows",
+            "learn-about-oxy/cache"
           ]
         },
         "learn-about-oxy/config"
