@@ -149,10 +149,12 @@ pub fn validate_output_format(
 
     match output_format {
         OutputFormat::File => match model {
-            Model::Gemini { .. } => Err(garde::Error::new(
-                "Gemini model does not support file output format",
-            )),
-            _ => Ok(()),
+            Model::Google { .. } => {
+                return Err(garde::Error::new(
+                    "Gemini model does not support file output format",
+                ));
+            }
+            _ => return Ok(()),
         },
         _ => Ok(()),
     }

@@ -415,8 +415,8 @@ pub enum Model {
         #[garde(skip)]
         azure_api_version: Option<String>,
     },
-    #[serde(rename = "gemini")]
-    Gemini {
+    #[serde(rename = "google")]
+    Google {
         #[garde(length(min = 1))]
         name: String,
         #[garde(length(min = 1))]

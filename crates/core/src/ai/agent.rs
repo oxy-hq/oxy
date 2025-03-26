@@ -70,7 +70,7 @@ enum OpenAIClient {
 
 pub enum OpenAIClientProvider {
     OpenAI,
-    Gemini,
+    Google,
 }
 
 pub struct OpenAIAgent {
@@ -200,7 +200,7 @@ impl OpenAIAgent {
 
                     Ok(rs.choices[0].message.clone())
                 }
-                OpenAIClientProvider::Gemini => {
+                OpenAIClientProvider::Google => {
                     request.tool_choice = Some(ChatCompletionToolChoiceOption::Auto);
                     let rs: GeminiCreateChatCompletionResponse =
                         client.chat().create_byot(request).await?;

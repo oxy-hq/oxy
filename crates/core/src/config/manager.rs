@@ -26,7 +26,7 @@ impl ConfigManager {
                 match match m {
                     Model::OpenAI { name, .. } => name,
                     Model::Ollama { name, .. } => name,
-                    Model::Gemini { name, .. } => name,
+                    Model::Google { name, .. } => name,
                 } {
                     name => name == model_name,
                 }
@@ -41,7 +41,7 @@ impl ConfigManager {
         self.config.models.first().map(|m| match m {
             Model::OpenAI { name, .. } => name,
             Model::Ollama { name, .. } => name,
-            Model::Gemini { name, .. } => name,
+            Model::Google { name, .. } => name,
         })
     }
 
