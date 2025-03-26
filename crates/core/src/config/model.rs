@@ -2,8 +2,8 @@ use garde::Validate;
 use indoc::indoc;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::fmt;
 use std::path::PathBuf;
+use std::{env, fmt};
 
 use crate::config::validate::validate_file_path;
 use crate::config::validate::{
@@ -78,9 +78,9 @@ pub struct Postgres {
     #[schemars(skip)]
     #[serde(default)]
     pub password: Option<String>,
-    #[garde(custom(validate_file_path))]
     #[serde(default)]
-    pub password_file: Option<PathBuf>,
+    #[garde(skip)]
+    pub password_var: Option<String>,
     #[garde(length(min = 1))]
     #[serde(default)]
     pub database: Option<String>,
@@ -93,10 +93,8 @@ impl Postgres {
                 return Some(password.clone());
             }
         }
-        if let Some(password_file) = &self.password_file {
-            return std::fs::read_to_string(password_file)
-                .ok()
-                .map(|s| s.trim().to_string());
+        if let Some(password_var) = &self.password_var {
+            return env::var(password_var).ok();
         }
         None
     }
@@ -118,9 +116,9 @@ pub struct Redshift {
     #[schemars(skip)]
     #[serde(default)]
     pub password: Option<String>,
-    #[garde(custom(validate_file_path))]
     #[serde(default)]
-    pub password_file: Option<PathBuf>,
+    #[garde(skip)]
+    pub password_var: Option<String>,
     #[garde(length(min = 1))]
     #[serde(default)]
     pub database: Option<String>,
@@ -133,10 +131,8 @@ impl Redshift {
                 return Some(password.clone());
             }
         }
-        if let Some(password_file) = &self.password_file {
-            return std::fs::read_to_string(password_file)
-                .ok()
-                .map(|s| s.trim().to_string());
+        if let Some(password_var) = &self.password_var {
+            return env::var(password_var).ok();
         }
         None
     }
@@ -158,9 +154,9 @@ pub struct Mysql {
     #[schemars(skip)]
     #[serde(default)]
     pub password: Option<String>,
-    #[garde(custom(validate_file_path))]
     #[serde(default)]
-    pub password_file: Option<PathBuf>,
+    #[garde(skip)]
+    pub password_var: Option<String>,
     #[garde(length(min = 1))]
     #[serde(default)]
     pub database: Option<String>,
@@ -173,10 +169,8 @@ impl Mysql {
                 return Some(password.clone());
             }
         }
-        if let Some(password_file) = &self.password_file {
-            return std::fs::read_to_string(password_file)
-                .ok()
-                .map(|s| s.trim().to_string());
+        if let Some(password_var) = &self.password_var {
+            return env::var(password_var).ok();
         }
         None
     }
@@ -196,8 +190,8 @@ pub struct ClickHouse {
     #[schemars(skip)]
     pub password: Option<String>,
     #[serde(default)]
-    #[garde(custom(validate_file_path))]
-    pub password_file: Option<PathBuf>,
+    #[garde(skip)]
+    pub password_var: Option<String>,
     #[serde(default)]
     #[garde(length(min = 1))]
     pub database: String,
@@ -210,10 +204,8 @@ impl ClickHouse {
                 return Some(password.clone());
             }
         }
-        if let Some(password_file) = &self.password_file {
-            return std::fs::read_to_string(password_file)
-                .ok()
-                .map(|s| s.trim().to_string());
+        if let Some(password_var) = &self.password_var {
+            return env::var(password_var).ok();
         }
         None
     }
@@ -321,12 +313,47 @@ pub struct DuckDB {
 
 #[derive(Serialize, Deserialize, Debug, Validate, Clone, JsonSchema)]
 #[garde(context(ValidationContext))]
+pub struct Snowflake {
+    #[garde(skip)]
+    pub account: String,
+    #[garde(skip)]
+    pub username: String,
+    #[garde(skip)]
+    pub password: Option<String>,
+    #[garde(skip)]
+    pub password_var: String,
+    #[garde(skip)]
+    pub warehouse: String,
+    #[garde(skip)]
+    pub database: Option<String>,
+    #[garde(skip)]
+    pub role: Option<String>,
+}
+
+impl Snowflake {
+    pub fn get_password(&self) -> Option<String> {
+        if let Some(password) = &self.password {
+            if !password.is_empty() {
+                return Some(password.clone());
+            }
+        }
+        if !self.password_var.is_empty() {
+            return env::var(&self.password_var).ok();
+        }
+        None
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Validate, Clone, JsonSchema)]
+#[garde(context(ValidationContext))]
 #[serde(tag = "type")]
 pub enum DatabaseType {
     #[serde(rename = "bigquery")]
     Bigquery(#[garde(dive)] BigQuery),
     #[serde(rename = "duckdb")]
     DuckDB(#[garde(dive)] DuckDB),
+    #[serde(rename = "snowflake")]
+    Snowflake(#[garde(dive)] Snowflake),
     #[serde(rename = "postgres")]
     Postgres(#[garde(dive)] Postgres),
     #[serde(rename = "redshift")]
@@ -342,6 +369,7 @@ impl fmt::Display for DatabaseType {
         match self {
             DatabaseType::Bigquery(_) => write!(f, "bigquery"),
             DatabaseType::DuckDB(_) => write!(f, "duckdb"),
+            DatabaseType::Snowflake(_) => write!(f, "snowflake"),
             DatabaseType::Postgres(_) => write!(f, "postgres"),
             DatabaseType::Redshift(_) => write!(f, "redshift"),
             DatabaseType::Mysql(_) => write!(f, "mysql"),
@@ -370,6 +398,7 @@ impl Database {
             DatabaseType::Redshift(rs) => rs.database.clone().unwrap_or_default(),
             DatabaseType::Mysql(my) => my.database.clone().unwrap_or_default(),
             DatabaseType::ClickHouse(ch) => ch.database.clone(),
+            DatabaseType::Snowflake(sn) => sn.warehouse.clone(),
         }
     }
 
@@ -381,6 +410,7 @@ impl Database {
             DatabaseType::Redshift(_) => "postgres".to_owned(),
             DatabaseType::Mysql(_) => "mysql".to_owned(),
             DatabaseType::ClickHouse(_) => "clickhouse".to_string(),
+            DatabaseType::Snowflake(_) => "snowflake".to_string(),
         }
     }
 

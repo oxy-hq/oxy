@@ -1,16 +1,23 @@
 use arrow::datatypes::{Schema, SchemaRef};
 use arrow::ipc::{reader::FileReader, writer::FileWriter};
+use arrow::json::ReaderBuilder;
+use arrow::json::reader::infer_json_schema;
 use arrow::{array::as_string_array, error::ArrowError, record_batch::RecordBatch};
 use clickhouse::Client;
 use connectorx::prelude::{CXQuery, SourceConn, get_arrow};
 use duckdb::Connection;
+use garde::rules::length::HasSimpleLength;
+use itertools::Itertools;
 use log::debug;
+use snowflake_api::{QueryResult, SnowflakeApi};
 use std::fs::File;
 use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::config::ConfigManager;
-use crate::config::model::{ClickHouse as ConfigClickHouse, DatabaseType};
+use crate::config::model::{
+    ClickHouse as ConfigClickHouse, DatabaseType, Snowflake as SnowflakeConfig,
+};
 use crate::errors::OxyError;
 
 const CREATE_CONN: &str = "Failed to open connection";
@@ -50,6 +57,7 @@ enum EngineType {
     DuckDB,
     ConnectorX,
     ClickHouse,
+    Snowflake,
 }
 
 use std::io::Cursor;
@@ -59,10 +67,124 @@ pub struct ClickHouse {
     pub config: ConfigClickHouse,
 }
 
-impl ClickHouse {
+#[derive(Debug)]
+pub struct Snowflake {
+    pub config: SnowflakeConfig,
+}
+
+impl Snowflake {
     pub async fn get_schemas(&self) -> Result<Vec<String>, OxyError> {
         let query_string = "SELECT name FROM system.tables WHERE database = currentDatabase()";
         let rs = self.run_query_and_load(query_string).await;
+        let (datasets, _) = self.run_query_and_load(query_string).await?;
+        let result_iter = datasets
+            .iter()
+            .flat_map(|batch| as_string_array(batch.column(0)).iter());
+        Ok(result_iter
+            .map(|name| name.map(|s| s.to_string()))
+            .collect::<Option<Vec<String>>>()
+            .unwrap_or_default())
+    }
+}
+
+impl Engine for Snowflake {
+    async fn run_query(&self, query: &str) -> Result<String, OxyError> {
+        let config = self.config.clone();
+        let api = SnowflakeApi::with_password_auth(
+            config.account.as_str(),
+            Some(config.warehouse.as_str()),
+            config.database.as_deref(),
+            None,
+            &config.username,
+            config.role.as_deref(),
+            &config.get_password().unwrap_or("".to_string()),
+        )
+        .map_err(|err| connector_internal_error(CREATE_CONN, &err))?;
+        let res = api
+            .exec(query)
+            .await
+            .map_err(|err| connector_internal_error(EXECUTE_QUERY, &err))?;
+        let record_batches: Vec<RecordBatch>;
+        match res {
+            QueryResult::Arrow(batches) => {
+                record_batches = batches;
+            }
+            QueryResult::Json(json) => {
+                let batches = convert_json_result_to_arrow(&json)?;
+                record_batches = batches;
+            }
+            QueryResult::Empty => return Ok("".to_string()),
+        }
+        let schema = record_batches[0].schema();
+        let file_path = format!("/tmp/{}.arrow", Uuid::new_v4());
+        write_to_ipc(&record_batches, &file_path, &schema)
+            .map_err(|err| connector_internal_error(WRITE_RESULT, &err))?;
+        return Ok(file_path);
+    }
+
+    async fn load_database_info(&self) -> Result<DatabaseInfo, OxyError> {
+        Ok(DatabaseInfo {
+            name: self.config.warehouse.clone(),
+            dialect: "clickhouse".to_string(),
+            tables: self.get_schemas().await?,
+        })
+    }
+}
+
+fn convert_to_json_objects(json: &snowflake_api::JsonResult) -> serde_json::Value {
+    let mut rs: Vec<serde_json::Value> = vec![];
+    match &json.value {
+        serde_json::Value::Array(values) => {
+            for value in values {
+                let mut m: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
+                match value {
+                    serde_json::Value::Array(inner_values) => {
+                        for field in &json.schema {
+                            let field_name = field.name.clone();
+                            let field_index = json
+                                .schema
+                                .iter()
+                                .position(|x| x.name == field_name)
+                                .unwrap();
+                            let field_value = inner_values[field_index].clone();
+                            m.insert(field_name, field_value);
+                        }
+                    }
+                    _ => {}
+                }
+                rs.push(serde_json::Value::Object(m));
+            }
+        }
+        _ => {}
+    }
+    return serde_json::Value::Array(rs);
+}
+
+fn convert_json_result_to_arrow(
+    json: &snowflake_api::JsonResult,
+) -> Result<Vec<RecordBatch>, OxyError> {
+    let json_objects = convert_to_json_objects(json);
+    let infer_cursor = std::io::Cursor::new(json_objects[0].to_string());
+    let (arrow_schema, _) = infer_json_schema(infer_cursor, None)
+        .map_err(|err| OxyError::DBError(format!("Failed to infer JSON schema: {}", err)))?;
+
+    let json_string = json_objects.to_string();
+    let json_stream_string = json_string[1..json_string.length() - 1]
+        .to_string()
+        .split(",")
+        .join("");
+    let cursor = std::io::Cursor::new(json_stream_string);
+    let reader = ReaderBuilder::new(Arc::new(arrow_schema))
+        .build(cursor)
+        .map_err(|err| OxyError::DBError(format!("Failed to create JSON reader: {}", err)))?;
+    return Ok(reader
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|err| OxyError::DBError(format!("Failed to convert JSON to Arrow: {}", err)))?);
+}
+
+impl ClickHouse {
+    pub async fn get_schemas(&self) -> Result<Vec<String>, OxyError> {
+        let query_string = "SELECT name FROM system.tables WHERE database = currentDatabase()";
         let (datasets, _) = self.run_query_and_load(query_string).await?;
         let result_iter = datasets
             .iter()
@@ -319,6 +441,9 @@ impl Connector {
             DatabaseType::ClickHouse(ch) => {
                 EngineType::ClickHouse(ClickHouse { config: ch.clone() })
             }
+            DatabaseType::Snowflake(snowflake) => EngineType::Snowflake(Snowflake {
+                config: snowflake.clone(),
+            }),
         };
         Ok(Connector {
             engine,

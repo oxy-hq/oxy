@@ -1,9 +1,9 @@
-select "apple" as name, 325 as sales
+select 'apple' as name, 325 as sales
 union all
-select "banana" as name, 2000 as sales
+select 'banana' as name, 2000 as sales
 union all
-select "cherry" as name, 18 as sales
+select 'cherry' as name, 18 as sales
 union all
-select "kiwi" as name, 120 as sales
+select 'kiwi' as name, 120 as sales
 union all 
-select "orange" as name, 1500 as sales
+select 'orange' as name, 1500 as sales

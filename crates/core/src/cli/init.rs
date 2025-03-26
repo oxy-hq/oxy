@@ -88,19 +88,10 @@ fn collect_postgres_conf() -> Result<DatabaseType, InitError> {
     let host = prompt_with_default("Host", "localhost", None)?;
     let port = prompt_with_default("Port", "5432", None)?;
     let user = prompt_with_default("User", "postgres", None)?;
-    let password_file = PathBuf::from(prompt_with_default("Password file", "password.txt", None)?);
-    let password = fs::read_to_string(&password_file)
-        .map_err(|_| InitError::ExtractionError("Failed to read password file".to_string()))?
-        .trim()
-        .to_string();
+    let password = prompt_with_default("Password", "password", None)?;
     let database = prompt_with_default("Database", "postgres", None)?;
 
-    if host.is_empty()
-        || port.is_empty()
-        || user.is_empty()
-        || password.is_empty()
-        || database.is_empty()
-    {
+    if host.is_empty() || port.is_empty() || user.is_empty() || database.is_empty() {
         return Err(InitError::ExtractionError(
             REQUIRED_FIELDS_ERROR.to_string(),
         ));
@@ -112,7 +103,7 @@ fn collect_postgres_conf() -> Result<DatabaseType, InitError> {
         user: Some(user),
         password: Some(password),
         database: Some(database),
-        password_file: Some(password_file.clone()), // Added missing field
+        password_var: None,
     }))
 }
 
@@ -120,11 +111,7 @@ fn collect_redshift_conf() -> Result<DatabaseType, InitError> {
     let host = prompt_with_default("Host", "localhost", None)?;
     let port = prompt_with_default("Port", "5439", None)?;
     let user = prompt_with_default("User", "awsuser", None)?;
-    let password_file = PathBuf::from(prompt_with_default("Password file", "password.txt", None)?);
-    let password = fs::read_to_string(&password_file)
-        .map_err(|_| InitError::ExtractionError("Failed to read password file".to_string()))?
-        .trim()
-        .to_string();
+    let password = prompt_with_default("Password", "password", None)?;
     let database = prompt_with_default("Database", "dev", None)?;
 
     if host.is_empty()
@@ -144,7 +131,7 @@ fn collect_redshift_conf() -> Result<DatabaseType, InitError> {
         user: Some(user),
         password: Some(password),
         database: Some(database),
-        password_file: Some(password_file.clone()), // Added missing field
+        password_var: None,
     }))
 }
 
@@ -152,19 +139,10 @@ fn collect_mysql_conf() -> Result<DatabaseType, InitError> {
     let host = prompt_with_default("Host", "localhost", None)?;
     let port = prompt_with_default("Port", "3306", None)?;
     let user = prompt_with_default("User", "root", None)?;
-    let password_file = PathBuf::from(prompt_with_default("Password file", "password.txt", None)?);
-    let password = fs::read_to_string(&password_file)
-        .map_err(|_| InitError::ExtractionError("Failed to read password file".to_string()))?
-        .trim()
-        .to_string();
+    let password = prompt_with_default("Password", "password", None)?;
     let database = prompt_with_default("Database", "default", None)?;
 
-    if host.is_empty()
-        || port.is_empty()
-        || user.is_empty()
-        || password.is_empty()
-        || database.is_empty()
-    {
+    if host.is_empty() || port.is_empty() || user.is_empty() || database.is_empty() {
         return Err(InitError::ExtractionError(
             REQUIRED_FIELDS_ERROR.to_string(),
         ));
@@ -176,18 +154,14 @@ fn collect_mysql_conf() -> Result<DatabaseType, InitError> {
         user: Some(user),
         password: Some(password),
         database: Some(database),
-        password_file: Some(password_file), // Added missing field
+        password_var: None,
     }))
 }
 
 fn collect_clickhouse_conf() -> Result<DatabaseType, InitError> {
     let host = prompt_with_default("Host", "localhost", None)?;
     let user = prompt_with_default("User", "default", None)?;
-    let password_file = PathBuf::from(prompt_with_default("Password file", "password.txt", None)?);
-    let password = fs::read_to_string(&password_file)
-        .map_err(|_| InitError::ExtractionError("Failed to read password file".to_string()))?
-        .trim()
-        .to_string();
+    let password = prompt_with_default("Password", "password", None)?;
     let database = prompt_with_default("Database", "default", None)?;
 
     if host.is_empty() || user.is_empty() || password.is_empty() || database.is_empty() {
@@ -201,7 +175,7 @@ fn collect_clickhouse_conf() -> Result<DatabaseType, InitError> {
         user,
         password: Some(password),
         database,
-        password_file: Some(password_file),
+        password_var: None,
     }))
 }
 
@@ -451,21 +425,6 @@ fn create_config_file(config_path: &Path) -> Result<(), InitError> {
     fs::write(config_path, content)?;
     for database in &databases {
         match &database.database_type {
-            DatabaseType::Postgres(postgres) => {
-                if let Some(password) = &postgres.password {
-                    sensitive_files.push(Path::new(password));
-                }
-            }
-            DatabaseType::Mysql(mysql) => {
-                if let Some(password_file) = &mysql.password_file {
-                    sensitive_files.push(password_file.as_path());
-                }
-            }
-            DatabaseType::Redshift(redshift) => {
-                if let Some(password_file) = &redshift.password_file {
-                    sensitive_files.push(password_file.as_path());
-                }
-            }
             _ => {}
         }
     }

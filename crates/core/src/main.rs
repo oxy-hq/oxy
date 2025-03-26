@@ -3,6 +3,7 @@ use std::str::FromStr;
 
 use oxy::cli::cli;
 mod theme;
+use dotenv::dotenv;
 use fern::colors::{Color, ColoredLevelConfig};
 use human_panic::Metadata;
 use human_panic::setup_panic;
@@ -65,6 +66,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .support("- For support, please email robert@oxy.tech or contact us directly via Discord or Github.")
     );
     init_logging()?;
+    dotenv().ok();
     match cli().await {
         Ok(_) => {}
         Err(e) => {
