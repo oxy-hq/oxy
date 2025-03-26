@@ -126,7 +126,7 @@ fn build_agent(
                 OpenAIClientProvider::OpenAI,
             )
         }
-        Model::Gemini {
+        Model::Google {
             name: _,
             model_ref,
             key_var,
@@ -148,7 +148,7 @@ fn build_agent(
                 anonymizer,
                 file_format.clone(),
                 tools,
-                OpenAIClientProvider::Gemini,
+                OpenAIClientProvider::Google,
             )
         }
         Model::Ollama {

@@ -174,7 +174,7 @@ impl Config {
         self.models.first().map(|m| match m {
             Model::OpenAI { name, .. } => name.clone(),
             Model::Ollama { name, .. } => name.clone(),
-            Model::Gemini { name, .. } => name.clone(),
+            Model::Google { name, .. } => name.clone(),
         })
     }
 
@@ -192,7 +192,7 @@ impl Config {
                 match match m {
                     Model::OpenAI { name, .. } => name,
                     Model::Ollama { name, .. } => name,
-                    Model::Gemini { name, .. } => name,
+                    Model::Google { name, .. } => name,
                 } {
                     name => name == model_name,
                 }
