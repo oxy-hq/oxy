@@ -121,6 +121,16 @@ pub async fn delete_thread(Path(id): Path<String>) -> Result<StatusCode, StatusC
     Ok(StatusCode::OK)
 }
 
+pub async fn delete_all_threads() -> Result<StatusCode, StatusCode> {
+    let connection = establish_connection().await;
+    Threads::delete_many()
+        .exec(&connection)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(StatusCode::OK)
+}
+
 pub async fn ask_thread(Path(id): Path<String>) -> impl IntoResponse {
     let connection = establish_connection().await;
     let thread = match Uuid::parse_str(&id) {

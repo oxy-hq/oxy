@@ -26,7 +26,7 @@ export function Workflows() {
           const pathb64 = btoa(workflow.path);
           const workflowUri = `/workflows/${pathb64}`;
           return (
-            <SidebarMenuSubItem>
+            <SidebarMenuSubItem key={pathb64}>
               <SidebarMenuSubButton
                 asChild
                 isActive={location.pathname === workflowUri}
