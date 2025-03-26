@@ -436,7 +436,6 @@ fn create_config_file(config_path: &Path) -> Result<(), InitError> {
         models,
         defaults: Some(Defaults {
             database: Some(default_database),
-            agent: Some("sql-generator.agent.yml".to_string()),
         }),
         project_path: PathBuf::new(),
     };

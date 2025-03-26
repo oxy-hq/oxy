@@ -1,5 +1,3 @@
-use assert_cmd::output;
-
 use super::model::{AgentConfig, Config, ExportFormat, Model, OutputFormat, TaskExport, TaskType};
 use std::{env, fmt::Display, path::PathBuf};
 
@@ -151,12 +149,10 @@ pub fn validate_output_format(
 
     match output_format {
         OutputFormat::File => match model {
-            Model::Gemini { .. } => {
-                return Err(garde::Error::new(
-                    "Gemini model does not support file output format",
-                ));
-            }
-            _ => return Ok(()),
+            Model::Gemini { .. } => Err(garde::Error::new(
+                "Gemini model does not support file output format",
+            )),
+            _ => Ok(()),
         },
         _ => Ok(()),
     }
