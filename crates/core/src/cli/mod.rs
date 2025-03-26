@@ -509,8 +509,32 @@ pub async fn handle_test_command(test_args: TestArgs) -> Result<(), OxyError> {
     run_eval(file_path, test_args.quiet).await
 }
 pub async fn start_server_and_web_app() {
+    let mut web_port = 3000;
+    while tokio::net::TcpListener::bind(("127.0.0.1", web_port))
+        .await
+        .is_err()
+    {
+        println!(
+            "Port {} for web app is occupied. Trying next port...",
+            web_port
+        );
+        web_port += 1;
+    }
+
+    let mut api_port = web_port + 1;
+    while tokio::net::TcpListener::bind(("127.0.0.1", api_port))
+        .await
+        .is_err()
+    {
+        println!(
+            "Port {} for API server is occupied. Trying next port...",
+            api_port
+        );
+        api_port += 1;
+    }
+
     let server_task = tokio::spawn(async move {
-        let addr = SocketAddr::from(([127, 0, 0, 1], 3001));
+        let addr = SocketAddr::from(([127, 0, 0, 1], api_port));
         println!(
             "{} {}",
             "API server running at".text(),
@@ -547,7 +571,7 @@ pub async fn start_server_and_web_app() {
             .nest_service("/", serve_with_fallback)
             .fallback_service(fallback_service);
 
-        let web_addr = SocketAddr::from(([127, 0, 0, 1], 3000));
+        let web_addr = SocketAddr::from(([127, 0, 0, 1], web_port));
         let listener = tokio::net::TcpListener::bind(web_addr).await.unwrap();
         println!(
             "{} {}",
