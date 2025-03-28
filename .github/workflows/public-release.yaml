@@ -150,11 +150,11 @@ jobs:
       - name: Unify release-please changelog (once)
         if: ${{ matrix.job.target == 'aarch64-apple-darwin' }}
         run: |
-          echo "# Changelog" > artifacts/CHANGELOG.md
+          echo "## Backend" > artifacts/CHANGELOG.md
           awk '/^## \[/{flag=0} /^## \[${{ inputs.tag || github.ref_name  }}\]/{flag=1} flag' artifacts/backend-CHANGELOG.md >> artifacts/CHANGELOG.md
           echo "" >> artifacts/CHANGELOG.md
           echo "## Frontend" >> artifacts/CHANGELOG.md
-          cat artifacts/frontend-CHANGELOG.md >> artifacts/CHANGELOG.md
+          awk '/^## \[/{flag=0} /^## \[${{ inputs.tag || github.ref_name  }}\]/{flag=1} flag' artifacts/frontend-CHANGELOG.md >> artifacts/CHANGELOG.md
 
       #-- Upload release artifacts
       - name: Upload release artifacts
