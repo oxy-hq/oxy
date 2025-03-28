@@ -1,3 +1,5 @@
+use assert_cmd::output;
+
 use super::model::{AgentConfig, Config, ExportFormat, Model, OutputFormat, TaskExport, TaskType};
 use std::{env, fmt::Display, path::PathBuf};
 
