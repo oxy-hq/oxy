@@ -80,7 +80,8 @@
           "type": "object",
           "required": [
             "account",
-            "password",
+            "database",
+            "password_var",
             "type",
             "username",
             "warehouse"
@@ -90,12 +91,15 @@
               "type": "string"
             },
             "database": {
+              "type": "string"
+            },
+            "password": {
               "type": [
                 "string",
                 "null"
               ]
             },
-            "password": {
+            "password_var": {
               "type": "string"
             },
             "role": {
@@ -138,7 +142,7 @@
                 "null"
               ]
             },
-            "password_file": {
+            "password_var": {
               "default": null,
               "type": [
                 "string",
@@ -187,7 +191,7 @@
                 "null"
               ]
             },
-            "password_file": {
+            "password_var": {
               "default": null,
               "type": [
                 "string",
@@ -236,7 +240,7 @@
                 "null"
               ]
             },
-            "password_file": {
+            "password_var": {
               "default": null,
               "type": [
                 "string",
@@ -279,7 +283,7 @@
               "default": "",
               "type": "string"
             },
-            "password_file": {
+            "password_var": {
               "default": null,
               "type": [
                 "string",
@@ -387,7 +391,7 @@
             "vendor": {
               "type": "string",
               "enum": [
-                "gemini"
+                "google"
               ]
             }
           }

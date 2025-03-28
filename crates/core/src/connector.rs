@@ -74,16 +74,24 @@ pub struct Snowflake {
 
 impl Snowflake {
     pub async fn get_schemas(&self) -> Result<Vec<String>, OxyError> {
-        let query_string = "SELECT name FROM system.tables WHERE database = currentDatabase()";
-        let rs = self.run_query_and_load(query_string).await;
-        let (datasets, _) = self.run_query_and_load(query_string).await?;
-        let result_iter = datasets
+        let query_string = format!(
+            "select get_ddl('DATABASE', '{}', false);",
+            self.config.database
+        );
+        let (datasets, _) = self.run_query_and_load(query_string.as_str()).await?;
+        let ddl = datasets
             .iter()
-            .flat_map(|batch| as_string_array(batch.column(0)).iter());
-        Ok(result_iter
-            .map(|name| name.map(|s| s.to_string()))
-            .collect::<Option<Vec<String>>>()
-            .unwrap_or_default())
+            .flat_map(|batch| as_string_array(batch.column(0)).iter())
+            .collect::<Vec<_>>()[0]
+            .unwrap_or_default();
+        let statements = ddl.split(";");
+        let mut tables = vec![];
+        for statement in statements {
+            if statement.contains("create or replace TABLE") {
+                tables.push(statement.replace("create or replace TABLE", "create_table"))
+            }
+        }
+        Ok(tables)
     }
 }
 
@@ -93,7 +101,7 @@ impl Engine for Snowflake {
         let api = SnowflakeApi::with_password_auth(
             config.account.as_str(),
             Some(config.warehouse.as_str()),
-            config.database.as_deref(),
+            Some(config.database.as_str()),
             None,
             &config.username,
             config.role.as_deref(),

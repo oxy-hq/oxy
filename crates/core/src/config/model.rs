@@ -325,7 +325,7 @@ pub struct Snowflake {
     #[garde(skip)]
     pub warehouse: String,
     #[garde(skip)]
-    pub database: Option<String>,
+    pub database: String,
     #[garde(skip)]
     pub role: Option<String>,
 }
