@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.1.5](https://github.com/oxy-hq/oxy-internal/compare/0.1.4...0.1.5) (2025-03-28)
+
+
+### <!-- 0 -->🚀 Features
+
+* [#510](https://github.com/oxy-hq/oxy-internal/issues/510) delete thread ([#520](https://github.com/oxy-hq/oxy-internal/issues/520)) ([998b9dd](https://github.com/oxy-hq/oxy-internal/commit/998b9ddf2fd690311a7524352deb89a3d4ff1096))
+* add clickhouse & mysql support ([#508](https://github.com/oxy-hq/oxy-internal/issues/508)) ([2415510](https://github.com/oxy-hq/oxy-internal/commit/2415510567b484b927299d7daf995ecfbe3f41f9))
+* add self-update to check for latest update ([9cdb948](https://github.com/oxy-hq/oxy-internal/commit/9cdb948e54e2ccd5e4e54f1d45cc1e23a59041a4))
+* delete all threads ([#526](https://github.com/oxy-hq/oxy-internal/issues/526)) ([74f8be6](https://github.com/oxy-hq/oxy-internal/commit/74f8be6d8907d445c48d3eb01960434738c40cc0))
+* gemini support ([#521](https://github.com/oxy-hq/oxy-internal/issues/521)) ([a0855e2](https://github.com/oxy-hq/oxy-internal/commit/a0855e27986363ae28c702eb0ba642d34771aa72))
+* self-update to check for latest update (closes [#132](https://github.com/oxy-hq/oxy-internal/issues/132)) ([#525](https://github.com/oxy-hq/oxy-internal/issues/525)) ([9cdb948](https://github.com/oxy-hq/oxy-internal/commit/9cdb948e54e2ccd5e4e54f1d45cc1e23a59041a4))
+* support snowflake and read env from .env ([#527](https://github.com/oxy-hq/oxy-internal/issues/527)) ([be4d803](https://github.com/oxy-hq/oxy-internal/commit/be4d8039b2603b42f9bd20b87d6efa9c62b60eb0))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* **#410:** handling of multibytes char inside pluralizer ([#522](https://github.com/oxy-hq/oxy-internal/issues/522)) ([6b6e91d](https://github.com/oxy-hq/oxy-internal/commit/6b6e91dbd9af6bf965926382fdd6b172eeb814b5))
+* figure out another port when one is busy ([#528](https://github.com/oxy-hq/oxy-internal/issues/528)) ([5477445](https://github.com/oxy-hq/oxy-internal/commit/54774451644b11e8d1e8d322ed5d7d73a3eceaec))
+* get schema not working for snowflake ([#534](https://github.com/oxy-hq/oxy-internal/issues/534)) ([14f8a77](https://github.com/oxy-hq/oxy-internal/commit/14f8a77583c8d0250e45e825011b27f7c756cf38))
+
 ## [0.1.4](https://github.com/oxy-hq/oxy-internal/compare/0.1.3...0.1.4) (2025-03-21)
 
 ### <!-- 0 -->🚀 Features
