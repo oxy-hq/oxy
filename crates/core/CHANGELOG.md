@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.6](https://github.com/oxy-hq/oxy-internal/compare/0.1.5...0.1.6) (2025-03-28)
+
+
+### <!-- 0 -->🚀 Features
+
+* support running api and web on same port ([#536](https://github.com/oxy-hq/oxy-internal/issues/536)) ([a1e9ff5](https://github.com/oxy-hq/oxy-internal/commit/a1e9ff51f8b0c414ef67a7b4ed952fc0b8e3e307))
+
 ## [0.1.5](https://github.com/oxy-hq/oxy-internal/compare/0.1.4...0.1.5) (2025-03-28)
 
 
