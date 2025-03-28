@@ -166,18 +166,17 @@ impl<'py> FromPyObject<'py> for RunOptions {
 }
 
 impl RunArgs {
-    pub fn from(file: String, options: Option<RunOptions>, config: &Config) -> Self {
-        let default_database = config.default_database();
+    pub fn from(file: String, options: Option<RunOptions>) -> Self {
         match options {
             Some(options) => Self {
                 file,
-                database: options.database.or(default_database),
+                database: options.database,
                 variables: options.variables.unwrap_or(vec![]),
                 question: options.question,
             },
             None => Self {
                 file,
-                database: default_database,
+                database: None,
                 variables: vec![],
                 question: None,
             },
@@ -455,11 +454,6 @@ pub async fn handle_run_command(run_args: RunArgs) -> Result<RunResult, OxyError
 
     let extension = file_path.extension().and_then(std::ffi::OsStr::to_str);
 
-    let config = ConfigBuilder::new()
-        .with_project_path(&find_project_path()?)?
-        .build()
-        .await?;
-
     match extension {
         Some("yml") => {
             if file.ends_with(".workflow.yml") {
@@ -475,6 +469,10 @@ pub async fn handle_run_command(run_args: RunArgs) -> Result<RunResult, OxyError
             }
         }
         Some("sql") => {
+            let config = ConfigBuilder::new()
+                .with_project_path(&find_project_path()?)?
+                .build()
+                .await?;
             let database = run_args
                 .database
                 .or_else(|| config.default_database_ref().cloned());

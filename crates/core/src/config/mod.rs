@@ -178,13 +178,6 @@ impl Config {
         })
     }
 
-    pub fn default_database(&self) -> Option<String> {
-        self.defaults
-            .as_ref()
-            .and_then(|d| d.database.as_ref())
-            .cloned()
-    }
-
     pub fn find_model(&self, model_name: &str) -> anyhow::Result<Model> {
         self.models
             .iter()

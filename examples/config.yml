@@ -75,6 +75,3 @@ retrievals:
     rerank_model: "jina-reranker-v2-base-multiligual"
     top_k: 10
     factor: 5
-
-defaults:
-  database: local
