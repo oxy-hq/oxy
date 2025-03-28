@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.5](https://github.com/oxy-hq/oxy-internal/compare/0.1.4...0.1.5) (2025-03-28)
+
+
+### <!-- 0 -->🚀 Features
+
+* add clickhouse & mysql support ([#508](https://github.com/oxy-hq/oxy-internal/issues/508)) ([2415510](https://github.com/oxy-hq/oxy-internal/commit/2415510567b484b927299d7daf995ecfbe3f41f9))
+
 ## [0.1.4](https://github.com/oxy-hq/oxy-internal/compare/0.1.3...0.1.4) (2025-03-21)
 
 ### <!-- 0 -->🚀 Features
