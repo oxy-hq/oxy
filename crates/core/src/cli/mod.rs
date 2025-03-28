@@ -35,7 +35,7 @@ use std::process::exit;
 
 use init::init;
 
-use crate::api::server;
+use crate::api::router;
 use crate::connector::Connector;
 use crate::theme::*;
 use crate::{build, vector_search};
@@ -519,29 +519,7 @@ pub async fn start_server_and_web_app() {
         web_port += 1;
     }
 
-    let mut api_port = web_port + 1;
-    while tokio::net::TcpListener::bind(("127.0.0.1", api_port))
-        .await
-        .is_err()
-    {
-        println!(
-            "Port {} for API server is occupied. Trying next port...",
-            api_port
-        );
-        api_port += 1;
-    }
-
-    let server_task = tokio::spawn(async move {
-        let addr = SocketAddr::from(([127, 0, 0, 1], api_port));
-        println!(
-            "{} {}",
-            "API server running at".text(),
-            format!("http://{}", addr).secondary()
-        );
-        server::serve(&addr).await;
-    });
-
-    let web_task = tokio::spawn(async move {
+    tokio::spawn(async move {
         let serve_with_fallback = service_fn(move |req: Request<Body>| {
             async move {
                 let res = get_service(ServeDir::new(&DIST))
@@ -565,8 +543,10 @@ pub async fn start_server_and_web_app() {
         let fallback_service =
             get_service(ServeDir::new(&DIST).append_index_html_on_directories(true));
 
+        let api_router = router::api_router().await;
         let web_app = Router::new()
             .nest_service("/", serve_with_fallback)
+            .nest("/api", api_router)
             .fallback_service(fallback_service);
 
         let web_addr = SocketAddr::from(([127, 0, 0, 1], web_port));
@@ -577,9 +557,9 @@ pub async fn start_server_and_web_app() {
             format!("http://{}", web_addr).secondary()
         );
         axum::serve(listener, web_app).await.unwrap();
-    });
-
-    let _ = tokio::try_join!(server_task, web_task);
+    })
+    .await
+    .unwrap();
 }
 
 async fn handle_check_for_updates() -> Result<(), OxyError> {

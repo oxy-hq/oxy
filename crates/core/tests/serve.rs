@@ -11,7 +11,6 @@ pub mod serve {
             .arg("serve")
             .timeout(Duration::from_secs(5))
             .assert()
-            .stdout(predicates::str::contains("API server running at"))
             .stdout(predicates::str::contains("Web app running at"));
     }
 }

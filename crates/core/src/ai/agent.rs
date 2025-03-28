@@ -192,23 +192,23 @@ impl OpenAIAgent {
         match &self.client {
             OpenAIClient::Azure(client) => {
                 let rs = client.chat().create(request).await?;
-                return Ok(rs.choices[0].message.clone());
+                Ok(rs.choices[0].message.clone())
             }
             OpenAIClient::OpenAI(client) => match self.provider {
                 OpenAIClientProvider::OpenAI => {
                     let rs = client.chat().create(request).await?;
 
-                    return Ok(rs.choices[0].message.clone());
+                    Ok(rs.choices[0].message.clone())
                 }
                 OpenAIClientProvider::Google => {
                     request.tool_choice = Some(ChatCompletionToolChoiceOption::Auto);
                     let rs: GeminiCreateChatCompletionResponse =
                         client.chat().create_byot(request).await?;
 
-                    return Ok(rs.choices[0].message.clone());
+                    Ok(rs.choices[0].message.clone())
                 }
             },
-        };
+        }
     }
 
     fn spec_serializer(

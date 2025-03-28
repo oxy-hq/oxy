@@ -127,7 +127,7 @@ impl Engine for Snowflake {
         let file_path = format!("/tmp/{}.arrow", Uuid::new_v4());
         write_to_ipc(&record_batches, &file_path, &schema)
             .map_err(|err| connector_internal_error(WRITE_RESULT, &err))?;
-        return Ok(file_path);
+        Ok(file_path)
     }
 
     async fn load_database_info(&self) -> Result<DatabaseInfo, OxyError> {
@@ -141,31 +141,25 @@ impl Engine for Snowflake {
 
 fn convert_to_json_objects(json: &snowflake_api::JsonResult) -> serde_json::Value {
     let mut rs: Vec<serde_json::Value> = vec![];
-    match &json.value {
-        serde_json::Value::Array(values) => {
-            for value in values {
-                let mut m: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
-                match value {
-                    serde_json::Value::Array(inner_values) => {
-                        for field in &json.schema {
-                            let field_name = field.name.clone();
-                            let field_index = json
-                                .schema
-                                .iter()
-                                .position(|x| x.name == field_name)
-                                .unwrap();
-                            let field_value = inner_values[field_index].clone();
-                            m.insert(field_name, field_value);
-                        }
-                    }
-                    _ => {}
+    if let serde_json::Value::Array(values) = &json.value {
+        for value in values {
+            let mut m: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
+            if let serde_json::Value::Array(inner_values) = value {
+                for field in &json.schema {
+                    let field_name = field.name.clone();
+                    let field_index = json
+                        .schema
+                        .iter()
+                        .position(|x| x.name == field_name)
+                        .unwrap();
+                    let field_value = inner_values[field_index].clone();
+                    m.insert(field_name, field_value);
                 }
-                rs.push(serde_json::Value::Object(m));
             }
+            rs.push(serde_json::Value::Object(m));
         }
-        _ => {}
     }
-    return serde_json::Value::Array(rs);
+    serde_json::Value::Array(rs)
 }
 
 fn convert_json_result_to_arrow(
@@ -185,9 +179,9 @@ fn convert_json_result_to_arrow(
     let reader = ReaderBuilder::new(Arc::new(arrow_schema))
         .build(cursor)
         .map_err(|err| OxyError::DBError(format!("Failed to create JSON reader: {}", err)))?;
-    return Ok(reader
+    reader
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|err| OxyError::DBError(format!("Failed to convert JSON to Arrow: {}", err)))?);
+        .map_err(|err| OxyError::DBError(format!("Failed to convert JSON to Arrow: {}", err)))
 }
 
 impl ClickHouse {
