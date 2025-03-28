@@ -6,13 +6,11 @@ use axum::routing::delete;
 use axum::routing::{get, post};
 use migration::Migrator;
 use migration::MigratorTrait;
-use std::net::SocketAddr;
-use tokio;
 use tower_http::cors::{Any, CorsLayer};
 
 use super::workflow;
 
-pub async fn serve(address: &SocketAddr) {
+pub async fn api_router() -> Router {
     let cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods(tower_http::cors::Any)
@@ -22,7 +20,7 @@ pub async fn serve(address: &SocketAddr) {
     // migrate db
     let _ = Migrator::up(&db, None).await;
 
-    let app: Router = Router::new()
+    Router::new()
         .route("/ask", post(agent::ask))
         .route("/messages/:agent", get(message::get_messages))
         .route("/agents", get(agent::get_agents))
@@ -35,8 +33,6 @@ pub async fn serve(address: &SocketAddr) {
         .route("/workflows", get(workflow::list))
         .route("/workflows/:pathb64", get(workflow::get))
         .route("/workflows/:pathb64/logs", get(workflow::get_logs))
-        .route("/workflows/:pathb64/run", post(workflow::run_workflow));
-
-    let listener = tokio::net::TcpListener::bind(address).await.unwrap();
-    axum::serve(listener, app.layer(cors)).await.unwrap();
+        .route("/workflows/:pathb64/run", post(workflow::run_workflow))
+        .layer(cors)
 }

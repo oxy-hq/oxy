@@ -394,7 +394,7 @@ fn create_config_file(config_path: &Path) -> Result<(), InitError> {
     if let Some(parent) = config_path.parent() {
         fs::create_dir_all(parent)?;
     }
-    let mut sensitive_files = Vec::new();
+    let sensitive_files = Vec::new();
 
     println!("{}", "\nDATABASE SETTINGS:".tertiary());
     let databases = collect_databases()?;
@@ -425,9 +425,7 @@ fn create_config_file(config_path: &Path) -> Result<(), InitError> {
 
     fs::write(config_path, content)?;
     for database in &databases {
-        match &database.database_type {
-            _ => {}
-        }
+        {}
     }
     ignore_sensitive_files(&config.project_path, &sensitive_files)?;
 
