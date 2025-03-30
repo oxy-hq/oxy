@@ -1,6 +1,7 @@
 use garde::Validate;
 use indoc::indoc;
 use serde::{Deserialize, Serialize};
+use serde_with::skip_serializing_none;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::{env, fmt};
@@ -425,6 +426,7 @@ impl Database {
     }
 }
 
+#[skip_serializing_none]
 #[derive(Deserialize, Debug, Clone, Validate, Serialize, JsonSchema)]
 #[garde(context(ValidationContext))]
 #[serde(tag = "vendor")]

@@ -8,6 +8,7 @@ documentation.workspace = true
 publish.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+exclude.workspace = true
 
 [dependencies]
 anyhow = "1.0.97"
@@ -73,6 +74,7 @@ tower-serve-static = "0.1.1"
 tqdm = "0.7.0"
 snowflake-api = "0.10.0"
 uuid = { version = "1.16.0", features = ["v4", "serde"] }
+serde_with = "3.12.0"
 
 [lib]
 name = "oxy"

@@ -5402,6 +5402,7 @@ dependencies = [
  "serde",
  "serde_arrow",
  "serde_json",
+ "serde_with",
  "serde_yaml",
  "slugify",
  "snowflake-api",

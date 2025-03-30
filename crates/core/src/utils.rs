@@ -86,3 +86,10 @@ pub fn find_project_path() -> Result<PathBuf, OxyError> {
         "Could not find config.yml".to_string(),
     ))
 }
+
+pub fn get_relative_path(path: PathBuf, root: PathBuf) -> Result<String, OxyError> {
+    let relative_path = path
+        .strip_prefix(root)
+        .map_err(|_| OxyError::ArgumentError("Could not get relative path".to_string()))?;
+    Ok(relative_path.to_string_lossy().to_string())
+}
