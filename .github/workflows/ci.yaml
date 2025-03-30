@@ -27,6 +27,7 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
+  RUST_LOG: debug
 
 defaults:
   run:
@@ -138,6 +139,10 @@ jobs:
     needs: [fmt]
     name: Test
     runs-on: ubuntu-latest
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      BIGQUERY_SAMPLE_KEY: ${{ secrets.BIGQUERY_SAMPLE_KEY }}
+      GEMINI_API_KEY: "empty"
     steps:
       - uses: actions/checkout@v4
       - name: Collect Workflow Telemetry
@@ -162,10 +167,6 @@ jobs:
         with:
           swap-storage: false
       - name: Run cargo test
-        env:
-          RUST_BACKTRACE: 1
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          BIGQUERY_SAMPLE_KEY: ${{ secrets.BIGQUERY_SAMPLE_KEY }}
         run: |
           touch examples/bigquery-sample.key
           echo $BIGQUERY_SAMPLE_KEY > examples/bigquery-sample.key
