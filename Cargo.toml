@@ -2,9 +2,9 @@
 # TODO: switch back to default-members = ["crates/*"] once we migrated from release-please
 members = [
   "crates/core",
-  "crates/py",
-  "crates/migration",
   "crates/entity",
+  "crates/migration",
+  "crates/py",
 ]
 
 default-members = ["crates/core"]
@@ -33,9 +33,9 @@ description = "Oxy"
 authors = ["oxy engineers"]
 documentation = "https://docs.oxy.tech"
 exclude = [
-  "examples",
+  "examples/",
+  "tests/"
 ]
-
 
 [profile.dev]
 opt-level = 1

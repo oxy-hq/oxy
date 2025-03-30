@@ -1,4 +1,5 @@
 mod init;
+mod make;
 
 use crate::ai::agent::AgentResult;
 use crate::ai::utils::record_batches_to_table;
@@ -14,6 +15,7 @@ use axum::handler::Handler;
 use clap::CommandFactory;
 use clap::Parser;
 use clap::builder::ValueParser;
+use make::handle_make_command;
 use minijinja::{Environment, Value};
 use model::AgentConfig;
 use model::FileFormat;
@@ -114,6 +116,12 @@ enum SubCommand {
     GenConfigSchema(GenConfigSchemaArgs),
     /// Update the CLI to the latest version
     SelfUpdate,
+    Make(MakeArgs),
+}
+
+#[derive(Parser, Debug)]
+pub struct MakeArgs {
+    file: String,
 }
 
 #[derive(Parser, Debug)]
@@ -340,6 +348,9 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             println!("{}", "-region".tertiary());
             println!("{}", "Viewing repository".info());
             println!("{}", "text".text());
+        }
+        Some(SubCommand::Make(make_args)) => {
+            handle_make_command(&make_args).await?;
         }
 
         None => {
