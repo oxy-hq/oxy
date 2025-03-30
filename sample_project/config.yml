@@ -1,7 +1,6 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/oxy-hq/oxy/refs/heads/main/json-schemas/config.json
 defaults:
   database: local
-  agent: sql-generator.agent.yml
 models:
 - vendor: openai
   name: openai-4o

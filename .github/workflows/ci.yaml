@@ -125,9 +125,7 @@ jobs:
       - name: Free Disk Space (Ubuntu)
         uses: jlumbroso/free-disk-space@main
         with:
-          # this might remove tools that are actually needed,
-          # if set to "true" but frees about 6 GB
-          tool-cache: false
+          swap-storage: false
       - name: Run cargo check
         run: cargo check --verbose --workspace
       - name: Run cargo clippy
@@ -162,9 +160,7 @@ jobs:
       - name: Free Disk Space (Ubuntu)
         uses: jlumbroso/free-disk-space@main
         with:
-          # this might remove tools that are actually needed,
-          # if set to "true" but frees about 6 GB
-          tool-cache: false
+          swap-storage: false
       - name: Run cargo test
         env:
           RUST_BACKTRACE: 1

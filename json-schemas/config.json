@@ -315,12 +315,6 @@
     "Defaults": {
       "type": "object",
       "properties": {
-        "agent": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
         "database": {
           "type": [
             "string",

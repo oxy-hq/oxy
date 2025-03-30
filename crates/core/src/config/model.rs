@@ -292,14 +292,6 @@ pub struct Defaults {
         }
     }))]
     pub database: Option<String>,
-    #[garde(length(min = 1))]
-    #[garde(custom(|ag: &Option<String>, ctx: &ValidationContext| {
-        match ag {
-            Some(agent) => validate_agent_exists(agent.as_str(), ctx),
-            None => Ok(()),
-        }
-    }))]
-    pub agent: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Validate, Clone, JsonSchema)]

@@ -374,7 +374,11 @@ async fn handle_sql_file(
     config: &ConfigManager,
     variables: &[(String, String)],
 ) -> Result<String, OxyError> {
-    let database = database.ok_or_else(|| OxyError::ArgumentError("Database is required for running SQL file. Please provide the database using --database or set a default database in config.yml".to_string()))?;
+    let database = database.ok_or_else(|| {
+        OxyError::ArgumentError(
+            "Database is required for running SQL file. Please provide the database using --database or set a default database in config.yml".to_string(),
+        )
+    })?;
     let content = std::fs::read_to_string(file_path)
         .map_err(|e| OxyError::RuntimeError(format!("Failed to read SQL file: {}", e)))?;
     let mut env = Environment::new();
