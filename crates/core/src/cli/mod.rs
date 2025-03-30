@@ -109,7 +109,7 @@ enum SubCommand {
     /// Validate the config file
     Validate,
     /// Start the API server and serve the frontend web app
-    Serve,
+    Serve(ServeArgs),
     /// Test theme for terminal output
     TestTheme,
     /// Generate JSON schemas for config files
@@ -195,6 +195,12 @@ impl RunArgs {
 #[derive(Parser, Debug)]
 struct VecSearchArgs {
     question: String,
+}
+
+#[derive(Parser, Debug)]
+struct ServeArgs {
+    #[clap(long, default_value_t = 3000)]
+    port: u16,
 }
 
 #[derive(Parser, Debug)]
@@ -327,8 +333,8 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                 }
             }
         }
-        Some(SubCommand::Serve) => {
-            start_server_and_web_app().await;
+        Some(SubCommand::Serve(serve_args)) => {
+            start_server_and_web_app(serve_args.port).await;
         }
         Some(SubCommand::SelfUpdate) => {
             if let Err(e) = handle_check_for_updates().await {
@@ -521,8 +527,8 @@ pub async fn handle_test_command(test_args: TestArgs) -> Result<(), OxyError> {
     }
     run_eval(file_path, test_args.quiet).await
 }
-pub async fn start_server_and_web_app() {
-    let mut web_port = 3000;
+
+pub async fn start_server_and_web_app(mut web_port: u16) {
     while tokio::net::TcpListener::bind(("127.0.0.1", web_port))
         .await
         .is_err()
