@@ -27,11 +27,9 @@ pub mod run {
     }
 
     #[test]
-    fn run_sql_file_failed_if_database_not_provided() {
+    fn run_sql_file_ok_if_database_not_provided_use_default_database() {
         let mut cmd = setup_command();
-        let result = cmd.arg("data/example_intervals.sql").assert().failure();
-        let output = String::from_utf8(result.get_output().stderr.clone()).unwrap();
-        assert!(output.contains("Database is required for running SQL file. Please provide the database using --database or set a default database in config.yml"));
+        let result = cmd.arg("data/example_intervals.sql").assert().success();
     }
 
     #[test]

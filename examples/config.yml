@@ -10,7 +10,7 @@ databases:
     type: duckdb
     key_path: None
     dataset: .db/
-  
+
   - name: snowflake
     type: snowflake
     account: jla01554
@@ -54,7 +54,7 @@ models:
   # - name: openai-4o-mini-azure
   #   vendor: openai
   #   model_ref: openai-4o-mini-azure
-  #   api_url:  https://dsmsmachatgpt4opoc.openai.azure.com
+  #   api_url: something
   #   azure_deployment_id: "SMART-Automated-gpt-4o"
   #   azure_api_version: "2024-08-01-preview"
   #   key_var: OPENAI_AZURE_KEY
@@ -63,7 +63,7 @@ models:
     model_ref: llama3.2:latest
     api_url: http://localhost:11434/v1
     api_key: secret
-  
+
   - name: gemini1.5pro
     key_var: GEMINI_API_KEY
     model_ref: gemini-1.5-pro
@@ -75,3 +75,6 @@ retrievals:
     rerank_model: "jina-reranker-v2-base-multiligual"
     top_k: 10
     factor: 5
+
+defaults:
+  database: local
