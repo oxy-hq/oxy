@@ -31,6 +31,7 @@ tasks:
             export:
               format: sql
               path: output/example_{{schedules.value}}_{{metrics.value}}.sql
+
           - name: report
             type: agent
             prompt: |

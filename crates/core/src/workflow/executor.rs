@@ -13,7 +13,7 @@ use crate::config::model::SQL;
 use crate::config::model::Task;
 use crate::config::model::TaskType;
 use crate::config::model::Workflow;
-use crate::config::model::{AgentTask, WorkflowTask};
+use crate::config::model::{AgentTask, ConditionalTask, WorkflowTask};
 use crate::connector::Connector;
 use crate::errors::OxyError;
 use crate::execute::agent::AgentInput;
@@ -412,6 +412,11 @@ impl Executable<(), WorkflowEvent> for Task {
                     )
                     .await?;
             }
+            TaskType::Conditional(conditional) => {
+                conditional
+                    .execute(execution_context, WorkflowInput)
+                    .await?;
+            }
             TaskType::Unknown => {
                 execution_context
                     .notify(WorkflowEvent::TaskUnknown {
@@ -470,5 +475,31 @@ impl Executable<ContextValue, WorkflowEvent> for Vec<Task> {
             .await;
         map_executor.finish();
         res
+    }
+}
+
+#[async_trait::async_trait]
+impl Executable<WorkflowInput, WorkflowEvent> for ConditionalTask {
+    async fn execute(
+        &self,
+        execution_context: &mut ExecutionContext<'_, WorkflowEvent>,
+        _input: WorkflowInput,
+    ) -> Result<(), OxyError> {
+        for condition in &self.conditions {
+            if execution_context.renderer.render(&condition.if_expr)? == "true" {
+                return condition
+                    .tasks
+                    .execute(execution_context, ContextValue::None)
+                    .await;
+            }
+        }
+
+        if let Some(else_tasks) = &self.else_tasks {
+            else_tasks
+                .execute(execution_context, ContextValue::None)
+                .await?;
+        }
+
+        Ok(())
     }
 }

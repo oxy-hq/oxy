@@ -30,6 +30,24 @@
     }
   },
   "definitions": {
+    "Condition": {
+      "type": "object",
+      "required": [
+        "if",
+        "tasks"
+      ],
+      "properties": {
+        "if": {
+          "type": "string"
+        },
+        "tasks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Task"
+          }
+        }
+      }
+    },
     "Eval": {
       "oneOf": [
         {
@@ -318,6 +336,37 @@
               "additionalProperties": {
                 "type": "string"
               }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "conditions",
+            "type"
+          ],
+          "properties": {
+            "conditions": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/Condition"
+              }
+            },
+            "else": {
+              "default": null,
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "$ref": "#/definitions/Task"
+              }
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "conditional"
+              ]
             }
           }
         },

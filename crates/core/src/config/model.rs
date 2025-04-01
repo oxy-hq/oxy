@@ -638,6 +638,26 @@ pub struct LoopSequentialTask {
 
 #[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
 #[garde(context(ValidationContext))]
+pub struct Condition {
+    #[garde(length(min = 1))]
+    #[serde(rename = "if")]
+    pub if_expr: String,
+    #[garde(dive)]
+    pub tasks: Vec<Task>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
+#[garde(context(ValidationContext))]
+pub struct ConditionalTask {
+    #[garde(length(min = 1))]
+    pub conditions: Vec<Condition>,
+    #[garde(skip)]
+    #[serde(default, rename = "else")]
+    pub else_tasks: Option<Vec<Task>>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
+#[garde(context(ValidationContext))]
 #[serde(tag = "type")]
 pub enum TaskType {
     #[serde(rename = "agent")]
@@ -650,9 +670,12 @@ pub enum TaskType {
     Formatter(#[garde(dive)] FormatterTask),
     #[serde(rename = "workflow")]
     Workflow(#[garde(dive)] WorkflowTask),
+    #[serde(rename = "conditional")]
+    Conditional(#[garde(dive)] ConditionalTask),
     #[serde(other)]
     Unknown,
 }
+
 #[derive(Deserialize, JsonSchema)]
 pub struct TempWorkflow {
     pub tasks: Vec<Task>,

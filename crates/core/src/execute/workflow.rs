@@ -6,6 +6,7 @@ use minijinja::Value;
 use serde::Deserialize;
 use serde::Serialize;
 
+use crate::config::model::Condition;
 use crate::{
     StyledText,
     ai::utils::{record_batches_to_markdown, record_batches_to_table},
@@ -159,8 +160,31 @@ impl TemplateRegister for &Task {
                 }
                 register.entry(&loop_sequential.tasks)?;
             }
+            TaskType::Conditional(conditional) => {
+                register.entry(&conditional.conditions)?;
+                if let Some(else_tasks) = &conditional.else_tasks {
+                    register.entry(else_tasks)?;
+                }
+            }
             _ => {}
         }
+        Ok(())
+    }
+}
+
+impl TemplateRegister for &Condition {
+    fn register_template(&self, renderer: &mut Renderer) -> Result<(), OxyError> {
+        let mut child_register = renderer.child_register();
+        child_register.entry(&self.if_expr.as_str())?;
+        child_register.entry(&self.tasks)?;
+        Ok(())
+    }
+}
+
+impl TemplateRegister for Vec<Condition> {
+    fn register_template(&self, renderer: &mut Renderer) -> Result<(), OxyError> {
+        let mut child_register = renderer.child_register();
+        child_register.entries(self)?;
         Ok(())
     }
 }
