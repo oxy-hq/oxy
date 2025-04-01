@@ -37,3 +37,22 @@ jobs:
           -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
           https://api.github.com/repos/oxy-hq/homebrew-oxy/dispatches \
           -d '{"event_type":"oxy_release"}'
+
+      - uses: actions/create-github-app-token@v1
+        name: Create GitHub App Token
+        if: steps.check-latest.outputs.latest == 'true'
+        id: app-token
+        with:
+          app-id: ${{ vars.ARGO_APP_ID }}
+          private-key: ${{ secrets.ARGO_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: |
+            oxy
+            homebrew-oxy
+
+      - name: Repository Dispatch
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          repository: oxy-hq/homebrew-oxy
+          event-type: oxy_release
