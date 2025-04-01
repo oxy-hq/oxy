@@ -28,8 +28,9 @@ pub struct Renderer {
 
 impl Renderer {
     pub fn new(global_context: Value) -> Self {
+        let env = Environment::new();
         Renderer {
-            env: Arc::new(RwLock::new(Environment::new())),
+            env: Arc::new(RwLock::new(env)),
             global_context: Arc::new(global_context),
             current_context: Default::default(),
         }
