@@ -1,0 +1,20 @@
+name: Public Announce Release to Slack
+
+on:
+  release:
+    types: [created, released, published]
+
+jobs:
+  announce-to-slack:
+    if: github.repository == 'oxy-hq/oxy' && github.event.release.draft == false && github.event.release.prerelease == false
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Send Slack Notification
+        uses: rtCamp/action-slack-notify@v2
+        env:
+          SLACK_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_CHANNEL: general
+          SLACK_MESSAGE: |
+            A new release has been published: *${{ github.event.release.name }}*
+            View the release notes here: <${{ github.event.release.html_url }}|${{ github.event.release.tag_name }}>
