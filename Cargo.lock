@@ -969,14 +969,14 @@ dependencies = [
 
 [[package]]
 name = "axum"
-version = "0.7.9"
+version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "edca88bc138befd0323b20752846e6587272d3b03b0343c8ea28a6f819e6e71f"
+checksum = "de45108900e1f9b9242f7f2e254aa3e2c029c921c258fe9e6b4217eeebd54288"
 dependencies = [
- "async-trait",
  "axum-core",
  "axum-macros",
  "bytes",
+ "form_urlencoded",
  "futures-util",
  "http 1.2.0",
  "http-body 1.0.1",
@@ -1004,13 +1004,12 @@ dependencies = [
 
 [[package]]
 name = "axum-core"
-version = "0.4.5"
+version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "09f2bd6146b97ae3359fa0cc6d6b376d9539582c7b4220f041a33ec24c226199"
+checksum = "68464cd0412f486726fb3373129ef5d2993f90c34bc2bc1c1e9943b2f4fc7ca6"
 dependencies = [
- "async-trait",
  "bytes",
- "futures-util",
+ "futures-core",
  "http 1.2.0",
  "http-body 1.0.1",
  "http-body-util",
@@ -1025,9 +1024,9 @@ dependencies = [
 
 [[package]]
 name = "axum-macros"
-version = "0.4.2"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "57d123550fa8d071b7255cb0cc04dc302baa6c8c4a79f55701552684d8399bce"
+checksum = "604fde5e028fea851ce1d8570bbdc034bec850d157f7569d10f347d06808c05c"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1036,9 +1035,9 @@ dependencies = [
 
 [[package]]
 name = "axum-streams"
-version = "0.19.0"
+version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ef49936ad8fd9750be8bb5c75f64b19bd407027c5c9e89c42e0939122d162d67"
+checksum = "7e706938a2f02ac53dac79575d99819fa6285a5eae35b0fa27b959affb80c435"
 dependencies = [
  "axum",
  "bytes",
@@ -4675,9 +4674,9 @@ dependencies = [
 
 [[package]]
 name = "matchit"
-version = "0.7.3"
+version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0e7465ac9959cc2b1404e8e2367b43684a6d13790fe23056cc8c6c5a6b7bcb94"
+checksum = "47e1ffaa40ddd1f3ed91f717a33c8c0ee23fff369e3aa8772b9605cc1d22f4c3"
 
 [[package]]
 name = "matrixmultiply"
@@ -5396,6 +5395,7 @@ dependencies = [
  "predicates",
  "pyo3",
  "pyo3-arrow",
+ "rmcp",
  "schemars",
  "sea-orm",
  "self_update",
@@ -6652,6 +6652,39 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 1.0.109",
+]
+
+[[package]]
+name = "rmcp"
+version = "0.1.5"
+source = "git+https://github.com/modelcontextprotocol/rust-sdk.git?rev=588a01309072142b8f1d68555b2203a342deeba4#588a01309072142b8f1d68555b2203a342deeba4"
+dependencies = [
+ "axum",
+ "base64 0.21.7",
+ "chrono",
+ "futures",
+ "paste",
+ "pin-project-lite",
+ "rand 0.9.0",
+ "rmcp-macros",
+ "schemars",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.12",
+ "tokio",
+ "tokio-stream",
+ "tokio-util",
+ "tracing",
+]
+
+[[package]]
+name = "rmcp-macros"
+version = "0.1.5"
+source = "git+https://github.com/modelcontextprotocol/rust-sdk.git?rev=588a01309072142b8f1d68555b2203a342deeba4#588a01309072142b8f1d68555b2203a342deeba4"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.98",
 ]
 
 [[package]]

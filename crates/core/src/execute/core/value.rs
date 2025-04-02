@@ -162,6 +162,7 @@ pub struct ConsistencyOutput {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(tag = "type")]
 pub enum ContextValue {
     None,
     Text(String),

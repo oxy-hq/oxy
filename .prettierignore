@@ -35,3 +35,4 @@ vite-env.d.ts
 
 # docs
 docs/
+**/CHANGELOG.md

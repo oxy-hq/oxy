@@ -2,5 +2,6 @@
 
 name: local
 model: "openai-4o-mini"
+description: "A personal assistant agent for general tasks."
 system_instructions: |
   You are a personal assistant.

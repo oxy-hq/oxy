@@ -165,6 +165,7 @@ async fn create_agent_file(
         output_format: OutputFormat::Default,
         anonymize: None,
         tests: vec![],
+        description: "".to_string(),
     };
 
     serde_yaml::to_writer(std::fs::File::create(&agent_file)?, &agent_content)?;

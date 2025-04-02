@@ -8,6 +8,7 @@ use crate::errors::OxyError;
 use crate::execute::agent::run_agent;
 use crate::execute::eval::run_eval;
 use crate::execute::workflow::run_workflow;
+use crate::mcp::service::OxyMcpServer;
 use crate::utils::find_project_path;
 use crate::utils::print_colored_sql;
 use crate::workflow::WorkflowResult;
@@ -28,12 +29,16 @@ use pyo3::PyAny;
 use pyo3::PyErr;
 use pyo3::Python;
 use pyo3::types::PyAnyMethods;
+use rmcp::transport::SseServer;
+use rmcp::{ServiceExt, transport::stdio};
 use std::backtrace;
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::path::PathBuf;
 use std::process::Command;
 use std::process::exit;
+use tokio::signal;
+use tokio_util::sync::CancellationToken;
 
 use init::init;
 
@@ -94,6 +99,18 @@ struct Args {
 }
 
 #[derive(Parser, Debug)]
+struct McpArgs {
+    #[clap(long)]
+    pub project_path: PathBuf,
+}
+
+#[derive(Parser, Debug)]
+struct McpSseArgs {
+    #[clap(long, default_value_t = 8000)]
+    port: u16,
+}
+
+#[derive(Parser, Debug)]
 enum SubCommand {
     /// Initialize a repository as an oxy project. Also creates a ~/.config/oxy/config.yaml file if it doesn't exist
     Init,
@@ -109,6 +126,8 @@ enum SubCommand {
     /// Validate the config file
     Validate,
     /// Start the API server and serve the frontend web app
+    McpSse(McpSseArgs),
+    McpStdio(McpArgs),
     Serve(ServeArgs),
     /// Test theme for terminal output
     TestTheme,
@@ -210,7 +229,7 @@ struct GenConfigSchemaArgs {
 }
 
 async fn handle_workflow_file(workflow_name: &PathBuf) -> Result<WorkflowResult, OxyError> {
-    run_workflow(workflow_name).await
+    run_workflow(workflow_name, None, None, None).await
 }
 
 pub async fn cli() -> Result<(), Box<dyn Error>> {
@@ -336,6 +355,18 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
         Some(SubCommand::Serve(serve_args)) => {
             start_server_and_web_app(serve_args.port).await;
         }
+        Some(SubCommand::McpSse(mcp_sse_args)) => {
+            let cancellation_token = start_mcp_sse_server(mcp_sse_args.port)
+                .await
+                .expect("Failed to start MCP SSE server");
+
+            tokio::signal::ctrl_c().await.unwrap();
+            println!("Shutting down server...");
+            cancellation_token.cancel();
+        }
+        Some(SubCommand::McpStdio(args)) => {
+            let _ = start_mcp_stdio(args.project_path).await;
+        }
         Some(SubCommand::SelfUpdate) => {
             if let Err(e) = handle_check_for_updates().await {
                 log::error!("Failed to update: {}", e);
@@ -381,7 +412,14 @@ async fn handle_agent_file(
             .build()
             .await?,
     );
-    let result = run_agent(file_path, &FileFormat::Markdown, Some(question), config).await?;
+    let result = run_agent(
+        file_path,
+        &FileFormat::Markdown,
+        Some(question),
+        config,
+        None,
+    )
+    .await?;
     Ok(result)
 }
 
@@ -513,6 +551,41 @@ pub async fn handle_run_command(run_args: RunArgs) -> Result<RunResult, OxyError
     }
 }
 
+pub async fn start_mcp_stdio(project_path: PathBuf) -> anyhow::Result<()> {
+    let service = OxyMcpServer { project_path }
+        .serve(stdio())
+        .await
+        .inspect_err(|e| {
+            log::error!("Error: {:?}", e);
+        })?;
+
+    service.waiting().await?;
+    Ok(())
+}
+
+pub async fn start_mcp_sse_server(mut port: u16) -> anyhow::Result<CancellationToken> {
+    let project_path = find_project_path()?;
+    while tokio::net::TcpListener::bind(("127.0.0.1", port))
+        .await
+        .is_err()
+    {
+        println!("Port {} for mcp is occupied. Trying next port...", port);
+        port += 1;
+    }
+    let bind = SocketAddr::from(([127, 0, 0, 1], port));
+    let ct = SseServer::serve(bind)
+        .await?
+        .with_service(move || OxyMcpServer {
+            project_path: project_path.clone(),
+        });
+
+    println!(
+        "{}",
+        format!("MCP server started at port {}", port).success()
+    );
+    anyhow::Ok(ct)
+}
+
 pub async fn handle_test_command(test_args: TestArgs) -> Result<(), OxyError> {
     let file = &test_args.file;
 
@@ -529,18 +602,41 @@ pub async fn handle_test_command(test_args: TestArgs) -> Result<(), OxyError> {
 }
 
 pub async fn start_server_and_web_app(mut web_port: u16) {
-    while tokio::net::TcpListener::bind(("127.0.0.1", web_port))
-        .await
-        .is_err()
-    {
-        println!(
-            "Port {} for web app is occupied. Trying next port...",
-            web_port
-        );
-        web_port += 1;
+    async fn shutdown_signal() {
+        let ctrl_c = async {
+            signal::ctrl_c()
+                .await
+                .expect("failed to install Ctrl+C handler");
+        };
+
+        #[cfg(unix)]
+        let terminate = async {
+            signal::unix::signal(signal::unix::SignalKind::terminate())
+                .expect("failed to install signal handler")
+                .recv()
+                .await;
+        };
+
+        #[cfg(not(unix))]
+        let terminate = std::future::pending::<()>();
+
+        tokio::select! {
+            _ = ctrl_c => {},
+            _ = terminate => {},
+        }
     }
 
-    tokio::spawn(async move {
+    let web_server_task = tokio::spawn(async move {
+        while tokio::net::TcpListener::bind(("127.0.0.1", web_port))
+            .await
+            .is_err()
+        {
+            println!(
+                "Port {} for web app is occupied. Trying next port...",
+                web_port
+            );
+            web_port += 1;
+        }
         let serve_with_fallback = service_fn(move |req: Request<Body>| {
             async move {
                 let res = get_service(ServeDir::new(&DIST))
@@ -561,14 +657,10 @@ pub async fn start_server_and_web_app(mut web_port: u16) {
                 }
             }
         });
-        let fallback_service =
-            get_service(ServeDir::new(&DIST).append_index_html_on_directories(true));
-
         let api_router = router::api_router().await;
         let web_app = Router::new()
-            .nest_service("/", serve_with_fallback)
             .nest("/api", api_router)
-            .fallback_service(fallback_service);
+            .fallback_service(serve_with_fallback);
 
         let web_addr = SocketAddr::from(([127, 0, 0, 1], web_port));
         let listener = tokio::net::TcpListener::bind(web_addr).await.unwrap();
@@ -577,10 +669,13 @@ pub async fn start_server_and_web_app(mut web_port: u16) {
             "Web app running at".text(),
             format!("http://{}", web_addr).secondary()
         );
-        axum::serve(listener, web_app).await.unwrap();
-    })
-    .await
-    .unwrap();
+        axum::serve(listener, web_app)
+            .with_graceful_shutdown(shutdown_signal())
+            .await
+            .unwrap();
+    });
+
+    web_server_task.await.unwrap();
 }
 
 async fn handle_check_for_updates() -> Result<(), OxyError> {

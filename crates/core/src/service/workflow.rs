@@ -20,8 +20,11 @@ pub struct WorkflowInfo {
     pub path: String,
 }
 
-pub async fn list_workflows() -> Result<Vec<WorkflowInfo>, OxyError> {
-    let project_path = find_project_path()?;
+pub async fn list_workflows(project_path: Option<PathBuf>) -> Result<Vec<WorkflowInfo>, OxyError> {
+    let project_path = match project_path {
+        Some(path) => path,
+        None => find_project_path()?,
+    };
     let config = ConfigBuilder::new()
         .with_project_path(project_path.clone())?
         .build()
@@ -50,8 +53,15 @@ pub async fn list_workflows() -> Result<Vec<WorkflowInfo>, OxyError> {
     Ok(workflows)
 }
 
-pub async fn get_workflow(relative_path: PathBuf) -> Result<Workflow, OxyError> {
-    let project_path = find_project_path()?;
+pub async fn get_workflow(
+    relative_path: PathBuf,
+    project_path: Option<PathBuf>,
+) -> Result<Workflow, OxyError> {
+    let project_path = match project_path {
+        Some(path) => path,
+        None => find_project_path()?,
+    };
+
     let config = ConfigBuilder::new()
         .with_project_path(project_path.clone())?
         .build()

@@ -1,8 +1,9 @@
+use std::collections::HashMap;
 use std::{fs::File, io::Write, path::PathBuf, sync::Arc, sync::Mutex, time::Duration};
 
 use arrow::{array::RecordBatch, datatypes::Schema};
 use chrono::{DateTime, Utc};
-use minijinja::Value;
+use minijinja::{Value, context};
 use serde::Deserialize;
 use serde::Serialize;
 
@@ -213,6 +214,9 @@ impl WorkflowReceiver {
 #[derive(Debug, Clone, Copy)]
 pub struct WorkflowCLILogger;
 
+#[derive(Debug, Clone, Copy)]
+pub struct NoopLogger;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum LogType {
     #[serde(rename = "success")]
@@ -273,6 +277,24 @@ pub trait WorkflowLogger: Send + Sync {
     fn clone(&self) -> Box<dyn WorkflowLogger>;
     fn log_agent_finished(&self, output: &str);
     fn log_agent_tool_call(&self, tool_call: &ToolCall);
+}
+
+impl WorkflowLogger for NoopLogger {
+    fn log(&self, _text: &str) {}
+    fn log_execution_result(
+        &self,
+        _query: &str,
+        _schema: &Arc<Schema>,
+        _datasets: &Vec<RecordBatch>,
+    ) {
+    }
+    fn log_task_started(&self, _name: &str) {}
+    fn log_event(&self, _event: WorkflowEvent) {}
+    fn clone(&self) -> Box<dyn WorkflowLogger> {
+        Box::new(NoopLogger)
+    }
+    fn log_agent_finished(&self, _output: &str) {}
+    fn log_agent_tool_call(&self, _tool_call: &ToolCall) {}
 }
 
 impl WorkflowLogger for WorkflowAPILogger {
@@ -717,19 +739,39 @@ impl Handler for PassthroughHandler {
     }
 }
 
-pub async fn run_workflow(workflow_path: &PathBuf) -> Result<WorkflowResult, OxyError> {
+pub async fn run_workflow(
+    workflow_path: &PathBuf,
+    project_path: Option<PathBuf>,
+    variables: Option<HashMap<String, String>>,
+    logger: Option<Box<dyn WorkflowLogger>>,
+) -> Result<WorkflowResult, OxyError> {
+    let project_path = match project_path {
+        Some(path) => path,
+        None => find_project_path()?,
+    };
+
     let config = ConfigBuilder::new()
-        .with_project_path(find_project_path()?)?
+        .with_project_path(project_path.clone())?
         .build()
         .await?;
+    log::info!(
+        "Running workflow: {}",
+        workflow_path.to_string_lossy().to_string().clone()
+    );
     let workflow = config.resolve_workflow(workflow_path).await?;
 
+    let workflow_logger = logger.unwrap_or_else(|| Box::new(WorkflowCLILogger {}));
+
     let dispatcher = Dispatcher::new(vec![
-        Box::new(WorkflowReceiver::new(Box::new(WorkflowCLILogger))),
+        Box::new(WorkflowReceiver::new(workflow_logger)),
         Box::new(WorkflowExporter),
     ]);
     let executor = WorkflowExecutor::new(workflow.clone());
-    let ctx = Value::from_serialize(&workflow.variables);
+    let mut ctx = Value::from_serialize(&workflow.variables);
+    if let Some(variables) = variables {
+        let variables_context = Value::from_serialize(variables);
+        ctx = context!(..variables_context, ..ctx);
+    }
     let output = run(
         &executor,
         WorkflowInput,
