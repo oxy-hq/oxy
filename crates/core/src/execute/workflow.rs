@@ -334,12 +334,12 @@ impl WorkflowLogger for WorkflowAPILogger {
                 );
                 self.log(item)
             }
-            WorkflowEvent::Retry { err, after } => {
+            WorkflowEvent::Retry { err: _, after } => {
                 let item =
                     LogItem::new(format!("Retrying after {:?} ...", after), LogType::Warning);
                 self.log(item)
             }
-            WorkflowEvent::CacheHit { path } => {
+            WorkflowEvent::CacheHit { path: _ } => {
                 let item = LogItem::new("Cache detected. Using cache.".to_string(), LogType::Info);
                 self.log(item)
             }
@@ -355,32 +355,32 @@ impl WorkflowLogger for WorkflowAPILogger {
                 self.log(item)
             }
             WorkflowEvent::Export {
-                export_file_path,
-                task,
+                export_file_path: _,
+                task: _,
             } => {}
             WorkflowEvent::Agent {
-                orig,
-                task,
-                export_file_path,
+                orig: _,
+                task: _,
+                export_file_path: _,
             } => {}
             WorkflowEvent::ExecuteSQL {
-                task,
+                task: _,
                 query,
                 datasets,
                 schema,
-                export_file_path,
+                export_file_path: _,
             } => {
                 self.log_execution_result(query.as_str(), &schema, &datasets);
             }
             WorkflowEvent::Formatter {
-                task,
+                task: _,
                 output,
-                export_file_path,
+                export_file_path: _,
             } => {
                 let item = LogItem::new(format!("Output:\n\n{}", output), LogType::Info);
                 self.log(item)
             }
-            WorkflowEvent::SubWorkflow { step } => {
+            WorkflowEvent::SubWorkflow { step: _ } => {
                 let item = LogItem::new(
                     "Subworkflow executed successfully".to_string(),
                     LogType::Success,
@@ -488,11 +488,11 @@ impl WorkflowLogger for WorkflowCLILogger {
                 println!("\n\n⏳Starting {}", name.text());
             }
             WorkflowEvent::ExecuteSQL {
-                task,
+                task: _,
                 query,
                 datasets,
                 schema,
-                export_file_path,
+                export_file_path: _,
             } => {
                 print_colored_sql(query.as_str());
 
@@ -520,7 +520,7 @@ impl WorkflowLogger for WorkflowCLILogger {
                 println!("{}", format!("\nRetrying after {:?} ...", after).warning());
                 println!("Reason {:?}", err);
             }
-            WorkflowEvent::CacheHit { path } => {
+            WorkflowEvent::CacheHit { path: _ } => {
                 println!("{}", "Cache detected. Using cache.".primary());
             }
             WorkflowEvent::CacheWrite { path } => {
@@ -533,23 +533,23 @@ impl WorkflowLogger for WorkflowCLILogger {
                 );
             }
             WorkflowEvent::Export {
-                export_file_path,
-                task,
+                export_file_path: _,
+                task: _,
             } => {}
             WorkflowEvent::Agent {
-                orig,
-                task,
-                export_file_path,
+                orig: _,
+                task: _,
+                export_file_path: _,
             } => {}
             WorkflowEvent::Formatter {
-                task,
+                task: _,
                 output,
-                export_file_path,
+                export_file_path: _,
             } => {
                 println!("{}", "\nOutput:".primary());
                 println!("{}", output);
             }
-            WorkflowEvent::SubWorkflow { step } => {
+            WorkflowEvent::SubWorkflow { step: _ } => {
                 println!("\n⏳Subworkflow executed successfully");
             }
             WorkflowEvent::Consistency { .. } => {}
@@ -610,26 +610,26 @@ impl Handler for WorkflowReceiver {
     fn handle(&self, event: &Self::Event) {
         self.logger.log_event(event.clone());
         match event {
-            WorkflowEvent::Started { name } => {}
+            WorkflowEvent::Started { name: _ } => {}
             WorkflowEvent::ExecuteSQL {
                 task: _,
-                query,
-                datasets,
-                schema,
+                query: _,
+                datasets: _,
+                schema: _,
                 export_file_path: _,
             } => {}
             WorkflowEvent::Formatter {
                 task: _,
-                output,
+                output: _,
                 export_file_path: _,
             } => {}
-            WorkflowEvent::TaskStarted { name } => {}
+            WorkflowEvent::TaskStarted { name: _ } => {}
             WorkflowEvent::CacheHit { .. } => {}
-            WorkflowEvent::CacheWrite { path } => {}
-            WorkflowEvent::CacheWriteFailed { path, err } => {}
-            WorkflowEvent::TaskUnknown { name } => {}
+            WorkflowEvent::CacheWrite { path: _ } => {}
+            WorkflowEvent::CacheWriteFailed { path: _, err: _ } => {}
+            WorkflowEvent::TaskUnknown { name: _ } => {}
             WorkflowEvent::Finished => {}
-            WorkflowEvent::Retry { err, after } => {}
+            WorkflowEvent::Retry { err: _, after: _ } => {}
             WorkflowEvent::Agent { orig, .. } => {
                 AgentReceiver {
                     logger: self.logger.clone(),
@@ -637,7 +637,7 @@ impl Handler for WorkflowReceiver {
                 }
                 .handle(orig);
             }
-            WorkflowEvent::SubWorkflow { step } => {}
+            WorkflowEvent::SubWorkflow { step: _ } => {}
             WorkflowEvent::Consistency { orig, .. } => {
                 self.consistency_receiver.handle(orig);
             }
