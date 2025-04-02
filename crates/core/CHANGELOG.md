@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.1.8](https://github.com/oxy-hq/oxy-internal/compare/0.1.7...0.1.8) (2025-04-02)
+
+
+### <!-- 0 -->🚀 Features
+
+* [#518](https://github.com/oxy-hq/oxy-internal/issues/518) implement if else logic for our yaml ([#535](https://github.com/oxy-hq/oxy-internal/issues/535)) ([6aca561](https://github.com/oxy-hq/oxy-internal/commit/6aca561e678be726609021bfa0d9ed384cff1121))
+* [#550](https://github.com/oxy-hq/oxy-internal/issues/550) support Jinja filters and data transformation for referenced variable ([#554](https://github.com/oxy-hq/oxy-internal/issues/554)) ([34f424b](https://github.com/oxy-hq/oxy-internal/commit/34f424ba9bbc3df5f5bc56540191ad8227b636b7))
+* **beta:** mcp server and improvements to web server ([#553](https://github.com/oxy-hq/oxy-internal/issues/553)) ([5c2aab2](https://github.com/oxy-hq/oxy-internal/commit/5c2aab2299f74d4c1076b7d08e2c554a5087a319))
+
 ## [0.1.7](https://github.com/oxy-hq/oxy-internal/compare/0.1.6...0.1.7) (2025-03-31)
 
 

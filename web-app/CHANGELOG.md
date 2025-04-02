@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.7](https://github.com/oxy-hq/oxy-internal/compare/0.1.6...0.1.7) (2025-04-02)
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* sort agent alphabetically and dont allow message to be sent if form is empty ([#552](https://github.com/oxy-hq/oxy-internal/issues/552)) ([8a9738a](https://github.com/oxy-hq/oxy-internal/commit/8a9738af19283ba95d7ec4daa9a2b42ffbc55a2d))
+
 ## [0.1.6](https://github.com/oxy-hq/oxy-internal/compare/0.1.5...0.1.6) (2025-03-28)
 
 
