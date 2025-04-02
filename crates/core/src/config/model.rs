@@ -237,6 +237,10 @@ pub struct AgentConfig {
     #[serde(default)]
     #[garde(skip)]
     pub tests: Vec<Eval>,
+
+    #[garde(skip)]
+    #[serde(default)]
+    pub description: String,
 }
 
 #[derive(Debug, Validate, Deserialize, Serialize, Clone, JsonSchema)]
@@ -682,6 +686,8 @@ pub struct TempWorkflow {
     pub variables: Option<HashMap<String, String>>,
     #[serde(default = "default_tests")]
     pub tests: Vec<Eval>,
+    #[serde(default)]
+    pub description: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
@@ -742,6 +748,9 @@ pub struct Workflow {
     pub tests: Vec<Eval>,
     #[garde(skip)]
     pub variables: Option<HashMap<String, String>>,
+    #[garde(skip)]
+    #[serde(default)]
+    pub description: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]

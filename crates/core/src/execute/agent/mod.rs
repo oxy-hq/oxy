@@ -210,6 +210,7 @@ pub async fn run_agent(
     file_format: &FileFormat,
     prompt: Option<String>,
     config: Arc<ConfigManager>,
+    logger: Option<Box<dyn WorkflowLogger>>,
 ) -> Result<AgentResult, OxyError> {
     let (agent, agent_config, global_context) =
         build_agent(agent_file, file_format, prompt.clone(), config.clone()).await?;
@@ -218,8 +219,10 @@ pub async fn run_agent(
 
     let references_collector = Arc::new(Mutex::new(ReferenceCollector::new()));
 
+    let agent_logger = logger.unwrap_or_else(|| Box::new(WorkflowCLILogger {}));
+
     let handler = AgentReceiver {
-        logger: Box::new(WorkflowCLILogger),
+        logger: agent_logger,
         references_collector: Some(Arc::clone(&references_collector)),
     };
     let output = run(

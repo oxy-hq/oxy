@@ -2,6 +2,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::config::ConfigBuilder;
+use crate::config::model::AgentConfig;
+use crate::errors::OxyError;
+use crate::execute::workflow::NoopLogger;
 use crate::{
     config::model::FileFormat,
     db::{
@@ -75,6 +78,7 @@ pub async fn ask(payload: AskRequest) -> impl Stream<Item = Message> {
         &FileFormat::Markdown,
         Some(payload.question),
         Arc::new(config),
+        None,
     ).await {
         Ok(output) => output.output.to_string(),
         Err(e) => format!("Error running agent: {}", e),
@@ -133,6 +137,7 @@ pub async fn ask_preview(payload: AskRequest) -> impl Stream<Item = Message> {
         &FileFormat::Markdown,
         Some(payload.question),
         Arc::new(config),
+        None,
     ).await {
         Ok(output) => output.output.to_string(),
         Err(e) => format!("Error running agent: {}", e),
@@ -163,4 +168,82 @@ pub async fn ask_preview(payload: AskRequest) -> impl Stream<Item = Message> {
     };
 
     stream
+}
+
+pub async fn ask_adhoc(
+    question: String,
+    project_path: PathBuf,
+    agent: String,
+) -> Result<String, OxyError> {
+    let config = ConfigBuilder::new()
+        .with_project_path(project_path.clone())
+        .unwrap()
+        .build()
+        .await
+        .unwrap();
+
+    let agent_path = get_path_by_name(project_path.clone(), agent).await?;
+
+    let result = match run_agent(
+        &agent_path,
+        &FileFormat::Markdown,
+        Some(question),
+        Arc::new(config),
+        Some(Box::new(NoopLogger {})),
+    )
+    .await
+    {
+        Ok(output) => output.output.to_string(),
+        Err(e) => format!("Error running agent: {}", e),
+    };
+    Ok(result)
+}
+
+pub async fn list_agents(project_path: PathBuf) -> Result<Vec<String>, OxyError> {
+    let config_builder = ConfigBuilder::new().with_project_path(&project_path)?;
+    let config = config_builder.build().await?;
+
+    let agents = config.list_agents().await?;
+    Ok(agents
+        .iter()
+        .map(|absolute_path| {
+            absolute_path
+                .strip_prefix(&project_path)
+                .unwrap()
+                .to_string_lossy()
+                .to_string()
+        })
+        .collect())
+}
+
+pub async fn get_agent_config(
+    project_path: PathBuf,
+    relative_path: String,
+) -> Result<AgentConfig, OxyError> {
+    let config_builder = ConfigBuilder::new().with_project_path(&project_path)?;
+    let config = config_builder.build().await?;
+
+    let agent = config.resolve_agent(relative_path).await?;
+    Ok(agent)
+}
+
+pub async fn get_path_by_name(
+    project_path: PathBuf,
+    agent_name: String,
+) -> Result<PathBuf, OxyError> {
+    let config_builder = ConfigBuilder::new().with_project_path(&project_path)?;
+    let config = config_builder.build().await?;
+
+    let agents = config.list_agents().await?;
+    for agent in agents {
+        let agent_config = config.resolve_agent(agent.clone()).await?;
+        if agent_config.name == agent_name {
+            let path = project_path.join(agent);
+            return Ok(path);
+        }
+    }
+    Err(OxyError::ArgumentError(format!(
+        "Agent with name {} not found",
+        agent_name
+    )))
 }

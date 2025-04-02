@@ -5,6 +5,7 @@ pub mod connector;
 pub mod db;
 pub mod errors;
 pub mod execute;
+pub mod mcp;
 pub mod service;
 pub mod theme;
 pub mod utils;

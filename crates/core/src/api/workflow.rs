@@ -25,7 +25,7 @@ pub struct GetWorkflowResponse {
 }
 
 pub async fn list() -> impl IntoResponse {
-    match crate::service::workflow::list_workflows().await {
+    match crate::service::workflow::list_workflows(None).await {
         Ok(workflows) => {
             let response = serde_json::to_string(&workflows).unwrap();
             (StatusCode::OK, response)
@@ -45,7 +45,7 @@ pub async fn get(
         log::info!("{:?}", e);
         StatusCode::BAD_REQUEST
     })?;
-    match get_workflow(PathBuf::from(path)).await {
+    match get_workflow(PathBuf::from(path), None).await {
         Ok(workflow) => Ok(extract::Json(GetWorkflowResponse { data: workflow })),
         Err(_) => Err(StatusCode::NOT_FOUND),
     }

@@ -213,6 +213,7 @@ pub async fn ask_thread(Path(id): Path<String>) -> impl IntoResponse {
         &FileFormat::Markdown,
         Some(thread.question.clone()),
         config,
+        None,
     )
     .await
     {

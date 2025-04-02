@@ -1,5 +1,7 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/oxy-hq/oxy/refs/heads/main/json-schemas/agent.json
 
+description: "An agent for assisting with SQL query generation and validation."
+
 model: "openai-4o-mini"
 
 context:

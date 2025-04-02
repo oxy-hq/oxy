@@ -1,6 +1,7 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/oxy-hq/oxy/refs/heads/main/json-schemas/workflow.json
 
 name: fruit_sales_report
+description: "This workflow generates a fruit sales report."
 variables:
   fruit: apple
 tasks:
