@@ -19,6 +19,7 @@ const ChatPanel = () => {
 
   const handleFormSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (!message) return;
     createThread({
       title: message,
       agent: agent?.id ?? "",

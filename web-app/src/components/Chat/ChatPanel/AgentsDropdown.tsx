@@ -31,10 +31,12 @@ const AgentsDropdown = ({
 
   const agentOptions = useMemo(
     () =>
-      agents?.map((agentPath) => ({
-        id: agentPath,
-        name: getNameFromPath(agentPath),
-      })) ?? [],
+      agents
+        ?.map((agentPath) => ({
+          id: agentPath,
+          name: getNameFromPath(agentPath),
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name)) ?? [],
     [agents],
   );
 
