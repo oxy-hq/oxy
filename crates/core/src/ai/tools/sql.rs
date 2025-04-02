@@ -56,7 +56,7 @@ impl Tool for ExecuteSQLTool {
             false => {
                 let file_path = self.connector.run_query(&parameters.sql).await?;
                 let (datasets, schema) = load_result(&file_path)?;
-                let (truncated_results, truncated) = truncate_datasets(datasets.clone());
+                let (_truncated_results, _truncated) = truncate_datasets(datasets.clone());
                 let output = match self.output_format {
                     OutputFormat::Default => {
                         let markdown_table = record_batches_to_markdown(&datasets, &schema)?;

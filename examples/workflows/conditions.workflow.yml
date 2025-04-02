@@ -17,7 +17,7 @@ tasks:
       - name: conditions
         type: conditional
         conditions:
-          - if: "{{schedule_value_checks.value > 10}}"
+          - if: "{{schedule_value_checks.value|int > 10}}"
             tasks:
               - name: value_greater_than_10
                 type: formatter

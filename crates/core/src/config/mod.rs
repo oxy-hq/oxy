@@ -225,7 +225,7 @@ pub fn load_config(project_path: Option<PathBuf>) -> Result<Config, OxyError> {
 
 pub fn parse_config(config_path: &PathBuf, project_path: PathBuf) -> Result<Config, OxyError> {
     let config_str = fs::read_to_string(config_path)
-        .map_err(|e| OxyError::ConfigurationError("Unable to read config file".into()))?;
+        .map_err(|_e| OxyError::ConfigurationError("Unable to read config file".into()))?;
 
     let result = serde_yaml::from_str::<Config>(&config_str);
     match result {

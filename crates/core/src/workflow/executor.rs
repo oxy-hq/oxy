@@ -304,10 +304,7 @@ impl Executable<LoopInput, WorkflowEvent> for LoopSequentialTask {
                 |param| {
                     Value::from(Kwargs::from_iter([(
                         name.clone(),
-                        Value::from(Kwargs::from_iter([(
-                            "value",
-                            Value::from_object(param.clone()),
-                        )])),
+                        Value::from(Kwargs::from_iter([("value", param.clone().into())])),
                     )]))
                 },
                 self.concurrency,

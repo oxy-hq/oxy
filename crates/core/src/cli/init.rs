@@ -2,9 +2,6 @@ use crate::cli::model::{BigQuery, Config, DatabaseType, DuckDB};
 use crate::config::model::{ClickHouse, Mysql, Postgres, Redshift};
 use crate::utils::find_project_path;
 use include_dir::{Dir, include_dir};
-use serde::Serialize;
-use serde::de::DeserializeOwned;
-use serde_json::Value;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::{fmt, fs};
@@ -219,23 +216,6 @@ fn choose_database_type() -> Result<DatabaseType, InitError> {
     }
 }
 
-trait ConfigFieldAccess {
-    fn set_field(&mut self, field_name: &str, value: Value);
-}
-
-impl<T> ConfigFieldAccess for T
-where
-    T: Serialize + DeserializeOwned + Default,
-{
-    fn set_field(&mut self, field_name: &str, value: Value) {
-        let mut serialized = serde_json::to_value(&*self).unwrap_or_default();
-        if let Some(obj) = serialized.as_object_mut() {
-            obj.insert(field_name.to_string(), value);
-        }
-        *self = serde_json::from_value(serialized).unwrap_or_default();
-    }
-}
-
 fn collect_models() -> Result<Vec<Model>, InitError> {
     let mut models = Vec::new();
 
@@ -423,9 +403,6 @@ fn create_config_file(config_path: &Path) -> Result<(), InitError> {
     );
 
     fs::write(config_path, content)?;
-    for database in &databases {
-        {}
-    }
     ignore_sensitive_files(&config.project_path, &sensitive_files)?;
 
     println!(
