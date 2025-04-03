@@ -26,6 +26,10 @@
         "$ref": "#/definitions/AgentContext"
       }
     },
+    "description": {
+      "default": "",
+      "type": "string"
+    },
     "model": {
       "type": "string"
     },

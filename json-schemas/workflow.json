@@ -6,6 +6,10 @@
     "tasks"
   ],
   "properties": {
+    "description": {
+      "default": "",
+      "type": "string"
+    },
     "tasks": {
       "type": "array",
       "items": {
