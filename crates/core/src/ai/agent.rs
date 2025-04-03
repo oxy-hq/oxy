@@ -386,6 +386,12 @@ impl LLMAgent for OpenAIAgent {
     }
 }
 
+fn add_date_time_to_system_instruction(system_instruction: &str) -> String {
+    let current_date_time = chrono::Utc::now().to_rfc2822();
+    let date_time_context = format!("Current date and time: {}", current_date_time);
+    format!("{}\n{}", date_time_context, system_instruction)
+}
+
 #[async_trait]
 impl Executable<AgentInput, AgentEvent> for OpenAIAgent {
     async fn execute(
@@ -395,10 +401,13 @@ impl Executable<AgentInput, AgentEvent> for OpenAIAgent {
     ) -> Result<(), OxyError> {
         execution_context.notify(AgentEvent::Started).await?;
         log::info!("AgentInput: {:?}", input);
-        let system_instruction = execution_context
+        let mut system_instruction = execution_context
             .renderer
             .render_async(&self.system_instruction)
             .await?;
+
+        system_instruction = add_date_time_to_system_instruction(system_instruction.as_str());
+
         let input = input.prompt.unwrap_or_default();
         let result = self
             .request(&input, &system_instruction, execution_context)
