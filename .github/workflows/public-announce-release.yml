@@ -13,8 +13,18 @@ jobs:
       - name: Send Slack Notification
         uses: rtCamp/action-slack-notify@v2
         env:
+          SLACK_USERNAME: "Release Notifier"
+          MSG_MINIMAL: ref,commit
+          SLACK_ICON_EMOJI: ":rocket:"
+          SLACK_LINK_NAMES: true
+          SLACKIFY_MARKDOWN: true
           SLACK_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           SLACK_CHANNEL: general
+          SLACK_TITLE: |
+            :tada: New Release Published: *${{ github.event.release.name }}* :tada:
           SLACK_MESSAGE: |
-            A new release has been published: *${{ github.event.release.name }}*
-            View the release notes here: <${{ github.event.release.html_url }}|${{ github.event.release.tag_name }}>
+            *Release Details:*
+            - *Tag:* ${{ github.event.release.tag_name }}
+            - *Published At:* ${{ github.event.release.published_at }}
+
+            View the full release notes and download links here: <${{ github.event.release.html_url }}|Release Page>
