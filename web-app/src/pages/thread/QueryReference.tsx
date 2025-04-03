@@ -36,9 +36,9 @@ export const QueryReference = ({ reference }: QueryReferenceProps) => {
         </DialogTrigger>
         <DialogContent
           showOverlay={false}
-          className="[&>button]:hidden break-all p-0"
+          className="[&>button]:hidden break-all p-0 max-w-[50vw]!"
         >
-          <div className="text-sm">
+          <div className="text-sm max-w-[50vw]">
             <div className="flex items-center justify-between pl-4 pr-2 py-2">
               <div className="flex items-center gap-1 justify-start w-full">
                 <div className="p-2 flex items-center justify-center">
