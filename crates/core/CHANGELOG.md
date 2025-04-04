@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.1.9](https://github.com/oxy-hq/oxy-internal/compare/0.1.8...0.1.9) (2025-04-04)
+
+
+### <!-- 0 -->🚀 Features
+
+* refactor & stabilize mcp server ([#560](https://github.com/oxy-hq/oxy-internal/issues/560)) ([55962a2](https://github.com/oxy-hq/oxy-internal/commit/55962a2c6ad1469116ac645f116998c6d4cffcad))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* agent datetime awareness ([#558](https://github.com/oxy-hq/oxy-internal/issues/558)) ([0030e66](https://github.com/oxy-hq/oxy-internal/commit/0030e66c25c262443af77a3110de7eaf8d118524))
+* context value serialization fail ([#566](https://github.com/oxy-hq/oxy-internal/issues/566)) ([539a8c9](https://github.com/oxy-hq/oxy-internal/commit/539a8c985c99dfc8451f6aea39b14acb554800b9))
+
 ## [0.1.8](https://github.com/oxy-hq/oxy-internal/compare/0.1.7...0.1.8) (2025-04-02)
 
 

@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.9](https://github.com/oxy-hq/oxy-internal/compare/0.1.8...0.1.9) (2025-04-04)
+
+
+### <!-- 0 -->🚀 Features
+
+* add workflow diagram control ([#567](https://github.com/oxy-hq/oxy-internal/issues/567)) ([893035b](https://github.com/oxy-hq/oxy-internal/commit/893035ba634518a7199512906581137bfb675df1))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* source overflow when query is too long ([#557](https://github.com/oxy-hq/oxy-internal/issues/557)) ([2affdb5](https://github.com/oxy-hq/oxy-internal/commit/2affdb5ec12401cbf906f2bbb7bec51043fbb227))
+
 ## [0.1.8](https://github.com/oxy-hq/oxy-internal/compare/0.1.7...0.1.8) (2025-04-03)
 
 
