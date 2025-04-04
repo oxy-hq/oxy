@@ -20,6 +20,7 @@ jobs:
           SLACKIFY_MARKDOWN: true
           SLACK_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           SLACK_CHANNEL: general
+          SLACK_FOOTER: ""
           SLACK_TITLE: |
             :tada: New Release Published: *${{ github.event.release.name }}* :tada:
           SLACK_MESSAGE: |
@@ -27,4 +28,4 @@ jobs:
             - *Tag:* ${{ github.event.release.tag_name }}
             - *Published At:* ${{ github.event.release.published_at }}
 
-            View the full release notes and download links here: <${{ github.event.release.html_url }}|Release Page>
+            View the full release notes and download links here: [Release Page](${{ github.event.release.html_url }})
