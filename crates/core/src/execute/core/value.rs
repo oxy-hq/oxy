@@ -162,14 +162,20 @@ pub struct ConsistencyOutput {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(tag = "type")]
+#[serde(tag = "type", content = "value")]
 pub enum ContextValue {
     None,
+    #[serde(rename = "text")]
     Text(String),
+    #[serde(rename = "map")]
     Map(Map),
+    #[serde(rename = "array")]
     Array(Array),
+    #[serde(rename = "table")]
     Table(ArrowTable),
+    #[serde(rename = "agent")]
     Agent(AgentOutput),
+    #[serde(rename = "consistency")]
     Consistency(ConsistencyOutput),
 }
 
