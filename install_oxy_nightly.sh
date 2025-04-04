@@ -29,6 +29,12 @@ if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
 	esac
 fi
 
+# Ensure unzip is installed
+if ! command -v unzip >/dev/null 2>&1; then
+	echo "The 'unzip' command is required but not installed. Please install 'unzip' and try again."
+	exit 1
+fi
+
 # Map architecture to target
 case $ARCH in
 x86_64)
@@ -52,22 +58,39 @@ aarch64 | arm64)
 esac
 
 # Fetch the latest nightly build artifact URL
-ARTIFACT_URL=$(curl -s "https://api.github.com/repos/$REPO/actions/artifacts" | jq -r ".artifacts[] | select(.name | contains(\"nightly-$TARGET\")) | .archive_download_url" | head -n 1)
+ARTIFACT_URL=$(curl -s "https://api.github.com/repos/$REPO/actions/artifacts" | jq -r ".artifacts[] | select(.name == \"nightly-$TARGET\") | .archive_download_url" | head -n 1)
 
 if [ -z "$ARTIFACT_URL" ]; then
 	echo "Failed to find the latest nightly build for $TARGET."
 	exit 1
 fi
 
+echo "Downloading the latest nightly build for $TARGET from $ARTIFACT_URL..."
+
 # Download the artifact
 curl -L -H "Authorization: token $GITHUB_TOKEN" "$ARTIFACT_URL" -o nightly-artifact.zip
 
+# Validate the downloaded file
+if ! unzip -tq nightly-artifact.zip >/dev/null 2>&1; then
+	echo "The downloaded file is not a valid zip archive. Please check the artifact URL or your network connection."
+	rm -f nightly-artifact.zip
+	exit 1
+fi
+
 # Extract the binary from the artifact
 unzip nightly-artifact.zip -d nightly-artifact
-mv nightly-artifact/oxy-$TARGET $INSTALL_DIR/oxy
+BINARY_PATH=$(find nightly-artifact -type f -name "oxy-$TARGET")
+
+if [ -z "$BINARY_PATH" ]; then
+	echo "Failed to find the binary for $TARGET in the artifact."
+	rm -rf nightly-artifact nightly-artifact.zip
+	exit 1
+fi
+
+mv "$BINARY_PATH" "$INSTALL_DIR/oxy"
 
 # Make the binary executable
-chmod +x $INSTALL_DIR/oxy
+chmod +x "$INSTALL_DIR/oxy"
 
 # Cleanup
 rm -rf nightly-artifact nightly-artifact.zip
