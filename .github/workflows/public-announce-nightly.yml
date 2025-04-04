@@ -29,4 +29,4 @@ jobs:
             - *Event:* Nightly Build
             - *Completed At:* ${{ github.event.workflow_run.created_at }}
 
-            View the artifacts here: [Nightly Build Artifacts](${{ github.server_url }}/{{ github.repository }}/actions/runs/${{ github.event.workflow_run.id }})
+            View the artifacts here: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.event.workflow_run.id }}
