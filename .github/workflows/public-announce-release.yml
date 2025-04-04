@@ -28,4 +28,4 @@ jobs:
             - *Tag:* ${{ github.event.release.tag_name }}
             - *Published At:* ${{ github.event.release.published_at }}
 
-            View the full release notes and download links here: [Release Page](${{ github.event.release.html_url }})
+            View the full release notes and download links here: ${{ github.event.release.html_url }}
