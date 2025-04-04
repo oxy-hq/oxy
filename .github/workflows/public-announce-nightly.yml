@@ -1,0 +1,32 @@
+name: Public Announce Nightly Build to Slack
+
+on:
+  workflow_run:
+    workflows: ["Public Nightly Build"]
+    types:
+      - completed
+
+jobs:
+  announce-nightly-to-slack:
+    if: github.repository == 'oxy-hq/oxy' && github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Send Slack Notification
+        uses: rtCamp/action-slack-notify@v2
+        env:
+          SLACK_USERNAME: "Nightly Build Notifier"
+          MSG_MINIMAL: ref,commit
+          SLACK_ICON_EMOJI: ":crescent_moon:"
+          SLACK_LINK_NAMES: true
+          SLACKIFY_MARKDOWN: true
+          SLACK_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_CHANNEL: product-releases-dev
+          SLACK_FOOTER: ""
+          SLACK_TITLE: ":crescent_moon: Nightly Build Completed :crescent_moon:"
+          SLACK_MESSAGE: |
+            *Details:*
+            - *Event:* Nightly Build
+            - *Completed At:* ${{ github.event.workflow_run.created_at }}
+
+            View the artifacts here: [Nightly Build Artifacts](${{ github.server_url }}/{{ github.repository }}/actions/runs/${{ github.event.workflow_run.id }})
