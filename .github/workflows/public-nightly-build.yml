@@ -19,7 +19,7 @@ permissions:
 
 jobs:
   build-nightly:
-    if: github.repository == 'oxy-hq/oxy'
+    if: (github.repository == 'oxy-hq/oxy' && github.event_name == 'schedule') || github.event_name == 'workflow_dispatch'
     name: Build Nightly CLI for ${{ matrix.job.target }}
     runs-on: ${{ matrix.job.os }}
     strategy:
