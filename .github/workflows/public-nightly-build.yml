@@ -1,0 +1,110 @@
+name: Public Nightly Build
+
+on:
+  schedule:
+    - cron: "0 8 * * *" # Runs every day at midnight Bay Area time (UTC-8)
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  MACOSX_DEPLOYMENT_TARGET: "11.0"
+
+defaults:
+  run:
+    shell: bash
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  build-nightly:
+    if: github.repository == 'oxy-hq/oxy'
+    name: Build Nightly CLI for ${{ matrix.job.target }}
+    runs-on: ${{ matrix.job.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        job:
+          - os: macos-13
+            target: x86_64-apple-darwin
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create artifacts folder
+        run: mkdir -p artifacts
+
+      - name: Prep Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.job.target }}
+      - name: Prep cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: nightly-build-${{ matrix.job.os }}-${{ matrix.job.target }}
+          cache-all-crates: "true"
+
+      # protobuf is required by lance https://github.com/lancedb/lance/issues/3073
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      # cleanup disk space
+      - name: Free Disk Space (Ubuntu)
+        if: ${{ matrix.job.os == 'ubuntu-latest' }}
+        uses: jlumbroso/free-disk-space@main
+
+      #-- Prep node
+      - name: Prep Node
+        uses: actions/setup-node@v4
+        id: setup-node
+        with:
+          node-version: lts/*
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+      - name: Get pnpm store directory
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+      - uses: actions/cache@v4
+        name: Setup pnpm cache
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: pnpm-store-${{ matrix.job.os }}-${{ matrix.job.target }}-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-store-${{ matrix.job.os }}-${{ matrix.job.target }}
+      - name: Install dependencies & Build web-app
+        env:
+          NODE_OPTIONS: "--max_old_space_size=4096"
+        run: |
+          pnpm install --prefer-frozen-lockfile
+          pnpm -C web-app build
+
+      - name: Build oxy cli
+        shell: bash
+        run: |
+          cargo build --release --target ${{ matrix.job.target }}
+          mv target/${{ matrix.job.target }}/release/oxy artifacts/oxy-${{ matrix.job.target }}
+
+      - name: Generate config schema (once)
+        if: ${{ matrix.job.target == 'aarch64-apple-darwin' }}
+        run: |
+          cargo run --release --target ${{ matrix.job.target }} -- gen-config-schema
+          cp -a json-schemas/. artifacts/
+          cp Cargo.lock artifacts/
+
+      - name: Upload nightly artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-${{ matrix.job.target }}
+          path: artifacts/**/*
+          if-no-files-found: error
+          retention-days: 3
