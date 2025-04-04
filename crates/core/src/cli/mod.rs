@@ -37,6 +37,7 @@ use std::error::Error;
 use std::path::PathBuf;
 use std::process::Command;
 use std::process::exit;
+use tokio::runtime::Runtime;
 use tokio::signal;
 use tokio_util::sync::CancellationToken;
 
@@ -552,7 +553,8 @@ pub async fn handle_run_command(run_args: RunArgs) -> Result<RunResult, OxyError
 }
 
 pub async fn start_mcp_stdio(project_path: PathBuf) -> anyhow::Result<()> {
-    let service = OxyMcpServer { project_path }
+    let service = OxyMcpServer::new(project_path)
+        .await?
         .serve(stdio())
         .await
         .inspect_err(|e| {
@@ -573,11 +575,11 @@ pub async fn start_mcp_sse_server(mut port: u16) -> anyhow::Result<CancellationT
         port += 1;
     }
     let bind = SocketAddr::from(([127, 0, 0, 1], port));
-    let ct = SseServer::serve(bind)
-        .await?
-        .with_service(move || OxyMcpServer {
-            project_path: project_path.clone(),
-        });
+    let ct = SseServer::serve(bind).await?.with_service(move || {
+        let rt = Runtime::new().unwrap();
+        rt.block_on(OxyMcpServer::new(project_path.clone()))
+            .unwrap()
+    });
 
     println!(
         "{}",

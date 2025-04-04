@@ -14,6 +14,7 @@ use rmcp::{
 use serde_json::{Map, Value, json};
 
 use crate::{
+    errors::OxyError,
     execute::{
         core::value::ContextValue,
         workflow::{NoopLogger, run_workflow},
@@ -25,8 +26,22 @@ use crate::{
 };
 
 #[derive(Debug, Clone)]
+pub enum ToolType {
+    Agent,
+    Workflow,
+}
+
+#[derive(Debug, Clone)]
+pub struct OxyTool {
+    pub tool: Tool,
+    pub tool_type: ToolType,
+    pub name: String,
+}
+
+#[derive(Debug, Clone)]
 pub struct OxyMcpServer {
     pub project_path: PathBuf,
+    pub tools: HashMap<String, OxyTool>,
 }
 
 #[derive(Debug, Clone, schemars::JsonSchema, serde::Serialize)]
@@ -53,9 +68,11 @@ impl ServerHandler for OxyMcpServer {
         _: PaginatedRequestParam,
         _: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, rmcp::Error> {
-        let mut tools = self.list_agent_tools().await?;
-        tools.extend(self.list_workflow_tools().await?);
-
+        let tools = self
+            .tools
+            .iter()
+            .map(|(_, oxy_tool)| oxy_tool.tool.clone())
+            .collect::<Vec<_>>();
         Ok(ListToolsResult {
             tools,
             next_cursor: None,
@@ -68,85 +85,35 @@ impl ServerHandler for OxyMcpServer {
         _: RequestContext<RoleServer>,
     ) -> Result<CallToolResult, rmcp::Error> {
         let tool_name = request.name.clone().to_string();
-        if is_agent_tool(tool_name.as_str()) {
-            let agent_name = get_agent_name_from_tool_name(tool_name.as_str());
-            return self
-                .run_agent_tool(agent_name.to_string(), request.arguments)
-                .await;
+        let oxy_tool = self
+            .tools
+            .get(tool_name.as_str())
+            .ok_or(rmcp::Error::invalid_request(
+                format!("Tool {} not found", tool_name),
+                None,
+            ))?;
+        match oxy_tool.tool_type {
+            ToolType::Agent => {
+                return self
+                    .run_agent_tool(oxy_tool.name.to_owned(), request.arguments)
+                    .await;
+            }
+            ToolType::Workflow => {
+                return self
+                    .run_workflow_tool(oxy_tool.name.to_owned(), request.arguments)
+                    .await;
+            }
         }
-        if is_workflow_tool(tool_name.as_str()) {
-            let workflow_name = get_workflow_name_from_tool_name(tool_name.as_str());
-            return self
-                .run_workflow_tool(workflow_name.to_string(), request.arguments)
-                .await;
-        }
-        Err(rmcp::Error::invalid_request(
-            format!("Tool {} not found", tool_name),
-            None,
-        ))
     }
 }
 
 impl OxyMcpServer {
-    async fn list_agent_tools(&self) -> Result<Vec<Tool>, rmcp::Error> {
-        let mut tools = Vec::new();
-        for agent in list_agents(self.project_path.clone()).await.map_err(|e| {
-            rmcp::Error::internal_error(format!("Failed to list agents: {}", e), None)
-        })? {
-            let agent_config = get_agent_config(self.project_path.clone(), agent.clone())
-                .await
-                .map_err(|e| {
-                    rmcp::Error::internal_error(format!("Failed to get agent config: {}", e), None)
-                })?;
-            let schema = serde_json::from_value(json!({
-                "type": "object",
-                "properties": {
-                    "question": {
-                        "type": "string",
-                        "description": "question to ask the agent"
-                    }
-                }
-            }))
-            .map_err(|e| {
-                rmcp::Error::internal_error(format!("Failed to parse schema: {}", e), None)
-            })?;
-            let tool = Tool::new(
-                get_agent_tool_name(agent_config.name.as_str()),
-                agent_config.description,
-                Arc::new(schema),
-            );
-            tools.push(tool);
-        }
-        Ok(tools)
-    }
-
-    async fn list_workflow_tools(&self) -> Result<Vec<Tool>, rmcp::Error> {
-        let mut tools = Vec::new();
-        let workflows = list_workflows(Some(self.project_path.clone()))
-            .await
-            .map_err(|e| {
-                rmcp::Error::internal_error(format!("Failed to list workflows: {}", e), None)
-            })?;
-
-        for workflow in workflows {
-            let workflow_config = get_workflow(
-                PathBuf::from(workflow.path),
-                Some(self.project_path.clone()),
-            )
-            .await
-            .map_err(|e| {
-                rmcp::Error::internal_error(format!("Failed to get workflow config: {}", e), None)
-            })?;
-            let tool = Tool::new(
-                get_workflow_tool_name(workflow.name.as_str()),
-                workflow_config.description,
-                Arc::new(generate_workflow_run_schema(
-                    workflow_config.variables.clone(),
-                )),
-            );
-            tools.push(tool);
-        }
-        Ok(tools)
+    pub async fn new(project_path: PathBuf) -> Result<Self, OxyError> {
+        let tools = get_oxy_tools(project_path.clone()).await?;
+        Ok(Self {
+            project_path,
+            tools,
+        })
     }
 
     async fn run_agent_tool(
@@ -305,24 +272,77 @@ fn generate_workflow_run_schema(
     schema
 }
 
+async fn get_oxy_tools(project_path: PathBuf) -> Result<HashMap<String, OxyTool>, OxyError> {
+    let mut tools_map = get_agent_tools(project_path.clone()).await?;
+    tools_map.extend(get_workflow_tools(project_path.clone()).await?);
+    Ok(tools_map)
+}
+
+async fn get_agent_tools(project_path: PathBuf) -> Result<HashMap<String, OxyTool>, OxyError> {
+    let mut tools_map = HashMap::new();
+    for agent in list_agents(project_path.clone()).await? {
+        let agent_config = get_agent_config(project_path.clone(), agent.clone()).await?;
+        let schema = serde_json::from_value(json!({
+            "type": "object",
+            "properties": {
+                "question": {
+                    "type": "string",
+                    "description": "question to ask the agent"
+                }
+            }
+        }))?;
+        let tool_name = get_agent_tool_name(agent_config.name.as_str());
+        let tool = Tool::new(
+            get_agent_tool_name(agent_config.name.as_str()),
+            agent_config.description,
+            Arc::new(schema),
+        );
+        let oxy_tool = OxyTool {
+            tool: tool.clone(),
+            tool_type: ToolType::Agent,
+            name: agent_config.name.to_owned(),
+        };
+        tools_map.insert(tool_name, oxy_tool);
+    }
+    Ok(tools_map)
+}
+
+async fn get_workflow_tools(project_path: PathBuf) -> Result<HashMap<String, OxyTool>, OxyError> {
+    let mut tools_map = HashMap::new();
+    let workflows = list_workflows(Some(project_path.clone())).await?;
+
+    for workflow in workflows {
+        let workflow_config = get_workflow(
+            PathBuf::from(workflow.path.clone()),
+            Some(project_path.clone()),
+        )
+        .await?;
+
+        let tool_name = get_workflow_tool_name(workflow.name.as_str());
+        let tool = Tool::new(
+            tool_name.clone(),
+            workflow_config.description,
+            Arc::new(generate_workflow_run_schema(
+                workflow_config.variables.clone(),
+            )),
+        );
+
+        let oxy_tool = OxyTool {
+            tool: tool.clone(),
+            tool_type: ToolType::Workflow,
+            name: workflow.name,
+        };
+        tools_map.insert(tool_name, oxy_tool);
+    }
+    Ok(tools_map)
+}
+
 const AGENT_TOOL_PREFIX: &str = "agent-";
 const WORKFLOW_TOOL_PREFIX: &str = "workflow-";
 
-fn is_agent_tool(tool_name: &str) -> bool {
-    tool_name.starts_with(AGENT_TOOL_PREFIX)
-}
-fn is_workflow_tool(tool_name: &str) -> bool {
-    tool_name.starts_with(WORKFLOW_TOOL_PREFIX)
-}
 fn get_agent_tool_name(agent_name: &str) -> String {
     format!("{}{}", AGENT_TOOL_PREFIX, agent_name)
 }
 fn get_workflow_tool_name(workflow_name: &str) -> String {
     format!("{}{}", WORKFLOW_TOOL_PREFIX, workflow_name)
-}
-fn get_agent_name_from_tool_name(tool_name: &str) -> String {
-    tool_name.split_at(AGENT_TOOL_PREFIX.len()).1.to_string()
-}
-fn get_workflow_name_from_tool_name(tool_name: &str) -> String {
-    tool_name.split_at(WORKFLOW_TOOL_PREFIX.len()).1.to_string()
 }
