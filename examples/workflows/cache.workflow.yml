@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/oxy-hq/oxy/refs/heads/main/json-schemas/workflow.json
 
 name: cache_sample
-description: "This workflow demonstrates caching mechanisms."
+description: "This workflow demonstrates caching mechanisms. ** Note: Report must be show as is. Without any modification. **"
 tasks:
   - name: sql
     type: agent

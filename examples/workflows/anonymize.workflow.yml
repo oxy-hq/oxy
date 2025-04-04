@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/oxy-hq/oxy/refs/heads/main/json-schemas/workflow.json
 
 name: anonymize_sample
-description: "This workflow anonymizes sensitive data."
+description: "This workflow anonymizes sensitive data. ** Note: Report must be show as is. Without any modification. **"
 tasks:
   - name: execute
     type: execute_sql
