@@ -1,9 +1,12 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 
 import {
   Background,
   BackgroundVariant,
+  Controls,
   ReactFlow,
+  useEdgesState,
+  useNodesState,
   useReactFlow,
 } from "@xyflow/react";
 import ELK, { ElkNode } from "elkjs/lib/elk.bundled.js";
@@ -232,10 +235,15 @@ const nodeTypes = {
 } as const;
 
 const WorkflowDiagram = ({ tasks }: { tasks: TaskConfigWithId[] }) => {
+  const [reactFlowNodes, setReactFlowNodes, onNodesChange] =
+    useNodesState<LayoutedNode>([]);
+  const [reactFlowEdges, setReactFlowEdges, onEdgesChange] =
+    useEdgesState<Edge>([]);
   const setNodes = useWorkflow((state) => state.setNodes);
   const setEdges = useWorkflow((state) => state.setEdges);
   const setLayoutedNodes = useWorkflow((state) => state.setLayoutedNodes);
   const layoutedNodes = useWorkflow((state) => state.layoutedNodes);
+  const reactFlowInstance = useReactFlow();
   useEffect(() => {
     const { nodes, edges } = buildNodes(tasks);
     setNodes(nodes);
@@ -243,7 +251,6 @@ const WorkflowDiagram = ({ tasks }: { tasks: TaskConfigWithId[] }) => {
   }, [tasks, setNodes, setEdges]);
   const nodes = useWorkflow((state) => state.nodes);
   const edges = useWorkflow((state) => state.edges);
-  const reactFlowInstance = useReactFlow(); // Access React Flow instance
   const reactFlowWrapper = useRef(null);
 
   useEffect(() => {
@@ -255,27 +262,42 @@ const WorkflowDiagram = ({ tasks }: { tasks: TaskConfigWithId[] }) => {
     getLayout();
   }, [nodes, edges, setLayoutedNodes]);
 
+  const fitViewOptions = useMemo(
+    () => ({
+      maxZoom: 1,
+      minZoom: 0.1,
+      nodes: layoutedNodes,
+      duration: 0,
+    }),
+    [layoutedNodes],
+  );
+
   useEffect(() => {
     if (reactFlowInstance) {
-      setTimeout(() => {
-        reactFlowInstance.fitView({
-          nodes: layoutedNodes,
-          maxZoom: 1,
-          minZoom: 0.1,
-          duration: 0,
-        });
-      }, 10);
+      setReactFlowEdges(edges);
+      setReactFlowNodes(layoutedNodes);
+      reactFlowInstance.fitView(fitViewOptions);
     }
-  }, [reactFlowInstance, layoutedNodes]);
+  }, [
+    reactFlowInstance,
+    layoutedNodes,
+    edges,
+    setReactFlowEdges,
+    setReactFlowNodes,
+    fitViewOptions,
+  ]);
   return (
     <div className="w-full h-full" ref={reactFlowWrapper}>
       <ReactFlow
-        nodes={layoutedNodes}
-        edges={edges}
         nodeTypes={nodeTypes}
         proOptions={{ hideAttribution: true }}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
+        nodes={reactFlowNodes}
+        edges={reactFlowEdges}
         fitView
       >
+        <Controls showInteractive={false} fitViewOptions={fitViewOptions} />
         <Background color="#ccc" variant={BackgroundVariant.Dots} />
       </ReactFlow>
     </div>
