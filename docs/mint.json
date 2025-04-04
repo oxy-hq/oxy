@@ -101,6 +101,12 @@
       ]
     },
     {
+      "group": "MCP Server",
+      "pages": [
+        "learn-about-oxy/mcp-usage"
+      ]
+    },
+    {
       "group": "Contributing",
       "pages": ["community/contributing-writing"]
     },

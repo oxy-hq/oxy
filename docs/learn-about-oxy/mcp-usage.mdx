@@ -1,0 +1,38 @@
+---
+title: "Setting up the MCP Server"
+description: "Learn how to use the MCP server in Oxy."
+---
+
+### Starting the MCP Server
+
+Oxy supports two transport options for the MCP server:
+
+1. **SSE (Server-Sent Events)**:
+
+   To run MCP SSE server use `oxy mcp-sse` command:
+   ```sh
+   oxy mcp-sse --port <port>
+   ```
+
+2. **Stdio**: Start the server with:
+   ```sh
+   oxy mcp-stdio --project-path <path>
+   ```
+   Example configuration for Claude desktop:
+   ```json
+    {
+      "mcpServers":{
+        "oxy":{
+        "command":"oxy",
+        "args":[
+            "mcp-stdio",
+            "--project-path",
+            "<path_to_your_project>"
+        ],
+        "env":{
+            "OPENAI_API_KEY":"<your_model_api_key>"
+         }
+        }
+      }
+    }
+   ```
