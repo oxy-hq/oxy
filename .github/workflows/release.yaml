@@ -59,7 +59,7 @@ jobs:
 
       # cleanup disk space
       - name: Free Disk Space (Ubuntu)
-        if: ${{ matrix.job.os == 'ubuntu-latest' }}
+        if: ${{ startsWith(matrix.job.os, 'ubuntu') }}
         uses: jlumbroso/free-disk-space@main
 
       #-- Prep rust
