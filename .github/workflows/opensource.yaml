@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     if: ${{ (github.event_name == 'push' && github.repository == 'oxy-hq/oxy-internal') || (github.event_name == 'pull_request_target' && github.repository == 'oxy-hq/oxy') }}
     steps:
-      - uses: actions/create-github-app-token@v1
+      - uses: actions/create-github-app-token@v2
         name: Create GitHub App Token
         id: app-token
         with:
