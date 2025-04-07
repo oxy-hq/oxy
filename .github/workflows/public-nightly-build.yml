@@ -19,6 +19,8 @@ permissions:
 
 jobs:
   build-nightly:
+    # we dont build nightly release from internal repo
+    # but allowing adhoc build for cache purposes
     if: (github.repository == 'oxy-hq/oxy' && github.event_name == 'schedule') || github.event_name == 'workflow_dispatch'
     name: Build Nightly CLI for ${{ matrix.job.target }}
     runs-on: ${{ matrix.job.os }}
@@ -42,6 +44,7 @@ jobs:
           owner: ${{ github.repository_owner }}
           repositories: |
             oxy
+            oxy-internal
             oxy-nightly
 
       - name: Checkout repository
@@ -121,6 +124,7 @@ jobs:
         run: echo "current_date=$(date -u +'%Y%m%d')" >> $GITHUB_OUTPUT
 
       - name: Publish nightly release
+        if: github.event_name == 'schedule'
         uses: softprops/action-gh-release@v2
         with:
           token: ${{ steps.app-token.outputs.token }}
@@ -132,4 +136,7 @@ jobs:
           name: Nightly Build ${{ steps.date.outputs.current_date }}
           files: artifacts/**/*
           body: |
-            Nightly build for target ${{ matrix.job.target }}. Please use with caution. `curl https://nightly.oxy.tech | bash` to install latest nightly build.
+            Nightly build for target ${{ matrix.job.target }}. Please use with caution.
+            Commit: [${{ github.sha }}](https://github.com/${{ github.repository }}/commit/${{ github.sha }})
+            To install the latest release:
+            `bash <(curl --proto '=https' --tlsv1.2 -sSf https://nightly.oxy.tech)`
