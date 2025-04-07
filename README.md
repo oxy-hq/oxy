@@ -41,7 +41,7 @@ brew install oxy-hq/oxy/oxy
 #### Installing a Specific Version
 
 ```bash
-OXY_VERSION="0.1.0" bash <(curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/ooxy-hqxy/refs/heads/main/install_oxy.sh)
+OXY_VERSION="0.1.0" bash <(curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/oxy-hq/oxy/refs/heads/main/install_oxy.sh)
 ```
 
 </details>
