@@ -33,13 +33,7 @@
     {
       "type": "linked-versions",
       "groupName": "oxy",
-      "components": [
-        "core",
-        "py",
-        "migration",
-        "entity",
-        "web-app"
-      ]
+      "components": ["core", "py", "migration", "entity", "web-app"]
     }
   ],
   "changelog-sections": [
@@ -66,7 +60,7 @@
     {
       "type": "revert",
       "section": "<!-- 9 -->◀️ Revert",
-      "hidden": true
+      "hidden": false
     },
     {
       "type": "docs",
