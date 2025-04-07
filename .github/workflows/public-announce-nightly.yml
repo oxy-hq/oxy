@@ -29,4 +29,6 @@ jobs:
             - *Event:* Nightly Build
             - *Completed At:* ${{ github.event.workflow_run.created_at }}
 
-            View the artifacts here: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.event.workflow_run.id }}
+            View the latest release here: https://github.com/oxy-hq/oxy-nightly/releases/latest
+
+            To install the latest release: `bash <(curl --proto '=https' --tlsv1.2 -sSf https://nightly.oxy.tech)`
