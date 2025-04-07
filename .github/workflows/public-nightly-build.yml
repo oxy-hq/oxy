@@ -33,10 +33,22 @@ jobs:
           - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
     steps:
+      - uses: actions/create-github-app-token@v2
+        name: Create GitHub App Token
+        id: app-token
+        with:
+          app-id: ${{ vars.ARGO_APP_ID }}
+          private-key: ${{ secrets.ARGO_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: |
+            oxy
+            oxy-nightly
+
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
 
       - name: Create artifacts folder
         run: mkdir -p artifacts
@@ -55,7 +67,8 @@ jobs:
       - name: Install Protoc
         uses: arduino/setup-protoc@v3
         with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          repo-token: ${{ steps.app-token.outputs.token }}
+
       # cleanup disk space
       - name: Free Disk Space (Ubuntu)
         if: ${{ matrix.job.os == 'ubuntu-latest' }}
@@ -67,9 +80,11 @@ jobs:
         id: setup-node
         with:
           node-version: lts/*
+
       - uses: pnpm/action-setup@v4
         with:
           run_install: false
+
       - name: Get pnpm store directory
         shell: bash
         run: |
@@ -101,10 +116,20 @@ jobs:
           cp -a json-schemas/. artifacts/
           cp Cargo.lock artifacts/
 
-      - name: Upload nightly artifacts
-        uses: actions/upload-artifact@v4
+      - name: Get current date
+        id: date
+        run: echo "current_date=$(date -u +'%Y%m%d')" >> $GITHUB_OUTPUT
+
+      - name: Publish nightly release
+        uses: softprops/action-gh-release@v2
         with:
-          name: nightly-${{ matrix.job.target }}
-          path: artifacts/**/*
-          if-no-files-found: error
-          retention-days: 3
+          token: ${{ steps.app-token.outputs.token }}
+          draft: false
+          repository: oxy-hq/oxy-nightly
+          prerelease: false
+          make_latest: true
+          tag_name: nightly
+          name: Nightly Build ${{ steps.date.outputs.current_date }}
+          files: artifacts/**/*
+          body: |
+            Nightly build for target ${{ matrix.job.target }}. Please use with caution. `curl https://nightly.oxy.tech | bash` to install latest nightly build.
