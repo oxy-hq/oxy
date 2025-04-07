@@ -1,7 +1,12 @@
 #!/bin/bash
 
 REPO="oxy-hq/oxy-nightly"
-INSTALL_DIR="$HOME/.local/bin"
+
+if [ "$(id -u)" -eq 0 ]; then
+	INSTALL_DIR="/usr/local/bin"
+else
+	INSTALL_DIR="$HOME/.local/bin"
+fi
 
 # Ensure the install directory exists
 mkdir -p "$INSTALL_DIR"
@@ -13,8 +18,8 @@ VERSION=${OXY_VERSION:-latest}
 OS=$(uname | tr '[:upper:]' '[:lower:]')
 ARCH=$(uname -m)
 
-# Ensure the install directory is in the PATH
-if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
+# Ensure the install directory is in the PATH (only for user-specific installation)
+if [ "$(id -u)" -ne 0 ] && [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
 	echo "The install directory is not in your PATH. Adding it now..."
 	SHELL_NAME=$(basename "$SHELL")
 	case "$SHELL_NAME" in
