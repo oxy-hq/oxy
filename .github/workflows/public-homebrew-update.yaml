@@ -38,7 +38,7 @@ jobs:
           https://api.github.com/repos/oxy-hq/homebrew-oxy/dispatches \
           -d '{"event_type":"oxy_release"}'
 
-      - uses: actions/create-github-app-token@v1
+      - uses: actions/create-github-app-token@v2
         name: Create GitHub App Token
         if: steps.check-latest.outputs.latest == 'true'
         id: app-token

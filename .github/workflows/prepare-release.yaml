@@ -23,7 +23,7 @@ jobs:
       release_created: ${{ steps.release-please.outputs['crates/core--release_created'] }}
       release_version: ${{ steps.release-please.outputs['crates/core--major'] }}.${{ steps.release-please.outputs['crates/core--minor'] }}.${{ steps.release-please.outputs['crates/core--patch'] }}
     steps:
-      - uses: actions/create-github-app-token@v1
+      - uses: actions/create-github-app-token@v2
         name: Create GitHub App Token
         id: app-token
         with:
@@ -49,7 +49,7 @@ jobs:
     if: needs.release-private.outputs.release_created == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/create-github-app-token@v1
+      - uses: actions/create-github-app-token@v2
         name: Create GitHub App Token
         id: app-token
         with:
