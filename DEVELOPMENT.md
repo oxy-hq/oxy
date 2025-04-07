@@ -6,7 +6,6 @@
   - [Install Project Dependencies](#install-project-dependencies)
   - [Test Your Installation](#test-your-installation)
   - [Other Commands](#other-commands)
-  - [Integration Testing](#integration-testing)
     - [Manual Testing Oxy Integration with Different Databases](#manual-testing-oxy-integration-with-different-databases)
   - [Known Issues](#known-issues)
   - [OxyPy Requirements](#oxypy-requirements)
@@ -14,7 +13,7 @@
 ## Clone This Repository
 
 ```sh
-git clone git@github.com:oxyhq/ooxyit
+git clone git@github.com:oxy-hq/oxy.git
 cd oxy
 ```
 
@@ -97,47 +96,15 @@ pnpm -C web-app build
 
 ## Test Your Installation
 
-Download our BigQuery key in [1password](https://hyperquery.1password.com/app#/lwrm73rxzjvbhi5hl3ludt2xcu/AllItems/lwrm73rxzjvbhi5hl3ludt2xcumv67bpwhm4f55j6e5k4y5jjnwa) and save it into `examples/bigquery-sample.key`
-
-Inside 1password, find the `OPENAI_API_KEY` and set it in your environment:
-
 ```sh
-# consider adding this to mise or your local shell to persist it
-export OPENAI_API_KEY=sk-...
+cargo run -- --help
 ```
 
-Run your first query:
-
-```sh
-oxyrun agents/default.agent.yml "how many users"
-```
-
-Try other commands:
-
-```sh
-oxy--help
-```
+or you can start following our [quickstart guide](https://docs.oxy.tech/docs/quickstart).
 
 ## Other Commands
 
 Please check out the docs folder for more commands and examples.
-
-Also, update the docs folder with usability docs and keep this README lean.
-
-## Integration Testing
-
-Tests are running on examples configuration.
-To run all tests, need `bigquery_sample.key` in `examples` directory and `OPENAI_API_KEY` env set.
-
-```sh
-cargo test
-```
-
-To show test stdout for debugging use `--nocapture`
-
-```sh
-cargo test -- --nocapture
-```
 
 ### Manual Testing Oxy Integration with Different Databases
 
