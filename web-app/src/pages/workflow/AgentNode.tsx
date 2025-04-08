@@ -1,17 +1,17 @@
 import useWorkflow, { TaskConfigWithId } from "@/stores/useWorkflow";
-import { StepContainer } from "./StepContainer";
-import { TaskHeader } from "./TaskHeader.tsx";
+import { StepContainer } from "./StepContainer.tsx";
+import { NodeHeader } from "./NodeHeader.tsx";
 
 type Props = {
   task: TaskConfigWithId;
 };
 
-export function FormatterStep({ task }: Props) {
+export function AgentNode({ task }: Props) {
   const selectedNodeId = useWorkflow((state) => state.selectedNodeId);
   const selected = selectedNodeId === task.id;
   return (
     <StepContainer selected={selected}>
-      <TaskHeader task={task} />
+      <NodeHeader type={task.type} name={task.name} />
     </StepContainer>
   );
 }

@@ -1,3 +1,4 @@
+import { NodeType } from "./useWorkflow";
 import { create } from "zustand";
 import debounce from "debounce";
 
@@ -9,6 +10,7 @@ export type NodeData = {
   index: number;
   canMoveUp: boolean;
   canMoveDown: boolean;
+  metadata?: Record<string, unknown>;
 };
 
 export type TaskConfigWithId = (
@@ -17,6 +19,7 @@ export type TaskConfigWithId = (
   | AgentTaskConfig
   | LoopSequentialTaskConfigWithId
   | WorkflowTaskConfig
+  | ConditionalTaskConfigWithId
 ) & { id: string };
 
 export type WorkflowConfigWithPath = Omit<WorkflowConfig, "tasks"> & {
@@ -43,7 +46,7 @@ export type Node = {
   id: string;
   parentId?: string;
   name: string;
-  type: TaskType;
+  type: NodeType;
   size: {
     width: number;
     height: number;
@@ -59,6 +62,7 @@ export type Edge = {
   id: string;
   source: string;
   target: string;
+  hidden?: boolean;
 };
 
 export type WorkflowConfig = {
@@ -122,6 +126,17 @@ const removeTaskIds = (tasks: TaskConfigWithId[]): TaskConfig[] => {
   return tasks.map((task) => {
     if (task.type === TaskType.LOOP_SEQUENTIAL) {
       return { ...task, steps: removeTaskIds(task.tasks), id: undefined };
+    }
+    if (task.type === TaskType.CONDITIONAL) {
+      return {
+        ...task,
+        conditions: task.conditions.map((condition) => ({
+          ...condition,
+          tasks: removeTaskIds(condition.tasks),
+        })),
+        else: removeTaskIds(task.else),
+        id: undefined,
+      };
     }
     return { ...task, id: undefined };
   });
@@ -324,7 +339,15 @@ export enum TaskType {
   AGENT = "agent",
   LOOP_SEQUENTIAL = "loop_sequential",
   WORKFLOW = "workflow",
+  CONDITIONAL = "conditional",
 }
+
+export enum NoneTaskNodeType {
+  CONDITIONAL_ELSE = "conditional-else",
+  CONDITIONAL_IF = "conditional-if",
+}
+
+export type NodeType = TaskType | NoneTaskNodeType;
 
 export type BaseTaskConfig = {
   name: string;
@@ -361,6 +384,28 @@ export type LoopSequentialTaskConfig = BaseTaskConfig & {
   values: string | string[];
 };
 
+export type ConditionConfigWithId = {
+  if: string;
+  tasks: TaskConfigWithId[];
+};
+
+export type ConditionConfig = {
+  if: string;
+  tasks: TaskConfig[];
+};
+
+export type ConditionalTaskConfigWithId = BaseTaskConfig & {
+  type: TaskType.CONDITIONAL;
+  conditions: ConditionConfigWithId[];
+  else?: TaskConfigWithId[];
+};
+
+export type ConditionalTaskConfig = BaseTaskConfig & {
+  type: TaskType.CONDITIONAL;
+  conditions: ConditionConfig[];
+  else: TaskConfig[];
+};
+
 export type LoopSequentialTaskConfigWithId = BaseTaskConfig & {
   type: TaskType.LOOP_SEQUENTIAL;
   tasks: TaskConfigWithId[];
@@ -380,6 +425,7 @@ export type TaskConfig =
   | FormatterTaskConfig
   | AgentTaskConfig
   | LoopSequentialTaskConfig
+  | ConditionalTaskConfig
   | WorkflowTaskConfig;
 
 export default useWorkflow;

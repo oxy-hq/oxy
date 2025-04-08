@@ -1,24 +1,27 @@
-import { TaskConfigWithId } from "@/stores/useWorkflow";
-import { taskIconMap, taskNameMap } from "./utils";
+import { NodeType } from "@/stores/useWorkflow";
+import { nodeIconMap, nodeNameMap } from "./utils";
 import { DynamicIcon } from "lucide-react/dynamic";
 import { headerHeight } from "./constants";
 import { Button } from "@/components/ui/shadcn/button";
+import TruncatedText from "@/components/TruncatedText";
 
 type Props = {
-  task: TaskConfigWithId;
+  name: string;
+  type: NodeType;
   expandable?: boolean;
   expanded?: boolean;
   onExpandClick?: () => void;
 };
 
-export const TaskHeader = ({
-  task,
+export const NodeHeader = ({
+  type,
+  name,
   expandable,
   expanded,
   onExpandClick,
 }: Props) => {
-  const taskName = taskNameMap[task.type];
-  const taskIcon = taskIconMap[task.type];
+  const taskName = nodeNameMap[type];
+  const taskIcon = nodeIconMap[type];
   return (
     <div
       className="gap-2 items-center flex w-full min-w-0"
@@ -37,7 +40,7 @@ export const TaskHeader = ({
             <span className="text-sm text-gray-500 truncate">{taskName}</span>
           </div>
           <div className="flex items-center min-w-0">
-            <span className="text-sm truncate min-w-0">{task.name}</span>
+            <TruncatedText className="text-sm min-w-0">{name}</TruncatedText>
           </div>
         </div>
         <div className="flex items-center h-full justify-start">

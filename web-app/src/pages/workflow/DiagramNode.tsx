@@ -1,17 +1,17 @@
 import { Handle, NodeProps, Position } from "@xyflow/react";
 
 import { NodeContainer } from "./NodeContainer";
-import { StepItem } from "./StepItem";
-import { NodeData } from "@/stores/useWorkflow";
+import { NodeContent } from "./NodeContent";
+import { NodeData, NodeType } from "@/stores/useWorkflow";
 
-type NodeType = {
+type Node = {
   id: string;
   data: NodeData;
   position: {
     x: number;
     y: number;
   };
-  type: string;
+  type: NodeType;
   parentId?: string;
   width?: number;
   height?: number;
@@ -20,9 +20,15 @@ type NodeType = {
   dragHandle?: string;
 };
 
-type Props = NodeProps<NodeType>;
+type Props = NodeProps<Node>;
 
-export function StepNode({ data, isConnectable }: Props) {
+export function DiagramNode({
+  data,
+  isConnectable,
+  type,
+  width,
+  height,
+}: Props) {
   return (
     <div key={data.id}>
       <NodeContainer>
@@ -32,7 +38,13 @@ export function StepNode({ data, isConnectable }: Props) {
           isConnectable={isConnectable}
           className="invisible !top-0.5"
         />
-        <StepItem task={data.task} />
+        <NodeContent
+          task={data.task}
+          data={data}
+          type={type}
+          width={width}
+          height={height}
+        />
         <Handle
           type="source"
           position={Position.Bottom}
