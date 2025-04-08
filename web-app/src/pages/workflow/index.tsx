@@ -20,6 +20,10 @@ import WorkflowPageHeader from "./WorkflowPageHeader";
 import WorkflowOutput from "./WorkflowOutput";
 import { throttle } from "lodash";
 
+const getTaskId = (task_name: string) => {
+  return task_name + "__" + uuidv4();
+};
+
 const addTaskId = (tasks: TaskConfig[]): TaskConfigWithId[] => {
   return tasks.map((task) => {
     if (task.type === TaskType.LOOP_SEQUENTIAL) {
@@ -27,10 +31,22 @@ const addTaskId = (tasks: TaskConfig[]): TaskConfigWithId[] => {
         ...task,
         type: TaskType.LOOP_SEQUENTIAL,
         tasks: addTaskId(task.tasks),
-        id: uuidv4(),
+        id: getTaskId(task.name),
       };
     }
-    return { ...task, id: uuidv4() } as TaskConfigWithId;
+    if (task.type === TaskType.CONDITIONAL) {
+      return {
+        ...task,
+        conditions: task.conditions.map((c) => ({
+          ...c,
+          tasks: addTaskId(c.tasks),
+        })),
+        type: TaskType.CONDITIONAL,
+        else: task.else ? addTaskId(task.else) : undefined,
+        id: getTaskId(task.name),
+      };
+    }
+    return { ...task, id: getTaskId(task.name) } as TaskConfigWithId;
   });
 };
 
