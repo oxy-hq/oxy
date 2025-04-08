@@ -1,17 +1,5 @@
 # Changelog
 
-## [0.1.10](https://github.com/oxy-hq/oxy-internal/compare/0.1.9...0.1.10) (2025-04-08)
-
-
-### <!-- 0 -->🚀 Features
-
-* [#524](https://github.com/oxy-hq/oxy-internal/issues/524) Build testing UI ([#556](https://github.com/oxy-hq/oxy-internal/issues/556)) ([8c119f0](https://github.com/oxy-hq/oxy-internal/commit/8c119f087f2392f95243a571dc1e3b7306d03350))
-
-
-### <!-- 1 -->🐛 Bug Fixes
-
-* oxy panic and exit silently, load .env from project path when running mcp ([#584](https://github.com/oxy-hq/oxy-internal/issues/584)) ([7289c17](https://github.com/oxy-hq/oxy-internal/commit/7289c1747dc1204894b49fbb0736eb277f286bc0))
-
 ## [0.1.9](https://github.com/oxy-hq/oxy-internal/compare/0.1.8...0.1.9) (2025-04-04)
 
 
