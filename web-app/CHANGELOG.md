@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.1.10](https://github.com/oxy-hq/oxy-internal/compare/0.1.9...0.1.10) (2025-04-08)
+
+
+### <!-- 0 -->🚀 Features
+
+* [#524](https://github.com/oxy-hq/oxy-internal/issues/524) Build testing UI ([#556](https://github.com/oxy-hq/oxy-internal/issues/556)) ([8c119f0](https://github.com/oxy-hq/oxy-internal/commit/8c119f087f2392f95243a571dc1e3b7306d03350))
+* render condition task in workflow diagram ([#578](https://github.com/oxy-hq/oxy-internal/issues/578)) ([2d7512d](https://github.com/oxy-hq/oxy-internal/commit/2d7512dc4ea61067c259a7032471aeb1c3a5eb4c))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* ts typing ([#585](https://github.com/oxy-hq/oxy-internal/issues/585)) ([eb0f204](https://github.com/oxy-hq/oxy-internal/commit/eb0f20478c738478dec0bcf7290c0096b8ea0891))
+
 ## [0.1.9](https://github.com/oxy-hq/oxy-internal/compare/0.1.8...0.1.9) (2025-04-04)
 
 
