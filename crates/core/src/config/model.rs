@@ -10,6 +10,7 @@ use crate::config::validate::validate_file_path;
 use crate::config::validate::{
     ValidationContext, validate_agent_exists, validate_database_exists, validate_env_var,
 };
+use crate::errors::OxyError;
 use schemars::JsonSchema;
 
 use super::validate::{
@@ -775,14 +776,14 @@ pub struct RetrievalTool {
 }
 
 impl RetrievalTool {
-    pub fn get_api_key(&self) -> String {
+    pub fn get_api_key(&self) -> Result<String, OxyError> {
         match &self.api_key {
-            Some(key) => key.to_string(),
-            None => std::env::var(&self.key_var).unwrap_or_else(|_| {
-                panic!(
-                    "OpenAI key not found in environment variable {}",
+            Some(key) => Ok(key.to_string()),
+            None => std::env::var(&self.key_var).map_err(|_| {
+                OxyError::AgentError(format!(
+                    "API key not found in environment variable {}",
                     self.key_var
-                )
+                ))
             }),
         }
     }
