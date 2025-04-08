@@ -3,6 +3,7 @@ import { apiClient } from "./axios";
 import { readMessageFromStreamData } from "@/libs/utils/stream";
 import { apiBaseURL } from "./env";
 import { ThreadCreateRequest } from "@/types/chat";
+import { TestStreamMessage } from "@/types/eval";
 
 export const apiService: Service = {
   async listThreads() {
@@ -29,6 +30,23 @@ export const apiService: Service = {
     const response = await apiClient.get("/agents");
     return response.data;
   },
+  async runTestAgent(
+    pathb64: string,
+    testIndex: number,
+    onReadStream: (event: TestStreamMessage) => void,
+  ) {
+    const url = `/agents/${pathb64}/tests/${testIndex}`;
+    const options = {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    };
+    const response = await fetch(apiBaseURL + url, options);
+    if (response) {
+      await readMessageFromStreamData(response, onReadStream);
+    }
+  },
   async ask(threadId: string, onReadStream) {
     const url = `/threads/${threadId}/ask`;
     const options = {
@@ -40,5 +58,9 @@ export const apiService: Service = {
     if (response) {
       await readMessageFromStreamData(response, onReadStream);
     }
+  },
+  async getAgent(pathb64: string) {
+    const response = await apiClient.get("/agents/" + pathb64);
+    return response.data;
   },
 };

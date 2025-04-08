@@ -2,10 +2,11 @@ use std::sync::PoisonError;
 
 use async_openai::error::OpenAIError;
 use axum::http::StatusCode;
+use serde::Serialize;
 use thiserror::Error;
 use tokio::{sync::mpsc::error::SendError, task::JoinError};
 
-#[derive(Error, Debug, Clone)]
+#[derive(Error, Debug, Clone, Serialize)]
 pub enum OxyError {
     #[error("Invalid configuration:\n{0}")]
     ConfigurationError(String),

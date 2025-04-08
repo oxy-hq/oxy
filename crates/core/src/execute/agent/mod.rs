@@ -5,6 +5,7 @@ use std::{
 
 use contexts::Contexts;
 use minijinja::{Value, context};
+use serde::Serialize;
 use tools::ToolsContext;
 
 use super::{
@@ -85,7 +86,7 @@ impl ToolCall {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub enum AgentEvent {
     Started,
     ToolCall(ToolCall),

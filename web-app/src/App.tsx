@@ -14,6 +14,7 @@ import Threads from "./pages/threads";
 import ThreadPage from "./pages/thread";
 import WorkflowPage from "./pages/workflow";
 import "@xyflow/react/dist/style.css";
+import AgentTestsPage from "./pages/agent-test";
 
 function App() {
   return (
@@ -27,6 +28,10 @@ function App() {
               <Route path="/threads" element={<Threads />} />
               <Route path="/threads/:threadId" element={<ThreadPage />} />
               <Route path="/workflows/:pathb64" element={<WorkflowPage />} />
+              <Route
+                path="/agents/:pathb64/tests"
+                element={<AgentTestsPage />}
+              />
             </Route>
             <Route path="*" element={<Navigate to="/" />} />
           </Routes>

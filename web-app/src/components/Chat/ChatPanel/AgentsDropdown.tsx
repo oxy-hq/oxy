@@ -8,16 +8,11 @@ import { DropdownMenu } from "@/components/ui/shadcn/dropdown-menu";
 import useAgents from "@/hooks/api/useAgents";
 import { ChevronDown, Loader2 } from "lucide-react";
 import { useEffect, useMemo } from "react";
+import { getAgentNameFromPath } from "@/libs/utils/string";
 
 export type Agent = {
   id: string;
   name: string;
-};
-
-const getNameFromPath = (path: string): string => {
-  const parts = path.split("/");
-  parts[parts.length - 1] = parts[parts.length - 1].split(".")[0];
-  return parts.join(" - ");
 };
 
 const AgentsDropdown = ({
@@ -34,7 +29,7 @@ const AgentsDropdown = ({
       agents
         ?.map((agentPath) => ({
           id: agentPath,
-          name: getNameFromPath(agentPath),
+          name: getAgentNameFromPath(agentPath),
         }))
         .sort((a, b) => a.name.localeCompare(b.name)) ?? [],
     [agents],

@@ -8,6 +8,7 @@ const conversationKeys = {
 const agentKeys = {
   all: ["agent"] as const,
   list: () => [...agentKeys.all, "list"] as const,
+  get: (pathb64: string) => [...agentKeys.all, "get", pathb64] as const,
 };
 
 const threadKeys = {

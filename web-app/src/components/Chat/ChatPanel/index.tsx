@@ -8,12 +8,18 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AgentsDropdown, { Agent } from "./AgentsDropdown";
 
-const ChatPanel = () => {
+const ChatPanel = ({
+  agent,
+  onChangeAgent,
+}: {
+  agent: Agent | null;
+  onChangeAgent: (agent: Agent) => void;
+}) => {
   const navigate = useNavigate();
   const { mutate: createThread, isPending } = useThreadMutation((data) => {
     navigate(`/threads/${data.id}`);
   });
-  const [agent, setAgent] = useState<Agent | null>(null);
+
   const [message, setMessage] = useState("");
   const { formRef, onKeyDown } = useEnterSubmit();
 
@@ -31,7 +37,7 @@ const ChatPanel = () => {
     <form
       ref={formRef}
       onSubmit={handleFormSubmit}
-      className="w-full max-w-[672px] flex p-2 flex-col gap-1 shadow-sm rounded-md border-2"
+      className="w-full max-w-[672px] flex p-2 flex-col gap-1 shadow-sm rounded-md border-2 mx-auto"
     >
       <Textarea
         disabled={isPending}
@@ -49,7 +55,7 @@ const ChatPanel = () => {
         placeholder={`Ask the ${agent?.name} agent a question`}
       />
       <div className="flex justify-between">
-        <AgentsDropdown onSelect={setAgent} agent={agent} />
+        <AgentsDropdown onSelect={onChangeAgent} agent={agent} />
         <Button disabled={!message || isPending || !agent} type="submit">
           {isPending ? <Loader2 className="animate-spin" /> : <ArrowRight />}
         </Button>

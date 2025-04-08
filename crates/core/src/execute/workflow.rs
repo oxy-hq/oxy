@@ -42,7 +42,7 @@ pub struct LoopInput {
     pub name: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub enum WorkflowEvent {
     // workflow
     Started {
@@ -94,7 +94,11 @@ pub enum WorkflowEvent {
     ExecuteSQL {
         task: ExecuteSQLTask,
         query: String,
+
+        #[serde(skip)]
         datasets: Vec<RecordBatch>,
+
+        #[serde(skip)]
         schema: Arc<Schema>,
         export_file_path: String,
     },
