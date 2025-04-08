@@ -65,6 +65,6 @@ pub fn get_vector_store(
     tool_config: &RetrievalTool,
     db_path: &str,
 ) -> anyhow::Result<Box<dyn VectorStore + Send + Sync>> {
-    let db = LanceDBStore::with_config(tool_config, db_path);
+    let db = LanceDBStore::with_config(tool_config, db_path)?;
     Ok(Box::new(db))
 }

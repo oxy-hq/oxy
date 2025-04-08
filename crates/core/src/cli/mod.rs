@@ -56,6 +56,7 @@ use axum::{
     routing::get_service,
 };
 
+use dotenv;
 use include_dir::{Dir, include_dir};
 use std::net::SocketAddr;
 use tower::service_fn;
@@ -366,6 +367,8 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             cancellation_token.cancel();
         }
         Some(SubCommand::McpStdio(args)) => {
+            let env_path = args.project_path.join(".env");
+            dotenv::from_path(env_path).ok();
             let _ = start_mcp_stdio(args.project_path).await;
         }
         Some(SubCommand::SelfUpdate) => {

@@ -53,7 +53,7 @@ pub fn setup_eval_agent(prompt: &str, model: &str) -> Result<OpenAIAgent, OxyErr
         prompt,
         Arc::new(ToolBox::new()),
         None,
-    );
+    )?;
     Ok(agent)
 }
 
@@ -88,7 +88,7 @@ async fn from_config(
         &agent_config.system_instructions,
         toolbox,
         anonymizer,
-    );
+    )?;
     Ok(agent)
 }
 
@@ -99,7 +99,7 @@ fn build_agent(
     system_instructions: &str,
     tools: Arc<ToolBox<MultiTool>>,
     anonymizer: Option<Box<dyn Anonymizer + Send + Sync>>,
-) -> OpenAIAgent {
+) -> Result<OpenAIAgent, OxyError> {
     match model {
         Model::OpenAI {
             name: _,
@@ -109,10 +109,13 @@ fn build_agent(
             azure_deployment_id,
             azure_api_version,
         } => {
-            let api_key = std::env::var(key_var).unwrap_or_else(|_| {
-                panic!("OpenAI key not found in environment variable {}", key_var)
-            });
-            OpenAIAgent::new(
+            let api_key = std::env::var(key_var).map_err(|_| {
+                OxyError::AgentError(format!(
+                    "API key not found in environment variable {}",
+                    key_var
+                ))
+            })?;
+            Ok(OpenAIAgent::new(
                 model_ref.to_string(),
                 api_url.clone(),
                 api_key,
@@ -124,20 +127,20 @@ fn build_agent(
                 file_format.clone(),
                 tools,
                 OpenAIClientProvider::OpenAI,
-            )
+            ))
         }
         Model::Google {
             name: _,
             model_ref,
             key_var,
         } => {
-            let api_key = std::env::var(key_var).unwrap_or_else(|_| {
-                panic!(
-                    "Gemini API key not found in environment variable {}",
+            let api_key = std::env::var(key_var).map_err(|_| {
+                return OxyError::AgentError(format!(
+                    "API key not found in environment variable {}",
                     key_var
-                )
-            });
-            OpenAIAgent::new(
+                ));
+            })?;
+            Ok(OpenAIAgent::new(
                 model_ref.to_string(),
                 Some(GEMINI_API_URL.to_string()),
                 api_key,
@@ -149,14 +152,14 @@ fn build_agent(
                 file_format.clone(),
                 tools,
                 OpenAIClientProvider::Google,
-            )
+            ))
         }
         Model::Ollama {
             name: _,
             model_ref,
             api_key,
             api_url,
-        } => OpenAIAgent::new(
+        } => Ok(OpenAIAgent::new(
             model_ref.to_string(),
             Some(api_url.clone()),
             api_key.clone(),
@@ -168,7 +171,7 @@ fn build_agent(
             file_format.clone(),
             tools,
             OpenAIClientProvider::OpenAI,
-        ),
+        )),
     }
 }
 

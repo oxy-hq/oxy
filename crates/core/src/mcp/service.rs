@@ -57,7 +57,7 @@ pub struct RunWorkflowInput {
 impl ServerHandler for OxyMcpServer {
     fn get_info(&self) -> ServerInfo {
         ServerInfo {
-            instructions: Some("A simple calculator".into()),
+            instructions: Some("Oxy is the Data Agent Platform that brings intelligence to your structured enterprise data. Answer, build, and automate anything.".into()),
             capabilities: ServerCapabilities::builder().enable_tools().build(),
             ..Default::default()
         }

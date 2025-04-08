@@ -62,14 +62,14 @@ pub struct LanceDBStore {
 }
 
 impl LanceDBStore {
-    pub fn with_config(tool_config: &RetrievalTool, db_path: &str) -> Self {
+    pub fn with_config(tool_config: &RetrievalTool, db_path: &str) -> Result<Self, OxyError> {
         let client = Client::with_config(
             OpenAIConfig::new()
-                .with_api_key(tool_config.get_api_key())
+                .with_api_key(tool_config.get_api_key()?)
                 .with_api_base(tool_config.api_url.to_string()),
         );
 
-        Self {
+        Ok(Self {
             uri: db_path.to_string(),
             connection: Arc::new(tokio::sync::OnceCell::new()),
             client,
@@ -77,7 +77,7 @@ impl LanceDBStore {
             n_dims: tool_config.n_dims,
             top_k: tool_config.top_k,
             factor: tool_config.factor,
-        }
+        })
     }
 
     async fn get_database_metadata_table(&self) -> anyhow::Result<Table> {
