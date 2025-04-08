@@ -1,4 +1,3 @@
-import { NodeType } from "./useWorkflow";
 import { create } from "zustand";
 import debounce from "debounce";
 
@@ -134,7 +133,7 @@ const removeTaskIds = (tasks: TaskConfigWithId[]): TaskConfig[] => {
           ...condition,
           tasks: removeTaskIds(condition.tasks),
         })),
-        else: removeTaskIds(task.else),
+        else: task.else ? removeTaskIds(task.else) : undefined,
         id: undefined,
       };
     }
@@ -403,7 +402,7 @@ export type ConditionalTaskConfigWithId = BaseTaskConfig & {
 export type ConditionalTaskConfig = BaseTaskConfig & {
   type: TaskType.CONDITIONAL;
   conditions: ConditionConfig[];
-  else: TaskConfig[];
+  else?: TaskConfig[];
 };
 
 export type LoopSequentialTaskConfigWithId = BaseTaskConfig & {
