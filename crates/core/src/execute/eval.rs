@@ -1,10 +1,12 @@
 use futures::future::try_join_all;
 use itertools::Itertools;
 use minijinja::{Value, value::Kwargs};
+use serde::Serialize;
 use std::{
     path::PathBuf,
     sync::{Arc, Mutex},
 };
+use tokio::sync::mpsc::Sender;
 use tqdm::pbar;
 
 use crate::{
@@ -31,15 +33,22 @@ use super::{
     workflow::{WorkflowEvent, WorkflowInput},
 };
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "type")]
 pub enum EvalEvent {
     Started,
-    GeneratingOutputs,
+    GeneratingOutputs {
+        progress: u32,
+        total: u32,
+    },
     SomeOutputsFailed {
         failed_count: u32,
         err: String,
     },
-    EvaluatingRecords,
+    EvaluatingRecords {
+        progress: u32,
+        total: u32,
+    },
     Finished {
         metrics: Metrics,
         records: Vec<Record>,
@@ -95,14 +104,14 @@ pub struct TargetAgent {
     pub input: AgentInput,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Record {
     pub cot: String,
     pub choice: String,
     pub score: f32,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Serialize)]
 pub enum Metrics {
     Accuracy(f32),
 }
@@ -252,20 +261,32 @@ impl Executable<Target, EvalEvent> for Consistency {
         execution_context: &mut ExecutionContext<'_, EvalEvent>,
         input: Target,
     ) -> Result<(), OxyError> {
-        execution_context
-            .notify(EvalEvent::GeneratingOutputs)
-            .await?;
         let sample_size = self.n;
+        execution_context
+            .notify(EvalEvent::GeneratingOutputs {
+                progress: 0,
+                total: sample_size as u32,
+            })
+            .await?;
         let outputs = {
+            let sender = execution_context.get_sender().clone();
             let mut loop_executor = execution_context.loop_executor();
             let mut inputs = (0..sample_size).map(|_| ()).collect::<Vec<_>>();
             log::info!("Inputs: {:?}", inputs.len());
             let output_progress = Arc::new(Mutex::new(pbar(Some(sample_size))));
+            let progress = Arc::new(Mutex::new(0));
             let progress_tracker = || {
                 if let Ok(mut output_progress) = output_progress.lock() {
                     if let Err(err) = output_progress.update(1) {
                         eprintln!("{}", err);
                     }
+                }
+                if let Ok(mut progress) = progress.lock() {
+                    *progress += 1;
+                    let _ = sender.try_send(EvalEvent::GeneratingOutputs {
+                        progress: *progress,
+                        total: sample_size as u32,
+                    });
                 }
             };
             let res = loop_executor
@@ -336,9 +357,6 @@ impl Executable<Target, EvalEvent> for Consistency {
             },
         };
 
-        execution_context
-            .notify(EvalEvent::EvaluatingRecords)
-            .await?;
         if outputs.len() < 2 {
             return Err(OxyError::RuntimeError(
                 "The number of successfully generated outputs must be greater than 2.".to_string(),
@@ -364,18 +382,38 @@ impl Executable<Target, EvalEvent> for Consistency {
                         .render_once(&self.prompt, context)
                 })
                 .try_collect::<String, Vec<String>, OxyError>()?;
-            let records_progress = Arc::new(Mutex::new(pbar(Some(prompts.len()))));
+
+            let total = prompts.len();
+            execution_context
+                .notify(EvalEvent::EvaluatingRecords {
+                    progress: 0,
+                    total: prompts.len() as u32,
+                })
+                .await?;
+            let records_progress = Arc::new(Mutex::new(pbar(Some(total))));
+            let progress = Arc::new(Mutex::new(0));
+            let sender = execution_context.get_sender();
             let records_fut = prompts
                 .into_iter()
                 .map(move |system_instruction| agent_ref.simple_request(system_instruction))
                 .map(|item| {
                     let records_progress = records_progress.clone();
+                    let progress = progress.clone();
+                    let sender = sender.clone();
                     async move {
                         let output = item.await;
                         if let Ok(mut records_progress) = records_progress.lock() {
                             if let Err(err) = records_progress.update(1) {
                                 eprintln!("{}", err);
                             }
+                        }
+
+                        if let Ok(mut progress) = progress.lock() {
+                            *progress += 1;
+                            let _ = sender.try_send(EvalEvent::EvaluatingRecords {
+                                progress: *progress,
+                                total: total as u32,
+                            });
                         }
                         output.map(|r| self.parse_response(&r))
                     }
@@ -416,14 +454,22 @@ impl Consistency {
         Metrics::Accuracy(accuracy)
     }
 }
+
+#[derive(Serialize, Clone)]
+pub struct TestStreamMessage {
+    pub error: Option<String>,
+    pub event: Option<EvalEvent>,
+}
+
 #[derive(Debug)]
 pub struct EvalReceiver {
-    quiet: bool,
+    pub quiet: bool,
+    sender: Option<Sender<TestStreamMessage>>,
 }
 
 impl EvalReceiver {
-    pub fn new(quiet: bool) -> Self {
-        EvalReceiver { quiet }
+    pub fn new(quiet: bool, sender: Option<Sender<TestStreamMessage>>) -> Self {
+        EvalReceiver { quiet, sender }
     }
 }
 
@@ -431,12 +477,24 @@ impl Handler for EvalReceiver {
     type Event = EvalEvent;
 
     fn handle(&self, event: &Self::Event) {
+        if let Some(sender) = &self.sender {
+            let message = TestStreamMessage {
+                error: None,
+                event: Some(event.clone()),
+            };
+            let _ = sender.try_send(message);
+        }
         match event {
             EvalEvent::Started => {
                 println!("⏳Eval started");
             }
-            EvalEvent::GeneratingOutputs => {
-                println!("🔄Generating outputs");
+            EvalEvent::GeneratingOutputs { progress, total } => {
+                if *progress == 0 {
+                    println!("🔄Generating outputs");
+                }
+                if *progress == *total {
+                    println!("✅Outputs generated");
+                }
             }
             EvalEvent::SomeOutputsFailed { failed_count, err } => {
                 println!(
@@ -444,8 +502,13 @@ impl Handler for EvalReceiver {
                     format!("Failed to generate {} outputs:\n{}", failed_count, err).warning()
                 );
             }
-            EvalEvent::EvaluatingRecords => {
-                println!("🔄Evaluating records");
+            EvalEvent::EvaluatingRecords { progress, total } => {
+                if *progress == 0 {
+                    println!("🔄Evaluating records");
+                }
+                if *progress == *total {
+                    println!("✅Records evaluated");
+                }
             }
             EvalEvent::Finished { metrics, records } => {
                 println!(
@@ -540,7 +603,10 @@ pub async fn run_eval(path: PathBuf, quiet: bool) -> Result<(), OxyError> {
         Arc::new(config),
         Value::UNDEFINED,
         None,
-        EvalReceiver { quiet },
+        EvalReceiver {
+            quiet,
+            sender: None,
+        },
     )
     .await?;
     Ok(())

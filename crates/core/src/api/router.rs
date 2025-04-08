@@ -34,5 +34,10 @@ pub async fn api_router() -> Router {
         .route("/workflows/{pathb64}", get(workflow::get))
         .route("/workflows/{pathb64}/logs", get(workflow::get_logs))
         .route("/workflows/{pathb64}/run", post(workflow::run_workflow))
+        .route("/agents/{pathb64}", get(agent::get_agent))
+        .route(
+            "/agents/{pathb64}/tests/{test_index}",
+            post(agent::run_test),
+        )
         .layer(cors)
 }

@@ -1,6 +1,7 @@
 use indoc::indoc;
 use itertools::Itertools;
 use minijinja::Value;
+use serde::Serialize;
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex, RwLock},
@@ -23,7 +24,7 @@ use super::core::{
 
 use tqdm::{Pbar, pbar};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub enum ConsistencyEvent {
     StartedProgress { total: usize, title: String },
     Progress { progress: usize },
