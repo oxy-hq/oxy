@@ -71,6 +71,7 @@ enum OpenAIClient {
 pub enum OpenAIClientProvider {
     OpenAI,
     Google,
+    Anthropic,
 }
 
 pub struct OpenAIAgent {
@@ -195,7 +196,7 @@ impl OpenAIAgent {
                 Ok(rs.choices[0].message.clone())
             }
             OpenAIClient::OpenAI(client) => match self.provider {
-                OpenAIClientProvider::OpenAI => {
+                OpenAIClientProvider::OpenAI | OpenAIClientProvider::Anthropic => {
                     let rs = client.chat().create(request).await?;
 
                     Ok(rs.choices[0].message.clone())

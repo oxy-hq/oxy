@@ -143,6 +143,7 @@ jobs:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       BIGQUERY_SAMPLE_KEY: ${{ secrets.BIGQUERY_SAMPLE_KEY }}
       GEMINI_API_KEY: "empty"
+      ANTHROPIC_API_KEY: "empty"
     steps:
       - uses: actions/checkout@v4
       - name: Collect Workflow Telemetry

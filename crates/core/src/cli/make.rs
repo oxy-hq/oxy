@@ -27,6 +27,7 @@ use super::MakeArgs;
 
 const OPENAI_API_KEY_VAR: &str = "OPENAI_API_KEY";
 const GEMINI_API_KEY_VAR: &str = "GEMINI_API_KEY";
+const ANTHROPIC_API_KEY_VAR: &str = "ANTHROPIC_API_KEY";
 
 struct ProjectSetup {
     file_path: String,
@@ -81,6 +82,30 @@ fn determine_model() -> (String, Model) {
                 name,
                 model_ref: "gemini-1.5-pro".to_string(),
                 key_var: GEMINI_API_KEY_VAR.to_string(),
+            },
+        )
+    } else if std::env::var(ANTHROPIC_API_KEY_VAR).is_ok() {
+        let name = "claude-3-7-sonnet".to_string();
+        (
+            name.clone(),
+            Model::Anthropic {
+                name,
+                model_ref: "claude-3-7-sonnet-20250219".to_string(),
+                key_var: ANTHROPIC_API_KEY_VAR.to_string(),
+                api_url: None,
+            },
+        )
+    } else if std::env::var(OPENAI_API_KEY_VAR).is_ok() {
+        let name = "gpt4o".to_string();
+        (
+            name.clone(),
+            Model::OpenAI {
+                name,
+                model_ref: "gpt-4o".to_string(),
+                key_var: OPENAI_API_KEY_VAR.to_string(),
+                api_url: None,
+                azure_deployment_id: None,
+                azure_api_version: None,
             },
         )
     } else {

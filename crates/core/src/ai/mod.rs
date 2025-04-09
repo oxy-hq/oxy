@@ -172,6 +172,32 @@ fn build_agent(
             tools,
             OpenAIClientProvider::OpenAI,
         )),
+        Model::Anthropic {
+            name: _,
+            model_ref,
+            key_var,
+            api_url,
+        } => {
+            let api_key = std::env::var(key_var).unwrap_or_else(|_| {
+                panic!(
+                    "Anthropic API key not found in environment variable {}",
+                    key_var
+                )
+            });
+            Ok(OpenAIAgent::new(
+                model_ref.to_string(),
+                api_url.clone(),
+                api_key.clone(),
+                None,
+                None,
+                system_instructions.to_string(),
+                output_format.clone(),
+                anonymizer,
+                file_format.clone(),
+                tools,
+                OpenAIClientProvider::Anthropic,
+            ))
+        }
     }
 }
 

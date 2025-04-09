@@ -96,7 +96,7 @@
         },
         {
           "group": "Cloud-based models",
-          "pages": ["integrations/models/openai", "integrations/models/gemini"]
+          "pages": ["integrations/models/openai", "integrations/models/gemini", "integrations/models/anthropic"]
         }
       ]
     },

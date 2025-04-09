@@ -7,7 +7,6 @@ context:
     type: file
     src:
       - data/*.sql
-      - data/example_intervals.sql
 
 system_instructions: |
   ## Instructions

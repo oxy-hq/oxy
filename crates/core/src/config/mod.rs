@@ -175,21 +175,19 @@ impl Config {
             Model::OpenAI { name, .. } => name.clone(),
             Model::Ollama { name, .. } => name.clone(),
             Model::Google { name, .. } => name.clone(),
+            Model::Anthropic { name, .. } => name.clone(),
         })
     }
 
     pub fn find_model(&self, model_name: &str) -> anyhow::Result<Model> {
         self.models
             .iter()
-            .find(|m| {
-                match match m {
-                    Model::OpenAI { name, .. } => name,
-                    Model::Ollama { name, .. } => name,
-                    Model::Google { name, .. } => name,
-                } {
-                    name => name == model_name,
-                }
-            })
+            .find(|m| match m {
+                Model::OpenAI { name, .. } => name,
+                Model::Ollama { name, .. } => name,
+                Model::Google { name, .. } => name,
+                Model::Anthropic { name, .. } => name,
+            } == model_name)
             .cloned()
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "Model not found").into())
     }

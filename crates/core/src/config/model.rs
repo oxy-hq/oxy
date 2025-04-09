@@ -472,6 +472,18 @@ pub enum Model {
         #[garde(length(min = 1))]
         api_url: String,
     },
+    #[serde(rename = "anthropic")]
+    Anthropic {
+        #[garde(length(min = 1))]
+        name: String,
+        #[garde(length(min = 1))]
+        model_ref: String,
+        #[garde(custom(validate_env_var))]
+        key_var: String,
+        #[serde(default = "default_anthropic_api_url")]
+        #[garde(skip)]
+        api_url: Option<String>,
+    },
 }
 #[derive(Serialize, Deserialize, Default, Clone, Debug, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -818,6 +830,10 @@ pub enum ToolConfig {
 
 fn default_openai_api_url() -> Option<String> {
     Some("https://api.openai.com/v1".to_string())
+}
+
+fn default_anthropic_api_url() -> Option<String> {
+    Some("https://api.anthropic.com/v1".to_string())
 }
 
 fn default_anonymizer_replacement() -> String {
