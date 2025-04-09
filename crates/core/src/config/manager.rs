@@ -22,15 +22,12 @@ impl ConfigManager {
             .config
             .models
             .iter()
-            .find(|m| {
-                match match m {
-                    Model::OpenAI { name, .. } => name,
-                    Model::Ollama { name, .. } => name,
-                    Model::Google { name, .. } => name,
-                } {
-                    name => name == model_name,
-                }
-            })
+            .find(|m| match m {
+                Model::OpenAI { name, .. } => name,
+                Model::Ollama { name, .. } => name,
+                Model::Google { name, .. } => name,
+                Model::Anthropic { name, .. } => name,
+            } == model_name)
             .ok_or_else(|| {
                 OxyError::ConfigurationError(format!("Model '{}' not found in config", model_name))
             })?;
@@ -42,6 +39,7 @@ impl ConfigManager {
             Model::OpenAI { name, .. } => name,
             Model::Ollama { name, .. } => name,
             Model::Google { name, .. } => name,
+            Model::Anthropic { name, .. } => name,
         })
     }
 
