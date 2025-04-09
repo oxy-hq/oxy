@@ -70,6 +70,5 @@ pub async fn get_agent(
 }
 
 pub async fn run_test(Path((pathb64, test_index)): Path<(String, usize)>) -> impl IntoResponse {
-    let s = service::test::run_test(pathb64, test_index).await;
-    s
+    service::test::run_test(pathb64, test_index).await
 }

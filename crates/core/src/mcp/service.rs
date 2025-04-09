@@ -70,8 +70,8 @@ impl ServerHandler for OxyMcpServer {
     ) -> Result<ListToolsResult, rmcp::Error> {
         let tools = self
             .tools
-            .iter()
-            .map(|(_, oxy_tool)| oxy_tool.tool.clone())
+            .values()
+            .map(|oxy_tool| oxy_tool.tool.clone())
             .collect::<Vec<_>>();
         Ok(ListToolsResult {
             tools,
