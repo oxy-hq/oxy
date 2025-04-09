@@ -135,10 +135,10 @@ fn build_agent(
             key_var,
         } => {
             let api_key = std::env::var(key_var).map_err(|_| {
-                return OxyError::AgentError(format!(
+                OxyError::AgentError(format!(
                     "API key not found in environment variable {}",
                     key_var
-                ));
+                ))
             })?;
             Ok(OpenAIAgent::new(
                 model_ref.to_string(),
