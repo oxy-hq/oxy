@@ -425,6 +425,39 @@
               ]
             }
           }
+        },
+        {
+          "type": "object",
+          "required": [
+            "key_var",
+            "model_ref",
+            "name",
+            "vendor"
+          ],
+          "properties": {
+            "api_url": {
+              "default": "https://api.anthropic.com/v1",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "key_var": {
+              "type": "string"
+            },
+            "model_ref": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "vendor": {
+              "type": "string",
+              "enum": [
+                "anthropic"
+              ]
+            }
+          }
         }
       ]
     }
