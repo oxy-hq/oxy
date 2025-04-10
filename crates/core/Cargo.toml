@@ -83,6 +83,7 @@ rmcp = {git="https://github.com/modelcontextprotocol/rust-sdk.git", rev="588a013
 serde_with = "3.12.0"
 strip-ansi-escapes = "=0.2.1"
 shadow-rs = { version = "1.1.1", default-features = false }
+regex = "1.11.1"
 
 [build-dependencies]
 shadow-rs = "1.1.1"

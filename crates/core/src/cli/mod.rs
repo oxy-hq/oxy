@@ -104,10 +104,6 @@ struct Args {
     /// Subcommand
     #[clap(subcommand)]
     command: Option<SubCommand>,
-
-    /// Specify a custom agent configuration
-    #[clap(long, value_name = "AGENT_NAME")]
-    agent: Option<String>,
 }
 
 #[derive(Parser, Debug)]
@@ -237,6 +233,9 @@ impl RunArgs {
 #[derive(Parser, Debug)]
 struct VecSearchArgs {
     question: String,
+    /// Specify a custom agent configuration
+    #[clap(long, value_name = "AGENT_NAME")]
+    agent: Option<String>,
 }
 
 #[derive(Parser, Debug)]
@@ -345,7 +344,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                 .with_project_path(&find_project_path()?)?
                 .build()
                 .await?;
-            let agent = config.resolve_agent(args.agent.unwrap()).await?;
+            let agent = config.resolve_agent(search_args.agent.unwrap()).await?;
 
             for tool in agent.tools_config.tools {
                 if let ToolType::Retrieval(retrieval) = tool {
