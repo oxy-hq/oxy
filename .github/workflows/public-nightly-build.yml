@@ -1,9 +1,9 @@
 name: Public Nightly Build
 
 on:
-  schedule:
-    - cron: "0 8 * * *" # Runs every day at midnight Bay Area time (UTC-8)
-  workflow_dispatch:
+  push:
+    branches:
+      - test-arm
 
 env:
   CARGO_TERM_COLOR: always
@@ -21,19 +21,16 @@ jobs:
   build-nightly:
     # we dont build nightly release from internal repo
     # but allowing adhoc build for cache purposes
-    if: (github.repository == 'oxy-hq/oxy' && github.event_name == 'schedule') || github.event_name == 'workflow_dispatch'
     name: Build Nightly CLI for ${{ matrix.job.target }}
     runs-on: ${{ matrix.job.os }}
     strategy:
       fail-fast: false
       matrix:
         job:
-          - os: macos-13
-            target: x86_64-apple-darwin
-          - os: macos-latest
-            target: aarch64-apple-darwin
+          - os: ubuntu-22.04-arm
+            target: aarch64-unknown-linux-gnu
           - os: ubuntu-22.04
-            target: x86_64-unknown-linux-gnu
+            target: x86_64-unknown-linux-musl
     steps:
       - uses: actions/create-github-app-token@v2
         name: Create GitHub App Token
@@ -59,7 +56,14 @@ jobs:
       - name: Prep Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.job.target }}
+          targets: |
+            ${{ matrix.job.target }}
+
+      - name: Setup MUSL
+        if: ${{ matrix.job.target == 'x86_64-unknown-linux-musl' }}
+        run: |
+          sudo apt-get -qq install musl-tools
+
       - name: Prep cargo cache
         uses: Swatinem/rust-cache@v2
         with:
@@ -112,30 +116,7 @@ jobs:
           cargo build --features builders --release --target ${{ matrix.job.target }}
           mv target/${{ matrix.job.target }}/release/oxy artifacts/oxy-${{ matrix.job.target }}
 
-      - name: Generate config schema (once)
-        if: ${{ matrix.job.target == 'aarch64-apple-darwin' }}
+      - name: List all files recursively and output to GitHub
         run: |
-          cargo run --release --target ${{ matrix.job.target }} -- gen-config-schema
-          cp -a json-schemas/. artifacts/
-          cp Cargo.lock artifacts/
-
-      - name: Get current date
-        id: date
-        run: echo "current_date=$(date -u +'%Y%m%d')" >> $GITHUB_OUTPUT
-
-      - name: Publish nightly release
-        uses: softprops/action-gh-release@v2
-        with:
-          token: ${{ steps.app-token.outputs.token }}
-          draft: false
-          repository: oxy-hq/oxy-nightly
-          prerelease: false
-          make_latest: true
-          tag_name: nightly-${{ github.sha }}
-          name: Nightly Build ${{ steps.date.outputs.current_date }}
-          files: artifacts/**/*
-          body: |
-            Nightly build for target ${{ matrix.job.target }}. Please use with caution.
-            Commit: [${{ github.sha }}](https://github.com/${{ github.repository }}/commit/${{ github.sha }})
-            To install the latest release:
-            `bash <(curl --proto '=https' --tlsv1.2 -LsSf https://nightly.oxy.tech)`
+          echo "Listing all files in artifacts directory:"
+          ls -alR artifacts
