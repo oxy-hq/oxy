@@ -1,6 +1,6 @@
 use super::Tool;
 use crate::{
-    ai::retrieval::embedding::VectorStore, config::model::RetrievalTool as Retrieval,
+    ai::retrieval::embedding::VectorStore, config::model::RetrievalConfig as Retrieval,
     execute::agent::ToolCall,
 };
 use async_trait::async_trait;

@@ -1,18 +1,26 @@
 use base64::{Engine, prelude::BASE64_STANDARD};
 use minijinja::Value;
 use serde::Serialize;
-use std::{path::PathBuf, sync::Arc};
+use std::path::{Path, PathBuf};
 
 use crate::{
-    config::{ConfigBuilder, model::Workflow},
+    config::{
+        ConfigBuilder,
+        constants::{CONCURRENCY_SOURCE, CONSISTENCY_SOURCE, WORKFLOW_SOURCE},
+        model::Workflow,
+    },
     errors::OxyError,
     execute::{
         core::{event::Dispatcher, run},
+        types::{Event, EventKind, Output, ProgressType},
         workflow::{LogItem, WorkflowExporter, WorkflowInput, WorkflowLogger, WorkflowReceiver},
+        writer::EventHandler,
     },
     utils::find_project_path,
-    workflow::executor::WorkflowExecutor,
+    workflow::{WorkflowInput as NewWorkflowInput, WorkflowLauncher, executor::WorkflowExecutor},
 };
+
+use super::eval::PBarsHandler;
 
 #[derive(Serialize)]
 pub struct WorkflowInfo {
@@ -73,7 +81,22 @@ pub async fn get_workflow(
     Ok(workflow)
 }
 
-pub async fn run_workflow(path: &PathBuf, logger: Box<dyn WorkflowLogger>) -> Result<(), OxyError> {
+pub async fn run_workflow<P: AsRef<Path>, L: WorkflowLogger + 'static>(
+    path: P,
+    logger: L,
+    restore_from_checkpoint: bool,
+) -> Result<(), OxyError> {
+    #[cfg(feature = "builders")]
+    return run_workflow_with_builder(path, logger, restore_from_checkpoint).await;
+    #[cfg(not(feature = "builders"))]
+    return run_workflow_legacy(path, logger, restore_from_checkpoint).await;
+}
+
+async fn run_workflow_legacy<P: AsRef<Path>, L: WorkflowLogger + 'static>(
+    path: P,
+    logger: L,
+    _restore_from_checkpoint: bool,
+) -> Result<(), OxyError> {
     let project_path = find_project_path()?;
 
     let config = ConfigBuilder::new()
@@ -81,7 +104,7 @@ pub async fn run_workflow(path: &PathBuf, logger: Box<dyn WorkflowLogger>) -> Re
         .unwrap()
         .build()
         .await?;
-    let workflow = config.resolve_workflow(&path).await?;
+    let workflow = config.resolve_workflow(path).await?;
 
     // Create a channel to send logs to the client
     let dispatcher = Dispatcher::new(vec![
@@ -90,18 +113,112 @@ pub async fn run_workflow(path: &PathBuf, logger: Box<dyn WorkflowLogger>) -> Re
     ]);
     let executor = WorkflowExecutor::new(workflow.clone());
     let ctx = Value::from_serialize(&workflow.variables);
-    tokio::spawn(async move {
-        run(
-            &executor,
-            WorkflowInput,
-            Arc::new(config),
-            ctx,
-            Some(&workflow),
-            dispatcher,
+    run(
+        &executor,
+        WorkflowInput,
+        config,
+        ctx,
+        Some(&workflow),
+        dispatcher,
+    )
+    .await?;
+    Ok(())
+}
+
+pub struct WorkflowEventHandler<L> {
+    logger: L,
+    pbar_handler: PBarsHandler,
+}
+
+impl<L> WorkflowEventHandler<L> {
+    pub fn new(logger: L) -> Self {
+        Self {
+            logger,
+            pbar_handler: PBarsHandler::new(),
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl<L> EventHandler for WorkflowEventHandler<L>
+where
+    L: WorkflowLogger,
+{
+    async fn handle_event(&mut self, event: Event) -> Result<(), OxyError> {
+        log::debug!("Received event: {:?}", event);
+        match event.source.kind.as_str() {
+            WORKFLOW_SOURCE => match event.kind {
+                EventKind::Started { name } => {
+                    self.logger
+                        .log(&format!("\n\n⏳Running workflow: {}", name));
+                }
+                EventKind::Finished { message } => {
+                    self.logger.log(&message);
+                }
+                _ => {}
+            },
+            CONSISTENCY_SOURCE => match event.kind {
+                EventKind::Progress { progress } => match progress {
+                    ProgressType::Started(total) => {
+                        self.pbar_handler.get_or_create_bar(&event.source.id, total);
+                    }
+                    ProgressType::Updated(progress) => {
+                        self.pbar_handler.update_bar(&event.source.id, progress)?;
+                    }
+                    ProgressType::Finished => {
+                        self.pbar_handler.remove_bar(&event.source.id);
+                    }
+                },
+                EventKind::Message { message } => {
+                    self.logger.log(&message);
+                }
+                _ => {}
+            },
+            CONCURRENCY_SOURCE => {}
+            _ => match event.kind {
+                EventKind::Started { name } => {
+                    self.logger.log_task_started(&name);
+                }
+                EventKind::Updated { chunk } => match chunk.delta.clone() {
+                    Output::SQL(sql) => {
+                        self.logger.log_sql_query(&sql.0);
+                    }
+                    Output::Table(table) => {
+                        self.logger.log_table_result(table);
+                    }
+                    Output::Text(text) => {
+                        self.logger.log_text_chunk(&text, chunk.finished);
+                    }
+                    _ => {}
+                },
+                EventKind::Message { message } => {
+                    self.logger.log(&message);
+                }
+                _ => {}
+            },
+        }
+        Ok(())
+    }
+}
+
+async fn run_workflow_with_builder<P: AsRef<Path>, L: WorkflowLogger + 'static>(
+    path: P,
+    logger: L,
+    restore_from_checkpoint: bool,
+) -> Result<(), OxyError> {
+    let project_path = find_project_path()?.to_string_lossy().to_string();
+    let _ = WorkflowLauncher::new()
+        .with_local_context(&project_path)
+        .await?
+        .launch(
+            NewWorkflowInput {
+                workflow_ref: path.as_ref().to_string_lossy().to_string(),
+                variables: None,
+                restore_from_checkpoint,
+            },
+            WorkflowEventHandler::new(logger),
         )
-        .await
-        .unwrap();
-    });
+        .await?;
     Ok(())
 }
 

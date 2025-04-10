@@ -1,5 +1,5 @@
 use std::{
-    path::{Path, PathBuf},
+    path::Path,
     sync::{Arc, Mutex},
 };
 
@@ -15,6 +15,10 @@ use super::{
     workflow::WorkflowLogger,
 };
 use crate::{
+    adapters::connector::load_result, execute::workflow::WorkflowCLILogger,
+    utils::truncate_datasets,
+};
+use crate::{
     ai::{
         agent::{AgentResult, OpenAIAgent},
         setup_agent,
@@ -27,15 +31,12 @@ use crate::{
     errors::OxyError,
     utils::truncate_with_ellipsis,
 };
-use crate::{
-    connector::load_result, execute::workflow::WorkflowCLILogger, utils::truncate_datasets,
-};
 
 pub mod contexts;
 pub mod tools;
 
 impl TemplateRegister for AgentConfig {
-    fn register_template(&self, renderer: &mut Renderer) -> Result<(), OxyError> {
+    fn register_template(&self, renderer: &Renderer) -> Result<(), OxyError> {
         renderer.register_template(&self.system_instructions)?;
         Ok(())
     }
@@ -148,7 +149,7 @@ pub async fn build_agent<P: AsRef<Path>>(
     agent_file: P,
     file_format: &FileFormat,
     prompt: Option<String>,
-    config: Arc<ConfigManager>,
+    config: ConfigManager,
 ) -> Result<(OpenAIAgent, AgentConfig, Value), OxyError> {
     let (agent, agent_config) = setup_agent(agent_file, file_format, config.clone()).await?;
     let contexts = Contexts::new(
@@ -206,11 +207,11 @@ impl ReferenceCollector {
     }
 }
 
-pub async fn run_agent(
-    agent_file: &PathBuf,
+pub async fn run_agent<P: AsRef<Path>>(
+    agent_file: P,
     file_format: &FileFormat,
     prompt: Option<String>,
-    config: Arc<ConfigManager>,
+    config: ConfigManager,
     logger: Option<Box<dyn WorkflowLogger>>,
 ) -> Result<AgentResult, OxyError> {
     let (agent, agent_config, global_context) =
@@ -232,7 +233,7 @@ pub async fn run_agent(
             prompt,
             system_instructions: agent_config.system_instructions.clone(),
         },
-        config.clone(),
+        config,
         global_context,
         Some(&agent_config),
         handler,

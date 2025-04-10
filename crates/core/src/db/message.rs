@@ -36,3 +36,15 @@ pub async fn save_message(conversation_id: Uuid, content: &str, is_human: bool) 
         .await
         .expect("Error saving new message")
 }
+
+pub async fn update_message(id: Uuid, content: &str) -> Result<messages::Model, DbErr> {
+    let connection = establish_connection().await;
+    let message = Messages::find_by_id(id)
+        .one(&connection)
+        .await?
+        .ok_or(DbErr::RecordNotFound("".to_string()))?;
+    let mut message: messages::ActiveModel = message.into();
+    message.content = ActiveValue::Set(content.to_string());
+    let message = message.update(&connection).await?;
+    Ok(message)
+}

@@ -342,16 +342,10 @@
               ]
             },
             "azure_api_version": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             },
             "azure_deployment_id": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             },
             "key_var": {
               "type": "string"

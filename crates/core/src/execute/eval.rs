@@ -3,7 +3,7 @@ use itertools::Itertools;
 use minijinja::{Value, value::Kwargs};
 use serde::Serialize;
 use std::{
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{Arc, Mutex},
 };
 use tokio::sync::mpsc::Sender;
@@ -14,7 +14,7 @@ use crate::{
     ai::setup_eval_agent,
     config::{
         ConfigBuilder,
-        model::{Consistency, Eval, FileFormat, Task, TaskType, Workflow},
+        model::{Consistency, EvalKind, FileFormat, Task, TaskType, Workflow},
     },
     errors::OxyError,
     utils::find_project_path,
@@ -29,7 +29,7 @@ use super::{
         run,
         value::{Array, ContextValue},
     },
-    renderer::{Renderer, TemplateRegister},
+    renderer::{NoopRegister, Renderer, TemplateRegister},
     workflow::{WorkflowEvent, WorkflowInput},
 };
 
@@ -59,7 +59,7 @@ pub enum EvalEvent {
 
 #[derive(Debug)]
 pub struct EvalInput {
-    pub eval: Eval,
+    pub eval: EvalKind,
     pub target: Target,
 }
 
@@ -118,10 +118,10 @@ pub enum Metrics {
 
 pub struct EvalExecutor;
 
-impl TemplateRegister for Eval {
-    fn register_template(&self, renderer: &mut Renderer) -> Result<(), OxyError> {
+impl TemplateRegister for EvalKind {
+    fn register_template(&self, renderer: &Renderer) -> Result<(), OxyError> {
         match self {
-            Eval::Consistency(Consistency { prompt, .. }) => {
+            EvalKind::Consistency(Consistency { prompt, .. }) => {
                 renderer.register_template(prompt)?;
             }
         }
@@ -238,7 +238,7 @@ impl Executable<(), EvalEvent> for TargetAgent {
 }
 
 #[async_trait::async_trait]
-impl Executable<Target, EvalEvent> for Eval {
+impl Executable<Target, EvalEvent> for EvalKind {
     async fn execute(
         &self,
         execution_context: &mut ExecutionContext<'_, EvalEvent>,
@@ -246,7 +246,7 @@ impl Executable<Target, EvalEvent> for Eval {
     ) -> Result<(), OxyError> {
         execution_context.notify(EvalEvent::Started).await?;
         match self {
-            Eval::Consistency(consistency) => {
+            EvalKind::Consistency(consistency) => {
                 consistency.execute(execution_context, input).await?;
             }
         }
@@ -548,12 +548,12 @@ impl Handler for EvalReceiver {
     }
 }
 
-pub async fn run_eval(path: PathBuf, quiet: bool) -> Result<(), OxyError> {
+pub async fn run_eval_legacy<P: AsRef<Path>>(path: P, quiet: bool) -> Result<(), OxyError> {
     let config = ConfigBuilder::new()
         .with_project_path(find_project_path()?)?
         .build()
         .await?;
-    let eval_inputs = match path.to_str().unwrap_or_default() {
+    let eval_inputs = match path.as_ref().to_str().unwrap_or_default() {
         workflow_path if workflow_path.ends_with(".workflow.yml") => {
             let workflow = config.resolve_workflow(&path).await?;
             workflow
@@ -577,9 +577,9 @@ pub async fn run_eval(path: PathBuf, quiet: bool) -> Result<(), OxyError> {
                 .into_iter()
                 .map(|eval| EvalInput {
                     target: Target::Agent(TargetAgent {
-                        agent_ref: path.clone(),
+                        agent_ref: path.as_ref().to_path_buf(),
                         input: match &eval {
-                            Eval::Consistency(consistency) => AgentInput {
+                            EvalKind::Consistency(consistency) => AgentInput {
                                 system_instructions: agent.system_instructions.clone(),
                                 prompt: consistency.task_description.clone(),
                             },
@@ -592,7 +592,7 @@ pub async fn run_eval(path: PathBuf, quiet: bool) -> Result<(), OxyError> {
         _ => {
             return Err(OxyError::ConfigurationError(format!(
                 "Invalid file extension: {}. Expected .workflow.yml",
-                path.display()
+                path.as_ref().display()
             )));
         }
     };
@@ -600,9 +600,9 @@ pub async fn run_eval(path: PathBuf, quiet: bool) -> Result<(), OxyError> {
     run(
         &executor,
         eval_inputs,
-        Arc::new(config),
+        config,
         Value::UNDEFINED,
-        None,
+        Some(&NoopRegister),
         EvalReceiver {
             quiet,
             sender: None,

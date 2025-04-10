@@ -1,12 +1,11 @@
-use std::sync::PoisonError;
+use std::sync::{PoisonError, TryLockError};
 
 use async_openai::error::OpenAIError;
 use axum::http::StatusCode;
-use serde::Serialize;
 use thiserror::Error;
 use tokio::{sync::mpsc::error::SendError, task::JoinError};
 
-#[derive(Error, Debug, Clone, Serialize)]
+#[derive(Error, Debug)]
 pub enum OxyError {
     #[error("Invalid configuration:\n{0}")]
     ConfigurationError(String),
@@ -26,6 +25,17 @@ pub enum OxyError {
     IOError(String),
     #[error("DB error:\n{0}")]
     DBError(String),
+    #[error("LanceDB error:\n{0}")]
+    LanceDBError(#[from] lancedb::Error),
+    #[error("SerdeArrow error:\n{0}")]
+    SerdeArrowError(#[from] serde_arrow::Error),
+    #[error("Tool call error {handle}({param}):\n{msg}")]
+    ToolCallError {
+        call_id: String,
+        handle: String,
+        param: String,
+        msg: String,
+    },
 }
 
 impl From<Box<dyn std::error::Error>> for OxyError {
@@ -48,6 +58,12 @@ impl From<String> for OxyError {
 
 impl<T> From<PoisonError<T>> for OxyError {
     fn from(error: PoisonError<T>) -> Self {
+        OxyError::RuntimeError(format!("Failed to acquire lock: {error}"))
+    }
+}
+
+impl<T> From<TryLockError<T>> for OxyError {
+    fn from(error: TryLockError<T>) -> Self {
         OxyError::RuntimeError(format!("Failed to acquire lock: {error}"))
     }
 }
@@ -82,6 +98,9 @@ impl From<OxyError> for StatusCode {
             OxyError::SerializerError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             OxyError::IOError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             OxyError::DBError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            OxyError::LanceDBError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            OxyError::SerdeArrowError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            OxyError::ToolCallError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }

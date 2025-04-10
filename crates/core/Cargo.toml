@@ -72,11 +72,20 @@ tower = "0.5.2"
 tower-http = { version = "0.6.2", features = ["fs", "cors"] }
 tower-serve-static = "0.1.1"
 tqdm = "0.7.0"
-snowflake-api = "0.10.0"
 uuid = { version = "1.16.0", features = ["v4", "serde"] }
+reqwest = "0.12.12"
+secrecy = "0.10.3"
+fxhash = "0.2.1"
+deser-incomplete = "0.1.2"
+snowflake-api = "0.10.0"
 rmcp = {git="https://github.com/modelcontextprotocol/rust-sdk.git", rev="588a01309072142b8f1d68555b2203a342deeba4", features = ["server", "transport-sse-server", "transport-io"]}
 serde_with = "3.12.0"
+strip-ansi-escapes = "=0.2.1"
 
 [lib]
 name = "oxy"
 crate-type = ["cdylib", "rlib"]
+
+[features]
+default = []
+builders = []

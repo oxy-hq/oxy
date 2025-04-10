@@ -1,5 +1,6 @@
 export type Answer = {
   content: string;
+  references: Reference[];
   is_error: boolean;
 };
 

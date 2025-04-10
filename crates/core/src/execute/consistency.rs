@@ -393,7 +393,7 @@ impl ConsistencyExecutor {
     }
 }
 
-const PROMPT: &str = indoc! {"
+pub const PROMPT: &str = indoc! {"
     You are comparing a pair of submitted answers on a given question. Here is the data:
     [BEGIN DATA]
     ************
@@ -429,7 +429,7 @@ const PROMPT: &str = indoc! {"
     Reasoning:
 "};
 
-fn parse_consistency_response(response: &str) -> String {
+pub fn parse_consistency_response(response: &str) -> String {
     for line in response.lines().rev() {
         let trimmed = line.trim();
         if trimmed == "A" || trimmed == "B" {

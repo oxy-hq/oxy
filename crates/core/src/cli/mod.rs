@@ -1,17 +1,21 @@
 mod init;
 mod make;
 
-use crate::ai::agent::AgentResult;
+use crate::adapters::connector::Connector;
 use crate::ai::utils::record_batches_to_table;
 use crate::config::*;
 use crate::errors::OxyError;
-use crate::execute::agent::run_agent;
-use crate::execute::eval::run_eval;
-use crate::execute::workflow::run_workflow;
+use crate::execute::workflow::WorkflowCLILogger;
 use crate::mcp::service::OxyMcpServer;
+use crate::service::agent::AgentCLIHandler;
+use crate::service::agent::run_agent;
+use crate::service::eval::run_eval;
+use crate::service::workflow::run_workflow;
+use crate::theme::StyledText;
+use crate::theme::detect_true_color_support;
+use crate::theme::get_current_theme_mode;
 use crate::utils::find_project_path;
 use crate::utils::print_colored_sql;
-use crate::workflow::WorkflowResult;
 use axum::handler::Handler;
 use clap::CommandFactory;
 use clap::Parser;
@@ -19,8 +23,7 @@ use clap::builder::ValueParser;
 use make::handle_make_command;
 use minijinja::{Environment, Value};
 use model::AgentConfig;
-use model::FileFormat;
-use model::ToolConfig;
+use model::ToolType;
 use model::{Config, Workflow};
 use pyo3::Bound;
 use pyo3::FromPyObject;
@@ -44,8 +47,6 @@ use tokio_util::sync::CancellationToken;
 use init::init;
 
 use crate::api::router;
-use crate::connector::Connector;
-use crate::theme::*;
 use crate::{build, vector_search};
 use tower_serve_static::ServeDir;
 
@@ -156,6 +157,9 @@ pub struct RunArgs {
     variables: Vec<(String, String)>,
 
     question: Option<String>,
+
+    #[clap(long, default_value_t = false)]
+    retry: bool,
 }
 
 #[derive(Parser, Debug)]
@@ -170,6 +174,7 @@ pub struct RunOptions {
     database: Option<String>,
     variables: Option<Vec<(String, String)>>,
     question: Option<String>,
+    retry: bool,
 }
 
 impl<'py> FromPyObject<'py> for RunOptions {
@@ -186,10 +191,15 @@ impl<'py> FromPyObject<'py> for RunOptions {
             .get_item("question")
             .map(|v| v.extract::<Option<String>>().unwrap_or(None))
             .unwrap_or(None);
+        let retry = ob
+            .get_item("retry")
+            .map(|v| v.extract::<bool>().unwrap_or(false))
+            .unwrap_or(false);
         Ok(RunOptions {
             database,
             variables,
             question,
+            retry,
         })
     }
 }
@@ -202,12 +212,14 @@ impl RunArgs {
                 database: options.database,
                 variables: options.variables.unwrap_or(vec![]),
                 question: options.question,
+                retry: options.retry,
             },
             None => Self {
                 file,
                 database: None,
                 variables: vec![],
                 question: None,
+                retry: false,
             },
         }
     }
@@ -230,8 +242,8 @@ struct GenConfigSchemaArgs {
     check: bool,
 }
 
-async fn handle_workflow_file(workflow_name: &PathBuf) -> Result<WorkflowResult, OxyError> {
-    run_workflow(workflow_name, None, None, None).await
+async fn handle_workflow_file(workflow_name: &PathBuf, retry: bool) -> Result<(), OxyError> {
+    return run_workflow(workflow_name, WorkflowCLILogger, retry).await;
 }
 
 pub async fn cli() -> Result<(), Box<dyn Error>> {
@@ -326,8 +338,8 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                 .await?;
             let agent = config.resolve_agent(args.agent.unwrap()).await?;
 
-            for tool in agent.tools {
-                if let ToolConfig::Retrieval(retrieval) = tool {
+            for tool in agent.tools_config.tools {
+                if let ToolType::Retrieval(retrieval) = tool {
                     vector_search(&agent.name, &retrieval, &search_args.question, &config).await?;
                 }
             }
@@ -402,29 +414,13 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-async fn handle_agent_file(
-    file_path: &PathBuf,
-    question: Option<String>,
-) -> Result<AgentResult, OxyError> {
+async fn handle_agent_file(file_path: &PathBuf, question: Option<String>) -> Result<(), OxyError> {
     let question = question.ok_or_else(|| {
         OxyError::ArgumentError("Question is required for agent files".to_string())
     })?;
     let project_path = find_project_path()?;
-    let config = std::sync::Arc::new(
-        ConfigBuilder::new()
-            .with_project_path(&project_path)?
-            .build()
-            .await?,
-    );
-    let result = run_agent(
-        file_path,
-        &FileFormat::Markdown,
-        Some(question),
-        config,
-        None,
-    )
-    .await?;
-    Ok(result)
+    let _ = run_agent(&project_path, file_path, question, AgentCLIHandler).await?;
+    Ok(())
 }
 
 async fn handle_sql_file(
@@ -475,8 +471,8 @@ async fn handle_sql_file(
 }
 
 pub enum RunResult {
-    Workflow(WorkflowResult),
-    Agent(AgentResult),
+    Workflow,
+    Agent,
     Sql(String),
 }
 
@@ -489,14 +485,8 @@ impl<'py> IntoPyObject<'py> for RunResult {
 
     fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
         match self {
-            RunResult::Workflow(result) => {
-                let output = result.into_pyobject(py)?;
-                Ok(output.into_any())
-            }
-            RunResult::Agent(result) => {
-                let output = result.into_pyobject(py)?;
-                Ok(output.into_any())
-            }
+            RunResult::Workflow => Ok(None::<usize>.into_pyobject(py)?.into_any()),
+            RunResult::Agent => Ok(None::<usize>.into_pyobject(py)?.into_any()),
             RunResult::Sql(result) => Ok(result.into_pyobject(py)?.into_any()),
         }
     }
@@ -520,11 +510,11 @@ pub async fn handle_run_command(run_args: RunArgs) -> Result<RunResult, OxyError
     match extension {
         Some("yml") => {
             if file.ends_with(".workflow.yml") {
-                let workflow_result = handle_workflow_file(&file_path).await?;
-                Ok(RunResult::Workflow(workflow_result))
+                handle_workflow_file(&file_path, run_args.retry).await?;
+                Ok(RunResult::Workflow)
             } else if file.ends_with(".agent.yml") {
-                let agent_result = handle_agent_file(&file_path, run_args.question).await?;
-                return Ok(RunResult::Agent(agent_result));
+                handle_agent_file(&file_path, run_args.question).await?;
+                return Ok(RunResult::Agent);
             } else {
                 return Err(OxyError::ArgumentError(
                     "Invalid YAML file. Must be either *.workflow.yml or *.agent.yml".into(),
@@ -592,18 +582,7 @@ pub async fn start_mcp_sse_server(mut port: u16) -> anyhow::Result<CancellationT
 }
 
 pub async fn handle_test_command(test_args: TestArgs) -> Result<(), OxyError> {
-    let file = &test_args.file;
-
-    let current_dir = std::env::current_dir().expect("Could not get current directory");
-
-    let file_path = current_dir.join(file);
-    if !file_path.exists() {
-        return Err(OxyError::ConfigurationError(format!(
-            "File not found: {:?}",
-            file_path
-        )));
-    }
-    run_eval(file_path, test_args.quiet).await
+    run_eval(&test_args.file, test_args.quiet).await
 }
 
 pub async fn start_server_and_web_app(mut web_port: u16) {

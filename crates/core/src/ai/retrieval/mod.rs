@@ -2,7 +2,7 @@ use embedding::{Document, LanceDBStore, VectorStore};
 
 use crate::StyledText;
 use crate::config::ConfigManager;
-use crate::config::model::{RetrievalTool, ToolConfig};
+use crate::config::model::{RetrievalConfig, ToolType};
 use crate::errors::OxyError;
 
 pub mod embedding;
@@ -36,8 +36,8 @@ pub async fn build_embeddings(config: &ConfigManager) -> Result<(), OxyError> {
         );
         let agent = config.resolve_agent(&agent_dir).await?;
 
-        for tool in agent.tools {
-            if let ToolConfig::Retrieval(retrieval) = tool {
+        for tool in agent.tools_config.tools {
+            if let ToolType::Retrieval(retrieval) = tool {
                 let db_path = config
                     .resolve_file(format!(".db-{}-{}", &agent.name, retrieval.name))
                     .await?;
@@ -62,7 +62,7 @@ pub async fn build_embeddings(config: &ConfigManager) -> Result<(), OxyError> {
 }
 
 pub fn get_vector_store(
-    tool_config: &RetrievalTool,
+    tool_config: &RetrievalConfig,
     db_path: &str,
 ) -> anyhow::Result<Box<dyn VectorStore + Send + Sync>> {
     let db = LanceDBStore::with_config(tool_config, db_path)?;

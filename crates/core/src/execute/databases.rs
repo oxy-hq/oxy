@@ -6,16 +6,16 @@ use std::{
 use minijinja::value::{Object, ObjectRepr, Value};
 use tokio::runtime::Handle;
 
-use crate::{config::ConfigManager, connector::Connector};
+use crate::{adapters::connector::Connector, config::ConfigManager};
 
 #[derive(Debug, Clone)]
 pub struct DatabasesContext {
     cache: Arc<Mutex<HashMap<String, Value>>>,
-    config: Arc<ConfigManager>,
+    config: ConfigManager,
 }
 
 impl DatabasesContext {
-    pub fn new(config: Arc<ConfigManager>) -> Self {
+    pub fn new(config: ConfigManager) -> Self {
         DatabasesContext {
             cache: Arc::new(Mutex::new(HashMap::new())),
             config,

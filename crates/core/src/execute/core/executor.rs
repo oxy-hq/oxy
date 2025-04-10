@@ -72,7 +72,7 @@ where
         parts.with_renderer(
             self.execution_context
                 .renderer
-                .wrap(Value::from_object(current_output)),
+                .wrap(&Value::from_object(current_output)),
         );
         let mut map_adapter = MapAdapter {
             key: key.to_string(),
@@ -147,7 +147,7 @@ where
                 let loop_state = self.loop_state.clone();
                 let mut parts = self.execution_context.clone_parts();
                 parts.with_renderer(
-                    self.execution_context.renderer.wrap(context_map(&param))
+                    self.execution_context.renderer.wrap(&context_map(&param))
                 );
 
                 if let Some(event_sender) = &event_sender {
@@ -273,18 +273,19 @@ where
         }
     }
 
-    pub async fn execute<'executor, I, F, ChildEvent: 'executor>(
+    pub async fn execute<'executor, I, F, ChildEvent: 'executor, T>(
         &'executor mut self,
         entry: &dyn Executable<I, ChildEvent>,
         input: I,
         map_event: F,
         global_context: Value,
         context: Value,
-        template: &'executor dyn TemplateRegister,
+        template: &'executor T,
     ) -> Result<(), OxyError>
     where
         F: Fn(ChildEvent) -> Event + Send + 'static,
         ChildEvent: Send + 'static,
+        T: TemplateRegister,
     {
         let (child_sender, child_receiver) = tokio::sync::mpsc::channel::<ChildEvent>(10);
         let parent_sender = self.execution_context.get_sender();

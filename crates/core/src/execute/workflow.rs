@@ -7,9 +7,11 @@ use minijinja::{Value, context};
 use serde::Deserialize;
 use serde::Serialize;
 
+use super::types::Table;
 use crate::config::model::Condition;
 use crate::{
     StyledText,
+    adapters::connector::load_result,
     ai::utils::{record_batches_to_markdown, record_batches_to_table},
     config::{
         ConfigBuilder,
@@ -18,7 +20,6 @@ use crate::{
             WorkflowTask,
         },
     },
-    connector::load_result,
     errors::OxyError,
     execute::exporter::{export_agent_task, export_execute_sql, export_formatter},
     utils::{MAX_DISPLAY_ROWS, find_project_path, print_colored_sql, truncate_datasets},
@@ -58,7 +59,7 @@ pub enum WorkflowEvent {
         name: String,
     },
     Retry {
-        err: OxyError,
+        err: String,
         after: Duration,
     },
     CacheHit {
@@ -69,7 +70,7 @@ pub enum WorkflowEvent {
     },
     CacheWriteFailed {
         path: String,
-        err: OxyError,
+        err: String,
     },
 
     // export
@@ -115,13 +116,13 @@ pub enum WorkflowEvent {
 }
 
 impl TemplateRegister for Workflow {
-    fn register_template(&self, renderer: &mut Renderer) -> Result<(), OxyError> {
+    fn register_template(&self, renderer: &Renderer) -> Result<(), OxyError> {
         renderer.register(&self.tasks)
     }
 }
 
 impl TemplateRegister for &Task {
-    fn register_template(&self, renderer: &mut Renderer) -> Result<(), OxyError> {
+    fn register_template(&self, renderer: &Renderer) -> Result<(), OxyError> {
         let mut register = renderer.child_register();
 
         if let Some(cache) = &self.cache {
@@ -178,8 +179,8 @@ impl TemplateRegister for &Task {
 }
 
 impl TemplateRegister for &Condition {
-    fn register_template(&self, renderer: &mut Renderer) -> Result<(), OxyError> {
-        let mut child_register = renderer.child_register();
+    fn register_template(&self, renderer: &Renderer) -> Result<(), OxyError> {
+        let child_register = renderer.child_register();
         child_register.entry(&self.if_expr.as_str())?;
         child_register.entry(&self.tasks)?;
         Ok(())
@@ -187,7 +188,7 @@ impl TemplateRegister for &Condition {
 }
 
 impl TemplateRegister for Vec<Condition> {
-    fn register_template(&self, renderer: &mut Renderer) -> Result<(), OxyError> {
+    fn register_template(&self, renderer: &Renderer) -> Result<(), OxyError> {
         let mut child_register = renderer.child_register();
         child_register.entries(self)?;
         Ok(())
@@ -195,20 +196,20 @@ impl TemplateRegister for Vec<Condition> {
 }
 
 impl TemplateRegister for Vec<Task> {
-    fn register_template(&self, renderer: &mut Renderer) -> Result<(), OxyError> {
+    fn register_template(&self, renderer: &Renderer) -> Result<(), OxyError> {
         let mut child_register = renderer.child_register();
         child_register.entries(self)?;
         Ok(())
     }
 }
 
-pub struct WorkflowReceiver {
+pub struct WorkflowReceiver<L> {
     consistency_receiver: ConsistencyReceiver,
-    pub logger: Box<dyn WorkflowLogger>,
+    pub logger: L,
 }
 
-impl WorkflowReceiver {
-    pub fn new(logger: Box<dyn WorkflowLogger>) -> Self {
+impl<L> WorkflowReceiver<L> {
+    pub fn new(logger: L) -> Self {
         Self {
             consistency_receiver: ConsistencyReceiver::new(),
             logger,
@@ -252,6 +253,7 @@ impl LogItem {
 
 #[derive(Debug, Clone)]
 pub struct WorkflowAPILogger {
+    streaming_text: String,
     sender: tokio::sync::mpsc::Sender<LogItem>,
     writer: Option<Arc<Mutex<File>>>,
 }
@@ -261,7 +263,11 @@ impl WorkflowAPILogger {
         sender: tokio::sync::mpsc::Sender<LogItem>,
         writer: Option<Arc<Mutex<File>>>,
     ) -> Self {
-        Self { sender, writer }
+        Self {
+            sender,
+            writer,
+            streaming_text: String::new(),
+        }
     }
 
     pub fn log(&self, log_item: LogItem) {
@@ -275,6 +281,9 @@ impl WorkflowAPILogger {
 
 pub trait WorkflowLogger: Send + Sync {
     fn log(&self, text: &str);
+    fn log_sql_query(&self, query: &str);
+    fn log_table_result(&self, table: Table);
+    fn log_text_chunk(&mut self, chunk: &str, is_finished: bool);
     fn log_execution_result(&self, query: &str, schema: &Arc<Schema>, datasets: &Vec<RecordBatch>);
     fn log_task_started(&self, name: &str);
     fn log_event(&self, event: WorkflowEvent);
@@ -285,6 +294,9 @@ pub trait WorkflowLogger: Send + Sync {
 
 impl WorkflowLogger for NoopLogger {
     fn log(&self, _text: &str) {}
+    fn log_sql_query(&self, query: &str) {}
+    fn log_table_result(&self, table: Table) {}
+    fn log_text_chunk(&mut self, chunk: &str, is_finished: bool) {}
     fn log_execution_result(
         &self,
         _query: &str,
@@ -303,7 +315,7 @@ impl WorkflowLogger for NoopLogger {
 
 impl WorkflowLogger for WorkflowAPILogger {
     fn log(&self, text: &str) {
-        let item = LogItem::new(text.to_string(), LogType::Info);
+        let item = LogItem::new(strip_ansi_escapes::strip_str(text), LogType::Info);
         self.log(item)
     }
 
@@ -311,7 +323,37 @@ impl WorkflowLogger for WorkflowAPILogger {
         Box::new(WorkflowAPILogger {
             sender: self.sender.clone(),
             writer: self.writer.clone(),
+            streaming_text: self.streaming_text.clone(),
         })
+    }
+
+    fn log_sql_query(&self, query: &str) {
+        let item = LogItem::new(format!("Query: \n\n```sql\n{}\n```", query), LogType::Info);
+        self.log(item)
+    }
+
+    fn log_table_result(&self, table: Table) {
+        match table.to_markdown() {
+            Ok(table) => {
+                let item = LogItem::new(format!("Result:\n\n{}", table), LogType::Info);
+                self.log(item);
+            }
+            Err(e) => {
+                let err_log =
+                    LogItem::new(format!("Error displaying results: {}", e), LogType::Error);
+                self.log(err_log);
+            }
+        }
+    }
+
+    fn log_text_chunk(&mut self, chunk: &str, is_finished: bool) {
+        self.streaming_text.push_str(chunk);
+        if !is_finished {
+            return;
+        }
+        let text = std::mem::take(&mut self.streaming_text);
+        let item = LogItem::new(text, LogType::Info);
+        self.log(item)
     }
 
     fn log_execution_result(&self, query: &str, schema: &Arc<Schema>, datasets: &Vec<RecordBatch>) {
@@ -486,6 +528,31 @@ impl WorkflowLogger for WorkflowCLILogger {
         Box::new(WorkflowCLILogger)
     }
 
+    fn log_sql_query(&self, query: &str) {
+        print_colored_sql(query);
+    }
+
+    fn log_table_result(&self, table: Table) {
+        match table.to_term() {
+            Ok(table) => {
+                println!("{}", "\nResult:".primary());
+                println!("{}", table);
+            }
+            Err(e) => {
+                println!("{}", format!("Error displaying results: {}", e).error());
+            }
+        }
+    }
+
+    fn log_text_chunk(&mut self, chunk: &str, is_finished: bool) {
+        if is_finished {
+            println!("{}", chunk);
+        } else {
+            print!("{}", chunk);
+            std::io::stdout().flush().unwrap();
+        }
+    }
+
     fn log_execution_result(&self, query: &str, schema: &Arc<Schema>, datasets: &Vec<RecordBatch>) {
         print_colored_sql(query);
 
@@ -630,7 +697,10 @@ impl WorkflowLogger for WorkflowCLILogger {
     }
 }
 
-impl Handler for WorkflowReceiver {
+impl<L> Handler for WorkflowReceiver<L>
+where
+    L: WorkflowLogger,
+{
     type Event = WorkflowEvent;
 
     fn handle(&self, event: &Self::Event) {
@@ -743,11 +813,11 @@ impl Handler for PassthroughHandler {
     }
 }
 
-pub async fn run_workflow(
+pub async fn run_workflow<L: WorkflowLogger + 'static>(
     workflow_path: &PathBuf,
     project_path: Option<PathBuf>,
     variables: Option<HashMap<String, String>>,
-    logger: Option<Box<dyn WorkflowLogger>>,
+    logger: Option<L>,
 ) -> Result<WorkflowResult, OxyError> {
     let project_path = match project_path {
         Some(path) => path,
@@ -764,12 +834,17 @@ pub async fn run_workflow(
     );
     let workflow = config.resolve_workflow(workflow_path).await?;
 
-    let workflow_logger = logger.unwrap_or_else(|| Box::new(WorkflowCLILogger {}));
+    let dispatcher = match logger {
+        Some(logger) => Dispatcher::new(vec![
+            Box::new(WorkflowReceiver::new(logger)),
+            Box::new(WorkflowExporter),
+        ]),
+        None => Dispatcher::new(vec![
+            Box::new(WorkflowReceiver::new(WorkflowCLILogger)),
+            Box::new(WorkflowExporter),
+        ]),
+    };
 
-    let dispatcher = Dispatcher::new(vec![
-        Box::new(WorkflowReceiver::new(workflow_logger)),
-        Box::new(WorkflowExporter),
-    ]);
     let executor = WorkflowExecutor::new(workflow.clone());
     let mut ctx = Value::from_serialize(&workflow.variables);
     if let Some(variables) = variables {
@@ -779,7 +854,7 @@ pub async fn run_workflow(
     let output = run(
         &executor,
         WorkflowInput,
-        Arc::new(config),
+        config,
         ctx,
         Some(&workflow),
         dispatcher,

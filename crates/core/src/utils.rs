@@ -93,3 +93,7 @@ pub fn get_relative_path(path: PathBuf, root: PathBuf) -> Result<String, OxyErro
         .map_err(|_| OxyError::ArgumentError("Could not get relative path".to_string()))?;
     Ok(relative_path.to_string_lossy().to_string())
 }
+
+pub fn variant_eq<T>(a: &T, b: &T) -> bool {
+    std::mem::discriminant(a) == std::mem::discriminant(b)
+}

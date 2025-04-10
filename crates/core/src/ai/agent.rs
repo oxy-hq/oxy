@@ -1,7 +1,7 @@
 use crate::{
+    adapters::connector::load_result,
     ai::utils::{record_batches_to_json, record_batches_to_markdown},
     config::model::{FileFormat, OutputFormat},
-    connector::load_result,
     errors::OxyError,
     execute::{
         agent::{AgentEvent, AgentInput, AgentReference},

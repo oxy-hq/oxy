@@ -1,20 +1,27 @@
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
+
+use crate::errors::OxyError;
 
 use super::{
     model::{AgentConfig, Config, Database, Model, Workflow},
     storage::{ConfigSource, ConfigStorage},
 };
-use crate::errors::OxyError;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ConfigManager {
-    storage: ConfigSource,
-    config: Config,
+    storage: Arc<ConfigSource>,
+    config: Arc<Config>,
 }
 
 impl ConfigManager {
     pub(super) fn new(storage: ConfigSource, config: Config) -> Self {
-        Self { storage, config }
+        Self {
+            storage: Arc::new(storage),
+            config: Arc::new(config),
+        }
     }
 
     pub fn resolve_model(&self, model_name: &str) -> Result<&Model, OxyError> {

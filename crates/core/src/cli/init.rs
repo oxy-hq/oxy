@@ -1,5 +1,5 @@
 use crate::cli::model::{BigQuery, Config, DatabaseType, DuckDB};
-use crate::config::model::{ClickHouse, Mysql, Postgres, Redshift};
+use crate::config::model::{AzureModel, ClickHouse, Mysql, Postgres, Redshift};
 use crate::utils::find_project_path;
 use include_dir::{Dir, include_dir};
 use std::io::{self, Write};
@@ -233,22 +233,20 @@ fn collect_models() -> Result<Vec<Model>, InitError> {
                     "https://api.openai.com/v1",
                     None,
                 )?;
-                let (azure_deployment_id, azure_api_version) =
-                    if api_url != "https://api.openai.com/v1" {
-                        (
-                            Some(prompt_with_default("Azure deployment ID", "", None)?),
-                            Some(prompt_with_default("Azure API version", "", None)?),
-                        )
-                    } else {
-                        (None, None)
-                    };
+                let azure = if api_url != "https://api.openai.com/v1" {
+                    Some(AzureModel {
+                        azure_deployment_id: prompt_with_default("Azure deployment ID", "", None)?,
+                        azure_api_version: prompt_with_default("Azure API version", "", None)?,
+                    })
+                } else {
+                    None
+                };
                 Model::OpenAI {
                     name: prompt_with_default("Name", "openai-4o", None)?,
                     model_ref: prompt_with_default("Model reference", "gpt-4o", None)?,
                     key_var: prompt_with_default("Key variable", "OPENAI_API_KEY", None)?,
                     api_url: Some(api_url),
-                    azure_deployment_id,
-                    azure_api_version,
+                    azure,
                 }
             }
             "2" => Model::Ollama {
@@ -268,8 +266,7 @@ fn collect_models() -> Result<Vec<Model>, InitError> {
                         "https://api.openai.com/v1",
                         None,
                     )?),
-                    azure_deployment_id: None,
-                    azure_api_version: None,
+                    azure: None,
                 }
             }
         };

@@ -1,7 +1,4 @@
-use std::{
-    fmt::{Debug, Formatter},
-    sync::Arc,
-};
+use std::fmt::{Debug, Formatter};
 
 use async_trait::async_trait;
 use cache::CacheExecutor;
@@ -35,7 +32,7 @@ pub struct ExecutionContext<'writer, Event> {
     writer: &'writer mut (dyn Write + Send + Sync + 'writer),
     sender: Sender<Event>,
     pub renderer: Renderer,
-    pub config: Arc<ConfigManager>,
+    pub config: ConfigManager,
 }
 
 impl<'writer, Event> ExecutionContext<'writer, Event>
@@ -45,7 +42,7 @@ where
     pub fn new(
         renderer: Renderer,
         writer: &'writer mut (dyn Write + Send + Sync + 'writer),
-        config: Arc<ConfigManager>,
+        config: ConfigManager,
         sender: Sender<Event>,
     ) -> Self {
         ExecutionContext {
@@ -118,7 +115,7 @@ impl<Event> Debug for ExecutionContext<'_, Event> {
 pub struct ExecutionContextParts<Event> {
     pub sender: Sender<Event>,
     pub renderer: Renderer,
-    pub config: Arc<ConfigManager>,
+    pub config: ConfigManager,
 }
 
 impl<Event> ExecutionContextParts<Event> {
@@ -139,16 +136,17 @@ impl<Event> ExecutionContextParts<Event> {
     }
 }
 
-pub async fn run<Input, Event>(
+pub async fn run<Input, Event, T>(
     executable: &dyn Executable<Input, Event>,
     input: Input,
-    config: Arc<ConfigManager>,
+    config: ConfigManager,
     global_context: minijinja::Value,
-    template_register: Option<&dyn TemplateRegister>,
+    template_register: Option<&T>,
     handler: impl Handler<Event = Event> + 'static,
 ) -> Result<ContextValue, OxyError>
 where
     Event: Send + 'static,
+    T: TemplateRegister,
 {
     let (tx, rx) = tokio::sync::mpsc::channel(100);
     let mut output_collector = OutputCollector::new();
