@@ -9,6 +9,7 @@ publish.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 exclude.workspace = true
+build = "build.rs"
 
 [dependencies]
 anyhow = "1.0.97"
@@ -81,6 +82,10 @@ snowflake-api = "0.10.0"
 rmcp = {git="https://github.com/modelcontextprotocol/rust-sdk.git", rev="588a01309072142b8f1d68555b2203a342deeba4", features = ["server", "transport-sse-server", "transport-io"]}
 serde_with = "3.12.0"
 strip-ansi-escapes = "=0.2.1"
+shadow-rs = { version = "1.1.1", default-features = false }
+
+[build-dependencies]
+shadow-rs = "1.1.1"
 
 [lib]
 name = "oxy"

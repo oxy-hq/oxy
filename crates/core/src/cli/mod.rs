@@ -34,6 +34,7 @@ use pyo3::Python;
 use pyo3::types::PyAnyMethods;
 use rmcp::transport::SseServer;
 use rmcp::{ServiceExt, transport::stdio};
+use shadow_rs::shadow;
 use std::backtrace;
 use std::collections::BTreeMap;
 use std::error::Error;
@@ -70,6 +71,8 @@ static DIST: Dir = include_dir!("D:\\a\\oxy\\oxy\\crates\\core\\dist");
 #[cfg(not(target_os = "windows"))]
 static DIST: Dir = include_dir!("$CARGO_MANIFEST_DIR/dist");
 
+shadow!(build);
+
 type Variable = (String, String);
 fn parse_variable(env: &str) -> Result<Variable, OxyError> {
     if let Some((var, value)) = env.split_once('=') {
@@ -82,7 +85,13 @@ fn parse_variable(env: &str) -> Result<Variable, OxyError> {
 }
 
 #[derive(Parser, Debug)]
-#[clap(author, version, about, long_about = None)]
+#[clap(
+    author,
+    version = build::PKG_VERSION,
+    long_version = build::CLAP_LONG_VERSION,
+    about,
+    long_about = None
+)]
 struct Args {
     /// The question to ask or command to execute
     #[clap(default_value = "")]
