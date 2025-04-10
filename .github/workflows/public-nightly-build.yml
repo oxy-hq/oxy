@@ -124,7 +124,6 @@ jobs:
         run: echo "current_date=$(date -u +'%Y%m%d')" >> $GITHUB_OUTPUT
 
       - name: Publish nightly release
-        if: github.event_name == 'schedule'
         uses: softprops/action-gh-release@v2
         with:
           token: ${{ steps.app-token.outputs.token }}
