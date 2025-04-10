@@ -139,4 +139,4 @@ jobs:
             Nightly build for target ${{ matrix.job.target }}. Please use with caution.
             Commit: [${{ github.sha }}](https://github.com/${{ github.repository }}/commit/${{ github.sha }})
             To install the latest release:
-            `bash <(curl --proto '=https' --tlsv1.2 -sSf https://nightly.oxy.tech)`
+            `bash <(curl --proto '=https' --tlsv1.2 -LsSf https://nightly.oxy.tech)`
