@@ -31,4 +31,4 @@ jobs:
 
             View the latest release here: https://github.com/oxy-hq/oxy-nightly/releases/latest
 
-            To install the latest release: `bash <(curl --proto '=https' --tlsv1.2 -sSf https://nightly.oxy.tech)`
+            To install the latest release: `bash <(curl --proto '=https' --tlsv1.2 -LsSf https://nightly.oxy.tech)`
