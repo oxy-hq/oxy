@@ -14,11 +14,11 @@ use crate::{
 #[derive(Debug, Clone)]
 pub struct Contexts {
     contexts: HashMap<String, AgentContext>,
-    config: Arc<ConfigManager>,
+    config: ConfigManager,
 }
 
 impl Contexts {
-    pub fn new(contexts: Vec<AgentContext>, config: Arc<ConfigManager>) -> Self {
+    pub fn new(contexts: Vec<AgentContext>, config: ConfigManager) -> Self {
         let contexts = contexts.into_iter().map(|c| (c.name.clone(), c)).collect();
         Contexts { contexts, config }
     }

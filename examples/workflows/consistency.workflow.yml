@@ -10,7 +10,7 @@ tasks:
     database: primary_database
   - name: report
     type: agent
-    consistency_run: 2
+    consistency_run: 5
     agent_ref: agents/default.agent.yml
     prompt: |
       how many users?
@@ -24,9 +24,3 @@ tasks:
 
       Consistency score:
       {{ report.score }}
-
-      Prompt:
-      {{ report }}
-
-      Total users:
-      {{ report.value[0] }}

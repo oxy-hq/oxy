@@ -1,5 +1,6 @@
 use crate::config::model::AgentContext;
 use crate::config::model::AgentContextType;
+use crate::config::model::AgentToolsConfig;
 use crate::config::model::Database;
 use crate::config::model::DatabaseType;
 use crate::config::model::Defaults;
@@ -11,13 +12,13 @@ use crate::config::model::Model;
 use crate::config::model::OutputFormat;
 use crate::config::model::SemanticModelContext;
 use crate::config::model::SemanticModels;
+use crate::config::model::ToolType;
 use crate::config::*;
 use crate::theme::*;
 use crate::utils::get_relative_path;
 use csv::StringRecord;
 use model::AgentConfig;
 use model::Config;
-use model::ToolConfig;
 use std::env::current_dir;
 use std::path::PathBuf;
 use std::process::exit;
@@ -104,8 +105,7 @@ fn determine_model() -> (String, Model) {
                 model_ref: "gpt-4o".to_string(),
                 key_var: OPENAI_API_KEY_VAR.to_string(),
                 api_url: None,
-                azure_deployment_id: None,
-                azure_api_version: None,
+                azure: None,
             },
         )
     } else {
@@ -117,8 +117,7 @@ fn determine_model() -> (String, Model) {
                 model_ref: "gpt-4o".to_string(),
                 key_var: OPENAI_API_KEY_VAR.to_string(),
                 api_url: None,
-                azure_deployment_id: None,
-                azure_api_version: None,
+                azure: None,
             },
         )
     }
@@ -166,11 +165,15 @@ async fn create_agent_file(
 
     let agent_content = AgentConfig {
         name: setup.file_name_without_ext.clone(),
-        tools: vec![ToolConfig::ExecuteSQL(ExecuteSQLTool {
-            name: "execute_sql".to_string(),
-            description: "".to_string(),
-            database: "local".to_string(),
-        })],
+        tools_config: AgentToolsConfig {
+            max_tool_calls: 5,
+            max_tool_concurrency: 1,
+            tools: vec![ToolType::ExecuteSQL(ExecuteSQLTool {
+                name: "execute_sql".to_string(),
+                description: "".to_string(),
+                database: "local".to_string(),
+            })],
+        },
         model: model_name,
         context: Some(vec![
             AgentContext {

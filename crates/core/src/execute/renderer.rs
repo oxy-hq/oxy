@@ -10,12 +10,20 @@ use tokio::task::spawn_blocking;
 use crate::errors::OxyError;
 
 pub trait TemplateRegister: Sync + Send {
-    fn register_template(&self, renderer: &mut Renderer) -> Result<(), OxyError>;
+    fn register_template(&self, renderer: &Renderer) -> Result<(), OxyError>;
 }
 
 impl TemplateRegister for &str {
-    fn register_template(&self, renderer: &mut Renderer) -> Result<(), OxyError> {
+    fn register_template(&self, renderer: &Renderer) -> Result<(), OxyError> {
         renderer.register_template(self)
+    }
+}
+
+pub struct NoopRegister;
+
+impl TemplateRegister for NoopRegister {
+    fn register_template(&self, _renderer: &Renderer) -> Result<(), OxyError> {
+        Ok(())
     }
 }
 
@@ -36,22 +44,22 @@ impl Renderer {
         }
     }
 
-    pub fn from_template(
+    pub fn from_template<T: TemplateRegister>(
         global_context: Value,
-        template: &dyn TemplateRegister,
+        template: &T,
     ) -> Result<Self, OxyError> {
-        let mut renderer = Renderer::new(global_context);
+        let renderer = Renderer::new(global_context);
         renderer.register(template)?;
         Ok(renderer)
     }
 
-    pub fn wrap(&self, context: Value) -> Renderer {
+    pub fn wrap(&self, context: &Value) -> Renderer {
         Renderer {
             env: self.env.clone(),
             global_context: self.global_context.clone(),
             current_context: context! {
               ..Value::from_serialize(&self.current_context),
-              ..Value::from_serialize(&context),
+              ..Value::from_serialize(context),
             },
         }
     }
@@ -64,15 +72,15 @@ impl Renderer {
         }
     }
 
-    pub fn register(&mut self, item: &dyn TemplateRegister) -> Result<(), OxyError> {
+    pub fn register<T: TemplateRegister>(&self, item: &T) -> Result<(), OxyError> {
         item.register_template(self)
     }
 
-    pub fn child_register(&mut self) -> ChildRegister<'_> {
+    pub fn child_register(&self) -> ChildRegister<'_> {
         ChildRegister::new(self)
     }
 
-    pub fn register_template(&mut self, value: &str) -> Result<(), OxyError> {
+    pub fn register_template(&self, value: &str) -> Result<(), OxyError> {
         self.env
             .write()?
             .deref_mut()
@@ -86,7 +94,7 @@ impl Renderer {
         self.render_sync_internal(template, ctx)
     }
 
-    pub fn render_once(&mut self, template: &str, context: Value) -> Result<String, OxyError> {
+    pub fn render_once(&self, template: &str, context: Value) -> Result<String, OxyError> {
         self.register_template(template)?;
         self.render_sync_internal(template, context)
     }
@@ -161,8 +169,9 @@ impl Renderer {
                 Ok(values)
             }
             _ => Err(OxyError::RuntimeError(format!(
-                "Values {} did not resolve to an array",
+                "Values {} did not resolve to an array. \nContext: {}",
                 template,
+                self.get_context()
             ))),
         }
     }
@@ -210,11 +219,11 @@ impl Renderer {
 }
 
 pub struct ChildRegister<'register> {
-    renderer: &'register mut Renderer,
+    renderer: &'register Renderer,
 }
 
 impl<'register> ChildRegister<'register> {
-    pub fn new(renderer: &'register mut Renderer) -> Self {
+    pub fn new(renderer: &'register Renderer) -> Self {
         ChildRegister { renderer }
     }
 
@@ -229,7 +238,7 @@ impl<'register> ChildRegister<'register> {
         Ok(())
     }
 
-    pub fn entry(&mut self, value: &dyn TemplateRegister) -> Result<&mut Self, OxyError> {
+    pub fn entry<T: TemplateRegister>(&self, value: &T) -> Result<&Self, OxyError> {
         value.register_template(self.renderer)?;
         Ok(self)
     }

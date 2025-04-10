@@ -20,7 +20,7 @@
       "default": [],
       "type": "array",
       "items": {
-        "$ref": "#/definitions/Eval"
+        "$ref": "#/definitions/EvalKind"
       }
     },
     "variables": {
@@ -52,7 +52,7 @@
         }
       }
     },
-    "Eval": {
+    "EvalKind": {
       "oneOf": [
         {
           "type": "object",

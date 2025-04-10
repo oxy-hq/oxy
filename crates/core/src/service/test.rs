@@ -1,10 +1,11 @@
 use crate::config::ConfigBuilder;
-use crate::config::model::Eval;
+use crate::config::model::EvalKind;
 use crate::execute::agent::AgentInput;
 use crate::execute::core::run;
 use crate::execute::eval::{
     EvalExecutor, EvalInput, EvalReceiver, Target, TargetAgent, TestStreamMessage,
 };
+use crate::execute::renderer::NoopRegister;
 use crate::utils::find_project_path;
 use async_stream::stream;
 use axum::response::IntoResponse;
@@ -62,7 +63,7 @@ pub async fn run_test(pathb64: String, test_index: usize) -> impl IntoResponse {
     };
 
     let config = match config_builder.build().await {
-        Ok(config) => std::sync::Arc::new(config),
+        Ok(config) => config,
         Err(e) => {
             return StreamBodyAs::json_nl(stream! {
                 yield TestStreamMessage {
@@ -94,7 +95,7 @@ pub async fn run_test(pathb64: String, test_index: usize) -> impl IntoResponse {
             target: Target::Agent(TargetAgent {
                 agent_ref: path.clone().into(),
                 input: match &eval {
-                    Eval::Consistency(consistency) => AgentInput {
+                    EvalKind::Consistency(consistency) => AgentInput {
                         system_instructions: agent.system_instructions.clone(),
                         prompt: consistency.task_description.clone(),
                     },
@@ -116,7 +117,7 @@ pub async fn run_test(pathb64: String, test_index: usize) -> impl IntoResponse {
             eval_inputs,
             config,
             Value::UNDEFINED,
-            None,
+            Some(&NoopRegister),
             receiver,
         )
         .await

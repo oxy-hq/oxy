@@ -180,7 +180,7 @@ impl OxyMcpServer {
             &PathBuf::from(workflow_info.path.clone()),
             Some(self.project_path.clone()),
             variables,
-            Some(Box::new(NoopLogger {})),
+            Some(NoopLogger {}),
         )
         .await
         .map_err(|e| rmcp::Error::internal_error(format!("Failed to run workflow: {}", e), None))?;

@@ -14,6 +14,7 @@ tasks:
   - name: schedules
     type: loop_sequential
     values: "{{ intervals.intervals }}"
+    concurrency: 10
     tasks:
       - name: metrics
         type: loop_sequential

@@ -4,6 +4,7 @@ use std::fs;
 use minijinja::value::Kwargs;
 use minijinja::{Value, context};
 
+use crate::adapters::connector::Connector;
 use crate::config::model::ExecuteSQLTask;
 use crate::config::model::FileFormat;
 use crate::config::model::FormatterTask;
@@ -14,7 +15,6 @@ use crate::config::model::Task;
 use crate::config::model::TaskType;
 use crate::config::model::Workflow;
 use crate::config::model::{AgentTask, ConditionalTask, WorkflowTask};
-use crate::connector::Connector;
 use crate::errors::OxyError;
 use crate::execute::agent::AgentInput;
 use crate::execute::agent::build_agent;
@@ -170,7 +170,7 @@ impl Executable<WorkflowInput, WorkflowEvent> for ExecuteSQLTask {
         };
 
         let (datasets, schema) =
-            Connector::from_database(&self.database, execution_context.config.as_ref())
+            Connector::from_database(&self.database, &execution_context.config)
                 .await?
                 .run_query_and_load(&query)
                 .await?;
@@ -245,7 +245,7 @@ impl Executable<WorkflowInput, WorkflowEvent> for WorkflowTask {
         let mut variables = HashMap::new();
         if let Some(vars) = &self.variables {
             let ctx = execution_context.renderer.get_context();
-            let mut renderer = execution_context.renderer.clone();
+            let renderer = execution_context.renderer.clone();
             for (key, value) in vars {
                 let rendered_value = renderer.render_once(value, ctx.clone())?;
                 let rendered_key = renderer.render_once(key, ctx.clone())?;
@@ -360,7 +360,7 @@ impl Cacheable<(), WorkflowEvent> for Task {
     fn write_event_failed(&self, key: &str, err: OxyError) -> Option<WorkflowEvent> {
         Some(WorkflowEvent::CacheWriteFailed {
             path: key.to_string(),
-            err,
+            err: err.to_string(),
         })
     }
 }

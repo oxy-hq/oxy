@@ -1,8 +1,8 @@
 use super::Tool;
 use crate::{
+    adapters::connector::{Connector, load_result},
     ai::utils::record_batches_to_markdown,
     config::model::OutputFormat,
-    connector::{Connector, load_result},
     execute::agent::{ToolCall, ToolMetadata},
     utils::truncate_datasets,
 };

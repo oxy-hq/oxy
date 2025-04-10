@@ -30,6 +30,18 @@
       "default": "",
       "type": "string"
     },
+    "max_tool_calls": {
+      "default": 5,
+      "type": "integer",
+      "format": "uint",
+      "minimum": 0.0
+    },
+    "max_tool_concurrency": {
+      "default": 10,
+      "type": "integer",
+      "format": "uint",
+      "minimum": 0.0
+    },
     "model": {
       "type": "string"
     },
@@ -48,14 +60,14 @@
       "default": [],
       "type": "array",
       "items": {
-        "$ref": "#/definitions/Eval"
+        "$ref": "#/definitions/EvalKind"
       }
     },
     "tools": {
       "default": [],
       "type": "array",
       "items": {
-        "$ref": "#/definitions/ToolConfig"
+        "$ref": "#/definitions/ToolType"
       }
     }
   },
@@ -170,7 +182,7 @@
         }
       ]
     },
-    "Eval": {
+    "EvalKind": {
       "oneOf": [
         {
           "type": "object",
@@ -240,7 +252,7 @@
         "file"
       ]
     },
-    "ToolConfig": {
+    "ToolType": {
       "oneOf": [
         {
           "type": "object",
@@ -296,6 +308,17 @@
         },
         {
           "type": "object",
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "db_path": {
+                  "default": ".lancedb",
+                  "type": "string"
+                }
+              }
+            }
+          ],
           "required": [
             "name",
             "src",
@@ -344,6 +367,10 @@
               "items": {
                 "type": "string"
               }
+            },
+            "table": {
+              "default": "documents",
+              "type": "string"
             },
             "top_k": {
               "default": 4,

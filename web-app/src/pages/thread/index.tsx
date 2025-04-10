@@ -9,11 +9,15 @@ import { useQueryClient } from "@tanstack/react-query";
 import queryKeys from "@/hooks/api/queryKey";
 import PageHeader from "@/components/PageHeader";
 import References from "./References";
+import { Reference } from "@/types/chat";
 
 const Thread = () => {
   const { threadId } = useParams();
   const { data: thread, isSuccess } = useThread(threadId ?? "");
   const [answerStream, setAnswerStream] = useState<string | null>(null);
+  const [references, setReferences] = useState<Reference[]>(
+    thread?.references || [],
+  );
   const [isLoading, setIsLoading] = useState(false);
   const queryClient = useQueryClient();
 
@@ -27,6 +31,12 @@ const Thread = () => {
             setAnswerStream((pre) =>
               pre ? pre + answer.content : answer.content,
             );
+            setReferences((pre) => {
+              if (answer.references) {
+                return [...pre, ...answer.references];
+              }
+              return pre;
+            });
             setIsLoading(false);
           })
           .finally(() => {
@@ -38,6 +48,14 @@ const Thread = () => {
       }
     }
   }, [isSuccess, thread, threadId, queryClient]);
+
+  useEffect(() => {
+    if (isSuccess) {
+      if (thread?.references) {
+        setReferences(thread.references);
+      }
+    }
+  }, [isSuccess, thread]);
 
   const answer = thread?.answer ? thread?.answer : answerStream;
 
@@ -82,9 +100,7 @@ const Thread = () => {
             </div>
           )}
           <div className="mt-2 flex">
-            {thread?.references && (
-              <References references={thread?.references} />
-            )}
+            {references.length > 0 && <References references={references} />}
           </div>
         </div>
       </div>

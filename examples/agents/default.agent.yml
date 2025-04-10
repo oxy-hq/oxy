@@ -29,15 +29,6 @@ system_instructions: |
   {% endfor %}
   ```
 
-  ### You can use these queries as hints:
-  ```
-  {% for query in context.queries %}
-  {{ query }}
-  {% endfor %}
-
-  {{ tools.retrieval }}
-  ```
-
   ### Begin
 
 output_format: file

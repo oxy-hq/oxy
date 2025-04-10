@@ -18,6 +18,7 @@ use axum_streams::StreamBodyAs;
 use serde::Serialize;
 use std::fs::OpenOptions;
 use tokio::sync::mpsc;
+use tokio_stream::wrappers::ReceiverStream;
 
 #[derive(Serialize)]
 pub struct GetWorkflowResponse {
@@ -108,9 +109,7 @@ pub async fn run_workflow(Path(pathb64): Path<String>) -> Result<impl IntoRespon
 
     let full_workflow_path = project_path.join(&path);
     let (logger, receiver) = build_workflow_api_logger(&full_workflow_path).await;
-    service::run_workflow(&path, Box::new(logger)).await?;
-
-    use tokio_stream::wrappers::ReceiverStream;
+    let _ = tokio::spawn(async move { service::run_workflow(&path, logger, false).await });
     let stream = ReceiverStream::new(receiver);
     Ok(StreamBodyAs::json_nl(stream))
 }

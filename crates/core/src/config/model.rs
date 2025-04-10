@@ -1,10 +1,12 @@
 use garde::Validate;
 use indoc::indoc;
+use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use serde_with::skip_serializing_none;
 use std::collections::HashMap;
+use std::env;
+use std::hash::Hash;
 use std::path::PathBuf;
-use std::{env, fmt};
 
 use crate::config::validate::validate_file_path;
 use crate::config::validate::{
@@ -219,15 +221,13 @@ pub fn validate_agent_config() {}
 #[garde(context(AgentValidationContext))]
 pub struct AgentConfig {
     #[serde(skip)]
+    #[schemars(skip)]
     #[garde(skip)]
     pub name: String,
     #[garde(custom(validate_model))]
     pub model: String,
     #[garde(length(min = 1))]
     pub system_instructions: String,
-    #[serde(default = "default_tools")]
-    #[garde(skip)]
-    pub tools: Vec<ToolConfig>,
     #[garde(skip)]
     pub context: Option<Vec<AgentContext>>,
     #[serde(default)]
@@ -237,11 +237,34 @@ pub struct AgentConfig {
     pub anonymize: Option<AnonymizerConfig>,
     #[serde(default)]
     #[garde(skip)]
-    pub tests: Vec<Eval>,
-
+    pub tests: Vec<EvalKind>,
+    #[serde(flatten)]
+    #[serde(default)]
+    #[garde(skip)]
+    pub tools_config: AgentToolsConfig,
     #[garde(skip)]
     #[serde(default)]
     pub description: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
+pub struct AgentToolsConfig {
+    #[serde(default = "default_tools")]
+    pub tools: Vec<ToolType>,
+    #[serde(default = "default_max_tool_calls")]
+    pub max_tool_calls: usize,
+    #[serde(default = "default_max_tool_concurrency")]
+    pub max_tool_concurrency: usize,
+}
+
+impl Default for AgentToolsConfig {
+    fn default() -> Self {
+        AgentToolsConfig {
+            tools: default_tools(),
+            max_tool_calls: default_max_tool_calls(),
+            max_tool_concurrency: default_max_tool_concurrency(),
+        }
+    }
 }
 
 #[derive(Debug, Validate, Deserialize, Serialize, Clone, JsonSchema)]
@@ -370,8 +393,8 @@ pub enum DatabaseType {
     ClickHouse(#[garde(dive)] ClickHouse),
 }
 
-impl fmt::Display for DatabaseType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl std::fmt::Display for DatabaseType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             DatabaseType::Bigquery(_) => write!(f, "bigquery"),
             DatabaseType::DuckDB(_) => write!(f, "duckdb"),
@@ -431,6 +454,12 @@ impl Database {
     }
 }
 
+#[derive(Deserialize, Debug, Clone, Serialize, JsonSchema)]
+pub struct AzureModel {
+    pub azure_deployment_id: String,
+    pub azure_api_version: String,
+}
+
 #[skip_serializing_none]
 #[derive(Deserialize, Debug, Clone, Validate, Serialize, JsonSchema)]
 #[garde(context(ValidationContext))]
@@ -447,10 +476,9 @@ pub enum Model {
         #[serde(default = "default_openai_api_url")]
         #[garde(skip)]
         api_url: Option<String>,
+        #[serde(flatten)]
         #[garde(skip)]
-        azure_deployment_id: Option<String>,
-        #[garde(skip)]
-        azure_api_version: Option<String>,
+        azure: Option<AzureModel>,
     },
     #[serde(rename = "google")]
     Google {
@@ -485,6 +513,18 @@ pub enum Model {
         api_url: Option<String>,
     },
 }
+
+impl Model {
+    pub fn model_name(&self) -> &str {
+        match self {
+            Model::OpenAI { model_ref, .. } => model_ref,
+            Model::Ollama { model_ref, .. } => model_ref,
+            Model::Google { model_ref, .. } => model_ref,
+            Model::Anthropic { model_ref, .. } => model_ref,
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Default, Clone, Debug, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum OutputFormat {
@@ -550,6 +590,13 @@ pub struct AgentTask {
     pub export: Option<TaskExport>,
 }
 
+impl Hash for AgentTask {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.agent_ref.hash(state);
+        self.prompt.hash(state);
+    }
+}
+
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug, Validate, JsonSchema)]
 #[garde(context(ValidationContext))]
 pub enum ExportFormat {
@@ -584,7 +631,7 @@ pub struct TaskCache {
     pub path: String,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema, Hash)]
 #[garde(context(ValidationContext))]
 #[serde(untagged)]
 pub enum SQL {
@@ -614,6 +661,19 @@ pub struct ExecuteSQLTask {
     pub export: Option<TaskExport>,
 }
 
+impl Hash for ExecuteSQLTask {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.database.hash(state);
+        self.sql.hash(state);
+        if let Some(ref vars) = self.variables {
+            for (key, value) in vars.iter().sorted() {
+                key.hash(state);
+                value.hash(state);
+            }
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
 #[garde(context(ValidationContext))]
 pub struct FormatterTask {
@@ -621,6 +681,12 @@ pub struct FormatterTask {
     pub template: String,
     #[garde(dive)]
     pub export: Option<TaskExport>,
+}
+
+impl Hash for FormatterTask {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.template.hash(state);
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
@@ -634,7 +700,19 @@ pub struct WorkflowTask {
     pub export: Option<TaskExport>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, JsonSchema)]
+impl Hash for WorkflowTask {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.src.hash(state);
+        if let Some(ref vars) = self.variables {
+            for (key, value) in vars.iter().sorted() {
+                key.hash(state);
+                value.hash(state);
+            }
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, JsonSchema, Hash)]
 #[serde(untagged)]
 pub enum LoopValues {
     Template(String),
@@ -653,7 +731,16 @@ pub struct LoopSequentialTask {
     pub concurrency: usize,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
+impl Hash for LoopSequentialTask {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.values.hash(state);
+        for task in &self.tasks {
+            task.hash(state);
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema, Hash)]
 #[garde(context(ValidationContext))]
 pub struct Condition {
     #[garde(length(min = 1))]
@@ -673,7 +760,23 @@ pub struct ConditionalTask {
     pub else_tasks: Option<Vec<Task>>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
+impl Hash for ConditionalTask {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        for condition in &self.conditions {
+            condition.if_expr.hash(state);
+            for task in &condition.tasks {
+                task.hash(state);
+            }
+        }
+        if let Some(ref else_tasks) = self.else_tasks {
+            for task in else_tasks {
+                task.hash(state);
+            }
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema, Hash)]
 #[garde(context(ValidationContext))]
 #[serde(tag = "type")]
 pub enum TaskType {
@@ -698,7 +801,7 @@ pub struct TempWorkflow {
     pub tasks: Vec<Task>,
     pub variables: Option<HashMap<String, String>>,
     #[serde(default = "default_tests")]
-    pub tests: Vec<Eval>,
+    pub tests: Vec<EvalKind>,
     #[serde(default)]
     pub description: String,
 }
@@ -716,10 +819,30 @@ pub struct Task {
     pub cache: Option<TaskCache>,
 }
 
+impl Task {
+    pub fn kind(&self) -> &str {
+        match &self.task_type {
+            TaskType::Agent(_) => "agent",
+            TaskType::ExecuteSQL(_) => "execute_sql",
+            TaskType::LoopSequential(_) => "loop",
+            TaskType::Formatter(_) => "formatter",
+            TaskType::Workflow(_) => "sub_workflow",
+            TaskType::Conditional(_) => "conditional",
+            TaskType::Unknown => "unknown",
+        }
+    }
+}
+
+impl Hash for Task {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.task_type.hash(state);
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Validate, JsonSchema, Clone)]
 #[serde(tag = "type")]
 #[garde(context(ValidationContext))]
-pub enum Eval {
+pub enum EvalKind {
     #[serde(rename = "consistency")]
     Consistency(#[garde(dive)] Consistency),
 }
@@ -758,7 +881,7 @@ pub struct Workflow {
     pub tasks: Vec<Task>,
     #[serde(default = "default_tests")]
     #[garde(dive)]
-    pub tests: Vec<Eval>,
+    pub tests: Vec<EvalKind>,
     #[garde(skip)]
     pub variables: Option<HashMap<String, String>>,
     #[garde(skip)]
@@ -767,18 +890,11 @@ pub struct Workflow {
 }
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
-pub struct RetrievalTool {
-    pub name: String,
-    #[serde(default = "default_retrieval_tool_description")]
-    pub description: String,
-    pub src: Vec<String>,
+pub struct EmbeddingConfig {
+    #[serde(default = "default_embed_table")]
+    pub table: String,
     #[serde(default = "default_embed_model")]
     pub embed_model: String,
-    #[serde(default = "default_api_url")]
-    pub api_url: String,
-    pub api_key: Option<String>,
-    #[serde(default = "default_key_var")]
-    pub key_var: String,
     #[serde(default = "default_retrieval_n_dims")]
     pub n_dims: usize,
     #[serde(default = "default_retrieval_top_k")]
@@ -787,7 +903,41 @@ pub struct RetrievalTool {
     pub factor: usize,
 }
 
-impl RetrievalTool {
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
+#[serde(untagged)]
+pub enum VectorDBConfig {
+    LanceDB {
+        #[serde(default = "default_lance_db_path")]
+        db_path: String,
+    },
+}
+
+impl Default for VectorDBConfig {
+    fn default() -> Self {
+        VectorDBConfig::LanceDB {
+            db_path: default_lance_db_path(),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
+pub struct RetrievalConfig {
+    pub name: String,
+    #[serde(default = "default_retrieval_tool_description")]
+    pub description: String,
+    pub src: Vec<String>,
+    #[serde(default = "default_api_url")]
+    pub api_url: String,
+    pub api_key: Option<String>,
+    #[serde(default = "default_key_var")]
+    pub key_var: String,
+    #[serde(flatten)]
+    pub embedding_config: EmbeddingConfig,
+    #[serde(flatten, default)]
+    pub db_config: VectorDBConfig,
+}
+
+impl RetrievalConfig {
     pub fn get_api_key(&self) -> Result<String, OxyError> {
         match &self.api_key {
             Some(key) => Ok(key.to_string()),
@@ -819,13 +969,29 @@ pub struct ValidateSQLTool {
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
 #[serde(tag = "type")]
-pub enum ToolConfig {
+pub enum ToolType {
     #[serde(rename = "execute_sql")]
     ExecuteSQL(ExecuteSQLTool),
     #[serde(rename = "validate_sql")]
     ValidateSQL(ValidateSQLTool),
     #[serde(rename = "retrieval")]
-    Retrieval(RetrievalTool),
+    Retrieval(RetrievalConfig),
+}
+
+impl From<ExecuteSQLTool> for ToolType {
+    fn from(tool: ExecuteSQLTool) -> Self {
+        ToolType::ExecuteSQL(tool)
+    }
+}
+impl From<ValidateSQLTool> for ToolType {
+    fn from(tool: ValidateSQLTool) -> Self {
+        ToolType::ValidateSQL(tool)
+    }
+}
+impl From<RetrievalConfig> for ToolType {
+    fn from(tool: RetrievalConfig) -> Self {
+        ToolType::Retrieval(tool)
+    }
 }
 
 fn default_openai_api_url() -> Option<String> {
@@ -864,6 +1030,14 @@ fn default_retrieval_tool_description() -> String {
     "Retrieve the relevant SQL queries to support query generation.".to_string()
 }
 
+fn default_lance_db_path() -> String {
+    ".lancedb".to_string()
+}
+
+fn default_embed_table() -> String {
+    "documents".to_string()
+}
+
 fn default_embed_model() -> String {
     "text-embedding-3-small".to_string()
 }
@@ -896,8 +1070,16 @@ fn default_validate_sql_tool_description() -> String {
     "Validate the SQL query. If the query is invalid, fix it and run again.".to_string()
 }
 
-fn default_tools() -> Vec<ToolConfig> {
+fn default_tools() -> Vec<ToolType> {
     vec![]
+}
+
+fn default_max_tool_calls() -> usize {
+    5
+}
+
+fn default_max_tool_concurrency() -> usize {
+    10
 }
 
 fn default_cache_enabled() -> bool {
@@ -950,7 +1132,7 @@ fn default_consistency_prompt() -> String {
     "}.to_string()
 }
 
-fn default_tests() -> Vec<Eval> {
+fn default_tests() -> Vec<EvalKind> {
     vec![]
 }
 

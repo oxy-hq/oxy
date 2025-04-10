@@ -109,7 +109,7 @@ jobs:
       - name: Build oxy cli
         shell: bash
         run: |
-          cargo build --release --target ${{ matrix.job.target }}
+          cargo build --feature builders --release --target ${{ matrix.job.target }}
           mv target/${{ matrix.job.target }}/release/oxy artifacts/oxy-${{ matrix.job.target }}
 
       - name: Generate config schema (once)
@@ -132,7 +132,7 @@ jobs:
           repository: oxy-hq/oxy-nightly
           prerelease: false
           make_latest: true
-          tag_name: nightly
+          tag_name: nightly-${{ github.sha }}
           name: Nightly Build ${{ steps.date.outputs.current_date }}
           files: artifacts/**/*
           body: |

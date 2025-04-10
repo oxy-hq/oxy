@@ -8,14 +8,14 @@ pub mod utils;
 use std::{path::Path, sync::Arc};
 
 use crate::{
+    adapters::connector::Connector,
     config::{
         ConfigManager, load_config,
         model::{
             AgentConfig, AnonymizerConfig, FileFormat, FlashTextSourceType, Model, OutputFormat,
-            ToolConfig,
+            ToolType,
         },
     },
-    connector::Connector,
     errors::OxyError,
     execute::agent::ToolCall,
     union_tools,
@@ -34,7 +34,7 @@ const GEMINI_API_URL: &str = "https://generativelanguage.googleapis.com/v1beta/o
 pub async fn setup_agent<P: AsRef<Path>>(
     agent_file: P,
     file_format: &FileFormat,
-    config: Arc<ConfigManager>,
+    config: ConfigManager,
 ) -> Result<(OpenAIAgent, AgentConfig), OxyError> {
     let agent_config = config.resolve_agent(agent_file).await?;
     let agent = from_config(&config, &agent_config, file_format)
@@ -106,8 +106,7 @@ fn build_agent(
             model_ref,
             key_var,
             api_url,
-            azure_deployment_id,
-            azure_api_version,
+            azure,
         } => {
             let api_key = std::env::var(key_var).map_err(|_| {
                 OxyError::AgentError(format!(
@@ -119,8 +118,8 @@ fn build_agent(
                 model_ref.to_string(),
                 api_url.clone(),
                 api_key,
-                azure_deployment_id.clone(),
-                azure_api_version.clone(),
+                azure.clone().map(|a| a.azure_deployment_id),
+                azure.clone().map(|a| a.azure_api_version),
                 system_instructions.to_string(),
                 output_format.clone(),
                 anonymizer,
@@ -206,9 +205,9 @@ async fn tools_from_config(
     agent_config: &AgentConfig,
 ) -> Result<ToolBox<MultiTool>, OxyError> {
     let mut toolbox = ToolBox::new();
-    for tool_config in agent_config.tools.iter() {
+    for tool_config in agent_config.tools_config.tools.iter() {
         match tool_config {
-            ToolConfig::ExecuteSQL(sql_tool) => {
+            ToolType::ExecuteSQL(sql_tool) => {
                 let connector = Connector::from_database(&sql_tool.database, config).await?;
                 let tool: ExecuteSQLTool = ExecuteSQLTool {
                     tool_name: sql_tool.name.to_string(),
@@ -219,7 +218,7 @@ async fn tools_from_config(
                 };
                 toolbox.add_tool(sql_tool.name.to_string(), tool.into());
             }
-            ToolConfig::ValidateSQL(sql_tool) => {
+            ToolType::ValidateSQL(sql_tool) => {
                 let connector = Connector::from_database(&sql_tool.database, config).await?;
                 let tool: ExecuteSQLTool = ExecuteSQLTool {
                     tool_name: sql_tool.name.to_string(),
@@ -230,7 +229,7 @@ async fn tools_from_config(
                 };
                 toolbox.add_tool(sql_tool.name.to_string(), tool.into());
             }
-            ToolConfig::Retrieval(retrieval) => {
+            ToolType::Retrieval(retrieval) => {
                 let db_path = config
                     .resolve_file(format!(".db-{}-{}", agent_config.name, retrieval.name))
                     .await?;
