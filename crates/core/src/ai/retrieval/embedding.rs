@@ -37,6 +37,7 @@ pub struct Document {
     pub source_type: String,
     pub source_identifier: String,
     pub embeddings: Vec<f32>,
+    pub embedding_content: String,
 }
 
 #[async_trait]
@@ -94,6 +95,7 @@ impl LanceDBStore {
                         Field::new("content", DataType::Utf8, false),
                         Field::new("source_type", DataType::Utf8, false),
                         Field::new("source_identifier", DataType::Utf8, false),
+                        Field::new("embedding_content", DataType::Utf8, false),
                         Field::new(
                             "embeddings",
                             DataType::FixedSizeList(
@@ -130,14 +132,17 @@ impl LanceDBStore {
         let indices = table.list_indices().await?;
         let fts_index = indices
             .iter()
-            .find(|index| index.columns == vec!["content"]);
+            .find(|index| index.columns == vec!["embedding_content"]);
         let vector_index = indices
             .iter()
             .find(|index| index.columns == vec!["embeddings"]);
 
         if fts_index.is_none() {
             table
-                .create_index(&["content"], Index::FTS(FtsIndexBuilder::default()))
+                .create_index(
+                    &["embedding_content"],
+                    Index::FTS(FtsIndexBuilder::default()),
+                )
                 .execute()
                 .await?;
         }
@@ -180,7 +185,7 @@ impl LanceDBStore {
     ) -> anyhow::Result<Vec<Option<Vec<Option<f32>>>>> {
         let embedding_contents = documents
             .iter()
-            .map(|doc| doc.content.clone())
+            .map(|doc| doc.embedding_content.clone())
             .collect::<Vec<String>>();
         let embeddings_request = CreateEmbeddingRequestArgs::default()
             .model(self.embed_model.clone())
@@ -210,6 +215,9 @@ impl VectorStore for LanceDBStore {
         let source_identifiers = Arc::new(StringArray::from_iter_values(
             documents.iter().map(|doc| doc.source_identifier.clone()),
         ));
+        let embedding_contents = Arc::new(StringArray::from_iter_values(
+            documents.iter().map(|doc| doc.embedding_content.clone()),
+        ));
         let embedding_iter = self.embed_documents(documents).await?;
 
         let embeddings: Arc<FixedSizeListArray> = Arc::new(
@@ -224,7 +232,13 @@ impl VectorStore for LanceDBStore {
             vec![
                 RecordBatch::try_new(
                     schema.clone(),
-                    vec![contents, source_types, source_identifiers, embeddings],
+                    vec![
+                        contents,
+                        source_types,
+                        source_identifiers,
+                        embedding_contents,
+                        embeddings,
+                    ],
                 )
                 .unwrap(),
             ]

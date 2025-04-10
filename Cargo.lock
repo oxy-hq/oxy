@@ -5473,6 +5473,7 @@ dependencies = [
  "predicates",
  "pyo3",
  "pyo3-arrow",
+ "regex",
  "reqwest 0.12.12",
  "rmcp",
  "schemars",
