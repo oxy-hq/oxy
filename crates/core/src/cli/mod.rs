@@ -44,6 +44,9 @@ use std::process::exit;
 use tokio::runtime::Runtime;
 use tokio::signal;
 use tokio_util::sync::CancellationToken;
+use utoipa::OpenApi;
+use utoipa_axum::router::OpenApiRouter;
+use utoipa_swagger_ui::SwaggerUi;
 
 use init::init;
 
@@ -593,6 +596,9 @@ pub async fn handle_test_command(test_args: TestArgs) -> Result<(), OxyError> {
     run_eval(&test_args.file, test_args.quiet).await
 }
 
+#[derive(OpenApi)]
+struct ApiDoc;
+
 pub async fn start_server_and_web_app(mut web_port: u16) {
     async fn shutdown_signal() {
         let ctrl_c = async {
@@ -650,7 +656,13 @@ pub async fn start_server_and_web_app(mut web_port: u16) {
             }
         });
         let api_router = router::api_router().await;
+        let openapi_router = router::openapi_router().await;
+        let (_, openapi) = OpenApiRouter::with_openapi(ApiDoc::openapi())
+            .nest("/api", openapi_router.into())
+            .fallback_service(serve_with_fallback)
+            .split_for_parts();
         let web_app = Router::new()
+            .merge(SwaggerUi::new("/apidoc").url("/apidoc/openapi.json", openapi))
             .nest("/api", api_router)
             .fallback_service(serve_with_fallback);
 
