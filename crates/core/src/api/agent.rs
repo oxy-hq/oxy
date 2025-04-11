@@ -1,7 +1,7 @@
 use crate::config::ConfigBuilder;
 use crate::config::model::AgentConfig;
 use crate::service;
-use crate::service::agent::AskRequest;
+use crate::service::agent::{AskRequest, Message};
 use crate::utils::find_project_path;
 use axum::extract::{self, Path};
 use axum::http::StatusCode;
@@ -10,6 +10,13 @@ use axum_streams::StreamBodyAs;
 use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
 
+#[utoipa::path(
+    method(post),
+    path = "/ask",
+    responses(
+        (status = OK, description = "Success", body = Message, content_type = "application/x-ndjson")
+    )
+)]
 pub async fn ask(
     extract::Json(payload): extract::Json<AskRequest>,
 ) -> Result<impl IntoResponse, StatusCode> {
@@ -17,6 +24,13 @@ pub async fn ask(
     Ok(StreamBodyAs::json_nl(s))
 }
 
+#[utoipa::path(
+    method(get),
+    path = "/agents",
+    responses(
+        (status = OK, description = "Success", body = Vec<String>, content_type = "application/json")
+    )
+)]
 pub async fn get_agents() -> Result<extract::Json<Vec<String>>, StatusCode> {
     let project_path = find_project_path().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 

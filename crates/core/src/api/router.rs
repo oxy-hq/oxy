@@ -1,14 +1,15 @@
 use crate::api::agent;
 use crate::api::message;
 use crate::api::thread;
+use crate::api::workflow;
 use axum::Router;
 use axum::routing::delete;
 use axum::routing::{get, post};
 use migration::Migrator;
 use migration::MigratorTrait;
 use tower_http::cors::{Any, CorsLayer};
-
-use super::workflow;
+use utoipa_axum::router::OpenApiRouter;
+use utoipa_axum::routes;
 
 pub async fn api_router() -> Router {
     let cors = CorsLayer::new()
@@ -39,5 +40,17 @@ pub async fn api_router() -> Router {
             "/agents/{pathb64}/tests/{test_index}",
             post(agent::run_test),
         )
+        .layer(cors)
+}
+
+pub async fn openapi_router() -> OpenApiRouter {
+    let cors = CorsLayer::new()
+        .allow_origin(Any)
+        .allow_methods(tower_http::cors::Any)
+        .allow_headers(tower_http::cors::Any);
+
+    OpenApiRouter::new()
+        .routes(routes!(agent::ask, agent::get_agents))
+        .routes(routes!(workflow::list, workflow::run_workflow))
         .layer(cors)
 }

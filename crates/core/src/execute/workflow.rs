@@ -6,6 +6,7 @@ use chrono::{DateTime, Utc};
 use minijinja::{Value, context};
 use serde::Deserialize;
 use serde::Serialize;
+use utoipa::ToSchema;
 
 use super::types::Table;
 use crate::config::model::Condition;
@@ -222,7 +223,7 @@ pub struct WorkflowCLILogger;
 #[derive(Debug, Clone, Copy)]
 pub struct NoopLogger;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub enum LogType {
     #[serde(rename = "success")]
     Success,
@@ -234,7 +235,7 @@ pub enum LogType {
     Error,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct LogItem {
     pub content: String,
     pub timestamp: DateTime<Utc>,

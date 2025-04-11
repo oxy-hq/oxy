@@ -1,5 +1,6 @@
 use base64::prelude::*;
 use std::path::PathBuf;
+use utoipa::ToSchema;
 
 use std::fs::File;
 use std::sync::Arc;
@@ -9,6 +10,7 @@ use crate::config::model::Workflow;
 use crate::execute::workflow::LogItem;
 use crate::execute::workflow::WorkflowAPILogger;
 use crate::service::workflow as service;
+use crate::service::workflow::WorkflowInfo;
 use crate::service::workflow::get_workflow;
 use crate::utils::find_project_path;
 use axum::extract::{self, Path};
@@ -25,6 +27,13 @@ pub struct GetWorkflowResponse {
     data: Workflow,
 }
 
+#[utoipa::path(
+    method(get),
+    path = "/workflows",
+    responses(
+        (status = 200, description = "Success", body = Vec<WorkflowInfo>, content_type = "application/json")
+    )
+)]
 pub async fn list() -> impl IntoResponse {
     match crate::service::workflow::list_workflows(None).await {
         Ok(workflows) => {
@@ -52,11 +61,18 @@ pub async fn get(
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct GetLogsResponse {
     logs: Vec<LogItem>,
 }
 
+#[utoipa::path(
+    method(get),
+    path = "/workflows/{pathb64}/logs",
+    responses(
+        (status = 200, description = "Success", body = GetLogsResponse, content_type = "application/json")
+    )
+)]
 pub async fn get_logs(
     Path(pathb64): Path<String>,
 ) -> Result<extract::Json<GetLogsResponse>, StatusCode> {
@@ -96,6 +112,13 @@ pub async fn build_workflow_api_logger(
     (api_logger, receiver)
 }
 
+#[utoipa::path(
+    method(post),
+    path = "/workflows/{pathb64}/run",
+    responses(
+        (status = 200, description = "Success", body = (), content_type = "application/json")
+    )
+)]
 pub async fn run_workflow(Path(pathb64): Path<String>) -> Result<impl IntoResponse, StatusCode> {
     let decoded_path = BASE64_STANDARD.decode(pathb64).map_err(|e| {
         log::info!("{:?}", e);

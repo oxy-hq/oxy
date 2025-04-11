@@ -2,7 +2,9 @@ use base64::{Engine, prelude::BASE64_STANDARD};
 use minijinja::Value;
 use serde::Serialize;
 use std::path::{Path, PathBuf};
+use utoipa::ToSchema;
 
+use super::eval::PBarsHandler;
 use crate::{
     config::{
         ConfigBuilder,
@@ -20,9 +22,7 @@ use crate::{
     workflow::{WorkflowInput as NewWorkflowInput, WorkflowLauncher, executor::WorkflowExecutor},
 };
 
-use super::eval::PBarsHandler;
-
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct WorkflowInfo {
     pub name: String,
     pub path: String,
