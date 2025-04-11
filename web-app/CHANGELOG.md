@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.11](https://github.com/oxy-hq/oxy-internal/compare/0.1.10...0.1.11) (2025-04-11)
+
+
+### <!-- 0 -->🚀 Features
+
+* navigate to subworkflow ([#601](https://github.com/oxy-hq/oxy-internal/issues/601)) ([ed36936](https://github.com/oxy-hq/oxy-internal/commit/ed3693643e030d8dcda3321b50f9d14ac515a88a))
+
 ## [0.1.10](https://github.com/oxy-hq/oxy-internal/compare/0.1.9...0.1.10) (2025-04-08)
 
 
