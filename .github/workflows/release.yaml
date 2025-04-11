@@ -38,11 +38,11 @@ jobs:
       fail-fast: false
       matrix:
         job:
-          - os: macos-13
+          - os: warp-macos-15-arm64-6x
             target: x86_64-apple-darwin
-          - os: macos-latest
+          - os: warp-macos-15-arm64-6x
             target: aarch64-apple-darwin
-          - os: ubuntu-22.04
+          - os: warp-ubuntu-2204-x64-2x
             target: x86_64-unknown-linux-gnu
           # - os: ubuntu-latest
           #   target: aarch64-unknown-linux-gnu
@@ -156,7 +156,7 @@ jobs:
           retention-days: 1
 
   release:
-    runs-on: ubuntu-latest
+    runs-on: warp-ubuntu-latest-x64-2x
     needs: [build-cli]
     steps:
       - name: Download release assets from artifact
