@@ -11,7 +11,7 @@ export function WorkflowTaskNode({ task }: Props) {
   const selected = selectedNodeId === task.id;
   return (
     <StepContainer selected={selected}>
-      <NodeHeader name={task.name} type={task.type} />
+      <NodeHeader name={task.name} type={task.type} task={task} />
     </StepContainer>
   );
 }
