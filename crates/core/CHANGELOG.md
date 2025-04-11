@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.1.11](https://github.com/oxy-hq/oxy-internal/compare/0.1.10...0.1.11) (2025-04-11)
+
+
+### <!-- 0 -->🚀 Features
+
+* add Anthropic/Claude model support ([#582](https://github.com/oxy-hq/oxy-internal/issues/582)) ([8424d64](https://github.com/oxy-hq/oxy-internal/commit/8424d64e2238851cdf4cae559b67b568500872ad))
+* add more information to build ([354e85b](https://github.com/oxy-hq/oxy-internal/commit/354e85b65bac27d49caf0f090e72a10f0e75e2ae))
+* add openapi docs for customer facing API ([#589](https://github.com/oxy-hq/oxy-internal/issues/589)) ([25a128d](https://github.com/oxy-hq/oxy-internal/commit/25a128dc374979ddc22566fe1e36a88219655868))
+* improve embedding ([#593](https://github.com/oxy-hq/oxy-internal/issues/593)) ([d429df0](https://github.com/oxy-hq/oxy-internal/commit/d429df0f1cb54d80658e82fa11a41753ebffe364))
+
 ## [0.1.10](https://github.com/oxy-hq/oxy-internal/compare/0.1.9...0.1.10) (2025-04-08)
 
 
