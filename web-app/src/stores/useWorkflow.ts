@@ -375,6 +375,7 @@ export type AgentTaskConfig = BaseTaskConfig & {
 
 export type WorkflowTaskConfig = BaseTaskConfig & {
   type: TaskType.WORKFLOW;
+  src: string;
 };
 
 export type LoopSequentialTaskConfig = BaseTaskConfig & {

@@ -1,13 +1,20 @@
-import { NodeType } from "@/stores/useWorkflow";
+import {
+  NodeType,
+  TaskConfigWithId,
+  TaskType,
+  WorkflowTaskConfig,
+} from "@/stores/useWorkflow";
 import { nodeIconMap, nodeNameMap } from "./utils";
 import { DynamicIcon } from "lucide-react/dynamic";
 import { headerHeight } from "./constants";
 import { Button } from "@/components/ui/shadcn/button";
 import TruncatedText from "@/components/TruncatedText";
+import { useNavigate } from "react-router-dom";
 
 type Props = {
   name: string;
   type: NodeType;
+  task?: TaskConfigWithId;
   expandable?: boolean;
   expanded?: boolean;
   onExpandClick?: () => void;
@@ -16,6 +23,7 @@ type Props = {
 export const NodeHeader = ({
   type,
   name,
+  task,
   expandable,
   expanded,
   onExpandClick,
@@ -56,8 +64,37 @@ export const NodeHeader = ({
               />
             </Button>
           )}
+          {type === TaskType.WORKFLOW && (
+            <SubWorkflowNavigateButton task={task as WorkflowTaskConfig} />
+          )}
         </div>
       </div>
     </div>
+  );
+};
+
+type SubWorkflowNavigateButtonProps = {
+  task: WorkflowTaskConfig;
+};
+
+const SubWorkflowNavigateButton = ({
+  task,
+}: SubWorkflowNavigateButtonProps) => {
+  const navigate = useNavigate();
+  const handleClick = () => {
+    const pathb64 = btoa(task.src);
+    console.log("Navigate to sub workflow", pathb64);
+    navigate("/workflows/" + pathb64);
+  };
+
+  return (
+    <Button
+      className="p-1 ps-1 pe-1"
+      variant="ghost"
+      title="Navigate to definition"
+      onClick={handleClick}
+    >
+      <DynamicIcon size={14} name="locate-fixed" />
+    </Button>
   );
 };
