@@ -228,6 +228,10 @@ impl VectorStore for LanceDBStore {
         );
         log::info!("Total: {:?}", &embeddings.len());
 
+        // clean up the table
+        table.delete("true").await?;
+
+        // insert new data
         let batches = RecordBatchIterator::new(
             vec![
                 RecordBatch::try_new(

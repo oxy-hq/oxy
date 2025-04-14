@@ -1,8 +1,12 @@
 /*
  oxy:
-    embed: |
-        this return fruit with sales
-        fruit including apple, banana, kiwi, cherry and orange
+    embed:
+        - fruit sales
+        - apple sales
+        - banana sales
+        - cherry sales
+        - kiwi sales
+        - orange sales
 */
 
 
