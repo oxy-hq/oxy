@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.12](https://github.com/oxy-hq/oxy-internal/compare/0.1.11...0.1.12) (2025-04-14)
+
+
+### <!-- 0 -->🚀 Features
+
+* support multiple embed documents for a sql file ([#605](https://github.com/oxy-hq/oxy-internal/issues/605)) ([0746c15](https://github.com/oxy-hq/oxy-internal/commit/0746c15ba48689da8b8c63785929733627032bc8))
+
 ## [0.1.11](https://github.com/oxy-hq/oxy-internal/compare/0.1.10...0.1.11) (2025-04-11)
 
 
