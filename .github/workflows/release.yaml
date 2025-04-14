@@ -15,6 +15,10 @@ on:
       - "[0-9]+.[0-9]+.[0-9]+"
     paths-ignore:
       - "docs/**"
+  schedule:
+    # This cron job is used to trigger the workflow every Tuesday at midnight UTC, to keep cache on main branch
+    - cron: "0 0 * * 2"
+
 env:
   CARGO_TERM_COLOR: always
   MACOSX_DEPLOYMENT_TARGET: "11.0"
@@ -42,10 +46,6 @@ jobs:
             target: x86_64-apple-darwin
           - os: warp-macos-15-arm64-6x
             target: aarch64-apple-darwin
-          - os: warp-ubuntu-2204-x64-2x
-            target: x86_64-unknown-linux-gnu
-          # - os: ubuntu-latest
-          #   target: aarch64-unknown-linux-gnu
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -145,9 +145,9 @@ jobs:
       - name: Move wheels
         run: mv crates/py/dist/* artifacts/
 
-      #-- Upload release artifacts
       - name: Upload release artifacts
         uses: actions/upload-artifact@v4
+        if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
         with:
           name: cli-${{ matrix.job.target }}
           path: |
@@ -157,6 +157,7 @@ jobs:
 
   release:
     runs-on: warp-ubuntu-latest-x64-2x
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
     needs: [build-cli]
     steps:
       - name: Download release assets from artifact
