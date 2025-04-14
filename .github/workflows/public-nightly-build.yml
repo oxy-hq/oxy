@@ -21,7 +21,7 @@ jobs:
   build-nightly:
     # we dont build nightly release from internal repo
     # but allowing adhoc build for cache purposes
-    if: (github.repository == 'oxy-hq/oxy' && github.event_name == 'schedule') || github.event_name == 'workflow_dispatch'
+    if: github.repository == 'oxy-hq/oxy'
     name: Build Nightly CLI for ${{ matrix.job.target }}
     runs-on: ${{ matrix.job.os }}
     strategy:
