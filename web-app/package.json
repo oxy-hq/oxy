@@ -76,9 +76,9 @@
   "devDependencies": {
     "@types/invariant": "^2.2.37",
     "@types/lodash": "^4.17.15",
-    "@types/node": "^22.14.0",
-    "@types/react": "^19.1.0",
-    "@types/react-dom": "^19.1.1",
+    "@types/node": "^22.14.1",
+    "@types/react": "^19.1.2",
+    "@types/react-dom": "^19.1.2",
     "@types/react-syntax-highlighter": "^15.5.13",
     "@types/react-window": "^1.8.8",
     "@vitejs/plugin-react-swc": "^3.8.1",
