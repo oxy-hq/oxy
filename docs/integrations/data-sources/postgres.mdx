@@ -24,6 +24,7 @@ databases:
 ## Example Configurations
 <Steps>
 <Step title="Prepare password environment variable">
+
 Export the environment variable:
 ```sh
 export PG_PWD=<your password>
@@ -32,9 +33,11 @@ Or put it in `.env` file:
 ```sh
 echo PG_PWD=<your password> >> .env
 ```
+
 </Step>
 
 <Step title="Add PostgreSQL configuration">
+
 ```yaml
 databases:
   - name: local_pg
@@ -46,6 +49,7 @@ databases:
     database: "myapp"
     ssl_mode: "disable"
 ```
+
 </Step>
 </Steps>
 
