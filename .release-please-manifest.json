@@ -3,5 +3,5 @@
   "crates/py": "0.1.13",
   "crates/migration": "0.1.13",
   "crates/entity": "0.1.13",
-  "web-app": "0.1.12"
+  "web-app": "0.1.13"
 }

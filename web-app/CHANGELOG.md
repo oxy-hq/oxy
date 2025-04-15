@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.13](https://github.com/oxy-hq/oxy-internal/compare/0.1.12...0.1.13) (2025-04-15)
+
+
+### <!-- 0 -->🚀 Features
+
+* [#573](https://github.com/oxy-hq/oxy-internal/issues/573) Visualization meta issue ([#590](https://github.com/oxy-hq/oxy-internal/issues/590)) ([d22479c](https://github.com/oxy-hq/oxy-internal/commit/d22479c6c1af739997b93a15854968ea8e0eaa20))
+
 ## [0.1.12](https://github.com/oxy-hq/oxy-internal/compare/0.1.11...0.1.12) (2025-04-15)
 
 
