@@ -12,7 +12,7 @@ use crate::{
         model::{Model, RetrievalConfig, ToolType},
     },
     errors::OxyError,
-    tools::types::{RetrievalParams, SQLParams, WorkflowParams},
+    tools::types::{RetrievalParams, SQLParams},
 };
 
 #[derive(Debug, Clone)]
@@ -182,7 +182,6 @@ impl OpenAIToolConfig for &ToolType {
             ToolType::ExecuteSQL(e) => e.description.clone(),
             ToolType::ValidateSQL(v) => v.description.clone(),
             ToolType::Retrieval(r) => r.description.clone(),
-            ToolType::Workflow(w) => w.description.clone(),
         }
     }
 
@@ -191,7 +190,6 @@ impl OpenAIToolConfig for &ToolType {
             ToolType::ExecuteSQL(e) => e.name.clone(),
             ToolType::ValidateSQL(v) => v.name.clone(),
             ToolType::Retrieval(r) => r.name.clone(),
-            ToolType::Workflow(w) => w.name.clone(),
         }
     }
 
@@ -200,7 +198,6 @@ impl OpenAIToolConfig for &ToolType {
             ToolType::ExecuteSQL(_) => "execute_sql".to_string(),
             ToolType::ValidateSQL(_) => "validate_sql".to_string(),
             ToolType::Retrieval(_) => "retrieval".to_string(),
-            ToolType::Workflow(_) => "workflow".to_string(),
         }
     }
 
@@ -209,28 +206,18 @@ impl OpenAIToolConfig for &ToolType {
             ToolType::ExecuteSQL(_) => serde_json::json!(&schemars::schema_for!(SQLParams)),
             ToolType::ValidateSQL(_) => serde_json::json!(&schemars::schema_for!(SQLParams)),
             ToolType::Retrieval(_) => serde_json::json!(&schemars::schema_for!(RetrievalParams)),
-            ToolType::Workflow(_) => serde_json::json!(&schemars::schema_for!(WorkflowParams)),
         }
     }
 }
 
 impl From<&ToolType> for FunctionObject {
     fn from(tool: &ToolType) -> Self {
-        let mut binding = FunctionObjectArgs::default();
-        let mut function_args = binding.name(tool.handle()).description(tool.description());
-        let params_schema = tool.params_schema();
-        if !params_schema.is_null()
-            && params_schema.is_object()
-            && params_schema
-                .as_object()
-                .unwrap()
-                .get("properties")
-                .is_some()
-        {
-            function_args = function_args.parameters(params_schema);
-        }
-
-        function_args.build().unwrap()
+        FunctionObjectArgs::default()
+            .name(tool.handle())
+            .description(tool.description())
+            .parameters(tool.params_schema())
+            .build()
+            .unwrap()
     }
 }
 
