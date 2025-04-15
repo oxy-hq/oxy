@@ -20,9 +20,11 @@ databases:
 ```
 
 ## Example Configurations
+
 <Steps>
 <Step title="Prepare password environment variable">
 Export the environment variable:
+
 ```sh
 export CH_PWD=<your password>
 ```
@@ -30,9 +32,11 @@ Or put it in `.env` file:
 ```sh
 echo CH_PWD=<your password> >> .env
 ```
+
 </Step>
 
 <Step title="Add ClickHouse configuration">
+
 ```yaml
 databases:
   - name: local_ch
@@ -42,6 +46,7 @@ databases:
     password_var: "CH_PWD"
     database: "analytics"
 ```
+
 </Step>
 </Steps>
 
