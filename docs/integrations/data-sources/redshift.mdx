@@ -23,6 +23,7 @@ databases:
 ## Example Configurations
 <Steps>
 <Step title="Prepare password environment variable">
+
 Export the environment variable:
 ```sh
 export RS_PWD=<your password>
@@ -31,9 +32,11 @@ Or put it in `.env` file:
 ```sh
 echo RS_PWD=<your password> >> .env
 ```
+
 </Step>
 
 <Step title="Add Redshift configuration">
+
 ```yaml
 databases:
   - name: rs_analytics
@@ -44,6 +47,7 @@ databases:
     password_var: "RS_PWD"
     database: "analytics"
 ```
+
 </Step>
 </Steps>
 
