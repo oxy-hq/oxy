@@ -15,6 +15,7 @@ use crate::{
 use super::{ToolExecutable, types::ToolRawInput};
 
 pub struct ToolInput {
+    pub agent_name: String,
     pub raw: ToolRawInput,
     pub tools: Vec<ToolType>,
 }
@@ -103,13 +104,23 @@ impl Executable<ToolInput> for ToolLauncherExecutable {
 struct ToolMapper;
 
 #[async_trait::async_trait]
-impl ParamMapper<ToolInput, (Option<ToolType>, ToolRawInput)> for ToolMapper {
+impl ParamMapper<ToolInput, (String, Option<ToolType>, ToolRawInput)> for ToolMapper {
     async fn map(
         &self,
         execution_context: &ExecutionContext,
         input: ToolInput,
-    ) -> Result<((Option<ToolType>, ToolRawInput), Option<ExecutionContext>), OxyError> {
-        let ToolInput { raw, tools } = input;
+    ) -> Result<
+        (
+            (String, Option<ToolType>, ToolRawInput),
+            Option<ExecutionContext>,
+        ),
+        OxyError,
+    > {
+        let ToolInput {
+            agent_name,
+            raw,
+            tools,
+        } = input;
         let tool = tools
             .into_iter()
             .find(|tool| tool.handle() == raw.handle.as_str());
@@ -122,7 +133,7 @@ impl ParamMapper<ToolInput, (Option<ToolType>, ToolRawInput)> for ToolMapper {
             None => "unknown".to_string(),
         };
         let execution_context = execution_context.with_child_source(source_id, tool_kind);
-        Ok(((tool, raw), Some(execution_context)))
+        Ok(((agent_name, tool, raw), Some(execution_context)))
     }
 }
 

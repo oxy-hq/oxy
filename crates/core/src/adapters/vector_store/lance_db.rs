@@ -6,14 +6,10 @@ use arrow::{
     },
     datatypes::{DataType, Field, Float32Type, Schema},
 };
-use async_openai::{
-    Client,
-    config::OpenAIConfig,
-    types::{CreateEmbeddingRequestArgs, EmbeddingInput},
-};
-use async_trait::async_trait;
+use async_openai::types::{CreateEmbeddingRequestArgs, EmbeddingInput};
+use futures::TryStreamExt;
 use lancedb::{
-    Connection, Error, Table, connect,
+    Connection, Table,
     database::CreateTableMode,
     index::{
         Index,
@@ -23,74 +19,40 @@ use lancedb::{
     query::{ExecutableQuery, QueryBase},
     table::OptimizeAction,
 };
-use serde::{Deserialize, Serialize};
 use serde_arrow::from_record_batch;
-use tokio::sync::OnceCell;
 
-use crate::{config::model::RetrievalConfig, errors::OxyError};
+use crate::{adapters::openai::OpenAIClient, config::model::EmbeddingConfig, errors::OxyError};
 
-use super::reranking::ReciprocalRankingFusion;
+use super::{
+    engine::VectorEngine,
+    types::{Document, SearchRecord},
+};
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Document {
-    pub content: String,
-    pub source_type: String,
-    pub source_identifier: String,
-    pub embeddings: Vec<f32>,
-    pub embedding_content: String,
+pub(super) struct LanceDB {
+    client: OpenAIClient,
+    connection: Connection,
+    embedding_config: EmbeddingConfig,
 }
 
-#[async_trait]
-pub trait VectorStore {
-    async fn embed(&self, documents: &Vec<Document>) -> anyhow::Result<()>;
-    async fn search(&self, query: &str) -> anyhow::Result<Vec<Document>>;
-}
-
-impl std::fmt::Debug for dyn VectorStore + Send + Sync {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "VectorStore")
-    }
-}
-
-pub struct LanceDBStore {
-    uri: String,
-    connection: Arc<OnceCell<Connection>>,
-    client: Client<OpenAIConfig>,
-    embed_model: String,
-    n_dims: usize,
-    top_k: usize,
-    factor: usize,
-}
-
-impl LanceDBStore {
-    pub fn with_config(tool_config: &RetrievalConfig, db_path: &str) -> Result<Self, OxyError> {
-        let client = Client::with_config(
-            OpenAIConfig::new()
-                .with_api_key(tool_config.get_api_key()?)
-                .with_api_base(tool_config.api_url.to_string()),
-        );
-        let embedding_config = &tool_config.embedding_config;
-        Ok(Self {
-            uri: db_path.to_string(),
-            connection: Arc::new(tokio::sync::OnceCell::new()),
+impl LanceDB {
+    pub(super) fn new(
+        client: OpenAIClient,
+        connection: Connection,
+        embedding_config: EmbeddingConfig,
+    ) -> Self {
+        Self {
             client,
-            embed_model: embedding_config.embed_model.to_string(),
-            n_dims: embedding_config.n_dims,
-            top_k: embedding_config.top_k,
-            factor: embedding_config.factor,
-        })
+            connection,
+            embedding_config,
+        }
     }
 
-    async fn get_database_metadata_table(&self) -> anyhow::Result<Table> {
-        let connection = self
-            .connection
-            .get_or_init(|| async { connect(&self.uri).execute().await.unwrap() })
-            .await;
-        let table_result = connection.open_table("database_metadata").execute().await;
+    async fn get_or_create_table(&self, table_name: &str) -> Result<Table, OxyError> {
+        let table_result = self.connection.open_table(table_name).execute().await;
         let table = match table_result {
             Ok(table) => table,
             Err(err) => match err {
-                Error::TableNotFound { name } => {
+                lancedb::Error::TableNotFound { name } => {
                     let schema = Arc::new(Schema::new(vec![
                         Field::new("content", DataType::Utf8, false),
                         Field::new("source_type", DataType::Utf8, false),
@@ -100,13 +62,13 @@ impl LanceDBStore {
                             "embeddings",
                             DataType::FixedSizeList(
                                 Arc::new(Field::new("item", DataType::Float32, true)),
-                                self.n_dims.try_into().unwrap(),
+                                self.embedding_config.n_dims.try_into().unwrap(),
                             ),
                             false,
                         ),
                     ]));
 
-                    connection
+                    self.connection
                         .create_empty_table(name, schema)
                         .mode(CreateTableMode::exist_ok(|builder| builder))
                         .execute()
@@ -171,9 +133,9 @@ impl LanceDBStore {
 
     async fn embed_query(&self, query: &str) -> anyhow::Result<Vec<f32>> {
         let embeddings_request = CreateEmbeddingRequestArgs::default()
-            .model(self.embed_model.clone())
+            .model(self.embedding_config.embed_model.clone())
             .input(EmbeddingInput::String(query.to_string()))
-            .dimensions(self.n_dims as u32)
+            .dimensions(self.embedding_config.n_dims as u32)
             .build()?;
         let embeddings_response = self.client.embeddings().create(embeddings_request).await?;
         Ok(embeddings_response.data[0].embedding.clone())
@@ -188,9 +150,9 @@ impl LanceDBStore {
             .map(|doc| doc.embedding_content.clone())
             .collect::<Vec<String>>();
         let embeddings_request = CreateEmbeddingRequestArgs::default()
-            .model(self.embed_model.clone())
+            .model(self.embedding_config.embed_model.clone())
             .input(EmbeddingInput::StringArray(embedding_contents))
-            .dimensions(self.n_dims as u32)
+            .dimensions(self.embedding_config.n_dims as u32)
             .build()?;
         let embeddings_response = self.client.embeddings().create(embeddings_request).await?;
         Ok(embeddings_response
@@ -201,10 +163,11 @@ impl LanceDBStore {
     }
 }
 
-#[async_trait]
-impl VectorStore for LanceDBStore {
-    async fn embed(&self, documents: &Vec<Document>) -> anyhow::Result<()> {
-        let table = self.get_database_metadata_table().await?;
+impl VectorEngine for LanceDB {
+    async fn embed(&self, documents: &Vec<Document>) -> Result<(), OxyError> {
+        let table = self
+            .get_or_create_table(&self.embedding_config.table)
+            .await?;
         let schema = table.schema().await?;
         let contents = Arc::new(StringArray::from_iter_values(
             documents.iter().map(|doc| doc.content.clone()),
@@ -215,6 +178,7 @@ impl VectorStore for LanceDBStore {
         let source_identifiers = Arc::new(StringArray::from_iter_values(
             documents.iter().map(|doc| doc.source_identifier.clone()),
         ));
+
         let embedding_contents = Arc::new(StringArray::from_iter_values(
             documents.iter().map(|doc| doc.embedding_content.clone()),
         ));
@@ -223,10 +187,10 @@ impl VectorStore for LanceDBStore {
         let embeddings: Arc<FixedSizeListArray> = Arc::new(
             FixedSizeListArray::from_iter_primitive::<Float32Type, _, _>(
                 embedding_iter,
-                self.n_dims.try_into().unwrap(),
+                self.embedding_config.n_dims.try_into().unwrap(),
             ),
         );
-        log::info!("Total: {:?}", &embeddings.len());
+        log::info!("Total embedding records: {:?}", &embeddings.len());
 
         // clean up the table
         table.delete("true").await?;
@@ -255,35 +219,36 @@ impl VectorStore for LanceDBStore {
         Ok(())
     }
 
-    async fn search(&self, query: &str) -> anyhow::Result<Vec<Document>> {
+    async fn search(&self, query: &str) -> Result<Vec<SearchRecord>, OxyError> {
         log::info!("Embedding search query: {}", query);
         let query_vector = self.embed_query(query).await?;
 
         if query_vector.is_empty() {
-            anyhow::bail!(OxyError::RuntimeError(
-                "Failed to generate embeddings for query".into()
+            return Err(OxyError::RuntimeError(
+                "Failed to generate embeddings for query".into(),
             ));
         }
 
-        let table = self.get_database_metadata_table().await?;
-        let mut results = table
-            .vector_search(query_vector)?
-            .limit(self.top_k * self.factor)
-            .with_row_id()
-            .execute()
+        let table = self
+            .get_or_create_table(&self.embedding_config.table)
             .await?;
-        let mut fts_results = table
+        let stream = table
             .query()
             .full_text_search(FullTextSearchQuery::new(query.to_string()))
-            .limit(self.top_k * self.factor)
-            .with_row_id()
+            .limit(self.embedding_config.top_k * self.embedding_config.factor)
+            .nearest_to(query_vector)?
             .execute()
             .await?;
 
-        let record_batch = ReciprocalRankingFusion::default()
-            .rerank(&mut results, &mut fts_results, Some(self.top_k))
-            .await?;
-        let docs: Vec<Document> = from_record_batch(&record_batch)?;
-        Ok(docs)
+        log::debug!("Query results schema: {:?}", stream.schema());
+
+        let record_batches = stream.try_collect::<Vec<_>>().await?;
+        let mut results = vec![];
+        for record_batch in record_batches {
+            let docs: Vec<SearchRecord> =
+                from_record_batch(&record_batch).map_err(OxyError::SerdeArrowError)?;
+            results.extend(docs);
+        }
+        Ok(results)
     }
 }

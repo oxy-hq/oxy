@@ -1,8 +1,3 @@
-use std::{collections::HashMap, fs, sync::Arc};
-
-use minijinja::value::{Object, ObjectRepr, Value};
-use tokio::runtime::Handle;
-
 use crate::{
     StyledText,
     config::{
@@ -10,6 +5,9 @@ use crate::{
         model::{AgentContext, AgentContextType, SemanticModels},
     },
 };
+use minijinja::value::{Object, ObjectRepr, Value};
+use std::{collections::HashMap, fs, sync::Arc};
+use tokio::runtime::Handle;
 
 #[derive(Debug, Clone)]
 pub struct Contexts {

@@ -7,12 +7,12 @@ use std::sync::Arc;
 use std::sync::Mutex;
 
 use crate::config::model::Workflow;
-use crate::execute::workflow::LogItem;
-use crate::execute::workflow::WorkflowAPILogger;
 use crate::service::workflow as service;
 use crate::service::workflow::WorkflowInfo;
 use crate::service::workflow::get_workflow;
 use crate::utils::find_project_path;
+use crate::workflow::loggers::api::WorkflowAPILogger;
+use crate::workflow::loggers::types::LogItem;
 use axum::extract::{self, Path};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
@@ -132,7 +132,7 @@ pub async fn run_workflow(Path(pathb64): Path<String>) -> Result<impl IntoRespon
 
     let full_workflow_path = project_path.join(&path);
     let (logger, receiver) = build_workflow_api_logger(&full_workflow_path).await;
-    let _ = tokio::spawn(async move { service::run_workflow(&path, logger, false).await });
+    let _ = tokio::spawn(async move { service::run_workflow(&path, logger, false, None).await });
     let stream = ReceiverStream::new(receiver);
     Ok(StreamBodyAs::json_nl(stream))
 }

@@ -28,6 +28,8 @@ system_instructions: |
   {{ table }}
   {% endfor %}
   ```
+  ## Retrieval:
+  {{ tools.retrieval }}
 
   ### Begin
 
@@ -40,7 +42,7 @@ tools:
   - name: retrieval
     type: retrieval
     src:
-      - "data/*"
+      - "data/*.sql"
     # embed_model: text-embedding-3-small
     # api_url: https://api.openai.com/v1
     # key_var: OPENAI_API_KEY

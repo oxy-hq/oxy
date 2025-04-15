@@ -1,14 +1,20 @@
-use crate::db::client::establish_connection;
-use crate::errors::OxyError;
-use crate::execute::agent::AgentReference;
-use crate::execute::types::{Event, EventKind, Output};
-use crate::execute::writer::EventHandler;
-use crate::service::agent::run_agent;
-use crate::utils::find_project_path;
+use crate::{
+    agent::types::AgentReference,
+    db::client::establish_connection,
+    errors::OxyError,
+    execute::{
+        types::{Event, EventKind, Output},
+        writer::EventHandler,
+    },
+    service::agent::run_agent,
+    utils::find_project_path,
+};
 use async_stream::stream;
-use axum::extract::{self, Path};
-use axum::http::StatusCode;
-use axum::response::IntoResponse;
+use axum::{
+    extract::{self, Path},
+    http::StatusCode,
+    response::IntoResponse,
+};
 use axum_streams::StreamBodyAs;
 use entity::prelude::Threads;
 use sea_orm::prelude::DateTimeWithTimeZone;
@@ -246,10 +252,10 @@ pub async fn ask_thread(Path(id): Path<String>) -> impl IntoResponse {
             )
             .await?
         };
-        log::debug!("Agent output: {}", output);
+        log::debug!("Agent output: {:?}", output);
         log::debug!("Agent references: {:?}", references);
         let mut thread_model: entity::threads::ActiveModel = thread.into();
-        thread_model.answer = ActiveValue::Set(output);
+        thread_model.answer = ActiveValue::Set(output.to_string());
         thread_model.references =
             ActiveValue::Set(serde_json::to_string(&references).map_err(|err| {
                 OxyError::SerializerError(format!("Failed to serialize references:\n{}", err))

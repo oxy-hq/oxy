@@ -6,7 +6,7 @@ mod output_container;
 mod prompt;
 mod sql;
 mod table;
-mod utils;
+pub mod utils;
 
 pub use display::ProgressType;
 pub use eval::TargetOutput;

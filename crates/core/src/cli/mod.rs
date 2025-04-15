@@ -2,20 +2,22 @@ mod init;
 mod make;
 
 use crate::adapters::connector::Connector;
-use crate::ai::utils::record_batches_to_table;
 use crate::config::*;
 use crate::errors::OxyError;
-use crate::execute::workflow::WorkflowCLILogger;
+use crate::execute::types::utils::record_batches_to_table;
 use crate::mcp::service::OxyMcpServer;
 use crate::service::agent::AgentCLIHandler;
 use crate::service::agent::run_agent;
+use crate::service::eval::EvalEventsHandler;
 use crate::service::eval::run_eval;
+use crate::service::retrieval::{ReindexInput, SearchInput, reindex, search};
 use crate::service::workflow::run_workflow;
 use crate::theme::StyledText;
 use crate::theme::detect_true_color_support;
 use crate::theme::get_current_theme_mode;
 use crate::utils::find_project_path;
 use crate::utils::print_colored_sql;
+use crate::workflow::loggers::cli::WorkflowCLILogger;
 use axum::handler::Handler;
 use clap::CommandFactory;
 use clap::Parser;
@@ -23,7 +25,6 @@ use clap::builder::ValueParser;
 use make::handle_make_command;
 use minijinja::{Environment, Value};
 use model::AgentConfig;
-use model::ToolType;
 use model::{Config, Workflow};
 use pyo3::Bound;
 use pyo3::FromPyObject;
@@ -51,7 +52,6 @@ use utoipa_swagger_ui::SwaggerUi;
 use init::init;
 
 use crate::api::router;
-use crate::{build, vector_search};
 use tower_serve_static::ServeDir;
 
 use axum::{
@@ -238,7 +238,7 @@ struct VecSearchArgs {
     question: String,
     /// Specify a custom agent configuration
     #[clap(long, value_name = "AGENT_NAME")]
-    agent: Option<String>,
+    agent: String,
 }
 
 #[derive(Parser, Debug)]
@@ -254,7 +254,8 @@ struct GenConfigSchemaArgs {
 }
 
 async fn handle_workflow_file(workflow_name: &PathBuf, retry: bool) -> Result<(), OxyError> {
-    return run_workflow(workflow_name, WorkflowCLILogger, retry).await;
+    run_workflow(workflow_name, WorkflowCLILogger, retry, None).await?;
+    Ok(())
 }
 
 pub async fn cli() -> Result<(), Box<dyn Error>> {
@@ -336,24 +337,19 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             handle_test_command(test_args).await?;
         }
         Some(SubCommand::Build) => {
-            let config = ConfigBuilder::new()
-                .with_project_path(&find_project_path()?)?
-                .build()
-                .await?;
-            build(&config).await?;
+            reindex(ReindexInput {
+                project_path: find_project_path()?.to_string_lossy().to_string(),
+            })
+            .await?;
         }
         Some(SubCommand::VecSearch(search_args)) => {
-            let config = ConfigBuilder::new()
-                .with_project_path(&find_project_path()?)?
-                .build()
-                .await?;
-            let agent = config.resolve_agent(search_args.agent.unwrap()).await?;
-
-            for tool in agent.tools_config.tools {
-                if let ToolType::Retrieval(retrieval) = tool {
-                    vector_search(&agent.name, &retrieval, &search_args.question, &config).await?;
-                }
-            }
+            let project_path = find_project_path()?.to_string_lossy().to_string();
+            search(SearchInput {
+                project_path,
+                agent_ref: search_args.agent.to_string(),
+                query: search_args.question.to_string(),
+            })
+            .await?;
         }
         Some(SubCommand::Validate) => {
             let result = load_config(None);
@@ -593,7 +589,14 @@ pub async fn start_mcp_sse_server(mut port: u16) -> anyhow::Result<CancellationT
 }
 
 pub async fn handle_test_command(test_args: TestArgs) -> Result<(), OxyError> {
-    run_eval(&test_args.file, test_args.quiet).await
+    run_eval(
+        &find_project_path()?.to_string_lossy().to_string(),
+        &test_args.file,
+        None,
+        EvalEventsHandler::new(test_args.quiet),
+    )
+    .await?;
+    Ok(())
 }
 
 #[derive(OpenApi)]
@@ -658,7 +661,7 @@ pub async fn start_server_and_web_app(mut web_port: u16) {
         let api_router = router::api_router().await;
         let openapi_router = router::openapi_router().await;
         let (_, openapi) = OpenApiRouter::with_openapi(ApiDoc::openapi())
-            .nest("/api", openapi_router.into())
+            .nest("/api", openapi_router)
             .fallback_service(serve_with_fallback)
             .split_for_parts();
         let web_app = Router::new()

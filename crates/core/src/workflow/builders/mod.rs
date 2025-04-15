@@ -17,7 +17,7 @@ use std::{
     hash::Hash,
     path::{Path, PathBuf},
 };
-pub use workflow::build_workflow_executable;
+use workflow::build_workflow_executable;
 
 mod cache;
 mod consistency;
@@ -25,6 +25,7 @@ mod export;
 mod loop_concurrency;
 mod sql;
 mod task;
+mod template;
 mod workflow;
 
 #[derive(Clone, Debug)]

@@ -1,26 +1,33 @@
-mod builders;
 pub mod types;
-
-use std::path::Path;
-
-pub use builders::{AgentExecutable, OpenAIExecutableResponse, build_openai_executable};
-use minijinja::{Value, context};
-use types::AgentInput;
-
 use crate::{
     config::{ConfigManager, constants::AGENT_SOURCE, model::AgentConfig},
     errors::OxyError,
     execute::{
         Executable, ExecutionContext, ExecutionContextBuilder,
-        agent::contexts::Contexts,
         builders::{ExecutableBuilder, map::ParamMapper},
-        databases::DatabasesContext,
-        renderer::Renderer,
+        renderer::{Renderer, TemplateRegister},
         types::{Output, Source},
         writer::{BufWriter, EventHandler},
     },
     tools::ToolsContext,
 };
+pub use builders::{AgentExecutable, OpenAIExecutableResponse, build_openai_executable};
+use contexts::Contexts;
+use databases::DatabasesContext;
+use minijinja::{Value, context};
+use std::path::Path;
+use types::AgentInput;
+
+mod builders;
+mod contexts;
+mod databases;
+
+impl TemplateRegister for AgentConfig {
+    fn register_template(&self, renderer: &Renderer) -> Result<(), OxyError> {
+        renderer.register_template(&self.system_instructions)?;
+        Ok(())
+    }
+}
 
 pub struct AgentLauncher {
     execution_context: Option<ExecutionContext>,
@@ -146,6 +153,7 @@ fn build_global_context(config: &ConfigManager, agent_config: &AgentConfig, prom
     let databases = DatabasesContext::new(config.clone());
     let tools = ToolsContext::new(
         config.clone(),
+        agent_config.name.to_string(),
         agent_config.tools_config.tools.clone(),
         prompt.to_string(),
     );

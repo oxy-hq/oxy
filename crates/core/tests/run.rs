@@ -29,7 +29,7 @@ pub mod run {
     #[test]
     fn run_sql_file_ok_if_database_not_provided_use_default_database() {
         let mut cmd = setup_command();
-        let result = cmd.arg("data/example_intervals.sql").assert().success();
+        cmd.arg("data/example_intervals.sql").assert().success();
     }
 
     #[test]

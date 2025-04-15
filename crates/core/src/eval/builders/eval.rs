@@ -2,12 +2,13 @@ use std::collections::HashMap;
 
 use itertools::Itertools;
 use minijinja::{Value, context};
+use serde::Serialize;
 use tokio::task::JoinHandle;
 
 use crate::{
     agent::{OpenAIExecutableResponse, build_openai_executable, types::AgentInput},
     config::{
-        constants::EVAL_SOURCE,
+        constants::{EVAL_METRICS_POSTFIX, EVAL_SOURCE},
         model::{Consistency, EvalKind, Task, TaskType},
     },
     errors::OxyError,
@@ -27,8 +28,8 @@ use crate::{
 use super::target::TargetExecutable;
 
 pub struct EvalInput {
+    pub index: Option<usize>,
     pub target_ref: String,
-    pub quiet: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -46,7 +47,7 @@ impl std::fmt::Display for EvalTarget {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 enum MetricKind {
     Accuracy(f32),
 }
@@ -59,7 +60,7 @@ impl std::fmt::Display for MetricKind {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Clone)]
 pub struct Record {
     pub cot: String,
     pub choice: String,
@@ -73,7 +74,7 @@ impl std::fmt::Display for Record {
             .replace("---", &format!("{}", "---".error()))
             .replace("+++", &format!("{}", "+++".success()));
 
-        if self.choice.trim() == "B" {
+        if self.score < 1.0 {
             writeln!(f, "{}", "Inconsistent result detected.".warning())?;
         }
         writeln!(f, "{}", &reason)
@@ -115,7 +116,7 @@ impl TryFrom<Output> for Record {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Clone)]
 pub struct Metric {
     errors: Vec<String>,
     records: Vec<Record>,
@@ -204,7 +205,7 @@ impl ParamMapper<EvalInput, Vec<(usize, EvalKind, EvalTarget)>> for EvalMapper {
         execution_context: &ExecutionContext,
         input: EvalInput,
     ) -> Result<(Vec<(usize, EvalKind, EvalTarget)>, Option<ExecutionContext>), OxyError> {
-        let EvalInput { target_ref, .. } = input;
+        let EvalInput { target_ref, index } = input;
         let mapped_input = match &target_ref {
             workflow_ref if workflow_ref.ends_with("workflow.yml") => {
                 let workflow = execution_context
@@ -215,6 +216,7 @@ impl ParamMapper<EvalInput, Vec<(usize, EvalKind, EvalTarget)>> for EvalMapper {
                     .tests
                     .iter()
                     .enumerate()
+                    .filter(|(idx, _)| index.clone().map_or(true, |i| *idx == i))
                     .map(|(idx, test)| {
                         (
                             idx,
@@ -245,6 +247,7 @@ impl ParamMapper<EvalInput, Vec<(usize, EvalKind, EvalTarget)>> for EvalMapper {
                     .tests
                     .iter()
                     .enumerate()
+                    .filter(|(idx, _)| index.clone().map_or(true, |i| *idx == i))
                     .map(|(idx, test)| {
                         Ok((
                             idx,
@@ -410,7 +413,7 @@ impl ConcurrencyControl<Vec<TargetOutput>> for EvalConsistencyControl {
             .circular_tuple_windows::<(_, _)>()
             .collect::<Vec<_>>();
         let metric_context = execution_context.with_child_source(
-            format!("{}-metrics", execution_context.source.id),
+            format!("{}-{}", execution_context.source.id, EVAL_METRICS_POSTFIX),
             EVAL_SOURCE.to_string(),
         );
         metric_context

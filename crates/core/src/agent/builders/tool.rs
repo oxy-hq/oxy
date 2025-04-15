@@ -18,13 +18,19 @@ use super::openai::OpenAIExecutableResponse;
 
 #[derive(Clone, Debug)]
 pub struct OpenAITool {
+    agent_name: String,
     max_concurrency: usize,
     tool_configs: Vec<ToolType>,
 }
 
 impl OpenAITool {
-    pub fn new(tool_configs: impl IntoIterator<Item = ToolType>, max_concurrency: usize) -> Self {
+    pub fn new(
+        agent_name: String,
+        tool_configs: impl IntoIterator<Item = ToolType>,
+        max_concurrency: usize,
+    ) -> Self {
         Self {
+            agent_name,
             max_concurrency,
             tool_configs: tool_configs.into_iter().collect(),
         }
@@ -47,9 +53,13 @@ impl Executable<OpenAIExecutableResponse> for OpenAITool {
         let assistant_message = ChatCompletionRequestAssistantMessageArgs::default()
             .tool_calls(input.tool_calls.clone())
             .build()?;
-        let response = build_tool_executable(self.tool_configs.clone(), self.max_concurrency)
-            .execute(execution_context, input.tool_calls.clone())
-            .await?;
+        let response = build_tool_executable(
+            self.agent_name.to_string(),
+            self.tool_configs.clone(),
+            self.max_concurrency,
+        )
+        .execute(execution_context, input.tool_calls.clone())
+        .await?;
         let tool_rets = input
             .tool_calls
             .iter()
@@ -80,16 +90,19 @@ impl Executable<OpenAIExecutableResponse> for OpenAITool {
 pub struct ToolMapper;
 
 #[async_trait::async_trait]
-impl ParamMapper<(Vec<ToolType>, ChatCompletionMessageToolCall), ToolInput> for ToolMapper {
+impl ParamMapper<((String, Vec<ToolType>), ChatCompletionMessageToolCall), ToolInput>
+    for ToolMapper
+{
     async fn map(
         &self,
         _execution_context: &ExecutionContext,
-        input: (Vec<ToolType>, ChatCompletionMessageToolCall),
+        input: ((String, Vec<ToolType>), ChatCompletionMessageToolCall),
     ) -> Result<(ToolInput, Option<ExecutionContext>), OxyError> {
-        let (tools, tool_call) = input;
+        let ((agent_name, tools), tool_call) = input;
         Ok((
             ToolInput {
                 raw: tool_call.into(),
+                agent_name,
                 tools,
             },
             None,
@@ -98,12 +111,13 @@ impl ParamMapper<(Vec<ToolType>, ChatCompletionMessageToolCall), ToolInput> for 
 }
 
 fn build_tool_executable(
+    agent_name: String,
     tool_configs: Vec<ToolType>,
     max: usize,
 ) -> impl Executable<Vec<ChatCompletionMessageToolCall>, Response = Vec<Result<Output, OxyError>>> {
     ExecutableBuilder::new()
         .concurrency::<ChatCompletionMessageToolCall>(max)
-        .state(tool_configs)
+        .state((agent_name, tool_configs))
         .map(ToolMapper)
         .executable(ToolLauncherExecutable)
 }

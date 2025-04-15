@@ -112,7 +112,7 @@ jobs:
       - name: Build oxy cli
         shell: bash
         run: |
-          cargo build --features builders --release --target ${{ matrix.job.target }}
+          cargo build --release --target ${{ matrix.job.target }}
           mv target/${{ matrix.job.target }}/release/oxy artifacts/oxy-${{ matrix.job.target }}
 
       - name: Generate config schema (once)

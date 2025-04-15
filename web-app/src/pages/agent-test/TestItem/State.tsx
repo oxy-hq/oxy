@@ -1,6 +1,6 @@
 import { Check, LoaderCircle } from "lucide-react";
 import { cn } from "@/libs/shadcn/utils";
-import { EvalEventState } from "@/types/eval";
+import { EVAL_METRICS_POSTFIX, EvalEventState } from "@/types/eval";
 import { TestState } from "@/stores/useTests";
 import ProgressIcon from "./ProgressIcon";
 
@@ -17,21 +17,16 @@ const State = ({ testState }: { testState: TestState }) => {
             <LoaderCircle className="w-4 h-4 animate-spin" /> Running test
           </>
         );
-      case EvalEventState.GeneratingOutputs:
-      case EvalEventState.Workflow:
-      case EvalEventState.SomeOutputsFailed:
-      case EvalEventState.Agent:
-        return (
-          <>
-            <ProgressIcon progress={progress.progress} total={progress.total} />
-            Generating outputs... {progress.progress} / {progress.total}
-          </>
-        );
-      case EvalEventState.EvaluatingRecords:
-        return (
+      case EvalEventState.Progress:
+        return progress.id?.endsWith(EVAL_METRICS_POSTFIX) ? (
           <>
             <ProgressIcon progress={progress.progress} total={progress.total} />
             Evaluating records... {progress.progress} / {progress.total}
+          </>
+        ) : (
+          <>
+            <ProgressIcon progress={progress.progress} total={progress.total} />
+            Generating outputs... {progress.progress} / {progress.total}
           </>
         );
       case EvalEventState.Finished:

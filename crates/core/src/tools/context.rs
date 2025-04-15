@@ -14,6 +14,7 @@ use super::{ToolInput, ToolLauncher, types::ToolRawInput};
 #[derive(Debug, Clone)]
 pub struct ToolsContext {
     config: ConfigManager,
+    agent_name: String,
     tools_config: Vec<ToolType>,
     prompt: String,
 }
@@ -21,11 +22,13 @@ pub struct ToolsContext {
 impl ToolsContext {
     pub fn new(
         config: ConfigManager,
+        agent_name: String,
         tools: impl IntoIterator<Item = ToolType>,
         prompt: String,
     ) -> Self {
         ToolsContext {
             config,
+            agent_name,
             tools_config: tools.into_iter().collect(),
             prompt,
         }
@@ -42,6 +45,7 @@ impl Object for ToolsContext {
                     let output = rt
                         .block_on(launcher.launch(
                             ToolInput {
+                                agent_name: self.agent_name.to_string(),
                                 raw: ToolRawInput {
                                     call_id: "tools_context".to_string(),
                                     handle: tool_key.to_string(),

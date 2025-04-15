@@ -1,14 +1,16 @@
 import { service } from "@/services/service";
-import { EvalEventState, Metrics, Record } from "@/types/eval";
+import { EvalEventState, MetricValue, Record } from "@/types/eval";
 import { create } from "zustand";
 
 interface TestProgress {
+  id: string | null;
   progress: number;
   total: number;
 }
 
 export interface TestResult {
-  metrics: Metrics;
+  errors: string[];
+  metrics: MetricValue;
   records: Record[];
 }
 
@@ -21,7 +23,7 @@ export interface TestState {
 
 const defaultTestState: TestState = {
   state: null,
-  progress: { progress: 0, total: 0 },
+  progress: { id: null, progress: 0, total: 0 },
   error: null,
   result: null,
 };
@@ -59,17 +61,18 @@ const useTests = create<TestsState>()((set, get) => ({
       } else if (message.event) {
         test.state = message.event.type;
         switch (message.event.type) {
-          case EvalEventState.GeneratingOutputs:
-          case EvalEventState.EvaluatingRecords:
+          case EvalEventState.Progress:
             test.progress = {
+              id: message.event.id,
               progress: message.event.progress,
               total: message.event.total,
             };
             break;
           case EvalEventState.Finished:
             test.result = {
-              metrics: message.event.metrics,
-              records: message.event.records,
+              errors: message.event.metric.errors,
+              metrics: message.event.metric.kind,
+              records: message.event.metric.records,
             };
             break;
         }

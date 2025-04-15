@@ -1,7 +1,9 @@
 use base64::{Engine, prelude::BASE64_STANDARD};
-use minijinja::Value;
 use serde::Serialize;
-use std::path::{Path, PathBuf};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+};
 use utoipa::ToSchema;
 
 use super::eval::PBarsHandler;
@@ -13,13 +15,14 @@ use crate::{
     },
     errors::OxyError,
     execute::{
-        core::{event::Dispatcher, run},
-        types::{Event, EventKind, Output, ProgressType},
-        workflow::{LogItem, WorkflowExporter, WorkflowInput, WorkflowLogger, WorkflowReceiver},
+        types::{Event, EventKind, Output, OutputContainer, ProgressType},
         writer::EventHandler,
     },
     utils::find_project_path,
-    workflow::{WorkflowInput as NewWorkflowInput, WorkflowLauncher, executor::WorkflowExecutor},
+    workflow::{
+        WorkflowInput, WorkflowLauncher,
+        loggers::types::{LogItem, WorkflowLogger},
+    },
 };
 
 #[derive(Serialize, ToSchema)]
@@ -81,50 +84,6 @@ pub async fn get_workflow(
     Ok(workflow)
 }
 
-pub async fn run_workflow<P: AsRef<Path>, L: WorkflowLogger + 'static>(
-    path: P,
-    logger: L,
-    restore_from_checkpoint: bool,
-) -> Result<(), OxyError> {
-    #[cfg(feature = "builders")]
-    return run_workflow_with_builder(path, logger, restore_from_checkpoint).await;
-    #[cfg(not(feature = "builders"))]
-    return run_workflow_legacy(path, logger, restore_from_checkpoint).await;
-}
-
-async fn run_workflow_legacy<P: AsRef<Path>, L: WorkflowLogger + 'static>(
-    path: P,
-    logger: L,
-    _restore_from_checkpoint: bool,
-) -> Result<(), OxyError> {
-    let project_path = find_project_path()?;
-
-    let config = ConfigBuilder::new()
-        .with_project_path(project_path)
-        .unwrap()
-        .build()
-        .await?;
-    let workflow = config.resolve_workflow(path).await?;
-
-    // Create a channel to send logs to the client
-    let dispatcher = Dispatcher::new(vec![
-        Box::new(WorkflowReceiver::new(logger)),
-        Box::new(WorkflowExporter),
-    ]);
-    let executor = WorkflowExecutor::new(workflow.clone());
-    let ctx = Value::from_serialize(&workflow.variables);
-    run(
-        &executor,
-        WorkflowInput,
-        config,
-        ctx,
-        Some(&workflow),
-        dispatcher,
-    )
-    .await?;
-    Ok(())
-}
-
 pub struct WorkflowEventHandler<L> {
     logger: L,
     pbar_handler: PBarsHandler,
@@ -177,7 +136,7 @@ where
             CONCURRENCY_SOURCE => {}
             _ => match event.kind {
                 EventKind::Started { name } => {
-                    self.logger.log_task_started(&name);
+                    self.logger.log(&format!("\n⏳Starting {}", name));
                 }
                 EventKind::Updated { chunk } => match chunk.delta.clone() {
                     Output::SQL(sql) => {
@@ -201,25 +160,25 @@ where
     }
 }
 
-async fn run_workflow_with_builder<P: AsRef<Path>, L: WorkflowLogger + 'static>(
+pub async fn run_workflow<P: AsRef<Path>, L: WorkflowLogger + 'static>(
     path: P,
     logger: L,
     restore_from_checkpoint: bool,
-) -> Result<(), OxyError> {
+    variables: Option<HashMap<String, String>>,
+) -> Result<OutputContainer, OxyError> {
     let project_path = find_project_path()?.to_string_lossy().to_string();
-    let _ = WorkflowLauncher::new()
+    WorkflowLauncher::new()
         .with_local_context(&project_path)
         .await?
         .launch(
-            NewWorkflowInput {
+            WorkflowInput {
                 workflow_ref: path.as_ref().to_string_lossy().to_string(),
-                variables: None,
+                variables,
                 restore_from_checkpoint,
             },
             WorkflowEventHandler::new(logger),
         )
-        .await?;
-    Ok(())
+        .await
 }
 
 pub async fn get_workflow_logs(path: &PathBuf) -> Result<Vec<LogItem>, OxyError> {
