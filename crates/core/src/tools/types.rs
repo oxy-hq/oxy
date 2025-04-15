@@ -7,6 +7,8 @@ use serde::Deserialize;
 
 use crate::config::model::RetrievalConfig;
 
+use super::visualize::types::VisualizeParams;
+
 #[derive(Debug, Clone)]
 pub struct ToolRawInput {
     pub call_id: String,
@@ -44,6 +46,10 @@ pub struct RetrievalParams {
 pub struct SQLInput {
     pub database: String,
     pub sql: String,
+}
+
+pub struct VisualizeInput {
+    pub param: VisualizeParams,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]

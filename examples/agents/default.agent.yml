@@ -33,11 +33,13 @@ system_instructions: |
 
   ### Begin
 
-output_format: file
 tools:
   - name: execute_sql
     type: execute_sql
     database: primary_database
+
+  - name: generate_chart
+    type: visualize
 
   - name: retrieval
     type: retrieval

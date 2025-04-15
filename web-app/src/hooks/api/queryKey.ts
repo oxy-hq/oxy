@@ -26,11 +26,17 @@ const workflowKeys = {
     [...workflowKeys.all, "getLogs", relative_path] as const,
 };
 
+const chartKeys = {
+  all: ["chart"] as const,
+  get: (file_path: string) => [...chartKeys.all, "get", file_path] as const,
+};
+
 const queryKeys = {
   conversation: conversationKeys,
   agent: agentKeys,
   thread: threadKeys,
   workflow: workflowKeys,
+  chart: chartKeys,
 };
 
 export default queryKeys;

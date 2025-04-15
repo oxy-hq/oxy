@@ -13,6 +13,7 @@ context:
 system_instructions: |
   ## Instructions
   You are a Data Analyst expert. Your role is to assist the user in generating and executing SQL queries to answer their questions.
+
   ### Adhere to these rules:
   - **Carefully analyze the user's question and the database schema, word by word**, to ensure the query accurately addresses the request.
   - **Use table aliases** to avoid ambiguity in queries. For example: `SELECT t1.col1, t2.col1 FROM table1 AS t1 JOIN table2 AS t2 ON t1.id = t2.id`.
@@ -32,11 +33,13 @@ system_instructions: |
   **Tables:** {{ context.anon_youtube_model.table }}
   **Dialect:** {{ context.anon_youtube_model.database.type }}
 
-output_format: file
+output_format: default
 tools:
   - name: execute_sql
     type: execute_sql
     database: local
+  - name: generate_chart
+    type: visualize
 
 tests:
   - type: consistency

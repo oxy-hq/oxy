@@ -61,7 +61,7 @@ jobs:
       - name: Prep Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.85.1
+          toolchain: stable
           targets: ${{ matrix.job.target }}
       - name: Prep cargo cache
         uses: Swatinem/rust-cache@v2
@@ -138,7 +138,7 @@ jobs:
           name: Nightly Build ${{ steps.date.outputs.current_date }}
           files: artifacts/**/*
           body: |
-            Nightly build for target ${{ matrix.job.target }}. Please use with caution.
+            Nightly build triggered at ${{ steps.date.outputs.current_date }}. Please use with caution.
             Commit: [${{ github.sha }}](https://github.com/${{ github.repository }}/commit/${{ github.sha }})
             To install the latest release:
             `bash <(curl --proto '=https' --tlsv1.2 -LsSf https://nightly.oxy.tech)`

@@ -18,6 +18,7 @@ export interface Service {
     onReadStream: (event: TestStreamMessage) => void,
   ): Promise<void>;
   ask(threadId: string, onReadStream: (answer: Answer) => void): Promise<void>;
+  getChart(file_path: string): Promise<string>;
 }
 
 export const service = apiService;

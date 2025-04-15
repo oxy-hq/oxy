@@ -1,7 +1,8 @@
 use super::{
     retrieval::RetrievalExecutable,
     sql::{SQLExecutable, ValidateSQLExecutable},
-    types::{RetrievalInput, RetrievalParams, SQLInput, SQLParams, ToolRawInput},
+    types::{RetrievalInput, RetrievalParams, SQLInput, SQLParams, ToolRawInput, VisualizeInput},
+    visualize::{types::VisualizeParams, visualize::VisualizeExecutable},
 };
 use crate::{
     config::model::{RetrievalConfig, ToolType},
@@ -71,6 +72,16 @@ impl Executable<(String, Option<ToolType>, ToolRawInput)> for ToolExecutable {
                         )
                         .await
                 }
+                ToolType::Visualize(_visualize_config) => {
+                    build_visualize_executable()
+                        .execute(
+                            execution_context,
+                            VisualizeToolInput {
+                                param: input.param.clone(),
+                            },
+                        )
+                        .await
+                }
             };
             let ToolRawInput {
                 call_id,
@@ -130,6 +141,38 @@ where
     ExecutableBuilder::new()
         .map(SQLMapper)
         .executable(executable)
+}
+
+#[derive(Clone)]
+struct VisualizeToolInput {
+    param: String,
+}
+
+#[derive(Clone)]
+struct VisualizeMapper;
+
+#[async_trait::async_trait]
+impl ParamMapper<VisualizeToolInput, VisualizeInput> for VisualizeMapper {
+    async fn map(
+        &self,
+        _execution_context: &ExecutionContext,
+        input: VisualizeToolInput,
+    ) -> Result<(VisualizeInput, Option<ExecutionContext>), OxyError> {
+        let VisualizeToolInput { param, .. } = input;
+        let visualize_params = serde_json::from_str::<VisualizeParams>(&param)?;
+        Ok((
+            VisualizeInput {
+                param: visualize_params,
+            },
+            None,
+        ))
+    }
+}
+
+fn build_visualize_executable() -> impl Executable<VisualizeToolInput, Response = Output> {
+    ExecutableBuilder::new()
+        .map(VisualizeMapper)
+        .executable(VisualizeExecutable::new())
 }
 
 #[derive(Clone)]
