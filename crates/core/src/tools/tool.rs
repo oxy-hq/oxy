@@ -1,10 +1,12 @@
 use super::{
     retrieval::RetrievalExecutable,
     sql::{SQLExecutable, ValidateSQLExecutable},
-    types::{RetrievalInput, RetrievalParams, SQLInput, SQLParams, ToolRawInput},
+    types::{RetrievalInput, RetrievalParams, SQLInput, SQLParams, ToolRawInput, WorkflowInput},
+    workflow::WorkflowExecutable,
 };
 use crate::{
-    config::model::{RetrievalConfig, ToolType},
+    ai::tools::WorkflowParams,
+    config::model::{RetrievalConfig, ToolType, WorkflowTool},
     errors::OxyError,
     execute::{
         Executable, ExecutionContext,
@@ -67,6 +69,16 @@ impl Executable<(String, Option<ToolType>, ToolRawInput)> for ToolExecutable {
                                 agent_name,
                                 param: input.param.clone(),
                                 retrieval_config: retrieval_config.clone(),
+                            },
+                        )
+                        .await
+                }
+                ToolType::Workflow(workflow_config) => {
+                    build_workflow_executable()
+                        .execute(
+                            execution_context,
+                            WorkflowToolInput {
+                                workflow_config: workflow_config.clone(),
                             },
                         )
                         .await
@@ -173,4 +185,34 @@ fn build_retrieval_executable() -> impl Executable<RetrievalToolInput, Response 
     ExecutableBuilder::new()
         .map(RetrievalMapper)
         .executable(RetrievalExecutable::new())
+}
+
+#[derive(Clone)]
+struct WorkflowToolInput {
+    workflow_config: WorkflowTool,
+}
+
+#[derive(Clone)]
+struct WorkflowMapper;
+
+#[async_trait::async_trait]
+impl ParamMapper<WorkflowToolInput, WorkflowInput> for WorkflowMapper {
+    async fn map(
+        &self,
+        _execution_context: &ExecutionContext,
+        input: WorkflowToolInput,
+    ) -> Result<(WorkflowInput, Option<ExecutionContext>), OxyError> {
+        Ok((
+            WorkflowInput {
+                workflow_config: input.workflow_config,
+            },
+            None,
+        ))
+    }
+}
+
+fn build_workflow_executable() -> impl Executable<WorkflowToolInput, Response = Output> {
+    ExecutableBuilder::new()
+        .map(WorkflowMapper)
+        .executable(WorkflowExecutable::new())
 }

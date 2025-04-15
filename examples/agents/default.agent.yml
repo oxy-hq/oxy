@@ -33,8 +33,13 @@ system_instructions: |
 
   ### Begin
 
-output_format: file
 tools:
+  - name: fruit_sales_report
+    type: workflow
+    workflow_ref: workflows/fruit_sales_report.workflow.yml
+    description: this tool retrieves the fruit sales report
+    output_task_ref: report
+
   - name: execute_sql
     type: execute_sql
     database: primary_database

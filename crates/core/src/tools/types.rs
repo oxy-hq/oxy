@@ -5,7 +5,7 @@ use async_openai::types::{
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::config::model::RetrievalConfig;
+use crate::config::model::{RetrievalConfig, WorkflowTool};
 
 #[derive(Debug, Clone)]
 pub struct ToolRawInput {
@@ -41,9 +41,16 @@ pub struct RetrievalParams {
     pub query: String,
 }
 
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct WorkflowParams {}
+
 pub struct SQLInput {
     pub database: String,
     pub sql: String,
+}
+
+pub struct WorkflowInput {
+    pub workflow_config: WorkflowTool,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
