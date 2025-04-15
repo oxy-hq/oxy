@@ -12,7 +12,7 @@ Add your ClickHouse configuration to `config.yml`. Here are all available parame
 databases:
   - name: my_clickhouse_db    # Unique identifier for this connection
     type: clickhouse
-    host: "localhost"         # ClickHouse server hostname or IP
+    host: "http://clickhouse.local:8123"        # ClickHouse server url with protocol://hostname:port
     user: "default"          # Username for authentication
     password: <password>      # Direct password (not recommended)
     password_var: "CH_PWD"   # Environment variable containing password (recommended)
@@ -37,7 +37,7 @@ echo CH_PWD=<your password> >> .env
 databases:
   - name: local_ch
     type: clickhouse
-    host: "localhost"
+    host: "http://clickhouse.local:8123"
     user: "default"
     password_var: "CH_PWD"
     database: "analytics"
