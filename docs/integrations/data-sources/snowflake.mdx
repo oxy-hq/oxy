@@ -24,6 +24,7 @@ databases:
 ## Example Configurations
 <Steps>
 <Step title="Prepare password environment variable">
+
 Export the environment variables
 ```sh
 export SF_PWD=<your password>
@@ -35,6 +36,7 @@ echo SF_PWD=<your password> >> .env
 
 </Step>
 <Step title="Add Snowflake configuration">
+
 ```yaml
 databases:
   - name: snowflake_analytics
@@ -45,6 +47,7 @@ databases:
     warehouse: "COMPUTE_WH"
     database: "ANALYTICS"
 ```
+
 </Step>
 </Steps>
 
