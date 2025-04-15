@@ -890,6 +890,13 @@ pub struct Workflow {
 }
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
+pub struct VisualizeTool {
+    pub name: String,
+    #[serde(default = "default_visualize_tool_description")]
+    pub description: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
 pub struct EmbeddingConfig {
     #[serde(default = "default_embed_table")]
     pub table: String,
@@ -976,6 +983,8 @@ pub enum ToolType {
     ValidateSQL(ValidateSQLTool),
     #[serde(rename = "retrieval")]
     Retrieval(RetrievalConfig),
+    #[serde(rename = "visualize")]
+    Visualize(VisualizeTool),
 }
 
 impl From<ExecuteSQLTool> for ToolType {
@@ -1028,6 +1037,11 @@ fn default_consistency_run() -> usize {
 
 fn default_retrieval_tool_description() -> String {
     "Retrieve the relevant SQL queries to support query generation.".to_string()
+}
+
+fn default_visualize_tool_description() -> String {
+    "Render a chart based on the data provided, make sure to use the correct chart type and fields."
+        .to_string()
 }
 
 fn default_lance_db_path() -> String {

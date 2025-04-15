@@ -13,6 +13,7 @@ use crate::{
     },
     errors::OxyError,
     tools::types::{RetrievalParams, SQLParams},
+    tools::visualize::types::VisualizeParams,
 };
 
 #[derive(Debug, Clone)]
@@ -182,6 +183,7 @@ impl OpenAIToolConfig for &ToolType {
             ToolType::ExecuteSQL(e) => e.description.clone(),
             ToolType::ValidateSQL(v) => v.description.clone(),
             ToolType::Retrieval(r) => r.description.clone(),
+            ToolType::Visualize(v) => v.description.clone(),
         }
     }
 
@@ -190,6 +192,7 @@ impl OpenAIToolConfig for &ToolType {
             ToolType::ExecuteSQL(e) => e.name.clone(),
             ToolType::ValidateSQL(v) => v.name.clone(),
             ToolType::Retrieval(r) => r.name.clone(),
+            ToolType::Visualize(v) => v.name.clone(),
         }
     }
 
@@ -198,6 +201,7 @@ impl OpenAIToolConfig for &ToolType {
             ToolType::ExecuteSQL(_) => "execute_sql".to_string(),
             ToolType::ValidateSQL(_) => "validate_sql".to_string(),
             ToolType::Retrieval(_) => "retrieval".to_string(),
+            ToolType::Visualize(_) => "visualize".to_string(),
         }
     }
 
@@ -206,6 +210,7 @@ impl OpenAIToolConfig for &ToolType {
             ToolType::ExecuteSQL(_) => serde_json::json!(&schemars::schema_for!(SQLParams)),
             ToolType::ValidateSQL(_) => serde_json::json!(&schemars::schema_for!(SQLParams)),
             ToolType::Retrieval(_) => serde_json::json!(&schemars::schema_for!(RetrievalParams)),
+            ToolType::Visualize(_) => serde_json::json!(&schemars::schema_for!(VisualizeParams)),
         }
     }
 }

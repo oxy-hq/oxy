@@ -63,4 +63,8 @@ export const apiService: Service = {
     const response = await apiClient.get("/agents/" + pathb64);
     return response.data;
   },
+  async getChart(file_path: string) {
+    const response = await apiClient.get("/charts/" + file_path);
+    return response.data;
+  },
 };

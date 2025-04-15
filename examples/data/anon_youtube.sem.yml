@@ -17,7 +17,15 @@ dimensions:
     sample:
       - "Fruit"
       - "Vegetable"
+  - name: views
+    sample:
+      - 100
+      - 200
+      
 
 measures:
   - name: count_content_id
     sql: sum(distinct content_id)
+
+  - name: total_views
+    sql: sum(views)

@@ -63,7 +63,7 @@ pub async fn get_threads() -> Result<extract::Json<Vec<ThreadItem>>, StatusCode>
             answer: t.answer.clone(),
             agent: t.agent.clone(),
             created_at: t.created_at,
-            references: serde_json::from_str(&t.references).unwrap(),
+            references: serde_json::from_str(&t.references).unwrap_or_default(),
         })
         .collect();
     Ok(extract::Json(thread_items))
@@ -83,7 +83,7 @@ pub async fn get_thread(Path(id): Path<String>) -> Result<extract::Json<ThreadIt
         answer: thread.answer,
         agent: thread.agent,
         created_at: thread.created_at,
-        references: serde_json::from_str(&thread.references).unwrap(),
+        references: serde_json::from_str(&thread.references).unwrap_or_default(),
     };
     Ok(extract::Json(thread_item))
 }

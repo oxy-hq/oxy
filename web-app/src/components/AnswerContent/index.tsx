@@ -8,6 +8,8 @@ import remarkGfm from "remark-gfm";
 
 import CodeContainer from "./Code";
 import { cn } from "@/libs/shadcn/utils";
+import ChartPlugin from "./ChartPlugin";
+import ChartContainer from "./Chart";
 
 type Props = {
   content: string;
@@ -44,13 +46,15 @@ const extendedComponents: ExtendedComponents = {
     </td>
   ),
   code: (props) => <CodeContainer {...props} />,
+
+  chart: (props) => <ChartContainer {...props} />,
 };
 
 function AnswerContent({ content, className }: Props) {
   return (
     <div className={cn("flex flex-col gap-4", className)}>
       <Markdown
-        remarkPlugins={[directive, remarkGfm]}
+        remarkPlugins={[directive, remarkGfm, ChartPlugin]}
         components={extendedComponents}
       >
         {content}

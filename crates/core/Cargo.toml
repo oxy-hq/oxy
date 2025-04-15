@@ -13,7 +13,7 @@ build = "build.rs"
 
 [dependencies]
 anyhow = "1.0.97"
-arrow = { version = "53", default-features = false, features = ["json"] } # arrow version has to comply with duckdb version
+arrow = { version = "53.0", default-features = false, features = ["json"] } # arrow version has to comply with duckdb version
 assert_cmd = "2.0.16"
 async-openai = {version = "0.28.0", features = ["byot"]}
 async-stream = "0.3.6"

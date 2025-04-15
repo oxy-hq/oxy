@@ -1,4 +1,5 @@
 use crate::api::agent;
+use crate::api::chart;
 use crate::api::message;
 use crate::api::thread;
 use crate::api::workflow;
@@ -40,6 +41,7 @@ pub async fn api_router() -> Router {
             "/agents/{pathb64}/tests/{test_index}",
             post(agent::run_test),
         )
+        .route("/charts/{file_path}", get(chart::get_chart))
         .layer(cors)
 }
 
