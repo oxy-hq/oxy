@@ -4,9 +4,9 @@ use crate::{
     execute::{
         ExecutionContext,
         builders::cache::{CacheStorage, CacheWriter, Cacheable},
-        exporter::get_file_directories,
         types::{Output, OutputContainer},
     },
+    utils::get_file_directories,
 };
 use serde::de::DeserializeOwned;
 use slugify::slugify;
@@ -76,7 +76,10 @@ impl CacheStorage<TaskInput, OutputContainer> for TaskCacheStorage {
         let maybe_sql = file_cache.read_str(&key)?;
 
         if let Some(cache_key) = self.compute_cache_key(&input.task.name, &key) {
-            match file_cache.read(&cache_key).await {
+            log::debug!("Cache key: {}", cache_key);
+            let output = file_cache.read::<OutputContainer>(&cache_key).await;
+            log::debug!("May be SQL: {}\n{:?}", maybe_sql, output);
+            match output {
                 Some(OutputContainer::Single(Output::SQL(mut sql))) => {
                     sql.0 = maybe_sql;
                     Some(OutputContainer::Single(sql.into()))

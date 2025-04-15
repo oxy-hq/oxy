@@ -2,7 +2,9 @@ use crate::config::ConfigBuilder;
 use crate::config::model::AgentConfig;
 use crate::service;
 use crate::service::agent::{AskRequest, Message};
+use crate::service::test::{TestStreamMessage, run_test as run_agent_test};
 use crate::utils::find_project_path;
+use async_stream::stream;
 use axum::extract::{self, Path};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
@@ -85,6 +87,44 @@ pub async fn get_agent(
     Ok(extract::Json(agent))
 }
 
-pub async fn run_test(Path((pathb64, test_index)): Path<(String, usize)>) -> impl IntoResponse {
-    service::test::run_test(pathb64, test_index).await
+pub async fn run_test(
+    Path((pathb64, test_index)): Path<(String, usize)>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let decoded_path: Vec<u8> = match BASE64_STANDARD.decode(pathb64) {
+        Ok(decoded_path) => decoded_path,
+        Err(e) => {
+            return Ok(StreamBodyAs::json_nl(stream! {
+                yield TestStreamMessage {
+                    error: Some(format!("Failed to decode path: {}", e)),
+                    event: None,
+                };
+            }));
+        }
+    };
+    let path = match String::from_utf8(decoded_path) {
+        Ok(path) => path,
+        Err(e) => {
+            return Ok(StreamBodyAs::json_nl(stream! {
+                yield TestStreamMessage {
+                    error: Some(format!("Failed to decode path: {}", e)),
+                    event: None,
+                };
+            }));
+        }
+    };
+
+    let project_path = match find_project_path() {
+        Ok(path) => path.to_string_lossy().to_string(),
+        Err(e) => {
+            return Ok(StreamBodyAs::json_nl(stream! {
+                yield TestStreamMessage {
+                    error: Some(format!("Failed to find project path: {}", e)),
+                    event: None,
+                };
+            }));
+        }
+    };
+
+    let stream = run_agent_test(project_path, path, test_index).await?;
+    Ok(StreamBodyAs::json_nl(stream))
 }

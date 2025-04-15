@@ -2,7 +2,7 @@ export interface AgentConfig {
   name: string;
   model: string;
   system_instructions: string;
-  tools: ToolConfig[];
+  tools: ToolType[];
   context?: AgentContext[];
   output_format: OutputFormat;
   anonymize?: AnonymizerConfig;
@@ -10,7 +10,7 @@ export interface AgentConfig {
   description: string;
 }
 
-type ToolConfig = ExecuteSQLTool | ValidateSQLTool | RetrievalTool;
+type ToolType = ExecuteSQLTool | ValidateSQLTool | RetrievalConfig;
 
 interface ExecuteSQLTool {
   type: "execute_sql";
@@ -26,7 +26,7 @@ interface ValidateSQLTool {
   database: string;
 }
 
-interface RetrievalTool {
+interface RetrievalConfig {
   type: "retrieval";
   name: string;
   description: string;

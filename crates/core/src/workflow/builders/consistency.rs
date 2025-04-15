@@ -6,6 +6,7 @@ use tokio::task::JoinHandle;
 
 use crate::{
     agent::{OpenAIExecutableResponse, build_openai_executable},
+    config::constants::CONSISTENCY_PROMPT,
     errors::OxyError,
     execute::{
         Executable, ExecutionContext,
@@ -13,7 +14,6 @@ use crate::{
             ExecutableBuilder, concurrency::ConcurrencyControl, consistency::ConsistencyPicker,
             map::ParamMapper,
         },
-        consistency::{PROMPT, parse_consistency_response},
         types::Output,
         writer::OrderedWriter,
     },
@@ -116,7 +116,9 @@ impl ParamMapper<(Output, Output), String> for AgentPromptMapper {
             submission_2 => Value::from_object(right).to_string(),
             task_description => self.task_description.to_string(),
         };
-        let prompt = execution_context.renderer.render_once(PROMPT, context)?;
+        let prompt = execution_context
+            .renderer
+            .render_once(CONSISTENCY_PROMPT, context)?;
         Ok((prompt, None))
     }
 }
@@ -173,4 +175,14 @@ impl ConsistencyPicker<Output> for AgentPicker {
             .execute(execution_context, output_pairs)
             .await
     }
+}
+
+fn parse_consistency_response(response: &str) -> String {
+    for line in response.lines().rev() {
+        let trimmed = line.trim();
+        if trimmed == "A" || trimmed == "B" {
+            return trimmed.to_string();
+        }
+    }
+    "B".to_string()
 }

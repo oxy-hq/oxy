@@ -19,13 +19,14 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     adapters::connector::load_result,
-    ai::utils::record_batches_to_2d_array,
+    agent::types::{AgentReference, SqlQueryReference},
     errors::OxyError,
-    execute::agent::{AgentReference, SqlQueryReference},
     utils::truncate_datasets,
 };
 
-use super::utils::{record_batches_to_markdown, record_batches_to_table};
+use super::utils::{
+    record_batches_to_2d_array, record_batches_to_markdown, record_batches_to_table,
+};
 
 #[derive(Clone, Debug)]
 struct ArrowTable {

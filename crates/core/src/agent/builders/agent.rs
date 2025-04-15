@@ -56,6 +56,7 @@ impl Executable<(AgentConfig, String)> for AgentExecutable {
             })
             .await?;
         let mut react_executable = build_react_loop(
+            agent_config.name.clone(),
             agent_config.tools_config.tools.clone(),
             agent_config.tools_config.max_tool_concurrency,
             client,
@@ -70,6 +71,7 @@ impl Executable<(AgentConfig, String)> for AgentExecutable {
 }
 
 fn build_react_loop(
+    agent_name: String,
     tool_configs: Vec<ToolType>,
     max_concurrency: usize,
     client: OpenAIClient,
@@ -79,7 +81,7 @@ fn build_react_loop(
     let tools: Vec<ChatCompletionTool> = tool_configs.iter().map(|tool| tool.into()).collect();
     ExecutableBuilder::new()
         .react(
-            OpenAITool::new(tool_configs, max_concurrency),
+            OpenAITool::new(agent_name, tool_configs, max_concurrency),
             |response: &OpenAIExecutableResponse,
              new_response: Option<&OpenAIExecutableResponse>| {
                 match new_response {

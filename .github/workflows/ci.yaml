@@ -7,6 +7,7 @@ on:
       - "[0-9]+.[0-9]+.x"
     paths-ignore:
       - "docs/**"
+      - "web-app/**"
     types:
       - opened
       - reopened
@@ -18,6 +19,7 @@ on:
       - trigger-ci-workflow
     paths-ignore:
       - "docs/**"
+      - "web-app/**"
 
 permissions:
   contents: write

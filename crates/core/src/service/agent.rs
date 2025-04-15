@@ -1,23 +1,17 @@
 use crate::agent::AgentLauncher;
-use crate::agent::types::AgentInput;
+use crate::agent::types::{AgentInput, AgentReference};
 use crate::config::ConfigBuilder;
-use crate::config::constants::AGENT_SOURCE;
 use crate::config::model::AgentConfig;
 use crate::db::message::update_message;
+use crate::db::{
+    conversations::{create_conversation, get_conversation_by_agent},
+    message::save_message,
+};
 use crate::errors::OxyError;
-use crate::execute::agent::AgentReference;
-use crate::execute::types::{Chunk, Event, EventKind, Output, Source};
-use crate::execute::writer::{BufWriter, EventHandler, NoopHandler};
+use crate::execute::types::{Event, EventKind, Output};
+use crate::execute::writer::{EventHandler, NoopHandler};
 use crate::theme::StyledText;
 use crate::utils::print_colored_sql;
-use crate::{
-    config::model::FileFormat,
-    db::{
-        conversations::{create_conversation, get_conversation_by_agent},
-        message::save_message,
-    },
-    execute::agent::run_agent as run_agent_legacy,
-};
 use futures::Stream;
 use sea_orm::prelude::DateTimeWithTimeZone;
 use serde::{Deserialize, Serialize};
@@ -121,7 +115,7 @@ pub async fn ask(payload: AskRequest) -> Result<impl Stream<Item = Message>, Oxy
 
     let _ = tokio::spawn(async move {
         let (output, _) = run_agent(&project_path, &agent_path, prompt, message_stream).await?;
-        update_message(answer.id, &output)
+        update_message(answer.id, &output.to_string())
             .await
             .map_err(|err| OxyError::DBError(format!("Failed to update message:\n{}", err)))
     });
@@ -136,7 +130,7 @@ pub async fn ask_adhoc(
 ) -> Result<String, OxyError> {
     let agent_path = get_path_by_name(project_path.clone(), agent).await?;
     let result = match run_agent(&project_path, &agent_path, question, NoopHandler).await {
-        Ok(output) => output.0,
+        Ok(output) => output.0.to_string(),
         Err(e) => format!("Error running agent: {}", e),
     };
     Ok(result)
@@ -189,63 +183,6 @@ pub async fn get_path_by_name(
         "Agent with name {} not found",
         agent_name
     )))
-}
-
-pub async fn run_agent<H: EventHandler + Send + 'static, P: AsRef<Path>>(
-    project_path: P,
-    agent_ref: P,
-    prompt: String,
-    event_handler: H,
-) -> Result<(String, Vec<AgentReference>), OxyError> {
-    #[cfg(not(feature = "builders"))]
-    return {
-        let mut event_handler = event_handler;
-        let source = Source {
-            parent_id: None,
-            id: AGENT_SOURCE.to_string(),
-            kind: AGENT_SOURCE.to_string(),
-        };
-        let config = ConfigBuilder::new()
-            .with_project_path(&project_path)?
-            .build()
-            .await?;
-        let result =
-            run_agent_legacy(agent_ref, &FileFormat::Markdown, Some(prompt), config, None).await?;
-        for c in result.output.to_string().chars() {
-            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
-            event_handler
-                .handle_event(Event {
-                    source: source.clone(),
-                    kind: EventKind::Updated {
-                        chunk: Chunk {
-                            key: None,
-                            delta: Output::Text(c.to_string()),
-                            finished: false,
-                        },
-                    },
-                })
-                .await?;
-        }
-        event_handler
-            .handle_event(Event {
-                source: source.clone(),
-                kind: EventKind::Updated {
-                    chunk: Chunk {
-                        key: None,
-                        delta: Output::Text("".to_string()),
-                        finished: true,
-                    },
-                },
-            })
-            .await?;
-        Ok((result.output.to_string(), result.references))
-    };
-    #[cfg(feature = "builders")]
-    return {
-        let (output, references) =
-            run_agent_with_builders(project_path, agent_ref, prompt, event_handler).await?;
-        Ok((output.to_string(), references))
-    };
 }
 
 pub struct AgentCLIHandler;
@@ -310,22 +247,17 @@ where
     }
 }
 
-pub async fn run_agent_with_builders<P: AsRef<Path>, H: EventHandler + Send + 'static>(
+pub async fn run_agent<P: AsRef<Path>, H: EventHandler + Send + 'static>(
     project_path: P,
     agent_ref: P,
     prompt: String,
     event_handler: H,
 ) -> Result<(Output, Vec<AgentReference>), OxyError> {
-    let mut buf_writer = BufWriter::new();
-    let tx = buf_writer.create_writer(None)?;
     let references = Arc::new(Mutex::new(vec![]));
     let event_handler = AgentReferencesHandler {
         handler: event_handler,
         references: references.clone(),
     };
-    let event_handle =
-        tokio::spawn(async move { buf_writer.write_to_handler(event_handler).await });
-
     let result = AgentLauncher::new()
         .with_local_context(project_path)
         .await?
@@ -334,10 +266,9 @@ pub async fn run_agent_with_builders<P: AsRef<Path>, H: EventHandler + Send + 's
                 agent_ref: agent_ref.as_ref().to_string_lossy().to_string(),
                 prompt,
             },
-            tx,
+            event_handler,
         )
         .await;
-    event_handle.await??;
     let output = result?;
     let references = Arc::try_unwrap(references)
         .map_err(|_| OxyError::RuntimeError("Failed to eject value from loop".to_string()))?

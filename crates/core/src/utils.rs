@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::{errors::OxyError, theme::*};
 use arrow::array::RecordBatch;
@@ -96,4 +96,22 @@ pub fn get_relative_path(path: PathBuf, root: PathBuf) -> Result<String, OxyErro
 
 pub fn variant_eq<T>(a: &T, b: &T) -> bool {
     std::mem::discriminant(a) == std::mem::discriminant(b)
+}
+
+pub fn get_file_directories<P: AsRef<Path>>(file_path: P) -> Result<P, OxyError> {
+    create_parent_dirs(&file_path).map_err(|e| {
+        OxyError::IOError(format!(
+            "Error creating directories for path '{}': {}",
+            file_path.as_ref().display(),
+            e
+        ))
+    })?;
+    Ok(file_path)
+}
+
+pub fn create_parent_dirs<P: AsRef<Path>>(path: P) -> std::io::Result<()> {
+    if let Some(parent) = path.as_ref().parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    Ok(())
 }

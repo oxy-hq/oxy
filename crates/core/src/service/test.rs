@@ -1,132 +1,126 @@
-use crate::config::ConfigBuilder;
-use crate::config::model::EvalKind;
-use crate::execute::agent::AgentInput;
-use crate::execute::core::run;
-use crate::execute::eval::{
-    EvalExecutor, EvalInput, EvalReceiver, Target, TargetAgent, TestStreamMessage,
-};
-use crate::execute::renderer::NoopRegister;
-use crate::utils::find_project_path;
-use async_stream::stream;
-use axum::response::IntoResponse;
-use axum_streams::StreamBodyAs;
-use base64::Engine;
-use base64::prelude::BASE64_STANDARD;
-use minijinja::Value;
+use std::collections::HashMap;
+use std::path::Path;
 
-pub async fn run_test(pathb64: String, test_index: usize) -> impl IntoResponse {
-    let decoded_path: Vec<u8> = match BASE64_STANDARD.decode(pathb64) {
-        Ok(decoded_path) => decoded_path,
-        Err(e) => {
-            return StreamBodyAs::json_nl(stream! {
-                yield TestStreamMessage {
-                    error: Some(format!("Failed to decode path: {}", e)),
-                    event: None,
-                };
-            });
+use crate::config::constants::EVAL_SOURCE;
+use crate::errors::OxyError;
+use crate::eval::Metric;
+use crate::execute::types::{Event, EventKind, ProgressType};
+use crate::execute::writer::EventHandler;
+use futures::Stream;
+use serde::Serialize;
+use tokio::task::JoinHandle;
+use tokio_stream::wrappers::ReceiverStream;
+
+use super::eval::run_eval;
+
+#[derive(Serialize, Clone)]
+#[serde(tag = "type")]
+pub enum EvalEvent {
+    Started,
+    Progress {
+        id: String,
+        progress: usize,
+        total: usize,
+    },
+    Finished {
+        metric: Metric,
+    },
+}
+
+#[derive(Serialize, Clone)]
+pub struct TestStreamMessage {
+    pub error: Option<String>,
+    pub event: Option<EvalEvent>,
+}
+
+struct EvalEventsHandler {
+    tx: tokio::sync::mpsc::Sender<TestStreamMessage>,
+    progress: HashMap<String, usize>,
+    total: HashMap<String, Option<usize>>,
+}
+
+#[async_trait::async_trait]
+impl EventHandler for EvalEventsHandler {
+    async fn handle_event(&mut self, event: Event) -> Result<(), OxyError> {
+        match event.source.kind.as_str() {
+            EVAL_SOURCE => match &event.kind {
+                EventKind::Started { .. } => {
+                    self.tx
+                        .send(TestStreamMessage {
+                            error: None,
+                            event: Some(EvalEvent::Started),
+                        })
+                        .await?;
+                }
+                EventKind::Progress { progress } => {
+                    let (id, progress, total) = match progress {
+                        ProgressType::Started(total) => {
+                            let id = event.source.id;
+                            self.progress.insert(id.clone(), 0);
+                            self.total.insert(id.clone(), total.clone());
+                            (id, 0, total.clone().unwrap_or(0))
+                        }
+                        ProgressType::Updated(inc) => {
+                            let id = event.source.id;
+                            let progress = self.progress.entry(id.clone()).or_insert(0);
+                            *progress += inc;
+                            let total = self.total.get(&id).cloned().unwrap_or(None);
+                            (id, *progress, total.clone().unwrap_or(progress.clone()))
+                        }
+                        ProgressType::Finished => {
+                            let id = event.source.id;
+                            let progress = self.progress.remove(&id).unwrap_or(0);
+                            let total = self.total.remove(&id).unwrap_or(None);
+                            (id, progress, total.clone().unwrap_or(progress.clone()))
+                        }
+                    };
+                    self.tx
+                        .send(TestStreamMessage {
+                            error: None,
+                            event: Some(EvalEvent::Progress {
+                                id,
+                                progress,
+                                total,
+                            }),
+                        })
+                        .await?;
+                }
+                _ => {}
+            },
+
+            _ => {}
         }
+        Ok(())
+    }
+}
+
+pub async fn run_test<P: AsRef<Path> + Send + 'static>(
+    project_path: P,
+    target_ref: P,
+    index: usize,
+) -> Result<impl Stream<Item = TestStreamMessage>, OxyError> {
+    let (tx, rx) = tokio::sync::mpsc::channel(100);
+    let response_tx = tx.clone();
+    let event_handler = EvalEventsHandler {
+        tx,
+        progress: HashMap::new(),
+        total: HashMap::new(),
     };
-    let path = match String::from_utf8(decoded_path) {
-        Ok(path) => path,
-        Err(e) => {
-            return StreamBodyAs::json_nl(stream! {
-                yield TestStreamMessage {
-                    error: Some(format!("Failed to decode path: {}", e)),
-                    event: None,
-                };
-            });
+    let _: JoinHandle<Result<Vec<Metric>, OxyError>> = tokio::spawn(async move {
+        let response = run_eval(project_path, target_ref, Some(index), event_handler).await?;
+        for metric in response.iter() {
+            let _ = response_tx
+                .send(TestStreamMessage {
+                    error: None,
+                    event: Some(EvalEvent::Finished {
+                        metric: metric.clone(),
+                    }),
+                })
+                .await
+                .map_err(|_err| OxyError::RuntimeError("Failed to send eval event".to_string()))?;
         }
-    };
-
-    let project_path = match find_project_path() {
-        Ok(path) => path,
-        Err(e) => {
-            return StreamBodyAs::json_nl(stream! {
-                yield TestStreamMessage {
-                    error: Some(format!("Failed to find project path: {}", e)),
-                    event: None,
-                };
-            });
-        }
-    };
-
-    let config_builder = match ConfigBuilder::new().with_project_path(&project_path) {
-        Ok(config_builder) => config_builder,
-        Err(e) => {
-            return StreamBodyAs::json_nl(stream! {
-                yield TestStreamMessage {
-                    error: Some(format!("Failed to build config: {}", e)),
-                    event: None,
-                };
-            });
-        }
-    };
-
-    let config = match config_builder.build().await {
-        Ok(config) => config,
-        Err(e) => {
-            return StreamBodyAs::json_nl(stream! {
-                yield TestStreamMessage {
-                    error: Some(format!("Failed to build config: {}", e)),
-                    event: None,
-                };
-            });
-        }
-    };
-
-    let agent = match config.resolve_agent(&path).await {
-        Ok(agent) => agent,
-        Err(e) => {
-            return StreamBodyAs::json_nl(stream! {
-                yield TestStreamMessage {
-                    error: Some(format!("Failed to resolve agent: {}", e)),
-                    event: None,
-                };
-            });
-        }
-    };
-
-    let eval_inputs = agent
-        .tests
-        .clone()
-        .into_iter()
-        .nth(test_index)
-        .map(|eval| EvalInput {
-            target: Target::Agent(TargetAgent {
-                agent_ref: path.clone().into(),
-                input: match &eval {
-                    EvalKind::Consistency(consistency) => AgentInput {
-                        system_instructions: agent.system_instructions.clone(),
-                        prompt: consistency.task_description.clone(),
-                    },
-                },
-            }),
-            eval,
-        })
-        .into_iter()
-        .collect::<Vec<_>>();
-
-    let executor = EvalExecutor;
-
-    let (tx, mut rx) = tokio::sync::mpsc::channel(32);
-    let receiver = EvalReceiver::new(true, Some(tx));
-
-    tokio::spawn(async move {
-        run(
-            &executor,
-            eval_inputs,
-            config,
-            Value::UNDEFINED,
-            Some(&NoopRegister),
-            receiver,
-        )
-        .await
+        Ok(response)
     });
 
-    let stream = stream! {
-        while let Some(msg) = rx.recv().await {
-            yield msg;
-        }
-    };
-    StreamBodyAs::json_nl(stream)
+    Ok(ReceiverStream::new(rx))
 }

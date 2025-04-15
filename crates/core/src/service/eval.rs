@@ -1,17 +1,16 @@
 use std::{collections::HashMap, path::Path};
 
+use itertools::Itertools;
 use tqdm::{Pbar, pbar};
 
 use crate::{
     config::constants::EVAL_SOURCE,
     errors::OxyError,
-    eval::EvalLauncher,
+    eval::{EvalLauncher, Metric},
     execute::{
-        eval::run_eval_legacy,
         types::{Event, EventKind, ProgressType},
         writer::EventHandler,
     },
-    utils::find_project_path,
 };
 
 pub use crate::eval::EvalInput;
@@ -52,7 +51,7 @@ impl PBarsHandler {
     }
 }
 
-struct EvalEventsHandler {
+pub struct EvalEventsHandler {
     quiet: bool,
     pbar_handler: PBarsHandler,
 }
@@ -103,24 +102,22 @@ impl EventHandler for EvalEventsHandler {
     }
 }
 
-async fn run_eval_with_builders(eval_input: EvalInput) -> Result<(), OxyError> {
-    let project_path = find_project_path()?;
-    let quiet = eval_input.quiet;
-    EvalLauncher::new()
+pub async fn run_eval<P: AsRef<Path>, H: EventHandler + Send + 'static>(
+    project_path: P,
+    path: P,
+    index: Option<usize>,
+    event_handler: H,
+) -> Result<Vec<Metric>, OxyError> {
+    let result = EvalLauncher::new()
         .with_project_path(project_path)
         .await?
-        .launch(eval_input, EvalEventsHandler::new(quiet))
-        .await?;
-    Ok(())
-}
-
-pub async fn run_eval<P: AsRef<Path>>(path: P, quiet: bool) -> Result<(), OxyError> {
-    #[cfg(not(feature = "builders"))]
-    return run_eval_legacy(path, quiet).await;
-    #[cfg(feature = "builders")]
-    return run_eval_with_builders(EvalInput {
-        target_ref: path.as_ref().to_string_lossy().to_string(),
-        quiet,
-    })
-    .await;
+        .launch(
+            EvalInput {
+                index,
+                target_ref: path.as_ref().to_string_lossy().to_string(),
+            },
+            event_handler,
+        )
+        .await;
+    result.and_then(|r| r.into_iter().try_collect::<Metric, Vec<Metric>, OxyError>())
 }

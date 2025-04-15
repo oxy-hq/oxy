@@ -2,6 +2,7 @@ use std::{collections::HashMap, hash::Hash};
 
 use itertools::Itertools;
 use minijinja::Value;
+use rmcp::model::Content;
 use serde::{Deserialize, Serialize};
 
 use crate::{errors::OxyError, execute::types::Output};
@@ -103,6 +104,17 @@ impl From<&OutputContainer> for Value {
                 Value::from_iter(map)
             }
         }
+    }
+}
+
+impl TryFrom<OutputContainer> for Content {
+    type Error = OxyError;
+
+    fn try_from(value: OutputContainer) -> Result<Self, Self::Error> {
+        let value = serde_json::to_string(&value).map_err(|e| {
+            OxyError::SerializerError(format!("Error serializing OutputContainer to JSON: {}", e))
+        })?;
+        Ok(Content::text(value))
     }
 }
 

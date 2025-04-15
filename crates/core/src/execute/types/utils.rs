@@ -162,3 +162,19 @@ pub fn record_batches_to_json(batches: &[RecordBatch]) -> Result<String, ArrowEr
     let buf = writer.into_inner();
     String::from_utf8(buf).map_err(|e| ArrowError::ExternalError(Box::new(e)))
 }
+
+pub fn record_batches_to_2d_array(
+    results: &[RecordBatch],
+    schema: &Arc<Schema>,
+) -> Result<Vec<Vec<String>>, ArrowError> {
+    let headers: Vec<String> = get_header(schema);
+    let mut rows = Vec::new();
+    rows.push(headers.clone());
+    for batch in results {
+        let formatters = create_formatters(batch)?;
+        for row in 0..batch.num_rows() {
+            rows.push(format_row(&formatters, row));
+        }
+    }
+    Ok(rows)
+}

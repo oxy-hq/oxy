@@ -1,11 +1,9 @@
+export const EVAL_METRICS_POSTFIX = "metrics";
+
 export enum EvalEventState {
   Started = "Started",
-  GeneratingOutputs = "GeneratingOutputs",
-  SomeOutputsFailed = "SomeOutputsFailed",
-  EvaluatingRecords = "EvaluatingRecords",
+  Progress = "Progress",
   Finished = "Finished",
-  Workflow = "Workflow",
-  Agent = "Agent",
 }
 
 export interface TestStreamMessage {
@@ -15,20 +13,16 @@ export interface TestStreamMessage {
 
 export type EvalEvent =
   | { type: EvalEventState.Started }
-  | { type: EvalEventState.GeneratingOutputs; progress: number; total: number }
   | {
-      type: EvalEventState.SomeOutputsFailed;
-      failed_count: number;
-      err: string;
+      type: EvalEventState.Progress;
+      id: string;
+      progress: number;
+      total: number;
     }
-  | { type: EvalEventState.EvaluatingRecords; progress: number; total: number }
   | {
       type: EvalEventState.Finished;
-      metrics: Metrics;
-      records: Record[];
-    }
-  | { type: EvalEventState.Workflow; event: unknown }
-  | { type: EvalEventState.Agent; event: unknown };
+      metric: Metric;
+    };
 
 export interface Record {
   cot: string;
@@ -36,6 +30,16 @@ export interface Record {
   score: number;
 }
 
-export type Metrics = {
-  Accuracy: number;
+export enum MetricKind {
+  Accuracy = "Accuracy",
+}
+
+export type MetricValue = {
+  [MetricKind.Accuracy]: number;
+};
+
+export type Metric = {
+  errors: string[];
+  records: Record[];
+  kind: MetricValue;
 };

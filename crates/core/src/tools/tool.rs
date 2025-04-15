@@ -26,15 +26,15 @@ pub trait Tool {
 pub struct ToolExecutable;
 
 #[async_trait::async_trait]
-impl Executable<(Option<ToolType>, ToolRawInput)> for ToolExecutable {
+impl Executable<(String, Option<ToolType>, ToolRawInput)> for ToolExecutable {
     type Response = Output;
 
     async fn execute(
         &mut self,
         execution_context: &ExecutionContext,
-        input: (Option<ToolType>, ToolRawInput),
+        input: (String, Option<ToolType>, ToolRawInput),
     ) -> Result<Self::Response, OxyError> {
-        let (tool_type, input) = input;
+        let (agent_name, tool_type, input) = input;
         if let Some(tool_type) = &tool_type {
             let tool_ret = match tool_type {
                 ToolType::ExecuteSQL(sql_config) => {
@@ -64,6 +64,7 @@ impl Executable<(Option<ToolType>, ToolRawInput)> for ToolExecutable {
                         .execute(
                             execution_context,
                             RetrievalToolInput {
+                                agent_name,
                                 param: input.param.clone(),
                                 retrieval_config: retrieval_config.clone(),
                             },
@@ -133,6 +134,7 @@ where
 
 #[derive(Clone)]
 struct RetrievalToolInput {
+    agent_name: String,
     param: String,
     retrieval_config: RetrievalConfig,
 }
@@ -148,9 +150,9 @@ impl ParamMapper<RetrievalToolInput, RetrievalInput> for RetrievalMapper {
         input: RetrievalToolInput,
     ) -> Result<(RetrievalInput, Option<ExecutionContext>), OxyError> {
         let RetrievalToolInput {
+            agent_name,
             param,
             retrieval_config,
-            ..
         } = input;
         let query = match serde_json::from_str::<RetrievalParams>(&param) {
             Ok(RetrievalParams { query }) => query,
@@ -158,6 +160,7 @@ impl ParamMapper<RetrievalToolInput, RetrievalInput> for RetrievalMapper {
         };
         Ok((
             RetrievalInput {
+                agent_name,
                 query,
                 retrieval_config,
             },

@@ -54,7 +54,7 @@ impl ParamMapper<(String, Option<HashMap<String, String>>), (Vec<TaskInput>, Out
     }
 }
 
-pub fn build_workflow_executable<S>(
+pub(super) fn build_workflow_executable<S>(
     checkpoint_manager: CheckpointManager,
     should_restore: S,
 ) -> impl Executable<(String, Option<HashMap<String, String>>), Response = OutputContainer>

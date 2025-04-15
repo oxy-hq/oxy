@@ -15,14 +15,11 @@ use serde_json::{Map, Value, json};
 
 use crate::{
     errors::OxyError,
-    execute::{
-        core::value::ContextValue,
-        workflow::{NoopLogger, run_workflow},
-    },
     service::{
         agent::{ask_adhoc, get_agent_config, list_agents},
-        workflow::{get_workflow, list_workflows},
+        workflow::{get_workflow, list_workflows, run_workflow},
     },
+    workflow::loggers::NoopLogger,
 };
 
 #[derive(Debug, Clone)]
@@ -167,36 +164,22 @@ impl OxyMcpServer {
             rmcp::Error::invalid_request(format!("Workflow {} not found", workflow_name), None),
         )?;
 
-        let workflow_config = get_workflow(
-            PathBuf::from(workflow_info.path.clone()),
-            Some(self.project_path.clone()),
-        )
-        .await
-        .map_err(|e| {
-            rmcp::Error::internal_error(format!("Failed to get workflow config: {}", e), None)
-        })?;
-
         let output = run_workflow(
             &PathBuf::from(workflow_info.path.clone()),
-            Some(self.project_path.clone()),
+            NoopLogger {},
+            false,
             variables,
-            Some(NoopLogger {}),
         )
         .await
         .map_err(|e| rmcp::Error::internal_error(format!("Failed to run workflow: {}", e), None))?;
 
-        let last_task = workflow_config
-            .tasks
-            .last()
-            .ok_or(rmcp::Error::internal_error(
-                "Workflow has no tasks".to_string(),
-                None,
-            ))?;
-
         Ok(CallToolResult {
-            content: vec![Content::text(
-                get_final_result(output.output, last_task.name.clone()).unwrap(),
-            )],
+            content: vec![output.try_into().map_err(|_err| {
+                rmcp::Error::internal_error(
+                    format!("Failed to convert from workflow output into mcp output"),
+                    None,
+                )
+            })?],
             is_error: Some(false),
         })
     }
@@ -210,28 +193,6 @@ fn json_to_hashmap(json: serde_json::Map<String, serde_json::Value>) -> HashMap<
         map.insert(k, v.as_str().unwrap().to_string());
     }
     map
-}
-
-fn get_final_result(value: ContextValue, last_task_name: String) -> Result<String, rmcp::Error> {
-    match value {
-        ContextValue::Map(map) => {
-            let last_task_result = map.get_value(last_task_name.as_str());
-            match last_task_result {
-                Some(value) => get_final_result(value.to_owned(), last_task_name),
-                None => Ok(serde_json::to_string(&map).unwrap()),
-            }
-        }
-        ContextValue::Array(array) => Ok(serde_json::to_string(&array).unwrap()),
-        ContextValue::Text(string) => Ok(string),
-        ContextValue::None => Ok("None".to_owned()),
-        ContextValue::Table(arrow_table) => Ok(serde_json::to_string(&arrow_table).unwrap()),
-        ContextValue::Agent(agent_output) => {
-            get_final_result(agent_output.output.as_ref().to_owned(), last_task_name)
-        }
-        ContextValue::Consistency(consistency_output) => {
-            get_final_result(consistency_output.value.as_ref().to_owned(), last_task_name)
-        }
-    }
 }
 
 fn generate_workflow_run_schema(

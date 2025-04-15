@@ -31,6 +31,7 @@ impl From<ChatCompletionMessageToolCall> for ToolRawInput {
 }
 
 pub struct RetrievalInput {
+    pub agent_name: String,
     pub retrieval_config: RetrievalConfig,
     pub query: String,
 }
