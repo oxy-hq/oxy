@@ -385,6 +385,28 @@
               ]
             }
           }
+        },
+        {
+          "type": "object",
+          "required": [
+            "name",
+            "type"
+          ],
+          "properties": {
+            "description": {
+              "default": "Render a chart based on the data provided, make sure to use the correct chart type and fields.",
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "visualize"
+              ]
+            }
+          }
         }
       ]
     }
