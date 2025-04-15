@@ -890,15 +890,6 @@ pub struct Workflow {
 }
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
-pub struct WorkflowTool {
-    pub name: String,
-    pub description: String,
-    pub workflow_ref: String,
-    pub variables: Option<HashMap<String, String>>,
-    pub output_task_ref: String,
-}
-
-#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
 pub struct EmbeddingConfig {
     #[serde(default = "default_embed_table")]
     pub table: String,
@@ -985,8 +976,6 @@ pub enum ToolType {
     ValidateSQL(ValidateSQLTool),
     #[serde(rename = "retrieval")]
     Retrieval(RetrievalConfig),
-    #[serde(rename = "workflow")]
-    Workflow(WorkflowTool),
 }
 
 impl From<ExecuteSQLTool> for ToolType {
