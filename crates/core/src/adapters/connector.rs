@@ -3,8 +3,10 @@ use arrow::ipc::{reader::FileReader, writer::FileWriter};
 use arrow::json::ReaderBuilder;
 use arrow::json::reader::infer_json_schema;
 use arrow::{array::as_string_array, error::ArrowError, record_batch::RecordBatch};
+use bigquery::BigQuerySource;
+use bigquery_transport::BigQueryArrowTransport;
 use clickhouse::Client;
-use connectorx::prelude::{CXQuery, SourceConn, get_arrow};
+use connectorx::prelude::{ArrowDestination, CXQuery, Dispatcher, SourceConn, get_arrow};
 use duckdb::Connection;
 use itertools::Itertools;
 use log::debug;
@@ -20,6 +22,10 @@ use crate::config::model::{
 };
 use crate::errors::OxyError;
 
+mod bigquery;
+mod bigquery_transport;
+
+const BIGQUERY_DIALECT: &str = "bigquery";
 const CREATE_CONN: &str = "Failed to open connection";
 const EXECUTE_QUERY: &str = "Failed to execute query";
 const LOAD_RESULT: &str = "Error loading query results";
@@ -107,7 +113,7 @@ pub struct ConnectorX {
 impl ConnectorX {
     pub async fn get_schemas(&self) -> Result<Vec<String>, OxyError> {
         let query_string = match self.dialect.as_str() {
-            "bigquery" => {
+            BIGQUERY_DIALECT => {
                 format!(
                     "SELECT ddl FROM `{}`.INFORMATION_SCHEMA.TABLES",
                     self.db_name
@@ -133,12 +139,31 @@ impl Engine for ConnectorX {
     async fn run_query(&self, query: &str) -> Result<String, OxyError> {
         let conn_string = format!("{}://{}", self.dialect, self.db_path);
         let query = query.to_string();
+        let dialect = self.dialect.clone();
         let result = tokio::task::spawn_blocking(move || {
-            let source_conn = SourceConn::try_from(conn_string.as_str())
-                .map_err(|err| connector_internal_error(CREATE_CONN, &err))?;
-            let queries = &[CXQuery::from(query.as_str())];
-            let destination = get_arrow(&source_conn, None, queries, None)
-                .map_err(|err| connector_internal_error(EXECUTE_QUERY, &err))?;
+            let destination = match dialect.as_str() {
+                BIGQUERY_DIALECT => {
+                    let mut destination = ArrowDestination::new();
+                    let rt = Arc::new(tokio::runtime::Runtime::new()?);
+                    let source = BigQuerySource::new(rt, &conn_string)?;
+                    let queries = &[query.as_str()];
+                    let dispatcher = Dispatcher::<_, _, BigQueryArrowTransport>::new(
+                        source,
+                        &mut destination,
+                        queries,
+                        None,
+                    );
+                    dispatcher.run()?;
+                    Ok(destination)
+                }
+                _ => {
+                    let source_conn = SourceConn::try_from(conn_string.as_str())
+                        .map_err(|err| connector_internal_error(CREATE_CONN, &err))?;
+                    let queries = &[CXQuery::from(query.as_str())];
+                    get_arrow(&source_conn, None, queries, None)
+                        .map_err(|err| connector_internal_error(EXECUTE_QUERY, &err))
+                }
+            }?;
             let schema = destination.arrow_schema();
             let file_path = format!("/tmp/{}.arrow", Uuid::new_v4());
             let result = destination
