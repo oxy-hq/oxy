@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/oxy-hq/oxy/refs/heads/main/json-schemas/agent.json
 
 name: local
-model: "openai-4o-mini"
+model: "openai-4.1-mini"
 description: "A personal assistant agent for general tasks."
 system_instructions: |
   You are a personal assistant.

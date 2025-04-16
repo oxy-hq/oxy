@@ -97,24 +97,24 @@ fn determine_model() -> (String, Model) {
             },
         )
     } else if std::env::var(OPENAI_API_KEY_VAR).is_ok() {
-        let name = "gpt4o".to_string();
+        let name = "openai-4.1".to_string();
         (
             name.clone(),
             Model::OpenAI {
                 name,
-                model_ref: "gpt-4o".to_string(),
+                model_ref: "gpt-4.1".to_string(),
                 key_var: OPENAI_API_KEY_VAR.to_string(),
                 api_url: None,
                 azure: None,
             },
         )
     } else {
-        let name = "gpt4o".to_string();
+        let name = "openai-4.1".to_string();
         (
             name.clone(),
             Model::OpenAI {
                 name,
-                model_ref: "gpt-4o".to_string(),
+                model_ref: "gpt-4.1".to_string(),
                 key_var: OPENAI_API_KEY_VAR.to_string(),
                 api_url: None,
                 azure: None,

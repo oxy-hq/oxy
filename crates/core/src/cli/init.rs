@@ -242,8 +242,8 @@ fn collect_models() -> Result<Vec<Model>, InitError> {
                     None
                 };
                 Model::OpenAI {
-                    name: prompt_with_default("Name", "openai-4o", None)?,
-                    model_ref: prompt_with_default("Model reference", "gpt-4o", None)?,
+                    name: prompt_with_default("Name", "openai-4.1", None)?,
+                    model_ref: prompt_with_default("Model reference", "gpt-4.1", None)?,
                     key_var: prompt_with_default("Key variable", "OPENAI_API_KEY", None)?,
                     api_url: Some(api_url),
                     azure,
@@ -258,8 +258,8 @@ fn collect_models() -> Result<Vec<Model>, InitError> {
             _ => {
                 println!("Invalid model type selected. Using OpenAI as default.");
                 Model::OpenAI {
-                    name: prompt_with_default("Name", "openai-4o", None)?,
-                    model_ref: prompt_with_default("Model reference", "gpt-4o", None)?,
+                    name: prompt_with_default("Name", "openai-4.1", None)?,
+                    model_ref: prompt_with_default("Model reference", "gpt-4.1", None)?,
                     key_var: prompt_with_default("Key variable", "OPENAI_API_KEY", None)?,
                     api_url: Some(prompt_with_default(
                         "API URL",
