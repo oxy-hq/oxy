@@ -2,7 +2,7 @@
 
 description: "An agent for generating and executing SQL queries using semantic models."
 
-model: "openai-4o-mini"
+model: "openai-4.1-mini"
 retrieval: "default"
 
 context:

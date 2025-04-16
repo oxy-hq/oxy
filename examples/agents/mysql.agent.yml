@@ -2,7 +2,7 @@
 
 description: "An agent for generating and executing SQL queries for MySQL databases."
 
-model: "openai-4o-mini"
+model: "openai-4.1-mini"
 context:
   - name: queries
     type: file

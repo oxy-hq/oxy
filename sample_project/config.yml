@@ -3,8 +3,8 @@ defaults:
   database: local
 models:
 - vendor: openai
-  name: openai-4o
-  model_ref: gpt-4o
+  name: openai-4.1
+  model_ref: gpt-4.1
   key_var: OPENAI_API_KEY
   api_url: https://api.openai.com/v1
   azure_deployment_id: null

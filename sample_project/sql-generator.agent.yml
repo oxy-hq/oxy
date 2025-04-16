@@ -1,4 +1,4 @@
-model: "openai-4o"
+model: "openai-4.1"
 
 context:
   - name: queries
