@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.16](https://github.com/oxy-hq/oxy-internal/compare/0.1.15...0.1.16) (2025-04-17)
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* force using ring as default for rustls ([53880db](https://github.com/oxy-hq/oxy-internal/commit/53880dbfb99ef0f0f880e3da130f3f208ba3aa80))
+
 ## [0.1.15](https://github.com/oxy-hq/oxy-internal/compare/0.1.14...0.1.15) (2025-04-17)
 
 
