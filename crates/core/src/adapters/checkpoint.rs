@@ -286,7 +286,7 @@ impl CheckpointStorage for FileStorage {
             let entry_path = entry.path();
             if let (true, Some(run_id)) = (
                 entry_path.is_dir(),
-                entry_path.components().last().and_then(|c| {
+                entry_path.components().next_back().and_then(|c| {
                     c.as_os_str()
                         .to_string_lossy()
                         .to_string()

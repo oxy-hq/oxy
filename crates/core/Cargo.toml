@@ -9,7 +9,6 @@ publish.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 exclude.workspace = true
-build = "build.rs"
 
 [dependencies]
 anyhow = "1.0.98"
@@ -86,16 +85,13 @@ utoipa = {git="https://github.com/haitrr/utoipa.git", rev="7fbfdea", features = 
 utoipa-axum = {git="https://github.com/haitrr/utoipa.git",rev="7fbfdea" }
 utoipa-swagger-ui={git="https://github.com/haitrr/utoipa.git",rev="7fbfdea", features = ["axum"] }
 strip-ansi-escapes = "=0.2.1"
-shadow-rs = { version = "1.1.1", default-features = false }
 regex = "1.11.1"
 url = "2.5.4"
 gcp-bigquery-client = "0.25.1"
 fehler = "1.0.0"
 sqlparser = "0.37.0"
 backoff = { version = "0.4.0", features = ["tokio"] }
-
-[build-dependencies]
-shadow-rs = "1.1.1"
+rustc_version_runtime = "0.3.0"
 
 [lib]
 name = "oxy"

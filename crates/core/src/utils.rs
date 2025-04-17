@@ -82,7 +82,7 @@ pub fn find_project_path() -> Result<PathBuf, OxyError> {
         }
     }
 
-    Err(OxyError::ArgumentError(
+    Err(OxyError::RuntimeError(
         "Could not find config.yml".to_string(),
     ))
 }

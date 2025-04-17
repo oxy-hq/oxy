@@ -216,7 +216,7 @@ impl ParamMapper<EvalInput, Vec<(usize, EvalKind, EvalTarget)>> for EvalMapper {
                     .tests
                     .iter()
                     .enumerate()
-                    .filter(|(idx, _)| index.clone().map_or(true, |i| *idx == i))
+                    .filter(|(idx, _)| index.is_none_or(|i| *idx == i))
                     .map(|(idx, test)| {
                         (
                             idx,
@@ -247,7 +247,7 @@ impl ParamMapper<EvalInput, Vec<(usize, EvalKind, EvalTarget)>> for EvalMapper {
                     .tests
                     .iter()
                     .enumerate()
-                    .filter(|(idx, _)| index.clone().map_or(true, |i| *idx == i))
+                    .filter(|(idx, _)| index.is_none_or(|i| *idx == i))
                     .map(|(idx, test)| {
                         Ok((
                             idx,

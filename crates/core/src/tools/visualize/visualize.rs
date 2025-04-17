@@ -45,7 +45,7 @@ impl Executable<VisualizeInput> for VisualizeExecutable {
         execution_context
             .write_chunk(Chunk {
                 key: None,
-                delta: Output::Prompt(Prompt::new("Visualizing data...".to_string())).into(),
+                delta: Output::Prompt(Prompt::new("Visualizing data...".to_string())),
                 finished: true,
             })
             .await?;

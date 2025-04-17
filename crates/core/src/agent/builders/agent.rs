@@ -17,7 +17,6 @@ use async_openai::types::{
     ChatCompletionRequestMessage, ChatCompletionRequestSystemMessageArgs,
     ChatCompletionRequestUserMessageArgs, ChatCompletionTool,
 };
-use futures;
 
 #[derive(Debug, Clone)]
 pub struct AgentExecutable;
@@ -81,14 +80,11 @@ async fn build_react_loop(
     model: String,
     max_iterations: usize,
 ) -> impl Executable<Vec<ChatCompletionRequestMessage>, Response = OpenAIExecutableResponse> {
-    let tools: Vec<ChatCompletionTool> = futures::future::join_all(
-        tool_configs
-            .iter()
-            .map(|tool| ChatCompletionTool::from_tool_async(tool)),
-    )
-    .await
-    .into_iter()
-    .collect();
+    let tools: Vec<ChatCompletionTool> =
+        futures::future::join_all(tool_configs.iter().map(ChatCompletionTool::from_tool_async))
+            .await
+            .into_iter()
+            .collect();
     ExecutableBuilder::new()
         .react(
             OpenAITool::new(agent_name, tool_configs, max_concurrency),

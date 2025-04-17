@@ -35,7 +35,6 @@ use pyo3::Python;
 use pyo3::types::PyAnyMethods;
 use rmcp::transport::SseServer;
 use rmcp::{ServiceExt, transport::stdio};
-use shadow_rs::shadow;
 use std::backtrace;
 use std::collections::BTreeMap;
 use std::error::Error;
@@ -73,8 +72,6 @@ static DIST: Dir = include_dir!("D:\\a\\oxy\\oxy\\crates\\core\\dist");
 #[cfg(not(target_os = "windows"))]
 static DIST: Dir = include_dir!("$CARGO_MANIFEST_DIR/dist");
 
-shadow!(build);
-
 type Variable = (String, String);
 fn parse_variable(env: &str) -> Result<Variable, OxyError> {
     if let Some((var, value)) = env.split_once('=') {
@@ -89,10 +86,33 @@ fn parse_variable(env: &str) -> Result<Variable, OxyError> {
 #[derive(Parser, Debug)]
 #[clap(
     author,
-    version = build::PKG_VERSION,
-    long_version = build::CLAP_LONG_VERSION,
-    about,
-    long_about = None
+    version,
+    long_version = if cfg!(debug_assertions) {
+        Box::leak(format!(
+            "version {}, built locally as debug, rust ver {}",
+            env!("CARGO_PKG_VERSION"),
+            rustc_version_runtime::version(),
+        ).into_boxed_str()) as &'static str
+    } else {
+        Box::leak(format!(
+            "version: {}\n\
+            rust version: {}\n\
+            commit SHA: {}\n\
+            branch: {}\n\
+            repository: {}\n\
+            triggered by: {}\n\
+            event: {}\n\
+            build timestamp: {}",
+            env!("CARGO_PKG_VERSION"),
+            rustc_version_runtime::version(),
+            option_env!("GITHUB_SHA").unwrap_or("unknown"),
+            option_env!("GITHUB_REF_NAME").unwrap_or("unknown"),
+            option_env!("GITHUB_REPOSITORY").unwrap_or("unknown"),
+            option_env!("GITHUB_ACTOR").unwrap_or("unknown"),
+            option_env!("GITHUB_EVENT_NAME").unwrap_or("unknown"),
+            chrono::Utc::now().to_rfc3339(),
+        ).into_boxed_str()) as &'static str
+    },
 )]
 struct Args {
     /// The question to ask or command to execute
@@ -565,7 +585,14 @@ pub async fn start_mcp_stdio(project_path: PathBuf) -> anyhow::Result<()> {
 }
 
 pub async fn start_mcp_sse_server(mut port: u16) -> anyhow::Result<CancellationToken> {
-    let project_path = find_project_path()?;
+    // require webserver to be started inside the project path
+    let project_path = match find_project_path() {
+        Ok(path) => path,
+        Err(e) => {
+            eprintln!("Failed to find project path: {}", e);
+            std::process::exit(1);
+        }
+    };
     while tokio::net::TcpListener::bind(("127.0.0.1", port))
         .await
         .is_err()
@@ -601,6 +628,14 @@ pub async fn handle_test_command(test_args: TestArgs) -> Result<(), OxyError> {
 struct ApiDoc;
 
 pub async fn start_server_and_web_app(mut web_port: u16) {
+    // require webserver to be started inside the project path
+    match find_project_path() {
+        Ok(path) => path,
+        Err(e) => {
+            eprintln!("Failed to find project path: {}", e);
+            std::process::exit(1);
+        }
+    };
     async fn shutdown_signal() {
         let ctrl_c = async {
             signal::ctrl_c()
