@@ -593,7 +593,7 @@ pub async fn start_mcp_sse_server(mut port: u16) -> anyhow::Result<CancellationT
             std::process::exit(1);
         }
     };
-    while tokio::net::TcpListener::bind(("127.0.0.1", port))
+    while tokio::net::TcpListener::bind(("0.0.0.0", port))
         .await
         .is_err()
     {
@@ -601,7 +601,7 @@ pub async fn start_mcp_sse_server(mut port: u16) -> anyhow::Result<CancellationT
         port += 1;
     }
     let service = OxyMcpServer::new(project_path.clone()).await?;
-    let bind = SocketAddr::from(([127, 0, 0, 1], port));
+    let bind = SocketAddr::from(([0, 0, 0, 0], port));
     let ct = SseServer::serve(bind)
         .await?
         .with_service(move || service.to_owned());
@@ -661,7 +661,7 @@ pub async fn start_server_and_web_app(mut web_port: u16) {
     }
 
     let web_server_task = tokio::spawn(async move {
-        while tokio::net::TcpListener::bind(("127.0.0.1", web_port))
+        while tokio::net::TcpListener::bind(("0.0.0.0", web_port))
             .await
             .is_err()
         {
@@ -702,7 +702,7 @@ pub async fn start_server_and_web_app(mut web_port: u16) {
             .nest("/api", api_router)
             .fallback_service(serve_with_fallback);
 
-        let web_addr = SocketAddr::from(([127, 0, 0, 1], web_port));
+        let web_addr = SocketAddr::from(([0, 0, 0, 0], web_port));
         let listener = tokio::net::TcpListener::bind(web_addr).await.unwrap();
         println!(
             "{} {}",

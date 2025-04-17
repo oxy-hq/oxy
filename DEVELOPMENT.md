@@ -113,6 +113,7 @@ We use Docker Compose to spin up database containers to create and supply test d
 1. Start the required database containers:
 
    ```sh
+   cd examples # make sure the docker compose you are trying to stand up is inside examples folder
    docker-compose up -d
    ```
 

@@ -1,0 +1,64 @@
+services:
+  clickhouse:
+    image: clickhouse/clickhouse-server
+    user: "101:101"
+    container_name: clickhouse
+    hostname: clickhouse
+    volumes:
+      - ./docker-entrypoints/clickhouse/etc/clickhouse-server/config.d/config.xml:/etc/clickhouse-server/config.d/config.xml
+      - ./docker-entrypoints/clickhouse/etc/clickhouse-server/users.d/users.xml:/etc/clickhouse-server/users.d/users.xml
+      - ./docker-entrypoints/clickhouse/docker-entrypoint-initdb.d/:/docker-entrypoint-initdb.d/
+      - clickhouse-data:/var/lib/clickhouse
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+      - "9004:9004"
+
+  postgres:
+    container_name: postgres
+    hostname: postgres
+    image: postgres
+    restart: always
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: default
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./docker-entrypoints/postgres/docker-entrypoint-initdb.d/:/docker-entrypoint-initdb.d/
+    command: >
+      postgres -c wal_level=logical -c max_replication_slots=2
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "admin", "-d", "default"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mysql:
+    container_name: mysql
+    hostname: mysql
+    image: mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: password
+      MYSQL_DATABASE: default
+      MYSQL_USER: admin
+      MYSQL_PASSWORD: password
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./docker-entrypoints/mysql/docker-entrypoint-initdb.d/:/docker-entrypoint-initdb.d/
+    healthcheck:
+      test:
+        ["CMD-SHELL", "mysql -uadmin -p'password' -e 'USE default;'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres-data:
+  mysql-data:
+  clickhouse-data:
