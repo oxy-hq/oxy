@@ -1,5 +1,6 @@
 use super::openai::{OpenAIExecutable, OpenAIExecutableResponse};
 use super::tool::OpenAITool;
+use crate::adapters::openai::AsyncFunctionObject;
 use crate::config::constants::AGENT_SOURCE_PROMPT;
 use crate::config::model::AgentConfig;
 use crate::{
@@ -16,6 +17,7 @@ use async_openai::types::{
     ChatCompletionRequestMessage, ChatCompletionRequestSystemMessageArgs,
     ChatCompletionRequestUserMessageArgs, ChatCompletionTool,
 };
+use futures;
 
 #[derive(Debug, Clone)]
 pub struct AgentExecutable;
@@ -62,7 +64,8 @@ impl Executable<(AgentConfig, String)> for AgentExecutable {
             client,
             model_config.model_name().to_string(),
             agent_config.tools_config.max_tool_calls,
-        );
+        )
+        .await;
         let response = react_executable
             .execute(execution_context, messages)
             .await?;
@@ -70,7 +73,7 @@ impl Executable<(AgentConfig, String)> for AgentExecutable {
     }
 }
 
-fn build_react_loop(
+async fn build_react_loop(
     agent_name: String,
     tool_configs: Vec<ToolType>,
     max_concurrency: usize,
@@ -78,7 +81,14 @@ fn build_react_loop(
     model: String,
     max_iterations: usize,
 ) -> impl Executable<Vec<ChatCompletionRequestMessage>, Response = OpenAIExecutableResponse> {
-    let tools: Vec<ChatCompletionTool> = tool_configs.iter().map(|tool| tool.into()).collect();
+    let tools: Vec<ChatCompletionTool> = futures::future::join_all(
+        tool_configs
+            .iter()
+            .map(|tool| ChatCompletionTool::from_tool_async(tool)),
+    )
+    .await
+    .into_iter()
+    .collect();
     ExecutableBuilder::new()
         .react(
             OpenAITool::new(agent_name, tool_configs, max_concurrency),
