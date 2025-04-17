@@ -1,5 +1,5 @@
 {
-  "last-release-sha": "8b130d8ddd52e92a9aa4efe4534e3beca11904f4",
+  "last-release-sha": "2f2111af8d7e745e5b91be74e3cec7ea0ee3f7e4",
   "packages": {
     "crates/core": {
       "release-type": "rust",
