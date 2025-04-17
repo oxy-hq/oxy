@@ -2,7 +2,10 @@ use std::{fs::File, io::Write};
 
 use crate::{
     errors::OxyError,
-    execute::{Executable, ExecutionContext, types::Output},
+    execute::{
+        Executable, ExecutionContext,
+        types::{Chunk, Output, Prompt},
+    },
     tools::{tool::Tool, types::VisualizeInput},
 };
 
@@ -35,10 +38,17 @@ impl Executable<VisualizeInput> for VisualizeExecutable {
 
     async fn execute(
         &mut self,
-        _execution_context: &ExecutionContext,
+        execution_context: &ExecutionContext,
         input: VisualizeInput,
     ) -> Result<Self::Response, OxyError> {
         let VisualizeInput { param } = input;
+        execution_context
+            .write_chunk(Chunk {
+                key: None,
+                delta: Output::Prompt(Prompt::new("Visualizing data...".to_string())).into(),
+                finished: true,
+            })
+            .await?;
         serde_json::from_str::<serde_json::Value>(&param.data)
             .map_err(|e| anyhow::anyhow!("Invalid JSON data: {}", e))?;
 

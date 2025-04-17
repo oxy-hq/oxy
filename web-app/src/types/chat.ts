@@ -1,6 +1,7 @@
 export type Answer = {
   content: string;
   references: Reference[];
+  step: string;
   is_error: boolean;
 };
 
