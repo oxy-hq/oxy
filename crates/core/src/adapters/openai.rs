@@ -84,7 +84,7 @@ impl TryFrom<&Model> for ConfigType {
                         let mut config = AzureConfig::new()
                             .with_api_version(&azure.azure_api_version)
                             .with_deployment_id(&azure.azure_deployment_id)
-                            .with_api_key(key_var.clone());
+                            .with_api_key(api_key);
                         if let Some(api_url) = api_url {
                             config = config.with_api_base(api_url);
                         }
