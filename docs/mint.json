@@ -35,6 +35,10 @@
     {
       "name": "Reference",
       "url": "reference"
+    },
+    {
+      "name": "Changelog",
+      "url": "changelog"
     }
   ],
   "navigation": [
@@ -117,6 +121,10 @@
     {
       "group": "Oxy commands",
       "pages": ["reference/oxy-commands"]
+    },
+    {
+      "group": "",
+      "pages": ["changelog/product-updates"]
     }
   ],
   "footerSocials": {
