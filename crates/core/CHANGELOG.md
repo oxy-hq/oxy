@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.17](https://github.com/oxy-hq/oxy-internal/compare/0.1.16...0.1.17) (2025-04-17)
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* update MCP server log message to include localhost URL ([99c1a45](https://github.com/oxy-hq/oxy-internal/commit/99c1a45b9227ae92082b20e3ba6fc669fe8b9b59))
+
 ## [0.1.16](https://github.com/oxy-hq/oxy-internal/compare/0.1.15...0.1.16) (2025-04-17)
 
 
