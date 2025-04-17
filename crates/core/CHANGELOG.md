@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.15](https://github.com/oxy-hq/oxy-internal/compare/0.1.14...0.1.15) (2025-04-17)
+
+
+### <!-- 0 -->🚀 Features
+
+* dockerize oxy and enable postgres as a data backend ([#632](https://github.com/oxy-hq/oxy-internal/issues/632)) ([5f81c3a](https://github.com/oxy-hq/oxy-internal/commit/5f81c3a692239efa57f390b01e3b4c6f1bdbe4fc))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* always set current dir to project path for mcp stdio, force web server to be started in project path ([#634](https://github.com/oxy-hq/oxy-internal/issues/634)) ([7d1d632](https://github.com/oxy-hq/oxy-internal/commit/7d1d63285a6900731e4537c19c1b50f3a396adf2))
+
 ## [0.1.14](https://github.com/oxy-hq/oxy-internal/compare/0.1.13...0.1.14) (2025-04-17)
 
 
