@@ -574,12 +574,11 @@ pub async fn start_mcp_sse_server(mut port: u16) -> anyhow::Result<CancellationT
         println!("Port {} for mcp is occupied. Trying next port...", port);
         port += 1;
     }
+    let service = OxyMcpServer::new(project_path.clone()).await?;
     let bind = SocketAddr::from(([127, 0, 0, 1], port));
-    let ct = SseServer::serve(bind).await?.with_service(move || {
-        let rt = Runtime::new().unwrap();
-        rt.block_on(OxyMcpServer::new(project_path.clone()))
-            .unwrap()
-    });
+    let ct = SseServer::serve(bind)
+        .await?
+        .with_service(move || service.to_owned());
 
     println!(
         "{}",
