@@ -3,8 +3,10 @@ use async_openai::{
     config::{AzureConfig, Config, OpenAIConfig},
     types::{ChatCompletionTool, ChatCompletionToolArgs, FunctionObject, FunctionObjectArgs},
 };
-use reqwest::header::HeaderMap;
+use axum::http::HeaderMap;
 use secrecy::SecretString;
+use serde_json::{Value, json};
+use std::path::PathBuf;
 
 use crate::{
     config::{
@@ -12,8 +14,12 @@ use crate::{
         model::{Model, RetrievalConfig, ToolType},
     },
     errors::OxyError,
-    tools::types::{RetrievalParams, SQLParams},
-    tools::visualize::types::VisualizeParams,
+    service::workflow::get_workflow,
+    tools::{
+        types::{RetrievalParams, SQLParams},
+        visualize::types::VisualizeParams,
+    },
+    utils::find_project_path,
 };
 
 #[derive(Debug, Clone)]
@@ -174,7 +180,7 @@ pub trait OpenAIToolConfig {
     fn description(&self) -> String;
     fn tool_kind(&self) -> String;
     fn handle(&self) -> String;
-    fn params_schema(&self) -> serde_json::Value;
+    async fn params_schema(&self) -> Result<serde_json::Value, OxyError>;
 }
 
 impl OpenAIToolConfig for &ToolType {
@@ -183,6 +189,7 @@ impl OpenAIToolConfig for &ToolType {
             ToolType::ExecuteSQL(e) => e.description.clone(),
             ToolType::ValidateSQL(v) => v.description.clone(),
             ToolType::Retrieval(r) => r.description.clone(),
+            ToolType::Workflow(w) => w.description.clone(),
             ToolType::Visualize(v) => v.description.clone(),
         }
     }
@@ -192,6 +199,7 @@ impl OpenAIToolConfig for &ToolType {
             ToolType::ExecuteSQL(e) => e.name.clone(),
             ToolType::ValidateSQL(v) => v.name.clone(),
             ToolType::Retrieval(r) => r.name.clone(),
+            ToolType::Workflow(w) => w.name.clone(),
             ToolType::Visualize(v) => v.name.clone(),
         }
     }
@@ -201,35 +209,103 @@ impl OpenAIToolConfig for &ToolType {
             ToolType::ExecuteSQL(_) => "execute_sql".to_string(),
             ToolType::ValidateSQL(_) => "validate_sql".to_string(),
             ToolType::Retrieval(_) => "retrieval".to_string(),
+            ToolType::Workflow(_) => "workflow".to_string(),
             ToolType::Visualize(_) => "visualize".to_string(),
         }
     }
 
-    fn params_schema(&self) -> serde_json::Value {
+    async fn params_schema(&self) -> Result<serde_json::Value, OxyError> {
         match self {
-            ToolType::ExecuteSQL(_) => serde_json::json!(&schemars::schema_for!(SQLParams)),
-            ToolType::ValidateSQL(_) => serde_json::json!(&schemars::schema_for!(SQLParams)),
-            ToolType::Retrieval(_) => serde_json::json!(&schemars::schema_for!(RetrievalParams)),
-            ToolType::Visualize(_) => serde_json::json!(&schemars::schema_for!(VisualizeParams)),
+            ToolType::ExecuteSQL(_) => Ok(serde_json::json!(&schemars::schema_for!(SQLParams))),
+            ToolType::ValidateSQL(_) => Ok(serde_json::json!(&schemars::schema_for!(SQLParams))),
+            ToolType::Retrieval(_) => {
+                Ok(serde_json::json!(&schemars::schema_for!(RetrievalParams)))
+            }
+            ToolType::Workflow(w) => {
+                let schema = generate_workflow_run_schema(&w.workflow_ref.clone())
+                    .await
+                    .unwrap();
+                Ok(serde_json::json!(schema))
+            }
+            ToolType::Visualize(_) => {
+                Ok(serde_json::json!(&schemars::schema_for!(VisualizeParams)))
+            }
         }
     }
 }
 
-impl From<&ToolType> for FunctionObject {
-    fn from(tool: &ToolType) -> Self {
-        FunctionObjectArgs::default()
-            .name(tool.handle())
-            .description(tool.description())
-            .parameters(tool.params_schema())
-            .build()
-            .unwrap()
+async fn generate_workflow_run_schema(
+    workflow_path: &str,
+) -> Result<serde_json::Map<String, Value>, OxyError> {
+    let project_path = find_project_path().unwrap();
+    let workflow_config =
+        get_workflow(PathBuf::from(workflow_path), Some(project_path.clone())).await?;
+
+    let variables = workflow_config.variables;
+
+    if variables.is_none() {
+        let mut schema = serde_json::Map::new();
+        schema.insert("type".to_string(), Value::String("object".to_string()));
+
+        return Ok(schema);
+    }
+    let mut schema = serde_json::Map::new();
+    let mut variable_schema = serde_json::Map::new();
+    let mut properties = serde_json::Map::new();
+    let variables = variables.unwrap();
+
+    for (key, _) in variables.iter() {
+        properties.insert(
+            key.clone(),
+            json!(
+                {
+                    "type": "string",
+                }
+            ),
+        );
+    }
+    variable_schema.insert("type".to_string(), Value::String("object".to_string()));
+    variable_schema.insert("properties".to_string(), Value::Object(properties));
+
+    schema.insert(
+        "properties".to_string(),
+        json!({
+            "variables": variable_schema,
+        }),
+    );
+    schema.insert("type".to_string(), Value::String("object".to_string()));
+
+    Ok(schema)
+}
+
+pub trait AsyncFunctionObject {
+    async fn from_tool_async(tool: &ToolType) -> Self;
+}
+
+impl AsyncFunctionObject for FunctionObject {
+    async fn from_tool_async(tool: &ToolType) -> Self {
+        let mut binding = FunctionObjectArgs::default();
+        let mut function_args = binding.name(tool.handle()).description(tool.description());
+        let params_schema = tool.params_schema().await.unwrap();
+        if !params_schema.is_null()
+            && params_schema.is_object()
+            && params_schema
+                .as_object()
+                .unwrap()
+                .get("properties")
+                .is_some()
+        {
+            function_args = function_args.parameters(params_schema);
+        }
+
+        function_args.build().unwrap()
     }
 }
 
-impl From<&ToolType> for ChatCompletionTool {
-    fn from(tool: &ToolType) -> Self {
+impl AsyncFunctionObject for ChatCompletionTool {
+    async fn from_tool_async(tool: &ToolType) -> Self {
         ChatCompletionToolArgs::default()
-            .function::<FunctionObject>(tool.into())
+            .function::<FunctionObject>(FunctionObject::from_tool_async(tool).await)
             .build()
             .unwrap()
     }

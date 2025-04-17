@@ -1,17 +1,22 @@
 use super::{
     retrieval::RetrievalExecutable,
     sql::{SQLExecutable, ValidateSQLExecutable},
-    types::{RetrievalInput, RetrievalParams, SQLInput, SQLParams, ToolRawInput, VisualizeInput},
+    types::{
+        RetrievalInput, RetrievalParams, SQLInput, SQLParams, ToolRawInput, VisualizeInput,
+        WorkflowInput,
+    },
     visualize::{types::VisualizeParams, visualize::VisualizeExecutable},
+    workflow::WorkflowExecutable,
 };
 use crate::{
-    config::model::{RetrievalConfig, ToolType},
+    config::model::{RetrievalConfig, ToolType, WorkflowTool},
     errors::OxyError,
     execute::{
         Executable, ExecutionContext,
         builders::{ExecutableBuilder, map::ParamMapper},
         types::Output,
     },
+    tools::types::WorkflowParams,
 };
 
 const TOOL_NOT_FOUND_ERR: &str = "Tool not found";
@@ -68,6 +73,17 @@ impl Executable<(String, Option<ToolType>, ToolRawInput)> for ToolExecutable {
                                 agent_name,
                                 param: input.param.clone(),
                                 retrieval_config: retrieval_config.clone(),
+                            },
+                        )
+                        .await
+                }
+                ToolType::Workflow(workflow_config) => {
+                    build_workflow_executable()
+                        .execute(
+                            execution_context,
+                            WorkflowToolInput {
+                                workflow_config: workflow_config.clone(),
+                                param: input.param.clone(),
                             },
                         )
                         .await
@@ -216,4 +232,47 @@ fn build_retrieval_executable() -> impl Executable<RetrievalToolInput, Response 
     ExecutableBuilder::new()
         .map(RetrievalMapper)
         .executable(RetrievalExecutable::new())
+}
+
+#[derive(Clone)]
+struct WorkflowToolInput {
+    workflow_config: WorkflowTool,
+    param: String,
+}
+
+#[derive(Clone)]
+struct WorkflowMapper;
+
+#[async_trait::async_trait]
+impl ParamMapper<WorkflowToolInput, WorkflowInput> for WorkflowMapper {
+    async fn map(
+        &self,
+        _execution_context: &ExecutionContext,
+        input: WorkflowToolInput,
+    ) -> Result<(WorkflowInput, Option<ExecutionContext>), OxyError> {
+        let WorkflowToolInput { param, .. } = input;
+        if param.is_empty() {
+            return Ok((
+                WorkflowInput {
+                    workflow_config: input.workflow_config,
+                    variables: None,
+                },
+                None,
+            ));
+        }
+        let params = serde_json::from_str::<WorkflowParams>(&param)?;
+        Ok((
+            WorkflowInput {
+                workflow_config: input.workflow_config,
+                variables: params.variables,
+            },
+            None,
+        ))
+    }
+}
+
+fn build_workflow_executable() -> impl Executable<WorkflowToolInput, Response = Output> {
+    ExecutableBuilder::new()
+        .map(WorkflowMapper)
+        .executable(WorkflowExecutable::new())
 }

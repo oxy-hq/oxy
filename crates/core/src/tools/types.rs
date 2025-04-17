@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use async_openai::types::{
     ChatCompletionMessageToolCall, ChatCompletionTool, ChatCompletionToolArgs, FunctionObject,
     FunctionObjectArgs,
@@ -5,7 +7,7 @@ use async_openai::types::{
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::config::model::RetrievalConfig;
+use crate::config::model::{RetrievalConfig, WorkflowTool};
 
 use super::visualize::types::VisualizeParams;
 
@@ -48,8 +50,18 @@ pub struct SQLInput {
     pub sql: String,
 }
 
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct WorkflowParams {
+    pub variables: Option<HashMap<String, String>>,
+}
+
 pub struct VisualizeInput {
     pub param: VisualizeParams,
+}
+
+pub struct WorkflowInput {
+    pub workflow_config: WorkflowTool,
+    pub variables: Option<HashMap<String, String>>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
