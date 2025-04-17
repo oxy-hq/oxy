@@ -5500,6 +5500,7 @@ dependencies = [
  "reqwest",
  "rmcp",
  "rustc_version_runtime",
+ "rustls 0.23.26",
  "schemars",
  "sea-orm",
  "secrecy",

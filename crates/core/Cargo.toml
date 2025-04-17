@@ -92,6 +92,9 @@ fehler = "1.0.0"
 sqlparser = "0.37.0"
 backoff = { version = "0.4.0", features = ["tokio"] }
 rustc_version_runtime = "0.3.0"
+# at some version, rustls changed default to aws_lc, which we are not ready for
+# so we need this here to force the use of ring
+rustls = { version = "0.23.26", features = ["ring"] }
 
 [lib]
 name = "oxy"
