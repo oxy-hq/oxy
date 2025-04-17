@@ -6,9 +6,11 @@ To specify a connection to BigQuery, you'll need to generate a service account
 keyfile, then pass the path to that file to your `config.yml` file, as shown below:
 
 ```yaml
+  # required fields
   - name: bigquery_connection
     type: bigquery
     key_path: /path/to/key.json
+    dataset: name_of_dataset
 ```
 
 # Generating a keyfile
