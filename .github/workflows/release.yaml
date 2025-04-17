@@ -71,6 +71,7 @@ jobs:
         with:
           shared-key: build-cli-${{ matrix.job.os }}-${{ matrix.job.target }}
           cache-all-crates: "true"
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       # protobuf is required by lance https://github.com/lancedb/lance/issues/3073
       - name: Install Protoc
         uses: arduino/setup-protoc@v3
