@@ -80,7 +80,7 @@ impl ConcurrencyControl<OpenAIExecutableResponse> for AgentScoreControl {
         let value = acc
             .into_iter()
             .sorted_by_key(|(_, count)| *count)
-            .last()
+            .next_back()
             .map(|(idx, count)| {
                 let output = self.outputs.get(&idx).unwrap();
                 let output = output.clone();

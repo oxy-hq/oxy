@@ -135,7 +135,7 @@ where
     fn fetch_metadata(&mut self) {
         assert!(!self.queries.is_empty());
         let job = self.client.job();
-        for (_, query) in self.queries.iter().enumerate() {
+        for query in self.queries.iter() {
             let l1query = limit1_query(query, &BigQueryDialect {})?;
             let rs = self.rt.block_on(job.query(
                 self.project_id.as_str(),
@@ -337,7 +337,7 @@ impl<'a> BigQuerySourceParser {
     }
 }
 
-impl<'a> PartitionParser<'a> for BigQuerySourceParser {
+impl PartitionParser<'_> for BigQuerySourceParser {
     type TypeSystem = BigQueryTypeSystem;
     type Error = BigQuerySourceError;
 
@@ -435,7 +435,7 @@ macro_rules! impl_produce {
 
 impl_produce!(i64, f64, String,);
 
-impl<'r, 'a> Produce<'r, bool> for BigQuerySourceParser {
+impl<'a> Produce<'_, bool> for BigQuerySourceParser {
     type Error = BigQuerySourceError;
 
     #[throws(BigQuerySourceError)]
@@ -509,7 +509,7 @@ impl<'r, 'a> Produce<'r, bool> for BigQuerySourceParser {
     }
 }
 
-impl<'r, 'a> Produce<'r, Option<bool>> for BigQuerySourceParser {
+impl<'a> Produce<'_, Option<bool>> for BigQuerySourceParser {
     type Error = BigQuerySourceError;
 
     #[throws(BigQuerySourceError)]
@@ -585,7 +585,7 @@ impl<'r, 'a> Produce<'r, Option<bool>> for BigQuerySourceParser {
     }
 }
 
-impl<'r, 'a> Produce<'r, NaiveDate> for BigQuerySourceParser {
+impl<'a> Produce<'_, NaiveDate> for BigQuerySourceParser {
     type Error = BigQuerySourceError;
 
     #[throws(BigQuerySourceError)]
@@ -654,7 +654,7 @@ impl<'r, 'a> Produce<'r, NaiveDate> for BigQuerySourceParser {
     }
 }
 
-impl<'r, 'a> Produce<'r, Option<NaiveDate>> for BigQuerySourceParser {
+impl<'a> Produce<'_, Option<NaiveDate>> for BigQuerySourceParser {
     type Error = BigQuerySourceError;
 
     #[throws(BigQuerySourceError)]
@@ -729,7 +729,7 @@ impl<'r, 'a> Produce<'r, Option<NaiveDate>> for BigQuerySourceParser {
     }
 }
 
-impl<'r, 'a> Produce<'r, NaiveDateTime> for BigQuerySourceParser {
+impl<'a> Produce<'_, NaiveDateTime> for BigQuerySourceParser {
     type Error = BigQuerySourceError;
 
     #[throws(BigQuerySourceError)]
@@ -798,7 +798,7 @@ impl<'r, 'a> Produce<'r, NaiveDateTime> for BigQuerySourceParser {
     }
 }
 
-impl<'r, 'a> Produce<'r, Option<NaiveDateTime>> for BigQuerySourceParser {
+impl<'a> Produce<'_, Option<NaiveDateTime>> for BigQuerySourceParser {
     type Error = BigQuerySourceError;
 
     #[throws(BigQuerySourceError)]
@@ -873,7 +873,7 @@ impl<'r, 'a> Produce<'r, Option<NaiveDateTime>> for BigQuerySourceParser {
     }
 }
 
-impl<'r, 'a> Produce<'r, NaiveTime> for BigQuerySourceParser {
+impl<'a> Produce<'_, NaiveTime> for BigQuerySourceParser {
     type Error = BigQuerySourceError;
 
     #[throws(BigQuerySourceError)]
@@ -942,7 +942,7 @@ impl<'r, 'a> Produce<'r, NaiveTime> for BigQuerySourceParser {
     }
 }
 
-impl<'r, 'a> Produce<'r, Option<NaiveTime>> for BigQuerySourceParser {
+impl<'a> Produce<'_, Option<NaiveTime>> for BigQuerySourceParser {
     type Error = BigQuerySourceError;
 
     #[throws(BigQuerySourceError)]
@@ -1017,7 +1017,7 @@ impl<'r, 'a> Produce<'r, Option<NaiveTime>> for BigQuerySourceParser {
     }
 }
 
-impl<'r, 'a> Produce<'r, DateTime<Utc>> for BigQuerySourceParser {
+impl<'a> Produce<'_, DateTime<Utc>> for BigQuerySourceParser {
     type Error = BigQuerySourceError;
 
     #[throws(BigQuerySourceError)]
@@ -1090,7 +1090,7 @@ impl<'r, 'a> Produce<'r, DateTime<Utc>> for BigQuerySourceParser {
     }
 }
 
-impl<'r, 'a> Produce<'r, Option<DateTime<Utc>>> for BigQuerySourceParser {
+impl<'a> Produce<'_, Option<DateTime<Utc>>> for BigQuerySourceParser {
     type Error = BigQuerySourceError;
 
     #[throws(BigQuerySourceError)]

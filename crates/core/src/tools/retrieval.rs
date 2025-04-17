@@ -44,7 +44,7 @@ impl Executable<RetrievalInput> for RetrievalExecutable {
         execution_context
             .write_chunk(Chunk {
                 key: None,
-                delta: Output::Prompt(Prompt::new("Retrieving data...".to_string())).into(),
+                delta: Output::Prompt(Prompt::new("Retrieving data...".to_string())),
                 finished: true,
             })
             .await?;

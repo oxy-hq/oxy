@@ -46,7 +46,7 @@ impl Executable<WorkflowToolInput> for WorkflowExecutable {
         execution_context
             .write_chunk(Chunk {
                 key: None,
-                delta: Output::Prompt(Prompt::new("Running workflow...".to_string())).into(),
+                delta: Output::Prompt(Prompt::new("Running workflow...".to_string())),
                 finished: true,
             })
             .await?;

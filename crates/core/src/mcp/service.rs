@@ -118,6 +118,10 @@ impl OxyMcpServer {
         agent_name: String,
         arguments: Option<Map<String, Value>>,
     ) -> Result<CallToolResult, rmcp::Error> {
+        std::env::set_current_dir(&self.project_path).map_err(|e| {
+            rmcp::Error::internal_error(format!("Failed to set current directory: {}", e), None)
+        })?;
+
         match arguments {
             None => Err(rmcp::Error::invalid_request(
                 "Missing 'arguments' parameter".to_string(),
@@ -146,6 +150,10 @@ impl OxyMcpServer {
         workflow_name: String,
         arguments: Option<Map<String, Value>>,
     ) -> Result<CallToolResult, rmcp::Error> {
+        std::env::set_current_dir(&self.project_path).map_err(|e| {
+            rmcp::Error::internal_error(format!("Failed to set current directory: {}", e), None)
+        })?;
+
         let variables = match arguments {
             None => None,
             Some(args) => args
@@ -176,7 +184,7 @@ impl OxyMcpServer {
         Ok(CallToolResult {
             content: vec![output.try_into().map_err(|_err| {
                 rmcp::Error::internal_error(
-                    format!("Failed to convert from workflow output into mcp output"),
+                    "Failed to convert from workflow output into mcp output".to_string(),
                     None,
                 )
             })?],
