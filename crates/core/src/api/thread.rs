@@ -48,6 +48,7 @@ pub struct AnswerStream {
     pub content: String,
     pub references: Vec<AgentReference>,
     pub is_error: bool,
+    pub step: String,
 }
 
 pub async fn get_threads() -> Result<extract::Json<Vec<ThreadItem>>, StatusCode> {
@@ -156,11 +157,21 @@ impl EventHandler for ThreadStream {
     async fn handle_event(&mut self, event: Event) -> Result<(), OxyError> {
         if let EventKind::Updated { chunk } = event.kind {
             match chunk.delta {
+                Output::Prompt(_) => {
+                    let message = AnswerStream {
+                        content: "".to_string(),
+                        references: vec![],
+                        is_error: false,
+                        step: event.source.kind.to_string(),
+                    };
+                    self.tx.send(message).await?;
+                }
                 Output::Text(text) => {
                     let message = AnswerStream {
                         content: text,
                         references: vec![],
                         is_error: false,
+                        step: event.source.kind.to_string(),
                     };
                     self.tx.send(message).await?;
                 }
@@ -170,6 +181,7 @@ impl EventHandler for ThreadStream {
                         content: "".to_string(),
                         references: reference.map(|r| vec![r]).unwrap_or_default(),
                         is_error: false,
+                        step: event.source.kind.to_string(),
                     };
                     self.tx.send(message).await?;
                 }
@@ -191,6 +203,7 @@ pub async fn ask_thread(Path(id): Path<String>) -> impl IntoResponse {
                         content: format!("Thread with ID {} not found", id),
                         references: vec![],
                         is_error: true,
+                        step: "".to_string(),
                     };
                 });
             }
@@ -200,6 +213,7 @@ pub async fn ask_thread(Path(id): Path<String>) -> impl IntoResponse {
                         content: format!("Database error: {}", e),
                         references: vec![],
                         is_error: true,
+                        step: "".to_string(),
                     };
                 });
             }
@@ -210,6 +224,7 @@ pub async fn ask_thread(Path(id): Path<String>) -> impl IntoResponse {
                     content: format!("Invalid UUID format: {}", id),
                     references: vec![],
                     is_error: true,
+                    step: "".to_string(),
                 };
             });
         }
@@ -221,6 +236,7 @@ pub async fn ask_thread(Path(id): Path<String>) -> impl IntoResponse {
                 content: thread.answer,
                 references: serde_json::from_str(&thread.references).unwrap_or_default(),
                 is_error: false,
+                step: "".to_string(),
             };
         });
     }
@@ -233,6 +249,7 @@ pub async fn ask_thread(Path(id): Path<String>) -> impl IntoResponse {
                     content: format!("Failed to find project path: {}", e),
                     references: vec![],
                     is_error: true,
+                    step: "".to_string(),
                 };
             });
         }

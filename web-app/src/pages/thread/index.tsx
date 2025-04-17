@@ -10,6 +10,13 @@ import queryKeys from "@/hooks/api/queryKey";
 import PageHeader from "@/components/PageHeader";
 import References from "./References";
 import { Reference } from "@/types/chat";
+import Steps from "./Steps";
+
+const STEP_MAP = {
+  execute_sql: "Execute SQL",
+  visualize: "Generate visualization",
+  retrieve: "Retrieve data",
+};
 
 const Thread = () => {
   const { threadId } = useParams();
@@ -18,6 +25,8 @@ const Thread = () => {
   const [references, setReferences] = useState<Reference[]>(
     thread?.references || [],
   );
+
+  const [steps, setSteps] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const queryClient = useQueryClient();
 
@@ -28,6 +37,17 @@ const Thread = () => {
         // eslint-disable-next-line promise/catch-or-return
         service
           .ask(threadId ?? "", (answer) => {
+            if (answer.step) {
+              setSteps((pre) => {
+                if (
+                  Object.keys(STEP_MAP).includes(answer.step) &&
+                  pre.at(-1) !== answer.step
+                ) {
+                  return [...pre, answer.step];
+                }
+                return pre;
+              });
+            }
             setAnswerStream((pre) =>
               pre ? pre + answer.content : answer.content,
             );
@@ -37,7 +57,6 @@ const Thread = () => {
               }
               return pre;
             });
-            setIsLoading(false);
           })
           .finally(() => {
             setIsLoading(false);
@@ -58,6 +77,10 @@ const Thread = () => {
   }, [isSuccess, thread]);
 
   const answer = thread?.answer ? thread?.answer : answerStream;
+
+  const showAnswer = answer || steps.length > 0;
+
+  const showAgentThinking = isLoading && !showAnswer;
 
   return (
     <div className="flex flex-col h-full">
@@ -81,13 +104,13 @@ const Thread = () => {
             {thread?.question}
           </div>
 
-          {isLoading && (
-            <div className="flex gap-1 ju">
+          {showAgentThinking && (
+            <div className="flex gap-1">
               <img className="w-8 h-8" src="/oxy-loading.gif" />
               <p className="text-muted-foreground">Agent is thinking...</p>
             </div>
           )}
-          {!isLoading && answer && (
+          {showAnswer && (
             <div className="p-6 rounded-xl bg-base-card border border-base-border shadow-sm flex flex-col gap-2 ">
               <div className="flex gap-1 items-center h-12 justify-start">
                 <img className="w-[24px] h-[24px]" src="/logo.svg" alt="Oxy" />
@@ -95,8 +118,9 @@ const Thread = () => {
                   Answer
                 </p>
               </div>
+              <Steps steps={steps} isLoading={isLoading} />
 
-              <AnswerContent content={answer} />
+              <AnswerContent content={answer || ""} />
             </div>
           )}
           <div className="mt-2 flex">

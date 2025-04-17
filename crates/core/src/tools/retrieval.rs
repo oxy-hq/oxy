@@ -1,7 +1,10 @@
 use crate::{
     adapters::vector_store::{SearchRecord, VectorStore},
     errors::OxyError,
-    execute::{Executable, ExecutionContext, types::Output},
+    execute::{
+        Executable, ExecutionContext,
+        types::{Chunk, Output, Prompt},
+    },
 };
 
 use super::{
@@ -38,6 +41,13 @@ impl Executable<RetrievalInput> for RetrievalExecutable {
         execution_context: &ExecutionContext,
         input: RetrievalInput,
     ) -> Result<Self::Response, OxyError> {
+        execution_context
+            .write_chunk(Chunk {
+                key: None,
+                delta: Output::Prompt(Prompt::new("Retrieving data...".to_string())).into(),
+                finished: true,
+            })
+            .await?;
         let RetrievalInput {
             agent_name,
             query,
