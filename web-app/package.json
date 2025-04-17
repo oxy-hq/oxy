@@ -92,7 +92,7 @@
     "@vitejs/plugin-react-swc": "^3.8.1",
     "i": "^0.3.7",
     "typescript": "^5.8.3",
-    "vite": "^6.3.0",
+    "vite": "^6.3.1",
     "vite-plugin-node-polyfills": "^0.23.0"
   },
   "version": "0.1.14"
