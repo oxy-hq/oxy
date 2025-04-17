@@ -66,8 +66,7 @@ jobs:
           components: clippy, rustfmt
       - name: Prep cargo cache
         uses: Swatinem/rust-cache@v2
-        with:
-          cache-on-failure: "true"
+
         # protobuf is required by lance https://github.com/lancedb/lance/issues/3073
       - name: Install Protoc
         uses: arduino/setup-protoc@v3
@@ -118,8 +117,7 @@ jobs:
           components: clippy, rustfmt
       - name: Prep cargo cache
         uses: Swatinem/rust-cache@v2
-        with:
-          cache-on-failure: "true"
+
       # protobuf is required by lance https://github.com/lancedb/lance/issues/3073
       - name: Install Protoc
         uses: arduino/setup-protoc@v3
@@ -154,21 +152,19 @@ jobs:
           proc_trace_sys_enable: true
           comment_on_pr: false
           theme: dark
+
       - name: Prep Rust
         uses: dtolnay/rust-toolchain@stable
+
       - name: Prep cargo cache
         uses: Swatinem/rust-cache@v2
-        with:
-          cache-on-failure: "true"
+
       # protobuf is required by lance https://github.com/lancedb/lance/issues/3073
       - name: Install Protoc
         uses: arduino/setup-protoc@v3
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Free Disk Space (Ubuntu)
-        uses: jlumbroso/free-disk-space@main
-        with:
-          swap-storage: false
+
       - name: Run cargo test
         run: |
           touch examples/bigquery-sample.key
