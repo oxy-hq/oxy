@@ -250,9 +250,17 @@ pub fn build_openai_executable(
 #[derive(JsonSchema, Deserialize, Debug, Clone)]
 #[serde(untagged, rename_all = "camelCase", deny_unknown_fields)]
 enum AgentResponseData {
-    File { file_path: String },
-    Text { text: String },
-    SQL { sql: String },
+    File {
+        file_path: String,
+    },
+    #[schemars(description = "Default response type")]
+    Text {
+        text: String,
+    },
+    #[schemars(description = "Use when the user explicitly asks for generating SQL")]
+    SQL {
+        sql: String,
+    },
 }
 
 impl From<AgentResponseData> for Output {

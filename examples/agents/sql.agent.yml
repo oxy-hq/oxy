@@ -41,3 +41,8 @@ tools:
   - name: validate_sql
     type: validate_sql
     database: local
+
+tests:
+  - type: consistency
+    task_description: "Generate a SQL to support property grouping report generation"
+    n: 10
