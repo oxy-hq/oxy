@@ -1,10 +1,13 @@
 use std::{collections::HashMap, sync::Arc};
 
-use async_openai::types::{
-    ChatCompletionMessageToolCall, ChatCompletionMessageToolCallChunk,
-    ChatCompletionRequestMessage, ChatCompletionRequestSystemMessageArgs, ChatCompletionTool,
-    ChatCompletionToolType, CreateChatCompletionRequestArgs, FunctionCall, ResponseFormat,
-    ResponseFormatJsonSchema,
+use async_openai::{
+    error::OpenAIError,
+    types::{
+        ChatCompletionMessageToolCall, ChatCompletionMessageToolCallChunk,
+        ChatCompletionRequestMessage, ChatCompletionRequestSystemMessageArgs, ChatCompletionTool,
+        ChatCompletionToolType, CreateChatCompletionRequestArgs, FunctionCall, ResponseFormat,
+        ResponseFormatJsonSchema,
+    },
 };
 use deser_incomplete::from_json_str;
 use futures::StreamExt;
@@ -117,98 +120,128 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
             request_builder.tools(self.tool_configs.clone());
         }
 
-        let mut response = chat.create_stream(request_builder.build()?).await?;
+        let func = || async {
+            let request = request_builder
+                .build()
+                .map_err(|err| {
+                    OxyError::RuntimeError(format!(
+                        "Error in building completion request: {:?}",
+                        err
+                    ))
+                })
+                .map_err(backoff::Error::Permanent)?;
+            let mut response = chat
+                .create_stream(request)
+                .await
+                .map_err(|err| {
+                    OxyError::RuntimeError(format!("Error in completion request: {:?}", err))
+                })
+                .map_err(backoff::Error::Permanent)?;
+            let mut content = String::new();
+            let mut tool_calls = HashMap::<(u32, u32), ChatCompletionMessageToolCall>::new();
+            let mut last_parsed_content = String::new();
+            let mut has_written = false;
 
-        let mut content = String::new();
-        let mut tool_calls = HashMap::<(u32, u32), ChatCompletionMessageToolCall>::new();
-        let mut last_parsed_content = String::new();
-        let mut has_written = false;
+            while let Some(response) =
+                response.next().await.transpose().map_err(|err| match err {
+                    OpenAIError::StreamError(_) => {
+                        backoff::Error::<OxyError>::transient(err.into())
+                    }
+                    _ => backoff::Error::<OxyError>::Permanent(err.into()),
+                })?
+            {
+                if let Some(chunk) = response.choices.first() {
+                    if let Some(tool_call_chunks) = &chunk.delta.tool_calls {
+                        self.parse_tool_call_chunks(&mut tool_calls, chunk.index, tool_call_chunks);
+                    }
+                    if let Some(message) = &chunk.delta.content {
+                        content.push_str(message);
+                        // Check if the content is a valid JSON string and parse it
+                        // then write the chunk to the execution context
+                        if let Ok(data) = from_json_str::<AgentResponse>(&content) {
+                            let (parsed_content, mut output) = match data.data {
+                                AgentResponseData::File { file_path } => {
+                                    (file_path, Output::table(message.to_string()))
+                                }
+                                AgentResponseData::Text { text } => {
+                                    (text, Output::Text(message.to_string()))
+                                }
+                                AgentResponseData::SQL { sql } => {
+                                    (sql, Output::sql(message.to_string()))
+                                }
+                            };
+                            if last_parsed_content != parsed_content
+                                && variant_eq(&Output::Text("".to_string()), &output)
+                            {
+                                if !has_written {
+                                    execution_context
+                                        .write_kind(EventKind::Message {
+                                            message: "\nOutput:".primary().to_string(),
+                                        })
+                                        .await?;
+                                }
 
-        while let Some(response) = response.next().await.transpose()? {
-            if let Some(chunk) = response.choices.first() {
-                if let Some(tool_call_chunks) = &chunk.delta.tool_calls {
-                    self.parse_tool_call_chunks(&mut tool_calls, chunk.index, tool_call_chunks);
-                }
-                if let Some(message) = &chunk.delta.content {
-                    content.push_str(message);
-                    // Check if the content is a valid JSON string and parse it
-                    // then write the chunk to the execution context
-                    if let Ok(data) = from_json_str::<AgentResponse>(&content) {
-                        let (parsed_content, mut output) = match data.data {
-                            AgentResponseData::File { file_path } => {
-                                (file_path, Output::table(message.to_string()))
-                            }
-                            AgentResponseData::Text { text } => {
-                                (text, Output::Text(message.to_string()))
-                            }
-                            AgentResponseData::SQL { sql } => {
-                                (sql, Output::sql(message.to_string()))
-                            }
-                        };
-                        if last_parsed_content != parsed_content
-                            && variant_eq(&Output::Text("".to_string()), &output)
-                        {
-                            if !has_written {
+                                has_written = true;
+                                let chunk = parsed_content.replace(&last_parsed_content, "");
+                                output.replace(chunk);
+                                last_parsed_content = parsed_content;
                                 execution_context
-                                    .write_kind(EventKind::Message {
-                                        message: "\nOutput:".primary().to_string(),
+                                    .write_chunk(Chunk {
+                                        key: Some(AGENT_SOURCE_CONTENT.to_string()),
+                                        delta: output,
+                                        finished: false,
                                     })
                                     .await?;
                             }
-
-                            has_written = true;
-                            let chunk = parsed_content.replace(&last_parsed_content, "");
-                            output.replace(chunk);
-                            last_parsed_content = parsed_content;
-                            execution_context
-                                .write_chunk(Chunk {
-                                    key: Some(AGENT_SOURCE_CONTENT.to_string()),
-                                    delta: output,
-                                    finished: false,
-                                })
-                                .await?;
                         }
                     }
-                }
 
-                if chunk.finish_reason.is_some() {
-                    break;
+                    if chunk.finish_reason.is_some() {
+                        break;
+                    }
                 }
             }
-        }
-        let content = {
-            if content.is_empty() {
-                AgentResponse::default()
+            let content = {
+                if content.is_empty() {
+                    AgentResponse::default()
+                } else {
+                    serde_json::from_str::<AgentResponse>(&content).map_err(|err| {
+                        OxyError::SerializerError(format!(
+                            "Failed to deserialize OpenAI response: \"{}\"\n{}",
+                            content, err
+                        ))
+                    })?
+                }
+            };
+            log::info!("Agent response: {:?}", content);
+
+            let delta: Output = if has_written {
+                let mut output = Into::<Output>::into(content.data.clone());
+                output.replace("".to_string());
+                output
             } else {
-                serde_json::from_str::<AgentResponse>(&content).map_err(|err| {
-                    OxyError::SerializerError(format!(
-                        "Failed to deserialize OpenAI response: \"{}\"\n{}",
-                        content, err
-                    ))
-                })?
-            }
-        };
-        log::info!("Agent response: {:?}", content);
+                content.data.clone().into()
+            };
+            execution_context
+                .write_chunk(Chunk {
+                    key: Some(AGENT_SOURCE_CONTENT.to_string()),
+                    delta,
+                    finished: true,
+                })
+                .await?;
 
-        let delta: Output = if has_written {
-            let mut output = Into::<Output>::into(content.data.clone());
-            output.replace("".to_string());
-            output
-        } else {
-            content.data.clone().into()
-        };
-        execution_context
-            .write_chunk(Chunk {
-                key: Some(AGENT_SOURCE_CONTENT.to_string()),
-                delta,
-                finished: true,
+            Ok(OpenAIExecutableResponse {
+                content: content.into(),
+                tool_calls: tool_calls.into_values().collect(),
             })
-            .await?;
-
-        Ok(OpenAIExecutableResponse {
-            content: content.into(),
-            tool_calls: tool_calls.into_values().collect(),
+        };
+        let mut attempt = 0;
+        backoff::future::retry_notify(backoff::ExponentialBackoff::default(), func, |err, b| {
+            attempt += 1;
+            log::error!("Error happened at {:?} in OpenAI executable: {:?}", b, err);
+            log::warn!("Retrying({})...", attempt);
         })
+        .await
     }
 }
 

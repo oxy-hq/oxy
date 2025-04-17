@@ -92,6 +92,7 @@ url = "2.5.4"
 gcp-bigquery-client = "0.25.1"
 fehler = "1.0.0"
 sqlparser = "0.37.0"
+backoff = { version = "0.4.0", features = ["tokio"] }
 
 [build-dependencies]
 shadow-rs = "1.1.1"
