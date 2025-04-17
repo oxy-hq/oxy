@@ -1,0 +1,55 @@
+# Ignore node_modules and build artifacts
+node_modules/
+dist/
+web-app/node_modules/
+web-app/dist/
+
+# Ignore Rust target directory
+target/
+
+# Ignore version control and metadata files
+.git/
+.gitignore
+
+# Ignore editor and IDE files
+*.swp
+*.swo
+*.idea/
+.vscode/
+*.log
+
+# Ignore Docker-related files
+Dockerfile
+.dockerignore
+
+# Ignore temporary files
+*.tmp
+*.bak
+*.old
+
+# Ignore OS-specific files
+.DS_Store
+Thumbs.db
+
+# dockerfiles
+docker-compose.yml
+
+
+# examples, because we will mount them later
+examples/
+
+# unnecessary files & folders
+json-schemas/
+.github/
+db.sqlite
+
+
+# tests
+crates/core/tests/
+
+# markdowns
+docs/
+**/*.md
+
+# log
+*.log

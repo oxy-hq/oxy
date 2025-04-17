@@ -27,7 +27,13 @@ pub fn get_state_dir() -> String {
 }
 
 pub async fn establish_connection() -> DatabaseConnection {
-    let db_path = format!("sqlite://{}/db.sqlite?mode=rwc", get_state_dir());
-    let db: DatabaseConnection = Database::connect(db_path).await.unwrap();
-    db
+    let db_url = std::env::var("DATABASE_URL").ok();
+    if let Some(url) = db_url {
+        Database::connect(url).await.unwrap()
+    } else {
+        eprintln!("Warning: No database URL provided, falling back to default SQLite database.");
+        // Use the default SQLite database path
+        let db_path = format!("sqlite://{}/db.sqlite?mode=rwc", get_state_dir());
+        Database::connect(db_path).await.unwrap()
+    }
 }

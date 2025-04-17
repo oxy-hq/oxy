@@ -3,6 +3,7 @@ use crate::api::chart;
 use crate::api::message;
 use crate::api::thread;
 use crate::api::workflow;
+use crate::db::client::establish_connection;
 use axum::Router;
 use axum::routing::delete;
 use axum::routing::{get, post};
@@ -18,7 +19,7 @@ pub async fn api_router() -> Router {
         .allow_methods(tower_http::cors::Any)
         .allow_headers(tower_http::cors::Any);
 
-    let db = crate::db::client::establish_connection().await;
+    let db = establish_connection().await;
     // migrate db
     let _ = Migrator::up(&db, None).await;
 

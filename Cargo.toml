@@ -1,11 +1,6 @@
 [workspace]
 # TODO: switch back to default-members = ["crates/*"] once we migrated from release-please
-members = [
-  "crates/core",
-  "crates/entity",
-  "crates/migration",
-  "crates/py",
-]
+members = ["crates/core", "crates/entity", "crates/migration", "crates/py"]
 
 default-members = ["crates/core"]
 resolver = "2"
@@ -14,11 +9,13 @@ resolver = "2"
 tokio = { version = "1.44", features = ["full"] }
 sea-orm = { version = "1.1.7", features = [
   "sqlx-sqlite",
+  "sqlx-postgres",
   "runtime-tokio-rustls",
   "macros",
 ] }
 sea-orm-migration = { version = "1.1.7", features = [
   "sqlx-sqlite",
+  "sqlx-postgres",
   "runtime-tokio-rustls",
 ] }
 log = { version = "0.4" }
@@ -32,10 +29,7 @@ publish = false
 description = "Oxy"
 authors = ["oxy engineers"]
 documentation = "https://docs.oxy.tech"
-exclude = [
-  "examples/",
-  "tests/"
-]
+exclude = ["examples/", "tests/"]
 
 [profile.dev]
 opt-level = 1
