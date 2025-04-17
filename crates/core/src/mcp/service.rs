@@ -62,7 +62,7 @@ impl ServerHandler for OxyMcpServer {
 
     async fn list_tools(
         &self,
-        _: PaginatedRequestParam,
+        _: std::option::Option<PaginatedRequestParam>,
         _: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, rmcp::Error> {
         let tools = self
