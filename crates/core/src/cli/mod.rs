@@ -608,7 +608,7 @@ pub async fn start_mcp_sse_server(mut port: u16) -> anyhow::Result<CancellationT
 
     println!(
         "{}",
-        format!("MCP server started at port {}", port).success()
+        format!("MCP server running at http://localhost:{}", port).secondary()
     );
     anyhow::Ok(ct)
 }
@@ -707,7 +707,7 @@ pub async fn start_server_and_web_app(mut web_port: u16) {
         println!(
             "{} {}",
             "Web app running at".text(),
-            format!("http://{}", web_addr).secondary()
+            format!("http://localhost:{}", web_port).secondary()
         );
         axum::serve(listener, web_app)
             .with_graceful_shutdown(shutdown_signal())
