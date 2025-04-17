@@ -55,7 +55,4 @@ tools:
 
 tests:
   - type: consistency
-    task_description: "hello"
-
-  - type: consistency
     task_description: "how many users are there in the database?"

@@ -7,8 +7,6 @@ models:
   model_ref: gpt-4.1
   key_var: OPENAI_API_KEY
   api_url: https://api.openai.com/v1
-  azure_deployment_id: null
-  azure_api_version: null
 databases:
 - name: local
   dataset: .db/
