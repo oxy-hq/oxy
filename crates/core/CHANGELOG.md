@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.1.14](https://github.com/oxy-hq/oxy-internal/compare/0.1.13...0.1.14) (2025-04-17)
+
+
+### <!-- 0 -->🚀 Features
+
+* allow agents to execute workflows ([#618](https://github.com/oxy-hq/oxy-internal/issues/618)) ([cca67ec](https://github.com/oxy-hq/oxy-internal/commit/cca67ec2dc43bb9532977c69e5b73ec29d289171))
+* closes [#630](https://github.com/oxy-hq/oxy-internal/issues/630) Improve agent loading state ([#631](https://github.com/oxy-hq/oxy-internal/issues/631)) ([85c20d9](https://github.com/oxy-hq/oxy-internal/commit/85c20d9ea0c074521bd09a4146007fbfa8d14590))
+* handle bigquery source directly and increase timeout ([#622](https://github.com/oxy-hq/oxy-internal/issues/622)) ([503ed5c](https://github.com/oxy-hq/oxy-internal/commit/503ed5c9ae1c94c786b94da6aa75f390f3bad915))
+* implement stream retry ([#629](https://github.com/oxy-hq/oxy-internal/issues/629)) ([122e57f](https://github.com/oxy-hq/oxy-internal/commit/122e57f519233c0997ba2cea610a49b67cc22c22))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* add structured response description ([#628](https://github.com/oxy-hq/oxy-internal/issues/628)) ([e8407b5](https://github.com/oxy-hq/oxy-internal/commit/e8407b50f1943da93cdfaa8aeb135ce97c8209d5))
+* mcp sse not working ([c4e1516](https://github.com/oxy-hq/oxy-internal/commit/c4e15165bf9837a063af8d07fc57a54662da107e))
+* using api_key in azure ([#627](https://github.com/oxy-hq/oxy-internal/issues/627)) ([49d3ca9](https://github.com/oxy-hq/oxy-internal/commit/49d3ca9dd2011194844faf490c30afd0be4581c7))
+
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+* release 0.1.14 ([8b6cf7f](https://github.com/oxy-hq/oxy-internal/commit/8b6cf7fdb83ccaad5dbda51bec5764073736d45d))
+
 ## [0.1.13](https://github.com/oxy-hq/oxy-internal/compare/0.1.12...0.1.13) (2025-04-15)
 
 
