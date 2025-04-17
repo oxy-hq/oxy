@@ -42,7 +42,6 @@ use std::error::Error;
 use std::path::PathBuf;
 use std::process::Command;
 use std::process::exit;
-use tokio::runtime::Runtime;
 use tokio::signal;
 use tokio_util::sync::CancellationToken;
 use utoipa::OpenApi;

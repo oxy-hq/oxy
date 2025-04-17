@@ -1,5 +1,5 @@
 {
-  "commit-search-depth": "1000",
+  "last-release-sha": "8b130d8ddd52e92a9aa4efe4534e3beca11904f4",
   "packages": {
     "crates/core": {
       "release-type": "rust",
