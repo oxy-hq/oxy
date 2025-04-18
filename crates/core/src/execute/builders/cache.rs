@@ -1,8 +1,10 @@
 use serde::{Serialize, de::DeserializeOwned};
 
 use crate::{
+    config::constants::CACHE_SOURCE,
     errors::OxyError,
-    execute::{Executable, ExecutionContext},
+    execute::{Executable, ExecutionContext, types::EventKind},
+    theme::StyledText,
 };
 
 use super::wrap::Wrap;
@@ -89,14 +91,21 @@ where
         execution_context: &ExecutionContext,
         input: I,
     ) -> Result<Self::Response, OxyError> {
-        if let Some(value) = self.storage.read(execution_context, &input).await {
+        let cache_context = execution_context.with_child_source(
+            CACHE_SOURCE.to_string(),
+            format!("{}-{}", execution_context.source.id, CACHE_SOURCE),
+        );
+        if let Some(value) = self.storage.read(&cache_context, &input).await {
+            cache_context
+                .write_kind(EventKind::Message {
+                    message: "Cache detected. Using cache.".primary().to_string(),
+                })
+                .await?;
             return Ok(value);
         };
 
         let result = self.inner.execute(execution_context, input.clone()).await?;
-        self.storage
-            .write(execution_context, &input, &result)
-            .await?;
+        self.storage.write(&cache_context, &input, &result).await?;
         Ok(result)
     }
 }

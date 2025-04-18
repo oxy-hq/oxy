@@ -18,6 +18,7 @@ pub const GEMINI_API_URL: &str = "https://generativelanguage.googleapis.com/v1be
 pub const ANTHROPIC_API_URL: &str = "https://api.anthropic.com/v1";
 pub const CONCURRENCY_SOURCE: &str = "concurrency";
 pub const CONCURRENCY_ITEM_ID_PREFIX: &str = "concurrency_item_";
+pub const CACHE_SOURCE: &str = "cache";
 pub const CONSISTENCY_SOURCE: &str = "consistency";
 pub const CONSISTENCY_THRESHOLD: f32 = 0.25;
 
