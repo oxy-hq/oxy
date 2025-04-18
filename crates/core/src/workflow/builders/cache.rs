@@ -4,8 +4,9 @@ use crate::{
     execute::{
         ExecutionContext,
         builders::cache::{CacheStorage, CacheWriter, Cacheable},
-        types::{Output, OutputContainer},
+        types::{EventKind, Output, OutputContainer},
     },
+    theme::StyledText,
     utils::get_file_directories,
 };
 use serde::de::DeserializeOwned;
@@ -48,16 +49,20 @@ impl TaskCacheStorage {
         }
     }
 
-    fn compute_cache_key(&self, prefix: &str, key: &str) -> Option<String> {
+    fn compute_cache_key(&self, prefix: &str, key: &str, check_exists: bool) -> Option<String> {
         let path = PathBuf::from(key);
         let dir = path.parent()?;
         let file_name = path.file_name()?.to_string_lossy();
-        Some(format!(
+        let cache_path = format!(
             "{}/{}_{}",
             dir.to_string_lossy(),
             slugify!(prefix, separator = "_"),
             slugify!(&file_name, separator = "_")
-        ))
+        );
+        if check_exists && !PathBuf::from(&cache_path).exists() {
+            return None;
+        }
+        Some(cache_path)
     }
 }
 
@@ -75,7 +80,7 @@ impl CacheStorage<TaskInput, OutputContainer> for TaskCacheStorage {
             .await?;
         let maybe_sql = file_cache.read_str(&key)?;
 
-        if let Some(cache_key) = self.compute_cache_key(&input.task.name, &key) {
+        if let Some(cache_key) = self.compute_cache_key(&input.task.name, &key, true) {
             log::debug!("Cache key: {}", cache_key);
             let output = file_cache.read::<OutputContainer>(&cache_key).await;
             log::debug!("May be SQL: {}\n{:?}", maybe_sql, output);
@@ -94,7 +99,7 @@ impl CacheStorage<TaskInput, OutputContainer> for TaskCacheStorage {
                         metadata,
                     })
                 }
-                _ => file_cache.deserialize(&maybe_sql),
+                _ => Some(OutputContainer::Single(Output::sql(maybe_sql))),
             }
         } else {
             file_cache.deserialize(&maybe_sql)
@@ -117,7 +122,7 @@ impl CacheStorage<TaskInput, OutputContainer> for TaskCacheStorage {
                     let formatted_sql = format_sql(&sql.0.to_string());
                     file_cache.write_bytes(&key, formatted_sql.as_bytes())?;
 
-                    if let Some(cache_key) = self.compute_cache_key(&input.task.name, &key) {
+                    if let Some(cache_key) = self.compute_cache_key(&input.task.name, &key, false) {
                         file_cache.write(&cache_key, value).await?;
                     }
                 }
@@ -128,7 +133,7 @@ impl CacheStorage<TaskInput, OutputContainer> for TaskCacheStorage {
                     let formatted_sql = format_sql(&sql.0.to_string());
                     file_cache.write_bytes(&key, formatted_sql.as_bytes())?;
 
-                    if let Some(cache_key) = self.compute_cache_key(&input.task.name, &key) {
+                    if let Some(cache_key) = self.compute_cache_key(&input.task.name, &key, false) {
                         file_cache.write(&cache_key, value).await?;
                     }
                 }
@@ -136,6 +141,11 @@ impl CacheStorage<TaskInput, OutputContainer> for TaskCacheStorage {
                     file_cache.write(&key, value).await?;
                 }
             }
+            execution_context
+                .write_kind(EventKind::Message {
+                    message: format!("Cache written to {}", &key).primary().to_string(),
+                })
+                .await?;
         }
         Ok(())
     }
