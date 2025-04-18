@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.16](https://github.com/oxy-hq/oxy-internal/compare/0.1.15...0.1.16) (2025-04-18)
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* improve visualize tool output ([#638](https://github.com/oxy-hq/oxy-internal/issues/638)) ([3eecb45](https://github.com/oxy-hq/oxy-internal/commit/3eecb4574e68336fe3abe0850ac5625ed5cdeda2))
+
 ## [0.1.15](https://github.com/oxy-hq/oxy-internal/compare/0.1.14...0.1.15) (2025-04-18)
 
 
