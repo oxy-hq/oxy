@@ -1,0 +1,147 @@
+{
+  // Feel free to change this file to suit your needs, as it is already ignored by git.
+  // This is just for references and help you get started
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug executable 'oxy' serve",
+      "cargo": {
+        "args": ["build", "--bin=oxy", "--package=oxy"],
+        "filter": {
+          "name": "oxy",
+          "kind": "bin"
+        }
+      },
+      "args": ["serve"],
+      "cwd": "${workspaceFolder}/examples"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug unit tests in library 'oxy'",
+      "cargo": {
+        "args": ["test", "--no-run", "--lib", "--package=oxy"],
+        "filter": {
+          "name": "oxy",
+          "kind": "lib"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug unit tests in executable 'oxy'",
+      "cargo": {
+        "args": ["test", "--no-run", "--bin=oxy", "--package=oxy"],
+        "filter": {
+          "name": "oxy",
+          "kind": "bin"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug integration test 'run'",
+      "cargo": {
+        "args": ["test", "--no-run", "--test=run", "--package=oxy"],
+        "filter": {
+          "name": "run",
+          "kind": "test"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug integration test 'serve'",
+      "cargo": {
+        "args": ["test", "--no-run", "--test=serve", "--package=oxy"],
+        "filter": {
+          "name": "serve",
+          "kind": "test"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug integration test 'validation'",
+      "cargo": {
+        "args": ["test", "--no-run", "--test=validation", "--package=oxy"],
+        "filter": {
+          "name": "validation",
+          "kind": "test"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug unit tests in library 'entity'",
+      "cargo": {
+        "args": ["test", "--no-run", "--lib", "--package=entity"],
+        "filter": {
+          "name": "entity",
+          "kind": "lib"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug unit tests in library 'migration'",
+      "cargo": {
+        "args": ["test", "--no-run", "--lib", "--package=migration"],
+        "filter": {
+          "name": "migration",
+          "kind": "lib"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug executable 'migration'",
+      "cargo": {
+        "args": ["build", "--bin=migration", "--package=migration"],
+        "filter": {
+          "name": "migration",
+          "kind": "bin"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug unit tests in executable 'migration'",
+      "cargo": {
+        "args": ["test", "--no-run", "--bin=migration", "--package=migration"],
+        "filter": {
+          "name": "migration",
+          "kind": "bin"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}"
+    }
+  ]
+}
