@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.19](https://github.com/oxy-hq/oxy-internal/compare/0.1.18...0.1.19) (2025-04-18)
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* fallback to single sql type when cache key found ([#641](https://github.com/oxy-hq/oxy-internal/issues/641)) ([7b281f6](https://github.com/oxy-hq/oxy-internal/commit/7b281f69cd694d8841596e53283b951eb249e452))
+
 ## [0.1.18](https://github.com/oxy-hq/oxy-internal/compare/0.1.17...0.1.18) (2025-04-18)
 
 
