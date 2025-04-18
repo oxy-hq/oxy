@@ -16,15 +16,15 @@ function ChartPlugin() {
 
       const data = node.data || (node.data = {});
       const attributes = node.attributes || {};
-      const file_path = attributes.file_path;
+      const chart_src = attributes.chart_src;
 
-      if (!file_path) {
+      if (!chart_src) {
         return;
       }
 
       data.hName = "chart";
       data.hProperties = {
-        file_path,
+        chart_src,
       };
     });
   };

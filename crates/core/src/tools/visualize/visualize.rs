@@ -80,7 +80,7 @@ impl Executable<VisualizeInput> for VisualizeExecutable {
             .map_err(|e| anyhow::anyhow!(e))?;
 
         Ok(Output::Text(format!(
-            "Use this markdown directive to render the chart \":chart{{file_path={}}}\" directly in the final answer.",
+            "Use this markdown directive to render the chart \":chart{{chart_src={}}}\" directly in the final answer.",
             file_path
         )))
     }

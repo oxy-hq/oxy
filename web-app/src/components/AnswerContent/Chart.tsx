@@ -3,11 +3,11 @@ import useChart from "@/hooks/api/useChart";
 import { TopLevelSpec } from "vega-lite";
 
 type Props = {
-  file_path: string;
+  chart_src: string;
 };
 
 export default function ChartContainer(props: Props) {
-  const encodedPath = encodeURIComponent(props.file_path);
+  const encodedPath = encodeURIComponent(props.chart_src);
   const { data, isLoading } = useChart(encodedPath);
 
   if (isLoading) return <div>Loading...</div>;
