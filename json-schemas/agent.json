@@ -407,6 +407,45 @@
               ]
             }
           }
+        },
+        {
+          "type": "object",
+          "required": [
+            "description",
+            "name",
+            "output_task_ref",
+            "type",
+            "workflow_ref"
+          ],
+          "properties": {
+            "description": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "output_task_ref": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "workflow"
+              ]
+            },
+            "variables": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "workflow_ref": {
+              "type": "string"
+            }
+          }
         }
       ]
     }
