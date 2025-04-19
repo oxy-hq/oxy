@@ -8,10 +8,10 @@ updates:
   - package-ecosystem: "cargo"
     directories:
       - "/"
-      - "/backend-workspaces"
+      - "/crates/**"
     schedule:
       interval: "weekly"
-    open-pull-requests-limit: 4
+    open-pull-requests-limit: 5
     allow:
       - dependency-type: "direct"
     groups: # here until https://github.com/dependabot/dependabot-core/issues/1778 is solved
