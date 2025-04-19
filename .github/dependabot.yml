@@ -6,7 +6,7 @@ updates:
       interval: "weekly"
     open-pull-requests-limit: 2
   - package-ecosystem: "cargo"
-    directories: ["/", "/crates/core", "/crates/entity", "/crates/migration", "/crates/py"]
+    directories: ["/"]
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
