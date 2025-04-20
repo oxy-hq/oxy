@@ -12,7 +12,7 @@ exclude.workspace = true
 
 [dependencies]
 anyhow = "1.0.98"
-arrow = { version = "53.4", default-features = false, features = ["json"] } # arrow version has to comply with duckdb version
+arrow = { version = "54.2", default-features = false, features = ["json"] } # arrow version has to comply with duckdb version
 assert_cmd = "2.0.17"
 async-openai = {version = "0.28.1", features = ["byot"]}
 async-stream = "0.3.6"
