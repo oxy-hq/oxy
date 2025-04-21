@@ -43,19 +43,19 @@ databases:
     database: default
 
 models:
-  - name: openai-4.1-mini
+  - name: openai-4o-mini
     vendor: openai
-    model_ref: gpt-4.1-mini
+    model_ref: gpt-4o-mini
     key_var: OPENAI_API_KEY
-  - name: openai-4.1
+  - name: openai-4o
     vendor: openai
-    model_ref: gpt-4.1
+    model_ref: gpt-4o
     key_var: OPENAI_API_KEY
-  # - name: openai-4.1-mini-azure
+  # - name: openai-4o-mini-azure
   #   vendor: openai
-  #   model_ref: openai-4.1-mini-azure
+  #   model_ref: openai-4o-mini-azure
   #   api_url: something
-  #   azure_deployment_id: "SMART-Automated-gpt-4.1"
+  #   azure_deployment_id: "SMART-Automated-gpt-4o"
   #   azure_api_version: "2024-08-01-preview"
   #   key_var: OPENAI_AZURE_KEY
   - name: llama3.2

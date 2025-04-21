@@ -2,7 +2,7 @@
 
 description: "An agent for generating and executing SQL queries for PostgreSQL databases."
 
-model: "openai-4.1-mini"
+model: "openai-4o-mini"
 context:
   - name: queries
     type: file

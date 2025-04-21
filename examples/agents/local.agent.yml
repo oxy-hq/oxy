@@ -2,7 +2,7 @@
 
 name: local
 description: "A local agent for generating reports based on user-provided data."
-model: "openai-4.1-mini"
+model: "openai-4o-mini"
 system_instructions: |
   You are an Data Analyst expert.
   Your task is to help the user generate report given the input.

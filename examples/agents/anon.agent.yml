@@ -2,7 +2,7 @@
 
 name: local
 description: "An agent for anonymizing sensitive data and generating reports."
-model: "openai-4.1-mini"
+model: "openai-4o-mini"
 anonymize:
   type: flash_text
   # Mapping-based anonymization
