@@ -2,7 +2,7 @@
 
 description: "An agent for assisting with SQL query generation and validation."
 
-model: "openai-4.1-mini"
+model: "openai-4o-mini"
 
 context:
   - name: anon_youtube_model

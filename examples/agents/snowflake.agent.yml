@@ -2,7 +2,7 @@
 
 description: "An agent for generating and executing SQL queries for Snowflake databases."
 
-model: "openai-4.1-mini"
+model: "openai-4o-mini"
 
 system_instructions: |
   ## Instructions
