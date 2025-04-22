@@ -32,9 +32,9 @@ documentation = "https://docs.oxy.tech"
 exclude = ["examples/", "tests/"]
 
 [profile.dev]
-opt-level = 0
+opt-level = 1
 [profile.dev.package."*"]
-opt-level = 0
+opt-level = 1
 
 [profile.release]
 opt-level = 3
