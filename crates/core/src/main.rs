@@ -60,9 +60,9 @@ fn init_logging() -> Result<(), fern::InitError> {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // at some version, rustls changed default to aws_lc, which we are not ready for
-    // so we need this here to force the use of ring
-    rustls::crypto::ring::default_provider()
+    // at some version, rustls changed default to aws_lc, which some libs are not aware of
+    // so we need to set it to default provider to avoid collision of crypto provider
+    rustls::crypto::aws_lc_rs::default_provider()
         .install_default()
         .expect("Failed to install rustls crypto provider");
     setup_panic!(Metadata::new(env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"))
