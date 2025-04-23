@@ -28,7 +28,6 @@ const MainLayout = React.memo(function MainLayout() {
           <Route path="/threads/:threadId" element={<ThreadPage />} />
           <Route path="/workflows/:pathb64" element={<WorkflowPage />} />
           <Route path="/agents/:pathb64/tests" element={<AgentTestsPage />} />
-          <Route path="/not_signed_in" element={<NotSignedIn />} />
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>
       </main>
@@ -40,7 +39,10 @@ function App() {
   return (
     <Router>
       <SidebarProvider>
-        <MainLayout />
+        <Routes>
+          <Route path="/not_signed_in" element={<NotSignedIn />} />
+          <Route path="*" element={<MainLayout />} />
+        </Routes>
       </SidebarProvider>
       <ShadcnToaster />
     </Router>
