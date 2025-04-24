@@ -50,6 +50,7 @@ impl Executable<(String, Option<ToolType>, ToolRawInput)> for ToolExecutable {
                             SQLToolInput {
                                 database: sql_config.database.clone(),
                                 param: input.param.clone(),
+                                dry_run_limit: sql_config.dry_run_limit,
                             },
                         )
                         .await
@@ -61,6 +62,7 @@ impl Executable<(String, Option<ToolType>, ToolRawInput)> for ToolExecutable {
                             SQLToolInput {
                                 database: sql_config.database.clone(),
                                 param: input.param.clone(),
+                                dry_run_limit: None,
                             },
                         )
                         .await
@@ -130,6 +132,7 @@ impl Executable<(String, Option<ToolType>, ToolRawInput)> for ToolExecutable {
 struct SQLToolInput {
     database: String,
     param: String,
+    dry_run_limit: Option<u64>,
 }
 
 #[derive(Clone)]
@@ -143,10 +146,19 @@ impl ParamMapper<SQLToolInput, SQLInput> for SQLMapper {
         input: SQLToolInput,
     ) -> Result<(SQLInput, Option<ExecutionContext>), OxyError> {
         let SQLToolInput {
-            param, database, ..
+            param,
+            database,
+            dry_run_limit,
         } = input;
         let SQLParams { sql } = serde_json::from_str::<SQLParams>(&param)?;
-        Ok((SQLInput { sql, database }, None))
+        Ok((
+            SQLInput {
+                sql,
+                database,
+                dry_run_limit,
+            },
+            None,
+        ))
     }
 }
 

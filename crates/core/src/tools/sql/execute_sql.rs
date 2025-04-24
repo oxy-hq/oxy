@@ -45,8 +45,12 @@ impl Executable<SQLInput> for SQLExecutable {
                 finished: true,
             })
             .await?;
-        let connector =
-            Connector::from_database(&input.database, &execution_context.config).await?;
+        let connector = Connector::from_database(
+            &input.database,
+            &execution_context.config,
+            input.dry_run_limit,
+        )
+        .await?;
         let file_path = connector.run_query(&input.sql).await?;
         let table = Output::table_with_reference(
             file_path,

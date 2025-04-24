@@ -36,9 +36,8 @@ impl Executable<SQLInput> for ValidateSQLExecutable {
         input: SQLInput,
     ) -> Result<Self::Response, OxyError> {
         let connector =
-            Connector::from_database(&input.database, &execution_context.config).await?;
-        let explain_sql = format!("EXPLAIN ({})", &input.sql.trim().trim_end_matches(';'));
-        let success = match connector.run_query(&explain_sql).await {
+            Connector::from_database(&input.database, &execution_context.config, None).await?;
+        let success = match connector.explain_query(&input.sql).await {
             Ok(_) => Output::Bool(true),
             Err(err) => {
                 let error_message = format!("SQL validation failed: {}", err);

@@ -172,6 +172,7 @@ async fn create_agent_file(
                 name: "execute_sql".to_string(),
                 description: "".to_string(),
                 database: "local".to_string(),
+                dry_run_limit: None,
             })],
         },
         model: model_name,

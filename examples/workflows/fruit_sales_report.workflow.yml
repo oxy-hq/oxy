@@ -12,7 +12,8 @@ tasks:
     type: execute_sql
     database: primary_database
     sql_file: data/fruit_sales.sql
-  
+    # dry_run_limit: 1
+
   - name: report
     type: agent
     agent_ref: agents/local.agent.yml

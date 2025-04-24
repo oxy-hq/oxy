@@ -331,6 +331,8 @@ pub struct BigQuery {
     pub key_path: Option<PathBuf>,
     #[garde(length(min = 1))]
     pub dataset: String,
+    #[garde(range(min = 1))]
+    pub dry_run_limit: Option<u64>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Validate, Clone, JsonSchema)]
@@ -660,6 +662,9 @@ pub struct ExecuteSQLTask {
 
     #[garde(dive)]
     pub export: Option<TaskExport>,
+
+    #[garde(range(min = 1))]
+    pub dry_run_limit: Option<u64>,
 }
 
 impl Hash for ExecuteSQLTask {
@@ -1006,6 +1011,7 @@ pub struct ExecuteSQLTool {
     #[serde(default = "default_sql_tool_description")]
     pub description: String,
     pub database: String,
+    pub dry_run_limit: Option<u64>,
 }
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]

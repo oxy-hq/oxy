@@ -55,6 +55,13 @@ trait Engine {
         let file_path = self.run_query(query).await?;
         load_result(&file_path).map_err(|e| connector_internal_error(LOAD_RESULT, &e))
     }
+    async fn explain_query(&self, query: &str) -> Result<(Vec<RecordBatch>, SchemaRef), OxyError> {
+        let explain_query = format!("EXPLAIN ({})", query.trim().trim_end_matches(';'));
+        self.run_query_and_load(&explain_query).await
+    }
+    async fn dry_run(&self, query: &str) -> Result<(Vec<RecordBatch>, SchemaRef), OxyError> {
+        self.explain_query(query).await
+    }
 }
 
 #[enum_dispatch::enum_dispatch(Engine)]
@@ -108,6 +115,7 @@ pub struct ConnectorX {
     dialect: String,
     db_path: String,
     db_name: String,
+    dry_run_limit: Option<u64>,
 }
 
 impl ConnectorX {
@@ -124,7 +132,9 @@ impl ConnectorX {
                 self.dialect
             )))?,
         };
-        let (datasets, _) = self.run_query_and_load(&query_string).await?;
+        let file_path = self.run_query_internal(&query_string, None).await?;
+        let (datasets, _) =
+            load_result(&file_path).map_err(|e| connector_internal_error(LOAD_RESULT, &e))?;
         let result_iter = datasets
             .iter()
             .flat_map(|batch| as_string_array(batch.column(0)).iter());
@@ -133,10 +143,12 @@ impl ConnectorX {
             .collect::<Option<Vec<String>>>()
             .unwrap_or_default())
     }
-}
 
-impl Engine for ConnectorX {
-    async fn run_query(&self, query: &str) -> Result<String, OxyError> {
+    async fn run_query_internal(
+        &self,
+        query: &str,
+        dry_run_limit: Option<u64>,
+    ) -> Result<String, OxyError> {
         let conn_string = format!("{}://{}", self.dialect, self.db_path);
         let query = query.to_string();
         let dialect = self.dialect.clone();
@@ -145,7 +157,7 @@ impl Engine for ConnectorX {
                 BIGQUERY_DIALECT => {
                     let mut destination = ArrowDestination::new();
                     let rt = Arc::new(tokio::runtime::Runtime::new()?);
-                    let source = BigQuerySource::new(rt, &conn_string)?;
+                    let source = BigQuerySource::new(rt, &conn_string, dry_run_limit)?;
                     let queries = &[query.as_str()];
                     let dispatcher = Dispatcher::<_, _, BigQueryArrowTransport>::new(
                         source,
@@ -178,6 +190,36 @@ impl Engine for ConnectorX {
         .map_err(|e| connector_internal_error(FAILED_TO_RUN_BLOCKING_TASK, &e))??;
 
         Ok(result)
+    }
+}
+
+impl Engine for ConnectorX {
+    async fn dry_run(&self, query: &str) -> Result<(Vec<RecordBatch>, SchemaRef), OxyError> {
+        match self.dialect.as_str() {
+            BIGQUERY_DIALECT => {
+                let conn_string = format!("{}://{}", self.dialect, self.db_path);
+                let rt =
+                    Arc::new(tokio::runtime::Runtime::new().map_err(|err| {
+                        connector_internal_error(FAILED_TO_RUN_BLOCKING_TASK, &err)
+                    })?);
+                let query = query.to_string();
+
+                tokio::task::spawn_blocking(move || {
+                    let mut source = BigQuerySource::new(rt, &conn_string, None)
+                        .map_err(|err| connector_internal_error(CREATE_CONN, &err))?;
+                    source
+                        .dry_run(&query)
+                        .map_err(|err| connector_internal_error(EXECUTE_QUERY, &err))
+                })
+                .await
+                .map_err(|err| connector_internal_error(FAILED_TO_RUN_BLOCKING_TASK, &err))?
+            }
+            _ => self.explain_query(query).await,
+        }
+    }
+
+    async fn run_query(&self, query: &str) -> Result<String, OxyError> {
+        self.run_query_internal(query, self.dry_run_limit).await
     }
 
     async fn load_database_info(&self) -> Result<DatabaseInfo, OxyError> {
@@ -334,6 +376,7 @@ impl Connector {
     pub async fn from_database(
         database_ref: &str,
         config_manager: &ConfigManager,
+        dry_run_limit: Option<u64>,
     ) -> Result<Self, OxyError> {
         let database = config_manager.resolve_database(database_ref)?;
         let engine = match &database.database_type {
@@ -350,6 +393,7 @@ impl Connector {
                     dialect: database.dialect(),
                     db_path: key_path,
                     db_name: bigquery.dataset.clone(),
+                    dry_run_limit: dry_run_limit.or(bigquery.dry_run_limit),
                 })
             }
             DatabaseType::DuckDB(duckdb) => EngineType::DuckDB(DuckDB {
@@ -371,6 +415,7 @@ impl Connector {
                     dialect: database.dialect(),
                     db_path,
                     db_name,
+                    dry_run_limit: None,
                 })
             }
             DatabaseType::Redshift(rs) => {
@@ -387,6 +432,7 @@ impl Connector {
                     dialect: database.dialect(),
                     db_path,
                     db_name,
+                    dry_run_limit: None,
                 })
             }
             DatabaseType::Mysql(my) => {
@@ -403,6 +449,7 @@ impl Connector {
                     dialect: database.dialect(),
                     db_path,
                     db_name,
+                    dry_run_limit: None,
                 })
             }
             DatabaseType::ClickHouse(ch) => {
@@ -428,6 +475,17 @@ impl Connector {
         query: &str,
     ) -> Result<(Vec<RecordBatch>, SchemaRef), OxyError> {
         self.engine.run_query_and_load(query).await
+    }
+
+    pub async fn explain_query(
+        &self,
+        query: &str,
+    ) -> Result<(Vec<RecordBatch>, SchemaRef), OxyError> {
+        self.engine.explain_query(query).await
+    }
+
+    pub async fn dry_run(&self, query: &str) -> Result<(Vec<RecordBatch>, SchemaRef), OxyError> {
+        self.engine.dry_run(query).await
     }
 }
 

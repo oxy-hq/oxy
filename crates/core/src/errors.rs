@@ -29,7 +29,7 @@ pub enum OxyError {
     LanceDBError(#[from] lancedb::Error),
     #[error("SerdeArrow error:\n{0}")]
     SerdeArrowError(#[from] serde_arrow::Error),
-    #[error("Tool call error {handle}({param}):\n{msg}")]
+    #[error("Error when calling {handle}:\n{msg}")]
     ToolCallError {
         call_id: String,
         handle: String,

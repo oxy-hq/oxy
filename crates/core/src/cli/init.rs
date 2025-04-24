@@ -205,6 +205,7 @@ fn choose_database_type() -> Result<DatabaseType, InitError> {
                         None,
                     )?)),
                     dataset: prompt_with_default("Dataset", "bigquery-public-data", None)?,
+                    dry_run_limit: None, // TODO: Implement this or left as None by default?
                 }));
             }
             "3" => collect_postgres_conf(),
