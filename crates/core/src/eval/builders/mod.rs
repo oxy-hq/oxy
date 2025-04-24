@@ -11,10 +11,14 @@ use crate::{
         writer::{BufWriter, EventHandler},
     },
 };
-pub use eval::{EvalInput, Metric, build_eval_executable};
+use eval::build_eval_executable;
+use types::{EvalInput, Metric};
 
 mod eval;
+mod generator;
+mod solver;
 mod target;
+pub mod types;
 
 pub struct EvalLauncher {
     execution_context: Option<ExecutionContext>,
