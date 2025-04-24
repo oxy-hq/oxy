@@ -2,6 +2,10 @@
 // Source implementation for Google BigQuery
 
 use anyhow::anyhow;
+use arrow::{
+    array::{Array, ArrayData, FixedSizeListArray, GenericByteArray, RecordBatch, StringArray},
+    datatypes::{DataType, Field, Schema, SchemaRef, Utf8Type},
+};
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Utc};
 use connectorx::{
     data_order::DataOrder,
@@ -28,11 +32,33 @@ use url::Url;
 
 const DEFAULT_TIMEOUT_MS: i32 = 180000;
 
-fn make_query_result_with_default_timeout(sql_query: impl Into<String>) -> QueryRequest {
+fn make_query_request_with_default_timeout(sql_query: impl Into<String>) -> QueryRequest {
     QueryRequest {
         connection_properties: None,
         default_dataset: None,
         dry_run: None,
+        kind: None,
+        labels: None,
+        location: None,
+        max_results: None,
+        maximum_bytes_billed: None,
+        parameter_mode: None,
+        preserve_nulls: None,
+        query: sql_query.into(),
+        query_parameters: None,
+        request_id: None,
+        timeout_ms: Some(DEFAULT_TIMEOUT_MS),
+        use_legacy_sql: false, // force standard SQL by default
+        use_query_cache: None,
+        format_options: None,
+    }
+}
+
+fn make_dry_run_query_request(sql_query: impl Into<String>) -> QueryRequest {
+    QueryRequest {
+        connection_properties: None,
+        default_dataset: None,
+        dry_run: Some(true),
         kind: None,
         labels: None,
         location: None,
@@ -76,11 +102,12 @@ pub struct BigQuerySource {
     queries: Vec<CXQuery<String>>,
     names: Vec<String>,
     schema: Vec<BigQueryTypeSystem>,
+    dry_run_limit: Option<u64>,
 }
 
 impl BigQuerySource {
     #[throws(BigQuerySourceError)]
-    pub fn new(rt: Arc<Runtime>, conn: &str) -> Self {
+    pub fn new(rt: Arc<Runtime>, conn: &str, dry_run_limit: Option<u64>) -> Self {
         let url = Url::parse(conn)?;
         let sa_key_path = url.path();
         let client = Arc::new(rt.block_on(
@@ -102,7 +129,50 @@ impl BigQuerySource {
             queries: vec![],
             names: vec![],
             schema: vec![],
+            dry_run_limit,
         }
+    }
+
+    #[throws(BigQuerySourceError)]
+    pub fn dry_run(&mut self, query: &str) -> (Vec<RecordBatch>, SchemaRef) {
+        let job = self.client.job();
+        let rs = self
+            .rt
+            .block_on(job.query(self.project_id.as_str(), make_dry_run_query_request(query)))?;
+        let errors_list = DataType::FixedSizeList(
+            Arc::new(Field::new("error", DataType::Utf8, false)),
+            rs.errors.as_ref().map(|v| v.len()).unwrap_or(0) as i32,
+        );
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("total_bytes_processed", DataType::Utf8, true),
+            Field::new("errors", errors_list.clone(), true),
+        ]));
+        let batches = vec![
+            RecordBatch::try_new(
+                schema.clone(),
+                vec![
+                    Arc::new(StringArray::from(vec![rs.total_bytes_processed.clone()])),
+                    Arc::new(FixedSizeListArray::from(
+                        ArrayData::builder(errors_list)
+                            .len(1)
+                            .add_child_data(
+                                GenericByteArray::<Utf8Type>::from(
+                                    rs.errors
+                                        .map(|v| {
+                                            v.into_iter().map(|e| e.to_string()).collect::<Vec<_>>()
+                                        })
+                                        .unwrap_or_default(),
+                                )
+                                .into_data(),
+                            )
+                            .build()
+                            .map_err(|err| anyhow!(err.to_string()))?,
+                    )),
+                ],
+            )
+            .map_err(|err| anyhow!(err.to_string()))?,
+        ];
+        (batches, schema)
     }
 }
 
@@ -136,10 +206,34 @@ where
         assert!(!self.queries.is_empty());
         let job = self.client.job();
         for query in self.queries.iter() {
+            // Check bytes limit
+            log::debug!("Dry run limit: {:?}", self.dry_run_limit);
+            if let Some(dry_run_limit) = self.dry_run_limit {
+                let dry_run_rs = self.rt.block_on(job.query(
+                    self.project_id.as_str(),
+                    make_dry_run_query_request(query.as_str()),
+                ))?;
+                log::debug!("Dry run response: {:?}", dry_run_rs);
+                if let Some(total_bytes_processed) = dry_run_rs
+                    .total_bytes_processed
+                    .map(|v| v.parse::<u64>().ok())
+                    .flatten()
+                {
+                    if total_bytes_processed > dry_run_limit {
+                        throw!(anyhow!(
+                            "Query would process {} bytes of data, which would exceed the dry run limit of {} bytes.",
+                            total_bytes_processed,
+                            dry_run_limit
+                        ));
+                    }
+                }
+            }
+
+            // Run limit 1 query to fetch schema
             let l1query = limit1_query(query, &BigQueryDialect {})?;
             let rs = self.rt.block_on(job.query(
                 self.project_id.as_str(),
-                make_query_result_with_default_timeout(l1query.as_str()),
+                make_query_request_with_default_timeout(l1query.as_str()),
             ))?;
             let (names, types) = rs
                 .schema
@@ -170,7 +264,7 @@ where
                 let job = self.client.job();
                 let query_response = self.rt.block_on(job.query(
                     self.project_id.as_str(),
-                    make_query_result_with_default_timeout(cquery.as_str()),
+                    make_query_request_with_default_timeout(cquery.as_str()),
                 ))?;
                 let mut rs = ResultSet::new_from_query_response(query_response);
                 rs.next_row();
@@ -248,7 +342,7 @@ impl SourcePartition for BigQuerySourcePartition {
         let job = self.client.job();
         let query_response = self.rt.block_on(job.query(
             self.project_id.as_str(),
-            make_query_result_with_default_timeout(cquery.as_str()),
+            make_query_request_with_default_timeout(cquery.as_str()),
         ))?;
         let mut rs = ResultSet::new_from_query_response(query_response);
         rs.next_row();
@@ -263,7 +357,7 @@ impl SourcePartition for BigQuerySourcePartition {
         let job = self.client.job();
         let qry = self.rt.block_on(job.query(
             self.project_id.as_str(),
-            make_query_result_with_default_timeout(self.query.as_str()),
+            make_query_request_with_default_timeout(self.query.as_str()),
         ))?;
         let job_info = qry
             .job_reference

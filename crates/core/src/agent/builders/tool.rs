@@ -9,8 +9,9 @@ use crate::{
     execute::{
         Executable, ExecutionContext,
         builders::{ExecutableBuilder, map::ParamMapper},
-        types::Output,
+        types::{EventKind, Output},
     },
+    theme::StyledText,
     tools::{ToolInput, ToolLauncherExecutable},
 };
 
@@ -60,6 +61,17 @@ impl Executable<OpenAIExecutableResponse> for OpenAITool {
         )
         .execute(execution_context, input.tool_calls.clone())
         .await?;
+
+        for tool_ret in response.iter() {
+            if let Err(e) = tool_ret {
+                execution_context
+                    .write_kind(EventKind::Message {
+                        message: e.to_string().error().to_string(),
+                    })
+                    .await?;
+            }
+        }
+
         let tool_rets = input
             .tool_calls
             .iter()

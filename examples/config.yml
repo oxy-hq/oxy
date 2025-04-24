@@ -5,6 +5,7 @@ databases:
     type: bigquery
     key_path: bigquery-sample.key
     dataset: dbt_prod_core
+    # dry_run_limit: 1
 
   - name: local
     type: duckdb

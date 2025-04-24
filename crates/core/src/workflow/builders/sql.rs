@@ -74,6 +74,7 @@ impl ParamMapper<ExecuteSQLTask, SQLInput> for SQLTaskMapper {
             SQLInput {
                 sql,
                 database: input.database,
+                dry_run_limit: input.dry_run_limit,
             },
             None,
         ))

@@ -187,6 +187,9 @@ pub struct RunArgs {
 
     #[clap(long, default_value_t = false)]
     retry: bool,
+
+    #[clap(long, default_value_t = false)]
+    dry_run: bool,
 }
 
 #[derive(Parser, Debug)]
@@ -202,6 +205,7 @@ pub struct RunOptions {
     variables: Option<Vec<(String, String)>>,
     question: Option<String>,
     retry: bool,
+    dry_run: bool,
 }
 
 impl<'py> FromPyObject<'py> for RunOptions {
@@ -222,11 +226,17 @@ impl<'py> FromPyObject<'py> for RunOptions {
             .get_item("retry")
             .map(|v| v.extract::<bool>().unwrap_or(false))
             .unwrap_or(false);
+        let dry_run = ob
+            .get_item("dry_run")
+            .map(|v| v.extract::<bool>().unwrap_or(false))
+            .unwrap_or(false);
+
         Ok(RunOptions {
             database,
             variables,
             question,
             retry,
+            dry_run,
         })
     }
 }
@@ -240,6 +250,7 @@ impl RunArgs {
                 variables: options.variables.unwrap_or(vec![]),
                 question: options.question,
                 retry: options.retry,
+                dry_run: options.dry_run,
             },
             None => Self {
                 file,
@@ -247,6 +258,7 @@ impl RunArgs {
                 variables: vec![],
                 question: None,
                 retry: false,
+                dry_run: false,
             },
         }
     }
@@ -454,6 +466,7 @@ async fn handle_sql_file(
     database: Option<String>,
     config: &ConfigManager,
     variables: &[(String, String)],
+    dry_run: bool,
 ) -> Result<String, OxyError> {
     let database = database.ok_or_else(|| {
         OxyError::ArgumentError(
@@ -484,10 +497,11 @@ async fn handle_sql_file(
 
     // Print colored SQL and execute query
     print_colored_sql(&query);
-    let (datasets, schema) = Connector::from_database(&database, config)
-        .await?
-        .run_query_and_load(&query)
-        .await?;
+    let connector = Connector::from_database(&database, config, None).await?;
+    let (datasets, schema) = match dry_run {
+        false => connector.run_query_and_load(&query).await,
+        true => connector.dry_run(&query).await,
+    }?;
     let batches_display = record_batches_to_table(&datasets, &schema)
         .map_err(|e| OxyError::RuntimeError(format!("Failed to display query results: {}", e)))?;
     println!("\n\x1b[1;32mResults:\x1b[0m");
@@ -561,8 +575,14 @@ pub async fn handle_run_command(run_args: RunArgs) -> Result<RunResult, OxyError
                     "Database is required for running SQL file. Please provide the database using --database or set a default database in config.yml".into(),
                 ));
             }
-            let sql_result =
-                handle_sql_file(&file_path, database, &config, &run_args.variables).await?;
+            let sql_result = handle_sql_file(
+                &file_path,
+                database,
+                &config,
+                &run_args.variables,
+                run_args.dry_run,
+            )
+            .await?;
             Ok(RunResult::Sql(sql_result))
         }
         _ => Err(OxyError::ArgumentError(
