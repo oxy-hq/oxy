@@ -1,3 +1,3 @@
 mod builders;
-
-pub use builders::{EvalInput, EvalLauncher, Metric};
+pub use builders::EvalLauncher;
+pub use builders::types::{EvalInput, Metric};

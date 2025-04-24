@@ -13,7 +13,7 @@ use crate::{
     workflow::WorkflowLauncher,
 };
 
-use super::eval::EvalTarget;
+use super::types::EvalTarget;
 
 #[derive(Clone, Debug)]
 pub(super) struct TargetExecutable {

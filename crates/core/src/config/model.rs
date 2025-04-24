@@ -238,7 +238,7 @@ pub struct AgentConfig {
     pub anonymize: Option<AnonymizerConfig>,
     #[serde(default)]
     #[garde(skip)]
-    pub tests: Vec<EvalKind>,
+    pub tests: Vec<EvalConfig>,
     #[serde(flatten)]
     #[serde(default)]
     #[garde(skip)]
@@ -802,7 +802,7 @@ pub struct TempWorkflow {
     pub tasks: Vec<Task>,
     pub variables: Option<HashMap<String, String>>,
     #[serde(default = "default_tests")]
-    pub tests: Vec<EvalKind>,
+    pub tests: Vec<EvalConfig>,
     #[serde(default)]
     pub description: String,
 }
@@ -841,34 +841,66 @@ impl Hash for Task {
 }
 
 #[derive(Serialize, Deserialize, Debug, Validate, JsonSchema, Clone)]
+#[garde(context(ValidationContext))]
+pub struct EvalConfig {
+    #[garde(dive)]
+    #[serde(flatten)]
+    pub kind: EvalKind,
+    #[garde(dive)]
+    #[serde(flatten)]
+    pub solver: SolverKind,
+    #[garde(skip)]
+    #[serde(default = "default_consistency_concurrency")]
+    pub concurrency: usize,
+    #[garde(skip)]
+    pub task_ref: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Validate, JsonSchema, Clone)]
 #[serde(tag = "type")]
 #[garde(context(ValidationContext))]
 pub enum EvalKind {
     #[serde(rename = "consistency")]
     Consistency(#[garde(dive)] Consistency),
+    #[serde(rename = "custom")]
+    Custom(#[garde(dive)] Custom),
 }
 
 #[derive(Serialize, Deserialize, Debug, Validate, JsonSchema, Clone)]
 #[garde(context(ValidationContext))]
 pub struct Consistency {
+    #[garde(skip)]
+    #[serde(default = "default_n")]
+    pub n: usize,
+}
+
+#[derive(Serialize, Deserialize, Debug, Validate, JsonSchema, Clone)]
+#[garde(context(ValidationContext))]
+pub struct Custom {
+    #[garde(length(min = 1))]
+    pub test_set: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
+#[serde(untagged)]
+#[garde(context(ValidationContext))]
+pub enum SolverKind {
+    LLM(#[garde(dive)] LLMSolver),
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
+#[garde(context(ValidationContext))]
+pub struct LLMSolver {
     #[garde(length(min = 1))]
     #[serde(default = "default_consistency_prompt")]
     pub prompt: String,
     #[garde(length(min = 1))]
     pub model_ref: Option<String>,
-    #[garde(skip)]
-    #[serde(default = "default_n")]
-    pub n: usize,
     #[garde(length(min = 1))]
     pub task_description: Option<String>,
     #[garde(skip)]
-    pub task_ref: Option<String>,
-    #[garde(skip)]
     #[serde(default = "default_scores")]
     pub scores: HashMap<String, f32>,
-    #[garde(skip)]
-    #[serde(default = "default_consistency_concurrency")]
-    pub concurrency: usize,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
@@ -882,7 +914,7 @@ pub struct Workflow {
     pub tasks: Vec<Task>,
     #[serde(default = "default_tests")]
     #[garde(dive)]
-    pub tests: Vec<EvalKind>,
+    pub tests: Vec<EvalConfig>,
     #[garde(skip)]
     pub variables: Option<HashMap<String, String>>,
     #[garde(skip)]
@@ -1158,7 +1190,7 @@ fn default_consistency_prompt() -> String {
     "}.to_string()
 }
 
-fn default_tests() -> Vec<EvalKind> {
+fn default_tests() -> Vec<EvalConfig> {
     vec![]
 }
 

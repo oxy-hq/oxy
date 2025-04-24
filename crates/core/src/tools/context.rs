@@ -55,6 +55,10 @@ impl Object for ToolsContext {
                             },
                             NoopHandler,
                         ))
+                        .map_err(|err| {
+                            log::error!("Error launching tool: {:?}", err);
+                            err
+                        })
                         .ok()?;
                     let parsed_output =
                         truncate_with_ellipsis(&Value::from_object(output).to_string(), None);
