@@ -29,7 +29,7 @@ fn init_logging() -> Result<(), fern::InitError> {
                         message,
                     ))
                 })
-                .level(log::LevelFilter::Trace)
+                .level(log::LevelFilter::Debug)
                 .chain(fern::log_file(log_file_path)?),
         )
         .chain(
