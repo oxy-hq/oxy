@@ -9,7 +9,8 @@ databases:
 
   - name: omni_bigquery
     type: bigquery
-    key_path: omni_bigquery.json
+    # key_path: omni_bigquery.json
+    key_path: bigquery-sample.key # this is just here for placeholder
     dataset: dbt_prod_fpx
 
   - name: local
