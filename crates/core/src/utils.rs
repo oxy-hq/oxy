@@ -115,3 +115,27 @@ pub fn create_parent_dirs<P: AsRef<Path>>(path: P) -> std::io::Result<()> {
     }
     Ok(())
 }
+
+pub fn list_by_sub_extension(dir: &PathBuf, sub_extension: &str) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                files.extend(list_by_sub_extension(&path, sub_extension));
+            } else if path.is_file()
+                // && path.extension().and_then(|s| s.to_str()) == Some("")
+                && path
+                    .file_name()
+                    .and_then(|s| s.to_str())
+                    .map(|s| s.ends_with(sub_extension))
+                    .unwrap_or(false)
+            {
+                files.push(path);
+            }
+        }
+    }
+
+    files
+}

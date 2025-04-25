@@ -389,6 +389,36 @@
         {
           "type": "object",
           "required": [
+            "database",
+            "model_path",
+            "name",
+            "type"
+          ],
+          "properties": {
+            "database": {
+              "type": "string"
+            },
+            "description": {
+              "default": "Execute query on the database. Construct from Omni sematic model.",
+              "type": "string"
+            },
+            "model_path": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "execute_omni"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
             "name",
             "type"
           ],
@@ -444,6 +474,32 @@
             },
             "workflow_ref": {
               "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "model_path",
+            "name",
+            "type"
+          ],
+          "properties": {
+            "description": {
+              "default": "Get details a about a omni topic. Including available fields",
+              "type": "string"
+            },
+            "model_path": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "omni_topic_info"
+              ]
             }
           }
         }
