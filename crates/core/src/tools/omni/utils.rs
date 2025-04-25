@@ -1,12 +1,12 @@
 use std::collections::HashSet;
 
-pub const DELIMITTER: &str = "____";
+pub const DELIMITER: &str = "____";
 pub fn omni_template_to_jinja2(input: &str) -> String {
     regex::Regex::new(r"\$\{([a-z_A-Z.\d]+)\}")
         .unwrap()
         .replace_all(input, |caps: &regex::Captures<'_>| {
             let mut var = caps.get(1).unwrap().as_str().to_owned();
-            var = var.replace(".", DELIMITTER);
+            var = var.replace(".", DELIMITER);
             format!("{{{{ ({}) }}}}", var)
         })
         .to_string()
@@ -14,9 +14,9 @@ pub fn omni_template_to_jinja2(input: &str) -> String {
 
 pub fn generate_alias(field_name: &str) -> String {
     let mut alias = field_name.to_string();
-    alias = alias.replace(".", DELIMITTER);
-    alias = alias.replace("[", DELIMITTER);
-    alias = alias.replace("]", DELIMITTER);
+    alias = alias.replace(".", DELIMITER);
+    alias = alias.replace("[", DELIMITER);
+    alias = alias.replace("]", DELIMITER);
     alias = alias.replace(" ", "_");
     alias
 }

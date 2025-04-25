@@ -399,7 +399,7 @@
               "type": "string"
             },
             "description": {
-              "default": "Execute query on the database. Construct from Omni sematic model.",
+              "default": "Execute query on the database. Construct from Omni semantic model.",
               "type": "string"
             },
             "model_path": {
