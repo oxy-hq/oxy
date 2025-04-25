@@ -60,7 +60,7 @@ impl Executable<(EvalKind, EvalTarget, Option<String>)> for GeneratorExecutable 
                     .collect::<Vec<_>>();
                 Ok((outputs, errors))
             }
-            EvalKind::Custom(custom) => {
+            EvalKind::Custom(_custom) => {
                 todo!()
             }
         }

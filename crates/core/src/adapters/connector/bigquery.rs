@@ -216,8 +216,7 @@ where
                 log::debug!("Dry run response: {:?}", dry_run_rs);
                 if let Some(total_bytes_processed) = dry_run_rs
                     .total_bytes_processed
-                    .map(|v| v.parse::<u64>().ok())
-                    .flatten()
+                    .and_then(|v| v.parse::<u64>().ok())
                 {
                     if total_bytes_processed > dry_run_limit {
                         throw!(anyhow!(
