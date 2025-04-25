@@ -7,6 +7,11 @@ databases:
     dataset: dbt_prod_core
     # dry_run_limit: 1
 
+  - name: omni_bigquery
+    type: bigquery
+    key_path: omni_bigquery.json
+    dataset: dbt_prod_fpx
+
   - name: local
     type: duckdb
     key_path: None

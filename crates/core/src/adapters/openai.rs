@@ -16,7 +16,7 @@ use crate::{
     errors::OxyError,
     service::workflow::get_workflow,
     tools::{
-        types::{RetrievalParams, SQLParams},
+        types::{ExecuteOmniParams, OmniTopicInfoParams, RetrievalParams, SQLParams},
         visualize::types::VisualizeParams,
     },
     utils::find_project_path,
@@ -189,8 +189,21 @@ impl OpenAIToolConfig for &ToolType {
             ToolType::ExecuteSQL(e) => e.description.clone(),
             ToolType::ValidateSQL(v) => v.description.clone(),
             ToolType::Retrieval(r) => r.description.clone(),
+            ToolType::ExecuteOmni(execute_omni_tool) => {
+                let model: Result<crate::config::model::OmniSemanticModel, OxyError> =
+                    execute_omni_tool.load_semantic_model();
+                match model {
+                    Ok(model) => {
+                        return model.get_description();
+                    }
+                    Err(e) => {
+                        return format!("Failed to load semantic model: {}", e.to_string());
+                    }
+                }
+            }
             ToolType::Workflow(w) => w.description.clone(),
             ToolType::Visualize(v) => v.description.clone(),
+            ToolType::OmniTopicInfo(v) => v.get_description(),
         }
     }
 
@@ -199,8 +212,10 @@ impl OpenAIToolConfig for &ToolType {
             ToolType::ExecuteSQL(e) => e.name.clone(),
             ToolType::ValidateSQL(v) => v.name.clone(),
             ToolType::Retrieval(r) => r.name.clone(),
+            ToolType::ExecuteOmni(e) => e.name.clone(),
             ToolType::Workflow(w) => w.name.clone(),
             ToolType::Visualize(v) => v.name.clone(),
+            ToolType::OmniTopicInfo(omni_topic_info_tool) => omni_topic_info_tool.name.clone(),
         }
     }
 
@@ -211,6 +226,8 @@ impl OpenAIToolConfig for &ToolType {
             ToolType::Retrieval(_) => "retrieval".to_string(),
             ToolType::Workflow(_) => "workflow".to_string(),
             ToolType::Visualize(_) => "visualize".to_string(),
+            ToolType::ExecuteOmni(_) => "execute_omni".to_string(),
+            ToolType::OmniTopicInfo(omni_topic_info_tool) => "omni_topic_info".to_string(),
         }
     }
 
@@ -230,6 +247,12 @@ impl OpenAIToolConfig for &ToolType {
             ToolType::Visualize(_) => {
                 Ok(serde_json::json!(&schemars::schema_for!(VisualizeParams)))
             }
+            ToolType::ExecuteOmni(_) => {
+                Ok(serde_json::json!(&schemars::schema_for!(ExecuteOmniParams)))
+            }
+            ToolType::OmniTopicInfo(omni_topic_info_tool) => Ok(serde_json::json!(
+                &schemars::schema_for!(OmniTopicInfoParams)
+            )),
         }
     }
 }

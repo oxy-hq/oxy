@@ -183,7 +183,7 @@ impl ConnectorX {
                 .map_err(|err| connector_internal_error(LOAD_ARROW_RESULT, &err))?;
 
             write_to_ipc(&result, &file_path, &schema)
-                .map_err(|err| connector_internal_error(WRITE_RESULT, &err))?;
+                .map_err(|err: anyhow::Error| connector_internal_error(WRITE_RESULT, &err))?;
             Ok::<String, anyhow::Error>(file_path)
         })
         .await

@@ -7,7 +7,8 @@ use async_openai::types::{
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::config::model::{RetrievalConfig, WorkflowTool};
+use crate::config::model::WorkflowTool;
+use crate::config::model::{OmniSemanticModel, RetrievalConfig};
 
 use super::visualize::types::VisualizeParams;
 
@@ -45,12 +46,86 @@ pub struct RetrievalParams {
     pub query: String,
 }
 
+#[derive(Debug, Deserialize, JsonSchema)]
+pub enum OrderType {
+    #[serde(rename = "asc")]
+    Ascending,
+    #[serde(rename = "desc")]
+    Descending,
+}
+#[derive(Debug, Deserialize, JsonSchema)]
+pub enum FilterOperator {
+    #[serde(rename = "eq")]
+    Equal,
+    #[serde(rename = "neq")]
+    NotEqual,
+    #[serde(rename = "gt")]
+    GreaterThan,
+    #[serde(rename = "gte")]
+    GreaterThanOrEqual,
+    #[serde(rename = "lt")]
+    LessThan,
+    #[serde(rename = "lte")]
+    LessThanOrEqual,
+    #[serde(rename = "in")]
+    In,
+    #[serde(rename = "not_in")]
+    NotIn,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct Filter {
+    #[schemars(
+        description = "Field name must be full name format {view}.{field_name}. No aggregation or any other syntax."
+    )]
+    pub field: String,
+    #[schemars(description = "The operator to use for filtering.")]
+    pub operator: FilterOperator,
+    #[schemars(
+        description = "Values to filter, example: true, 12, 'abc', (1,2,3). String must be quoted with single quotes"
+    )]
+    pub values: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ExecuteOmniParams {
+    #[schemars(description = "The topic to query from.")]
+    pub topic: String,
+    #[schemars(
+        description = "You can only select field name. Field name must be full name format {view}.{field_name}. No aggregation or any other syntax."
+    )]
+    pub fields: Vec<String>,
+    #[schemars(description = "List of the filters.")]
+    pub filters: Vec<Filter>,
+    pub limit: Option<u64>,
+    #[schemars(description = "List of the sorts.")]
+    pub sorts: Option<HashMap<String, OrderType>>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct OmniTopicInfoParams {
+    pub topic: String,
+}
+
+#[derive(Debug)]
 pub struct SQLInput {
     pub database: String,
     pub sql: String,
     pub dry_run_limit: Option<u64>,
 }
 
+#[derive(Debug)]
+pub struct OmniInput {
+    pub database: String,
+    pub params: ExecuteOmniParams,
+    pub semantic_model: OmniSemanticModel,
+}
+
+#[derive(Debug)]
+pub struct OmniTopicInfoInput {
+    pub topic: String,
+    pub semantic_model: OmniSemanticModel,
+}
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct WorkflowParams {
     pub variables: Option<HashMap<String, String>>,

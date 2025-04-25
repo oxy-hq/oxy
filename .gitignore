@@ -89,3 +89,5 @@ examples/.lancedb/
 artifacts/
 
 .qodo
+examples/omni
+examples/omni_bigquery.json
