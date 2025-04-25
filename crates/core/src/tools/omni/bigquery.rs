@@ -11,7 +11,7 @@ use crate::{
 
 use super::{
     types::{CompiledField, Filter, SqlParts},
-    utils::{DELIMITTER, generate_alias, get_referenced_variables, omni_template_to_jinja2},
+    utils::{DELIMITER, generate_alias, get_referenced_variables, omni_template_to_jinja2},
 };
 
 use super::engine::SqlGenerationEngine;
@@ -89,7 +89,7 @@ impl BigquerySqlGenerationEngine {
         let jinja_sql = omni_template_to_jinja2(sql);
         let ctx = ctx
             .iter()
-            .map(|(k, v)| (k.replace(".", DELIMITTER), Value::from(v)))
+            .map(|(k, v)| (k.replace(".", DELIMITER), Value::from(v)))
             .collect::<HashMap<String, Value>>();
         let jinja_env = minijinja::Environment::new();
         let ctx_serialized = serde_json::to_string(&ctx)

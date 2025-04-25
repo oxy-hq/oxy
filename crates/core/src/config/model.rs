@@ -1521,11 +1521,11 @@ impl OmniView {
     pub fn get_model_description(&self) -> String {
         let mut description = format!("Schema: {}\n", self.schema);
         for (name, dimension) in &self.dimensions {
-            let mut dimention_str = name.to_owned();
+            let mut dimension_str = name.to_owned();
             if let Some(ref description) = dimension.description {
-                dimention_str.push_str(&format!(" -  {}", description));
+                dimension_str.push_str(&format!(" -  {}", description));
             }
-            description.push_str(&format!("Dimension: {}\n", dimention_str));
+            description.push_str(&format!("Dimension: {}\n", dimension_str));
         }
         for (name, measure) in &self.measures {
             let mut measure_str = name.to_owned();
@@ -1630,14 +1630,14 @@ impl ExecuteOmniTool {
     }
     // pub fn get_description(&self) -> Result<String, OxyError> {
     //     if self.models.is_empty() {
-    //         log::warn!("No sematic models for Omni");
+    //         log::warn!("No semantic models for Omni");
     //         return Err(OxyError::AgentError(
     //             "No semantic models for Omni tool. Please add models to the config file."
     //                 .to_owned(),
     //         ));
     //     }
     //     let mut description =
-    //         "Execute query on the database. Construct from Omni sematic model. Dimension/Measure must be full name: {table}.{dimension/measure name}".to_string();
+    //         "Execute query on the database. Construct from Omni semantic model. Dimension/Measure must be full name: {table}.{dimension/measure name}".to_string();
     //     for omni_model in &self.load_semantic_model()? {
     //         let model_description = omni_model.get_model_description();
     //         description.push_str(&format!("{}\n\n", model_description));
@@ -1768,7 +1768,7 @@ fn default_sql_tool_description() -> String {
 }
 
 fn default_omni_tool_description() -> String {
-    "Execute query on the database. Construct from Omni sematic model.".to_string()
+    "Execute query on the database. Construct from Omni semantic model.".to_string()
 }
 
 fn default_omni_info_description() -> String {
