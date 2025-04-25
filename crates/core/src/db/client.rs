@@ -45,7 +45,7 @@ pub fn get_charts_dir() -> &'static Path {
 }
 
 pub async fn establish_connection() -> DatabaseConnection {
-    let db_url = std::env::var("DATABASE_URL").ok();
+    let db_url = std::env::var("OXY_DATABASE_URL").ok();
     if let Some(url) = db_url {
         Database::connect(url).await.unwrap()
     } else {
