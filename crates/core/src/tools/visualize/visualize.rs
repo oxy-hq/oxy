@@ -1,6 +1,7 @@
 use std::{fs::File, io::Write};
 
 use crate::{
+    db::client::get_charts_dir,
     errors::OxyError,
     execute::{
         Executable, ExecutionContext,
@@ -52,7 +53,8 @@ impl Executable<VisualizeInput> for VisualizeExecutable {
         serde_json::from_str::<serde_json::Value>(&param.data)
             .map_err(|e| anyhow::anyhow!("Invalid JSON data: {}", e))?;
 
-        let file_path = format!("/tmp/{}.json", Uuid::new_v4());
+        let tmp_chart_dir = get_charts_dir();
+        let file_path = tmp_chart_dir.join(format!("{}.json", Uuid::new_v4()));
 
         let mut encoding = Map::new();
 
@@ -81,7 +83,7 @@ impl Executable<VisualizeInput> for VisualizeExecutable {
 
         Ok(Output::Text(format!(
             "Use this markdown directive to render the chart \":chart{{chart_src={}}}\" directly in the final answer.",
-            file_path
+            file_path.display()
         )))
     }
 }

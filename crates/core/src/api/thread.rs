@@ -132,12 +132,30 @@ pub async fn delete_thread(Path(id): Path<String>) -> Result<StatusCode, StatusC
     Ok(StatusCode::OK)
 }
 
+fn remove_all_files_in_dir<P: AsRef<std::path::Path>>(dir: P) {
+    if dir.as_ref().exists() {
+        if let Ok(entries) = std::fs::read_dir(&dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_file() {
+                    let _ = std::fs::remove_file(path);
+                }
+            }
+        }
+    }
+}
+
 pub async fn delete_all_threads() -> Result<StatusCode, StatusCode> {
     let connection = establish_connection().await;
     Threads::delete_many()
         .exec(&connection)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    {
+        use crate::db::client::get_charts_dir;
+        remove_all_files_in_dir(get_charts_dir());
+    }
 
     Ok(StatusCode::OK)
 }

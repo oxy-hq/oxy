@@ -1,6 +1,9 @@
+use std::fs;
+use std::path::PathBuf;
 use std::{fs::File, io::Write};
 
 use super::Tool;
+use crate::db::client::{STATE_DIR, get_charts_dir};
 use crate::{
     config::model::{Model, OutputFormat},
     execute::agent::{ToolCall, ToolMetadata},
@@ -155,7 +158,9 @@ impl Tool for VisualizeTool {
         serde_json::from_str::<serde_json::Value>(&parameters.data)
             .map_err(|e| anyhow::anyhow!("Invalid JSON data: {}", e))?;
 
-        let file_path = format!("/tmp/{}.json", Uuid::new_v4());
+        let tmp_chart_dir = get_charts_dir();
+
+        let file_path = tmp_chart_dir.join(format!("{}.json", Uuid::new_v4()));
 
         let mut encoding = Map::new();
 
@@ -185,9 +190,11 @@ impl Tool for VisualizeTool {
             name: self.name(),
             output: format!(
                 "Use this markdown directive to render the chart :chart{{file_path={}}} directly in the final answer.",
-                file_path
+                file_path.display()
             ),
-            metadata: Some(ToolMetadata::Visualize { file_path }),
+            metadata: Some(ToolMetadata::Visualize {
+                file_path: file_path.display().to_string(),
+            }),
         })
     }
 }
