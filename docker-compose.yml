@@ -14,7 +14,7 @@ services:
       - "3000:3000"
     environment:
       - RUST_LOG=info
-      - DATABASE_URL=postgresql://admin:password@postgres:5432/default
+      - OXY_DATABASE_URL=postgresql://admin:password@postgres:5432/default
     depends_on:
       clickhouse:
         condition: service_started
