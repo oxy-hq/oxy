@@ -44,6 +44,14 @@
             "dataset": {
               "type": "string"
             },
+            "dry_run_limit": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0.0
+            },
             "key_path": {
               "type": [
                 "string",
