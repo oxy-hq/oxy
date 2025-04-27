@@ -58,7 +58,7 @@
         "tab": "Integrations",
         "groups": [
           {
-            "group": "",
+            "group": "Integrations",
             "pages": [
               "integrations/overview"
             ]
