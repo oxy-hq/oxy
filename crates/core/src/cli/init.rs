@@ -308,30 +308,6 @@ fn create_project_structure() -> Result<(), InitError> {
     Ok(())
 }
 
-fn ignore_sensitive_files(project_path: &Path, files: &[&Path]) -> Result<(), InitError> {
-    let gitignore_path = project_path.join(".gitignore");
-    let mut content = String::new();
-
-    if gitignore_path.exists() {
-        content = fs::read_to_string(&gitignore_path)?;
-    }
-
-    for file in files {
-        content.push_str(&format!("{}\n", file.display()));
-    }
-
-    fs::write(&gitignore_path, content)?;
-    println!(
-        "{}",
-        format!(
-            "Updated .gitignore in {}",
-            gitignore_path.display().to_string().secondary()
-        )
-        .text()
-    );
-    Ok(())
-}
-
 pub fn init() -> Result<(), InitError> {
     let project_path = find_project_path().unwrap_or_else(|_| {
         println!(
@@ -372,7 +348,6 @@ fn create_config_file(config_path: &Path) -> Result<(), InitError> {
     if let Some(parent) = config_path.parent() {
         fs::create_dir_all(parent)?;
     }
-    let sensitive_files = Vec::new();
 
     println!("{}", "\nDATABASE SETTINGS:".tertiary());
     let databases = collect_databases()?;
@@ -401,7 +376,6 @@ fn create_config_file(config_path: &Path) -> Result<(), InitError> {
     );
 
     fs::write(config_path, content)?;
-    ignore_sensitive_files(&config.project_path, &sensitive_files)?;
 
     println!(
         "{}",
