@@ -14,21 +14,23 @@ fn format_error_message(error_message: &str, value: impl Display) -> garde::Erro
     garde::Error::new(format!("{} ({})", error_message, value))
 }
 
-pub fn validate_file_path(path: &PathBuf, context: &ValidationContext) -> garde::Result {
-    if path.is_absolute() || path.components().count() > 1 {
-        return Err(format_error_message(
-            FILE_SAME_DIR_ERROR,
-            path.to_string_lossy(),
-        ));
-    }
+pub fn validate_file_path(path: &Option<PathBuf>, context: &ValidationContext) -> garde::Result {
+    if let Some(path) = path {
+        if path.is_absolute() || path.components().count() > 1 {
+            return Err(format_error_message(
+                FILE_SAME_DIR_ERROR,
+                path.to_string_lossy(),
+            ));
+        }
 
-    let file_path = context.config.project_path.join(path);
+        let file_path = context.config.project_path.join(path);
 
-    if !file_path.exists() {
-        return Err(format_error_message(
-            FILE_NOT_FOUND_ERROR,
-            file_path.to_string_lossy(),
-        ));
+        if !file_path.exists() {
+            return Err(format_error_message(
+                FILE_NOT_FOUND_ERROR,
+                file_path.to_string_lossy(),
+            ));
+        }
     }
     Ok(())
 }
