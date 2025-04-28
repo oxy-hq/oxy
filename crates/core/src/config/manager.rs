@@ -95,6 +95,10 @@ impl ConfigManager {
         self.storage.load_agent_config(agent_name).await
     }
 
+    pub fn list_databases(&self) -> Result<&[Database], OxyError> {
+        Ok(self.config.databases.as_slice())
+    }
+
     pub async fn list_agents(&self) -> Result<Vec<PathBuf>, OxyError> {
         self.storage.list_agents().await
     }

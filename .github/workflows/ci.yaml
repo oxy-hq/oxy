@@ -108,10 +108,11 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
-      - uses: mbrobbel/rustfmt-check@master
+      - uses: mbrobbel/rustfmt-check@0.17.0
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          mode: review
+          # mode: review
+          mode: pull
       - name: Prep cargo cache
         uses: Swatinem/rust-cache@v2
       # protobuf is required by lance https://github.com/lancedb/lance/issues/3073

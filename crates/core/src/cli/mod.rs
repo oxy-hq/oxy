@@ -12,6 +12,7 @@ use crate::service::agent::run_agent;
 use crate::service::eval::EvalEventsHandler;
 use crate::service::eval::run_eval;
 use crate::service::retrieval::{ReindexInput, SearchInput, reindex, search};
+use crate::service::sync::sync_databases;
 use crate::service::workflow::run_workflow;
 use crate::theme::StyledText;
 use crate::theme::detect_true_color_support;
@@ -158,6 +159,8 @@ enum SubCommand {
     Build,
     /// Perform vector search
     VecSearch(VecSearchArgs),
+    /// Collect semantic information from the databases
+    Sync(SyncArgs),
     /// Validate the config file
     Validate,
     /// Start the API server and serve the frontend web app
@@ -278,6 +281,13 @@ struct VecSearchArgs {
 }
 
 #[derive(Parser, Debug)]
+struct SyncArgs {
+    database: Option<String>,
+    #[clap(long, short = 'd', num_args = 0..)]
+    datasets: Vec<String>,
+}
+
+#[derive(Parser, Debug)]
 struct ServeArgs {
     #[clap(long, default_value_t = 3000)]
     port: u16,
@@ -386,6 +396,32 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                 query: search_args.question.to_string(),
             })
             .await?;
+        }
+        Some(SubCommand::Sync(sync_args)) => {
+            let config = ConfigBuilder::new()
+                .with_project_path(&find_project_path()?)?
+                .build()
+                .await?;
+            let databases = match sync_args.database {
+                Some(db) => vec![
+                    config
+                        .resolve_database(&db)?
+                        .clone()
+                        .with_datasets(sync_args.datasets.clone()),
+                ],
+                None => config.list_databases()?.iter().map(|d| d.clone()).collect(),
+            };
+            log::debug!("Syncing {:?}\n{:?}", sync_args.datasets, databases);
+            println!("🔄Syncing databases");
+            let sync_metrics = sync_databases(config.clone(), databases).await?;
+            println!(
+                "✅Sync finished:\n\n{}",
+                sync_metrics
+                    .into_iter()
+                    .map(|m| m.map_or_else(|e| e.to_string().error().to_string(), |v| v.to_string()))
+                    .collect::<Vec<_>>()
+                    .join("\n---\n")
+            )
         }
         Some(SubCommand::Validate) => {
             let result = load_config(None);
