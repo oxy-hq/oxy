@@ -52,7 +52,7 @@ jobs:
         uses: crate-ci/typos@master
 
   fmt-web:
-    name: Format codes
+    name: Format web
     needs: [changesets, typos]
     concurrency:
       group: fmt-web-${{ github.event.pull_request.number || github.ref }}
@@ -100,7 +100,7 @@ jobs:
       cancel-in-progress: true
     needs: [changesets, typos]
     if: needs.changesets.outputs.oxy == 'true'
-    name: Lint
+    name: Format cargo & check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -108,10 +108,11 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
-      - uses: mbrobbel/rustfmt-check@master
+      - uses: mbrobbel/rustfmt-check@0.17.0
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          mode: review
+          # mode: review
+          mode: pull
       - name: Prep cargo cache
         uses: Swatinem/rust-cache@v2
       # protobuf is required by lance https://github.com/lancedb/lance/issues/3073
