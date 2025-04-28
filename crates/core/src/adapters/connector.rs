@@ -8,7 +8,6 @@ use bigquery_transport::BigQueryArrowTransport;
 use clickhouse::Client;
 use connectorx::prelude::{ArrowDestination, CXQuery, Dispatcher, SourceConn, get_arrow};
 use duckdb::Connection;
-use futures::StreamExt;
 use itertools::Itertools;
 use log::debug;
 use snowflake_api::{QueryResult, SnowflakeApi};
@@ -48,10 +47,7 @@ fn connector_internal_error(message: &str, e: &impl std::fmt::Display) -> OxyErr
 #[enum_dispatch::enum_dispatch]
 trait Engine {
     async fn run_query(&self, query: &str) -> Result<String, OxyError>;
-    async fn load_database_info(
-        &self,
-        dataset_tables_pair: Option<(String, Vec<String>)>,
-    ) -> Result<Vec<DatabaseInfo>, OxyError>;
+    async fn load_database_info(&self) -> Result<DatabaseInfo, OxyError>;
     async fn run_query_and_load(
         &self,
         query: &str,
@@ -105,11 +101,12 @@ impl Engine for DuckDB {
         Ok(file_path)
     }
 
-    async fn load_database_info(
-        &self,
-        _dataset_tables_pair: Option<(String, Vec<String>)>,
-    ) -> Result<Vec<DatabaseInfo>, OxyError> {
-        Ok(vec![])
+    async fn load_database_info(&self) -> Result<DatabaseInfo, OxyError> {
+        Ok(DatabaseInfo {
+            name: self.file_search_path.to_string(),
+            dialect: "duckdb".to_string(),
+            tables: vec![],
+        })
     }
 }
 
@@ -117,39 +114,18 @@ impl Engine for DuckDB {
 pub struct ConnectorX {
     dialect: String,
     db_path: String,
+    db_name: String,
     dry_run_limit: Option<u64>,
 }
 
 impl ConnectorX {
-    pub async fn get_schemas(
-        &self,
-        dataset_tables_pair: Option<(String, Vec<String>)>,
-    ) -> Result<Vec<(String, String)>, OxyError> {
+    pub async fn get_schemas(&self) -> Result<Vec<String>, OxyError> {
         let query_string = match self.dialect.as_str() {
             BIGQUERY_DIALECT => {
-                let mut query =
-                    "SELECT table_schema, ddl FROM `region-us`.INFORMATION_SCHEMA.TABLES"
-                        .to_string();
-                if let Some((dataset, tables)) = dataset_tables_pair {
-                    query = format!(
-                        "SELECT table_schema, ddl FROM `{}`.INFORMATION_SCHEMA.TABLES",
-                        dataset
-                    );
-                    if tables.iter().find(|v| *v == "*").is_none() && tables.len() > 0 {
-                        let where_clause = tables
-                            .iter()
-                            .map(|v| {
-                                if v.contains("*") {
-                                    format!("table_name LIKE '{}'", v.replace("*", "%"))
-                                } else {
-                                    format!("table_name = '{}'", v)
-                                }
-                            })
-                            .join(" OR ");
-                        query = format!("{} WHERE {}", query, where_clause)
-                    }
-                }
-                query
+                format!(
+                    "SELECT ddl FROM `{}`.INFORMATION_SCHEMA.TABLES",
+                    self.db_name
+                )
             }
             _ => Err(OxyError::DBError(format!(
                 "Unsupported dialect: {}",
@@ -161,19 +137,11 @@ impl ConnectorX {
             load_result(&file_path).map_err(|e| connector_internal_error(LOAD_RESULT, &e))?;
         let result_iter = datasets
             .iter()
-            .flat_map(|batch| {
-                as_string_array(batch.column(0))
-                    .iter()
-                    .zip(as_string_array(batch.column(1)).iter())
-            })
-            .map(|(table_schema, ddl)| {
-                (
-                    table_schema.map(|s| s.to_string()).unwrap_or_default(),
-                    ddl.map(|s| s.to_string()).unwrap_or_default(),
-                )
-            })
-            .collect::<Vec<_>>();
-        Ok(result_iter)
+            .flat_map(|batch| as_string_array(batch.column(0)).iter());
+        Ok(result_iter
+            .map(|name| name.map(|s| s.to_string()))
+            .collect::<Option<Vec<String>>>()
+            .unwrap_or_default())
     }
 
     async fn run_query_internal(
@@ -254,22 +222,12 @@ impl Engine for ConnectorX {
         self.run_query_internal(query, self.dry_run_limit).await
     }
 
-    async fn load_database_info(
-        &self,
-        dataset_tables_pair: Option<(String, Vec<String>)>,
-    ) -> Result<Vec<DatabaseInfo>, OxyError> {
-        let infos = self.get_schemas(dataset_tables_pair).await?;
-
-        Ok(infos
-            .into_iter()
-            .into_group_map()
-            .into_iter()
-            .map(|(dataset, ddl)| DatabaseInfo {
-                dataset,
-                dialect: self.dialect.clone(),
-                tables: ddl,
-            })
-            .collect())
+    async fn load_database_info(&self) -> Result<DatabaseInfo, OxyError> {
+        Ok(DatabaseInfo {
+            name: self.db_name.to_string(),
+            dialect: self.dialect.to_string(),
+            tables: self.get_schemas().await?,
+        })
     }
 }
 
@@ -279,48 +237,16 @@ pub struct ClickHouse {
 }
 
 impl ClickHouse {
-    pub async fn get_schemas(
-        &self,
-        dataset_tables_pair: Option<(String, Vec<String>)>,
-    ) -> Result<Vec<(String, String)>, OxyError> {
-        let mut query = "SELECT database, create_table_query FROM system.tables".to_string();
-        if let Some((dataset, tables)) = dataset_tables_pair {
-            query = format!("{} WHERE database = '{}'", query, dataset,);
-            if tables.iter().find(|v| *v == "*").is_none() && tables.len() > 0 {
-                let where_clause = tables
-                    .iter()
-                    .map(|v| {
-                        if v.contains("*") {
-                            format!("name LIKE '{}'", v.replace("*", "%"))
-                        } else {
-                            format!("name = '{}'", v)
-                        }
-                    })
-                    .join(" OR ");
-                query = format!("{} AND ({})", query, where_clause)
-            }
-        } else {
-            query = format!(
-                "{} WHERE database NOT IN ('system', 'information_schema', 'INFORMATION_SCHEMA')",
-                query
-            );
-        }
-        let (datasets, _) = self.run_query_and_load(&query).await?;
+    pub async fn get_schemas(&self) -> Result<Vec<String>, OxyError> {
+        let query_string = "SELECT name FROM system.tables WHERE database = currentDatabase()";
+        let (datasets, _) = self.run_query_and_load(query_string).await?;
         let result_iter = datasets
             .iter()
-            .flat_map(|batch| {
-                as_string_array(batch.column(0))
-                    .iter()
-                    .zip(as_string_array(batch.column(1)).iter())
-            })
-            .map(|(table_schema, ddl)| {
-                (
-                    table_schema.map(|s| s.to_string()).unwrap_or_default(),
-                    ddl.map(|s| s.to_string()).unwrap_or_default(),
-                )
-            })
-            .collect::<Vec<_>>();
-        Ok(result_iter)
+            .flat_map(|batch| as_string_array(batch.column(0)).iter());
+        Ok(result_iter
+            .map(|name| name.map(|s| s.to_string()))
+            .collect::<Option<Vec<String>>>()
+            .unwrap_or_default())
     }
 }
 
@@ -353,22 +279,12 @@ impl Engine for ClickHouse {
         }
     }
 
-    async fn load_database_info(
-        &self,
-        dataset_tables_pair: Option<(String, Vec<String>)>,
-    ) -> Result<Vec<DatabaseInfo>, OxyError> {
-        let infos = self.get_schemas(dataset_tables_pair).await?;
-
-        Ok(infos
-            .into_iter()
-            .into_group_map()
-            .into_iter()
-            .map(|(dataset, ddl)| DatabaseInfo {
-                dataset,
-                dialect: "clickhouse".to_string(),
-                tables: ddl,
-            })
-            .collect())
+    async fn load_database_info(&self) -> Result<DatabaseInfo, OxyError> {
+        Ok(DatabaseInfo {
+            name: self.config.database.clone(),
+            dialect: "clickhouse".to_string(),
+            tables: self.get_schemas().await?,
+        })
     }
 }
 
@@ -435,15 +351,12 @@ impl Engine for Snowflake {
         Ok(file_path)
     }
 
-    async fn load_database_info(
-        &self,
-        _dataset_tables_pair: Option<(String, Vec<String>)>,
-    ) -> Result<Vec<DatabaseInfo>, OxyError> {
-        Ok(vec![DatabaseInfo {
-            dataset: self.config.warehouse.clone(),
-            dialect: "snowflake".to_string(),
+    async fn load_database_info(&self) -> Result<DatabaseInfo, OxyError> {
+        Ok(DatabaseInfo {
+            name: self.config.warehouse.clone(),
+            dialect: "clickhouse".to_string(),
             tables: self.get_schemas().await?,
-        }])
+        })
     }
 }
 
@@ -454,19 +367,9 @@ pub struct Connector {
 
 #[derive(serde::Serialize, Clone)]
 pub struct DatabaseInfo {
-    dataset: String,
+    name: String,
     dialect: String,
     tables: Vec<String>,
-}
-
-impl DatabaseInfo {
-    pub fn get_ddl(&self) -> String {
-        self.tables.join("\n")
-    }
-
-    pub fn dataset(&self) -> String {
-        self.dataset.clone()
-    }
 }
 
 impl Connector {
@@ -478,10 +381,18 @@ impl Connector {
         let database = config_manager.resolve_database(database_ref)?;
         let engine = match &database.database_type {
             DatabaseType::Bigquery(bigquery) => {
-                let key_path = config_manager.resolve_file(&bigquery.key_path).await?;
+                let key_path = config_manager
+                    .resolve_file(
+                        bigquery
+                            .key_path
+                            .as_ref()
+                            .ok_or(OxyError::DBError("Key path not set".to_string()))?,
+                    )
+                    .await?;
                 EngineType::ConnectorX(ConnectorX {
                     dialect: database.dialect(),
                     db_path: key_path,
+                    db_name: bigquery.dataset.clone(),
                     dry_run_limit: dry_run_limit.or(bigquery.dry_run_limit),
                 })
             }
@@ -503,6 +414,7 @@ impl Connector {
                 EngineType::ConnectorX(ConnectorX {
                     dialect: database.dialect(),
                     db_path,
+                    db_name,
                     dry_run_limit: None,
                 })
             }
@@ -519,6 +431,7 @@ impl Connector {
                 EngineType::ConnectorX(ConnectorX {
                     dialect: database.dialect(),
                     db_path,
+                    db_name,
                     dry_run_limit: None,
                 })
             }
@@ -535,6 +448,7 @@ impl Connector {
                 EngineType::ConnectorX(ConnectorX {
                     dialect: database.dialect(),
                     db_path,
+                    db_name,
                     dry_run_limit: None,
                 })
             }
@@ -548,26 +462,8 @@ impl Connector {
         Ok(Connector { engine })
     }
 
-    pub async fn database_info(
-        &self,
-        datasets: Vec<(String, Vec<String>)>,
-    ) -> Result<Vec<DatabaseInfo>, OxyError> {
-        match datasets.len() > 0 {
-            true => Ok(async_stream::stream! {
-                for (dataset, tables) in datasets {
-                    yield self.engine.load_database_info(Some((dataset, tables)));
-                }
-            }
-            .buffered(10)
-            .collect::<Vec<_>>()
-            .await
-            .into_iter()
-            .try_collect::<Vec<DatabaseInfo>, Vec<Vec<DatabaseInfo>>, OxyError>()?
-            .into_iter()
-            .flatten()
-            .collect()),
-            false => self.engine.load_database_info(None).await,
-        }
+    pub async fn database_info(&self) -> Result<DatabaseInfo, OxyError> {
+        self.engine.load_database_info().await
     }
 
     pub async fn run_query(&self, query: &str) -> Result<String, OxyError> {

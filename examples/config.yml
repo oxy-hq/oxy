@@ -4,14 +4,7 @@ databases:
   - name: primary_database
     type: bigquery
     key_path: bigquery-sample.key
-    datasets:
-      dbt_prod_core:
-        - "*"
-      dbt_prod_metrics:
-        - "monthly_active_*"
-      user_analytics:
-        - "company_activity_analytics_summary_view"
-
+    dataset: dbt_prod_core
     # dry_run_limit: 1
 
   - name: omni_bigquery
@@ -55,9 +48,6 @@ databases:
     user: default
     password_var: CLICKHOUSE_PASSWORD
     database: default
-    schemas:
-      default:
-        - "hacker_news_*"
 
 models:
   - name: openai-4o-mini

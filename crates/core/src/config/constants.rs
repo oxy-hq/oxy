@@ -12,7 +12,6 @@ pub const EVAL_METRICS_POSTFIX: &str = "metrics";
 pub const LOOP_VAR_NAME: &str = "value";
 pub const CHECKPOINT_ROOT_PATH: &str = ".checkpoint";
 pub const CHECKPOINT_DATA_PATH: &str = "checkpoint_data";
-pub const DATABASE_SEMANTIC_PATH: &str = ".databases";
 pub const CHECKPOINT_EVENTS_FILE: &str = "events.jsonl";
 pub const CHECKPOINT_SUCCESS_MARKER: &str = "SUCCESS";
 pub const GEMINI_API_URL: &str = "https://generativelanguage.googleapis.com/v1beta/openai";
