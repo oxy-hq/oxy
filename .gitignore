@@ -91,3 +91,7 @@ artifacts/
 .qodo
 examples/omni
 examples/omni_bigquery.json
+
+# ignore dist folder
+dist/
+web-app/dist

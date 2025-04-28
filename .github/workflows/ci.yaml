@@ -51,27 +51,18 @@ jobs:
       - name: Check typos
         uses: crate-ci/typos@master
 
-  fmt:
+  fmt-web:
     name: Format codes
     needs: [changesets, typos]
-    if: needs.changesets.outputs.oxy == 'true'
+    concurrency:
+      group: fmt-web-${{ github.event.pull_request.number || github.ref }}
+      cancel-in-progress: true
+    if: needs.changesets.outputs.web-app == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Prep Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy, rustfmt
-      - name: Prep cargo cache
-        uses: Swatinem/rust-cache@v2
-
-        # protobuf is required by lance https://github.com/lancedb/lance/issues/3073
-      - name: Install Protoc
-        uses: arduino/setup-protoc@v3
-        with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install Node.js
         uses: actions/setup-node@v4
         id: setup-node
@@ -88,9 +79,10 @@ jobs:
         name: Setup pnpm cache
         with:
           path: ${{ env.STORE_PATH }}
-          key: pnpm-store-ubuntu-latest-x86_64-unknown-linux-gnu-${{ hashFiles('**/pnpm-lock.yaml') }}
+          key: pnpm-store-ubuntu-22.04-x86_64-unknown-linux-gnu-${{ hashFiles('**/pnpm-lock.yaml') }}
+          # cache key from build job
           restore-keys: |
-            pnpm-store-ubuntu-latest-x86_64-unknown-linux-gnu
+            pnpm-store-ubuntu-22.04-x86_64-unknown-linux-gnu
       - name: Run pnpm install
         run: pnpm install --prefer-frozen-lockfile
       - name: Run lint-staged
@@ -102,11 +94,12 @@ jobs:
             pnpm lint-staged --diff="${{ github.event.before }}...${{ github.event.after }}"
           fi
 
-  lint:
+  cargo-check:
     concurrency:
-      group: lint-${{ github.event.pull_request.number || github.ref }}
+      group: cargo-check-${{ github.event.pull_request.number || github.ref }}
       cancel-in-progress: true
-    needs: [fmt]
+    needs: [changesets, typos]
+    if: needs.changesets.outputs.oxy == 'true'
     name: Lint
     runs-on: ubuntu-latest
     steps:
@@ -115,27 +108,29 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
+      - uses: mbrobbel/rustfmt-check@master
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          mode: review
       - name: Prep cargo cache
         uses: Swatinem/rust-cache@v2
-
       # protobuf is required by lance https://github.com/lancedb/lance/issues/3073
       - name: Install Protoc
         uses: arduino/setup-protoc@v3
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Run cargo check
         run: cargo check --verbose --workspace
       - name: Run cargo clippy
         run: cargo clippy --verbose --workspace --fix
 
-  test:
+  cargo-test:
     concurrency:
       group: test-${{ github.event.pull_request.number || github.ref }}
       cancel-in-progress: true
-    needs: [fmt]
+    needs: [cargo-check]
     name: Test
-    runs-on: ubuntu-latest
+    runs-on: 'ubuntu-latest'
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       BIGQUERY_SAMPLE_KEY: ${{ secrets.BIGQUERY_SAMPLE_KEY }}
@@ -143,25 +138,15 @@ jobs:
       ANTHROPIC_API_KEY: "empty"
     steps:
       - uses: actions/checkout@v4
-      - name: Collect Workflow Telemetry
-        uses: catchpoint/workflow-telemetry-action@v2
-        with:
-          proc_trace_sys_enable: true
-          comment_on_pr: false
-          theme: dark
-
       - name: Prep Rust
         uses: dtolnay/rust-toolchain@stable
-
       - name: Prep cargo cache
         uses: Swatinem/rust-cache@v2
-
       # protobuf is required by lance https://github.com/lancedb/lance/issues/3073
       - name: Install Protoc
         uses: arduino/setup-protoc@v3
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Run cargo test
         run: |
           touch examples/bigquery-sample.key

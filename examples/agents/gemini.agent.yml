@@ -2,7 +2,7 @@
 
 description: "An agent for generating and executing SQL queries using the Gemini model."
 
-model:  gemini1.5pro
+model: gemini1.5pro
 context:
   - name: queries
     type: file

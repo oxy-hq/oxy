@@ -5,6 +5,8 @@ on:
     outputs:
       oxy:
         value: ${{ jobs.changesets.outputs.oxy }}
+      web-app:
+        value: ${{ jobs.changesets.outputs.web-app }}
       changes:
         value: ${{ jobs.changesets.outputs.changes }}
 
@@ -23,6 +25,7 @@ jobs:
     outputs:
       changes: ${{ steps.changes.outputs.changes }}
       oxy: ${{ steps.changes.outputs.oxy }}
+      web-app: ${{ steps.changes.outputs.web-app }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -34,5 +37,6 @@ jobs:
               - "crates/**"
               - "**/Cargo.toml"
               - "**/Cargo.lock"
+            web-app:
               - "web-app/**"
               - "pnpm-lock.yaml"

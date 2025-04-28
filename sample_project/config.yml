@@ -2,12 +2,12 @@
 defaults:
   database: local
 models:
-- vendor: openai
-  name: openai-4.1
-  model_ref: gpt-4.1
-  key_var: OPENAI_API_KEY
-  api_url: https://api.openai.com/v1
+  - vendor: openai
+    name: openai-4.1
+    model_ref: gpt-4.1
+    key_var: OPENAI_API_KEY
+    api_url: https://api.openai.com/v1
 databases:
-- name: local
-  dataset: .db/
-  type: duckdb
+  - name: local
+    dataset: .db/
+    type: duckdb

@@ -52,8 +52,7 @@ services:
       - mysql-data:/var/lib/mysql
       - ./docker-entrypoints/mysql/docker-entrypoint-initdb.d/:/docker-entrypoint-initdb.d/
     healthcheck:
-      test:
-        ["CMD-SHELL", "mysql -uadmin -p'password' -e 'USE default;'"]
+      test: ["CMD-SHELL", "mysql -uadmin -p'password' -e 'USE default;'"]
       interval: 10s
       timeout: 5s
       retries: 5
