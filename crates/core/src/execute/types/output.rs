@@ -8,11 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::errors::OxyError;
 
-use super::{
-    Prompt, SQL, Table,
-    output_container::{Data, DataContainer},
-    table::TableReference,
-};
+use super::{Prompt, SQL, Table, output_container::Data, table::TableReference};
 
 #[derive(Debug, Serialize, Deserialize, Clone, Hash)]
 pub enum Output {

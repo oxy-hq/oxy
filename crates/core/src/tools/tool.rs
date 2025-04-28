@@ -89,7 +89,7 @@ impl Executable<(String, Option<ToolType>, ToolRawInput)> for ToolExecutable {
                             OmniToolInput {
                                 database: execute_omni_tool.database.clone(),
                                 param: input.param.clone(),
-                                semantic_model: semantic_model,
+                                semantic_model,
                             },
                         )
                         .await
@@ -122,7 +122,7 @@ impl Executable<(String, Option<ToolType>, ToolRawInput)> for ToolExecutable {
                             execution_context,
                             OmniTopicInfoToolInput {
                                 param: input.param.clone(),
-                                semantic_model: semantic_model,
+                                semantic_model,
                             },
                         )
                         .await

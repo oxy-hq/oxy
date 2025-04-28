@@ -62,7 +62,7 @@ pub async fn run_app(app_file_relative_path: &PathBuf) -> Result<DataContainer, 
 }
 
 pub fn try_load_cached_data(app_file_path: &PathBuf) -> Option<DataContainer> {
-    if let Some((data_path, data_file_path)) = get_app_data_path(app_file_path).ok() {
+    if let Ok((data_path, data_file_path)) = get_app_data_path(app_file_path) {
         if !data_path.exists() {
             return None;
         }
@@ -74,16 +74,16 @@ pub fn try_load_cached_data(app_file_path: &PathBuf) -> Option<DataContainer> {
                 if data.is_none() {
                     log::warn!("Failed to parse data file");
                 }
-                return data;
+                data
             }
             Err(e) => {
                 log::warn!("Failed to open data file: {}", e);
-                return None;
+                None
             }
         }
     } else {
         log::warn!("Data file path is not valid");
-        return None;
+        None
     }
 }
 

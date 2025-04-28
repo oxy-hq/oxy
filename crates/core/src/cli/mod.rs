@@ -2,7 +2,6 @@ mod init;
 mod make;
 
 use crate::adapters::connector::Connector;
-use crate::config::model::ExecuteOmniTool;
 use crate::config::*;
 use crate::errors::OxyError;
 use crate::execute::types::utils::record_batches_to_table;
@@ -16,9 +15,6 @@ use crate::service::workflow::run_workflow;
 use crate::theme::StyledText;
 use crate::theme::detect_true_color_support;
 use crate::theme::get_current_theme_mode;
-use crate::tools::BigquerySqlGenerationEngine;
-use crate::tools::SqlGenerationEngine;
-use crate::tools::types::ExecuteOmniParams;
 use crate::utils::find_project_path;
 use crate::utils::print_colored_sql;
 use crate::workflow::loggers::cli::WorkflowCLILogger;

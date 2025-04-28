@@ -193,11 +193,9 @@ impl OpenAIToolConfig for &ToolType {
                 let model: Result<crate::config::model::OmniSemanticModel, OxyError> =
                     execute_omni_tool.load_semantic_model();
                 match model {
-                    Ok(model) => {
-                        return model.get_description();
-                    }
+                    Ok(model) => model.get_description(),
                     Err(e) => {
-                        return format!("Failed to load semantic model: {}", e.to_string());
+                        format!("Failed to load semantic model: {}", e)
                     }
                 }
             }
