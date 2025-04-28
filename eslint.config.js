@@ -14,6 +14,7 @@ export default tseslint.config(
   {
     ignores: [
       "dist",
+      "web-app/dist",
       "logs",
       ".prettierrc.js",
       "node_modules",

@@ -17,11 +17,11 @@ tasks:
   - name: subworkflow
     src: workflows/fruit_sales_report.workflow.yml
     type: workflow
-    variables: 
+    variables:
       fruit: "{{ random_fruit.fruit }}"
 
   - name: report
     type: formatter
-    template: | 
+    template: |
       Sales report for orange:
       {{ subworkflow.report }}

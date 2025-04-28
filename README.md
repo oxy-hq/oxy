@@ -9,7 +9,6 @@
 <a href="https://docs.oxy.tech" title="Go to project documentation"><img src="https://img.shields.io/badge/view-Documentation-blue?style=for-the-badge" alt="view - Documentation"></a>
 </div>
 
-
 ## The framework for agentic analytics
 
 Oxy is an open-source framework for agentic analytics. It is declarative by design and written in Rust. Oxy is built with the following product principles in mind: open-source, performant, code-native, declarative, composable, and secure.
@@ -53,5 +52,3 @@ oxy --version
 ```
 
 See our [docs](https://docs.oxy.tech) on how to modify the agent file, seed it with context, run tests, and create workflows.
-
-

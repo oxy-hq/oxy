@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/oxy-hq/oxy/refs/heads/main/json-schemas/agent.json
 
-model:  claude-3-7-sonnet
+model: claude-3-7-sonnet
 description: "An agent for generating and executing SQL queries using the Claude 3.7 Sonnet model."
 context:
   - name: queries

@@ -21,7 +21,6 @@ dimensions:
     sample:
       - 100
       - 200
-      
 
 measures:
   - name: count_content_id
