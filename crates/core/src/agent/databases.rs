@@ -41,7 +41,10 @@ impl Object for DatabasesContext {
                         let connector = rt
                             .block_on(Connector::from_database(database_key, &self.config, None))
                             .ok()?;
-                        let database_info = match rt.block_on(connector.database_info()) {
+                        let database = self.config.resolve_database(database_key).ok()?;
+                        let database_info = match rt.block_on(
+                            connector.database_info(database.datasets().into_iter().collect()),
+                        ) {
                             Ok(info) => info,
                             Err(e) => {
                                 println!(
