@@ -198,7 +198,8 @@ impl ContextMapper<TaskInput, OutputContainer> for TaskChainMapper {
         input: TaskInput,
         value: OutputContainer,
     ) -> Result<(OutputContainer, Option<ExecutionContext>), OxyError> {
-        let new_value = memo.merge(HashMap::from_iter([(input.task.name, value)]).into());
+        let new_value: OutputContainer =
+            memo.merge(HashMap::from_iter([(input.task.name, value)]).into());
         log::debug!("Output Value: {:?}", new_value);
         let execution_context = execution_context.wrap_render_context(&(&new_value).into());
         Ok((new_value, Some(execution_context)))

@@ -13,6 +13,8 @@ use tower_http::cors::{Any, CorsLayer};
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 
+use super::app;
+
 pub async fn api_router() -> Router {
     let cors = CorsLayer::new()
         .allow_origin(Any)
@@ -27,6 +29,10 @@ pub async fn api_router() -> Router {
         .route("/ask", post(agent::ask))
         .route("/messages/{agent}", get(message::get_messages))
         .route("/agents", get(agent::get_agents))
+        .route("/apps", get(app::list_apps))
+        .route("/app/{pathb64}", get(app::get_app))
+        .route("/app/file/{pathb64}", get(app::get_data))
+        .route("/app/{pathb64}/run", post(app::run_app))
         .route("/threads", get(thread::get_threads))
         .route("/threads/{id}", get(thread::get_thread))
         .route("/threads/{id}/ask", get(thread::ask_thread))

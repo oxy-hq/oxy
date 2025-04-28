@@ -31,12 +31,20 @@ const chartKeys = {
   get: (file_path: string) => [...chartKeys.all, "get", file_path] as const,
 };
 
+const appKeys = {
+  all: ["app"] as const,
+  list: () => [...appKeys.all, "list"] as const,
+  get: (appPath: string) => [...appKeys.all, "get", appPath] as const,
+  getData: (appPath: string) => [...appKeys.all, "getData", appPath] as const,
+};
+
 const queryKeys = {
   conversation: conversationKeys,
   agent: agentKeys,
   thread: threadKeys,
   workflow: workflowKeys,
   chart: chartKeys,
+  app: appKeys,
 };
 
 export default queryKeys;

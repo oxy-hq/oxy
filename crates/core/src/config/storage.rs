@@ -3,7 +3,7 @@ use tokio::fs;
 
 use crate::errors::OxyError;
 
-use super::model::{AgentConfig, Config, Workflow};
+use super::model::{AgentConfig, AppConfig, Config, Workflow};
 
 const DEFAULT_CONFIG_PATH: &str = "config.yml";
 const WORKFLOW_EXTENSION: &str = ".workflow";
@@ -23,7 +23,9 @@ pub(super) trait ConfigStorage {
     async fn fs_link<P: AsRef<Path>>(&self, file_ref: P) -> Result<String, OxyError>;
     async fn glob<P: AsRef<Path>>(&self, path: P) -> Result<Vec<String>, OxyError>;
     async fn list_agents(&self) -> Result<Vec<PathBuf>, OxyError>;
+    async fn list_apps(&self) -> Result<Vec<PathBuf>, OxyError>;
     async fn list_workflows(&self) -> Result<Vec<PathBuf>, OxyError>;
+    async fn load_app_config<P: AsRef<Path>>(&self, app_path: P) -> Result<AppConfig, OxyError>;
 }
 
 #[derive(Debug)]
@@ -155,5 +157,21 @@ impl ConfigStorage for LocalSource {
 
     async fn list_workflows(&self) -> Result<Vec<PathBuf>, OxyError> {
         Ok(self.list_by_sub_extension(None, "workflow"))
+    }
+
+    async fn list_apps(&self) -> Result<Vec<PathBuf>, OxyError> {
+        Ok(self.list_by_sub_extension(None, "app"))
+    }
+
+    async fn load_app_config<P: AsRef<Path>>(&self, app_path: P) -> Result<AppConfig, OxyError> {
+        let resolved_path = PathBuf::from(&self.project_path).join(app_path);
+        let agent_yml = fs::read_to_string(&resolved_path).await.map_err(|e| {
+            OxyError::ConfigurationError(format!("Failed to read agent config from file: {e}"))
+        })?;
+        let mut app_config: AppConfig = serde_yaml::from_str(&agent_yml).map_err(|e| {
+            OxyError::ConfigurationError(format!("Failed to deserialize agent config: {e}"))
+        })?;
+
+        Ok(app_config)
     }
 }

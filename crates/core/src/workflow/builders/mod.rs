@@ -1,6 +1,9 @@
 use crate::{
     adapters::checkpoint::{CheckpointBuilder, CheckpointManager},
-    config::constants::{CHECKPOINT_ROOT_PATH, WORKFLOW_SOURCE},
+    config::{
+        constants::{CHECKPOINT_ROOT_PATH, WORKFLOW_SOURCE},
+        model::Task,
+    },
     errors::OxyError,
     execute::{
         Executable, ExecutionContext, ExecutionContextBuilder,
@@ -17,7 +20,7 @@ use std::{
     hash::Hash,
     path::{Path, PathBuf},
 };
-use workflow::build_workflow_executable;
+use workflow::{build_tasks_executable, build_workflow_executable};
 
 mod cache;
 mod consistency;
@@ -167,6 +170,43 @@ impl WorkflowLauncher {
                 })
                 .await?;
             Ok(response)
+        });
+        let buf_writer = self.buf_writer;
+        let event_handle =
+            tokio::spawn(async move { buf_writer.write_to_handler(event_handler).await });
+        let response = handle.await?;
+        event_handle.await??;
+        response
+    }
+
+    pub async fn launch_tasks<H: EventHandler + Send + 'static>(
+        self,
+        tasks: Vec<Task>,
+        event_handler: H,
+    ) -> Result<OutputContainer, OxyError> {
+        let execution_context = self
+            .execution_context
+            .ok_or(OxyError::RuntimeError(
+                "ExecutionContext is required".to_string(),
+            ))?
+            .with_child_source("tasks".to_string(), WORKFLOW_SOURCE.to_string());
+        let checkpoint_manager = self.checkpoint_manager.ok_or(OxyError::RuntimeError(
+            "CheckpointManager is required".to_string(),
+        ))?;
+        execution_context
+            .write_kind(EventKind::Started {
+                name: "tasks".to_string(),
+            })
+            .await?;
+        let handle = tokio::spawn(async move {
+            let mut executable = build_tasks_executable(checkpoint_manager, NoRestore);
+            let response = executable.execute(&execution_context, tasks).await;
+            execution_context
+                .write_kind(EventKind::Finished {
+                    message: "\n✅Workflow executed successfully".success().to_string(),
+                })
+                .await?;
+            response
         });
         let buf_writer = self.buf_writer;
         let event_handle =

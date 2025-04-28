@@ -1,4 +1,5 @@
 pub mod agent;
+pub mod app;
 pub mod chart;
 pub mod message;
 pub mod router;
