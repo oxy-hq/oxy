@@ -136,6 +136,10 @@ impl Config {
         self.list_by_sub_extension(dir, "workflow")
     }
 
+    pub fn list_apps(&self, dir: &PathBuf) -> Vec<PathBuf> {
+        self.list_by_sub_extension(dir, "app")
+    }
+
     pub fn load_workflow(&self, workflow_path: &PathBuf) -> Result<Workflow, OxyError> {
         if !workflow_path.exists() {
             return Err(OxyError::ArgumentError(format!(

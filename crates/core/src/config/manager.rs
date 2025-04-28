@@ -6,7 +6,7 @@ use std::{
 use crate::errors::OxyError;
 
 use super::{
-    model::{AgentConfig, Config, Database, Model, Workflow},
+    model::{AgentConfig, AppConfig, Config, Database, Model, Workflow},
     storage::{ConfigSource, ConfigStorage},
 };
 
@@ -103,7 +103,14 @@ impl ConfigManager {
         self.storage.list_agents().await
     }
 
+    pub async fn list_apps(&self) -> Result<Vec<PathBuf>, OxyError> {
+        self.storage.list_apps().await
+    }
     pub async fn list_workflows(&self) -> Result<Vec<PathBuf>, OxyError> {
         self.storage.list_workflows().await
+    }
+
+    pub async fn resolve_app<P: AsRef<Path>>(&self, app_path: P) -> Result<AppConfig, OxyError> {
+        self.storage.load_app_config(app_path).await
     }
 }

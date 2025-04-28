@@ -1,0 +1,65 @@
+tasks:
+  - name: fruit_sales
+    type: execute_sql
+    sql_file: data/fruit_sales.sql
+    database: local
+
+  - name: revenues
+    type: execute_sql
+    sql_query: |
+      select * from monthly_revenue_by_region.csv where month != 'Apr'
+    database: local
+
+  - name: active_users
+    type: execute_sql
+    sql_query: |
+      select * from monthly_active_user_by_platform.csv
+    database: local
+
+display:
+  - type: markdown
+    content: |
+      # Example Oxy Data app
+
+      This is an example of a simple Oxy Data app that demonstrates how to use different types of visualizations.
+
+      The app includes a line chart, a bar chart, and a table.
+
+      The data is loaded from SQL files and displayed using different chart types.
+
+  - type: line_chart
+    title: Monthly Revenue by Region
+    data: revenues
+    x: month
+    y: revenue
+    series: region
+
+  - type: line_chart
+    title: Monthly Revenue
+    data: revenues
+    x: month
+    y: revenue
+
+  - type: bar_chart
+    title: Monthly Active Users by Platform
+    data: active_users
+    x: month
+    y: users
+    series: platform
+
+  - type: bar_chart
+    title: Monthly Active Users
+    data: active_users
+    x: month
+    y: users
+
+  - type: pie_chart
+    title: Monthly Active Users
+    data: active_users
+    name: platform
+    value: users
+
+  - type: table
+    title: Fruit Sales
+    data: fruit_sales
+  

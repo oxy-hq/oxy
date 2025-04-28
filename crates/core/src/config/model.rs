@@ -1,10 +1,8 @@
-use garde::{Path, Validate};
+use garde::Validate;
 use indoc::indoc;
 use itertools::Itertools;
-use sea_orm::Order;
 use serde::{Deserialize, Serialize};
 use serde_with::skip_serializing_none;
-use std::cmp::Ordering;
 use std::cmp::PartialEq;
 use std::collections::HashMap;
 use std::hash::Hash;
@@ -16,7 +14,7 @@ use crate::config::validate::{
     ValidationContext, validate_agent_exists, validate_database_exists, validate_env_var,
 };
 use crate::errors::OxyError;
-use crate::utils::{find_project_path, list_by_sub_extension};
+use crate::utils::list_by_sub_extension;
 use schemars::JsonSchema;
 
 use super::validate::{
@@ -1686,6 +1684,66 @@ pub struct ValidateSQLTool {
     #[serde(default = "default_validate_sql_tool_description")]
     pub description: String,
     pub database: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
+pub struct MarkdownDisplay {
+    pub content: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
+pub struct LineChartDisplay {
+    pub x: String,
+    pub y: String,
+    pub x_axis_label: Option<String>,
+    pub y_axis_label: Option<String>,
+    pub data: String,
+    pub series: Option<String>,
+    pub title: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
+pub struct BarChartDisplay {
+    pub x: String,
+    pub y: String,
+    pub title: Option<String>,
+    pub data: String,
+    pub series: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
+pub struct PieChartDisplay {
+    pub name: String,
+    pub value: String,
+    pub title: Option<String>,
+    pub data: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
+pub struct TableDisplay {
+    pub data: String,
+    pub title: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
+#[serde(tag = "type")]
+pub enum Display {
+    #[serde(rename = "markdown")]
+    Markdown(MarkdownDisplay),
+    #[serde(rename = "line_chart")]
+    LineChart(LineChartDisplay),
+    #[serde(rename = "pie_chart")]
+    PieChart(PieChartDisplay),
+    #[serde(rename = "bar_chart")]
+    BarChart(BarChartDisplay),
+    #[serde(rename = "table")]
+    Table(TableDisplay),
+}
+
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
+pub struct AppConfig {
+    pub tasks: Vec<Task>,
+    pub display: Vec<Display>,
 }
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]

@@ -16,6 +16,7 @@ import "@xyflow/react/dist/style.css";
 import AgentTestsPage from "@/pages/agent-test";
 import NotSignedIn from "@/pages/NotSignedIn";
 import React from "react";
+import AppPage from "./pages/app";
 
 const MainLayout = React.memo(function MainLayout() {
   return (
@@ -29,6 +30,7 @@ const MainLayout = React.memo(function MainLayout() {
           <Route path="/workflows/:pathb64" element={<WorkflowPage />} />
           <Route path="/agents/:pathb64/tests" element={<AgentTestsPage />} />
           <Route path="*" element={<Navigate to="/" />} />
+          <Route path="/apps/:pathb64" element={<AppPage />} />
         </Routes>
       </main>
     </>

@@ -1,4 +1,4 @@
-use std::{collections::HashMap, hash::Hash};
+use std::{collections::HashMap, hash::Hash, path::PathBuf};
 
 use itertools::Itertools;
 use minijinja::Value;
@@ -29,7 +29,72 @@ impl Default for OutputContainer {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TableData {
+    pub file_path: PathBuf,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum Data {
+    Bool(bool),
+    Text(String),
+    Table(TableData),
+    None,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum DataContainer {
+    List(Vec<DataContainer>),
+    Map(HashMap<String, DataContainer>),
+    Single(Data),
+    None,
+}
+
+impl DataContainer {
+    pub fn load_from_file(file_path: &PathBuf) -> Result<Self, OxyError> {
+        let file = std::fs::File::open(file_path).map_err(|e| {
+            OxyError::RuntimeError(format!("Error opening file {}: {}", file_path.display(), e))
+        })?;
+        let reader = std::io::BufReader::new(file);
+        let output_container: DataContainer = serde_yaml::from_reader(reader)
+            .map_err(|e| OxyError::RuntimeError(format!("Error deserializing yaml: {}", e)))?;
+        Ok(output_container)
+    }
+}
+
 impl OutputContainer {
+    pub fn to_data(self, file_path: &PathBuf) -> Result<DataContainer, OxyError> {
+        match self {
+            OutputContainer::List(list) => {
+                let mut rs = vec![];
+                for item in list {
+                    rs.push(item.to_data(file_path)?);
+                }
+                Ok(DataContainer::List(rs))
+            }
+            OutputContainer::Map(map) => {
+                let mut rs = HashMap::new();
+                for (k, v) in map {
+                    rs.insert(k, v.to_data(file_path)?);
+                }
+
+                Ok(DataContainer::Map(rs))
+            }
+            OutputContainer::Single(output) => {
+                Ok(DataContainer::Single(output.to_data(file_path)?))
+            }
+            OutputContainer::Consistency {
+                value,
+                score,
+                metadata,
+            } => Ok(DataContainer::None),
+            OutputContainer::Metadata { output, metadata } => {
+                Ok(DataContainer::Single(output.to_data(file_path)?))
+            }
+        }
+    }
     pub fn merge(self, other: OutputContainer) -> OutputContainer {
         match (self, other) {
             (OutputContainer::List(mut list1), OutputContainer::List(list2)) => {

@@ -1,4 +1,4 @@
-use std::{str::FromStr, sync::Arc};
+use std::{path::PathBuf, str::FromStr, sync::Arc};
 
 use minijinja::{
     Value,
@@ -6,7 +6,13 @@ use minijinja::{
 };
 use serde::{Deserialize, Serialize};
 
-use super::{Prompt, SQL, Table, table::TableReference};
+use crate::errors::OxyError;
+
+use super::{
+    Prompt, SQL, Table,
+    output_container::{Data, DataContainer},
+    table::TableReference,
+};
 
 #[derive(Debug, Serialize, Deserialize, Clone, Hash)]
 pub enum Output {
@@ -50,6 +56,16 @@ impl Output {
             Output::Prompt(t) => t.0 = text,
             Output::Table(t) => t.file_path = text,
             _ => {}
+        }
+    }
+
+    pub fn to_data(&self, file_path: &PathBuf) -> Result<Data, OxyError> {
+        match self {
+            Output::Text(text) => Ok(Data::Text(text.to_owned())),
+            Output::SQL(sql) => Ok(Data::Text(sql.to_string())),
+            Output::Table(table) => Ok(Data::Table(table.to_data(file_path)?)),
+            Output::Bool(b) => Ok(Data::Bool(*b)),
+            Output::Prompt(prompt) => Ok(Data::Text(prompt.to_string())),
         }
     }
 }

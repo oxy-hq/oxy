@@ -2,6 +2,7 @@ use std::{
     collections::HashMap,
     fmt::{self, Debug, Display, Formatter},
     hash::{Hash, Hasher},
+    path::PathBuf,
     sync::Arc,
 };
 
@@ -10,22 +11,26 @@ use arrow::{
     datatypes::Schema,
     util::display::{ArrayFormatter, FormatOptions},
 };
+use gcp_bigquery_client::model::project_list;
 use minijinja::{
     Value,
     value::{Enumerator, Object, ObjectExt, ObjectRepr},
 };
 use once_cell::sync::OnceCell;
+use parquet::{arrow::ArrowWriter, basic::Compression, file::properties::WriterProperties};
 use serde::{Deserialize, Serialize};
 
 use crate::{
     adapters::connector::load_result,
     agent::types::{AgentReference, SqlQueryReference},
+    db::client::get_state_dir,
     errors::OxyError,
-    utils::truncate_datasets,
+    utils::{find_project_path, truncate_datasets},
 };
 
-use super::utils::{
-    record_batches_to_2d_array, record_batches_to_markdown, record_batches_to_table,
+use super::{
+    output_container::TableData,
+    utils::{record_batches_to_2d_array, record_batches_to_markdown, record_batches_to_table},
 };
 
 #[derive(Clone, Debug)]
@@ -121,6 +126,46 @@ impl Table {
             result: formatted_results,
             is_result_truncated: truncated,
         }))
+    }
+
+    // need to convert the file from arrow to parquet
+    // because duckdb wasm in the browser have better support for parquet
+    // than arrow.
+    pub fn to_data(&self, data_path: &PathBuf) -> Result<TableData, OxyError> {
+        let table = self.get_inner()?;
+        let state_dir = get_state_dir();
+        let batches = &table.batches;
+        let file_name = format!("{}.parquet", uuid::Uuid::new_v4());
+        let full_file_path: PathBuf = data_path.join(file_name);
+        let file = std::fs::File::create(&full_file_path).map_err(|e| {
+            OxyError::RuntimeError(format!(
+                "Failed to create file {}: {}",
+                full_file_path.display(),
+                e
+            ))
+        })?;
+        let props = WriterProperties::builder()
+            .set_compression(Compression::SNAPPY)
+            .build();
+
+        let mut writer = ArrowWriter::try_new(file, table.schema.clone(), Some(props))
+            .map_err(|e| OxyError::RuntimeError(format!("Failed to create Arrow writer: {}", e)))?;
+        for batch in batches {
+            writer
+                .write(batch)
+                .map_err(|e| OxyError::RuntimeError(format!("Failed to write batch: {}", e)))?;
+        }
+        writer
+            .close()
+            .map_err(|e| OxyError::RuntimeError(format!("Failed to close writer: {}", e)))?;
+
+        let relative_file_path = full_file_path.strip_prefix(state_dir).map_err(|e| {
+            OxyError::RuntimeError(format!("Failed to strip prefix from file path: {}", e))
+        })?;
+
+        return Ok(TableData {
+            file_path: relative_file_path.to_path_buf(),
+        });
     }
 
     pub fn to_export(&self) -> Option<(String, &Arc<Schema>, &Vec<RecordBatch>)> {
