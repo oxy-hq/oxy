@@ -930,13 +930,11 @@ impl OmniTopic {
             return 3;
         }
         let parts = pattern.split('.').collect::<Vec<_>>();
-        if parts.len() == 2 {
-            if parts[1] == "*" {
-                return 2;
-            }
+        if parts.len() == 2 && parts[1] == "*" {
+            return 2;
         }
 
-        return 4;
+        4
     }
     pub fn get_sorted_field_patterns(&self) -> Vec<String> {
         let mut sorted_fields = self.fields.clone();
@@ -944,9 +942,9 @@ impl OmniTopic {
         sorted_fields.sort_by(|a, b| {
             let a_priority = self.get_pattern_priority(a);
             let b_priority = self.get_pattern_priority(b);
-            return a_priority.cmp(&b_priority);
+            a_priority.cmp(&b_priority)
         });
-        return sorted_fields;
+        sorted_fields
     }
 }
 
@@ -1171,10 +1169,10 @@ impl OmniView {
     pub fn get_full_field_name(&self, field_name: &str, view_name: &str) -> String {
         match self.view_type.clone() {
             OmniViewType::Table(v) => {
-                return format!("{}.{}", v.table_name, field_name);
+                format!("{}.{}", v.table_name, field_name)
             }
             OmniViewType::Query(_) => {
-                return format!("{}.{}", view_name, field_name);
+                format!("{}.{}", view_name, field_name)
             }
         }
     }
@@ -1193,10 +1191,10 @@ impl OmniView {
     pub fn get_table_name(&self, view_name: &str) -> String {
         match &self.view_type {
             OmniViewType::Table(view) => {
-                return format!("{}.{}", self.schema, view.table_name);
+                format!("{}.{}", self.schema, view.table_name)
             }
             OmniViewType::Query(v) => {
-                return format!("({}) as {}", v.sql, view_name);
+                format!("({}) as {}", v.sql, view_name)
             }
         }
     }
@@ -1217,10 +1215,7 @@ pub enum OmniField {
 
 impl OmniSemanticModel {
     pub fn get_description(&self) -> String {
-        let mut description =
-            "Execute query on the database through the semantic layer.".to_string();
-
-        description
+        "Execute query on the database through the semantic layer.".to_string()
     }
 
     pub fn get_fields_by_pattern(
@@ -1507,11 +1502,11 @@ impl OmniTopicInfoTool {
             vec![]
         };
 
-        return Ok(OmniSemanticModel {
+        Ok(OmniSemanticModel {
             views,
             relationships,
             topics,
-        });
+        })
     }
 }
 
@@ -1620,11 +1615,11 @@ impl ExecuteOmniTool {
             vec![]
         };
 
-        return Ok(OmniSemanticModel {
+        Ok(OmniSemanticModel {
             views,
             relationships,
             topics,
-        });
+        })
     }
     // pub fn get_description(&self) -> Result<String, OxyError> {
     //     if self.models.is_empty() {

@@ -81,16 +81,14 @@ pub async fn get_app(
         StatusCode::BAD_REQUEST
     })?);
 
-    let app_config = service::app::get_app(&PathBuf::from(path.to_owned()))
-        .await
-        .map_err(|e| {
-            log::debug!(
-                "Failed to get app config from path: {:?} {}",
-                path.to_owned(),
-                e
-            );
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    let app_config = service::app::get_app(&path.to_owned()).await.map_err(|e| {
+        log::debug!(
+            "Failed to get app config from path: {:?} {}",
+            path.to_owned(),
+            e
+        );
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
     if let Some(cached_data) = service::app::try_load_cached_data(&path) {
         return Ok(extract::Json(GetAppResponse {
             data: cached_data,
@@ -105,7 +103,7 @@ pub async fn get_app(
     })?;
 
     Ok(extract::Json(GetAppResponse {
-        data: data,
+        data,
         displays: app_config.display,
     }))
 }
@@ -152,8 +150,8 @@ pub async fn run_app(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    return Ok(extract::Json(GetAppResponse {
+    Ok(extract::Json(GetAppResponse {
         data: rs,
         displays: app_config.display,
-    }));
+    }))
 }

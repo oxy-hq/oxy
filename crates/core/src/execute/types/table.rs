@@ -11,7 +11,6 @@ use arrow::{
     datatypes::Schema,
     util::display::{ArrayFormatter, FormatOptions},
 };
-use gcp_bigquery_client::model::project_list;
 use minijinja::{
     Value,
     value::{Enumerator, Object, ObjectExt, ObjectRepr},
@@ -25,7 +24,7 @@ use crate::{
     agent::types::{AgentReference, SqlQueryReference},
     db::client::get_state_dir,
     errors::OxyError,
-    utils::{find_project_path, truncate_datasets},
+    utils::truncate_datasets,
 };
 
 use super::{
@@ -163,9 +162,9 @@ impl Table {
             OxyError::RuntimeError(format!("Failed to strip prefix from file path: {}", e))
         })?;
 
-        return Ok(TableData {
+        Ok(TableData {
             file_path: relative_file_path.to_path_buf(),
-        });
+        })
     }
 
     pub fn to_export(&self) -> Option<(String, &Arc<Schema>, &Vec<RecordBatch>)> {

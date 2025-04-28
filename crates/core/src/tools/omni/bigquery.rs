@@ -33,19 +33,19 @@ impl SqlParts {
     pub fn to_query(&self) -> String {
         let mut sql_query = format!("SELECT {}", self.select_clauses.join(", "));
         sql_query.push_str(format!(" FROM {}", self.base_table).as_str());
-        if self.join_clauses.len() > 0 {
+        if !self.join_clauses.is_empty() {
             sql_query.push_str(format!(" {}", self.join_clauses.join(" ")).as_str());
         }
-        if self.where_clauses.len() > 0 {
+        if !self.where_clauses.is_empty() {
             sql_query.push_str(format!(" WHERE {}", self.where_clauses.join(" AND ")).as_str());
         }
-        if self.group_clauses.len() > 0 {
+        if !self.group_clauses.is_empty() {
             sql_query.push_str(format!(" GROUP BY {}", self.group_clauses.join(", ")).as_str());
         }
-        if self.having_clauses.len() > 0 {
+        if !self.having_clauses.is_empty() {
             sql_query.push_str(format!(" HAVING {}", self.having_clauses.join(" AND ")).as_str());
         }
-        if self.order_clauses.len() > 0 {
+        if !self.order_clauses.is_empty() {
             sql_query.push_str(format!(" ORDER BY {}", self.order_clauses.join(", ")).as_str());
         }
         if self.limit.is_some() {
@@ -70,16 +70,16 @@ impl BigquerySqlGenerationEngine {
 
     pub fn get_field_name(&self, field: &str, view_name: Option<&str>) -> String {
         if field.contains(".") {
-            return field.to_owned();
+            field.to_owned()
         } else {
             match view_name {
-                Some(view_name) => return format!("{}.{}", view_name, field),
+                Some(view_name) => format!("{}.{}", view_name, field),
                 None => {
                     log::error!(
                         "Field {} does not have view name, please check your semantic model",
                         field
                     );
-                    return field.to_owned();
+                    field.to_owned()
                 }
             }
         }
@@ -111,7 +111,7 @@ impl BigquerySqlGenerationEngine {
         value: &str,
     ) -> anyhow::Result<CompiledField> {
         let referenced_fields = get_referenced_variables(value);
-        if referenced_fields.len() == 0 {
+        if referenced_fields.is_empty() {
             return Ok(CompiledField {
                 sql: value.to_owned(),
                 required_views: HashSet::new(),
@@ -152,11 +152,11 @@ impl BigquerySqlGenerationEngine {
             filters.extend(compiled_field.filters.clone());
         }
 
-        return Ok(CompiledField {
-            sql: sql,
-            required_views: required_views,
-            filters: filters,
-        });
+        Ok(CompiledField {
+            sql,
+            required_views,
+            filters,
+        })
     }
 
     fn compile_filter_value(
@@ -175,7 +175,7 @@ impl BigquerySqlGenerationEngine {
                 Ok(format!("({})", values.join(",")))
             }
             Some(OmniFilterValue::Bool(value)) => {
-                Ok(format!("{}", if value { "true" } else { "false" }))
+                Ok((if value { "true" } else { "false" }).to_string())
             }
             None => Ok("NULL".to_string()),
         }
@@ -185,30 +185,18 @@ impl BigquerySqlGenerationEngine {
         match filter.filter {
             OmniFilter::Is(ref f) => match f.is.clone() {
                 Some(v) => match v {
-                    OmniFilterValue::String(_) => {
-                        return Ok("=".to_string());
-                    }
-                    OmniFilterValue::Int(_) => {
-                        return Ok("=".to_string());
-                    }
-                    OmniFilterValue::Array(_) => {
-                        return Ok("IN".to_string());
-                    }
+                    OmniFilterValue::String(_) => Ok("=".to_string()),
+                    OmniFilterValue::Int(_) => Ok("=".to_string()),
+                    OmniFilterValue::Array(_) => Ok("IN".to_string()),
                     OmniFilterValue::Bool(_) => Ok("IS".to_string()),
                 },
                 None => Ok("IS".to_string()),
             },
             OmniFilter::Not(ref f) => match f.not.clone() {
                 Some(v) => match v {
-                    OmniFilterValue::String(_) => {
-                        return Ok("!=".to_string());
-                    }
-                    OmniFilterValue::Int(_) => {
-                        return Ok("!=".to_string());
-                    }
-                    OmniFilterValue::Array(_) => {
-                        return Ok("NOT IN".to_string());
-                    }
+                    OmniFilterValue::String(_) => Ok("!=".to_string()),
+                    OmniFilterValue::Int(_) => Ok("!=".to_string()),
+                    OmniFilterValue::Array(_) => Ok("NOT IN".to_string()),
                     OmniFilterValue::Bool(_) => Ok("IS NOT".to_string()),
                 },
                 None => Ok("IS NOT".to_string()),
@@ -227,19 +215,19 @@ impl BigquerySqlGenerationEngine {
         match filter.filter {
             OmniFilter::Is(ref f) => {
                 let value = self.compile_filter_value(f.is.clone())?;
-                return Ok(CompiledField {
+                Ok(CompiledField {
                     sql: format!("{} {} {}", compiled_field.sql, filter_operator, value),
                     required_views: compiled_field.required_views,
                     filters: vec![],
-                });
+                })
             }
             OmniFilter::Not(ref value) => {
                 let value = self.compile_filter_value(value.not.clone())?;
-                return Ok(CompiledField {
+                Ok(CompiledField {
                     sql: format!("{} {} {}", compiled_field.sql, filter_operator, value),
                     required_views: compiled_field.required_views,
                     filters: vec![],
-                });
+                })
             }
         }
     }
@@ -257,7 +245,7 @@ impl BigquerySqlGenerationEngine {
     ) -> anyhow::Result<CompiledField> {
         let compiled_primary_k = self.compile_value(
             Some(view_name),
-            &measure.custom_primary_key_sql.as_ref().unwrap(),
+            measure.custom_primary_key_sql.as_ref().unwrap(),
         )?;
         let alias = generate_alias(field_name);
         let sql = format!(
@@ -269,11 +257,11 @@ impl BigquerySqlGenerationEngine {
             &compiled_primary_k.sql
         );
 
-        return Ok(CompiledField {
-            sql: sql,
+        Ok(CompiledField {
+            sql,
             required_views: compiled_primary_k.required_views,
             filters: compiled_primary_k.filters,
-        });
+        })
     }
     fn compile_mean_distinct_on(
         &self,
@@ -291,7 +279,7 @@ impl BigquerySqlGenerationEngine {
         }
         let compiled_primary_k = self.compile_value(
             Some(view_name),
-            &measure.custom_primary_key_sql.as_ref().unwrap(),
+            measure.custom_primary_key_sql.as_ref().unwrap(),
         )?;
         let alias = generate_alias(field_name);
         let sql = format!(
@@ -303,11 +291,11 @@ impl BigquerySqlGenerationEngine {
             &compiled_primary_k.sql
         );
 
-        return Ok(CompiledField {
-            sql: sql,
+        Ok(CompiledField {
+            sql,
             required_views: compiled_primary_k.required_views,
             filters: compiled_primary_k.filters,
-        });
+        })
     }
 
     fn compile_sum_distinct_on(
@@ -326,7 +314,7 @@ impl BigquerySqlGenerationEngine {
         }
         let compiled_primary_k = self.compile_value(
             Some(view_name),
-            &measure.custom_primary_key_sql.as_ref().unwrap(),
+            measure.custom_primary_key_sql.as_ref().unwrap(),
         )?;
         let alias = generate_alias(field_name);
         let sql = format!(
@@ -338,11 +326,11 @@ impl BigquerySqlGenerationEngine {
             &compiled_primary_k.sql
         );
 
-        return Ok(CompiledField {
-            sql: sql,
+        Ok(CompiledField {
+            sql,
             required_views: compiled_primary_k.required_views,
             filters: compiled_primary_k.filters,
-        });
+        })
     }
 
     pub fn compiled_measure(
@@ -374,7 +362,7 @@ impl BigquerySqlGenerationEngine {
         let mut required_views = HashSet::new();
         required_views.insert(view_name.to_owned());
         if let Some(sql) = &measure.sql {
-            let compiled_field = self.compile_value(Some(view_name), &sql)?;
+            let compiled_field = self.compile_value(Some(view_name), sql)?;
             log::debug!("compiled field {} {:?}", field_name, compiled_field);
             compiled_sql = compiled_field.sql;
             required_views.extend(compiled_field.required_views);
@@ -389,7 +377,7 @@ impl BigquerySqlGenerationEngine {
             compiled_filters.push(compiled_filter);
         }
 
-        if compiled_filters.len() > 0 {
+        if !compiled_filters.is_empty() {
             // use case when on top of the sql
             compiled_sql = format!(
                 "CASE WHEN ({}) THEN ({}) ELSE NULL END",
@@ -406,157 +394,155 @@ impl BigquerySqlGenerationEngine {
             Some(aggregate_type) => match aggregate_type {
                 AggregateType::Count => {
                     let value;
-                    if let Some(_) = &measure.sql {
+                    if measure.sql.is_some() {
                         value = compiled_sql;
                     } else {
                         value = "1".to_string();
                     }
-                    return Ok(CompiledField {
+                    Ok(CompiledField {
                         sql: format!("COUNT({})", value),
-                        required_views: required_views,
-                        filters: filters,
-                    });
+                        required_views,
+                        filters,
+                    })
                 }
                 AggregateType::Sum => {
-                    if let Some(_) = &measure.sql {
-                        return Ok(CompiledField {
+                    if measure.sql.is_some() {
+                        Ok(CompiledField {
                             sql: format!("SUM({})", compiled_sql),
-                            required_views: required_views,
-                            filters: filters,
-                        });
+                            required_views,
+                            filters,
+                        })
                     } else {
-                        return Err(anyhow::anyhow!(
+                        Err(anyhow::anyhow!(
                             "Sum measure {} does not have sql",
                             field_name
-                        ));
+                        ))
                     }
                 }
                 AggregateType::Avg => {
-                    if let Some(_) = &measure.sql {
-                        return Ok(CompiledField {
+                    if measure.sql.is_some() {
+                        Ok(CompiledField {
                             sql: format!("AVG({})", compiled_sql),
-                            required_views: required_views,
-                            filters: filters,
-                        });
+                            required_views,
+                            filters,
+                        })
                     } else {
-                        return Err(anyhow::anyhow!(
+                        Err(anyhow::anyhow!(
                             "Avg measure {} does not have sql",
                             field_name
-                        ));
+                        ))
                     }
                 }
                 AggregateType::Max => {
                     if let Some(_sql) = &measure.sql {
-                        return Ok(CompiledField {
+                        Ok(CompiledField {
                             sql: format!("MAX({})", compiled_sql),
-                            required_views: required_views,
-                            filters: filters,
-                        });
+                            required_views,
+                            filters,
+                        })
                     } else {
-                        return Err(anyhow::anyhow!(
+                        Err(anyhow::anyhow!(
                             "Max measure {} does not have sql",
                             field_name
-                        ));
+                        ))
                     }
                 }
                 AggregateType::Min => {
                     if let Some(_sql) = &measure.sql {
-                        return Ok(CompiledField {
+                        Ok(CompiledField {
                             sql: format!("MIN({})", compiled_sql),
-                            required_views: required_views,
-                            filters: filters,
-                        });
+                            required_views,
+                            filters,
+                        })
                     } else {
-                        return Err(anyhow::anyhow!(
+                        Err(anyhow::anyhow!(
                             "Min measure {} does not have sql",
                             field_name
-                        ));
+                        ))
                     }
                 }
                 AggregateType::CountDistinct => {
-                    if let Some(_) = &measure.sql {
-                        return Ok(CompiledField {
+                    if measure.sql.is_some() {
+                        Ok(CompiledField {
                             sql: format!("COUNT(DISTINCT {})", compiled_sql),
-                            required_views: required_views,
-                            filters: filters,
-                        });
+                            required_views,
+                            filters,
+                        })
                     } else {
-                        return Err(anyhow::anyhow!(
+                        Err(anyhow::anyhow!(
                             "CountDistinct measure {} does not have sql",
                             field_name
-                        ));
+                        ))
                     }
                 }
                 AggregateType::AverageDistinctOn => {
                     let compiled = self.compile_average_distinct_on(
                         view_name,
                         &compiled_sql,
-                        &measure,
+                        measure,
                         view,
                         field_name,
                     )?;
                     required_views.extend(compiled.required_views);
                     filters.extend(compiled.filters);
-                    return Ok(CompiledField {
+                    Ok(CompiledField {
                         sql: compiled.sql,
-                        required_views: required_views,
-                        filters: filters,
-                    });
+                        required_views,
+                        filters,
+                    })
                 }
                 AggregateType::MedianDistinctOn => {
                     let compiled = self.compile_mean_distinct_on(
                         view_name,
                         &compiled_sql,
-                        &measure,
+                        measure,
                         view,
                         field_name,
                     )?;
                     required_views.extend(compiled.required_views);
                     filters.extend(compiled.filters);
-                    return Ok(CompiledField {
+                    Ok(CompiledField {
                         sql: compiled.sql,
-                        required_views: required_views,
-                        filters: filters,
-                    });
+                        required_views,
+                        filters,
+                    })
                 }
                 AggregateType::SumDistinctOn => {
                     let compiled = self.compile_sum_distinct_on(
                         view_name,
                         &compiled_sql,
-                        &measure,
+                        measure,
                         view,
                         field_name,
                     )?;
                     required_views.extend(compiled.required_views);
                     filters.extend(compiled.filters);
-                    return Ok(CompiledField {
+                    Ok(CompiledField {
                         sql: compiled.sql,
-                        required_views: required_views,
-                        filters: filters,
-                    });
+                        required_views,
+                        filters,
+                    })
                 }
                 AggregateType::Median => {
-                    if let Some(_) = &measure.sql {
-                        return Ok(CompiledField {
+                    if measure.sql.is_some() {
+                        Ok(CompiledField {
                             sql: format!("MEDIAN({})", compiled_sql),
-                            required_views: required_views,
-                            filters: filters,
-                        });
+                            required_views,
+                            filters,
+                        })
                     } else {
-                        return Err(anyhow::anyhow!(
+                        Err(anyhow::anyhow!(
                             "Median measure {} does not have sql",
                             field_name
-                        ));
+                        ))
                     }
                 }
             },
-            None => {
-                return Ok(CompiledField {
-                    sql: compiled_sql,
-                    required_views: required_views,
-                    filters: filters,
-                });
-            }
+            None => Ok(CompiledField {
+                sql: compiled_sql,
+                required_views,
+                filters,
+            }),
         }
     }
 
@@ -588,22 +574,18 @@ impl BigquerySqlGenerationEngine {
 
         match field {
             OmniField::Dimension(dimension) => match dimension.sql {
-                Some(ref sql) => {
-                    return self.compile_value(Some(view_name), &sql);
-                }
+                Some(ref sql) => self.compile_value(Some(view_name), sql),
                 None => {
                     let mut required_views = HashSet::new();
                     required_views.insert(view_name.to_owned());
-                    return Ok(CompiledField {
+                    Ok(CompiledField {
                         sql: view.get_full_field_name(field_name, view_name),
-                        required_views: required_views,
+                        required_views,
                         filters: vec![],
-                    });
+                    })
                 }
             },
-            OmniField::Measure(measure) => {
-                return self.compiled_measure(field_name, view_name, &measure);
-            }
+            OmniField::Measure(measure) => self.compiled_measure(field_name, view_name, &measure),
         }
     }
 
@@ -636,25 +618,23 @@ impl BigquerySqlGenerationEngine {
                     let join_clause = format!(
                         "{} {} ON {}",
                         relationship.join_type.to_sql(),
-                        join_view.get_table_name(&view_name),
+                        join_view.get_table_name(view_name),
                         on_clause.sql
                     );
-                    return Ok(join_clause);
+                    Ok(join_clause)
                 }
-                None => {
-                    return Err(anyhow::anyhow!(
-                        "Relationship not found between view {} and view {}",
-                        view_name,
-                        &topic.base_view
-                    ));
-                }
+                None => Err(anyhow::anyhow!(
+                    "Relationship not found between view {} and view {}",
+                    view_name,
+                    &topic.base_view
+                )),
             }
         } else {
-            return Err(anyhow::anyhow!(
+            Err(anyhow::anyhow!(
                 "Join {} not allowed in topic {}",
                 view_name,
                 topic.label.clone().unwrap_or("no label".to_string())
-            ));
+            ))
         }
     }
 }
@@ -690,8 +670,8 @@ impl SqlGenerationEngine for BigquerySqlGenerationEngine {
                 topic.base_view
             ))?;
         let mut sql_parts = SqlParts::new(&base_view.get_table_name(&topic.base_view));
-        if let Some(_) = &params.limit {
-            sql_parts.limit = params.limit.clone();
+        if params.limit.is_some() {
+            sql_parts.limit = params.limit;
         } else {
             // if all selected fields are measures, we need to set limit to 1
             if selected_fields

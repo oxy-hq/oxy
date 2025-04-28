@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::{
     adapters::checkpoint::CheckpointManager,
-    config::model::{Task, Workflow, WorkflowTask},
+    config::model::Task,
     errors::OxyError,
     execute::{
         Executable, ExecutionContext,
