@@ -14,9 +14,8 @@ export const BarChart = ({
   data: DataContainer;
 }) => {
   const value = getData(data, display.data) as TableData;
-  const [chartOptions, setChartOptions] = useState<EChartsOption>({
-    loading: true,
-  });
+  const [isLoading, setIsLoading] = useState(true);
+  const [chartOptions, setChartOptions] = useState<EChartsOption>({});
 
   useEffect(() => {
     (async (): Promise<void> => {
@@ -87,6 +86,7 @@ export const BarChart = ({
         ];
       }
       setChartOptions(options);
+      setIsLoading(false);
     })();
   }, [display, value.file_path, data]);
 
@@ -96,5 +96,5 @@ export const BarChart = ({
         Loading...
       </div>
     );
-  return <Echarts isLoading={!chartOptions} options={chartOptions} />;
+  return <Echarts isLoading={isLoading} options={chartOptions} />;
 };
