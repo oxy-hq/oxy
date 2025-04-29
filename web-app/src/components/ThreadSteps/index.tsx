@@ -7,7 +7,7 @@ const STEP_MAP = {
   retrieve: "Retrieve data",
 };
 
-const Steps = ({
+const ThreadSteps = ({
   steps,
   isLoading,
 }: {
@@ -35,4 +35,4 @@ const Steps = ({
   );
 };
 
-export default Steps;
+export default ThreadSteps;

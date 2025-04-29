@@ -8,9 +8,9 @@ import AnswerContent from "@/components/AnswerContent";
 import { useQueryClient } from "@tanstack/react-query";
 import queryKeys from "@/hooks/api/queryKey";
 import PageHeader from "@/components/PageHeader";
-import References from "./References";
+import ThreadReferences from "@/components/ThreadReferences";
 import { Reference } from "@/types/chat";
-import Steps from "./Steps";
+import ThreadSteps from "@/components/ThreadSteps";
 
 const STEP_MAP = {
   execute_sql: "Execute SQL",
@@ -118,13 +118,15 @@ const Thread = () => {
                   Answer
                 </p>
               </div>
-              <Steps steps={steps} isLoading={isLoading} />
+              <ThreadSteps steps={steps} isLoading={isLoading} />
 
               <AnswerContent content={answer || ""} />
             </div>
           )}
           <div className="mt-2 flex">
-            {references.length > 0 && <References references={references} />}
+            {references.length > 0 && (
+              <ThreadReferences references={references} />
+            )}
           </div>
         </div>
       </div>

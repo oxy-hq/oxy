@@ -31,6 +31,16 @@ const chartKeys = {
   get: (file_path: string) => [...chartKeys.all, "get", file_path] as const,
 };
 
+const fileKeys = {
+  all: ["file"] as const,
+  get: (pathb64: string) => [...fileKeys.all, "get", pathb64] as const,
+};
+
+const databaseKeys = {
+  all: ["database"] as const,
+  list: () => [...databaseKeys.all, "list"] as const,
+};
+
 const appKeys = {
   all: ["app"] as const,
   list: () => [...appKeys.all, "list"] as const,
@@ -44,6 +54,8 @@ const queryKeys = {
   thread: threadKeys,
   workflow: workflowKeys,
   chart: chartKeys,
+  file: fileKeys,
+  database: databaseKeys,
   app: appKeys,
 };
 

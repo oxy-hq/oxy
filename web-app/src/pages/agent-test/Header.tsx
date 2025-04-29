@@ -21,7 +21,7 @@ const Header: React.FC = () => {
   return (
     <PageHeader className="flex-col border-b border-border w-full">
       <div className="flex items-center justify-between py-[2px]">
-        <Link to="/">
+        <Link to="/home">
           <Button variant="ghost">
             <ChevronLeft className="w-4 h-4" />
             Return to home

@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/shadcn/sidebar";
 import Threads from "./Threads";
 import { Workflows } from "./Workflows";
+import Ide from "./Ide";
 import { Apps } from "./Apps";
 
 function useCurrentUserEmail() {
@@ -68,6 +69,7 @@ export function AppSidebar() {
           </Link>
         </SidebarMenuButton>
       </SidebarMenuItem>
+      <Ide />
       <Threads />
       <Workflows />
       <Apps />

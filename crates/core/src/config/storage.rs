@@ -83,7 +83,6 @@ impl LocalSource {
                 }
             }
         }
-
         files
     }
 }
