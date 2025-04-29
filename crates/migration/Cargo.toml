@@ -9,6 +9,7 @@ publish.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 
+
 [dependencies]
 async-std = { version = "1", features = ["attributes", "tokio1"] }
 sea-orm-migration = { workspace = true }
