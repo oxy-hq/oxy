@@ -151,7 +151,7 @@
   }
 
   .markdown {
-    * {
+    *:not(svg *) {
       all: revert;
     }
     tr {
