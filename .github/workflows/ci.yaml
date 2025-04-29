@@ -121,9 +121,9 @@ jobs:
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Run cargo check
-        run: cargo check --verbose --workspace
+        run: cargo check --profile ci --verbose --workspace
       - name: Run cargo clippy
-        run: cargo clippy --verbose --workspace --fix
+        run: cargo clippy --profile ci --verbose --workspace --fix
 
   cargo-test:
     concurrency:
@@ -153,6 +153,6 @@ jobs:
         run: |
           touch examples/bigquery-sample.key
           echo $BIGQUERY_SAMPLE_KEY > examples/bigquery-sample.key
-          cargo test --verbose --no-fail-fast -- --nocapture
+          cargo test --profile ci --verbose --no-fail-fast -- --nocapture
       - name: Check json schemas
         run: ./target/debug/oxy gen-config-schema --check
