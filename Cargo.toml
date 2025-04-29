@@ -30,3 +30,9 @@ description = "Oxy"
 authors = ["oxy engineers"]
 documentation = "https://docs.oxy.tech"
 exclude = ["examples/", "tests/"]
+
+[profile.ci]
+inherits = "dev"
+debug = false
+codegen-units = 16
+strip = true
