@@ -66,7 +66,7 @@ terminal_size = "0.4.2"
 thiserror = "2.0.12"
 tokio = { workspace = true }
 tokio-stream = "0.1.17"
-tokio-util = "0.7.14"
+tokio-util = "0.7.15"
 tower = "0.5.2"
 tower-http = { version = "0.6.2", features = ["fs", "cors"] }
 tower-serve-static = "0.1.1"
