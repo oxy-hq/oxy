@@ -15,17 +15,21 @@ const MANUAL_BUNDLES: duckdb.DuckDBBundles = {
   },
 };
 let duckDB: duckdb.AsyncDuckDB = null!;
+let initPromise: Promise<void> | null = null;
+
 const init = async () => {
-  if (duckDB) {
-    return;
+  if (duckDB) return;
+  if (!initPromise) {
+    initPromise = (async () => {
+      console.log("Initializing DuckDB");
+      const bundle = await duckdb.selectBundle(MANUAL_BUNDLES);
+      const worker = new Worker(bundle.mainWorker!);
+      const logger = new duckdb.ConsoleLogger();
+      duckDB = new duckdb.AsyncDuckDB(logger, worker);
+      await duckDB.instantiate(bundle.mainModule, bundle.pthreadWorker);
+    })();
   }
-  // Select a bundle based on browser checks
-  const bundle = await duckdb.selectBundle(MANUAL_BUNDLES);
-  // Instantiate the asynchronous version of DuckDB-wasm
-  const worker = new Worker(bundle.mainWorker!);
-  const logger = new duckdb.ConsoleLogger();
-  duckDB = new duckdb.AsyncDuckDB(logger, worker);
-  await duckDB.instantiate(bundle.mainModule, bundle.pthreadWorker);
+  return initPromise;
 };
 
 export const getDuckDB = async () => {
