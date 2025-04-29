@@ -34,10 +34,12 @@ const AppPage: React.FC = () => {
 
   if (isPending) return <Loading />;
   return (
-    <div className="w-full h-full flex flex-col justify-center items-center">
+    <div className="w-full h-full flex flex-col">
       <AppPageHeader path={path} onRun={handleRun} isRunning={isRunning} />
-      <div className="w-full h-full flex flex-col overflow-auto p-16 max-w-200">
-        <Displays displays={app!.displays} data={app!.data} />
+      <div className="flex-1 w-full flex justify-center items-start overflow-auto">
+        <div className="p-16 max-w-200 w-full">
+          <Displays displays={app!.displays} data={app!.data} />
+        </div>
       </div>
     </div>
   );
