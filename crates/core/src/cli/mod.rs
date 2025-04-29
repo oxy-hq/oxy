@@ -19,6 +19,7 @@ use crate::utils::find_project_path;
 use crate::utils::print_colored_sql;
 use crate::workflow::loggers::cli::WorkflowCLILogger;
 use axum::handler::Handler;
+use axum::http::HeaderValue;
 use clap::CommandFactory;
 use clap::Parser;
 use clap::builder::ValueParser;
@@ -694,9 +695,13 @@ pub async fn start_server_and_web_app(mut web_port: u16) {
         }
         let serve_with_fallback = service_fn(move |req: Request<Body>| {
             async move {
-                let res = get_service(ServeDir::new(&DIST))
+                let uri = req.uri().clone();
+                let mut res = get_service(ServeDir::new(&DIST))
                     .call(req, None::<()>)
                     .await;
+                if uri.path().starts_with("/assets/") {
+                    res.headers_mut().insert("Cache-Control", HeaderValue::from_static("public, max-age=31536000, immutable"));
+                }
                 if res.status() == StatusCode::NOT_FOUND {
                     // If 404, fallback to serving index.html
                     let index_req = Request::builder()
