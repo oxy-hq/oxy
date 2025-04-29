@@ -16,23 +16,77 @@ import "@xyflow/react/dist/style.css";
 import AgentTestsPage from "@/pages/agent-test";
 import NotSignedIn from "@/pages/NotSignedIn";
 import React from "react";
+import IdePage from "./pages/ide";
+import EditorPage from "./pages/ide/Editor";
 import AppPage from "./pages/app";
+
+const PageWrapper = ({ children }: { children: React.ReactNode }) => {
+  return (
+    <main className="bg-background w-full rounded-xl my-2 mr-2 shadow-[0px_1px_3px_0px_rgba(0,0,0,0.10),0px_1px_2px_0px_rgba(0,0,0,0.06)]">
+      {children}
+    </main>
+  );
+};
 
 const MainLayout = React.memo(function MainLayout() {
   return (
     <>
       <AppSidebar />
-      <main className="bg-background w-full rounded-xl my-2 mr-2 shadow-[0px_1px_3px_0px_rgba(0,0,0,0.10),0px_1px_2px_0px_rgba(0,0,0,0.06)]">
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/threads" element={<Threads />} />
-          <Route path="/threads/:threadId" element={<ThreadPage />} />
-          <Route path="/workflows/:pathb64" element={<WorkflowPage />} />
-          <Route path="/agents/:pathb64/tests" element={<AgentTestsPage />} />
-          <Route path="*" element={<Navigate to="/" />} />
-          <Route path="/apps/:pathb64" element={<AppPage />} />
-        </Routes>
-      </main>
+
+      <Routes>
+        <Route
+          path="/"
+          element={
+            <PageWrapper>
+              <Home />
+            </PageWrapper>
+          }
+        />
+        <Route
+          path="/threads"
+          element={
+            <PageWrapper>
+              <Threads />
+            </PageWrapper>
+          }
+        />
+        <Route
+          path="/threads/:threadId"
+          element={
+            <PageWrapper>
+              <ThreadPage />
+            </PageWrapper>
+          }
+        />
+        <Route
+          path="/workflows/:pathb64"
+          element={
+            <PageWrapper>
+              <WorkflowPage />
+            </PageWrapper>
+          }
+        />
+        <Route
+          path="/agents/:pathb64/tests"
+          element={
+            <PageWrapper>
+              <AgentTestsPage />
+            </PageWrapper>
+          }
+        />
+        <Route
+          path="/apps/:pathb64"
+          element={
+            <PageWrapper>
+              <AppPage />
+            </PageWrapper>
+          }
+        />
+        <Route path="/ide" element={<IdePage />}>
+          <Route path=":pathb64" element={<EditorPage />} />
+        </Route>
+        <Route path="*" element={<Navigate to="/" />} />
+      </Routes>
     </>
   );
 });

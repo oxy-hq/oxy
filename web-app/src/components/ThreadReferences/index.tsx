@@ -1,11 +1,11 @@
 import { Reference } from "@/types/chat";
 import { ReferenceItem } from "./ReferenceItem";
 
-type ReferencesProps = {
+type ThreadReferencesProps = {
   references: Reference[];
 };
 
-const References = ({ references }: ReferencesProps) => {
+const ThreadReferences = ({ references }: ThreadReferencesProps) => {
   return (
     <div className="gap-2 flex overflow-x-auto font-sans">
       {references.map((reference, index) => (
@@ -15,4 +15,4 @@ const References = ({ references }: ReferencesProps) => {
   );
 };
 
-export default References;
+export default ThreadReferences;

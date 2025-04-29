@@ -1,7 +1,8 @@
 import React from "react";
 import { Button } from "@/components/ui/shadcn/button";
-import { LoaderCircle, Workflow } from "lucide-react";
+import { LoaderCircle, Pencil, Workflow } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
+import { useNavigate } from "react-router-dom";
 
 type WorkflowPageHeaderProps = {
   path: string;
@@ -15,6 +16,8 @@ const WorkflowPageHeader: React.FC<WorkflowPageHeaderProps> = ({
   isRunning,
 }) => {
   const relativePath = path;
+  const pathb64 = btoa(path);
+  const navigate = useNavigate();
   return (
     <PageHeader className="border border-neutral-200 bg-white items-center">
       <div className="py-2 pr-18 flex justify-between items-center flex-1">
@@ -22,15 +25,26 @@ const WorkflowPageHeader: React.FC<WorkflowPageHeaderProps> = ({
           <Workflow width={16} height={16} />
           <span className="text-sm truncate">{relativePath}</span>
         </div>
-        <Button
-          onClick={onRun}
-          disabled={isRunning}
-          variant="default"
-          content="icon"
-          className="absolute right-4"
-        >
-          {isRunning ? <LoaderCircle className="animate-spin" /> : "Run"}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            onClick={() => {
+              navigate(`/workflows/${pathb64}/edit`);
+            }}
+          >
+            <Pencil className="w-4 h-4" />
+            <span>Edit</span>
+          </Button>
+          <Button
+            onClick={onRun}
+            disabled={isRunning}
+            variant="default"
+            content="icon"
+            className="absolute right-4"
+          >
+            {isRunning ? <LoaderCircle className="animate-spin" /> : "Run"}
+          </Button>
+        </div>
       </div>
     </PageHeader>
   );

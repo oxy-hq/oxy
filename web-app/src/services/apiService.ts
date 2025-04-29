@@ -68,6 +68,43 @@ export const apiService: Service = {
     const response = await apiClient.get("/charts/" + file_path);
     return response.data;
   },
+  async getFile(pathb64: string) {
+    const response = await apiClient.get("/files/" + pathb64);
+    return response.data;
+  },
+  async saveFile(pathb64: string, data: string) {
+    const response = await apiClient.post("/files/" + pathb64, { data });
+    return response.data;
+  },
+  async executeSql(pathb64: string, sql: string, database: string) {
+    const response = await apiClient.post("/sql/" + pathb64, {
+      sql,
+      database,
+    });
+    return response.data;
+  },
+  async listDatabases() {
+    const response = await apiClient.get("/databases");
+    return response.data;
+  },
+  async getFileTree() {
+    const response = await apiClient.get("/files");
+    return response.data;
+  },
+  async askAgent(agentPathb64: string, question: string, onReadStream) {
+    const url = `/agents/${agentPathb64}/ask`;
+    const options = {
+      method: "POST",
+      body: JSON.stringify({ question }),
+      headers: {
+        "Content-Type": "application/json",
+      },
+    };
+    const response = await fetch(apiBaseURL + url, options);
+    if (response) {
+      await readMessageFromStreamData(response, onReadStream);
+    }
+  },
   async listApps(): Promise<AppItem[]> {
     const response = await apiClient.get("/apps");
     return response.data;

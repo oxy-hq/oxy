@@ -19,7 +19,6 @@ system_instructions: |
   - ALWAYS try to fix the SQL query and run without confirmation if the query return an error.
   - The `sql` should conform to the dialect of the database.
   - The `sql` should be returned in plain text, not in JSON.
-
   ### You have access to the following databases and tables, ONLY use the provided database and tables, columns:
   # **Dataset: {{ databases.mysql.name }}**
   # **Dialect: {{ databases.mysql.dialect }}**
@@ -29,18 +28,14 @@ system_instructions: |
   {{ table }}
   {% endfor %}
   ```
-
   ### You can use these queries as hints:
   ```
   {% for query in context.queries %}
   {{ query }}
   {% endfor %}
-
   {{ tools.retrieval }}
   ```
-
   ### Begin
-
 output_format: file
 tools:
   - name: execute_sql

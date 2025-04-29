@@ -1,5 +1,7 @@
 use crate::api::agent;
 use crate::api::chart;
+use crate::api::data;
+use crate::api::file;
 use crate::api::message;
 use crate::api::thread;
 use crate::api::workflow;
@@ -44,11 +46,17 @@ pub async fn api_router() -> Router {
         .route("/workflows/{pathb64}/logs", get(workflow::get_logs))
         .route("/workflows/{pathb64}/run", post(workflow::run_workflow))
         .route("/agents/{pathb64}", get(agent::get_agent))
+        .route("/files", get(file::get_file_tree))
+        .route("/files/{pathb64}", get(file::get_file))
+        .route("/files/{pathb64}", post(file::save_file))
+        .route("/databases", get(data::list_databases))
         .route(
             "/agents/{pathb64}/tests/{test_index}",
             post(agent::run_test),
         )
         .route("/charts/{file_path}", get(chart::get_chart))
+        .route("/sql/{pathb64}", post(data::execute_sql))
+        .route("/agents/{pathb64}/ask", post(thread::ask_agent))
         .layer(cors)
 }
 

@@ -16,6 +16,7 @@ use axum::{
     response::IntoResponse,
 };
 use axum_streams::StreamBodyAs;
+use base64::{Engine, prelude::BASE64_STANDARD};
 use entity::prelude::Threads;
 use sea_orm::prelude::DateTimeWithTimeZone;
 use sea_orm::{ActiveModelTrait, ActiveValue, EntityTrait};
@@ -299,6 +300,70 @@ pub async fn ask_thread(Path(id): Path<String>) -> impl IntoResponse {
             .update(&connection)
             .await
             .map_err(|err| OxyError::DBError(format!("Failed to update thread:\n{}", err)))
+    });
+    StreamBodyAs::json_nl(ReceiverStream::new(rx))
+}
+
+#[derive(Deserialize)]
+pub struct AskAgentRequest {
+    pub question: String,
+}
+
+pub async fn ask_agent(
+    Path(pathb64): Path<String>,
+    extract::Json(payload): extract::Json<AskAgentRequest>,
+) -> impl IntoResponse {
+    let decoded_path: Vec<u8> = match BASE64_STANDARD.decode(pathb64) {
+        Ok(path) => path,
+        Err(e) => {
+            return StreamBodyAs::json_nl(stream! {
+                yield AnswerStream {
+                    content: format!("Failed to decode path: {}", e),
+                    references: vec![],
+                    is_error: true,
+                    step: "".to_string(),
+                };
+            });
+        }
+    };
+    let path = match String::from_utf8(decoded_path) {
+        Ok(path) => path,
+        Err(e) => {
+            return StreamBodyAs::json_nl(stream! {
+                yield AnswerStream {
+                    content: format!("Failed to decode path: {}", e),
+                    references: vec![],
+                    is_error: true,
+                    step: "".to_string(),
+                };
+            });
+        }
+    };
+
+    let project_path = match find_project_path() {
+        Ok(path) => path,
+        Err(e) => {
+            return StreamBodyAs::json_nl(stream! {
+                yield AnswerStream {
+                    content: format!("Failed to find project path: {}", e),
+                    references: vec![],
+                    is_error: true,
+                    step: "".to_string(),
+                };
+            });
+        }
+    };
+    let (tx, rx) = tokio::sync::mpsc::channel(100);
+    let _ = tokio::spawn(async move {
+        let thread_stream = ThreadStream::new(tx);
+        run_agent(
+            &project_path,
+            &PathBuf::from(path),
+            payload.question,
+            thread_stream,
+        )
+        .await
+        .map_err(|err| OxyError::AgentError(format!("Failed to run agent:\n{}", err)))
     });
     StreamBodyAs::json_nl(ReceiverStream::new(rx))
 }
