@@ -94,65 +94,45 @@ jobs:
             pnpm lint-staged --diff="${{ github.event.before }}...${{ github.event.after }}"
           fi
 
-  cargo-check:
+  cargo-check-and-test:
     concurrency:
-      group: cargo-check-${{ github.event.pull_request.number || github.ref }}
+      group: cargo-check-and-test-${{ matrix.task }}-${{ github.event.pull_request.number || github.ref }}
       cancel-in-progress: true
     needs: [changesets, typos]
     if: needs.changesets.outputs.oxy == 'true'
-    name: Format cargo & check
-    runs-on: ubuntu-latest
+    name: Format cargo, check & test
+    runs-on: ${{ github.repository == 'oxy-hq/oxy-internal' && format('codebuild-oxy-internal-{0}-{1}', github.run_id, github.run_attempt) || 'ubuntu-latest' }}
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      BIGQUERY_SAMPLE_KEY: ${{ secrets.BIGQUERY_SAMPLE_KEY }}
+      GEMINI_API_KEY: "empty"
+      ANTHROPIC_API_KEY: "empty"
+    strategy:
+      fail-fast: true
+      matrix:
+        task: [check, test]
     steps:
       - uses: actions/checkout@v4
       - name: Prep Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
-      - uses: mbrobbel/rustfmt-check@0.17.0
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          # mode: review
-          mode: pull
       - name: Prep cargo cache
         uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.task }}
       # protobuf is required by lance https://github.com/lancedb/lance/issues/3073
       - name: Install Protoc
         uses: arduino/setup-protoc@v3
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Run cargo check
-        run: cargo check --profile ci --verbose --workspace
-      - name: Run cargo clippy
-        run: cargo clippy --profile ci --verbose --workspace --fix
-
-  cargo-test:
-    concurrency:
-      group: test-${{ github.event.pull_request.number || github.ref }}
-      cancel-in-progress: true
-    needs: [cargo-check]
-    name: Test
-    runs-on:
-      - codebuild-oxy-internal-${{ github.run_id }}-${{ github.run_attempt }}
-    env:
-      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-      BIGQUERY_SAMPLE_KEY: ${{ secrets.BIGQUERY_SAMPLE_KEY }}
-      GEMINI_API_KEY: "empty"
-      ANTHROPIC_API_KEY: "empty"
-    steps:
-      - uses: actions/checkout@v4
-      - name: Prep Rust
-        uses: dtolnay/rust-toolchain@stable
-      - name: Prep cargo cache
-        uses: Swatinem/rust-cache@v2
-      # protobuf is required by lance https://github.com/lancedb/lance/issues/3073
-      - name: Install Protoc
-        uses: arduino/setup-protoc@v3
-        with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Run cargo test
+      - name: Run task
         run: |
-          touch examples/bigquery-sample.key
-          echo $BIGQUERY_SAMPLE_KEY > examples/bigquery-sample.key
-          cargo test --profile ci --verbose --no-fail-fast -- --nocapture
-      - name: Check json schemas
-        run: cargo run --profile ci -- gen-config-schema --check
+          if [[ "${{ matrix.task }}" == "check" ]]; then
+            cargo clippy --profile ci --verbose --workspace --fix
+          elif [[ "${{ matrix.task }}" == "test" ]]; then
+            touch examples/bigquery-sample.key
+            echo $BIGQUERY_SAMPLE_KEY > examples/bigquery-sample.key
+            cargo test --profile ci --verbose --no-fail-fast -- --nocapture
+            cargo run --profile ci -- gen-config-schema --check
+          fi

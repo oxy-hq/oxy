@@ -1,0 +1,1 @@
+cargo clippy --fix --all-targets --all-features --broken-code
