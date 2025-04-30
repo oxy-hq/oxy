@@ -5,6 +5,9 @@ import WorkflowPreview from "@/pages/workflow/WorkflowPreview";
 import AgentPreview from "./AgentPreview";
 import SqlEditorPage from "./SqlEditor";
 import Header from "./Header";
+import AppPreview from "./AppPreview";
+import { useQueryClient } from "@tanstack/react-query";
+import queryKeys from "@/hooks/api/queryKey";
 
 // eslint-disable-next-line sonarjs/pseudo-random
 const randomKey = () => Math.random().toString(36).substring(2, 15);
@@ -13,9 +16,15 @@ const Editor = ({ pathb64 }: { pathb64: string }) => {
   const filePath = atob(pathb64 ?? "");
   const isWorkflow = filePath.endsWith(".workflow.yml");
   const isAgent = filePath.endsWith(".agent.yml");
+  const isApp = filePath.endsWith(".app.yml");
   const isSql = filePath.endsWith(".sql");
   const [fileState, setFileState] = useState<FileState>("saved");
   const [previewKey, setPreviewKey] = useState<string>(randomKey());
+  const queryClient = useQueryClient();
+
+  const onSaveApp = () => {
+    queryClient.invalidateQueries({ queryKey: queryKeys.app.get(filePath) });
+  };
 
   if (isSql) {
     return <SqlEditorPage />;
@@ -30,7 +39,11 @@ const Editor = ({ pathb64 }: { pathb64: string }) => {
           pathb64={pathb64 ?? ""}
           onFileStateChange={setFileState}
           onSaved={() => {
-            setPreviewKey(randomKey());
+            if (isApp) {
+              onSaveApp();
+            } else {
+              setPreviewKey(randomKey());
+            }
           }}
         />
       </div>
@@ -43,6 +56,11 @@ const Editor = ({ pathb64 }: { pathb64: string }) => {
       {isAgent && (
         <div className="flex-1">
           <AgentPreview key={previewKey} agentPathb64={pathb64 ?? ""} />
+        </div>
+      )}
+      {isApp && (
+        <div className="flex-1 h-full min-h-0 overflow-auto">
+          <AppPreview appPath={filePath ?? ""} />
         </div>
       )}
     </div>
