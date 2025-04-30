@@ -1,0 +1,5 @@
+version: 0.2
+run-as:
+  user: root
+  group: root
+
