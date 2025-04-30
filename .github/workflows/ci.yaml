@@ -120,7 +120,7 @@ jobs:
         with:
           components: clippy, rustfmt
       - name: Prep cargo cache
-        uses: Swatinem/rust-cache@v2
+        uses: luong-komorebi/rust-cache@master
         with:
           key: ${{ matrix.task }}
       # protobuf is required by lance https://github.com/lancedb/lance/issues/3073
