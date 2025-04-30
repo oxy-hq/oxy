@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/shadcn/button";
 import useApp from "@/hooks/api/useApp";
 import useRunAppMutation from "@/hooks/api/useRunAppMutation";
 import { Displays } from "@/pages/app/Displays";
-import { LoaderCircle } from "lucide-react";
+import { LoaderCircle, RefreshCw } from "lucide-react";
 import { useEffect } from "react";
 import { toast } from "sonner";
 
@@ -33,21 +33,16 @@ export default function AppPreview({ appPath }: Props) {
     );
 
   return (
-    <div className="flex-1 flex-col w-full flex justify-center items-start">
-      <div className="flex items-center pl-4 pr-4 pt-4 w-full justify-center">
-        <Button
-          onClick={handleRun}
-          disabled={isRunning}
-          variant="default"
-          content="icon"
-        >
-          {isRunning ? (
-            <LoaderCircle className="animate-spin" />
-          ) : (
-            "Refresh Data"
-          )}
-        </Button>
-      </div>
+    <>
+      <Button
+        onClick={handleRun}
+        disabled={isRunning}
+        variant="default"
+        content="icon"
+        className="absolute w-14 h-14 bottom-4 right-4 z-1 rounded-full break-words"
+      >
+        {isRunning ? <LoaderCircle className="animate-spin" /> : <RefreshCw />}
+      </Button>
       <div className="p-8 max-w-200 w-full">
         <ErrorBoundary
           resetKeys={[app]}
@@ -61,6 +56,6 @@ export default function AppPreview({ appPath }: Props) {
           <Displays displays={app!.displays} data={app!.data} />
         </ErrorBoundary>
       </div>
-    </div>
+    </>
   );
 }
