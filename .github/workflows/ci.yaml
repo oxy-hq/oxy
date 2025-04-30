@@ -104,6 +104,7 @@ jobs:
     runs-on:
       - ${{ github.repository == 'oxy-hq/oxy-internal' && format('codebuild-oxy-internal-{0}-{1}', github.run_id, github.run_attempt) || 'ubuntu-latest' }}
       - ${{ github.repository == 'oxy-hq/oxy-internal' && matrix.task == 'check' && 'instance-size:medium' || github.repository == 'oxy-hq/oxy-internal' && matrix.task == 'test' && 'instance-size:large' }}
+      - ${{ github.repository == 'oxy-hq/oxy-internal' && 'buildspec-override:true' }}
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       BIGQUERY_SAMPLE_KEY: ${{ secrets.BIGQUERY_SAMPLE_KEY }}

@@ -9,7 +9,6 @@ publish.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 
-
 [dependencies]
 oxy = { path = "../core" }
 tokio = { workspace = true }
