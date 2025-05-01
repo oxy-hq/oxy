@@ -1,9 +1,0 @@
-version: 0.2
-run-as: 'root'
-
-phases:
-  install:
-    commands:
-      - mkdir -p /codebuild/stable_workspace
-      - cp -R $CODEBUILD_SRC_DIR/* /codebuild/stable_workspace
-      - echo "GITHUB_WORKSPACE=/codebuild/stable_workspace" >> $GITHUB_ENV
