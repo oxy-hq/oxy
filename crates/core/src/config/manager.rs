@@ -95,6 +95,10 @@ impl ConfigManager {
         self.storage.load_agent_config(agent_name).await
     }
 
+    pub fn list_databases(&self) -> Result<&[Database], OxyError> {
+        Ok(self.config.databases.as_slice())
+    }
+
     pub async fn list_agents(&self) -> Result<Vec<PathBuf>, OxyError> {
         self.storage.list_agents().await
     }
@@ -104,14 +108,6 @@ impl ConfigManager {
     }
     pub async fn list_workflows(&self) -> Result<Vec<PathBuf>, OxyError> {
         self.storage.list_workflows().await
-    }
-
-    pub fn list_databases(&self) -> Vec<String> {
-        self.config
-            .databases
-            .iter()
-            .map(|d| d.name.clone())
-            .collect()
     }
 
     pub async fn resolve_app<P: AsRef<Path>>(&self, app_path: P) -> Result<AppConfig, OxyError> {

@@ -6,7 +6,7 @@ context:
   - name: queries
     type: file
     src:
-      - data/*.sql
+      - 'data/^(?!.*example_fruit).*\.sql$'
 
 system_instructions: |
   ## Instructions
@@ -20,14 +20,19 @@ system_instructions: |
   - The `sql` should be returned in plain text, not in JSON.
 
   ### You have access to the following databases and tables, ONLY use the provided database and tables, columns:
-  **Dataset: {{ databases.primary_database.name }}**
+
   **Dialect: {{ databases.primary_database.dialect }}**
-  **Tables:**
+  {% with dataset = databases.primary_database.datasets.dbt_prod_core %}
+  **Dataset: {{ dataset.dataset }}**
+  **DDL:**
   ```
-  {% for table in databases.primary_database.tables %}
-  {{ table }}
-  {% endfor %}
+  {{ dataset.ddl }}
   ```
+  **Semantic Information:**
+  {{ dataset.semantic_info.dim_users }}
+  ```
+  {% endwith %}
+
   ## Retrieval:
   {{ tools.retrieval }}
 
@@ -51,7 +56,7 @@ tools:
   - name: retrieval
     type: retrieval
     src:
-      - "data/*.sql"
+      - 'data/^(?!.*example_fruit).*\.sql$'
     # embed_model: text-embedding-3-small
     # api_url: https://api.openai.com/v1
     # key_var: OPENAI_API_KEY

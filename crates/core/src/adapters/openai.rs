@@ -225,7 +225,7 @@ impl OpenAIToolConfig for &ToolType {
             ToolType::Workflow(_) => "workflow".to_string(),
             ToolType::Visualize(_) => "visualize".to_string(),
             ToolType::ExecuteOmni(_) => "execute_omni".to_string(),
-            ToolType::OmniTopicInfo(omni_topic_info_tool) => "omni_topic_info".to_string(),
+            ToolType::OmniTopicInfo(_) => "omni_topic_info".to_string(),
         }
     }
 
@@ -248,9 +248,9 @@ impl OpenAIToolConfig for &ToolType {
             ToolType::ExecuteOmni(_) => {
                 Ok(serde_json::json!(&schemars::schema_for!(ExecuteOmniParams)))
             }
-            ToolType::OmniTopicInfo(omni_topic_info_tool) => Ok(serde_json::json!(
-                &schemars::schema_for!(OmniTopicInfoParams)
-            )),
+            ToolType::OmniTopicInfo(_) => Ok(serde_json::json!(&schemars::schema_for!(
+                OmniTopicInfoParams
+            ))),
         }
     }
 }

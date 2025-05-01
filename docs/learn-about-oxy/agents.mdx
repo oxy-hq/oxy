@@ -153,11 +153,26 @@ Additional parameters can be supplied as follows:
 Database information can be accessed within `system_instructions` by using the `databases` namespace, then referencing by `name`, as follows:
 
 ```
-**Dataset: {{ databases.primary_database.name }}**
-**Dialect: {{ databases.primary_database.dialect }}**
+**Dataset: {{ databases.primary_database[0].dataset }}**
+**Dialect: {{ databases.primary_database[0].dialect }}**
 **Tables:**
-{% for table in databases.primary_database.tables %}
+{% for table in databases.primary_database[0].tables %}
 {{ table }}
+{% endfor %}
+```
+
+This will render the database name, dialect, and all tables in the database.
+
+Note that for cases where multiple datasets are present, you should loop through the datasets and tables as follows:
+
+```
+{% for dataset in databases.primary_database %}
+**Dataset: {{ dataset.dataset }}**
+**Dialect: {{ dataset.dialect }}**
+**Tables:**
+{% for table in dataset.tables %}
+{{ table }}
+{% endfor %}
 {% endfor %}
 ```
 
@@ -188,10 +203,10 @@ system_instructions: |
   Measures:
   {{ context.acme.measures }}
 
-  **Dataset: {{ databases.primary_database.name }}**
-  **Dialect: {{ databases.primary_database.dialect }}**
+  **Dataset: {{ databases.primary_database[0].dataset }}**
+  **Dialect: {{ databases.primary_database[0].dialect }}**
   **Tables:**
-  {% for table in databases.primary_database.tables %}
+  {% for table in databases.primary_database[0].tables %}
   {{ table }}
   {% endfor %}
 

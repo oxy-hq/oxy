@@ -172,6 +172,7 @@ fn collect_clickhouse_conf() -> Result<DatabaseType, InitError> {
         user,
         password: Some(password),
         database,
+        schemas: Default::default(),
         password_var: None,
     }))
 }
@@ -199,12 +200,13 @@ fn choose_database_type() -> Result<DatabaseType, InitError> {
             }
             "2" => {
                 return Ok(DatabaseType::Bigquery(BigQuery {
-                    key_path: Some(PathBuf::from(prompt_with_default(
-                        "Key path",
-                        "bigquery.key",
+                    key_path: PathBuf::from(prompt_with_default("Key path", "bigquery.key", None)?),
+                    dataset: Some(prompt_with_default(
+                        "Dataset",
+                        "bigquery-public-data",
                         None,
-                    )?)),
-                    dataset: prompt_with_default("Dataset", "bigquery-public-data", None)?,
+                    )?),
+                    datasets: Default::default(),
                     dry_run_limit: None, // TODO: Implement this or left as None by default?
                 }));
             }

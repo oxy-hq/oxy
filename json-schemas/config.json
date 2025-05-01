@@ -37,12 +37,25 @@
         {
           "type": "object",
           "required": [
-            "dataset",
+            "key_path",
             "type"
           ],
           "properties": {
             "dataset": {
-              "type": "string"
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "datasets": {
+              "default": {},
+              "type": "object",
+              "additionalProperties": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
             },
             "dry_run_limit": {
               "type": [
@@ -53,10 +66,7 @@
               "minimum": 0.0
             },
             "key_path": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             },
             "type": {
               "type": "string",
@@ -297,6 +307,16 @@
                 "string",
                 "null"
               ]
+            },
+            "schemas": {
+              "default": {},
+              "type": "object",
+              "additionalProperties": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
             },
             "type": {
               "type": "string",

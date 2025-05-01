@@ -8,6 +8,7 @@ pub mod errors;
 mod eval;
 pub mod execute;
 pub mod mcp;
+pub mod semantic;
 pub mod service;
 pub mod theme;
 mod tools;

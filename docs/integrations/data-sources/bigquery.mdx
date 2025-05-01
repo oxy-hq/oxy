@@ -10,7 +10,13 @@ keyfile, then pass the path to that file to your `config.yml` file, as shown bel
   - name: bigquery_connection
     type: bigquery
     key_path: /path/to/key.json
-    dataset: name_of_dataset
+    datasets:
+      dataset_num_one:
+        - "*" # all tables
+      dataset_num_two:
+        - "monthly_active_*" # regex filtered tables
+      user_analytics:
+        - "company_activity_analytics_summary_view" # one specific table
 ```
 
 # Generating a keyfile
