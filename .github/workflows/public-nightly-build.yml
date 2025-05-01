@@ -58,6 +58,11 @@ jobs:
       - name: Create artifacts folder
         run: mkdir -p artifacts
 
+      - uses: rui314/setup-mold@v1
+        if: runner.os == 'Linux'
+        with:
+          make-default: true
+
       - name: Prep Rust
         uses: dtolnay/rust-toolchain@stable
         with:

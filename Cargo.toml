@@ -34,5 +34,5 @@ exclude = ["examples/", "tests/"]
 
 [profile.ci]
 inherits = "dev"
-debug = false
-strip = true
+debug = false # reduces compilation time and resource usage by omitting debug symbols.
+strip = true # reduces memory usage during linking

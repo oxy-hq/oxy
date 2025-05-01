@@ -6,3 +6,15 @@ PYO3_PYTHON="/usr/bin/python3"
 
 [net]
 git-fetch-with-cli = true
+
+# mold linker is automatically set via Github Actions
+# on macos, ld64 already works fairly well so there is no reason to use mold
+# and this keeps the development environment simple
+
+# [target.x86_64-unknown-linux-gnu]
+# linker = "clang"
+# rustflags = ["-C", "link-arg=-fuse-ld=mold"]
+
+# [target.aarch64-unknown-linux-gnu]
+# linker = "clang"
+# rustflags = ["-C", "link-arg=-fuse-ld=mold"]

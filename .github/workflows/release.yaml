@@ -60,6 +60,10 @@ jobs:
         if: ${{ startsWith(matrix.job.os, 'ubuntu') }}
         uses: jlumbroso/free-disk-space@main
 
+      - uses: rui314/setup-mold@v1
+        if: runner.os == 'Linux'
+        with:
+          make-default: true
       #-- Prep rust
       - name: Prep Rust
         uses: dtolnay/rust-toolchain@stable
