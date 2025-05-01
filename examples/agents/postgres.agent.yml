@@ -20,15 +20,6 @@ system_instructions: |
   - The `sql` should conform to the dialect of the database.
   - The `sql` should be returned in plain text, not in JSON.
 
-  ### You have access to the following databases and tables, ONLY use the provided database and tables, columns:
-  **Dataset: {{ databases.postgres[0].name }}**
-  **Dialect: {{ databases.postgres[0].dialect }}**
-  **Tables:**
-  ```
-  {% for table in databases.postgres[0].tables %}
-  {{ table }}
-  {% endfor %}
-  ```
 
   ### You can use these queries as hints:
   ```

@@ -6,7 +6,7 @@ context:
   - name: queries
     type: file
     src:
-      - 'data/^(?!.*example_fruit).*\.sql$'
+      - 'data/*.sql'
 
 system_instructions: |
   ## Instructions
@@ -23,8 +23,10 @@ system_instructions: |
 
   **Dialect: {{ databases.primary_database.dialect }}**
   {% with dataset = databases.primary_database.datasets.dbt_prod_core %}
+
   **Dataset: {{ dataset.dataset }}**
   **DDL:**
+
   ```
   {{ dataset.ddl }}
   ```
@@ -56,7 +58,7 @@ tools:
   - name: retrieval
     type: retrieval
     src:
-      - 'data/^(?!.*example_fruit).*\.sql$'
+      - 'data/*.sql'
     # embed_model: text-embedding-3-small
     # api_url: https://api.openai.com/v1
     # key_var: OPENAI_API_KEY
