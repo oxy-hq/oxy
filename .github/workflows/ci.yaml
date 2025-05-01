@@ -101,10 +101,7 @@ jobs:
     needs: [changesets, typos]
     if: needs.changesets.outputs.oxy == 'true'
     name: Format cargo, check & test
-    runs-on:
-      - ${{ github.repository == 'oxy-hq/oxy-internal' && format('codebuild-oxy-internal-{0}-{1}', github.run_id, github.run_attempt) || 'ubuntu-latest' }}
-      - ${{ github.repository == 'oxy-hq/oxy-internal' && matrix.task == 'check' && 'instance-size:medium' || github.repository == 'oxy-hq/oxy-internal' && matrix.task == 'test' && 'instance-size:large' }}
-      - ${{ github.repository == 'oxy-hq/oxy-internal' && 'buildspec-override:true' }}
+    runs-on: ${{ github.repository == 'oxy-hq/oxy-internal' && 'warp-ubuntu-latest-arm64-2x' || 'ubuntu-latest' }}
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       BIGQUERY_SAMPLE_KEY: ${{ secrets.BIGQUERY_SAMPLE_KEY }}
@@ -121,7 +118,7 @@ jobs:
         with:
           components: clippy, rustfmt
       - name: Prep cargo cache
-        uses: luong-komorebi/rust-cache@master
+        uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.task }}
       # protobuf is required by lance https://github.com/lancedb/lance/issues/3073
