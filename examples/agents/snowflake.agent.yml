@@ -16,11 +16,11 @@ system_instructions: |
   - The `sql` should be returned in plain text, not in JSON.
 
   ### You have access to the following databases and tables, ONLY use the provided database and tables, columns:
-  **Dataset: {{ databases.snowflake.name }}**
-  **Dialect: {{ databases.snowflake.dialect }}**
+  **Dataset: {{ databases.snowflake[0].dataset }}**
+  **Dialect: {{ databases.snowflake[0].dialect }}**
   **Tables:**
   ```
-  {% for table in databases.snowflake.tables %}
+  {% for table in databases.snowflake[0].tables %}
   {{ table }}
   {% endfor %}
   ```
@@ -31,7 +31,6 @@ system_instructions: |
   {{ query }}
   {% endfor %}
 
-  {{ tools.retrieval }}
   ```
 
   ### Begin

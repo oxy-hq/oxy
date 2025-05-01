@@ -6,7 +6,7 @@ use std::{
 use minijinja::value::{Object, ObjectRepr, Value};
 use tokio::runtime::Handle;
 
-use crate::{adapters::connector::Connector, config::ConfigManager, theme::StyledText};
+use crate::{config::ConfigManager, semantic::SemanticManager, theme::StyledText};
 
 #[derive(Debug, Clone)]
 pub struct DatabasesContext {
@@ -38,19 +38,20 @@ impl Object for DatabasesContext {
                 }
                 match Handle::try_current() {
                     Ok(rt) => {
-                        let connector = rt
-                            .block_on(Connector::from_database(database_key, &self.config, None))
+                        let semantic_manager = rt
+                            .block_on(SemanticManager::from_config(self.config.clone(), false))
                             .ok()?;
-                        let database_info = match rt.block_on(connector.database_info()) {
-                            Ok(info) => info,
-                            Err(e) => {
-                                println!(
-                                    "{}",
-                                    format!("Failed to get database info: \n{}\n", e).error()
-                                );
-                                return None;
-                            }
-                        };
+                        let database_info =
+                            match rt.block_on(semantic_manager.load_database_info(database_key)) {
+                                Ok(info) => info,
+                                Err(e) => {
+                                    println!(
+                                        "{}",
+                                        format!("Failed to get database info: \n{}\n", e).error()
+                                    );
+                                    return None;
+                                }
+                            };
                         let value = Value::from_serialize(database_info);
                         cache.insert(database_key.to_string(), value.clone());
                         Some(value)

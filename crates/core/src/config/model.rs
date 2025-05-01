@@ -41,9 +41,13 @@ pub struct Config {
 pub struct SemanticModels {
     pub table: String,
     pub database: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub description: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub entities: Vec<Entity>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub dimensions: Vec<Dimension>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub measures: Vec<Measure>,
 }
 
@@ -59,7 +63,10 @@ pub struct Dimension {
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub synonyms: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub sample: Vec<String>,
+    #[serde(rename = "type", alias = "type")]
+    pub data_type: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema)]
@@ -201,6 +208,9 @@ pub struct ClickHouse {
     #[serde(default)]
     #[garde(length(min = 1))]
     pub database: String,
+    #[serde(default)]
+    #[garde(skip)]
+    pub schemas: HashMap<String, Vec<String>>,
 }
 
 impl ClickHouse {
@@ -329,9 +339,12 @@ pub struct Defaults {
 #[garde(context(ValidationContext))]
 pub struct BigQuery {
     #[garde(custom(validate_file_path))]
-    pub key_path: Option<PathBuf>,
+    pub key_path: PathBuf,
     #[garde(length(min = 1))]
-    pub dataset: String,
+    pub dataset: Option<String>,
+    #[serde(default)]
+    #[garde(skip)]
+    pub datasets: HashMap<String, Vec<String>>,
     #[garde(range(min = 1))]
     pub dry_run_limit: Option<u64>,
 }
@@ -423,18 +436,6 @@ pub struct Database {
 }
 
 impl Database {
-    pub fn db_name(&self) -> String {
-        match &self.database_type {
-            DatabaseType::Bigquery(bq) => bq.dataset.clone(),
-            DatabaseType::DuckDB(ddb) => ddb.file_search_path.clone(),
-            DatabaseType::Postgres(pg) => pg.database.clone().unwrap_or_default(),
-            DatabaseType::Redshift(rs) => rs.database.clone().unwrap_or_default(),
-            DatabaseType::Mysql(my) => my.database.clone().unwrap_or_default(),
-            DatabaseType::ClickHouse(ch) => ch.database.clone(),
-            DatabaseType::Snowflake(sn) => sn.warehouse.clone(),
-        }
-    }
-
     pub fn dialect(&self) -> String {
         match &self.database_type {
             DatabaseType::Bigquery(_) => "bigquery".to_owned(),
@@ -447,13 +448,61 @@ impl Database {
         }
     }
 
-    pub fn protocol(&self) -> String {
+    pub fn datasets(&self) -> HashMap<String, Vec<String>> {
         match &self.database_type {
-            DatabaseType::Bigquery(_) => "binary".to_owned(),
-            DatabaseType::Postgres(_) => "binary".to_owned(),
-            DatabaseType::Redshift(_) => "cursor".to_owned(),
-            DatabaseType::Mysql(_) => "binary".to_owned(),
-            _ => "".to_owned(),
+            DatabaseType::Bigquery(bq) => match (bq.dataset.is_some(), bq.datasets.is_empty()) {
+                (true, _) => HashMap::from_iter([(
+                    bq.dataset.clone().unwrap().to_string(),
+                    vec!["*".to_string()],
+                )]),
+                (false, false) => bq.datasets.clone(),
+                (false, true) => {
+                    HashMap::from_iter([("`region-us`".to_string(), vec!["*".to_string()])])
+                }
+            },
+            DatabaseType::ClickHouse(ch) => match ch.schemas.is_empty() {
+                true => HashMap::from_iter([(String::new(), vec!["*".to_string()])]),
+                false => ch.schemas.clone(),
+            },
+            _ => Default::default(),
+        }
+    }
+
+    pub fn with_datasets(self, datasets: Vec<String>) -> Self {
+        if datasets.is_empty() {
+            return self;
+        }
+
+        match &self.database_type {
+            DatabaseType::Bigquery(bq) => {
+                let mut datasets_map = HashMap::new();
+                for dataset in datasets {
+                    let tables = bq.datasets.get(&dataset).cloned();
+                    datasets_map.insert(dataset, tables.unwrap_or(vec!["*".to_string()]));
+                }
+                Database {
+                    database_type: DatabaseType::Bigquery(BigQuery {
+                        datasets: datasets_map,
+                        ..bq.clone()
+                    }),
+                    ..self
+                }
+            }
+            DatabaseType::ClickHouse(ch) => {
+                let mut datasets_map = HashMap::new();
+                for dataset in datasets {
+                    let tables = ch.schemas.get(&dataset).cloned();
+                    datasets_map.insert(dataset, tables.unwrap_or(vec!["*".to_string()]));
+                }
+                Database {
+                    database_type: DatabaseType::ClickHouse(ClickHouse {
+                        schemas: datasets_map,
+                        ..ch.clone()
+                    }),
+                    ..self
+                }
+            }
+            _ => self,
         }
     }
 }

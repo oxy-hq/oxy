@@ -51,7 +51,12 @@ pub async fn list_databases() -> Result<extract::Json<Vec<String>>, StatusCode> 
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let databases = config.list_databases();
+    let databases = config
+        .list_databases()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .iter()
+        .map(|db| db.name.clone())
+        .collect::<Vec<String>>();
 
     Ok(extract::Json(databases))
 }
