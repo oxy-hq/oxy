@@ -118,7 +118,7 @@ jobs:
         with:
           theme: dark
           metric_frequency: 3
-
+          comment_on_pr: false
       - uses: rui314/setup-mold@v1
         if: runner.os == 'Linux'
         with:
