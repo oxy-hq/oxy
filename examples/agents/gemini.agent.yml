@@ -7,7 +7,7 @@ context:
   - name: queries
     type: file
     src:
-      - 'data/^(?!.*example_fruit).*\.sql$'
+      - 'data/*.sql'
 
 system_instructions: |
   ## Instructions
@@ -22,17 +22,17 @@ system_instructions: |
 
   ### You have access to the following databases and tables, ONLY use the provided database and tables, columns:
 
-  **Dialect: {{ databases.primary_database[0].dialect }}**
-
-  {% for dataset in databases.primary_database %}
-  **Datasets: {{ dataset.dataset }}**
-  **Tables:**
+  **Dialect: {{ databases.primary_database.dialect }}**
+  {% with dataset = databases.primary_database.datasets.dbt_prod_core %}
+  **Dataset: {{ dataset.dataset }}**
+  **DDL:**
   ```
-    {% for table in dataset.tables %}
-    {{ table }}
-    {% endfor %}
+  {{ dataset.ddl }}
   ```
-  {% endfor %}
+  **Semantic Information:**
+  {{ dataset.semantic_info.dim_users }}
+  ```
+  {% endwith %}
 
   ## Retrieval:
   {{ tools.retrieval }}
@@ -47,7 +47,7 @@ tools:
   - name: retrieval
     type: retrieval
     src:
-      - 'data/^(?!.*example_fruit).*\.sql$'
+      - 'data/*.sql'
 
 
 tests:

@@ -1,7 +1,7 @@
 tasks:
   - name: fruit_sales
     type: execute_sql
-    sql_file: data/fruit_sales.sql
+    sql_file: data_fruit/example_sales.sql
     database: local
 
   - name: revenues
