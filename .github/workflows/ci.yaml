@@ -113,6 +113,17 @@ jobs:
         task: [check, test]
     steps:
       - uses: actions/checkout@v4
+      - name: Collect Workflow Telemetry
+        uses: catchpoint/workflow-telemetry-action@v2
+        with:
+          theme: dark
+          metric_frequency: 3
+
+      - uses: rui314/setup-mold@v1
+        if: runner.os == 'Linux'
+        with:
+          make-default: true
+
       - name: Prep Rust
         uses: dtolnay/rust-toolchain@stable
         with:

@@ -15,10 +15,6 @@ cargo run -p migration -- [OPTIONS]
 - Apply all pending migrations
 
   ```sh
-  cargo run
-  ```
-
-  ```sh
   cargo run -- up
   ```
 
