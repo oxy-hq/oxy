@@ -4,6 +4,7 @@ import { DataContainer, LineChartDisplay, TableData } from "@/types/app";
 import { getArrowValue, getData, getDataFileUrl } from "./utils";
 import { Echarts } from "@/components/Echarts";
 import { getDuckDB } from "@/libs/duckdb";
+import useTheme from "@/stores/useTheme";
 
 export const LineChart = ({
   display,
@@ -15,6 +16,8 @@ export const LineChart = ({
   const dt = getData(data, display.data) as unknown as TableData;
   const [isLoading, setIsLoading] = useState(true);
   const [chartOptions, setChartOptions] = useState<EChartsOption>({});
+  const { theme } = useTheme();
+  const isDarkMode = theme === "dark";
 
   useEffect(() => {
     (async () => {
@@ -29,6 +32,7 @@ export const LineChart = ({
       );
 
       let options: EChartsOption = {
+        darkMode: isDarkMode,
         title: { text: display.title },
         tooltip: {},
         xAxis: { type: "category" },

@@ -6,21 +6,13 @@ import { useState } from "react";
 import { useEnterSubmit } from "@/hooks/useEnterSubmit";
 import { service } from "@/services/service";
 import Messages from "./Messages";
-import { Reference } from "@/types/chat";
 import useAgent from "@/hooks/api/useAgent";
+import { Message } from "@/types/chat";
 
 const getAgentNameFromPath = (path: string) => {
   const parts = path.split("/");
   return parts[parts.length - 1].split(".")[0].replace(/_/g, " ");
 };
-
-export interface Message {
-  content: string;
-  references: Reference[];
-  steps: string[];
-  isUser: boolean;
-  isStreaming: boolean;
-}
 
 const STEP_MAP = {
   execute_sql: "Execute SQL",
@@ -61,26 +53,27 @@ const AgentPreview = ({ agentPathb64 }: { agentPathb64: string }) => {
       .askAgent(agentPathb64, question, (answer) => {
         setMessages((prev) => {
           const currentStreamingMessage = prev.at(-1);
-          const steps = currentStreamingMessage?.steps ?? [];
-          if (answer.step) {
-            if (
-              Object.keys(STEP_MAP).includes(answer.step) &&
-              steps.at(-1) !== answer.step
-            ) {
-              steps.push(answer.step);
-            }
-          }
+          const { steps, references, content } = currentStreamingMessage ?? {
+            content: "",
+            references: [],
+            steps: [],
+            isUser: false,
+            isStreaming: true,
+          };
+
+          const shouldAddStep =
+            answer.step &&
+            Object.keys(STEP_MAP).includes(answer.step) &&
+            steps.at(-1) !== answer.step;
+
           const updatedMessages = [...prev];
 
-          const currentContent = currentStreamingMessage?.content ?? "";
-          const currentReferences = currentStreamingMessage?.references ?? [];
-
           updatedMessages[prev.length - 1] = {
-            content: currentContent + answer.content,
+            content: content + answer.content,
             references: answer.references
-              ? [...currentReferences, ...answer.references]
-              : currentReferences,
-            steps,
+              ? [...references, ...answer.references]
+              : references,
+            steps: shouldAddStep ? [...steps, answer.step] : steps,
             isUser: false,
             isStreaming: true,
           };
@@ -106,7 +99,7 @@ const AgentPreview = ({ agentPathb64 }: { agentPathb64: string }) => {
   const agentName = agent?.name ?? getAgentNameFromPath(path);
 
   return (
-    <div className="flex flex-col h-full justify-between p-6 overflow-hidden">
+    <div className="flex flex-col h-full justify-between overflow-hidden px-4 pb-4">
       <div className="flex flex-col gap-4 flex-1 overflow-auto customScrollbar py-6">
         <Messages messages={messages} />
       </div>

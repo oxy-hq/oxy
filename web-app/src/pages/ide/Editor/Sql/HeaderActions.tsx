@@ -16,13 +16,13 @@ const HeaderActions = ({ onExecuteSql, loading }: HeaderActionsProps) => {
   };
 
   return (
-    <div className="flex gap-2 p-2">
+    <div className="flex gap-2 p-2 md:flex-row flex-col items-start">
       <DatabasesDropdown
         onSelect={(database) => setDatabase(database)}
         database={database}
       />
       <Button
-        className="hover:bg-[#1e1e1e] text-white hover:text-muted-foreground"
+        className="text-white hover:text-muted-foreground"
         variant="ghost"
         disabled={loading || !database}
         onClick={handleExecuteSql}

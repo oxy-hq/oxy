@@ -1,4 +1,4 @@
-import { StrictMode } from "react";
+import { StrictMode, useEffect } from "react";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createRoot } from "react-dom/client";
@@ -10,10 +10,14 @@ const queryClient = new QueryClient();
 export const AppWrapper = () => {
   const { theme } = useTheme();
 
+  useEffect(() => {
+    document.body.classList.add(theme);
+  }, [theme]);
+
   return (
     <div
       id="app-root"
-      className={`root`}
+      className={`root ${theme}`}
       lang="en"
       data-theme-variant="new"
       data-theme={theme}

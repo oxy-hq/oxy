@@ -5,6 +5,7 @@ import { BarChartDisplay, DataContainer, TableData } from "@/types/app";
 import { getArrowValue, getData, getDataFileUrl } from "./utils";
 import { Echarts } from "@/components/Echarts";
 import { getDuckDB } from "@/libs/duckdb";
+import useTheme from "@/stores/useTheme";
 
 export const BarChart = ({
   display,
@@ -15,6 +16,8 @@ export const BarChart = ({
 }) => {
   const value = getData(data, display.data) as TableData;
   const [isLoading, setIsLoading] = useState(true);
+  const { theme } = useTheme();
+  const isDarkMode = theme === "dark";
   const [chartOptions, setChartOptions] = useState<EChartsOption>({});
 
   useEffect(() => {
@@ -30,6 +33,7 @@ export const BarChart = ({
       );
 
       const options: EChartsOption = {
+        darkMode: isDarkMode,
         title: { text: display.title },
         tooltip: {},
         xAxis: { type: "category" },

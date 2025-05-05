@@ -16,18 +16,19 @@ const AppPageHeader: React.FC<AppPageHeaderProps> = ({
 }) => {
   const relativePath = path;
   return (
-    <PageHeader className="border w-full border-neutral-200 bg-white items-center">
-      <div className="py-2 pr-18 flex justify-between items-center flex-1">
-        <div className="flex items-center justify-center gap-0.5 flex-1 w-full min-w-0">
+    <PageHeader className="border-b-1 border-border">
+      <div className="flex justify-between items-center w-full">
+        <div />
+        <div className="flex items-center justify-center gap-0.5">
           <LayoutDashboard width={16} height={16} />
           <span className="text-sm truncate">{relativePath}</span>
         </div>
         <Button
+          size="sm"
           onClick={onRun}
           disabled={isRunning}
           variant="default"
           content="icon"
-          className="absolute right-4"
         >
           {isRunning ? <LoaderCircle className="animate-spin" /> : "Refresh"}
         </Button>

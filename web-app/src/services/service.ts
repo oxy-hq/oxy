@@ -10,13 +10,13 @@ export interface Service {
   listThreads(): Promise<ThreadItem[]>;
   createThread(request: ThreadCreateRequest): Promise<ThreadItem>;
   deleteThread(threadId: string): Promise<void>;
-  runApp(appPath: string): Promise<App>;
+  runApp(pathb64: string): Promise<App>;
   deleteAllThread(): Promise<void>;
   getThread(threadId: string): Promise<ThreadItem>;
   listAgents(): Promise<string[]>;
   listApps(): Promise<AppItem[]>;
   getAgent(pathb64: string): Promise<AgentConfig>;
-  getApp(appPath: string): Promise<App>;
+  getApp(appPath64: string): Promise<App>;
   getData(filePath: string): Promise<Blob>;
   runTestAgent(
     pathb64: string,

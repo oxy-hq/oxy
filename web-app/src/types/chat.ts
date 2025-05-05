@@ -36,3 +36,11 @@ export type ThreadCreateRequest = {
   question: string;
   agent: string;
 };
+
+export interface Message {
+  content: string;
+  references: Reference[];
+  steps: string[];
+  isUser: boolean;
+  isStreaming: boolean;
+}

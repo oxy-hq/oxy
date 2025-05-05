@@ -1,4 +1,4 @@
-import { Message } from ".";
+import { Message } from "@/types/chat";
 
 const UserMessage = ({ message }: { message: Message }) => {
   const { content } = message;

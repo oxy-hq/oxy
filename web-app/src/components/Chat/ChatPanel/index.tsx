@@ -37,7 +37,7 @@ const ChatPanel = ({
     <form
       ref={formRef}
       onSubmit={handleFormSubmit}
-      className="w-full max-w-[672px] flex p-2 flex-col gap-1 shadow-sm rounded-md border-2 mx-auto"
+      className="w-full max-w-[672px] flex p-2 flex-col gap-1 shadow-sm rounded-md border-2 mx-auto bg-sidebar-background"
     >
       <Textarea
         disabled={isPending}
@@ -52,7 +52,7 @@ const ChatPanel = ({
           "focus-visible:ring-0 focus-visible:ring-offset-0",
           "outline-none resize-none",
         )}
-        placeholder={`Ask the ${agent?.name} agent a question`}
+        placeholder={`Ask anything`}
       />
       <div className="flex justify-between">
         <AgentsDropdown onSelect={onChangeAgent} agent={agent} />

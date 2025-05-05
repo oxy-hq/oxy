@@ -9,7 +9,7 @@ interface ThemeState {
 const useTheme = create<ThemeState>()(
   persist(
     (set) => ({
-      theme: "light",
+      theme: "dark",
       setTheme: (theme: string) => set({ theme }),
     }),
     {

@@ -21,6 +21,7 @@ export function LoopSequentialNode({ task }: Props) {
   const layoutedNodes = useWorkflow((state) => state.layoutedNodes);
   const selectedNodeId = useWorkflow((state) => state.selectedNodeId);
   const selected = selectedNodeId === task.id;
+  console.log("selected", selectedNodeId);
   const setNodeVisibility = useWorkflow((state) => state.setNodeVisibility);
   const nodes = useWorkflow((state) => state.nodes);
   const tasks = (task as LoopSequentialTaskConfig).tasks;

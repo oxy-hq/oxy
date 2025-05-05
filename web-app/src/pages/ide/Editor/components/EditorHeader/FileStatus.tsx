@@ -1,4 +1,4 @@
-import { AlertCircle, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { TooltipContent } from "@/components/ui/shadcn/tooltip";
 import {
   TooltipProvider,
@@ -21,7 +21,7 @@ const FileStatus = ({ fileState }: FileStatusProps) => {
         <TooltipProvider>
           <Tooltip>
             <TooltipTrigger>
-              <AlertCircle className="w-4 h-4 text-yellow-500" />
+              <div className="h-1.5 w-1.5 rounded-full bg-warning"></div>
             </TooltipTrigger>
             <TooltipContent>
               <p>Unsaved changes</p>

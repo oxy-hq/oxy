@@ -4,13 +4,11 @@ import { useParams } from "react-router-dom";
 import { Separator } from "@/components/ui/shadcn/separator";
 import { useEffect, useState } from "react";
 import { service } from "@/services/service";
-import AnswerContent from "@/components/AnswerContent";
 import { useQueryClient } from "@tanstack/react-query";
 import queryKeys from "@/hooks/api/queryKey";
 import PageHeader from "@/components/PageHeader";
-import ThreadReferences from "@/components/ThreadReferences";
-import { Reference } from "@/types/chat";
-import ThreadSteps from "@/components/ThreadSteps";
+import { Message } from "@/types/chat";
+import AgentMessage from "@/components/AgentMessage";
 
 const STEP_MAP = {
   execute_sql: "Execute SQL",
@@ -21,66 +19,66 @@ const STEP_MAP = {
 const Thread = () => {
   const { threadId } = useParams();
   const { data: thread, isSuccess } = useThread(threadId ?? "");
-  const [answerStream, setAnswerStream] = useState<string | null>(null);
-  const [references, setReferences] = useState<Reference[]>(
-    thread?.references || [],
-  );
-
-  const [steps, setSteps] = useState<string[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [message, setMessage] = useState<Message>({
+    content: "",
+    references: [],
+    steps: [],
+    isUser: false,
+    isStreaming: false,
+  });
   const queryClient = useQueryClient();
 
   useEffect(() => {
     if (isSuccess) {
       if (!thread?.answer) {
-        setIsLoading(true);
+        setMessage((pre) => ({
+          ...pre,
+          content: "",
+          references: [],
+          steps: [],
+          isStreaming: true,
+        }));
         // eslint-disable-next-line promise/catch-or-return
         service
           .ask(threadId ?? "", (answer) => {
-            if (answer.step) {
-              setSteps((pre) => {
-                if (
-                  Object.keys(STEP_MAP).includes(answer.step) &&
-                  pre.at(-1) !== answer.step
-                ) {
-                  return [...pre, answer.step];
-                }
-                return pre;
-              });
-            }
-            setAnswerStream((pre) =>
-              pre ? pre + answer.content : answer.content,
-            );
-            setReferences((pre) => {
-              if (answer.references) {
-                return [...pre, ...answer.references];
-              }
-              return pre;
+            setMessage((prevMessage) => {
+              const { content, references, steps } = prevMessage;
+              const shouldAddStep =
+                answer.step &&
+                Object.keys(STEP_MAP).includes(answer.step) &&
+                steps.at(-1) !== answer.step;
+
+              return {
+                content: content + answer.content,
+                references: answer.references
+                  ? [...references, ...answer.references]
+                  : references,
+                steps: shouldAddStep ? [...steps, answer.step] : steps,
+                isUser: false,
+                isStreaming: true,
+              };
             });
           })
           .finally(() => {
-            setIsLoading(false);
+            setMessage((prev) => {
+              return { ...prev, isStreaming: false };
+            });
             queryClient.invalidateQueries({
               queryKey: queryKeys.thread.all,
             });
           });
+      } else {
+        setMessage((prev) => ({
+          ...prev,
+          content: thread.answer,
+          references: thread.references,
+          steps: [],
+          isUser: false,
+          isStreaming: false,
+        }));
       }
     }
   }, [isSuccess, thread, threadId, queryClient]);
-
-  useEffect(() => {
-    if (isSuccess) {
-      if (thread?.references) {
-        setReferences(thread.references);
-      }
-    }
-  }, [isSuccess, thread]);
-
-  const answer = thread?.answer ? thread?.answer : answerStream;
-
-  const showAnswer = answer || steps.length > 0;
-
-  const showAgentThinking = isLoading && !showAnswer;
 
   return (
     <div className="flex flex-col h-full">
@@ -104,30 +102,7 @@ const Thread = () => {
             {thread?.question}
           </div>
 
-          {showAgentThinking && (
-            <div className="flex gap-1">
-              <img className="w-8 h-8" src="/oxy-loading.gif" />
-              <p className="text-muted-foreground">Agent is thinking...</p>
-            </div>
-          )}
-          {showAnswer && (
-            <div className="p-6 rounded-xl bg-base-card border border-base-border shadow-sm flex flex-col gap-2 ">
-              <div className="flex gap-1 items-center h-12 justify-start">
-                <img className="w-[24px] h-[24px]" src="/logo.svg" alt="Oxy" />
-                <p className="text-xl text-card-foreground font-semibold">
-                  Answer
-                </p>
-              </div>
-              <ThreadSteps steps={steps} isLoading={isLoading} />
-
-              <AnswerContent content={answer || ""} />
-            </div>
-          )}
-          <div className="mt-2 flex">
-            {references.length > 0 && (
-              <ThreadReferences references={references} />
-            )}
-          </div>
+          <AgentMessage message={message} />
         </div>
       </div>
     </div>

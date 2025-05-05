@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef } from "react";
 import {
   Background,
   BackgroundVariant,
+  ColorMode,
   Controls,
   ReactFlow,
   useEdgesState,
@@ -19,6 +20,7 @@ import useWorkflow, {
 
 import { DiagramNode } from "./DiagramNode";
 import { buildNodes, calculateNodesSize, getLayoutedElements } from "./layout";
+import useTheme from "@/stores/useTheme";
 
 const nodeTypes: Record<NodeType, typeof DiagramNode> = {
   execute_sql: DiagramNode,
@@ -49,6 +51,7 @@ const WorkflowDiagram = ({ tasks }: { tasks: TaskConfigWithId[] }) => {
   const nodes = useWorkflow((state) => state.nodes);
   const edges = useWorkflow((state) => state.edges);
   const reactFlowWrapper = useRef(null);
+  const { theme } = useTheme();
 
   useEffect(() => {
     const getLayout = async () => {
@@ -86,6 +89,7 @@ const WorkflowDiagram = ({ tasks }: { tasks: TaskConfigWithId[] }) => {
   return (
     <div className="w-full h-full" ref={reactFlowWrapper}>
       <ReactFlow
+        colorMode={theme as ColorMode}
         nodeTypes={nodeTypes}
         proOptions={{ hideAttribution: true }}
         onNodesChange={onNodesChange}
