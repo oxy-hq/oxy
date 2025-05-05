@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
 import { VegaLite } from "react-vega";
@@ -7,77 +8,204 @@ import { useMemo } from "react";
 
 export interface IChartProps {
   spec: TopLevelSpec;
+  aspectRatio?: number;
 }
 
 export default function Chart(props: IChartProps) {
-  const { ref: containerRef } = useResizeDetector();
+  const { ref: containerRef, width } = useResizeDetector();
+  const { spec, aspectRatio = 16 / 9 } = props;
 
-  const spec: TopLevelSpec = {
-    ...props.spec,
+  // Calculate height based on aspect ratio
+  const height = useMemo(() => {
+    return width ? width / aspectRatio : undefined;
+  }, [width, aspectRatio]);
+
+  // Enhanced color palette for dark theme - more vibrant and distinct colors
+  const darkColors = [
+    "#3aa7ff",
+    "#50c878",
+    "#ffc857",
+    "#ff6b6b",
+    "#bf9af7",
+    "#64dfdf",
+    "#ff9f7f",
+    "#a0e8af",
+  ];
+
+  // Enhanced spec with better defaults for readability
+  const enhancedSpec: TopLevelSpec = {
+    ...spec,
     width: "container",
     height: "container",
-    center: true,
+    padding: { left: 60, right: 20, top: 30, bottom: 40 }, // Increased left padding for axis labels
+    background: "transparent",
     config: {
-      autosize: { contains: "padding", type: "fit" },
-      font: "'Inter', sans-serif",
+      ...(spec.config || {}),
+      autosize: { type: "fit", contains: "padding" },
+      font: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
       background: "transparent",
-      mark: { tooltip: true },
-      axis: {
-        labelFontSize: 14,
-        labelFontWeight: 400,
-        labelFont: "'Inter', sans-serif",
-        labelFontStyle: "normal",
-        labelLimit: 180,
-        labelPadding: 12,
-        labelSeparation: 4,
-        labelOverlap: true,
-        labelAngle: 0,
-        titleFontWeight: 400,
-        titleFont: "'Inter', sans-serif",
-        titleFontSize: 14,
-        titleFontStyle: "normal",
-        titlePadding: 20,
-        ticks: false,
-        grid: true,
-        domain: false,
-        labelColor: "var(--primary)",
-        titleColor: "var(--primary)",
-      },
-      axisQuantitative: {
-        tickCount: 3,
-      },
-      legend: {
-        symbolSize: 260,
-        symbolType:
-          "M -1 -0.5 A 0.5 0.5 0 0 1 -0.5 -1 h 1 A 0.5 0.5 0 0 1 1 -0.5 v 1 A 0.5 0.5 0 0 1 0.5 1 h -1 A 0.5 0.5 0 0 1 -1 0.5 v -1 Z",
 
-        titleFont: "'Inter', sans-serif",
-        titleFontWeight: 400,
-        titleFontSize: 14,
-        titleFontStyle: "normal",
-        titlePadding: 12,
-        labelFont: "'Inter', sans-serif",
-        labelFontWeight: 400,
-        labelFontSize: 14,
-        labelFontStyle: "normal",
-        labelPadding: 4,
-        labelColor: "var(--primary)",
-        titleColor: "var(--primary)",
+      // Better mark configuration specifically for line charts
+      line: {
+        point: true, // Always show points for better readability
+        strokeWidth: 2.5, // Slightly thinner than 3 for clarity
+        strokeCap: "round", // Rounded line ends
+        opacity: 0.9, // Slight transparency for overlapping lines
+        ...((spec.config as any)?.line || {}),
       },
-      view: { strokeWidth: 1, stroke: "var(--primary)" },
+
+      // Point configuration for better visibility
+      point: {
+        filled: true,
+        size: 50, // Slightly smaller than 60 for less visual noise
+        strokeWidth: 1.5, // Thinner stroke for cleaner look
+        ...((spec.config as any)?.point || {}),
+      },
+
+      // Axis improvements for better readability
+      axis: {
+        labelFont: "'Inter', sans-serif",
+        labelFontSize: 13, // Increased from 12
+        labelFontWeight: 500,
+        labelPadding: 10, // Increased from 8
+        labelColor: "rgba(255,255,255,0.9)", // Slightly transparent for less harshness
+        titleFont: "'Inter', sans-serif",
+        titleFontSize: 14,
+        titleFontWeight: 600,
+        titlePadding: 15, // Increased from 12
+        titleColor: "#ffffff",
+        gridColor: "rgba(255,255,255,0.08)", // More subtle grid
+        gridDash: [2, 2], // Dashed grid lines for better distinction from data
+        gridOpacity: 1,
+        gridWidth: 1,
+        ticks: false,
+        domain: false,
+        labelLimit: 180, // Increased from default
+        labelOverlap: true,
+        ...((spec.config as any)?.axis || {}),
+      },
+
+      // X-axis specific improvements
+      axisX: {
+        labelAngle: 0,
+        labelAlign: "center",
+        labelBaseline: "top",
+        labelPadding: 8,
+        ...((spec.config as any)?.axisX || {}),
+      },
+
+      // Y-axis specific improvements
+      axisY: {
+        labelAlign: "right",
+        labelPadding: 10,
+        labelBaseline: "middle",
+        grid: true,
+        // Format currency if the field looks like a money value
+        format: (spec.encoding?.y as any)?.field?.toLowerCase().includes("sale")
+          ? "$,.0f"
+          : undefined,
+        ...((spec.config as any)?.axisY || {}),
+      },
+
+      // Better tick configuration
+      axisQuantitative: {
+        tickCount: 5, // Show 5 ticks for better readability
+        ...((spec.config as any)?.axisQuantitative || {}),
+      },
+
+      // Improved legend for better readability
+      legend: {
+        orient: "top",
+        direction: "horizontal",
+        symbolType: "circle",
+        symbolSize: 80,
+        symbolFillOpacity: 0.9, // Slight transparency
+        symbolStrokeWidth: 1.5, // Thinner stroke
+        titleFont: "'Inter', sans-serif",
+        titleFontSize: 14,
+        titleFontWeight: 600,
+        labelFont: "'Inter', sans-serif",
+        labelFontSize: 13, // Increased from 12
+        labelFontWeight: 500,
+        labelColor: "rgba(255,255,255,0.9)", // Slightly transparent
+        titleColor: "#ffffff",
+        titlePadding: 10,
+        labelPadding: 5,
+        padding: 15, // Increased padding
+        offset: 5, // Offset from chart
+        ...((spec.config as any)?.legend || {}),
+      },
+
+      // Apply enhanced color scheme
+      range: {
+        category: darkColors,
+        ...((spec.config as any)?.range || {}),
+      },
+
+      // Improved tooltips
+      tooltip: {
+        fill: "#1f1f1f", // Darker background for less eye strain
+        stroke: "#444444", // Darker border
+        strokeWidth: 1,
+        cornerRadius: 4,
+        title: { color: "#ffffff", fontWeight: 600 },
+        content: { color: "#ffffff" },
+        ...((spec.config as any)?.tooltip || {}),
+      },
+
+      // Improved view
+      view: {
+        strokeWidth: 0,
+        ...((spec.config as any)?.view || {}),
+      },
     },
   };
 
-  const key = useMemo(() => {
-    return Date.now();
-  }, []);
+  // Add default tooltip encoding if none exists
+  if (
+    "mark" in spec &&
+    spec.mark === "line" &&
+    "encoding" in spec &&
+    spec.encoding &&
+    !spec.encoding.tooltip
+  ) {
+    const xField = (spec.encoding.x as any)?.field;
+    const yField = (spec.encoding.y as any)?.field;
+
+    if (xField && yField) {
+      (enhancedSpec as any).encoding = {
+        ...(enhancedSpec as any).encoding,
+        tooltip: [
+          { field: xField, type: (spec.encoding.x as any)?.type || "nominal" },
+          {
+            field: yField,
+            type: (spec.encoding.y as any)?.type || "quantitative",
+            // Automatically format currencies
+            format: yField?.toLowerCase().includes("sale")
+              ? "$,.2f"
+              : undefined,
+          },
+        ],
+      };
+    }
+  }
+
+  // Key for forcing re-render when container size changes
+  const key = useMemo(() => Date.now().toString(), []);
 
   return (
-    <div ref={containerRef} className="w-full h-full relative">
+    <div
+      ref={containerRef}
+      className="w-full h-full"
+      style={{
+        position: "relative",
+        height: height || "100%",
+      }}
+    >
       <VegaLite
         renderer="svg"
         key={key}
-        spec={spec}
+        spec={enhancedSpec}
         className="w-full h-full absolute"
         actions={false}
       />
