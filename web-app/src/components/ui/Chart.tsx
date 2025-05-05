@@ -100,10 +100,6 @@ export default function Chart(props: IChartProps) {
         labelPadding: 10,
         labelBaseline: "middle",
         grid: true,
-        // Format currency if the field looks like a money value
-        format: (spec.encoding?.y as any)?.field?.toLowerCase().includes("sale")
-          ? "$,.0f"
-          : undefined,
         ...((spec.config as any)?.axisY || {}),
       },
 
@@ -142,17 +138,6 @@ export default function Chart(props: IChartProps) {
         ...((spec.config as any)?.range || {}),
       },
 
-      // Improved tooltips
-      tooltip: {
-        fill: "#1f1f1f", // Darker background for less eye strain
-        stroke: "#444444", // Darker border
-        strokeWidth: 1,
-        cornerRadius: 4,
-        title: { color: "#ffffff", fontWeight: 600 },
-        content: { color: "#ffffff" },
-        ...((spec.config as any)?.tooltip || {}),
-      },
-
       // Improved view
       view: {
         strokeWidth: 0,
@@ -180,10 +165,6 @@ export default function Chart(props: IChartProps) {
           {
             field: yField,
             type: (spec.encoding.y as any)?.type || "quantitative",
-            // Automatically format currencies
-            format: yField?.toLowerCase().includes("sale")
-              ? "$,.2f"
-              : undefined,
           },
         ],
       };
