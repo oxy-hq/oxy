@@ -5,6 +5,7 @@ import { DataContainer, PieChartDisplay, TableData } from "@/types/app";
 import { getArrowValue, getData, getDataFileUrl } from "./utils";
 import { Echarts } from "@/components/Echarts";
 import { getDuckDB } from "@/libs/duckdb";
+import useTheme from "@/stores/useTheme";
 
 export const PieChart = ({
   display,
@@ -16,6 +17,8 @@ export const PieChart = ({
   const value = getData(data, display.data) as TableData;
   const [isLoading, setIsLoading] = useState(true);
   const [chartOptions, setChartOptions] = useState<EChartsOption>({});
+  const { theme } = useTheme();
+  const isDarkMode = theme === "dark";
 
   useEffect(() => {
     (async (): Promise<void> => {
@@ -30,6 +33,7 @@ export const PieChart = ({
       );
 
       const options: EChartsOption = {
+        darkMode: isDarkMode,
         title: { text: display.title },
         tooltip: {
           trigger: "item",

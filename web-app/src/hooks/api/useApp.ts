@@ -4,14 +4,14 @@ import queryKeys from "./queryKey";
 import { service } from "@/services/service";
 
 export default function useApp(
-  appPath: string,
+  appPath64: string,
   enabled = true,
   refetchOnWindowFocus = true,
   refetchOnMount: boolean | "always" = false,
 ) {
   return useQuery({
-    queryKey: queryKeys.app.get(appPath),
-    queryFn: () => service.getApp(appPath),
+    queryKey: queryKeys.app.get(appPath64),
+    queryFn: () => service.getApp(appPath64),
     enabled,
     refetchOnWindowFocus: refetchOnWindowFocus,
     refetchOnMount,

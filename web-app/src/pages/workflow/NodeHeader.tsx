@@ -38,7 +38,7 @@ export const NodeHeader = ({
       }}
     >
       <div className="flex items-center min-w-0">
-        <div className="flex items-center justify-center p-2 bg-gray-100 rounded-md">
+        <div className="flex items-center justify-center p-2 bg-special rounded-md">
           <DynamicIcon name={taskIcon} />
         </div>
       </div>

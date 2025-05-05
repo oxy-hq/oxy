@@ -31,6 +31,8 @@
   --chart-5: oklch(0.769 0.188 70.08);
   --radius: 0.625rem;
 
+  --warning: #eab308;
+
   --sidebar: oklch(0.985 0 0);
 
   --sidebar-background: hsl(0 0% 98%);
@@ -48,6 +50,10 @@
 
   --accent-main-000: rgba(48, 92, 197, 1);
   --font-sans: "Inter", sans-serif;
+
+  --editor-background: #0d1117;
+
+  --special: #dfecfa;
 }
 
 .dark {
@@ -77,6 +83,8 @@
   --chart-5: oklch(0.645 0.246 16.439);
   --sidebar: oklch(0.205 0 0);
 
+  --warning: #eab308;
+
   --sidebar-background: hsl(240 5.9% 10%);
   --sidebar-foreground: hsl(240 4.8% 95.9%);
   --sidebar-primary: hsl(224.3 76.3% 48%);
@@ -91,6 +99,10 @@
   --code-primary: rgba(171, 178, 191, 1);
 
   --accent-main-000: rgba(58, 113, 214, 1);
+
+  --special: #305cc5;
+
+  --editor-background: #0d1117;
 }
 
 @theme inline {
@@ -123,6 +135,7 @@
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
   --color-sidebar: var(--sidebar);
+  --color-sidebar-background: var(--sidebar-background);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
   --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
@@ -136,14 +149,21 @@
   --color-code-primary: var(--code-primary);
 
   --color-accent-main-000: var(--accent-main-000);
+
+  --color-editor-background: var(--editor-background);
+
+  --color-warning: var(--warning);
+
+  --color-special: var(--special);
 }
 
 @layer base {
   * {
     @apply border-border outline-ring/50;
   }
+  #app-root,
   body {
-    @apply bg-primary-foreground text-foreground;
+    @apply bg-background text-foreground;
   }
   button:not([disabled]),
   [role="button"]:not([disabled]) {

@@ -15,7 +15,7 @@ type ResultTableProps = {
 
 export const QueryResultTable = ({ result, isTruncated }: ResultTableProps) => {
   return (
-    <div className="max-h-80 bg-white overflow-y-scroll scroll">
+    <div className="max-h-80 overflow-auto customScrollbar">
       <Table className="w-[reset]">
         <TableHeader>
           <TableRow>

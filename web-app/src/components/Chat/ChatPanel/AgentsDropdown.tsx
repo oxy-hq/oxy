@@ -44,12 +44,16 @@ const AgentsDropdown = ({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger>
-        <Button disabled={isLoading} variant="outline">
+        <Button
+          disabled={isLoading}
+          variant="outline"
+          className="bg-sidebar-background"
+        >
           <span>{agent?.name}</span>
           {isLoading ? <Loader2 className="animate-spin" /> : <ChevronDown />}
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent>
+      <DropdownMenuContent className="customScrollbar">
         {agentOptions.map((item) => (
           <DropdownMenuCheckboxItem
             key={item.id}

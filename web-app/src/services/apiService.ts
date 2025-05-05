@@ -109,9 +109,8 @@ export const apiService: Service = {
     const response = await apiClient.get("/apps");
     return response.data;
   },
-  async getApp(appPath: string): Promise<App> {
-    const pathb64 = btoa(appPath);
-    const response = await apiClient.get("/app/" + pathb64);
+  async getApp(appPath64: string): Promise<App> {
+    const response = await apiClient.get("/app/" + appPath64);
     return response.data;
   },
   async getData(filePath: string): Promise<Blob> {
@@ -123,8 +122,7 @@ export const apiService: Service = {
 
     return blob;
   },
-  async runApp(appPath: string): Promise<App> {
-    const pathb64 = btoa(appPath);
+  async runApp(pathb64: string): Promise<App> {
     const response = await apiClient.post(`/app/${pathb64}/run`);
     return response.data;
   },

@@ -17,6 +17,12 @@ dimensions:
     sample:
       - "Fruit"
       - "Vegetable"
+  - name: content_type
+    synonyms:
+      - "content_type"
+    sample:
+      - "Instagram"
+      - "Facebook"
   - name: views
     sample:
       - 100

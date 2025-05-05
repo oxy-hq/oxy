@@ -46,3 +46,7 @@ tests:
   - type: consistency
     task_description: "Generate a SQL to support property grouping report generation"
     n: 10
+
+  - type: consistency
+    task_description: "Generate a SQL to support content_type report generation"
+    n: 10

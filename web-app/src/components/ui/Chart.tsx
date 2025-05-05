@@ -40,6 +40,8 @@ export default function Chart(props: IChartProps) {
         ticks: false,
         grid: true,
         domain: false,
+        labelColor: "var(--primary)",
+        titleColor: "var(--primary)",
       },
       axisQuantitative: {
         tickCount: 3,
@@ -59,8 +61,10 @@ export default function Chart(props: IChartProps) {
         labelFontSize: 14,
         labelFontStyle: "normal",
         labelPadding: 4,
+        labelColor: "var(--primary)",
+        titleColor: "var(--primary)",
       },
-      view: { strokeWidth: 1, stroke: "var(--colors-border-primary)" },
+      view: { strokeWidth: 1, stroke: "var(--primary)" },
     },
   };
 

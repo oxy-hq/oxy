@@ -66,18 +66,18 @@ const WorkflowOutput: React.FC<WorkflowOutputProps> = ({
   return (
     logs.length > 0 && (
       <div
-        className="sticky bottom-0"
+        className="sticky bottom-0 bg-sidebar-background"
         style={{
           width: "inherit",
         }}
       >
         <div
-          className="px-2 py-1 border border-neutral-200 bg-white flex justify-between items-center"
+          className="px-2 py-1 border border-border flex justify-between items-center"
           style={{
             width: "inherit",
           }}
         >
-          <span className="text-gray-700 text-sm">Output</span>
+          <span className="text-background-foreground text-sm">Output</span>
           <Button variant="ghost" content="icon" onClick={toggleOutput}>
             {showOutput ? (
               <DynamicIcon name="x" size={14} />
@@ -89,7 +89,7 @@ const WorkflowOutput: React.FC<WorkflowOutputProps> = ({
         {showOutput && (
           <div
             ref={parentRef}
-            className="h-75 relative overflow-y-auto scrollbar-thin break-all p-1 contain-strict"
+            className="h-75 relative overflow-y-auto customScrollbar break-all contain-strict"
           >
             <div
               style={{
@@ -163,7 +163,7 @@ const ExpandableOutput = ({ content, timestamp }: ExpandableOutputProps) => {
   };
   if (!expanded) {
     return (
-      <div className="flex w-full border-b ">
+      <div className="flex w-full border-b border-border">
         <div className="w-10 flex items-center justify-center">
           <Button variant="link" content="icon" onClick={toggle}>
             <DynamicIcon name="chevron-down" size={14} />
@@ -183,7 +183,7 @@ const ExpandableOutput = ({ content, timestamp }: ExpandableOutputProps) => {
   }
   return (
     <div
-      className="border-b border-neutral-200 bg-white flex justify-between items-stretch"
+      className="border-b border-border flex justify-between items-stretch"
       onClick={toggle}
     >
       <div className="w-10 flex items-start justify-center">
@@ -226,12 +226,12 @@ const OutputItem = ({ content, timestamp, logType }: OutputItemProps) => {
   }
 
   return (
-    <div className="border-b p-2 border-neutral-200 bg-white flex justify-between items-stretch text-xs">
+    <div className="border-b p-2 border-border flex justify-between items-stretch text-xs">
       <div className="w-10"></div>
       <span className="flex-1 flex justify-between items-center">
         <span className={cx("flex-1", getLogColor(logType))}>{content}</span>
       </span>
-      <span className="text-gray-400 text-xs flex justify-end">
+      <span className="text-background-foreground text-xs flex justify-end">
         {timestamp}
       </span>
     </div>

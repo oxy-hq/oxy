@@ -23,20 +23,20 @@ const AppPage: React.FC = () => {
     isPending: isRunning,
     isError,
   } = useRunAppMutation(() => {});
-  const { data: app, isPending } = useApp(path);
+  const { data: app, isPending } = useApp(pathb64);
 
   useEffect(() => {
     if (isError)
       toast.error("Error refreshing app. Check configuration and try again.");
   }, [isError]);
 
-  const handleRun = () => runApp(path);
+  const handleRun = () => runApp(pathb64);
 
   if (isPending) return <Loading />;
   return (
     <div className="w-full h-full flex flex-col">
       <AppPageHeader path={path} onRun={handleRun} isRunning={isRunning} />
-      <div className="flex-1 w-full flex justify-center items-start overflow-auto">
+      <div className="flex-1 w-full flex justify-center items-start overflow-auto customScrollbar">
         <div className="p-16 max-w-200 w-full">
           <Displays displays={app!.displays} data={app!.data} />
         </div>

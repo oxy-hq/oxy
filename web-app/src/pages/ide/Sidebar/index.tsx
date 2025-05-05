@@ -25,7 +25,7 @@ const Sidebar = ({
     .sort((a) => (a.is_dir ? -1 : 1));
 
   return (
-    <div className="h-full w-full border-r border-l">
+    <div className="h-full w-full border-r border-l bg-sidebar-background">
       {sidebarOpen && (
         <SidebarContent className="customScrollbar h-full">
           <SidebarGroup>
@@ -45,7 +45,9 @@ const Sidebar = ({
               </Button>
             </SidebarGroupLabel>
             <SidebarMenu>
-              {fileTree?.map((item) => <FileTreeNode fileTree={item} />)}
+              {fileTree?.map((item) => (
+                <FileTreeNode key={item.path} fileTree={item} />
+              ))}
             </SidebarMenu>
           </SidebarGroup>
         </SidebarContent>

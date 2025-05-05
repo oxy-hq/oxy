@@ -44,7 +44,7 @@ const State = ({ testState }: { testState: TestState }) => {
     <div
       className={cn(
         "flex gap-2 px-4 py-2 justify-center items-center rounded-md bg-primary",
-        "text-white text-sm",
+        "text-primary-foreground text-sm",
       )}
     >
       {renderState()}

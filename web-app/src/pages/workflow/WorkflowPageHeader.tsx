@@ -19,28 +19,30 @@ const WorkflowPageHeader: React.FC<WorkflowPageHeaderProps> = ({
   const pathb64 = btoa(path);
   const navigate = useNavigate();
   return (
-    <PageHeader className="border border-neutral-200 bg-white items-center">
-      <div className="py-2 pr-18 flex justify-between items-center flex-1">
-        <div className="flex items-center justify-center gap-0.5 flex-1 w-full min-w-0">
-          <Workflow width={16} height={16} />
+    <PageHeader className="border-b-1 border-border items-center">
+      <div className="flex justify-between items-center w-full">
+        <div></div>
+        <div className="flex items-center justify-center gap-0.5">
+          <Workflow className="h-4 w-4" />
           <span className="text-sm truncate">{relativePath}</span>
         </div>
         <div className="flex items-center gap-2">
           <Button
+            size="sm"
             variant="ghost"
             onClick={() => {
-              navigate(`/workflows/${pathb64}/edit`);
+              navigate(`/ide/${pathb64}`);
             }}
           >
             <Pencil className="w-4 h-4" />
             <span>Edit</span>
           </Button>
           <Button
+            size="sm"
             onClick={onRun}
             disabled={isRunning}
             variant="default"
             content="icon"
-            className="absolute right-4"
           >
             {isRunning ? <LoaderCircle className="animate-spin" /> : "Run"}
           </Button>

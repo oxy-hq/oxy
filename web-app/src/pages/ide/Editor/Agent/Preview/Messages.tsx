@@ -1,6 +1,6 @@
-import AgentMessage from "./AgentMessage";
+import AgentMessage from "@/components/AgentMessage";
 import UserMessage from "./UserMessage";
-import { Message } from ".";
+import { Message } from "@/types/chat";
 
 const Messages = ({ messages }: { messages: Message[] }) => {
   return (
@@ -10,7 +10,7 @@ const Messages = ({ messages }: { messages: Message[] }) => {
           {message.isUser ? (
             <UserMessage message={message} />
           ) : (
-            <AgentMessage message={message} />
+            <AgentMessage showAvatar message={message} />
           )}
         </div>
       ))}
