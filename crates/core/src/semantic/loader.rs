@@ -19,6 +19,7 @@ pub struct ColumnNames {
     table: String,
     column: String,
     data_type: String,
+    is_partitioning_column: String,
     ddl: String,
 }
 
@@ -29,6 +30,7 @@ impl Default for ColumnNames {
             table: "table_name".to_string(),
             column: "column_name".to_string(),
             data_type: "data_type".to_string(),
+            is_partitioning_column: "is_partitioning_column".to_string(),
             ddl: "ddl".to_string(),
         }
     }
@@ -42,6 +44,21 @@ impl ColumnNames {
 
     pub fn with_table(mut self, table: &str) -> Self {
         self.table = table.to_string();
+        self
+    }
+
+    pub fn with_column(mut self, column: &str) -> Self {
+        self.column = column.to_string();
+        self
+    }
+
+    pub fn with_data_type(mut self, data_type: &str) -> Self {
+        self.data_type = data_type.to_string();
+        self
+    }
+
+    pub fn with_is_partitioning_column(mut self, is_partitioning_column: &str) -> Self {
+        self.is_partitioning_column = is_partitioning_column.to_string();
         self
     }
 
@@ -112,11 +129,12 @@ impl GetSchemaQueryBuilder {
 
     pub fn build(&self) -> String {
         let mut query = format!(
-            "SELECT {}, {}, {}, {} FROM {}",
+            "SELECT {}, {}, {}, {}, {} FROM {}",
             self.column_names.dataset,
             self.column_names.table,
             self.column_names.column,
             self.column_names.data_type,
+            self.column_names.is_partitioning_column,
             self.columns_table,
         );
         let where_clause = self.get_where_clause();
@@ -179,8 +197,17 @@ impl GetSchemaQuery for Database {
                 }
                 DatabaseType::ClickHouse(_) => {
                     let query = GetSchemaQueryBuilder::default()
+                        .with_column_names(
+                            ColumnNames::default()
+                                .with_dataset("database")
+                                .with_table("table")
+                                .with_column("name")
+                                .with_data_type("type")
+                                .with_is_partitioning_column("is_in_partition_key"),
+                        )
                         .with_filter_dataset(dataset.to_string())
                         .with_filter_tables(tables.clone())
+                        .with_columns_table("system.columns".to_string())
                         .build();
                     Ok(query)
                 }
@@ -230,11 +257,40 @@ pub struct SchemaLoader {
 
 #[derive(Debug, Deserialize)]
 pub(super) struct SchemaRecord {
-    #[serde(alias = "table_schema")]
+    #[serde(alias = "table_schema", alias = "database")]
     dataset: String,
+    #[serde(alias = "table")]
     table_name: String,
+    #[serde(alias = "name")]
     column_name: String,
+    #[serde(alias = "type")]
     data_type: String,
+    #[serde(alias = "is_in_partition_key", deserialize_with = "deserialize_bool")]
+    is_partitioning_column: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum IsPartitionTypes {
+    U8(u8),
+    Utf8(String),
+}
+
+fn deserialize_bool<'de, D>(deserializer: D) -> Result<bool, D::Error>
+where
+    D: serde::de::Deserializer<'de>,
+{
+    let value = IsPartitionTypes::deserialize(deserializer)?;
+    match value {
+        IsPartitionTypes::U8(value) => Ok(value > 0),
+        IsPartitionTypes::Utf8(value) => match value.to_lowercase().as_str() {
+            "yes" => Ok(true),
+            "no" => Ok(false),
+            _ => Err(serde::de::Error::custom(
+                "Expected 'yes', 'no', 'YES' or 'NO'",
+            )),
+        },
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -342,6 +398,11 @@ impl SchemaLoader {
                 synonyms: None,
                 sample: vec![],
                 data_type: Some(record.data_type.to_string()),
+                is_partition_key: if record.is_partitioning_column {
+                    Some(record.is_partitioning_column)
+                } else {
+                    None
+                },
             });
             acc
         });

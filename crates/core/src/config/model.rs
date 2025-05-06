@@ -69,6 +69,8 @@ pub struct Dimension {
     pub sample: Vec<String>,
     #[serde(rename = "type", alias = "type")]
     pub data_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_partition_key: Option<bool>,
 }
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema)]
