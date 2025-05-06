@@ -30,16 +30,33 @@ export interface Record {
   score: number;
 }
 
-export enum MetricKind {
-  Accuracy = "Accuracy",
+export interface RecallRecord {
+  score: number;
+  pass: boolean;
+  retrieved_contexts: string[];
+  reference_contexts: string[];
 }
 
-export type MetricValue = {
-  [MetricKind.Accuracy]: number;
+export enum MetricKind {
+  Similarity = "Similarity",
+  Recall = "Recall",
+}
+
+export type SimilarityMetric = {
+  type: MetricKind.Similarity;
+  score: number;
+  records: Record[];
 };
+
+export type RecallMetric = {
+  type: MetricKind.Recall;
+  score: number;
+  records: RecallRecord[];
+};
+
+export type MetricValue = SimilarityMetric | RecallMetric;
 
 export type Metric = {
   errors: string[];
-  records: Record[];
-  kind: MetricValue;
+  metrics: MetricValue[];
 };

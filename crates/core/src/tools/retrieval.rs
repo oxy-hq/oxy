@@ -57,6 +57,20 @@ impl Executable<RetrievalInput> for RetrievalExecutable {
             VectorStore::from_retrieval(&execution_context.config, &agent_name, &retrieval_config)
                 .await?;
         let results = store.search(&query).await?;
+        if !results.is_empty() {
+            execution_context
+                .write_chunk(Chunk {
+                    key: None,
+                    delta: Output::Documents(
+                        results
+                            .iter()
+                            .map(|record| record.document.content.clone())
+                            .collect(),
+                    ),
+                    finished: true,
+                })
+                .await?;
+        }
         let output = self.serialize_output(&results)?;
         Ok(Output::Text(output))
     }

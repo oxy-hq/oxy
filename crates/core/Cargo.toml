@@ -94,6 +94,7 @@ backoff = { version = "0.4.0", features = ["tokio"] }
 rustc_version_runtime = "0.3.0"
 rustls = { version = "0.23.26", features = ["aws_lc_rs"] }
 parquet = "53.4"
+rapidfuzz = "0.5.0"
 
 [lib]
 name = "oxy"

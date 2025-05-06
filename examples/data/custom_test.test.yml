@@ -1,0 +1,9 @@
+- query: "How many apple sales? And how many calories per apple?"
+  response: "325 sales and 80 calories"
+  relevant_contexts:
+    - "select 'apple' as name, 325 as sales"
+    - "select 'apple' as name, 80 as calories"
+- query: "Who is the CEO of Apple?"
+  response: "Tim Cook"
+  relevant_contexts:
+    - "select 'Apple' as name, 'Tim Cook' as ceo"

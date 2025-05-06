@@ -70,3 +70,9 @@ tools:
 tests:
   - type: consistency
     task_description: "how many users are there in the database?"
+
+  - type: custom
+    dataset: data/custom_test.test.yml
+    metrics:
+      - type: similarity
+      - type: context_recall

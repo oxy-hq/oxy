@@ -7,19 +7,29 @@ use serde::{Deserialize, Serialize};
 
 use crate::{errors::OxyError, execute::types::Output};
 
+use super::reference::ReferenceKind;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Metadata {
+    #[serde(alias = "value")]
+    pub output: Output,
+    pub references: Vec<ReferenceKind>,
+    pub metadata: HashMap<String, String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum OutputContainer {
     List(Vec<OutputContainer>),
     Map(HashMap<String, OutputContainer>),
     Single(Output),
     Consistency {
-        value: Output,
+        #[serde(flatten)]
+        value: Metadata,
         score: f32,
-        metadata: HashMap<String, String>,
     },
     Metadata {
-        output: Output,
-        metadata: HashMap<String, String>,
+        #[serde(flatten)]
+        value: Metadata,
     },
 }
 
@@ -85,13 +95,11 @@ impl OutputContainer {
             OutputContainer::Single(output) => {
                 Ok(DataContainer::Single(output.to_data(file_path)?))
             }
-            OutputContainer::Consistency {
-                value,
-                score,
-                metadata,
-            } => Ok(DataContainer::None),
-            OutputContainer::Metadata { output, metadata } => {
-                Ok(DataContainer::Single(output.to_data(file_path)?))
+            OutputContainer::Consistency { value, .. } => {
+                Ok(DataContainer::Single(value.output.to_data(file_path)?))
+            }
+            OutputContainer::Metadata { value, .. } => {
+                Ok(DataContainer::Single(value.output.to_data(file_path)?))
             }
         }
     }
@@ -154,17 +162,13 @@ impl From<&OutputContainer> for Value {
                     .collect::<Vec<_>>(),
             ),
             OutputContainer::Single(output) => Value::from_object(output.clone()),
-            OutputContainer::Metadata {
-                output,
-                metadata: _,
-            } => Value::from_object(output.clone()),
-            OutputContainer::Consistency {
-                value,
-                score,
-                metadata: _,
-            } => {
+            OutputContainer::Metadata { value, .. } => Value::from_object(value.output.clone()),
+            OutputContainer::Consistency { value, score, .. } => {
                 let mut map = HashMap::new();
-                map.insert("value".to_string(), Value::from_object(value.clone()));
+                map.insert(
+                    "value".to_string(),
+                    Value::from_object(value.output.clone()),
+                );
                 map.insert("score".to_string(), Value::from(*score));
                 Value::from_iter(map)
             }
@@ -210,18 +214,11 @@ impl Hash for OutputContainer {
             OutputContainer::Single(output) => {
                 output.hash(state);
             }
-            OutputContainer::Metadata {
-                output,
-                metadata: _,
-            } => {
-                output.hash(state);
+            OutputContainer::Metadata { value, .. } => {
+                value.output.hash(state);
             }
-            OutputContainer::Consistency {
-                value,
-                score,
-                metadata: _,
-            } => {
-                value.hash(state);
+            OutputContainer::Consistency { value, score } => {
+                value.output.hash(state);
                 score.to_bits().hash(state);
             }
         }

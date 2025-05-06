@@ -1,14 +1,14 @@
 use itertools::Itertools;
 use minijinja::{Value, context};
+use rapidfuzz::distance::levenshtein::normalized_distance;
 
 use crate::{
     agent::build_openai_executable,
     config::{
         constants::{EVAL_METRICS_POSTFIX, EVAL_SOURCE},
-        model::SolverKind,
+        model::{DistanceMethod, SolverKind},
     },
     errors::OxyError,
-    eval::Metric,
     execute::{
         Executable, ExecutionContext,
         builders::{ExecutableBuilder, map::ParamMapper},
@@ -16,7 +16,7 @@ use crate::{
     },
 };
 
-use super::types::Record;
+use super::types::{MetricKind, RecallRecord, Record};
 
 #[derive(Clone, Debug)]
 pub struct LLMSolverMapper {
@@ -69,7 +69,7 @@ impl SolverExecutable {
 
 #[async_trait::async_trait]
 impl Executable<(SolverKind, Vec<(TargetOutput, TargetOutput)>)> for SolverExecutable {
-    type Response = Metric;
+    type Response = MetricKind;
 
     async fn execute(
         &mut self,
@@ -82,7 +82,7 @@ impl Executable<(SolverKind, Vec<(TargetOutput, TargetOutput)>)> for SolverExecu
         );
 
         match solver_kind {
-            SolverKind::LLM(llm_solver) => {
+            SolverKind::Similarity(llm_solver) => {
                 let model_ref = match &llm_solver.model_ref {
                     Some(model_ref) => model_ref,
                     None => match execution_context.config.default_model() {
@@ -100,7 +100,7 @@ impl Executable<(SolverKind, Vec<(TargetOutput, TargetOutput)>)> for SolverExecu
                     .concurrency(self.concurrency)
                     .map(LLMSolverMapper {
                         prompt_template: llm_solver.prompt.to_string(),
-                        task_description: llm_solver.task_description.clone(),
+                        task_description: None,
                     })
                     .executable(agent);
                 let results = eval_executable.execute(&metric_context, outputs).await?;
@@ -112,7 +112,46 @@ impl Executable<(SolverKind, Vec<(TargetOutput, TargetOutput)>)> for SolverExecu
                         record.fill_score(&llm_solver.scores);
                         Ok(record)
                     })
-                    .try_collect::<Record, Metric, OxyError>()?;
+                    .try_collect::<Record, MetricKind, OxyError>()?;
+                Ok(metric)
+            }
+            SolverKind::ContextRecall(recall) => {
+                let metric = outputs
+                    .into_iter()
+                    .map(|(submission_1, submission_2)| match recall.distance {
+                        DistanceMethod::Levenshtein => {
+                            let scores = submission_2
+                                .relevant_contexts
+                                .iter()
+                                .filter_map(|reference_context| {
+                                    submission_1
+                                        .relevant_contexts
+                                        .iter()
+                                        .map(|retrieved_context| {
+                                            let distance = normalized_distance(
+                                                retrieved_context.chars(),
+                                                reference_context.chars(),
+                                            );
+                                            let score = 1.0 - distance;
+                                            score
+                                        })
+                                        .max_by(|a, b| a.partial_cmp(b).unwrap())
+                                })
+                                .collect::<Vec<_>>();
+                            let score = if scores.is_empty() {
+                                f32::NAN
+                            } else {
+                                scores.iter().sum::<f64>() as f32 / scores.len() as f32
+                            };
+                            RecallRecord {
+                                score,
+                                pass: score > recall.threshold,
+                                retrieved_contexts: submission_1.relevant_contexts,
+                                reference_contexts: submission_2.relevant_contexts,
+                            }
+                        }
+                    })
+                    .collect::<MetricKind>();
                 Ok(metric)
             }
         }

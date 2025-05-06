@@ -4,7 +4,7 @@ use crate::{
     agent::types::AgentInput,
     config::{
         constants::EVAL_SOURCE,
-        model::{EvalConfig, SolverKind, Task, TaskType},
+        model::{EvalConfig, EvalKind, Task, TaskType},
     },
     errors::OxyError,
     execute::{
@@ -17,7 +17,10 @@ use crate::{
 };
 
 use super::{
-    EvalInput, Metric, generator::GeneratorExecutable, solver::SolverExecutable, types::EvalTarget,
+    EvalInput, EvalResult,
+    generator::GeneratorExecutable,
+    solver::SolverExecutable,
+    types::{EvalTarget, MetricKind},
 };
 
 #[derive(Clone, Debug)]
@@ -104,14 +107,16 @@ impl ParamMapper<EvalInput, Vec<(usize, EvalConfig, EvalTarget)>> for EvalMapper
                             test.clone(),
                             EvalTarget::Agent(AgentInput {
                                 agent_ref: agent_ref.to_string(),
-                                prompt: match &test.solver {
-                                    SolverKind::LLM(llm_solver) => llm_solver
-                                        .task_description
-                                        .clone()
-                                        .ok_or(OxyError::ConfigurationError(
-                                            "Task description is required for agent evaluation"
-                                                .to_string(),
-                                        ))?,
+                                prompt: match &test.kind {
+                                    EvalKind::Consistency(consistency) => {
+                                        consistency.task_description.clone().ok_or(
+                                            OxyError::ConfigurationError(
+                                                "Task description is required for agent consistency evaluation"
+                                                    .to_string(),
+                                            ),
+                                        )?
+                                    }
+                                    _ => "".to_string(),
                                 },
                             }),
                         ))
@@ -134,7 +139,7 @@ pub struct EvalExecutable;
 
 #[async_trait::async_trait]
 impl Executable<(usize, EvalConfig, EvalTarget)> for EvalExecutable {
-    type Response = Metric;
+    type Response = EvalResult;
 
     async fn execute(
         &mut self,
@@ -167,29 +172,38 @@ impl Executable<(usize, EvalConfig, EvalTarget)> for EvalExecutable {
                 message: "🔄Evaluating records".to_string(),
             })
             .await?;
-        let mut metric = SolverExecutable::new(eval.concurrency)
-            .execute(execution_context, (eval.solver.clone(), outputs))
-            .await?;
+        let mut solver_executable = ExecutableBuilder::new()
+            .concurrency(eval.concurrency)
+            .executable(SolverExecutable::new(eval.concurrency));
+        let metrics = solver_executable
+            .execute(
+                execution_context,
+                eval.metrics
+                    .into_iter()
+                    .map(|solver| (solver, outputs.clone()))
+                    .collect::<Vec<_>>(),
+            )
+            .await?
+            .into_iter()
+            .try_collect::<MetricKind, Vec<_>, OxyError>()?;
 
-        metric.set_errors(errors);
+        let result = EvalResult::new(errors, metrics);
         eval_context
             .write_kind(EventKind::Message {
-                message: format!("✅Eval finished with metrics: {}", metric.kind)
-                    .primary()
-                    .to_string(),
+                message: format!("{}", result).primary().to_string(),
             })
             .await?;
         eval_context
             .write_kind(EventKind::Finished {
-                message: format!("{}", metric),
+                message: format!("{:?}", result),
             })
             .await?;
-        Ok(metric)
+        Ok(result)
     }
 }
 
 pub(crate) fn build_eval_executable()
--> impl Executable<EvalInput, Response = Vec<Result<Metric, OxyError>>> {
+-> impl Executable<EvalInput, Response = Vec<Result<EvalResult, OxyError>>> {
     ExecutableBuilder::new()
         .map(EvalMapper)
         .concurrency(10)

@@ -17,6 +17,7 @@ pub enum Output {
     SQL(SQL),
     Table(Table),
     Prompt(Prompt),
+    Documents(Vec<String>),
 }
 
 impl Output {
@@ -62,6 +63,7 @@ impl Output {
             Output::Table(table) => Ok(Data::Table(table.to_data(file_path)?)),
             Output::Bool(b) => Ok(Data::Bool(*b)),
             Output::Prompt(prompt) => Ok(Data::Text(prompt.to_string())),
+            Output::Documents(_) => Ok(Data::None),
         }
     }
 }
@@ -106,6 +108,12 @@ impl std::fmt::Display for Output {
             Output::Table(table) => write!(f, "{}", table),
             Output::Prompt(prompt) => write!(f, "{}", prompt),
             Output::Bool(b) => write!(f, "{}", b),
+            Output::Documents(docs) => {
+                for doc in docs {
+                    writeln!(f, "{}", doc)?;
+                }
+                Ok(())
+            }
         }
     }
 }
@@ -146,6 +154,12 @@ impl Object for Output {
             Output::Table(table) => Arc::new(table.clone()).render(f),
             Output::Prompt(prompt) => write!(f, "{:?}", prompt),
             Output::Bool(b) => write!(f, "{}", b),
+            Output::Documents(docs) => {
+                for doc in docs {
+                    writeln!(f, "{}", doc)?;
+                }
+                Ok(())
+            }
         }
     }
 }

@@ -52,13 +52,26 @@
         }
       }
     },
+    "DistanceMethod": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "distance"
+          ],
+          "properties": {
+            "distance": {
+              "type": "string",
+              "enum": [
+                "Levenshtein"
+              ]
+            }
+          }
+        }
+      ]
+    },
     "EvalConfig": {
       "type": "object",
-      "anyOf": [
-        {
-          "$ref": "#/definitions/LLMSolver"
-        }
-      ],
       "oneOf": [
         {
           "type": "object",
@@ -72,6 +85,12 @@
               "format": "uint",
               "minimum": 0.0
             },
+            "task_description": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
             "type": {
               "type": "string",
               "enum": [
@@ -83,17 +102,23 @@
         {
           "type": "object",
           "required": [
-            "test_set",
+            "dataset",
             "type"
           ],
           "properties": {
-            "test_set": {
+            "dataset": {
               "type": "string"
             },
             "type": {
               "type": "string",
               "enum": [
                 "custom"
+              ]
+            },
+            "workflow_variable_name": {
+              "type": [
+                "string",
+                "null"
               ]
             }
           }
@@ -105,6 +130,23 @@
           "type": "integer",
           "format": "uint",
           "minimum": 0.0
+        },
+        "metrics": {
+          "default": [
+            {
+              "model_ref": null,
+              "prompt": "You are comparing a pair of submitted answers on a given question. Here is the data:\n[BEGIN DATA]\n************\n[Question]: {{ task_description }}\n************\n[Submission 1]: {{submission_1}}\n************\n[Submission 2]: {{submission_2}}\n************\n[END DATA]\n\nCompare the factual content of the submitted answers. Ignore any differences in style, grammar, punctuation. Answer the question by selecting one of the following options:\nA. The submitted answers are either a superset or contains each other and is fully consistent with it.\nB. There is a disagreement between the submitted answers.\n\n- First, highlight the disagreements between the two submissions.\nFollowing is the syntax to highlight the differences:\n\n(1) <factual_content>\n+++ <submission_1_factual_content_diff>\n--- <submission_2_factual_content_diff>\n\n[BEGIN EXAMPLE]\nHere are the key differences between the two submissions:\n(1) Capital of France\n+++ Paris\n--- France\n[END EXAMPLE]\n\n- Then reason about the highlighted differences. The submitted answers may either be a subset or superset of each other, or it may conflict. Determine which case applies.\n- At the end, print only a single choice from AB (without quotes or brackets or punctuation) on its own line corresponding to the correct answer. e.g A\n\nReasoning:\n",
+              "scores": {
+                "A": 1.0,
+                "B": 0.0
+              },
+              "type": "similarity"
+            }
+          ],
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/SolverKind"
+          }
         },
         "task_ref": {
           "type": [
@@ -124,38 +166,6 @@
         "docx"
       ]
     },
-    "LLMSolver": {
-      "type": "object",
-      "properties": {
-        "model_ref": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "prompt": {
-          "default": "You are comparing a pair of submitted answers on a given question. Here is the data:\n[BEGIN DATA]\n************\n[Question]: {{ task_description }}\n************\n[Submission 1]: {{submission_1}}\n************\n[Submission 2]: {{submission_2}}\n************\n[END DATA]\n\nCompare the factual content of the submitted answers. Ignore any differences in style, grammar, punctuation. Answer the question by selecting one of the following options:\nA. The submitted answers are either a superset or contains each other and is fully consistent with it.\nB. There is a disagreement between the submitted answers.\n\n- First, highlight the disagreements between the two submissions.\nFollowing is the syntax to highlight the differences:\n\n(1) <factual_content>\n+++ <submission_1_factual_content_diff>\n--- <submission_2_factual_content_diff>\n\n[BEGIN EXAMPLE]\nHere are the key differences between the two submissions:\n(1) Capital of France\n+++ Paris\n--- France\n[END EXAMPLE]\n\n- Then reason about the highlighted differences. The submitted answers may either be a subset or superset of each other, or it may conflict. Determine which case applies.\n- At the end, print only a single choice from AB (without quotes or brackets or punctuation) on its own line corresponding to the correct answer. e.g A\n\nReasoning:\n",
-          "type": "string"
-        },
-        "scores": {
-          "default": {
-            "A": 1.0,
-            "B": 0.0
-          },
-          "type": "object",
-          "additionalProperties": {
-            "type": "number",
-            "format": "float"
-          }
-        },
-        "task_description": {
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      }
-    },
     "LoopValues": {
       "anyOf": [
         {
@@ -165,6 +175,74 @@
           "type": "array",
           "items": {
             "type": "string"
+          }
+        }
+      ]
+    },
+    "SolverKind": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "distance": {
+              "default": {
+                "distance": "Levenshtein"
+              },
+              "allOf": [
+                {
+                  "$ref": "#/definitions/DistanceMethod"
+                }
+              ]
+            },
+            "threshold": {
+              "default": 0.5,
+              "type": "number",
+              "format": "float"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "context_recall"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "model_ref": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "prompt": {
+              "default": "You are comparing a pair of submitted answers on a given question. Here is the data:\n[BEGIN DATA]\n************\n[Question]: {{ task_description }}\n************\n[Submission 1]: {{submission_1}}\n************\n[Submission 2]: {{submission_2}}\n************\n[END DATA]\n\nCompare the factual content of the submitted answers. Ignore any differences in style, grammar, punctuation. Answer the question by selecting one of the following options:\nA. The submitted answers are either a superset or contains each other and is fully consistent with it.\nB. There is a disagreement between the submitted answers.\n\n- First, highlight the disagreements between the two submissions.\nFollowing is the syntax to highlight the differences:\n\n(1) <factual_content>\n+++ <submission_1_factual_content_diff>\n--- <submission_2_factual_content_diff>\n\n[BEGIN EXAMPLE]\nHere are the key differences between the two submissions:\n(1) Capital of France\n+++ Paris\n--- France\n[END EXAMPLE]\n\n- Then reason about the highlighted differences. The submitted answers may either be a subset or superset of each other, or it may conflict. Determine which case applies.\n- At the end, print only a single choice from AB (without quotes or brackets or punctuation) on its own line corresponding to the correct answer. e.g A\n\nReasoning:\n",
+              "type": "string"
+            },
+            "scores": {
+              "default": {
+                "A": 1.0,
+                "B": 0.0
+              },
+              "type": "object",
+              "additionalProperties": {
+                "type": "number",
+                "format": "float"
+              }
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "similarity"
+              ]
+            }
           }
         }
       ]

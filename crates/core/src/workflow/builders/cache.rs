@@ -4,7 +4,7 @@ use crate::{
     execute::{
         ExecutionContext,
         builders::cache::{CacheStorage, CacheWriter, Cacheable},
-        types::{EventKind, Output, OutputContainer},
+        types::{EventKind, Metadata, Output, OutputContainer},
     },
     theme::StyledText,
     utils::get_file_directories,
@@ -90,13 +90,39 @@ impl CacheStorage<TaskInput, OutputContainer> for TaskCacheStorage {
                     Some(OutputContainer::Single(sql.into()))
                 }
                 Some(OutputContainer::Metadata {
-                    output: Output::SQL(mut sql),
-                    metadata,
+                    value:
+                        Metadata {
+                            output: Output::SQL(mut sql),
+                            metadata,
+                            references,
+                        },
                 }) => {
                     sql.0 = maybe_sql;
                     Some(OutputContainer::Metadata {
-                        output: sql.into(),
-                        metadata,
+                        value: Metadata {
+                            output: sql.into(),
+                            metadata,
+                            references,
+                        },
+                    })
+                }
+                Some(OutputContainer::Consistency {
+                    value:
+                        Metadata {
+                            output: Output::SQL(mut sql),
+                            metadata,
+                            references,
+                        },
+                    score,
+                }) => {
+                    sql.0 = maybe_sql;
+                    Some(OutputContainer::Consistency {
+                        value: Metadata {
+                            output: sql.into(),
+                            metadata,
+                            references,
+                        },
+                        score,
                     })
                 }
                 _ => Some(OutputContainer::Single(Output::sql(maybe_sql))),
@@ -127,8 +153,19 @@ impl CacheStorage<TaskInput, OutputContainer> for TaskCacheStorage {
                     }
                 }
                 OutputContainer::Metadata {
-                    output: Output::SQL(sql),
-                    metadata: _,
+                    value:
+                        Metadata {
+                            output: Output::SQL(sql),
+                            ..
+                        },
+                }
+                | OutputContainer::Consistency {
+                    value:
+                        Metadata {
+                            output: Output::SQL(sql),
+                            ..
+                        },
+                    ..
                 } => {
                     let formatted_sql = format_sql(&sql.0.to_string());
                     file_cache.write_bytes(&key, formatted_sql.as_bytes())?;

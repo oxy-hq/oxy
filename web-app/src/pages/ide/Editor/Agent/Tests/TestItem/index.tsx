@@ -44,7 +44,7 @@ const TestItem = ({
           <p className="font-semibold text-sm text-left">
             {test.task_description}
           </p>
-          <p className="text-muted-foreground">{test.n} tries</p>
+          {!!test.n && <p className="text-muted-foreground">{test.n} tries</p>}
         </div>
         <div className="flex flex-col gap-2 items-end">
           <Button

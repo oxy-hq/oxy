@@ -1,4 +1,3 @@
-pub mod types;
 use crate::{
     config::{ConfigManager, constants::AGENT_SOURCE, model::AgentConfig},
     errors::OxyError,
@@ -6,7 +5,7 @@ use crate::{
         Executable, ExecutionContext, ExecutionContextBuilder,
         builders::{ExecutableBuilder, map::ParamMapper},
         renderer::{Renderer, TemplateRegister},
-        types::{Output, Source},
+        types::{Event, Output, Source},
         writer::{BufWriter, EventHandler},
     },
     tools::ToolsContext,
@@ -15,12 +14,16 @@ pub use builders::{AgentExecutable, OpenAIExecutableResponse, build_openai_execu
 use contexts::Contexts;
 use databases::DatabasesContext;
 use minijinja::{Value, context};
+pub use references::AgentReferencesHandler;
 use std::path::Path;
+use tokio::sync::mpsc::Sender;
 use types::AgentInput;
 
 mod builders;
 mod contexts;
 mod databases;
+mod references;
+pub mod types;
 
 impl TemplateRegister for AgentConfig {
     fn register_template(&self, renderer: &Renderer) -> Result<(), OxyError> {
@@ -131,8 +134,12 @@ impl ParamMapper<AgentInput, (AgentConfig, String)> for AgentMapper {
     ) -> Result<((AgentConfig, String), Option<ExecutionContext>), OxyError> {
         let AgentInput { agent_ref, prompt } = input;
         let agent_config = execution_context.config.resolve_agent(&agent_ref).await?;
-        let global_context =
-            build_global_context(&execution_context.config, &agent_config, &prompt);
+        let global_context = build_global_context(
+            &execution_context.config,
+            &agent_config,
+            &prompt,
+            execution_context.writer.clone(),
+        );
         let renderer = Renderer::from_template(global_context, &agent_config)?;
         let execution_context = execution_context.wrap_renderer(renderer);
         Ok(((agent_config, prompt), Some(execution_context)))
@@ -145,7 +152,12 @@ fn build_agent_executable() -> impl Executable<AgentInput, Response = Output> {
         .executable(AgentExecutable)
 }
 
-fn build_global_context(config: &ConfigManager, agent_config: &AgentConfig, prompt: &str) -> Value {
+fn build_global_context(
+    config: &ConfigManager,
+    agent_config: &AgentConfig,
+    prompt: &str,
+    sender: Sender<Event>,
+) -> Value {
     let contexts = Contexts::new(
         agent_config.context.clone().unwrap_or_default(),
         config.clone(),
@@ -156,6 +168,7 @@ fn build_global_context(config: &ConfigManager, agent_config: &AgentConfig, prom
         agent_config.name.to_string(),
         agent_config.tools_config.tools.clone(),
         prompt.to_string(),
+        sender,
     );
     context! {
         context => Value::from_object(contexts),

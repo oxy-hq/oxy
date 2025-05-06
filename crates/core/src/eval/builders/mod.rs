@@ -12,7 +12,7 @@ use crate::{
     },
 };
 use eval::build_eval_executable;
-use types::{EvalInput, Metric};
+use types::{EvalInput, EvalResult};
 
 mod eval;
 mod generator;
@@ -57,7 +57,7 @@ impl EvalLauncher {
         self,
         eval_input: EvalInput,
         event_handler: H,
-    ) -> Result<Vec<Result<Metric, OxyError>>, OxyError> {
+    ) -> Result<Vec<Result<EvalResult, OxyError>>, OxyError> {
         let execution_context = self.execution_context.ok_or(OxyError::RuntimeError(
             "ExecutionContext is required".to_string(),
         ))?;

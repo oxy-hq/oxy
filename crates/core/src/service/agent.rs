@@ -1,5 +1,5 @@
-use crate::agent::AgentLauncher;
-use crate::agent::types::{AgentInput, AgentReference};
+use crate::agent::types::AgentInput;
+use crate::agent::{AgentLauncher, AgentReferencesHandler};
 use crate::config::ConfigBuilder;
 use crate::config::model::AgentConfig;
 use crate::db::message::update_message;
@@ -8,7 +8,7 @@ use crate::db::{
     message::save_message,
 };
 use crate::errors::OxyError;
-use crate::execute::types::{Event, EventKind, Output};
+use crate::execute::types::{Event, EventKind, Output, ReferenceKind};
 use crate::execute::writer::{EventHandler, NoopHandler};
 use crate::theme::StyledText;
 use crate::utils::print_colored_sql;
@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use std::io::Write;
 use std::path::Path;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
 use tokio_stream::wrappers::ReceiverStream;
 use utoipa::ToSchema;
@@ -223,41 +223,14 @@ impl EventHandler for AgentCLIHandler {
     }
 }
 
-pub struct AgentReferencesHandler<H> {
-    handler: H,
-    references: Arc<Mutex<Vec<AgentReference>>>,
-}
-
-#[async_trait::async_trait]
-impl<H> EventHandler for AgentReferencesHandler<H>
-where
-    H: EventHandler + Send + 'static,
-{
-    async fn handle_event(&mut self, event: Event) -> Result<(), OxyError> {
-        if let EventKind::Updated { chunk } = &event.kind {
-            if let Output::Table(table) = &chunk.delta {
-                if let Some(reference) = table.clone().into_reference() {
-                    let mut references = self.references.lock().unwrap();
-                    references.push(reference);
-                }
-            }
-        }
-        self.handler.handle_event(event).await?;
-        Ok(())
-    }
-}
-
 pub async fn run_agent<P: AsRef<Path>, H: EventHandler + Send + 'static>(
     project_path: P,
     agent_ref: P,
     prompt: String,
     event_handler: H,
-) -> Result<(Output, Vec<AgentReference>), OxyError> {
-    let references = Arc::new(Mutex::new(vec![]));
-    let event_handler = AgentReferencesHandler {
-        handler: event_handler,
-        references: references.clone(),
-    };
+) -> Result<(Output, Vec<ReferenceKind>), OxyError> {
+    let event_handler = AgentReferencesHandler::new(event_handler);
+    let references = event_handler.references.clone();
     let result = AgentLauncher::new()
         .with_local_context(project_path)
         .await?
@@ -271,7 +244,8 @@ pub async fn run_agent<P: AsRef<Path>, H: EventHandler + Send + 'static>(
         .await;
     let output = result?;
     let references = Arc::try_unwrap(references)
-        .map_err(|_| OxyError::RuntimeError("Failed to eject value from loop".to_string()))?
-        .into_inner()?;
+        .map_err(|_| OxyError::RuntimeError("Failed to unwrap references".to_string()))?
+        .into_inner()
+        .map_err(|_| OxyError::RuntimeError("Failed to lock references".to_string()))?;
     Ok((output, references))
 }

@@ -1,8 +1,8 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use crate::{
     adapters::checkpoint::CheckpointManager,
-    agent::{AgentLauncher, AgentLauncherExecutable, types::AgentInput},
+    agent::{AgentLauncherExecutable, AgentReferencesHandler, types::AgentInput},
     config::{
         constants::AGENT_SOURCE_PROMPT,
         model::{Task, TaskType},
@@ -11,7 +11,8 @@ use crate::{
     execute::{
         Executable, ExecutionContext,
         builders::{ExecutableBuilder, cache::Cache, chain::ContextMapper, export::Export},
-        types::{EventKind, Output, OutputContainer},
+        execute_with_handler,
+        types::{EventKind, Metadata, Output, OutputContainer},
     },
     theme::StyledText,
     workflow::{WorkflowInput, WorkflowLauncher},
@@ -64,7 +65,7 @@ impl Executable<TaskInput> for TaskExecutable {
                 let metadata_prompt = prompt.clone();
                 match &agent_task.consistency_run {
                     consistency_run if *consistency_run > 1 => {
-                        let (output, score) = ExecutableBuilder::new()
+                        let executable = ExecutableBuilder::new()
                             .consistency(
                                 AgentPicker {
                                     task_description: prompt.clone(),
@@ -73,41 +74,69 @@ impl Executable<TaskInput> for TaskExecutable {
                                 *consistency_run,
                                 10,
                             )
-                            .executable(AgentLauncherExecutable)
-                            .execute(
-                                &execution_context,
-                                AgentInput {
-                                    agent_ref: agent_task.agent_ref.to_string(),
-                                    prompt,
-                                },
-                            )
-                            .await?;
+                            .executable(AgentLauncherExecutable);
+                        let agent_reference_handler =
+                            AgentReferencesHandler::new(execution_context.writer.clone());
+                        let references = agent_reference_handler.references.clone();
+                        let (output, score) = execute_with_handler(
+                            executable,
+                            &execution_context,
+                            AgentInput {
+                                agent_ref: agent_task.agent_ref.to_string(),
+                                prompt,
+                            },
+                            agent_reference_handler,
+                        )
+                        .await?;
+                        let references = Arc::try_unwrap(references)
+                            .map_err(|_| {
+                                OxyError::RuntimeError(
+                                    "Failed to unwrap agent references".to_string(),
+                                )
+                            })?
+                            .into_inner()?;
                         Ok(OutputContainer::Consistency {
-                            value: output,
+                            value: Metadata {
+                                output,
+                                references,
+                                metadata: HashMap::from_iter([(
+                                    AGENT_SOURCE_PROMPT.to_string(),
+                                    metadata_prompt,
+                                )]),
+                            },
                             score,
-                            metadata: HashMap::from_iter([(
-                                AGENT_SOURCE_PROMPT.to_string(),
-                                metadata_prompt,
-                            )]),
                         })
                     }
                     _ => {
-                        let output = AgentLauncher::new()
-                            .with_external_context(&execution_context)?
-                            .launch(
-                                AgentInput {
-                                    agent_ref: agent_task.agent_ref.to_string(),
-                                    prompt,
-                                },
-                                execution_context.writer.clone(),
-                            )
-                            .await?;
+                        let agent_reference_handler =
+                            AgentReferencesHandler::new(execution_context.writer.clone());
+                        let references = agent_reference_handler.references.clone();
+                        let output = execute_with_handler(
+                            AgentLauncherExecutable,
+                            &execution_context,
+                            AgentInput {
+                                agent_ref: agent_task.agent_ref.to_string(),
+                                prompt,
+                            },
+                            agent_reference_handler,
+                        )
+                        .await?;
+                        let references = Arc::try_unwrap(references)
+                            .map_err(|_| {
+                                OxyError::RuntimeError(
+                                    "Failed to unwrap agent references".to_string(),
+                                )
+                            })?
+                            .into_inner()?;
                         Ok(OutputContainer::Metadata {
-                            output,
-                            metadata: HashMap::from_iter([(
-                                AGENT_SOURCE_PROMPT.to_string(),
-                                metadata_prompt,
-                            )]),
+                            value: Metadata {
+                                output,
+                                references,
+                                metadata: HashMap::from_iter([(
+                                    AGENT_SOURCE_PROMPT.to_string(),
+                                    metadata_prompt,
+                                )]),
+                            },
                         })
                     }
                 }

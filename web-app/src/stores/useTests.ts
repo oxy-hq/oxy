@@ -1,5 +1,5 @@
 import { service } from "@/services/service";
-import { EvalEventState, MetricValue, Record } from "@/types/eval";
+import { EvalEventState, MetricValue } from "@/types/eval";
 import { create } from "zustand";
 
 interface TestProgress {
@@ -10,8 +10,7 @@ interface TestProgress {
 
 export interface TestResult {
   errors: string[];
-  metrics: MetricValue;
-  records: Record[];
+  metrics: MetricValue[];
 }
 
 export interface TestState {
@@ -71,8 +70,7 @@ const useTests = create<TestsState>()((set, get) => ({
           case EvalEventState.Finished:
             test.result = {
               errors: message.event.metric.errors,
-              metrics: message.event.metric.kind,
-              records: message.event.metric.records,
+              metrics: message.event.metric.metrics,
             };
             break;
         }
