@@ -39,6 +39,7 @@ export const BarChart = ({
         xAxis: { type: "category" },
         yAxis: { type: "value" },
         series: [],
+        grid: { containLabel: true },
       };
 
       const xData = await conn.query(
@@ -92,7 +93,7 @@ export const BarChart = ({
       setChartOptions(options);
       setIsLoading(false);
     })();
-  }, [display, value.file_path, data]);
+  }, [display, value.file_path, data, isDarkMode]);
 
   if (!chartOptions)
     return (

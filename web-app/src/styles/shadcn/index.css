@@ -49,6 +49,7 @@
   --code-primary: rgba(171, 178, 191, 1);
 
   --accent-main-000: rgba(48, 92, 197, 1);
+  --button-hover: rgba(58, 113, 214, 0.1);
   --font-sans: "Inter", sans-serif;
 
   --editor-background: #0d1117;
@@ -149,6 +150,7 @@
   --color-code-primary: var(--code-primary);
 
   --color-accent-main-000: var(--accent-main-000);
+  --color-button-hover: var(--button-hover);
 
   --color-editor-background: var(--editor-background);
 

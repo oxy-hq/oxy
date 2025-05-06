@@ -40,6 +40,7 @@ export const PieChart = ({
           formatter: "{b}: {c} ({d}%)",
         },
         series: [],
+        grid: { containLabel: true },
       };
 
       const pieData = await conn.query(
@@ -69,7 +70,7 @@ export const PieChart = ({
       setChartOptions(options);
       setIsLoading(false);
     })();
-  }, [display, value.file_path, data]);
+  }, [display, value.file_path, data, isDarkMode]);
 
   return <Echarts isLoading={isLoading} options={chartOptions} />;
 };

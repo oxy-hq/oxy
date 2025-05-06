@@ -38,6 +38,7 @@ export const LineChart = ({
         xAxis: { type: "category" },
         yAxis: { type: "value" },
         series: [],
+        grid: { containLabel: true },
       };
 
       const xData = await conn.query(
@@ -60,10 +61,12 @@ export const LineChart = ({
           `SELECT ${display.x} as x, SUM(${display.y}) as y from "${file_name}" where ${display.series} = ? group by ${display.x}, ${display.series};`,
         );
         const seriesData: LineSeriesOption[] = [];
-        for (const seriesItem of series.toArray().map((row) => row.series)) {
+        for (const seriesItem of series
+          .toArray()
+          .map((row) => getArrowValue(row.series))) {
           const yData = await seriesDataStatement.query(seriesItem);
           seriesData.push({
-            name: seriesItem,
+            name: JSON.stringify(seriesItem),
             type: "line",
             data: yData.toArray().map((row) => getArrowValue(row.y)) as (
               | number
@@ -90,7 +93,7 @@ export const LineChart = ({
       setChartOptions(options);
       setIsLoading(false);
     })();
-  }, [display, dt.file_path]);
+  }, [display, dt.file_path, isDarkMode]);
 
   return <Echarts options={chartOptions} isLoading={isLoading} />;
 };
