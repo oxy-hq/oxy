@@ -17,8 +17,14 @@ import useWorkflowLogs from "@/hooks/api/useWorkflowLogs";
 
 import WorkflowDiagram from "./WorkflowDiagram";
 import WorkflowPageHeader from "./WorkflowPageHeader";
-import WorkflowOutput from "./WorkflowOutput";
+import WorkflowOutput from "./output";
 import { throttle } from "lodash";
+import { ResizableHandle } from "@/components/ui/shadcn/resizable";
+import {
+  ResizablePanel,
+  ResizablePanelGroup,
+} from "@/components/ui/shadcn/resizable";
+import { cn } from "@/libs/shadcn/utils";
 
 const getTaskId = (task_name: string) => {
   return task_name + "__" + uuidv4();
@@ -50,8 +56,7 @@ const addTaskId = (tasks: TaskConfig[]): TaskConfigWithId[] => {
   });
 };
 
-const WorkflowPage: React.FC = () => {
-  const pathb64 = useParams<{ pathb64: string }>().pathb64!;
+const Workflow: React.FC<{ pathb64: string }> = ({ pathb64 }) => {
   const path = useMemo(() => atob(pathb64), [pathb64]);
   const relativePath = path;
   const workflow = useWorkflow((state) => state.workflow);
@@ -125,19 +130,30 @@ const WorkflowPage: React.FC = () => {
         onRun={handleRun}
         isRunning={run.isPending}
       />
-      <div className="flex h-full flex-1 flex-col w-full">
-        <div className="flex-1 h-full w-full">
+      <ResizablePanelGroup direction="horizontal">
+        <ResizablePanel
+          defaultSize={50}
+          minSize={20}
+          className={cn(!showOutput && "flex-1!")}
+        >
           <ReactFlowProvider>
             <WorkflowDiagram tasks={workflow.tasks} />
           </ReactFlowProvider>
-        </div>
-      </div>
-      <WorkflowOutput
-        logs={logs}
-        showOutput={showOutput}
-        toggleOutput={toggleOutput}
-        isPending={run.isPending}
-      />
+        </ResizablePanel>
+        <ResizableHandle />
+        <ResizablePanel
+          defaultSize={50}
+          minSize={20}
+          className={cn(!showOutput && "flex-[unset]!")}
+        >
+          <WorkflowOutput
+            logs={logs}
+            showOutput={showOutput}
+            toggleOutput={toggleOutput}
+            isPending={run.isPending}
+          />
+        </ResizablePanel>
+      </ResizablePanelGroup>
     </div>
   );
 };
@@ -146,6 +162,11 @@ export type StepData = {
   id: string;
   name: string;
   type: string;
+};
+
+const WorkflowPage = () => {
+  const { pathb64 } = useParams();
+  return <Workflow key={pathb64 ?? ""} pathb64={pathb64 ?? ""} />;
 };
 
 export default WorkflowPage;
