@@ -29,7 +29,7 @@ where
 {
     async fn handle_event(&mut self, event: Event) -> Result<(), OxyError> {
         if let EventKind::Updated { chunk } = &event.kind {
-            if let Some(reference) = TryInto::<ReferenceKind>::try_into(chunk.delta.clone()).ok() {
+            if let Ok(reference) = TryInto::<ReferenceKind>::try_into(chunk.delta.clone()) {
                 let mut references = self.references.lock().unwrap();
                 references.push(reference);
             }

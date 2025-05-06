@@ -951,14 +951,10 @@ pub enum SolverKind {
 #[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
 #[serde(tag = "distance")]
 #[garde(context(ValidationContext))]
+#[derive(Default)]
 pub enum DistanceMethod {
+    #[default]
     Levenshtein,
-}
-
-impl Default for DistanceMethod {
-    fn default() -> Self {
-        DistanceMethod::Levenshtein
-    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
@@ -967,7 +963,7 @@ pub struct ContextRecallSolver {
     #[serde(default)]
     #[garde(dive)]
     pub distance: DistanceMethod,
-    #[garde(range(min = 0 as f32, max = 1 as f32))]
+    #[garde(range(min = 0 as f32, max = 1_f32))]
     #[serde(default = "default_threshold")]
     pub threshold: f32,
 }

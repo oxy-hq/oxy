@@ -87,10 +87,7 @@ impl Executable<(EvalKind, EvalTarget, Option<String>)> for GeneratorExecutable 
                     .executable(TargetExecutable::new(task_ref));
                 let inputs = records
                     .iter()
-                    .map(|record| {
-                        let target = record.as_target(&eval_target, &custom.workflow_variable_name);
-                        target
-                    })
+                    .map(|record| record.as_target(&eval_target, &custom.workflow_variable_name))
                     .collect::<Vec<_>>();
                 let results = target_executable
                     .execute(execution_context, inputs)
