@@ -21,7 +21,7 @@ export const QueryReference = ({ reference }: QueryReferenceProps) => {
   return (
     <>
       <Dialog open={isOpen} onOpenChange={setIsOpen}>
-        <DialogTrigger>
+        <DialogTrigger className="h-21">
           <ReferenceItemContainer isOpen={isOpen}>
             <div className="px-4 py-2 gap-2 w-50 flex flex-col items-center justify-center overflow-hidden text-muted-foreground">
               <div className="flex text-sm items-center gap-2 justify-start w-full">

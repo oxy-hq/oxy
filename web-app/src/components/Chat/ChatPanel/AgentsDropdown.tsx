@@ -15,13 +15,13 @@ export type Agent = {
   name: string;
 };
 
-const AgentsDropdown = ({
-  onSelect,
-  agent,
-}: {
+type Props = {
   onSelect: (agent: Agent) => void;
   agent: Agent | null;
-}) => {
+  disabled?: boolean;
+};
+
+const AgentsDropdown = ({ onSelect, agent, disabled = false }: Props) => {
   const { data: agents, isLoading, isSuccess } = useAgents();
 
   const agentOptions = useMemo(
@@ -43,9 +43,9 @@ const AgentsDropdown = ({
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger>
+      <DropdownMenuTrigger disabled={isLoading || disabled}>
         <Button
-          disabled={isLoading}
+          disabled={isLoading || disabled}
           variant="outline"
           className="bg-sidebar-background"
         >

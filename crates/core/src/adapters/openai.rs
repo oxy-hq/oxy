@@ -9,6 +9,7 @@ use serde_json::{Value, json};
 use std::path::PathBuf;
 
 use crate::{
+    adapters::create_app_schema,
     config::{
         constants::{ANTHROPIC_API_URL, GEMINI_API_URL},
         model::{Model, RetrievalConfig, ToolType},
@@ -202,6 +203,7 @@ impl OpenAIToolConfig for &ToolType {
             ToolType::Workflow(w) => w.description.clone(),
             ToolType::Visualize(v) => v.description.clone(),
             ToolType::OmniTopicInfo(v) => v.get_description(),
+            ToolType::CreateDataApp(v) => v.description.clone(),
         }
     }
 
@@ -214,6 +216,7 @@ impl OpenAIToolConfig for &ToolType {
             ToolType::Workflow(w) => w.name.clone(),
             ToolType::Visualize(v) => v.name.clone(),
             ToolType::OmniTopicInfo(omni_topic_info_tool) => omni_topic_info_tool.name.clone(),
+            ToolType::CreateDataApp(create_data_app_tool) => create_data_app_tool.name.clone(),
         }
     }
 
@@ -225,7 +228,8 @@ impl OpenAIToolConfig for &ToolType {
             ToolType::Workflow(_) => "workflow".to_string(),
             ToolType::Visualize(_) => "visualize".to_string(),
             ToolType::ExecuteOmni(_) => "execute_omni".to_string(),
-            ToolType::OmniTopicInfo(_) => "omni_topic_info".to_string(),
+            ToolType::OmniTopicInfo(omni_topic_info_tool) => "omni_topic_info".to_string(),
+            ToolType::CreateDataApp(create_data_app_tool) => "create_data_app".to_string(),
         }
     }
 
@@ -248,9 +252,15 @@ impl OpenAIToolConfig for &ToolType {
             ToolType::ExecuteOmni(_) => {
                 Ok(serde_json::json!(&schemars::schema_for!(ExecuteOmniParams)))
             }
-            ToolType::OmniTopicInfo(_) => Ok(serde_json::json!(&schemars::schema_for!(
-                OmniTopicInfoParams
-            ))),
+            ToolType::OmniTopicInfo(omni_topic_info_tool) => Ok(serde_json::json!(
+                &schemars::schema_for!(OmniTopicInfoParams)
+            )),
+            ToolType::CreateDataApp(create_data_app_tool) => {
+                // we need to manually create the schema for CreateDataAppParams
+                // because this schema is quite complex and the library we use
+                // schemars does not generate a compatiible schema with OpenAI.
+                Ok(serde_json::from_str(create_app_schema::CREATE_APP_SCHEMA).unwrap())
+            }
         }
     }
 }

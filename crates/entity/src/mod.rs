@@ -4,4 +4,5 @@ pub mod prelude;
 
 pub mod conversations;
 pub mod messages;
+pub mod tasks;
 pub mod threads;

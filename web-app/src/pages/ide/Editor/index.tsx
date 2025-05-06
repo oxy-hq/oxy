@@ -5,7 +5,7 @@ import DefaultEditor from "./Default";
 import WorkflowEditor from "./Workflow";
 import SqlEditor from "./Sql";
 
-const Editor = ({ pathb64 }: { pathb64: string }) => {
+export const Editor = ({ pathb64 }: { pathb64: string }) => {
   const filePath = atob(pathb64 ?? "");
   const isWorkflow = filePath.endsWith(".workflow.yml");
   const isAgent = filePath.endsWith(".agent.yml");

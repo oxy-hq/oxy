@@ -30,6 +30,8 @@ pub struct Config {
     pub models: Vec<Model>,
     #[garde(dive)]
     pub databases: Vec<Database>,
+    #[garde(skip)]
+    pub builder_agent: Option<PathBuf>,
 
     #[serde(skip)]
     #[garde(skip)]
@@ -1721,6 +1723,13 @@ pub struct ValidateSQLTool {
 }
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
+pub struct CreateDataAppTool {
+    pub name: String,
+    #[serde(default = "default_create_data_app_tool_description")]
+    pub description: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
 pub struct MarkdownDisplay {
     pub content: String,
 }
@@ -1731,6 +1740,7 @@ pub struct LineChartDisplay {
     pub y: String,
     pub x_axis_label: Option<String>,
     pub y_axis_label: Option<String>,
+    #[schemars(description = "reference data output from a task using task name")]
     pub data: String,
     pub series: Option<String>,
     pub title: Option<String>,
@@ -1776,7 +1786,9 @@ pub enum Display {
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
 pub struct AppConfig {
+    #[schemars(description = "tasks to prepare the data for the app")]
     pub tasks: Vec<Task>,
+    #[schemars(description = "display blocks to render the app")]
     pub display: Vec<Display>,
 }
 
@@ -1797,6 +1809,8 @@ pub enum ToolType {
     Workflow(WorkflowTool),
     #[serde(rename = "omni_topic_info")]
     OmniTopicInfo(OmniTopicInfoTool),
+    #[serde(rename = "create_data_app")]
+    CreateDataApp(CreateDataAppTool),
 }
 
 impl From<ExecuteSQLTool> for ToolType {
@@ -1904,12 +1918,16 @@ fn default_validate_sql_tool_description() -> String {
     "Validate the SQL query. If the query is invalid, fix it and run again.".to_string()
 }
 
+fn default_create_data_app_tool_description() -> String {
+    "Create a data app/dashboard to visualize metrics.".to_string()
+}
+
 fn default_tools() -> Vec<ToolType> {
     vec![]
 }
 
 fn default_max_tool_calls() -> usize {
-    5
+    10
 }
 
 fn default_max_tool_concurrency() -> usize {

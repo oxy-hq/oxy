@@ -31,7 +31,7 @@
       "type": "string"
     },
     "max_tool_calls": {
-      "default": 5,
+      "default": 10,
       "type": "integer",
       "format": "uint",
       "minimum": 0.0
@@ -616,6 +616,28 @@
               "type": "string",
               "enum": [
                 "omni_topic_info"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "name",
+            "type"
+          ],
+          "properties": {
+            "description": {
+              "default": "Create a data app/dashboard to visualize metrics.",
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "create_data_app"
               ]
             }
           }

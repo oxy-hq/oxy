@@ -2,9 +2,12 @@ mod init;
 mod make;
 
 use crate::adapters::connector::Connector;
+use crate::config::model::AppConfig;
 use crate::config::*;
 use crate::errors::OxyError;
+use crate::execute::builders::ExecutableBuilder;
 use crate::execute::types::utils::record_batches_to_table;
+use crate::execute::writer::BufWriter;
 use crate::mcp::service::OxyMcpServer;
 use crate::service::agent::AgentCLIHandler;
 use crate::service::agent::run_agent;
@@ -40,9 +43,11 @@ use rmcp::{ServiceExt, transport::stdio};
 use std::backtrace;
 use std::collections::BTreeMap;
 use std::error::Error;
+use std::ops::Sub;
 use std::path::PathBuf;
 use std::process::Command;
 use std::process::exit;
+use std::sync::Arc;
 use tokio::signal;
 use tokio_util::sync::CancellationToken;
 use utoipa::OpenApi;
@@ -144,6 +149,12 @@ struct McpSseArgs {
 }
 
 #[derive(Parser, Debug)]
+struct AskArgs {
+    #[clap(long)]
+    pub question: String,
+}
+
+#[derive(Parser, Debug)]
 enum SubCommand {
     /// Initialize a repository as an oxy project. Also creates a ~/.config/oxy/config.yaml file if it doesn't exist
     Init,
@@ -171,6 +182,7 @@ enum SubCommand {
     /// Update the CLI to the latest version
     SelfUpdate,
     Make(MakeArgs),
+    Ask(AskArgs),
 }
 
 #[derive(Parser, Debug)]
@@ -335,6 +347,10 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                     "agent.json",
                     serde_json::to_string_pretty(&schemars::schema_for!(AgentConfig))?,
                 ),
+                (
+                    "app.json",
+                    serde_json::to_string_pretty(&schemars::schema_for!(AppConfig))?,
+                ),
             ];
 
             for (filename, schema) in &schemas {
@@ -478,6 +494,22 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
         }
         Some(SubCommand::Make(make_args)) => {
             handle_make_command(&make_args).await?;
+        }
+
+        Some(SubCommand::Ask(ask_args)) => {
+            let project_path = find_project_path()?;
+            let config = ConfigBuilder::new()
+                .with_project_path(&project_path)?
+                .build()
+                .await?;
+
+            let _ = run_agent(
+                &project_path,
+                &config.get_builder_agent_path().await?,
+                ask_args.question,
+                AgentCLIHandler,
+            )
+            .await?;
         }
 
         None => {

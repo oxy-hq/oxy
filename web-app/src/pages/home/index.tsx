@@ -5,7 +5,6 @@ import { useState } from "react";
 
 const Home = () => {
   const [agent, setAgent] = useState<Agent | null>(null);
-
   return (
     <div className="flex flex-col h-full">
       <PageHeader className="md:hidden" />

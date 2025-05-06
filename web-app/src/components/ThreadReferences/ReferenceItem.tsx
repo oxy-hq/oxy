@@ -6,6 +6,7 @@ type ReferenceProps = {
 };
 
 export const ReferenceItem = ({ reference }: ReferenceProps) => {
+  console.log("ReferenceItem", reference);
   if (reference.type === ReferenceType.SQLQuery) {
     return <QueryReference reference={reference} />;
   }

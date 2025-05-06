@@ -8,7 +8,10 @@ import {
 import Home from "@/pages/home";
 import { AppSidebar } from "@/components/AppSidebar";
 import { Toaster as ShadcnToaster } from "@/components/ui/shadcn/sonner";
-import { SidebarProvider } from "@/components/ui/shadcn/sidebar";
+import {
+  SidebarProvider,
+  SidebarTrigger,
+} from "@/components/ui/shadcn/sidebar";
 import Threads from "@/pages/threads";
 import ThreadPage from "@/pages/thread";
 import WorkflowPage from "@/pages/workflow";
@@ -18,14 +21,21 @@ import React from "react";
 import IdePage from "./pages/ide";
 import EditorPage from "./pages/ide/Editor";
 import AppPage from "./pages/app";
+import { HotkeysProvider } from "react-hotkeys-hook";
+import TaskPage from "./pages/task/index.tsx";
 
 const PageWrapper = ({ children }: { children: React.ReactNode }) => {
-  return <main className="bg-background w-full h-full">{children}</main>;
+  return (
+    <main className="bg-background w-full h-full">
+      <SidebarTrigger className="absolute left-4 top-4" />
+      {children}
+    </main>
+  );
 };
 
 const MainLayout = React.memo(function MainLayout() {
   return (
-    <>
+    <HotkeysProvider>
       <AppSidebar />
 
       <Routes>
@@ -54,6 +64,14 @@ const MainLayout = React.memo(function MainLayout() {
           }
         />
         <Route
+          path="/tasks/:taskId"
+          element={
+            <PageWrapper>
+              <TaskPage />
+            </PageWrapper>
+          }
+        />
+        <Route
           path="/workflows/:pathb64"
           element={
             <PageWrapper>
@@ -74,7 +92,7 @@ const MainLayout = React.memo(function MainLayout() {
         </Route>
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>
-    </>
+    </HotkeysProvider>
   );
 });
 

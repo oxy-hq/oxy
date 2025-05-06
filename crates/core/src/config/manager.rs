@@ -113,4 +113,24 @@ impl ConfigManager {
     pub async fn resolve_app<P: AsRef<Path>>(&self, app_path: P) -> Result<AppConfig, OxyError> {
         self.storage.load_app_config(app_path).await
     }
+
+    pub async fn get_build_agent(&self) -> Result<AgentConfig, OxyError> {
+        if let Some(ref agent) = self.config.builder_agent {
+            return self.resolve_agent(agent).await;
+        } else {
+            return Err(OxyError::ConfigurationError(
+                "No builder agent specified in config".to_string(),
+            ));
+        }
+    }
+
+    pub async fn get_builder_agent_path(&self) -> Result<PathBuf, OxyError> {
+        if let Some(ref agent) = self.config.builder_agent {
+            return Ok(agent.to_owned());
+        } else {
+            return Err(OxyError::ConfigurationError(
+                "No builder agent specified in config".to_string(),
+            ));
+        }
+    }
 }

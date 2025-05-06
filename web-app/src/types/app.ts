@@ -66,3 +66,10 @@ export type AppItem = {
   name: string;
   path: string;
 };
+
+export type Chunk = {
+  content: string;
+  step: string;
+  file_path: string;
+  is_error: boolean;
+};

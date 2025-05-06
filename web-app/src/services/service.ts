@@ -1,18 +1,29 @@
-import { ThreadCreateRequest, ThreadItem, Answer } from "@/types/chat";
+import {
+  ThreadCreateRequest,
+  ThreadItem,
+  Answer,
+  TaskCreateRequest,
+  TaskItem,
+} from "@/types/chat";
 
 import { apiService } from "./apiService";
 import { AgentConfig } from "@/types/agent";
 import { TestStreamMessage } from "@/types/eval";
 import { FileTreeModel } from "@/types/file";
-import { App, AppItem } from "@/types/app";
+import { App, AppItem, Chunk } from "@/types/app";
 
 export interface Service {
   listThreads(): Promise<ThreadItem[]>;
+  listTasks(): Promise<TaskItem[]>;
   createThread(request: ThreadCreateRequest): Promise<ThreadItem>;
+  createTask(request: TaskCreateRequest): Promise<TaskItem>;
   deleteThread(threadId: string): Promise<void>;
   runApp(pathb64: string): Promise<App>;
   deleteAllThread(): Promise<void>;
+  deleteAllTasks(): Promise<void>;
   getThread(threadId: string): Promise<ThreadItem>;
+  getTask(taskId: string): Promise<TaskItem>;
+  deleteTask(taskId: string): Promise<void>;
   listAgents(): Promise<string[]>;
   listApps(): Promise<AppItem[]>;
   getAgent(pathb64: string): Promise<AgentConfig>;
@@ -24,6 +35,7 @@ export interface Service {
     onReadStream: (event: TestStreamMessage) => void,
   ): Promise<void>;
   ask(threadId: string, onReadStream: (answer: Answer) => void): Promise<void>;
+  askTask(taskId: string, onReadStream: (answer: Chunk) => void): Promise<void>;
   askAgent(
     agentPath: string,
     question: string,

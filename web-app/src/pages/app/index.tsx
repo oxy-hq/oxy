@@ -32,7 +32,7 @@ const AppPage: React.FC = () => {
 
   const handleRun = () => runApp(pathb64);
 
-  if (isPending) return <Loading />;
+  if (isPending || !app) return <Loading />;
   return (
     <div className="w-full h-full flex flex-col">
       <AppPageHeader path={path} onRun={handleRun} isRunning={isRunning} />

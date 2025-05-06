@@ -119,6 +119,14 @@ impl ExecutionContext {
         self.write_kind(EventKind::Updated { chunk }).await
     }
 
+    pub async fn write_data_app(
+        &self,
+        data_app: crate::execute::types::event::DataApp,
+    ) -> Result<(), OxyError> {
+        self.write_kind(EventKind::DataAppCreated { data_app })
+            .await
+    }
+
     pub async fn write_progress(&self, progress: ProgressType) -> Result<(), OxyError> {
         self.write_kind(EventKind::Progress { progress }).await
     }

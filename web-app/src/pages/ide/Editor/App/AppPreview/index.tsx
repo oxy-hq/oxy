@@ -32,6 +32,14 @@ export default function AppPreview({ appPath64 }: Props) {
       </div>
     );
 
+  if (!app) {
+    return (
+      <div className="w-full h-full flex items-center justify-center">
+        Failed to load app. Check configuration and try again.
+      </div>
+    );
+  }
+
   return (
     <div className="h-full flex-col w-full flex justify-center items-start">
       <div className="flex items-center pl-4 pr-4 pt-4 w-full justify-end">
@@ -58,7 +66,7 @@ export default function AppPreview({ appPath64 }: Props) {
             </div>
           }
         >
-          <Displays displays={app!.displays} data={app!.data} />
+          <Displays displays={app.displays} data={app.data} />
         </ErrorBoundary>
       </div>
     </div>

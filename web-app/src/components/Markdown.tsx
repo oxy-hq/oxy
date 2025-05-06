@@ -45,7 +45,7 @@ const extendedComponents: ExtendedComponents = {
 
 function Markdown({ children, plugins, components }: Props) {
   return (
-    <div className="markdown">
+    <p className="markdown">
       <ReactMarkdown
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         remarkPlugins={[directive, remarkGfm, ...((plugins as any[]) || [])]}
@@ -53,7 +53,7 @@ function Markdown({ children, plugins, components }: Props) {
       >
         {children}
       </ReactMarkdown>
-    </div>
+    </p>
   );
 }
 
