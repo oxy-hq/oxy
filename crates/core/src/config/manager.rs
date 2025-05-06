@@ -118,19 +118,19 @@ impl ConfigManager {
         if let Some(ref agent) = self.config.builder_agent {
             return self.resolve_agent(agent).await;
         } else {
-            return Err(OxyError::ConfigurationError(
+            Err(OxyError::ConfigurationError(
                 "No builder agent specified in config".to_string(),
-            ));
+            ))
         }
     }
 
     pub async fn get_builder_agent_path(&self) -> Result<PathBuf, OxyError> {
         if let Some(ref agent) = self.config.builder_agent {
-            return Ok(agent.to_owned());
+            Ok(agent.to_owned())
         } else {
-            return Err(OxyError::ConfigurationError(
+            Err(OxyError::ConfigurationError(
                 "No builder agent specified in config".to_string(),
-            ));
+            ))
         }
     }
 }

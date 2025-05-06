@@ -27,7 +27,7 @@ use crate::{
 use super::{
     ReferenceKind,
     output_container::TableData,
-    reference::{DataAppReference, QueryReference},
+    reference::QueryReference,
     utils::{record_batches_to_2d_array, record_batches_to_markdown, record_batches_to_table},
 };
 
