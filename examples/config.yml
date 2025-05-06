@@ -11,6 +11,8 @@ databases:
         - "monthly_active_*"
       user_analytics:
         - "company_activity_analytics_summary_view"
+      python_prod:
+        - "v1_*"
 
     # dry_run_limit: 1
 

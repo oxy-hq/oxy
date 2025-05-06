@@ -140,7 +140,8 @@ fn create_semantic_models(
             name: column.to_string(),
             sample: vec![first_row[i].to_string()],
             synonyms: None,
-            data_type: None, // Placeholder for data type
+            data_type: None,
+            is_partition_key: None,
         })
         .collect();
 
