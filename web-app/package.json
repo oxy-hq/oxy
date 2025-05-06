@@ -98,7 +98,7 @@
   "devDependencies": {
     "@types/invariant": "^2.2.37",
     "@types/lodash": "^4.17.16",
-    "@types/node": "^22.15.3",
+    "@types/node": "^22.15.12",
     "@types/nunjucks": "3.2.6",
     "@types/react": "^19.1.2",
     "@types/react-dom": "^19.1.3",
