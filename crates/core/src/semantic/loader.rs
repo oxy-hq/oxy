@@ -143,10 +143,9 @@ impl GetSchemaQueryBuilder {
     }
 
     fn get_dataset_filter(&self) -> Option<String> {
-        match &self.filter_dataset {
-            Some(dataset) => Some(format!("{} = '{}'", self.column_names.dataset, dataset)),
-            None => None,
-        }
+        self.filter_dataset
+            .as_ref()
+            .map(|dataset| format!("{} = '{}'", self.column_names.dataset, dataset))
     }
 
     fn get_where_clause(&self) -> String {
@@ -299,9 +298,9 @@ impl SchemaLoader {
         .into_iter()
         .flatten()
         .fold(HashMap::new(), |mut acc, record| {
-            let entry = acc.entry(record.dataset.clone()).or_insert(String::new());
+            let entry: &mut String = acc.entry(record.dataset.clone()).or_default();
             entry.push_str(&record.ddl);
-            entry.push_str("\n");
+            entry.push('\n');
             acc
         });
         Ok(datasets)
@@ -326,7 +325,8 @@ impl SchemaLoader {
         .into_iter()
         .flatten()
         .fold(HashMap::new(), |mut acc, record| {
-            let model = acc.entry(record.dataset.clone()).or_insert(HashMap::new());
+            let model: &mut HashMap<String, SemanticModels> =
+                acc.entry(record.dataset.clone()).or_default();
             let entry = model
                 .entry(record.table_name.clone())
                 .or_insert(SemanticModels {
