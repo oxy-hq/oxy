@@ -18,8 +18,6 @@ impl Hash for DataApp {
 impl DataApp {
     pub fn into_references(&self) -> ReferenceKind {
         let file_path: PathBuf = self.file_path.clone();
-        ReferenceKind::DataApp(DataAppReference {
-            file_path: file_path,
-        })
+        ReferenceKind::DataApp(DataAppReference { file_path })
     }
 }

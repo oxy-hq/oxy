@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use crate::{
     config::ConfigBuilder,
     db::client::establish_connection,
@@ -293,25 +291,17 @@ pub async fn ask_task(Path(id): Path<String>) -> impl IntoResponse {
     let _ = tokio::spawn(async move {
         let (output, references) = {
             let thread_stream = TaskStream::new(tx);
-            run_agent(
-                &project_path,
-                &PathBuf::from(agent_ref),
-                prompt,
-                thread_stream,
-            )
-            .await
-            .unwrap()
+            run_agent(&project_path, &agent_ref, prompt, thread_stream)
+                .await
+                .unwrap()
         };
         log::debug!("Agent output: {:?}", output);
         log::debug!("Agent references: {:?}", references);
         let mut task_model: entity::tasks::ActiveModel = task.into();
         for r in references {
-            match r {
-                ReferenceKind::DataApp(data_app) => {
-                    let file_path = data_app.file_path.to_string_lossy().to_string();
-                    task_model.file_path = ActiveValue::Set(file_path.clone());
-                }
-                _ => {}
+            if let ReferenceKind::DataApp(data_app) = r {
+                let file_path = data_app.file_path.to_string_lossy().to_string();
+                task_model.file_path = ActiveValue::Set(file_path.clone());
             }
         }
         task_model.answer = ActiveValue::Set(output.to_string());

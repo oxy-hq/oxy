@@ -17,7 +17,6 @@ use axum::{
 use axum_streams::StreamBodyAs;
 use base64::{Engine, prelude::BASE64_STANDARD};
 use entity::prelude::Threads;
-use lancedb::data;
 use sea_orm::prelude::DateTimeWithTimeZone;
 use sea_orm::{ActiveModelTrait, ActiveValue, EntityTrait};
 use serde::{Deserialize, Serialize};

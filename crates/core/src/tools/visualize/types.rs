@@ -2,8 +2,6 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, json};
 
-use crate::config::model::AppConfig;
-
 #[derive(Deserialize, Debug, JsonSchema, Serialize)]
 pub struct FieldDefinition {
     #[schemars(description = "A name of the field from which to pull a data value")]
