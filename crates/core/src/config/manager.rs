@@ -100,7 +100,23 @@ impl ConfigManager {
     }
 
     pub async fn list_agents(&self) -> Result<Vec<PathBuf>, OxyError> {
-        self.storage.list_agents().await
+        let agents = self.storage.list_agents().await?;
+        log::debug!("Agents: {:?}", agents);
+        log::debug!("Builder: {:?}", self.config.builder_agent);
+        if let Some(ref builder_agent) = self.config.builder_agent {
+            // hide the builder agent from the list
+            let builder_agent_full_path =
+                self.storage.fs_link(builder_agent).await.map_err(|_| {
+                    OxyError::ConfigurationError(format!("Failed to resolve agent path"))
+                })?;
+            return Ok(agents
+                .iter()
+                .filter(|agent| agent.display().to_string() != builder_agent_full_path)
+                .cloned()
+                .collect());
+        } else {
+            return Ok(agents);
+        }
     }
 
     pub async fn list_apps(&self) -> Result<Vec<PathBuf>, OxyError> {
