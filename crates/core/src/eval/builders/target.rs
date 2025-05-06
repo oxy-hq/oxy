@@ -1,14 +1,14 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use itertools::Itertools;
 
 use crate::{
-    agent::AgentLauncher,
-    config::constants::{AGENT_SOURCE_PROMPT, WORKFLOW_SOURCE},
+    agent::{AgentLauncherExecutable, AgentReferencesHandler},
+    config::constants::AGENT_SOURCE_PROMPT,
     errors::OxyError,
     execute::{
-        Executable, ExecutionContext,
-        types::{OutputContainer, TargetOutput},
+        Executable, ExecutionContext, execute_with_handler,
+        types::{Metadata, OutputContainer, TargetOutput},
     },
     workflow::WorkflowLauncher,
 };
@@ -37,25 +37,35 @@ impl Executable<EvalTarget> for TargetExecutable {
     ) -> Result<Self::Response, OxyError> {
         let output_container = match input {
             EvalTarget::Workflow(workflow_input) => {
-                let workflow_context = execution_context.with_child_source(
-                    workflow_input.workflow_ref.to_string(),
-                    WORKFLOW_SOURCE.to_string(),
-                );
                 WorkflowLauncher::new()
-                    .with_external_context(&workflow_context)
+                    .with_external_context(&execution_context)
                     .await?
                     .launch(workflow_input, execution_context.writer.clone())
                     .await
             }
             EvalTarget::Agent(agent_input) => {
                 let prompt = agent_input.prompt.clone();
-                let output = AgentLauncher::new()
-                    .with_external_context(execution_context)?
-                    .launch(agent_input, execution_context.writer.clone())
-                    .await?;
+                let agent_reference_handler =
+                    AgentReferencesHandler::new(execution_context.writer.clone());
+                let references = agent_reference_handler.references.clone();
+                let output = execute_with_handler(
+                    AgentLauncherExecutable,
+                    &execution_context,
+                    agent_input,
+                    agent_reference_handler,
+                )
+                .await?;
+                let references = Arc::try_unwrap(references)
+                    .map_err(|_| {
+                        OxyError::RuntimeError("Failed to unwrap agent references".to_string())
+                    })?
+                    .into_inner()?;
                 Ok(OutputContainer::Metadata {
-                    output,
-                    metadata: HashMap::from_iter([(AGENT_SOURCE_PROMPT.to_string(), prompt)]),
+                    value: Metadata {
+                        output,
+                        references,
+                        metadata: HashMap::from_iter([(AGENT_SOURCE_PROMPT.to_string(), prompt)]),
+                    },
                 })
             }
         }?;

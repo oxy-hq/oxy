@@ -3,7 +3,7 @@ use std::path::Path;
 
 use crate::config::constants::EVAL_SOURCE;
 use crate::errors::OxyError;
-use crate::eval::Metric;
+use crate::eval::EvalResult;
 use crate::execute::types::{Event, EventKind, ProgressType};
 use crate::execute::writer::EventHandler;
 use futures::Stream;
@@ -23,7 +23,7 @@ pub enum EvalEvent {
         total: usize,
     },
     Finished {
-        metric: Metric,
+        metric: EvalResult,
     },
 }
 
@@ -104,7 +104,7 @@ pub async fn run_test<P: AsRef<Path> + Send + 'static>(
         progress: HashMap::new(),
         total: HashMap::new(),
     };
-    let _: JoinHandle<Result<Vec<Metric>, OxyError>> = tokio::spawn(async move {
+    let _: JoinHandle<Result<Vec<EvalResult>, OxyError>> = tokio::spawn(async move {
         let response = run_eval(project_path, target_ref, Some(index), event_handler).await?;
         for metric in response.iter() {
             response_tx

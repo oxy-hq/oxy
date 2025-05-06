@@ -86,6 +86,12 @@ impl From<JoinError> for OxyError {
     }
 }
 
+impl From<std::io::Error> for OxyError {
+    fn from(error: std::io::Error) -> Self {
+        OxyError::IOError(error.to_string())
+    }
+}
+
 impl From<OxyError> for StatusCode {
     fn from(error: OxyError) -> Self {
         match error {

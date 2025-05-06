@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
 use minijinja::value::{Object, Value};
-use tokio::runtime::Handle;
+use tokio::{runtime::Handle, sync::mpsc::Sender};
 
 use crate::{
     config::{ConfigManager, model::ToolType},
-    execute::writer::NoopHandler,
+    execute::types::Event,
     utils::truncate_with_ellipsis,
 };
 
@@ -17,6 +17,7 @@ pub struct ToolsContext {
     agent_name: String,
     tools_config: Vec<ToolType>,
     prompt: String,
+    sender: Sender<Event>,
 }
 
 impl ToolsContext {
@@ -25,12 +26,14 @@ impl ToolsContext {
         agent_name: String,
         tools: impl IntoIterator<Item = ToolType>,
         prompt: String,
+        sender: Sender<Event>,
     ) -> Self {
         ToolsContext {
             config,
             agent_name,
             tools_config: tools.into_iter().collect(),
             prompt,
+            sender,
         }
     }
 }
@@ -53,7 +56,7 @@ impl Object for ToolsContext {
                                 },
                                 tools: self.tools_config.clone(),
                             },
-                            NoopHandler,
+                            self.sender.clone(),
                         ))
                         .map_err(|err| {
                             log::error!("Error launching tool: {:?}", err);

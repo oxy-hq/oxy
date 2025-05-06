@@ -8,6 +8,7 @@ use syntect::{
     parsing::SyntaxSet,
     util::{LinesWithEndings, as_24_bit_terminal_escaped},
 };
+use tokio::task::spawn_blocking;
 
 pub const MAX_DISPLAY_ROWS: usize = 100;
 pub const MAX_OUTPUT_LENGTH: usize = 1000;
@@ -138,4 +139,18 @@ pub fn list_by_sub_extension(dir: &PathBuf, sub_extension: &str) -> Vec<PathBuf>
     }
 
     files
+}
+
+pub async fn asyncify<F, T>(f: F) -> Result<T, OxyError>
+where
+    F: FnOnce() -> Result<T, OxyError> + Send + 'static,
+    T: Send + 'static,
+{
+    match spawn_blocking(f).await {
+        Ok(res) => res,
+        Err(err) => Err(OxyError::RuntimeError(format!(
+            "Failed to spawn blocking task: {}",
+            err
+        ))),
+    }
 }

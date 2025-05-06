@@ -1,9 +1,12 @@
 use std::collections::HashMap;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{
-    agent::types::AgentInput, errors::OxyError, execute::types::Output, theme::StyledText,
+    agent::types::AgentInput,
+    errors::OxyError,
+    execute::types::{Output, TargetOutput},
+    theme::StyledText,
     workflow::WorkflowInput,
 };
 
@@ -27,15 +30,145 @@ impl std::fmt::Display for EvalTarget {
     }
 }
 
+#[derive(Clone, Debug, Deserialize)]
+pub(super) struct EvalRecord {
+    pub query: String,
+    pub response: String,
+    pub relevant_contexts: Vec<String>,
+}
+
+impl Into<TargetOutput> for EvalRecord {
+    fn into(self) -> TargetOutput {
+        TargetOutput {
+            output: self.response,
+            task_description: Some(self.query),
+            relevant_contexts: self.relevant_contexts.clone(),
+        }
+    }
+}
+
+impl EvalRecord {
+    pub(super) fn as_target(
+        &self,
+        target: &EvalTarget,
+        workflow_variable_name: &Option<String>,
+    ) -> EvalTarget {
+        match target {
+            EvalTarget::Workflow(workflow_input) => EvalTarget::Workflow(WorkflowInput {
+                restore_from_checkpoint: false,
+                workflow_ref: workflow_input.workflow_ref.clone(),
+                variables: Some(HashMap::from_iter([(
+                    workflow_variable_name.clone().unwrap_or_default(),
+                    self.query.clone(),
+                )])),
+            }),
+            EvalTarget::Agent(agent_input) => EvalTarget::Agent(AgentInput {
+                agent_ref: agent_input.agent_ref.clone(),
+                prompt: self.query.clone(),
+            }),
+        }
+    }
+}
+
+#[enum_dispatch::enum_dispatch]
+trait Verbose {
+    fn verbose(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result;
+}
+
 #[derive(Clone, Debug, Serialize)]
+#[serde(tag = "type")]
+#[enum_dispatch::enum_dispatch(Verbose)]
 pub enum MetricKind {
-    Accuracy(f32),
+    Similarity(Similarity),
+    Recall(Recall),
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct Similarity {
+    pub score: f32,
+    pub records: Vec<Record>,
+}
+
+impl Similarity {
+    pub fn new(score: f32, records: Vec<Record>) -> Self {
+        Self { score, records }
+    }
+}
+
+impl Verbose for Similarity {
+    fn verbose(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut is_header_printed = false;
+        for record in &self.records {
+            if record.score < 1.0 {
+                if !is_header_printed {
+                    writeln!(f, "{}\n", "FAILURES:".error())?;
+                    writeln!(f, "**********\n")?;
+                    is_header_printed = true;
+                }
+                write!(f, "{}", record)?;
+                writeln!(f, "**********\n")?;
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct RecallRecord {
+    pub score: f32,
+    pub pass: bool,
+    pub retrieved_contexts: Vec<String>,
+    pub reference_contexts: Vec<String>,
+}
+
+impl std::fmt::Display for RecallRecord {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "Distance score: {}", self.score)?;
+        writeln!(f, "Retrieved Contexts:")?;
+        for context in &self.retrieved_contexts {
+            writeln!(f, "- {:?}", context)?;
+        }
+        writeln!(f, "Reference Contexts:")?;
+        for context in &self.reference_contexts {
+            writeln!(f, "- {:?}", context)?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct Recall {
+    pub score: f32,
+    pub records: Vec<RecallRecord>,
+}
+
+impl Verbose for Recall {
+    fn verbose(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut is_header_printed = false;
+        for record in &self.records {
+            if !record.pass {
+                if !is_header_printed {
+                    writeln!(f, "{}\n", "RECALL FAILURES:".error())?;
+                    writeln!(f, "**********\n")?;
+                    is_header_printed = true;
+                }
+                write!(f, "{}", record)?;
+                writeln!(f, "**********\n")?;
+            }
+        }
+        Ok(())
+    }
 }
 
 impl std::fmt::Display for MetricKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            MetricKind::Accuracy(accuracy) => write!(f, "Accuracy: {:.2}%", accuracy * 100.0),
+            MetricKind::Similarity(Similarity { score, .. }) => {
+                writeln!(f, "Accuracy: {:.2}%", score * 100.0)
+            }
+            MetricKind::Recall(Recall { score, .. }) => {
+                writeln!(f, "Recall: {:.2}%", score * 100.0)
+            }
         }
     }
 }
@@ -96,20 +229,19 @@ impl TryFrom<Output> for Record {
     }
 }
 
-#[derive(Debug, Serialize, Clone)]
-pub struct Metric {
+#[derive(Serialize, Clone)]
+pub struct EvalResult {
     errors: Vec<String>,
-    records: Vec<Record>,
-    pub kind: MetricKind,
+    pub metrics: Vec<MetricKind>,
 }
 
-impl Metric {
-    pub fn set_errors(&mut self, errors: Vec<String>) {
-        self.errors = errors;
+impl EvalResult {
+    pub fn new(errors: Vec<String>, metrics: Vec<MetricKind>) -> Self {
+        Self { errors, metrics }
     }
 }
 
-impl std::fmt::Display for Metric {
+impl std::fmt::Debug for EvalResult {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if !self.errors.is_empty() {
             writeln!(
@@ -124,30 +256,39 @@ impl std::fmt::Display for Metric {
             }
             writeln!(f)?;
         }
-        let mut is_header_printed = false;
-        for record in &self.records {
-            if record.score < 1.0 {
-                if !is_header_printed {
-                    writeln!(f, "{}\n", "FAILURES:".error())?;
-                    writeln!(f, "**********\n")?;
-                    is_header_printed = true;
-                }
-                write!(f, "{}", record)?;
-                writeln!(f, "**********\n")?;
-            }
+        for metric in &self.metrics {
+            metric.verbose(f)?;
         }
         Ok(())
     }
 }
 
-impl FromIterator<Record> for Metric {
+impl std::fmt::Display for EvalResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(
+            f,
+            "{}",
+            "✅Eval finished with metrics:".primary().to_string()
+        )?;
+        for metric in &self.metrics {
+            writeln!(f, "{}", format!("{}", metric).primary().to_string())?;
+        }
+        Ok(())
+    }
+}
+
+impl FromIterator<Record> for MetricKind {
     fn from_iter<T: IntoIterator<Item = Record>>(iter: T) -> Self {
         let records = iter.into_iter().collect::<Vec<_>>();
-        let accuracy = records.iter().map(|r| r.score).sum::<f32>() / records.len() as f32;
-        Metric {
-            errors: vec![],
-            records,
-            kind: MetricKind::Accuracy(accuracy),
-        }
+        let score = records.iter().map(|r| r.score).sum::<f32>() / records.len() as f32;
+        MetricKind::Similarity(Similarity { score, records })
+    }
+}
+
+impl FromIterator<RecallRecord> for MetricKind {
+    fn from_iter<T: IntoIterator<Item = RecallRecord>>(iter: T) -> Self {
+        let records = iter.into_iter().collect::<Vec<_>>();
+        let score = records.iter().map(|r| r.score).sum::<f32>() / records.len() as f32;
+        MetricKind::Recall(Recall { score, records })
     }
 }

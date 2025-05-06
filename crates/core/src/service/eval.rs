@@ -6,7 +6,7 @@ use tqdm::{Pbar, pbar};
 use crate::{
     config::constants::EVAL_SOURCE,
     errors::OxyError,
-    eval::{EvalLauncher, Metric},
+    eval::{EvalLauncher, EvalResult},
     execute::{
         types::{Event, EventKind, ProgressType},
         writer::EventHandler,
@@ -107,7 +107,7 @@ pub async fn run_eval<P: AsRef<Path>, H: EventHandler + Send + 'static>(
     path: P,
     index: Option<usize>,
     event_handler: H,
-) -> Result<Vec<Metric>, OxyError> {
+) -> Result<Vec<EvalResult>, OxyError> {
     let result = EvalLauncher::new()
         .with_project_path(project_path)
         .await?
@@ -119,5 +119,8 @@ pub async fn run_eval<P: AsRef<Path>, H: EventHandler + Send + 'static>(
             event_handler,
         )
         .await;
-    result.and_then(|r| r.into_iter().try_collect::<Metric, Vec<Metric>, OxyError>())
+    result.and_then(|r| {
+        r.into_iter()
+            .try_collect::<EvalResult, Vec<EvalResult>, OxyError>()
+    })
 }

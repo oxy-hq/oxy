@@ -902,8 +902,8 @@ pub struct EvalConfig {
     #[serde(flatten)]
     pub kind: EvalKind,
     #[garde(dive)]
-    #[serde(flatten)]
-    pub solver: SolverKind,
+    #[serde(default = "default_solvers")]
+    pub metrics: Vec<SolverKind>,
     #[garde(skip)]
     #[serde(default = "default_consistency_concurrency")]
     pub concurrency: usize,
@@ -927,32 +927,59 @@ pub struct Consistency {
     #[garde(skip)]
     #[serde(default = "default_n")]
     pub n: usize,
+    #[garde(length(min = 1))]
+    pub task_description: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Validate, JsonSchema, Clone)]
 #[garde(context(ValidationContext))]
 pub struct Custom {
     #[garde(length(min = 1))]
-    pub test_set: String,
+    pub dataset: String,
+    #[garde(length(min = 1))]
+    pub workflow_variable_name: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
-#[serde(untagged)]
 #[garde(context(ValidationContext))]
+#[serde(tag = "type", rename_all = "snake_case")]
 pub enum SolverKind {
-    LLM(#[garde(dive)] LLMSolver),
+    ContextRecall(#[garde(dive)] ContextRecallSolver),
+    Similarity(#[garde(dive)] SimilaritySolver),
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
+#[serde(tag = "distance")]
+#[garde(context(ValidationContext))]
+pub enum DistanceMethod {
+    Levenshtein,
+}
+
+impl Default for DistanceMethod {
+    fn default() -> Self {
+        DistanceMethod::Levenshtein
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
 #[garde(context(ValidationContext))]
-pub struct LLMSolver {
+pub struct ContextRecallSolver {
+    #[serde(default)]
+    #[garde(dive)]
+    pub distance: DistanceMethod,
+    #[garde(range(min = 0 as f32, max = 1 as f32))]
+    #[serde(default = "default_threshold")]
+    pub threshold: f32,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
+#[garde(context(ValidationContext))]
+pub struct SimilaritySolver {
     #[garde(length(min = 1))]
     #[serde(default = "default_consistency_prompt")]
     pub prompt: String,
     #[garde(length(min = 1))]
     pub model_ref: Option<String>,
-    #[garde(length(min = 1))]
-    pub task_description: Option<String>,
     #[garde(skip)]
     #[serde(default = "default_scores")]
     pub scores: HashMap<String, f32>,
@@ -1903,6 +1930,18 @@ fn default_scores() -> HashMap<String, f32> {
 
 fn default_n() -> usize {
     10
+}
+
+fn default_threshold() -> f32 {
+    0.5
+}
+
+fn default_solvers() -> Vec<SolverKind> {
+    vec![SolverKind::Similarity(SimilaritySolver {
+        prompt: default_consistency_prompt(),
+        model_ref: None,
+        scores: default_scores(),
+    })]
 }
 
 fn default_consistency_prompt() -> String {

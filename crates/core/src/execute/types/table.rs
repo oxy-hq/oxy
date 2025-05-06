@@ -20,15 +20,14 @@ use parquet::{arrow::ArrowWriter, basic::Compression, file::properties::WriterPr
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    adapters::connector::load_result,
-    agent::types::{AgentReference, SqlQueryReference},
-    db::client::get_state_dir,
-    errors::OxyError,
+    adapters::connector::load_result, db::client::get_state_dir, errors::OxyError,
     utils::truncate_datasets,
 };
 
 use super::{
+    ReferenceKind,
     output_container::TableData,
+    reference::QueryReference,
     utils::{record_batches_to_2d_array, record_batches_to_markdown, record_batches_to_table},
 };
 
@@ -112,14 +111,14 @@ impl Table {
             .to_string())
     }
 
-    pub fn into_reference(self) -> Option<AgentReference> {
+    pub fn into_reference(self) -> Option<ReferenceKind> {
         self.get_inner().ok()?;
         let table = self.inner.into_inner()?;
         let TableReference { sql, database_ref } = self.reference?;
         let (truncated_results, truncated) = truncate_datasets(table.batches);
         let formatted_results =
             record_batches_to_2d_array(&truncated_results, &table.schema).ok()?;
-        Some(AgentReference::SqlQuery(SqlQueryReference {
+        Some(ReferenceKind::SqlQuery(QueryReference {
             sql_query: sql,
             database: database_ref,
             result: formatted_results,

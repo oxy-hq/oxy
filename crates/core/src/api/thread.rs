@@ -1,9 +1,8 @@
 use crate::{
-    agent::types::AgentReference,
     db::client::establish_connection,
     errors::OxyError,
     execute::{
-        types::{Event, EventKind, Output},
+        types::{Event, EventKind, Output, ReferenceKind},
         writer::EventHandler,
     },
     service::agent::run_agent,
@@ -34,7 +33,7 @@ pub struct ThreadItem {
     pub answer: String,
     pub agent: String,
     pub created_at: DateTimeWithTimeZone,
-    pub references: Vec<AgentReference>,
+    pub references: Vec<ReferenceKind>,
 }
 
 #[derive(Deserialize)]
@@ -47,7 +46,7 @@ pub struct CreateThreadRequest {
 #[derive(Serialize)]
 pub struct AnswerStream {
     pub content: String,
-    pub references: Vec<AgentReference>,
+    pub references: Vec<ReferenceKind>,
     pub is_error: bool,
     pub step: String,
 }
