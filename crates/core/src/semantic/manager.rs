@@ -92,12 +92,7 @@ impl SemanticManager {
                     .clone()
                     .with_datasets(datasets),
             ],
-            None => self
-                .config
-                .list_databases()?
-                .iter()
-                .map(|d| d.clone())
-                .collect(),
+            None => self.config.list_databases()?.to_vec(),
         };
         let pbar = Arc::new(Mutex::new(pbar(Some(databases.len()))));
         Ok(async_stream::stream! {

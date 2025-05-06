@@ -105,7 +105,7 @@ impl Storage for SemanticFileStorage {
 
     async fn load_ddl(&self, key: &SemanticKey) -> Result<String, OxyError> {
         // Implement file loading logic here
-        let ddl_path = self.get_dataset_ddl_path(&key);
+        let ddl_path = self.get_dataset_ddl_path(key);
         if !ddl_path.exists() {
             return Err(OxyError::IOError(format!(
                 "Failed to load file: {}",
@@ -115,19 +115,19 @@ impl Storage for SemanticFileStorage {
         let ddl = read_to_string(ddl_path)
             .await
             .map_err(|err| OxyError::IOError(format!("Failed to load ddl file: {}", err)))?;
-        return Ok(ddl);
+        Ok(ddl)
     }
 
     async fn save_ddl(&self, key: &SemanticKey, value: String) -> Result<String, OxyError> {
         // Implement file saving logic here
-        let ddl_path = self.get_dataset_ddl_path(&key);
+        let ddl_path = self.get_dataset_ddl_path(key);
         let output = ddl_path.to_string_lossy().to_string();
         if ddl_path.exists() && !self.override_mode {
             return Ok(output);
         }
-        create_dir_all(ddl_path.parent().ok_or(OxyError::IOError(format!(
-            "Failed to resolve database semantic path"
-        )))?)
+        create_dir_all(ddl_path.parent().ok_or(OxyError::IOError(
+            "Failed to resolve database semantic path".to_string(),
+        ))?)
         .await
         .map_err(|err| OxyError::IOError(format!("Failed to create ddl parent path: {}", err)))?;
         tokio::fs::write(ddl_path, value)
@@ -138,7 +138,7 @@ impl Storage for SemanticFileStorage {
 
     async fn load_model(&self, key: &SemanticKey) -> Result<HashMap<String, String>, OxyError> {
         // Implement file loading logic here
-        let semantic_path = self.get_dataset_semantic_dir(&key);
+        let semantic_path = self.get_dataset_semantic_dir(key);
         if !semantic_path.exists() {
             return Err(OxyError::IOError(format!(
                 "Failed to load file: {}",
@@ -178,7 +178,7 @@ impl Storage for SemanticFileStorage {
             }
         }
 
-        return Ok(results);
+        Ok(results)
     }
 
     async fn save_model(
@@ -187,17 +187,14 @@ impl Storage for SemanticFileStorage {
         value: HashMap<String, SemanticModels>,
     ) -> Result<String, OxyError> {
         // Implement file saving logic here
-        let semantic_path = self.get_dataset_semantic_dir(&key);
+        let semantic_path = self.get_dataset_semantic_dir(key);
         let output = semantic_path.to_string_lossy().to_string();
         create_dir_all(semantic_path).await.map_err(|err| {
-            OxyError::IOError(format!(
-                "Failed to create semantic directory: {}",
-                err.to_string()
-            ))
+            OxyError::IOError(format!("Failed to create semantic directory: {}", err))
         })?;
         async_stream::stream! {
             for (table_name, model) in value {
-                let file_path = self.get_semantic_file_path(&key, &table_name);
+                let file_path = self.get_semantic_file_path(key, &table_name);
                 let override_mode = self.override_mode;
 
                 yield async move {

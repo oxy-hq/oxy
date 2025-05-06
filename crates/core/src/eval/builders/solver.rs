@@ -132,8 +132,8 @@ impl Executable<(SolverKind, Vec<(TargetOutput, TargetOutput)>)> for SolverExecu
                                                 retrieved_context.chars(),
                                                 reference_context.chars(),
                                             );
-                                            let score = 1.0 - distance;
-                                            score
+
+                                            1.0 - distance
                                         })
                                         .max_by(|a, b| a.partial_cmp(b).unwrap())
                                 })

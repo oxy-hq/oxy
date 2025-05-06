@@ -37,12 +37,12 @@ pub(super) struct EvalRecord {
     pub relevant_contexts: Vec<String>,
 }
 
-impl Into<TargetOutput> for EvalRecord {
-    fn into(self) -> TargetOutput {
+impl From<EvalRecord> for TargetOutput {
+    fn from(val: EvalRecord) -> Self {
         TargetOutput {
-            output: self.response,
-            task_description: Some(self.query),
-            relevant_contexts: self.relevant_contexts.clone(),
+            output: val.response,
+            task_description: Some(val.query),
+            relevant_contexts: val.relevant_contexts.clone(),
         }
     }
 }
@@ -265,13 +265,9 @@ impl std::fmt::Debug for EvalResult {
 
 impl std::fmt::Display for EvalResult {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(
-            f,
-            "{}",
-            "✅Eval finished with metrics:".primary().to_string()
-        )?;
+        writeln!(f, "{}", "✅Eval finished with metrics:".primary())?;
         for metric in &self.metrics {
-            writeln!(f, "{}", format!("{}", metric).primary().to_string())?;
+            writeln!(f, "{}", format!("{}", metric).primary())?;
         }
         Ok(())
     }

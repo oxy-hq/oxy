@@ -38,7 +38,7 @@ impl Executable<EvalTarget> for TargetExecutable {
         let output_container = match input {
             EvalTarget::Workflow(workflow_input) => {
                 WorkflowLauncher::new()
-                    .with_external_context(&execution_context)
+                    .with_external_context(execution_context)
                     .await?
                     .launch(workflow_input, execution_context.writer.clone())
                     .await
@@ -50,7 +50,7 @@ impl Executable<EvalTarget> for TargetExecutable {
                 let references = agent_reference_handler.references.clone();
                 let output = execute_with_handler(
                     AgentLauncherExecutable,
-                    &execution_context,
+                    execution_context,
                     agent_input,
                     agent_reference_handler,
                 )
