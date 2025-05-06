@@ -8,7 +8,7 @@ use crate::service;
 use crate::utils::find_project_path;
 use axum::body::Body;
 use axum::extract::{self, Path};
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::IntoResponse;
 use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
@@ -109,6 +109,7 @@ pub async fn get_app(
 }
 
 pub async fn get_data(Path(pathb64): Path<String>) -> impl IntoResponse {
+    let mut headers = HeaderMap::new();
     let state_path = get_state_dir();
     let decoded_path: Vec<u8> = BASE64_STANDARD.decode(pathb64).map_err(|e| {
         log::info!("{:?}", e);
@@ -126,7 +127,11 @@ pub async fn get_data(Path(pathb64): Path<String>) -> impl IntoResponse {
     let stream = ReaderStream::new(file);
     let body = Body::from_stream(stream);
 
-    Ok(body)
+    headers.insert(
+        "Cache-Control",
+        HeaderValue::from_static("public, max-age=31536000, immutable"),
+    );
+    Ok((StatusCode::OK, headers, body))
 }
 
 pub async fn run_app(
