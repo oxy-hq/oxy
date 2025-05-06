@@ -3,12 +3,20 @@ import { Textarea } from "@/components/ui/shadcn/textarea";
 import useThreadMutation from "@/hooks/api/useThreadMutation";
 import { useEnterSubmit } from "@/hooks/useEnterSubmit";
 import { cx } from "class-variance-authority";
-import { ArrowRight, Loader2, SquareChartGantt } from "lucide-react";
+import {
+  ArrowRight,
+  Hammer,
+  Loader2,
+  MessageCircleQuestion,
+} from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AgentsDropdown, { Agent } from "./AgentsDropdown";
 import useTaskMutation from "@/hooks/api/useTaskMutation";
-import { Toggle } from "@/components/ui/shadcn/toggle";
+import {
+  ToggleGroup,
+  ToggleGroupItem,
+} from "@/components/ui/shadcn/toggle-group";
 
 const ChatPanel = ({
   agent,
@@ -30,12 +38,12 @@ const ChatPanel = ({
 
   const [message, setMessage] = useState("");
   const { formRef, onKeyDown } = useEnterSubmit();
-  const [isBuildMode, setIsBuildMode] = useState(false);
+  const [mode, setMode] = useState<string>("ask");
 
   const handleFormSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!message) return;
-    if (isBuildMode) {
+    if (mode === "build") {
       createTask({
         title: message,
         question: message,
@@ -53,7 +61,7 @@ const ChatPanel = ({
     <form
       ref={formRef}
       onSubmit={handleFormSubmit}
-      className="w-full max-w-[672px] flex p-2 flex-col gap-1 shadow-sm rounded-md border-2 mx-auto bg-sidebar-background"
+      className="w-full max-w-[672px] flex p-2 flex-col gap-1 shadow-sm rounded-md border-2 mx-auto bg-secondary"
     >
       <Textarea
         disabled={isPending || isCreatingTask}
@@ -72,19 +80,32 @@ const ChatPanel = ({
       />
       <div className="flex justify-between">
         <div className="flex items-center justify-center">
-          <Toggle
-            className="border"
-            onPressedChange={(value) => setIsBuildMode(value)}
-            aria-label="Toggle builder"
+          <ToggleGroup
+            type="single"
+            defaultValue="ask"
+            className="gap-1 p-1 bg-sidebar-background text-accent-main-000 rounded-md"
+            onValueChange={setMode}
           >
-            <SquareChartGantt />
-            Builder
-          </Toggle>
+            <ToggleGroupItem
+              value="ask"
+              className="data-[state=on]:border hover:text-special hover:bg-button-hover data-[state=on]:bg-button-hover  data-[state=on]:text-special border-accent-main-000 rounded-md"
+            >
+              <MessageCircleQuestion />
+              <span>Ask</span>
+            </ToggleGroupItem>
+            <ToggleGroupItem
+              value="build"
+              className="data-[state=on]:border hover:text-special hover:bg-button-hover data-[state=on]:bg-button-hover  data-[state=on]:text-special border-accent-main-000 rounded-md"
+            >
+              <Hammer />
+              <span>Build</span>
+            </ToggleGroupItem>
+          </ToggleGroup>
         </div>
         <div className="flex gap-2 items-center">
           <AgentsDropdown
             onSelect={onChangeAgent}
-            disabled={isBuildMode}
+            disabled={mode === "build"}
             agent={agent}
           />
           <Button disabled={!message || isPending || !agent} type="submit">

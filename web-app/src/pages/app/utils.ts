@@ -1,10 +1,14 @@
 import { apiBaseURL } from "@/services/env";
 import { DataContainer } from "@/types/app";
 
-export const getArrowValue = (value: unknown) => {
+export const getArrowValue = (value: unknown): number | string | unknown => {
   if (value instanceof Uint32Array) return formatNumber(value[0]);
   if (value instanceof Float32Array) return formatNumber(value[0]);
   if (value instanceof Float64Array) return formatNumber(value[0]);
+  if (typeof value === "bigint") {
+    // Add this condition to handle BigInt
+    return value.toString(); // Or value.toString() if precision is important
+  }
   if (typeof value === "number") {
     return formatNumber(value);
   }
