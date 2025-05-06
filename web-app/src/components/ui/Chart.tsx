@@ -147,13 +147,7 @@ export default function Chart(props: IChartProps) {
   };
 
   // Add default tooltip encoding if none exists
-  if (
-    "mark" in spec &&
-    spec.mark === "line" &&
-    "encoding" in spec &&
-    spec.encoding &&
-    !spec.encoding.tooltip
-  ) {
+  if ("encoding" in spec && spec.encoding && !spec.encoding.tooltip) {
     const xField = (spec.encoding.x as any)?.field;
     const yField = (spec.encoding.y as any)?.field;
 
