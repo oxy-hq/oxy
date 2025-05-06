@@ -10,6 +10,7 @@ use serde::Deserialize;
 use crate::config::model::WorkflowTool;
 use crate::config::model::{OmniSemanticModel, RetrievalConfig};
 
+use super::create_data_app::types::CreateDataAppParams;
 use super::visualize::types::VisualizeParams;
 
 #[derive(Debug, Clone)]
@@ -138,6 +139,11 @@ pub struct VisualizeInput {
 pub struct WorkflowInput {
     pub workflow_config: WorkflowTool,
     pub variables: Option<HashMap<String, String>>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct CreateDataAppInput {
+    pub param: CreateDataAppParams,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]

@@ -1,24 +1,25 @@
 use super::{
+    create_data_app::CreateDataAppExecutable,
     omni::{OmniExecutable, OmniTopicInfoExecutable},
     retrieval::RetrievalExecutable,
     sql::{SQLExecutable, ValidateSQLExecutable},
     types::{
-        ExecuteOmniParams, OmniInput, OmniTopicInfoInput, OmniTopicInfoParams, RetrievalInput,
-        RetrievalParams, SQLInput, SQLParams, ToolRawInput, VisualizeInput, WorkflowInput,
+        CreateDataAppInput, ExecuteOmniParams, OmniInput, OmniTopicInfoInput, OmniTopicInfoParams,
+        RetrievalInput, RetrievalParams, SQLInput, SQLParams, ToolRawInput, VisualizeInput,
+        WorkflowInput,
     },
     visualize::{types::VisualizeParams, visualize::VisualizeExecutable},
     workflow::WorkflowExecutable,
 };
 use crate::{
-    config::model::WorkflowTool,
-    config::model::{OmniSemanticModel, RetrievalConfig, ToolType},
+    config::model::{OmniSemanticModel, RetrievalConfig, ToolType, WorkflowTool},
     errors::OxyError,
     execute::{
         Executable, ExecutionContext,
         builders::{ExecutableBuilder, map::ParamMapper},
         types::Output,
     },
-    tools::types::WorkflowParams,
+    tools::{create_data_app::types::CreateDataAppParams, types::WorkflowParams},
 };
 
 const TOOL_NOT_FOUND_ERR: &str = "Tool not found";
@@ -123,6 +124,16 @@ impl Executable<(String, Option<ToolType>, ToolRawInput)> for ToolExecutable {
                             OmniTopicInfoToolInput {
                                 param: input.param.clone(),
                                 semantic_model,
+                            },
+                        )
+                        .await
+                }
+                ToolType::CreateDataApp(create_data_app_tool) => {
+                    build_create_data_app_executable()
+                        .execute(
+                            execution_context,
+                            CreateDataAppToolInput {
+                                param: input.param.clone(),
                             },
                         )
                         .await
@@ -284,8 +295,29 @@ struct VisualizeToolInput {
     param: String,
 }
 
+struct CreateDataAppToolInput {
+    param: String,
+}
+
 #[derive(Clone)]
 struct VisualizeMapper;
+
+#[derive(Clone)]
+struct CreateDataAppMapper;
+
+#[async_trait::async_trait]
+impl ParamMapper<CreateDataAppToolInput, CreateDataAppInput> for CreateDataAppMapper {
+    async fn map(
+        &self,
+        _execution_context: &ExecutionContext,
+        input: CreateDataAppToolInput,
+    ) -> Result<(CreateDataAppInput, Option<ExecutionContext>), OxyError> {
+        let CreateDataAppToolInput { param, .. } = input;
+        log::debug!("CreateDataAppToolInput param: {}", &param);
+        let params = serde_json::from_str::<CreateDataAppParams>(&param)?;
+        Ok((CreateDataAppInput { param: params }, None))
+    }
+}
 
 #[async_trait::async_trait]
 impl ParamMapper<VisualizeToolInput, VisualizeInput> for VisualizeMapper {
@@ -309,6 +341,13 @@ fn build_visualize_executable() -> impl Executable<VisualizeToolInput, Response 
     ExecutableBuilder::new()
         .map(VisualizeMapper)
         .executable(VisualizeExecutable::new())
+}
+
+fn build_create_data_app_executable() -> impl Executable<CreateDataAppToolInput, Response = Output>
+{
+    ExecutableBuilder::new()
+        .map(CreateDataAppMapper)
+        .executable(CreateDataAppExecutable {})
 }
 
 #[derive(Clone)]

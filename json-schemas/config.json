@@ -7,6 +7,12 @@
     "models"
   ],
   "properties": {
+    "builder_agent": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "databases": {
       "type": "array",
       "items": {

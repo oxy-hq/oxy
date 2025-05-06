@@ -7,6 +7,7 @@ type Props = {
 };
 
 export default function ChartContainer(props: Props) {
+  console.log("ChartContainer", props.chart_src);
   const encodedPath = encodeURIComponent(props.chart_src);
   const { data, isLoading } = useChart(encodedPath);
 

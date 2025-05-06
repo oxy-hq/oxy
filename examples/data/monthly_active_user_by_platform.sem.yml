@@ -1,0 +1,15 @@
+table: monthly_active_user_by_platform.csv
+database: local
+description: ''
+entities: []
+dimensions:
+- name: month
+  sample:
+  - Jan
+- name: platform
+  sample:
+  - iOS
+- name: users
+  sample:
+  - '220000'
+measures: []

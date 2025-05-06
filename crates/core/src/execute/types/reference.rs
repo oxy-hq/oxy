@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use serde::{Deserialize, Serialize};
 
 use crate::errors::OxyError;
@@ -9,6 +11,7 @@ use super::Output;
 pub enum ReferenceKind {
     SqlQuery(QueryReference),
     Retrieval(RetrievalReference),
+    DataApp(DataAppReference),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -40,4 +43,9 @@ impl TryFrom<Output> for ReferenceKind {
             )),
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DataAppReference {
+    pub file_path: PathBuf,
 }

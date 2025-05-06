@@ -27,7 +27,7 @@ use crate::{
 use super::{
     ReferenceKind,
     output_container::TableData,
-    reference::QueryReference,
+    reference::{DataAppReference, QueryReference},
     utils::{record_batches_to_2d_array, record_batches_to_markdown, record_batches_to_table},
 };
 
@@ -157,6 +157,7 @@ impl Table {
             .close()
             .map_err(|e| OxyError::RuntimeError(format!("Failed to close writer: {}", e)))?;
 
+        log::debug!("Exported table to: {}", full_file_path.display());
         let relative_file_path = full_file_path.strip_prefix(state_dir).map_err(|e| {
             OxyError::RuntimeError(format!("Failed to strip prefix from file path: {}", e))
         })?;

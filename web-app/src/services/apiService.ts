@@ -3,12 +3,16 @@ import { Service } from "./service";
 import { apiClient } from "./axios";
 import { readMessageFromStreamData } from "@/libs/utils/stream";
 import { apiBaseURL } from "./env";
-import { ThreadCreateRequest } from "@/types/chat";
+import { TaskCreateRequest, TaskItem, ThreadCreateRequest } from "@/types/chat";
 import { TestStreamMessage } from "@/types/eval";
 
 export const apiService: Service = {
   async listThreads() {
     const response = await apiClient.get("/threads");
+    return response.data;
+  },
+  async listTasks() {
+    const response = await apiClient.get("/tasks");
     return response.data;
   },
   async deleteThread(threadId: string) {
@@ -17,6 +21,10 @@ export const apiService: Service = {
   },
   async deleteAllThread() {
     const response = await apiClient.delete("/threads");
+    return response.data;
+  },
+  async deleteAllTasks() {
+    const response = await apiClient.delete("/tasks");
     return response.data;
   },
   async getThread(threadId: string) {
@@ -50,6 +58,18 @@ export const apiService: Service = {
   },
   async ask(threadId: string, onReadStream) {
     const url = `/threads/${threadId}/ask`;
+    const options = {
+      headers: {
+        "Content-Type": "application/json",
+      },
+    };
+    const response = await fetch(apiBaseURL + url, options);
+    if (response) {
+      await readMessageFromStreamData(response, onReadStream);
+    }
+  },
+  async askTask(taskId: string, onReadStream) {
+    const url = `/tasks/${taskId}/ask`;
     const options = {
       headers: {
         "Content-Type": "application/json",
@@ -125,5 +145,16 @@ export const apiService: Service = {
   async runApp(pathb64: string): Promise<App> {
     const response = await apiClient.post(`/app/${pathb64}/run`);
     return response.data;
+  },
+  createTask: async function (request: TaskCreateRequest): Promise<TaskItem> {
+    const response = await apiClient.post("/tasks", request);
+    return response.data;
+  },
+  getTask: async function (taskId: string): Promise<TaskItem> {
+    const response = await apiClient.get("/tasks/" + taskId);
+    return response.data;
+  },
+  deleteTask: async function (taskId: string): Promise<void> {
+    await apiClient.delete("/tasks/" + taskId);
   },
 };

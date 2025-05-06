@@ -68,6 +68,10 @@ models:
     vendor: openai
     model_ref: gpt-4o
     key_var: OPENAI_API_KEY
+  - name: openai-4.1
+    vendor: openai
+    model_ref: gpt-4.1
+    key_var: OPENAI_API_KEY
   # - name: openai-4o-mini-azure
   #   vendor: openai
   #   model_ref: openai-4o-mini-azure
@@ -98,3 +102,5 @@ retrievals:
 
 defaults:
   database: local
+
+builder_agent: agents/builder.agent.yml

@@ -130,6 +130,7 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
                     ))
                 })
                 .map_err(backoff::Error::Permanent)?;
+            log::debug!("OpenAI request: {:?}", request);
             let mut response = chat
                 .create_stream(request)
                 .await
@@ -160,7 +161,7 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
                         // then write the chunk to the execution context
                         if let Ok(data) = from_json_str::<AgentResponse>(&content) {
                             let (parsed_content, mut output) = match data.data {
-                                AgentResponseData::File { file_path } => {
+                                AgentResponseData::Table { file_path } => {
                                     (file_path, Output::table(message.to_string()))
                                 }
                                 AgentResponseData::Text { text } => {
@@ -283,23 +284,18 @@ pub fn build_openai_executable(
 #[derive(JsonSchema, Deserialize, Debug, Clone)]
 #[serde(untagged, rename_all = "camelCase", deny_unknown_fields)]
 enum AgentResponseData {
-    File {
-        file_path: String,
-    },
+    #[schemars(description = "For table result of queries. Don't use for data app.")]
+    Table { file_path: String },
     #[schemars(description = "Default response type")]
-    Text {
-        text: String,
-    },
+    Text { text: String },
     #[schemars(description = "Use when the user explicitly asks for generating SQL")]
-    SQL {
-        sql: String,
-    },
+    SQL { sql: String },
 }
 
 impl From<AgentResponseData> for Output {
     fn from(val: AgentResponseData) -> Self {
         match val {
-            AgentResponseData::File { file_path } => Output::table(file_path),
+            AgentResponseData::Table { file_path } => Output::table(file_path),
             AgentResponseData::Text { text } => Output::Text(text),
             AgentResponseData::SQL { sql } => Output::sql(sql),
         }

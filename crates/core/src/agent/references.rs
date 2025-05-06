@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use crate::{
     errors::OxyError,
     execute::{
-        types::{Event, EventKind, ReferenceKind},
+        types::{DataAppReference, Event, EventKind, ReferenceKind},
         writer::EventHandler,
     },
 };
@@ -33,6 +33,12 @@ where
                 let mut references = self.references.lock().unwrap();
                 references.push(reference);
             }
+        }
+        if let EventKind::DataAppCreated { data_app } = &event.kind {
+            let mut references = self.references.lock().unwrap();
+            references.push(ReferenceKind::DataApp(DataAppReference {
+                file_path: data_app.file_path.clone(),
+            }));
         }
         self.handler.handle_event(event).await?;
         Ok(())

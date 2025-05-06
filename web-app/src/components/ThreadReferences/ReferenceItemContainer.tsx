@@ -11,7 +11,7 @@ export const ReferenceItemContainer = ({
 }: ReferenceItemContainerProps) => {
   return (
     <div
-      className={cn("bg-sidebar-accent hover:bg-input border rounded-md", {
+      className={cn("h-21 bg-sidebar-accent hover:bg-input border rounded-md", {
         "bg-input": isOpen,
       })}
     >

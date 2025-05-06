@@ -7,17 +7,14 @@ use crate::{
         Executable, ExecutionContext,
         types::{Chunk, Output, Prompt},
     },
-    tools::{tool::Tool, types::VisualizeInput},
+    tools::{create_data_app::types::CreateDataAppParams, tool::Tool, types::VisualizeInput},
 };
 
 use serde_json::{Map, json};
 use uuid::Uuid;
 
-use super::types::VisualizeParams;
-
 #[derive(Debug, Clone)]
 pub struct VisualizeExecutable;
-
 impl VisualizeExecutable {
     pub fn new() -> Self {
         Self
@@ -25,8 +22,8 @@ impl VisualizeExecutable {
 }
 
 impl Tool for VisualizeExecutable {
-    type Param = VisualizeParams;
-    type Output = String;
+    type Param = CreateDataAppParams;
+    type Output = Output;
 
     fn serialize_output(&self, output: &Self::Output) -> Result<String, OxyError> {
         Ok(output.to_string())

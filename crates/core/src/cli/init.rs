@@ -367,6 +367,7 @@ fn create_config_file(config_path: &Path) -> Result<(), InitError> {
             database: Some(default_database),
         }),
         project_path: PathBuf::new(),
+        builder_agent: None,
     };
 
     let yaml =

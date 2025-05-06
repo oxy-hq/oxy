@@ -17,6 +17,7 @@ use axum::{
 use axum_streams::StreamBodyAs;
 use base64::{Engine, prelude::BASE64_STANDARD};
 use entity::prelude::Threads;
+use lancedb::data;
 use sea_orm::prelude::DateTimeWithTimeZone;
 use sea_orm::{ActiveModelTrait, ActiveValue, EntityTrait};
 use serde::{Deserialize, Serialize};
@@ -182,7 +183,7 @@ impl EventHandler for ThreadStream {
                         is_error: false,
                         step: event.source.kind.to_string(),
                     };
-                    self.tx.send(message).await?;
+                    __self.tx.send(message).await?;
                 }
                 Output::Text(text) => {
                     let message = AnswerStream {
@@ -191,7 +192,7 @@ impl EventHandler for ThreadStream {
                         is_error: false,
                         step: event.source.kind.to_string(),
                     };
-                    self.tx.send(message).await?;
+                    __self.tx.send(message).await?;
                 }
                 Output::Table(table) => {
                     let reference = table.into_reference();
@@ -201,9 +202,11 @@ impl EventHandler for ThreadStream {
                         is_error: false,
                         step: event.source.kind.to_string(),
                     };
-                    self.tx.send(message).await?;
+                    __self.tx.send(message).await?;
                 }
-                _ => {}
+                Output::Bool(_) => {}
+                Output::SQL(sql) => {}
+                Output::Documents(items) => {}
             }
         }
         Ok(())
