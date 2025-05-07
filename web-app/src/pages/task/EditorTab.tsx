@@ -41,26 +41,23 @@ const EditorTab = ({ pathb64 }: { pathb64?: string }) => {
           className="w-full flex flex-col items-center h-full gap-4"
           value="preview"
         >
-          {!filePath && (
-            <>
-              <div>
+          {!filePath ? (
+            <div className="flex flex-col w-full h-full items-center justify-center">
+              <div className="flex flex-col gap-4">
                 <div className="space-y-2">
                   <Skeleton className="h-4 w-[250px]" />
                   <Skeleton className="h-4 w-[250px]" />
                   <Skeleton className="h-4 w-[200px]" />
                 </div>
-              </div>
-              <div>
+                <Skeleton className="h-[200px] w-[250px]" />
                 <Skeleton className="h-[200px] w-[250px]" />
               </div>
-              <div>
-                <Skeleton className="h-[200px] w-[250px]" />
-              </div>
-            </>
+            </div>
+          ) : (
+            <div className="flex-1 min-h-0 overflow-hidden w-full">
+              <AppPreview key={previewKey} appPath64={pathb64 ?? ""} />
+            </div>
           )}
-          <div className="flex-1 min-h-0 overflow-hidden w-full">
-            <AppPreview key={previewKey} appPath64={pathb64 ?? ""} />
-          </div>
         </TabsContent>
         <TabsContent
           value="editor"
