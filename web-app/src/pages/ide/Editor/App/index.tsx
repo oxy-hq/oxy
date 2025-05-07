@@ -1,6 +1,6 @@
 import { useState } from "react";
 import EditorPageWrapper from "../components/EditorPageWrapper";
-import AppPreview from "./AppPreview";
+import AppPreview from "@/components/AppPreview";
 import { useQueryClient } from "@tanstack/react-query";
 import queryKeys from "@/hooks/api/queryKey";
 import { randomKey } from "@/libs/utils/string";

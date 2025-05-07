@@ -2,7 +2,7 @@ import { ErrorBoundary } from "react-error-boundary";
 import { Button } from "@/components/ui/shadcn/button";
 import useApp from "@/hooks/api/useApp";
 import useRunAppMutation from "@/hooks/api/useRunAppMutation";
-import { Displays } from "@/pages/app/Displays";
+import { Displays } from "@/components/AppPreview/Displays";
 import { LoaderCircle, RefreshCw } from "lucide-react";
 import { useEffect } from "react";
 import { toast } from "sonner";
@@ -41,33 +41,30 @@ export default function AppPreview({ appPath64 }: Props) {
   }
 
   return (
-    <div className="h-full flex-col w-full flex justify-center items-start">
-      <div className="flex items-center pl-4 pr-4 pt-4 w-full justify-end">
-        <Button
-          onClick={handleRun}
-          disabled={isRunning}
-          variant="default"
-          content="icon"
-        >
-          {isRunning ? (
-            <LoaderCircle className="animate-spin" />
-          ) : (
-            <RefreshCw />
-          )}
-        </Button>
-      </div>
-      <div className="p-8 max-w-200 w-full overflow-auto customScrollbar">
-        <ErrorBoundary
-          resetKeys={[app]}
-          fallback={
-            <div className="text-red-600">
-              Failed to render app review. Refresh the data or check for
-              configuration errors.
-            </div>
-          }
-        >
-          <Displays displays={app.displays} data={app.data} />
-        </ErrorBoundary>
+    <div className="h-full w-full relative overflow-hidden">
+      <Button
+        className="absolute bottom-6 right-6"
+        onClick={handleRun}
+        disabled={isRunning}
+        variant="default"
+        content="icon"
+      >
+        {isRunning ? <LoaderCircle className="animate-spin" /> : <RefreshCw />}
+      </Button>
+      <div className="h-full w-full justify-center customScrollbar overflow-auto">
+        <div className="p-8 max-w-200 w-full">
+          <ErrorBoundary
+            resetKeys={[app]}
+            fallback={
+              <div className="text-red-600">
+                Failed to render app review. Refresh the data or check for
+                configuration errors.
+              </div>
+            }
+          >
+            <Displays displays={app.displays} data={app.data} />
+          </ErrorBoundary>
+        </div>
       </div>
     </div>
   );

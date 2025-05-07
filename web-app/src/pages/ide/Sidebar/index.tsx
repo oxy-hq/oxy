@@ -5,6 +5,7 @@ import {
   SidebarGroupLabel,
   SidebarMenu,
   SidebarTrigger,
+  useSidebar,
 } from "@/components/ui/shadcn/sidebar";
 import FileTreeNode from "./FileTreeNode";
 import { ChevronsLeft, ChevronsRight } from "lucide-react";
@@ -24,6 +25,8 @@ const Sidebar = ({
     ?.filter((f) => !ignoreFilesRegex.some((r) => f.name.match(r)))
     .sort((a) => (a.is_dir ? -1 : 1));
 
+  const { open } = useSidebar();
+
   return (
     <div className="h-full w-full border-r border-l bg-sidebar-background">
       {sidebarOpen && (
@@ -31,7 +34,7 @@ const Sidebar = ({
           <SidebarGroup>
             <SidebarGroupLabel className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <SidebarTrigger className="md:hidden" />
+                {!open && <SidebarTrigger />}
                 Files
               </div>
 

@@ -9,7 +9,7 @@ import queryKeys from "@/hooks/api/queryKey";
 import PageHeader from "@/components/PageHeader";
 import ThreadSteps from "@/components/ThreadSteps";
 import useTask from "@/hooks/api/useTask";
-import EditorTab from "../ide/Editor/EditorTab";
+import EditorTab from "./EditorTab";
 import { useSidebar } from "@/components/ui/shadcn/sidebar";
 
 const STEP_MAP = {

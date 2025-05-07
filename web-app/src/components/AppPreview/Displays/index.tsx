@@ -4,8 +4,8 @@ import { DataContainer, Display } from "@/types/app";
 import { MarkdownDisplayBlock } from "./MarkdownDisplayBlock";
 import { LineChart } from "./LineChart";
 import { BarChart } from "./BarChart";
-import { DataTableBlock } from "./DataTableBlock";
 import { PieChart } from "./PieChart";
+import { DataTableBlock } from "./DataTableBlock";
 
 // Display block switch
 const DisplayBlock = ({

@@ -16,12 +16,16 @@ import {
 } from "@/components/ui/shadcn/dropdown-menu";
 import ThreadItem from "./Item";
 import ClearAllThreadsDialog from "./ClearAllThreadsDialog";
+import { Button } from "@/components/ui/shadcn/button";
 
 const Threads = () => {
   const location = useLocation();
   const { data: threads } = useThreads();
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [showAll, setShowAll] = useState(false);
   const isThreadsPage = location.pathname === "/threads";
+
+  const visibleThreads = showAll ? threads : threads?.slice(0, 5);
 
   return (
     <>
@@ -48,9 +52,19 @@ const Threads = () => {
           </DropdownMenuContent>
         </DropdownMenu>
         <SidebarMenuSub>
-          {threads?.map((thread) => (
+          {visibleThreads?.map((thread) => (
             <ThreadItem key={thread.id} thread={thread} />
           ))}
+          {threads && threads.length > 5 && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setShowAll(!showAll)}
+              className="w-full text-sm text-muted-foreground hover:text-foreground py-1 text-left"
+            >
+              {showAll ? "Show less" : `Show all (${threads.length} threads)`}
+            </Button>
+          )}
         </SidebarMenuSub>
       </SidebarMenuItem>
     </>

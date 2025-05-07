@@ -5,10 +5,21 @@ import {
   ResizablePanelGroup,
 } from "@/components/ui/shadcn/resizable";
 import Sidebar from "./Sidebar";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { cn } from "@/libs/shadcn/utils";
+import { useSidebar } from "@/components/ui/shadcn/sidebar";
 const Ide = () => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const { open, setOpen } = useSidebar();
+
+  const hasClosedSidebar = useRef(false);
+
+  useEffect(() => {
+    if (open && !hasClosedSidebar.current) {
+      setOpen(false);
+      hasClosedSidebar.current = true;
+    }
+  }, [open, setOpen]);
 
   return (
     <div className="flex h-full flex-1 overflow-hidden">

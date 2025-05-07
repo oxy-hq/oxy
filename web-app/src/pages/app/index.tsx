@@ -3,7 +3,7 @@ import { useParams } from "react-router-dom";
 import AppPageHeader from "./AppPageHeader";
 import useApp from "@/hooks/api/useApp";
 import useRunAppMutation from "@/hooks/api/useRunAppMutation";
-import { Displays } from "./Displays";
+import { Displays } from "../../components/AppPreview/Displays";
 import { toast } from "sonner";
 import { LoaderCircle } from "lucide-react";
 

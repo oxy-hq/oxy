@@ -47,7 +47,7 @@ const AgentsDropdown = ({ onSelect, agent, disabled = false }: Props) => {
         <Button
           disabled={isLoading || disabled}
           variant="outline"
-          className="bg-sidebar-background"
+          className="bg-sidebar-background border-sidebar-background"
         >
           <span>{agent?.name}</span>
           {isLoading ? <Loader2 className="animate-spin" /> : <ChevronDown />}
