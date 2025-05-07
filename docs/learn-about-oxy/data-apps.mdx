@@ -1,0 +1,63 @@
+---
+title: "Data Apps"
+description: "Configuration-based dashboards for visualizing SQL data"
+---
+
+import { Tabs, TabItem } from '@components/tabs';
+import { Callout } from '@components/callout';
+
+# Data Apps
+
+A data app is a configuration-based visualization tool that allows you to create interactive dashboards from SQL queries without writing complex frontend code. 
+
+## What are Data Apps?
+
+Data apps in Oxy are defined using YAML configuration files (`.app.yml`) that specify both the data processing tasks and how to visualize the results.
+
+<Callout type="info">
+  Data apps are designed to make it simple to transform SQL query results into meaningful visualizations with minimal effort. The `.app.yml` files abstract away the complexity of building dashboards, allowing you to focus on the data and insights rather than visualization code.
+</Callout>
+
+## Data App Components
+
+In a data app YAML file, you need to specify the following components:
+
+| Component | Description | Required |
+| --- | --- | --- |
+| name | Unique identifier for the data app | Required |
+| description | Brief explanation of the app's purpose | Optional |
+| tasks | SQL queries that prepare data for visualization | Required |
+| display | Visualization components to render the data | Required |
+
+### Tasks
+
+The `tasks` section defines SQL queries that will extract and transform data from your databases. Each task has the following structure:
+
+| Field | Description | Required |
+| --- | --- | --- |
+| name | Identifier for the task (referenced in display) | Required |
+| type | The task type (currently only `execute_sql` is supported) | Required |
+| database | Database connection to use (defined in config.yml) | Required |
+| sql_query | Inline SQL query to execute | Required if sql_file not provided |
+| sql_file | Path to SQL file to execute | Required if sql_query not provided |
+| variables | Key-value pairs for variable substitution in queries | Optional |
+| cache | Cache configuration for query results | Optional |
+| export | Configuration for exporting query results | Optional |
+
+<Callout type="warning">
+  Make sure your tasks are named uniquely as these names are referenced in the display section.
+</Callout>
+
+### Display
+
+The `display` section defines how to visualize the data produced by your tasks. Several visualization types are supported:
+
+<Tabs/>
+  <TabItem value="markdown" label="Markdown"/>
+    Markdown blocks can be used to add formatted text, headers, and documentation:
+
+```yaml
+- type: markdown
+  content: |
+    # Dashboard Title
+    Additional formatted text here

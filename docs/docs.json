@@ -36,6 +36,7 @@
                 "group": "Core concepts",
                 "pages": [
                   "learn-about-oxy/agents",
+                  "learn-about-oxy/data-apps",
                   "learn-about-oxy/context",
                   "learn-about-oxy/semantic-model",
                   "learn-about-oxy/testing",
