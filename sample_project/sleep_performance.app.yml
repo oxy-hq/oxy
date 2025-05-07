@@ -1,0 +1,105 @@
+tasks:
+  - name: sleep_performance_trends
+    type: execute_sql
+    sql_query: |
+      SELECT 
+        strftime("Sleep onset", '%Y-%m') as month, 
+        AVG("Sleep performance %") as avg_performance,
+        AVG("Sleep efficiency %") as avg_efficiency,
+        AVG("Sleep consistency %") as avg_consistency
+      FROM sleeps.csv
+      WHERE "Nap" = 'false'
+      GROUP BY month
+      ORDER BY month
+    database: local
+
+  - name: sleep_duration_by_type
+    type: execute_sql
+    sql_query: |
+      SELECT 
+        strftime("Sleep onset", '%Y-%m') as month,
+        'Light' as sleep_type,
+        AVG("Light sleep duration (min)") as duration
+      FROM sleeps.csv
+      WHERE "Nap" = 'false'
+      GROUP BY month
+      
+      UNION ALL
+      
+      SELECT 
+        strftime("Sleep onset", '%Y-%m') as month,
+        'Deep' as sleep_type,
+        AVG("Deep (SWS) duration (min)") as duration
+      FROM sleeps.csv
+      WHERE "Nap" = 'false'
+      GROUP BY month
+      
+      UNION ALL
+      
+      SELECT 
+        strftime("Sleep onset", '%Y-%m') as month,
+        'REM' as sleep_type,
+        AVG("REM duration (min)") as duration
+      FROM sleeps.csv
+      WHERE "Nap" = 'false'
+      GROUP BY month
+      
+      ORDER BY month, sleep_type
+    database: local
+
+  - name: sleep_efficiency_stats
+    type: execute_sql
+    sql_query: |
+      SELECT 
+        CASE 
+          WHEN "Sleep efficiency %" >= 90 THEN 'Excellent (90%+)'
+          WHEN "Sleep efficiency %" >= 80 THEN 'Good (80-89%)'
+          WHEN "Sleep efficiency %" >= 70 THEN 'Fair (70-79%)'
+          ELSE 'Poor (<70%)'
+        END as efficiency_category,
+        COUNT(*) as count
+      FROM sleeps.csv
+      WHERE "Nap" = 'false'
+      GROUP BY efficiency_category
+      ORDER BY 
+        CASE efficiency_category
+          WHEN 'Excellent (90%+)' THEN 1
+          WHEN 'Good (80-89%)' THEN 2
+          WHEN 'Fair (70-79%)' THEN 3
+          WHEN 'Poor (<70%)' THEN 4
+        END
+    database: local
+
+display:
+  - type: markdown
+    content: |
+      # Sleep Analytics Dashboard
+      
+      This dashboard provides insights into sleep patterns and quality based on collected sleep data.
+      The visualizations below show trends in sleep performance, duration by sleep phase,
+      and efficiency metrics across 367 recorded sleep sessions.
+
+  - type: line_chart
+    title: Sleep Quality Metrics Over Time
+    data: sleep_performance_trends
+    x: month
+    y: avg_performance
+    x_axis_label: Month
+    y_axis_label: Performance Score (%)
+
+  - type: bar_chart
+    title: Average Sleep Duration by Phase
+    data: sleep_duration_by_type
+    x: month
+    y: duration
+    series: sleep_type
+
+  - type: pie_chart
+    title: Sleep Efficiency Distribution
+    data: sleep_efficiency_stats
+    name: efficiency_category
+    value: count
+
+  - type: table
+    title: Sleep Efficiency Statistics
+    data: sleep_efficiency_stats
