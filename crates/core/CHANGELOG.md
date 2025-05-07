@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.1.21](https://github.com/oxy-hq/oxy-internal/compare/0.1.20...0.1.21) (2025-05-07)
+
+
+### <!-- 0 -->🚀 Features
+
+* Add data app support ([#678](https://github.com/oxy-hq/oxy-internal/issues/678)) ([787536d](https://github.com/oxy-hq/oxy-internal/commit/787536da3a55d29bbbe4e7ed806e402f8194f04d))
+* add duckdb schema exploration ([#719](https://github.com/oxy-hq/oxy-internal/issues/719)) ([ac54c2d](https://github.com/oxy-hq/oxy-internal/commit/ac54c2d44d09829e3191ee1dc9c0578a35bb9776))
+* add is_partition_key flag to semantic dimensions ([#738](https://github.com/oxy-hq/oxy-internal/issues/738)) ([13e4a48](https://github.com/oxy-hq/oxy-internal/commit/13e4a4857c069b9af3d891d3334f093d3c40c0bf))
+* cache assests ([#707](https://github.com/oxy-hq/oxy-internal/issues/707)) ([5f139f7](https://github.com/oxy-hq/oxy-internal/commit/5f139f72d5dd68a7fc44c2dd1a027aa81352c58c))
+* closes [#661](https://github.com/oxy-hq/oxy-internal/issues/661) SQL and YAML editor ([#662](https://github.com/oxy-hq/oxy-internal/issues/662)) ([c2f656b](https://github.com/oxy-hq/oxy-internal/commit/c2f656b836d909453de502c7fcf4da3c1f49c823))
+* estimate cost before running query for biquery ([#669](https://github.com/oxy-hq/oxy-internal/issues/669)) ([c11424f](https://github.com/oxy-hq/oxy-internal/commit/c11424f94442dd4e4ceec76b6f2f602868dfd42d))
+* extend oxy make to support bigquery / support multiple datasets in bigquery ([#683](https://github.com/oxy-hq/oxy-internal/issues/683)) ([3aee31a](https://github.com/oxy-hq/oxy-internal/commit/3aee31af808efeb052a47336f68695006f91578d))
+* persist chart in chart dir and refactor statedir ([#668](https://github.com/oxy-hq/oxy-internal/issues/668)) ([78176a0](https://github.com/oxy-hq/oxy-internal/commit/78176a0d1e02d8b7f668e7cdcb2812f3b26c1faa))
+* psudo data app vibe coding ([#729](https://github.com/oxy-hq/oxy-internal/issues/729)) ([382a881](https://github.com/oxy-hq/oxy-internal/commit/382a881971e9d6c5f0c461a1728ecbba11fccb34))
+* support execute query generated from Omni semantic model ([#664](https://github.com/oxy-hq/oxy-internal/issues/664)) ([293f4e2](https://github.com/oxy-hq/oxy-internal/commit/293f4e24eadeb1b88030144e23e2f64f35b4dccd))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* improve dry run query parsing and update logging level to debug ([4fc975a](https://github.com/oxy-hq/oxy-internal/commit/4fc975acaa59e3d5ced6f24ff7f8c8cddb41be2b))
+
 ## [0.1.20](https://github.com/oxy-hq/oxy-internal/compare/0.1.19...0.1.20) (2025-04-22)
 
 

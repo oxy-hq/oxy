@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.21](https://github.com/oxy-hq/oxy-internal/compare/0.1.20...0.1.21) (2025-05-07)
+
+
+### <!-- 0 -->🚀 Features
+
+* psudo data app vibe coding ([#729](https://github.com/oxy-hq/oxy-internal/issues/729)) ([382a881](https://github.com/oxy-hq/oxy-internal/commit/382a881971e9d6c5f0c461a1728ecbba11fccb34))
+
 ## [0.1.20](https://github.com/oxy-hq/oxy-internal/compare/0.1.19...0.1.20) (2025-04-22)
 
 
