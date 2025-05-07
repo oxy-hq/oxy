@@ -43,7 +43,7 @@ export default function AppPreview({ appPath64 }: Props) {
   return (
     <div className="h-full w-full relative overflow-hidden">
       <Button
-        className="absolute bottom-6 right-6"
+        className="absolute bottom-6 right-6 z-1"
         onClick={handleRun}
         disabled={isRunning}
         variant="default"
