@@ -1,7 +1,10 @@
 use std::path::{Path, PathBuf};
 
+use crate::config::model::Dimension;
 use crate::{errors::OxyError, theme::*};
 use arrow::array::RecordBatch;
+use csv::StringRecord;
+use duckdb::Connection;
 use syntect::{
     easy::HighlightLines,
     highlighting::{Style, ThemeSet},
@@ -153,4 +156,82 @@ where
             err
         ))),
     }
+}
+
+pub fn extract_csv_dimensions(
+    path: &std::path::Path,
+) -> Result<Vec<Dimension>, crate::errors::OxyError> {
+    let conn = Connection::open_in_memory().map_err(|e| {
+        crate::errors::OxyError::RuntimeError(format!("Failed to open in-memory DuckDB: {}", e))
+    })?;
+
+    let sql = format!(
+        "CREATE VIEW auto_csv AS SELECT * FROM read_csv_auto('{}', SAMPLE_SIZE=10000, ALL_VARCHAR=FALSE);",
+        path.display()
+    );
+    conn.execute(&sql, []).map_err(|e| {
+        crate::errors::OxyError::RuntimeError(format!(
+            "DuckDB failed to read CSV {}: {}",
+            path.display(),
+            e
+        ))
+    })?;
+
+    let mut stmt = conn
+        .prepare("PRAGMA table_info('auto_csv');")
+        .map_err(|e| {
+            crate::errors::OxyError::RuntimeError(format!(
+                "DuckDB failed to prepare schema query: {}",
+                e
+            ))
+        })?;
+    let mut rows = stmt.query([]).map_err(|e| {
+        crate::errors::OxyError::RuntimeError(format!("DuckDB failed to query schema: {}", e))
+    })?;
+
+    let mut columns = Vec::new();
+    while let Some(row) = rows.next().map_err(|e| {
+        crate::errors::OxyError::RuntimeError(format!("DuckDB failed to read schema row: {}", e))
+    })? {
+        let name: String = row.get(1).map_err(|e| {
+            crate::errors::OxyError::RuntimeError(format!("DuckDB schema row: {}", e))
+        })?;
+        let dtype: String = row.get(2).map_err(|e| {
+            crate::errors::OxyError::RuntimeError(format!("DuckDB schema row: {}", e))
+        })?;
+        columns.push((name, dtype));
+    }
+
+    let mut samples: Vec<Vec<String>> = vec![Vec::new(); columns.len()];
+    const MAX_SAMPLES_PER_COLUMN: usize = 1;
+    if let Ok(mut reader) = csv::Reader::from_path(path) {
+        for _ in 0..5 {
+            let mut row = StringRecord::new();
+            if !reader
+                .read_record(&mut row)
+                .map_err(|e| OxyError::RuntimeError(format!("CSV read error: {}", e)))?
+            {
+                break;
+            }
+            for (i, field) in row.iter().enumerate().take(columns.len()) {
+                if samples[i].len() < MAX_SAMPLES_PER_COLUMN {
+                    samples[i].push(field.to_string());
+                }
+            }
+        }
+    }
+
+    let dimensions = columns
+        .into_iter()
+        .enumerate()
+        .map(|(i, (name, dtype))| Dimension {
+            name,
+            synonyms: None,
+            sample: samples.get(i).cloned().unwrap_or_default(),
+            data_type: Some(dtype),
+            is_partition_key: None,
+        })
+        .collect();
+
+    Ok(dimensions)
 }

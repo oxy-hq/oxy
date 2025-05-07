@@ -7,7 +7,9 @@ export const apiBaseURL = (() => {
 
 export const vibeCodingBaseUrl = (() => {
   if (process.env.NODE_ENV === "development") {
-    return import.meta.env.VITE_VIBE_CODING_API_BASE_URL || "http://localhost:8000";
+    return (
+      import.meta.env.VITE_VIBE_CODING_API_BASE_URL || "http://localhost:8000"
+    );
   }
   // TODO: fix this
   return `${window.location.origin}`;
