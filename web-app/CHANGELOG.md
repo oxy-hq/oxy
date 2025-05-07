@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.1.21](https://github.com/oxy-hq/oxy-internal/compare/0.1.20...0.1.21) (2025-05-07)
+
+
+### <!-- 0 -->🚀 Features
+
+* Add data app support ([#678](https://github.com/oxy-hq/oxy-internal/issues/678)) ([787536d](https://github.com/oxy-hq/oxy-internal/commit/787536da3a55d29bbbe4e7ed806e402f8194f04d))
+* add duckdb schema exploration ([#719](https://github.com/oxy-hq/oxy-internal/issues/719)) ([ac54c2d](https://github.com/oxy-hq/oxy-internal/commit/ac54c2d44d09829e3191ee1dc9c0578a35bb9776))
+* add login, logout and user information ([#663](https://github.com/oxy-hq/oxy-internal/issues/663)) ([38f79c9](https://github.com/oxy-hq/oxy-internal/commit/38f79c9a87bc6b432b1448055be97ddb7c16d1cb))
+* closes [#661](https://github.com/oxy-hq/oxy-internal/issues/661) SQL and YAML editor ([#662](https://github.com/oxy-hq/oxy-internal/issues/662)) ([c2f656b](https://github.com/oxy-hq/oxy-internal/commit/c2f656b836d909453de502c7fcf4da3c1f49c823))
+* closes [#690](https://github.com/oxy-hq/oxy-internal/issues/690) dark theme for sidebar, main app experience ([#713](https://github.com/oxy-hq/oxy-internal/issues/713)) ([556cce4](https://github.com/oxy-hq/oxy-internal/commit/556cce4fa7ac9c04f88bc224ddaceb488bfc0cb7))
+* closes [#695](https://github.com/oxy-hq/oxy-internal/issues/695) output panel for workflow ([#740](https://github.com/oxy-hq/oxy-internal/issues/740)) ([032f735](https://github.com/oxy-hq/oxy-internal/commit/032f735fbbbdf36aa3d2f6bcb7ac7de47ea91f09))
+* data app editor enhancement ([#712](https://github.com/oxy-hq/oxy-internal/issues/712)) ([22b1aa1](https://github.com/oxy-hq/oxy-internal/commit/22b1aa1900c3ee82b512d036204d507a775c6df0))
+* improve UI/UX tasks, app sidebar ([#745](https://github.com/oxy-hq/oxy-internal/issues/745)) ([f23798d](https://github.com/oxy-hq/oxy-internal/commit/f23798df1233b991b78dd8bf85fc6439e6c61b15))
+* new color for our app ([#727](https://github.com/oxy-hq/oxy-internal/issues/727)) ([c2b1666](https://github.com/oxy-hq/oxy-internal/commit/c2b1666bf7825f4e2459a8436480e693e1174366))
+* psudo data app vibe coding ([#729](https://github.com/oxy-hq/oxy-internal/issues/729)) ([382a881](https://github.com/oxy-hq/oxy-internal/commit/382a881971e9d6c5f0c461a1728ecbba11fccb34))
+* support data app live editor ([#711](https://github.com/oxy-hq/oxy-internal/issues/711)) ([c59fc59](https://github.com/oxy-hq/oxy-internal/commit/c59fc5956aac9909b61b616e7a846e57a90b25e3))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* bar chart loading ([#709](https://github.com/oxy-hq/oxy-internal/issues/709)) ([1daa280](https://github.com/oxy-hq/oxy-internal/commit/1daa28005cd830d4527c1710a9f4779fdd454188))
+* chart fails to render ([#706](https://github.com/oxy-hq/oxy-internal/issues/706)) ([250f609](https://github.com/oxy-hq/oxy-internal/commit/250f609bcee246a6f6dd1a2b168585ffc544a15c))
+* chart readability ([#728](https://github.com/oxy-hq/oxy-internal/issues/728)) ([f173c4b](https://github.com/oxy-hq/oxy-internal/commit/f173c4b27101369b43ca811154d8bba327c6628e))
+* duckdb init multiple times ([#708](https://github.com/oxy-hq/oxy-internal/issues/708)) ([a60a209](https://github.com/oxy-hq/oxy-internal/commit/a60a20962a58bd4519f0e673bd429574094a6e94))
+* ensure scrollbar always appear on the right hand side ([#710](https://github.com/oxy-hq/oxy-internal/issues/710)) ([85a74a7](https://github.com/oxy-hq/oxy-internal/commit/85a74a75bbc9b75b24cfca3cfa94330a0d549218))
+* UI bugs always stuck at Fail to load app ([#747](https://github.com/oxy-hq/oxy-internal/issues/747)) ([8387e32](https://github.com/oxy-hq/oxy-internal/commit/8387e3296297db9e06e34f69bb169f4dc82eba9c))
+* visual fixes ([#741](https://github.com/oxy-hq/oxy-internal/issues/741)) ([0059df2](https://github.com/oxy-hq/oxy-internal/commit/0059df29c92de7e67223296ce299c40944578ef7))
+
 ## [0.1.20](https://github.com/oxy-hq/oxy-internal/compare/0.1.16...0.1.20) (2025-04-22)
 
 
