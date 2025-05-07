@@ -52,9 +52,8 @@ const taskKeys = {
   all: ["task"] as const,
   list: () => [...taskKeys.all, "list"] as const,
   item: (taskId: string) => [...taskKeys.all, { taskId }] as const,
-  get: (taskId: string) => [...taskKeys.all, "get", taskId] as const
-}
-
+  get: (taskId: string) => [...taskKeys.all, "get", taskId] as const,
+};
 
 const queryKeys = {
   conversation: conversationKeys,

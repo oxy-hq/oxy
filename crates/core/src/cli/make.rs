@@ -4,7 +4,6 @@ use crate::config::model::AgentToolsConfig;
 use crate::config::model::Database;
 use crate::config::model::DatabaseType;
 use crate::config::model::Defaults;
-use crate::config::model::Dimension;
 use crate::config::model::DuckDB;
 use crate::config::model::ExecuteSQLTool;
 use crate::config::model::FileContext;
@@ -15,8 +14,8 @@ use crate::config::model::SemanticModels;
 use crate::config::model::ToolType;
 use crate::config::*;
 use crate::theme::*;
+use crate::utils::extract_csv_dimensions;
 use crate::utils::get_relative_path;
-use csv::StringRecord;
 use model::AgentConfig;
 use model::Config;
 use std::env::current_dir;
@@ -128,28 +127,19 @@ fn create_semantic_models(
     db_file_path: &PathBuf,
     db_dir: &PathBuf,
 ) -> anyhow::Result<SemanticModels> {
-    let mut reader = csv::Reader::from_path(file_path)?;
-    let columns = reader.headers()?.to_owned();
-    let mut first_row = StringRecord::new();
-    reader.read_record(&mut first_row)?;
+    use std::path::Path;
 
-    let dimensions = columns
-        .iter()
-        .enumerate()
-        .map(|(i, column)| Dimension {
-            name: column.to_string(),
-            sample: vec![first_row[i].to_string()],
-            synonyms: None,
-            data_type: None,
-            is_partition_key: None,
-        })
-        .collect();
+    let dimensions = extract_csv_dimensions(Path::new(file_path))
+        .map_err(|e| anyhow::anyhow!("Failed to extract CSV dimensions: {e}"))?;
 
     Ok(SemanticModels {
         table: get_relative_path(db_file_path.clone(), db_dir.clone())?,
         database: "local".to_string(),
         dimensions,
-        description: "".to_string(),
+        description: Path::new(file_path)
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_default(),
         entities: vec![],
         measures: vec![],
     })

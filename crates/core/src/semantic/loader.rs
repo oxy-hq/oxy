@@ -1,4 +1,5 @@
-use std::{collections::HashMap, sync::Arc};
+use std::path::Path;
+use std::{collections::HashMap, fs, sync::Arc};
 
 use crate::{
     adapters::connector::Connector,
@@ -7,6 +8,7 @@ use crate::{
         model::{Database, DatabaseType, Dimension, SemanticModels},
     },
     errors::OxyError,
+    utils::extract_csv_dimensions,
 };
 
 use futures::StreamExt;
@@ -185,17 +187,22 @@ trait GetSchemaQuery {
 
 impl GetSchemaQuery for Database {
     fn get_schemas_queries(&self) -> Result<Vec<String>, OxyError> {
-        self.datasets()
-            .iter()
-            .map(|(dataset, tables)| match self.database_type {
-                DatabaseType::Bigquery(_) => {
+        match &self.database_type {
+            DatabaseType::Bigquery(_) => self
+                .datasets()
+                .iter()
+                .map(|(dataset, tables)| {
                     let query = GetSchemaQueryBuilder::default()
                         .with_columns_table(format!("{}.INFORMATION_SCHEMA.COLUMNS", dataset))
                         .with_filter_tables(tables.clone())
                         .build();
                     Ok(query)
-                }
-                DatabaseType::ClickHouse(_) => {
+                })
+                .collect::<Result<Vec<_>, OxyError>>(),
+            DatabaseType::ClickHouse(_) => self
+                .datasets()
+                .iter()
+                .map(|(dataset, tables)| {
                     let query = GetSchemaQueryBuilder::default()
                         .with_column_names(
                             ColumnNames::default()
@@ -210,25 +217,31 @@ impl GetSchemaQuery for Database {
                         .with_columns_table("system.columns".to_string())
                         .build();
                     Ok(query)
-                }
-                _ => Err(OxyError::ConfigurationError(
-                    "Unsupported database type".to_string(),
-                )),
-            })
-            .collect::<Result<Vec<_>, OxyError>>()
+                })
+                .collect::<Result<Vec<_>, OxyError>>(),
+            DatabaseType::DuckDB(_) => Ok(vec!["DUCKDB_SCHEMA".to_string()]),
+            _ => Err(OxyError::ConfigurationError(
+                "Unsupported database type".to_string(),
+            )),
+        }
     }
     fn get_ddl_queries(&self) -> Result<Vec<String>, OxyError> {
-        self.datasets()
-            .iter()
-            .map(|(dataset, tables)| match self.database_type {
-                DatabaseType::Bigquery(_) => {
+        match &self.database_type {
+            DatabaseType::Bigquery(_) => self
+                .datasets()
+                .iter()
+                .map(|(dataset, tables)| {
                     let query = GetSchemaQueryBuilder::default()
                         .with_tables_table(format!("{}.INFORMATION_SCHEMA.TABLES", dataset))
                         .with_filter_tables(tables.clone())
                         .build_ddl();
                     Ok(query)
-                }
-                DatabaseType::ClickHouse(_) => {
+                })
+                .collect::<Result<Vec<_>, OxyError>>(),
+            DatabaseType::ClickHouse(_) => self
+                .datasets()
+                .iter()
+                .map(|(dataset, tables)| {
                     let query = GetSchemaQueryBuilder::default()
                         .with_column_names(
                             ColumnNames::default()
@@ -241,13 +254,44 @@ impl GetSchemaQuery for Database {
                         .with_filter_tables(tables.clone())
                         .build_ddl();
                     Ok(query)
-                }
-                _ => Err(OxyError::ConfigurationError(
-                    "Unsupported database type".to_string(),
-                )),
-            })
-            .collect::<Result<Vec<_>, OxyError>>()
+                })
+                .collect::<Result<Vec<_>, OxyError>>(),
+            DatabaseType::DuckDB(_) => Ok(vec!["DUCKDB_DDL".to_string()]),
+            _ => Err(OxyError::ConfigurationError(
+                "Unsupported database type".to_string(),
+            )),
+        }
     }
+}
+
+async fn fetch_schema_models<T: for<'de> Deserialize<'de>>(
+    queries: Vec<String>,
+    connector: &Arc<Connector>,
+) -> Result<Vec<T>, OxyError> {
+    let datasets = async_stream::stream! {
+        for query in queries {
+            yield async move {
+                let (record_batches, _) = connector.run_query_with_limit(&query, None).await?;
+                let mut results = vec![];
+                for record_batch in record_batches {
+                    let records: Vec<T> = from_record_batch(&record_batch).map_err(|e| {
+                        OxyError::RuntimeError(format!("Failed to parse schema information: {}", e))
+                    })?;
+                    results.extend(records);
+                }
+                Ok::<_, OxyError>(results)
+            };
+        }
+    }
+    .buffered(10)
+    .collect::<Vec<_>>()
+    .await
+    .into_iter()
+    .try_collect::<Vec<T>, Vec<_>, _>()?
+    .into_iter()
+    .flatten()
+    .collect();
+    Ok(datasets)
 }
 
 pub struct SchemaLoader {
@@ -306,106 +350,203 @@ impl SchemaLoader {
         database: &Database,
         config: &ConfigManager,
     ) -> Result<Self, OxyError> {
-        let connector = Connector::from_database(&database.name, config, None).await?;
+        let connector = Arc::new(Connector::from_database(&database.name, config, None).await?);
         Ok(SchemaLoader {
             database: database.clone(),
-            connector: Arc::new(connector),
+            connector,
         })
-    }
-
-    async fn load_schema_records(&self, query: &str) -> Result<Vec<SchemaRecord>, OxyError> {
-        let (record_batches, _) = self.connector.run_query_with_limit(query, None).await?;
-        let mut results = vec![];
-        for record_batch in record_batches {
-            let records: Vec<SchemaRecord> = from_record_batch(&record_batch).map_err(|e| {
-                OxyError::RuntimeError(format!("Failed to parse schema information: {}", e))
-            })?;
-            results.extend(records);
-        }
-        Ok(results)
-    }
-
-    async fn load_ddl_records(&self, query: &str) -> Result<Vec<DDLRecord>, OxyError> {
-        let (record_batches, _) = self.connector.run_query_with_limit(query, None).await?;
-        let mut results = vec![];
-        for record_batch in record_batches {
-            let records: Vec<DDLRecord> = from_record_batch(&record_batch).map_err(|e| {
-                OxyError::RuntimeError(format!("Failed to parse schema information: {}", e))
-            })?;
-            results.extend(records);
-        }
-        Ok(results)
-    }
-
-    pub async fn load_ddl(&self) -> Result<HashMap<String, String>, OxyError> {
-        let queries = self.database.get_ddl_queries()?;
-        let datasets = async_stream::stream! {
-            for query in queries {
-                yield async move {
-                    self.load_ddl_records(&query).await
-                };
-            }
-        }
-        .buffered(10)
-        .collect::<Vec<_>>()
-        .await
-        .into_iter()
-        .try_collect::<Vec<DDLRecord>, Vec<_>, _>()?
-        .into_iter()
-        .flatten()
-        .fold(HashMap::new(), |mut acc, record| {
-            let entry: &mut String = acc.entry(record.dataset.clone()).or_default();
-            entry.push_str(&record.ddl);
-            entry.push('\n');
-            acc
-        });
-        Ok(datasets)
     }
 
     pub async fn load_schema(
         &self,
     ) -> Result<HashMap<String, HashMap<String, SemanticModels>>, OxyError> {
-        let queries = self.database.get_schemas_queries()?;
-        let datasets = async_stream::stream! {
-            for query in queries {
-                yield async move {
-                    self.load_schema_records(&query).await
-                };
+        match &self.database.database_type {
+            DatabaseType::DuckDB(duckdb) => {
+                let mut result = HashMap::new();
+                let mut tables = HashMap::new();
+                let path = Path::new(&duckdb.file_search_path);
+                if !path.exists() || !path.is_dir() {
+                    return Ok(result);
+                }
+                for entry in fs::read_dir(path).map_err(|e| {
+                    OxyError::RuntimeError(format!("Failed to read DuckDB directory: {}", e))
+                })? {
+                    let entry = entry.map_err(|e| {
+                        OxyError::RuntimeError(format!(
+                            "Failed to read DuckDB directory entry: {}",
+                            e
+                        ))
+                    })?;
+                    let path = entry.path();
+                    let ext = path
+                        .extension()
+                        .and_then(|e| e.to_str())
+                        .unwrap_or("")
+                        .to_lowercase();
+                    let table_name = path.file_stem().unwrap().to_string_lossy().to_string();
+                    let dimensions = match ext.as_str() {
+                        "csv" => extract_csv_dimensions(&path),
+                        // "parquet" | "json" => not supported for now
+                        _ => Ok(vec![]),
+                    }?;
+                    if !dimensions.is_empty() {
+                        tables.insert(
+                            table_name.clone(),
+                            SemanticModels {
+                                database: self.database.name.clone(),
+                                table: table_name.clone(),
+                                description: "".to_string(),
+                                dimensions,
+                                entities: vec![],
+                                measures: vec![],
+                            },
+                        );
+                    }
+                }
+                if !tables.is_empty() {
+                    result.insert("duckdb".to_string(), tables);
+                }
+                Ok(result)
             }
-        }
-        .buffered(10)
-        .collect::<Vec<_>>()
-        .await
-        .into_iter()
-        .try_collect::<Vec<SchemaRecord>, Vec<_>, _>()?
-        .into_iter()
-        .flatten()
-        .fold(HashMap::new(), |mut acc, record| {
-            let model: &mut HashMap<String, SemanticModels> =
-                acc.entry(record.dataset.clone()).or_default();
-            let entry = model
-                .entry(record.table_name.clone())
-                .or_insert(SemanticModels {
-                    database: self.database.name.to_string(),
-                    table: format!("{}.{}", record.dataset, record.table_name),
-                    description: Default::default(),
-                    dimensions: vec![],
-                    entities: vec![],
-                    measures: vec![],
+            DatabaseType::ClickHouse(_) | DatabaseType::Bigquery(_) => {
+                let queries = self.database.get_schemas_queries()?;
+                let records: Vec<SchemaRecord> =
+                    fetch_schema_models(queries, &self.connector).await?;
+                let datasets = records.into_iter().fold(HashMap::new(), |mut acc, record| {
+                    let model: &mut HashMap<String, SemanticModels> =
+                        acc.entry(record.dataset.clone()).or_default();
+                    let entry: &mut SemanticModels = model
+                        .entry(record.table_name.clone())
+                        .or_insert(SemanticModels {
+                            database: self.database.name.to_string(),
+                            table: format!("{}.{}", record.dataset, record.table_name),
+                            description: Default::default(),
+                            dimensions: vec![],
+                            entities: vec![],
+                            measures: vec![],
+                        });
+                    entry.dimensions.push(Dimension {
+                        name: record.column_name.to_string(),
+                        synonyms: None,
+                        sample: vec![],
+                        data_type: Some(record.data_type.to_string()),
+                        is_partition_key: if record.is_partitioning_column {
+                            Some(record.is_partitioning_column)
+                        } else {
+                            None
+                        },
+                    });
+                    acc
                 });
-            entry.dimensions.push(Dimension {
-                name: record.column_name.to_string(),
-                synonyms: None,
-                sample: vec![],
-                data_type: Some(record.data_type.to_string()),
-                is_partition_key: if record.is_partitioning_column {
-                    Some(record.is_partitioning_column)
-                } else {
-                    None
-                },
-            });
-            acc
-        });
-        Ok(datasets)
+                Ok(datasets)
+            }
+            _ => Err(OxyError::ConfigurationError(
+                "Unsupported database type".to_string(),
+            )),
+        }
+    }
+
+    pub async fn load_ddl(&self) -> Result<HashMap<String, String>, OxyError> {
+        match &self.database.database_type {
+            DatabaseType::DuckDB(duckdb) => {
+                let mut ddls = HashMap::new();
+                let path = Path::new(&duckdb.file_search_path);
+                if !path.exists() || !path.is_dir() {
+                    return Ok(ddls);
+                }
+                let mut ddl_lines = Vec::new();
+                use duckdb::Connection;
+                let conn = Connection::open_in_memory().map_err(|e| {
+                    OxyError::RuntimeError(format!("Failed to open in-memory DuckDB: {}", e))
+                })?;
+                for entry in fs::read_dir(path).map_err(|e| {
+                    OxyError::RuntimeError(format!("Failed to read DuckDB directory: {}", e))
+                })? {
+                    let entry = entry.map_err(|e| {
+                        OxyError::RuntimeError(format!(
+                            "Failed to read DuckDB directory entry: {}",
+                            e
+                        ))
+                    })?;
+                    let path = entry.path();
+                    let ext = path
+                        .extension()
+                        .and_then(|e| e.to_str())
+                        .unwrap_or("")
+                        .to_lowercase();
+                    let file_name = path.file_name().unwrap().to_string_lossy().to_string();
+                    let columns = match ext.as_str() {
+                        "csv" => {
+                            let sql = format!(
+                                "CREATE OR REPLACE VIEW auto_csv AS SELECT * FROM read_csv_auto('{}', SAMPLE_SIZE=10000, ALL_VARCHAR=FALSE);",
+                                path.display()
+                            );
+                            conn.execute(&sql, []).map_err(|e| {
+                                OxyError::RuntimeError(format!(
+                                    "DuckDB failed to read CSV {}: {}",
+                                    path.display(),
+                                    e
+                                ))
+                            })?;
+                            let mut stmt =
+                                conn.prepare("PRAGMA table_info('auto_csv');")
+                                    .map_err(|e| {
+                                        OxyError::RuntimeError(format!(
+                                            "DuckDB failed to prepare schema query: {}",
+                                            e
+                                        ))
+                                    })?;
+                            let mut rows = stmt.query([]).map_err(|e| {
+                                OxyError::RuntimeError(format!(
+                                    "DuckDB failed to query schema: {}",
+                                    e
+                                ))
+                            })?;
+                            let mut columns: Vec<String> = Vec::new();
+                            while let Some(row) = rows.next().map_err(|e| {
+                                OxyError::RuntimeError(format!(
+                                    "DuckDB failed to read schema row: {}",
+                                    e
+                                ))
+                            })? {
+                                let name: String = row.get(1).map_err(|e| {
+                                    OxyError::RuntimeError(format!("DuckDB schema row: {}", e))
+                                })?;
+                                let dtype: String = row.get(2).map_err(|e| {
+                                    OxyError::RuntimeError(format!("DuckDB schema row: {}", e))
+                                })?;
+                                columns.push(format!("\"{}\" {}", name, dtype));
+                            }
+                            Ok::<Vec<String>, OxyError>(columns)
+                        }
+                        // "parquet" | "json" => not supported for now
+                        _ => Ok::<Vec<String>, OxyError>(vec![]),
+                    }?;
+                    if !columns.is_empty() {
+                        let ddl =
+                            format!("CREATE TABLE '{}' ({});", file_name, columns.join(", "),);
+                        ddl_lines.push(format!("-- {file_name}\n{ddl}"));
+                    }
+                }
+                if !ddl_lines.is_empty() {
+                    ddls.insert("duckdb".to_string(), ddl_lines.join("\n\n"));
+                }
+                Ok(ddls)
+            }
+            DatabaseType::ClickHouse(_) | DatabaseType::Bigquery(_) => {
+                let queries = self.database.get_ddl_queries()?;
+                let records: Vec<DDLRecord> = fetch_schema_models(queries, &self.connector).await?;
+                let datasets = records.into_iter().fold(HashMap::new(), |mut acc, record| {
+                    let entry: &mut String = acc.entry(record.dataset.clone()).or_default();
+                    entry.push_str(&record.ddl);
+                    entry.push('\n');
+                    acc
+                });
+                Ok(datasets)
+            }
+            _ => Err(OxyError::ConfigurationError(
+                "Unsupported database type".to_string(),
+            )),
+        }
     }
 }
