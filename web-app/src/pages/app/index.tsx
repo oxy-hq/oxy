@@ -34,7 +34,7 @@ const AppPage: React.FC = () => {
   const handleRun = () => runApp(pathb64);
 
   if (isPending) return <Loading />;
-  
+
   if (!app) {
     return (
       <div className="w-full h-full flex items-center justify-center">
@@ -54,7 +54,8 @@ const AppPage: React.FC = () => {
             resetKeys={[app]}
             fallback={
               <div className="text-red-600">
-                Failed to render app. Refresh the data or check for configuration errors.
+                Failed to render app. Refresh the data or check for
+                configuration errors.
               </div>
             }
           >
