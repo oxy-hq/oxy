@@ -18,6 +18,9 @@ import {
   ToggleGroupItem,
 } from "@/components/ui/shadcn/toggle-group";
 
+const ToggleGroupItemClasses =
+  "data-[state=on]:border hover:text-special hover:bg-button-hover data-[state=on]:bg-button-hover  data-[state=on]:text-special border-accent-main-000 rounded-md";
+
 const ChatPanel = ({
   agent,
   onChangeAgent,
@@ -81,21 +84,24 @@ const ChatPanel = ({
       <div className="flex justify-between">
         <div className="flex items-center justify-center">
           <ToggleGroup
+            size="sm"
             type="single"
             defaultValue="ask"
             className="gap-1 p-1 bg-sidebar-background text-accent-main-000 rounded-md"
             onValueChange={setMode}
           >
             <ToggleGroupItem
+              size="sm"
               value="ask"
-              className="data-[state=on]:border hover:text-special hover:bg-button-hover data-[state=on]:bg-button-hover  data-[state=on]:text-special border-accent-main-000 rounded-md"
+              className={ToggleGroupItemClasses}
             >
               <MessageCircleQuestion />
               <span>Ask</span>
             </ToggleGroupItem>
             <ToggleGroupItem
+              size="sm"
               value="build"
-              className="data-[state=on]:border hover:text-special hover:bg-button-hover data-[state=on]:bg-button-hover  data-[state=on]:text-special border-accent-main-000 rounded-md"
+              className={ToggleGroupItemClasses}
             >
               <Hammer />
               <span>Build</span>
@@ -103,11 +109,9 @@ const ChatPanel = ({
           </ToggleGroup>
         </div>
         <div className="flex gap-2 items-center">
-          <AgentsDropdown
-            onSelect={onChangeAgent}
-            disabled={mode === "build"}
-            agent={agent}
-          />
+          {mode === "ask" && (
+            <AgentsDropdown onSelect={onChangeAgent} agent={agent} />
+          )}
           <Button disabled={!message || isPending || !agent} type="submit">
             {isPending ? <Loader2 className="animate-spin" /> : <ArrowRight />}
           </Button>

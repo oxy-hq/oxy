@@ -8,10 +8,15 @@ import {
   SidebarMenuSubItem,
 } from "@/components/ui/shadcn/sidebar";
 import useWorkflows from "@/hooks/api/useWorkflows";
+import { useState } from "react";
+import { Button } from "@/components/ui/shadcn/button";
 
 export function Workflows() {
+  const [showAll, setShowAll] = useState(false);
   const location = useLocation();
   const { data: workflows } = useWorkflows();
+
+  const visibleWorkflows = showAll ? workflows : workflows?.slice(0, 5);
 
   return (
     <SidebarMenuItem>
@@ -22,7 +27,7 @@ export function Workflows() {
         </div>
       </SidebarMenuButton>
       <SidebarMenuSub>
-        {workflows?.map((workflow) => {
+        {visibleWorkflows?.map((workflow) => {
           const pathb64 = btoa(workflow.path);
           const workflowUri = `/workflows/${pathb64}`;
           return (
@@ -38,6 +43,16 @@ export function Workflows() {
             </SidebarMenuSubItem>
           );
         })}
+        {workflows && workflows.length > 5 && (
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setShowAll(!showAll)}
+            className="w-full text-sm text-muted-foreground hover:text-foreground py-1 text-left"
+          >
+            {showAll ? "Show less" : `Show all (${workflows.length} workflows)`}
+          </Button>
+        )}
       </SidebarMenuSub>
     </SidebarMenuItem>
   );
