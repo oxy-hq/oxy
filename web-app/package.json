@@ -88,6 +88,7 @@
     "tailwindcss-animate": "^1.0.7",
     "unist-util-visit": "^5.0.0",
     "uuid": "11.1.0",
+    "vega": "^6.1.2",
     "vega-lite": "^6.1.0",
     "yaml": "^2.7.1",
     "zustand": "^5.0.4"
