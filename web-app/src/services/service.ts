@@ -51,6 +51,7 @@ export interface Service {
   ): Promise<string[][]>;
   listDatabases(): Promise<string[]>;
   getFileTree(): Promise<FileTreeModel[]>;
+  checkBuilderAvailability(): Promise<{ available: boolean }>;
 }
 
 export const service = apiService;

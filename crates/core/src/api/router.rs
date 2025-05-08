@@ -32,6 +32,10 @@ pub async fn api_router() -> Router {
         .route("/ask", post(agent::ask))
         .route("/messages/{agent}", get(message::get_messages))
         .route("/agents", get(agent::get_agents))
+        .route(
+            "/builder-availability",
+            get(agent::check_builder_availability),
+        )
         .route("/apps", get(app::list_apps))
         .route("/app/{pathb64}", get(app::get_app))
         .route("/app/file/{pathb64}", get(app::get_data))

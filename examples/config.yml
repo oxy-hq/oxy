@@ -105,4 +105,4 @@ retrievals:
 defaults:
   database: local
 
-builder_agent: agents/builder.agent.yml
+# builder_agent: agents/builder.agent.yml

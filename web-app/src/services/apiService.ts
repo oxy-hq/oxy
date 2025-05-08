@@ -157,4 +157,8 @@ export const apiService: Service = {
   deleteTask: async function (taskId: string): Promise<void> {
     await apiClient.delete("/tasks/" + taskId);
   },
+  checkBuilderAvailability: async function (): Promise<{ available: boolean }> {
+    const response = await apiClient.get("/builder-availability");
+    return response.data;
+  },
 };

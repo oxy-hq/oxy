@@ -11,6 +11,31 @@ use axum::response::IntoResponse;
 use axum_streams::StreamBodyAs;
 use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
+use serde::Serialize;
+
+#[derive(Serialize)]
+pub struct BuilderAvailabilityResponse {
+    pub available: bool,
+}
+
+pub async fn check_builder_availability()
+-> Result<extract::Json<BuilderAvailabilityResponse>, StatusCode> {
+    let project_path = find_project_path().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let config_builder = ConfigBuilder::new()
+        .with_project_path(&project_path)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let config = config_builder
+        .build()
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let is_available = config.get_builder_agent_path().await.is_ok();
+
+    Ok(extract::Json(BuilderAvailabilityResponse {
+        available: is_available,
+    }))
+}
 
 #[utoipa::path(
     method(post),

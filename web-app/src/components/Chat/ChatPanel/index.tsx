@@ -13,6 +13,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AgentsDropdown, { Agent } from "./AgentsDropdown";
 import useTaskMutation from "@/hooks/api/useTaskMutation";
+import useBuilderAvailable from "@/hooks/api/useBuilderAvailable";
 import {
   ToggleGroup,
   ToggleGroupItem,
@@ -39,6 +40,9 @@ const ChatPanel = ({
     },
   );
 
+  const { isAvailable: isBuilderAvailable, isLoading: isCheckingBuilder } =
+    useBuilderAvailable();
+
   const [message, setMessage] = useState("");
   const { formRef, onKeyDown } = useEnterSubmit();
   const [mode, setMode] = useState<string>("ask");
@@ -46,7 +50,7 @@ const ChatPanel = ({
   const handleFormSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!message) return;
-    if (mode === "build") {
+    if (mode === "build" && isBuilderAvailable) {
       createTask({
         title: message,
         question: message,
@@ -86,9 +90,13 @@ const ChatPanel = ({
           <ToggleGroup
             size="sm"
             type="single"
-            defaultValue="ask"
+            value={mode}
             className="gap-1 p-1 bg-sidebar-background text-accent-main-000 rounded-md"
-            onValueChange={setMode}
+            onValueChange={(value) => {
+              if (value) {
+                setMode(value);
+              }
+            }}
           >
             <ToggleGroupItem
               size="sm"
@@ -102,6 +110,8 @@ const ChatPanel = ({
               size="sm"
               value="build"
               className={ToggleGroupItemClasses}
+              disabled={!isBuilderAvailable || isCheckingBuilder}
+              title={!isBuilderAvailable ? "Builder agent not available" : ""}
             >
               <Hammer />
               <span>Build</span>
