@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.23](https://github.com/oxy-hq/oxy-internal/compare/0.1.22...0.1.23) (2025-05-08)
+
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+* release 0.1.23 ([1f4ee90](https://github.com/oxy-hq/oxy-internal/commit/1f4ee900db72935ca253bdebde8e207afb01f7c2))
+
 ## [0.1.22](https://github.com/oxy-hq/oxy-internal/compare/0.1.21...0.1.22) (2025-05-08)
 
 
