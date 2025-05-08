@@ -8,6 +8,12 @@ on:
     branches:
       - main
       - "[0-9]+.[0-9]+.x"
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to sync'
+        required: true
+        default: 'main'
 permissions:
   contents: write
   actions: read
@@ -35,6 +41,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ inputs.branch || github.ref_name }}
           token: ${{ steps.app-token.outputs.token }}
       - uses: luong-komorebi/copybara-action@ft/sync-pull-request-title
         with:
