@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.22](https://github.com/oxy-hq/oxy-internal/compare/0.1.21...0.1.22) (2025-05-08)
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* Add error boundary to data app page to prevent crashes ([#754](https://github.com/oxy-hq/oxy-internal/issues/754)) ([c94cb3e](https://github.com/oxy-hq/oxy-internal/commit/c94cb3ec2dd82c7b286240b4e49ecc22b8bdf705))
+* Disable builder toggle when builder agent is not available ([#755](https://github.com/oxy-hq/oxy-internal/issues/755)) ([1c9b625](https://github.com/oxy-hq/oxy-internal/commit/1c9b6251885200c646f897334eeef44f862a47c6))
+
 ## [0.1.21](https://github.com/oxy-hq/oxy-internal/compare/0.1.20...0.1.21) (2025-05-07)
 
 

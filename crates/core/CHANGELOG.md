@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.22](https://github.com/oxy-hq/oxy-internal/compare/0.1.21...0.1.22) (2025-05-08)
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* Disable builder toggle when builder agent is not available ([#755](https://github.com/oxy-hq/oxy-internal/issues/755)) ([1c9b625](https://github.com/oxy-hq/oxy-internal/commit/1c9b6251885200c646f897334eeef44f862a47c6))
+
 ## [0.1.21](https://github.com/oxy-hq/oxy-internal/compare/0.1.20...0.1.21) (2025-05-07)
 
 
