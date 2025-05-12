@@ -15,7 +15,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
       - name: GitHub Branch Cleaner
-        uses: fpicalausa/remove-stale-branches@v2.3.0
+        uses: fpicalausa/remove-stale-branches@v2.4.0
         with:
           exempt-branches-regex: ^(main|[0-9]+.[0-9]+.x)$
           days-before-branch-stale: 90
