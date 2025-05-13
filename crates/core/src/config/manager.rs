@@ -107,15 +107,15 @@ impl ConfigManager {
             // hide the builder agent from the list
             let builder_agent_full_path =
                 self.storage.fs_link(builder_agent).await.map_err(|_| {
-                    OxyError::ConfigurationError(format!("Failed to resolve agent path"))
+                    OxyError::ConfigurationError("Failed to resolve agent path".to_string())
                 })?;
-            return Ok(agents
+            Ok(agents
                 .iter()
                 .filter(|agent| agent.display().to_string() != builder_agent_full_path)
                 .cloned()
-                .collect());
+                .collect())
         } else {
-            return Ok(agents);
+            Ok(agents)
         }
     }
 
