@@ -1,3 +1,5 @@
 packages:
-  - "web-app"
-  - "crates/core/src"
+  - web-app
+  - crates/core/src
+ignoredBuiltDependencies:
+  - '@tailwindcss/oxide'
