@@ -94,6 +94,54 @@ jobs:
             pnpm lint-staged --diff="${{ github.event.before }}...${{ github.event.after }}"
           fi
 
+  build-web:
+    name: Build web
+    needs: [changesets, typos]
+    concurrency:
+      group: build-web-${{ github.event.pull_request.number || github.ref }}
+      cancel-in-progress: true
+    if: needs.changesets.outputs.web-app == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+      - name: Get pnpm store directory
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+      - uses: actions/cache@v4
+        name: Setup pnpm cache
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: pnpm-store-ubuntu-22.04-x86_64-unknown-linux-gnu-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-store-ubuntu-22.04-x86_64-unknown-linux-gnu
+      - name: Restore Vite pre-bundle cache
+        uses: actions/cache@v4
+        with:
+          path: web-app/node_modules/.vite
+          key: vite-prebundle-${{ hashFiles('web-app/pnpm-lock.yaml') }}-${{ hashFiles('web-app/vite.config.*', 'web-app/src/**') }}
+          restore-keys: |
+            vite-prebundle-
+      - name: Install dependencies & Build web-app
+        env:
+          NODE_OPTIONS: "--max_old_space_size=4096"
+        run: |
+          pnpm install --prefer-frozen-lockfile
+          pnpm -C web-app build
+      - name: Save Vite pre-bundle cache
+        if: always()
+        uses: actions/cache@v4
+        with:
+          path: web-app/node_modules/.vite
+          key: vite-prebundle-${{ hashFiles('web-app/pnpm-lock.yaml') }}-${{ hashFiles('web-app/vite.config.*', 'web-app/src/**') }}
+
   cargo-check-and-test:
     concurrency:
       group: cargo-check-and-test-${{ matrix.task }}-${{ github.event.pull_request.number || github.ref }}
