@@ -75,7 +75,7 @@ impl BigquerySqlGenerationEngine {
             match view_name {
                 Some(view_name) => format!("{}.{}", view_name, field),
                 None => {
-                    log::error!(
+                    tracing::error!(
                         "Field {} does not have view name, please check your semantic model",
                         field
                     );
@@ -132,7 +132,7 @@ impl BigquerySqlGenerationEngine {
                 );
             } else {
                 let compiled_field = self.compile_field(&field_name)?;
-                log::debug!("compiled field {} {:?}", field_name, compiled_field);
+                tracing::debug!("compiled field {} {:?}", field_name, compiled_field);
                 rendered_ref_fields.insert(field_name.clone(), compiled_field.clone());
 
                 ctx_map.insert(
@@ -363,7 +363,7 @@ impl BigquerySqlGenerationEngine {
         required_views.insert(view_name.to_owned());
         if let Some(sql) = &measure.sql {
             let compiled_field = self.compile_value(Some(view_name), sql)?;
-            log::debug!("compiled field {} {:?}", field_name, compiled_field);
+            tracing::debug!("compiled field {} {:?}", field_name, compiled_field);
             compiled_sql = compiled_field.sql;
             required_views.extend(compiled_field.required_views);
             filters.extend(compiled_field.filters);
@@ -684,7 +684,7 @@ impl SqlGenerationEngine for BigquerySqlGenerationEngine {
 
         for (select_field_name, selected_field) in selected_fields {
             let compiled_field = self.compile_field(&select_field_name)?;
-            log::debug!("compiled field {} {:?}", select_field_name, compiled_field);
+            tracing::debug!("compiled field {} {:?}", select_field_name, compiled_field);
             sql_parts.select_clauses.push(compiled_field.sql.clone());
 
             // add measure to group by
@@ -718,7 +718,7 @@ impl SqlGenerationEngine for BigquerySqlGenerationEngine {
             };
 
             let compiled_field = self.compile_field(&filter.field)?;
-            log::debug!("compiled field {} {:?}", filter.field, compiled_field);
+            tracing::debug!("compiled field {} {:?}", filter.field, compiled_field);
             required_views.extend(compiled_field.required_views.clone());
             let expression: String =
                 format!("({}) {} {}", &compiled_field.sql, operator, filter.values);

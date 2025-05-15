@@ -37,7 +37,7 @@ impl Executable<CreateDataAppInput> for CreateDataAppExecutable {
         execution_context: &ExecutionContext,
         input: CreateDataAppInput,
     ) -> Result<Self::Response, OxyError> {
-        log::debug!("Creating data app with input: {:?}", &input);
+        tracing::debug!("Creating data app with input: {:?}", &input);
         let CreateDataAppInput { param } = input;
         let project_path = find_project_path()?;
         let mut full_file_name = format!("{}.app.yml", param.file_name);

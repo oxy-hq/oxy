@@ -123,7 +123,7 @@ impl LanceDB {
         }
 
         let optimization_stats = table.optimize(OptimizeAction::All).await?;
-        log::info!(
+        tracing::info!(
             "Optimization stats:\n- Compaction: {:?} \n- Prune: {:?}\n",
             &optimization_stats.compaction,
             &optimization_stats.prune
@@ -190,7 +190,7 @@ impl VectorEngine for LanceDB {
                 self.embedding_config.n_dims.try_into().unwrap(),
             ),
         );
-        log::info!("Total embedding records: {:?}", &embeddings.len());
+        tracing::info!("Total embedding records: {:?}", &embeddings.len());
 
         // clean up the table
         table.delete("true").await?;
@@ -215,12 +215,12 @@ impl VectorEngine for LanceDB {
             schema.clone(),
         );
         self.add_batches(&table, Box::new(batches)).await?;
-        log::info!("{} documents embedded!", documents.len());
+        tracing::info!("{} documents embedded!", documents.len());
         Ok(())
     }
 
     async fn search(&self, query: &str) -> Result<Vec<SearchRecord>, OxyError> {
-        log::info!("Embedding search query: {}", query);
+        tracing::info!("Embedding search query: {}", query);
         let query_vector = self.embed_query(query).await?;
 
         if query_vector.is_empty() {
@@ -240,7 +240,7 @@ impl VectorEngine for LanceDB {
             .execute()
             .await?;
 
-        log::debug!("Query results schema: {:?}", stream.schema());
+        tracing::debug!("Query results schema: {:?}", stream.schema());
 
         let record_batches = stream.try_collect::<Vec<_>>().await?;
         let mut results = vec![];

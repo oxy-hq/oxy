@@ -67,7 +67,7 @@ async fn make_documents_from_files(
                             embedding_content: embed,
                             embeddings: vec![],
                         };
-                        log::info!("Found 1 embed for file: {:?}", file_name);
+                        tracing::info!("Found 1 embed for file: {:?}", file_name);
                         documents.push(doc);
                     }
                     Embed::Multiple(embeds) => {
@@ -82,7 +82,7 @@ async fn make_documents_from_files(
                             };
                             documents.push(doc);
                         }
-                        log::info!("Found {} embeds for file: {:?}", length, file_name);
+                        tracing::info!("Found {} embeds for file: {:?}", length, file_name);
                     }
                 },
                 None => {
@@ -93,7 +93,7 @@ async fn make_documents_from_files(
                         embedding_content: content.to_owned(),
                         embeddings: vec![],
                     });
-                    log::info!(
+                    tracing::info!(
                         "No embed found for file: {:?}, embedding the whole file content",
                         file_name
                     );

@@ -41,7 +41,7 @@ impl Engine for DuckDB {
             .map_err(|err| connector_internal_error(EXECUTE_QUERY, &err))?;
         let schema = arrow_stream.get_schema();
         let arrow_chunks = arrow_stream.collect();
-        log::debug!("Query results: {:?}", arrow_chunks);
+        tracing::debug!("Query results: {:?}", arrow_chunks);
         Ok((arrow_chunks, schema))
     }
 }

@@ -101,8 +101,8 @@ impl ConfigManager {
 
     pub async fn list_agents(&self) -> Result<Vec<PathBuf>, OxyError> {
         let agents = self.storage.list_agents().await?;
-        log::debug!("Agents: {:?}", agents);
-        log::debug!("Builder: {:?}", self.config.builder_agent);
+        tracing::debug!("Agents: {:?}", agents);
+        tracing::debug!("Builder: {:?}", self.config.builder_agent);
         if let Some(ref builder_agent) = self.config.builder_agent {
             // hide the builder agent from the list
             let builder_agent_full_path =

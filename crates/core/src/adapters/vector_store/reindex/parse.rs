@@ -43,7 +43,7 @@ pub(super) fn parse_embed_document(content: &str) -> Option<(String, ContextHead
     let header_data: Result<ContextHeader, serde_yaml::Error> =
         serde_yaml::from_str(comment_content.as_str());
     if header_data.is_err() {
-        log::warn!(
+        tracing::warn!(
             "Failed to parse header data: {:?}, error: {:?}",
             comment_content,
             header_data

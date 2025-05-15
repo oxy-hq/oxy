@@ -81,9 +81,9 @@ impl CacheStorage<TaskInput, OutputContainer> for TaskCacheStorage {
         let maybe_sql = file_cache.read_str(&key)?;
 
         if let Some(cache_key) = self.compute_cache_key(&input.task.name, &key, true) {
-            log::debug!("Cache key: {}", cache_key);
+            tracing::debug!("Cache key: {}", cache_key);
             let output = file_cache.read::<OutputContainer>(&cache_key).await;
-            log::debug!("May be SQL: {}\n{:?}", maybe_sql, output);
+            tracing::debug!("May be SQL: {}\n{:?}", maybe_sql, output);
             match output {
                 Some(OutputContainer::Single(Output::SQL(mut sql))) => {
                     sql.0 = maybe_sql;
@@ -200,7 +200,7 @@ impl FileCache {
         match serde_json::from_str::<R>(json) {
             Ok(value) => Some(value),
             Err(e) => {
-                log::error!("Error deserializing \n{}\n\n{}", json, e);
+                tracing::error!("Error deserializing \n{}\n\n{}", json, e);
                 None
             }
         }

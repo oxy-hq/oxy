@@ -10,7 +10,7 @@ use arrow::{
 use crate::errors::OxyError;
 
 pub(super) fn connector_internal_error(message: &str, e: impl std::fmt::Display) -> OxyError {
-    log::error!("{}: {}", message, e);
+    tracing::error!("{}: {}", message, e);
     OxyError::DBError(format!("{}: {}", message, e))
 }
 
@@ -34,10 +34,10 @@ pub(super) fn write_to_ipc<P: AsRef<Path>>(
 ) -> anyhow::Result<()> {
     let file = File::create(file_path)?;
     if batches.is_empty() {
-        log::debug!("Warning: query returned no results.");
+        tracing::debug!("Warning: query returned no results.");
     }
 
-    log::debug!("Schema: {:?}", schema);
+    tracing::debug!("Schema: {:?}", schema);
     let schema_ref = schema.as_ref();
     let mut writer = FileWriter::try_new(file, schema_ref)?;
     for batch in batches {

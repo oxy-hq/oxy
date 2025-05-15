@@ -289,8 +289,8 @@ pub async fn ask_thread(Path(id): Path<String>) -> impl IntoResponse {
             )
             .await?
         };
-        log::debug!("Agent output: {:?}", output);
-        log::debug!("Agent references: {:?}", references);
+        tracing::debug!("Agent output: {:?}", output);
+        tracing::debug!("Agent references: {:?}", references);
         let mut thread_model: entity::threads::ActiveModel = thread.into();
         thread_model.answer = ActiveValue::Set(output.to_string());
         thread_model.references =

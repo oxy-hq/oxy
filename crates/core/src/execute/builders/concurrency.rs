@@ -157,7 +157,7 @@ where
             finish_context
                 .write_progress(ProgressType::Finished)
                 .await?;
-            log::debug!("Concurrency sending back results");
+            tracing::debug!("Concurrency sending back results");
             Ok(result)
         });
         let results = self

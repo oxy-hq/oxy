@@ -91,11 +91,11 @@ pub async fn get_agent(
     Path(pathb64): Path<String>,
 ) -> Result<extract::Json<AgentConfig>, StatusCode> {
     let decoded_path: Vec<u8> = BASE64_STANDARD.decode(pathb64).map_err(|e| {
-        log::info!("{:?}", e);
+        tracing::info!("{:?}", e);
         StatusCode::BAD_REQUEST
     })?;
     let path = String::from_utf8(decoded_path).map_err(|e| {
-        log::info!("{:?}", e);
+        tracing::info!("{:?}", e);
         StatusCode::BAD_REQUEST
     })?;
     let project_path = find_project_path().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;

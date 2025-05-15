@@ -104,7 +104,7 @@ where
             }
             iterations += 1;
         }
-        log::debug!("Stopped after {} iterations", iterations);
+        tracing::debug!("Stopped after {} iterations", iterations);
         Ok(final_response)
     }
 }

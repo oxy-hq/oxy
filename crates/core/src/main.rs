@@ -1,61 +1,48 @@
 use std::process::exit;
-use std::str::FromStr;
 
 use oxy::cli::cli;
 mod theme;
 use dotenv::dotenv;
-use fern::colors::{Color, ColoredLevelConfig};
 use human_panic::Metadata;
 use human_panic::setup_panic;
 use oxy::db::client;
 use oxy::theme::StyledText;
+use std::env;
+use tracing_subscriber::{EnvFilter, fmt};
 
-fn init_logging() -> Result<(), fern::InitError> {
-    // allow override stdout log level with RUST_LOG env var
-    let stdout_log_level = std::env::var("RUST_LOG").unwrap_or_else(|_| "off".to_string());
+fn init_tracing_logging(log_to_stdout: bool) {
+    let mut env_filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+    env_filter = env_filter
+        .add_directive("oxy=debug".parse().unwrap())
+        .add_directive("deser_incomplete::options_impl=warn".parse().unwrap())
+        .add_directive("tower_http=debug".parse().unwrap());
+    let is_debug = cfg!(debug_assertions);
+    if log_to_stdout {
+        fmt()
+            .with_env_filter(env_filter)
+            .with_target(true)
+            .with_level(true)
+            .init();
+    } else {
+        let log_file_path = std::path::Path::new(&client::get_state_dir()).join("oxy.log");
+        let file_appender = tracing_appender::rolling::never(
+            log_file_path.parent().unwrap(),
+            log_file_path.file_name().unwrap(),
+        );
+        let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
+        let log_builder = fmt()
+            .with_env_filter(env_filter)
+            .with_target(true)
+            .with_level(true)
+            .with_writer(non_blocking);
 
-    let log_file_path = std::path::Path::new(&client::get_state_dir()).join("oxy.log");
-
-    fern::Dispatch::new()
-        .chain(
-            // log everything to a file
-            fern::Dispatch::new()
-                .format(|out, message, record| {
-                    out.finish(format_args!(
-                        "[{} {} {} ] {}",
-                        humantime::format_rfc3339_seconds(std::time::SystemTime::now()),
-                        record.level(),
-                        record.module_path().unwrap_or("unknown"),
-                        message,
-                    ))
-                })
-                .level(log::LevelFilter::Debug)
-                .chain(fern::log_file(log_file_path)?),
-        )
-        .chain(
-            // log only oxy logs to stdout
-            fern::Dispatch::new()
-                .level(log::LevelFilter::Off)
-                .level_for(
-                    "oxy",
-                    log::LevelFilter::from_str(&stdout_log_level).expect("Invalid log level"),
-                )
-                .format(|out, message, record| {
-                    let colors = ColoredLevelConfig::new()
-                        .info(Color::Green)
-                        .warn(Color::BrightYellow)
-                        .error(Color::Red);
-                    out.finish(format_args!(
-                        "[{}] {}",
-                        colors.color(record.level()),
-                        message,
-                    ))
-                })
-                .chain(std::io::stdout()),
-        )
-        .apply()?;
-
-    Ok(())
+        if !is_debug {
+            log_builder.json().init();
+        } else {
+            log_builder.init();
+        }
+    }
 }
 
 #[tokio::main]
@@ -70,12 +57,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .homepage("github.com/oxy-hq/oxy")
         .support("- For support, please email robert@oxy.tech or contact us directly via Discord or Github.")
     );
-    init_logging()?;
     dotenv().ok();
+
+    // Log to stdout if `oxy serve`
+    let args: Vec<String> = env::args().collect();
+    let log_to_stdout = args.iter().any(|a| a == "serve");
+    init_tracing_logging(log_to_stdout);
+
     match cli().await {
         Ok(_) => {}
         Err(e) => {
-            log::error!("{}", e);
+            tracing::error!(error = %e, "Application error");
             eprintln!("{}", format!("{}", e).error());
             exit(1)
         }

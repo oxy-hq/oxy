@@ -1,11 +1,11 @@
 // TODO: This file is unused but left as an example of Python imports to pyo3.
 // Leveraged with the `oxy` Python directory and the build.rs file to register the venv.
 
-use log::debug;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use std::error::Error;
 use std::path::PathBuf;
+use tracing::debug;
 
 // Include the generated file
 include!(concat!(env!("OUT_DIR"), "/poetry_path.rs"));

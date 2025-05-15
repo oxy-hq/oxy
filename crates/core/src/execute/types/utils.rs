@@ -114,7 +114,7 @@ pub fn record_batches_to_table(
             None
         })
         .collect::<Vec<String>>();
-    log::debug!("Displayed columns: {:?}", displayed_headers);
+    tracing::debug!("Displayed columns: {:?}", displayed_headers);
     let mut rows = Vec::new();
     for batch in results {
         let formatters = create_formatters(batch)?

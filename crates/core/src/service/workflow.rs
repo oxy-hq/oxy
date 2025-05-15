@@ -104,7 +104,7 @@ where
     L: WorkflowLogger,
 {
     async fn handle_event(&mut self, event: Event) -> Result<(), OxyError> {
-        log::debug!("Received event: {:?}", event);
+        tracing::debug!(?event, "Received event");
         match event.source.kind.as_str() {
             WORKFLOW_SOURCE => match event.kind {
                 EventKind::Started { name } => {

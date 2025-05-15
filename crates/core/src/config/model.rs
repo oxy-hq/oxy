@@ -1561,7 +1561,7 @@ impl OmniTopicInfoTool {
                     topics.insert(topic_name, topic);
                 }
                 Err(e) => {
-                    log::warn!("Failed to parse topic: {} {}", &topic_name, e);
+                    tracing::warn!("Failed to parse topic: {} {}", &topic_name, e);
                 }
             }
         }
@@ -1674,7 +1674,7 @@ impl ExecuteOmniTool {
                     topics.insert(topic_name, topic);
                 }
                 Err(e) => {
-                    log::warn!("Failed to parse topic: {} {}", &topic_name, e);
+                    tracing::warn!("Failed to parse topic: {} {}", &topic_name, e);
                 }
             }
         }
@@ -1699,7 +1699,7 @@ impl ExecuteOmniTool {
     }
     // pub fn get_description(&self) -> Result<String, OxyError> {
     //     if self.models.is_empty() {
-    //         log::warn!("No semantic models for Omni");
+    //         tracing::warn!("No semantic models for Omni");
     //         return Err(OxyError::AgentError(
     //             "No semantic models for Omni tool. Please add models to the config file."
     //                 .to_owned(),

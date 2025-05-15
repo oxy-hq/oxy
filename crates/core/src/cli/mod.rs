@@ -53,6 +53,7 @@ use utoipa_swagger_ui::SwaggerUi;
 use init::init;
 
 use crate::api::router;
+use tower_http::trace::TraceLayer;
 use tower_serve_static::ServeDir;
 
 use axum::{
@@ -66,6 +67,7 @@ use dotenv;
 use include_dir::{Dir, include_dir};
 use std::net::SocketAddr;
 use tower::service_fn;
+use tracing::{debug, error};
 
 // hardcode the path for windows because of macro expansion issues
 // when using CARGO_MANIFEST_DIR with windows path separators
@@ -316,10 +318,10 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
     use std::panic;
 
     panic::set_hook(Box::new(move |panic_info| {
-        log::error!(
-            "{}\nTrace:\n{}",
-            panic_info,
-            backtrace::Backtrace::force_capture()
+        error!(
+            error = %panic_info,
+            trace = %backtrace::Backtrace::force_capture(),
+            "panic occurred"
         );
     }));
 
@@ -417,7 +419,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                 .database
                 .clone()
                 .map(|db| (db, sync_args.datasets.clone()));
-            log::debug!("Syncing {:?}", sync_args);
+            debug!(sync_args = ?sync_args, "Syncing");
             println!("🔄Syncing databases");
             let sync_metrics =
                 sync_databases(config.clone(), filter, !sync_args.ignore_changes).await?;
@@ -471,7 +473,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
         }
         Some(SubCommand::SelfUpdate) => {
             if let Err(e) = handle_check_for_updates().await {
-                log::error!("Failed to update: {}", e);
+                error!(error = %e, "Failed to update");
                 eprintln!("{}", format!("Failed to update: {}", e).error());
                 exit(1);
             }
@@ -661,7 +663,7 @@ pub async fn start_mcp_stdio(project_path: PathBuf) -> anyhow::Result<()> {
         .serve(stdio())
         .await
         .inspect_err(|e| {
-            log::error!("Error: {:?}", e);
+            error!(error = ?e, "Error in MCP stdio server");
         })?;
 
     service.waiting().await?;
@@ -782,8 +784,10 @@ pub async fn start_server_and_web_app(mut web_port: u16) {
                 }
             }
         });
-        let api_router = router::api_router().await;
-        let openapi_router = router::openapi_router().await;
+        let api_router = router::api_router().await.layer(TraceLayer::new_for_http());
+        let openapi_router = router::openapi_router()
+            .await
+            .layer(TraceLayer::new_for_http());
         let (_, openapi) = OpenApiRouter::with_openapi(ApiDoc::openapi())
             .nest("/api", openapi_router)
             .fallback_service(serve_with_fallback)
@@ -791,7 +795,8 @@ pub async fn start_server_and_web_app(mut web_port: u16) {
         let web_app = Router::new()
             .merge(SwaggerUi::new("/apidoc").url("/apidoc/openapi.json", openapi))
             .nest("/api", api_router)
-            .fallback_service(serve_with_fallback);
+            .fallback_service(serve_with_fallback)
+            .layer(TraceLayer::new_for_http());
 
         let web_addr = SocketAddr::from(([0, 0, 0, 0], web_port));
         let listener = tokio::net::TcpListener::bind(web_addr).await.unwrap();

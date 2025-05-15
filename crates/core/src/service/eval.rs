@@ -68,7 +68,7 @@ impl EvalEventsHandler {
 #[async_trait::async_trait]
 impl EventHandler for EvalEventsHandler {
     async fn handle_event(&mut self, event: Event) -> Result<(), OxyError> {
-        log::debug!("Received event: {:?}", event);
+        tracing::debug!("Received event: {:?}", event);
         match event.source.kind.as_str() {
             EVAL_SOURCE => match event.kind {
                 EventKind::Started { name } => {
@@ -95,7 +95,7 @@ impl EventHandler for EvalEventsHandler {
                 }
                 _ => {}
             },
-            _ => log::debug!("Unknown source: {:?}", event),
+            _ => tracing::debug!("Unknown source: {:?}", event),
         }
 
         Ok(())
