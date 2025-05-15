@@ -133,7 +133,7 @@ impl Renderer {
         let value = expression.eval(&context).map_err(|err| {
             OxyError::RuntimeError(format!("Error evaluating expression: {}", err))
         })?;
-        log::info!(
+        tracing::info!(
             "Evaluated expression: {} -> {:?} with context: {:?}",
             template,
             value,

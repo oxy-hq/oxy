@@ -73,16 +73,16 @@ pub async fn get_app(
     Path(pathb64): Path<String>,
 ) -> Result<extract::Json<GetAppResponse>, StatusCode> {
     let decoded_path: Vec<u8> = BASE64_STANDARD.decode(pathb64).map_err(|e| {
-        log::info!("{:?}", e);
+        tracing::info!("{:?}", e);
         StatusCode::BAD_REQUEST
     })?;
     let path = PathBuf::from(String::from_utf8(decoded_path).map_err(|e| {
-        log::info!("{:?}", e);
+        tracing::info!("{:?}", e);
         StatusCode::BAD_REQUEST
     })?);
 
     let app_config = service::app::get_app(&path.to_owned()).await.map_err(|e| {
-        log::debug!(
+        tracing::debug!(
             "Failed to get app config from path: {:?} {}",
             path.to_owned(),
             e
@@ -98,7 +98,7 @@ pub async fn get_app(
 
     // write the data to the file
     let data = service::app::run_app(&path).await.map_err(|e| {
-        log::debug!("Failed to run app: {:?}", e);
+        tracing::debug!("Failed to run app: {:?}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
@@ -112,11 +112,11 @@ pub async fn get_data(Path(pathb64): Path<String>) -> impl IntoResponse {
     let mut headers = HeaderMap::new();
     let state_path = get_state_dir();
     let decoded_path: Vec<u8> = BASE64_STANDARD.decode(pathb64).map_err(|e| {
-        log::info!("{:?}", e);
+        tracing::info!("{:?}", e);
         (StatusCode::BAD_REQUEST, "Invalid path".to_string())
     })?;
     let path = String::from_utf8(decoded_path).map_err(|e| {
-        log::info!("{:?}", e);
+        tracing::info!("{:?}", e);
         (StatusCode::BAD_REQUEST, "Invalid path".to_string())
     })?;
     let full_file_path = state_path.join(path);
@@ -142,7 +142,7 @@ pub async fn run_app(
         .map_err(|_| StatusCode::BAD_REQUEST)?;
     let path = PathBuf::from(String::from_utf8(decoded_path).map_err(|_| StatusCode::BAD_REQUEST)?);
     let app_config = service::app::get_app(&path).await.map_err(|e| {
-        log::debug!(
+        tracing::debug!(
             "Failed to get app config from path: {:?} {}",
             path.to_owned(),
             e
@@ -151,7 +151,7 @@ pub async fn run_app(
     })?;
 
     let rs = service::app::run_app(&path).await.map_err(|e| {
-        log::debug!("Failed to run app: {:?}", e);
+        tracing::debug!("Failed to run app: {:?}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 

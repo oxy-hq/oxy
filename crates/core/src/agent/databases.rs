@@ -57,7 +57,7 @@ impl Object for DatabasesContext {
                         Some(value)
                     }
                     _ => {
-                        log::error!("No tokio runtime found");
+                        tracing::error!("No tokio runtime found");
                         None
                     }
                 }

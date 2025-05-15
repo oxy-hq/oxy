@@ -102,7 +102,7 @@ impl ShouldRestore for LastRunFailed {
         _execution_context: &ExecutionContext,
         manager: &CheckpointManager,
     ) -> Option<RunInfo> {
-        log::info!("Checking last run failed {:?}", input);
+        tracing::info!("Checking last run failed {:?}", input);
         let checkpoint_id = manager.checkpoint_id(input);
         let run_info = manager.last_run(&checkpoint_id).await.ok()?;
         if run_info.success {
@@ -134,13 +134,13 @@ where
             .await
         {
             Some(run) => {
-                log::info!("Restoring run: {:?}", run);
+                tracing::info!("Restoring run: {:?}", run);
                 self.manager.read_events(&run, execution_context).await?;
                 run
             }
             None => {
                 let checkpoint_id = self.manager.checkpoint_id(&input);
-                log::info!(
+                tracing::info!(
                     "Creating new run for input: {:?}\ncheckpoint_id: {}",
                     input,
                     checkpoint_id
@@ -148,7 +148,7 @@ where
                 self.manager.create_run(&checkpoint_id).await?
             }
         };
-        log::info!("Running with checkpoint: {:?}", run_info);
+        tracing::info!("Running with checkpoint: {:?}", run_info);
 
         // Spawn event receiver task
         let (tx, rx) = channel::<Vec<Event>>(100);

@@ -76,7 +76,7 @@ impl ConcurrencyControl<OpenAIExecutableResponse> for AgentScoreControl {
                 }
                 memo
             });
-        log::debug!("Consistency results: {:?}", acc);
+        tracing::debug!("Consistency results: {:?}", acc);
         let value = acc
             .into_iter()
             .sorted_by_key(|(_, count)| *count)
@@ -88,7 +88,7 @@ impl ConcurrencyControl<OpenAIExecutableResponse> for AgentScoreControl {
                 (idx, output, score)
             })
             .ok_or_else(|| OxyError::RuntimeError("No successful results".to_string()))?;
-        log::debug!(
+        tracing::debug!(
             "Consistency score: {:?}, times: {:?}",
             value,
             comparison_times

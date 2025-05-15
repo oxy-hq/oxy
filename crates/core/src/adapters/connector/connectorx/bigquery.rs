@@ -207,13 +207,13 @@ where
         let job = self.client.job();
         for query in self.queries.iter() {
             // Check bytes limit
-            log::debug!("Dry run limit: {:?}", self.dry_run_limit);
+            tracing::debug!("Dry run limit: {:?}", self.dry_run_limit);
             if let Some(dry_run_limit) = self.dry_run_limit {
                 let dry_run_rs = self.rt.block_on(job.query(
                     self.project_id.as_str(),
                     make_dry_run_query_request(query.as_str()),
                 ))?;
-                log::debug!("Dry run response: {:?}", dry_run_rs);
+                tracing::debug!("Dry run response: {:?}", dry_run_rs);
                 if let Some(total_bytes_processed) = dry_run_rs
                     .total_bytes_processed
                     .and_then(|v| v.parse::<u64>().ok())

@@ -98,7 +98,7 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
         execution_context: &ExecutionContext,
         input: Vec<ChatCompletionRequestMessage>,
     ) -> Result<Self::Response, OxyError> {
-        log::debug!("Executing OpenAI executable with input: {:?}", input);
+        tracing::debug!("Executing OpenAI executable with input: {:?}", input);
         let chat = self.client.chat();
         let mut request_builder = CreateChatCompletionRequestArgs::default();
         let schema = json!(schema_for!(AgentResponse));
@@ -130,7 +130,7 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
                     ))
                 })
                 .map_err(backoff::Error::Permanent)?;
-            log::debug!("OpenAI request: {:?}", request);
+            tracing::debug!("OpenAI request: {:?}", request);
             let mut response = chat
                 .create_stream(request)
                 .await
@@ -214,7 +214,7 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
                     })?
                 }
             };
-            log::info!("Agent response: {:?}", content);
+            tracing::info!("Agent response: {:?}", content);
 
             let delta: Output = if has_written {
                 let mut output = Into::<Output>::into(content.data.clone());
@@ -239,8 +239,8 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
         let mut attempt = 0;
         backoff::future::retry_notify(backoff::ExponentialBackoff::default(), func, |err, b| {
             attempt += 1;
-            log::error!("Error happened at {:?} in OpenAI executable: {:?}", b, err);
-            log::warn!("Retrying({})...", attempt);
+            tracing::error!("Error happened at {:?} in OpenAI executable: {:?}", b, err);
+            tracing::warn!("Retrying({})...", attempt);
         })
         .await
     }

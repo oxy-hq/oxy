@@ -130,7 +130,7 @@ fn export_execute_sql<P: AsRef<Path>>(
                 ExportFormat::CSV => export_csv(&file_path, schema, datasets),
                 ExportFormat::JSON => export_json(&file_path, datasets),
                 _ => {
-                    log::warn!("Unsupported export format");
+                    tracing::warn!("Unsupported export format");
                     return;
                 }
             };

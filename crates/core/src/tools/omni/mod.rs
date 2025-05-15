@@ -47,7 +47,7 @@ impl Executable<OmniInput> for OmniExecutable {
         execution_context: &ExecutionContext,
         input: OmniInput,
     ) -> Result<Self::Response, OxyError> {
-        log::debug!(
+        tracing::debug!(
             "{}",
             format!(
                 "Executing Omni tool on database {} with input: {:?}",
@@ -57,7 +57,7 @@ impl Executable<OmniInput> for OmniExecutable {
         // TODO: right now support only bigquery
         let engine = BigquerySqlGenerationEngine::new(input.semantic_model.clone());
         let sql = engine.generate_sql(&input.params)?;
-        log::debug!("{}", format!("Generated SQL: {}", sql));
+        tracing::debug!("{}", format!("Generated SQL: {}", sql));
         execution_context
             .write_chunk(Chunk {
                 key: None,

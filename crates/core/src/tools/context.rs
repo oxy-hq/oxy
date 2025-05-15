@@ -59,7 +59,7 @@ impl Object for ToolsContext {
                             self.sender.clone(),
                         ))
                         .map_err(|err| {
-                            log::error!("Error launching tool: {:?}", err);
+                            tracing::error!("Error launching tool: {:?}", err);
                             err
                         })
                         .ok()?;
@@ -68,7 +68,7 @@ impl Object for ToolsContext {
                     Some(Value::from_safe_string(parsed_output))
                 }
                 Err(err) => {
-                    log::error!("No tokio runtime found: {:?}", err);
+                    tracing::error!("No tokio runtime found: {:?}", err);
                     None
                 }
             },

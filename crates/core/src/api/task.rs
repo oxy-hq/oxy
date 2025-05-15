@@ -96,7 +96,7 @@ pub async fn create_task(
         file_path: ActiveValue::Set("".to_string()),
     };
     let task = new_task.insert(&connection).await.map_err(|err| {
-        log::error!("Failed to create task: {}", err);
+        tracing::error!("Failed to create task: {}", err);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
     let task_item = TaskItem {
@@ -295,8 +295,8 @@ pub async fn ask_task(Path(id): Path<String>) -> impl IntoResponse {
                 .await
                 .unwrap()
         };
-        log::debug!("Agent output: {:?}", output);
-        log::debug!("Agent references: {:?}", references);
+        tracing::debug!("Agent output: {:?}", output);
+        tracing::debug!("Agent references: {:?}", references);
         let mut task_model: entity::tasks::ActiveModel = task.into();
         for r in references {
             if let ReferenceKind::DataApp(data_app) = r {

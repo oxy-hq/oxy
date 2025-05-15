@@ -20,17 +20,17 @@ pub async fn save_file(
     extract::Json(payload): extract::Json<SaveFileRequest>,
 ) -> Result<extract::Json<String>, StatusCode> {
     let decoded_path: Vec<u8> = BASE64_STANDARD.decode(pathb64).map_err(|e| {
-        log::info!("{:?}", e);
+        tracing::info!("{:?}", e);
         StatusCode::BAD_REQUEST
     })?;
     let path = String::from_utf8(decoded_path).map_err(|e| {
-        log::info!("{:?}", e);
+        tracing::info!("{:?}", e);
         StatusCode::BAD_REQUEST
     })?;
     let project_path = find_project_path().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let file_path = project_path.join(path);
     fs::write(file_path, payload.data).map_err(|e| {
-        log::info!("{:?}", e);
+        tracing::info!("{:?}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
     Ok(extract::Json("success".to_string()))
@@ -38,17 +38,17 @@ pub async fn save_file(
 
 pub async fn get_file(Path(pathb64): Path<String>) -> Result<extract::Json<String>, StatusCode> {
     let decoded_path: Vec<u8> = BASE64_STANDARD.decode(pathb64).map_err(|e| {
-        log::info!("{:?}", e);
+        tracing::info!("{:?}", e);
         StatusCode::BAD_REQUEST
     })?;
     let path = String::from_utf8(decoded_path).map_err(|e| {
-        log::info!("{:?}", e);
+        tracing::info!("{:?}", e);
         StatusCode::BAD_REQUEST
     })?;
     let project_path = find_project_path().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let file_path = project_path.join(path);
     let file_content = fs::read_to_string(file_path).map_err(|e| {
-        log::info!("{:?}", e);
+        tracing::info!("{:?}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
     Ok(extract::Json(file_content))

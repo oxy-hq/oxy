@@ -12,6 +12,7 @@ use axum::routing::{get, post};
 use migration::Migrator;
 use migration::MigratorTrait;
 use tower_http::cors::{Any, CorsLayer};
+use tower_http::trace::TraceLayer;
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 
@@ -69,6 +70,7 @@ pub async fn api_router() -> Router {
         .route("/sql/{pathb64}", post(data::execute_sql))
         .route("/agents/{pathb64}/ask", post(thread::ask_agent))
         .layer(cors)
+        .layer(TraceLayer::new_for_http())
 }
 
 pub async fn openapi_router() -> OpenApiRouter {
@@ -81,4 +83,5 @@ pub async fn openapi_router() -> OpenApiRouter {
         .routes(routes!(agent::ask, agent::get_agents))
         .routes(routes!(workflow::list, workflow::run_workflow))
         .layer(cors)
+        .layer(TraceLayer::new_for_http())
 }

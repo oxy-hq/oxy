@@ -71,17 +71,17 @@ pub fn try_load_cached_data(app_file_path: &PathBuf) -> Option<DataContainer> {
                 let reader = std::io::BufReader::new(file);
                 let data: Option<DataContainer> = serde_yaml::from_reader(reader).ok();
                 if data.is_none() {
-                    log::warn!("Failed to parse data file");
+                    tracing::warn!("Failed to parse data file");
                 }
                 data
             }
             Err(e) => {
-                log::warn!("Failed to open data file: {}", e);
+                tracing::warn!("Failed to open data file: {}", e);
                 None
             }
         }
     } else {
-        log::warn!("Data file path is not valid");
+        tracing::warn!("Data file path is not valid");
         None
     }
 }

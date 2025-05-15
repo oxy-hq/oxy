@@ -48,11 +48,11 @@ pub async fn get(
     Path(pathb64): Path<String>,
 ) -> Result<extract::Json<GetWorkflowResponse>, StatusCode> {
     let decoded_path = BASE64_STANDARD.decode(pathb64).map_err(|e| {
-        log::info!("{:?}", e);
+        tracing::info!("{:?}", e);
         StatusCode::BAD_REQUEST
     })?;
     let path = String::from_utf8(decoded_path).map_err(|e| {
-        log::info!("{:?}", e);
+        tracing::info!("{:?}", e);
         StatusCode::BAD_REQUEST
     })?;
     match get_workflow(PathBuf::from(path), None).await {
@@ -78,11 +78,11 @@ pub async fn get_logs(
 ) -> Result<extract::Json<GetLogsResponse>, StatusCode> {
     let path = PathBuf::from(
         String::from_utf8(BASE64_STANDARD.decode(pathb64).map_err(|e| {
-            log::info!("{:?}", e);
+            tracing::info!("{:?}", e);
             StatusCode::BAD_REQUEST
         })?)
         .map_err(|e| {
-            log::info!("{:?}", e);
+            tracing::info!("{:?}", e);
             StatusCode::BAD_REQUEST
         })?,
     );
@@ -103,7 +103,7 @@ pub async fn build_workflow_api_logger(
         .append(true)
         .open(log_file_path)
         .map_err(|e| {
-            log::error!("{:?}", e);
+            tracing::error!("{:?}", e);
             StatusCode::INTERNAL_SERVER_ERROR
         })
         .unwrap();
@@ -121,11 +121,11 @@ pub async fn build_workflow_api_logger(
 )]
 pub async fn run_workflow(Path(pathb64): Path<String>) -> Result<impl IntoResponse, StatusCode> {
     let decoded_path = BASE64_STANDARD.decode(pathb64).map_err(|e| {
-        log::info!("{:?}", e);
+        tracing::info!("{:?}", e);
         StatusCode::BAD_REQUEST
     })?;
     let path = PathBuf::from(String::from_utf8(decoded_path).map_err(|e| {
-        log::info!("{:?}", e);
+        tracing::info!("{:?}", e);
         StatusCode::BAD_REQUEST
     })?);
     let project_path = find_project_path()?;

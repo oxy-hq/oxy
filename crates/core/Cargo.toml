@@ -31,7 +31,6 @@ dotenv = "0.15.0"
 duckdb = { version = "=1.1.1", features = ["bundled"] }
 entity = { path = "../entity" }
 enum_dispatch = "0.3.13"
-fern = { version = "0.7.1", features = ["colored"] }
 futures = "0.3.31"
 garde = { version = "0.22.0", features = ["full"] }
 glob = "0.3.2"
@@ -68,7 +67,7 @@ tokio = { workspace = true }
 tokio-stream = "0.1.17"
 tokio-util = "0.7.15"
 tower = "0.5.2"
-tower-http = { version = "0.6.4", features = ["fs", "cors"] }
+tower-http = { version = "0.6.4", features = ["fs", "cors", "trace"] }
 tower-serve-static = "0.1.1"
 tqdm = "0.7.0"
 uuid = { version = "1.16.0", features = ["v4", "serde"] }
@@ -96,6 +95,10 @@ rustls = { version = "0.23.27", features = ["aws_lc_rs"] }
 parquet = "53.4"
 short-uuid = "0.2.0"
 rapidfuzz = "0.5.0"
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.19", features = ["env-filter", "fmt", "json"] }
+tracing-appender = "0.2.3"
+tracing-log = "0.2.0"
 
 [lib]
 name = "oxy"

@@ -29,7 +29,7 @@ impl Executable<OmniTopicInfoInput> for OmniTopicInfoExecutable {
         execution_context: &ExecutionContext,
         input: OmniTopicInfoInput,
     ) -> Result<Self::Response, OxyError> {
-        log::debug!(
+        tracing::debug!(
             "{}",
             format!("Executing Omni topic tool with input: {:?}", input.topic)
         );

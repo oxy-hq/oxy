@@ -313,7 +313,7 @@ impl ParamMapper<CreateDataAppToolInput, CreateDataAppInput> for CreateDataAppMa
         input: CreateDataAppToolInput,
     ) -> Result<(CreateDataAppInput, Option<ExecutionContext>), OxyError> {
         let CreateDataAppToolInput { param, .. } = input;
-        log::debug!("CreateDataAppToolInput param: {}", &param);
+        tracing::debug!("CreateDataAppToolInput param: {}", &param);
         let params = serde_json::from_str::<CreateDataAppParams>(&param)?;
         Ok((CreateDataAppInput { param: params }, None))
     }
