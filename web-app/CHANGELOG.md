@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.2.1](https://github.com/oxy-hq/oxy-internal/compare/0.2.0...0.2.1) (2025-05-16)
+
+
+### <!-- 0 -->🚀 Features
+
+* improve workflow diagram ([#759](https://github.com/oxy-hq/oxy-internal/issues/759)) ([58d1ef8](https://github.com/oxy-hq/oxy-internal/commit/58d1ef88ff86cfc40ce441e51b8992d75366ab56))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* add scrollbar to query box ([#775](https://github.com/oxy-hq/oxy-internal/issues/775)) ([62e7dc4](https://github.com/oxy-hq/oxy-internal/commit/62e7dc44cf747b2555622afa28c10982aee69f73))
+* can not render vega chart ([#780](https://github.com/oxy-hq/oxy-internal/issues/780)) ([2c649f2](https://github.com/oxy-hq/oxy-internal/commit/2c649f27918f251af01a2546d848a3b4e5c0d277))
+
 ## [0.2.0](https://github.com/oxy-hq/oxy-internal/compare/0.1.23...0.2.0) (2025-05-13)
 
 

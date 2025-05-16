@@ -2810,7 +2810,7 @@ dependencies = [
 
 [[package]]
 name = "entity"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "sea-orm",
 ]
@@ -4991,7 +4991,7 @@ dependencies = [
 
 [[package]]
 name = "migration"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "async-std",
  "sea-orm-migration",
@@ -5638,7 +5638,7 @@ dependencies = [
 
 [[package]]
 name = "oxy"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "arrow",
@@ -6361,7 +6361,7 @@ dependencies = [
 
 [[package]]
 name = "py"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "oxy",
  "pyo3",
