@@ -1,11 +1,6 @@
+import { STEP_MAP } from "@/types/agent";
 import Step from "./Step";
 import { useAutoAnimate } from "@formkit/auto-animate/react";
-
-const STEP_MAP = {
-  execute_sql: "Execute SQL",
-  visualize: "Generate visualization",
-  retrieve: "Retrieve data",
-};
 
 const ThreadSteps = ({
   steps,

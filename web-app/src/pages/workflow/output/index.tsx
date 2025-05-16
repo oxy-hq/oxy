@@ -2,6 +2,7 @@ import React from "react";
 import { LogItem } from "@/hooks/api/runWorkflow";
 import Header from "./Header";
 import OutputLogs from "./Logs";
+import EmptyState from "@/components/ui/EmptyState";
 
 interface WorkflowOutputProps {
   showOutput: boolean;
@@ -19,6 +20,14 @@ const WorkflowOutput: React.FC<WorkflowOutputProps> = ({
   return (
     <div className="bg-sidebar-background h-full">
       <Header showOutput={showOutput} toggleOutput={toggleOutput} />
+      {logs.length === 0 && (
+        <EmptyState
+          className="mt-[150px]"
+          title="No logs yet"
+          description="Run the workflow to see the logs"
+        />
+      )}
+
       {logs.length > 0 && showOutput && (
         <OutputLogs isPending={isPending} logs={logs} />
       )}

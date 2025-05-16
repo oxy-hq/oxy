@@ -16,7 +16,7 @@ const HeaderActions = ({ onExecuteSql, loading }: HeaderActionsProps) => {
   };
 
   return (
-    <div className="flex gap-2 p-2 md:flex-row flex-col items-start">
+    <div className="flex gap-2 md:flex-row flex-col items-start">
       <DatabasesDropdown
         onSelect={(database) => setDatabase(database)}
         database={database}

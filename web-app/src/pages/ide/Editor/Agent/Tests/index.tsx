@@ -1,6 +1,7 @@
 import useAgent from "@/hooks/api/useAgent";
 import TestSkeleton from "./TestSkeleton";
 import TestItem from "./TestItem";
+import EmptyState from "@/components/ui/EmptyState";
 
 interface AgentTestsProps {
   agentPathb64: string;
@@ -27,6 +28,14 @@ const AgentTests = ({ agentPathb64 }: AgentTestsProps) => {
               />
             ))}
           </div>
+        )}
+
+        {tests.length === 0 && (
+          <EmptyState
+            className="h-full mt-[150px]"
+            title="No tests yet"
+            description="Create a test to get started"
+          />
         )}
       </div>
     </div>

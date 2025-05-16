@@ -1,7 +1,7 @@
 import { useState } from "react";
 import EditorPageWrapper from "../components/EditorPageWrapper";
-import WorkflowPreview from "@/pages/workflow/WorkflowPreview";
 import { randomKey } from "@/libs/utils/string";
+import { WorkflowPreview } from "@/pages/workflow/WorkflowPreview";
 
 const WorkflowEditor = ({ pathb64 }: { pathb64: string }) => {
   const [previewKey, setPreviewKey] = useState<string>(randomKey());

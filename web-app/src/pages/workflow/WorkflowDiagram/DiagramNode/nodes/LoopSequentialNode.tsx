@@ -1,32 +1,31 @@
+import { useMemo, useState } from "react";
+
 import useWorkflow, {
-  ConditionalTaskConfigWithId,
+  LoopSequentialTaskConfig,
   TaskConfigWithId,
-} from "@/stores/useWorkflow.ts";
-import { StepContainer } from "./StepContainer.tsx";
-import { NodeHeader } from "./NodeHeader.tsx";
+} from "@/stores/useWorkflow";
 import {
   distanceBetweenHeaderAndContent,
   headerHeight,
   nodeBorderHeight,
   paddingHeight,
-} from "./constants.ts";
-import { useMemo, useState } from "react";
+} from "../../layout/constants";
+import { StepContainer } from "./StepContainer";
+import { NodeHeader } from "./NodeHeader";
 
 type Props = {
   task: TaskConfigWithId;
 };
 
-export default function ConditionalNode({ task }: Props) {
+export function LoopSequentialNode({ task }: Props) {
   const layoutedNodes = useWorkflow((state) => state.layoutedNodes);
   const selectedNodeId = useWorkflow((state) => state.selectedNodeId);
   const selected = selectedNodeId === task.id;
   const setNodeVisibility = useWorkflow((state) => state.setNodeVisibility);
   const nodes = useWorkflow((state) => state.nodes);
+  const tasks = (task as LoopSequentialTaskConfig).tasks;
   const [expanded, setExpanded] = useState(true);
-  const expandable = useMemo(() => {
-    const t = task as ConditionalTaskConfigWithId;
-    return t.conditions.length > 0 || t.else !== undefined;
-  }, [task]);
+  const expandable = useMemo(() => tasks.length > 0, [tasks]);
 
   const node = layoutedNodes.find((n) => n.id === task.id);
   const onExpandClick = () => {
@@ -44,21 +43,19 @@ export default function ConditionalNode({ task }: Props) {
     nodeBorderHeight;
   const childSpace = node.size.height - usedHeight;
   return (
-    <StepContainer
-      width={node.size.width}
-      height={node.size.height}
-      selected={selected}
-    >
+    <StepContainer selected={selected}>
       <NodeHeader
-        type={task.type}
         name={task.name}
+        type={task.type}
         expandable={expandable}
         expanded={expanded}
         onExpandClick={onExpandClick}
       />
-      <>
-        <div style={{ height: `${childSpace}px` }}></div>
-      </>
+      {expandable && expanded && (
+        <>
+          <div style={{ height: `${childSpace}px` }}></div>
+        </>
+      )}
     </StepContainer>
   );
 }

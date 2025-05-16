@@ -1,6 +1,5 @@
 import { Handle, NodeProps, Position } from "@xyflow/react";
 
-import { NodeContainer } from "./NodeContainer";
 import { NodeContent } from "./NodeContent";
 import { NodeData, NodeType } from "@/stores/useWorkflow";
 
@@ -31,27 +30,25 @@ export function DiagramNode({
 }: Props) {
   return (
     <div key={data.id}>
-      <NodeContainer>
-        <Handle
-          type="target"
-          position={Position.Top}
-          isConnectable={isConnectable}
-          className="invisible !top-0.5"
-        />
-        <NodeContent
-          task={data.task}
-          data={data}
-          type={type}
-          width={width}
-          height={height}
-        />
-        <Handle
-          type="source"
-          position={Position.Bottom}
-          isConnectable={isConnectable}
-          className="invisible !bottom-0.5"
-        />
-      </NodeContainer>
+      <Handle
+        type="target"
+        position={Position.Top}
+        isConnectable={isConnectable}
+        className="invisible !top-0.5"
+      />
+      <NodeContent
+        task={data.task}
+        data={data}
+        type={type}
+        width={width}
+        height={height}
+      />
+      <Handle
+        type="source"
+        position={Position.Bottom}
+        isConnectable={isConnectable}
+        className="invisible !bottom-0.5"
+      />
     </div>
   );
 }

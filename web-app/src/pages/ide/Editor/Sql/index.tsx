@@ -26,7 +26,7 @@ const SqlEditor = ({ pathb64 }: { pathb64: string }) => {
       pathb64={pathb64}
       onFileValueChange={setSql}
       pageContentClassName="flex-col"
-      editorClassName="h-1/2 w-full"
+      editorClassName={"h-1/2 w-full"}
       headerActions={
         <HeaderActions onExecuteSql={handleExecuteSql} loading={loading} />
       }

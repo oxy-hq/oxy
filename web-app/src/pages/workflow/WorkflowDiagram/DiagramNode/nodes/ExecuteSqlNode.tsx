@@ -1,6 +1,6 @@
 import useWorkflow, { TaskConfigWithId } from "@/stores/useWorkflow";
-import { StepContainer } from "./StepContainer.tsx";
-import { NodeHeader } from "./NodeHeader.tsx";
+import { StepContainer } from "./StepContainer";
+import { NodeHeader } from "./NodeHeader";
 
 type Props = {
   task: TaskConfigWithId;

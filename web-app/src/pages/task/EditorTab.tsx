@@ -1,19 +1,17 @@
 import { useState } from "react";
-import FileEditor, { FileState } from "@/components/FileEditor";
 import { useQueryClient } from "@tanstack/react-query";
 import queryKeys from "@/hooks/api/queryKey";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/shadcn/tabs";
 import { TabsContent } from "@radix-ui/react-tabs";
 import { Skeleton } from "@/components/ui/shadcn/skeleton";
 import AppPreview from "@/components/AppPreview";
-import EditorHeader from "../ide/Editor/components/EditorHeader";
+import EditorPageWrapper from "../ide/Editor/components/EditorPageWrapper";
 
 // eslint-disable-next-line sonarjs/pseudo-random
 const randomKey = () => Math.random().toString(36).substring(2, 15);
 
 const EditorTab = ({ pathb64 }: { pathb64?: string }) => {
   const filePath = atob(pathb64 ?? "");
-  const [fileState, setFileState] = useState<FileState>("saved");
   const [previewKey, setPreviewKey] = useState<string>(randomKey());
   const queryClient = useQueryClient();
 
@@ -63,11 +61,10 @@ const EditorTab = ({ pathb64 }: { pathb64?: string }) => {
           value="editor"
           className="flex-1 flex flex-col bg-editor-background"
         >
-          <EditorHeader filePath={filePath} fileState={fileState} />
-          <FileEditor
-            fileState={fileState}
+          <EditorPageWrapper
             pathb64={pathb64 ?? ""}
-            onFileStateChange={setFileState}
+            pageContentClassName="md:flex-row flex-col"
+            editorClassName="w-full h-full"
             onSaved={() => {
               onSaveApp();
             }}

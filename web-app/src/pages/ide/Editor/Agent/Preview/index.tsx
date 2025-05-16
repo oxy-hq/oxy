@@ -2,98 +2,27 @@ import { Button } from "@/components/ui/shadcn/button";
 import { Textarea } from "@/components/ui/shadcn/textarea";
 import { cx } from "class-variance-authority";
 import { ArrowUp, Loader2 } from "lucide-react";
-import { useState } from "react";
 import { useEnterSubmit } from "@/hooks/useEnterSubmit";
-import { service } from "@/services/service";
 import Messages from "./Messages";
 import useAgent from "@/hooks/api/useAgent";
-import { Message } from "@/types/chat";
+import useAgentPreview from "@/stores/useAgentPreview";
+import EmptyState from "@/components/ui/EmptyState";
 
 const getAgentNameFromPath = (path: string) => {
   const parts = path.split("/");
   return parts[parts.length - 1].split(".")[0].replace(/_/g, " ");
 };
 
-const STEP_MAP = {
-  execute_sql: "Execute SQL",
-  visualize: "Generate visualization",
-  retrieve: "Retrieve data",
-};
-
 const AgentPreview = ({ agentPathb64 }: { agentPathb64: string }) => {
   const path = atob(agentPathb64);
   const { data: agent } = useAgent(agentPathb64);
-  const [question, setQuestion] = useState("");
   const { formRef, onKeyDown } = useEnterSubmit();
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const { getAgentPreview, askAgent, setQuestion } = useAgentPreview();
+  const { messages, question, isLoading } = getAgentPreview(agentPathb64);
 
   const handleFormSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!question) return;
-    setIsLoading(true);
-    setMessages((prev) => [
-      ...prev,
-      {
-        content: question,
-        references: [],
-        steps: [],
-        isUser: true,
-        isStreaming: false,
-      },
-      {
-        content: "",
-        references: [],
-        steps: [],
-        isUser: false,
-        isStreaming: true,
-      },
-    ]);
-    return service
-      .askAgent(agentPathb64, question, (answer) => {
-        setMessages((prev) => {
-          const currentStreamingMessage = prev.at(-1);
-          const { steps, references, content } = currentStreamingMessage ?? {
-            content: "",
-            references: [],
-            steps: [],
-            isUser: false,
-            isStreaming: true,
-          };
-
-          const shouldAddStep =
-            answer.step &&
-            Object.keys(STEP_MAP).includes(answer.step) &&
-            steps.at(-1) !== answer.step;
-
-          const updatedMessages = [...prev];
-
-          updatedMessages[prev.length - 1] = {
-            content: content + answer.content,
-            references: answer.references
-              ? [...references, ...answer.references]
-              : references,
-            steps: shouldAddStep ? [...steps, answer.step] : steps,
-            isUser: false,
-            isStreaming: true,
-          };
-          return updatedMessages;
-        });
-      })
-      .catch((error) => {
-        console.error("Error asking agent:", error);
-      })
-      .finally(() => {
-        setMessages((prev) => {
-          const lastMessage = prev.at(-1);
-          if (lastMessage?.isStreaming) {
-            lastMessage.isStreaming = false;
-          }
-          return prev;
-        });
-        setIsLoading(false);
-        setQuestion("");
-      });
+    askAgent(agentPathb64);
   };
 
   const agentName = agent?.name ?? getAgentNameFromPath(path);
@@ -101,7 +30,15 @@ const AgentPreview = ({ agentPathb64 }: { agentPathb64: string }) => {
   return (
     <div className="flex flex-col h-full justify-between overflow-hidden px-4 pb-4">
       <div className="flex flex-col gap-4 flex-1 overflow-auto customScrollbar py-6">
-        <Messages messages={messages} />
+        {messages.length === 0 ? (
+          <EmptyState
+            className="h-full"
+            title="No messages yet"
+            description={`Ask the ${agentName} agent a question to get started`}
+          />
+        ) : (
+          <Messages messages={messages} />
+        )}
       </div>
       <form
         ref={formRef}
@@ -114,7 +51,7 @@ const AgentPreview = ({ agentPathb64 }: { agentPathb64: string }) => {
           autoFocus
           onKeyDown={onKeyDown}
           value={question}
-          onChange={(e) => setQuestion(e.target.value)}
+          onChange={(e) => setQuestion(agentPathb64, e.target.value)}
           className={cx(
             "border-none shadow-none",
             "hover:border-none focus-visible:border-none focus-visible:shadow-none",

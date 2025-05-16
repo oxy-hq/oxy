@@ -4,12 +4,34 @@ import {
   TaskType,
   WorkflowTaskConfig,
 } from "@/stores/useWorkflow";
-import { nodeIconMap, nodeNameMap } from "./utils";
 import { DynamicIcon } from "lucide-react/dynamic";
-import { headerHeight } from "./constants";
 import { Button } from "@/components/ui/shadcn/button";
 import TruncatedText from "@/components/TruncatedText";
 import { useNavigate } from "react-router-dom";
+import { headerHeight } from "../../layout/constants";
+import { IconName } from "lucide-react/dynamic";
+
+const nodeNameMap: Record<NodeType, string> = {
+  execute_sql: "SQL",
+  loop_sequential: "Loop sequential",
+  formatter: "Formatter",
+  agent: "Agent",
+  workflow: "Subworkflow",
+  conditional: "Conditional",
+  "conditional-else": "Else",
+  "conditional-if": "If",
+};
+
+const nodeIconMap: Record<NodeType, IconName> = {
+  execute_sql: "code",
+  loop_sequential: "refresh-ccw",
+  formatter: "file-text",
+  agent: "bot",
+  workflow: "git-branch",
+  conditional: "split",
+  "conditional-else": "circle-alert",
+  "conditional-if": "circle-help",
+};
 
 type Props = {
   name: string;
@@ -83,7 +105,6 @@ const SubWorkflowNavigateButton = ({
   const navigate = useNavigate();
   const handleClick = () => {
     const pathb64 = btoa(task.src);
-    console.log("Navigate to sub workflow", pathb64);
     navigate("/workflows/" + pathb64);
   };
 

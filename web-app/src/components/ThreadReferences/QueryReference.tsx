@@ -51,9 +51,11 @@ export const QueryReference = ({ reference }: QueryReferenceProps) => {
               </Button>
             </div>
             <div className="p-4 pt-0 flex flex-col gap-4">
-              <CodeBlock className="language-sql !m-0">
-                {metadata.sql_query}
-              </CodeBlock>
+              <div className="max-h-80 overflow-auto customScrollbar">
+                <CodeBlock className="language-sql !m-0">
+                  {metadata.sql_query}
+                </CodeBlock>
+              </div>
               <QueryResultTable
                 result={metadata.result}
                 isTruncated={metadata.is_result_truncated}

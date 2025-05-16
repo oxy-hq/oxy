@@ -1,4 +1,4 @@
-import { nodePadding } from "./constants";
+import { nodePadding } from "../../layout/constants";
 
 type Props = {
   children: React.ReactNode;

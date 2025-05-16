@@ -1,7 +1,7 @@
-import { AgentNode } from "./AgentNode";
-import { FormatterNode } from "./FormatterNode";
-import { ExecuteSqlNode } from "./ExecuteSqlNode";
-import { LoopSequentialNode } from "./LoopSequentialNode";
+import { AgentNode } from "./nodes/AgentNode";
+import { FormatterNode } from "./nodes/FormatterNode";
+import { ExecuteSqlNode } from "./nodes/ExecuteSqlNode";
+import { LoopSequentialNode } from "./nodes/LoopSequentialNode";
 import {
   NodeData,
   NodeType,
@@ -9,10 +9,10 @@ import {
   TaskConfigWithId,
   TaskType,
 } from "@/stores/useWorkflow";
-import { WorkflowTaskNode } from "./WorkflowTaskNode";
-import ConditionalNode from "./ConditionalNode";
-import { ConditionalIfNode } from "./ConditionalIfNode";
-import { ConditionalElseNode } from "./ConditionalElseNode";
+import { WorkflowTaskNode } from "./nodes/WorkflowTaskNode";
+import ConditionalNode from "./nodes/ConditionalNode";
+import { ConditionalIfNode } from "./nodes/ConditionalIfNode";
+import { ConditionalElseNode } from "./nodes/ConditionalElseNode";
 
 type Props = {
   task: TaskConfigWithId;
