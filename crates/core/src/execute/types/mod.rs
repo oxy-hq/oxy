@@ -1,5 +1,6 @@
 mod data_app;
 mod display;
+mod document;
 mod eval;
 pub mod event;
 mod output;
@@ -12,7 +13,8 @@ pub mod utils;
 
 pub use data_app::DataApp;
 pub use display::ProgressType;
-pub use eval::TargetOutput;
+pub use document::Document;
+pub use eval::{OutputGetter, RelevantContextGetter, TargetOutput};
 pub use event::{Event, EventKind, Source};
 pub use output::{Chunk, Output};
 pub use output_container::DataContainer;

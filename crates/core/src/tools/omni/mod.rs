@@ -7,10 +7,7 @@ use crate::{
     },
 };
 
-use super::{
-    tool::Tool,
-    types::{ExecuteOmniParams, OmniInput},
-};
+use super::types::OmniInput;
 
 mod bigquery;
 mod engine;
@@ -26,15 +23,6 @@ pub use types::OmniExecutable;
 impl OmniExecutable {
     pub fn new() -> Self {
         Self
-    }
-}
-
-impl Tool for OmniExecutable {
-    type Param = ExecuteOmniParams;
-    type Output = String;
-
-    fn serialize_output(&self, output: &Self::Output) -> Result<String, OxyError> {
-        Ok(output.to_string())
     }
 }
 

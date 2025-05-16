@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::errors::OxyError;
 
-use super::{Prompt, SQL, Table, output_container::Data, table::TableReference};
+use super::{Document, Prompt, SQL, Table, output_container::Data, table::TableReference};
 
 #[derive(Debug, Serialize, Deserialize, Clone, Hash)]
 pub enum Output {
@@ -17,7 +17,7 @@ pub enum Output {
     SQL(SQL),
     Table(Table),
     Prompt(Prompt),
-    Documents(Vec<String>),
+    Documents(Vec<Document>),
 }
 
 impl Output {
@@ -64,6 +64,30 @@ impl Output {
             Output::Bool(b) => Ok(Data::Bool(*b)),
             Output::Prompt(prompt) => Ok(Data::Text(prompt.to_string())),
             Output::Documents(_) => Ok(Data::None),
+        }
+    }
+
+    pub fn to_markdown(&self) -> Result<String, OxyError> {
+        match self {
+            Output::Text(text) => Ok(text.clone()),
+            Output::SQL(sql) => Ok(format!("```{}```", sql.0)),
+            Output::Table(table) => table.to_markdown(),
+            Output::Prompt(prompt) => Ok(prompt.to_string()),
+            Output::Bool(b) => Ok(b.to_string()),
+            Output::Documents(docs) => {
+                let mut markdown = String::new();
+                for doc in docs {
+                    markdown.push_str(&format!("{}\n", doc.to_string()));
+                }
+                Ok(markdown)
+            }
+        }
+    }
+
+    pub fn to_documents(self) -> Vec<Document> {
+        match self {
+            Output::Documents(docs) => docs.clone(),
+            _ => vec![],
         }
     }
 }
@@ -152,7 +176,7 @@ impl Object for Output {
             Output::Text(text) => write!(f, "{}", text),
             Output::SQL(sql) => write!(f, "{:?}", sql),
             Output::Table(table) => Arc::new(table.clone()).render(f),
-            Output::Prompt(prompt) => write!(f, "{:?}", prompt),
+            Output::Prompt(prompt) => write!(f, "{}", prompt),
             Output::Bool(b) => write!(f, "{}", b),
             Output::Documents(docs) => {
                 for doc in docs {

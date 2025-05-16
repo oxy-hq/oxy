@@ -5,10 +5,10 @@ use async_openai::types::{
     FunctionObjectArgs,
 };
 use schemars::JsonSchema;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-use crate::config::model::WorkflowTool;
-use crate::config::model::{OmniSemanticModel, RetrievalConfig};
+use crate::config::model::OmniSemanticModel;
+use crate::config::model::{EmbeddingConfig, VectorDBConfig, WorkflowTool};
 
 use super::create_data_app::types::CreateDataAppParams;
 use super::visualize::types::VisualizeParams;
@@ -36,10 +36,12 @@ impl From<ChatCompletionMessageToolCall> for ToolRawInput {
     }
 }
 
-pub struct RetrievalInput {
-    pub agent_name: String,
-    pub retrieval_config: RetrievalConfig,
+pub struct RetrievalInput<C> {
     pub query: String,
+    pub db_config: VectorDBConfig,
+    pub db_name: String,
+    pub openai_config: C,
+    pub embedding_config: EmbeddingConfig,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -127,9 +129,10 @@ pub struct OmniTopicInfoInput {
     pub topic: String,
     pub semantic_model: OmniSemanticModel,
 }
+
 #[derive(Debug, Deserialize, JsonSchema)]
-pub struct WorkflowParams {
-    pub variables: Option<HashMap<String, String>>,
+pub struct AgentParams {
+    pub prompt: String,
 }
 
 pub struct VisualizeInput {
@@ -138,7 +141,7 @@ pub struct VisualizeInput {
 
 pub struct WorkflowInput {
     pub workflow_config: WorkflowTool,
-    pub variables: Option<HashMap<String, String>>,
+    pub variables: Option<HashMap<String, serde_json::Value>>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -146,10 +149,13 @@ pub struct CreateDataAppInput {
     pub param: CreateDataAppParams,
 }
 
-#[derive(Debug, Deserialize, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct SQLParams {
     pub sql: String,
 }
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct EmptySQLParams {}
 
 pub struct ToolSpec {
     pub handle: String,

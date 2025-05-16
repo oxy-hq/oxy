@@ -1,4 +1,4 @@
-use super::model::{AgentConfig, Config, ExportFormat, Model, OutputFormat, TaskExport, TaskType};
+use super::model::{AgentConfig, Config, ExportFormat, TaskExport, TaskType};
 use std::{env, fmt::Display, path::PathBuf};
 
 const FILE_NOT_FOUND_ERROR: &str = "File does not exist";
@@ -128,32 +128,6 @@ fn validate_export(
         }
     }
     Ok(())
-}
-
-// TODO: gemini function calling is not working with file output format for now
-pub fn validate_output_format(
-    output_format: &OutputFormat,
-    validation_text: &AgentValidationContext,
-) -> garde::Result {
-    let model = validation_text
-        .config
-        .find_model(&validation_text.agent_config.model)
-        .map_err(|_| {
-            garde::Error::new(format!(
-                "Model not found: {}",
-                validation_text.agent_config.model
-            ))
-        })?;
-
-    match output_format {
-        OutputFormat::File => match model {
-            Model::Google { .. } => Err(garde::Error::new(
-                "Gemini model does not support file output format",
-            )),
-            _ => Ok(()),
-        },
-        _ => Ok(()),
-    }
 }
 
 pub fn validate_model(

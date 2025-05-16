@@ -1,9 +1,11 @@
 use std::{collections::HashMap, hash::Hash, path::PathBuf};
 
+use indexmap::IndexMap;
 use itertools::Itertools;
 use minijinja::Value;
 use rmcp::model::Content;
 use serde::{Deserialize, Serialize};
+use serde_json::Value as JsonValue;
 
 use crate::{errors::OxyError, execute::types::Output};
 
@@ -12,16 +14,23 @@ use super::reference::ReferenceKind;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Metadata {
     #[serde(alias = "value")]
-    pub output: Output,
+    pub output: Box<OutputContainer>,
     pub references: Vec<ReferenceKind>,
     pub metadata: HashMap<String, String>,
+}
+
+impl std::fmt::Display for Metadata {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.output)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum OutputContainer {
     List(Vec<OutputContainer>),
-    Map(HashMap<String, OutputContainer>),
+    Map(IndexMap<String, OutputContainer>),
     Single(Output),
+    Variable(JsonValue),
     Consistency {
         #[serde(flatten)]
         value: Metadata,
@@ -35,7 +44,20 @@ pub enum OutputContainer {
 
 impl Default for OutputContainer {
     fn default() -> Self {
-        OutputContainer::Map(HashMap::new())
+        OutputContainer::Map(IndexMap::new())
+    }
+}
+
+impl OutputContainer {
+    pub fn try_get_metadata(&self) -> Result<Metadata, OxyError> {
+        match self {
+            OutputContainer::Consistency { value, .. } => Ok(value.clone()),
+            OutputContainer::Metadata { value, .. } => Ok(value.clone()),
+            _ => Err(OxyError::RuntimeError(format!(
+                "Cannot get metadata from {:?}",
+                self
+            ))),
+        }
     }
 }
 
@@ -75,6 +97,36 @@ impl DataContainer {
 }
 
 impl OutputContainer {
+    pub fn to_markdown(&self) -> Result<String, OxyError> {
+        match self {
+            OutputContainer::List(list) => {
+                let mut rs = String::new();
+                for item in list {
+                    rs.push_str(&format!("{}\n", item.to_markdown()?));
+                }
+                Ok(rs)
+            }
+            OutputContainer::Map(map) => {
+                let mut rs = String::new();
+                for (key, value) in map {
+                    if let OutputContainer::Variable(_) = value {
+                        continue;
+                    }
+                    rs.push_str(&format!(
+                        "<details open>\n<summary>{}</summary>\n\n{}\n\n</details>\n",
+                        key,
+                        value.to_markdown()?
+                    ));
+                }
+                Ok(rs)
+            }
+            OutputContainer::Single(output) => output.to_markdown(),
+            OutputContainer::Metadata { value, .. } => value.output.to_markdown(),
+            OutputContainer::Consistency { value, .. } => value.output.to_markdown(),
+            OutputContainer::Variable(output) => Ok(output.to_string()),
+        }
+    }
+
     pub fn to_data(self, file_path: &PathBuf) -> Result<DataContainer, OxyError> {
         match self {
             OutputContainer::List(list) => {
@@ -95,11 +147,10 @@ impl OutputContainer {
             OutputContainer::Single(output) => {
                 Ok(DataContainer::Single(output.to_data(file_path)?))
             }
-            OutputContainer::Consistency { value, .. } => {
-                Ok(DataContainer::Single(value.output.to_data(file_path)?))
-            }
-            OutputContainer::Metadata { value, .. } => {
-                Ok(DataContainer::Single(value.output.to_data(file_path)?))
+            OutputContainer::Consistency { value, .. } => value.output.to_data(file_path),
+            OutputContainer::Metadata { value, .. } => value.output.to_data(file_path),
+            OutputContainer::Variable(output) => {
+                Ok(DataContainer::Single(Data::Text(output.to_string())))
             }
         }
     }
@@ -152,6 +203,31 @@ impl OutputContainer {
     }
 }
 
+impl std::fmt::Display for OutputContainer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            OutputContainer::List(list) => {
+                for item in list {
+                    writeln!(f, "{}", item)?;
+                }
+                Ok(())
+            }
+            OutputContainer::Map(map) => {
+                for (key, value) in map {
+                    writeln!(f, "{}: {}", key, value)?;
+                }
+                Ok(())
+            }
+            OutputContainer::Single(output) => writeln!(f, "{}", output),
+            OutputContainer::Metadata { value, .. } => writeln!(f, "{}", value),
+            OutputContainer::Consistency { value, .. } => {
+                writeln!(f, "{}", value)
+            }
+            OutputContainer::Variable(output) => writeln!(f, "{}", output),
+        }
+    }
+}
+
 impl From<&OutputContainer> for Value {
     fn from(value: &OutputContainer) -> Self {
         match value {
@@ -162,16 +238,14 @@ impl From<&OutputContainer> for Value {
                     .collect::<Vec<_>>(),
             ),
             OutputContainer::Single(output) => Value::from_object(output.clone()),
-            OutputContainer::Metadata { value, .. } => Value::from_object(value.output.clone()),
+            OutputContainer::Metadata { value, .. } => (value.output.as_ref()).into(),
             OutputContainer::Consistency { value, score, .. } => {
                 let mut map = HashMap::new();
-                map.insert(
-                    "value".to_string(),
-                    Value::from_object(value.output.clone()),
-                );
+                map.insert("value".to_string(), (value.output.as_ref()).into());
                 map.insert("score".to_string(), Value::from(*score));
                 Value::from_iter(map)
             }
+            OutputContainer::Variable(output) => Value::from_serialize(output),
         }
     }
 }
@@ -195,7 +269,7 @@ impl From<Output> for OutputContainer {
 
 impl From<HashMap<String, OutputContainer>> for OutputContainer {
     fn from(val: HashMap<String, OutputContainer>) -> Self {
-        OutputContainer::Map(val)
+        OutputContainer::Map(val.into_iter().collect())
     }
 }
 
@@ -220,6 +294,9 @@ impl Hash for OutputContainer {
             OutputContainer::Consistency { value, score } => {
                 value.output.hash(state);
                 score.to_bits().hash(state);
+            }
+            OutputContainer::Variable(output) => {
+                output.hash(state);
             }
         }
     }

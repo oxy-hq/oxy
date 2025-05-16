@@ -3,6 +3,7 @@ pub const VALIDATE_SQL_SOURCE: &str = "validate_sql";
 pub const RETRIEVAL_SOURCE: &str = "retrieval";
 pub const TOOL_SOURCE: &str = "tool";
 pub const AGENT_SOURCE: &str = "agent";
+pub const AGENT_SOURCE_TYPE: &str = "agent_type";
 pub const AGENT_SOURCE_PROMPT: &str = "prompt";
 pub const AGENT_SOURCE_CONTENT: &str = "content";
 pub const WORKFLOW_SOURCE: &str = "workflow";

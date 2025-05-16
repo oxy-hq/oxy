@@ -9,24 +9,13 @@ use crate::{
         types::{Output, event::DataApp},
     },
     service,
-    tools::{tool::Tool, types::CreateDataAppInput},
+    tools::types::CreateDataAppInput,
     utils::find_project_path,
 };
 use short_uuid::ShortUuid;
 
-use types::CreateDataAppParams;
-
 #[derive(Debug, Clone)]
 pub struct CreateDataAppExecutable;
-
-impl Tool for CreateDataAppExecutable {
-    type Param = CreateDataAppParams;
-    type Output = String;
-
-    fn serialize_output(&self, output: &Self::Output) -> Result<String, OxyError> {
-        Ok(output.to_string())
-    }
-}
 
 #[async_trait::async_trait]
 impl Executable<CreateDataAppInput> for CreateDataAppExecutable {

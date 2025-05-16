@@ -59,7 +59,7 @@ impl EvalRecord {
                 workflow_ref: workflow_input.workflow_ref.clone(),
                 variables: Some(HashMap::from_iter([(
                     workflow_variable_name.clone().unwrap_or_default(),
-                    self.query.clone(),
+                    serde_json::to_value(&self.query).unwrap(),
                 )])),
             }),
             EvalTarget::Agent(agent_input) => EvalTarget::Agent(AgentInput {

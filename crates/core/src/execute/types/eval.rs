@@ -1,9 +1,21 @@
-use minijinja::Value;
-
 use crate::{config::constants::AGENT_SOURCE_PROMPT, errors::OxyError};
 
-use super::{Metadata, OutputContainer, ReferenceKind};
+use super::{Document, Metadata, OutputContainer, ReferenceKind};
 
+#[derive(Clone, Debug)]
+pub enum RelevantContextGetter {
+    Id,
+    Content,
+}
+
+impl RelevantContextGetter {
+    pub fn get(&self, document: &Document) -> String {
+        match self {
+            RelevantContextGetter::Id => document.id.clone(),
+            RelevantContextGetter::Content => document.content.clone(),
+        }
+    }
+}
 #[derive(Clone, Debug)]
 pub struct TargetOutput {
     pub output: String,
@@ -11,13 +23,19 @@ pub struct TargetOutput {
     pub relevant_contexts: Vec<String>,
 }
 
-impl TryFrom<&OutputContainer> for TargetOutput {
+#[derive(Debug)]
+pub struct OutputGetter<'a> {
+    pub value: &'a OutputContainer,
+    pub relevant_context_getter: &'a RelevantContextGetter,
+}
+
+impl<'a> TryFrom<OutputGetter<'a>> for TargetOutput {
     type Error = OxyError;
 
-    fn try_from(value: &OutputContainer) -> Result<Self, Self::Error> {
-        let (output, task_description, relevant_contexts) = match value {
+    fn try_from(getter: OutputGetter) -> Result<Self, Self::Error> {
+        let (output, task_description, relevant_contexts) = match getter.value {
             OutputContainer::Single(output) => {
-                let output = Value::from_object(output.clone()).to_string();
+                let output = output.to_string();
                 (output, None, vec![])
             }
             OutputContainer::Metadata { value } | OutputContainer::Consistency { value, .. } => {
@@ -26,7 +44,7 @@ impl TryFrom<&OutputContainer> for TargetOutput {
                     metadata,
                     references,
                 } = value;
-                let output = Value::from_object(output.clone()).to_string();
+                let output = output.to_string();
                 let task_description = metadata.get(AGENT_SOURCE_PROMPT).cloned();
                 (
                     output,
@@ -34,7 +52,12 @@ impl TryFrom<&OutputContainer> for TargetOutput {
                     references
                         .iter()
                         .filter_map(|r| match r {
-                            ReferenceKind::Retrieval(r) => Some(r.documents.clone()),
+                            ReferenceKind::Retrieval(r) => Some(
+                                r.documents
+                                    .iter()
+                                    .map(|doc| getter.relevant_context_getter.get(doc))
+                                    .collect::<Vec<_>>(),
+                            ),
                             _ => None,
                         })
                         .flatten()
@@ -44,7 +67,7 @@ impl TryFrom<&OutputContainer> for TargetOutput {
             _ => {
                 return Err(OxyError::RuntimeError(format!(
                     "Failed to convert OutputContainer to TargetOutput: {:?}",
-                    value
+                    getter
                 )));
             }
         };

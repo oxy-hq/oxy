@@ -7,7 +7,7 @@ use crate::{
     execute::{
         Executable, ExecutionContext,
         builders::{ExecutableBuilder, utils::ConsistencyMapper},
-        types::TargetOutput,
+        types::{RelevantContextGetter, TargetOutput},
     },
     utils::asyncify,
 };
@@ -41,7 +41,7 @@ impl Executable<(EvalKind, EvalTarget, Option<String>)> for GeneratorExecutable 
                         sample_size: consistency.n,
                     })
                     .concurrency(self.concurrency)
-                    .executable(TargetExecutable::new(task_ref));
+                    .executable(TargetExecutable::new(task_ref, RelevantContextGetter::Id));
                 let results = consistency_executable
                     .execute(execution_context, eval_target)
                     .await?;
@@ -82,9 +82,14 @@ impl Executable<(EvalKind, EvalTarget, Option<String>)> for GeneratorExecutable 
                     Ok(records)
                 })
                 .await?;
+                let relevant_context_getter = if custom.is_context_id {
+                    RelevantContextGetter::Id
+                } else {
+                    RelevantContextGetter::Content
+                };
                 let mut target_executable = ExecutableBuilder::new()
                     .concurrency(self.concurrency)
-                    .executable(TargetExecutable::new(task_ref));
+                    .executable(TargetExecutable::new(task_ref, relevant_context_getter));
                 let inputs = records
                     .iter()
                     .map(|record| record.as_target(&eval_target, &custom.workflow_variable_name))

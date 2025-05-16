@@ -1,3 +1,5 @@
+use std::sync::{Arc, Mutex};
+
 use crate::{
     config::ConfigBuilder,
     db::client::establish_connection,
@@ -155,12 +157,16 @@ pub async fn delete_all_tasks() -> Result<StatusCode, StatusCode> {
 }
 
 struct TaskStream {
+    references: Arc<Mutex<Vec<ReferenceKind>>>,
     tx: Sender<AnswerStream>,
 }
 
 impl TaskStream {
     fn new(tx: Sender<AnswerStream>) -> Self {
-        TaskStream { tx }
+        TaskStream {
+            tx,
+            references: Arc::new(Mutex::new(vec![])),
+        }
     }
 }
 
@@ -189,13 +195,19 @@ impl EventHandler for TaskStream {
                 }
                 Output::Table(table) => {
                     let reference = table.clone().into_reference();
-                    let message = AnswerStream {
-                        content: "".to_string(),
-                        is_error: false,
-                        step: event.source.kind.to_string(),
-                        file_path: "".to_string(),
-                    };
-                    __self.tx.send(message).await?;
+                    match reference {
+                        Some(r) => {
+                            __self.references.lock().unwrap().push(r);
+                            let message = AnswerStream {
+                                content: "".to_string(),
+                                is_error: false,
+                                step: event.source.kind.to_string(),
+                                file_path: "".to_string(),
+                            };
+                            __self.tx.send(message).await?;
+                        }
+                        None => {}
+                    }
                 }
                 Output::Bool(_) => {}
                 Output::SQL(sql) => {}
@@ -289,26 +301,49 @@ pub async fn ask_task(Path(id): Path<String>) -> impl IntoResponse {
     let prompt = task.question.to_string();
     let (tx, rx) = tokio::sync::mpsc::channel(100);
     let _ = tokio::spawn(async move {
-        let (output, references) = {
-            let thread_stream = TaskStream::new(tx);
-            run_agent(&project_path, &agent_ref, prompt, thread_stream)
-                .await
-                .unwrap()
-        };
-        tracing::debug!("Agent output: {:?}", output);
-        tracing::debug!("Agent references: {:?}", references);
-        let mut task_model: entity::tasks::ActiveModel = task.into();
-        for r in references {
-            if let ReferenceKind::DataApp(data_app) = r {
-                let file_path = data_app.file_path.to_string_lossy().to_string();
-                task_model.file_path = ActiveValue::Set(file_path.clone());
+        let tx_clone = tx.clone();
+        let thread_stream = TaskStream::new(tx);
+        let references = thread_stream.references.clone();
+        let agent_result = { run_agent(&project_path, &agent_ref, prompt, thread_stream).await };
+
+        match agent_result {
+            Ok(output_container) => {
+                let references = Arc::try_unwrap(references)
+                    .map_err(|_| {
+                        OxyError::RuntimeError("Failed to unwrap agent references".to_string())
+                    })?
+                    .into_inner()
+                    .map_err(|_| {
+                        OxyError::RuntimeError("Failed to lock agent references".to_string())
+                    })?;
+                tracing::debug!("Agent output: {:?}", output_container);
+                tracing::debug!("Agent references: {:?}", references);
+                let mut task_model: entity::tasks::ActiveModel = task.into();
+                for r in references {
+                    if let ReferenceKind::DataApp(data_app) = r {
+                        let file_path = data_app.file_path.to_string_lossy().to_string();
+                        task_model.file_path = ActiveValue::Set(file_path.clone());
+                    }
+                }
+                task_model.answer = ActiveValue::Set(output_container.to_string());
+                task_model.update(&connection).await.map_err(|err| {
+                    OxyError::DBError(format!("Failed to update thread:\n{}", err))
+                })?;
+                Result::<(), OxyError>::Ok(())
+            }
+            Err(e) => {
+                tracing::error!("Error running agent: {}", e);
+                tx_clone
+                    .send(AnswerStream {
+                        content: format!("Error running agent: {}", e),
+                        is_error: true,
+                        step: "".to_string(),
+                        file_path: "".to_string(),
+                    })
+                    .await?;
+                Result::<(), OxyError>::Ok(())
             }
         }
-        task_model.answer = ActiveValue::Set(output.to_string());
-        task_model
-            .update(&connection)
-            .await
-            .map_err(|err| OxyError::DBError(format!("Failed to update thread:\n{}", err)))
     });
     StreamBodyAs::json_nl(ReceiverStream::new(rx))
 }

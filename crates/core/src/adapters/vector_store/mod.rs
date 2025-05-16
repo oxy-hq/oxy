@@ -5,7 +5,7 @@ mod search;
 mod store;
 mod types;
 
-pub use reindex::reindex_all;
+pub use reindex::{parse_sql_source_type, reindex_all};
 pub use search::search_agent;
 pub use store::VectorStore;
 pub use types::{Document, SearchRecord};

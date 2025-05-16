@@ -6,6 +6,7 @@ use crate::{
 
 pub struct ReindexInput {
     pub project_path: String,
+    pub drop_all_tables: bool,
 }
 
 pub async fn reindex(input: ReindexInput) -> Result<(), OxyError> {
@@ -13,7 +14,7 @@ pub async fn reindex(input: ReindexInput) -> Result<(), OxyError> {
         .with_project_path(input.project_path)?
         .build()
         .await?;
-    reindex_all(&config).await
+    reindex_all(&config, input.drop_all_tables).await
 }
 
 pub struct SearchInput {

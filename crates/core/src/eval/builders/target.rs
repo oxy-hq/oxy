@@ -1,16 +1,13 @@
-use std::{collections::HashMap, sync::Arc};
-
 use itertools::Itertools;
 
 use crate::{
-    agent::{AgentLauncherExecutable, AgentReferencesHandler},
-    config::constants::AGENT_SOURCE_PROMPT,
+    agent::AgentLauncherExecutable,
     errors::OxyError,
     execute::{
-        Executable, ExecutionContext, execute_with_handler,
-        types::{Metadata, OutputContainer, TargetOutput},
+        Executable, ExecutionContext,
+        types::{OutputGetter, RelevantContextGetter, TargetOutput},
     },
-    workflow::WorkflowLauncher,
+    workflow::WorkflowLauncherExecutable,
 };
 
 use super::types::EvalTarget;
@@ -18,11 +15,15 @@ use super::types::EvalTarget;
 #[derive(Clone, Debug)]
 pub(super) struct TargetExecutable {
     task_ref: Option<String>,
+    relevant_context_getter: RelevantContextGetter,
 }
 
 impl TargetExecutable {
-    pub fn new(task_ref: Option<String>) -> Self {
-        Self { task_ref }
+    pub fn new(task_ref: Option<String>, relevant_context_getter: RelevantContextGetter) -> Self {
+        Self {
+            task_ref,
+            relevant_context_getter,
+        }
     }
 }
 
@@ -37,45 +38,36 @@ impl Executable<EvalTarget> for TargetExecutable {
     ) -> Result<Self::Response, OxyError> {
         let output_container = match input {
             EvalTarget::Workflow(workflow_input) => {
-                WorkflowLauncher::new()
-                    .with_external_context(execution_context)
-                    .await?
-                    .launch(workflow_input, execution_context.writer.clone())
+                WorkflowLauncherExecutable
+                    .execute(&execution_context, workflow_input)
                     .await
             }
             EvalTarget::Agent(agent_input) => {
-                let prompt = agent_input.prompt.clone();
-                let agent_reference_handler =
-                    AgentReferencesHandler::new(execution_context.writer.clone());
-                let references = agent_reference_handler.references.clone();
-                let output = execute_with_handler(
-                    AgentLauncherExecutable,
-                    execution_context,
-                    agent_input,
-                    agent_reference_handler,
-                )
-                .await?;
-                let references = Arc::try_unwrap(references)
-                    .map_err(|_| {
-                        OxyError::RuntimeError("Failed to unwrap agent references".to_string())
-                    })?
-                    .into_inner()?;
-                Ok(OutputContainer::Metadata {
-                    value: Metadata {
-                        output,
-                        references,
-                        metadata: HashMap::from_iter([(AGENT_SOURCE_PROMPT.to_string(), prompt)]),
-                    },
-                })
+                AgentLauncherExecutable
+                    .execute(&execution_context, agent_input)
+                    .await
             }
         }?;
         match &self.task_ref {
             Some(task_ref) => {
                 let output = output_container.project_ref(task_ref)?;
-                output.into_iter().map(|item| item.try_into()).try_collect()
+                output
+                    .into_iter()
+                    .map(|item| {
+                        OutputGetter {
+                            value: &item,
+                            relevant_context_getter: &self.relevant_context_getter,
+                        }
+                        .try_into()
+                    })
+                    .try_collect()
             }
             None => {
-                let output = (&output_container).try_into();
+                let output = OutputGetter {
+                    value: &output_container,
+                    relevant_context_getter: &self.relevant_context_getter,
+                }
+                .try_into();
                 output.map(|item| vec![item])
             }
         }

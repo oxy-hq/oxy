@@ -1,12 +1,36 @@
-# yaml-language-server: $schema=https://raw.githubusercontent.com/oxy-hq/oxy/refs/heads/main/json-schemas/workflow.json
+# yaml-language-server: $schema=../../json-schemas/workflow.json
 
 name: fruit_sales_report
 description: |
   This workflow generates a fruit sales report.
   Fruits: apple, banana, chery, orange, kiwi.
   ** Note: Report must be show as is. Without any modification. **
-variables:
-  fruit: apple
+variables: # Variable is fully compatible with JSON Schema(Draft 7).
+  fruit:
+    type: string
+    description: "The fruit to compare with others"
+    enum:
+      - apple
+      - banana
+      - cherry
+      - orange
+      - kiwi
+    default: apple
+  calories:
+    type: array
+    items:
+      type: number
+    description: "Calories per 100g of the fruit"
+    examples:
+      - [80, 105, 50, 42, 62, 102]
+    default:
+      - 80
+      - 105
+      - 50
+      - 42
+      - 62
+      - 102
+
 tasks:
   - name: query_data
     type: execute_sql
@@ -18,6 +42,7 @@ tasks:
     type: agent
     agent_ref: agents/local.agent.yml
     prompt: |
-      Tell me the for {{ fruit }} compare to other fruits.
+      Tell me the different between {{ fruit }} and the other fruits.
+      Given the calories: {{calories}}
       Given the sales data:
       {{ query_data }}

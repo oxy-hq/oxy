@@ -7,7 +7,7 @@ use crate::{
     execute::{
         Executable, ExecutionContext, ExecutionContextBuilder,
         builders::{ExecutableBuilder, map::ParamMapper},
-        types::{Output, Source},
+        types::{OutputContainer, Source},
         writer::{BufWriter, EventHandler},
     },
 };
@@ -33,15 +33,20 @@ impl ToolLauncher {
         }
     }
 
-    pub fn with_config(mut self, config: ConfigManager) -> Result<Self, OxyError> {
+    pub fn with_config(
+        mut self,
+        config: ConfigManager,
+        source: Option<Source>,
+    ) -> Result<Self, OxyError> {
+        let source = source.unwrap_or(Source {
+            parent_id: None,
+            id: TOOL_SOURCE.to_string(),
+            kind: TOOL_SOURCE.to_string(),
+        });
         self.execution_context = Some(
             ExecutionContextBuilder::new()
                 .with_config_manager(config)
-                .with_source(Source {
-                    parent_id: None,
-                    id: TOOL_SOURCE.to_string(),
-                    kind: TOOL_SOURCE.to_string(),
-                })
+                .with_source(source)
                 .with_writer(self.buf_writer.create_writer(None)?)
                 .with_global_context(Value::UNDEFINED)
                 .build()?,
@@ -62,13 +67,10 @@ impl ToolLauncher {
         self,
         tool_input: ToolInput,
         event_handler: H,
-    ) -> Result<Output, OxyError> {
-        let execution_context = self
-            .execution_context
-            .ok_or(OxyError::RuntimeError(
-                "ExecutionContext is required".to_string(),
-            ))?
-            .with_child_source(tool_input.raw.handle.to_string(), TOOL_SOURCE.to_string());
+    ) -> Result<OutputContainer, OxyError> {
+        let execution_context = self.execution_context.ok_or(OxyError::RuntimeError(
+            "ExecutionContext is required".to_string(),
+        ))?;
         let mut executable = build_tool_executable();
         let handle =
             tokio::spawn(async move { executable.execute(&execution_context, tool_input).await });
@@ -86,7 +88,7 @@ pub struct ToolLauncherExecutable;
 
 #[async_trait::async_trait]
 impl Executable<ToolInput> for ToolLauncherExecutable {
-    type Response = Output;
+    type Response = OutputContainer;
 
     async fn execute(
         &mut self,
@@ -137,7 +139,7 @@ impl ParamMapper<ToolInput, (String, Option<ToolType>, ToolRawInput)> for ToolMa
     }
 }
 
-fn build_tool_executable() -> impl Executable<ToolInput, Response = Output> {
+fn build_tool_executable() -> impl Executable<ToolInput, Response = OutputContainer> {
     ExecutableBuilder::new()
         .map(ToolMapper)
         .executable(ToolExecutable)

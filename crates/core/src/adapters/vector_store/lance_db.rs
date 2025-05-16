@@ -251,4 +251,11 @@ impl VectorEngine for LanceDB {
         }
         Ok(results)
     }
+
+    async fn cleanup(&self) -> Result<(), OxyError> {
+        self.connection
+            .drop_all_tables()
+            .await
+            .map_err(OxyError::LanceDBError)
+    }
 }

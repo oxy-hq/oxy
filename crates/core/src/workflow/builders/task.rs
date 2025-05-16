@@ -1,26 +1,24 @@
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
+
+use itertools::Itertools;
+use serde_json::Value as JsonValue;
 
 use crate::{
     adapters::checkpoint::CheckpointManager,
-    agent::{AgentLauncherExecutable, AgentReferencesHandler, types::AgentInput},
-    config::{
-        constants::AGENT_SOURCE_PROMPT,
-        model::{Task, TaskType},
-    },
+    agent::{AgentLauncherExecutable, types::AgentInput},
+    config::model::{Task, TaskType},
     errors::OxyError,
     execute::{
         Executable, ExecutionContext,
         builders::{ExecutableBuilder, cache::Cache, chain::ContextMapper, export::Export},
-        execute_with_handler,
-        types::{EventKind, Metadata, Output, OutputContainer},
+        types::{EventKind, Output, OutputContainer},
     },
     theme::StyledText,
-    workflow::{WorkflowInput, WorkflowLauncher},
 };
 
 use super::{
-    cache::TaskCacheStorage, consistency::AgentPicker, export::TaskExporter,
-    loop_concurrency::build_loop_executable, sql::build_sql_task_executable,
+    WorkflowInput, WorkflowLauncherExecutable, cache::TaskCacheStorage, consistency::AgentPicker,
+    export::TaskExporter, loop_concurrency::build_loop_executable, sql::build_sql_task_executable,
 };
 
 #[derive(Clone)]
@@ -62,10 +60,9 @@ impl Executable<TaskInput> for TaskExecutable {
         let new_value = match task.task_type {
             TaskType::Agent(agent_task) => {
                 let prompt = execution_context.renderer.render(&agent_task.prompt)?;
-                let metadata_prompt = prompt.clone();
                 match &agent_task.consistency_run {
                     consistency_run if *consistency_run > 1 => {
-                        let executable = ExecutableBuilder::new()
+                        let mut executable = ExecutableBuilder::new()
                             .consistency(
                                 AgentPicker {
                                     task_description: prompt.clone(),
@@ -75,69 +72,28 @@ impl Executable<TaskInput> for TaskExecutable {
                                 10,
                             )
                             .executable(AgentLauncherExecutable);
-                        let agent_reference_handler =
-                            AgentReferencesHandler::new(execution_context.writer.clone());
-                        let references = agent_reference_handler.references.clone();
-                        let (output, score) = execute_with_handler(
-                            executable,
-                            &execution_context,
-                            AgentInput {
-                                agent_ref: agent_task.agent_ref.to_string(),
-                                prompt,
-                            },
-                            agent_reference_handler,
-                        )
-                        .await?;
-                        let references = Arc::try_unwrap(references)
-                            .map_err(|_| {
-                                OxyError::RuntimeError(
-                                    "Failed to unwrap agent references".to_string(),
-                                )
-                            })?
-                            .into_inner()?;
-                        Ok(OutputContainer::Consistency {
-                            value: Metadata {
-                                output,
-                                references,
-                                metadata: HashMap::from_iter([(
-                                    AGENT_SOURCE_PROMPT.to_string(),
-                                    metadata_prompt,
-                                )]),
-                            },
-                            score,
-                        })
+                        let (output, score) = executable
+                            .execute(
+                                &execution_context,
+                                AgentInput {
+                                    agent_ref: agent_task.agent_ref.to_string(),
+                                    prompt,
+                                },
+                            )
+                            .await?;
+                        let value = output.try_get_metadata()?;
+                        Ok(OutputContainer::Consistency { value, score })
                     }
                     _ => {
-                        let agent_reference_handler =
-                            AgentReferencesHandler::new(execution_context.writer.clone());
-                        let references = agent_reference_handler.references.clone();
-                        let output = execute_with_handler(
-                            AgentLauncherExecutable,
-                            &execution_context,
-                            AgentInput {
-                                agent_ref: agent_task.agent_ref.to_string(),
-                                prompt,
-                            },
-                            agent_reference_handler,
-                        )
-                        .await?;
-                        let references = Arc::try_unwrap(references)
-                            .map_err(|_| {
-                                OxyError::RuntimeError(
-                                    "Failed to unwrap agent references".to_string(),
-                                )
-                            })?
-                            .into_inner()?;
-                        Ok(OutputContainer::Metadata {
-                            value: Metadata {
-                                output,
-                                references,
-                                metadata: HashMap::from_iter([(
-                                    AGENT_SOURCE_PROMPT.to_string(),
-                                    metadata_prompt,
-                                )]),
-                            },
-                        })
+                        AgentLauncherExecutable
+                            .execute(
+                                &execution_context,
+                                AgentInput {
+                                    agent_ref: agent_task.agent_ref.to_string(),
+                                    prompt,
+                                },
+                            )
+                            .await
                     }
                 }
             }
@@ -180,25 +136,31 @@ impl Executable<TaskInput> for TaskExecutable {
                     .map(|vars| {
                         vars.into_iter()
                             .map(|(k, v)| {
-                                let context = execution_context.renderer.get_context();
-                                execution_context
-                                    .renderer
-                                    .render_once(&v, context)
-                                    .map(|v| (k, v))
+                                if let Some(template) = v.as_str() {
+                                    let rendered_value = execution_context
+                                        .renderer
+                                        .eval_expression(template)?;
+                                    let json_value = serde_json::to_value(rendered_value)?;
+                                    let final_value = match json_value.is_null() {
+                                        true => v,
+                                        false => json_value,
+                                    };
+                                    Ok((k, final_value))
+                                } else {
+                                    Ok((k, v))
+                                }
                             })
-                            .collect::<Result<HashMap<String, String>, OxyError>>()
+                            .try_collect::<(String, JsonValue), HashMap<String, JsonValue>, OxyError>()
                     })
                     .transpose()?;
-                WorkflowLauncher::new()
-                    .with_external_context(&execution_context)
-                    .await?
-                    .launch(
+                WorkflowLauncherExecutable
+                    .execute(
+                        &execution_context,
                         WorkflowInput {
                             restore_from_checkpoint: false,
                             workflow_ref: workflow_task.src.to_string_lossy().to_string(),
                             variables,
                         },
-                        execution_context.writer.clone(),
                     )
                     .await
             }

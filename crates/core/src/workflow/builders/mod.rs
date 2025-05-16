@@ -15,6 +15,7 @@ use crate::{
 };
 use itertools::Itertools;
 use minijinja::Value;
+use serde_json::Value as JsonValue;
 use std::{
     collections::HashMap,
     hash::Hash,
@@ -35,14 +36,14 @@ mod workflow;
 pub struct WorkflowInput {
     pub restore_from_checkpoint: bool,
     pub workflow_ref: String,
-    pub variables: Option<HashMap<String, String>>,
+    pub variables: Option<HashMap<String, JsonValue>>,
 }
 
 impl Hash for WorkflowInput {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.workflow_ref.hash(state);
         if let Some(variables) = &self.variables {
-            for (key, value) in variables.iter().sorted() {
+            for (key, value) in variables.iter().sorted_by_cached_key(|(k, _)| *k) {
                 key.hash(state);
                 value.hash(state);
             }
@@ -214,5 +215,25 @@ impl WorkflowLauncher {
         let response = handle.await?;
         event_handle.await??;
         response
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct WorkflowLauncherExecutable;
+
+#[async_trait::async_trait]
+impl Executable<WorkflowInput> for WorkflowLauncherExecutable {
+    type Response = OutputContainer;
+
+    async fn execute(
+        &mut self,
+        execution_context: &ExecutionContext,
+        input: WorkflowInput,
+    ) -> Result<Self::Response, OxyError> {
+        WorkflowLauncher::new()
+            .with_external_context(execution_context)
+            .await?
+            .launch(input, execution_context.writer.clone())
+            .await
     }
 }

@@ -164,7 +164,7 @@ pub async fn run_workflow<P: AsRef<Path>, L: WorkflowLogger + 'static>(
     path: P,
     logger: L,
     restore_from_checkpoint: bool,
-    variables: Option<HashMap<String, String>>,
+    variables: Option<HashMap<String, serde_json::Value>>,
 ) -> Result<OutputContainer, OxyError> {
     let project_path = find_project_path()?.to_string_lossy().to_string();
     WorkflowLauncher::new()

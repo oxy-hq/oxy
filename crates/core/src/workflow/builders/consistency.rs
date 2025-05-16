@@ -1,11 +1,10 @@
 use std::collections::HashMap;
 
 use itertools::Itertools;
-use minijinja::Value;
 use tokio::task::JoinHandle;
 
 use crate::{
-    agent::{OpenAIExecutableResponse, build_openai_executable},
+    agent::{OneShotInput, OpenAIExecutableResponse, build_openai_executable},
     config::constants::CONSISTENCY_PROMPT,
     errors::OxyError,
     execute::{
@@ -14,7 +13,7 @@ use crate::{
             ExecutableBuilder, concurrency::ConcurrencyControl, consistency::ConsistencyPicker,
             map::ParamMapper,
         },
-        types::Output,
+        types::{Output, OutputContainer},
         writer::OrderedWriter,
     },
 };
@@ -26,14 +25,14 @@ pub struct AgentPicker {
 }
 
 #[derive(Clone)]
-pub struct AgentScoreControl {
-    pub comparison_idx_pairs: Vec<(usize, usize)>,
-    pub outputs: HashMap<usize, Output>,
+struct AgentScoreControl {
+    comparison_idx_pairs: Vec<(usize, usize)>,
+    outputs: HashMap<usize, OutputContainer>,
 }
 
 #[async_trait::async_trait]
 impl ConcurrencyControl<OpenAIExecutableResponse> for AgentScoreControl {
-    type Response = (usize, Output, f32);
+    type Response = (usize, OutputContainer, f32);
 
     async fn handle(
         &self,
@@ -99,37 +98,43 @@ impl ConcurrencyControl<OpenAIExecutableResponse> for AgentScoreControl {
 }
 
 #[derive(Clone)]
-pub struct AgentPromptMapper {
+struct AgentPromptMapper {
     task_description: String,
 }
 
 #[async_trait::async_trait]
-impl ParamMapper<(Output, Output), String> for AgentPromptMapper {
+impl ParamMapper<(OutputContainer, OutputContainer), OneShotInput> for AgentPromptMapper {
     async fn map(
         &self,
         execution_context: &ExecutionContext,
-        input: (Output, Output),
-    ) -> Result<(String, Option<ExecutionContext>), OxyError> {
+        input: (OutputContainer, OutputContainer),
+    ) -> Result<(OneShotInput, Option<ExecutionContext>), OxyError> {
         let (left, right) = input;
         let context = minijinja::context! {
-            submission_1 => Value::from_object(left).to_string(),
-            submission_2 => Value::from_object(right).to_string(),
+            submission_1 => left.to_string(),
+            submission_2 => right.to_string(),
             task_description => self.task_description.to_string(),
         };
-        let prompt = execution_context
+        let system_instructions = execution_context
             .renderer
             .render_once(CONSISTENCY_PROMPT, context)?;
-        Ok((prompt, None))
+        Ok((
+            OneShotInput {
+                system_instructions,
+                user_input: None,
+            },
+            None,
+        ))
     }
 }
 
 #[async_trait::async_trait]
-impl ConsistencyPicker<Output> for AgentPicker {
+impl ConsistencyPicker<OutputContainer> for AgentPicker {
     async fn pick(
         &self,
         execution_context: &ExecutionContext,
-        results: Vec<Result<Output, OxyError>>,
-    ) -> Result<(usize, Output, f32), OxyError> {
+        results: Vec<Result<OutputContainer, OxyError>>,
+    ) -> Result<(usize, OutputContainer, f32), OxyError> {
         let outputs = results
             .into_iter()
             .enumerate()

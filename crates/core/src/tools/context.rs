@@ -5,7 +5,10 @@ use tokio::{runtime::Handle, sync::mpsc::Sender};
 
 use crate::{
     config::{ConfigManager, model::ToolType},
-    execute::types::Event,
+    execute::{
+        ExecutionContext,
+        types::{Event, Source},
+    },
     utils::truncate_with_ellipsis,
 };
 
@@ -18,6 +21,7 @@ pub struct ToolsContext {
     tools_config: Vec<ToolType>,
     prompt: String,
     sender: Sender<Event>,
+    source: Source,
 }
 
 impl ToolsContext {
@@ -27,6 +31,7 @@ impl ToolsContext {
         tools: impl IntoIterator<Item = ToolType>,
         prompt: String,
         sender: Sender<Event>,
+        source: Source,
     ) -> Self {
         ToolsContext {
             config,
@@ -34,7 +39,26 @@ impl ToolsContext {
             tools_config: tools.into_iter().collect(),
             prompt,
             sender,
+            source,
         }
+    }
+
+    pub fn from_execution_context(
+        execution_context: &ExecutionContext,
+        agent_name: String,
+        tools: impl IntoIterator<Item = ToolType>,
+        prompt: String,
+    ) -> Self {
+        let config = execution_context.config.clone();
+        let sender = execution_context.writer.clone();
+        ToolsContext::new(
+            config,
+            agent_name,
+            tools,
+            prompt,
+            sender,
+            execution_context.source.clone(),
+        )
     }
 }
 
@@ -44,7 +68,9 @@ impl Object for ToolsContext {
         match tool_key {
             Some(tool_key) => match Handle::try_current() {
                 Ok(rt) => {
-                    let launcher = ToolLauncher::new().with_config(self.config.clone()).ok()?;
+                    let launcher = ToolLauncher::new()
+                        .with_config(self.config.clone(), Some(self.source.clone()))
+                        .ok()?;
                     let output = rt
                         .block_on(launcher.launch(
                             ToolInput {
@@ -64,7 +90,7 @@ impl Object for ToolsContext {
                         })
                         .ok()?;
                     let parsed_output =
-                        truncate_with_ellipsis(&Value::from_object(output).to_string(), None);
+                        truncate_with_ellipsis(&(Into::<Value>::into(&output)).to_string(), None);
                     Some(Value::from_safe_string(parsed_output))
                 }
                 Err(err) => {

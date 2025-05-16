@@ -2,23 +2,11 @@ use crate::{
     config::model::OmniField,
     errors::OxyError,
     execute::{Executable, ExecutionContext, types::Output},
-    tools::{
-        tool::Tool,
-        types::{OmniTopicInfoInput, OmniTopicInfoParams},
-    },
+    tools::types::OmniTopicInfoInput,
 };
 
 #[derive(Debug, Clone)]
 pub struct OmniTopicInfoExecutable;
-
-impl Tool for OmniTopicInfoExecutable {
-    type Param = OmniTopicInfoParams;
-    type Output = String;
-
-    fn serialize_output(&self, output: &Self::Output) -> Result<String, OxyError> {
-        Ok(output.to_string())
-    }
-}
 
 #[async_trait::async_trait]
 impl Executable<OmniTopicInfoInput> for OmniTopicInfoExecutable {
@@ -26,7 +14,7 @@ impl Executable<OmniTopicInfoInput> for OmniTopicInfoExecutable {
 
     async fn execute(
         &mut self,
-        execution_context: &ExecutionContext,
+        _execution_context: &ExecutionContext,
         input: OmniTopicInfoInput,
     ) -> Result<Self::Response, OxyError> {
         tracing::debug!(

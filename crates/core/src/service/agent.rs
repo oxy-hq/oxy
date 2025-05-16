@@ -1,6 +1,7 @@
+use crate::agent::AgentLauncher;
 use crate::agent::types::AgentInput;
-use crate::agent::{AgentLauncher, AgentReferencesHandler};
 use crate::config::ConfigBuilder;
+use crate::config::constants::{CONCURRENCY_SOURCE, CONSISTENCY_SOURCE, WORKFLOW_SOURCE};
 use crate::config::model::AgentConfig;
 use crate::db::message::update_message;
 use crate::db::{
@@ -8,7 +9,7 @@ use crate::db::{
     message::save_message,
 };
 use crate::errors::OxyError;
-use crate::execute::types::{Event, EventKind, Output, ReferenceKind};
+use crate::execute::types::{Event, EventKind, Output, OutputContainer, ProgressType};
 use crate::execute::writer::{EventHandler, NoopHandler};
 use crate::theme::StyledText;
 use crate::utils::print_colored_sql;
@@ -18,11 +19,12 @@ use serde::{Deserialize, Serialize};
 use std::io::Write;
 use std::path::Path;
 use std::path::PathBuf;
-use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
 use tokio_stream::wrappers::ReceiverStream;
 use utoipa::ToSchema;
 use uuid::Uuid;
+
+use super::eval::PBarsHandler;
 
 #[derive(Deserialize, ToSchema)]
 pub struct Memory {
@@ -114,8 +116,9 @@ pub async fn ask(payload: AskRequest) -> Result<impl Stream<Item = Message>, Oxy
     let agent_path = payload.agent.to_string();
 
     let _ = tokio::spawn(async move {
-        let (output, _) = run_agent(&project_path, &agent_path, prompt, message_stream).await?;
-        update_message(answer.id, &output.to_string())
+        let output_container =
+            run_agent(&project_path, &agent_path, prompt, message_stream).await?;
+        update_message(answer.id, &output_container.to_string())
             .await
             .map_err(|err| OxyError::DBError(format!("Failed to update message:\n{}", err)))
     });
@@ -130,7 +133,7 @@ pub async fn ask_adhoc(
 ) -> Result<String, OxyError> {
     let agent_path = get_path_by_name(project_path.clone(), agent).await?;
     let result = match run_agent(&project_path, &agent_path, question, NoopHandler).await {
-        Ok(output) => output.0.to_string(),
+        Ok(output) => output.to_string(),
         Err(e) => format!("Error running agent: {}", e),
     };
     Ok(result)
@@ -185,39 +188,71 @@ pub async fn get_path_by_name(
     )))
 }
 
-pub struct AgentCLIHandler;
+#[derive(Default)]
+pub struct AgentCLIHandler {
+    pbar_handler: PBarsHandler,
+}
 
 #[async_trait::async_trait]
 impl EventHandler for AgentCLIHandler {
     async fn handle_event(&mut self, event: Event) -> Result<(), OxyError> {
-        match event.kind {
-            EventKind::Updated { chunk } => match chunk.delta.clone() {
-                Output::SQL(sql) => {
-                    print_colored_sql(&sql.0);
+        match event.source.kind.as_str() {
+            WORKFLOW_SOURCE => match event.kind {
+                EventKind::Started { name } => {
+                    println!("\n⏳Running workflow: {}", name);
                 }
-                Output::Table(table) => match table.to_term() {
-                    Ok(table) => {
-                        println!("{}", "\nResult:".primary());
-                        println!("{}", table);
-                    }
-                    Err(e) => {
-                        println!("{}", format!("Error displaying results: {}", e).error());
-                    }
-                },
-                Output::Text(text) => {
-                    if chunk.finished {
-                        println!("{}", text);
-                    } else {
-                        print!("{}", text);
-                        std::io::stdout().flush().unwrap();
-                    }
+                EventKind::Finished { message } => {
+                    println!("{}", message);
                 }
                 _ => {}
             },
-            EventKind::Message { message } => {
-                println!("{}", message);
-            }
-            _ => {}
+            CONSISTENCY_SOURCE => match event.kind {
+                EventKind::Progress { progress } => match progress {
+                    ProgressType::Started(total) => {
+                        self.pbar_handler.get_or_create_bar(&event.source.id, total);
+                    }
+                    ProgressType::Updated(progress) => {
+                        self.pbar_handler.update_bar(&event.source.id, progress)?;
+                    }
+                    ProgressType::Finished => {
+                        self.pbar_handler.remove_bar(&event.source.id);
+                    }
+                },
+                EventKind::Message { message } => {
+                    println!("{}", message);
+                }
+                _ => {}
+            },
+            CONCURRENCY_SOURCE => {}
+            _ => match event.kind {
+                EventKind::Updated { chunk } => match chunk.delta.clone() {
+                    Output::SQL(sql) => {
+                        print_colored_sql(&sql.0);
+                    }
+                    Output::Table(table) => match table.to_term() {
+                        Ok(table) => {
+                            println!("{}", "\nResult:".primary());
+                            println!("{}", table);
+                        }
+                        Err(e) => {
+                            println!("{}", format!("Error displaying results: {}", e).error());
+                        }
+                    },
+                    Output::Text(text) => {
+                        if chunk.finished {
+                            println!("{}", text);
+                        } else {
+                            print!("{}", text);
+                            std::io::stdout().flush().unwrap();
+                        }
+                    }
+                    _ => {}
+                },
+                EventKind::Message { message } => {
+                    println!("{}", message);
+                }
+                _ => {}
+            },
         }
         Ok(())
     }
@@ -228,10 +263,8 @@ pub async fn run_agent<P: AsRef<Path>, H: EventHandler + Send + 'static>(
     agent_ref: P,
     prompt: String,
     event_handler: H,
-) -> Result<(Output, Vec<ReferenceKind>), OxyError> {
-    let event_handler = AgentReferencesHandler::new(event_handler);
-    let references = event_handler.references.clone();
-    let result = AgentLauncher::new()
+) -> Result<OutputContainer, OxyError> {
+    AgentLauncher::new()
         .with_local_context(project_path)
         .await?
         .launch(
@@ -241,11 +274,5 @@ pub async fn run_agent<P: AsRef<Path>, H: EventHandler + Send + 'static>(
             },
             event_handler,
         )
-        .await;
-    let output = result?;
-    let references = Arc::try_unwrap(references)
-        .map_err(|_| OxyError::RuntimeError("Failed to unwrap references".to_string()))?
-        .into_inner()
-        .map_err(|_| OxyError::RuntimeError("Failed to lock references".to_string()))?;
-    Ok((output, references))
+        .await
 }

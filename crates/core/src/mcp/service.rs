@@ -193,52 +193,16 @@ impl OxyMcpServer {
     }
 }
 
-fn json_to_hashmap(json: serde_json::Map<String, serde_json::Value>) -> HashMap<String, String> {
+fn json_to_hashmap(
+    json: serde_json::Map<String, serde_json::Value>,
+) -> HashMap<String, serde_json::Value> {
     let mut lookup = json.clone();
     let mut map = HashMap::new();
     for key in json.keys() {
         let (k, v) = lookup.remove_entry(key).unwrap();
-        map.insert(k, v.as_str().unwrap().to_string());
+        map.insert(k, v);
     }
     map
-}
-
-fn generate_workflow_run_schema(
-    variables: Option<HashMap<String, String>>,
-) -> serde_json::Map<String, Value> {
-    if variables.is_none() {
-        let mut schema = serde_json::Map::new();
-        schema.insert("type".to_string(), Value::String("object".to_string()));
-
-        return schema;
-    }
-    let mut schema = serde_json::Map::new();
-    let mut variable_schema = serde_json::Map::new();
-    let mut properties = serde_json::Map::new();
-    let variables = variables.unwrap();
-
-    for (key, _) in variables.iter() {
-        properties.insert(
-            key.clone(),
-            json!(
-                {
-                    "type": "string",
-                }
-            ),
-        );
-    }
-    variable_schema.insert("type".to_string(), Value::String("object".to_string()));
-    variable_schema.insert("properties".to_string(), Value::Object(properties));
-
-    schema.insert(
-        "properties".to_string(),
-        json!({
-            "variables": variable_schema,
-        }),
-    );
-    schema.insert("type".to_string(), Value::String("object".to_string()));
-
-    schema
 }
 
 async fn get_oxy_tools(project_path: PathBuf) -> Result<HashMap<String, OxyTool>, OxyError> {
@@ -291,9 +255,7 @@ async fn get_workflow_tools(project_path: PathBuf) -> Result<HashMap<String, Oxy
         let tool = Tool::new(
             tool_name.clone(),
             workflow_config.description,
-            Arc::new(generate_workflow_run_schema(
-                workflow_config.variables.clone(),
-            )),
+            Arc::new(workflow_config.variables.unwrap_or_default().into()),
         );
 
         let oxy_tool = OxyTool {

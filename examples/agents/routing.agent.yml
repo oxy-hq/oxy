@@ -1,0 +1,12 @@
+model: "openai-4o-mini"
+type: routing
+# system_instructions: |
+#   You are a routing agent. Your job is to route the task to the correct tool. Follow the steps below:
+#   1. Reasoning the task to find the most relevant tools.
+#   2. If the task is not relevant to any tool, explain why.
+#   3. If the task is relevant to a tool, route it to the tool.
+#   Your task:
+routes:
+  - "workflows/*.workflow.yml"
+  - "agents/*.agent.yml"
+  - "data_fruit/*.sql"

@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use serde_json::Value;
+
 use crate::{
     adapters::checkpoint::CheckpointManager,
     config::model::Task,
@@ -8,7 +10,7 @@ use crate::{
         Executable, ExecutionContext,
         builders::{ExecutableBuilder, checkpoint::ShouldRestore, map::ParamMapper},
         renderer::Renderer,
-        types::{Output, OutputContainer},
+        types::OutputContainer,
     },
 };
 
@@ -18,25 +20,35 @@ use super::task::{TaskChainMapper, TaskInput, build_task_executable};
 pub(super) struct WorkflowMapper;
 
 #[async_trait::async_trait]
-impl ParamMapper<(String, Option<HashMap<String, String>>), (Vec<TaskInput>, OutputContainer)>
+impl ParamMapper<(String, Option<HashMap<String, Value>>), (Vec<TaskInput>, OutputContainer)>
     for WorkflowMapper
 {
     async fn map(
         &self,
         execution_context: &ExecutionContext,
-        input: (String, Option<HashMap<String, String>>),
+        input: (String, Option<HashMap<String, Value>>),
     ) -> Result<((Vec<TaskInput>, OutputContainer), Option<ExecutionContext>), OxyError> {
+        // Extract the workflow reference and variables from the input
         let (workflow_ref, variables) = input;
         let workflow = execution_context
             .config
             .resolve_workflow(workflow_ref)
             .await?;
-        let variables = variables
-            .clone()
-            .unwrap_or(workflow.variables.clone().unwrap_or_default());
+
+        // Validate the workflow variables against the schema
+        let variables_schema = workflow.variables.clone().unwrap_or_default();
+        let variables = variables_schema.resolve_params(variables)?;
+        let json_schema: serde_json::Value = variables_schema.into();
+        let instance = serde_json::to_value(&variables)
+            .map_err(|err| OxyError::ArgumentError(err.to_string()))?;
+
+        jsonschema::validate(&json_schema, &instance)
+            .map_err(|err| OxyError::ArgumentError(err.to_string()))?;
+
+        // Create the OutputContainer and Renderer
         let value: OutputContainer = variables
             .into_iter()
-            .map(|(k, v)| (k, Output::Text(v).into()))
+            .map(|(k, v)| (k, OutputContainer::Variable(v)))
             .collect::<HashMap<String, OutputContainer>>()
             .into();
         let renderer = Renderer::from_template((&value).into(), &workflow)?;
@@ -58,7 +70,7 @@ impl ParamMapper<(String, Option<HashMap<String, String>>), (Vec<TaskInput>, Out
 pub(super) fn build_workflow_executable<S>(
     checkpoint_manager: CheckpointManager,
     should_restore: S,
-) -> impl Executable<(String, Option<HashMap<String, String>>), Response = OutputContainer>
+) -> impl Executable<(String, Option<HashMap<String, Value>>), Response = OutputContainer>
 where
     S: ShouldRestore + Clone + Send + Sync,
 {
