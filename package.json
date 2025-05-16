@@ -34,5 +34,5 @@
     "typescript-eslint": "^8.32.1"
   },
   "name": "oxy",
-  "packageManager": "pnpm@10.10.0"
+  "packageManager": "pnpm@10.11.0"
 }
