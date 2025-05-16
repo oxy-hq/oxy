@@ -23,8 +23,12 @@ impl std::fmt::Debug for SearchRecord {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "Content: {}\nFTS Score: {}\nRRF Score: {}",
-            self.document.content, self.score, self.relevance_score
+            "Id: {}\nType:{}\nContent: {}\nFTS Score: {}\nRRF Score: {}",
+            self.document.source_identifier,
+            self.document.source_type,
+            self.document.content,
+            self.score,
+            self.relevance_score
         )
     }
 }

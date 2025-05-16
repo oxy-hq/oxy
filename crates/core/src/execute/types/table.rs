@@ -203,6 +203,8 @@ impl Object for Table {
         let mut values = Vec::new();
         for batch in &table.batches {
             let array = batch.column(idx);
+            // @TODO: Right now we convert everything to string,
+            // to better support other type we need to handle different array types more gracefully
             let formatter = arrow::util::display::ArrayFormatter::try_new(
                 array,
                 &arrow::util::display::FormatOptions::default(),

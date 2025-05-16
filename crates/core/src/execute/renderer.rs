@@ -115,19 +115,11 @@ impl Renderer {
 
     pub fn eval_expression(&self, template: &str) -> Result<Value, OxyError> {
         let env = self.env.read()?;
-        let tmpl = env.get_template(template).map_err(|err| {
-            OxyError::ConfigurationError(format!("Template \"{template}\" not found: {err}"))
-        })?;
-        let variables = tmpl.undeclared_variables(true);
-        if variables.len() != 1 {
-            return Err(OxyError::RuntimeError(format!(
-                "Expected one variable in expression, found {}",
-                variables.len()
-            )));
-        }
-        let variable = variables.iter().next().unwrap();
-        let expression = env.compile_expression(variable).map_err(|err| {
-            OxyError::RuntimeError(format!("Failed to compile expression {variable} :{err}"))
+        let variable_regex = regex::Regex::new(r"^\{\{(.*)\}\}$")
+            .map_err(|err| OxyError::RuntimeError(format!("Invalid regex: {err}")))?;
+        let variable = variable_regex.replace(template.trim(), "$1").to_string();
+        let expression = env.compile_expression(&variable).map_err(|err| {
+            OxyError::RuntimeError(format!("Failed to compile expression {template} :{err}"))
         })?;
         let context = self.get_context();
         let value = expression.eval(&context).map_err(|err| {

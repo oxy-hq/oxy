@@ -438,9 +438,7 @@
                 "object",
                 "null"
               ],
-              "additionalProperties": {
-                "type": "string"
-              }
+              "additionalProperties": true
             }
           }
         },

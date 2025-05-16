@@ -1,18 +1,11 @@
-use std::collections::HashMap;
-use std::path::PathBuf;
-
 use crate::{
     errors::OxyError,
     execute::{
         Executable, ExecutionContext,
-        types::{Chunk, Output, Prompt},
+        types::{Chunk, Output, OutputContainer, Prompt},
     },
-    service::workflow::run_workflow,
-    tools::tool::Tool,
-    workflow::loggers::NoopLogger,
+    workflow::{WorkflowInput, WorkflowLauncherExecutable},
 };
-
-use minijinja::Value;
 
 use super::types::WorkflowInput as WorkflowToolInput;
 
@@ -25,18 +18,9 @@ impl WorkflowExecutable {
     }
 }
 
-impl Tool for WorkflowExecutable {
-    type Param = HashMap<String, String>;
-    type Output = String;
-
-    fn serialize_output(&self, output: &Self::Output) -> Result<String, OxyError> {
-        Ok(output.to_string())
-    }
-}
-
 #[async_trait::async_trait]
 impl Executable<WorkflowToolInput> for WorkflowExecutable {
-    type Response = Output;
+    type Response = OutputContainer;
 
     async fn execute(
         &mut self,
@@ -50,25 +34,29 @@ impl Executable<WorkflowToolInput> for WorkflowExecutable {
                 finished: true,
             })
             .await?;
-        let output = run_workflow(
-            &PathBuf::from(input.workflow_config.workflow_ref.clone()),
-            NoopLogger {},
-            false,
-            input.variables,
-        )
-        .await
-        .map_err(|e| OxyError::RuntimeError(format!("Failed to run workflow: {}", e)))?;
-        let template = format!("{{{{ {} }}}}", input.workflow_config.output_task_ref);
-        let env = minijinja::Environment::new();
-        let tmpl = env
-            .template_from_str(&template)
-            .map_err(|e| OxyError::RuntimeError(e.to_string()))?;
-
-        let workflow_data: Value = (&output).into();
-        let output = tmpl
-            .render(&workflow_data)
-            .map_err(|e| OxyError::RuntimeError(e.to_string()))?;
-
-        Ok(Output::Text(output))
+        let output = WorkflowLauncherExecutable
+            .execute(
+                execution_context,
+                WorkflowInput {
+                    restore_from_checkpoint: false,
+                    workflow_ref: input.workflow_config.workflow_ref.clone(),
+                    variables: input.variables,
+                },
+            )
+            .await
+            .map_err(|e| OxyError::RuntimeError(format!("Failed to run workflow: {}", e)))?;
+        let output = match input.workflow_config.output_task_ref {
+            Some(task_ref) => output
+                .project_ref(&task_ref)?
+                .first()
+                .ok_or(OxyError::RuntimeError(format!(
+                    "Workflow output task {} not found",
+                    task_ref
+                )))?
+                .to_owned()
+                .clone(),
+            None => output,
+        };
+        Ok(output)
     }
 }

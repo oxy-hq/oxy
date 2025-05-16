@@ -1,5 +1,6 @@
 /*
  oxy:
+    database: local
     embed: |
         Calories in fruit
 */
@@ -9,7 +10,7 @@ select 'apple' as name,
     80 as calories
 union all
 select 'banana' as name,
-    105 as calories
+    106 as calories
 union all
 select 'cherry' as name,
     50 as calories

@@ -5,4 +5,5 @@ use crate::errors::OxyError;
 pub(super) trait VectorEngine {
     async fn embed(&self, documents: &Vec<Document>) -> Result<(), OxyError>;
     async fn search(&self, query: &str) -> Result<Vec<SearchRecord>, OxyError>;
+    async fn cleanup(&self) -> Result<(), OxyError>;
 }

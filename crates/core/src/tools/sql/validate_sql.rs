@@ -2,10 +2,7 @@ use crate::{
     adapters::connector::Connector,
     errors::OxyError,
     execute::{Executable, ExecutionContext, types::Output},
-    tools::{
-        tool::Tool,
-        types::{SQLInput, SQLParams},
-    },
+    tools::types::SQLInput,
 };
 
 #[derive(Debug, Clone)]
@@ -14,15 +11,6 @@ pub struct ValidateSQLExecutable;
 impl ValidateSQLExecutable {
     pub fn new() -> Self {
         Self
-    }
-}
-
-impl Tool for ValidateSQLExecutable {
-    type Param = SQLParams;
-    type Output = bool;
-
-    fn serialize_output(&self, output: &Self::Output) -> Result<String, OxyError> {
-        Ok(output.to_string())
     }
 }
 

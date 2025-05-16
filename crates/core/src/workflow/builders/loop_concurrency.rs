@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use indexmap::IndexMap;
 
 use crate::{
     adapters::checkpoint::CheckpointManager,
@@ -50,10 +50,10 @@ impl ParamMapper<((Vec<Task>, String), String), (Vec<TaskInput>, OutputContainer
     ) -> Result<((Vec<TaskInput>, OutputContainer), Option<ExecutionContext>), OxyError> {
         let ((tasks, name), input) = input;
 
-        let value = OutputContainer::Map(HashMap::from_iter([
+        let value = OutputContainer::Map(IndexMap::from_iter([
             (
                 name,
-                OutputContainer::Map(HashMap::from_iter([(
+                OutputContainer::Map(IndexMap::from_iter([(
                     LOOP_VAR_NAME.to_string(),
                     Output::Text(input.clone()).into(),
                 )])),

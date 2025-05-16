@@ -1,116 +1,97 @@
-use super::openai::{OpenAIExecutable, OpenAIExecutableResponse};
-use super::tool::OpenAITool;
-use crate::adapters::openai::AsyncFunctionObject;
-use crate::config::constants::AGENT_SOURCE_PROMPT;
-use crate::config::model::AgentConfig;
+mod default;
+mod routing;
+
+use std::{collections::HashMap, sync::Arc};
+
+use default::{DefaultAgentInput, build_default_agent_executable};
+use routing::{RoutingAgentExecutable, RoutingAgentInput};
+
 use crate::{
-    adapters::openai::OpenAIClient,
-    config::model::ToolType,
+    agent::{AgentReferencesHandler, types::AgentInput},
+    config::{
+        constants::{AGENT_SOURCE, AGENT_SOURCE_PROMPT, AGENT_SOURCE_TYPE},
+        model::AgentType,
+    },
     errors::OxyError,
     execute::{
-        Executable, ExecutionContext,
-        builders::ExecutableBuilder,
-        types::{Chunk, Output, Prompt},
+        Executable, ExecutionContext, execute_with_handler,
+        types::{Metadata, OutputContainer},
     },
-};
-use async_openai::types::{
-    ChatCompletionRequestMessage, ChatCompletionRequestSystemMessageArgs,
-    ChatCompletionRequestUserMessageArgs, ChatCompletionTool,
 };
 
 #[derive(Debug, Clone)]
 pub struct AgentExecutable;
 
 #[async_trait::async_trait]
-impl Executable<(AgentConfig, String)> for AgentExecutable {
-    type Response = Output;
+impl Executable<AgentInput> for AgentExecutable {
+    type Response = OutputContainer;
 
     async fn execute(
         &mut self,
         execution_context: &ExecutionContext,
-        input: (AgentConfig, String),
+        input: AgentInput,
     ) -> Result<Self::Response, OxyError> {
-        let (agent_config, prompt) = input;
-        let model_config = execution_context
-            .config
-            .resolve_model(&agent_config.model)?;
-        let system_instructions = execution_context
-            .renderer
-            .render_async(&agent_config.system_instructions)
-            .await?;
-        let client = OpenAIClient::with_config(model_config.try_into()?);
-        let messages: Vec<ChatCompletionRequestMessage> = vec![
-            ChatCompletionRequestSystemMessageArgs::default()
-                .content(system_instructions)
-                .build()?
-                .into(),
-            ChatCompletionRequestUserMessageArgs::default()
-                .content(prompt.clone())
-                .build()?
-                .into(),
-        ];
-        execution_context
-            .write_chunk(Chunk {
-                key: Some(AGENT_SOURCE_PROMPT.to_string()),
-                delta: Prompt::new(prompt.clone()).into(),
-                finished: true,
-            })
-            .await?;
-        let mut react_executable = build_react_loop(
-            agent_config.name.clone(),
-            agent_config.tools_config.tools.clone(),
-            agent_config.tools_config.max_tool_concurrency,
-            client,
-            model_config.model_name().to_string(),
-            agent_config.tools_config.max_tool_calls,
-        )
-        .await;
-        let response = react_executable
-            .execute(execution_context, messages)
-            .await?;
-        Ok(response.content)
-    }
-}
+        let AgentInput { agent_ref, prompt } = input;
+        let agent_config = execution_context.config.resolve_agent(&agent_ref).await?;
+        let source_id = short_uuid::short!();
+        let handler = AgentReferencesHandler::new(
+            execution_context.writer.clone(),
+            Some(source_id.to_string()),
+        );
+        let references = handler.references.clone();
+        let metadata = HashMap::from_iter([
+            (
+                AGENT_SOURCE_TYPE.to_string(),
+                agent_config.r#type.to_string(),
+            ),
+            (AGENT_SOURCE_PROMPT.to_string(), prompt.to_string()),
+        ]);
+        let routing_context =
+            execution_context.with_child_source(source_id.to_string(), AGENT_SOURCE.to_string());
+        let output_container = match agent_config.r#type {
+            AgentType::Default(default_agent) => {
+                let default_agent_executable = build_default_agent_executable();
 
-async fn build_react_loop(
-    agent_name: String,
-    tool_configs: Vec<ToolType>,
-    max_concurrency: usize,
-    client: OpenAIClient,
-    model: String,
-    max_iterations: usize,
-) -> impl Executable<Vec<ChatCompletionRequestMessage>, Response = OpenAIExecutableResponse> {
-    let tools: Vec<ChatCompletionTool> =
-        futures::future::join_all(tool_configs.iter().map(ChatCompletionTool::from_tool_async))
-            .await
-            .into_iter()
-            .collect();
-    ExecutableBuilder::new()
-        .react(
-            OpenAITool::new(agent_name, tool_configs, max_concurrency),
-            |response: &OpenAIExecutableResponse,
-             new_response: Option<&OpenAIExecutableResponse>| {
-                match new_response {
-                    Some(new_response) => OpenAIExecutableResponse {
-                        content: response.content.merge(&new_response.content),
-                        tool_calls: response
-                            .tool_calls
-                            .iter()
-                            .chain(new_response.tool_calls.iter())
-                            .cloned()
-                            .collect(),
+                execute_with_handler(
+                    default_agent_executable,
+                    &routing_context,
+                    DefaultAgentInput {
+                        agent_name: agent_config.name,
+                        model: agent_config.model,
+                        default_agent,
+                        contexts: agent_config.context,
+                        prompt,
                     },
-                    None => OpenAIExecutableResponse {
-                        content: response.content.clone(),
-                        tool_calls: response.tool_calls.clone(),
+                    handler,
+                )
+                .await
+                .map(|output| output.into())
+            }
+            AgentType::Routing(routing_agent) => {
+                execute_with_handler(
+                    RoutingAgentExecutable,
+                    &routing_context,
+                    RoutingAgentInput {
+                        agent_name: agent_config.name,
+                        model: agent_config.model,
+                        routing_agent,
+                        prompt,
                     },
-                }
+                    handler,
+                )
+                .await
+            }
+        }?;
+
+        let references = Arc::try_unwrap(references)
+            .map_err(|_| OxyError::RuntimeError("Failed to unwrap agent references".to_string()))?
+            .into_inner()?;
+        Ok(OutputContainer::Metadata {
+            value: Metadata {
+                output: Box::new(output_container),
+                references,
+                metadata,
             },
-            |input: &Vec<ChatCompletionRequestMessage>,
-             new_input: &Vec<ChatCompletionRequestMessage>| {
-                input.iter().chain(new_input.iter()).cloned().collect()
-            },
-            max_iterations,
-        )
-        .executable(OpenAIExecutable::new(client, model, tools))
+        })
+    }
 }

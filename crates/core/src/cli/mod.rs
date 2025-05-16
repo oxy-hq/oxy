@@ -162,7 +162,7 @@ enum SubCommand {
     /// Run testing on a workflow file to get consistency metrics
     Test(TestArgs),
     /// Build embeddings for hybrid search
-    Build,
+    Build(BuildArgs),
     /// Perform vector search
     VecSearch(VecSearchArgs),
     /// Collect semantic information from the databases
@@ -212,6 +212,12 @@ pub struct TestArgs {
     file: String,
     #[clap(long, short = 'q', default_value_t = false)]
     quiet: bool,
+}
+
+#[derive(Parser, Debug)]
+pub struct BuildArgs {
+    #[clap(long, short = 'd', default_value_t = false)]
+    drop_all_tables: bool,
 }
 
 #[derive(Clone)]
@@ -395,9 +401,10 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
         Some(SubCommand::Test(test_args)) => {
             handle_test_command(test_args).await?;
         }
-        Some(SubCommand::Build) => {
+        Some(SubCommand::Build(build_args)) => {
             reindex(ReindexInput {
                 project_path: find_project_path()?.to_string_lossy().to_string(),
+                drop_all_tables: build_args.drop_all_tables,
             })
             .await?;
         }
@@ -505,7 +512,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                 &project_path,
                 &config.get_builder_agent_path().await?,
                 ask_args.question,
-                AgentCLIHandler,
+                AgentCLIHandler::default(),
             )
             .await?;
         }
@@ -523,7 +530,13 @@ async fn handle_agent_file(file_path: &PathBuf, question: Option<String>) -> Res
         OxyError::ArgumentError("Question is required for agent files".to_string())
     })?;
     let project_path = find_project_path()?;
-    let _ = run_agent(&project_path, file_path, question, AgentCLIHandler).await?;
+    let _ = run_agent(
+        &project_path,
+        file_path,
+        question,
+        AgentCLIHandler::default(),
+    )
+    .await?;
     Ok(())
 }
 

@@ -9,7 +9,7 @@ use crate::{
     execute::{
         Executable, ExecutionContext,
         builders::{ExecutableBuilder, map::ParamMapper},
-        types::{EventKind, Output},
+        types::{EventKind, OutputContainer},
     },
     theme::StyledText,
     tools::{ToolInput, ToolLauncherExecutable},
@@ -126,7 +126,8 @@ fn build_tool_executable(
     agent_name: String,
     tool_configs: Vec<ToolType>,
     max: usize,
-) -> impl Executable<Vec<ChatCompletionMessageToolCall>, Response = Vec<Result<Output, OxyError>>> {
+) -> impl Executable<Vec<ChatCompletionMessageToolCall>, Response = Vec<Result<OutputContainer, OxyError>>>
+{
     ExecutableBuilder::new()
         .concurrency::<ChatCompletionMessageToolCall>(max)
         .state((agent_name, tool_configs))

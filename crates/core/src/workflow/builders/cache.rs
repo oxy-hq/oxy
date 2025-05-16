@@ -92,15 +92,19 @@ impl CacheStorage<TaskInput, OutputContainer> for TaskCacheStorage {
                 Some(OutputContainer::Metadata {
                     value:
                         Metadata {
-                            output: Output::SQL(mut sql),
+                            output,
                             metadata,
                             references,
                         },
                 }) => {
-                    sql.0 = maybe_sql;
+                    let mut output = *output;
+                    match &mut output {
+                        OutputContainer::Single(Output::SQL(sql)) => sql.0 = maybe_sql,
+                        _ => return Some(OutputContainer::Single(Output::sql(maybe_sql))),
+                    };
                     Some(OutputContainer::Metadata {
                         value: Metadata {
-                            output: sql.into(),
+                            output: Box::new(output),
                             metadata,
                             references,
                         },
@@ -109,16 +113,20 @@ impl CacheStorage<TaskInput, OutputContainer> for TaskCacheStorage {
                 Some(OutputContainer::Consistency {
                     value:
                         Metadata {
-                            output: Output::SQL(mut sql),
+                            output,
                             metadata,
                             references,
                         },
                     score,
                 }) => {
-                    sql.0 = maybe_sql;
+                    let mut output = *output;
+                    match &mut output {
+                        OutputContainer::Single(Output::SQL(sql)) => sql.0 = maybe_sql,
+                        _ => return Some(OutputContainer::Single(Output::sql(maybe_sql))),
+                    };
                     Some(OutputContainer::Consistency {
                         value: Metadata {
-                            output: sql.into(),
+                            output: Box::new(output),
                             metadata,
                             references,
                         },
@@ -153,26 +161,28 @@ impl CacheStorage<TaskInput, OutputContainer> for TaskCacheStorage {
                     }
                 }
                 OutputContainer::Metadata {
-                    value:
-                        Metadata {
-                            output: Output::SQL(sql),
-                            ..
-                        },
+                    value: Metadata { output, .. },
                 }
                 | OutputContainer::Consistency {
-                    value:
-                        Metadata {
-                            output: Output::SQL(sql),
-                            ..
-                        },
+                    value: Metadata { output, .. },
                     ..
                 } => {
-                    let formatted_sql = format_sql(&sql.0.to_string());
-                    file_cache.write_bytes(&key, formatted_sql.as_bytes())?;
+                    let output = output.as_ref();
+                    match output {
+                        OutputContainer::Single(Output::SQL(sql)) => {
+                            let formatted_sql = format_sql(&sql.0.to_string());
+                            file_cache.write_bytes(&key, formatted_sql.as_bytes())?;
 
-                    if let Some(cache_key) = self.compute_cache_key(&input.task.name, &key, false) {
-                        file_cache.write(&cache_key, value).await?;
-                    }
+                            if let Some(cache_key) =
+                                self.compute_cache_key(&input.task.name, &key, false)
+                            {
+                                file_cache.write(&cache_key, value).await?;
+                            }
+                        }
+                        _ => {
+                            file_cache.write(&key, value).await?;
+                        }
+                    };
                 }
                 _ => {
                     file_cache.write(&key, value).await?;

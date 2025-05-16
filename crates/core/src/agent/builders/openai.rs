@@ -4,9 +4,9 @@ use async_openai::{
     error::OpenAIError,
     types::{
         ChatCompletionMessageToolCall, ChatCompletionMessageToolCallChunk,
-        ChatCompletionRequestMessage, ChatCompletionRequestSystemMessageArgs, ChatCompletionTool,
-        ChatCompletionToolType, CreateChatCompletionRequestArgs, FunctionCall, ResponseFormat,
-        ResponseFormatJsonSchema,
+        ChatCompletionRequestMessage, ChatCompletionRequestSystemMessageArgs,
+        ChatCompletionRequestUserMessageArgs, ChatCompletionTool, ChatCompletionToolType,
+        CreateChatCompletionRequestArgs, FunctionCall, ResponseFormat, ResponseFormatJsonSchema,
     },
 };
 use deser_incomplete::from_json_str;
@@ -104,7 +104,6 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
         let schema = json!(schema_for!(AgentResponse));
         request_builder
             .model(self.model.clone())
-            // .parallel_tool_calls(true)
             .response_format(ResponseFormat::JsonSchema {
                 json_schema: ResponseFormatJsonSchema {
                     name: "AgentResponse".to_string(),
@@ -246,25 +245,37 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct OneShotInput {
+    pub system_instructions: String,
+    pub user_input: Option<String>,
+}
+
 #[derive(Clone, Debug)]
 pub struct SimpleMapper;
 
 #[async_trait::async_trait]
-impl ParamMapper<String, Vec<ChatCompletionRequestMessage>> for SimpleMapper {
+impl ParamMapper<OneShotInput, Vec<ChatCompletionRequestMessage>> for SimpleMapper {
     async fn map(
         &self,
         _execution_context: &ExecutionContext,
-        input: String,
+        input: OneShotInput,
     ) -> Result<(Vec<ChatCompletionRequestMessage>, Option<ExecutionContext>), OxyError> {
-        Ok((
-            vec![
-                ChatCompletionRequestSystemMessageArgs::default()
-                    .content(input)
+        let mut messages = vec![
+            ChatCompletionRequestSystemMessageArgs::default()
+                .content(input.system_instructions)
+                .build()?
+                .into(),
+        ];
+        if let Some(user_input) = input.user_input {
+            messages.push(
+                ChatCompletionRequestUserMessageArgs::default()
+                    .content(user_input)
                     .build()?
                     .into(),
-            ],
-            None,
-        ))
+            );
+        }
+        Ok((messages, None))
     }
 }
 
@@ -281,10 +292,26 @@ pub fn build_openai_executable(
     executable
 }
 
+pub fn build_openai_executable_with_tools(
+    model: &Model,
+    tools: Vec<ChatCompletionTool>,
+) -> MapInput<OpenAIExecutable, SimpleMapper, Vec<ChatCompletionRequestMessage>> {
+    let executable = ExecutableBuilder::new()
+        .map(SimpleMapper)
+        .executable(OpenAIExecutable::new(
+            OpenAIClient::with_config(model.try_into().unwrap()),
+            model.model_name().to_string(),
+            tools,
+        ));
+    executable
+}
+
 #[derive(JsonSchema, Deserialize, Debug, Clone)]
 #[serde(untagged, rename_all = "camelCase", deny_unknown_fields)]
 enum AgentResponseData {
-    #[schemars(description = "For table result of queries. Don't use for data app.")]
+    #[schemars(
+        description = "Use when returning the result of an SQL query for the specified file_path. Do not use if file_path is not provided. Don't use for data app."
+    )]
     Table { file_path: String },
     #[schemars(description = "Default response type")]
     Text { text: String },

@@ -6,10 +6,10 @@ use super::{
     types::{Document, SearchRecord},
 };
 use crate::{
-    adapters::openai::OpenAIClient,
+    adapters::openai::{ConfigType, OpenAIClient},
     config::{
         ConfigManager,
-        model::{EmbeddingConfig, RetrievalConfig, VectorDBConfig},
+        model::{EmbeddingConfig, RetrievalConfig, RoutingAgent, VectorDBConfig},
     },
     errors::OxyError,
 };
@@ -35,37 +35,68 @@ pub struct VectorStore {
 }
 
 impl VectorStore {
+    pub async fn new(
+        config_manager: &ConfigManager,
+        db_config: &VectorDBConfig,
+        name: &str,
+        openai_config: impl TryInto<ConfigType, Error = OxyError>,
+        embedding_config: EmbeddingConfig,
+    ) -> Result<Self, OxyError> {
+        let client = OpenAIClient::with_config(openai_config.try_into()?);
+        let connection = match &db_config {
+            VectorDBConfig::LanceDB { db_path } => {
+                let path = config_manager.resolve_file(db_path).await?;
+                let db_path = PathBuf::from(&path)
+                    .join(name)
+                    .to_string_lossy()
+                    .to_string();
+                connect(&db_path)
+                    .execute()
+                    .await
+                    .map_err(OxyError::LanceDBError)
+            }
+        }?;
+        Ok(Self {
+            inner: VectorStoreImpl::lance_db(client, connection, embedding_config),
+        })
+    }
     pub async fn from_retrieval(
         config_manager: &ConfigManager,
         agent_name: &str,
         retrieval: &RetrievalConfig,
     ) -> Result<Self, OxyError> {
-        match &retrieval.db_config {
-            VectorDBConfig::LanceDB { db_path } => {
-                let path = config_manager.resolve_file(db_path).await?;
-                let db_path = PathBuf::from(&path)
-                    .join(format!("{}-{}", agent_name, retrieval.name))
-                    .to_string_lossy()
-                    .to_string();
-                let client = OpenAIClient::with_config(retrieval.try_into()?);
-                let connection = connect(&db_path)
-                    .execute()
-                    .await
-                    .map_err(OxyError::LanceDBError)?;
-                Ok(Self {
-                    inner: VectorStoreImpl::lance_db(
-                        client,
-                        connection,
-                        retrieval.embedding_config.clone(),
-                    ),
-                })
-            }
-        }
+        VectorStore::new(
+            config_manager,
+            &retrieval.db_config,
+            &format!("{}-{}", agent_name, retrieval.name),
+            retrieval,
+            retrieval.embedding_config.clone(),
+        )
+        .await
+    }
+    pub async fn from_routing_agent(
+        config_manager: &ConfigManager,
+        agent_name: &str,
+        model: &str,
+        routing_agent: &RoutingAgent,
+    ) -> Result<Self, OxyError> {
+        let model = config_manager.resolve_model(model)?;
+        VectorStore::new(
+            config_manager,
+            &routing_agent.db_config,
+            &format!("{}-routing", agent_name),
+            model,
+            routing_agent.embedding_config.clone(),
+        )
+        .await
     }
     pub async fn embed(&self, documents: &Vec<Document>) -> Result<(), OxyError> {
         self.inner.embed(documents).await
     }
     pub async fn search(&self, query: &str) -> Result<Vec<SearchRecord>, OxyError> {
         self.inner.search(query).await
+    }
+    pub async fn cleanup(&self) -> Result<(), OxyError> {
+        self.inner.cleanup().await
     }
 }

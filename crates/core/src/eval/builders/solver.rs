@@ -3,7 +3,7 @@ use minijinja::{Value, context};
 use rapidfuzz::distance::levenshtein::normalized_distance;
 
 use crate::{
-    agent::build_openai_executable,
+    agent::{OneShotInput, build_openai_executable},
     config::{
         constants::{EVAL_METRICS_POSTFIX, EVAL_SOURCE},
         model::{DistanceMethod, SolverKind},
@@ -25,12 +25,12 @@ pub struct LLMSolverMapper {
 }
 
 #[async_trait::async_trait]
-impl ParamMapper<(TargetOutput, TargetOutput), String> for LLMSolverMapper {
+impl ParamMapper<(TargetOutput, TargetOutput), OneShotInput> for LLMSolverMapper {
     async fn map(
         &self,
         execution_context: &ExecutionContext,
         input: (TargetOutput, TargetOutput),
-    ) -> Result<(String, Option<ExecutionContext>), OxyError> {
+    ) -> Result<(OneShotInput, Option<ExecutionContext>), OxyError> {
         let (submission_1, submission_2) = input;
         let task_description = match &self.task_description {
             Some(task_description) => task_description,
@@ -46,13 +46,19 @@ impl ParamMapper<(TargetOutput, TargetOutput), String> for LLMSolverMapper {
             submission_2 => submission_2.output,
             task_description => Value::from_safe_string(task_description.to_string()),
         };
-        let prompt = execution_context
+        let system_instructions = execution_context
             .renderer
             .render_once(&self.prompt_template, context)
             .map_err(|_| {
                 OxyError::RuntimeError("Failed to render consistency evaluation prompt".to_string())
             })?;
-        Ok((prompt, None))
+        Ok((
+            OneShotInput {
+                system_instructions,
+                user_input: None,
+            },
+            None,
+        ))
     }
 }
 

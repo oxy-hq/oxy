@@ -1,5 +1,8 @@
 use crate::{
-    config::{ConfigManager, model::ToolType},
+    config::{
+        ConfigManager,
+        model::{AgentType, ToolType},
+    },
     errors::OxyError,
 };
 
@@ -11,24 +14,46 @@ pub async fn search_agent(
     query: &str,
 ) -> Result<Vec<SearchRecord>, OxyError> {
     let agent = config.resolve_agent(agent_ref).await?;
-    let mut results = vec![];
-    for retrieval in &agent.tools_config.tools {
-        if let ToolType::Retrieval(retrieval) = retrieval {
+    let results = match &agent.r#type {
+        AgentType::Default(default_agent) => {
+            let mut results = vec![];
+            for retrieval in &default_agent.tools_config.tools {
+                if let ToolType::Retrieval(retrieval) = retrieval {
+                    println!(
+                        "{}",
+                        format!(
+                            "Searching using agent {} tool {} ...",
+                            &agent.name, retrieval.name
+                        )
+                    );
+                    let vector_store =
+                        VectorStore::from_retrieval(config, &agent.name, retrieval).await?;
+                    let documents = vector_store.search(query).await?;
+                    for document in documents.iter() {
+                        println!("\n{}\n", format!("{:?}", document));
+                        println!("---");
+                    }
+                    results.extend(documents);
+                }
+            }
+            results
+        }
+        AgentType::Routing(routing_agent) => {
             println!(
                 "{}",
-                format!(
-                    "Searching using agent {} tool {} ...",
-                    &agent.name, retrieval.name
-                )
+                format!("Searching using routing agent {} ...", &agent.name)
             );
-            let vector_store = VectorStore::from_retrieval(config, &agent.name, retrieval).await?;
+            let vector_store =
+                VectorStore::from_routing_agent(config, &agent.name, &agent.model, routing_agent)
+                    .await?;
             let documents = vector_store.search(query).await?;
             for document in documents.iter() {
                 println!("\n{}\n", format!("{:?}", document));
                 println!("---");
             }
-            results.extend(documents);
+            documents
         }
-    }
+    };
+
     Ok(results)
 }

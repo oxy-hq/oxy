@@ -19,6 +19,16 @@ impl TemplateRegister for &Task {
         }
 
         match &self.task_type {
+            TaskType::Workflow(workflow) => {
+                if let Some(variables) = workflow.variables.clone() {
+                    register.entries(
+                        variables
+                            .iter()
+                            .filter_map(|(_key, value)| value.as_str())
+                            .collect::<Vec<&str>>(),
+                    )?;
+                }
+            }
             TaskType::Agent(agent) => {
                 register.entry(&agent.prompt.as_str())?;
                 if let Some(export) = &agent.export {

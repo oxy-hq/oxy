@@ -4,8 +4,8 @@ use async_openai::{
     types::{ChatCompletionTool, ChatCompletionToolArgs, FunctionObject, FunctionObjectArgs},
 };
 use axum::http::HeaderMap;
+use schemars::schema::RootSchema;
 use secrecy::SecretString;
-use serde_json::{Value, json};
 use std::path::PathBuf;
 
 use crate::{
@@ -17,7 +17,10 @@ use crate::{
     errors::OxyError,
     service::workflow::get_workflow,
     tools::{
-        types::{ExecuteOmniParams, OmniTopicInfoParams, RetrievalParams, SQLParams},
+        types::{
+            AgentParams, EmptySQLParams, ExecuteOmniParams, OmniTopicInfoParams, RetrievalParams,
+            SQLParams,
+        },
         visualize::types::VisualizeParams,
     },
     utils::find_project_path,
@@ -64,6 +67,14 @@ impl Config for ConfigType {
             ConfigType::Default(config) => config.api_key(),
             ConfigType::Azure(config) => config.api_key(),
         }
+    }
+}
+
+impl TryFrom<Model> for ConfigType {
+    type Error = OxyError;
+
+    fn try_from(model: Model) -> Result<Self, Self::Error> {
+        TryFrom::try_from(&model)
     }
 }
 
@@ -154,6 +165,14 @@ impl TryFrom<&Model> for ConfigType {
     }
 }
 
+impl TryFrom<RetrievalConfig> for ConfigType {
+    type Error = OxyError;
+
+    fn try_from(retrieval: RetrievalConfig) -> Result<Self, Self::Error> {
+        TryFrom::try_from(&retrieval)
+    }
+}
+
 impl TryFrom<&RetrievalConfig> for ConfigType {
     type Error = OxyError;
 
@@ -201,6 +220,7 @@ impl OpenAIToolConfig for &ToolType {
                 }
             }
             ToolType::Workflow(w) => w.description.clone(),
+            ToolType::Agent(agent_tool) => agent_tool.description.clone(),
             ToolType::Visualize(v) => v.description.clone(),
             ToolType::OmniTopicInfo(v) => v.get_description(),
             ToolType::CreateDataApp(v) => v.description.clone(),
@@ -214,6 +234,7 @@ impl OpenAIToolConfig for &ToolType {
             ToolType::Retrieval(r) => r.name.clone(),
             ToolType::ExecuteOmni(e) => e.name.clone(),
             ToolType::Workflow(w) => w.name.clone(),
+            ToolType::Agent(agent_tool) => agent_tool.name.clone(),
             ToolType::Visualize(v) => v.name.clone(),
             ToolType::OmniTopicInfo(omni_topic_info_tool) => omni_topic_info_tool.name.clone(),
             ToolType::CreateDataApp(create_data_app_tool) => create_data_app_tool.name.clone(),
@@ -226,16 +247,20 @@ impl OpenAIToolConfig for &ToolType {
             ToolType::ValidateSQL(_) => "validate_sql".to_string(),
             ToolType::Retrieval(_) => "retrieval".to_string(),
             ToolType::Workflow(_) => "workflow".to_string(),
+            ToolType::Agent(_) => "agent".to_string(),
             ToolType::Visualize(_) => "visualize".to_string(),
             ToolType::ExecuteOmni(_) => "execute_omni".to_string(),
-            ToolType::OmniTopicInfo(omni_topic_info_tool) => "omni_topic_info".to_string(),
-            ToolType::CreateDataApp(create_data_app_tool) => "create_data_app".to_string(),
+            ToolType::OmniTopicInfo(_) => "omni_topic_info".to_string(),
+            ToolType::CreateDataApp(_) => "create_data_app".to_string(),
         }
     }
 
     async fn params_schema(&self) -> Result<serde_json::Value, OxyError> {
         match self {
-            ToolType::ExecuteSQL(_) => Ok(serde_json::json!(&schemars::schema_for!(SQLParams))),
+            ToolType::ExecuteSQL(sql_tool) => match sql_tool.sql {
+                None => Ok(serde_json::json!(&schemars::schema_for!(SQLParams))),
+                Some(_) => Ok(serde_json::json!(&schemars::schema_for!(EmptySQLParams))),
+            },
             ToolType::ValidateSQL(_) => Ok(serde_json::json!(&schemars::schema_for!(SQLParams))),
             ToolType::Retrieval(_) => {
                 Ok(serde_json::json!(&schemars::schema_for!(RetrievalParams)))
@@ -244,18 +269,19 @@ impl OpenAIToolConfig for &ToolType {
                 let schema = generate_workflow_run_schema(&w.workflow_ref.clone())
                     .await
                     .unwrap();
-                Ok(serde_json::json!(schema))
+                Ok(schema)
             }
+            ToolType::Agent(_) => Ok(serde_json::json!(&schemars::schema_for!(AgentParams))),
             ToolType::Visualize(_) => {
                 Ok(serde_json::json!(&schemars::schema_for!(VisualizeParams)))
             }
             ToolType::ExecuteOmni(_) => {
                 Ok(serde_json::json!(&schemars::schema_for!(ExecuteOmniParams)))
             }
-            ToolType::OmniTopicInfo(omni_topic_info_tool) => Ok(serde_json::json!(
-                &schemars::schema_for!(OmniTopicInfoParams)
-            )),
-            ToolType::CreateDataApp(create_data_app_tool) => {
+            ToolType::OmniTopicInfo(_) => Ok(serde_json::json!(&schemars::schema_for!(
+                OmniTopicInfoParams
+            ))),
+            ToolType::CreateDataApp(_) => {
                 // we need to manually create the schema for CreateDataAppParams
                 // because this schema is quite complex and the library we use
                 // schemars does not generate a compatiible schema with OpenAI.
@@ -265,48 +291,38 @@ impl OpenAIToolConfig for &ToolType {
     }
 }
 
-async fn generate_workflow_run_schema(
-    workflow_path: &str,
-) -> Result<serde_json::Map<String, Value>, OxyError> {
+async fn generate_workflow_run_schema(workflow_path: &str) -> Result<serde_json::Value, OxyError> {
     let project_path = find_project_path().unwrap();
     let workflow_config =
         get_workflow(PathBuf::from(workflow_path), Some(project_path.clone())).await?;
+    let schema = Into::<RootSchema>::into(workflow_config.variables.unwrap_or_default());
+    let json_schema = serde_json::json!(schema);
+    // if variables.is_none() {
+    //     let mut schema = serde_json::Map::new();
+    //     schema.insert("type".to_string(), Value::String("object".to_string()));
 
-    let variables = workflow_config.variables;
+    //     return Ok(schema);
+    // }
+    // let mut schema = serde_json::Map::new();
+    // let mut variable_schema = serde_json::Map::new();
+    // let mut properties = serde_json::Map::new();
+    // let variables = variables.unwrap();
 
-    if variables.is_none() {
-        let mut schema = serde_json::Map::new();
-        schema.insert("type".to_string(), Value::String("object".to_string()));
+    // for (key, value) in variables.variables.iter() {
+    //     properties.insert(key.clone(), schemars::schema_for!(value));
+    // }
+    // variable_schema.insert("type".to_string(), Value::String("object".to_string()));
+    // variable_schema.insert("properties".to_string(), Value::Object(properties));
 
-        return Ok(schema);
-    }
-    let mut schema = serde_json::Map::new();
-    let mut variable_schema = serde_json::Map::new();
-    let mut properties = serde_json::Map::new();
-    let variables = variables.unwrap();
+    // schema.insert(
+    //     "properties".to_string(),
+    //     json!({
+    //         "variables": variable_schema,
+    //     }),
+    // );
+    // schema.insert("type".to_string(), Value::String("object".to_string()));
 
-    for (key, _) in variables.iter() {
-        properties.insert(
-            key.clone(),
-            json!(
-                {
-                    "type": "string",
-                }
-            ),
-        );
-    }
-    variable_schema.insert("type".to_string(), Value::String("object".to_string()));
-    variable_schema.insert("properties".to_string(), Value::Object(properties));
-
-    schema.insert(
-        "properties".to_string(),
-        json!({
-            "variables": variable_schema,
-        }),
-    );
-    schema.insert("type".to_string(), Value::String("object".to_string()));
-
-    Ok(schema)
+    Ok(json_schema)
 }
 
 pub trait AsyncFunctionObject {

@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::errors::OxyError;
 
-use super::Output;
+use super::{Document, Output};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
@@ -24,7 +24,7 @@ pub struct QueryReference {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RetrievalReference {
-    pub documents: Vec<String>,
+    pub documents: Vec<Document>,
 }
 
 impl TryFrom<Output> for ReferenceKind {

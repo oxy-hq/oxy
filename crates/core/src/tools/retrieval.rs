@@ -1,16 +1,16 @@
 use crate::{
-    adapters::vector_store::{SearchRecord, VectorStore},
+    adapters::{
+        openai::ConfigType,
+        vector_store::{VectorStore, parse_sql_source_type},
+    },
     errors::OxyError,
     execute::{
         Executable, ExecutionContext,
-        types::{Chunk, Output, Prompt},
+        types::{Chunk, Document, Output, Prompt},
     },
 };
 
-use super::{
-    tool::Tool,
-    types::{RetrievalInput, RetrievalParams},
-};
+use super::types::RetrievalInput;
 
 #[derive(Debug, Clone)]
 pub struct RetrievalExecutable;
@@ -21,25 +21,17 @@ impl RetrievalExecutable {
     }
 }
 
-impl Tool for RetrievalExecutable {
-    type Param = RetrievalParams;
-    type Output = Vec<SearchRecord>;
-
-    fn serialize_output(&self, output: &Self::Output) -> Result<String, OxyError> {
-        Ok(output.iter().fold(String::new(), |acc, record| {
-            acc + &format!("{}\n", record.document.content)
-        }))
-    }
-}
-
 #[async_trait::async_trait]
-impl Executable<RetrievalInput> for RetrievalExecutable {
+impl<C> Executable<RetrievalInput<C>> for RetrievalExecutable
+where
+    C: TryInto<ConfigType, Error = OxyError> + Send + 'static,
+{
     type Response = Output;
 
     async fn execute(
         &mut self,
         execution_context: &ExecutionContext,
-        input: RetrievalInput,
+        input: RetrievalInput<C>,
     ) -> Result<Self::Response, OxyError> {
         execution_context
             .write_chunk(Chunk {
@@ -49,29 +41,49 @@ impl Executable<RetrievalInput> for RetrievalExecutable {
             })
             .await?;
         let RetrievalInput {
-            agent_name,
             query,
-            retrieval_config,
+            db_config,
+            db_name,
+            openai_config,
+            embedding_config,
         } = input;
-        let store =
-            VectorStore::from_retrieval(&execution_context.config, &agent_name, &retrieval_config)
-                .await?;
+        let store = VectorStore::new(
+            &execution_context.config,
+            &db_config,
+            &db_name,
+            openai_config,
+            embedding_config,
+        )
+        .await?;
         let results = store.search(&query).await?;
+        let output = Output::Documents(
+            results
+                .iter()
+                .map(
+                    |record| match parse_sql_source_type(&record.document.source_type) {
+                        Some(_) => Document {
+                            content: record.document.embedding_content.clone(),
+                            id: record.document.source_identifier.clone(),
+                            kind: record.document.source_type.clone(),
+                        },
+                        None => Document {
+                            content: record.document.content.clone(),
+                            id: record.document.source_identifier.clone(),
+                            kind: record.document.source_type.clone(),
+                        },
+                    },
+                )
+                .collect(),
+        );
         if !results.is_empty() {
             execution_context
                 .write_chunk(Chunk {
                     key: None,
-                    delta: Output::Documents(
-                        results
-                            .iter()
-                            .map(|record| record.document.content.clone())
-                            .collect(),
-                    ),
+                    delta: output.clone(),
                     finished: true,
                 })
                 .await?;
         }
-        let output = self.serialize_output(&results)?;
-        Ok(Output::Text(output))
+        Ok(output)
     }
 }

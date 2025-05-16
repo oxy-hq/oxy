@@ -11,5 +11,6 @@ mod workflow;
 
 pub use context::ToolsContext;
 pub use launcher::{ToolInput, ToolLauncher, ToolLauncherExecutable};
+pub use retrieval::RetrievalExecutable;
 pub use sql::SQLExecutable;
 pub use tool::ToolExecutable;

@@ -1,14 +1,15 @@
 use crate::config::model::AgentContext;
 use crate::config::model::AgentContextType;
 use crate::config::model::AgentToolsConfig;
+use crate::config::model::AgentType;
 use crate::config::model::Database;
 use crate::config::model::DatabaseType;
+use crate::config::model::DefaultAgent;
 use crate::config::model::Defaults;
 use crate::config::model::DuckDB;
 use crate::config::model::ExecuteSQLTool;
 use crate::config::model::FileContext;
 use crate::config::model::Model;
-use crate::config::model::OutputFormat;
 use crate::config::model::SemanticModelContext;
 use crate::config::model::SemanticModels;
 use crate::config::model::ToolType;
@@ -157,16 +158,6 @@ async fn create_agent_file(
 
     let agent_content = AgentConfig {
         name: setup.file_name_without_ext.clone(),
-        tools_config: AgentToolsConfig {
-            max_tool_calls: 5,
-            max_tool_concurrency: 1,
-            tools: vec![ToolType::ExecuteSQL(ExecuteSQLTool {
-                name: "execute_sql".to_string(),
-                description: "".to_string(),
-                database: "local".to_string(),
-                dry_run_limit: None,
-            })],
-        },
         model: model_name,
         context: Some(vec![
             AgentContext {
@@ -182,9 +173,20 @@ async fn create_agent_file(
                 }),
             },
         ]),
-        system_instructions: include_str!("../templates/agent_instructions.txt").to_string(),
-        output_format: OutputFormat::Default,
-        anonymize: None,
+        r#type: AgentType::Default(DefaultAgent {
+            system_instructions: include_str!("../templates/agent_instructions.txt").to_string(),
+            tools_config: AgentToolsConfig {
+                max_tool_calls: 5,
+                max_tool_concurrency: 1,
+                tools: vec![ToolType::ExecuteSQL(ExecuteSQLTool {
+                    name: "execute_sql".to_string(),
+                    description: "".to_string(),
+                    database: "local".to_string(),
+                    dry_run_limit: None,
+                    sql: None,
+                })],
+            },
+        }),
         tests: vec![],
         description: "".to_string(),
     };

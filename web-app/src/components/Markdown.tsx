@@ -5,6 +5,8 @@ import { memo } from "react";
 import ReactMarkdown, { ExtendedComponents } from "react-markdown";
 import directive from "remark-directive";
 import remarkGfm from "remark-gfm";
+import rehypeRaw from "rehype-raw";
+import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 
 type Props = {
   children: string;
@@ -49,6 +51,7 @@ function Markdown({ children, plugins, components }: Props) {
       <ReactMarkdown
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         remarkPlugins={[directive, remarkGfm, ...((plugins as any[]) || [])]}
+        rehypePlugins={[rehypeRaw, [rehypeSanitize, defaultSchema]]}
         components={{ ...extendedComponents, ...components }}
       >
         {children}

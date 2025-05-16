@@ -2,12 +2,14 @@ use garde::Validate;
 use indoc::indoc;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use serde_with::skip_serializing_none;
 use std::cmp::PartialEq;
 use std::collections::HashMap;
 use std::hash::Hash;
 use std::path::PathBuf;
 use std::{env, fs};
+pub use variables::Variables;
 
 use crate::config::validate::validate_file_path;
 use crate::config::validate::{
@@ -17,9 +19,9 @@ use crate::errors::OxyError;
 use crate::utils::list_by_sub_extension;
 use schemars::JsonSchema;
 
-use super::validate::{
-    AgentValidationContext, validate_model, validate_output_format, validate_task,
-};
+use super::validate::{AgentValidationContext, validate_model, validate_task};
+
+mod variables;
 
 #[derive(Serialize, Deserialize, Validate, Debug, Clone, JsonSchema)]
 #[garde(context(ValidationContext))]
@@ -242,25 +244,62 @@ pub struct AgentConfig {
     pub name: String,
     #[garde(custom(validate_model))]
     pub model: String,
-    #[garde(length(min = 1))]
-    pub system_instructions: String,
+    #[serde(flatten)]
+    #[garde(dive)]
+    pub r#type: AgentType,
     #[garde(skip)]
     pub context: Option<Vec<AgentContext>>,
     #[serde(default)]
-    #[garde(custom(validate_output_format))]
-    pub output_format: OutputFormat,
-    #[garde(skip)]
-    pub anonymize: Option<AnonymizerConfig>,
-    #[serde(default)]
     #[garde(skip)]
     pub tests: Vec<EvalConfig>,
-    #[serde(flatten)]
-    #[serde(default)]
-    #[garde(skip)]
-    pub tools_config: AgentToolsConfig,
+
     #[garde(skip)]
     #[serde(default)]
     pub description: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, JsonSchema, Validate)]
+#[garde(context(AgentValidationContext))]
+#[serde(untagged)]
+pub enum AgentType {
+    Routing(#[garde(dive)] RoutingAgent),
+    Default(#[garde(dive)] DefaultAgent),
+}
+
+impl std::fmt::Display for AgentType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AgentType::Default(_) => write!(f, "default"),
+            AgentType::Routing(_) => write!(f, "routing"),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, JsonSchema, Validate)]
+#[garde(context(AgentValidationContext))]
+pub struct DefaultAgent {
+    #[garde(length(min = 1))]
+    pub system_instructions: String,
+    #[serde(default, flatten)]
+    #[garde(skip)]
+    pub tools_config: AgentToolsConfig,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, JsonSchema, Validate)]
+#[garde(context(AgentValidationContext))]
+#[serde(tag = "type", rename = "routing")]
+pub struct RoutingAgent {
+    #[serde(default = "default_routing_agent_instructions")]
+    #[garde(length(min = 1))]
+    pub system_instructions: String,
+    #[garde(skip)]
+    pub routes: Vec<String>,
+    #[serde(default, flatten)]
+    #[garde(skip)]
+    pub db_config: VectorDBConfig,
+    #[serde(flatten)]
+    #[garde(skip)]
+    pub embedding_config: EmbeddingConfig,
 }
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
@@ -582,14 +621,6 @@ impl Model {
     }
 }
 
-#[derive(Serialize, Deserialize, Default, Clone, Debug, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum OutputFormat {
-    #[default]
-    Default,
-    File,
-}
-
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
 #[serde(tag = "type")]
 pub enum AnonymizerConfig {
@@ -755,7 +786,7 @@ pub struct WorkflowTask {
     #[garde(skip)]
     pub src: PathBuf,
     #[garde(skip)]
-    pub variables: Option<HashMap<String, String>>,
+    pub variables: Option<HashMap<String, Value>>,
     #[garde(dive)]
     pub export: Option<TaskExport>,
 }
@@ -764,7 +795,7 @@ impl Hash for WorkflowTask {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.src.hash(state);
         if let Some(ref vars) = self.variables {
-            for (key, value) in vars.iter().sorted() {
+            for (key, value) in vars.iter().sorted_by_cached_key(|(key, _)| *key) {
                 key.hash(state);
                 value.hash(state);
             }
@@ -859,7 +890,8 @@ pub enum TaskType {
 #[derive(Deserialize, JsonSchema)]
 pub struct TempWorkflow {
     pub tasks: Vec<Task>,
-    pub variables: Option<HashMap<String, String>>,
+    #[serde(flatten)]
+    pub variables: Option<Variables>,
     #[serde(default = "default_tests")]
     pub tests: Vec<EvalConfig>,
     #[serde(default)]
@@ -942,6 +974,9 @@ pub struct Custom {
     pub dataset: String,
     #[garde(length(min = 1))]
     pub workflow_variable_name: Option<String>,
+    #[serde(default)]
+    #[garde(skip)]
+    pub is_context_id: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
@@ -1036,8 +1071,9 @@ pub struct Workflow {
     #[serde(default = "default_tests")]
     #[garde(dive)]
     pub tests: Vec<EvalConfig>,
+    #[serde(flatten)]
     #[garde(skip)]
-    pub variables: Option<HashMap<String, String>>,
+    pub variables: Option<Variables>,
     #[garde(skip)]
     #[serde(default)]
     pub description: String,
@@ -1055,8 +1091,15 @@ pub struct WorkflowTool {
     pub name: String,
     pub description: String,
     pub workflow_ref: String,
-    pub variables: Option<HashMap<String, String>>,
-    pub output_task_ref: String,
+    pub variables: Option<Variables>,
+    pub output_task_ref: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
+pub struct AgentTool {
+    pub name: String,
+    pub description: String,
+    pub agent_ref: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
@@ -1128,6 +1171,10 @@ pub struct ExecuteSQLTool {
     pub description: String,
     pub database: String,
     pub dry_run_limit: Option<u64>,
+
+    #[serde(skip)]
+    #[schemars(skip)]
+    pub sql: Option<String>, // Used for routing agent
 }
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
@@ -1809,6 +1856,8 @@ pub enum ToolType {
     Visualize(VisualizeTool),
     #[serde(rename = "workflow")]
     Workflow(WorkflowTool),
+    #[serde(rename = "agent")]
+    Agent(AgentTool),
     #[serde(rename = "omni_topic_info")]
     OmniTopicInfo(OmniTopicInfoTool),
     #[serde(rename = "create_data_app")]
@@ -1958,6 +2007,16 @@ fn default_solvers() -> Vec<SolverKind> {
         model_ref: None,
         scores: default_scores(),
     })]
+}
+
+fn default_routing_agent_instructions() -> String {
+    indoc! {"You are a routing agent. Your job is to route the task to the correct tool. Follow the steps below:
+  1. Reasoning the task to find the most relevant tools.
+  2. If the task is not relevant to any tool, explain why.
+  3. If the task is relevant to a tool, route it to the tool.
+  Your task:"
+    }
+    .to_string()
 }
 
 fn default_consistency_prompt() -> String {

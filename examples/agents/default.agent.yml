@@ -73,6 +73,7 @@ tests:
 
   - type: custom
     dataset: data/custom_test.test.yml
+    is_context_id: true
     metrics:
       - type: similarity
       - type: context_recall
