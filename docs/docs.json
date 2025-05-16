@@ -36,12 +36,14 @@
                 "group": "Core concepts",
                 "pages": [
                   "learn-about-oxy/agents",
-                  "learn-about-oxy/data-apps",
+                  "learn-about-oxy/cache",
+                  "learn-about-oxy/config",
                   "learn-about-oxy/context",
+                  "learn-about-oxy/data-apps",
+                  "learn-about-oxy/debugging",
                   "learn-about-oxy/semantic-model",
                   "learn-about-oxy/testing",
-                  "learn-about-oxy/workflows",
-                  "learn-about-oxy/cache"
+                  "learn-about-oxy/workflows"
                 ]
               },
               "learn-about-oxy/config"
@@ -50,7 +52,7 @@
           {
             "group": "MCP Server",
             "pages": [
-              "learn-about-oxy/mcp-usage"
+              "mcp-server/mcp-usage"
             ]
           }
         ]

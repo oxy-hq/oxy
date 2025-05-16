@@ -1,0 +1,37 @@
+---
+title: Debugging & Logs
+sidebarTitle: Debugging
+---
+
+## Debugging Oxy CLI & Viewing Logs
+
+Oxy provides detailed logs to help you debug issues and understand what is happening under the hood.
+
+### Enable Debug Logging
+
+To see more detailed logs, set the `RUST_LOG` environment variable to `debug` when running any Oxy CLI command:
+
+```bash
+RUST_LOG=debug oxy run path/to/agent.agent.yml "How many users do we have?"
+```
+
+You can use this with any Oxy CLI command (e.g., `oxy run`, `oxy test`, `oxy build`, etc.).
+
+### Where to Find Log Files
+
+- **Most Oxy CLI commands** (such as `oxy run`, `oxy test`, etc.) write logs to a file at:
+  
+  ```
+  ~/.local/share/oxy/oxy.log
+  ```
+
+- **`oxy serve` command** logs directly to your terminal (stdout), so you can see logs in real time.
+
+### Tips
+- If you encounter an error or unexpected behavior, check the log file above for details.
+- For persistent issues, always try running with `RUST_LOG=debug` to get more context.
+- You can safely delete the log file if it grows too large; a new one will be created automatically.
+
+---
+
+For more troubleshooting tips, see the [Quickstart guide](/docs/quickstart) or reach out to the Oxy community.
