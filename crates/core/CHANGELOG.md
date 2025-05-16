@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/oxy-hq/oxy-internal/compare/0.2.0...0.2.1) (2025-05-16)
+
+
+### <!-- 0 -->🚀 Features
+
+* unified structured logging for oxy ([#776](https://github.com/oxy-hq/oxy-internal/issues/776)) ([1b00ada](https://github.com/oxy-hq/oxy-internal/commit/1b00ada396d4d6b423fe432e966ec99a06fc23ff))
+
 ## [0.2.0](https://github.com/oxy-hq/oxy-internal/compare/0.1.23...0.2.0) (2025-05-13)
 
 
