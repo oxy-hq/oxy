@@ -2,7 +2,9 @@ import "@/styles/shadcn/index.css";
 import {
   Navigate,
   Route,
-  BrowserRouter as Router,
+  createBrowserRouter,
+  createRoutesFromElements,
+  RouterProvider,
   Routes,
 } from "react-router-dom";
 import Home from "@/pages/home";
@@ -88,17 +90,28 @@ const MainLayout = React.memo(function MainLayout() {
   );
 });
 
+const router = createBrowserRouter(
+  createRoutesFromElements(
+    <Route>
+      <Route path="/not_signed_in" element={<NotSignedIn />} />
+      <Route
+        path="*"
+        element={
+          <SidebarProvider>
+            <MainLayout />
+          </SidebarProvider>
+        }
+      />
+    </Route>,
+  ),
+);
+
 function App() {
   return (
-    <Router>
-      <SidebarProvider>
-        <Routes>
-          <Route path="/not_signed_in" element={<NotSignedIn />} />
-          <Route path="*" element={<MainLayout />} />
-        </Routes>
-      </SidebarProvider>
+    <>
+      <RouterProvider router={router} />
       <ShadcnToaster />
-    </Router>
+    </>
   );
 }
 

@@ -93,3 +93,9 @@ interface ConsistencyEval {
   scores: Record<string, number>;
   concurrency: number;
 }
+
+export const STEP_MAP = {
+  execute_sql: "Execute SQL",
+  visualize: "Generate visualization",
+  retrieve: "Retrieve data",
+};

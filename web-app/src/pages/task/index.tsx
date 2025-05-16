@@ -51,7 +51,6 @@ const Task = () => {
         // eslint-disable-next-line promise/catch-or-return
         service
           .askTask(taskId ?? "", (answer) => {
-            console.log("answer", answer);
             if (answer.step) {
               setSteps((pre) => {
                 if (

@@ -1,7 +1,6 @@
 import { JSX, useRef, useState } from "react";
 import FileEditor, { FileEditorRef, FileState } from "@/components/FileEditor";
 import EditorHeader from "../EditorHeader";
-import PageHeader from "../PageHeader";
 import { cn } from "@/libs/shadcn/utils";
 
 export interface EditorPageWrapperProps {
@@ -37,7 +36,6 @@ const EditorPageWrapper = ({
 
   return (
     <div className={cn("flex h-full flex-col", className)}>
-      <PageHeader filePath={filePath} fileState={fileState} onSave={onSave} />
       <div className={cn("flex-1 flex overflow-hidden", pageContentClassName)}>
         <div
           className={cn(
@@ -49,6 +47,7 @@ const EditorPageWrapper = ({
             filePath={filePath}
             fileState={fileState}
             actions={headerActions}
+            onSave={onSave}
           />
           <FileEditor
             ref={fileEditorRef}
