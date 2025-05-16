@@ -8,6 +8,15 @@ import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 
+const sanitizeSchema = {
+  ...defaultSchema,
+  attributes: {
+    ...defaultSchema.attributes,
+    chart: ["chart_src"],
+  },
+  tagNames: [...(defaultSchema.tagNames || []), "chart"],
+};
+
 type Props = {
   children: string;
   plugins?: unknown[];
@@ -51,7 +60,7 @@ function Markdown({ children, plugins, components }: Props) {
       <ReactMarkdown
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         remarkPlugins={[directive, remarkGfm, ...((plugins as any[]) || [])]}
-        rehypePlugins={[rehypeRaw, [rehypeSanitize, defaultSchema]]}
+        rehypePlugins={[rehypeRaw, [rehypeSanitize, sanitizeSchema]]}
         components={{ ...extendedComponents, ...components }}
       >
         {children}
