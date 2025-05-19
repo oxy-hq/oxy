@@ -24,6 +24,7 @@ tasks:
     type: workflow
     variables:
       fruit: "{{ random_fruit.fruit[0] }}"
+      calories: "{{ calories.calories }}"
 
   - name: report
     type: formatter
