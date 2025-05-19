@@ -12,7 +12,7 @@
     "format:check": "prettier --check ."
   },
   "dependencies": {
-    "@codemirror/lang-python": "^6.2.0",
+    "@codemirror/lang-python": "^6.2.1",
     "@codemirror/lang-sql": "^6.8.0",
     "@codemirror/language": "^6.11.0",
     "@duckdb/duckdb-wasm": "1.29.1-dev132.0",
@@ -58,7 +58,7 @@
     "highlight.js": "^11.11.1",
     "invariant": "^2.2.4",
     "lodash": "^4.17.21",
-    "lucide-react": "^0.510.0",
+    "lucide-react": "^0.511.0",
     "memfs": "^4.17.1",
     "monaco-editor": "^0.52.2",
     "monaco-yaml": "^5.4.0",
@@ -69,7 +69,7 @@
     "react-dom": "^19.1.0",
     "react-error-boundary": "6.0.0",
     "react-hook-form": "^7.56.3",
-    "react-hotkeys-hook": "5.0.1",
+    "react-hotkeys-hook": "5.1.0",
     "react-intersection-observer": "^9.16.0",
     "react-markdown": "^10.1.0",
     "react-resizable-panels": "^3.0.2",
