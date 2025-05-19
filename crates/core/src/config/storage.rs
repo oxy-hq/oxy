@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 use tokio::fs;
 
-use crate::errors::OxyError;
+use crate::{constants::UNPUBLISH_APP_DIR, errors::OxyError};
 
 use super::model::{AgentConfig, AppConfig, Config, Workflow};
 
@@ -159,7 +159,20 @@ impl ConfigStorage for LocalSource {
     }
 
     async fn list_apps(&self) -> Result<Vec<PathBuf>, OxyError> {
-        Ok(self.list_by_sub_extension(None, "app"))
+        let apps = self.list_by_sub_extension(None, "app");
+        let project_path = self.project_path.clone();
+        Ok(apps
+            .iter()
+            .filter(|path| {
+                path.strip_prefix(&project_path)
+                    .map(|p| {
+                        !p.to_string_lossy()
+                            .starts_with(&format!("{}/", UNPUBLISH_APP_DIR))
+                    })
+                    .unwrap_or(true)
+            })
+            .cloned()
+            .collect())
     }
 
     async fn load_app_config<P: AsRef<Path>>(&self, app_path: P) -> Result<AppConfig, OxyError> {
