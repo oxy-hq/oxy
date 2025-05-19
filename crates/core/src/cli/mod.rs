@@ -713,9 +713,20 @@ pub async fn start_mcp_sse_server(mut port: u16) -> anyhow::Result<CancellationT
 }
 
 pub async fn handle_test_command(test_args: TestArgs) -> Result<(), OxyError> {
+    let file = &test_args.file;
+    let current_dir = std::env::current_dir().expect("Could not get current directory");
+    let file_path = current_dir.join(file);
+
+    if !file_path.exists() {
+        return Err(OxyError::ConfigurationError(format!(
+            "File not found: {:?}",
+            file_path
+        )));
+    }
+
     run_eval(
-        &find_project_path()?.to_string_lossy().to_string(),
-        &test_args.file,
+        &find_project_path()?,
+        &file_path,
         None,
         EvalEventsHandler::new(test_args.quiet),
     )
