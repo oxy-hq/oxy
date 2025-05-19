@@ -1,16 +1,11 @@
 use std::{
-    collections::HashMap,
     fmt::{self, Debug, Display, Formatter},
     hash::{Hash, Hasher},
     path::PathBuf,
     sync::Arc,
 };
 
-use arrow::{
-    array::RecordBatch,
-    datatypes::Schema,
-    util::display::{ArrayFormatter, FormatOptions},
-};
+use arrow::{array::RecordBatch, datatypes::Schema};
 use minijinja::{
     Value,
     value::{Enumerator, Object, ObjectExt, ObjectRepr},
@@ -199,23 +194,17 @@ impl Object for Table {
     fn get_value(self: &Arc<Self>, key: &Value) -> Option<Value> {
         let table = self.get_inner().ok()?;
         let schema = table.schema.clone();
-        let (idx, _field) = schema.column_with_name(key.as_str()?)?;
+        let column_name = key.as_str()?;
+        let (idx, _field) = schema.column_with_name(column_name)?;
         let mut values = Vec::new();
         for batch in &table.batches {
-            let array = batch.column(idx);
-            // @TODO: Right now we convert everything to string,
-            // to better support other type we need to handle different array types more gracefully
-            let formatter = arrow::util::display::ArrayFormatter::try_new(
-                array,
-                &arrow::util::display::FormatOptions::default(),
-            )
-            .ok()?;
-            for idx in 0..batch.num_rows() {
-                values.push(Value::from(formatter.value(idx).to_string()));
-            }
+            let projected_batch = batch.project(&[idx]).ok()?;
+            let json_values: Vec<serde_json::Value> =
+                serde_arrow::from_record_batch(&projected_batch).ok()?;
+            values.extend(json_values.into_iter().map(|v| v[column_name].clone()));
         }
         tracing::info!("ArrowTable.{} Values: {:?}", key, values);
-        Some(Value::from(values))
+        Some(Value::from_serialize(values))
     }
 
     fn enumerate(self: &Arc<Self>) -> Enumerator {
@@ -224,24 +213,21 @@ impl Object for Table {
             Err(_) => return Enumerator::Empty,
         };
         let mut values = vec![];
-        let schema = table.schema.clone();
-        let options = FormatOptions::default().with_display_error(true);
-        for batch in &table.batches {
-            let formatters = batch
-                .columns()
-                .iter()
-                .map(|c| ArrayFormatter::try_new(c.as_ref(), &options).unwrap())
-                .collect::<Vec<_>>();
 
-            for row in 0..batch.num_rows() {
-                let mut cells = HashMap::new();
-                for (idx, formatter) in formatters.iter().enumerate() {
-                    cells.insert(
-                        schema.field(idx).name().to_string(),
-                        Value::from(formatter.value(row).to_string()),
-                    );
+        for record_batch in &table.batches {
+            let result: Result<Vec<serde_json::Value>, serde_arrow::Error> =
+                serde_arrow::from_record_batch(record_batch);
+
+            match result {
+                Ok(json_value) => {
+                    for value in json_value {
+                        values.push(Value::from_serialize(value));
+                    }
                 }
-                values.push(Value::from(cells));
+                Err(e) => {
+                    tracing::error!("Failed to convert record batch to JSON: {}", e);
+                    return Enumerator::NonEnumerable;
+                }
             }
         }
         Enumerator::Values(values)
