@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.2](https://github.com/oxy-hq/oxy-internal/compare/0.2.1...0.2.2) (2025-05-19)
+
+
+### <!-- 0 -->🚀 Features
+
+* table render to follow json value format ([#785](https://github.com/oxy-hq/oxy-internal/issues/785)) ([69dcc04](https://github.com/oxy-hq/oxy-internal/commit/69dcc042d89ca8274cf54021bf09ff17c33adea4))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* oxy test relative path ([#783](https://github.com/oxy-hq/oxy-internal/issues/783)) ([fc17e0f](https://github.com/oxy-hq/oxy-internal/commit/fc17e0fcaa917804f57c4de9bb6b4dd89d25f46b))
+
 ## [0.2.1](https://github.com/oxy-hq/oxy-internal/compare/0.2.0...0.2.1) (2025-05-16)
 
 
