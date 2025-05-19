@@ -3,6 +3,7 @@ pub mod types;
 use std::{fs::File, path::PathBuf};
 
 use crate::{
+    constants::UNPUBLISH_APP_DIR,
     errors::OxyError,
     execute::{
         Executable, ExecutionContext,
@@ -13,6 +14,7 @@ use crate::{
     utils::find_project_path,
 };
 use short_uuid::ShortUuid;
+use tokio::fs;
 
 #[derive(Debug, Clone)]
 pub struct CreateDataAppExecutable;
@@ -30,7 +32,11 @@ impl Executable<CreateDataAppInput> for CreateDataAppExecutable {
         let CreateDataAppInput { param } = input;
         let project_path = find_project_path()?;
         let mut full_file_name = format!("{}.app.yml", param.file_name);
-        let mut file_path = project_path.join(&full_file_name);
+        let file_dir = project_path.join(UNPUBLISH_APP_DIR);
+        if !file_dir.exists() {
+            fs::create_dir_all(&file_dir).await?;
+        }
+        let mut file_path = file_dir.join(&full_file_name);
         // check if the file already exists
         if file_path.exists() {
             full_file_name = format!("{}_{}.app.yml", param.file_name, ShortUuid::generate());
@@ -42,16 +48,17 @@ impl Executable<CreateDataAppInput> for CreateDataAppExecutable {
         // write config to file
         serde_yaml::to_writer(&mut file, &config).map_err(|e| anyhow::anyhow!(e))?;
         println!("Data app created at: {}", file_path.display());
-        service::app::clean_up_app_data(&PathBuf::from(&full_file_name)).await?;
+        let file_relative_path = PathBuf::from(UNPUBLISH_APP_DIR).join(&full_file_name);
+        service::app::clean_up_app_data(&file_relative_path).await?;
         println!("Data app cleaned up at: {}", file_path.display());
         execution_context
             .write_data_app(DataApp {
-                file_path: PathBuf::from(full_file_name.clone()),
+                file_path: file_relative_path.clone(),
             })
             .await?;
         return Ok(Output::Text(format!(
             "Data app created at: {}",
-            full_file_name
+            file_relative_path.display()
         )));
     }
 }
