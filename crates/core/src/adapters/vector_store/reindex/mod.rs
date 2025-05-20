@@ -109,22 +109,17 @@ async fn make_documents_from_routing_agent(
                 let content = tokio::fs::read_to_string(sql_path).await?;
                 let mut documents = vec![];
                 for document in parse_embed_document(sql_path, &content) {
-                    match parse_sql_source_type(&document.source_type) {
-                        Some(database_ref) => {
-                            config.resolve_database(&database_ref)?;
-                            documents.push(document);
-                        }
-                        None => {}
+                    if let Some(database_ref) = parse_sql_source_type(&document.source_type) {
+                        config.resolve_database(&database_ref)?;
+                        documents.push(document);
                     }
                 }
                 Ok(documents)
             }
-            _ => {
-                return Err(OxyError::ConfigurationError(format!(
-                    "Unsupported file format for path: {}",
-                    path
-                )));
-            }
+            _ => Err(OxyError::ConfigurationError(format!(
+                "Unsupported file format for path: {}",
+                path
+            ))),
         }
     };
     let documents = async_stream::stream! {

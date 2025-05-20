@@ -29,7 +29,7 @@ pub struct OutputGetter<'a> {
     pub relevant_context_getter: &'a RelevantContextGetter,
 }
 
-impl<'a> TryFrom<OutputGetter<'a>> for TargetOutput {
+impl TryFrom<OutputGetter<'_>> for TargetOutput {
     type Error = OxyError;
 
     fn try_from(getter: OutputGetter) -> Result<Self, Self::Error> {

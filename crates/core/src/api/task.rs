@@ -68,18 +68,15 @@ impl EventHandler for TaskStream {
                 }
                 Output::Table(table) => {
                     let reference = table.clone().into_reference();
-                    match reference {
-                        Some(r) => {
-                            __self.references.lock().unwrap().push(r);
-                            let message = AnswerStream {
-                                content: "".to_string(),
-                                is_error: false,
-                                step: event.source.kind.to_string(),
-                                file_path: "".to_string(),
-                            };
-                            __self.tx.send(message).await?;
-                        }
-                        None => {}
+                    if let Some(r) = reference {
+                        __self.references.lock().unwrap().push(r);
+                        let message = AnswerStream {
+                            content: "".to_string(),
+                            is_error: false,
+                            step: event.source.kind.to_string(),
+                            file_path: "".to_string(),
+                        };
+                        __self.tx.send(message).await?;
                     }
                 }
                 Output::Bool(_) => {}

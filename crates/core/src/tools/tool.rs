@@ -395,7 +395,7 @@ impl ParamMapper<RetrievalToolInput, RetrievalInput<RetrievalConfig>> for Retrie
             RetrievalInput {
                 query,
                 db_config: retrieval_config.db_config.clone(),
-                db_name: format!("{}-{}", agent_name, retrieval_config.name.to_string()),
+                db_name: format!("{}-{}", agent_name, retrieval_config.name),
                 openai_config: retrieval_config,
                 embedding_config,
             },

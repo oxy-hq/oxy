@@ -207,16 +207,15 @@ impl EventHandler for ThreadStream {
         }
 
         if let EventKind::Finished { .. } = &event.kind {
-            if event.source.kind.as_str() != WORKFLOW_SOURCE {
-                if let Some(_) = self.task_queue.pop_back() {
-                    let message = AnswerStream {
-                        content: "\n\n</details>\n".to_string(),
-                        references: vec![],
-                        is_error: false,
-                        step: "".to_string(),
-                    };
-                    self.tx.send(message).await?;
-                }
+            if event.source.kind.as_str() != WORKFLOW_SOURCE && self.task_queue.pop_back().is_some()
+            {
+                let message = AnswerStream {
+                    content: "\n\n</details>\n".to_string(),
+                    references: vec![],
+                    is_error: false,
+                    step: "".to_string(),
+                };
+                self.tx.send(message).await?;
             }
         }
 
@@ -243,18 +242,15 @@ impl EventHandler for ThreadStream {
                 Output::Table(table) => {
                     let table_display = table.to_string();
                     let reference = table.into_reference();
-                    match reference {
-                        Some(r) => {
-                            self.references.lock().unwrap().push(r.clone());
-                            let message = AnswerStream {
-                                content: table_display,
-                                references: vec![r],
-                                is_error: false,
-                                step: event.source.kind.to_string(),
-                            };
-                            __self.tx.send(message).await?;
-                        }
-                        None => {}
+                    if let Some(r) = reference {
+                        self.references.lock().unwrap().push(r.clone());
+                        let message = AnswerStream {
+                            content: table_display,
+                            references: vec![r],
+                            is_error: false,
+                            step: event.source.kind.to_string(),
+                        };
+                        __self.tx.send(message).await?;
                     }
                 }
                 Output::Bool(_) => {}

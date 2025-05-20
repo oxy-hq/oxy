@@ -72,10 +72,10 @@ impl RoutingAgentExecutable {
                         sql: Some(tokio::fs::read_to_string(sql_path).await?),
                     }))
                 } else {
-                    return Err(OxyError::AgentError(format!(
+                    Err(OxyError::AgentError(format!(
                         "Unsupported SQL source type for path: {}",
                         &document.id
-                    )));
+                    )))
                 }
             }
             _ => Err(OxyError::AgentError(format!(
@@ -107,11 +107,8 @@ impl RoutingAgentExecutable {
             )
             .await?;
         for document in output.to_documents() {
-            match self.resolve_tool(execution_context, &document).await {
-                Ok(tool) => {
-                    resolved_routes.push(tool);
-                }
-                Err(_) => {}
+            if let Ok(tool) = self.resolve_tool(execution_context, &document).await {
+                resolved_routes.push(tool);
             }
         }
         Ok(resolved_routes)
@@ -148,7 +145,7 @@ impl Executable<RoutingAgentInput> for RoutingAgentExecutable {
                 .await
                 .into_iter()
                 .collect::<Vec<_>>();
-        let mut openai_executable = build_openai_executable_with_tools(&model, tools);
+        let mut openai_executable = build_openai_executable_with_tools(model, tools);
         let response = openai_executable
             .execute(
                 execution_context,

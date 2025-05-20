@@ -156,7 +156,7 @@ impl ParamMapper<DefaultAgentInput, DefaultAgentInput> for DefaultAgentMapper {
     ) -> Result<(DefaultAgentInput, Option<ExecutionContext>), OxyError> {
         let default_agent = &input.default_agent;
         let global_context = build_global_context(
-            &execution_context,
+            execution_context,
             &input.agent_name,
             default_agent,
             input.contexts.clone().unwrap_or_default(),

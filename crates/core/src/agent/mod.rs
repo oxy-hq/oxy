@@ -26,11 +26,8 @@ pub mod types;
 
 impl TemplateRegister for AgentConfig {
     fn register_template(&self, renderer: &Renderer) -> Result<(), OxyError> {
-        match &self.r#type {
-            AgentType::Default(default_agent) => {
-                renderer.register_template(&default_agent.system_instructions)?;
-            }
-            _ => {}
+        if let AgentType::Default(default_agent) = &self.r#type {
+            renderer.register_template(&default_agent.system_instructions)?;
         }
         Ok(())
     }
