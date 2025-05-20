@@ -3,21 +3,38 @@ import {
   DialogContent,
   DialogTrigger,
 } from "@/components/ui/shadcn/dialog";
-import { Code, X } from "lucide-react";
+import { Code, Loader2, Save, X } from "lucide-react";
 import { SqlQueryReference } from "@/types/chat";
 import CodeBlock from "@/components/CodeBlock";
 import { ReferenceItemContainer } from "./ReferenceItemContainer";
 import { QueryResultTable } from "./QueryResultTable";
 import { Button } from "@/components/ui/shadcn/button";
 import { useState } from "react";
+import useCreateWorkflowFromQueryMutation from "@/hooks/api/useCreateWorkflowFromQueryMutation";
+import { toast } from "sonner";
 
 export type QueryReferenceProps = {
   reference: SqlQueryReference;
+  prompt?: string;
 };
 
-export const QueryReference = ({ reference }: QueryReferenceProps) => {
+export const QueryReference = ({ reference, prompt }: QueryReferenceProps) => {
   const metadata = reference;
   const [isOpen, setIsOpen] = useState(false);
+  const { mutate: createWorkflowFromQuery, isPending } =
+    useCreateWorkflowFromQueryMutation(() => {
+      toast.success(`Workflow created successfully`);
+    });
+
+  const handleSaveToWorkflow = () => {
+    if (prompt) {
+      createWorkflowFromQuery({
+        prompt: prompt,
+        query: metadata.sql_query,
+        database: metadata.database,
+      });
+    }
+  };
   return (
     <>
       <Dialog open={isOpen} onOpenChange={setIsOpen}>
@@ -46,9 +63,29 @@ export const QueryReference = ({ reference }: QueryReferenceProps) => {
                 </div>
                 <span className="truncate">Query</span>
               </div>
-              <Button variant="ghost" onClick={() => setIsOpen(false)}>
-                <X />
-              </Button>
+              <div className="flex gap-2">
+                {prompt && (
+                  <Button
+                    disabled={isPending}
+                    variant="secondary"
+                    onClick={handleSaveToWorkflow}
+                    title="Save to Workflow"
+                  >
+                    {isPending ? (
+                      <Loader2
+                        className="animate-spin"
+                        size={16}
+                        color="currentColor"
+                      />
+                    ) : (
+                      <Save />
+                    )}
+                  </Button>
+                )}
+                <Button variant="ghost" onClick={() => setIsOpen(false)}>
+                  <X />
+                </Button>
+              </div>
             </div>
             <div className="p-4 pt-0 flex flex-col gap-4">
               <div className="max-h-80 overflow-auto customScrollbar">

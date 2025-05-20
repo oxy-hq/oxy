@@ -5,6 +5,7 @@ import { readMessageFromStreamData } from "@/libs/utils/stream";
 import { apiBaseURL } from "./env";
 import { ThreadCreateRequest } from "@/types/chat";
 import { TestStreamMessage } from "@/types/eval";
+import { Workflow } from "@/types/workflow";
 
 export const apiService: Service = {
   async listThreads() {
@@ -140,6 +141,14 @@ export const apiService: Service = {
   },
   checkBuilderAvailability: async function (): Promise<{ available: boolean }> {
     const response = await apiClient.get("/builder-availability");
+    return response.data;
+  },
+  createWorkflowFromQuery: async function (request: {
+    query: string;
+    prompt: string;
+    database: string;
+  }): Promise<{ workflow: Workflow }> {
+    const response = await apiClient.post("/workflows/from-query", request);
     return response.data;
   },
 };

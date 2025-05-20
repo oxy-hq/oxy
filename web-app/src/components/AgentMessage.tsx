@@ -7,9 +7,10 @@ import useTheme from "@/stores/useTheme";
 interface AgentMessageProps {
   message: Message;
   showAvatar?: boolean;
+  prompt?: string;
 }
 
-const AgentMessage = ({ message, showAvatar }: AgentMessageProps) => {
+const AgentMessage = ({ message, showAvatar, prompt }: AgentMessageProps) => {
   const { content, references, steps, isStreaming } = message;
   const showAnswer = content || steps.length > 0;
   const showAgentThinking = isStreaming && !showAnswer;
@@ -42,7 +43,7 @@ const AgentMessage = ({ message, showAvatar }: AgentMessageProps) => {
             </div>
             {references.length > 0 && (
               <div className="mt-2">
-                <ThreadReferences references={references} />
+                <ThreadReferences references={references} prompt={prompt} />
               </div>
             )}
           </div>

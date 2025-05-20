@@ -11,8 +11,9 @@ use crate::{
     config::{
         ConfigBuilder,
         constants::{CONCURRENCY_SOURCE, CONSISTENCY_SOURCE, WORKFLOW_SOURCE},
-        model::Workflow,
+        model::{ExecuteSQLTask, SQL, Task, TaskType, Workflow},
     },
+    constants::{WORKFLOW_FILE_EXTENSION, WORKFLOW_SAVED_FROM_QUERY_DIR},
     errors::OxyError,
     execute::{
         types::{Event, EventKind, Output, OutputContainer, ProgressType},
@@ -200,4 +201,54 @@ pub async fn get_workflow_logs(path: &PathBuf) -> Result<Vec<LogItem>, OxyError>
         }
         Err(_) => Ok(vec![]),
     }
+}
+
+pub async fn create_workflow_from_query(
+    query: &str,
+    prompt: &str,
+    database: &str,
+) -> Result<Workflow, OxyError> {
+    let project_path = find_project_path()?;
+
+    let task = Task {
+        task_type: TaskType::ExecuteSQL(ExecuteSQLTask {
+            sql: SQL::Query {
+                sql_query: query.to_string(),
+            },
+            database: database.to_string(),
+            export: None,
+            dry_run_limit: None,
+            variables: None,
+        }),
+        cache: None,
+        name: "execute_sql".to_string(),
+    };
+    let workflow_name = generate_workflow_name(prompt);
+    let workflow = Workflow {
+        name: workflow_name.clone(),
+        description: prompt.to_string(),
+        tasks: vec![task],
+        tests: vec![],
+        variables: None,
+    };
+    // write workflow to file
+    let workflow_dir = project_path.join(WORKFLOW_SAVED_FROM_QUERY_DIR);
+    if !workflow_dir.exists() {
+        std::fs::create_dir_all(&workflow_dir)?;
+    }
+    let workflow_path = workflow_dir.join(format!("{}{}", &workflow_name, WORKFLOW_FILE_EXTENSION));
+
+    let _ = serde_yaml::to_writer(std::fs::File::create(&workflow_path)?, &workflow);
+
+    Ok(workflow)
+}
+
+fn generate_workflow_name(prompt: &str) -> String {
+    let options = sanitize_filename::Options {
+        truncate: true,   // true by default, truncates to 255 bytes
+        windows: true, // default value depends on the OS, removes reserved names like `con` from start of strings on Windows
+        replacement: "_", // str to replace sanitized chars/strings,
+    };
+
+    sanitize_filename::sanitize_with_options(prompt, options)
 }

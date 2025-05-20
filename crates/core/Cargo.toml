@@ -101,6 +101,7 @@ tracing-subscriber = { version = "0.3.19", features = ["env-filter", "fmt", "jso
 tracing-appender = "0.2.3"
 tracing-log = "0.2.0"
 jsonschema = "0.30.0"
+sanitize-filename="0.6.0"
 
 [lib]
 name = "oxy"

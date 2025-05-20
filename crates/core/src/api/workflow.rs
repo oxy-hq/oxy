@@ -2,6 +2,7 @@ use base64::prelude::*;
 use entity::prelude::Threads;
 use sea_orm::ActiveValue;
 use sea_orm::EntityTrait;
+use serde::Deserialize;
 use std::path::PathBuf;
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -189,4 +190,29 @@ pub async fn run_workflow_thread(Path(id): Path<String>) -> Result<impl IntoResp
     });
     let stream = ReceiverStream::new(receiver);
     Ok(StreamBodyAs::json_nl(stream))
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct CreateFromQueryRequest {
+    pub query: String,
+    pub prompt: String,
+    pub database: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct CreateFromQueryResponse {
+    pub workflow: Workflow,
+}
+
+pub async fn create_from_query(
+    extract::Json(request): extract::Json<CreateFromQueryRequest>,
+) -> Result<extract::Json<CreateFromQueryResponse>, StatusCode> {
+    let workflow =
+        service::create_workflow_from_query(&request.query, &request.prompt, &request.database)
+            .await
+            .map_err(|e| {
+                tracing::info!("{:?}", e);
+                StatusCode::BAD_REQUEST
+            })?;
+    Ok(extract::Json(CreateFromQueryResponse { workflow }))
 }
