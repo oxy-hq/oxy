@@ -77,7 +77,7 @@ impl Output {
             Output::Documents(docs) => {
                 let mut markdown = String::new();
                 for doc in docs {
-                    markdown.push_str(&format!("{}\n", doc.to_string()));
+                    markdown.push_str(&format!("{}\n", doc));
                 }
                 Ok(markdown)
             }

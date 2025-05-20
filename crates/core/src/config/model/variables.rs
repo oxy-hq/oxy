@@ -48,9 +48,9 @@ impl Variables {
 pub struct Variable(SchemaObject);
 
 // Convert Variables to default value for workflow run
-impl Into<HashMap<String, Value>> for &Variables {
-    fn into(self) -> HashMap<String, Value> {
-        self.variables
+impl From<&Variables> for HashMap<String, Value> {
+    fn from(val: &Variables) -> Self {
+        val.variables
             .iter()
             .map(|(k, v)| {
                 (
@@ -67,18 +67,18 @@ impl Into<HashMap<String, Value>> for &Variables {
 }
 
 // Schema generation for Variables
-impl Into<serde_json::Map<String, Value>> for Variables {
-    fn into(self) -> serde_json::Map<String, Value> {
-        self.variables
+impl From<Variables> for serde_json::Map<String, Value> {
+    fn from(val: Variables) -> Self {
+        val.variables
             .into_iter()
             .map(|(k, v)| (k, serde_json::json!(&v)))
             .collect()
     }
 }
 
-impl Into<RootSchema> for Variables {
-    fn into(self) -> RootSchema {
-        self.variables.into_iter().fold(
+impl From<Variables> for RootSchema {
+    fn from(val: Variables) -> Self {
+        val.variables.into_iter().fold(
             RootSchema {
                 schema: SchemaObject {
                     instance_type: Some(SingleOrVec::Single(Box::new(InstanceType::Object))),
@@ -98,16 +98,16 @@ impl Into<RootSchema> for Variables {
     }
 }
 
-impl Into<serde_json::Value> for Variables {
-    fn into(self) -> serde_json::Value {
-        let root_schema: RootSchema = self.into();
+impl From<Variables> for serde_json::Value {
+    fn from(val: Variables) -> Self {
+        let root_schema: RootSchema = val.into();
         serde_json::json!(&root_schema)
     }
 }
 
-impl Into<SchemaObject> for Variable {
-    fn into(self) -> SchemaObject {
-        self.0
+impl From<Variable> for SchemaObject {
+    fn from(val: Variable) -> Self {
+        val.0
     }
 }
 

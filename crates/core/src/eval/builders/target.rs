@@ -39,12 +39,12 @@ impl Executable<EvalTarget> for TargetExecutable {
         let output_container = match input {
             EvalTarget::Workflow(workflow_input) => {
                 WorkflowLauncherExecutable
-                    .execute(&execution_context, workflow_input)
+                    .execute(execution_context, workflow_input)
                     .await
             }
             EvalTarget::Agent(agent_input) => {
                 AgentLauncherExecutable
-                    .execute(&execution_context, agent_input)
+                    .execute(execution_context, agent_input)
                     .await
             }
         }?;
@@ -55,7 +55,7 @@ impl Executable<EvalTarget> for TargetExecutable {
                     .into_iter()
                     .map(|item| {
                         OutputGetter {
-                            value: &item,
+                            value: item,
                             relevant_context_getter: &self.relevant_context_getter,
                         }
                         .try_into()

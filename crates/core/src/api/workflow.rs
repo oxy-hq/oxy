@@ -185,9 +185,7 @@ pub async fn run_workflow_thread(Path(id): Path<String>) -> Result<impl IntoResp
             thread_model.output = ActiveValue::Set(logs_json);
             let _ = thread_model.update(&connection).await;
             tracing::info!("Thread updated with logs");
-            return;
         }
-        return;
     });
     let stream = ReceiverStream::new(receiver);
     Ok(StreamBodyAs::json_nl(stream))
