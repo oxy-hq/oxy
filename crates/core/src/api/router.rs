@@ -53,6 +53,7 @@ pub async fn api_router() -> Router {
         .route("/threads/{id}", delete(thread::delete_thread))
         .route("/threads", delete(thread::delete_all_threads))
         .route("/workflows", get(workflow::list))
+        .route("/workflows/from-query", post(workflow::create_from_query))
         .route("/workflows/{pathb64}", get(workflow::get))
         .route("/workflows/{pathb64}/logs", get(workflow::get_logs))
         .route("/workflows/{pathb64}/run", post(workflow::run_workflow))

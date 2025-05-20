@@ -5,6 +5,7 @@ import { AgentConfig } from "@/types/agent";
 import { TestStreamMessage } from "@/types/eval";
 import { FileTreeModel } from "@/types/file";
 import { App, AppItem, Chunk } from "@/types/app";
+import { Workflow } from "@/types/workflow";
 
 export interface Service {
   listThreads(): Promise<ThreadItem[]>;
@@ -41,6 +42,11 @@ export interface Service {
   listDatabases(): Promise<string[]>;
   getFileTree(): Promise<FileTreeModel[]>;
   checkBuilderAvailability(): Promise<{ available: boolean }>;
+  createWorkflowFromQuery(request: {
+    query: string;
+    prompt: string;
+    database: string;
+  }): Promise<{ workflow: Workflow }>;
 }
 
 export const service = apiService;

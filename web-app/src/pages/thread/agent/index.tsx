@@ -98,11 +98,14 @@ const AgentThread = ({ thread }: { thread: ThreadItem }) => {
 
       <div className="overflow-y-auto customScrollbar">
         <div className="flex-1 max-w-[742px] px-4 mx-auto pb-4">
-          <div className="pt-8 pb-6 text-3xl font-semibold text-base-foreground">
-            {thread?.input}
-          </div>
-
-          <AgentMessage message={message} />
+          {thread && (
+            <>
+              <div className="pt-8 pb-6 text-3xl font-semibold text-base-foreground">
+                {thread?.input}
+              </div>
+              <AgentMessage message={message} prompt={thread.input} />
+            </>
+          )}
         </div>
       </div>
     </div>
