@@ -1,10 +1,4 @@
-import {
-  ThreadCreateRequest,
-  ThreadItem,
-  Answer,
-  TaskCreateRequest,
-  TaskItem,
-} from "@/types/chat";
+import { ThreadCreateRequest, ThreadItem, Answer } from "@/types/chat";
 
 import { apiService } from "./apiService";
 import { AgentConfig } from "@/types/agent";
@@ -14,16 +8,11 @@ import { App, AppItem, Chunk } from "@/types/app";
 
 export interface Service {
   listThreads(): Promise<ThreadItem[]>;
-  listTasks(): Promise<TaskItem[]>;
   createThread(request: ThreadCreateRequest): Promise<ThreadItem>;
-  createTask(request: TaskCreateRequest): Promise<TaskItem>;
   deleteThread(threadId: string): Promise<void>;
   runApp(pathb64: string): Promise<App>;
   deleteAllThread(): Promise<void>;
-  deleteAllTasks(): Promise<void>;
   getThread(threadId: string): Promise<ThreadItem>;
-  getTask(taskId: string): Promise<TaskItem>;
-  deleteTask(taskId: string): Promise<void>;
   listAgents(): Promise<string[]>;
   listApps(): Promise<AppItem[]>;
   getAgent(pathb64: string): Promise<AgentConfig>;

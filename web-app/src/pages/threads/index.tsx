@@ -83,7 +83,7 @@ const ThreadList = ({ threads }: { threads: ThreadItem[] }) => {
               className="cursor-pointer group"
             >
               <div className="flex flex-col gap-4">
-                <Badge variant="secondary">{thread.agent}</Badge>
+                <Badge variant="secondary">{thread.source}</Badge>
                 <div className="flex flex-col gap-2">
                   <h2 className="text-xl font-medium group-hover:text-accent-main-000">
                     {thread.title}
@@ -91,7 +91,7 @@ const ThreadList = ({ threads }: { threads: ThreadItem[] }) => {
                   <div className="text-sm max-h-[100px] overflow-hidden relative after:absolute after:bottom-0 after:left-0 after:w-full after:h-8 after:bg-gradient-to-t after:from-background">
                     <AnswerContent
                       className="text-sm"
-                      content={thread.answer}
+                      content={thread.output}
                     />
                   </div>
                 </div>

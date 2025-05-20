@@ -32,32 +32,21 @@ export type DataAppReference = {
 export type ThreadItem = {
   id: string;
   title: string;
-  question: string;
-  answer: string;
-  agent: string;
+  input: string;
+  output: string;
+  source: string;
+  source_type: string;
   created_at: string;
   references: Reference[];
 };
 
 export type ThreadCreateRequest = {
   title: string;
-  question: string;
-  agent: string;
+  input: string;
+  source: string;
+  source_type: string;
 };
 
-export type TaskItem = {
-  id: string;
-  title: string;
-  question: string;
-  answer: string;
-  file_path: string;
-  created_at: string;
-};
-
-export type TaskCreateRequest = {
-  title: string;
-  question: string;
-};
 export interface Message {
   content: string;
   references: Reference[];

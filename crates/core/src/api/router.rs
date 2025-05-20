@@ -44,15 +44,14 @@ pub async fn api_router() -> Router {
         .route("/threads", get(thread::get_threads))
         .route("/threads/{id}", get(thread::get_thread))
         .route("/threads/{id}/ask", get(thread::ask_thread))
+        .route(
+            "/threads/{id}/workflow",
+            post(workflow::run_workflow_thread),
+        )
+        .route("/threads/{id}/task", get(task::ask_task))
         .route("/threads", post(thread::create_thread))
         .route("/threads/{id}", delete(thread::delete_thread))
         .route("/threads", delete(thread::delete_all_threads))
-        .route("/tasks", get(task::get_tasks))
-        .route("/tasks/{id}", get(task::get_task))
-        .route("/tasks", post(task::create_task))
-        .route("/tasks/{id}", delete(task::delete_task))
-        .route("/tasks/{id}/ask", get(task::ask_task))
-        .route("/tasks", delete(task::delete_all_tasks))
         .route("/workflows", get(workflow::list))
         .route("/workflows/{pathb64}", get(workflow::get))
         .route("/workflows/{pathb64}/logs", get(workflow::get_logs))

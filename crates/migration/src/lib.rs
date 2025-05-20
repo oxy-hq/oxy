@@ -6,6 +6,7 @@ mod m20241112_035850_add_message;
 mod m20250307_090813_add_threads;
 mod m20250318_230139_add_thread_references;
 mod m20250501_215840_add_tasks;
+mod m20250519_011103_add_workflow_to_threads;
 
 pub struct Migrator;
 
@@ -19,6 +20,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20250307_090813_add_threads::Migration),
             Box::new(m20250318_230139_add_thread_references::Migration),
             Box::new(m20250501_215840_add_tasks::Migration),
+            Box::new(m20250519_011103_add_workflow_to_threads::Migration),
         ]
     }
 }

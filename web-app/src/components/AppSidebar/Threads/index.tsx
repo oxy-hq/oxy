@@ -25,7 +25,16 @@ const Threads = () => {
   const [showAll, setShowAll] = useState(false);
   const isThreadsPage = location.pathname === "/threads";
 
-  const visibleThreads = showAll ? threads : threads?.slice(0, 5);
+  const sortedThreads = threads?.sort((a, b) => {
+    if (a.created_at && b.created_at) {
+      return (
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+    }
+    return 0;
+  });
+
+  const visibleThreads = showAll ? sortedThreads : sortedThreads?.slice(0, 5);
 
   return (
     <>

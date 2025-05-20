@@ -5,42 +5,21 @@ use crate::{
     db::client::establish_connection,
     errors::OxyError,
     execute::{
-        types::{Event, EventKind, Output, ReferenceKind},
+        types::{DataAppReference, Event, EventKind, Output, ReferenceKind},
         writer::EventHandler,
     },
     service::agent::run_agent,
     utils::find_project_path,
 };
 use async_stream::stream;
-use axum::{
-    extract::{self, Path},
-    http::StatusCode,
-    response::IntoResponse,
-};
+use axum::{extract::Path, http::StatusCode, response::IntoResponse};
 use axum_streams::StreamBodyAs;
-use entity::prelude::Tasks;
-use sea_orm::prelude::DateTimeWithTimeZone;
+use entity::prelude::Threads;
 use sea_orm::{ActiveModelTrait, ActiveValue, EntityTrait};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use tokio::sync::mpsc::Sender;
 use tokio_stream::wrappers::ReceiverStream;
 use uuid::Uuid;
-
-#[derive(Serialize)]
-pub struct TaskItem {
-    pub id: String,
-    pub title: String,
-    pub question: String,
-    pub answer: String,
-    pub created_at: DateTimeWithTimeZone,
-    pub file_path: String,
-}
-
-#[derive(Deserialize)]
-pub struct CreateThreadRequest {
-    pub title: String,
-    pub question: String,
-}
 
 #[derive(Serialize)]
 pub struct AnswerStream {
@@ -48,112 +27,6 @@ pub struct AnswerStream {
     pub file_path: String,
     pub is_error: bool,
     pub step: String,
-}
-
-pub async fn get_tasks() -> Result<extract::Json<Vec<TaskItem>>, StatusCode> {
-    let connection = establish_connection().await;
-    let tasks = Tasks::find().all(&connection).await.unwrap();
-    let task_items = tasks
-        .into_iter()
-        .map(|t| TaskItem {
-            id: t.id.to_string(),
-            title: t.title.clone(),
-            question: t.question.clone(),
-            answer: t.answer.clone(),
-            created_at: t.created_at,
-            file_path: t.file_path.clone(),
-        })
-        .collect();
-    Ok(extract::Json(task_items))
-}
-
-pub async fn get_task(Path(id): Path<String>) -> Result<extract::Json<TaskItem>, StatusCode> {
-    let connection = establish_connection().await;
-    let task = Tasks::find_by_id(Uuid::parse_str(&id).unwrap())
-        .one(&connection)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-        .ok_or(StatusCode::NOT_FOUND)?;
-    let task_item = TaskItem {
-        id: task.id.to_string(),
-        title: task.title,
-        question: task.question,
-        answer: task.answer,
-        created_at: task.created_at,
-        file_path: task.file_path,
-    };
-    Ok(extract::Json(task_item))
-}
-
-pub async fn create_task(
-    extract::Json(thread_request): extract::Json<CreateThreadRequest>,
-) -> Result<extract::Json<TaskItem>, StatusCode> {
-    let connection = establish_connection().await;
-    let new_task = entity::tasks::ActiveModel {
-        id: ActiveValue::Set(Uuid::new_v4()),
-        created_at: ActiveValue::not_set(),
-        title: ActiveValue::Set(thread_request.title),
-        question: ActiveValue::Set(thread_request.question),
-        answer: ActiveValue::Set("".to_string()),
-        file_path: ActiveValue::Set("".to_string()),
-    };
-    let task = new_task.insert(&connection).await.map_err(|err| {
-        tracing::error!("Failed to create task: {}", err);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-    let task_item = TaskItem {
-        id: task.id.to_string(),
-        title: task.title,
-        question: task.question,
-        answer: task.answer,
-        created_at: task.created_at,
-        file_path: task.file_path,
-    };
-    Ok(extract::Json(task_item))
-}
-
-pub async fn delete_task(Path(id): Path<String>) -> Result<StatusCode, StatusCode> {
-    let connection = establish_connection().await;
-    let thread = Tasks::find_by_id(Uuid::parse_str(&id).unwrap())
-        .one(&connection)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    if let Some(thread) = thread {
-        let active_task: entity::tasks::ActiveModel = thread.into();
-        active_task
-            .delete(&connection)
-            .await
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    }
-    Ok(StatusCode::OK)
-}
-
-fn remove_all_files_in_dir<P: AsRef<std::path::Path>>(dir: P) {
-    if dir.as_ref().exists() {
-        if let Ok(entries) = std::fs::read_dir(&dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_file() {
-                    let _ = std::fs::remove_file(path);
-                }
-            }
-        }
-    }
-}
-
-pub async fn delete_all_tasks() -> Result<StatusCode, StatusCode> {
-    let connection = establish_connection().await;
-    Tasks::delete_many()
-        .exec(&connection)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    {
-        use crate::db::client::get_charts_dir;
-        remove_all_files_in_dir(get_charts_dir());
-    }
-
-    Ok(StatusCode::OK)
 }
 
 struct TaskStream {
@@ -215,6 +88,13 @@ impl EventHandler for TaskStream {
             }
         }
         if let EventKind::DataAppCreated { data_app } = &event.kind {
+            __self
+                .references
+                .lock()
+                .unwrap()
+                .push(ReferenceKind::DataApp(DataAppReference {
+                    file_path: data_app.file_path.clone(),
+                }));
             let message = AnswerStream {
                 content: "".to_string(),
                 is_error: false,
@@ -227,68 +107,33 @@ impl EventHandler for TaskStream {
     }
 }
 
-pub async fn ask_task(Path(id): Path<String>) -> impl IntoResponse {
+pub async fn ask_task(Path(id): Path<String>) -> Result<impl IntoResponse, StatusCode> {
     let connection = establish_connection().await;
-    let task = match Uuid::parse_str(&id) {
-        Ok(uuid) => match Tasks::find_by_id(uuid).one(&connection).await {
-            Ok(Some(thread)) => thread,
-            Ok(None) => {
-                return StreamBodyAs::json_nl(stream! {
-                    yield AnswerStream {
-                        content: format!("Thread with ID {} not found", id),
-                        is_error: true,
-                        step: "".to_string(),
-                        file_path: "".to_string()
-                    };
-                });
-            }
-            Err(e) => {
-                return StreamBodyAs::json_nl(stream! {
-                    yield AnswerStream {
-                        content: format!("Database error: {}", e),
-                        is_error: true,
-                        step: "".to_string(),
-                        file_path: "".to_string()
-                    };
-                });
-            }
-        },
-        Err(_) => {
-            return StreamBodyAs::json_nl(stream! {
-                yield AnswerStream {
-                    content: format!("Invalid UUID format: {}", id),
-                    is_error: true,
-                    step: "".to_string(),
-                    file_path: "".to_string()
-                };
-            });
-        }
-    };
+    let thread_id = Uuid::parse_str(&id).map_err(|e| {
+        tracing::info!("{:?}", e);
+        StatusCode::BAD_REQUEST
+    })?;
+    let thread = Threads::find_by_id(thread_id)
+        .one(&connection)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let thread = thread.ok_or(StatusCode::NOT_FOUND)?;
 
-    if !task.answer.is_empty() {
-        return StreamBodyAs::json_nl(stream! {
+    if !thread.output.is_empty() {
+        return Ok(StreamBodyAs::json_nl(stream! {
             yield AnswerStream {
-                content: task.answer,
+                content: thread.output,
+                file_path: thread.source,
                 is_error: false,
                 step: "".to_string(),
-                file_path: task.file_path,
             };
-        });
+        }));
     }
 
-    let project_path = match find_project_path() {
-        Ok(path) => path,
-        Err(e) => {
-            return StreamBodyAs::json_nl(stream! {
-                yield AnswerStream {
-                    content: format!("Failed to find project path: {}", e),
-                    is_error: true,
-                    step: "".to_string(),
-                    file_path: "".to_string()
-                };
-            });
-        }
-    };
+    let project_path = find_project_path().map_err(|e| {
+        tracing::info!("Failed to find project path: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     let config = ConfigBuilder::new()
         .with_project_path(&project_path)
@@ -298,7 +143,7 @@ pub async fn ask_task(Path(id): Path<String>) -> impl IntoResponse {
         .unwrap();
 
     let agent_ref = config.get_builder_agent_path().await.unwrap();
-    let prompt = task.question.to_string();
+    let prompt = thread.input.to_string();
     let (tx, rx) = tokio::sync::mpsc::channel(100);
     let _ = tokio::spawn(async move {
         let tx_clone = tx.clone();
@@ -318,15 +163,15 @@ pub async fn ask_task(Path(id): Path<String>) -> impl IntoResponse {
                     })?;
                 tracing::debug!("Agent output: {:?}", output_container);
                 tracing::debug!("Agent references: {:?}", references);
-                let mut task_model: entity::tasks::ActiveModel = task.into();
+                let mut thread_model: entity::threads::ActiveModel = thread.into();
                 for r in references {
                     if let ReferenceKind::DataApp(data_app) = r {
                         let file_path = data_app.file_path.to_string_lossy().to_string();
-                        task_model.file_path = ActiveValue::Set(file_path.clone());
+                        thread_model.source = ActiveValue::Set(file_path.clone());
                     }
                 }
-                task_model.answer = ActiveValue::Set(output_container.to_string());
-                task_model.update(&connection).await.map_err(|err| {
+                thread_model.output = ActiveValue::Set(output_container.to_string());
+                thread_model.update(&connection).await.map_err(|err| {
                     OxyError::DBError(format!("Failed to update thread:\n{}", err))
                 })?;
                 Result::<(), OxyError>::Ok(())
@@ -345,5 +190,5 @@ pub async fn ask_task(Path(id): Path<String>) -> impl IntoResponse {
             }
         }
     });
-    StreamBodyAs::json_nl(ReceiverStream::new(rx))
+    Ok(StreamBodyAs::json_nl(ReceiverStream::new(rx)))
 }

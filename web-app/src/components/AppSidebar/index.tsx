@@ -12,7 +12,6 @@ import Ide from "./Ide";
 import { Apps } from "./Apps";
 import { Header } from "./Header";
 import { Footer } from "./Footer";
-import { Tasks } from "./Tasks";
 
 export function AppSidebar() {
   return (
@@ -30,7 +29,6 @@ export function AppSidebar() {
           <SidebarGroupContent>
             <SidebarMenu>
               <Threads />
-              <Tasks />
               <Workflows />
               <Apps />
             </SidebarMenu>
