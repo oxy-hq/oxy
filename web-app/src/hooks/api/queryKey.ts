@@ -48,13 +48,6 @@ const appKeys = {
   getData: (appPath: string) => [...appKeys.all, "getData", appPath] as const,
 };
 
-const taskKeys = {
-  all: ["task"] as const,
-  list: () => [...taskKeys.all, "list"] as const,
-  item: (taskId: string) => [...taskKeys.all, { taskId }] as const,
-  get: (taskId: string) => [...taskKeys.all, "get", taskId] as const,
-};
-
 const queryKeys = {
   conversation: conversationKeys,
   agent: agentKeys,
@@ -64,7 +57,6 @@ const queryKeys = {
   file: fileKeys,
   database: databaseKeys,
   app: appKeys,
-  task: taskKeys,
 };
 
 export default queryKeys;

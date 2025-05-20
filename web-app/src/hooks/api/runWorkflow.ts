@@ -8,14 +8,16 @@ export type LogItem = {
   log_type: LogType;
 };
 
-async function* logItemGenerator(
+export async function* logItemGenerator(
   reader: ReadableStreamDefaultReader<Uint8Array<ArrayBufferLike>>,
   decoder: TextDecoder,
 ) {
   let buffer = "";
   while (true) {
     const { value, done } = await reader.read();
-    if (done) return;
+    if (done) {
+      return;
+    }
 
     buffer += decoder.decode(value, { stream: true });
 

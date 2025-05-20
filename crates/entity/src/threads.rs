@@ -8,9 +8,10 @@ pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
     pub title: String,
-    pub question: String,
-    pub answer: String,
-    pub agent: String,
+    pub output: String,
+    pub input: String,
+    pub source_type: String,
+    pub source: String,
     pub created_at: DateTimeWithTimeZone,
     #[sea_orm(column_type = "Text")]
     pub references: String,

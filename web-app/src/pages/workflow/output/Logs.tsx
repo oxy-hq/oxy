@@ -4,13 +4,19 @@ import { LogItem } from "@/hooks/api/runWorkflow";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import dayjs from "dayjs";
 import OutputItem from "./Item";
+import { cn } from "@/libs/shadcn/utils";
 
 interface OutputLogsProps {
   isPending: boolean;
   logs: LogItem[];
+  contentClassName?: string;
 }
 
-const OutputLogs: React.FC<OutputLogsProps> = ({ isPending, logs }) => {
+const OutputLogs: React.FC<OutputLogsProps> = ({
+  isPending,
+  logs,
+  contentClassName,
+}) => {
   const parentRef = React.useRef<HTMLDivElement | null>(null);
 
   const estimateSize = (index: number) => {
@@ -61,7 +67,7 @@ const OutputLogs: React.FC<OutputLogsProps> = ({ isPending, logs }) => {
       className="h-full relative overflow-y-auto customScrollbar break-all contain-strict"
     >
       <div
-        className="relative w-full"
+        className={cn("relative w-full", contentClassName)}
         style={{ height: logsVirtualizer.getTotalSize() }}
       >
         <div

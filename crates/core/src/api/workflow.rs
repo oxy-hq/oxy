@@ -1,6 +1,10 @@
 use base64::prelude::*;
+use entity::prelude::Threads;
+use sea_orm::ActiveValue;
+use sea_orm::EntityTrait;
 use std::path::PathBuf;
 use utoipa::ToSchema;
+use uuid::Uuid;
 
 use std::fs::File;
 use std::sync::Arc;
@@ -17,9 +21,13 @@ use axum::extract::{self, Path};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum_streams::StreamBodyAs;
+use sea_orm::ActiveModelTrait;
 use serde::Serialize;
 use std::fs::OpenOptions;
 use tokio::sync::mpsc;
+
+use crate::db::client::establish_connection;
+
 use tokio_stream::wrappers::ReceiverStream;
 
 #[derive(Serialize)]
@@ -132,12 +140,55 @@ pub async fn run_workflow(Path(pathb64): Path<String>) -> Result<impl IntoRespon
 
     let full_workflow_path = project_path.join(&path);
     let (logger, receiver) = build_workflow_api_logger(&full_workflow_path).await;
-    let _ = tokio::spawn(async move { service::run_workflow(&path, logger, false, None).await });
+    let _ = tokio::spawn(async move {
+        let _ = service::run_workflow(&path, logger, false, None).await;
+        tracing::info!("Workflow run started");
+    });
     let stream = ReceiverStream::new(receiver);
     Ok(StreamBodyAs::json_nl(stream))
 }
 
-#[derive(Serialize)]
-pub struct RunResponse {
-    output: String,
+#[utoipa::path(
+    method(post),
+    path = "/workflows/{pathb64}/run-thread",
+    responses(
+        (status = 200, description = "Success", body = (), content_type = "application/json")
+    )
+)]
+pub async fn run_workflow_thread(Path(id): Path<String>) -> Result<impl IntoResponse, StatusCode> {
+    let connection = establish_connection().await;
+    let thread_id = Uuid::parse_str(&id).map_err(|e| {
+        tracing::info!("{:?}", e);
+        StatusCode::BAD_REQUEST
+    })?;
+    let thread = Threads::find_by_id(thread_id)
+        .one(&connection)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let thread = thread.ok_or(StatusCode::NOT_FOUND)?;
+
+    let project_path = find_project_path().map_err(|e| {
+        tracing::info!("Failed to find project path: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    let workflow_ref = PathBuf::from(thread.source.to_string());
+
+    let full_workflow_path = project_path.join(&workflow_ref);
+    let (logger, receiver) = build_workflow_api_logger(&full_workflow_path).await;
+    let _ = tokio::spawn(async move {
+        let _ = service::run_workflow(&workflow_ref, logger, false, None).await;
+
+        if let Ok(logs) = service::get_workflow_logs(&workflow_ref).await {
+            let mut thread_model: entity::threads::ActiveModel = thread.into();
+            let logs_json = serde_json::to_string(&logs).unwrap_or_default();
+            thread_model.output = ActiveValue::Set(logs_json);
+            let _ = thread_model.update(&connection).await;
+            tracing::info!("Thread updated with logs");
+            return;
+        }
+        return;
+    });
+    let stream = ReceiverStream::new(receiver);
+    Ok(StreamBodyAs::json_nl(stream))
 }

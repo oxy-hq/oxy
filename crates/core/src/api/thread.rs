@@ -34,9 +34,10 @@ use uuid::Uuid;
 pub struct ThreadItem {
     pub id: String,
     pub title: String,
-    pub question: String,
-    pub answer: String,
-    pub agent: String,
+    pub input: String,
+    pub output: String,
+    pub source_type: String,
+    pub source: String,
     pub created_at: DateTimeWithTimeZone,
     pub references: Vec<ReferenceKind>,
 }
@@ -44,8 +45,9 @@ pub struct ThreadItem {
 #[derive(Deserialize)]
 pub struct CreateThreadRequest {
     pub title: String,
-    pub question: String,
-    pub agent: String,
+    pub input: String,
+    pub source: String,
+    pub source_type: String,
 }
 
 #[derive(Serialize)]
@@ -60,14 +62,18 @@ pub async fn get_threads() -> Result<extract::Json<Vec<ThreadItem>>, StatusCode>
     let connection = establish_connection().await;
     let threads = Threads::find().all(&connection).await;
     let threads = threads.unwrap();
+    if threads.is_empty() {
+        return Ok(extract::Json(vec![]));
+    }
     let thread_items = threads
         .into_iter()
         .map(|t| ThreadItem {
             id: t.id.to_string(),
             title: t.title.clone(),
-            question: t.question.clone(),
-            answer: t.answer.clone(),
-            agent: t.agent.clone(),
+            input: t.input.clone(),
+            output: t.output.clone(),
+            source: t.source.clone(),
+            source_type: t.source_type.clone(),
             created_at: t.created_at,
             references: serde_json::from_str(&t.references).unwrap_or_default(),
         })
@@ -85,9 +91,10 @@ pub async fn get_thread(Path(id): Path<String>) -> Result<extract::Json<ThreadIt
     let thread_item = ThreadItem {
         id: thread.id.to_string(),
         title: thread.title,
-        question: thread.question,
-        answer: thread.answer,
-        agent: thread.agent,
+        input: thread.input,
+        output: thread.output,
+        source_type: thread.source_type,
+        source: thread.source,
         created_at: thread.created_at,
         references: serde_json::from_str(&thread.references).unwrap_or_default(),
     };
@@ -102,9 +109,10 @@ pub async fn create_thread(
         id: ActiveValue::Set(Uuid::new_v4()),
         created_at: ActiveValue::not_set(),
         title: ActiveValue::Set(thread_request.title),
-        question: ActiveValue::Set(thread_request.question),
-        answer: ActiveValue::Set("".to_string()),
-        agent: ActiveValue::Set(thread_request.agent),
+        input: ActiveValue::Set(thread_request.input),
+        output: ActiveValue::Set("".to_string()),
+        source_type: ActiveValue::Set(thread_request.source_type),
+        source: ActiveValue::Set(thread_request.source),
         references: ActiveValue::Set("[]".to_string()),
     };
     let thread = new_thread.insert(&connection).await;
@@ -112,9 +120,10 @@ pub async fn create_thread(
     let thread_item = ThreadItem {
         id: thread.id.to_string(),
         title: thread.title,
-        question: thread.question,
-        answer: thread.answer,
-        agent: thread.agent,
+        input: thread.input,
+        output: thread.output,
+        source_type: thread.source_type,
+        source: thread.source,
         created_at: thread.created_at,
         references: serde_json::from_str(&thread.references).unwrap(),
     };
@@ -257,71 +266,36 @@ impl EventHandler for ThreadStream {
     }
 }
 
-pub async fn ask_thread(Path(id): Path<String>) -> impl IntoResponse {
+pub async fn ask_thread(Path(id): Path<String>) -> Result<impl IntoResponse, StatusCode> {
     let connection = establish_connection().await;
-    let thread = match Uuid::parse_str(&id) {
-        Ok(uuid) => match Threads::find_by_id(uuid).one(&connection).await {
-            Ok(Some(thread)) => thread,
-            Ok(None) => {
-                return StreamBodyAs::json_nl(stream! {
-                    yield AnswerStream {
-                        content: format!("Thread with ID {} not found", id),
-                        references: vec![],
-                        is_error: true,
-                        step: "".to_string(),
-                    };
-                });
-            }
-            Err(e) => {
-                return StreamBodyAs::json_nl(stream! {
-                    yield AnswerStream {
-                        content: format!("Database error: {}", e),
-                        references: vec![],
-                        is_error: true,
-                        step: "".to_string(),
-                    };
-                });
-            }
-        },
-        Err(_) => {
-            return StreamBodyAs::json_nl(stream! {
-                yield AnswerStream {
-                    content: format!("Invalid UUID format: {}", id),
-                    references: vec![],
-                    is_error: true,
-                    step: "".to_string(),
-                };
-            });
-        }
-    };
+    let thread_id = Uuid::parse_str(&id).map_err(|e| {
+        tracing::info!("{:?}", e);
+        StatusCode::BAD_REQUEST
+    })?;
+    let thread = Threads::find_by_id(thread_id)
+        .one(&connection)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let thread = thread.ok_or(StatusCode::NOT_FOUND)?;
 
-    if !thread.answer.is_empty() {
-        return StreamBodyAs::json_nl(stream! {
+    if !thread.output.is_empty() {
+        return Ok(StreamBodyAs::json_nl(stream! {
             yield AnswerStream {
-                content: thread.answer,
+                content: thread.output,
                 references: serde_json::from_str(&thread.references).unwrap_or_default(),
                 is_error: false,
                 step: "".to_string(),
             };
-        });
+        }));
     }
 
-    let project_path = match find_project_path() {
-        Ok(path) => path,
-        Err(e) => {
-            return StreamBodyAs::json_nl(stream! {
-                yield AnswerStream {
-                    content: format!("Failed to find project path: {}", e),
-                    references: vec![],
-                    is_error: true,
-                    step: "".to_string(),
-                };
-            });
-        }
-    };
+    let project_path = find_project_path().map_err(|e| {
+        tracing::info!("Failed to find project path: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
-    let agent_ref = thread.agent.to_string();
-    let prompt = thread.question.to_string();
+    let agent_ref = thread.source.to_string();
+    let prompt = thread.input.to_string();
     let (tx, rx) = tokio::sync::mpsc::channel(100);
     let _ = tokio::spawn(async move {
         let tx_clone = tx.clone();
@@ -349,7 +323,7 @@ pub async fn ask_thread(Path(id): Path<String>) -> impl IntoResponse {
                 tracing::debug!("Agent output: {:?}", output_container);
                 tracing::debug!("Agent references: {:?}", references);
                 let mut thread_model: entity::threads::ActiveModel = thread.into();
-                thread_model.answer = ActiveValue::Set(output_container.to_markdown()?);
+                thread_model.output = ActiveValue::Set(output_container.to_markdown()?);
                 thread_model.references =
                     ActiveValue::Set(serde_json::to_string(&references).map_err(|err| {
                         OxyError::SerializerError(format!(
@@ -378,7 +352,7 @@ pub async fn ask_thread(Path(id): Path<String>) -> impl IntoResponse {
             }
         }
     });
-    StreamBodyAs::json_nl(ReceiverStream::new(rx))
+    Ok(StreamBodyAs::json_nl(ReceiverStream::new(rx)))
 }
 
 #[derive(Deserialize)]
@@ -389,58 +363,46 @@ pub struct AskAgentRequest {
 pub async fn ask_agent(
     Path(pathb64): Path<String>,
     extract::Json(payload): extract::Json<AskAgentRequest>,
-) -> impl IntoResponse {
-    let decoded_path: Vec<u8> = match BASE64_STANDARD.decode(pathb64) {
-        Ok(path) => path,
-        Err(e) => {
-            return StreamBodyAs::json_nl(stream! {
-                yield AnswerStream {
-                    content: format!("Failed to decode path: {}", e),
-                    references: vec![],
-                    is_error: true,
-                    step: "".to_string(),
-                };
-            });
-        }
-    };
-    let path = match String::from_utf8(decoded_path) {
-        Ok(path) => path,
-        Err(e) => {
-            return StreamBodyAs::json_nl(stream! {
-                yield AnswerStream {
-                    content: format!("Failed to decode path: {}", e),
-                    references: vec![],
-                    is_error: true,
-                    step: "".to_string(),
-                };
-            });
-        }
-    };
+) -> Result<impl IntoResponse, StatusCode> {
+    let decoded_path = BASE64_STANDARD.decode(pathb64).map_err(|e| {
+        tracing::info!("{:?}", e);
+        StatusCode::BAD_REQUEST
+    })?;
 
-    let project_path = match find_project_path() {
-        Ok(path) => path,
-        Err(e) => {
-            return StreamBodyAs::json_nl(stream! {
-                yield AnswerStream {
-                    content: format!("Failed to find project path: {}", e),
-                    references: vec![],
-                    is_error: true,
-                    step: "".to_string(),
-                };
-            });
-        }
-    };
+    let path = String::from_utf8(decoded_path).map_err(|e| {
+        tracing::info!("{:?}", e);
+        StatusCode::BAD_REQUEST
+    })?;
+
+    let project_path = find_project_path().map_err(|e| {
+        tracing::error!("Failed to find project path: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
     let (tx, rx) = tokio::sync::mpsc::channel(100);
     let _ = tokio::spawn(async move {
+        let tx_clone = tx.clone();
         let thread_stream = ThreadStream::new(tx);
-        run_agent(
+
+        let result = run_agent(
             &project_path,
             &PathBuf::from(path),
             payload.question,
             thread_stream,
         )
-        .await
-        .map_err(|err| OxyError::AgentError(format!("Failed to run agent:\n{}", err)))
+        .await;
+
+        if let Err(err) = result {
+            tracing::error!("Error running agent: {}", err);
+            let message = AnswerStream {
+                content: format!("Error running agent: {}", err),
+                references: vec![],
+                is_error: true,
+                step: "".to_string(),
+            };
+            let _ = tx_clone.send(message).await;
+        }
     });
-    StreamBodyAs::json_nl(ReceiverStream::new(rx))
+
+    Ok(StreamBodyAs::json_nl(ReceiverStream::new(rx)))
 }

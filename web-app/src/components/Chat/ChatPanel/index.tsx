@@ -8,37 +8,32 @@ import {
   Hammer,
   Loader2,
   MessageCircleQuestion,
+  Play,
+  Workflow,
 } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AgentsDropdown, { Agent } from "./AgentsDropdown";
-import useTaskMutation from "@/hooks/api/useTaskMutation";
 import useBuilderAvailable from "@/hooks/api/useBuilderAvailable";
 import {
   ToggleGroup,
   ToggleGroupItem,
 } from "@/components/ui/shadcn/toggle-group";
+import WorkflowsDropdown from "./WorkflowsDropdown";
+import { WorkflowOption } from "./WorkflowsDropdown";
 
 const ToggleGroupItemClasses =
   "data-[state=on]:border hover:text-special hover:bg-button-hover data-[state=on]:bg-button-hover  data-[state=on]:text-special border-accent-main-000 rounded-md";
 
-const ChatPanel = ({
-  agent,
-  onChangeAgent,
-}: {
-  agent: Agent | null;
-  onChangeAgent: (agent: Agent) => void;
-}) => {
+const ChatPanel = () => {
   const navigate = useNavigate();
+
+  const [agent, setAgent] = useState<Agent | null>(null);
+  const [workflow, setWorkflow] = useState<WorkflowOption | null>(null);
+
   const { mutate: createThread, isPending } = useThreadMutation((data) => {
     navigate(`/threads/${data.id}`);
   });
-
-  const { mutate: createTask, isPending: isCreatingTask } = useTaskMutation(
-    (data) => {
-      navigate(`/tasks/${data.id}`);
-    },
-  );
 
   const { isAvailable: isBuilderAvailable, isLoading: isCheckingBuilder } =
     useBuilderAvailable();
@@ -49,20 +44,61 @@ const ChatPanel = ({
 
   const handleFormSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!message) return;
-    if (mode === "build" && isBuilderAvailable) {
-      createTask({
-        title: message,
-        question: message,
-      });
-    } else {
-      createThread({
-        title: message,
-        agent: agent?.id ?? "",
-        question: message,
-      });
+    switch (mode) {
+      case "ask":
+        if (!agent) return;
+        createThread({
+          title: message,
+          source: agent.id,
+          source_type: "agent",
+          input: message,
+        });
+        break;
+      case "build":
+        if (isBuilderAvailable) {
+          createThread({
+            title: message,
+            source: "",
+            source_type: "task",
+            input: message,
+          });
+        }
+        break;
+      case "workflow":
+        if (!workflow) return;
+        createThread({
+          title: message ? message : workflow.name,
+          source: workflow.id,
+          source_type: "workflow",
+          input: message,
+        });
+        break;
     }
   };
+
+  const submitIcon = mode === "workflow" ? <Play /> : <ArrowRight />;
+  const disabled = () => {
+    if (isPending) return true;
+    switch (mode) {
+      case "ask":
+        return !message || !agent;
+      case "build":
+        return !message || !isBuilderAvailable || isCheckingBuilder;
+      case "workflow":
+        return !workflow;
+    }
+  };
+
+  const placeholder = (() => {
+    switch (mode) {
+      case "ask":
+        return "Ask anything";
+      case "build":
+        return "Enter anything you want to build";
+      case "workflow":
+        return "Enter a title for this workflow run";
+    }
+  })();
 
   return (
     <form
@@ -71,7 +107,7 @@ const ChatPanel = ({
       className="w-full max-w-[672px] flex p-2 flex-col gap-1 shadow-sm rounded-md border-2 mx-auto bg-secondary"
     >
       <Textarea
-        disabled={isPending || isCreatingTask}
+        disabled={isPending}
         name="question"
         autoFocus
         onKeyDown={onKeyDown}
@@ -83,8 +119,9 @@ const ChatPanel = ({
           "focus-visible:ring-0 focus-visible:ring-offset-0",
           "outline-none resize-none",
         )}
-        placeholder={`Ask anything`}
+        placeholder={placeholder}
       />
+
       <div className="flex justify-between">
         <div className="flex items-center justify-center">
           <ToggleGroup
@@ -116,14 +153,25 @@ const ChatPanel = ({
               <Hammer />
               <span>Build</span>
             </ToggleGroupItem>
+            <ToggleGroupItem
+              size="sm"
+              value="workflow"
+              className={ToggleGroupItemClasses}
+            >
+              <Workflow />
+              <span>Workflow</span>
+            </ToggleGroupItem>
           </ToggleGroup>
         </div>
         <div className="flex gap-2 items-center">
           {mode === "ask" && (
-            <AgentsDropdown onSelect={onChangeAgent} agent={agent} />
+            <AgentsDropdown onSelect={setAgent} agent={agent} />
           )}
-          <Button disabled={!message || isPending || !agent} type="submit">
-            {isPending ? <Loader2 className="animate-spin" /> : <ArrowRight />}
+          {mode === "workflow" && (
+            <WorkflowsDropdown onSelect={setWorkflow} workflow={workflow} />
+          )}
+          <Button disabled={disabled()} type="submit">
+            {isPending ? <Loader2 className="animate-spin" /> : submitIcon}
           </Button>
         </div>
       </div>

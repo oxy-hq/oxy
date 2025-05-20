@@ -21,7 +21,6 @@ import IdePage from "./pages/ide";
 import EditorPage from "./pages/ide/Editor";
 import AppPage from "./pages/app";
 import { HotkeysProvider } from "react-hotkeys-hook";
-import TaskPage from "./pages/task/index.tsx";
 
 const PageWrapper = ({ children }: { children: React.ReactNode }) => {
   return <main className="bg-background w-full h-full">{children}</main>;
@@ -54,14 +53,6 @@ const MainLayout = React.memo(function MainLayout() {
           element={
             <PageWrapper>
               <ThreadPage />
-            </PageWrapper>
-          }
-        />
-        <Route
-          path="/tasks/:taskId"
-          element={
-            <PageWrapper>
-              <TaskPage />
             </PageWrapper>
           }
         />
