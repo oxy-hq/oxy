@@ -1676,6 +1676,7 @@ dependencies = [
  "futures-channel",
  "http-body-util",
  "hyper 1.6.0",
+ "hyper-tls",
  "hyper-util",
  "lz4_flex",
  "replace_with",
