@@ -10,6 +10,45 @@ Once you have your agents, config, and data configured, you can ask this agent q
 oxy run path/to/agent.agent.yml "How many users do we have?"
 ```
 
+### Database Synchronization
+
+The `sync` command collects semantic information from your databases, making their structure available to your agents.
+
+Basic usage:
+
+```bash
+oxy sync
+```
+
+Sync a specific database:
+
+```bash
+oxy sync database_name
+```
+
+Sync specific datasets within a database:
+
+```bash
+oxy sync database_name -d dataset1
+```
+
+By default, files that already exist will be skipped. To overwrite existing files:
+
+```bash
+oxy sync --overwrite
+# or oxy sync -o (shorthand)
+```
+
+To overwrite existing files for a specific database:
+
+```bash
+oxy sync database_name --overwrite
+```
+
+The sync command will show warnings when files are skipped (already exist) or when files are overwritten (when using the `-o` flag).
+
+For more detailed information about database synchronization, see the [Database Sync documentation](/reference/database-sync).
+
 ### Run queries
 
 Run a raw query on target database

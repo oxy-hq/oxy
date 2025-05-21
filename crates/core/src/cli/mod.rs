@@ -298,8 +298,8 @@ struct SyncArgs {
     database: Option<String>,
     #[clap(long, short = 'd', num_args = 0..)]
     datasets: Vec<String>,
-    #[clap(long, short = 'i', default_value_t = false)]
-    ignore_changes: bool,
+    #[clap(long, short = 'o', default_value_t = false, help = "Overwrite existing files during sync")]
+    overwrite: bool,
 }
 
 #[derive(Parser, Debug)]
@@ -428,8 +428,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                 .map(|db| (db, sync_args.datasets.clone()));
             debug!(sync_args = ?sync_args, "Syncing");
             println!("🔄Syncing databases");
-            let sync_metrics =
-                sync_databases(config.clone(), filter, !sync_args.ignore_changes).await?;
+            let sync_metrics = sync_databases(config.clone(), filter, sync_args.overwrite).await?;
             println!(
                 "✅Sync finished:\n\n{}",
                 sync_metrics
