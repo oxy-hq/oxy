@@ -114,16 +114,10 @@
         "tab": "Reference",
         "groups": [
           {
-            "group": "CLI commands",
-            "pages": [
-              "reference/cli-shortcuts",
-              "reference/cli-commands"
-            ]
-          },
-          {
             "group": "Oxy commands",
             "pages": [
-              "reference/oxy-commands"
+              "reference/oxy-commands",
+              "reference/database-sync"
             ]
           }
         ]

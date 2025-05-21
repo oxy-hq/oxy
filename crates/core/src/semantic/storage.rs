@@ -1,7 +1,6 @@
 use std::{collections::HashMap, path::PathBuf};
 
 use futures::StreamExt;
-use itertools::Itertools;
 use tokio::fs::{create_dir_all, read_dir, read_to_string};
 
 use crate::{
@@ -13,19 +12,23 @@ use crate::{
     errors::OxyError,
 };
 
-use super::types::{DatasetInfo, SemanticKey};
+use super::types::{DatasetInfo, SemanticKey, SyncOperationResult};
 
 #[enum_dispatch::enum_dispatch]
 trait Storage {
     async fn load_datasets(&self, database_ref: &str) -> Result<Vec<DatasetInfo>, OxyError>;
     async fn load_ddl(&self, key: &SemanticKey) -> Result<String, OxyError>;
-    async fn save_ddl(&self, key: &SemanticKey, value: String) -> Result<String, OxyError>;
+    async fn save_ddl(
+        &self,
+        key: &SemanticKey,
+        value: String,
+    ) -> Result<SyncOperationResult, OxyError>;
     async fn load_model(&self, key: &SemanticKey) -> Result<HashMap<String, String>, OxyError>; // Loading plaintext to allow easy iterate through the model
     async fn save_model(
         &self,
         key: &SemanticKey,
         value: HashMap<String, SemanticModels>,
-    ) -> Result<String, OxyError>;
+    ) -> Result<SyncOperationResult, OxyError>;
 }
 
 pub struct SemanticFileStorage {
@@ -118,22 +121,43 @@ impl Storage for SemanticFileStorage {
         Ok(ddl)
     }
 
-    async fn save_ddl(&self, key: &SemanticKey, value: String) -> Result<String, OxyError> {
+    async fn save_ddl(
+        &self,
+        key: &SemanticKey,
+        value: String,
+    ) -> Result<SyncOperationResult, OxyError> {
         // Implement file saving logic here
         let ddl_path = self.get_dataset_ddl_path(key);
         let output = ddl_path.to_string_lossy().to_string();
-        if ddl_path.exists() && !self.override_mode {
-            return Ok(output);
+        let existed = ddl_path.exists();
+
+        let mut result = SyncOperationResult::new(output.clone());
+
+        if existed && !self.override_mode {
+            result.would_overwrite_files.push(output);
+            return Ok(result);
         }
+
         create_dir_all(ddl_path.parent().ok_or(OxyError::IOError(
             "Failed to resolve database semantic path".to_string(),
         ))?)
         .await
         .map_err(|err| OxyError::IOError(format!("Failed to create ddl parent path: {}", err)))?;
+
+        if existed && self.override_mode {
+            tokio::fs::remove_file(&ddl_path).await.map_err(|err| {
+                OxyError::IOError(format!("Failed to delete existing ddl file: {}", err))
+            })?;
+            result.overwritten_files.push(output.clone());
+        } else {
+            result.created_files.push(output.clone());
+        }
+
         tokio::fs::write(ddl_path, value)
             .await
             .map_err(|err| OxyError::IOError(format!("Failed to write ddl file: {}", err)))?;
-        Ok(output)
+
+        Ok(result)
     }
 
     async fn load_model(&self, key: &SemanticKey) -> Result<HashMap<String, String>, OxyError> {
@@ -165,7 +189,7 @@ impl Storage for SemanticFileStorage {
                 let semantic_file_path = entry.path();
                 let key = semantic_file_path
                     .file_stem()
-                    .unwrap() // is a file so unwrap is safe here
+                    .unwrap()
                     .to_string_lossy()
                     .split(".")
                     .next()
@@ -185,38 +209,118 @@ impl Storage for SemanticFileStorage {
         &self,
         key: &SemanticKey,
         value: HashMap<String, SemanticModels>,
-    ) -> Result<String, OxyError> {
+    ) -> Result<SyncOperationResult, OxyError> {
         // Implement file saving logic here
         let semantic_path = self.get_dataset_semantic_dir(key);
         let output = semantic_path.to_string_lossy().to_string();
-        create_dir_all(semantic_path).await.map_err(|err| {
-            OxyError::IOError(format!("Failed to create semantic directory: {}", err))
-        })?;
-        async_stream::stream! {
+        let mut potential_deleted_files = Vec::new();
+        let mut created_files = Vec::new();
+        let mut overwritten_files = Vec::new();
+        let mut would_overwrite_files = Vec::new();
+
+        if semantic_path.exists() {
+            if let Ok(mut read_dir) = read_dir(&semantic_path).await {
+                while let Ok(Some(entry)) = read_dir.next_entry().await {
+                    if let Ok(file_type) = entry.file_type().await {
+                        if file_type.is_file() {
+                            potential_deleted_files
+                                .push(entry.path().to_string_lossy().to_string());
+                        }
+                    }
+                }
+            }
+
+            if self.override_mode {
+                tokio::fs::remove_dir_all(&semantic_path)
+                    .await
+                    .map_err(|err| {
+                        OxyError::IOError(format!(
+                            "Failed to delete existing semantic directory: {}",
+                            err
+                        ))
+                    })?;
+            }
+        }
+
+        if self.override_mode || !semantic_path.exists() {
+            create_dir_all(&semantic_path).await.map_err(|err| {
+                OxyError::IOError(format!("Failed to create semantic directory: {}", err))
+            })?;
+        }
+
+        let potential_deleted_for_filter = potential_deleted_files.clone();
+
+        let model_results = async_stream::stream! {
             for (table_name, model) in value {
                 let file_path = self.get_semantic_file_path(key, &table_name);
+                let file_path_str = file_path.to_string_lossy().to_string();
                 let override_mode = self.override_mode;
+                let potential_deleted = potential_deleted_files.clone();
 
                 yield async move {
                   let content = serde_yaml::to_string(&model).map_err(|err| {
                     OxyError::IOError(format!("Failed to serialize semantic model: {}", err))
                   })?;
-                if file_path.exists() && !override_mode {
-                    return Result::<(), OxyError>::Ok(());
-                }
-                  tokio::fs::write(file_path, content).await.map_err(|err| {
-                      OxyError::IOError(format!("Failed to write semantic file: {}", err))
-                  })?;
-                  Result::<(), OxyError>::Ok(())
+
+                  let existed = potential_deleted.iter().any(|path| path == &file_path_str);
+
+                  if !override_mode && existed {
+                      return Ok::<_, OxyError>((file_path_str, false, false, true));
+                  }
+
+                  if override_mode || !existed {
+                      tokio::fs::write(file_path, content).await.map_err(|err| {
+                          OxyError::IOError(format!("Failed to write semantic file: {}", err))
+                      })?;
+                  }
+
+                  let created = !existed;
+                  let overwritten = existed && override_mode;
+                  let would_overwrite = existed && !override_mode;
+
+                  Ok((file_path_str, created, overwritten, would_overwrite))
                 };
             }
         }
         .buffered(10)
         .collect::<Vec<_>>()
-        .await
-        .into_iter()
-        .try_collect::<(), Vec<_>, _>()?;
-        Ok(output)
+        .await;
+
+        for result in model_results {
+            match result {
+                Ok((file_path, created, overwritten, would_overwrite)) => {
+                    if created {
+                        created_files.push(file_path.clone());
+                    }
+
+                    if overwritten {
+                        overwritten_files.push(file_path.clone());
+                    }
+
+                    if would_overwrite {
+                        would_overwrite_files.push(file_path);
+                    }
+                }
+                Err(e) => return Err(e),
+            }
+        }
+
+        let deleted_files: Vec<String> = if self.override_mode {
+            potential_deleted_for_filter
+                .into_iter()
+                .filter(|path| !created_files.contains(path) && !overwritten_files.contains(path))
+                .collect()
+        } else {
+            Vec::new()
+        };
+
+        Ok(SyncOperationResult::with_tracking(
+            output,
+            deleted_files,
+            overwritten_files,
+            created_files,
+            would_overwrite_files,
+        ))
     }
 }
 
@@ -243,14 +347,20 @@ impl SemanticStorage {
     pub async fn load_datasets(&self, database_ref: &str) -> Result<Vec<DatasetInfo>, OxyError> {
         self.storage.load_datasets(database_ref).await
     }
-    pub async fn save_ddl(&self, key: &SemanticKey, value: String) -> Result<String, OxyError> {
+
+    pub async fn save_ddl(
+        &self,
+        key: &SemanticKey,
+        value: String,
+    ) -> Result<SyncOperationResult, OxyError> {
         self.storage.save_ddl(key, value).await
     }
+
     pub async fn save_model(
         &self,
         key: &SemanticKey,
         value: HashMap<String, SemanticModels>,
-    ) -> Result<String, OxyError> {
+    ) -> Result<SyncOperationResult, OxyError> {
         self.storage.save_model(key, value).await
     }
 }
