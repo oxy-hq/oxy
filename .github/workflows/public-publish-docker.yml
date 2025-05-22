@@ -1,12 +1,17 @@
 name: Publish Docker Image
 
 on:
-  push:
-    branches:
-      - main
-    tags:
-      - '[0-9]+.[0-9]+.[0-9]+'
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag or branch to release"
+        required: true
+        default: ""
+  push:
+    tags:
+      - "[0-9]+.[0-9]+.[0-9]+"
+    paths-ignore:
+      - "docs/**"
 
 jobs:
   build-and-publish:
@@ -23,6 +28,9 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.tag || github.ref_name  }}
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
@@ -34,11 +42,7 @@ jobs:
       - name: Set Docker tag
         id: docker_tag
         run: |
-          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
-            TAG_NAME="${GITHUB_REF#refs/tags/}"
-          else
-            TAG_NAME="latest"
-          fi
+          TAG_NAME="${{ inputs.tag || github.ref_name }}"
           echo "tag=$TAG_NAME" >> $GITHUB_OUTPUT
 
       - name: Build Docker image
