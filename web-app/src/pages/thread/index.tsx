@@ -3,13 +3,14 @@ import { useParams } from "react-router-dom";
 import WorkflowThread from "./workflow";
 import AgentThread from "./agent";
 import TaskThread from "./task";
+import PageSkeleton from "@/components/PageSkeleton";
 
 const Thread = () => {
   const { threadId } = useParams();
-  const { data: thread, isLoading, isSuccess } = useThread(threadId ?? "");
+  const { data: thread, isPending, isSuccess } = useThread(threadId ?? "");
 
-  if (isLoading) {
-    return <div>Loading...</div>;
+  if (isPending) {
+    return <PageSkeleton />;
   }
 
   if (!thread) {

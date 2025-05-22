@@ -21,6 +21,7 @@ import {
 import { cn } from "@/libs/shadcn/utils";
 import { Button } from "@/components/ui/shadcn/button";
 import { LoaderCircle, LogsIcon, PlayIcon } from "lucide-react";
+import { Skeleton } from "@/components/ui/shadcn/skeleton";
 
 const getTaskId = (task_name: string) => {
   return task_name + "__" + uuidv4();
@@ -121,7 +122,19 @@ export const WorkflowPreview = ({ pathb64 }: { pathb64: string }) => {
   };
 
   if (workflow === null) {
-    return <div>Loading...</div>;
+    return (
+      <div className="w-full">
+        <div className="flex flex-col gap-10 max-w-[742px] mx-auto py-10">
+          {Array.from({ length: 3 }).map((_, index) => (
+            <div key={index} className="flex flex-col gap-4">
+              <Skeleton className="h-4 max-w-[200px]" />
+              <Skeleton className="h-4 max-w-[500px]" />
+              <Skeleton className="h-4 max-w-[500px]" />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
   }
 
   return (
