@@ -16,7 +16,7 @@ static LOG_GUARD: OnceCell<tracing_appender::non_blocking::WorkerGuard> = OnceCe
 fn init_tracing_logging(log_to_stdout: bool) {
     let env_filter = EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| EnvFilter::new("info"))
-        .add_directive("oxy=debug".parse().unwrap())
+        .add_directive("oxy=info".parse().unwrap())
         .add_directive("deser_incomplete::options_impl=warn".parse().unwrap())
         .add_directive("tower_http=debug".parse().unwrap());
     let is_debug = cfg!(debug_assertions);
