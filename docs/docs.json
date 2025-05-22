@@ -63,7 +63,7 @@
           {
             "group": "Learn about deployment",
             "pages": [
-              "deployment/index",
+              "deployment/overview",
               "deployment/create-machine",
               "deployment/install-oxy",
               "deployment/workspace-setup",
@@ -76,7 +76,7 @@
           {
             "group": "Hands-on Guides",
             "pages": [
-              "deployment/hands-on/index",
+              "deployment/hands-on/overview",
               "deployment/hands-on/gcp"
             ]
           }
