@@ -17,6 +17,6 @@ impl std::fmt::Debug for SQL {
 
 impl std::fmt::Display for SQL {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "```{}```", self.0)
+        writeln!(f, "{}", self.0)
     }
 }
