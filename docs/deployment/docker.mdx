@@ -209,7 +209,6 @@ flowchart TD
 
                     @error status 401
                     handle_response @error {
-                        # redir * /sign_in?rd={scheme}://{host}{uri}
                         redir * 
                     }
                 }
@@ -328,7 +327,6 @@ your-domain.com {
 
             @error status 401
             handle_response @error {
-                # redir * /sign_in?rd={scheme}://{host}{uri}
                 redir * 
             }
         }
