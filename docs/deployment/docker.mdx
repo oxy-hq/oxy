@@ -118,7 +118,7 @@ flowchart TD
           - OPENAI_API_KEY=your-openai-api-key
           - OXY_STATE_DIR=/data
         restart: unless-stopped
-        command: ["oxy", "serve", "--host", "0.0.0.0", "--port", "3000"]
+        command: ["oxy", "serve", "--port", "3000"]
     ```
     
     <Warning>
@@ -356,6 +356,57 @@ When running Oxy in Docker, you'll typically need to mount two types of director
    ```
    This ensures your data is preserved even if the container is restarted.
 
+## Data Persistence
+
+Oxy uses SQLite for data storage by default, which means proper volume mounting is essential for maintaining your data across container restarts or updates.
+
+### Storage Location
+
+- By default, Oxy stores its data in `~/.local/share/oxy/` on the host system
+- When using Docker, you should explicitly set the `OXY_STATE_DIR` environment variable (typically to `/data`) and mount a volume to that location
+
+### What Data Is Stored
+
+Oxy stores several types of data that need to be persisted:
+
+- SQLite database files containing state information
+- Semantic information from synchronized databases
+- Cached query results and intermediate data
+- Workflow execution history and checkpoints
+
+### Example Docker Setup with Proper Data Persistence
+
+```yaml
+version: '3'
+services:
+  oxy:
+    image: ghcr.io/oxy-hq/oxy:0.2.2
+    container_name: oxy-instance
+    ports:
+      - "3000:3000"
+    working_dir: /workspace
+    volumes:
+      - ./workspace:/workspace
+      - ./oxy-data:/data  # Essential for data persistence
+    environment:
+      - OPENAI_API_KEY=your-openai-api-key
+      - OXY_STATE_DIR=/data  # Points to the mounted volume
+    restart: unless-stopped
+    command: ["oxy", "serve", "--port", "3000"]
+```
+
+<Warning>
+  For production deployments, ensure your data volume is backed by reliable storage. In cloud environments, consider using:
+  - Amazon EBS volumes (AWS)
+  - Persistent Disks (Google Cloud)
+  - Azure Disk Storage
+  - Network-attached storage (NAS) for multi-node setups
+</Warning>
+
+<Note>
+  When using Docker Compose, your data will persist as long as you don't remove the volumes. Use `docker-compose down -v` with caution as it will delete the volumes.
+</Note>
+
 ## Environment Variables
 
 Common environment variables to configure in your Oxy container:
@@ -365,7 +416,6 @@ Common environment variables to configure in your Oxy container:
 | `OPENAI_API_KEY` | Your OpenAI API key | `sk-...` |
 | `OXY_STATE_DIR` | Directory for Oxy state persistence | `/data` |
 | `DATABASE_URL` | Connection URL if using a database | `postgres://...` |
-| `PORT` | Override the default port | `8080` |
 
 ## Advanced Configuration
 

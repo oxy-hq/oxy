@@ -123,6 +123,19 @@ A reverse proxy is essential for providing secure access to your Oxy deployment.
 
 Now that you have a reverse proxy set up with automatic HTTPS, you can proceed to set up your Oxy workspace and repository.
 
+## Data Persistence Considerations
+
+When setting up your Oxy deployment behind a reverse proxy, it's important to properly configure data persistence:
+
+- Oxy stores its state data (including SQLite database files) at the location specified by `OXY_STATE_DIR`
+- If not specified, data defaults to `~/.local/share/oxy/` in the user's home directory
+- Ensure this directory is backed by reliable storage and included in your backup strategy
+- For high-availability setups, consider using network-attached storage that can be accessed by multiple instances
+
+<Note>
+  Your reverse proxy configuration remains unchanged regardless of where Oxy stores its data, but ensuring proper data persistence is critical for production deployments.
+</Note>
+
 <div className="mt-8">
   <Cards>
     <Card
