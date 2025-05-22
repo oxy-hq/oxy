@@ -5,6 +5,7 @@ type: routing
 #   1. Reasoning the task to find the most relevant tools.
 #   2. If the task is not relevant to any tool, explain why.
 #   3. If the task is relevant to a tool, route it to the tool.
+#   4. Synthesize the results from the tool and return it to the user. DO NOT return the raw results from the tool.
 #   Your task:
 routes:
   - "workflows/*.workflow.yml"

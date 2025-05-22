@@ -152,6 +152,7 @@ impl Executable<(usize, EvalConfig, EvalTarget)> for EvalExecutable {
         eval_context
             .write_kind(EventKind::Started {
                 name: format!("{}::Test{}", target, idx),
+                attributes: Default::default(),
             })
             .await?;
 

@@ -84,9 +84,19 @@ impl OpenAIExecutable {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct OpenAIExecutableResponse {
     pub content: Output,
     pub tool_calls: Vec<ChatCompletionMessageToolCall>,
+}
+
+impl Default for OpenAIExecutableResponse {
+    fn default() -> Self {
+        OpenAIExecutableResponse {
+            content: Output::Text("".to_string()),
+            tool_calls: vec![],
+        }
+    }
 }
 
 #[async_trait::async_trait]
@@ -282,28 +292,20 @@ impl ParamMapper<OneShotInput, Vec<ChatCompletionRequestMessage>> for SimpleMapp
 pub fn build_openai_executable(
     model: &Model,
 ) -> MapInput<OpenAIExecutable, SimpleMapper, Vec<ChatCompletionRequestMessage>> {
-    let executable = ExecutableBuilder::new()
+    ExecutableBuilder::new()
         .map(SimpleMapper)
-        .executable(OpenAIExecutable::new(
-            OpenAIClient::with_config(model.try_into().unwrap()),
-            model.model_name().to_string(),
-            vec![],
-        ));
-    executable
+        .executable(build_openai_executable_with_tools(model, vec![]))
 }
 
 pub fn build_openai_executable_with_tools(
     model: &Model,
     tools: Vec<ChatCompletionTool>,
-) -> MapInput<OpenAIExecutable, SimpleMapper, Vec<ChatCompletionRequestMessage>> {
-    let executable = ExecutableBuilder::new()
-        .map(SimpleMapper)
-        .executable(OpenAIExecutable::new(
-            OpenAIClient::with_config(model.try_into().unwrap()),
-            model.model_name().to_string(),
-            tools,
-        ));
-    executable
+) -> OpenAIExecutable {
+    OpenAIExecutable::new(
+        OpenAIClient::with_config(model.try_into().unwrap()),
+        model.model_name().to_string(),
+        tools,
+    )
 }
 
 #[derive(JsonSchema, Deserialize, Debug, Clone)]

@@ -98,4 +98,6 @@ export const STEP_MAP = {
   execute_sql: "Execute SQL",
   visualize: "Generate visualization",
   retrieve: "Retrieve data",
+  agent: "Generate answer",
+  workflow: "Running workflow",
 };

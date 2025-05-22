@@ -10,6 +10,7 @@ pub mod concurrency;
 pub mod consistency;
 pub mod export;
 pub mod map;
+pub mod memo;
 pub mod react;
 mod stack;
 pub mod state;
@@ -128,18 +129,38 @@ impl<W> ExecutableBuilder<W> {
         self.wrap(chain::ChainWrapper::new(mapper))
     }
 
-    pub fn react<A, RF, IF>(
+    pub fn memo<M>(self, memo: M) -> ExecutableBuilder<stack::Stack<memo::MemoWrapper<M>, W>> {
+        self.wrap(memo::MemoWrapper::new(memo))
+    }
+
+    pub fn react<A>(
         self,
         act: A,
-        response_fold: RF,
-        input_fold: IF,
         max_iterations: usize,
-    ) -> ExecutableBuilder<stack::Stack<react::ReasonActWrapper<A, RF, IF>, W>> {
+    ) -> ExecutableBuilder<stack::Stack<react::ReasonActWrapper<A>, W>> {
         self.wrap(react::ReasonActWrapper::new(
             act,
-            response_fold,
-            input_fold,
-            max_iterations,
+            react::IterationStrategy::Exhaustive { max_iterations },
+        ))
+    }
+
+    pub fn react_once<A>(
+        self,
+        act: A,
+    ) -> ExecutableBuilder<stack::Stack<react::ReasonActWrapper<A>, W>> {
+        self.wrap(react::ReasonActWrapper::new(
+            act,
+            react::IterationStrategy::Once,
+        ))
+    }
+
+    pub fn react_rar<A>(
+        self,
+        act: A,
+    ) -> ExecutableBuilder<stack::Stack<react::ReasonActWrapper<A>, W>> {
+        self.wrap(react::ReasonActWrapper::new(
+            act,
+            react::IterationStrategy::RAR,
         ))
     }
 

@@ -71,7 +71,7 @@ impl EventHandler for EvalEventsHandler {
         tracing::debug!("Received event: {:?}", event);
         match event.source.kind.as_str() {
             EVAL_SOURCE => match event.kind {
-                EventKind::Started { name } => {
+                EventKind::Started { name, .. } => {
                     println!("⏳Starting {}", name);
                 }
                 EventKind::Finished { message } => {

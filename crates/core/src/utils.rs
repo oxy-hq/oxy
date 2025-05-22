@@ -29,11 +29,11 @@ pub fn truncate_with_ellipsis(s: &str, max_width: Option<usize>) -> String {
     prefix
 }
 
-pub fn truncate_datasets(batches: Vec<RecordBatch>) -> (Vec<RecordBatch>, bool) {
+pub fn truncate_datasets(batches: &Vec<RecordBatch>) -> (Vec<RecordBatch>, bool) {
     if !batches.is_empty() && batches[0].num_rows() > MAX_DISPLAY_ROWS {
         return (vec![batches[0].slice(0, MAX_DISPLAY_ROWS)], true);
     }
-    (batches, false)
+    (batches.to_vec(), false)
 }
 
 pub fn format_table_output(table: &str, truncated: bool) -> String {
@@ -234,4 +234,19 @@ pub fn extract_csv_dimensions(
         .collect();
 
     Ok(dimensions)
+}
+
+pub fn try_unwrap_arc_mutex<T>(arc: std::sync::Arc<std::sync::Mutex<T>>) -> Result<T, OxyError> {
+    std::sync::Arc::try_unwrap(arc)
+        .map_err(|_| OxyError::RuntimeError("Failed to unwrap arc mutex".to_string()))?
+        .into_inner()
+        .map_err(|err| OxyError::RuntimeError(format!("Failed to unwrap arc mutex: {}", err)))
+}
+
+pub async fn try_unwrap_arc_tokio_mutex<T>(
+    arc: std::sync::Arc<tokio::sync::Mutex<T>>,
+) -> Result<T, OxyError> {
+    Ok(std::sync::Arc::try_unwrap(arc)
+        .map_err(|_| OxyError::RuntimeError("Failed to unwrap arc mutex".to_string()))?
+        .into_inner())
 }

@@ -173,7 +173,7 @@
   }
 
   .markdown {
-    *:not(svg *) {
+    *:not(.skip-revert):not(.skip-revert *):not(svg *) {
       all: revert;
     }
     tr {
@@ -190,6 +190,14 @@
     }
     table {
       border-collapse: collapse;
+    }
+  }
+}
+
+@layer components {
+  .markdown {
+    details {
+      padding-left: 0.5rem;
     }
   }
 }

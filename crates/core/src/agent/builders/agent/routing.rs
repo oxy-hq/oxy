@@ -3,19 +3,25 @@ use std::path::PathBuf;
 use async_openai::types::ChatCompletionTool;
 
 use crate::{
-    adapters::{openai::AsyncFunctionObject, vector_store::parse_sql_source_type},
-    agent::builders::{
-        openai::{OneShotInput, build_openai_executable_with_tools},
-        tool::ToolMapper,
+    adapters::{
+        openai::{AsyncFunctionObject, OpenAIClient},
+        vector_store::parse_sql_source_type,
+    },
+    agent::{
+        OpenAIExecutableResponse,
+        builders::{
+            openai::{OneShotInput, OpenAIExecutable, SimpleMapper},
+            tool::OpenAITool,
+        },
     },
     config::model::{AgentTool, ExecuteSQLTool, Model, RoutingAgent, ToolType, WorkflowTool},
     errors::OxyError,
     execute::{
         Executable, ExecutionContext,
         builders::ExecutableBuilder,
-        types::{Chunk, Document, Output, OutputContainer},
+        types::{Document, OutputContainer},
     },
-    tools::{RetrievalExecutable, ToolLauncherExecutable, types::RetrievalInput},
+    tools::{RetrievalExecutable, types::RetrievalInput},
 };
 
 #[derive(Debug, Clone)]
@@ -140,13 +146,14 @@ impl Executable<RoutingAgentInput> for RoutingAgentExecutable {
                 &prompt,
             )
             .await?;
-        let tools =
-            futures::future::join_all(tool_configs.iter().map(ChatCompletionTool::from_tool_async))
-                .await
-                .into_iter()
-                .collect::<Vec<_>>();
-        let mut openai_executable = build_openai_executable_with_tools(model, tools);
-        let response = openai_executable
+        let mut react_loop_executable = build_react_loop(
+            agent_name.clone(),
+            &model,
+            tool_configs,
+            routing_agent.synthesize_results,
+        )
+        .await?;
+        let outputs = react_loop_executable
             .execute(
                 execution_context,
                 OneShotInput {
@@ -156,33 +163,35 @@ impl Executable<RoutingAgentInput> for RoutingAgentExecutable {
             )
             .await?;
 
-        if response.tool_calls.is_empty() {
-            return Ok(response.content.into());
-        }
-
-        // It's safe to unwrap here because we check for tool_calls above
-        // and we know that there is at only one tool call because parallelism is not supported
-        let tool_call = response.tool_calls.first().unwrap().clone();
-        let routing_message =
-            Output::Text(format!("\nExecuting route: {}\n", &tool_call.function.name));
-        execution_context
-            .write_chunk(Chunk {
-                key: None,
-                delta: routing_message.clone(),
-                finished: true,
-            })
-            .await?;
-        let tool_output = ExecutableBuilder::new()
-            .state((agent_name, tool_configs))
-            .map(ToolMapper)
-            .executable(ToolLauncherExecutable)
-            .execute(execution_context, tool_call)
-            .await?;
-
-        Ok(OutputContainer::List(vec![
-            response.content.into(),
-            routing_message.into(),
-            tool_output,
-        ]))
+        Ok(OutputContainer::List(
+            outputs.into_iter().map(|o| o.content.into()).collect(),
+        ))
     }
+}
+
+async fn build_react_loop(
+    agent_name: String,
+    model: &Model,
+    tool_configs: Vec<ToolType>,
+    synthesize_results: bool,
+) -> Result<impl Executable<OneShotInput, Response = Vec<OpenAIExecutableResponse>>, OxyError> {
+    let tools: Vec<ChatCompletionTool> =
+        futures::future::join_all(tool_configs.iter().map(ChatCompletionTool::from_tool_async))
+            .await
+            .into_iter()
+            .collect();
+    let builder = match synthesize_results {
+        true => ExecutableBuilder::new()
+            .map(SimpleMapper)
+            .react_rar(OpenAITool::new(agent_name, tool_configs, 1)),
+        false => ExecutableBuilder::new()
+            .map(SimpleMapper)
+            .react_once(OpenAITool::new(agent_name, tool_configs, 1)),
+    };
+    let client = OpenAIClient::with_config(model.try_into()?);
+    Ok(builder.memo(vec![]).executable(OpenAIExecutable::new(
+        client,
+        model.model_name().to_string(),
+        tools,
+    )))
 }

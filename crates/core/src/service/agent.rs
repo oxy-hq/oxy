@@ -198,7 +198,7 @@ impl EventHandler for AgentCLIHandler {
     async fn handle_event(&mut self, event: Event) -> Result<(), OxyError> {
         match event.source.kind.as_str() {
             WORKFLOW_SOURCE => match event.kind {
-                EventKind::Started { name } => {
+                EventKind::Started { name, .. } => {
                     println!("\n⏳Running workflow: {}", name);
                 }
                 EventKind::Finished { message } => {

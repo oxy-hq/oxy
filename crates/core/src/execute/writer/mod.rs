@@ -1,11 +1,13 @@
 use crate::errors::OxyError;
 
-use super::types::Event;
+use super::types::{Event, event::EventFormat};
 
 mod buf_writer;
+mod markdown;
 mod ordered_writer;
 
 pub use buf_writer::BufWriter;
+pub use markdown::MarkdownWriter;
 pub use ordered_writer::OrderedWriter;
 use tokio::sync::mpsc::Sender;
 
@@ -45,4 +47,11 @@ impl EventHandler for NoopHandler {
     async fn handle_event(&mut self, _event: Event) -> Result<(), OxyError> {
         Ok(())
     }
+}
+
+#[async_trait::async_trait]
+pub trait OutputWriter<T> {
+    async fn write_event(&mut self, event: &Event) -> Result<Option<EventFormat>, OxyError>;
+    async fn write_str(&mut self, value: &str) -> Result<(), OxyError>;
+    async fn finish(self) -> Result<T, OxyError>;
 }

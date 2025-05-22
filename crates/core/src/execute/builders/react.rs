@@ -5,106 +5,135 @@ use crate::{
 
 use super::wrap::Wrap;
 
-pub struct ReasonActWrapper<A, RF, IF> {
+pub struct ReasonActWrapper<A> {
     act: A,
-    response_fold: RF,
-    input_fold: IF,
-    max_iterations: usize,
+    strategy: IterationStrategy,
 }
 
-impl<A, RF, IF> ReasonActWrapper<A, RF, IF> {
-    pub fn new(act: A, response_fold: RF, input_fold: IF, max_iterations: usize) -> Self {
-        Self {
-            act,
-            response_fold,
-            input_fold,
-            max_iterations,
+impl<A> ReasonActWrapper<A> {
+    pub fn new(act: A, strategy: IterationStrategy) -> Self {
+        Self { act, strategy }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum IterationStrategy {
+    Exhaustive { max_iterations: usize },
+    RAR, // Reason Act Reason
+    Once,
+}
+
+pub enum Decision {
+    Continue,
+    Break,
+    BreakInNextReasoning,
+    Error(OxyError),
+}
+
+impl IterationStrategy {
+    pub fn should_break(&self, iterations: usize) -> Decision {
+        match self {
+            IterationStrategy::Exhaustive { max_iterations } => {
+                if iterations >= *max_iterations {
+                    Decision::Error(OxyError::RuntimeError("Max iterations reached".to_string()))
+                } else {
+                    Decision::Continue
+                }
+            }
+            IterationStrategy::RAR => {
+                if iterations > 0 {
+                    Decision::BreakInNextReasoning
+                } else {
+                    Decision::Continue
+                }
+            }
+            IterationStrategy::Once => {
+                if iterations > 0 {
+                    Decision::Break
+                } else {
+                    Decision::Continue
+                }
+            }
         }
     }
 }
 
-impl<E, A, RF, IF> Wrap<E> for ReasonActWrapper<A, RF, IF>
+impl<E, A> Wrap<E> for ReasonActWrapper<A>
 where
     A: Clone,
-    RF: Clone,
-    IF: Clone,
 {
-    type Wrapper = ReasonAct<A, E, RF, IF>;
+    type Wrapper = ReasonAct<A, E>;
 
-    fn wrap(&self, inner: E) -> ReasonAct<A, E, RF, IF> {
-        ReasonAct::new(
-            self.act.clone(),
-            inner,
-            self.response_fold.clone(),
-            self.input_fold.clone(),
-            self.max_iterations,
-        )
+    fn wrap(&self, inner: E) -> ReasonAct<A, E> {
+        ReasonAct::new(self.act.clone(), inner, self.strategy.clone())
     }
 }
 
-pub struct ReasonAct<A, E, RF, IF> {
+pub struct ReasonAct<A, E> {
     act: A,
     inner: E,
-    response_fold: RF,
-    input_fold: IF,
-    max_iterations: usize,
+    strategy: IterationStrategy,
 }
 
-impl<A, E, RF, IF> ReasonAct<A, E, RF, IF> {
-    pub fn new(act: A, inner: E, response_fold: RF, input_fold: IF, max_iterations: usize) -> Self {
+impl<A, E> ReasonAct<A, E> {
+    pub fn new(act: A, inner: E, strategy: IterationStrategy) -> Self {
         Self {
             act,
             inner,
-            response_fold,
-            input_fold,
-            max_iterations,
+            strategy,
         }
     }
 }
 
 #[async_trait::async_trait]
-impl<I, A, E, RF, IF> Executable<I> for ReasonAct<A, E, RF, IF>
+impl<I, A, E, R> Executable<I> for ReasonAct<A, E>
 where
     A: Executable<E::Response, Response = Option<I>> + Send,
-    E: Executable<I> + Send,
-    RF: Fn(&E::Response, Option<&E::Response>) -> E::Response + Send,
-    IF: Fn(&I, &I) -> I + Send,
+    E: Executable<I, Response = R> + Send,
     I: Clone + Send + 'static,
+    R: Clone + Send + 'static,
 {
-    type Response = E::Response;
+    type Response = Vec<E::Response>;
 
     async fn execute(
         &mut self,
         execution_context: &ExecutionContext,
         input: I,
     ) -> Result<Self::Response, OxyError> {
-        let origin_input = input.clone();
-        let response = self.inner.execute(execution_context, input).await?;
         let mut iterations = 0;
-        let mut final_response = (self.response_fold)(&response, None);
-        let mut current_response = response;
+        let mut final_response: Vec<R> = vec![];
+        let mut current_input = input;
 
         loop {
-            if iterations >= self.max_iterations {
-                Err(OxyError::RuntimeError("Max iterations reached".to_string()))?;
+            match self.strategy.should_break(iterations) {
+                Decision::Continue => {}
+                Decision::Break => {
+                    tracing::debug!("Breaking after {} iterations", iterations);
+                    break;
+                }
+                Decision::BreakInNextReasoning => {
+                    tracing::debug!("Breaking with reason after {} iterations", iterations);
+                    let response = self.inner.execute(execution_context, current_input).await?;
+                    final_response.push(response.clone());
+                    break;
+                }
+                Decision::Error(e) => {
+                    tracing::error!("Breaking React loop with Error: {}", e);
+                    return Err(e);
+                }
             }
-            let act_response = self
-                .act
-                .execute(execution_context, current_response)
-                .await?;
 
-            match act_response {
+            let response = self.inner.execute(execution_context, current_input).await?;
+            final_response.push(response.clone());
+
+            match self.act.execute(execution_context, response).await? {
                 Some(new_input) => {
-                    let current_input = (self.input_fold)(&origin_input, &new_input);
-                    let new_response = self.inner.execute(execution_context, current_input).await?;
-                    final_response = (self.response_fold)(&final_response, Some(&new_response));
-                    current_response = new_response;
+                    current_input = new_input;
                 }
                 None => break,
             }
             iterations += 1;
         }
-        tracing::debug!("Stopped after {} iterations", iterations);
         Ok(final_response)
     }
 }

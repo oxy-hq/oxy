@@ -108,11 +108,11 @@ where
         tracing::debug!(?event, "Received event");
         match event.source.kind.as_str() {
             WORKFLOW_SOURCE => match event.kind {
-                EventKind::Started { name } => {
+                EventKind::Started { name, .. } => {
                     self.logger
                         .log(&format!("\n\n⏳Running workflow: {}", name));
                 }
-                EventKind::Finished { message } => {
+                EventKind::Finished { message, .. } => {
                     self.logger.log(&message);
                 }
                 _ => {}
@@ -136,7 +136,7 @@ where
             },
             CONCURRENCY_SOURCE => {}
             _ => match event.kind {
-                EventKind::Started { name } => {
+                EventKind::Started { name, .. } => {
                     self.logger.log(&format!("\n⏳Starting {}", name));
                 }
                 EventKind::Updated { chunk } => match chunk.delta.clone() {

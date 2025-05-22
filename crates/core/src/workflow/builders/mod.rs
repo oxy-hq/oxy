@@ -142,6 +142,7 @@ impl WorkflowLauncher {
         execution_context
             .write_kind(EventKind::Started {
                 name: workflow_name,
+                attributes: Default::default(),
             })
             .await?;
         let handle = tokio::spawn(async move {
@@ -197,6 +198,7 @@ impl WorkflowLauncher {
         execution_context
             .write_kind(EventKind::Started {
                 name: "tasks".to_string(),
+                attributes: Default::default(),
             })
             .await?;
         let handle = tokio::spawn(async move {
