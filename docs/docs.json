@@ -27,7 +27,8 @@
                   "deployment/reverse-proxy",
                   "deployment/workspace-setup",
                   "deployment/environment",
-                  "deployment/authentication"
+                  "deployment/authentication",
+                  "deployment/docker"
                 ]
               },
               {

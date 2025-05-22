@@ -1,0 +1,317 @@
+---
+title: "Docker Deployment"
+description: "Deploying Oxy using Docker containers"
+sidebarTitle: "Docker Deployment"
+---
+
+# Deploying Oxy with Docker
+
+This guide explains how to deploy Oxy using Docker containers, providing an alternative to the traditional server-based deployment approach.
+
+<Note>
+  Using Docker simplifies the deployment process and environment setup, making it easier to run Oxy in a consistent environment across different platforms.
+</Note>
+
+## Prerequisites
+
+Before you start, ensure you have:
+
+- Docker installed on your host system
+- An Oxy workspace with your configuration files, agents, and workflows
+- Required API keys and environment variables for your deployment
+
+<Tip>
+  We recommend your Docker host machine have a minimum of 4GB RAM for optimal performance of Oxy and related services.
+</Tip>
+
+## Quick Start
+
+The fastest way to get started with Oxy on Docker is to use the pre-built image from GitHub Packages:
+
+```bash
+# Pull the latest Oxy Docker image
+docker pull ghcr.io/oxy-hq/oxy:latest
+
+# Run Oxy with a mounted workspace
+docker run -d \
+  --name oxy-instance \
+  -p 3000:3000 \
+  -v /path/to/your/workspace:/workspace \
+  -e OPENAI_API_KEY=your-api-key \
+  -e OXY_STATE_DIR=/data \
+  -v /path/to/persistent/data:/data \
+  ghcr.io/oxy-hq/oxy:latest
+```
+
+## Detailed Deployment Steps
+
+<Steps>
+  <Step title="Prepare Your Workspace">
+    Before deploying, ensure you have an Oxy workspace ready with your configuration files. Your workspace directory should typically include:
+    
+    - `config.yml` - Main configuration file
+    - Your agent definitions (`.agent.yml` files)
+    - Your workflow definitions (`.workflow.yml` files)
+    - Any other resources your agents and workflows need
+
+    ```bash
+    # Example workspace structure
+    workspace/
+    ├── config.yml
+    ├── my-agent.agent.yml
+    ├── my-workflow.workflow.yml
+    └── resources/
+        └── data.json
+    ```
+  </Step>
+
+  <Step title="Create a Docker Compose File">
+    For easier management, create a `docker-compose.yml` file:
+
+    ```yaml
+    version: '3'
+    services:
+      oxy:
+        image: ghcr.io/oxy-hq/oxy:latest
+        container_name: oxy-instance
+        ports:
+          - "3000:3000"
+        volumes:
+          - ./workspace:/workspace
+          - ./oxy-data:/data
+        environment:
+          - OPENAI_API_KEY=your-openai-api-key
+          - OXY_STATE_DIR=/data
+        restart: unless-stopped
+        command: ["oxy", "serve", "--host", "0.0.0.0", "--port", "3000"]
+    ```
+    
+    <Warning>
+      Replace `your-openai-api-key` with your actual OpenAI API key. For production deployments, consider using Docker secrets or environment files to avoid storing sensitive data in your compose file.
+    </Warning>
+  </Step>
+
+  <Step title="Start the Container">
+    Launch your Oxy container:
+
+    ```bash
+    docker-compose up -d
+    ```
+
+    This will start Oxy in detached mode, running in the background.
+  </Step>
+
+  <Step title="Configure Reverse Proxy (Optional)">
+    For production deployments, you'll want to add a reverse proxy to handle SSL termination and provide additional security.
+    
+    <Tabs>
+      <Tab title="Using Caddy in Docker">
+        Add Caddy to your docker-compose.yml:
+
+        ```yaml
+        version: '3'
+        services:
+          oxy:
+            # ...existing Oxy configuration...
+          
+          caddy:
+            image: caddy:2
+            container_name: caddy
+            ports:
+              - "80:80"
+              - "443:443"
+            volumes:
+              - ./Caddyfile:/etc/caddy/Caddyfile
+              - caddy_data:/data
+              - caddy_config:/config
+            restart: unless-stopped
+            depends_on:
+              - oxy
+
+        volumes:
+          caddy_data:
+          caddy_config:
+        ```
+
+        Create a `Caddyfile` in the same directory:
+
+        ```caddy
+        your-domain.com {
+          reverse_proxy oxy:3000
+        }
+        ```
+      </Tab>
+      <Tab title="Using Traefik">
+        Traefik offers a more Docker-native approach to reverse proxying:
+
+        ```yaml
+        version: '3'
+        services:
+          oxy:
+            # ...existing Oxy configuration...
+            labels:
+              - "traefik.enable=true"
+              - "traefik.http.routers.oxy.rule=Host(`your-domain.com`)"
+              - "traefik.http.routers.oxy.entrypoints=websecure"
+              - "traefik.http.routers.oxy.tls.certresolver=myresolver"
+          
+          traefik:
+            image: traefik:v2.9
+            container_name: traefik
+            ports:
+              - "80:80"
+              - "443:443"
+            volumes:
+              - "/var/run/docker.sock:/var/run/docker.sock:ro"
+              - "./traefik.yml:/etc/traefik/traefik.yml"
+              - "./acme.json:/acme.json"
+            restart: unless-stopped
+        ```
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="Set Up Authentication">
+    For securing your Oxy instance, you can add authentication at the reverse proxy level:
+
+    <Tabs>
+      <Tab title="Caddy Basic Auth">
+        Update your Caddyfile to include basic authentication:
+
+        ```caddy
+        your-domain.com {
+          basicauth {
+            <username> <hashed_password>
+          }
+          reverse_proxy oxy:3000
+        }
+        ```
+
+        Generate a password hash:
+
+        ```bash
+        docker run --rm caddy:2 caddy hash-password
+        # Enter your password when prompted
+        ```
+      </Tab>
+      <Tab title="OAuth2 Proxy Container">
+        Add an OAuth2 Proxy container to your docker-compose.yml:
+
+        ```yaml
+        oauth2-proxy:
+          image: quay.io/oauth2-proxy/oauth2-proxy:latest
+          container_name: oauth2-proxy
+          ports:
+            - "4180:4180"
+          environment:
+            - OAUTH2_PROXY_PROVIDER=google
+            - OAUTH2_PROXY_CLIENT_ID=your-client-id
+            - OAUTH2_PROXY_CLIENT_SECRET=your-client-secret
+            - OAUTH2_PROXY_COOKIE_SECRET=your-cookie-secret
+            - OAUTH2_PROXY_EMAIL_DOMAINS=*
+            - OAUTH2_PROXY_UPSTREAM=http://oxy:3000
+            - OAUTH2_PROXY_HTTP_ADDRESS=0.0.0.0:4180
+            - OAUTH2_PROXY_REDIRECT_URL=https://your-domain.com/oauth2/callback
+          restart: unless-stopped
+        ```
+
+        Then update your Caddyfile:
+
+        ```caddy
+        your-domain.com {
+          reverse_proxy /oauth2/* oauth2-proxy:4180
+          
+          route {
+            forward_auth oauth2-proxy:4180 {
+              uri /oauth2/auth
+            }
+            reverse_proxy oxy:3000
+          }
+        }
+        ```
+      </Tab>
+    </Tabs>
+  </Step>
+</Steps>
+
+## Volume Mounting Explained
+
+When running Oxy in Docker, you'll typically need to mount two types of directories:
+
+1. **Workspace Mount**: Maps your local Oxy workspace to the container
+   ```
+   -v /path/to/your/workspace:/workspace
+   ```
+   This allows Oxy to access your configuration, agents, and workflows.
+
+2. **Data Mount**: Provides persistent storage for Oxy's state
+   ```
+   -v /path/to/persistent/data:/data
+   ```
+   This ensures your data is preserved even if the container is restarted.
+
+## Environment Variables
+
+Common environment variables to configure in your Oxy container:
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `OPENAI_API_KEY` | Your OpenAI API key | `sk-...` |
+| `OXY_STATE_DIR` | Directory for Oxy state persistence | `/data` |
+| `DATABASE_URL` | Connection URL if using a database | `postgres://...` |
+| `PORT` | Override the default port | `8080` |
+
+## Advanced Configuration
+
+### Custom Docker Images
+
+If you need to extend the official Oxy image with additional dependencies or configuration, you can create your own Dockerfile:
+
+```dockerfile
+FROM ghcr.io/oxy-hq/oxy:latest
+
+# Add custom dependencies
+RUN apt-get update && apt-get install -y your-package
+
+# Add custom files
+COPY ./custom-config.yml /default-config.yml
+
+# Override the default command if needed
+CMD ["oxy", "serve", "--config", "/default-config.yml"]
+```
+
+### Health Checks
+
+Add health checks to ensure your container is running properly:
+
+```yaml
+services:
+  oxy:
+    # ...existing configuration...
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+```
+
+## Troubleshooting
+
+If you encounter issues with your Docker deployment:
+
+1. **Container not starting**: Check logs with `docker logs oxy-instance`
+2. **Permission issues**: Ensure your volume mounts have correct permissions
+3. **Networking problems**: Verify port mappings and network configurations
+4. **API key issues**: Confirm environment variables are correctly set
+
+## Next Steps
+
+Once your Docker deployment is up and running, you can:
+
+- Set up CI/CD pipelines to automatically update your Oxy instance
+- Implement monitoring and logging solutions
+- Configure backups for your persistent data
+- Scale horizontally for higher availability
+
+For more information on using Oxy, refer to the [main documentation](/welcome).

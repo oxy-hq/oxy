@@ -1,26 +1,41 @@
 ---
-title: "Deployment Guide"
+title: "Deploying Oxy on Cloud"
 description: "How to deploy Oxy on cloud environments"
 sidebarTitle: "Overview"
 ---
 
-# Deploying Oxy on Cloud
-
 This guide walks you through deploying Oxy on a cloud environment, from provisioning infrastructure to configuring authentication.
 
 <Note>
-  The product currently doesn’t include built-in authentication and requires some technical setup, especially to work with your own files and configuration. It’s best suited for teams comfortable with a bit of customization and who want flexibility in how they deploy and integrate with existing systems.
+  The product currently doesn't include built-in authentication and requires some technical setup, especially to work with your own files and configuration. It's best suited for teams comfortable with a bit of customization and who want flexibility in how they deploy and integrate with existing systems.
 
-  We’re working on improving automation and usability, and are happy to help with setup—feel free to reach out via Discord or any support channel.
+  We're working on improving automation and usability, and are happy to help with setup—feel free to reach out via Discord or any support channel.
 </Note>
+
+<Tip>
+  **Quick Start with Docker:** If you prefer a faster deployment option, you can use our [Docker deployment](/deployment/docker) method instead of the traditional setup. Docker provides a more streamlined experience with fewer manual steps.
+</Tip>
+
+## Deployment Paths
+
+There are two main approaches to deploying Oxy:
+
+1. **Traditional Linux Setup** - Follow the step-by-step guide below to provision a machine, install dependencies, and configure each component manually.
+2. **Docker Deployment** - Use our [Docker image](https://github.com/oxy-hq/oxy/pkgs/container/oxy) for a containerized deployment that simplifies setup and maintenance. See the [Docker deployment guide](/deployment/docker) for details.loyment Guide"
 
 ## Deployment Overview
 
 ```mermaid
 flowchart TD
-    A[Start Deployment] --> B[Create Machine\nEC2 / Google Compute]
+    A[Start Deployment] --> Z{Deployment Type?}
+    Z -->|Traditional| B[Create Machine\nEC2 / Google Compute]
+    Z -->|Docker| Docker[Deploy Docker Container]
     B --> C[Install Oxy CLI]
     C --> D[Set Up Reverse Proxy\nCaddy - Security & Performance]
+    Docker --> DockerV[Mount Volumes\nWorkspace & Data]
+    Docker --> DockerE[Configure Environment\nOpenAI API Key, etc.]
+    DockerV --> DockerR[Configure Reverse Proxy\nCaddy or Traefik]
+    DockerE --> DockerR
     D --> E[Set Up Oxy Workspace]
     E --> F{Using Git?}
     F -->|Yes| G[Configure Git & Clone Repository]
@@ -28,6 +43,7 @@ flowchart TD
     G --> I[Configure Environment\nCreate .env with secrets\nOpenAI API Key, etc.]
     H --> I
     I --> J{Authentication Required?}
+    DockerR --> J
     J -->|Yes| K[Set Up Authentication]
     J -->|No| L[Deployment Complete]
     K --> M{Auth Method?}
@@ -35,6 +51,27 @@ flowchart TD
     M -->|OAuth2| O[Configure OAuth2 Proxy]
     N --> L
     O --> L
+    
+    style A fill:#e1f5fe
+    style Z fill:#e1f5fe
+    style B fill:#fff3e0
+    style C fill:#fff8e1
+    style D fill:#e8f5e8
+    style Docker fill:#fff3e0
+    style DockerV fill:#f3e5f5
+    style DockerE fill:#fff3e0
+    style DockerR fill:#e8f5e8
+    style E fill:#f3e5f5
+    style F fill:#e3f2fd
+    style G fill:#e3f2fd
+    style H fill:#e3f2fd
+    style I fill:#fff3e0
+    style J fill:#e1f5fe
+    style K fill:#fce4ec
+    style M fill:#fce4ec
+    style N fill:#fce4ec
+    style O fill:#fce4ec
+    style L fill:#c8e6c9
 ```
 
 ## Deployment Steps
@@ -83,6 +120,13 @@ Follow these steps to deploy Oxy on your cloud environment:
     href="/deployment/authentication"
   >
     Configure authentication using Basic Auth or OAuth2
+  </Card>
+  <Card
+    title="Docker Deployment"
+    icon="docker"
+    href="/deployment/docker"
+  >
+    Deploy Oxy using Docker containers for simplified setup and management
   </Card>
 </CardGroup>
 
