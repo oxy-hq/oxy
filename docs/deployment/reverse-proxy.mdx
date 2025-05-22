@@ -63,7 +63,6 @@ A reverse proxy is essential for providing secure access to your Oxy deployment.
 
                 @error status 401
                 handle_response @error {
-                    # redir * /sign_in?rd={scheme}://{host}{uri}
                     redir * 
                 }
             }
