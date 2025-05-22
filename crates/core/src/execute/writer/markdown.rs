@@ -17,7 +17,7 @@ use super::OutputWriter;
 pub struct MarkdownWriter {
     task_queue: VecDeque<String>,
     artifact_queue: VecDeque<String>,
-    pub content: String,
+    content: String,
 }
 
 #[async_trait::async_trait]
@@ -102,6 +102,15 @@ impl OutputWriter<String> for MarkdownWriter {
                                 is_error: false,
                                 kind: event.source.kind.to_string(),
                             })
+                        })
+                    }
+                    Output::SQL(sql) => {
+                        let sql_display = format!("```\n{}\n```\n", sql);
+                        Some(EventFormat {
+                            content: sql_display,
+                            reference: None,
+                            is_error: false,
+                            kind: event.source.kind.to_string(),
                         })
                     }
                     _ => None,
