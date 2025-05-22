@@ -156,7 +156,12 @@ jobs:
       group: docker-publish-nightly
       cancel-in-progress: true
     runs-on: ubuntu-24.04-arm
-    needs: build-nightly
+    strategy:
+      fail-fast: false
+      matrix:
+        arch:
+          - linux/amd64
+          - linux/arm64
     permissions:
       packages: write
       contents: read
@@ -199,17 +204,45 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v5
+      - name: Build and push ${{ matrix.arch }} image
+        run: |
+          DATE_TAG=${{ steps.date.outputs.current_date }}
+          SHA_TAG=${{ steps.short_sha.outputs.short_sha }}
+          ARCH_TAG=$(echo "${{ matrix.arch }}" | awk -F'/' '{print $2}')
+          docker buildx build --platform ${{ matrix.arch }} \
+            -t ghcr.io/${{ github.repository_owner }}/oxy:nightly-$DATE_TAG-$ARCH_TAG \
+            -t ghcr.io/${{ github.repository_owner }}/oxy:nightly-$SHA_TAG-$ARCH_TAG \
+            -t ghcr.io/${{ github.repository_owner }}/oxy:nightly-latest-$ARCH_TAG \
+            --push .
+
+  create-and-push-nightly-manifest:
+    if: github.repository == 'oxy-hq/oxy'
+    needs: build-and-publish-docker
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
         with:
-          context: .
-          push: true
-          tags: |
-            ghcr.io/${{ github.repository_owner }}/oxy:nightly-${{ steps.date.outputs.current_date }}
-            ghcr.io/${{ github.repository_owner }}/oxy:nightly-${{ steps.short_sha.outputs.short_sha }}
-            ghcr.io/${{ github.repository_owner }}/oxy:nightly-latest
-          labels: |
-            org.opencontainers.image.created=${{ github.event.repository.updated_at }}
-            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.version=nightly-${{ steps.date.outputs.current_date }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Get current date
+        id: date
+        run: echo "current_date=$(date -u +'%Y%m%d')" >> $GITHUB_OUTPUT
+      - name: Get short SHA
+        id: short_sha
+        run: echo "short_sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+      - name: Create and push multi-arch manifest
+        run: |
+          docker manifest create ghcr.io/${{ github.repository_owner }}/oxy:nightly-${{ steps.date.outputs.current_date }} \
+            ghcr.io/${{ github.repository_owner }}/oxy:nightly-${{ steps.date.outputs.current_date }}-amd64 \
+            ghcr.io/${{ github.repository_owner }}/oxy:nightly-${{ steps.date.outputs.current_date }}-arm64
+          docker manifest push ghcr.io/${{ github.repository_owner }}/oxy:nightly-${{ steps.date.outputs.current_date }}
+          docker manifest create ghcr.io/${{ github.repository_owner }}/oxy:nightly-${{ steps.short_sha.outputs.short_sha }} \
+            ghcr.io/${{ github.repository_owner }}/oxy:nightly-${{ steps.short_sha.outputs.short_sha }}-amd64 \
+            ghcr.io/${{ github.repository_owner }}/oxy:nightly-${{ steps.short_sha.outputs.short_sha }}-arm64
+          docker manifest push ghcr.io/${{ github.repository_owner }}/oxy:nightly-${{ steps.short_sha.outputs.short_sha }}
+          docker manifest create ghcr.io/${{ github.repository_owner }}/oxy:nightly-latest \
+            ghcr.io/${{ github.repository_owner }}/oxy:nightly-latest-amd64 \
+            ghcr.io/${{ github.repository_owner }}/oxy:nightly-latest-arm64
+          docker manifest push ghcr.io/${{ github.repository_owner }}/oxy:nightly-latest
