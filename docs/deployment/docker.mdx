@@ -28,7 +28,7 @@ The fastest way to get started with Oxy on Docker is to use the pre-built image 
 
 ```bash
 # Pull the latest Oxy Docker image
-docker pull ghcr.io/oxy-hq/oxy:0.2.2
+docker pull ghcr.io/oxy-hq/oxy:0.2.3
 
 # Run Oxy with a mounted workspace
 docker run -d \
@@ -37,7 +37,7 @@ docker run -d \
   -v /path/to/your/workspace:/app \
   -e OPENAI_API_KEY=your-api-key \
   -e OXY_STATE_DIR=/app \
-  ghcr.io/oxy-hq/oxy:0.2.2
+  ghcr.io/oxy-hq/oxy:0.2.3
 ```
 
 ## Why Use Docker Compose?
@@ -106,7 +106,7 @@ flowchart TD
     version: '3'
     services:
       oxy:
-        image: ghcr.io/oxy-hq/oxy:0.2.2
+        image: ghcr.io/oxy-hq/oxy:0.2.3
         container_name: oxy-instance
         ports:
           - "3000:3000"
@@ -378,7 +378,7 @@ Oxy stores several types of data that need to be persisted:
 version: '3'
 services:
   oxy:
-    image: ghcr.io/oxy-hq/oxy:0.2.2
+    image: ghcr.io/oxy-hq/oxy:0.2.3
     container_name: oxy-instance
     ports:
       - "3000:3000"
@@ -423,7 +423,7 @@ Common environment variables to configure in your Oxy container:
 If you need to extend the official Oxy image with additional dependencies or configuration, you can create your own Dockerfile:
 
 ```dockerfile
-FROM ghcr.io/oxy-hq/oxy:0.2.2
+FROM ghcr.io/oxy-hq/oxy:0.2.3
 
 # Add custom dependencies
 RUN apt-get update && apt-get install -y your-package
