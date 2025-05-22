@@ -118,7 +118,7 @@ flowchart TD
           - OPENAI_API_KEY=your-openai-api-key
           - OXY_STATE_DIR=/data
         restart: unless-stopped
-        command: ["oxy", "serve", "--port", "3000"]
+        command: ["oxy", "serve", "--host", "0.0.0.0", "--port", "3000"]
     ```
     
     <Warning>
@@ -392,7 +392,7 @@ services:
       - OPENAI_API_KEY=your-openai-api-key
       - OXY_STATE_DIR=/data  # Points to the mounted volume
     restart: unless-stopped
-    command: ["oxy", "serve", "--port", "3000"]
+    command: ["oxy", "serve", "--host", "0.0.0.0", "--port", "3000"]
 ```
 
 <Warning>
@@ -416,6 +416,7 @@ Common environment variables to configure in your Oxy container:
 | `OPENAI_API_KEY` | Your OpenAI API key | `sk-...` |
 | `OXY_STATE_DIR` | Directory for Oxy state persistence | `/data` |
 | `DATABASE_URL` | Connection URL if using a database | `postgres://...` |
+| `PORT` | Override the default port | `8080` |
 
 ## Advanced Configuration
 
