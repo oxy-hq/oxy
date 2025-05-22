@@ -1,0 +1,507 @@
+---
+title: "Google Cloud Platform (GCP) Deployment"
+description: "Step-by-step guide for deploying Oxy on Google Cloud Platform"
+sidebarTitle: "GCP Deployment"
+---
+
+# Deploy Oxy on GCP
+
+This guide walks you through deploying Oxy on Google Cloud Platform using Compute Engine VM instances. We'll cover everything from setting up a virtual machine to configuring Oxy with proper data persistence and HTTPS access.
+
+<Note>
+  This is part of our [Hands-on Deployment Guides](/deployment/hands-on). For additional deployment options, see our [Docker Deployment Guide](/deployment/docker) or the [general deployment overview](/deployment/overview).
+</Note>
+
+## Prerequisites
+
+Before you begin, make sure you have:
+- A Google Cloud Platform account
+- A domain name (optional, but recommended for production deployments)
+- Basic familiarity with Linux command line
+
+## Getting a VM Instance
+
+Follow these steps to create a VM instance in Google Cloud Platform:
+
+<Steps>
+  <Step title="Access Google Cloud Console">
+    Go to the [Google Cloud Console](https://console.cloud.google.com/) and sign in with your account.
+  </Step>
+
+  <Step title="Create or Select a Project">
+    Select an existing project or create a new one using the project selector at the top of the page.
+  </Step>
+
+  <Step title="Navigate to Compute Engine">
+    From the navigation menu, select **Compute Engine** > **VM instances**.
+    
+    If this is your first time using Compute Engine, you might need to enable the API.
+  </Step>
+
+  <Step title="Create a VM Instance">
+    Click the **CREATE INSTANCE** button and configure your instance:
+    
+    - **Name**: Choose a name for your instance (e.g., `oxy-server`)
+    - **Region & Zone**: Select a region close to your users
+    - **Machine Configuration**: 
+      - For moderate workloads: `e2-standard-2` (2 vCPU, 8 GB memory)
+      - For larger workloads: `e2-standard-4` (4 vCPU, 16 GB memory)
+    - **Boot disk**: 
+      - Operating System: Debian or Ubuntu
+      - Version: Latest stable (e.g., Debian 12 or Ubuntu 22.04)
+      - Size: At least 50 GB (more if you plan to store large datasets)
+    - **Firewall**:
+      - Check "Allow HTTP traffic"
+      - Check "Allow HTTPS traffic"
+    
+    Click **Create** to provision your VM.
+  </Step>
+
+  <Step title="Note Your External IP">
+    Once your VM is ready, note the External IP address displayed in the VM instances list. You'll need this to connect to your instance and to configure your domain DNS settings if using a custom domain.
+  </Step>
+</Steps>
+
+## Pointing Your Domain to the VM (Optional)
+
+If you have a domain name you want to use for your Oxy deployment:
+
+<Steps>
+  <Step title="Access DNS Settings">
+    Go to your domain registrar's website (such as GoDaddy, Namecheap, or Google Domains) and navigate to the DNS settings for your domain.
+  </Step>
+
+  <Step title="Add DNS Records">
+    Add the following DNS records:
+    
+    - **A Record**:
+      - Host/Name: `@` (represents the root domain)
+      - Value/Points to: Your VM's External IP address
+      - TTL: 3600 (or as recommended by your registrar)
+    
+    - **A Record** for www subdomain:
+      - Host/Name: `www`
+      - Value/Points to: Your VM's External IP address
+      - TTL: 3600 (or as recommended by your registrar)
+  </Step>
+
+  <Step title="Wait for DNS Propagation">
+    DNS changes can take from a few minutes to several hours to propagate. You can check the status using online tools like [whatsmydns.net](https://www.whatsmydns.net/).
+  </Step>
+</Steps>
+
+## Setting Up the VM
+
+Connect to your VM instance and prepare it for Oxy deployment:
+
+<Steps>
+  <Step title="Connect to Your VM">
+    You can connect directly from the Google Cloud Console by clicking the "SSH" button next to your instance, or use a terminal:
+    
+    ```bash
+    # If using gcloud CLI
+    gcloud compute ssh --project=YOUR_PROJECT_ID --zone=YOUR_ZONE oxy-server
+    
+    # Or using standard SSH if you've set up SSH keys
+    ssh username@EXTERNAL_IP
+    ```
+  </Step>
+
+  <Step title="Update System Packages">
+    ```bash
+    sudo apt update && sudo apt upgrade -y
+    ```
+  </Step>
+
+  <Step title="Install Essential Packages">
+    ```bash
+    sudo apt install -y curl wget git unzip jq nano
+    ```
+  </Step>
+</Steps>
+
+## Installing Docker and Docker Compose
+
+Oxy can be easily deployed using Docker, so let's install Docker and Docker Compose:
+
+<Steps>
+  <Step title="Install Docker">
+    For Debian/Ubuntu:
+    
+    ```bash
+    sudo apt update
+    sudo apt install -y ca-certificates curl gnupg
+
+    sudo install -m 0755 -d /etc/apt/keyrings
+    curl -fsSL https://download.docker.com/linux/debian/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+    sudo chmod a+r /etc/apt/keyrings/docker.gpg
+    
+    # For Debian
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+    
+    # For Ubuntu
+    # echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+    
+    sudo apt update
+    sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+    ```
+  </Step>
+
+  <Step title="Verify Docker Installation">
+    ```bash
+    sudo docker --version
+    sudo docker compose version
+    ```
+  </Step>
+
+  <Step title="Add Your User to the Docker Group">
+    This allows you to run Docker commands without sudo:
+    
+    ```bash
+    sudo usermod -aG docker ${USER}
+    # Log out and log back in for the changes to take effect
+    exit
+    # Re-connect to your VM
+    ```
+  </Step>
+</Steps>
+
+## Setting Up Oxy
+
+Now, let's set up Oxy using Docker:
+
+<Steps>
+  <Step title="Create Deployment Directory">
+    ```bash
+    mkdir -p ~/oxy-deployment
+    cd ~/oxy-deployment
+    ```
+  </Step>
+
+  <Step title="Create a Docker Compose File">
+    ```bash
+    nano docker-compose.yml
+    ```
+    
+    Add the following content to the file:
+    
+    ```yaml
+    version: '3'
+    services:
+      oxy:
+        image: ghcr.io/oxy-hq/oxy:0.2.2
+        container_name: oxy-instance
+        ports:
+          - "3000:3000"
+        working_dir: /workspace
+        volumes:
+          - ./workspace:/workspace
+          - ./oxy-data:/data
+        environment:
+          - OPENAI_API_KEY=your-openai-api-key
+          - OXY_STATE_DIR=/data
+        restart: unless-stopped
+        command: ["oxy", "serve", "--host", "0.0.0.0", "--port", "3000"]
+      
+      caddy:
+        image: caddy:2.10.0
+        container_name: caddy
+        ports:
+          - "80:80"
+          - "443:443"
+        volumes:
+          - ./Caddyfile:/etc/caddy/Caddyfile
+          - caddy_data:/data
+          - caddy_config:/config
+        restart: unless-stopped
+        depends_on:
+          - oxy
+
+    volumes:
+      caddy_data:
+      caddy_config:
+    ```
+    
+    Save and exit (Ctrl+X, then Y, then Enter).
+  </Step>
+
+  <Step title="Create Workspace Directory">
+    ```bash
+    mkdir -p ~/oxy-deployment/workspace
+    cd ~/oxy-deployment/workspace
+    ```
+  </Step>
+
+  <Step title="Create Basic Configuration">
+    ```bash
+    nano config.yml
+    ```
+    
+    Add basic configuration:
+    
+    ```yaml
+    # Basic Oxy Configuration
+    agent_directory: "agents"
+    workflow_directory: "workflows"
+    
+    # Add your database configurations here if needed
+    databases: []
+    ```
+    
+    Save and exit.
+  </Step>
+
+  <Step title="Create Caddyfile">
+    ```bash
+    cd ~/oxy-deployment
+    nano Caddyfile
+    ```
+    
+    If you have a domain name:
+    
+    ```caddy
+    (reverse_proxy_app) {
+        reverse_proxy oxy:3000 {
+            flush_interval -1
+            transport http {
+                versions 1.1 2 h2c
+            }
+        }
+    }
+
+    yourdomain.com {
+        import reverse_proxy_app
+    }
+    www.yourdomain.com {
+        import reverse_proxy_app
+    }
+    ```
+    
+    If you don't have a domain name and want to use the IP address:
+    
+    ```caddy
+    (reverse_proxy_app) {
+        reverse_proxy oxy:3000 {
+            flush_interval -1
+            transport http {
+                versions 1.1 2 h2c
+            }
+        }
+    }
+
+    http:// {
+        import reverse_proxy_app
+    }
+    ```
+    
+    Replace `yourdomain.com` with your actual domain name.
+    
+    Save and exit.
+  </Step>
+
+  <Step title="Create Data Directory">
+    ```bash
+    mkdir -p ~/oxy-deployment/oxy-data
+    ```
+    
+    This directory will store all persistent data for Oxy, including the SQLite database files.
+  </Step>
+
+  <Step title="Update Environment Variables">
+    Edit the docker-compose.yml file to update environment variables:
+    
+    ```bash
+    nano docker-compose.yml
+    ```
+    
+    Replace `your-openai-api-key` with your actual OpenAI API key.
+    
+    If you need additional environment variables (for database connections, etc.), add them here.
+    
+    Save and exit.
+  </Step>
+</Steps>
+
+## Starting Oxy
+
+<Steps>
+  <Step title="Start the Services">
+    ```bash
+    cd ~/oxy-deployment
+    docker compose up -d
+    ```
+    
+    This will start the Oxy and Caddy containers in the background.
+  </Step>
+
+  <Step title="Verify Services">
+    ```bash
+    docker ps
+    ```
+    
+    You should see both containers running.
+  </Step>
+
+  <Step title="Check Logs">
+    ```bash
+    # View Oxy logs
+    docker logs oxy-instance
+    
+    # View Caddy logs
+    docker logs caddy
+    ```
+  </Step>
+</Steps>
+
+## Configuring Authentication (Optional)
+
+For production deployments, you should add authentication to secure your Oxy instance:
+
+<Steps>
+  <Step title="Basic Authentication">
+    Edit your Caddyfile to add basic authentication:
+    
+    ```bash
+    cd ~/oxy-deployment
+    nano Caddyfile
+    ```
+    
+    Update your Caddyfile:
+    
+    ```caddy
+    (reverse_proxy_app) {
+        reverse_proxy oxy:3000 {
+            flush_interval -1
+            transport http {
+                versions 1.1 2 h2c
+            }
+        }
+    }
+
+    yourdomain.com {
+        basicauth {
+            username JDJhJDEwJEVCNmdaNEg0RHpzWjdGUGdKSG1TN09xQWdQVzlzd0ZJdUpRdzNqQ0hrd1NSdXlKTEpZQXpx
+        }
+        import reverse_proxy_app
+    }
+    ```
+    
+    To generate the password hash:
+    
+    ```bash
+    docker run --rm caddy:2 caddy hash-password
+    # Enter your password when prompted
+    ```
+    
+    Copy the resulting hash into your Caddyfile.
+    
+    Save, exit, and reload Caddy:
+    
+    ```bash
+    docker compose restart caddy
+    ```
+  </Step>
+</Steps>
+
+## Data Persistence
+
+It's important to understand how Oxy handles data persistence:
+
+- Oxy uses SQLite for its internal database by default
+- All data is stored in the directory specified by `OXY_STATE_DIR` (configured as `/data` in the container)
+- This directory is mounted to `./oxy-data` on your host
+
+<Note>
+  For production deployments, consider backing up the oxy-data directory regularly. You can set up automated backups to Google Cloud Storage using gsutil or use a persistent disk for enhanced reliability.
+</Note>
+
+## Managing Your Deployment
+
+<Steps>
+  <Step title="Stopping the Services">
+    ```bash
+    cd ~/oxy-deployment
+    docker compose down
+    ```
+  </Step>
+
+  <Step title="Updating Oxy">
+    ```bash
+    # Pull the latest version
+    docker compose pull
+    
+    # Restart with the new version
+    docker compose up -d
+    ```
+  </Step>
+
+  <Step title="Backup Data">
+    ```bash
+    # Create a backup of your Oxy data
+    cd ~/oxy-deployment
+    tar -czf oxy-backup-$(date +%Y%m%d).tar.gz oxy-data/
+    
+    # Optional: Upload to Google Cloud Storage
+    gsutil cp oxy-backup-*.tar.gz gs://your-bucket-name/
+    ```
+    
+    You'll need the `gcloud` CLI installed and authenticated for the last command.
+  </Step>
+</Steps>
+
+## Scaling on GCP
+
+As your usage grows, you may need to scale your deployment:
+
+### Vertical Scaling
+
+1. Stop your VM from the GCP Console
+2. Edit the VM configuration to increase CPU and memory
+3. Start the VM again
+4. Reconnect and start your Oxy services
+
+### Storage Scaling
+
+1. For larger data needs, consider attaching a Persistent Disk:
+   ```bash
+   # Create a new persistent disk in GCP Console
+   # Then attach and mount it:
+   sudo mkdir -p /mnt/oxy-data
+   sudo mount -o discard,defaults /dev/disk/by-id/google-[DISK_NAME] /mnt/oxy-data
+   sudo chown -R $(whoami):$(whoami) /mnt/oxy-data
+   
+   # Copy existing data
+   cp -r ~/oxy-deployment/oxy-data/* /mnt/oxy-data/
+   
+   # Update docker-compose.yml to mount the new location
+   # Change the volume mapping to:
+   # - /mnt/oxy-data:/data
+   ```
+
+## Troubleshooting
+
+**Issue: Cannot access Oxy through the domain or IP**
+- Check that ports 80 and 443 are open in your GCP firewall rules
+- Verify DNS settings if using a domain name
+- Check Caddy logs: `docker logs caddy`
+
+**Issue: Caddy cannot obtain SSL certificate**
+- Ensure your domain is correctly pointing to your VM's IP address
+- Check if your domain registrar supports CAA records and adjust if needed
+
+**Issue: Data not persisting after container restart**
+- Verify volume mounting in the docker-compose.yml file
+- Check file permissions on the host volume directory
+
+For further help, join our community on [Discord](https://discord.gg/m677N4EcRK).
+
+## Next Steps
+
+Once your GCP deployment is running:
+
+1. Configure agents and workflows in your workspace
+2. Set up regular backups for your data
+3. Consider implementing a CI/CD pipeline for deploying configuration updates
+4. Monitor your VM's resource usage and scale as needed
+
+For more information on using Oxy, refer to the [main documentation](/welcome).

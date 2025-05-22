@@ -18,10 +18,12 @@ This guide walks you through deploying Oxy on a cloud environment, from provisio
 
 ## Deployment Paths
 
-There are two main approaches to deploying Oxy:
+There are several approaches to deploying Oxy:
 
 1. **Traditional Linux Setup** - Follow the step-by-step guide below to provision a machine, install dependencies, and configure each component manually.
 2. **Docker Deployment** - Use our [Docker image](https://github.com/oxy-hq/oxy/pkgs/container/oxy) for a containerized deployment that simplifies setup and maintenance. See the [Docker deployment guide](/deployment/docker) for details.
+3. **Hands-on Guides** - For practical, ready-to-use deployment recipes, check our [hands-on guides](/deployment/hands-on) section which includes:
+   - **Google Cloud Platform (GCP)** - Deploy Oxy on Google Cloud using our dedicated [GCP deployment guide](/deployment/gcp).
 
 ## Deployment Overview
 
@@ -31,6 +33,9 @@ flowchart TD
   Choice{Deployment Type?}
   Traditional[Traditional: Create Machine\nEC2/Google Compute]
   Docker[Docker: Deploy Docker Container]
+  HandsOn[Hands-on: Follow Practical\nGuided Walkthroughs]
+  HandsOnOptions{Hands-on Option?}
+  GCP[GCP: Deploy on Google Cloud Platform]
   Install[Install Oxy CLI]
   Workspace[Set Up Oxy Workspace]
   GitChoice{Using Git?}
@@ -49,6 +54,9 @@ flowchart TD
   Start --> Choice
   Choice -->|Traditional| Traditional
   Choice -->|Docker| Docker
+  Choice -->|Hands-on| HandsOn
+  HandsOn --> HandsOnOptions
+  HandsOnOptions -->|GCP| GCP --> Done
   Traditional --> Install --> Workspace --> GitChoice
   GitChoice -->|Yes| Git --> Env
   GitChoice -->|No| Manual --> Env
@@ -155,12 +163,23 @@ Follow these steps to deploy Oxy on your cloud environment:
   >
     Deploy Oxy using Docker containers for simplified setup and management
   </Card>
+  <Card
+    title="GCP Deployment"
+    icon="cloud"
+    href="/deployment/gcp"
+  >
+    Step-by-step guide for deploying Oxy on Google Cloud Platform
+  </Card>
 </CardGroup>
 
 ## Troubleshooting
 <Note>
 For further help or to ask questions, join our community on [Discord](https://discord.gg/m677N4EcRK).
 </Note>
+
+<Tip>
+  Looking for quick, copy-paste deployment recipes? Check out our [Hands-on Deployment Guides](/deployment/hands-on) that provide step-by-step instructions for common deployment scenarios.
+</Tip>
 
 ## Quick One-Time Script
 
