@@ -127,8 +127,9 @@ Follow these steps to deploy Oxy on your cloud environment:
 </CardGroup>
 
 ## Troubleshooting
-
-For troubleshooting and advanced configuration, see our [support forum](https://github.com/oxy-hq/oxy/discussions) or contact the Oxy team.
+<Note>
+For further help or to ask questions, join our community on [Discord](https://discord.gg/m677N4EcRK).
+</Note>
 
 ## Quick One-Time Script
 
@@ -208,14 +209,13 @@ cd ${WORKSPACE_DIR}
 if [ "$USE_GIT" = true ]; then
     # Set up SSH for Git
     if [ ! -f ~/.ssh/id_ed25519 ]; then
-        ssh-keygen -t ed25519 -C "your-email@example.com" -f ~/.ssh/id_ed25519 -N ""
+        ssh-keygen -t ed25519 -C "$EMAIL" -f ~/.ssh/id_ed25519 -N ""
         ssh-keyscan -t rsa github.com >> ~/.ssh/known_hosts
         echo "Add this SSH key to your Git provider:"
         cat ~/.ssh/id_ed25519.pub
         echo "Press Enter when done..."
         read
     fi
-    
     # Clone repository
     git clone ${GIT_REPO} .
 else
@@ -237,32 +237,14 @@ curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --d
 curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
 sudo apt update -y
 sudo apt install -y caddy
-        echo "Press Enter when done..."
-        read
-    fi
-    
-    # Clone repository
-    git clone ${GIT_REPO} .
-else
-    echo "Manual workspace setup. Place your files in ${WORKSPACE_DIR}"
-    touch config.yml
-    echo "basic: true" > config.yml
-fi
 
-# ===== STEP 5: Configure Environment =====
-echo "===== 5. Setting up environment ====="
-touch .env
-chmod 600 .env
-echo "OPENAI_API_KEY=${OPENAI_API_KEY}" > .env
-
-# ===== STEP 6: Configure Authentication ====="
+# ===== STEP 6: Configure Authentication =====
 echo "===== 6. Setting up authentication ====="
 
 if [ "$USE_AUTH" = true ]; then
     if [ "$AUTH_METHOD" = "basic" ]; then
         # Generate password hash
         PASSWORD_HASH=$(caddy hash-password --plaintext ${AUTH_PASSWORD})
-        
         # Create Caddyfile with basic auth
         cat <<EOF | sudo tee /etc/caddy/Caddyfile
 ${DOMAIN_NAME} {
@@ -278,10 +260,9 @@ EOF
         ARCH="linux-arm64"
         wget "https://github.com/oauth2-proxy/oauth2-proxy/releases/download/${OAUTH2_PROXY_VERSION}/oauth2-proxy-${OAUTH2_PROXY_VERSION}.${ARCH}.tar.gz"
         tar -xzf "oauth2-proxy-${OAUTH2_PROXY_VERSION}.${ARCH}.tar.gz"
-        sudo mv "oauth2-proxy-${OAUTH2_PROXY_VERSION}.${ARCH}/oauth2-proxy" /usr/local/bin/
+        sudo mv "oauth2-proxy-${OAUTH2_PROXY_VERSION}.${ARCH}/oauth2-proxy" /usr/local/bin/oauth2-proxy
         sudo chmod +x /usr/local/bin/oauth2-proxy
         rm -rf "oauth2-proxy-${OAUTH2_PROXY_VERSION}.${ARCH}"*
-        
         echo "OAuth2 setup requires manual configuration. Follow the documentation for detailed steps."
     fi
 else
@@ -307,11 +288,12 @@ echo "Remember to update configuration variables in .env and restart the service
 ```
 
 <Warning>
-  This script is provided as a starting point and may need adjustments for your specific environment. Always review scripts before running them on your server.
+  This script is provided as a starting point and may need adjustments for your specific environment. Always review scripts before running them on your server.o "Your Oxy instance should now be available at: https://$\{DOMAIN_NAME\}"
+  echo "Remember to update configuration variables in .env and restart the service if needed."
 </Warning>
 
 To use the script:
 1. Save it to a file (e.g., `deploy-oxy.sh`)
-2. Make it executable: `chmod +x deploy-oxy.sh`
+2. Make it executable: `chmod +x deploy-oxy.sh`  This script is provided as a starting point and may need adjustments for your specific environment. Always review scripts before running them on your server.
 3. Edit the configuration variables at the beginning of the script
 4. Run the script: `./deploy-oxy.sh`
