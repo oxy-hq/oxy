@@ -27,47 +27,57 @@ There are two main approaches to deploying Oxy:
 
 ```mermaid
 flowchart TD
-    A[Start Deployment] --> Z{Deployment Type?}
-    Z -->|Traditional| B[Create Machine\nEC2 / Google Compute]
-    Z -->|Docker| Docker[Deploy Docker Container]
-    B --> C[Install Oxy CLI]
-    C --> E[Set Up Oxy Workspace]
-    E --> F{Using Git?}
-    F -->|Yes| G[Configure Git & Clone Repository]
-    F -->|No| H[Manual Setup]
-    G --> I[Configure Environment\nCreate .env with secrets\nOpenAI API Key, etc.]
-    H --> I
-    I --> D[Set Up Reverse Proxy\nCaddy - Security & Performance]
-    Docker --> DockerV[Mount Volumes\nWorkspace & Data]
-    Docker --> DockerE[Configure Environment\nOpenAI API Key, etc.]
-    DockerE --> DockerR[Configure Reverse Proxy\nCaddy or Traefik]
-    DockerV --> DockerE
-    D --> J{Authentication Required?}
-    DockerR --> J
-    J -->|Yes| K[Set Up Authentication]
-    J -->|No| L[Deployment Complete]
-    K --> M{Auth Method?}
-    M -->|Basic| N[Configure Basic Auth]
-    M -->|OAuth2| O[Configure OAuth2 Proxy]
-    N --> L
-    O --> L
+  Start[Start Deployment]
+  Choice{Deployment Type?}
+  Traditional[Traditional: Create Machine\nEC2/Google Compute]
+  Docker[Docker: Deploy Docker Container]
+  Install[Install Oxy CLI]
+  Workspace[Set Up Oxy Workspace]
+  GitChoice{Using Git?}
+  Git[Configure Git & Clone Repository]
+  Manual[Manual Setup]
+  Env[Configure Environment\n.env, API Key, etc.]
+  Volumes[Mount Volumes\nWorkspace & Data]
+  Proxy[Configure Reverse Proxy\nCaddy]
+  AuthChoice{Authentication Required?}
+  Auth[Set Up Authentication]
+  AuthMethod{Auth Method?}
+  Basic[Configure Basic Auth]
+  OAuth2[Configure OAuth2 Proxy]
+  Done[Deployment Complete]
 
+  Start --> Choice
+  Choice -->|Traditional| Traditional
+  Choice -->|Docker| Docker
+  Traditional --> Install --> Workspace --> GitChoice
+  GitChoice -->|Yes| Git --> Env
+  GitChoice -->|No| Manual --> Env
+  Docker --> Volumes --> Env
+  Env --> Proxy
+  Proxy --> AuthChoice
+  AuthChoice -->|Yes| Auth --> AuthMethod
+  AuthChoice -->|No| Done
+  AuthMethod -->|Basic| Basic --> Done
+  AuthMethod -->|OAuth2| OAuth2 --> Done
 ```
 
-## Reference Architecture Diagram
+## Deployment Request Flow Diagram
 
 ```mermaid
 flowchart TD
-  User[User/Browser]
-  ReverseProxy("Caddy (Reverse Proxy, optional)")
-  OxyServer("Oxy Server (Bare Metal/VM)")
-  Workspace("Oxy Workspace on Disk")
-  Data("Persistent Data on Disk")
+    User[User/Browser]
+    ReverseProxy["Caddy<br/>(Reverse Proxy, optional)"]
+    OxyServer[Oxy Server]
+    OAuth2[OAuth2 Provider]
+    Workspace[Oxy Workspace]
+    Data[Persistent Data]
 
-  User -- HTTPS --> ReverseProxy
-  ReverseProxy -- HTTP/HTTPS --> OxyServer
-  OxyServer -- Reads/Writes --> Workspace
-  OxyServer -- Reads/Writes --> Data
+    User -->|Web Request| ReverseProxy
+    ReverseProxy -->|Proxy Request| OxyServer
+    OxyServer -->|Authentication| OAuth2
+    OAuth2 -->|Token/Claims| OxyServer
+    OxyServer -->|Workspace Access| Workspace
+    OxyServer -->|Data Access| Data
 ```
 
 ## Deployment Steps
