@@ -51,27 +51,23 @@ flowchart TD
     M -->|OAuth2| O[Configure OAuth2 Proxy]
     N --> L
     O --> L
-    
-    style A fill:#e1f5fe
-    style Z fill:#e1f5fe
-    style B fill:#fff3e0
-    style C fill:#fff8e1
-    style D fill:#e8f5e8
-    style Docker fill:#fff3e0
-    style DockerV fill:#f3e5f5
-    style DockerE fill:#fff3e0
-    style DockerR fill:#e8f5e8
-    style E fill:#f3e5f5
-    style F fill:#e3f2fd
-    style G fill:#e3f2fd
-    style H fill:#e3f2fd
-    style I fill:#fff3e0
-    style J fill:#e1f5fe
-    style K fill:#fce4ec
-    style M fill:#fce4ec
-    style N fill:#fce4ec
-    style O fill:#fce4ec
-    style L fill:#c8e6c9
+
+```
+
+## Reference Architecture Diagram
+
+```mermaid
+flowchart TD
+  User[User/Browser]
+  ReverseProxy("Caddy (Reverse Proxy, optional)")
+  OxyServer("Oxy Server (Bare Metal/VM)")
+  Workspace("Oxy Workspace on Disk")
+  Data("Persistent Data on Disk")
+
+  User -- HTTPS --> ReverseProxy
+  ReverseProxy -- HTTP/HTTPS --> OxyServer
+  OxyServer -- Reads/Writes --> Workspace
+  OxyServer -- Reads/Writes --> Data
 ```
 
 ## Deployment Steps
