@@ -155,13 +155,11 @@ jobs:
     concurrency:
       group: docker-publish-nightly-${{ matrix.arch }}
       cancel-in-progress: true
-    runs-on: ubuntu-24.04-arm
+    runs-on: ${{ matrix.arch == 'linux/amd64' && 'ubuntu-latest' || 'ubuntu-24.04-arm' }}
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
-        arch:
-          - linux/amd64
-          - linux/arm64
+        arch: [linux/amd64, linux/arm64]
     permissions:
       packages: write
       contents: read
@@ -201,19 +199,17 @@ jobs:
         id: short_sha
         run: echo "short_sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
       - name: Build and push ${{ matrix.arch }} image
         run: |
           DATE_TAG=${{ steps.date.outputs.current_date }}
           SHA_TAG=${{ steps.short_sha.outputs.short_sha }}
           ARCH_TAG=$(echo "${{ matrix.arch }}" | awk -F'/' '{print $2}')
-          docker buildx build --platform ${{ matrix.arch }} \
-            -t ghcr.io/${{ github.repository_owner }}/oxy:nightly-$DATE_TAG-$ARCH_TAG \
-            -t ghcr.io/${{ github.repository_owner }}/oxy:nightly-$SHA_TAG-$ARCH_TAG \
-            -t ghcr.io/${{ github.repository_owner }}/oxy:nightly-latest-$ARCH_TAG \
-            --push .
+          docker build -t ghcr.io/${{ github.repository_owner }}/oxy:nightly-$DATE_TAG-$ARCH_TAG .
+          docker push ghcr.io/${{ github.repository_owner }}/oxy:nightly-$DATE_TAG-$ARCH_TAG
+          docker build -t ghcr.io/${{ github.repository_owner }}/oxy:nightly-$SHA_TAG-$ARCH_TAG .
+          docker push ghcr.io/${{ github.repository_owner }}/oxy:nightly-$SHA_TAG-$ARCH_TAG
+          docker build -t ghcr.io/${{ github.repository_owner }}/oxy:nightly-latest-$ARCH_TAG .
+          docker push ghcr.io/${{ github.repository_owner }}/oxy:nightly-latest-$ARCH_TAG
 
   create-and-push-nightly-manifest:
     if: github.repository == 'oxy-hq/oxy'

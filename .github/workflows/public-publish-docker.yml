@@ -19,18 +19,16 @@ jobs:
     concurrency:
       group: docker-publish-${{ github.ref_name }}-${{ matrix.arch }}
       cancel-in-progress: true
-    runs-on: ubuntu-24.04-arm
+    strategy:
+      fail-fast: true
+      matrix:
+        arch: [linux/amd64, linux/arm64]
+    runs-on: ${{ matrix.arch == 'linux/amd64' && 'ubuntu-latest' || 'ubuntu-24.04-arm' }}
     permissions:
       packages: write
       contents: read
       attestations: write
       id-token: write
-    strategy:
-      fail-fast: true
-      matrix:
-        arch:
-          - linux/amd64
-          - linux/arm64
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -51,13 +49,11 @@ jobs:
           TAG_NAME="${{ inputs.tag || github.ref_name }}"
           echo "tag=$TAG_NAME" >> $GITHUB_OUTPUT
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
       - name: Build and push ${{ matrix.arch }} image
         run: |
           ARCH_TAG=$(echo "${{ matrix.arch }}" | awk -F'/' '{print $2}')
-          docker buildx build --platform ${{ matrix.arch }} -t ghcr.io/${{ github.repository_owner }}/oxy:${{ steps.docker_tag.outputs.tag }}-$ARCH_TAG --push .
+          docker build -t ghcr.io/${{ github.repository_owner }}/oxy:${{ steps.docker_tag.outputs.tag }}-$ARCH_TAG .
+          docker push ghcr.io/${{ github.repository_owner }}/oxy:${{ steps.docker_tag.outputs.tag }}-$ARCH_TAG
 
   create-and-push-manifest:
     if: github.repository == 'oxy-hq/oxy'
