@@ -16,6 +16,7 @@ defaults:
 permissions:
   contents: write
   actions: read
+  packages: write
 
 jobs:
   build-nightly:
@@ -148,3 +149,67 @@ jobs:
             Commit: [${{ github.sha }}](https://github.com/${{ github.repository }}/commit/${{ github.sha }})
             To install the latest release:
             `bash <(curl --proto '=https' --tlsv1.2 -LsSf https://nightly.oxy.tech)`
+
+  build-and-publish-docker:
+    if: github.repository == 'oxy-hq/oxy'
+    concurrency:
+      group: docker-publish-nightly
+      cancel-in-progress: true
+    runs-on: ubuntu-24.04-arm
+    needs: build-nightly
+    permissions:
+      packages: write
+      contents: read
+      attestations: write
+      id-token: write
+    steps:
+      - uses: actions/create-github-app-token@v2
+        name: Create GitHub App Token
+        id: app-token
+        with:
+          app-id: ${{ vars.ARGO_APP_ID }}
+          private-key: ${{ secrets.ARGO_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: |
+            oxy
+            oxy-internal
+            oxy-nightly
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get current date
+        id: date
+        run: echo "current_date=$(date -u +'%Y%m%d')" >> $GITHUB_OUTPUT
+
+      - name: Get short SHA
+        id: short_sha
+        run: echo "short_sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/oxy:nightly-${{ steps.date.outputs.current_date }}
+            ghcr.io/${{ github.repository_owner }}/oxy:nightly-${{ steps.short_sha.outputs.short_sha }}
+            ghcr.io/${{ github.repository_owner }}/oxy:nightly-latest
+          labels: |
+            org.opencontainers.image.created=${{ github.event.repository.updated_at }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=nightly-${{ steps.date.outputs.current_date }}
