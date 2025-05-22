@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.2.3](https://github.com/oxy-hq/oxy-internal/compare/0.2.2...0.2.3) (2025-05-22)
+
+
+### <!-- 0 -->🚀 Features
+
+* add skipped files and overwritten files tracking & add docs and test for oxy sync ([#808](https://github.com/oxy-hq/oxy-internal/issues/808)) ([5f075f2](https://github.com/oxy-hq/oxy-internal/commit/5f075f21a829a81f3ff583052e2b22eb6af93a92))
+* hide data app ([#800](https://github.com/oxy-hq/oxy-internal/issues/800)) ([3cb0938](https://github.com/oxy-hq/oxy-internal/commit/3cb0938bd9d10f7e3a0cf6bdd2ca8f3ffd198fb5))
+* implement synthesize step for routing agent ([#814](https://github.com/oxy-hq/oxy-internal/issues/814)) ([01dd577](https://github.com/oxy-hq/oxy-internal/commit/01dd577b0379faa5a48dfdfb3c0c245b1b07a56d))
+* save query to workflow ([#809](https://github.com/oxy-hq/oxy-internal/issues/809)) ([676dd54](https://github.com/oxy-hq/oxy-internal/commit/676dd54669d24db27716d6512e5dd67d1405b322))
+* unify all into thread ([#802](https://github.com/oxy-hq/oxy-internal/issues/802)) ([26d59be](https://github.com/oxy-hq/oxy-internal/commit/26d59beab9321d3c33cb01c39706b9fd9a455d11))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* sql type not return in thread ([#817](https://github.com/oxy-hq/oxy-internal/issues/817)) ([9b63e9c](https://github.com/oxy-hq/oxy-internal/commit/9b63e9c7ae2448756c06a34dfff134bd3f07479d))
+
 ## [0.2.2](https://github.com/oxy-hq/oxy-internal/compare/0.2.1...0.2.2) (2025-05-19)
 
 

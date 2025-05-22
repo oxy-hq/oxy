@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.2](https://github.com/oxy-hq/oxy-internal/compare/0.2.1...0.2.2) (2025-05-22)
+
+
+### <!-- 0 -->🚀 Features
+
+* add skipped files and overwritten files tracking & add docs and test for oxy sync ([#808](https://github.com/oxy-hq/oxy-internal/issues/808)) ([5f075f2](https://github.com/oxy-hq/oxy-internal/commit/5f075f21a829a81f3ff583052e2b22eb6af93a92))
+* implement synthesize step for routing agent ([#814](https://github.com/oxy-hq/oxy-internal/issues/814)) ([01dd577](https://github.com/oxy-hq/oxy-internal/commit/01dd577b0379faa5a48dfdfb3c0c245b1b07a56d))
+* improve page loading state ([#816](https://github.com/oxy-hq/oxy-internal/issues/816)) ([3c0c22e](https://github.com/oxy-hq/oxy-internal/commit/3c0c22ed22cd8c5ec50c373c8a1bd20f3e977ba9))
+* save query to workflow ([#809](https://github.com/oxy-hq/oxy-internal/issues/809)) ([676dd54](https://github.com/oxy-hq/oxy-internal/commit/676dd54669d24db27716d6512e5dd67d1405b322))
+* support download query result csv ([#810](https://github.com/oxy-hq/oxy-internal/issues/810)) ([90d91dd](https://github.com/oxy-hq/oxy-internal/commit/90d91dd68df04f15c0e368deb6b1413837e69be9))
+* unify all into thread ([#802](https://github.com/oxy-hq/oxy-internal/issues/802)) ([26d59be](https://github.com/oxy-hq/oxy-internal/commit/26d59beab9321d3c33cb01c39706b9fd9a455d11))
+
 ## [0.2.1](https://github.com/oxy-hq/oxy-internal/compare/0.2.0...0.2.1) (2025-05-16)
 
 
