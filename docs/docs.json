@@ -19,6 +19,18 @@
               "welcome",
               "quickstart",
               {
+                "group": "Deployment",
+                "pages": [
+                  "deployment/index",
+                  "deployment/create-machine",
+                  "deployment/install-oxy",
+                  "deployment/reverse-proxy",
+                  "deployment/workspace-setup",
+                  "deployment/environment",
+                  "deployment/authentication"
+                ]
+              },
+              {
                 "group": "Getting started with agents",
                 "pages": [
                   "getting-started-agents/set-up-project",

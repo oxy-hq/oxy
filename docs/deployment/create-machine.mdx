@@ -1,0 +1,101 @@
+---
+title: "Create Machine"
+description: "Setting up your server for Oxy deployment"
+sidebarTitle: "1. Create Machine"
+---
+
+# Create Machine for Oxy Deployment
+
+The first step in deploying Oxy is to provision a server where your Oxy instance will run.
+
+<Note>
+  The following deployment guides assume you will be using Ubuntu as your operating system and "ubuntu" as your username. While Oxy can work on other Linux distributions and usernames, the commands and paths may need to be adjusted accordingly.
+</Note>
+
+<Steps>
+  <Step title="Provision a Server">
+    Provision a server (e.g., AWS EC2, Google Compute Engine) with your preferred OS (Ubuntu recommended).
+
+    <Tip>
+      For cloud deployments, we recommend using at least 2GB RAM and 1 CPU core.
+      This will ensure smooth operation of Oxy and any additional services you may run.
+    </Tip>
+  </Step>
+
+  <Step title="Install Essential Packages">
+    Once your server is up and running, install the essential packages:
+
+    ```bash
+    sudo apt-get update -y
+    sudo apt-get install -y \
+        git \
+        curl \
+        wget \
+        unzip \
+        tar \
+        gcc \
+        g++ \
+        make \
+        python3-pip \
+        ufw \
+        software-properties-common
+    ```
+
+    These packages will provide you with the basic tools needed for the deployment.
+  </Step>
+
+  <Step title="Configure SSH Access">
+    Ensure your server has proper SSH access configured for secure remote management.
+    
+    ```bash
+    # Create SSH directory if it doesn't exist
+    mkdir -p ~/.ssh
+    chmod 700 ~/.ssh
+    
+    # Set proper permissions for SSH files
+    touch ~/.ssh/authorized_keys
+    chmod 600 ~/.ssh/authorized_keys
+    ```
+
+    <Warning>
+      You should set up your own SSH key for secure access to your server. Add your public key to the `~/.ssh/authorized_keys` file to enable password-less authentication:
+      
+      ```bash
+      # On your local machine, generate a key if you don't have one
+      # ssh-keygen -t ed25519 -C "your-email@example.com"
+      
+      # Then add your public key to the server's authorized_keys file
+      # Either manually append your public key or use ssh-copy-id:
+      # ssh-copy-id user@your-server-ip
+      ```
+    </Warning>
+  </Step>
+
+  <Step title="Configure Basic Firewall">
+    Set up a basic firewall to allow only necessary traffic:
+
+    ```bash
+    # Allow SSH access
+    sudo ufw allow 22/tcp
+
+    # Enable the firewall
+    sudo ufw --force enable
+    ```
+
+    You'll configure additional ports in later steps.
+  </Step>
+</Steps>
+
+Once your machine is set up with the essential components, proceed to the next step to install the Oxy CLI.
+
+<div className="mt-8">
+  <Cards>
+    <Card
+      title="Next: Install Oxy CLI"
+      icon="arrow-right"
+      href="/deployment/install-oxy"
+    >
+      Install and configure the Oxy CLI on your server
+    </Card>
+  </Cards>
+</div>
