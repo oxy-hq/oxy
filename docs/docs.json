@@ -24,9 +24,9 @@
                   "deployment/index",
                   "deployment/create-machine",
                   "deployment/install-oxy",
-                  "deployment/reverse-proxy",
                   "deployment/workspace-setup",
                   "deployment/environment",
+                  "deployment/reverse-proxy",
                   "deployment/authentication",
                   "deployment/docker"
                 ]
