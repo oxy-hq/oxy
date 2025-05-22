@@ -30,7 +30,7 @@ The fastest way to get started with Oxy on Docker is to use the pre-built image 
 
 ```bash
 # Pull the latest Oxy Docker image
-docker pull ghcr.io/oxy-hq/oxy:latest
+docker pull ghcr.io/oxy-hq/oxy:0.2.2
 
 # Run Oxy with a mounted workspace
 docker run -d \
@@ -40,7 +40,7 @@ docker run -d \
   -e OPENAI_API_KEY=your-api-key \
   -e OXY_STATE_DIR=/data \
   -v /path/to/persistent/data:/data \
-  ghcr.io/oxy-hq/oxy:latest
+  ghcr.io/oxy-hq/oxy:0.2.2
 ```
 
 ## Detailed Deployment Steps
@@ -72,7 +72,7 @@ docker run -d \
     version: '3'
     services:
       oxy:
-        image: ghcr.io/oxy-hq/oxy:latest
+        image: ghcr.io/oxy-hq/oxy:0.2.2
         container_name: oxy-instance
         ports:
           - "3000:3000"
@@ -115,7 +115,7 @@ docker run -d \
             # ...existing Oxy configuration...
           
           caddy:
-            image: caddy:2
+            image: caddy:2.10.0
             container_name: caddy
             ports:
               - "80:80"
@@ -156,7 +156,7 @@ docker run -d \
               - "traefik.http.routers.oxy.tls.certresolver=myresolver"
           
           traefik:
-            image: traefik:v2.9
+            image: traefik:v3.4.0
             container_name: traefik
             ports:
               - "80:80"
@@ -199,7 +199,7 @@ docker run -d \
 
         ```yaml
         oauth2-proxy:
-          image: quay.io/oauth2-proxy/oauth2-proxy:latest
+          image: quay.io/oauth2-proxy/oauth2-proxy:v7.9.0
           container_name: oauth2-proxy
           ports:
             - "4180:4180"
@@ -268,7 +268,7 @@ Common environment variables to configure in your Oxy container:
 If you need to extend the official Oxy image with additional dependencies or configuration, you can create your own Dockerfile:
 
 ```dockerfile
-FROM ghcr.io/oxy-hq/oxy:latest
+FROM ghcr.io/oxy-hq/oxy:0.2.2
 
 # Add custom dependencies
 RUN apt-get update && apt-get install -y your-package
