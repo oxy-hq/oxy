@@ -105,17 +105,20 @@ Connect to your VM instance and prepare it for Oxy deployment:
     # Or using standard SSH if you've set up SSH keys
     ssh username@EXTERNAL_IP
     ```
+    
+    <Important>
+      **Switch to the ubuntu user after connecting:**
+      ```bash
+      sudo su - ubuntu
+      ```
+      This is a critical step! The rest of this guide assumes you're using the `ubuntu` user, and the paths and configurations are set up accordingly.
+    </Important>
   </Step>
 
-  <Step title="Update System Packages">
+  <Step title="Update System and Install Essential Packages">
     ```bash
-    sudo apt update
-    ```
-  </Step>
-
-  <Step title="Install Essential Packages">
-    ```bash
-    sudo apt install -y curl wget git unzip jq nano
+    # Update package lists and install essential tools in one command
+    sudo apt update && sudo apt install -y curl wget git unzip jq nano
     ```
   </Step>
 </Steps>
@@ -126,11 +129,9 @@ Let's install Oxy directly on the VM:
 
 <Steps>
   <Step title="Install Required Dependencies">
-    First, install some additional dependencies:
-    
     ```bash
-    sudo apt update
-    sudo apt install -y build-essential libssl-dev pkg-config
+    # Install all necessary dependencies at once
+    sudo apt update && sudo apt install -y build-essential libssl-dev pkg-config
     ```
   </Step>
 
@@ -230,6 +231,11 @@ Let's use the built-in `oxy init` command to initialize a new workspace with all
     
     Save and exit.
     
+    <Note>
+      If you don't set `OXY_STATE_DIR`, Oxy will use the default location `~/.local/share/oxy/`. 
+      We recommend setting it explicitly for production deployments to make backups and maintenance easier.
+    </Note>
+    
     Note: You won't need to manually set the OpenAI API key in the environment as it's already configured during the `oxy init` process.
   </Step>
 </Steps>
@@ -254,76 +260,59 @@ Now, let's install and configure Caddy as a reverse proxy for HTTPS and authenti
     sudo nano /etc/caddy/Caddyfile
     ```
     
-    If you have a domain name:
+    For domain-based setup (recommended):
     
     ```caddy
-    (reverse_proxy_app) {
-        reverse_proxy localhost:3000 {
-            flush_interval -1
-            transport http {
-                versions 1.1 2 h2c
-            }
-        }
-    }
-
     yourdomain.com {
-        import reverse_proxy_app
-    }
-    www.yourdomain.com {
-        import reverse_proxy_app
-    }
-    ```
-    
-    If you don't have a domain name and want to use the IP address:
-    
-    ```caddy
-    (reverse_proxy_app) {
         reverse_proxy localhost:3000 {
             flush_interval -1
-            transport http {
-                versions 1.1 2 h2c
-            }
         }
-    }
-
-    http:// {
-        import reverse_proxy_app
     }
     ```
     
     Replace `yourdomain.com` with your actual domain name.
     
-    Save and exit.
+    If you don't have a domain and want to use the IP address only, use:
+    
+    ```caddy
+    :80 {
+        reverse_proxy localhost:3000 {
+            flush_interval -1
+        }
+    }
+    ```
+    
+    Save and exit (Ctrl+X, then Y, then Enter).
   </Step>
 
-  <Step title="Configure Authentication">
-    To add basic authentication to your Caddyfile:
+  <Step title="Configure Authentication (Optional)">
+    To add basic authentication protection:
     
     ```bash
+    # Generate a password hash
+    sudo caddy hash-password
+    # Enter your desired password when prompted and copy the hash
+    
+    # Edit Caddyfile to add authentication
     sudo nano /etc/caddy/Caddyfile
     ```
     
-    Update your domain section to include authentication:
+    Update your Caddyfile to add the basicauth directive. You'll need to choose a username and use the password hash:
     
     ```caddy
     yourdomain.com {
         basicauth {
-            username JDJhJDEwJEVCNmdaNEg0RHpzWjdGUGdKSG1TN09xQWdQVzlzd0ZJdUpRdzNqQ0hrd1NSdXlKTEpZQXpx
+            your_chosen_username YOUR_PASSWORD_HASH
         }
-        import reverse_proxy_app
+        reverse_proxy localhost:3000 {
+            flush_interval -1
+        }
     }
     ```
     
-    To generate the password hash:
+    Replace `your_chosen_username` with your preferred username and `YOUR_PASSWORD_HASH` with the hash you generated.
     
-    ```bash
-    sudo caddy hash-password
-    # Enter your desired password when prompted
-    ```
-    
-    Copy the resulting hash into your Caddyfile, replacing the example hash above.
-    
-    Save and exit.
+    Save and exit (Ctrl+X, then Y, then Enter).
   </Step>
 
   <Step title="Reload Caddy">
@@ -333,9 +322,9 @@ Now, let's install and configure Caddy as a reverse proxy for HTTPS and authenti
   </Step>
 </Steps>
 
-## Creating a Systemd Service for Oxy
+## Setting Up and Starting Oxy as a Service
 
-To ensure Oxy runs automatically on system startup and restarts if it fails:
+Let's configure Oxy to run automatically on system startup and restart if it fails:
 
 <Steps>
   <Step title="Create a Systemd Service File">
@@ -352,10 +341,10 @@ To ensure Oxy runs automatically on system startup and restarts if it fails:
     
     [Service]
     Type=simple
-    User=YOUR_USERNAME
-    WorkingDirectory=/home/YOUR_USERNAME/oxy-workspace
-    EnvironmentFile=/home/YOUR_USERNAME/oxy-workspace/.env
-    ExecStart=/usr/local/bin/oxy serve --host 0.0.0.0 --port 3000
+    User=ubuntu
+    WorkingDirectory=/home/ubuntu/oxy-workspace
+    EnvironmentFile=/home/ubuntu/oxy-workspace/.env
+    ExecStart=/usr/local/bin/oxy serve --port 3000
     Restart=always
     RestartSec=5
     
@@ -363,7 +352,7 @@ To ensure Oxy runs automatically on system startup and restarts if it fails:
     WantedBy=multi-user.target
     ```
     
-    Replace `YOUR_USERNAME` with your actual username.
+    This configuration uses the default `ubuntu` user which is standard on GCP instances. If you're using a different username, adjust accordingly.
     
     Save and exit.
   </Step>
@@ -383,26 +372,6 @@ To ensure Oxy runs automatically on system startup and restarts if it fails:
     
     You should see that the service is active and running.
   </Step>
-</Steps>
-
-## Starting Oxy
-
-Let's start the Oxy service and make sure everything is working properly:
-
-<Steps>
-  <Step title="Start the Oxy Service">
-    ```bash
-    sudo systemctl start oxy
-    ```
-  </Step>
-
-  <Step title="Check the Service Status">
-    ```bash
-    sudo systemctl status oxy
-    ```
-    
-    Make sure it shows as "active (running)".
-  </Step>
 
   <Step title="View Logs (if needed)">
     If you encounter any issues, check the logs:
@@ -418,12 +387,38 @@ Let's start the Oxy service and make sure everything is working properly:
     You can test if Oxy is responding properly:
     
     ```bash
-    curl http://localhost:3000/health
+    curl http://localhost:3000
     ```
     
     You should get a positive response indicating that Oxy is running.
   </Step>
+
+  <Step title="Access Your Deployment">
+    If you've set up a domain, open your browser and navigate to your domain:
+    
+    ```
+    https://yourdomain.com
+    ```
+    
+    Or if you're using the IP address directly:
+    
+    ```
+    http://YOUR_VM_IP
+    ```
+    
+    <Tip>
+      If you've set up a domain with DNS earlier, now is the exciting moment to see your work! Open your browser and visit your domain to see the Oxy interface up and running on your own server.
+    </Tip>
+    
+    You should see the Oxy interface. Congratulations! 🎉 You've successfully deployed Oxy on Google Cloud Platform.
+  </Step>
 </Steps>
+
+---
+
+# Optional Configuration and Management
+
+Everything up to this point completes the core setup of your Oxy deployment. The following sections cover additional aspects of managing your deployment that you may want to explore as needed.
 
 ## Data Persistence
 
@@ -431,6 +426,7 @@ It's important to understand how Oxy handles data persistence:
 
 - Oxy uses SQLite for its internal database by default
 - All data is stored in the directory specified by `OXY_STATE_DIR` environment variable (we set it to ~/oxy-data)
+- If `OXY_STATE_DIR` is not set, Oxy uses `~/.local/share/oxy/` by default
 - This directory contains database files, semantic information, cached query results, and workflow history
 
 <Note>
@@ -482,37 +478,21 @@ It's important to understand how Oxy handles data persistence:
   </Step>
 </Steps>
 
-## Machine Selection Notes
-
-When selecting a machine for Oxy deployment, consider the following recommendations:
-
-### ARM-based Instances (T2A Series)
-
-GCP's T2A series offers ARM-based instances similar to Amazon's T4g series. These instances typically provide:
-
-- **Better price-performance ratio**: Often 15-20% cost savings compared to equivalent x86 instances
-- **Excellent for containerized workloads**: Great for running Oxy and supporting services
-- **Energy efficiency**: Lower power consumption can translate to additional cost savings
-
-The T2A series is particularly well-suited for Oxy deployments because:
-
-1. Oxy doesn't require specialized hardware acceleration
-2. Standard web server workloads perform well on ARM architecture
-3. Both Debian and Ubuntu have well-supported ARM variants
-
-### Instance Size Guidance
-
-- **Minimal deployments** (1-3 users): `t2a-standard-1` (2 vCPU ARM, 4 GB memory)
-- **Small deployments** (3-5 users): `t2a-standard-2` (2 vCPU ARM, 8 GB memory)
-- **Medium deployments** (5-15 users): `t2a-standard-4` (4 vCPU ARM, 16 GB memory)
-
-For x86 instances:
-- **Minimal deployments**: `e2-medium` (1 vCPU, 4 GB memory)
-- **Small deployments**: `e2-standard-2` (2 vCPU, 8 GB memory)
+## Machine Recommendations
 
 <Note>
-  Oxy can run effectively with as little as 4GB of memory for most use cases. Only consider larger instances if you expect heavy concurrent usage or are working with large datasets.
+  Oxy runs well with just 4GB of memory for most use cases.
 </Note>
+
+Choose from these recommended instance types:
+
+| Usage Level | ARM-based (Best Value) | x86-based |
+|-------------|------------------------|-----------|
+| Small (1-3 users) | `t2a-standard-1` (2 vCPU, 4 GB) | `e2-medium` (1 vCPU, 4 GB) |
+| Medium (3-5 users) | `t2a-standard-2` (2 vCPU, 8 GB) | `e2-standard-2` (2 vCPU, 8 GB) |
+| Large (5-15 users) | `t2a-standard-4` (4 vCPU, 16 GB) | `e2-standard-4` (4 vCPU, 16 GB) |
+
+ARM-based instances (T2A series) typically offer 15-20% cost savings over equivalent x86 instances.
 
 ## Scaling on GCP
 
@@ -531,47 +511,60 @@ As your usage grows, you may need to scale your deployment:
 
 ### Storage Scaling
 
-1. For larger data needs, consider attaching a Persistent Disk:
+If you need more storage for your Oxy data:
+
+1. Create a new persistent disk in the GCP Console
+2. Connect to your VM and mount the disk:
    ```bash
-   # Create a new persistent disk in GCP Console
-   # Then attach and mount it:
+   # Mount the disk to a new location
    sudo mkdir -p /mnt/oxy-data
    sudo mount -o discard,defaults /dev/disk/by-id/google-[DISK_NAME] /mnt/oxy-data
-   sudo chown -R $(whoami):$(whoami) /mnt/oxy-data
+   sudo chown -R ubuntu:ubuntu /mnt/oxy-data
    
-   # Copy existing data
+   # Copy your existing data to the new location
    cp -r ~/oxy-data/* /mnt/oxy-data/
    
-   # Update your systemd service file
-   sudo nano /etc/systemd/system/oxy.service
-   # Change the EnvironmentFile path if needed
-   # Update the .env file with the new path:
-   # OXY_STATE_DIR=/mnt/oxy-data
+   # Update the data path in your .env file
+   echo "OXY_STATE_DIR=/mnt/oxy-data" > ~/oxy-workspace/.env
    
-   # Reload systemd and restart the service
-   sudo systemctl daemon-reload
+   # Restart Oxy to use the new location
    sudo systemctl restart oxy
+   ```
+
+3. To make the mount persistent across reboots, add it to fstab:
+   ```bash
+   echo "/dev/disk/by-id/google-[DISK_NAME] /mnt/oxy-data ext4 discard,defaults 0 2" | sudo tee -a /etc/fstab
    ```
 
 ## Troubleshooting
 
-**Issue: Cannot access Oxy through the domain or IP**
-- Check that ports 80 and 443 are open in your GCP firewall rules
-- Verify DNS settings if using a domain name
-- Check Caddy logs: `sudo journalctl -u caddy -f`
-
-**Issue: Caddy cannot obtain SSL certificate**
-- Ensure your domain is correctly pointing to your VM's IP address
-- Check if your domain registrar supports CAA records and adjust if needed
-
-**Issue: Oxy service won't start**
-- Check the logs: `sudo journalctl -u oxy -f`
-- Verify environment variables in the service file
-- Ensure the workspace directory exists and has correct permissions
-
-**Issue: Data not persisting**
-- Check that OXY_STATE_DIR is set correctly in your service file
-- Verify file permissions on the data directory
+<AccordionGroup>
+  <Accordion title="Cannot access Oxy through the domain or IP">
+    - Check your GCP firewall rules: Go to VPC Network → Firewall in GCP Console and verify ports 80 and 443 are allowed
+    - For domain issues: Run `dig yourdomain.com` to verify DNS is pointing to your VM IP
+    - View Caddy logs: `sudo journalctl -u caddy -f`
+  </Accordion>
+  
+  <Accordion title="Caddy cannot obtain SSL certificate">
+    - Ensure your domain DNS records are correctly set up
+    - Verify Caddy has permissions to bind to ports 80 and 443: `sudo setcap CAP_NET_BIND_SERVICE=+ep /usr/bin/caddy`
+    - Check Caddy logs: `sudo journalctl -u caddy -f`
+  </Accordion>
+  
+  <Accordion title="Oxy service won't start">
+    - View detailed logs: `sudo journalctl -u oxy -f`
+    - Verify environment file exists: `cat ~/oxy-workspace/.env`
+    - Check service file: `sudo cat /etc/systemd/system/oxy.service`
+    - Ensure workspace exists: `ls -la ~/oxy-workspace`
+  </Accordion>
+  
+  <Accordion title="Data not persisting between restarts">
+    - Verify data directory exists: `ls -la ~/oxy-data`
+    - Check environment variable is set: `grep OXY_STATE_DIR ~/oxy-workspace/.env`
+    - If you didn't set `OXY_STATE_DIR`, check the default location: `ls -la ~/.local/share/oxy/`
+    - Ensure proper permissions: `sudo chown -R ubuntu:ubuntu ~/oxy-data`
+  </Accordion>
+</AccordionGroup>
 
 For further help, join our community on [Discord](https://discord.gg/m677N4EcRK).
 
