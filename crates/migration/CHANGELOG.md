@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.3](https://github.com/oxy-hq/oxy-internal/compare/0.2.2...0.2.3) (2025-05-22)
+
+
+### <!-- 0 -->🚀 Features
+
+* unify all into thread ([#802](https://github.com/oxy-hq/oxy-internal/issues/802)) ([26d59be](https://github.com/oxy-hq/oxy-internal/commit/26d59beab9321d3c33cb01c39706b9fd9a455d11))
+
 ## [0.2.2](https://github.com/oxy-hq/oxy-internal/compare/0.2.1...0.2.2) (2025-05-19)
 
 ## [0.2.1](https://github.com/oxy-hq/oxy-internal/compare/0.2.0...0.2.1) (2025-05-16)
