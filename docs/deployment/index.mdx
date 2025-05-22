@@ -21,7 +21,7 @@ This guide walks you through deploying Oxy on a cloud environment, from provisio
 There are two main approaches to deploying Oxy:
 
 1. **Traditional Linux Setup** - Follow the step-by-step guide below to provision a machine, install dependencies, and configure each component manually.
-2. **Docker Deployment** - Use our [Docker image](https://github.com/oxy-hq/oxy/pkgs/container/oxy) for a containerized deployment that simplifies setup and maintenance. See the [Docker deployment guide](/deployment/docker) for details.loyment Guide"
+2. **Docker Deployment** - Use our [Docker image](https://github.com/oxy-hq/oxy/pkgs/container/oxy) for a containerized deployment that simplifies setup and maintenance. See the [Docker deployment guide](/deployment/docker) for details.
 
 ## Deployment Overview
 
@@ -31,18 +31,18 @@ flowchart TD
     Z -->|Traditional| B[Create Machine\nEC2 / Google Compute]
     Z -->|Docker| Docker[Deploy Docker Container]
     B --> C[Install Oxy CLI]
-    C --> D[Set Up Reverse Proxy\nCaddy - Security & Performance]
-    Docker --> DockerV[Mount Volumes\nWorkspace & Data]
-    Docker --> DockerE[Configure Environment\nOpenAI API Key, etc.]
-    DockerV --> DockerR[Configure Reverse Proxy\nCaddy or Traefik]
-    DockerE --> DockerR
-    D --> E[Set Up Oxy Workspace]
+    C --> E[Set Up Oxy Workspace]
     E --> F{Using Git?}
     F -->|Yes| G[Configure Git & Clone Repository]
     F -->|No| H[Manual Setup]
     G --> I[Configure Environment\nCreate .env with secrets\nOpenAI API Key, etc.]
     H --> I
-    I --> J{Authentication Required?}
+    I --> D[Set Up Reverse Proxy\nCaddy - Security & Performance]
+    Docker --> DockerV[Mount Volumes\nWorkspace & Data]
+    Docker --> DockerE[Configure Environment\nOpenAI API Key, etc.]
+    DockerE --> DockerR[Configure Reverse Proxy\nCaddy or Traefik]
+    DockerV --> DockerE
+    D --> J{Authentication Required?}
     DockerR --> J
     J -->|Yes| K[Set Up Authentication]
     J -->|No| L[Deployment Complete]
@@ -94,25 +94,25 @@ Follow these steps to deploy Oxy on your cloud environment:
     Install and configure the Oxy CLI on your server
   </Card>
   <Card
-    title="3. Set Up Reverse Proxy"
-    icon="shield-halved"
-    href="/deployment/reverse-proxy"
-  >
-    Configure Caddy as a reverse proxy for HTTPS, security, and performance
-  </Card>
-  <Card
-    title="4. Set Up Workspace & Repository"
+    title="3. Set Up Workspace & Repository"
     icon="folder-tree"
     href="/deployment/workspace-setup"
   >
     Set up your Oxy workspace and configure your repository
   </Card>
   <Card
-    title="5. Configure Environment"
+    title="4. Configure Environment"
     icon="gear"
     href="/deployment/environment"
   >
     Set up environment variables and secrets management
+  </Card>
+  <Card
+    title="5. Set Up Reverse Proxy"
+    icon="shield-halved"
+    href="/deployment/reverse-proxy"
+  >
+    Configure Caddy as a reverse proxy for HTTPS, security, and performance
   </Card>
   <Card
     title="6. Set Up Authentication"
@@ -204,16 +204,8 @@ Environment="OXY_STATE_DIR=${HOME}/oxy_data"
 WantedBy=multi-user.target
 EOF
 
-# ===== STEP 3: Set Up Reverse Proxy =====
-echo "===== 3. Setting up Caddy reverse proxy ====="
-sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https curl
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
-sudo apt update -y
-sudo apt install -y caddy
-
-# ===== STEP 4: Set Up Workspace & Repository =====
-echo "===== 4. Setting up workspace ====="
+# ===== STEP 3: Set Up Workspace & Repository =====
+echo "===== 3. Setting up workspace ====="
 mkdir -p ${WORKSPACE_DIR}
 cd ${WORKSPACE_DIR}
 
@@ -224,6 +216,31 @@ if [ "$USE_GIT" = true ]; then
         ssh-keyscan -t rsa github.com >> ~/.ssh/known_hosts
         echo "Add this SSH key to your Git provider:"
         cat ~/.ssh/id_ed25519.pub
+        echo "Press Enter when done..."
+        read
+    fi
+    
+    # Clone repository
+    git clone ${GIT_REPO} .
+else
+    echo "Manual workspace setup. Place your files in ${WORKSPACE_DIR}"
+    touch config.yml
+    echo "basic: true" > config.yml
+fi
+
+# ===== STEP 4: Configure Environment =====
+echo "===== 4. Setting up environment ====="
+touch .env
+chmod 600 .env
+echo "OPENAI_API_KEY=${OPENAI_API_KEY}" > .env
+
+# ===== STEP 5: Set Up Reverse Proxy =====
+echo "===== 5. Setting up Caddy reverse proxy ====="
+sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https curl
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
+sudo apt update -y
+sudo apt install -y caddy
         echo "Press Enter when done..."
         read
     fi
