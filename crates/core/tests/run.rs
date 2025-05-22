@@ -117,6 +117,6 @@ pub mod run {
             .assert()
             .success();
         let output = String::from_utf8(result.get_output().stdout.clone()).unwrap();
-        assert!(output.contains("2"));
+        assert!(output.contains("2"), "{}", output);
     }
 }

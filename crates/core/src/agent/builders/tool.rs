@@ -75,25 +75,26 @@ impl Executable<OpenAIExecutableResponse> for OpenAITool {
         let tool_rets = input
             .tool_calls
             .iter()
-            .map(|c| c.id.clone())
+            .map(|c| c)
             .zip(response)
             .map(|(c, r)| match r {
                 Ok(o) => ChatCompletionRequestToolMessageArgs::default()
-                    .tool_call_id(c)
+                    .tool_call_id(c.id.clone())
                     .content(o.to_string())
                     .build()
                     .unwrap()
                     .into(),
                 Err(e) => ChatCompletionRequestToolMessageArgs::default()
-                    .tool_call_id(c)
+                    .tool_call_id(c.id.clone())
                     .content(e.to_string())
                     .build()
                     .unwrap()
                     .into(),
             })
-            .collect::<Vec<ChatCompletionRequestMessage>>();
+            .collect::<Vec<_>>();
         let mut result = vec![assistant_message.into()];
         result.extend_from_slice(&tool_rets);
+
         Ok(Some(result))
     }
 }

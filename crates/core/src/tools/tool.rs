@@ -14,13 +14,17 @@ use super::{
     workflow::WorkflowExecutable,
 };
 use crate::{
+    adapters::openai::OpenAIToolConfig,
     agent::{AgentLauncherExecutable, types::AgentInput},
-    config::model::{AgentTool, OmniSemanticModel, RetrievalConfig, ToolType, WorkflowTool},
+    config::{
+        constants::ARTIFACT_SOURCE,
+        model::{AgentTool, OmniSemanticModel, RetrievalConfig, ToolType, WorkflowTool},
+    },
     errors::OxyError,
     execute::{
         Executable, ExecutionContext,
         builders::{ExecutableBuilder, map::ParamMapper},
-        types::{Output, OutputContainer},
+        types::{EventKind, Output, OutputContainer},
     },
     tools::create_data_app::types::CreateDataAppParams,
 };
@@ -40,7 +44,30 @@ impl Executable<(String, Option<ToolType>, ToolRawInput)> for ToolExecutable {
         input: (String, Option<ToolType>, ToolRawInput),
     ) -> Result<Self::Response, OxyError> {
         let (agent_name, tool_type, input) = input;
+        let artifact_context =
+            execution_context.with_child_source(input.call_id.clone(), ARTIFACT_SOURCE.to_string());
+
         if let Some(tool_type) = &tool_type {
+            let artifact = tool_type.artifact();
+            if let Some((title, kind)) = &artifact {
+                let is_verified = match tool_type {
+                    ToolType::Workflow(_) => true,
+                    ToolType::Agent(_) => true,
+                    ToolType::ExecuteSQL(sql_config) => sql_config.sql.is_some(),
+                    _ => false,
+                };
+                artifact_context
+                    .write_kind(EventKind::Started {
+                        name: title.to_string(),
+                        attributes: HashMap::from_iter([
+                            ("title".to_string(), title.to_string()),
+                            ("kind".to_string(), kind.to_string()),
+                            ("is_verified".to_string(), is_verified.to_string()),
+                        ]),
+                    })
+                    .await?;
+            }
+
             let tool_ret: Result<OutputContainer, OxyError> = match tool_type {
                 ToolType::ExecuteSQL(sql_config) => {
                     let param = match sql_config.sql {
@@ -153,6 +180,15 @@ impl Executable<(String, Option<ToolType>, ToolRawInput)> for ToolExecutable {
                         .map(|output| output.into())
                 }
             };
+
+            if artifact.is_some() {
+                artifact_context
+                    .write_kind(EventKind::Finished {
+                        message: "".to_string(),
+                    })
+                    .await?;
+            }
+
             let ToolRawInput {
                 call_id,
                 handle,

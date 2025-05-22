@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     adapters::connector::load_result, db::client::get_state_dir, errors::OxyError,
-    utils::truncate_datasets,
+    execute::types::utils::record_batches_to_json, utils::truncate_datasets,
 };
 
 use super::{
@@ -110,7 +110,7 @@ impl Table {
         self.get_inner().ok()?;
         let table = self.inner.into_inner()?;
         let TableReference { sql, database_ref } = self.reference?;
-        let (truncated_results, truncated) = truncate_datasets(table.batches);
+        let (truncated_results, truncated) = truncate_datasets(&table.batches);
         let formatted_results =
             record_batches_to_2d_array(&truncated_results, &table.schema).ok()?;
         Some(ReferenceKind::SqlQuery(QueryReference {
@@ -177,11 +177,21 @@ impl Debug for Table {
 
 impl Display for Table {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match self.to_markdown() {
+        match self.get_inner() {
             Ok(inner) => {
-                write!(f, "{}", inner)
+                let (truncated_results, truncated) = truncate_datasets(&inner.batches);
+                match record_batches_to_json(&truncated_results) {
+                    Ok(json) => {
+                        writeln!(f, "{}", json)?;
+                        if truncated {
+                            writeln!(f, "Table results has been truncated.")?;
+                        }
+                        Ok(())
+                    }
+                    Err(e) => writeln!(f, "Table({}): {}", &self.file_path, e),
+                }
             }
-            Err(e) => write!(f, "Table({}): {}", &self.file_path, e),
+            Err(e) => writeln!(f, "Table({}): {}", &self.file_path, e),
         }
     }
 }

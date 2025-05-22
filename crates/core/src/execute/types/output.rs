@@ -20,6 +20,12 @@ pub enum Output {
     Documents(Vec<Document>),
 }
 
+impl Default for Output {
+    fn default() -> Self {
+        Output::Text(String::new())
+    }
+}
+
 impl Output {
     pub fn table(file_path: String) -> Self {
         Output::Table(Table::new(file_path))

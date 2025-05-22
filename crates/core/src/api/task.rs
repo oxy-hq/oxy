@@ -79,9 +79,7 @@ impl EventHandler for TaskStream {
                         __self.tx.send(message).await?;
                     }
                 }
-                Output::Bool(_) => {}
-                Output::SQL(sql) => {}
-                Output::Documents(items) => {}
+                _ => {}
             }
         }
         if let EventKind::DataAppCreated { data_app } = &event.kind {

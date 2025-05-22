@@ -13,8 +13,9 @@ const sanitizeSchema = {
   attributes: {
     ...defaultSchema.attributes,
     chart: ["chart_src"],
+    artifact: ["kind", "title", "is_verified"],
   },
-  tagNames: [...(defaultSchema.tagNames || []), "chart"],
+  tagNames: [...(defaultSchema.tagNames || []), "chart", "artifact"],
 };
 
 type Props = {

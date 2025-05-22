@@ -8,6 +8,7 @@ use crate::config::constants::AGENT_SOURCE_PROMPT;
 use crate::config::model::{AgentContext, AgentToolsConfig, DefaultAgent};
 use crate::execute::builders::map::ParamMapper;
 use crate::execute::renderer::Renderer;
+use crate::execute::types::{Output, OutputContainer};
 use crate::tools::ToolsContext;
 use crate::{
     adapters::openai::OpenAIClient,
@@ -16,7 +17,7 @@ use crate::{
     execute::{
         Executable, ExecutionContext,
         builders::ExecutableBuilder,
-        types::{Chunk, Output, Prompt},
+        types::{Chunk, Prompt},
     },
 };
 use async_openai::types::{
@@ -39,7 +40,7 @@ pub struct DefaultAgentInput {
 
 #[async_trait::async_trait]
 impl Executable<DefaultAgentInput> for DefaultAgentExecutable {
-    type Response = Output;
+    type Response = OutputContainer;
 
     async fn execute(
         &mut self,
@@ -94,10 +95,13 @@ impl Executable<DefaultAgentInput> for DefaultAgentExecutable {
             max_tool_calls,
         )
         .await;
-        let response = react_executable
+        let outputs = react_executable
             .execute(execution_context, messages)
             .await?;
-        Ok(response.content)
+        let output = outputs
+            .into_iter()
+            .fold(Output::default(), |m, o| m.merge(&o.content));
+        Ok(output.into())
     }
 }
 
@@ -108,7 +112,7 @@ async fn build_react_loop(
     client: OpenAIClient,
     model: String,
     max_iterations: usize,
-) -> impl Executable<Vec<ChatCompletionRequestMessage>, Response = OpenAIExecutableResponse> {
+) -> impl Executable<Vec<ChatCompletionRequestMessage>, Response = Vec<OpenAIExecutableResponse>> {
     let tools: Vec<ChatCompletionTool> =
         futures::future::join_all(tool_configs.iter().map(ChatCompletionTool::from_tool_async))
             .await
@@ -117,30 +121,9 @@ async fn build_react_loop(
     ExecutableBuilder::new()
         .react(
             OpenAITool::new(agent_name, tool_configs, max_concurrency),
-            |response: &OpenAIExecutableResponse,
-             new_response: Option<&OpenAIExecutableResponse>| {
-                match new_response {
-                    Some(new_response) => OpenAIExecutableResponse {
-                        content: response.content.merge(&new_response.content),
-                        tool_calls: response
-                            .tool_calls
-                            .iter()
-                            .chain(new_response.tool_calls.iter())
-                            .cloned()
-                            .collect(),
-                    },
-                    None => OpenAIExecutableResponse {
-                        content: response.content.clone(),
-                        tool_calls: response.tool_calls.clone(),
-                    },
-                }
-            },
-            |input: &Vec<ChatCompletionRequestMessage>,
-             new_input: &Vec<ChatCompletionRequestMessage>| {
-                input.iter().chain(new_input.iter()).cloned().collect()
-            },
             max_iterations,
         )
+        .memo(vec![])
         .executable(OpenAIExecutable::new(client, model, tools))
 }
 
@@ -194,7 +177,7 @@ fn build_global_context(
 }
 
 pub(super) fn build_default_agent_executable()
--> impl Executable<DefaultAgentInput, Response = Output> {
+-> impl Executable<DefaultAgentInput, Response = OutputContainer> {
     ExecutableBuilder::new()
         .map(DefaultAgentMapper)
         .executable(DefaultAgentExecutable)

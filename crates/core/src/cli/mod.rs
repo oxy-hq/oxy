@@ -298,7 +298,12 @@ struct SyncArgs {
     database: Option<String>,
     #[clap(long, short = 'd', num_args = 0..)]
     datasets: Vec<String>,
-    #[clap(long, short = 'o', default_value_t = false, help = "Overwrite existing files during sync")]
+    #[clap(
+        long,
+        short = 'o',
+        default_value_t = false,
+        help = "Overwrite existing files during sync"
+    )]
     overwrite: bool,
 }
 

@@ -6,12 +6,15 @@ use serde_json::Value as JsonValue;
 use crate::{
     adapters::checkpoint::CheckpointManager,
     agent::{AgentLauncherExecutable, types::AgentInput},
-    config::model::{Task, TaskType},
+    config::{
+        constants::TASK_SOURCE,
+        model::{Task, TaskType},
+    },
     errors::OxyError,
     execute::{
         Executable, ExecutionContext,
         builders::{ExecutableBuilder, cache::Cache, chain::ContextMapper, export::Export},
-        types::{EventKind, Output, OutputContainer},
+        types::{Chunk, EventKind, Output, OutputContainer},
     },
     theme::StyledText,
 };
@@ -48,15 +51,20 @@ impl Executable<TaskInput> for TaskExecutable {
         input: TaskInput,
     ) -> Result<Self::Response, OxyError> {
         let TaskInput { task, value } = input;
-        let execution_context = execution_context.with_child_source(
+        let task_source_id = format!("{}-{}", &task.name, fxhash::hash(&value));
+        let task_execution_context =
+            execution_context.with_child_source(task_source_id.clone(), TASK_SOURCE.to_string());
+        task_execution_context
+            .write_kind(EventKind::Started {
+                name: task.name.to_string(),
+                attributes: Default::default(),
+            })
+            .await?;
+        let execution_context = task_execution_context.with_child_source(
             format!("{}-{}", &task.name, fxhash::hash(&value)),
             (&task.kind()).to_string(),
         );
-        execution_context
-            .write_kind(EventKind::Started {
-                name: task.name.to_string(),
-            })
-            .await?;
+
         let new_value = match task.task_type {
             TaskType::Agent(agent_task) => {
                 let prompt = execution_context.renderer.render(&agent_task.prompt)?;
@@ -125,7 +133,14 @@ impl Executable<TaskInput> for TaskExecutable {
                     .render(&formatter_task.template)?;
                 execution_context
                     .write_kind(EventKind::Message {
-                        message: format!("{}\n{}", "\nOutput:".primary(), value.clone()),
+                        message: format!("{}", "\nOutput:".primary()),
+                    })
+                    .await?;
+                execution_context
+                    .write_chunk(Chunk {
+                        key: None,
+                        delta: Output::Text(value.clone()),
+                        finished: true,
                     })
                     .await?;
                 Ok(Output::Text(value).into())
@@ -167,7 +182,7 @@ impl Executable<TaskInput> for TaskExecutable {
             TaskType::Conditional(_) => todo!(),
             TaskType::Unknown => Err(OxyError::RuntimeError("Unknown task type".to_string())),
         }?;
-        execution_context
+        task_execution_context
             .write_kind(EventKind::Finished {
                 message: "".to_string(),
             })

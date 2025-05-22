@@ -300,6 +300,9 @@ pub struct RoutingAgent {
     #[serde(flatten)]
     #[garde(skip)]
     pub embedding_config: EmbeddingConfig,
+    #[serde(default = "default_synthesize_results")]
+    #[garde(skip)]
+    pub synthesize_results: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
@@ -2014,9 +2017,14 @@ fn default_routing_agent_instructions() -> String {
   1. Reasoning the task to find the most relevant tools.
   2. If the task is not relevant to any tool, explain why.
   3. If the task is relevant to a tool, route it to the tool.
+  4. Synthesize the results from the tool and return it to the user. DO NOT return the raw results from the tool.
   Your task:"
     }
     .to_string()
+}
+
+fn default_synthesize_results() -> bool {
+    true
 }
 
 fn default_consistency_prompt() -> String {

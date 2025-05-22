@@ -200,6 +200,7 @@ pub trait OpenAIToolConfig {
     fn description(&self) -> String;
     fn tool_kind(&self) -> String;
     fn handle(&self) -> String;
+    fn artifact(&self) -> Option<(String, String)>;
     async fn params_schema(&self) -> Result<serde_json::Value, OxyError>;
 }
 
@@ -241,6 +242,15 @@ impl OpenAIToolConfig for &ToolType {
         }
     }
 
+    fn artifact(&self) -> Option<(String, String)> {
+        match self {
+            ToolType::ExecuteSQL(_) | ToolType::Workflow(_) | ToolType::Agent(_) => {
+                Some((self.handle(), self.tool_kind()))
+            }
+            _ => None,
+        }
+    }
+
     fn tool_kind(&self) -> String {
         match self {
             ToolType::ExecuteSQL(_) => "execute_sql".to_string(),
@@ -265,12 +275,7 @@ impl OpenAIToolConfig for &ToolType {
             ToolType::Retrieval(_) => {
                 Ok(serde_json::json!(&schemars::schema_for!(RetrievalParams)))
             }
-            ToolType::Workflow(w) => {
-                let schema = generate_workflow_run_schema(&w.workflow_ref.clone())
-                    .await
-                    .unwrap();
-                Ok(schema)
-            }
+            ToolType::Workflow(w) => generate_workflow_run_schema(&w.workflow_ref.clone()).await,
             ToolType::Agent(_) => Ok(serde_json::json!(&schemars::schema_for!(AgentParams))),
             ToolType::Visualize(_) => {
                 Ok(serde_json::json!(&schemars::schema_for!(VisualizeParams)))
@@ -297,31 +302,6 @@ async fn generate_workflow_run_schema(workflow_path: &str) -> Result<serde_json:
         get_workflow(PathBuf::from(workflow_path), Some(project_path.clone())).await?;
     let schema = Into::<RootSchema>::into(workflow_config.variables.unwrap_or_default());
     let json_schema = serde_json::json!(schema);
-    // if variables.is_none() {
-    //     let mut schema = serde_json::Map::new();
-    //     schema.insert("type".to_string(), Value::String("object".to_string()));
-
-    //     return Ok(schema);
-    // }
-    // let mut schema = serde_json::Map::new();
-    // let mut variable_schema = serde_json::Map::new();
-    // let mut properties = serde_json::Map::new();
-    // let variables = variables.unwrap();
-
-    // for (key, value) in variables.variables.iter() {
-    //     properties.insert(key.clone(), schemars::schema_for!(value));
-    // }
-    // variable_schema.insert("type".to_string(), Value::String("object".to_string()));
-    // variable_schema.insert("properties".to_string(), Value::Object(properties));
-
-    // schema.insert(
-    //     "properties".to_string(),
-    //     json!({
-    //         "variables": variable_schema,
-    //     }),
-    // );
-    // schema.insert("type".to_string(), Value::String("object".to_string()));
-
     Ok(json_schema)
 }
 

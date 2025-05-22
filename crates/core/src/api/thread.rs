@@ -1,13 +1,12 @@
 use crate::{
-    config::constants::WORKFLOW_SOURCE,
     db::client::establish_connection,
     errors::OxyError,
     execute::{
-        types::{Event, EventKind, Output, ReferenceKind},
-        writer::EventHandler,
+        types::{Event, ReferenceKind},
+        writer::{EventHandler, MarkdownWriter, OutputWriter},
     },
     service::agent::run_agent,
-    utils::find_project_path,
+    utils::{find_project_path, try_unwrap_arc_mutex, try_unwrap_arc_tokio_mutex},
 };
 use async_stream::stream;
 use axum::{
@@ -22,7 +21,6 @@ use sea_orm::prelude::DateTimeWithTimeZone;
 use sea_orm::{ActiveModelTrait, ActiveValue, EntityTrait};
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::VecDeque,
     path::PathBuf,
     sync::{Arc, Mutex},
 };
@@ -177,15 +175,19 @@ pub async fn delete_all_threads() -> Result<StatusCode, StatusCode> {
 struct ThreadStream {
     references: Arc<Mutex<Vec<ReferenceKind>>>,
     tx: Sender<AnswerStream>,
-    task_queue: VecDeque<String>,
+    output_writer: Arc<tokio::sync::Mutex<MarkdownWriter>>,
 }
 
 impl ThreadStream {
-    fn new(tx: Sender<AnswerStream>) -> Self {
+    fn new(
+        tx: Sender<AnswerStream>,
+        references: Arc<Mutex<Vec<ReferenceKind>>>,
+        writer: Arc<tokio::sync::Mutex<MarkdownWriter>>,
+    ) -> Self {
         ThreadStream {
             tx,
-            references: Arc::new(Mutex::new(vec![])),
-            task_queue: VecDeque::new(),
+            references,
+            output_writer: writer,
         }
     }
 }
@@ -193,71 +195,26 @@ impl ThreadStream {
 #[async_trait::async_trait]
 impl EventHandler for ThreadStream {
     async fn handle_event(&mut self, event: Event) -> Result<(), OxyError> {
-        if let EventKind::Started { name } = &event.kind {
-            if event.source.kind.as_str() != WORKFLOW_SOURCE {
-                self.task_queue.push_back(name.clone());
-                let message = AnswerStream {
-                    content: format!("<details open>\n<summary>{}</summary>\n\n", name),
-                    references: vec![],
+        let mut output_writer = self.output_writer.lock().await;
+        let event_format = output_writer.write_event(&event).await?;
+
+        if let Some(event_format) = event_format {
+            self.tx
+                .send(AnswerStream {
+                    content: event_format.content,
+                    references: match event_format.reference {
+                        Some(reference) => {
+                            self.references.lock().unwrap().push(reference.clone());
+                            vec![reference]
+                        }
+                        None => vec![],
+                    },
                     is_error: false,
-                    step: "".to_string(),
-                };
-                self.tx.send(message).await?;
-            }
+                    step: event.source.kind.to_string(),
+                })
+                .await?;
         }
 
-        if let EventKind::Finished { .. } = &event.kind {
-            if event.source.kind.as_str() != WORKFLOW_SOURCE && self.task_queue.pop_back().is_some()
-            {
-                let message = AnswerStream {
-                    content: "\n\n</details>\n".to_string(),
-                    references: vec![],
-                    is_error: false,
-                    step: "".to_string(),
-                };
-                self.tx.send(message).await?;
-            }
-        }
-
-        if let EventKind::Updated { chunk } = event.kind {
-            match chunk.delta {
-                Output::Prompt(_) => {
-                    let message = AnswerStream {
-                        content: "".to_string(),
-                        references: vec![],
-                        is_error: false,
-                        step: event.source.kind.to_string(),
-                    };
-                    __self.tx.send(message).await?;
-                }
-                Output::Text(text) => {
-                    let message = AnswerStream {
-                        content: text,
-                        references: vec![],
-                        is_error: false,
-                        step: event.source.kind.to_string(),
-                    };
-                    __self.tx.send(message).await?;
-                }
-                Output::Table(table) => {
-                    let table_display = table.to_string();
-                    let reference = table.into_reference();
-                    if let Some(r) = reference {
-                        self.references.lock().unwrap().push(r.clone());
-                        let message = AnswerStream {
-                            content: table_display,
-                            references: vec![r],
-                            is_error: false,
-                            step: event.source.kind.to_string(),
-                        };
-                        __self.tx.send(message).await?;
-                    }
-                }
-                Output::Bool(_) => {}
-                Output::SQL(_) => {}
-                Output::Documents(_) => {}
-            }
-        }
         Ok(())
     }
 }
@@ -295,31 +252,24 @@ pub async fn ask_thread(Path(id): Path<String>) -> Result<impl IntoResponse, Sta
     let (tx, rx) = tokio::sync::mpsc::channel(100);
     let _ = tokio::spawn(async move {
         let tx_clone = tx.clone();
-        let thread_stream = ThreadStream::new(tx);
-        let references_arc = thread_stream.references.clone();
-        let result = {
-            run_agent(
-                &project_path,
-                &PathBuf::from(agent_ref),
-                prompt,
-                thread_stream,
-            )
-            .await
-        };
+        let markdown_writer = Arc::new(tokio::sync::Mutex::new(MarkdownWriter::default()));
+        let references_arc = Arc::new(Mutex::new(vec![]));
+        let thread_stream = ThreadStream::new(tx, references_arc.clone(), markdown_writer.clone());
+        let result = run_agent(
+            &project_path,
+            &PathBuf::from(agent_ref),
+            prompt,
+            thread_stream,
+        )
+        .await;
         match result {
             Ok(output_container) => {
-                let references = Arc::try_unwrap(references_arc)
-                    .map_err(|_| {
-                        OxyError::RuntimeError("Failed to unwrap agent references".to_string())
-                    })?
-                    .into_inner()
-                    .map_err(|err| {
-                        OxyError::RuntimeError(format!("Failed to get agent references: {}", err))
-                    })?;
+                let references = try_unwrap_arc_mutex(references_arc)?;
+                let markdown_writer = try_unwrap_arc_tokio_mutex(markdown_writer).await?;
                 tracing::debug!("Agent output: {:?}", output_container);
                 tracing::debug!("Agent references: {:?}", references);
                 let mut thread_model: entity::threads::ActiveModel = thread.into();
-                thread_model.output = ActiveValue::Set(output_container.to_markdown()?);
+                thread_model.output = ActiveValue::Set(markdown_writer.finish().await?);
                 thread_model.references =
                     ActiveValue::Set(serde_json::to_string(&references).map_err(|err| {
                         OxyError::SerializerError(format!(
@@ -378,8 +328,9 @@ pub async fn ask_agent(
     let (tx, rx) = tokio::sync::mpsc::channel(100);
     let _ = tokio::spawn(async move {
         let tx_clone = tx.clone();
-        let thread_stream = ThreadStream::new(tx);
-
+        let markdown_writer = Arc::new(tokio::sync::Mutex::new(MarkdownWriter::default()));
+        let references_arc = Arc::new(Mutex::new(vec![]));
+        let thread_stream = ThreadStream::new(tx, references_arc.clone(), markdown_writer.clone());
         let result = run_agent(
             &project_path,
             &PathBuf::from(path),

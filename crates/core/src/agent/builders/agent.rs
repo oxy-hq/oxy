@@ -51,7 +51,6 @@ impl Executable<AgentInput> for AgentExecutable {
         let output_container = match agent_config.r#type {
             AgentType::Default(default_agent) => {
                 let default_agent_executable = build_default_agent_executable();
-
                 execute_with_handler(
                     default_agent_executable,
                     &routing_context,
@@ -65,7 +64,6 @@ impl Executable<AgentInput> for AgentExecutable {
                     handler,
                 )
                 .await
-                .map(|output| output.into())
             }
             AgentType::Routing(routing_agent) => {
                 execute_with_handler(

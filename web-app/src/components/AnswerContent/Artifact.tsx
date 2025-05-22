@@ -1,0 +1,76 @@
+import {
+  CircleAlert,
+  CircleCheck,
+  MessagesSquare,
+  SquareTerminal,
+  Workflow,
+} from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "../ui/shadcn/tooltip";
+
+type Props = {
+  kind: string;
+  title: string;
+  is_verified: string;
+  children: React.ReactNode;
+};
+
+export default function ArtifactContainer(props: Props) {
+  let icon = <SquareTerminal />;
+  switch (props.kind) {
+    case "workflow":
+      icon = <Workflow />;
+      break;
+    case "agent":
+      icon = <MessagesSquare />;
+      break;
+  }
+  const isVerified = props.is_verified?.toLowerCase() === "true";
+  const verifiedClassName = isVerified ? "text-green-500" : "text-yellow-500";
+  const verifiedText = isVerified
+    ? "This is a verified object that has been created by a person."
+    : "This is a unverified object that has been created by an AI Agent.";
+  let children = props.children ?? null;
+  switch (props.kind) {
+    case "agent":
+    case "execute_sql":
+      children = children ? (
+        <details>
+          <summary>{props.title}</summary>
+          {props.children}
+        </details>
+      ) : null;
+      break;
+  }
+
+  return (
+    <>
+      <div className="skip-revert w-fit flex items-center space-x-4 rounded-md border border-base-border shadow-sm p-4 mb-1">
+        {icon}
+        <div className="flex-1 space-y-1">
+          <p className="text-sm font-medium leading-none">{props.title}</p>
+          <p className="text-sm text-muted-foreground">
+            Click to view the artifact.
+          </p>
+        </div>
+        <div className={`flex items-start justify-center ${verifiedClassName}`}>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                {isVerified ? <CircleCheck /> : <CircleAlert />}
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>{verifiedText}</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        </div>
+      </div>
+      {children ? <div className="mb-1">{children}</div> : null}
+    </>
+  );
+}

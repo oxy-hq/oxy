@@ -7,6 +7,8 @@ pub const AGENT_SOURCE_TYPE: &str = "agent_type";
 pub const AGENT_SOURCE_PROMPT: &str = "prompt";
 pub const AGENT_SOURCE_CONTENT: &str = "content";
 pub const WORKFLOW_SOURCE: &str = "workflow";
+pub const TASK_SOURCE: &str = "task";
+pub const ARTIFACT_SOURCE: &str = "artifact";
 pub const EVAL_SOURCE_ROOT: &str = "eval_root";
 pub const EVAL_SOURCE: &str = "eval";
 pub const EVAL_METRICS_POSTFIX: &str = "metrics";
@@ -24,6 +26,7 @@ pub const CONCURRENCY_ITEM_ID_PREFIX: &str = "concurrency_item_";
 pub const CACHE_SOURCE: &str = "cache";
 pub const CONSISTENCY_SOURCE: &str = "consistency";
 pub const CONSISTENCY_THRESHOLD: f32 = 0.25;
+pub const MARKDOWN_MAX_FENCES: usize = 10;
 
 pub const CONSISTENCY_PROMPT: &str = indoc::indoc! {"
     You are comparing a pair of submitted answers on a given question. Here is the data:

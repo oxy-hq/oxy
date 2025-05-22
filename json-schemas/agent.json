@@ -1063,8 +1063,12 @@
             "type": "string"
           }
         },
+        "synthesize_results": {
+          "default": true,
+          "type": "boolean"
+        },
         "system_instructions": {
-          "default": "You are a routing agent. Your job is to route the task to the correct tool. Follow the steps below:\n1. Reasoning the task to find the most relevant tools.\n2. If the task is not relevant to any tool, explain why.\n3. If the task is relevant to a tool, route it to the tool.\nYour task:",
+          "default": "You are a routing agent. Your job is to route the task to the correct tool. Follow the steps below:\n1. Reasoning the task to find the most relevant tools.\n2. If the task is not relevant to any tool, explain why.\n3. If the task is relevant to a tool, route it to the tool.\n4. Synthesize the results from the tool and return it to the user. DO NOT return the raw results from the tool.\nYour task:",
           "type": "string"
         },
         "table": {
