@@ -8,7 +8,7 @@ type ThreadReferencesProps = {
 
 const ThreadReferences = ({ references, prompt }: ThreadReferencesProps) => {
   return (
-    <div className="gap-2 flex overflow-x-auto font-sans">
+    <div className="gap-2 flex flex-wrap font-sans">
       {references.map((reference, index) => (
         <ReferenceItem key={index} reference={reference} prompt={prompt} />
       ))}
