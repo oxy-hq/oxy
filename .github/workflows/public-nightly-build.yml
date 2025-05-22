@@ -153,7 +153,7 @@ jobs:
   build-and-publish-docker:
     if: github.repository == 'oxy-hq/oxy'
     concurrency:
-      group: docker-publish-nightly
+      group: docker-publish-nightly-${{ matrix.arch }}
       cancel-in-progress: true
     runs-on: ubuntu-24.04-arm
     strategy:

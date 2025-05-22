@@ -17,7 +17,7 @@ jobs:
   build-and-publish:
     if: github.repository == 'oxy-hq/oxy'
     concurrency:
-      group: docker-publish-${{ github.ref_name }}
+      group: docker-publish-${{ github.ref_name }}-${{ matrix.arch }}
       cancel-in-progress: true
     runs-on: ubuntu-24.04-arm
     permissions:
