@@ -5,15 +5,8 @@ import useApp from "@/hooks/api/useApp";
 import useRunAppMutation from "@/hooks/api/useRunAppMutation";
 import { Displays } from "../../components/AppPreview/Displays";
 import { toast } from "sonner";
-import { LoaderCircle } from "lucide-react";
 import { ErrorBoundary } from "react-error-boundary";
-
-// Utility: Loading UI
-const Loading = () => (
-  <div className="w-full h-full flex items-center justify-center">
-    <LoaderCircle className="w-16 h-16 text-gray-500 animate-spin" />
-  </div>
-);
+import PageSkeleton from "@/components/PageSkeleton";
 
 // Main page
 const AppPage: React.FC = () => {
@@ -33,7 +26,7 @@ const AppPage: React.FC = () => {
 
   const handleRun = () => runApp(pathb64);
 
-  if (isPending) return <Loading />;
+  if (isPending) return <PageSkeleton />;
 
   if (!app) {
     return (

@@ -17,10 +17,11 @@ import {
 import ThreadItem from "./Item";
 import ClearAllThreadsDialog from "./ClearAllThreadsDialog";
 import { Button } from "@/components/ui/shadcn/button";
+import ItemsSkeleton from "../ItemsSkeleton";
 
 const Threads = () => {
   const location = useLocation();
-  const { data: threads } = useThreads();
+  const { data: threads, isPending } = useThreads();
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [showAll, setShowAll] = useState(false);
   const isThreadsPage = location.pathname === "/threads";
@@ -61,10 +62,14 @@ const Threads = () => {
           </DropdownMenuContent>
         </DropdownMenu>
         <SidebarMenuSub>
-          {visibleThreads?.map((thread) => (
-            <ThreadItem key={thread.id} thread={thread} />
-          ))}
-          {threads && threads.length > 5 && (
+          {isPending && <ItemsSkeleton />}
+
+          {!isPending &&
+            visibleThreads?.map((thread) => (
+              <ThreadItem key={thread.id} thread={thread} />
+            ))}
+
+          {!isPending && threads && threads.length > 5 && (
             <Button
               size="sm"
               variant="ghost"

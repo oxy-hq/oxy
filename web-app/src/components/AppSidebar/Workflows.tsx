@@ -10,11 +10,12 @@ import {
 import useWorkflows from "@/hooks/api/useWorkflows";
 import { useState } from "react";
 import { Button } from "@/components/ui/shadcn/button";
+import ItemsSkeleton from "./ItemsSkeleton";
 
 export function Workflows() {
   const [showAll, setShowAll] = useState(false);
   const location = useLocation();
-  const { data: workflows } = useWorkflows();
+  const { data: workflows, isPending } = useWorkflows();
 
   const visibleWorkflows = showAll ? workflows : workflows?.slice(0, 5);
 
@@ -27,22 +28,25 @@ export function Workflows() {
         </div>
       </SidebarMenuButton>
       <SidebarMenuSub>
-        {visibleWorkflows?.map((workflow) => {
-          const pathb64 = btoa(workflow.path);
-          const workflowUri = `/workflows/${pathb64}`;
-          return (
-            <SidebarMenuSubItem key={pathb64}>
-              <SidebarMenuSubButton
-                asChild
-                isActive={location.pathname === workflowUri}
-              >
-                <Link to={workflowUri}>
-                  <span>{workflow.name}</span>
-                </Link>
-              </SidebarMenuSubButton>
-            </SidebarMenuSubItem>
-          );
-        })}
+        {isPending && <ItemsSkeleton />}
+
+        {!isPending &&
+          visibleWorkflows?.map((workflow) => {
+            const pathb64 = btoa(workflow.path);
+            const workflowUri = `/workflows/${pathb64}`;
+            return (
+              <SidebarMenuSubItem key={pathb64}>
+                <SidebarMenuSubButton
+                  asChild
+                  isActive={location.pathname === workflowUri}
+                >
+                  <Link to={workflowUri}>
+                    <span>{workflow.name}</span>
+                  </Link>
+                </SidebarMenuSubButton>
+              </SidebarMenuSubItem>
+            );
+          })}
         {workflows && workflows.length > 5 && (
           <Button
             size="sm"
