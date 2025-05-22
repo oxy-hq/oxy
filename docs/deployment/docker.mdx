@@ -41,6 +41,35 @@ docker run -d \
   ghcr.io/oxy-hq/oxy:0.2.2
 ```
 
+## Reference Architecture Diagram
+
+```mermaid
+flowchart TD
+  subgraph User Host
+    Workspace[(Oxy Workspace)]
+    Data[(Persistent Data)]
+  end
+
+  subgraph DockerHost["Docker Host (VM/Server)"]
+    Oxy[Oxy Container]
+    DataVol[/data Volume/]
+    WorkspaceVol[/workspace Volume/]
+    Oxy-->|Mounts|WorkspaceVol
+    Oxy-->|Mounts|DataVol
+  end
+
+  subgraph ReverseProxy["Reverse Proxy (Optional)"]
+    Caddy[Caddy Container]
+  end
+
+  User[User/Browser]
+  User-->|HTTPS|Caddy
+  Caddy-->|Proxy|Oxy
+
+  WorkspaceVol-->|Host Path|Workspace
+  DataVol-->|Host Path|Data
+```
+
 ## Detailed Deployment Steps
 
 <Steps>
@@ -139,33 +168,6 @@ docker run -d \
         }
         ```
       </Tab>
-      <Tab title="Using Traefik">
-        Traefik offers a more Docker-native approach to reverse proxying:
-
-        ```yaml
-        version: '3'
-        services:
-          oxy:
-            # ...existing Oxy configuration...
-            labels:
-              - "traefik.enable=true"
-              - "traefik.http.routers.oxy.rule=Host(`your-domain.com`)"
-              - "traefik.http.routers.oxy.entrypoints=websecure"
-              - "traefik.http.routers.oxy.tls.certresolver=myresolver"
-          
-          traefik:
-            image: traefik:v3.4.0
-            container_name: traefik
-            ports:
-              - "80:80"
-              - "443:443"
-            volumes:
-              - "/var/run/docker.sock:/var/run/docker.sock:ro"
-              - "./traefik.yml:/etc/traefik/traefik.yml"
-              - "./acme.json:/acme.json"
-            restart: unless-stopped
-        ```
-      </Tab>
     </Tabs>
   </Step>
 
@@ -231,6 +233,37 @@ docker run -d \
     </Tabs>
   </Step>
 </Steps>
+
+## Example Caddyfile for Oxy Serve
+
+```caddyfile
+{
+    email luong@oxy.tech
+}
+
+(reverse_proxy_oxy) {
+    reverse_proxy 127.0.0.1:3000 {
+        flush_interval -1
+        transport http {
+            versions 1.1 2 h2c
+        }
+    }
+}
+
+oxy.yourdomain.com {
+    @static_assets {
+        path *.js *.css *.svg *.json *.gif *.wasm
+    }
+
+    handle @static_assets {
+        import reverse_proxy_oxy
+    }
+
+    handle {
+        import reverse_proxy_oxy
+    }
+}
+```
 
 ## Volume Mounting Explained
 
