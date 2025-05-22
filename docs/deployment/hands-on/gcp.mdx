@@ -1,7 +1,7 @@
 ---
 title: "Google Cloud Platform (GCP) Deployment"
 description: "Step-by-step guide for deploying Oxy on Google Cloud Platform"
-sidebarTitle: "GCP Deployment"
+sidebarTitle: "GCP Compute Engine"
 ---
 
 # Deploy Oxy on GCP
@@ -9,7 +9,7 @@ sidebarTitle: "GCP Deployment"
 This guide walks you through deploying Oxy on Google Cloud Platform using Compute Engine VM instances. We'll cover everything from setting up a virtual machine to configuring Oxy with proper data persistence and HTTPS access.
 
 <Note>
-  This is part of our [Hands-on Deployment Guides](/deployment/hands-on). For additional deployment options, see our [Docker Deployment Guide](/deployment/docker) or the [general deployment overview](/deployment/overview).
+  This is part of our [Hands-on Deployment Guides](/deployment/hands-on). For additional deployment options, see our [Docker Deployment Guide](/deployment/docker) or the [general deployment overview](/deployment/index).
 </Note>
 
 ## Prerequisites
@@ -44,12 +44,12 @@ Follow these steps to create a VM instance in Google Cloud Platform:
     - **Name**: Choose a name for your instance (e.g., `oxy-server`)
     - **Region & Zone**: Select a region close to your users
     - **Machine Configuration**: 
-      - For moderate workloads: `e2-standard-2` (2 vCPU, 8 GB memory)
-      - For larger workloads: `e2-standard-4` (4 vCPU, 16 GB memory)
-    - **Boot disk**: 
-      - Operating System: Debian or Ubuntu
-      - Version: Latest stable (e.g., Debian 12 or Ubuntu 22.04)
-      - Size: At least 50 GB (more if you plan to store large datasets)
+      - For optimal cost-performance, consider using ARM-based instances (T2A series):
+        - `t2a-standard-1` (1 vCPU ARM, 4 GB memory)
+    - **Boot disk**:
+      - Operating System: Ubuntu
+      - Version: Latest stable (e.g., Ubuntu 22.04)
+      - Size: recommended starting point 10 GB
     - **Firewall**:
       - Check "Allow HTTP traffic"
       - Check "Allow HTTPS traffic"
@@ -109,7 +109,7 @@ Connect to your VM instance and prepare it for Oxy deployment:
 
   <Step title="Update System Packages">
     ```bash
-    sudo apt update && sudo apt upgrade -y
+    sudo apt update
     ```
   </Step>
 
@@ -120,148 +120,145 @@ Connect to your VM instance and prepare it for Oxy deployment:
   </Step>
 </Steps>
 
-## Installing Docker and Docker Compose
+## Installing Oxy CLI
 
-Oxy can be easily deployed using Docker, so let's install Docker and Docker Compose:
+Let's install Oxy directly on the VM:
 
 <Steps>
-  <Step title="Install Docker">
-    For Debian/Ubuntu:
+  <Step title="Install Required Dependencies">
+    First, install some additional dependencies:
     
     ```bash
     sudo apt update
-    sudo apt install -y ca-certificates curl gnupg
-
-    sudo install -m 0755 -d /etc/apt/keyrings
-    curl -fsSL https://download.docker.com/linux/debian/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-    sudo chmod a+r /etc/apt/keyrings/docker.gpg
-    
-    # For Debian
-    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-    
-    # For Ubuntu
-    # echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-    
-    sudo apt update
-    sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+    sudo apt install -y build-essential libssl-dev pkg-config
     ```
   </Step>
 
-  <Step title="Verify Docker Installation">
-    ```bash
-    sudo docker --version
-    sudo docker compose version
-    ```
-  </Step>
-
-  <Step title="Add Your User to the Docker Group">
-    This allows you to run Docker commands without sudo:
+  <Step title="Install Oxy">
+    Run the official Oxy installation script:
     
     ```bash
-    sudo usermod -aG docker ${USER}
-    # Log out and log back in for the changes to take effect
-    exit
-    # Re-connect to your VM
+    bash <(curl --proto '=https' --tlsv1.2 -sSf https://get.oxy.tech)
     ```
+    
+    This script will download and install the latest stable version of Oxy.
+  </Step>
+
+  <Step title="Verify the Installation">
+    Confirm that Oxy is installed correctly:
+    
+    ```bash
+    oxy --version
+    ```
+    
+    You should see the version information displayed.
   </Step>
 </Steps>
 
-## Setting Up Oxy
+## Setting Up Oxy Workspace
 
-Now, let's set up Oxy using Docker:
+Let's use the built-in `oxy init` command to initialize a new workspace with all the necessary files and configuration:
 
 <Steps>
-  <Step title="Create Deployment Directory">
+  <Step title="Create and Navigate to Workspace Directory">
     ```bash
-    mkdir -p ~/oxy-deployment
-    cd ~/oxy-deployment
+    mkdir -p ~/oxy-workspace
+    cd ~/oxy-workspace
     ```
   </Step>
 
-  <Step title="Create a Docker Compose File">
+  <Step title="Initialize Oxy Project">
     ```bash
-    nano docker-compose.yml
+    oxy init
     ```
     
-    Add the following content to the file:
+    This interactive command will:
+    1. Create a `config.yml` file with your database and model configurations
+    2. Set up sample project files
+    3. Create necessary directories like `agents` and `workflows`
     
-    ```yaml
-    version: '3'
-    services:
-      oxy:
-        image: ghcr.io/oxy-hq/oxy:0.2.2
-        container_name: oxy-instance
-        ports:
-          - "3000:3000"
-        working_dir: /workspace
-        volumes:
-          - ./workspace:/workspace
-          - ./oxy-data:/data
-        environment:
-          - OPENAI_API_KEY=your-openai-api-key
-          - OXY_STATE_DIR=/data
-        restart: unless-stopped
-        command: ["oxy", "serve", "--host", "0.0.0.0", "--port", "3000"]
-      
-      caddy:
-        image: caddy:2.10.0
-        container_name: caddy
-        ports:
-          - "80:80"
-          - "443:443"
-        volumes:
-          - ./Caddyfile:/etc/caddy/Caddyfile
-          - caddy_data:/data
-          - caddy_config:/config
-        restart: unless-stopped
-        depends_on:
-          - oxy
-
-    volumes:
-      caddy_data:
-      caddy_config:
+    Follow the prompts to configure:
+    - Database settings (You can start with DuckDB for simplicity)
+    - Model configuration (e.g., OpenAI with your API key)
+    
+    The initialization process will ask for your OpenAI API key and create all the necessary configuration.
+  </Step>
+  
+  <Step title="Alternative: Set Up Git and Clone Existing Project">
+    <Note>
+      If you already have an existing Oxy project in a Git repository, you should set up Git and clone your repository instead of using `oxy init`.
+    </Note>
+    
+    First, make sure Git is properly configured:
+    
+    ```bash
+    git config --global user.name "Your Name"
+    git config --global user.email "your.email@example.com"
     ```
     
-    Save and exit (Ctrl+X, then Y, then Enter).
+    Then clone your existing repository:
+    
+    ```bash
+    git clone https://github.com/yourusername/your-oxy-project.git ~/oxy-workspace
+    cd ~/oxy-workspace
+    ```
+    
+    This will give you your existing project configuration and agents, which is preferable to starting from scratch if you already have a working setup.
   </Step>
 
-  <Step title="Create Workspace Directory">
+  <Step title="Create Data Directory">
     ```bash
-    mkdir -p ~/oxy-deployment/workspace
-    cd ~/oxy-deployment/workspace
+    mkdir -p ~/oxy-data
     ```
+    
+    This directory will store all persistent data for Oxy, including the SQLite database files.
   </Step>
 
-  <Step title="Create Basic Configuration">
+  <Step title="Configure Environment Variables">
+    Create a standard `.env` file in the workspace directory:
+    
     ```bash
-    nano config.yml
+    cd ~/oxy-workspace
+    nano .env
     ```
     
-    Add basic configuration:
+    Add your environment variables:
     
-    ```yaml
-    # Basic Oxy Configuration
-    agent_directory: "agents"
-    workflow_directory: "workflows"
-    
-    # Add your database configurations here if needed
-    databases: []
+    ```bash
+    OXY_STATE_DIR=/home/$(whoami)/oxy-data
     ```
     
     Save and exit.
+    
+    Note: You won't need to manually set the OpenAI API key in the environment as it's already configured during the `oxy init` process.
+  </Step>
+</Steps>
+
+## Installing and Configuring Caddy
+
+Now, let's install and configure Caddy as a reverse proxy for HTTPS and authentication:
+
+<Steps>
+  <Step title="Install Caddy">
+    ```bash
+    sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https
+    curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+    curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
+    sudo apt update
+    sudo apt install -y caddy
+    ```
   </Step>
 
   <Step title="Create Caddyfile">
     ```bash
-    cd ~/oxy-deployment
-    nano Caddyfile
+    sudo nano /etc/caddy/Caddyfile
     ```
     
     If you have a domain name:
     
     ```caddy
     (reverse_proxy_app) {
-        reverse_proxy oxy:3000 {
+        reverse_proxy localhost:3000 {
             flush_interval -1
             transport http {
                 versions 1.1 2 h2c
@@ -281,7 +278,7 @@ Now, let's set up Oxy using Docker:
     
     ```caddy
     (reverse_proxy_app) {
-        reverse_proxy oxy:3000 {
+        reverse_proxy localhost:3000 {
             flush_interval -1
             transport http {
                 versions 1.1 2 h2c
@@ -299,85 +296,16 @@ Now, let's set up Oxy using Docker:
     Save and exit.
   </Step>
 
-  <Step title="Create Data Directory">
-    ```bash
-    mkdir -p ~/oxy-deployment/oxy-data
-    ```
-    
-    This directory will store all persistent data for Oxy, including the SQLite database files.
-  </Step>
-
-  <Step title="Update Environment Variables">
-    Edit the docker-compose.yml file to update environment variables:
+  <Step title="Configure Authentication">
+    To add basic authentication to your Caddyfile:
     
     ```bash
-    nano docker-compose.yml
+    sudo nano /etc/caddy/Caddyfile
     ```
     
-    Replace `your-openai-api-key` with your actual OpenAI API key.
-    
-    If you need additional environment variables (for database connections, etc.), add them here.
-    
-    Save and exit.
-  </Step>
-</Steps>
-
-## Starting Oxy
-
-<Steps>
-  <Step title="Start the Services">
-    ```bash
-    cd ~/oxy-deployment
-    docker compose up -d
-    ```
-    
-    This will start the Oxy and Caddy containers in the background.
-  </Step>
-
-  <Step title="Verify Services">
-    ```bash
-    docker ps
-    ```
-    
-    You should see both containers running.
-  </Step>
-
-  <Step title="Check Logs">
-    ```bash
-    # View Oxy logs
-    docker logs oxy-instance
-    
-    # View Caddy logs
-    docker logs caddy
-    ```
-  </Step>
-</Steps>
-
-## Configuring Authentication (Optional)
-
-For production deployments, you should add authentication to secure your Oxy instance:
-
-<Steps>
-  <Step title="Basic Authentication">
-    Edit your Caddyfile to add basic authentication:
-    
-    ```bash
-    cd ~/oxy-deployment
-    nano Caddyfile
-    ```
-    
-    Update your Caddyfile:
+    Update your domain section to include authentication:
     
     ```caddy
-    (reverse_proxy_app) {
-        reverse_proxy oxy:3000 {
-            flush_interval -1
-            transport http {
-                versions 1.1 2 h2c
-            }
-        }
-    }
-
     yourdomain.com {
         basicauth {
             username JDJhJDEwJEVCNmdaNEg0RHpzWjdGUGdKSG1TN09xQWdQVzlzd0ZJdUpRdzNqQ0hrd1NSdXlKTEpZQXpx
@@ -389,17 +317,111 @@ For production deployments, you should add authentication to secure your Oxy ins
     To generate the password hash:
     
     ```bash
-    docker run --rm caddy:2 caddy hash-password
-    # Enter your password when prompted
+    sudo caddy hash-password
+    # Enter your desired password when prompted
     ```
     
-    Copy the resulting hash into your Caddyfile.
+    Copy the resulting hash into your Caddyfile, replacing the example hash above.
     
-    Save, exit, and reload Caddy:
+    Save and exit.
+  </Step>
+
+  <Step title="Reload Caddy">
+    ```bash
+    sudo systemctl reload caddy
+    ```
+  </Step>
+</Steps>
+
+## Creating a Systemd Service for Oxy
+
+To ensure Oxy runs automatically on system startup and restarts if it fails:
+
+<Steps>
+  <Step title="Create a Systemd Service File">
+    ```bash
+    sudo nano /etc/systemd/system/oxy.service
+    ```
+    
+    Add the following content:
+    
+    ```ini
+    [Unit]
+    Description=Oxy Server
+    After=network.target
+    
+    [Service]
+    Type=simple
+    User=YOUR_USERNAME
+    WorkingDirectory=/home/YOUR_USERNAME/oxy-workspace
+    EnvironmentFile=/home/YOUR_USERNAME/oxy-workspace/.env
+    ExecStart=/usr/local/bin/oxy serve --host 0.0.0.0 --port 3000
+    Restart=always
+    RestartSec=5
+    
+    [Install]
+    WantedBy=multi-user.target
+    ```
+    
+    Replace `YOUR_USERNAME` with your actual username.
+    
+    Save and exit.
+  </Step>
+
+  <Step title="Enable and Start the Service">
+    ```bash
+    sudo systemctl daemon-reload
+    sudo systemctl enable oxy
+    sudo systemctl start oxy
+    ```
+  </Step>
+
+  <Step title="Verify the Service">
+    ```bash
+    sudo systemctl status oxy
+    ```
+    
+    You should see that the service is active and running.
+  </Step>
+</Steps>
+
+## Starting Oxy
+
+Let's start the Oxy service and make sure everything is working properly:
+
+<Steps>
+  <Step title="Start the Oxy Service">
+    ```bash
+    sudo systemctl start oxy
+    ```
+  </Step>
+
+  <Step title="Check the Service Status">
+    ```bash
+    sudo systemctl status oxy
+    ```
+    
+    Make sure it shows as "active (running)".
+  </Step>
+
+  <Step title="View Logs (if needed)">
+    If you encounter any issues, check the logs:
     
     ```bash
-    docker compose restart caddy
+    sudo journalctl -u oxy -f
     ```
+    
+    This command will show you the live logs from the Oxy service.
+  </Step>
+
+  <Step title="Test the Connection">
+    You can test if Oxy is responding properly:
+    
+    ```bash
+    curl http://localhost:3000/health
+    ```
+    
+    You should get a positive response indicating that Oxy is running.
   </Step>
 </Steps>
 
@@ -408,8 +430,8 @@ For production deployments, you should add authentication to secure your Oxy ins
 It's important to understand how Oxy handles data persistence:
 
 - Oxy uses SQLite for its internal database by default
-- All data is stored in the directory specified by `OXY_STATE_DIR` (configured as `/data` in the container)
-- This directory is mounted to `./oxy-data` on your host
+- All data is stored in the directory specified by `OXY_STATE_DIR` environment variable (we set it to ~/oxy-data)
+- This directory contains database files, semantic information, cached query results, and workflow history
 
 <Note>
   For production deployments, consider backing up the oxy-data directory regularly. You can set up automated backups to Google Cloud Storage using gsutil or use a persistent disk for enhanced reliability.
@@ -419,27 +441,38 @@ It's important to understand how Oxy handles data persistence:
 
 <Steps>
   <Step title="Stopping the Services">
+    If you need to stop the Oxy service temporarily:
+    
     ```bash
-    cd ~/oxy-deployment
-    docker compose down
+    sudo systemctl stop oxy
+    ```
+    
+    To stop the Caddy service:
+    
+    ```bash
+    sudo systemctl stop caddy
     ```
   </Step>
 
   <Step title="Updating Oxy">
-    ```bash
-    # Pull the latest version
-    docker compose pull
+    To update Oxy to the latest version:
     
-    # Restart with the new version
-    docker compose up -d
+    ```bash
+    # Stop the service first
+    sudo systemctl stop oxy
+    
+    # Run the installation script again
+    bash <(curl --proto '=https' --tlsv1.2 -sSf https://get.oxy.tech)
+    
+    # Start the service again
+    sudo systemctl start oxy
     ```
   </Step>
 
   <Step title="Backup Data">
     ```bash
     # Create a backup of your Oxy data
-    cd ~/oxy-deployment
-    tar -czf oxy-backup-$(date +%Y%m%d).tar.gz oxy-data/
+    tar -czf oxy-backup-$(date +%Y%m%d).tar.gz ~/oxy-data/
     
     # Optional: Upload to Google Cloud Storage
     gsutil cp oxy-backup-*.tar.gz gs://your-bucket-name/
@@ -448,6 +481,38 @@ It's important to understand how Oxy handles data persistence:
     You'll need the `gcloud` CLI installed and authenticated for the last command.
   </Step>
 </Steps>
+
+## Machine Selection Notes
+
+When selecting a machine for Oxy deployment, consider the following recommendations:
+
+### ARM-based Instances (T2A Series)
+
+GCP's T2A series offers ARM-based instances similar to Amazon's T4g series. These instances typically provide:
+
+- **Better price-performance ratio**: Often 15-20% cost savings compared to equivalent x86 instances
+- **Excellent for containerized workloads**: Great for running Oxy and supporting services
+- **Energy efficiency**: Lower power consumption can translate to additional cost savings
+
+The T2A series is particularly well-suited for Oxy deployments because:
+
+1. Oxy doesn't require specialized hardware acceleration
+2. Standard web server workloads perform well on ARM architecture
+3. Both Debian and Ubuntu have well-supported ARM variants
+
+### Instance Size Guidance
+
+- **Minimal deployments** (1-3 users): `t2a-standard-1` (2 vCPU ARM, 4 GB memory)
+- **Small deployments** (3-5 users): `t2a-standard-2` (2 vCPU ARM, 8 GB memory)
+- **Medium deployments** (5-15 users): `t2a-standard-4` (4 vCPU ARM, 16 GB memory)
+
+For x86 instances:
+- **Minimal deployments**: `e2-medium` (1 vCPU, 4 GB memory)
+- **Small deployments**: `e2-standard-2` (2 vCPU, 8 GB memory)
+
+<Note>
+  Oxy can run effectively with as little as 4GB of memory for most use cases. Only consider larger instances if you expect heavy concurrent usage or are working with large datasets.
+</Note>
 
 ## Scaling on GCP
 
@@ -458,7 +523,11 @@ As your usage grows, you may need to scale your deployment:
 1. Stop your VM from the GCP Console
 2. Edit the VM configuration to increase CPU and memory
 3. Start the VM again
-4. Reconnect and start your Oxy services
+4. Reconnect and start your Oxy services:
+   ```bash
+   sudo systemctl start oxy
+   sudo systemctl start caddy
+   ```
 
 ### Storage Scaling
 
@@ -471,11 +540,17 @@ As your usage grows, you may need to scale your deployment:
    sudo chown -R $(whoami):$(whoami) /mnt/oxy-data
    
    # Copy existing data
-   cp -r ~/oxy-deployment/oxy-data/* /mnt/oxy-data/
+   cp -r ~/oxy-data/* /mnt/oxy-data/
    
-   # Update docker-compose.yml to mount the new location
-   # Change the volume mapping to:
-   # - /mnt/oxy-data:/data
+   # Update your systemd service file
+   sudo nano /etc/systemd/system/oxy.service
+   # Change the EnvironmentFile path if needed
+   # Update the .env file with the new path:
+   # OXY_STATE_DIR=/mnt/oxy-data
+   
+   # Reload systemd and restart the service
+   sudo systemctl daemon-reload
+   sudo systemctl restart oxy
    ```
 
 ## Troubleshooting
@@ -483,15 +558,20 @@ As your usage grows, you may need to scale your deployment:
 **Issue: Cannot access Oxy through the domain or IP**
 - Check that ports 80 and 443 are open in your GCP firewall rules
 - Verify DNS settings if using a domain name
-- Check Caddy logs: `docker logs caddy`
+- Check Caddy logs: `sudo journalctl -u caddy -f`
 
 **Issue: Caddy cannot obtain SSL certificate**
 - Ensure your domain is correctly pointing to your VM's IP address
 - Check if your domain registrar supports CAA records and adjust if needed
 
-**Issue: Data not persisting after container restart**
-- Verify volume mounting in the docker-compose.yml file
-- Check file permissions on the host volume directory
+**Issue: Oxy service won't start**
+- Check the logs: `sudo journalctl -u oxy -f`
+- Verify environment variables in the service file
+- Ensure the workspace directory exists and has correct permissions
+
+**Issue: Data not persisting**
+- Check that OXY_STATE_DIR is set correctly in your service file
+- Verify file permissions on the data directory
 
 For further help, join our community on [Discord](https://discord.gg/m677N4EcRK).
 
