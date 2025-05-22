@@ -80,6 +80,27 @@ flowchart TD
     OxyServer -->|Data Access| Data
 ```
 
+## Data Persistence
+
+When deploying Oxy in production, it's important to understand how data is stored and persisted:
+
+- Oxy uses SQLite by default for its internal state management
+- Data is stored at the location specified by `OXY_STATE_DIR` environment variable
+- If `OXY_STATE_DIR` is not set, data defaults to `~/.local/share/oxy/`
+- This directory contains database files, semantic information, cached query results, and workflow history
+
+### Persistence Strategies
+
+For production deployments, ensure your data persistence strategy matches your reliability requirements:
+
+- **Docker deployments**: Mount a volume to `/data` and set `OXY_STATE_DIR=/data`
+- **Cloud VMs**: Use attached persistent disks (EBS volumes, Google Persistent Disks, etc.)
+- **Self-hosted**: Consider regular backups of the state directory
+
+<Warning>
+  Data loss can occur if proper persistence is not configured. Always ensure your Oxy state directory is backed by reliable storage and included in your backup strategy.
+</Warning>
+
 ## Deployment Steps
 
 Follow these steps to deploy Oxy on your cloud environment:
