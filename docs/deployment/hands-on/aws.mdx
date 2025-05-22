@@ -1,0 +1,594 @@
+---
+title: "Amazon Web Services (AWS) Deployment"
+description: "Step-by-step guide for deploying Oxy on Amazon EC2"
+sidebarTitle: "AWS EC2"
+---
+
+# Deploy Oxy on AWS
+
+This guide walks you through deploying Oxy on Amazon EC2 instances. We'll cover everything from setting up a virtual machine to configuring Oxy with proper data persistence and HTTPS access.
+
+<Note>
+  This is part of our [Hands-on Deployment Guides](/deployment/hands-on). For additional deployment options, see our [Docker Deployment Guide](/deployment/docker) or the [general deployment overview](/deployment/overview).
+</Note>
+
+## Prerequisites
+
+Before you begin, make sure you have:
+- An AWS account
+- A domain name (optional, but recommended for production deployments)
+- Basic familiarity with Linux command line
+
+## Creating an EC2 Instance
+
+Follow these steps to create an EC2 instance in Amazon Web Services:
+
+<Steps>
+  <Step title="Access AWS Management Console">
+    Go to the [AWS Management Console](https://console.aws.amazon.com/) and sign in with your account.
+  </Step>
+
+  <Step title="Navigate to EC2 Dashboard">
+    From the services menu, select **EC2** under Compute services.
+  </Step>
+
+  <Step title="Launch an Instance">
+    Click the **Launch instance** button and configure your instance:
+    
+    - **Name**: Choose a name for your instance (e.g., `oxy-server`)
+    - **Application and OS Images**: 
+      - Select Ubuntu Server 22.04 LTS (64-bit ARM or x86)
+      - For best value, choose the ARM-based Amazon Machine Image (AMI)
+    - **Instance type**: 
+      - For ARM-based, select `t4g.small` (2 vCPU, 2 GB memory) or `t4g.medium` (2 vCPU, 4 GB memory)
+      - For x86-based, select `t3.small` (2 vCPU, 2 GB memory) or `t3.medium` (2 vCPU, 4 GB memory)
+    - **Key pair**: Create a new key pair or select an existing one
+      - If creating a new one, make sure to download and save the private key file
+    - **Network settings**:
+      - Allow SSH traffic from your IP
+      - Allow HTTP and HTTPS traffic from the internet
+    - **Storage**:
+      - Default 8 GB gp3 root volume is sufficient to start
+      
+    Click **Launch instance** to create your EC2 instance.
+  </Step>
+
+  <Step title="Note Your Public IP">
+    Once your instance is running (it may take a minute), select it from the Instances list and note the Public IPv4 address. You'll need this to connect to your instance and to configure your domain DNS settings if using a custom domain.
+  </Step>
+</Steps>
+
+## Pointing Your Domain to the EC2 Instance (Optional)
+
+If you have a domain name you want to use for your Oxy deployment:
+
+<Steps>
+  <Step title="Access DNS Settings">
+    Go to your domain registrar's website (such as Route 53, Namecheap, or GoDaddy) and navigate to the DNS settings for your domain.
+  </Step>
+
+  <Step title="Add DNS Records">
+    Add the following DNS records:
+    
+    - **A Record**:
+      - Host/Name: `@` (represents the root domain)
+      - Value/Points to: Your EC2 instance's Public IPv4 address
+      - TTL: 3600 (or as recommended by your registrar)
+    
+    - **A Record** for www subdomain:
+      - Host/Name: `www`
+      - Value/Points to: Your EC2 instance's Public IPv4 address
+      - TTL: 3600 (or as recommended by your registrar)
+  </Step>
+
+  <Step title="Wait for DNS Propagation">
+    DNS changes can take from a few minutes to several hours to propagate. You can check the status using online tools like [whatsmydns.net](https://www.whatsmydns.net/).
+  </Step>
+</Steps>
+
+## Setting Up the EC2 Instance
+
+Connect to your EC2 instance and prepare it for Oxy deployment:
+
+<Steps>
+  <Step title="Connect to Your Instance">
+    You can connect using the AWS EC2 Instance Connect from the AWS Console by selecting your instance and clicking "Connect", or use SSH with your key file:
+    
+    ```bash
+    # Using SSH (replace with your key file path and public IP)
+    ssh -i /path/to/your-key-file.pem ubuntu@YOUR_PUBLIC_IP
+    ```
+    
+    <Important>
+      The default user for Ubuntu instances on AWS is `ubuntu`. This guide assumes you're using this user account for all commands.
+    </Important>
+  </Step>
+
+  <Step title="Update System and Install Essential Packages">
+    ```bash
+    # Update package lists and install essential tools in one command
+    sudo apt update && sudo apt install -y curl wget git unzip jq nano
+    ```
+  </Step>
+</Steps>
+
+## Installing Oxy CLI
+
+Let's install Oxy directly on the EC2 instance:
+
+<Steps>
+  <Step title="Install Required Dependencies">
+    ```bash
+    # Install all necessary dependencies at once
+    sudo apt update && sudo apt install -y build-essential libssl-dev pkg-config
+    ```
+  </Step>
+
+  <Step title="Install Oxy">
+    Run the official Oxy installation script:
+    
+    ```bash
+    bash <(curl --proto '=https' --tlsv1.2 -sSf https://get.oxy.tech)
+    ```
+    
+    This script will download and install the latest stable version of Oxy.
+  </Step>
+
+  <Step title="Verify the Installation">
+    Confirm that Oxy is installed correctly:
+    
+    ```bash
+    oxy --version
+    ```
+    
+    You should see the version information displayed.
+  </Step>
+</Steps>
+
+## Setting Up Oxy Workspace
+
+Let's use the built-in `oxy init` command to initialize a new workspace with all the necessary files and configuration:
+
+<Steps>
+  <Step title="Create and Navigate to Workspace Directory">
+    ```bash
+    mkdir -p ~/oxy-workspace
+    cd ~/oxy-workspace
+    ```
+  </Step>
+
+  <Step title="Initialize Oxy Project">
+    ```bash
+    oxy init
+    ```
+    
+    This interactive command will:
+    1. Create a `config.yml` file with your database and model configurations
+    2. Set up sample project files
+    3. Create necessary directories like `agents` and `workflows`
+    
+    Follow the prompts to configure:
+    - Database settings (You can start with DuckDB for simplicity)
+    - Model configuration (e.g., OpenAI with your API key)
+    
+    The initialization process will ask for your OpenAI API key and create all the necessary configuration.
+  </Step>
+  
+  <Step title="Alternative: Set Up Git and Clone Existing Project">
+    <Note>
+      If you already have an existing Oxy project in a Git repository, you should set up Git and clone your repository instead of using `oxy init`.
+    </Note>
+    
+    First, make sure Git is properly configured:
+    
+    ```bash
+    git config --global user.name "Your Name"
+    git config --global user.email "your.email@example.com"
+    ```
+    
+    Then clone your existing repository:
+    
+    ```bash
+    git clone https://github.com/yourusername/your-oxy-project.git ~/oxy-workspace
+    cd ~/oxy-workspace
+    ```
+    
+    This will give you your existing project configuration and agents, which is preferable to starting from scratch if you already have a working setup.
+  </Step>
+
+  <Step title="Create Data Directory">
+    ```bash
+    mkdir -p ~/oxy-data
+    ```
+    
+    This directory will store all persistent data for Oxy, including the SQLite database files.
+  </Step>
+
+  <Step title="Configure Environment Variables">
+    Create a standard `.env` file in the workspace directory:
+    
+    ```bash
+    cd ~/oxy-workspace
+    nano .env
+    ```
+    
+    Add your environment variables:
+    
+    ```bash
+    OXY_STATE_DIR=/home/$(whoami)/oxy-data
+    ```
+    
+    Save and exit.
+    
+    <Note>
+      If you don't set `OXY_STATE_DIR`, Oxy will use the default location `~/.local/share/oxy/`. 
+      We recommend setting it explicitly for production deployments to make backups and maintenance easier.
+    </Note>
+    
+    Note: You won't need to manually set the OpenAI API key in the environment as it's already configured during the `oxy init` process.
+  </Step>
+</Steps>
+
+## Installing and Configuring Caddy
+
+Now, let's install and configure Caddy as a reverse proxy for HTTPS and authentication:
+
+<Steps>
+  <Step title="Install Caddy">
+    ```bash
+    sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https
+    curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+    curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
+    sudo apt update
+    sudo apt install -y caddy
+    ```
+  </Step>
+
+  <Step title="Create Caddyfile">
+    ```bash
+    sudo nano /etc/caddy/Caddyfile
+    ```
+    
+    For domain-based setup (recommended):
+    
+    ```caddy
+    yourdomain.com {
+        reverse_proxy localhost:3000 {
+            flush_interval -1
+        }
+    }
+    ```
+    
+    Replace `yourdomain.com` with your actual domain name.
+    
+    If you don't have a domain and want to use the IP address only, use:
+    
+    ```caddy
+    :80 {
+        reverse_proxy localhost:3000 {
+            flush_interval -1
+        }
+    }
+    ```
+    
+    Save and exit (Ctrl+X, then Y, then Enter).
+  </Step>
+
+  <Step title="Configure Authentication (Optional)">
+    To add basic authentication protection:
+    
+    ```bash
+    # Generate a password hash
+    sudo caddy hash-password
+    # Enter your desired password when prompted and copy the hash
+    
+    # Edit Caddyfile to add authentication
+    sudo nano /etc/caddy/Caddyfile
+    ```
+    
+    Update your Caddyfile to add the basicauth directive. You'll need to choose a username and use the password hash:
+    
+    ```caddy
+    yourdomain.com {
+        basicauth {
+            your_chosen_username YOUR_PASSWORD_HASH
+        }
+        reverse_proxy localhost:3000 {
+            flush_interval -1
+        }
+    }
+    ```
+    
+    Replace `your_chosen_username` with your preferred username and `YOUR_PASSWORD_HASH` with the hash you generated.
+    
+    Save and exit (Ctrl+X, then Y, then Enter).
+  </Step>
+
+  <Step title="Reload Caddy">
+    ```bash
+    sudo systemctl reload caddy
+    ```
+  </Step>
+</Steps>
+
+## Setting Up and Starting Oxy as a Service
+
+Let's configure Oxy to run automatically on system startup and restart if it fails:
+
+<Steps>
+  <Step title="Create a Systemd Service File">
+    ```bash
+    sudo nano /etc/systemd/system/oxy.service
+    ```
+    
+    Add the following content:
+    
+    ```ini
+    [Unit]
+    Description=Oxy Server
+    After=network.target
+    
+    [Service]
+    Type=simple
+    User=ubuntu
+    WorkingDirectory=/home/ubuntu/oxy-workspace
+    EnvironmentFile=/home/ubuntu/oxy-workspace/.env
+    ExecStart=/usr/local/bin/oxy serve --port 3000
+    Restart=always
+    RestartSec=5
+    
+    [Install]
+    WantedBy=multi-user.target
+    ```
+    
+    This configuration uses the default `ubuntu` user which is standard on EC2 Ubuntu instances. If you're using a different username, adjust accordingly.
+    
+    Save and exit.
+  </Step>
+
+  <Step title="Enable and Start the Service">
+    ```bash
+    sudo systemctl daemon-reload
+    sudo systemctl enable oxy
+    sudo systemctl start oxy
+    ```
+  </Step>
+
+  <Step title="Verify the Service">
+    ```bash
+    sudo systemctl status oxy
+    ```
+    
+    You should see that the service is active and running.
+  </Step>
+
+  <Step title="View Logs (if needed)">
+    If you encounter any issues, check the logs:
+    
+    ```bash
+    sudo journalctl -u oxy -f
+    ```
+    
+    This command will show you the live logs from the Oxy service.
+  </Step>
+
+  <Step title="Test the Connection">
+    You can test if Oxy is responding properly:
+    
+    ```bash
+    curl http://localhost:3000
+    ```
+    
+    You should get a positive response indicating that Oxy is running.
+  </Step>
+
+  <Step title="Access Your Deployment">
+    If you've set up a domain, open your browser and navigate to your domain:
+    
+    ```
+    https://yourdomain.com
+    ```
+    
+    Or if you're using the IP address directly:
+    
+    ```
+    http://YOUR_PUBLIC_IP
+    ```
+    
+    <Tip>
+      If you've set up a domain with DNS earlier, now is the exciting moment to see your work! Open your browser and visit your domain to see the Oxy interface up and running on your own server.
+    </Tip>
+    
+    You should see the Oxy interface. Congratulations! 🎉 You've successfully deployed Oxy on AWS EC2.
+  </Step>
+</Steps>
+
+---
+
+# Optional Configuration and Management
+
+Everything up to this point completes the core setup of your Oxy deployment. The following sections cover additional aspects of managing your deployment that you may want to explore as needed.
+
+## Data Persistence
+
+It's important to understand how Oxy handles data persistence:
+
+- Oxy uses SQLite for its internal database by default
+- All data is stored in the directory specified by `OXY_STATE_DIR` environment variable (we set it to ~/oxy-data)
+- If `OXY_STATE_DIR` is not set, Oxy uses `~/.local/share/oxy/` by default
+- This directory contains database files, semantic information, cached query results, and workflow history
+
+<Note>
+  For production deployments, consider backing up the oxy-data directory regularly. You can set up automated backups to Amazon S3 or use an additional EBS volume for enhanced reliability.
+</Note>
+
+## Managing Your Deployment
+
+<Steps>
+  <Step title="Stopping the Services">
+    If you need to stop the Oxy service temporarily:
+    
+    ```bash
+    sudo systemctl stop oxy
+    ```
+    
+    To stop the Caddy service:
+    
+    ```bash
+    sudo systemctl stop caddy
+    ```
+  </Step>
+
+  <Step title="Updating Oxy">
+    To update Oxy to the latest version:
+    
+    ```bash
+    # Stop the service first
+    sudo systemctl stop oxy
+    
+    # Run the installation script again
+    bash <(curl --proto '=https' --tlsv1.2 -sSf https://get.oxy.tech)
+    
+    # Start the service again
+    sudo systemctl start oxy
+    ```
+  </Step>
+
+  <Step title="Backup Data">
+    ```bash
+    # Create a backup of your Oxy data
+    tar -czf oxy-backup-$(date +%Y%m%d).tar.gz ~/oxy-data/
+    
+    # Optional: Upload to Amazon S3
+    aws s3 cp oxy-backup-*.tar.gz s3://your-bucket-name/
+    ```
+    
+    You'll need the AWS CLI installed and configured for the last command.
+  </Step>
+</Steps>
+
+## Machine Recommendations
+
+<Note>
+  Oxy runs well with just 4GB of memory for most use cases.
+</Note>
+
+Choose from these recommended instance types:
+
+| Usage Level | ARM-based (Best Value) | x86-based |
+|-------------|------------------------|-----------|
+| Small (1-3 users) | `t4g.small` (2 vCPU, 2 GB memory) or `t4g.medium` (2 vCPU, 4 GB memory) | `t3.small` (2 vCPU, 2 GB memory) or `t3.medium` (2 vCPU, 4 GB memory) |
+| Medium (3-5 users) | `t4g.large` (2 vCPU, 8 GB memory) | `t3.large` (2 vCPU, 8 GB memory) |
+| Large (5-15 users) | `t4g.xlarge` (4 vCPU, 16 GB memory) | `t3.xlarge` (4 vCPU, 16 GB memory) |
+
+ARM-based instances (T4g series) typically offer 20% cost savings over equivalent x86-based instances with comparable or better performance.
+
+## Scaling on AWS
+
+As your usage grows, you may need to scale your deployment:
+
+### Vertical Scaling
+
+1. Stop your EC2 instance from the AWS Management Console
+2. Change the instance type to a larger size (e.g., from t4g.small to t4g.medium)
+3. Start the instance again
+4. Reconnect and start your Oxy services:
+   ```bash
+   sudo systemctl start oxy
+   sudo systemctl start caddy
+   ```
+
+### Storage Scaling
+
+If you need more storage for your Oxy data:
+
+1. Create a new EBS volume in the AWS Management Console:
+   - Go to EC2 → Volumes → Create Volume
+   - Choose a size and volume type (gp3 is recommended for balanced cost/performance)
+   - Create in the same Availability Zone as your EC2 instance
+
+2. Attach the volume to your EC2 instance:
+   - Select the volume you created
+   - Actions → Attach Volume
+   - Select your instance and choose a device name (e.g., /dev/sdf)
+
+3. Connect to your VM and mount the disk:
+   ```bash
+   # Check the volume name
+   lsblk
+   
+   # Create a filesystem on the new volume (usually nvme1n1 on newer instances or xvdf on older ones)
+   sudo mkfs -t ext4 /dev/nvme1n1
+   
+   # Mount the disk to a new location
+   sudo mkdir -p /mnt/oxy-data
+   sudo mount /dev/nvme1n1 /mnt/oxy-data
+   sudo chown -R ubuntu:ubuntu /mnt/oxy-data
+   
+   # Copy your existing data to the new location
+   cp -r ~/oxy-data/* /mnt/oxy-data/
+   
+   # Update the data path in your .env file
+   echo "OXY_STATE_DIR=/mnt/oxy-data" > ~/oxy-workspace/.env
+   
+   # Restart Oxy to use the new location
+   sudo systemctl restart oxy
+   ```
+
+4. To make the mount persistent across reboots, add it to fstab:
+   ```bash
+   # Get the UUID of the volume
+   sudo blkid
+   
+   # Add to fstab using the UUID
+   echo "UUID=$(sudo blkid -s UUID -o value /dev/nvme1n1) /mnt/oxy-data ext4 defaults,nofail 0 2" | sudo tee -a /etc/fstab
+   ```
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Cannot access Oxy through the domain or IP">
+    - Check your EC2 Security Group rules: Go to EC2 → Security Groups and verify ports 80 and 443 are open for HTTP/HTTPS traffic
+    - For domain issues: Run `dig yourdomain.com` to verify DNS is pointing to your instance's IP
+    - View Caddy logs: `sudo journalctl -u caddy -f`
+  </Accordion>
+  
+  <Accordion title="Caddy cannot obtain SSL certificate">
+    - Ensure your domain DNS records are correctly set up
+    - Verify Caddy has permissions to bind to ports 80 and 443: `sudo setcap CAP_NET_BIND_SERVICE=+ep /usr/bin/caddy`
+    - Check Caddy logs: `sudo journalctl -u caddy -f`
+  </Accordion>
+  
+  <Accordion title="Oxy service won't start">
+    - View detailed logs: `sudo journalctl -u oxy -f`
+    - Verify environment file exists: `cat ~/oxy-workspace/.env`
+    - Check service file: `sudo cat /etc/systemd/system/oxy.service`
+    - Ensure workspace exists: `ls -la ~/oxy-workspace`
+  </Accordion>
+  
+  <Accordion title="Data not persisting between restarts">
+    - Verify data directory exists: `ls -la ~/oxy-data`
+    - Check environment variable is set: `grep OXY_STATE_DIR ~/oxy-workspace/.env`
+    - If you didn't set `OXY_STATE_DIR`, check the default location: `ls -la ~/.local/share/oxy/`
+    - Ensure proper permissions: `sudo chown -R ubuntu:ubuntu ~/oxy-data`
+  </Accordion>
+  
+  <Accordion title="Instance stopped responding">
+    - Check if you've hit CPU credit limits (t-series instances are burstable)
+    - Consider upgrading to a larger instance type if consistently hitting limits
+    - View system metrics in the AWS EC2 console to diagnose resource constraints
+  </Accordion>
+</AccordionGroup>
+
+For further help, join our community on [Discord](https://discord.gg/m677N4EcRK).
+
+## Next Steps
+
+Once your AWS EC2 deployment is running:
+
+1. Configure agents and workflows in your workspace
+2. Set up regular backups for your data
+3. Consider implementing a CI/CD pipeline for deploying configuration updates
+4. Monitor your EC2 instance's resource usage and scale as needed
+
+For more information on using Oxy, refer to the [main documentation](/welcome).

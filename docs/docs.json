@@ -77,7 +77,8 @@
             "group": "Hands-on Guides",
             "pages": [
               "deployment/hands-on/overview",
-              "deployment/hands-on/gcp"
+              "deployment/hands-on/gcp",
+              "deployment/hands-on/aws"
             ]
           }
         ]
