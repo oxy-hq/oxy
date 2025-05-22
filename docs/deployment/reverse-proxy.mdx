@@ -1,0 +1,132 @@
+---
+title: "Set Up Reverse Proxy"
+description: "Configuring Caddy as a reverse proxy for your Oxy deployment"
+sidebarTitle: "3. Reverse Proxy"
+---
+
+# Set Up Reverse Proxy
+
+A reverse proxy is essential for providing secure access to your Oxy deployment. We recommend using Caddy, which automatically handles SSL certificate management.
+
+<Steps>
+  <Step title="Install Caddy">
+    Install Caddy on your server:
+
+    ```bash
+    sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https curl
+    curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+    curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
+    sudo apt update -y
+    sudo apt install -y caddy
+    ```
+  </Step>
+
+  <Step title="Create Basic Caddyfile">
+    Create a basic Caddyfile to configure your reverse proxy:
+
+    ```caddy
+    your-domain.com {
+      reverse_proxy localhost:8080
+    }
+    ```
+
+    Replace `your-domain.com` with your actual domain name and `8080` with the port where your Oxy instance will be listening.
+
+    <Info>
+      Caddy automatically manages SSL certificates for you, making HTTPS setup effortless. Just make sure your domain's DNS is properly configured to point to your server.
+    </Info>
+  </Step>
+
+  <Step title="Advanced Configuration (Optional)">
+    For more complex setups with multiple routes:
+
+    ```caddy
+    {
+        email admin@yourdomain.com
+    }
+
+    example.com {
+        # Main application
+        reverse_proxy localhost:3000 {
+            flush_interval -1
+            transport http {
+                versions 1.1 2 h2c
+            }
+        }
+    }
+
+    api.example.com {
+        # API endpoint
+        reverse_proxy localhost:8000 {
+            flush_interval -1
+            transport http {
+                versions 1.1 2 h2c
+            }
+        }
+    }
+    ```
+
+    This example shows how to configure multiple subdomains and endpoints.
+  </Step>
+
+  <Step title="Set Up Caddy as a Service">
+    Configure Caddy to run as a systemd service:
+
+    ```bash
+    cat <<EOF | sudo tee /etc/systemd/system/caddy.service
+    [Unit]
+    Description=Caddy Web Server
+    After=network.target
+
+    [Service]
+    User=root
+    ExecStart=/usr/bin/caddy run --environ --config /etc/caddy/Caddyfile
+    ExecReload=/usr/bin/caddy reload --config /etc/caddy/Caddyfile
+    Restart=on-failure
+    TimeoutStopSec=5s
+    LimitNOFILE=1048576
+    LimitNPROC=512
+
+    [Install]
+    WantedBy=multi-user.target
+    EOF
+
+    sudo systemctl daemon-reload
+    sudo systemctl enable caddy
+    sudo systemctl start caddy
+    ```
+  </Step>
+
+  <Step title="Configure Firewall for HTTP/HTTPS">
+    Update your firewall to allow HTTP and HTTPS traffic:
+
+    ```bash
+    sudo ufw allow 80/tcp
+    sudo ufw allow 443/tcp
+    sudo ufw --force enable
+    ```
+
+    These ports are necessary for Caddy to obtain and renew SSL certificates (port 80) and serve your site securely (port 443).
+  </Step>
+</Steps>
+
+Now that you have a reverse proxy set up with automatic HTTPS, you can proceed to set up your Oxy workspace and repository.
+
+<div className="mt-8">
+  <Cards>
+    <Card
+      title="Previous: Install Oxy CLI"
+      icon="arrow-left"
+      href="/deployment/install-oxy"
+    >
+      Install and configure the Oxy CLI
+    </Card>
+    <Card
+      title="Next: Set Up Workspace & Repository"
+      icon="arrow-right"
+      href="/deployment/workspace-setup"
+    >
+      Set up your Oxy workspace and configure your repository
+    </Card>
+  </Cards>
+</div>

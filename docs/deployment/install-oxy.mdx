@@ -1,0 +1,94 @@
+---
+title: "Install Oxy CLI"
+description: "Installing and configuring the Oxy CLI on your server"
+sidebarTitle: "2. Install Oxy CLI"
+---
+
+# Install Oxy CLI
+
+After setting up your server, the next step is to install and configure the Oxy CLI.
+
+<Steps>
+  <Step title="Install Oxy">
+    Follow the [Oxy installation instructions](../../README.md#installation) to install the Oxy CLI on your server.
+
+    ```bash
+    bash <(curl --proto '=https' --tlsv1.2 -LsSf https://get.oxy.tech)
+    ```
+
+    This command downloads and runs the official Oxy installation script.
+  </Step>
+
+  <Step title="Verify Installation">
+    After installation, verify that Oxy is correctly installed:
+
+    ```bash
+    oxy --version
+    ```
+
+    This should display the current version of Oxy installed on your system.
+  </Step>
+
+  <Step title="Set Up Oxy as a System Service">
+    To ensure Oxy runs automatically and persists across server restarts, set it up as a systemd service:
+
+    ```bash
+    cat <<EOF | sudo tee /etc/systemd/system/oxy.service
+    [Unit]
+    Description=Oxy server
+    After=network.target
+
+    [Service]
+    User=ubuntu
+    WorkingDirectory=/home/ubuntu/your-oxy-project
+    ExecStart=/bin/bash -c "/usr/local/bin/oxy serve & /usr/local/bin/oxy mcp-sse"
+    Restart=always
+    Environment="OXY_STATE_DIR=/home/ubuntu/oxy_data"
+
+    [Install]
+    WantedBy=multi-user.target
+    EOF
+    ```
+
+    <Tip>
+      Make sure to replace `/home/ubuntu/your-oxy-project` with the actual path to your Oxy workspace that you'll set up in a later step.
+    </Tip>
+  </Step>
+
+  <Step title="Enable and Start the Service">
+    Enable the service to start automatically on boot and start it:
+
+    ```bash
+    sudo systemctl daemon-reload
+    sudo systemctl enable oxy
+    sudo systemctl start oxy
+    ```
+
+    You can check the status of the service with:
+
+    ```bash
+    sudo systemctl status oxy
+    ```
+  </Step>
+</Steps>
+
+Now that the Oxy CLI is installed and configured to run as a service, you can proceed to set up a reverse proxy for secure access.
+
+<div className="mt-8">
+  <Cards>
+    <Card
+      title="Previous: Create Machine"
+      icon="arrow-left"
+      href="/deployment/create-machine"
+    >
+      Provision and set up your server
+    </Card>
+    <Card
+      title="Next: Set Up Reverse Proxy"
+      icon="arrow-right"
+      href="/deployment/reverse-proxy"
+    >
+      Configure Caddy as a reverse proxy
+    </Card>
+  </Cards>
+</div>
