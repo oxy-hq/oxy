@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.5](https://github.com/oxy-hq/oxy-internal/compare/0.2.4...0.2.5) (2025-05-23)
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* improve delete handling in FileNode and DirNode components ([#824](https://github.com/oxy-hq/oxy-internal/issues/824)) ([33ca6f1](https://github.com/oxy-hq/oxy-internal/commit/33ca6f1fca42a6fc3723f8272a50e814823b4108))
+
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+* release 0.2.5 ([8e4699f](https://github.com/oxy-hq/oxy-internal/commit/8e4699f5286c8acb46aaccf888f0a5f52cb05729))
+
 ## [0.2.4](https://github.com/oxy-hq/oxy-internal/compare/0.2.2...0.2.4) (2025-05-23)
 
 
