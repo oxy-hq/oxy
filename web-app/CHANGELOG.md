@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.2.4](https://github.com/oxy-hq/oxy-internal/compare/0.2.2...0.2.4) (2025-05-23)
+
+
+### <!-- 0 -->🚀 Features
+
+* add skipped files and overwritten files tracking & add docs and test for oxy sync ([#808](https://github.com/oxy-hq/oxy-internal/issues/808)) ([5f075f2](https://github.com/oxy-hq/oxy-internal/commit/5f075f21a829a81f3ff583052e2b22eb6af93a92))
+* add styling for thread not found ([3344494](https://github.com/oxy-hq/oxy-internal/commit/3344494df8f4ab414d5637559ab3810486875a29))
+* closes [#803](https://github.com/oxy-hq/oxy-internal/issues/803) create file, edit file name, remove file in ide ([#811](https://github.com/oxy-hq/oxy-internal/issues/811)) ([4f7d39c](https://github.com/oxy-hq/oxy-internal/commit/4f7d39ccadef3912c7ae2b2c2e725d9e85281224))
+* implement synthesize step for routing agent ([#814](https://github.com/oxy-hq/oxy-internal/issues/814)) ([01dd577](https://github.com/oxy-hq/oxy-internal/commit/01dd577b0379faa5a48dfdfb3c0c245b1b07a56d))
+* improve page loading state ([#816](https://github.com/oxy-hq/oxy-internal/issues/816)) ([3c0c22e](https://github.com/oxy-hq/oxy-internal/commit/3c0c22ed22cd8c5ec50c373c8a1bd20f3e977ba9))
+* save query to workflow ([#809](https://github.com/oxy-hq/oxy-internal/issues/809)) ([676dd54](https://github.com/oxy-hq/oxy-internal/commit/676dd54669d24db27716d6512e5dd67d1405b322))
+* support download query result csv ([#810](https://github.com/oxy-hq/oxy-internal/issues/810)) ([90d91dd](https://github.com/oxy-hq/oxy-internal/commit/90d91dd68df04f15c0e368deb6b1413837e69be9))
+* unify all into thread ([#802](https://github.com/oxy-hq/oxy-internal/issues/802)) ([26d59be](https://github.com/oxy-hq/oxy-internal/commit/26d59beab9321d3c33cb01c39706b9fd9a455d11))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* page layout with thread references ([#818](https://github.com/oxy-hq/oxy-internal/issues/818)) ([f1740a6](https://github.com/oxy-hq/oxy-internal/commit/f1740a6fddcd0a3e597ad1e7e6506139bc58026d))
+* typo in artifact tooltip ([#821](https://github.com/oxy-hq/oxy-internal/issues/821)) ([b6377f4](https://github.com/oxy-hq/oxy-internal/commit/b6377f4ea7afc8331ab4f0d57d373d63429de2a9))
+
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+* release 0.2.4 ([69eb45f](https://github.com/oxy-hq/oxy-internal/commit/69eb45f3f4a36fb5ff7178bab460aff2d3ed3394))
+
 ## [0.2.2](https://github.com/oxy-hq/oxy-internal/compare/0.2.1...0.2.2) (2025-05-22)
 
 
