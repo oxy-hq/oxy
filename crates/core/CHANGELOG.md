@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.2.4](https://github.com/oxy-hq/oxy-internal/compare/0.2.3...0.2.4) (2025-05-23)
+
+
+### <!-- 0 -->🚀 Features
+
+* add styling for thread not found ([3344494](https://github.com/oxy-hq/oxy-internal/commit/3344494df8f4ab414d5637559ab3810486875a29))
+* closes [#803](https://github.com/oxy-hq/oxy-internal/issues/803) create file, edit file name, remove file in ide ([#811](https://github.com/oxy-hq/oxy-internal/issues/811)) ([4f7d39c](https://github.com/oxy-hq/oxy-internal/commit/4f7d39ccadef3912c7ae2b2c2e725d9e85281224))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* reduce amount of logs for http logging  ([#823](https://github.com/oxy-hq/oxy-internal/issues/823)) ([badd691](https://github.com/oxy-hq/oxy-internal/commit/badd6911be4ff604dcfa0803a055c186521265a6))
+
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+* release 0.2.4 ([69eb45f](https://github.com/oxy-hq/oxy-internal/commit/69eb45f3f4a36fb5ff7178bab460aff2d3ed3394))
+
 ## [0.2.3](https://github.com/oxy-hq/oxy-internal/compare/0.2.2...0.2.3) (2025-05-22)
 
 
