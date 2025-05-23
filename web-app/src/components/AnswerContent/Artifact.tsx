@@ -33,7 +33,7 @@ export default function ArtifactContainer(props: Props) {
   const verifiedClassName = isVerified ? "text-green-500" : "text-yellow-500";
   const verifiedText = isVerified
     ? "This is a verified object that has been created by a person."
-    : "This is a unverified object that has been created by an AI Agent.";
+    : "This is an unverified object that has been created by an AI Agent.";
   let children = props.children ?? null;
   switch (props.kind) {
     case "agent":
