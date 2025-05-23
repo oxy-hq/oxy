@@ -18,7 +18,7 @@ fn init_tracing_logging(log_to_stdout: bool) {
         .unwrap_or_else(|_| EnvFilter::new("info"))
         .add_directive("oxy=info".parse().unwrap())
         .add_directive("deser_incomplete::options_impl=warn".parse().unwrap())
-        .add_directive("tower_http=debug".parse().unwrap());
+        .add_directive("tower_http=info".parse().unwrap());
     let is_debug = cfg!(debug_assertions);
 
     let log_file_path = std::path::Path::new(&client::get_state_dir()).join("oxy.log");
