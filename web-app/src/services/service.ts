@@ -41,6 +41,12 @@ export interface Service {
   ): Promise<string[][]>;
   listDatabases(): Promise<string[]>;
   getFileTree(): Promise<FileTreeModel[]>;
+  createFile(pathb64: string): Promise<void>;
+  createFolder(pathb64: string): Promise<void>;
+  deleteFile(pathb64: string): Promise<void>;
+  deleteFolder(pathb64: string): Promise<void>;
+  renameFile(pathb64: string, newName: string): Promise<void>;
+  renameFolder(pathb64: string, newName: string): Promise<void>;
   checkBuilderAvailability(): Promise<{ available: boolean }>;
   createWorkflowFromQuery(request: {
     query: string;

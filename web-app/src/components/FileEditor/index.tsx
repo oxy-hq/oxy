@@ -1,5 +1,5 @@
 import Editor from "@monaco-editor/react";
-import useFile from "@/hooks/api/useFile";
+import useFile from "@/hooks/api/files/useFile";
 import { forwardRef, memo, useEffect, useImperativeHandle } from "react";
 import { Loader2 } from "lucide-react";
 import UnsavedChangesDialog from "./UnsavedChangesDialog";
