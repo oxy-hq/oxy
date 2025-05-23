@@ -14,6 +14,137 @@ pub struct SaveFileRequest {
     pub data: String,
 }
 
+pub async fn create_file(Path(pathb64): Path<String>) -> Result<extract::Json<String>, StatusCode> {
+    let decoded_path: Vec<u8> = BASE64_STANDARD.decode(pathb64).map_err(|e| {
+        tracing::info!("{:?}", e);
+        StatusCode::BAD_REQUEST
+    })?;
+    let path = String::from_utf8(decoded_path).map_err(|e| {
+        tracing::info!("{:?}", e);
+        StatusCode::BAD_REQUEST
+    })?;
+    let project_path = find_project_path().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let file_path = project_path.join(path);
+
+    if let Some(parent) = file_path.parent() {
+        fs::create_dir_all(parent).map_err(|e| {
+            tracing::info!("{:?}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+    }
+    fs::write(&file_path, "").map_err(|e| {
+        tracing::info!("{:?}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    Ok(extract::Json("success".to_string()))
+}
+
+pub async fn create_folder(
+    Path(pathb64): Path<String>,
+) -> Result<extract::Json<String>, StatusCode> {
+    let decoded_path: Vec<u8> = BASE64_STANDARD.decode(pathb64).map_err(|e| {
+        tracing::info!("{:?}", e);
+        StatusCode::BAD_REQUEST
+    })?;
+    let path = String::from_utf8(decoded_path).map_err(|e| {
+        tracing::info!("{:?}", e);
+        StatusCode::BAD_REQUEST
+    })?;
+    let project_path = find_project_path().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let file_path = project_path.join(path);
+    fs::create_dir_all(file_path).map_err(|e| {
+        tracing::info!("{:?}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+    Ok(extract::Json("success".to_string()))
+}
+
+pub async fn delete_file(Path(pathb64): Path<String>) -> Result<extract::Json<String>, StatusCode> {
+    let decoded_path: Vec<u8> = BASE64_STANDARD.decode(pathb64).map_err(|e| {
+        tracing::info!("{:?}", e);
+        StatusCode::BAD_REQUEST
+    })?;
+    let path = String::from_utf8(decoded_path).map_err(|e| {
+        tracing::info!("{:?}", e);
+        StatusCode::BAD_REQUEST
+    })?;
+    let project_path = find_project_path().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let file_path = project_path.join(path);
+    fs::remove_file(file_path).map_err(|e| {
+        tracing::info!("{:?}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+    Ok(extract::Json("success".to_string()))
+}
+
+pub async fn delete_folder(
+    Path(pathb64): Path<String>,
+) -> Result<extract::Json<String>, StatusCode> {
+    let decoded_path: Vec<u8> = BASE64_STANDARD.decode(pathb64).map_err(|e| {
+        tracing::info!("{:?}", e);
+        StatusCode::BAD_REQUEST
+    })?;
+    let path = String::from_utf8(decoded_path).map_err(|e| {
+        tracing::info!("{:?}", e);
+        StatusCode::BAD_REQUEST
+    })?;
+    let project_path = find_project_path().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let file_path = project_path.join(path);
+    fs::remove_dir_all(file_path).map_err(|e| {
+        tracing::info!("{:?}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+    Ok(extract::Json("success".to_string()))
+}
+
+#[derive(Serialize, Deserialize, Clone, ToSchema)]
+pub struct RenameFileRequest {
+    pub new_name: String,
+}
+
+pub async fn rename_file(
+    Path(pathb64): Path<String>,
+    extract::Json(payload): extract::Json<RenameFileRequest>,
+) -> Result<extract::Json<String>, StatusCode> {
+    let decoded_path: Vec<u8> = BASE64_STANDARD.decode(pathb64).map_err(|e| {
+        tracing::info!("{:?}", e);
+        StatusCode::BAD_REQUEST
+    })?;
+    let path = String::from_utf8(decoded_path).map_err(|e| {
+        tracing::info!("{:?}", e);
+        StatusCode::BAD_REQUEST
+    })?;
+    let project_path = find_project_path().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let file_path = project_path.join(path);
+    fs::rename(file_path, project_path.join(payload.new_name)).map_err(|e| {
+        tracing::info!("{:?}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+    Ok(extract::Json("success".to_string()))
+}
+
+pub async fn rename_folder(
+    Path(pathb64): Path<String>,
+    extract::Json(payload): extract::Json<RenameFileRequest>,
+) -> Result<extract::Json<String>, StatusCode> {
+    let decoded_path: Vec<u8> = BASE64_STANDARD.decode(pathb64).map_err(|e| {
+        tracing::info!("{:?}", e);
+        StatusCode::BAD_REQUEST
+    })?;
+    let path = String::from_utf8(decoded_path).map_err(|e| {
+        tracing::info!("{:?}", e);
+        StatusCode::BAD_REQUEST
+    })?;
+    let project_path = find_project_path().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let file_path = project_path.join(path);
+    fs::rename(file_path, project_path.join(payload.new_name)).map_err(|e| {
+        tracing::info!("{:?}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+    Ok(extract::Json("success".to_string()))
+}
+
 #[axum::debug_handler]
 pub async fn save_file(
     Path(pathb64): Path<String>,

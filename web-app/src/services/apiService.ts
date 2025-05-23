@@ -143,6 +143,34 @@ export const apiService: Service = {
     const response = await apiClient.get("/builder-availability");
     return response.data;
   },
+  async createFile(pathb64: string): Promise<void> {
+    const response = await apiClient.post(`/files/${pathb64}/new-file`);
+    return response.data;
+  },
+  async createFolder(pathb64: string): Promise<void> {
+    const response = await apiClient.post(`/files/${pathb64}/new-folder`);
+    return response.data;
+  },
+  async deleteFile(pathb64: string): Promise<void> {
+    const response = await apiClient.delete(`/files/${pathb64}/delete-file`);
+    return response.data;
+  },
+  async deleteFolder(pathb64: string): Promise<void> {
+    const response = await apiClient.delete(`/files/${pathb64}/delete-folder`);
+    return response.data;
+  },
+  async renameFile(pathb64: string, newName: string): Promise<void> {
+    const response = await apiClient.put(`/files/${pathb64}/rename-file`, {
+      new_name: newName,
+    });
+    return response.data;
+  },
+  async renameFolder(pathb64: string, newName: string): Promise<void> {
+    const response = await apiClient.put(`/files/${pathb64}/rename-folder`, {
+      new_name: newName,
+    });
+    return response.data;
+  },
   createWorkflowFromQuery: async function (request: {
     query: string;
     prompt: string;

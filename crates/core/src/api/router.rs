@@ -8,6 +8,7 @@ use crate::api::workflow;
 use crate::db::client::establish_connection;
 use axum::Router;
 use axum::routing::delete;
+use axum::routing::put;
 use axum::routing::{get, post};
 use migration::Migrator;
 use migration::MigratorTrait;
@@ -72,6 +73,15 @@ pub async fn api_router() -> Router {
         .route("/files", get(file::get_file_tree))
         .route("/files/{pathb64}", get(file::get_file))
         .route("/files/{pathb64}", post(file::save_file))
+        .route("/files/{pathb64}/delete-file", delete(file::delete_file))
+        .route(
+            "/files/{pathb64}/delete-folder",
+            delete(file::delete_folder),
+        )
+        .route("/files/{pathb64}/rename-file", put(file::rename_file))
+        .route("/files/{pathb64}/rename-folder", put(file::rename_folder))
+        .route("/files/{pathb64}/new-file", post(file::create_file))
+        .route("/files/{pathb64}/new-folder", post(file::create_folder))
         .route("/databases", get(data::list_databases))
         .route(
             "/agents/{pathb64}/tests/{test_index}",
