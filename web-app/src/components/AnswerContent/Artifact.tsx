@@ -53,9 +53,10 @@ export default function ArtifactContainer(props: Props) {
         {icon}
         <div className="flex-1 space-y-1">
           <p className="text-sm font-medium leading-none">{props.title}</p>
-          <p className="text-sm text-muted-foreground">
+          {/* TODO: bring back this when we have the backend for viewing artifacts */}
+          {/* <p className="text-sm text-muted-foreground">
             Click to view the artifact.
-          </p>
+          </p> */}
         </div>
         <div className={`flex items-start justify-center ${verifiedClassName}`}>
           <TooltipProvider>
