@@ -34,13 +34,11 @@ impl OutputWriter<String> for MarkdownWriter {
                         kind: event.source.kind.to_string(),
                     })
                 }
-                EventKind::Finished { .. } => self.task_queue.pop_back().and_then(|_| {
-                    Some(EventFormat {
-                        content: "\n</details>\n\n".to_string(),
-                        reference: None,
-                        is_error: false,
-                        kind: event.source.kind.to_string(),
-                    })
+                EventKind::Finished { .. } => self.task_queue.pop_back().map(|_| EventFormat {
+                    content: "\n</details>\n\n".to_string(),
+                    reference: None,
+                    is_error: false,
+                    kind: event.source.kind.to_string(),
                 }),
                 _ => None,
             },
@@ -57,7 +55,7 @@ impl OutputWriter<String> for MarkdownWriter {
                             "\n\n{}artifact{{{}}}\n",
                             prefix,
                             attributes
-                                .into_iter()
+                                .iter()
                                 .map(|(k, v)| format!("{}={}", k, v))
                                 .collect::<Vec<_>>()
                                 .join(" ")
@@ -67,14 +65,14 @@ impl OutputWriter<String> for MarkdownWriter {
                         is_error: false,
                     })
                 }
-                EventKind::Finished { .. } => self.artifact_queue.pop_back().and_then(|prefix| {
-                    Some(EventFormat {
+                EventKind::Finished { .. } => {
+                    self.artifact_queue.pop_back().map(|prefix| EventFormat {
                         content: format!("\n{}\n\n", prefix),
                         reference: None,
                         is_error: false,
                         kind: event.source.kind.to_string(),
                     })
-                }),
+                }
                 _ => None,
             },
             CONSISTENCY_SOURCE => None,
@@ -95,13 +93,11 @@ impl OutputWriter<String> for MarkdownWriter {
                     }),
                     Output::Table(table) => {
                         let table_display = table.to_markdown()?;
-                        table.clone().into_reference().and_then(|reference| {
-                            Some(EventFormat {
-                                content: table_display,
-                                reference: Some(reference),
-                                is_error: false,
-                                kind: event.source.kind.to_string(),
-                            })
+                        table.clone().into_reference().map(|reference| EventFormat {
+                            content: table_display,
+                            reference: Some(reference),
+                            is_error: false,
+                            kind: event.source.kind.to_string(),
                         })
                     }
                     Output::SQL(sql) => {

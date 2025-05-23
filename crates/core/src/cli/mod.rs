@@ -53,7 +53,7 @@ use utoipa_swagger_ui::SwaggerUi;
 use init::init;
 
 use crate::api::router;
-use tower_http::trace::TraceLayer;
+use tower_http::trace::{self, TraceLayer};
 use tower_serve_static::ServeDir;
 
 use axum::{
@@ -812,10 +812,20 @@ pub async fn start_server_and_web_app(mut web_port: u16) {
                 }
             }
         });
-        let api_router = router::api_router().await.layer(TraceLayer::new_for_http());
-        let openapi_router = router::openapi_router()
-            .await
-            .layer(TraceLayer::new_for_http());
+
+        // Configure HTTP request/response logging
+        let trace_layer = TraceLayer::new_for_http()
+            .make_span_with(trace::DefaultMakeSpan::new().level(tracing::Level::INFO))
+            .on_request(trace::DefaultOnRequest::new().level(tracing::Level::INFO))
+            .on_response(
+                trace::DefaultOnResponse::new()
+                    .level(tracing::Level::INFO)
+                    .latency_unit(tower_http::LatencyUnit::Millis),
+            )
+            .on_failure(trace::DefaultOnFailure::new().level(tracing::Level::ERROR));
+
+        let api_router = router::api_router().await.layer(trace_layer.clone());
+        let openapi_router = router::openapi_router().await.layer(trace_layer.clone());
         let (_, openapi) = OpenApiRouter::with_openapi(ApiDoc::openapi())
             .nest("/api", openapi_router)
             .fallback_service(serve_with_fallback)
@@ -824,7 +834,7 @@ pub async fn start_server_and_web_app(mut web_port: u16) {
             .merge(SwaggerUi::new("/apidoc").url("/apidoc/openapi.json", openapi))
             .nest("/api", api_router)
             .fallback_service(serve_with_fallback)
-            .layer(TraceLayer::new_for_http());
+            .layer(trace_layer);
 
         let web_addr = SocketAddr::from(([0, 0, 0, 0], web_port));
         let listener = tokio::net::TcpListener::bind(web_addr).await.unwrap();
