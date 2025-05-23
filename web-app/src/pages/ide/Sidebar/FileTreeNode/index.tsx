@@ -37,6 +37,7 @@ const DirNode = ({ fileTree }: { fileTree: FileTreeModel }) => {
   const [showDeleteDialog, setShowDeleteDialog] = React.useState(false);
   const [isCreating, setIsCreating] = React.useState(false);
   const [creationType, setCreationType] = React.useState<CreationType>("file");
+  const [pendingDelete, setPendingDelete] = React.useState(false);
   const renameInputRef = React.useRef<HTMLInputElement>(null);
   const newItemInputRef = React.useRef<HTMLInputElement>(null);
   const [isOpen, setIsOpen] = React.useState(false);
@@ -46,7 +47,8 @@ const DirNode = ({ fileTree }: { fileTree: FileTreeModel }) => {
   };
 
   const handleDelete = () => {
-    setShowDeleteDialog(true);
+    setPendingDelete(true);
+    setIsContextMenuOpen(false);
   };
 
   const handleCreateFile = () => {
@@ -69,7 +71,15 @@ const DirNode = ({ fileTree }: { fileTree: FileTreeModel }) => {
         setVisible={setShowDeleteDialog}
       />
 
-      <ContextMenu onOpenChange={setIsContextMenuOpen}>
+      <ContextMenu
+        onOpenChange={(open) => {
+          setIsContextMenuOpen(open);
+          if (!open && pendingDelete) {
+            setShowDeleteDialog(true);
+            setPendingDelete(false);
+          }
+        }}
+      >
         <ContextMenuTrigger asChild>
           <SidebarMenuItem key={fileTree.name}>
             <SidebarMenuButton
