@@ -1,10 +1,9 @@
 name: Open source oxy
 on:
-  workflow_dispatch:
-  # push:
-    # branches:
-    #   - main
-    #   - "[0-9]+.[0-9]+.x"
+  push:
+    branches:
+      - main
+      - "[0-9]+.[0-9]+.x"
   pull_request_target:
     branches:
       - main
@@ -17,7 +16,7 @@ permissions:
 jobs:
   move-code:
     runs-on: ubuntu-latest
-    if: ${{ github.repository == 'oxy-hq/oxy-internal' || (github.event_name == 'pull_request_target' && github.repository == 'oxy-hq/oxy') }}
+    if: ${{ (github.event_name == 'push' && github.repository == 'oxy-hq/oxy-internal') || (github.event_name == 'pull_request_target' && github.repository == 'oxy-hq/oxy') }}
     steps:
       - uses: actions/create-github-app-token@v2
         name: Create GitHub App Token
