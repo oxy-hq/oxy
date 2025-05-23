@@ -12,7 +12,7 @@ use axum::routing::{get, post};
 use migration::Migrator;
 use migration::MigratorTrait;
 use tower_http::cors::{Any, CorsLayer};
-use tower_http::trace::TraceLayer;
+use tower_http::trace::{self, TraceLayer};
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 
@@ -24,6 +24,17 @@ pub async fn api_router() -> Router {
         .allow_origin(Any)
         .allow_methods(tower_http::cors::Any)
         .allow_headers(tower_http::cors::Any);
+
+    // Configure HTTP request/response logging
+    let trace_layer = TraceLayer::new_for_http()
+        .make_span_with(trace::DefaultMakeSpan::new().level(tracing::Level::INFO))
+        .on_request(trace::DefaultOnRequest::new().level(tracing::Level::INFO))
+        .on_response(
+            trace::DefaultOnResponse::new()
+                .level(tracing::Level::INFO)
+                .latency_unit(tower_http::LatencyUnit::Millis),
+        )
+        .on_failure(trace::DefaultOnFailure::new().level(tracing::Level::ERROR));
 
     let db = establish_connection().await;
     // migrate db
@@ -70,7 +81,7 @@ pub async fn api_router() -> Router {
         .route("/sql/{pathb64}", post(data::execute_sql))
         .route("/agents/{pathb64}/ask", post(thread::ask_agent))
         .layer(cors)
-        .layer(TraceLayer::new_for_http())
+        .layer(trace_layer)
 }
 
 pub async fn openapi_router() -> OpenApiRouter {
@@ -79,9 +90,20 @@ pub async fn openapi_router() -> OpenApiRouter {
         .allow_methods(tower_http::cors::Any)
         .allow_headers(tower_http::cors::Any);
 
+    // Configure HTTP request/response logging for OpenAPI router
+    let trace_layer = TraceLayer::new_for_http()
+        .make_span_with(trace::DefaultMakeSpan::new().level(tracing::Level::INFO))
+        .on_request(trace::DefaultOnRequest::new().level(tracing::Level::INFO))
+        .on_response(
+            trace::DefaultOnResponse::new()
+                .level(tracing::Level::INFO)
+                .latency_unit(tower_http::LatencyUnit::Millis),
+        )
+        .on_failure(trace::DefaultOnFailure::new().level(tracing::Level::ERROR));
+
     OpenApiRouter::new()
         .routes(routes!(agent::ask, agent::get_agents))
         .routes(routes!(workflow::list, workflow::run_workflow))
         .layer(cors)
-        .layer(TraceLayer::new_for_http())
+        .layer(trace_layer)
 }

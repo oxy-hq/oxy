@@ -49,10 +49,9 @@ where
         input: Vec<I>,
     ) -> Result<Self::Response, OxyError> {
         self.memo.extend(input);
-        let response = self
-            .inner
+
+        self.inner
             .execute(execution_context, self.memo.clone())
-            .await;
-        response
+            .await
     }
 }

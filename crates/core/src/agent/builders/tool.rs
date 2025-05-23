@@ -75,7 +75,6 @@ impl Executable<OpenAIExecutableResponse> for OpenAITool {
         let tool_rets = input
             .tool_calls
             .iter()
-            .map(|c| c)
             .zip(response)
             .map(|(c, r)| match r {
                 Ok(o) => ChatCompletionRequestToolMessageArgs::default()

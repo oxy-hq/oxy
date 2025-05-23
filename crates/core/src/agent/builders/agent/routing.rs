@@ -148,7 +148,7 @@ impl Executable<RoutingAgentInput> for RoutingAgentExecutable {
             .await?;
         let mut react_loop_executable = build_react_loop(
             agent_name.clone(),
-            &model,
+            model,
             tool_configs,
             routing_agent.synthesize_results,
         )
