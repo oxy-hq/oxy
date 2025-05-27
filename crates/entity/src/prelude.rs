@@ -4,3 +4,4 @@ pub use super::conversations::Entity as Conversations;
 pub use super::messages::Entity as Messages;
 pub use super::tasks::Entity as Tasks;
 pub use super::threads::Entity as Threads;
+pub use super::users::Entity as Users;

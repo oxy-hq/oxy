@@ -1,7 +1,9 @@
 mod init;
 mod make;
+mod seed;
 
 use crate::adapters::connector::Connector;
+use crate::auth::types::AuthMode;
 use crate::config::model::AppConfig;
 use crate::config::*;
 use crate::errors::OxyError;
@@ -181,6 +183,8 @@ enum SubCommand {
     SelfUpdate,
     Make(MakeArgs),
     Ask(AskArgs),
+    /// Database seeding commands for development and testing
+    Seed(SeedArgs),
 }
 
 #[derive(Parser, Debug)]
@@ -311,12 +315,32 @@ struct SyncArgs {
 struct ServeArgs {
     #[clap(long, default_value_t = 3000)]
     port: u16,
+    #[clap(long, default_value_t = AuthMode::Local, value_enum)]
+    auth_mode: AuthMode,
 }
 
 #[derive(Parser, Debug)]
 struct GenConfigSchemaArgs {
     #[clap(long)]
     check: bool,
+}
+
+#[derive(Parser, Debug)]
+pub struct SeedArgs {
+    #[clap(subcommand)]
+    pub action: SeedAction,
+}
+
+#[derive(Parser, Debug)]
+pub enum SeedAction {
+    /// Create test users for development
+    Users,
+    /// Create sample threads for existing test users
+    Threads,
+    /// Clear all test data (users and threads)
+    Clear,
+    /// Full seed - create users and sample threads
+    Full,
 }
 
 async fn handle_workflow_file(workflow_name: &PathBuf, retry: bool) -> Result<(), OxyError> {
@@ -466,7 +490,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             }
         }
         Some(SubCommand::Serve(serve_args)) => {
-            start_server_and_web_app(serve_args.port).await;
+            start_server_and_web_app(serve_args.port, serve_args.auth_mode).await;
         }
         Some(SubCommand::McpSse(mcp_sse_args)) => {
             let cancellation_token = start_mcp_sse_server(mcp_sse_args.port)
@@ -519,6 +543,10 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                 AgentCLIHandler::default(),
             )
             .await?;
+        }
+
+        Some(SubCommand::Seed(seed_args)) => {
+            handle_seed_command(seed_args).await?;
         }
 
         None => {
@@ -741,7 +769,7 @@ pub async fn handle_test_command(test_args: TestArgs) -> Result<(), OxyError> {
 #[derive(OpenApi)]
 struct ApiDoc;
 
-pub async fn start_server_and_web_app(mut web_port: u16) {
+pub async fn start_server_and_web_app(mut web_port: u16, auth_mode: AuthMode) {
     // require webserver to be started inside the project path
     match find_project_path() {
         Ok(path) => path,
@@ -823,8 +851,13 @@ pub async fn start_server_and_web_app(mut web_port: u16) {
                     .latency_unit(tower_http::LatencyUnit::Millis),
             )
             .on_failure(trace::DefaultOnFailure::new().level(tracing::Level::ERROR));
-
-        let api_router = router::api_router().await.layer(trace_layer.clone());
+        let api_router = match router::api_router(auth_mode).await {
+            Ok(router) => router.layer(trace_layer.clone()),
+            Err(e) => {
+                eprintln!("Failed to create API router: {}", e);
+                std::process::exit(1);
+            }
+        };
         let openapi_router = router::openapi_router().await.layer(trace_layer.clone());
         let (_, openapi) = OpenApiRouter::with_openapi(ApiDoc::openapi())
             .nest("/api", openapi_router)
@@ -884,6 +917,27 @@ async fn handle_check_for_updates() -> Result<(), OxyError> {
         );
     } else {
         println!("{}", "No updates available.".info());
+    }
+    Ok(())
+}
+
+async fn handle_seed_command(seed_args: SeedArgs) -> Result<(), OxyError> {
+    match seed_args.action {
+        SeedAction::Users => {
+            seed::seed_test_users().await?;
+        }
+        SeedAction::Threads => {
+            seed::create_sample_threads_for_users().await?;
+        }
+        SeedAction::Clear => {
+            seed::clear_test_data().await?;
+        }
+        SeedAction::Full => {
+            println!("🚀 Performing full database seed...");
+            seed::seed_test_users().await?;
+            seed::create_sample_threads_for_users().await?;
+            println!("✨ Full seed completed successfully!");
+        }
     }
     Ok(())
 }

@@ -6,56 +6,84 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/shadcn/sidebar";
 
-function useCurrentUserEmail() {
-  const [email, setEmail] = useState<string | null>(() =>
-    sessionStorage.getItem("current_user_email"),
-  );
+interface UserInfo {
+  email: string;
+  picture?: string;
+}
 
-  const fetchEmail = useCallback(async () => {
+function useCurrentUserInfo() {
+  const [userInfo, setUserInfo] = useState<UserInfo | null>(() => {
+    const cached = sessionStorage.getItem("current_user_info");
+    return cached ? JSON.parse(cached) : null;
+  });
+
+  const fetchUserInfo = useCallback(async () => {
     try {
-      const res = await fetch("/oauth2/userinfo", { credentials: "include" });
+      const res = await fetch("/api/user", { credentials: "include" });
       if (!res.ok) throw new Error();
       const data = await res.json();
-      const userEmail =
-        data && typeof data.email === "string" ? data.email : "unknown";
-      setEmail(userEmail);
-      sessionStorage.setItem("current_user_email", userEmail);
+      const info: UserInfo = {
+        email: data && typeof data.email === "string" ? data.email : "unknown",
+        picture:
+          data && typeof data.picture === "string" ? data.picture : undefined,
+      };
+      setUserInfo(info);
+      sessionStorage.setItem("current_user_info", JSON.stringify(info));
     } catch {
-      setEmail("unknown");
-      sessionStorage.setItem("current_user_email", "unknown");
+      const fallbackInfo: UserInfo = { email: "unknown" };
+      setUserInfo(fallbackInfo);
+      sessionStorage.setItem("current_user_info", JSON.stringify(fallbackInfo));
     }
   }, []);
 
   useEffect(() => {
-    if (!email) {
-      fetchEmail();
+    if (!userInfo) {
+      fetchUserInfo();
     }
-  }, [email, fetchEmail]);
+  }, [userInfo, fetchUserInfo]);
 
-  return email;
+  return userInfo;
 }
 
 export function Footer() {
-  const currentUserEmail = useCurrentUserEmail();
+  const userInfo = useCurrentUserInfo();
 
   return (
     <div className="mt-auto px-2 pb-4">
       <SidebarMenu>
-        {currentUserEmail && (
+        {userInfo && (
           <SidebarMenuItem>
             <div
-              className="flex items-center gap-2 w-full px-2 py-2 text-xs text-muted-foreground truncate"
-              title={currentUserEmail}
+              className="flex items-center gap-3 w-full px-2 py-3 text-sm border-t pt-4"
+              title={userInfo.email}
             >
-              <User2 className="w-4 h-4" />
-              <span className="truncate">{currentUserEmail}</span>
+              {userInfo.picture ? (
+                <img
+                  src={userInfo.picture}
+                  alt={userInfo.email}
+                  className="w-8 h-8 rounded-full object-cover"
+                  onError={(e) => {
+                    // Fallback to icon if image fails to load
+                    e.currentTarget.style.display = "none";
+                    e.currentTarget.nextElementSibling?.classList.remove(
+                      "hidden",
+                    );
+                  }}
+                />
+              ) : null}
+              <User2
+                className={`w-8 h-8 text-muted-foreground ${userInfo.picture ? "hidden" : ""}`}
+              />
+              <span className="truncate text-muted-foreground">
+                {userInfo.email}
+              </span>
             </div>
           </SidebarMenuItem>
         )}
         <SidebarMenuItem>
           <SidebarMenuButton asChild>
             <a
-              href={`${window.location.origin}/oauth2/sign_out`}
+              href={`${window.location.origin}?gcp-iap-mode=CLEAR_LOGIN_COOKIE`}
               className="flex items-center gap-2 w-full"
             >
               <LogOut className="w-4 h-4" />
