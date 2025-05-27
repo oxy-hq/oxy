@@ -94,6 +94,7 @@ impl From<std::io::Error> for OxyError {
 
 impl From<OxyError> for StatusCode {
     fn from(error: OxyError) -> Self {
+        tracing::error!("Error occurred: {}", error);
         match error {
             OxyError::ConfigurationError(_) => StatusCode::BAD_REQUEST,
             OxyError::ArgumentError(_) => StatusCode::BAD_REQUEST,
