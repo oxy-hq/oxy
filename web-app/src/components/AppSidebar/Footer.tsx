@@ -61,7 +61,7 @@ export function Footer() {
                 <img
                   src={userInfo.picture}
                   alt={userInfo.email}
-                  className="w-8 h-8 rounded-full object-cover"
+                  className="w-4 h-4 rounded-full object-cover"
                   onError={(e) => {
                     // Fallback to icon if image fails to load
                     e.currentTarget.style.display = "none";
@@ -72,7 +72,7 @@ export function Footer() {
                 />
               ) : null}
               <User2
-                className={`w-8 h-8 text-muted-foreground ${userInfo.picture ? "hidden" : ""}`}
+                className={`w-4 h-4 text-muted-foreground ${userInfo.picture ? "hidden" : ""}`}
               />
               <span className="truncate text-muted-foreground">
                 {userInfo.email}
