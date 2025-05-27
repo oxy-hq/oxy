@@ -7,4 +7,5 @@ pub mod message;
 pub mod router;
 pub mod task;
 pub mod thread;
+pub mod user;
 pub mod workflow;

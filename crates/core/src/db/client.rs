@@ -47,12 +47,14 @@ pub fn get_charts_dir() -> &'static Path {
 pub async fn establish_connection() -> DatabaseConnection {
     let db_url = std::env::var("OXY_DATABASE_URL").ok();
     if let Some(url) = db_url {
+        tracing::info!("Using database URL from environment: {}", url);
         Database::connect(url).await.unwrap()
     } else {
         let db_path = format!(
             "sqlite://{}/db.sqlite?mode=rwc",
             get_state_dir().to_str().unwrap()
         );
+        tracing::info!("Using default database path: {}", db_path);
         Database::connect(db_path).await.unwrap()
     }
 }
