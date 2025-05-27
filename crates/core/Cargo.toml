@@ -72,7 +72,7 @@ tower = "0.5.2"
 tower-http = { version = "0.6.4", features = ["fs", "cors", "trace"] }
 tower-serve-static = "0.1.1"
 tqdm = "0.7.0"
-uuid = { version = "1.16.0", features = ["v4", "serde"] }
+uuid = { version = "1.17.0", features = ["v4", "serde"] }
 reqwest = { version = "0.12.15" }
 secrecy = "0.10.3"
 fxhash = "0.2.1"
