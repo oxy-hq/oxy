@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.6](https://github.com/oxy-hq/oxy-internal/compare/0.2.5...0.2.6) (2025-05-27)
+
+
+### <!-- 0 -->🚀 Features
+
+* user isolation & iap authentication ([#827](https://github.com/oxy-hq/oxy-internal/issues/827)) ([325aa03](https://github.com/oxy-hq/oxy-internal/commit/325aa03af44f7275780fe5d8eded9faf2fb05494))
+
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+* release 0.2.6 ([65017bb](https://github.com/oxy-hq/oxy-internal/commit/65017bb99027d296d7e01e66a9c9ac1aa61afa64))
+
 ## [0.2.5](https://github.com/oxy-hq/oxy-internal/compare/0.2.4...0.2.5) (2025-05-23)
 
 
