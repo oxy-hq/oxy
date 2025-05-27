@@ -32,7 +32,9 @@ pub async fn api_router(auth_mode: AuthMode) -> Result<Router, OxyError> {
 
     let db = establish_connection().await;
     // migrate db
-    let _ = Migrator::up(&db, None).await;
+    let _ = Migrator::up(&db, None)
+        .await
+        .map_err(|err| OxyError::DBError(format!("Migration failed to apply: {}", err)))?;
 
     let mut protected_routes = Router::new()
         .route("/user", get(user::get_current_user))
