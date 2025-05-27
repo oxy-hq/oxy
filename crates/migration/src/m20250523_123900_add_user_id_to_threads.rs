@@ -1,4 +1,8 @@
-use sea_orm_migration::{prelude::*, schema::*};
+use sea_orm_migration::{
+    prelude::*,
+    schema::*,
+    sea_orm::{DbBackend, Statement},
+};
 
 #[derive(DeriveMigrationName)]
 pub struct Migration;
@@ -6,58 +10,68 @@ pub struct Migration;
 #[async_trait::async_trait]
 impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        // SQLite doesn't support adding foreign keys to existing tables
-        // We need to recreate the table with the foreign key constraint
+        match manager.get_database_backend() {
+            DbBackend::Sqlite => {
+                let stmt = Statement::from_string(
+                    DbBackend::Sqlite,
+                    r#"PRAGMA foreign_keys=off;
+BEGIN TRANSACTION;
 
-        // Create a temporary table with the new structure including foreign key
-        manager
-            .create_table(
-                Table::create()
-                    .table(ThreadsNew::Table)
-                    .if_not_exists()
-                    .col(uuid(ThreadsNew::Id).primary_key())
-                    .col(string(ThreadsNew::Title).not_null())
-                    .col(string(ThreadsNew::Output).not_null())
-                    .col(string(ThreadsNew::Input).not_null())
-                    .col(string(ThreadsNew::SourceType).not_null())
-                    .col(string(ThreadsNew::Source).not_null())
-                    .col(
-                        timestamp_with_time_zone(ThreadsNew::CreatedAt)
-                            .extra("DEFAULT CURRENT_TIMESTAMP".to_string()),
+ALTER TABLE threads RENAME TO _threads_old;
+
+CREATE TABLE "threads" (
+  "id" uuid_text NOT NULL PRIMARY KEY,
+  "title" varchar NOT NULL,
+  "input" varchar NOT NULL,
+  "output" varchar NOT NULL,
+  "source" varchar NOT NULL,
+  "created_at" timestamp_with_timezone_text NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "references" text NOT NULL,
+  "source_type" varchar NOT NULL DEFAULT '',
+  "user_id" uuid_text NULL,
+
+  CONSTRAINT fk_threads_user_id
+    FOREIGN KEY (user_id)
+    REFERENCES users (id)
+);
+
+INSERT INTO threads SELECT *, NULL FROM _threads_old;
+
+DROP TABLE _threads_old;
+
+COMMIT;
+
+PRAGMA foreign_keys=on;
+
+"#,
+                );
+                manager.get_connection().execute(stmt).await?;
+            }
+            _ => {
+                // Add user_id column to threads table (nullable for existing records)
+                manager
+                    .alter_table(
+                        Table::alter()
+                            .table(Threads::Table)
+                            .add_column(uuid_null(Threads::UserId))
+                            .to_owned(),
                     )
-                    .col(text(ThreadsNew::References).not_null())
-                    .col(uuid_null(ThreadsNew::UserId))
-                    .foreign_key(
+                    .await?;
+
+                // Add foreign key constraint
+                manager
+                    .create_foreign_key(
                         ForeignKey::create()
                             .name("fk_threads_user_id")
-                            .from(ThreadsNew::Table, ThreadsNew::UserId)
+                            .from(Threads::Table, Threads::UserId)
                             .to(Users::Table, Users::Id)
                             .on_delete(ForeignKeyAction::Cascade)
-                            .on_update(ForeignKeyAction::NoAction),
+                            .on_update(ForeignKeyAction::NoAction)
+                            .to_owned(),
                     )
-                    .to_owned(),
-            )
-            .await?;
-
-        // Copy data from old table to new table
-        manager
-            .get_connection()
-            .execute_unprepared(
-                "INSERT INTO threads_new (id, title, output, input, source_type, source, created_at, references, user_id) 
-                 SELECT id, title, output, input, source_type, source, created_at, references, NULL FROM threads"
-            )
-            .await?;
-
-        // Drop the old table
-        manager
-            .drop_table(Table::drop().table(Threads::Table).to_owned())
-            .await?;
-
-        // Rename the new table to the original name
-        manager
-            .get_connection()
-            .execute_unprepared("ALTER TABLE threads_new RENAME TO threads")
-            .await?;
+                    .await?;
+            }
+        }
 
         // Create index on user_id for faster lookups
         manager
@@ -66,6 +80,7 @@ impl MigrationTrait for Migration {
                     .table(Threads::Table)
                     .name("idx_threads_user_id")
                     .col(Threads::UserId)
+                    .if_not_exists()
                     .to_owned(),
             )
             .await?;
@@ -80,51 +95,86 @@ impl MigrationTrait for Migration {
                 Index::drop()
                     .table(Threads::Table)
                     .name("idx_threads_user_id")
+                    .if_exists()
                     .to_owned(),
             )
             .await?;
 
-        // Recreate the original threads table without user_id and foreign key
-        manager
-            .create_table(
-                Table::create()
-                    .table(ThreadsOld::Table)
-                    .if_not_exists()
-                    .col(uuid(ThreadsOld::Id).primary_key())
-                    .col(string(ThreadsOld::Title).not_null())
-                    .col(string(ThreadsOld::Output).not_null())
-                    .col(string(ThreadsOld::Input).not_null())
-                    .col(string(ThreadsOld::SourceType).not_null())
-                    .col(string(ThreadsOld::Source).not_null())
-                    .col(
-                        timestamp_with_time_zone(ThreadsOld::CreatedAt)
-                            .extra("DEFAULT CURRENT_TIMESTAMP".to_string()),
+        match manager.get_database_backend() {
+            DbBackend::Sqlite => {
+                let stmt = Statement::from_string(
+                    DbBackend::Sqlite,
+                    r#"
+PRAGMA foreign_keys=off;
+
+BEGIN TRANSACTION;
+
+ALTER TABLE threads RENAME TO _threads_old;
+
+CREATE TABLE "threads" (
+  "id" uuid_text NOT NULL PRIMARY KEY,
+  "title" varchar NOT NULL,
+  "input" varchar NOT NULL,
+  "output" varchar NOT NULL,
+  "source" varchar NOT NULL,
+  "created_at" timestamp_with_timezone_text NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "references" text NOT NULL,
+  "source_type" varchar NOT NULL DEFAULT ''
+);
+
+INSERT INTO threads
+    (
+        id,
+        title,
+        input,
+        output,
+        source,
+        created_at,
+        'references',
+        source_type
+    )
+    SELECT
+        id,
+        title,
+        input,
+        output,
+        source,
+        created_at,
+        'references',
+        source_type
+    FROM _threads_old;
+
+DROP TABLE _threads_old;
+
+COMMIT;
+
+PRAGMA foreign_keys=on;
+"#,
+                );
+                manager.get_connection().execute(stmt).await?;
+            }
+            _ => {
+                // Drop the foreign key
+                manager
+                    .drop_foreign_key(
+                        ForeignKey::drop()
+                            .table(Threads::Table)
+                            .name("fk_threads_user_id")
+                            .to_owned(),
                     )
-                    .col(text(ThreadsOld::References).not_null())
-                    .to_owned(),
-            )
-            .await?;
+                    .await?;
 
-        // Copy data back (excluding user_id)
-        manager
-            .get_connection()
-            .execute_unprepared(
-                "INSERT INTO threads_old (id, title, output, input, source_type, source, created_at, references) 
-                 SELECT id, title, output, input, source_type, source, created_at, references FROM threads"
-            )
-            .await?;
-
-        // Drop the current threads table
-        manager
-            .drop_table(Table::drop().table(Threads::Table).to_owned())
-            .await?;
-
-        // Rename back
-        manager
-            .get_connection()
-            .execute_unprepared("ALTER TABLE threads_old RENAME TO threads")
-            .await?;
-
+                // Drop the column
+                manager
+                    .alter_table(
+                        Table::alter()
+                            .table(Threads::Table)
+                            .drop_column(Threads::UserId)
+                            .to_owned(),
+                    )
+                    .await?;
+            }
+        }
         Ok(())
     }
 }
@@ -132,42 +182,7 @@ impl MigrationTrait for Migration {
 #[derive(DeriveIden)]
 enum Threads {
     Table,
-    Id,
-    Title,
-    Output,
-    Input,
-    SourceType,
-    Source,
-    CreatedAt,
-    References,
     UserId,
-}
-
-#[derive(DeriveIden)]
-enum ThreadsNew {
-    Table,
-    Id,
-    Title,
-    Output,
-    Input,
-    SourceType,
-    Source,
-    CreatedAt,
-    References,
-    UserId,
-}
-
-#[derive(DeriveIden)]
-enum ThreadsOld {
-    Table,
-    Id,
-    Title,
-    Output,
-    Input,
-    SourceType,
-    Source,
-    CreatedAt,
-    References,
 }
 
 #[derive(DeriveIden)]
