@@ -38,20 +38,6 @@ pub async fn check_builder_availability()
 }
 
 #[utoipa::path(
-    method(post),
-    path = "/ask",
-    responses(
-        (status = OK, description = "Success", body = Message, content_type = "application/x-ndjson")
-    )
-)]
-pub async fn ask(
-    extract::Json(payload): extract::Json<AskRequest>,
-) -> Result<impl IntoResponse, StatusCode> {
-    let s = service::agent::ask(payload).await?;
-    Ok(StreamBodyAs::json_nl(s))
-}
-
-#[utoipa::path(
     method(get),
     path = "/agents",
     responses(

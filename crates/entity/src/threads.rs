@@ -7,27 +7,35 @@ use sea_orm::entity::prelude::*;
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
-    pub user_id: Option<Uuid>,
     pub title: String,
-    pub output: String,
     pub input: String,
-    pub source_type: String,
+    pub output: String,
     pub source: String,
     pub created_at: DateTimeWithTimeZone,
     #[sea_orm(column_type = "Text")]
     pub references: String,
+    pub source_type: String,
+    pub user_id: Option<Uuid>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
+    #[sea_orm(has_many = "super::messages::Entity")]
+    Messages,
     #[sea_orm(
         belongs_to = "super::users::Entity",
         from = "Column::UserId",
         to = "super::users::Column::Id",
         on_update = "NoAction",
-        on_delete = "Cascade"
+        on_delete = "NoAction"
     )]
     Users,
+}
+
+impl Related<super::messages::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Messages.def()
+    }
 }
 
 impl Related<super::users::Entity> for Entity {

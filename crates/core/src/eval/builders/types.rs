@@ -65,6 +65,7 @@ impl EvalRecord {
             EvalTarget::Agent(agent_input) => EvalTarget::Agent(AgentInput {
                 agent_ref: agent_input.agent_ref.clone(),
                 prompt: self.query.clone(),
+                memory: vec![],
             }),
         }
     }

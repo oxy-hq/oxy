@@ -1,4 +1,9 @@
-import { ThreadCreateRequest, ThreadItem, Answer } from "@/types/chat";
+import {
+  ThreadCreateRequest,
+  ThreadItem,
+  Answer,
+  MessageItem,
+} from "@/types/chat";
 
 import { apiService } from "./apiService";
 import { AgentConfig } from "@/types/agent";
@@ -24,8 +29,16 @@ export interface Service {
     testIndex: number,
     onReadStream: (event: TestStreamMessage) => void,
   ): Promise<void>;
-  ask(threadId: string, onReadStream: (answer: Answer) => void): Promise<void>;
-  askTask(taskId: string, onReadStream: (answer: Chunk) => void): Promise<void>;
+  ask(
+    threadId: string,
+    question: string | null,
+    onReadStream: (answer: Answer) => void,
+  ): Promise<void>;
+  askTask(
+    taskId: string,
+    question: string | null,
+    onReadStream: (answer: Chunk) => void,
+  ): Promise<void>;
   askAgent(
     agentPath: string,
     question: string,
@@ -53,6 +66,7 @@ export interface Service {
     prompt: string;
     database: string;
   }): Promise<{ workflow: Workflow }>;
+  getThreadMessages(threadId: string): Promise<MessageItem[]>;
 }
 
 export const service = apiService;

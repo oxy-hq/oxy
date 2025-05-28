@@ -4,9 +4,10 @@ use async_openai::{
     error::OpenAIError,
     types::{
         ChatCompletionMessageToolCall, ChatCompletionMessageToolCallChunk,
-        ChatCompletionRequestMessage, ChatCompletionRequestSystemMessageArgs,
-        ChatCompletionRequestUserMessageArgs, ChatCompletionTool, ChatCompletionToolType,
-        CreateChatCompletionRequestArgs, FunctionCall, ResponseFormat, ResponseFormatJsonSchema,
+        ChatCompletionRequestAssistantMessageArgs, ChatCompletionRequestMessage,
+        ChatCompletionRequestSystemMessageArgs, ChatCompletionRequestUserMessageArgs,
+        ChatCompletionTool, ChatCompletionToolType, CreateChatCompletionRequestArgs, FunctionCall,
+        ResponseFormat, ResponseFormatJsonSchema,
     },
 };
 use deser_incomplete::from_json_str;
@@ -27,6 +28,7 @@ use crate::{
         },
         types::{Chunk, EventKind, Output},
     },
+    service::agent::Message,
     theme::StyledText,
     utils::variant_eq,
 };
@@ -259,6 +261,7 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
 pub struct OneShotInput {
     pub system_instructions: String,
     pub user_input: Option<String>,
+    pub memory: Vec<Message>,
 }
 
 #[derive(Clone, Debug)]
@@ -277,6 +280,21 @@ impl ParamMapper<OneShotInput, Vec<ChatCompletionRequestMessage>> for SimpleMapp
                 .build()?
                 .into(),
         ];
+        messages.extend(input.memory.into_iter().map(|message| {
+            if message.is_human {
+                ChatCompletionRequestUserMessageArgs::default()
+                    .content(message.content)
+                    .build()
+                    .unwrap()
+                    .into()
+            } else {
+                ChatCompletionRequestAssistantMessageArgs::default()
+                    .content(message.content)
+                    .build()
+                    .unwrap()
+                    .into()
+            }
+        }));
         if let Some(user_input) = input.user_input {
             messages.push(
                 ChatCompletionRequestUserMessageArgs::default()

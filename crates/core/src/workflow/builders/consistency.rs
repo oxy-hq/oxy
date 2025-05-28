@@ -122,6 +122,7 @@ impl ParamMapper<(OutputContainer, OutputContainer), OneShotInput> for AgentProm
             OneShotInput {
                 system_instructions,
                 user_input: None,
+                memory: vec![],
             },
             None,
         ))

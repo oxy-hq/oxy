@@ -6,10 +6,9 @@ use crate::{
         types::{Event, ReferenceKind},
         writer::{EventHandler, MarkdownWriter, OutputWriter},
     },
-    service::agent::run_agent,
+    service::agent::{Message, run_agent},
     utils::{find_project_path, try_unwrap_arc_mutex, try_unwrap_arc_tokio_mutex},
 };
-use async_stream::stream;
 use axum::{
     extract::{self, Path},
     http::StatusCode,
@@ -17,10 +16,12 @@ use axum::{
 };
 use axum_streams::StreamBodyAs;
 use base64::{Engine, prelude::BASE64_STANDARD};
-use entity::prelude::Threads;
 use entity::threads;
-use sea_orm::prelude::DateTimeWithTimeZone;
-use sea_orm::{ActiveModelTrait, ActiveValue, ColumnTrait, EntityTrait, QueryFilter};
+use entity::{prelude::Messages, prelude::Threads};
+use sea_orm::{ActiveModelTrait, ActiveValue, ColumnTrait, EntityTrait};
+use sea_orm::{
+    Condition, Order, QueryFilter, QueryOrder, QuerySelect, prelude::DateTimeWithTimeZone,
+};
 use serde::{Deserialize, Serialize};
 use std::{
     path::PathBuf,
@@ -125,7 +126,7 @@ pub async fn create_thread(
         user_id: ActiveValue::Set(Some(user.id)),
         created_at: ActiveValue::not_set(),
         title: ActiveValue::Set(thread_request.title),
-        input: ActiveValue::Set(thread_request.input),
+        input: ActiveValue::Set(thread_request.input.clone()),
         output: ActiveValue::Set("".to_string()),
         source_type: ActiveValue::Set(thread_request.source_type),
         source: ActiveValue::Set(thread_request.source),
@@ -146,6 +147,18 @@ pub async fn create_thread(
         created_at: thread.created_at,
         references: serde_json::from_str(&thread.references).unwrap_or_default(),
     };
+
+    let message = entity::messages::ActiveModel {
+        id: ActiveValue::Set(Uuid::new_v4()),
+        content: ActiveValue::Set(thread_request.input),
+        is_human: ActiveValue::Set(true),
+        thread_id: ActiveValue::Set(thread.id),
+        created_at: ActiveValue::default(),
+    };
+    message.insert(&connection).await.map_err(|e| {
+        tracing::error!("Failed to insert message: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
     Ok(extract::Json(thread_item))
 }
 
@@ -254,9 +267,15 @@ impl EventHandler for ThreadStream {
     }
 }
 
+#[derive(Deserialize)]
+pub struct AskThreadRequest {
+    pub question: Option<String>,
+}
+
 pub async fn ask_thread(
     Path(id): Path<String>,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
+    extract::Json(payload): extract::Json<AskThreadRequest>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let connection = establish_connection().await;
     let thread_id = Uuid::parse_str(&id).map_err(|e| {
@@ -270,17 +289,57 @@ pub async fn ask_thread(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let thread = thread.ok_or(StatusCode::NOT_FOUND)?;
+    let mut messages = Messages::find()
+        .filter(
+            Condition::all()
+                .add(<entity::prelude::Messages as EntityTrait>::Column::ThreadId.eq(thread.id)),
+        )
+        .order_by(
+            <entity::prelude::Messages as EntityTrait>::Column::CreatedAt,
+            Order::Desc,
+        )
+        .limit(10)
+        .all(&connection)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    if !thread.output.is_empty() {
-        return Ok(StreamBodyAs::json_nl(stream! {
-            yield AnswerStream {
-                content: thread.output,
-                references: serde_json::from_str(&thread.references).unwrap_or_default(),
-                is_error: false,
-                step: "".to_string(),
+    // sort the 10 most recent messages by created_at asc
+    messages.sort_by(|a, b| a.created_at.cmp(&b.created_at));
+
+    let user_question;
+
+    match payload.question {
+        Some(question) => {
+            user_question = question.clone();
+            let new_message = entity::messages::ActiveModel {
+                id: ActiveValue::Set(Uuid::new_v4()),
+                content: ActiveValue::Set(question),
+                is_human: ActiveValue::Set(true),
+                thread_id: ActiveValue::Set(thread.id),
+                created_at: ActiveValue::default(),
             };
-        }));
+            new_message
+                .insert(&connection)
+                .await
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        }
+        None => {
+            if messages.len() > 1 {
+                return Err(StatusCode::BAD_REQUEST);
+            } else {
+                user_question = thread.input.clone();
+            }
+        }
     }
+
+    let memory = messages
+        .into_iter()
+        .map(|message| Message {
+            content: message.content,
+            is_human: message.is_human,
+            created_at: message.created_at,
+        })
+        .collect::<Vec<Message>>();
 
     let project_path = find_project_path().map_err(|e| {
         tracing::info!("Failed to find project path: {}", e);
@@ -288,7 +347,6 @@ pub async fn ask_thread(
     })?;
 
     let agent_ref = thread.source.to_string();
-    let prompt = thread.input.to_string();
     let (tx, rx) = tokio::sync::mpsc::channel(100);
     let _ = tokio::spawn(async move {
         let tx_clone = tx.clone();
@@ -298,8 +356,9 @@ pub async fn ask_thread(
         let result = run_agent(
             &project_path,
             &PathBuf::from(agent_ref),
-            prompt,
+            user_question,
             thread_stream,
+            memory,
         )
         .await;
         match result {
@@ -308,17 +367,16 @@ pub async fn ask_thread(
                 let markdown_writer = try_unwrap_arc_tokio_mutex(markdown_writer).await?;
                 tracing::debug!("Agent output: {:?}", output_container);
                 tracing::debug!("Agent references: {:?}", references);
-                let mut thread_model: entity::threads::ActiveModel = thread.into();
-                thread_model.output = ActiveValue::Set(markdown_writer.finish().await?);
-                thread_model.references =
-                    ActiveValue::Set(serde_json::to_string(&references).map_err(|err| {
-                        OxyError::SerializerError(format!(
-                            "Failed to serialize references:\n{}",
-                            err
-                        ))
-                    })?);
-                thread_model.update(&connection).await.map_err(|err| {
-                    OxyError::DBError(format!("Failed to update thread:\n{}", err))
+
+                let answer_message = entity::messages::ActiveModel {
+                    id: ActiveValue::Set(Uuid::new_v4()),
+                    content: ActiveValue::Set(markdown_writer.finish().await?),
+                    is_human: ActiveValue::Set(false),
+                    thread_id: ActiveValue::Set(thread.id),
+                    created_at: ActiveValue::default(),
+                };
+                answer_message.insert(&connection).await.map_err(|err| {
+                    OxyError::DBError(format!("Failed to insert message:\n{}", err))
                 })?;
                 Result::<(), OxyError>::Ok(())
             }
@@ -377,6 +435,7 @@ pub async fn ask_agent(
             &PathBuf::from(path),
             payload.question,
             thread_stream,
+            vec![],
         )
         .await;
 

@@ -1,4 +1,4 @@
-import AgentMessage from "@/components/AgentMessage";
+import AgentMessage from "@/components/Messages/AgentMessage";
 import UserMessage from "./UserMessage";
 import { Message } from "@/types/chat";
 

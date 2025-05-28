@@ -2,7 +2,6 @@ use crate::api::agent;
 use crate::api::chart;
 use crate::api::data;
 use crate::api::file;
-use crate::api::message;
 use crate::api::thread;
 use crate::api::user;
 use crate::api::workflow;
@@ -22,6 +21,7 @@ use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 
 use super::app;
+use super::message;
 use super::task;
 
 pub async fn api_router(auth_mode: AuthMode) -> Result<Router, OxyError> {
@@ -41,18 +41,20 @@ pub async fn api_router(auth_mode: AuthMode) -> Result<Router, OxyError> {
         .route("/user", put(user::update_current_user))
         .route("/threads", get(thread::get_threads))
         .route("/threads/{id}", get(thread::get_thread))
-        .route("/threads/{id}/ask", get(thread::ask_thread))
+        .route("/threads/{id}/ask", post(thread::ask_thread))
         .route("/threads", post(thread::create_thread))
         .route("/threads/{id}", delete(thread::delete_thread))
+        .route(
+            "/threads/{id}/messages",
+            get(message::get_messages_by_thread),
+        )
         .route("/threads", delete(thread::delete_all_threads))
         .route("/agents/{pathb64}/ask", post(thread::ask_agent))
         .route(
             "/threads/{id}/workflow",
             post(workflow::run_workflow_thread),
         )
-        .route("/threads/{id}/task", get(task::ask_task))
-        .route("/ask", post(agent::ask))
-        .route("/messages/{agent}", get(message::get_messages))
+        .route("/threads/{id}/task", post(task::ask_task))
         .route("/agents", get(agent::get_agents))
         .route(
             "/builder-availability",
@@ -112,7 +114,7 @@ pub async fn openapi_router() -> OpenApiRouter {
         .allow_headers(tower_http::cors::Any);
 
     OpenApiRouter::new()
-        .routes(routes!(agent::ask, agent::get_agents))
+        .routes(routes!(agent::get_agents))
         .routes(routes!(workflow::list, workflow::run_workflow))
         .layer(cors)
 }
