@@ -162,7 +162,7 @@ impl Executable<RoutingAgentInput> for RoutingAgentExecutable {
                 OneShotInput {
                     system_instructions: routing_agent.system_instructions.clone(),
                     user_input: Some(prompt),
-                    memory: memory,
+                    memory,
                 },
             )
             .await?;

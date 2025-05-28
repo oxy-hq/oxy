@@ -8,16 +8,12 @@ use crate::execute::types::{Event, EventKind, Output, OutputContainer, ProgressT
 use crate::execute::writer::{EventHandler, NoopHandler};
 use crate::theme::StyledText;
 use crate::utils::print_colored_sql;
-use futures::Stream;
 use sea_orm::prelude::DateTimeWithTimeZone;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::io::Write;
 use std::path::Path;
 use std::path::PathBuf;
-use tokio::sync::mpsc::Sender;
-use tokio_stream::wrappers::ReceiverStream;
 use utoipa::ToSchema;
-use uuid::Uuid;
 
 use super::eval::PBarsHandler;
 
@@ -182,7 +178,7 @@ pub async fn run_agent<P: AsRef<Path>, H: EventHandler + Send + 'static>(
             AgentInput {
                 agent_ref: agent_ref.as_ref().to_string_lossy().to_string(),
                 prompt,
-                memory: memory,
+                memory,
             },
             event_handler,
         )
