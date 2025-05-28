@@ -1,7 +1,5 @@
 use crate::config::ConfigBuilder;
 use crate::config::model::AgentConfig;
-use crate::service;
-use crate::service::agent::{AskRequest, Message};
 use crate::service::test::{TestStreamMessage, run_test as run_agent_test};
 use crate::utils::find_project_path;
 use async_stream::stream;

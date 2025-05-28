@@ -1,4 +1,3 @@
-use crate::errors::OxyError;
 use sea_orm::prelude::DateTimeWithTimeZone;
 use serde::Serialize;
 use uuid::Uuid;

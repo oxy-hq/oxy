@@ -10,7 +10,6 @@ use crate::errors::OxyError;
 use crate::execute::types::utils::record_batches_to_table;
 use crate::mcp::service::OxyMcpServer;
 use crate::service::agent::AgentCLIHandler;
-use crate::service::agent::Message;
 use crate::service::agent::run_agent;
 use crate::service::eval::EvalEventsHandler;
 use crate::service::eval::run_eval;

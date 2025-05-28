@@ -1,11 +1,11 @@
-use crate::{db::client::establish_connection, errors::OxyError};
+use crate::db::client::establish_connection;
 use axum::{
     extract::{self, Path},
     http::StatusCode,
 };
 use entity::prelude::Messages;
+use sea_orm::prelude::DateTimeWithTimeZone;
 use sea_orm::{ColumnTrait, Condition, EntityTrait, Order, QueryFilter, QueryOrder};
-use sea_orm::{QuerySelect, prelude::DateTimeWithTimeZone};
 use serde::Serialize;
 use uuid::Uuid;
 
