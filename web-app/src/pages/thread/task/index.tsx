@@ -16,7 +16,6 @@ import { useState } from "react";
 const TaskThread = ({ thread }: { thread: ThreadItem }) => {
   const queryClient = useQueryClient();
 
-  const [answerStream, setAnswerStream] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [filePath, setFilePath] = useState<string | undefined>(thread.source);
   const [followUpQuestion, setFollowUpQuestion] = useState("");
@@ -51,12 +50,9 @@ const TaskThread = ({ thread }: { thread: ThreadItem }) => {
       return;
     }
 
-    hasRun.current = true;
+    if (messageHistory.length !== 1) return;
 
-    if (thread.output) {
-      setAnswerStream(thread.output);
-      return;
-    }
+    hasRun.current = true;
     setIsLoading(true);
     // eslint-disable-next-line promise/catch-or-return
     service
@@ -79,14 +75,14 @@ const TaskThread = ({ thread }: { thread: ThreadItem }) => {
         setIsLoading(false);
         setMessage((prev) => ({
           ...prev,
-          content: answer || "",
+          content: "",
           isStreaming: false,
         }));
         queryClient.invalidateQueries({
           queryKey: queryKeys.thread.all,
         });
       });
-  }, [queryClient, thread]);
+  }, [queryClient, messageHistory, thread, fetchMessages]);
 
   const handleSendMessage = useCallback(async () => {
     if (!followUpQuestion.trim() || isLoading) return;
@@ -123,16 +119,6 @@ const TaskThread = ({ thread }: { thread: ThreadItem }) => {
     }
   }, [messageHistory, message]);
 
-  // Auto-scroll effect for answerStream changes
-  useEffect(() => {
-    if (messagesContainerRef.current) {
-      messagesContainerRef.current.scrollTop =
-        messagesContainerRef.current.scrollHeight;
-    }
-  }, [answerStream]);
-
-  const answer = thread?.output ? thread?.output : answerStream;
-
   const filePathB64 = filePath ? btoa(filePath) : undefined;
 
   return (
@@ -153,20 +139,16 @@ const TaskThread = ({ thread }: { thread: ThreadItem }) => {
 
       <div className="flex flex-1 overflow-hidden">
         <div className="flex-1 flex flex-col h-full">
-          <div className="flex flex-col flex-1 max-w-[742px] px-4 mx-auto pb-4 h-full">
-            <div className="pt-8 pb-6 text-3xl font-semibold text-base-foreground">
-              {thread?.input}
-            </div>
-
+          <div className="flex flex-col flex-1 w-full max-w-[742px] p-4 mx-auto h-full">
             <div
               ref={messagesContainerRef}
-              className="flex flex-col flex-1 overflow-y-auto customScrollbar"
+              className="flex flex-col flex-1 [scrollbar-gutter:stable_both-edges] overflow-y-auto customScrollbar"
             >
               <MessageHistory messages={messageHistory} />
               <StreamingMessage message={message} />
             </div>
 
-            <div className="p-4 pt-0">
+            <div className="p-6 pt-0">
               <MessageInput
                 value={followUpQuestion}
                 onChange={setFollowUpQuestion}

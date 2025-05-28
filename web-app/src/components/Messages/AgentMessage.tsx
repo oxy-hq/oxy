@@ -24,7 +24,7 @@ const AgentMessage = ({
   const { theme } = useTheme();
 
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-2 w-full">
       <MessageHeader isHuman={false} createdAt={createdAt} />
       {showAgentThinking && (
         <div className="flex gap-2 items-start">
@@ -40,12 +40,12 @@ const AgentMessage = ({
         </div>
       )}
       {showAnswer && (
-        <div className="flex gap-2 items-start">
+        <div className="flex gap-2 items-start w-full">
           {showAvatar && (
             <img className="w-8 h-8 rounded-full" src="/logo.svg" alt="Oxy" />
           )}
-          <div className="flex-1">
-            <div className="p-6 rounded-xl bg-base-card border border-base-border shadow-sm flex flex-col gap-2">
+          <div className="flex-1 w-full">
+            <div className="p-4 w-full rounded-xl bg-base-card border border-base-border shadow-sm flex flex-col gap-2 overflow-x-auto">
               <ThreadSteps steps={steps} isLoading={isStreaming} />
               <AnswerContent content={content || ""} />
             </div>

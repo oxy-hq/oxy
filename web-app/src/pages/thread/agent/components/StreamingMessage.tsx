@@ -6,6 +6,7 @@ interface StreamingMessageProps {
 }
 
 const StreamingMessage = ({ message }: StreamingMessageProps) => {
+  console.log("StreamingMessage", message);
   if (!message.isStreaming) return null;
 
   return (
