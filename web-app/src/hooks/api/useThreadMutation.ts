@@ -8,7 +8,10 @@ const useThreadMutation = (onSuccess: (data: ThreadItem) => void) => {
   return useMutation<ThreadItem, Error, ThreadCreateRequest>({
     mutationFn: service.createThread,
     onSuccess: (data: ThreadItem) => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.thread.list() });
+      // Invalidate all thread list queries (all pages)
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.thread.all,
+      });
       onSuccess(data);
     },
   });

@@ -10,7 +10,7 @@ use crate::{
     utils::{find_project_path, try_unwrap_arc_mutex, try_unwrap_arc_tokio_mutex},
 };
 use axum::{
-    extract::{self, Path},
+    extract::{self, Path, Query},
     http::StatusCode,
     response::IntoResponse,
 };
@@ -18,9 +18,9 @@ use axum_streams::StreamBodyAs;
 use base64::{Engine, prelude::BASE64_STANDARD};
 use entity::threads;
 use entity::{prelude::Messages, prelude::Threads};
-use sea_orm::{ActiveModelTrait, ActiveValue, ColumnTrait, EntityTrait};
 use sea_orm::{
-    Condition, Order, QueryFilter, QueryOrder, QuerySelect, prelude::DateTimeWithTimeZone,
+    ActiveModelTrait, ActiveValue, ColumnTrait, Condition, EntityTrait, Order, PaginatorTrait,
+    QueryFilter, QueryOrder, QuerySelect, prelude::DateTimeWithTimeZone,
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -43,6 +43,28 @@ pub struct ThreadItem {
     pub references: Vec<ReferenceKind>,
 }
 
+#[derive(Serialize)]
+pub struct ThreadsResponse {
+    pub threads: Vec<ThreadItem>,
+    pub pagination: PaginationInfo,
+}
+
+#[derive(Serialize)]
+pub struct PaginationInfo {
+    pub page: u64,
+    pub limit: u64,
+    pub total: u64,
+    pub total_pages: u64,
+    pub has_next: bool,
+    pub has_previous: bool,
+}
+
+#[derive(Deserialize)]
+pub struct PaginationQuery {
+    pub page: Option<u64>,
+    pub limit: Option<u64>,
+}
+
 #[derive(Deserialize)]
 pub struct CreateThreadRequest {
     pub title: String,
@@ -61,17 +83,46 @@ pub struct AnswerStream {
 
 pub async fn get_threads(
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
-) -> Result<extract::Json<Vec<ThreadItem>>, StatusCode> {
+    Query(pagination): Query<PaginationQuery>,
+) -> Result<extract::Json<ThreadsResponse>, StatusCode> {
     let connection = establish_connection().await;
-    let threads = Threads::find()
+
+    let page = pagination.page.unwrap_or(1);
+    let limit = pagination.limit.unwrap_or(100).clamp(1, 100);
+    let page = page.max(1);
+    let total = Threads::find()
         .filter(threads::Column::UserId.eq(Some(user.id)))
-        .all(&connection)
+        .count(&connection)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    if threads.is_empty() {
-        return Ok(extract::Json(vec![]));
+    if total == 0 {
+        return Ok(extract::Json(ThreadsResponse {
+            threads: vec![],
+            pagination: PaginationInfo {
+                page,
+                limit,
+                total: 0,
+                total_pages: 0,
+                has_next: false,
+                has_previous: false,
+            },
+        }));
     }
+
+    let total_pages = total.div_ceil(limit); // Ceiling division for pagination
+    let has_next = page < total_pages;
+    let has_previous = page > 1;
+    let offset = (page - 1) * limit;
+
+    let threads = Threads::find()
+        .filter(threads::Column::UserId.eq(Some(user.id)))
+        .order_by_desc(threads::Column::CreatedAt)
+        .offset(offset)
+        .limit(limit)
+        .all(&connection)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let thread_items = threads
         .into_iter()
@@ -86,7 +137,18 @@ pub async fn get_threads(
             references: serde_json::from_str(&t.references).unwrap_or_default(),
         })
         .collect();
-    Ok(extract::Json(thread_items))
+
+    Ok(extract::Json(ThreadsResponse {
+        threads: thread_items,
+        pagination: PaginationInfo {
+            page,
+            limit,
+            total,
+            total_pages,
+            has_next,
+            has_previous,
+        },
+    }))
 }
 
 pub async fn get_thread(

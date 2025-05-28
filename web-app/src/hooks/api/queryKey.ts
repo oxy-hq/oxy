@@ -13,7 +13,8 @@ const agentKeys = {
 
 const threadKeys = {
   all: ["thread"] as const,
-  list: () => [...threadKeys.all, "list"] as const,
+  list: (page?: number, limit?: number) =>
+    [...threadKeys.all, "list", { page, limit }] as const,
   item: (threadId: string) => [...threadKeys.all, { threadId }] as const,
 };
 const workflowKeys = {

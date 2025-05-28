@@ -7,7 +7,11 @@ const useDeleteThread = () => {
   return useMutation<void, Error, string>({
     mutationFn: service.deleteThread,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.thread.list() });
+      // Invalidate all thread list queries (all pages)
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.thread.all,
+        type: "all",
+      });
     },
   });
 };

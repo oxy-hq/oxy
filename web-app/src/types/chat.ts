@@ -47,6 +47,20 @@ export type ThreadCreateRequest = {
   source_type: string;
 };
 
+export type PaginationInfo = {
+  page: number;
+  limit: number;
+  total: number;
+  total_pages: number;
+  has_next: boolean;
+  has_previous: boolean;
+};
+
+export type ThreadsResponse = {
+  threads: ThreadItem[];
+  pagination: PaginationInfo;
+};
+
 export interface Message {
   content: string;
   references: Reference[];

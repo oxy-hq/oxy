@@ -1,16 +1,18 @@
 import { service } from "@/services/service";
 import { useQuery } from "@tanstack/react-query";
 import queryKeys from "./queryKey";
-import { ThreadItem } from "@/types/chat";
+import { ThreadsResponse } from "@/types/chat";
 
 const useThreads = (
+  page: number = 1,
+  limit: number = 100,
   enabled = true,
   refetchOnWindowFocus = true,
   refetchOnMount: boolean | "always" = false,
 ) =>
-  useQuery<ThreadItem[], Error>({
-    queryKey: queryKeys.thread.list(),
-    queryFn: service.listThreads,
+  useQuery<ThreadsResponse, Error>({
+    queryKey: queryKeys.thread.list(page, limit),
+    queryFn: () => service.listThreads(page, limit),
     enabled,
     refetchOnWindowFocus,
     refetchOnMount,

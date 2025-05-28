@@ -19,13 +19,19 @@ import ClearAllThreadsDialog from "./ClearAllThreadsDialog";
 import { Button } from "@/components/ui/shadcn/button";
 import ItemsSkeleton from "../ItemsSkeleton";
 
+const SIDEBAR_THREADS_LIMIT = 50;
+
 const Threads = () => {
   const location = useLocation();
-  const { data: threads, isPending } = useThreads();
+  const { data: threadsResponse, isLoading } = useThreads(
+    1,
+    SIDEBAR_THREADS_LIMIT,
+  );
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [showAll, setShowAll] = useState(false);
   const isThreadsPage = location.pathname === "/threads";
 
+  const threads = threadsResponse?.threads ?? [];
   const sortedThreads = threads?.sort((a, b) => {
     if (a.created_at && b.created_at) {
       return (
@@ -62,21 +68,21 @@ const Threads = () => {
           </DropdownMenuContent>
         </DropdownMenu>
         <SidebarMenuSub>
-          {isPending && <ItemsSkeleton />}
+          {isLoading && <ItemsSkeleton />}
 
-          {!isPending &&
+          {!isLoading &&
             visibleThreads?.map((thread) => (
               <ThreadItem key={thread.id} thread={thread} />
             ))}
 
-          {!isPending && threads && threads.length > 5 && (
+          {!isLoading && threads && threads.length > 5 && (
             <Button
               size="sm"
               variant="ghost"
               onClick={() => setShowAll(!showAll)}
               className="w-full text-sm text-muted-foreground hover:text-foreground py-1 text-left"
             >
-              {showAll ? "Show less" : `Show all (${threads.length} threads)`}
+              {showAll ? "Show less" : `Show ${threads.length} recent threads`}
             </Button>
           )}
         </SidebarMenuSub>

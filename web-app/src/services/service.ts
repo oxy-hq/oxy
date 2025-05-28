@@ -3,6 +3,7 @@ import {
   ThreadItem,
   Answer,
   MessageItem,
+  ThreadsResponse,
 } from "@/types/chat";
 
 import { apiService } from "./apiService";
@@ -13,7 +14,7 @@ import { App, AppItem, Chunk } from "@/types/app";
 import { Workflow } from "@/types/workflow";
 
 export interface Service {
-  listThreads(): Promise<ThreadItem[]>;
+  listThreads(page?: number, limit?: number): Promise<ThreadsResponse>;
   createThread(request: ThreadCreateRequest): Promise<ThreadItem>;
   deleteThread(threadId: string): Promise<void>;
   runApp(pathb64: string): Promise<App>;
