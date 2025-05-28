@@ -56,6 +56,7 @@ impl ParamMapper<(TargetOutput, TargetOutput), OneShotInput> for LLMSolverMapper
             OneShotInput {
                 system_instructions,
                 user_input: None,
+                memory: vec![],
             },
             None,
         ))

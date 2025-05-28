@@ -51,7 +51,7 @@ impl Executable<OpenAIExecutableResponse> for OpenAITool {
             return Ok(None);
         }
 
-        let assistant_message = ChatCompletionRequestAssistantMessageArgs::default()
+        let agent_message = ChatCompletionRequestAssistantMessageArgs::default()
             .tool_calls(input.tool_calls.clone())
             .build()?;
         let response = build_tool_executable(
@@ -91,7 +91,7 @@ impl Executable<OpenAIExecutableResponse> for OpenAITool {
                     .into(),
             })
             .collect::<Vec<_>>();
-        let mut result = vec![assistant_message.into()];
+        let mut result = vec![agent_message.into()];
         result.extend_from_slice(&tool_rets);
 
         Ok(Some(result))

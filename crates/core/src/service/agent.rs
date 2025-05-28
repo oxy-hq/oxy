@@ -3,11 +3,6 @@ use crate::agent::types::AgentInput;
 use crate::config::ConfigBuilder;
 use crate::config::constants::{CONCURRENCY_SOURCE, CONSISTENCY_SOURCE, WORKFLOW_SOURCE};
 use crate::config::model::AgentConfig;
-use crate::db::message::update_message;
-use crate::db::{
-    conversations::{create_conversation, get_conversation_by_agent},
-    message::save_message,
-};
 use crate::errors::OxyError;
 use crate::execute::types::{Event, EventKind, Output, OutputContainer, ProgressType};
 use crate::execute::writer::{EventHandler, NoopHandler};
@@ -41,98 +36,13 @@ pub struct AskRequest {
     pub memory: Vec<Memory>,
 }
 
-#[derive(Serialize, Clone, ToSchema)]
-pub struct Message {
-    content: String,
-    id: Uuid,
-    is_human: bool,
-    created_at: DateTimeWithTimeZone,
-}
-
-struct MessageStream {
-    id: Uuid,
-    is_human: bool,
-    created_at: DateTimeWithTimeZone,
-    tx: Sender<Message>,
-}
-
-impl MessageStream {
-    fn new(
-        id: Uuid,
-        is_human: bool,
-        created_at: DateTimeWithTimeZone,
-        tx: Sender<Message>,
-    ) -> Self {
-        MessageStream {
-            id,
-            is_human,
-            created_at,
-            tx,
-        }
-    }
-}
-
-#[async_trait::async_trait]
-impl EventHandler for MessageStream {
-    async fn handle_event(&mut self, event: Event) -> Result<(), OxyError> {
-        if let EventKind::Updated { chunk } = event.kind {
-            let message = Message {
-                content: chunk.delta.to_string(),
-                id: self.id,
-                is_human: self.is_human,
-                created_at: self.created_at,
-            };
-            self.tx.send(message).await?;
-        }
-        Ok(())
-    }
-}
-
-pub async fn ask(payload: AskRequest) -> Result<impl Stream<Item = Message>, OxyError> {
-    let conversation = get_conversation_by_agent(payload.agent.as_str()).await;
-    let conversation_id: Uuid;
-    match conversation {
-        Some(c) => {
-            conversation_id = c.id;
-        }
-        None => {
-            let new_conversation = create_conversation(&payload.agent, &payload.title).await;
-            conversation_id = new_conversation.id;
-        }
-    }
-    let question = save_message(conversation_id, &payload.question, true).await;
-    let answer = save_message(conversation_id, "", false).await;
-    let (tx, rx) = tokio::sync::mpsc::channel(100);
-    tx.send(Message {
-        content: payload.question.to_string(),
-        id: question.id,
-        is_human: question.is_human,
-        created_at: question.created_at,
-    })
-    .await?;
-    let message_stream = MessageStream::new(answer.id, answer.is_human, answer.created_at, tx);
-    let prompt = payload.question.to_string();
-    let project_path = payload.project_path.to_string();
-    let agent_path = payload.agent.to_string();
-
-    let _ = tokio::spawn(async move {
-        let output_container =
-            run_agent(&project_path, &agent_path, prompt, message_stream).await?;
-        update_message(answer.id, &output_container.to_string())
-            .await
-            .map_err(|err| OxyError::DBError(format!("Failed to update message:\n{}", err)))
-    });
-
-    Ok(ReceiverStream::new(rx))
-}
-
 pub async fn ask_adhoc(
     question: String,
     project_path: PathBuf,
     agent: String,
 ) -> Result<String, OxyError> {
     let agent_path = get_path_by_name(project_path.clone(), agent).await?;
-    let result = match run_agent(&project_path, &agent_path, question, NoopHandler).await {
+    let result = match run_agent(&project_path, &agent_path, question, NoopHandler, vec![]).await {
         Ok(output) => output.to_string(),
         Err(e) => format!("Error running agent: {}", e),
     };
@@ -263,6 +173,7 @@ pub async fn run_agent<P: AsRef<Path>, H: EventHandler + Send + 'static>(
     agent_ref: P,
     prompt: String,
     event_handler: H,
+    memory: Vec<Message>,
 ) -> Result<OutputContainer, OxyError> {
     AgentLauncher::new()
         .with_local_context(project_path)
@@ -271,8 +182,16 @@ pub async fn run_agent<P: AsRef<Path>, H: EventHandler + Send + 'static>(
             AgentInput {
                 agent_ref: agent_ref.as_ref().to_string_lossy().to_string(),
                 prompt,
+                memory: memory,
             },
             event_handler,
         )
         .await
+}
+
+#[derive(Debug, Clone)]
+pub struct Message {
+    pub content: String,
+    pub is_human: bool,
+    pub created_at: DateTimeWithTimeZone,
 }

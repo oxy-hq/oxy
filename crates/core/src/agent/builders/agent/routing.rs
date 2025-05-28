@@ -21,6 +21,7 @@ use crate::{
         builders::ExecutableBuilder,
         types::{Document, OutputContainer},
     },
+    service::agent::Message,
     tools::{RetrievalExecutable, types::RetrievalInput},
 };
 
@@ -30,6 +31,7 @@ pub(super) struct RoutingAgentInput {
     pub model: String,
     pub routing_agent: RoutingAgent,
     pub prompt: String,
+    pub memory: Vec<Message>,
 }
 
 #[derive(Debug, Clone)]
@@ -135,6 +137,7 @@ impl Executable<RoutingAgentInput> for RoutingAgentExecutable {
             model,
             routing_agent,
             prompt,
+            memory,
         } = input;
         let model = execution_context.config.resolve_model(&model)?;
         let tool_configs = self
@@ -159,6 +162,7 @@ impl Executable<RoutingAgentInput> for RoutingAgentExecutable {
                 OneShotInput {
                     system_instructions: routing_agent.system_instructions.clone(),
                     user_input: Some(prompt),
+                    memory: memory,
                 },
             )
             .await?;

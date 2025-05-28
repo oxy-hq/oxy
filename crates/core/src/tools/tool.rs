@@ -514,6 +514,7 @@ impl ParamMapper<AgentToolInput, AgentInput> for AgentMapper {
             AgentInput {
                 agent_ref: agent_config.agent_ref.to_string(),
                 prompt: params.prompt.to_string(),
+                memory: vec![],
             },
             None,
         ))

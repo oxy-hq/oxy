@@ -1,18 +1,39 @@
-import AgentMessage from "@/components/AgentMessage";
-import PageHeader from "@/components/PageHeader";
-import { Separator } from "@/components/ui/shadcn/separator";
-import queryKeys from "@/hooks/api/queryKey";
+import MessageInput from "@/components/MessageInput";
+import useSendMessageMutation from "@/hooks/api/sendMessageMutation";
 import { service } from "@/services/service";
-import { STEP_MAP } from "@/types/agent";
-import { Message, ThreadItem } from "@/types/chat";
-import { useQueryClient } from "@tanstack/react-query";
-import { Bot } from "lucide-react";
-import { useRef } from "react";
-import { useState } from "react";
-import { useEffect } from "react";
+import { Message, ThreadItem, MessageItem } from "@/types/chat";
+import { useCallback, useEffect, useRef, useState } from "react";
+import dayjs from "dayjs";
+import relativeTime from "dayjs/plugin/relativeTime";
+import MessageHistory from "./components/MessageHistory";
+import ThreadHeader from "./components/ThreadHeader";
+import StreamingMessage from "./components/StreamingMessage";
 
+// Initialize dayjs plugins
+dayjs.extend(relativeTime);
+
+// Custom hook for message management
+const useThreadMessages = (threadId: string) => {
+  const [messageHistory, setMessageHistory] = useState<MessageItem[]>([]);
+
+  const fetchMessages = useCallback(async () => {
+    try {
+      const messages = await service.getThreadMessages(threadId);
+      setMessageHistory(messages);
+    } catch (error) {
+      console.error("Failed to fetch message history:", error);
+    }
+  }, [threadId]);
+
+  useEffect(() => {
+    fetchMessages();
+  }, [fetchMessages]);
+
+  return { messageHistory, setMessageHistory, fetchMessages };
+};
+
+// Main component
 const AgentThread = ({ thread }: { thread: ThreadItem }) => {
-  const queryClient = useQueryClient();
   const [message, setMessage] = useState<Message>({
     content: "",
     references: [],
@@ -20,14 +41,35 @@ const AgentThread = ({ thread }: { thread: ThreadItem }) => {
     isUser: false,
     isStreaming: false,
   });
-
+  const [followUpQuestion, setFollowUpQuestion] = useState("");
   const hasRun = useRef(false);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
 
+  const { messageHistory, setMessageHistory, fetchMessages } =
+    useThreadMessages(thread.id);
+
+  // Calculate total message count (user + agent messages)
+  const totalMessageCount = messageHistory.length;
+  const shouldShowWarning = totalMessageCount >= 10;
+
+  const { sendMessage, isLoading } = useSendMessageMutation({
+    threadId: thread.id,
+    onStreamingMessage: setMessage,
+    onMessageSent: fetchMessages,
+    onMessagesUpdated: setMessageHistory,
+  });
+
+  // Auto-scroll effect
   useEffect(() => {
-    if (hasRun.current) {
-      return;
+    if (messagesContainerRef.current) {
+      messagesContainerRef.current.scrollTop =
+        messagesContainerRef.current.scrollHeight;
     }
+  }, [messageHistory, message]);
 
+  // Initial message handling
+  useEffect(() => {
+    if (hasRun.current) return;
     hasRun.current = true;
 
     if (thread.output) {
@@ -42,71 +84,45 @@ const AgentThread = ({ thread }: { thread: ThreadItem }) => {
       return;
     }
 
-    setMessage((pre) => ({
-      ...pre,
-      content: "",
-      references: [],
-      steps: [],
-      isStreaming: true,
-    }));
-    // eslint-disable-next-line promise/catch-or-return
-    service
-      .ask(thread.id, (answer) => {
-        setMessage((prevMessage) => {
-          const { content, references, steps } = prevMessage;
-          const shouldAddStep =
-            answer.step &&
-            Object.keys(STEP_MAP).includes(answer.step) &&
-            steps.at(-1) !== answer.step;
+    sendMessage(null);
+  }, [sendMessage, thread]);
 
-          return {
-            content: content + answer.content,
-            references: answer.references
-              ? [...references, ...answer.references]
-              : references,
-            steps: shouldAddStep ? [...steps, answer.step] : steps,
-            isUser: false,
-            isStreaming: true,
-          };
-        });
-      })
-      .finally(() => {
-        setMessage((prev) => {
-          return { ...prev, isStreaming: false };
-        });
-        queryClient.invalidateQueries({
-          queryKey: queryKeys.thread.all,
-        });
-      });
-  }, [queryClient, thread]);
+  const handleSendMessage = useCallback(() => {
+    if (!followUpQuestion.trim() || isLoading) return;
+    sendMessage(followUpQuestion);
+    setFollowUpQuestion("");
+  }, [followUpQuestion, isLoading, sendMessage]);
 
   return (
-    <div className="flex flex-col h-full">
-      <PageHeader className="border-b-1 border-border items-center">
-        <div className="p-2 flex items-center justify-center flex-1 h-full">
-          <div className="flex gap-1 items-center text-muted-foreground">
-            <Bot className="w-4 h-4 min-w-4 min-h-4" />
-            <p className="text-sm break-all">{thread?.source}</p>
-          </div>
-          <div className="px-4 h-full flex items-stretch">
-            <Separator orientation="vertical" />
-          </div>
+    <div className="flex flex-col h-full max-w-[742px] mx-auto ">
+      <ThreadHeader thread={thread} />
 
-          <p className="text-sm text-base-foreground">{thread?.title}</p>
-        </div>
-      </PageHeader>
-
-      <div className="overflow-y-auto customScrollbar">
-        <div className="flex-1 max-w-[742px] px-4 mx-auto pb-4">
+      <div
+        ref={messagesContainerRef}
+        className="overflow-y-auto customScrollbar flex-1"
+      >
+        <div className="flex-1 pb-4">
           {thread && (
             <>
               <div className="pt-8 pb-6 text-3xl font-semibold text-base-foreground">
                 {thread?.input}
               </div>
-              <AgentMessage message={message} prompt={thread.input} />
+              <MessageHistory messages={messageHistory} />
+              <StreamingMessage message={message} />
             </>
           )}
         </div>
+      </div>
+
+      <div className="flex flex-col gap-1 p-4 pt-0">
+        <MessageInput
+          value={followUpQuestion}
+          onChange={setFollowUpQuestion}
+          onSend={handleSendMessage}
+          disabled={isLoading}
+          showWarning={shouldShowWarning}
+          isLoading={message.isStreaming || isLoading}
+        />
       </div>
     </div>
   );

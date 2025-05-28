@@ -9,6 +9,7 @@ use crate::config::model::{AgentContext, AgentToolsConfig, DefaultAgent};
 use crate::execute::builders::map::ParamMapper;
 use crate::execute::renderer::Renderer;
 use crate::execute::types::{Output, OutputContainer};
+use crate::service::agent::Message;
 use crate::tools::ToolsContext;
 use crate::{
     adapters::openai::OpenAIClient,
@@ -21,8 +22,9 @@ use crate::{
     },
 };
 use async_openai::types::{
-    ChatCompletionRequestMessage, ChatCompletionRequestSystemMessageArgs,
-    ChatCompletionRequestUserMessageArgs, ChatCompletionTool,
+    ChatCompletionRequestAssistantMessageArgs, ChatCompletionRequestMessage,
+    ChatCompletionRequestSystemMessageArgs, ChatCompletionRequestUserMessageArgs,
+    ChatCompletionTool,
 };
 use minijinja::{Value, context};
 
@@ -36,6 +38,7 @@ pub struct DefaultAgentInput {
     pub default_agent: DefaultAgent,
     pub contexts: Option<Vec<AgentContext>>,
     pub prompt: String,
+    pub memory: Vec<Message>,
 }
 
 #[async_trait::async_trait]
@@ -62,14 +65,34 @@ impl Executable<DefaultAgentInput> for DefaultAgentExecutable {
                             max_tool_concurrency,
                         },
                 },
+            memory,
         } = input;
+        println!("Default agent input: {:?}", &memory);
         let model_config = execution_context.config.resolve_model(&model)?;
         let system_instructions = execution_context
             .renderer
             .render_async(&system_instructions)
             .await?;
         let client = OpenAIClient::with_config(model_config.try_into()?);
-        let messages: Vec<ChatCompletionRequestMessage> = vec![
+        let mut messages = memory
+            .into_iter()
+            .map(|message| {
+                if message.is_human {
+                    ChatCompletionRequestUserMessageArgs::default()
+                        .content(message.content)
+                        .build()
+                        .unwrap()
+                        .into()
+                } else {
+                    ChatCompletionRequestAssistantMessageArgs::default()
+                        .content(message.content)
+                        .build()
+                        .unwrap()
+                        .into()
+                }
+            })
+            .collect::<Vec<ChatCompletionRequestMessage>>();
+        messages.extend(vec![
             ChatCompletionRequestSystemMessageArgs::default()
                 .content(system_instructions)
                 .build()?
@@ -78,7 +101,7 @@ impl Executable<DefaultAgentInput> for DefaultAgentExecutable {
                 .content(prompt.clone())
                 .build()?
                 .into(),
-        ];
+        ]);
         execution_context
             .write_chunk(Chunk {
                 key: Some(AGENT_SOURCE_PROMPT.to_string()),

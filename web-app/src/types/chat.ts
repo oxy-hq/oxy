@@ -54,3 +54,11 @@ export interface Message {
   isUser: boolean;
   isStreaming: boolean;
 }
+
+export interface MessageItem {
+  id: string;
+  content: string;
+  is_human: boolean;
+  thread_id: string;
+  created_at: string;
+}

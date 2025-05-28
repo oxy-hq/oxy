@@ -1,15 +1,15 @@
-import AnswerContent from "@/components/AnswerContent";
 import PageHeader from "@/components/PageHeader";
-import ThreadSteps from "@/components/ThreadSteps";
+import MessageInput from "@/components/MessageInput";
 import { Separator } from "@/components/ui/shadcn/separator";
 import queryKeys from "@/hooks/api/queryKey";
 import EditorTab from "@/pages/thread/task/EditorTab";
+import MessageHistory from "@/pages/thread/agent/components/MessageHistory";
+import StreamingMessage from "@/pages/thread/agent/components/StreamingMessage";
 import { service } from "@/services/service";
-import { STEP_MAP } from "@/types/agent";
-import { ThreadItem } from "@/types/chat";
+import { ThreadItem, MessageItem, Message } from "@/types/chat";
 import { useQueryClient } from "@tanstack/react-query";
 import { FileCheck2 } from "lucide-react";
-import { useRef } from "react";
+import { useRef, useCallback } from "react";
 import { useEffect } from "react";
 import { useState } from "react";
 
@@ -17,10 +17,34 @@ const TaskThread = ({ thread }: { thread: ThreadItem }) => {
   const queryClient = useQueryClient();
 
   const [answerStream, setAnswerStream] = useState<string | null>(null);
-  const [steps, setSteps] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [filePath, setFilePath] = useState<string | undefined>(thread.source);
+  const [followUpQuestion, setFollowUpQuestion] = useState("");
+  const [messageHistory, setMessageHistory] = useState<MessageItem[]>([]);
+  const [message, setMessage] = useState<Message>({
+    content: "",
+    references: [],
+    steps: [],
+    isUser: false,
+    isStreaming: false,
+  });
   const hasRun = useRef(false);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const shouldShowWarning = messageHistory.length > 10;
+
+  // Fetch message history
+  const fetchMessages = useCallback(async () => {
+    try {
+      const messages = await service.getThreadMessages(thread.id);
+      setMessageHistory(messages);
+    } catch (error) {
+      console.error("Failed to fetch message history:", error);
+    }
+  }, [thread.id]);
+
+  useEffect(() => {
+    fetchMessages();
+  }, [fetchMessages]);
 
   useEffect(() => {
     if (hasRun.current) {
@@ -36,36 +60,79 @@ const TaskThread = ({ thread }: { thread: ThreadItem }) => {
     setIsLoading(true);
     // eslint-disable-next-line promise/catch-or-return
     service
-      .askTask(thread.id, (answer) => {
-        if (answer.step) {
-          setSteps((pre) => {
-            if (
-              Object.keys(STEP_MAP).includes(answer.step) &&
-              pre.at(-1) !== answer.step
-            ) {
-              return [...pre, answer.step];
-            }
-            return pre;
-          });
-        }
-        setAnswerStream((pre) => (pre ? pre + answer.content : answer.content));
+      .askTask(thread.id, null, (answer) => {
+        setMessage((prev) => ({
+          ...prev,
+          content: prev.content + answer.content,
+          isStreaming: true,
+        }));
+
         if (answer.file_path) {
           setFilePath(answer.file_path);
         }
       })
+      .then(() => {
+        fetchMessages();
+        return null;
+      })
       .finally(() => {
         setIsLoading(false);
+        setMessage((prev) => ({
+          ...prev,
+          content: answer || "",
+          isStreaming: false,
+        }));
         queryClient.invalidateQueries({
           queryKey: queryKeys.thread.all,
         });
       });
   }, [queryClient, thread]);
 
+  const handleSendMessage = useCallback(async () => {
+    if (!followUpQuestion.trim() || isLoading) return;
+
+    setIsLoading(true);
+    setMessage((prev) => ({ ...prev, content: "", isStreaming: true }));
+
+    try {
+      await service.askTask(thread.id, followUpQuestion, (answer) => {
+        setMessage((prev) => ({
+          ...prev,
+          content: prev.content + answer.content,
+          isStreaming: true,
+        }));
+
+        if (answer.file_path) {
+          setFilePath(answer.file_path);
+        }
+      });
+
+      fetchMessages();
+    } finally {
+      setIsLoading(false);
+      setMessage((prev) => ({ ...prev, isStreaming: false }));
+      setFollowUpQuestion("");
+    }
+  }, [followUpQuestion, isLoading, thread.id, fetchMessages]);
+
+  // Auto-scroll effect
+  useEffect(() => {
+    if (messagesContainerRef.current) {
+      messagesContainerRef.current.scrollTop =
+        messagesContainerRef.current.scrollHeight;
+    }
+  }, [messageHistory, message]);
+
+  // Auto-scroll effect for answerStream changes
+  useEffect(() => {
+    if (messagesContainerRef.current) {
+      messagesContainerRef.current.scrollTop =
+        messagesContainerRef.current.scrollHeight;
+    }
+  }, [answerStream]);
+
   const answer = thread?.output ? thread?.output : answerStream;
 
-  const showAnswer = answer || steps.length > 0;
-
-  const showAgentThinking = isLoading && !showAnswer;
   const filePathB64 = filePath ? btoa(filePath) : undefined;
 
   return (
@@ -85,35 +152,30 @@ const TaskThread = ({ thread }: { thread: ThreadItem }) => {
       </PageHeader>
 
       <div className="flex flex-1 overflow-hidden">
-        <div className="overflow-y-auto customScrollbar flex-1">
-          <div className="flex-1 max-w-[742px] px-4 mx-auto pb-4">
+        <div className="flex-1 flex flex-col h-full">
+          <div className="flex flex-col flex-1 max-w-[742px] px-4 mx-auto pb-4 h-full">
             <div className="pt-8 pb-6 text-3xl font-semibold text-base-foreground">
               {thread?.input}
             </div>
 
-            {showAgentThinking && (
-              <div className="flex gap-1">
-                <img className="w-8 h-8" src="/oxy-loading-dark.gif" />
-                <p className="text-muted-foreground">Agent is thinking...</p>
-              </div>
-            )}
-            {showAnswer && (
-              <div className="p-6 rounded-xl bg-base-card border border-base-border shadow-sm flex flex-col gap-2 ">
-                <div className="flex gap-1 items-center h-12 justify-start">
-                  <img
-                    className="w-[24px] h-[24px]"
-                    src="/logo.svg"
-                    alt="Oxy"
-                  />
-                  <p className="text-xl text-card-foreground font-semibold">
-                    Answer
-                  </p>
-                </div>
-                <ThreadSteps steps={steps} isLoading={isLoading} />
+            <div
+              ref={messagesContainerRef}
+              className="flex flex-col flex-1 overflow-y-auto customScrollbar"
+            >
+              <MessageHistory messages={messageHistory} />
+              <StreamingMessage message={message} />
+            </div>
 
-                <AnswerContent content={answer || ""} />
-              </div>
-            )}
+            <div className="p-4 pt-0">
+              <MessageInput
+                value={followUpQuestion}
+                onChange={setFollowUpQuestion}
+                onSend={handleSendMessage}
+                disabled={isLoading}
+                isLoading={message.isStreaming || isLoading}
+                showWarning={shouldShowWarning}
+              />
+            </div>
           </div>
         </div>
         <div className="border-l flex-1 h-full">

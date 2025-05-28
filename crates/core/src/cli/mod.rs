@@ -10,6 +10,7 @@ use crate::errors::OxyError;
 use crate::execute::types::utils::record_batches_to_table;
 use crate::mcp::service::OxyMcpServer;
 use crate::service::agent::AgentCLIHandler;
+use crate::service::agent::Message;
 use crate::service::agent::run_agent;
 use crate::service::eval::EvalEventsHandler;
 use crate::service::eval::run_eval;
@@ -541,6 +542,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                 &config.get_builder_agent_path().await?,
                 ask_args.question,
                 AgentCLIHandler::default(),
+                vec![],
             )
             .await?;
         }
@@ -567,6 +569,7 @@ async fn handle_agent_file(file_path: &PathBuf, question: Option<String>) -> Res
         file_path,
         question,
         AgentCLIHandler::default(),
+        vec![],
     )
     .await?;
     Ok(())

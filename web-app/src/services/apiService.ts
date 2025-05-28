@@ -49,24 +49,32 @@ export const apiService: Service = {
       await readMessageFromStreamData(response, onReadStream);
     }
   },
-  async ask(threadId: string, onReadStream) {
+  async ask(threadId: string, question: string | null, onReadStream) {
     const url = `/threads/${threadId}/ask`;
     const options = {
       headers: {
         "Content-Type": "application/json",
       },
+      body: JSON.stringify({
+        question: question,
+      }),
+      method: "POST",
     };
     const response = await fetch(apiBaseURL + url, options);
     if (response) {
       await readMessageFromStreamData(response, onReadStream);
     }
   },
-  async askTask(threadId: string, onReadStream) {
+  async askTask(threadId: string, question: string | null, onReadStream) {
     const url = `/threads/${threadId}/task`;
     const options = {
+      method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
+      body: JSON.stringify({
+        question: question,
+      }),
     };
     const response = await fetch(apiBaseURL + url, options);
     if (response) {
@@ -177,6 +185,10 @@ export const apiService: Service = {
     database: string;
   }): Promise<{ workflow: Workflow }> {
     const response = await apiClient.post("/workflows/from-query", request);
+    return response.data;
+  },
+  async getThreadMessages(threadId: string) {
+    const response = await apiClient.get(`/threads/${threadId}/messages`);
     return response.data;
   },
 };

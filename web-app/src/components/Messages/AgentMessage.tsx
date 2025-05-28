@@ -3,14 +3,21 @@ import ThreadSteps from "@/components/ThreadSteps";
 import ThreadReferences from "@/components/ThreadReferences";
 import { Message } from "@/types/chat";
 import useTheme from "@/stores/useTheme";
+import MessageHeader from "./MessageHeader";
 
 interface AgentMessageProps {
   message: Message;
   showAvatar?: boolean;
   prompt?: string;
+  createdAt?: string;
 }
 
-const AgentMessage = ({ message, showAvatar, prompt }: AgentMessageProps) => {
+const AgentMessage = ({
+  message,
+  showAvatar,
+  prompt,
+  createdAt,
+}: AgentMessageProps) => {
   const { content, references, steps, isStreaming } = message;
   const showAnswer = content || steps.length > 0;
   const showAgentThinking = isStreaming && !showAnswer;
@@ -18,6 +25,7 @@ const AgentMessage = ({ message, showAvatar, prompt }: AgentMessageProps) => {
 
   return (
     <div className="flex flex-col gap-2">
+      <MessageHeader isHuman={false} createdAt={createdAt} />
       {showAgentThinking && (
         <div className="flex gap-2 items-start">
           <img

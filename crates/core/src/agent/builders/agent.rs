@@ -31,7 +31,11 @@ impl Executable<AgentInput> for AgentExecutable {
         execution_context: &ExecutionContext,
         input: AgentInput,
     ) -> Result<Self::Response, OxyError> {
-        let AgentInput { agent_ref, prompt } = input;
+        let AgentInput {
+            agent_ref,
+            prompt,
+            memory,
+        } = input;
         let agent_config = execution_context.config.resolve_agent(&agent_ref).await?;
         let source_id = short_uuid::short!();
         let handler = AgentReferencesHandler::new(
@@ -50,6 +54,7 @@ impl Executable<AgentInput> for AgentExecutable {
             execution_context.with_child_source(source_id.to_string(), AGENT_SOURCE.to_string());
         let output_container = match agent_config.r#type {
             AgentType::Default(default_agent) => {
+                tracing::debug!("Executing default agent: {:?}", &default_agent);
                 let default_agent_executable = build_default_agent_executable();
                 execute_with_handler(
                     default_agent_executable,
@@ -60,12 +65,14 @@ impl Executable<AgentInput> for AgentExecutable {
                         default_agent,
                         contexts: agent_config.context,
                         prompt,
+                        memory,
                     },
                     handler,
                 )
                 .await
             }
             AgentType::Routing(routing_agent) => {
+                tracing::debug!("Executing routing agent: {:?}", &routing_agent);
                 execute_with_handler(
                     RoutingAgentExecutable,
                     &routing_context,
@@ -74,6 +81,7 @@ impl Executable<AgentInput> for AgentExecutable {
                         model: agent_config.model,
                         routing_agent,
                         prompt,
+                        memory,
                     },
                     handler,
                 )

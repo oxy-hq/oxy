@@ -86,6 +86,7 @@ impl Executable<TaskInput> for TaskExecutable {
                                 AgentInput {
                                     agent_ref: agent_task.agent_ref.to_string(),
                                     prompt,
+                                    memory: vec![],
                                 },
                             )
                             .await?;
@@ -99,6 +100,7 @@ impl Executable<TaskInput> for TaskExecutable {
                                 AgentInput {
                                     agent_ref: agent_task.agent_ref.to_string(),
                                     prompt,
+                                    memory: vec![],
                                 },
                             )
                             .await
