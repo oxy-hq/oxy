@@ -13,6 +13,10 @@ const ThreadSteps = ({
     duration: 300,
   });
 
+  if (!steps || steps.length === 0) {
+    return null;
+  }
+
   return (
     <div ref={parent}>
       {steps.length > 0 && isLoading && (

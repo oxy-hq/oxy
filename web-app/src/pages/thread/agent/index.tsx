@@ -70,22 +70,12 @@ const AgentThread = ({ thread }: { thread: ThreadItem }) => {
   // Initial message handling
   useEffect(() => {
     if (hasRun.current) return;
-    hasRun.current = true;
 
-    if (thread.output) {
-      setMessage((prev) => ({
-        ...prev,
-        content: thread.output,
-        references: thread.references,
-        steps: [],
-        isUser: false,
-        isStreaming: false,
-      }));
-      return;
+    if (messageHistory.length === 1) {
+      sendMessage(null);
+      hasRun.current = true;
     }
-
-    sendMessage(null);
-  }, [sendMessage, thread]);
+  }, [sendMessage, messageHistory]);
 
   const handleSendMessage = useCallback(() => {
     if (!followUpQuestion.trim() || isLoading) return;
@@ -94,19 +84,16 @@ const AgentThread = ({ thread }: { thread: ThreadItem }) => {
   }, [followUpQuestion, isLoading, sendMessage]);
 
   return (
-    <div className="flex flex-col h-full max-w-[742px] mx-auto ">
+    <div className="flex flex-col h-full overflow-hidden">
       <ThreadHeader thread={thread} />
 
       <div
         ref={messagesContainerRef}
-        className="overflow-y-auto customScrollbar flex-1"
+        className="overflow-y-auto p-4 [scrollbar-gutter:stable_both-edges] customScrollbar flex-1 flex items-center w-full justify-center"
       >
-        <div className="flex-1 pb-4">
+        <div className="flex-1 max-w-[742px] w-full h-full">
           {thread && (
             <>
-              <div className="pt-8 pb-6 text-3xl font-semibold text-base-foreground">
-                {thread?.input}
-              </div>
               <MessageHistory messages={messageHistory} />
               <StreamingMessage message={message} />
             </>
@@ -114,7 +101,7 @@ const AgentThread = ({ thread }: { thread: ThreadItem }) => {
         </div>
       </div>
 
-      <div className="flex flex-col gap-1 p-4 pt-0">
+      <div className="flex flex-col p-4 gap-1 pt-0 max-w-[742px] mx-auto w-full">
         <MessageInput
           value={followUpQuestion}
           onChange={setFollowUpQuestion}

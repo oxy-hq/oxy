@@ -30,7 +30,7 @@ const MessageInput = ({
   };
 
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex flex-col gap-1 w-full flex-1">
       {showWarning && (
         <div className="w-full p-2 bg-gray-900 border border-gray-950 rounded-lg">
           <div className="flex items-center">
@@ -65,7 +65,7 @@ const MessageInput = ({
           />
           <Button
             size="icon"
-            className="absolute right-2 bottom-2"
+            className="absolute right-2 transform top-1/2 -translate-y-1/2"
             onClick={onSend}
             disabled={!value.trim() || disabled}
           >
