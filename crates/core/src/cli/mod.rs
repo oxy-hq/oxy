@@ -125,32 +125,51 @@ fn parse_variable(env: &str) -> Result<Variable, OxyError> {
 )]
 struct Args {
     /// The question to ask or command to execute
+    ///
+    /// When no subcommand is provided, this input will be processed
+    /// as a question for the default AI agent or as a query suggestion.
     #[clap(default_value = "")]
     input: String,
 
     /// Output format: 'text' (default) or 'code' for SQL
+    ///
+    /// Control how results are displayed in the terminal.
+    /// Use 'code' for syntax-highlighted SQL output.
     #[clap(long, value_name = "FORMAT")]
     output: Option<String>,
 
-    /// Subcommand
+    /// Subcommand to execute
     #[clap(subcommand)]
     command: Option<SubCommand>,
 }
 
 #[derive(Parser, Debug)]
 struct McpArgs {
+    /// Path to the Oxy project directory
+    ///
+    /// Specify the root directory of your Oxy project where
+    /// config.yml and other project files are located.
     #[clap(long)]
     pub project_path: PathBuf,
 }
 
 #[derive(Parser, Debug)]
 struct McpSseArgs {
+    /// Port number for the MCP Server-Sent Events server
+    ///
+    /// Specify which port to bind the MCP SSE server for
+    /// web-based integrations. Default is 8000.
     #[clap(long, default_value_t = 8000)]
     port: u16,
 }
 
 #[derive(Parser, Debug)]
 struct AskArgs {
+    /// Question to ask the AI agent
+    ///
+    /// Provide your question or request for analysis to the
+    /// configured AI agent. The agent will use your project context
+    /// to provide relevant insights and answers.
     #[clap(long)]
     pub question: String,
 }
@@ -159,68 +178,145 @@ struct AskArgs {
 enum SubCommand {
     /// Initialize a repository as an oxy project. Also creates a ~/.config/oxy/config.yaml file if it doesn't exist
     Init,
-    /// Search through SQL in your project path. Run them against the associated database on
-    /// selection.
+    /// Execute workflow (.workflow.yml), agent (.agent.yml), or SQL (.sql) files
+    ///
+    /// Run SQL queries against databases, execute workflows for data processing,
+    /// or interact with AI agents for analysis and insights.
     Run(RunArgs),
-    /// Run testing on a workflow file to get consistency metrics
+    /// Run evaluation tests on workflow files to measure consistency and performance
+    ///
+    /// Execute test cases defined in workflow files and generate metrics
+    /// to validate workflow reliability and output quality.
     Test(TestArgs),
-    /// Build embeddings for hybrid search
+    /// Build vector embeddings for hybrid search capabilities
+    ///
+    /// Process your project files and create searchable embeddings for
+    /// enhanced semantic search and retrieval functionality.
     Build(BuildArgs),
-    /// Perform vector search
+    /// Perform semantic vector search across your project
+    ///
+    /// Search through your codebase, documentation, and data using
+    /// natural language queries powered by vector embeddings.
     VecSearch(VecSearchArgs),
-    /// Collect semantic information from the databases
+    /// Synchronize and collect metadata from connected databases
+    ///
+    /// Extract schema information, table structures, and relationships
+    /// from your databases to enable better query suggestions and validation.
     Sync(SyncArgs),
-    /// Validate the config file
+    /// Validate configuration files for syntax and structure
+    ///
+    /// Check your config.yml, workflow files, and agent configurations
+    /// for errors and compliance with the expected schema.
     Validate,
-    /// Start the API server and serve the frontend web app
+    /// Start MCP (Model Context Protocol) server with Server-Sent Events transport
+    ///
+    /// Launch a web-accessible MCP server that enables integration with
+    /// MCP-compatible AI tools and applications via HTTP/SSE.
     McpSse(McpSseArgs),
+    /// Start MCP (Model Context Protocol) server with stdio transport
+    ///
+    /// Launch an MCP server using standard input/output for direct
+    /// integration with local AI tools and development environments.
     McpStdio(McpArgs),
+    /// Start the web application server with API endpoints
+    ///
+    /// Launch the full Oxy web interface with authentication,
+    /// database connectivity, and interactive query capabilities.
     Serve(ServeArgs),
-    /// Test theme for terminal output
+    /// Test and preview terminal color theme support
+    ///
+    /// Display color samples and theme information to verify
+    /// terminal compatibility and appearance settings.
     TestTheme,
-    /// Generate JSON schemas for config files
+    /// Generate JSON schema files for configuration validation
+    ///
+    /// Create or update schema files used by IDEs and tools
+    /// for configuration file validation and autocompletion.
     GenConfigSchema(GenConfigSchemaArgs),
-    /// Update the CLI to the latest version
+    /// Update the Oxy CLI to the latest available version
+    ///
+    /// Download and install the newest release of Oxy,
+    /// ensuring you have access to the latest features and fixes.
     SelfUpdate,
+    /// Execute and manage workflow files with advanced options
+    ///
+    /// Run workflow files with additional control over execution,
+    /// error handling, and output formatting.
     Make(MakeArgs),
+    /// Ask questions to AI agents for analysis and insights
+    ///
+    /// Interact with configured AI agents to get answers about
+    /// your data, generate queries, or analyze results.
     Ask(AskArgs),
     /// Database seeding commands for development and testing
+    #[clap(hide = true)]
     Seed(SeedArgs),
 }
 
 #[derive(Parser, Debug)]
 pub struct MakeArgs {
+    /// Path to the workflow file to execute
     file: String,
 }
 
 #[derive(Parser, Debug)]
 pub struct RunArgs {
+    /// Path to the file to execute (.sql, .workflow.yml, or .agent.yml)
     file: String,
 
+    /// Database connection to use for SQL execution
+    ///
+    /// Specify which database from your config.yml to use.
+    /// If not provided, uses the default database from configuration.
     #[clap(long)]
     database: Option<String>,
 
+    /// Template variables in the format VAR=VALUE
+    ///
+    /// Pass variables to SQL templates using Jinja2 syntax.
+    /// Example: --variables user_id=123 --variables status=active
     #[clap(long, short = 'v', value_parser=ValueParser::new(parse_variable), num_args = 1..)]
     variables: Vec<(String, String)>,
 
+    /// Question to ask when running agent files
+    ///
+    /// Required when executing .agent.yml files to provide context
+    /// for the AI agent's analysis or response.
     question: Option<String>,
 
+    /// Retry failed operations automatically
+    ///
+    /// Enable automatic retry logic for transient failures
+    /// during workflow or query execution.
     #[clap(long, default_value_t = false)]
     retry: bool,
 
+    /// Preview SQL without executing against the database
+    ///
+    /// Validate and display the generated SQL query without
+    /// actually running it against your database.
     #[clap(long, default_value_t = false)]
     dry_run: bool,
 }
 
 #[derive(Parser, Debug)]
 pub struct TestArgs {
+    /// Path to the workflow file to test
     file: String,
+    /// Suppress detailed output and show only results summary
+    ///
+    /// Enable quiet mode to reduce verbose logging during test execution
+    /// and display only essential test results and metrics.
     #[clap(long, short = 'q', default_value_t = false)]
     quiet: bool,
 }
 
 #[derive(Parser, Debug)]
 pub struct BuildArgs {
+    /// Drop all existing embedding tables before rebuilding
+    ///
+    /// Warning: This will delete all existing vector embeddings
+    /// and rebuild the entire search index from scratch.
     #[clap(long, short = 'd', default_value_t = false)]
     drop_all_tables: bool,
 }
@@ -292,17 +388,36 @@ impl RunArgs {
 
 #[derive(Parser, Debug)]
 struct VecSearchArgs {
+    /// Natural language query to search for
+    ///
+    /// Enter your search question in plain English. The system will
+    /// find relevant code, documentation, and data using semantic matching.
     question: String,
-    /// Specify a custom agent configuration
+    /// Specify a custom agent configuration for enhanced search
+    ///
+    /// Use a specific agent from your configuration to process
+    /// and interpret the search results with domain expertise.
     #[clap(long, value_name = "AGENT_NAME")]
     agent: String,
 }
 
 #[derive(Parser, Debug)]
 struct SyncArgs {
+    /// Specific database to sync (syncs all if not specified)
+    ///
+    /// Target a single database connection from your config.yml
+    /// instead of syncing metadata from all configured databases.
     database: Option<String>,
+    /// Specific datasets/tables to sync within the database
+    ///
+    /// Limit synchronization to particular tables or schemas
+    /// instead of processing the entire database structure.
     #[clap(long, short = 'd', num_args = 0..)]
     datasets: Vec<String>,
+    /// Overwrite existing metadata files during sync
+    ///
+    /// Replace existing schema files and metadata instead of
+    /// skipping tables that have already been synchronized.
     #[clap(
         long,
         short = 'o',
@@ -314,33 +429,58 @@ struct SyncArgs {
 
 #[derive(Parser, Debug)]
 struct ServeArgs {
+    /// Port number for the web application server
+    ///
+    /// Specify which port to bind the Oxy web interface.
+    /// Default is 3000 if not specified.
     #[clap(long, default_value_t = 3000)]
     port: u16,
+    /// Authentication mode for the web application
+    ///
+    /// Choose between 'local' for development or 'oauth' for
+    /// production deployments with proper user authentication.
     #[clap(long, default_value_t = AuthMode::Local, value_enum)]
     auth_mode: AuthMode,
 }
 
 #[derive(Parser, Debug)]
 struct GenConfigSchemaArgs {
+    /// Check for uncommitted schema changes in git
+    ///
+    /// Verify that generated schema files match the current
+    /// configuration structure and fail if changes are detected.
     #[clap(long)]
     check: bool,
 }
 
 #[derive(Parser, Debug)]
 pub struct SeedArgs {
+    /// Database seeding action to perform
     #[clap(subcommand)]
     pub action: SeedAction,
 }
 
 #[derive(Parser, Debug)]
 pub enum SeedAction {
-    /// Create test users for development
+    /// Create test users for development environment
+    ///
+    /// Generates 3 test users including guest@oxy.local for
+    /// local authentication testing and development.
     Users,
     /// Create sample threads for existing test users
+    ///
+    /// Generates 1000 sample analysis threads per test user
+    /// with realistic SQL queries and responses.
     Threads,
     /// Clear all test data (users and threads)
+    ///
+    /// Removes all test users and their associated threads
+    /// to reset the development database to a clean state.
     Clear,
     /// Full seed - create users and sample threads
+    ///
+    /// Complete seeding process that creates test users
+    /// and generates sample threads for comprehensive testing.
     Full,
 }
 
@@ -925,20 +1065,22 @@ async fn handle_check_for_updates() -> Result<(), OxyError> {
 }
 
 async fn handle_seed_command(seed_args: SeedArgs) -> Result<(), OxyError> {
+    use seed::*;
+
     match seed_args.action {
         SeedAction::Users => {
-            seed::seed_test_users().await?;
+            seed_test_users().await?;
         }
         SeedAction::Threads => {
-            seed::create_sample_threads_for_users().await?;
+            create_sample_threads_for_users().await?;
         }
         SeedAction::Clear => {
-            seed::clear_test_data().await?;
+            clear_test_data().await?;
         }
         SeedAction::Full => {
             println!("🚀 Performing full database seed...");
-            seed::seed_test_users().await?;
-            seed::create_sample_threads_for_users().await?;
+            seed_test_users().await?;
+            create_sample_threads_for_users().await?;
             println!("✨ Full seed completed successfully!");
         }
     }

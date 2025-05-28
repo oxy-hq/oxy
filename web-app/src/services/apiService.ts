@@ -8,12 +8,21 @@ import { TestStreamMessage } from "@/types/eval";
 import { Workflow } from "@/types/workflow";
 
 export const apiService: Service = {
-  async listThreads() {
-    const response = await apiClient.get("/threads");
+  async listThreads(page?: number, limit?: number) {
+    const params = new URLSearchParams();
+    if (page !== undefined) params.append("page", page.toString());
+    if (limit !== undefined) params.append("limit", limit.toString());
+
+    let url = "/threads";
+    const paramsStr = params.toString();
+    if (paramsStr) {
+      url += "?" + paramsStr;
+    }
+    const response = await apiClient.get(url);
     return response.data;
   },
   async deleteThread(threadId: string) {
-    const response = await apiClient.delete("/threads/" + threadId);
+    const response = await apiClient.delete(`/threads/${threadId}`);
     return response.data;
   },
   async deleteAllThread() {
@@ -21,7 +30,7 @@ export const apiService: Service = {
     return response.data;
   },
   async getThread(threadId: string) {
-    const response = await apiClient.get("/threads/" + threadId);
+    const response = await apiClient.get(`/threads/${threadId}`);
     return response.data;
   },
   async createThread(request: ThreadCreateRequest) {

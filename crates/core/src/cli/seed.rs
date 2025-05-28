@@ -30,16 +30,9 @@ impl TestUser {
 
 pub fn get_test_users() -> Vec<TestUser> {
     vec![
+        TestUser::new("guest@oxy.local", "Guest User"),
         TestUser::new("alice.smith@company.com", "Alice Smith"),
         TestUser::new("bob.johnson@company.com", "Bob Johnson"),
-        TestUser::new("carol.williams@company.com", "Carol Williams"),
-        TestUser::new("david.brown@company.com", "David Brown"),
-        TestUser::new("eva.davis@company.com", "Eva Davis"),
-        TestUser::new("frank.miller@company.com", "Frank Miller"),
-        TestUser::new("grace.wilson@company.com", "Grace Wilson"),
-        TestUser::new("henry.moore@company.com", "Henry Moore"),
-        TestUser::new("iris.taylor@company.com", "Iris Taylor"),
-        TestUser::new("jack.anderson@company.com", "Jack Anderson"),
     ]
 }
 
@@ -114,9 +107,13 @@ pub async fn clear_test_data() -> Result<(), OxyError> {
         threads_deleted.rows_affected
     );
 
-    // Delete all test users (users with @company.com domain)
+    // Delete all test users (users with @company.com domain and guest@oxy.local)
     let users_deleted = Users::delete_many()
-        .filter(users::Column::Email.like("%@company.com"))
+        .filter(
+            users::Column::Email
+                .like("%@company.com")
+                .or(users::Column::Email.eq("guest@oxy.local")),
+        )
         .exec(&connection)
         .await
         .map_err(|e| OxyError::DBError(format!("Failed to delete test users: {}", e)))?;
@@ -137,7 +134,11 @@ pub async fn create_sample_threads_for_users() -> Result<(), OxyError> {
 
     // Get all test users
     let test_users = Users::find()
-        .filter(users::Column::Email.like("%@company.com"))
+        .filter(
+            users::Column::Email
+                .like("%@company.com")
+                .or(users::Column::Email.eq("guest@oxy.local")),
+        )
         .all(&connection)
         .await
         .map_err(|e| OxyError::DBError(format!("Failed to query test users: {}", e)))?;
@@ -147,7 +148,7 @@ pub async fn create_sample_threads_for_users() -> Result<(), OxyError> {
         return Ok(());
     }
 
-    println!("📝 Creating sample threads for test users...");
+    println!("📝 Creating 1000 sample threads for each test user...");
 
     let sample_threads = [
         (
@@ -177,17 +178,27 @@ pub async fn create_sample_threads_for_users() -> Result<(), OxyError> {
         ),
     ];
 
-    for (i, user) in test_users.iter().enumerate() {
-        // Create 2-3 threads per user
-        let num_threads = 2 + (i % 2); // Alternates between 2 and 3 threads
+    for (user_index, user) in test_users.iter().enumerate() {
+        println!(
+            "  {} Creating 1000 threads for {} ({}/{})",
+            "🔄".info(),
+            user.email,
+            user_index + 1,
+            test_users.len()
+        );
 
-        for j in 0..num_threads {
-            let thread_data = &sample_threads[j % sample_threads.len()];
+        for thread_index in 0..1000 {
+            let thread_data = &sample_threads[thread_index % sample_threads.len()];
 
             let new_thread = threads::ActiveModel {
                 id: ActiveValue::Set(Uuid::new_v4()),
                 user_id: ActiveValue::Set(Some(user.id)),
-                title: ActiveValue::Set(format!("{} - {}", thread_data.0, user.name)),
+                title: ActiveValue::Set(format!(
+                    "{} #{} - {}",
+                    thread_data.0,
+                    thread_index + 1,
+                    user.name
+                )),
                 input: ActiveValue::Set(thread_data.2.to_string()),
                 output: ActiveValue::Set(format!(
                     "```sql\n{}\n```\n\nThis query would return the requested data analysis.",
@@ -199,18 +210,27 @@ pub async fn create_sample_threads_for_users() -> Result<(), OxyError> {
                 created_at: ActiveValue::not_set(),
             };
 
-            let thread = new_thread
+            let _thread = new_thread
                 .insert(&connection)
                 .await
                 .map_err(|e| OxyError::DBError(format!("Failed to create thread: {}", e)))?;
 
-            println!(
-                "  {} Created thread '{}' for {}",
-                "📄".info(),
-                thread.title,
-                user.email
-            );
+            // Progress reporting every 100 threads
+            if (thread_index + 1) % 100 == 0 {
+                println!(
+                    "    {} Created {}/1000 threads for {}",
+                    "📄".info(),
+                    thread_index + 1,
+                    user.email
+                );
+            }
         }
+
+        println!(
+            "  {} Completed all 1000 threads for {}",
+            "✅".success(),
+            user.email
+        );
     }
 
     println!("✨ Sample threads created successfully!");

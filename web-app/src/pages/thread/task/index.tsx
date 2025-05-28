@@ -79,7 +79,8 @@ const TaskThread = ({ thread }: { thread: ThreadItem }) => {
           isStreaming: false,
         }));
         queryClient.invalidateQueries({
-          queryKey: queryKeys.thread.all,
+          queryKey: queryKeys.thread.list(),
+          type: "all",
         });
       });
   }, [queryClient, messageHistory, thread, fetchMessages]);

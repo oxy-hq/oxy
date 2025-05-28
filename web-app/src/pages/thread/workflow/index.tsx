@@ -63,7 +63,8 @@ const WorkflowThread = ({ thread }: { thread: ThreadItem }) => {
       .finally(() => {
         setIsPending(false);
         queryClient.invalidateQueries({
-          queryKey: queryKeys.thread.item(thread.id),
+          queryKey: queryKeys.thread.list(),
+          type: "all",
         });
       });
   }, [queryClient, thread, processLogs]);
