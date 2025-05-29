@@ -79,12 +79,7 @@ const ChatPanel = () => {
     }
   };
 
-  const submitIcon =
-    mode === "workflow" ? (
-      <Play className="text-white" />
-    ) : (
-      <ArrowRight className="text-white" />
-    );
+  const submitIcon = mode === "workflow" ? <Play /> : <ArrowRight />;
   const disabled = () => {
     if (isPending) return true;
     switch (mode) {
@@ -179,11 +174,7 @@ const ChatPanel = () => {
             <WorkflowsDropdown onSelect={setWorkflow} workflow={workflow} />
           )}
           <Button disabled={disabled()} type="submit">
-            {isPending ? (
-              <Loader2 className="animate-spin text-white" />
-            ) : (
-              submitIcon
-            )}
+            {isPending ? <Loader2 className="animate-spin" /> : submitIcon}
           </Button>
         </div>
       </div>

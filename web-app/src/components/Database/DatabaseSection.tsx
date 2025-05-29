@@ -144,12 +144,7 @@ const DataSection = memo(() => {
     return false;
   };
 
-  const submitIcon =
-    mode === "build" ? (
-      <Hammer className="text-white" />
-    ) : (
-      <RefreshCw className="text-white" />
-    );
+  const submitIcon = mode === "build" ? <Hammer /> : <RefreshCw />;
 
   // Error state
   if (databasesError && isExpanded) {
@@ -196,7 +191,7 @@ const DataSection = memo(() => {
         </div>
 
         <div className="flex items-center justify-center p-4">
-          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground text-white" />
+          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
           <span className="ml-2 text-sm text-muted-foreground">
             Loading databases...
           </span>
@@ -292,7 +287,7 @@ const DataSection = memo(() => {
                   className="whitespace-nowrap"
                 >
                   {syncMutation.isPending || buildMutation.isPending ? (
-                    <Loader2 className="animate-spin text-white h-4 w-4" />
+                    <Loader2 className="animate-spin h-4 w-4" />
                   ) : (
                     submitIcon
                   )}

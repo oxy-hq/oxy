@@ -22,7 +22,7 @@ const HeaderActions = ({ onExecuteSql, loading }: HeaderActionsProps) => {
         database={database}
       />
       <Button
-        className="text-white hover:text-muted-foreground"
+        className="hover:text-muted-foreground"
         variant="ghost"
         disabled={loading || !database}
         onClick={handleExecuteSql}

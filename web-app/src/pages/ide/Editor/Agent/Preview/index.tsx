@@ -62,11 +62,7 @@ const AgentPreview = ({ agentPathb64 }: { agentPathb64: string }) => {
           placeholder={`Ask the ${agentName} agent a question`}
         />
         <Button className="w-8 h-8" disabled={!question} type="submit">
-          {isLoading ? (
-            <Loader2 className="animate-spin text-white" />
-          ) : (
-            <ArrowUp className="text-white" />
-          )}
+          {isLoading ? <Loader2 className="animate-spin" /> : <ArrowUp />}
         </Button>
       </form>
     </div>
