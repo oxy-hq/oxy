@@ -1,4 +1,5 @@
 import { App, AppItem } from "./../types/app";
+import { DatabaseInfo } from "@/types/database";
 import { Service } from "./service";
 import { apiClient } from "./axios";
 import { readMessageFromStreamData } from "@/libs/utils/stream";
@@ -113,7 +114,7 @@ export const apiService: Service = {
     });
     return response.data;
   },
-  async listDatabases() {
+  async listDatabases(): Promise<DatabaseInfo[]> {
     const response = await apiClient.get("/databases");
     return response.data;
   },
@@ -198,6 +199,24 @@ export const apiService: Service = {
   },
   async getThreadMessages(threadId: string) {
     const response = await apiClient.get(`/threads/${threadId}/messages`);
+    return response.data;
+  },
+  async syncDatabase(database?: string, options?: { datasets?: string[] }) {
+    const params = new URLSearchParams();
+    if (database) params.append("database", database);
+    if (options?.datasets && options.datasets.length > 0) {
+      options.datasets.forEach((dataset) => {
+        params.append("datasets", dataset);
+      });
+    }
+
+    const response = await apiClient.post(
+      `/databases/sync?${params.toString()}`,
+    );
+    return response.data;
+  },
+  async buildDatabase() {
+    const response = await apiClient.post("/databases/build");
     return response.data;
   },
 };

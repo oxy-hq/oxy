@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { DatabaseInfo } from "@/types/database";
 
 import queryKeys from "./queryKey";
 import { service } from "@/services/service";
@@ -8,7 +9,7 @@ export default function useDatabases(
   refetchOnWindowFocus = true,
   refetchOnMount: boolean | "always" = false,
 ) {
-  return useQuery({
+  return useQuery<DatabaseInfo[], unknown>({
     queryKey: queryKeys.database.list(),
     queryFn: service.listDatabases,
     enabled,

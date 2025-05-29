@@ -8,6 +8,7 @@ import { DropdownMenu } from "@/components/ui/shadcn/dropdown-menu";
 import { ChevronDown, Loader2 } from "lucide-react";
 import { useEffect, useMemo } from "react";
 import useDatabases from "@/hooks/api/useDatabases";
+import { DatabaseInfo } from "@/types/database";
 
 interface DatabaseDropdownProps {
   onSelect: (database: string) => void;
@@ -20,9 +21,9 @@ const DatabasesDropdown = ({ onSelect, database }: DatabaseDropdownProps) => {
   const databaseOptions = useMemo(
     () =>
       databases
-        ?.map((database) => ({
-          id: database,
-          name: database,
+        ?.map((databaseInfo: DatabaseInfo) => ({
+          id: databaseInfo.name,
+          name: databaseInfo.name,
         }))
         .sort((a, b) => a.name.localeCompare(b.name)) ?? [],
     [databases],
