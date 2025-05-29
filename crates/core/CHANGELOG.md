@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.2.7](https://github.com/oxy-hq/oxy-internal/compare/0.2.6...0.2.7) (2025-05-29)
+
+
+### <!-- 0 -->🚀 Features
+
+* add database sync/build API and oxy sync oxy build to the frontend  ([#850](https://github.com/oxy-hq/oxy-internal/issues/850)) ([8af0108](https://github.com/oxy-hq/oxy-internal/commit/8af010830c3c429ace8e71f5068977e25356087b))
+* adds paginated thread API and virtualized thread list ([#839](https://github.com/oxy-hq/oxy-internal/issues/839)) ([7e6c215](https://github.com/oxy-hq/oxy-internal/commit/7e6c21559c498caad53e8325d4bf3fce1b6925b2))
+* improve app usability ([#843](https://github.com/oxy-hq/oxy-internal/issues/843)) ([614ac1a](https://github.com/oxy-hq/oxy-internal/commit/614ac1ad990e9c49cce1a4b57d1ba8ead48742f5))
+* memory and n-threads chat ([#828](https://github.com/oxy-hq/oxy-internal/issues/828)) ([ec582d4](https://github.com/oxy-hq/oxy-internal/commit/ec582d474855646e7360edb5e88a024d81c90c0d))
+
 ## [0.2.6](https://github.com/oxy-hq/oxy-internal/compare/0.2.5...0.2.6) (2025-05-27)
 
 
