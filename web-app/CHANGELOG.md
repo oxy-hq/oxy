@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.2.9](https://github.com/oxy-hq/oxy-internal/compare/0.2.8...0.2.9) (2025-05-29)
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* remove all Button-related text-white and apply global style ([4495b58](https://github.com/oxy-hq/oxy-internal/commit/4495b58382c6dd99b80c6b9db02fc9eeda605660))
+* threads list layout ([#855](https://github.com/oxy-hq/oxy-internal/issues/855)) ([2a86837](https://github.com/oxy-hq/oxy-internal/commit/2a8683768b463813cb8f4ec585967b2d0c705556))
+* white content inside button ([ffe19d8](https://github.com/oxy-hq/oxy-internal/commit/ffe19d8a689d3869e04cf431b6367c283ef8a7ea))
+
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+* release 0.2.9 ([4f777d4](https://github.com/oxy-hq/oxy-internal/commit/4f777d4f2cbd620250d5925149b27324352c1f15))
+
 ## [0.2.8](https://github.com/oxy-hq/oxy-internal/compare/0.2.7...0.2.8) (2025-05-29)
 
 
