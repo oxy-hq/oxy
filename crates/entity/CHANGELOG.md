@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.7](https://github.com/oxy-hq/oxy-internal/compare/0.2.6...0.2.7) (2025-05-29)
+
+
+### <!-- 0 -->🚀 Features
+
+* memory and n-threads chat ([#828](https://github.com/oxy-hq/oxy-internal/issues/828)) ([ec582d4](https://github.com/oxy-hq/oxy-internal/commit/ec582d474855646e7360edb5e88a024d81c90c0d))
+
 ## [0.2.6](https://github.com/oxy-hq/oxy-internal/compare/0.2.5...0.2.6) (2025-05-27)
 
 
