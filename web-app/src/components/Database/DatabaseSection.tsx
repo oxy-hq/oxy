@@ -196,7 +196,7 @@ const DataSection = memo(() => {
         </div>
 
         <div className="flex items-center justify-center p-4">
-          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground text-white" />
           <span className="ml-2 text-sm text-muted-foreground">
             Loading databases...
           </span>
