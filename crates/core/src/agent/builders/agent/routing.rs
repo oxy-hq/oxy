@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use async_openai::types::ChatCompletionTool;
+use fallback::FallbackAgent;
 
 use crate::{
     adapters::{
@@ -14,16 +15,21 @@ use crate::{
             tool::OpenAITool,
         },
     },
-    config::model::{AgentTool, ExecuteSQLTool, Model, RoutingAgent, ToolType, WorkflowTool},
+    config::{
+        constants::ARTIFACT_SOURCE,
+        model::{AgentTool, ExecuteSQLTool, Model, RoutingAgent, ToolType, WorkflowTool},
+    },
     errors::OxyError,
     execute::{
         Executable, ExecutionContext,
         builders::ExecutableBuilder,
-        types::{Document, OutputContainer},
+        types::{Document, Event, OutputContainer},
     },
     service::agent::Message,
     tools::{RetrievalExecutable, types::RetrievalInput},
 };
+
+mod fallback;
 
 #[derive(Debug, Clone)]
 pub(super) struct RoutingAgentInput {
@@ -41,9 +47,10 @@ impl RoutingAgentExecutable {
     async fn resolve_tool(
         &self,
         execution_context: &ExecutionContext,
-        document: &Document,
+        file_ref: &str,
+        is_verified: bool,
     ) -> Result<ToolType, OxyError> {
-        match document.id.as_str() {
+        match file_ref {
             workflow_path if workflow_path.ends_with(".workflow.yml") => {
                 let workflow = execution_context
                     .config
@@ -55,6 +62,7 @@ impl RoutingAgentExecutable {
                     variables: workflow.variables,
                     description: workflow.description,
                     output_task_ref: None,
+                    is_verified,
                 }))
             }
             agent_path if agent_path.ends_with(".agent.yml") => {
@@ -63,8 +71,22 @@ impl RoutingAgentExecutable {
                     name: agent.name,
                     agent_ref: agent_path.to_string(),
                     description: agent.description,
+                    is_verified,
                 }))
             }
+            _ => Err(OxyError::AgentError(format!(
+                "Unsupported tool type for path: {}",
+                file_ref
+            ))),
+        }
+    }
+
+    async fn resolve_document(
+        &self,
+        execution_context: &ExecutionContext,
+        document: &Document,
+    ) -> Result<ToolType, OxyError> {
+        match document.id.as_str() {
             sql_path if sql_path.ends_with(".sql") => {
                 if let Some(database_ref) = parse_sql_source_type(document.kind.as_str()) {
                     execution_context.config.resolve_database(&database_ref)?;
@@ -86,10 +108,10 @@ impl RoutingAgentExecutable {
                     )))
                 }
             }
-            _ => Err(OxyError::AgentError(format!(
-                "Unsupported tool type for path: {}",
-                &document.id
-            ))),
+            _ => {
+                self.resolve_tool(execution_context, &document.id, true)
+                    .await
+            }
         }
     }
 
@@ -115,7 +137,7 @@ impl RoutingAgentExecutable {
             )
             .await?;
         for document in output.to_documents() {
-            if let Ok(tool) = self.resolve_tool(execution_context, &document).await {
+            if let Ok(tool) = self.resolve_document(execution_context, &document).await {
                 resolved_routes.push(tool);
             }
         }
@@ -156,16 +178,28 @@ impl Executable<RoutingAgentInput> for RoutingAgentExecutable {
             routing_agent.synthesize_results,
         )
         .await?;
-        let outputs = react_loop_executable
-            .execute(
-                execution_context,
-                OneShotInput {
-                    system_instructions: routing_agent.system_instructions.clone(),
-                    user_input: Some(prompt),
-                    memory,
-                },
-            )
-            .await?;
+        let one_shot_input = OneShotInput {
+            system_instructions: routing_agent.system_instructions.clone(),
+            user_input: Some(prompt),
+            memory,
+        };
+        let outputs = match routing_agent.route_fallback {
+            Some(fallback) => {
+                let fallback_tool = self
+                    .resolve_tool(execution_context, &fallback, false)
+                    .await?;
+                let fallback_route = FallbackAgent::new(&agent_name, model, fallback_tool).await?;
+                let mut fallback_executable = build_fallback(react_loop_executable, fallback_route);
+                fallback_executable
+                    .execute(execution_context, one_shot_input)
+                    .await
+            }
+            None => {
+                react_loop_executable
+                    .execute(execution_context, one_shot_input)
+                    .await
+            }
+        }?;
 
         Ok(OutputContainer::List(
             outputs.into_iter().map(|o| o.content.into()).collect(),
@@ -178,7 +212,8 @@ async fn build_react_loop(
     model: &Model,
     tool_configs: Vec<ToolType>,
     synthesize_results: bool,
-) -> Result<impl Executable<OneShotInput, Response = Vec<OpenAIExecutableResponse>>, OxyError> {
+) -> Result<impl Executable<OneShotInput, Response = Vec<OpenAIExecutableResponse>> + Clone, OxyError>
+{
     let tools: Vec<ChatCompletionTool> =
         futures::future::join_all(tool_configs.iter().map(ChatCompletionTool::from_tool_async))
             .await
@@ -197,5 +232,23 @@ async fn build_react_loop(
         client,
         model.model_name().to_string(),
         tools,
+        None,
     )))
+}
+
+fn build_fallback(
+    executable: impl Executable<OneShotInput, Response = Vec<OpenAIExecutableResponse>> + Send,
+    fallback: FallbackAgent,
+) -> impl Executable<OneShotInput, Response = Vec<OpenAIExecutableResponse>> {
+    ExecutableBuilder::default()
+        .fallback(
+            |response: &Vec<OpenAIExecutableResponse>| {
+                response.iter().any(|r| !r.tool_calls.is_empty())
+            },
+            |event: &Event| event.source.kind.as_str() == ARTIFACT_SOURCE,
+            ExecutableBuilder::new()
+                .map(SimpleMapper)
+                .executable(fallback),
+        )
+        .executable(executable)
 }

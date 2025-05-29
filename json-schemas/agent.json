@@ -1057,6 +1057,12 @@
           "format": "uint",
           "minimum": 0.0
         },
+        "route_fallback": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "routes": {
           "type": "array",
           "items": {

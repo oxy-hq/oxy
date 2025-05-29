@@ -6,8 +6,8 @@ use async_openai::{
         ChatCompletionMessageToolCall, ChatCompletionMessageToolCallChunk,
         ChatCompletionRequestAssistantMessageArgs, ChatCompletionRequestMessage,
         ChatCompletionRequestSystemMessageArgs, ChatCompletionRequestUserMessageArgs,
-        ChatCompletionTool, ChatCompletionToolType, CreateChatCompletionRequestArgs, FunctionCall,
-        ResponseFormat, ResponseFormatJsonSchema,
+        ChatCompletionTool, ChatCompletionToolChoiceOption, ChatCompletionToolType,
+        CreateChatCompletionRequestArgs, FunctionCall, ResponseFormat, ResponseFormatJsonSchema,
     },
 };
 use deser_incomplete::from_json_str;
@@ -18,7 +18,10 @@ use serde_json::json;
 
 use crate::{
     adapters::openai::OpenAIClient,
-    config::{constants::AGENT_SOURCE_CONTENT, model::Model},
+    config::{
+        constants::{AGENT_RETRY_MAX_ELAPSED_TIME, AGENT_SOURCE_CONTENT},
+        model::Model,
+    },
     errors::OxyError,
     execute::{
         Executable, ExecutionContext,
@@ -38,15 +41,27 @@ pub struct OpenAIExecutable {
     client: Arc<OpenAIClient>,
     model: String,
     tool_configs: Vec<ChatCompletionTool>,
+    tool_choice: Option<ChatCompletionToolChoiceOption>,
 }
 
 impl OpenAIExecutable {
-    pub fn new(client: OpenAIClient, model: String, tool_configs: Vec<ChatCompletionTool>) -> Self {
+    pub fn new(
+        client: OpenAIClient,
+        model: String,
+        tool_configs: Vec<ChatCompletionTool>,
+        tool_choice: Option<ChatCompletionToolChoiceOption>,
+    ) -> Self {
         Self {
             client: Arc::new(client),
             model,
             tool_configs,
+            tool_choice,
         }
+    }
+
+    pub fn clear_tools(&mut self) {
+        self.tool_choice = None;
+        self.tool_configs.clear();
     }
 
     fn parse_tool_call_chunks(
@@ -126,6 +141,10 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
             })
             .stream(true)
             .messages(input);
+
+        if self.tool_choice.is_some() {
+            request_builder.tool_choice(self.tool_choice.clone().unwrap());
+        }
 
         if !self.tool_configs.is_empty() {
             request_builder.tools(self.tool_configs.clone());
@@ -225,7 +244,11 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
                     })?
                 }
             };
-            tracing::info!("Agent response: {:?}", content);
+            tracing::info!(
+                "Agent response: {:?},\nTool Calls: {:?}",
+                content,
+                tool_calls
+            );
 
             let delta: Output = if has_written {
                 let mut output = Into::<Output>::into(content.data.clone());
@@ -248,11 +271,17 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
             })
         };
         let mut attempt = 0;
-        backoff::future::retry_notify(backoff::ExponentialBackoff::default(), func, |err, b| {
-            attempt += 1;
-            tracing::error!("Error happened at {:?} in OpenAI executable: {:?}", b, err);
-            tracing::warn!("Retrying({})...", attempt);
-        })
+        backoff::future::retry_notify(
+            backoff::ExponentialBackoffBuilder::default()
+                .with_max_elapsed_time(Some(AGENT_RETRY_MAX_ELAPSED_TIME))
+                .build(),
+            func,
+            |err, b| {
+                attempt += 1;
+                tracing::error!("Error happened at {:?} in OpenAI executable: {:?}", b, err);
+                tracing::warn!("Retrying({})...", attempt);
+            },
+        )
         .await
     }
 }
@@ -274,6 +303,7 @@ impl ParamMapper<OneShotInput, Vec<ChatCompletionRequestMessage>> for SimpleMapp
         _execution_context: &ExecutionContext,
         input: OneShotInput,
     ) -> Result<(Vec<ChatCompletionRequestMessage>, Option<ExecutionContext>), OxyError> {
+        tracing::info!("Mapping OneShotInput: {:?}", input);
         let mut messages = vec![
             ChatCompletionRequestSystemMessageArgs::default()
                 .content(input.system_instructions)
@@ -323,6 +353,7 @@ pub fn build_openai_executable_with_tools(
         OpenAIClient::with_config(model.try_into().unwrap()),
         model.model_name().to_string(),
         tools,
+        None,
     )
 }
 

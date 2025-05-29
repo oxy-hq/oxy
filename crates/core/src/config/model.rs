@@ -303,6 +303,8 @@ pub struct RoutingAgent {
     #[serde(default = "default_synthesize_results")]
     #[garde(skip)]
     pub synthesize_results: bool,
+    #[garde(length(min = 1))]
+    pub route_fallback: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
@@ -1096,6 +1098,9 @@ pub struct WorkflowTool {
     pub workflow_ref: String,
     pub variables: Option<Variables>,
     pub output_task_ref: Option<String>,
+    #[serde(skip)]
+    #[schemars(skip)]
+    pub is_verified: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
@@ -1103,6 +1108,9 @@ pub struct AgentTool {
     pub name: String,
     pub description: String,
     pub agent_ref: String,
+    #[serde(skip)]
+    #[schemars(skip)]
+    pub is_verified: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]

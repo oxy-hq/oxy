@@ -85,6 +85,20 @@ impl<A, E> ReasonAct<A, E> {
     }
 }
 
+impl<A, E> Clone for ReasonAct<A, E>
+where
+    A: Clone,
+    E: Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            act: self.act.clone(),
+            inner: self.inner.clone(),
+            strategy: self.strategy.clone(),
+        }
+    }
+}
+
 #[async_trait::async_trait]
 impl<I, A, E, R> Executable<I> for ReasonAct<A, E>
 where

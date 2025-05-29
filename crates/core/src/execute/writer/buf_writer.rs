@@ -39,6 +39,39 @@ impl BufWriter {
         Ok(())
     }
 
+    pub async fn write_when<F: Fn(&Event) -> bool>(
+        self,
+        sender: Sender<Event>,
+        predict: F,
+    ) -> Result<Vec<Event>, OxyError> {
+        let mut rx = self
+            .rx
+            .ok_or(OxyError::RuntimeError("Writer not created".to_string()))?;
+        let mut buffer: Vec<Event> = vec![];
+        let mut is_drained = false;
+        while let Some(event) = rx.recv().await {
+            // Add the event to the buffer if we are not drained and the prediction fails
+            if !is_drained && !predict(&event) {
+                buffer.push(event);
+                continue;
+            }
+
+            // If we are already drained, we can send the event directly
+            if is_drained {
+                sender.send(event).await?;
+                continue;
+            }
+
+            // If we are not drained, we need to send the buffered events first
+            for buffered_event in buffer.drain(..) {
+                sender.send(buffered_event).await?;
+            }
+            sender.send(event).await?;
+            is_drained = true;
+        }
+        Ok(buffer)
+    }
+
     pub async fn write_to_handler<H: EventHandler>(self, handler: H) -> Result<(), OxyError> {
         let mut rx = self
             .rx

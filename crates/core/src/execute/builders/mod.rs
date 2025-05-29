@@ -9,6 +9,7 @@ pub mod checkpoint;
 pub mod concurrency;
 pub mod consistency;
 pub mod export;
+pub mod fallback;
 pub mod map;
 pub mod memo;
 pub mod react;
@@ -161,6 +162,19 @@ impl<W> ExecutableBuilder<W> {
         self.wrap(react::ReasonActWrapper::new(
             act,
             react::IterationStrategy::RAR,
+        ))
+    }
+
+    pub fn fallback<C, F, P>(
+        self,
+        condition_fn: C,
+        event_predict: P,
+        fallback: F,
+    ) -> ExecutableBuilder<stack::Stack<fallback::FallbackWrapper<C, F, P>, W>> {
+        self.wrap(fallback::FallbackWrapper::new(
+            condition_fn,
+            fallback,
+            event_predict,
         ))
     }
 

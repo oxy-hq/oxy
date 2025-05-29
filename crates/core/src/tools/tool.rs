@@ -44,15 +44,15 @@ impl Executable<(String, Option<ToolType>, ToolRawInput)> for ToolExecutable {
         input: (String, Option<ToolType>, ToolRawInput),
     ) -> Result<Self::Response, OxyError> {
         let (agent_name, tool_type, input) = input;
+        tracing::info!("Executing tool: {:?}", input);
         let artifact_context =
             execution_context.with_child_source(input.call_id.clone(), ARTIFACT_SOURCE.to_string());
-
         if let Some(tool_type) = &tool_type {
             let artifact = tool_type.artifact();
             if let Some((title, kind)) = &artifact {
                 let is_verified = match tool_type {
-                    ToolType::Workflow(_) => true,
-                    ToolType::Agent(_) => true,
+                    ToolType::Workflow(workflow_tool) => workflow_tool.is_verified,
+                    ToolType::Agent(agent_tool) => agent_tool.is_verified,
                     ToolType::ExecuteSQL(sql_config) => sql_config.sql.is_some(),
                     _ => false,
                 };

@@ -147,7 +147,7 @@ async fn build_react_loop(
             max_iterations,
         )
         .memo(vec![])
-        .executable(OpenAIExecutable::new(client, model, tools))
+        .executable(OpenAIExecutable::new(client, model, tools, None))
 }
 
 #[derive(Clone)]

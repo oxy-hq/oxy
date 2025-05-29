@@ -1,0 +1,12 @@
+model: "openai-4o-mini"
+type: routing
+# system_instructions: |
+#   You are a routing agent responsible for directing tasks to the appropriate tools. Follow the steps below to complete your task:
+#   1. Analyze the Task: Carefully assess the user's request to determine the most relevant tool for handling it.
+#   2. Seek Clarification if Needed: If the appropriate tool is unclear or the request is ambiguous, ask the user for clarification before proceeding.
+#   3. Route to the Relevant Tool: If a suitable tool is identified, route the task to that tool for processing.
+#   4. Process and Respond: Synthesize the tool’s output into a clear and concise response for the user. Do not return raw or unprocessed tool results.
+routes:
+  - "workflows/*.workflow.yml"
+  - "data_fruit/*.sql"
+route_fallback: agents/default.agent.yml

@@ -1,7 +1,10 @@
 use async_openai::{
     Client,
     config::{AzureConfig, Config, OpenAIConfig},
-    types::{ChatCompletionTool, ChatCompletionToolArgs, FunctionObject, FunctionObjectArgs},
+    types::{
+        ChatCompletionNamedToolChoice, ChatCompletionTool, ChatCompletionToolArgs,
+        ChatCompletionToolType, FunctionName, FunctionObject, FunctionObjectArgs,
+    },
 };
 use axum::http::HeaderMap;
 use schemars::schema::RootSchema;
@@ -292,6 +295,17 @@ impl OpenAIToolConfig for &ToolType {
                 // schemars does not generate a compatiible schema with OpenAI.
                 Ok(serde_json::from_str(create_app_schema::CREATE_APP_SCHEMA).unwrap())
             }
+        }
+    }
+}
+
+impl Into<ChatCompletionNamedToolChoice> for ToolType {
+    fn into(self) -> ChatCompletionNamedToolChoice {
+        ChatCompletionNamedToolChoice {
+            r#type: ChatCompletionToolType::Function,
+            function: FunctionName {
+                name: (&self).handle(),
+            },
         }
     }
 }
