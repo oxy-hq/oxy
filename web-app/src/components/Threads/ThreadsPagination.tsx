@@ -23,45 +23,30 @@ interface ThreadsPaginationProps {
 
 export type { ThreadsPaginationProps };
 
-const ResponsivePaginationPrevious = ({
+const PaginationButton = ({
   className,
-  showText,
+  direction,
   ...props
-}: React.ComponentProps<"a"> & { showText: boolean }) => (
-  <a
-    aria-label="Go to previous page"
-    className={cn(
-      buttonVariants({ variant: "ghost", size: showText ? "default" : "icon" }),
-      "gap-1 pl-2.5 min-w-0",
-      className,
-    )}
-    {...props}
-  >
-    <ChevronLeft className="h-4 w-4 shrink-0" />
-    {showText && <span>Previous</span>}
-    <span className="sr-only">Previous</span>
-  </a>
-);
-
-const ResponsivePaginationNext = ({
-  className,
-  showText,
-  ...props
-}: React.ComponentProps<"a"> & { showText: boolean }) => (
-  <a
-    aria-label="Go to next page"
-    className={cn(
-      buttonVariants({ variant: "ghost", size: showText ? "default" : "icon" }),
-      "gap-1 pr-2.5 min-w-0",
-      className,
-    )}
-    {...props}
-  >
-    {showText && <span>Next</span>}
-    <span className="sr-only">Next</span>
-    <ChevronRight className="h-4 w-4 shrink-0" />
-  </a>
-);
+}: React.ComponentProps<"a"> & {
+  direction: "previous" | "next";
+}) => {
+  const isNext = direction === "next";
+  return (
+    <a
+      aria-label={`Go to ${direction} page`}
+      className={cn(
+        buttonVariants({ variant: "ghost", size: "icon" }),
+        "min-w-0",
+        className,
+      )}
+      {...props}
+    >
+      {!isNext && <ChevronLeft className="h-4 w-4 shrink-0" />}
+      {isNext && <ChevronRight className="h-4 w-4 shrink-0" />}
+      <span className="sr-only">{direction}</span>
+    </a>
+  );
+};
 
 const ThreadsPagination: React.FC<ThreadsPaginationProps> = ({
   pagination,
@@ -74,59 +59,60 @@ const ThreadsPagination: React.FC<ThreadsPaginationProps> = ({
   const isMobile = useMediaQuery("(max-width: 767px)");
   const { width } = useWindowSize();
 
-  const useIconOnly = width < 900;
-
   const maxVisiblePages = useMemo(() => {
     if (isMobile) return 3;
-    if (width >= 1400) return 15;
-    if (width >= 1200) return 12;
-    if (width >= 1024) return 10;
-    if (width >= 768) return 8;
+    if (width >= 1200) return 10;
+    if (width >= 768) return 7;
     return 5;
   }, [isMobile, width]);
 
   const visiblePages = useMemo(() => {
-    const getMobilePages = () => {
-      if (total_pages <= 3) {
-        return Array.from({ length: total_pages }, (_, i) => i + 1);
-      }
-      if (page <= 2) {
-        return [1, 2, "ellipsis", total_pages];
-      }
-      if (page >= total_pages - 1) {
-        return [1, "ellipsis", total_pages - 1, total_pages];
-      }
-      return [1, "ellipsis", page, "ellipsis", total_pages];
-    };
+    // If total pages is small enough, show all pages
+    if (total_pages <= maxVisiblePages) {
+      return Array.from({ length: total_pages }, (_, i) => i + 1);
+    }
 
-    const getDesktopPages = () => {
-      if (total_pages <= maxVisiblePages) {
-        return Array.from({ length: total_pages }, (_, i) => i + 1);
-      }
-      if (total_pages === 2) {
-        return [1, 2];
-      }
-      const pages: (number | "ellipsis")[] = [1];
-      const siblings = Math.max(1, Math.floor((maxVisiblePages - 4) / 2));
-      let left = Math.max(2, page - siblings);
-      let right = Math.min(total_pages - 1, page + siblings);
-      if (page - 1 <= siblings) {
-        right = Math.min(total_pages - 1, right + (siblings - (page - 2)));
-      }
-      if (total_pages - page <= siblings) {
-        left = Math.max(2, left - (siblings - (total_pages - page - 1)));
-      }
-      if (left > 2) pages.push("ellipsis");
-      for (let i = left; i <= right; i++) {
-        pages.push(i);
-      }
-      if (right < total_pages - 1) pages.push("ellipsis");
+    const pages: (number | "ellipsis")[] = [];
+    const siblings = Math.floor((maxVisiblePages - 3) / 2); // Reserve space for first, last, and ellipsis
+
+    // Always show first page
+    pages.push(1);
+
+    // Calculate start and end of middle section
+    let start = Math.max(2, page - siblings);
+    let end = Math.min(total_pages - 1, page + siblings);
+
+    // Adjust range if we're near the beginning or end
+    if (start <= 3) {
+      end = Math.min(total_pages - 1, maxVisiblePages - 1);
+      start = 2;
+    } else if (end >= total_pages - 2) {
+      start = Math.max(2, total_pages - maxVisiblePages + 2);
+      end = total_pages - 1;
+    }
+
+    // Add ellipsis before middle section if needed
+    if (start > 2) {
+      pages.push("ellipsis");
+    }
+
+    // Add middle pages
+    for (let i = start; i <= end; i++) {
+      pages.push(i);
+    }
+
+    // Add ellipsis after middle section if needed
+    if (end < total_pages - 1) {
+      pages.push("ellipsis");
+    }
+
+    // Always show last page (if more than 1 page)
+    if (total_pages > 1) {
       pages.push(total_pages);
-      return pages;
-    };
+    }
 
-    return isMobile ? getMobilePages() : getDesktopPages();
-  }, [isMobile, page, total_pages, maxVisiblePages]);
+    return pages;
+  }, [page, total_pages, maxVisiblePages]);
 
   if (total_pages <= 1 && !onLimitChange) {
     return null;
@@ -134,26 +120,29 @@ const ThreadsPagination: React.FC<ThreadsPaginationProps> = ({
 
   return (
     <div
-      className={`flex ${isMobile ? "flex-col gap-4" : "items-center justify-between"}`}
+      className={cn(
+        "flex",
+        isMobile ? "flex-col gap-4" : "items-center justify-between",
+      )}
     >
-      <div className={`flex-shrink-0 ${isMobile ? "flex justify-center" : ""}`}>
-        {onLimitChange && currentLimit && (
+      {onLimitChange && currentLimit && (
+        <div className={cn("flex-shrink-0", isMobile && "justify-center")}>
           <ItemsPerPageFilter
             currentLimit={currentLimit}
             onLimitChange={onLimitChange}
             isLoading={isLoading}
           />
-        )}
-      </div>
-      <div className={`flex-shrink-0 ${isMobile ? "flex justify-center" : ""}`}>
-        {total_pages > 1 && (
+        </div>
+      )}
+      {total_pages > 1 && (
+        <div className={cn("flex-shrink-0", isMobile && "justify-center")}>
           <Pagination>
             <PaginationContent className="flex-wrap justify-center">
               <PaginationItem>
-                <ResponsivePaginationPrevious
+                <PaginationButton
                   href="#"
-                  showText={!useIconOnly}
-                  onClick={(e) => {
+                  direction="previous"
+                  onClick={(e: React.MouseEvent) => {
                     e.preventDefault();
                     if (has_previous && !isLoading) {
                       onPageChange(page - 1);
@@ -175,16 +164,19 @@ const ThreadsPagination: React.FC<ThreadsPaginationProps> = ({
                   ) : (
                     <PaginationLink
                       href="#"
-                      onClick={(e) => {
+                      onClick={(e: React.MouseEvent) => {
                         e.preventDefault();
                         if (!isLoading && typeof pageNum === "number") {
                           onPageChange(pageNum);
                         }
                       }}
                       isActive={pageNum === page}
-                      className={
-                        isLoading ? "pointer-events-none opacity-50" : ""
-                      }
+                      className={cn(
+                        isLoading ? "pointer-events-none opacity-50" : "",
+                        pageNum === page
+                          ? "bg-primary text-primary-foreground shadow-md border-primary hover:bg-primary/90 focus:bg-primary/90"
+                          : "",
+                      )}
                     >
                       {pageNum}
                     </PaginationLink>
@@ -192,10 +184,10 @@ const ThreadsPagination: React.FC<ThreadsPaginationProps> = ({
                 </PaginationItem>
               ))}
               <PaginationItem>
-                <ResponsivePaginationNext
+                <PaginationButton
                   href="#"
-                  showText={!useIconOnly}
-                  onClick={(e) => {
+                  direction="next"
+                  onClick={(e: React.MouseEvent) => {
                     e.preventDefault();
                     if (has_next && !isLoading) {
                       onPageChange(page + 1);
@@ -210,8 +202,8 @@ const ThreadsPagination: React.FC<ThreadsPaginationProps> = ({
               </PaginationItem>
             </PaginationContent>
           </Pagination>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 };
