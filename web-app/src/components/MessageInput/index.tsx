@@ -70,9 +70,9 @@ const MessageInput = ({
             disabled={!value.trim() || disabled}
           >
             {isLoading ? (
-              <Loader2 className="animate-spin h-5 w-5" />
+              <Loader2 className="text-white animate-spin h-5 w-5" />
             ) : (
-              <ArrowRight className="h-5 w-5" />
+              <ArrowRight className="text-white h-5 w-5" />
             )}
           </Button>
         </div>
