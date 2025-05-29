@@ -238,7 +238,7 @@ pub fn validate_agent_config() {}
 #[derive(Serialize, Deserialize, Debug, Clone, JsonSchema, Validate)]
 #[garde(context(AgentValidationContext))]
 pub struct AgentConfig {
-    #[serde(skip)]
+    #[serde(default = "default_agent_name")]
     #[schemars(skip)]
     #[garde(skip)]
     pub name: String,
@@ -256,6 +256,10 @@ pub struct AgentConfig {
     #[garde(skip)]
     #[serde(default)]
     pub description: String,
+
+    #[serde(default = "default_agent_public")]
+    #[garde(skip)]
+    pub public: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, JsonSchema, Validate)]
@@ -2033,6 +2037,14 @@ fn default_routing_agent_instructions() -> String {
 
 fn default_synthesize_results() -> bool {
     true
+}
+
+fn default_agent_public() -> bool {
+    true
+}
+
+fn default_agent_name() -> String {
+    "".to_string()
 }
 
 fn default_consistency_prompt() -> String {

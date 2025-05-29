@@ -159,6 +159,7 @@ async fn create_agent_file(
     let agent_content = AgentConfig {
         name: setup.file_name_without_ext.clone(),
         model: model_name,
+        public: true,
         context: Some(vec![
             AgentContext {
                 name: "semantic_model".to_string(),

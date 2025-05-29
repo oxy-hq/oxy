@@ -49,70 +49,72 @@ const Sidebar = ({
   return (
     <div className="h-full w-full border-r border-l bg-sidebar-background">
       {sidebarOpen && (
-        <SidebarContent className="customScrollbar h-full">
-          <SidebarGroup>
-            <SidebarGroupLabel className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                {!open && <SidebarTrigger />}
-                Files
-              </div>
+        <div className="flex h-full flex-col overflow-hidden">
+          <SidebarGroupLabel className="h-auto flex items-center justify-between p-2 border-b border-sidebar-border">
+            <div className="flex items-center gap-2">
+              {!open && <SidebarTrigger />}
+              Files
+            </div>
 
-              <div className="flex items-center">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleCreateFile}
-                  tooltip="New File"
-                >
-                  <FilePlus />
-                </Button>
+            <div className="flex items-center">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleCreateFile}
+                tooltip="New File"
+              >
+                <FilePlus />
+              </Button>
 
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleCreateFolder}
-                  tooltip="New Folder"
-                >
-                  <FolderPlus />
-                </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleCreateFolder}
+                tooltip="New Folder"
+              >
+                <FolderPlus />
+              </Button>
 
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => refetch()}
-                  tooltip="Refresh Files"
-                >
-                  <RotateCw />
-                </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => refetch()}
+                tooltip="Refresh Files"
+              >
+                <RotateCw />
+              </Button>
 
-                <Button
-                  className="md:hidden"
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setSidebarOpen(!sidebarOpen)}
-                  tooltip="Collapse Sidebar"
-                >
-                  <ChevronsLeft />
-                </Button>
-              </div>
-            </SidebarGroupLabel>
-            <SidebarMenu>
-              {isCreating && (
-                <NewNode
-                  creationType={creationType}
-                  onCreated={() => {
-                    setIsCreating(false);
-                    refetch();
-                  }}
-                  onCancel={() => setIsCreating(false)}
-                />
-              )}
-              {fileTree?.map((item) => (
-                <FileTreeNode key={item.path} fileTree={item} />
-              ))}
-            </SidebarMenu>
-          </SidebarGroup>
-        </SidebarContent>
+              <Button
+                className="md:hidden"
+                variant="ghost"
+                size="icon"
+                onClick={() => setSidebarOpen(!sidebarOpen)}
+                tooltip="Collapse Sidebar"
+              >
+                <ChevronsLeft />
+              </Button>
+            </div>
+          </SidebarGroupLabel>
+          <SidebarContent className="customScrollbar h-full flex-1 overflow-y-auto">
+            <SidebarGroup>
+              <SidebarMenu>
+                {isCreating && (
+                  <NewNode
+                    creationType={creationType}
+                    onCreated={() => {
+                      setIsCreating(false);
+                      refetch();
+                    }}
+                    onCancel={() => setIsCreating(false)}
+                  />
+                )}
+                {fileTree?.map((item) => (
+                  <FileTreeNode key={item.path} fileTree={item} />
+                ))}
+              </SidebarMenu>
+            </SidebarGroup>
+          </SidebarContent>
+        </div>
       )}
       {!sidebarOpen && (
         <Button
