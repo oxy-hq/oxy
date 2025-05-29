@@ -6,7 +6,7 @@ import { service } from "@/services/service";
 export default function useAgents(
   enabled = true,
   refetchOnWindowFocus = true,
-  refetchOnMount: boolean | "always" = false,
+  refetchOnMount: boolean | "always" = true,
 ) {
   return useQuery({
     queryKey: queryKeys.agent.list(),

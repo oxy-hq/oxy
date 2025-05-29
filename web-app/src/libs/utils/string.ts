@@ -9,3 +9,17 @@ export const getAgentNameFromPath = (path: string) => {
 
 // eslint-disable-next-line sonarjs/pseudo-random
 export const randomKey = () => Math.random().toString(36).substring(2, 15);
+
+export const getShortTitle = (message: string) => {
+  const words = message.trim().split(/\s+/);
+  const baseTitle = words.slice(0, 8).join(" ");
+  let shortTitle = words.length > 8 ? baseTitle : message;
+
+  if (shortTitle.length > 50) {
+    shortTitle = shortTitle.slice(0, 50) + "...";
+  } else if (shortTitle !== message) {
+    shortTitle += "...";
+  }
+
+  return shortTitle;
+};

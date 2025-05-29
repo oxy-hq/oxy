@@ -30,6 +30,10 @@
     "model": {
       "type": "string"
     },
+    "public": {
+      "default": true,
+      "type": "boolean"
+    },
     "tests": {
       "default": [],
       "type": "array",

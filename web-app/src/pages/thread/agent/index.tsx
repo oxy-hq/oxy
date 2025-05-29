@@ -41,6 +41,7 @@ const AgentThread = ({ thread }: { thread: ThreadItem }) => {
     isUser: false,
     isStreaming: false,
   });
+
   const [followUpQuestion, setFollowUpQuestion] = useState("");
   const hasRun = useRef(false);
   const messagesContainerRef = useRef<HTMLDivElement>(null);

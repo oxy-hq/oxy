@@ -8,6 +8,8 @@ export interface AgentConfig {
   anonymize?: AnonymizerConfig;
   tests: Eval[];
   description: string;
+  public: boolean;
+  path: string;
 }
 
 type ToolType = ExecuteSQLTool | ValidateSQLTool | RetrievalConfig;

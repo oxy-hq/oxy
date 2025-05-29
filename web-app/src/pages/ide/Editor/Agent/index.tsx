@@ -11,10 +11,13 @@ import { Button } from "@/components/ui/shadcn/button";
 import { Play } from "lucide-react";
 import useAgent from "@/hooks/api/useAgent";
 import useTests from "@/stores/useTests";
+import { useQueryClient } from "@tanstack/react-query";
+import queryKeys from "@/hooks/api/queryKey";
 
 const AgentEditor = ({ pathb64 }: { pathb64: string }) => {
   const [previewKey, setPreviewKey] = useState<string>(randomKey());
   const [selected, setSelected] = useState<string>("preview");
+  const queryClient = useQueryClient();
 
   const { data: agent, isLoading } = useAgent(pathb64);
   const { runTest } = useTests();
@@ -32,6 +35,7 @@ const AgentEditor = ({ pathb64 }: { pathb64: string }) => {
       pathb64={pathb64}
       onSaved={() => {
         setPreviewKey(randomKey());
+        queryClient.invalidateQueries({ queryKey: queryKeys.agent.list() });
       }}
       pageContentClassName="md:flex-row flex-col"
       editorClassName="md:w-1/2 w-full h-1/2 md:h-full"

@@ -21,7 +21,7 @@ export interface Service {
   runApp(pathb64: string): Promise<App>;
   deleteAllThread(): Promise<void>;
   getThread(threadId: string): Promise<ThreadItem>;
-  listAgents(): Promise<string[]>;
+  listAgents(): Promise<AgentConfig[]>;
   listApps(): Promise<AppItem[]>;
   getAgent(pathb64: string): Promise<AgentConfig>;
   getApp(appPath64: string): Promise<App>;

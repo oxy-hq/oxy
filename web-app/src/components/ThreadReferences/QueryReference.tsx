@@ -3,7 +3,7 @@ import {
   DialogContent,
   DialogTrigger,
 } from "@/components/ui/shadcn/dialog";
-import { Code, Loader2, Save, X } from "lucide-react";
+import { Code, Download, Loader2, Save, X } from "lucide-react";
 import { SqlQueryReference } from "@/types/chat";
 import CodeBlock from "@/components/CodeBlock";
 import { ReferenceItemContainer } from "./ReferenceItemContainer";
@@ -35,6 +35,19 @@ export const QueryReference = ({ reference, prompt }: QueryReferenceProps) => {
       });
     }
   };
+
+  const handleDownloadSql = () => {
+    const blob = new Blob([metadata.sql_query], { type: "text/plain" });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "query.sql";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+  };
+
   return (
     <>
       <Dialog open={isOpen} onOpenChange={setIsOpen}>
@@ -88,10 +101,19 @@ export const QueryReference = ({ reference, prompt }: QueryReferenceProps) => {
               </div>
             </div>
             <div className="p-4 pt-0 flex flex-col gap-4">
-              <div className="max-h-80 overflow-auto customScrollbar">
-                <CodeBlock className="language-sql !m-0">
+              <div className="max-h-80 overflow-auto customScrollbar relative">
+                <CodeBlock className="language-sql !m-0 pr-[54px]!">
                   {metadata.sql_query}
                 </CodeBlock>
+                <Button
+                  title="Download SQL"
+                  className="absolute top-2 right-2"
+                  variant="outline"
+                  size="icon"
+                  onClick={handleDownloadSql}
+                >
+                  <Download className="h-4 w-4" />
+                </Button>
               </div>
               <QueryResultTable
                 result={metadata.result}

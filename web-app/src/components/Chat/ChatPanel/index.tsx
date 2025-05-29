@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/shadcn/toggle-group";
 import WorkflowsDropdown from "./WorkflowsDropdown";
 import { WorkflowOption } from "./WorkflowsDropdown";
+import { getShortTitle } from "@/libs/utils/string";
 
 const ToggleGroupItemClasses =
   "data-[state=on]:border data-[state=on]:border-blue-500 data-[state=on]:bg-blue-500 data-[state=on]:text-white hover:bg-blue-500/20 hover:text-blue-300 hover:border-blue-400/50 transition-colors border-gray-600 rounded-md text-gray-400";
@@ -44,11 +45,13 @@ const ChatPanel = () => {
 
   const handleFormSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    const title = getShortTitle(message);
+
     switch (mode) {
       case "ask":
         if (!agent) return;
         createThread({
-          title: message,
+          title: title,
           source: agent.id,
           source_type: "agent",
           input: message,
@@ -57,7 +60,7 @@ const ChatPanel = () => {
       case "build":
         if (isBuilderAvailable) {
           createThread({
-            title: message,
+            title: title,
             source: "",
             source_type: "task",
             input: message,
@@ -67,7 +70,7 @@ const ChatPanel = () => {
       case "workflow":
         if (!workflow) return;
         createThread({
-          title: message ? message : workflow.name,
+          title: title ? title : workflow.name,
           source: workflow.id,
           source_type: "workflow",
           input: message,
@@ -122,7 +125,7 @@ const ChatPanel = () => {
           "border-none shadow-none",
           "hover:border-none focus-visible:border-none focus-visible:shadow-none",
           "focus-visible:ring-0 focus-visible:ring-offset-0",
-          "outline-none resize-none",
+          "outline-none resize-none max-h-[200px] customScrollbar",
         )}
         placeholder={placeholder}
       />
@@ -170,7 +173,7 @@ const ChatPanel = () => {
         </div>
         <div className="flex gap-2 items-center">
           {mode === "ask" && (
-            <AgentsDropdown onSelect={setAgent} agent={agent} />
+            <AgentsDropdown onSelect={setAgent} agentSelected={agent} />
           )}
           {mode === "workflow" && (
             <WorkflowsDropdown onSelect={setWorkflow} workflow={workflow} />

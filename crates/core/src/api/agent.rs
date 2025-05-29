@@ -9,7 +9,7 @@ use axum::response::IntoResponse;
 use axum_streams::StreamBodyAs;
 use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 #[derive(Serialize)]
 pub struct BuilderAvailabilityResponse {
@@ -35,6 +35,23 @@ pub async fn check_builder_availability()
     }))
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct AgentConfigResponse {
+    #[serde(flatten)]
+    pub config: AgentConfig,
+    pub path: String,
+}
+
+impl AgentConfigResponse {
+    pub fn new(config: AgentConfig, path: String) -> Self {
+        Self { config, path }
+    }
+
+    pub fn from_config(config: AgentConfig, path: &str) -> Self {
+        Self::new(config, path.to_string())
+    }
+}
+
 #[utoipa::path(
     method(get),
     path = "/agents",
@@ -42,33 +59,50 @@ pub async fn check_builder_availability()
         (status = OK, description = "Success", body = Vec<String>, content_type = "application/json")
     )
 )]
-pub async fn get_agents() -> Result<extract::Json<Vec<String>>, StatusCode> {
+pub async fn get_agents() -> Result<extract::Json<Vec<AgentConfigResponse>>, StatusCode> {
     let project_path = find_project_path().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let config_builder = ConfigBuilder::new()
+    let config = ConfigBuilder::new()
         .with_project_path(&project_path)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let config = config_builder
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .build()
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let agents = config
+    let agent_paths = config
         .list_agents()
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    Ok(extract::Json(
-        agents
-            .iter()
-            .filter_map(|agent| {
-                agent
-                    .strip_prefix(&project_path)
-                    .ok()
-                    .map(|path| path.to_string_lossy().to_string())
-            })
-            .collect(),
-    ))
+    let agent_relative_paths: Vec<String> = agent_paths
+        .iter()
+        .filter_map(|agent| {
+            agent
+                .strip_prefix(&project_path)
+                .ok()
+                .map(|path| path.to_string_lossy().to_string())
+        })
+        .collect();
+
+    let agent_futures = agent_relative_paths
+        .into_iter()
+        .map(|path| {
+            let config = &config;
+            async move {
+                let agent_config = config.resolve_agent(&path).await?;
+                Ok::<AgentConfigResponse, anyhow::Error>(AgentConfigResponse::from_config(
+                    agent_config,
+                    &path,
+                ))
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let agents: Vec<AgentConfigResponse> = futures::future::try_join_all(agent_futures)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(extract::Json(agents))
 }
 
 pub async fn get_agent(
