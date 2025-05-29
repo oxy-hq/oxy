@@ -71,27 +71,21 @@ const ThreadsPagination: React.FC<ThreadsPaginationProps> = ({
   isLoading = false,
 }) => {
   const { page, total_pages, has_previous, has_next } = pagination;
-  const isMobile = useMediaQuery("(max-width: 767px)"); // 768px is the mobile breakpoint
+  const isMobile = useMediaQuery("(max-width: 767px)");
   const { width } = useWindowSize();
 
-  // Use icon-only buttons for smaller screens (including small tablets)
-  const useIconOnly = width < 900; // Hide text below 900px instead of just mobile breakpoint
+  const useIconOnly = width < 900;
 
-  // Calculate how many pages to show based on viewport width (memoized for performance)
   const maxVisiblePages = useMemo(() => {
     if (isMobile) return 3;
-
-    // Responsive breakpoints for different screen sizes
-    if (width >= 1400) return 15; // Extra large screens
-    if (width >= 1200) return 12; // Large screens
-    if (width >= 1024) return 10; // Medium-large screens
-    if (width >= 768) return 8; // Medium screens
-    return 5; // Small screens (but not mobile)
+    if (width >= 1400) return 15;
+    if (width >= 1200) return 12;
+    if (width >= 1024) return 10;
+    if (width >= 768) return 8;
+    return 5;
   }, [isMobile, width]);
 
-  // Generate page numbers to show (memoized for performance)
   const visiblePages = useMemo(() => {
-    // Mobile pagination logic - keep simple for small screens
     const getMobilePages = () => {
       if (total_pages <= 3) {
         return Array.from({ length: total_pages }, (_, i) => i + 1);
@@ -105,56 +99,29 @@ const ThreadsPagination: React.FC<ThreadsPaginationProps> = ({
       return [1, "ellipsis", page, "ellipsis", total_pages];
     };
 
-    // Desktop pagination logic - balanced first/last approach
     const getDesktopPages = () => {
       if (total_pages <= maxVisiblePages) {
         return Array.from({ length: total_pages }, (_, i) => i + 1);
       }
-
-      const pages: (number | "ellipsis")[] = [];
-
-      // Determine how many pages to show on each side
-      const firstCount = Math.min(5, Math.floor(maxVisiblePages * 0.4));
-      const lastCount = Math.min(5, Math.floor(maxVisiblePages * 0.4));
-
-      // Add first pages (1, 2, 3, 4, 5)
-      for (let i = 1; i <= Math.min(firstCount, total_pages); i++) {
+      if (total_pages === 2) {
+        return [1, 2];
+      }
+      const pages: (number | "ellipsis")[] = [1];
+      const siblings = Math.max(1, Math.floor((maxVisiblePages - 4) / 2));
+      let left = Math.max(2, page - siblings);
+      let right = Math.min(total_pages - 1, page + siblings);
+      if (page - 1 <= siblings) {
+        right = Math.min(total_pages - 1, right + (siblings - (page - 2)));
+      }
+      if (total_pages - page <= siblings) {
+        left = Math.max(2, left - (siblings - (total_pages - page - 1)));
+      }
+      if (left > 2) pages.push("ellipsis");
+      for (let i = left; i <= right; i++) {
         pages.push(i);
       }
-
-      // If current page is within first or last section, no need for middle logic
-      const isInFirstSection = page <= firstCount;
-      const isInLastSection = page > total_pages - lastCount;
-
-      if (!isInFirstSection && !isInLastSection) {
-        // Current page is in the middle - add ellipsis, current page area, ellipsis
-        pages.push("ellipsis");
-
-        // Add current page and immediate neighbors
-        const neighborsToShow = Math.floor(
-          (maxVisiblePages - firstCount - lastCount - 2) / 2,
-        ); // -2 for ellipses
-        const start = Math.max(firstCount + 1, page - neighborsToShow);
-        const end = Math.min(total_pages - lastCount, page + neighborsToShow);
-
-        for (let i = start; i <= end; i++) {
-          pages.push(i);
-        }
-
-        pages.push("ellipsis");
-      } else if (firstCount < total_pages - lastCount) {
-        // Add single ellipsis if there's a gap
-        pages.push("ellipsis");
-      }
-
-      // Add last pages (..., 96, 97, 98, 99, 100)
-      const lastStart = Math.max(firstCount + 1, total_pages - lastCount + 1);
-      for (let i = lastStart; i <= total_pages; i++) {
-        if (!pages.includes(i)) {
-          pages.push(i);
-        }
-      }
-
+      if (right < total_pages - 1) pages.push("ellipsis");
+      pages.push(total_pages);
       return pages;
     };
 
@@ -169,7 +136,6 @@ const ThreadsPagination: React.FC<ThreadsPaginationProps> = ({
     <div
       className={`flex ${isMobile ? "flex-col gap-4" : "items-center justify-between"}`}
     >
-      {/* Left side - Items per page filter */}
       <div className={`flex-shrink-0 ${isMobile ? "flex justify-center" : ""}`}>
         {onLimitChange && currentLimit && (
           <ItemsPerPageFilter
@@ -179,8 +145,6 @@ const ThreadsPagination: React.FC<ThreadsPaginationProps> = ({
           />
         )}
       </div>
-
-      {/* Right side - Pagination */}
       <div className={`flex-shrink-0 ${isMobile ? "flex justify-center" : ""}`}>
         {total_pages > 1 && (
           <Pagination>
@@ -202,7 +166,6 @@ const ThreadsPagination: React.FC<ThreadsPaginationProps> = ({
                   }
                 />
               </PaginationItem>
-
               {visiblePages.map((pageNum, index) => (
                 <PaginationItem
                   key={pageNum === "ellipsis" ? `ellipsis-${index}` : pageNum}
@@ -228,7 +191,6 @@ const ThreadsPagination: React.FC<ThreadsPaginationProps> = ({
                   )}
                 </PaginationItem>
               ))}
-
               <PaginationItem>
                 <ResponsivePaginationNext
                   href="#"
