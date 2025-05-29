@@ -132,6 +132,7 @@ pub struct OmniTopicInfoInput {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct AgentParams {
+    #[schemars(description = "Chat with your prompt")]
     pub prompt: String,
 }
 
