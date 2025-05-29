@@ -33,8 +33,7 @@ impl PBarsHandler {
     }
 
     pub fn get_or_create_bar(&mut self, name: &str, total: Option<usize>) -> &mut Pbar {
-        let bar = self.bars.entry(name.to_string()).or_insert(pbar(total));
-        bar
+        (self.bars.entry(name.to_string()).or_insert(pbar(total))) as _
     }
 
     pub fn update_bar(&mut self, name: &str, progress: usize) -> Result<(), OxyError> {

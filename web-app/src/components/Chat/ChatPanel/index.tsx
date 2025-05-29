@@ -23,7 +23,7 @@ import WorkflowsDropdown from "./WorkflowsDropdown";
 import { WorkflowOption } from "./WorkflowsDropdown";
 
 const ToggleGroupItemClasses =
-  "data-[state=on]:border hover:text-special hover:bg-button-hover data-[state=on]:bg-button-hover  data-[state=on]:text-special border-accent-main-000 rounded-md";
+  "data-[state=on]:border data-[state=on]:border-blue-500 data-[state=on]:bg-blue-500 data-[state=on]:text-white hover:bg-blue-500/20 hover:text-blue-300 hover:border-blue-400/50 transition-colors border-gray-600 rounded-md text-gray-400";
 
 const ChatPanel = () => {
   const navigate = useNavigate();
@@ -76,7 +76,12 @@ const ChatPanel = () => {
     }
   };
 
-  const submitIcon = mode === "workflow" ? <Play /> : <ArrowRight />;
+  const submitIcon =
+    mode === "workflow" ? (
+      <Play className="text-white" />
+    ) : (
+      <ArrowRight className="text-white" />
+    );
   const disabled = () => {
     if (isPending) return true;
     switch (mode) {
@@ -171,7 +176,11 @@ const ChatPanel = () => {
             <WorkflowsDropdown onSelect={setWorkflow} workflow={workflow} />
           )}
           <Button disabled={disabled()} type="submit">
-            {isPending ? <Loader2 className="animate-spin" /> : submitIcon}
+            {isPending ? (
+              <Loader2 className="animate-spin text-white" />
+            ) : (
+              submitIcon
+            )}
           </Button>
         </div>
       </div>

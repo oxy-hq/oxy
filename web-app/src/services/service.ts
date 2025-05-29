@@ -12,6 +12,7 @@ import { TestStreamMessage } from "@/types/eval";
 import { FileTreeModel } from "@/types/file";
 import { App, AppItem, Chunk } from "@/types/app";
 import { Workflow } from "@/types/workflow";
+import { DatabaseInfo, DatabaseSyncResponse } from "@/types/database";
 
 export interface Service {
   listThreads(page?: number, limit?: number): Promise<ThreadsResponse>;
@@ -53,7 +54,7 @@ export interface Service {
     sql: string,
     database: string,
   ): Promise<string[][]>;
-  listDatabases(): Promise<string[]>;
+  listDatabases(): Promise<DatabaseInfo[]>;
   getFileTree(): Promise<FileTreeModel[]>;
   createFile(pathb64: string): Promise<void>;
   createFolder(pathb64: string): Promise<void>;
@@ -68,6 +69,11 @@ export interface Service {
     database: string;
   }): Promise<{ workflow: Workflow }>;
   getThreadMessages(threadId: string): Promise<MessageItem[]>;
+  syncDatabase(
+    database?: string,
+    options?: { datasets?: string[] },
+  ): Promise<DatabaseSyncResponse>;
+  buildDatabase(): Promise<{ success: boolean; message?: string }>;
 }
 
 export const service = apiService;

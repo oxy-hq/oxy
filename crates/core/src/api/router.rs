@@ -1,6 +1,7 @@
 use crate::api::agent;
 use crate::api::chart;
 use crate::api::data;
+use crate::api::database;
 use crate::api::file;
 use crate::api::thread;
 use crate::api::user;
@@ -87,7 +88,10 @@ pub async fn api_router(auth_mode: AuthMode) -> Result<Router, OxyError> {
             post(agent::run_test),
         )
         .route("/charts/{file_path}", get(chart::get_chart))
-        .route("/sql/{pathb64}", post(data::execute_sql));
+        .route("/sql/{pathb64}", post(data::execute_sql))
+        .route("/databases", get(database::list_databases))
+        .route("/databases/sync", post(database::sync_database))
+        .route("/databases/build", post(data::build_embeddings));
 
     protected_routes = match auth_mode {
         AuthMode::IAP => protected_routes.route_layer(middleware::from_fn_with_state(
