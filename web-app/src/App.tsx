@@ -23,7 +23,9 @@ import AppPage from "./pages/app";
 import { HotkeysProvider } from "react-hotkeys-hook";
 
 const PageWrapper = ({ children }: { children: React.ReactNode }) => {
-  return <main className="bg-background w-full h-full">{children}</main>;
+  return (
+    <main className="bg-background w-full h-full min-w-0">{children}</main>
+  );
 };
 
 const MainLayout = React.memo(function MainLayout() {
