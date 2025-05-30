@@ -52,7 +52,7 @@ impl Executable<(String, Option<ToolType>, ToolRawInput)> for ToolExecutable {
             if let Some((title, kind)) = &artifact {
                 let is_verified = match tool_type {
                     ToolType::Workflow(workflow_tool) => workflow_tool.is_verified,
-                    ToolType::Agent(agent_tool) => agent_tool.is_verified,
+                    ToolType::Agent(_) => false, // Agent's answer are not verified
                     ToolType::ExecuteSQL(sql_config) => sql_config.sql.is_some(),
                     _ => false,
                 };
