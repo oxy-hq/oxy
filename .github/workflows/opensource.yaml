@@ -13,6 +13,11 @@ permissions:
   contents: write
   actions: read
   pull-requests: read
+
+concurrency:
+  group: opensource-sync-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   move-code:
     runs-on: ubuntu-latest
