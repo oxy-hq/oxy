@@ -5,6 +5,7 @@ use crate::{errors::OxyError, theme::*};
 use arrow::array::RecordBatch;
 use csv::StringRecord;
 use duckdb::Connection;
+use slugify::slugify;
 use syntect::{
     easy::HighlightLines,
     highlighting::{Style, ThemeSet},
@@ -249,4 +250,62 @@ pub async fn try_unwrap_arc_tokio_mutex<T>(
     Ok(std::sync::Arc::try_unwrap(arc)
         .map_err(|_| OxyError::RuntimeError("Failed to unwrap arc mutex".to_string()))?
         .into_inner())
+}
+
+/// Converts a file path to a valid OpenAI function name.
+///
+/// This function takes a file path and transforms it into a slug-friendly string
+/// suitable for use as an OpenAI function name. The transformation process:
+/// 1. Converts the path to be relative to the project root (if possible)
+/// 2. Removes the file extension
+/// 3. Slugifies the result using underscores as separators
+/// 4. Limits the length to 60 characters
+///
+/// # Arguments
+///
+/// * `file_path` - A reference to a PathBuf representing the file path to convert
+///
+/// # Returns
+///
+/// * `Ok(String)` - A slugified function name derived from the file path
+/// * `Err(OxyError)` - If the project path cannot be found or other processing errors occur
+///
+/// ```
+pub fn to_openai_function_name(file_path: &PathBuf) -> Result<String, OxyError> {
+    // Get the relative path from project root, falling back to the original path
+    let relative_path = file_path
+        .strip_prefix(find_project_path()?)
+        .unwrap_or(file_path);
+
+    // Remove the file extension to get a clean path
+    let path_without_extension = remove_file_extension(relative_path);
+
+    // Convert the path to a string and slugify it
+    let path_string = path_without_extension.to_string_lossy();
+    let function_name = slugify!(&path_string, separator = "_", max_length = 60);
+
+    Ok(function_name)
+}
+
+/// Removes the file extension from a path, returning a new PathBuf.
+///
+/// # Arguments
+///
+/// * `path` - The path to remove the extension from
+///
+/// # Returns
+///
+/// A new PathBuf with the file extension removed
+fn remove_file_extension(path: &Path) -> PathBuf {
+    let mut result = path.to_path_buf();
+
+    if let Some(file_name) = path.file_name() {
+        let file_str = file_name.to_string_lossy();
+        if let Some(dot_index) = file_str.find('.') {
+            let name_without_ext = &file_str[..dot_index];
+            result.set_file_name(name_without_ext);
+        }
+    }
+
+    result
 }
