@@ -1,5 +1,6 @@
 use base64::{Engine, prelude::BASE64_STANDARD};
 use serde::Serialize;
+use slugify::slugify;
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
@@ -223,7 +224,7 @@ pub async fn create_workflow_from_query(
         cache: None,
         name: "execute_sql".to_string(),
     };
-    let workflow_name = generate_workflow_name(prompt);
+    let workflow_name = slugify!(prompt, separator = "_");
     let workflow = Workflow {
         name: workflow_name.clone(),
         description: prompt.to_string(),
@@ -241,14 +242,4 @@ pub async fn create_workflow_from_query(
     let _ = serde_yaml::to_writer(std::fs::File::create(&workflow_path)?, &workflow);
 
     Ok(workflow)
-}
-
-fn generate_workflow_name(prompt: &str) -> String {
-    let options = sanitize_filename::Options {
-        truncate: true,   // true by default, truncates to 255 bytes
-        windows: true, // default value depends on the OS, removes reserved names like `con` from start of strings on Windows
-        replacement: "_", // str to replace sanitized chars/strings,
-    };
-
-    sanitize_filename::sanitize_with_options(prompt, options)
 }

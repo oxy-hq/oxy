@@ -27,6 +27,7 @@ use crate::{
     },
     service::agent::Message,
     tools::{RetrievalExecutable, types::RetrievalInput},
+    utils::to_openai_function_name,
 };
 
 mod fallback;
@@ -57,7 +58,7 @@ impl RoutingAgentExecutable {
                     .resolve_workflow(workflow_path)
                     .await?;
                 Ok(ToolType::Workflow(WorkflowTool {
-                    name: workflow.name,
+                    name: to_openai_function_name(&PathBuf::from(workflow_path))?,
                     workflow_ref: workflow_path.to_string(),
                     variables: workflow.variables,
                     description: workflow.description,
@@ -68,7 +69,7 @@ impl RoutingAgentExecutable {
             agent_path if agent_path.ends_with(".agent.yml") => {
                 let agent = execution_context.config.resolve_agent(agent_path).await?;
                 Ok(ToolType::Agent(AgentTool {
-                    name: agent.name,
+                    name: to_openai_function_name(&PathBuf::from(agent_path))?,
                     agent_ref: agent_path.to_string(),
                     description: agent.description,
                     is_verified,
@@ -94,11 +95,7 @@ impl RoutingAgentExecutable {
                         database: database_ref.to_string(),
                         description: document.content.to_string(),
                         dry_run_limit: None,
-                        name: PathBuf::from(sql_path)
-                            .file_stem()
-                            .unwrap_or_default()
-                            .to_string_lossy()
-                            .to_string(),
+                        name: to_openai_function_name(&PathBuf::from(sql_path))?,
                         sql: Some(tokio::fs::read_to_string(sql_path).await?),
                     }))
                 } else {
@@ -228,10 +225,11 @@ async fn build_react_loop(
             .react_once(OpenAITool::new(agent_name, tool_configs, 1)),
     };
     let client = OpenAIClient::with_config(model.try_into()?);
+    let deduplicated_tools = deduplicate_tools(tools)?;
     Ok(builder.memo(vec![]).executable(OpenAIExecutable::new(
         client,
         model.model_name().to_string(),
-        tools,
+        deduplicated_tools,
         None,
     )))
 }
@@ -251,4 +249,66 @@ fn build_fallback(
                 .executable(fallback),
         )
         .executable(executable)
+}
+
+/// Deduplicates tools by their function names, ensuring each tool has a unique name.
+///
+/// When duplicate tool names are found, this function appends a numeric suffix
+/// (e.g., "tool_1", "tool_2") to make them unique. The original tool keeps its
+/// name if it's the first occurrence.
+///
+/// # Arguments
+/// * `tools` - Vector of ChatCompletionTool instances that may contain duplicates
+///
+/// # Returns
+/// * `Ok(Vec<ChatCompletionTool>)` - Deduplicated tools with unique names
+/// * `Err(OxyError)` - Currently never returns an error, but maintains Result for consistency
+///
+/// # Example
+/// If input contains tools named ["search", "search", "format"], the output will
+/// contain tools named ["search", "search_1", "format"].
+fn deduplicate_tools(tools: Vec<ChatCompletionTool>) -> Result<Vec<ChatCompletionTool>, OxyError> {
+    let mut seen_names = std::collections::HashSet::new();
+    let mut deduplicated_tools = Vec::with_capacity(tools.len());
+
+    for tool in tools {
+        let original_name = &tool.function.name;
+
+        if seen_names.insert(original_name.clone()) {
+            // First occurrence - keep original name
+            deduplicated_tools.push(tool);
+        } else {
+            // Duplicate found - generate unique name
+            let unique_name = generate_unique_tool_name(original_name, &seen_names);
+            seen_names.insert(unique_name.clone());
+
+            let mut unique_tool = tool;
+            unique_tool.function.name = unique_name;
+            deduplicated_tools.push(unique_tool);
+        }
+    }
+
+    Ok(deduplicated_tools)
+}
+
+/// Generates a unique tool name by appending a numeric suffix.
+///
+/// # Arguments
+/// * `base_name` - The original tool name to make unique
+/// * `seen_names` - Set of already used names to avoid conflicts
+///
+/// # Returns
+/// A unique name in the format "{base_name}_{number}"
+fn generate_unique_tool_name(
+    base_name: &str,
+    seen_names: &std::collections::HashSet<String>,
+) -> String {
+    let mut suffix = 1;
+    loop {
+        let candidate_name = format!("{}_{}", base_name, suffix);
+        if !seen_names.contains(&candidate_name) {
+            return candidate_name;
+        }
+        suffix += 1;
+    }
 }
