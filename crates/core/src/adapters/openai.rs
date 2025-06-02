@@ -299,12 +299,12 @@ impl OpenAIToolConfig for &ToolType {
     }
 }
 
-impl Into<ChatCompletionNamedToolChoice> for ToolType {
-    fn into(self) -> ChatCompletionNamedToolChoice {
+impl From<ToolType> for ChatCompletionNamedToolChoice {
+    fn from(val: ToolType) -> Self {
         ChatCompletionNamedToolChoice {
             r#type: ChatCompletionToolType::Function,
             function: FunctionName {
-                name: (&self).handle(),
+                name: (&val).handle(),
             },
         }
     }

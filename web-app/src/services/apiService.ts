@@ -26,6 +26,12 @@ export const apiService: Service = {
     const response = await apiClient.delete(`/threads/${threadId}`);
     return response.data;
   },
+  async bulkDeleteThreads(threadIds: string[]) {
+    const response = await apiClient.post("/threads/bulk-delete", {
+      thread_ids: threadIds,
+    });
+    return response.data;
+  },
   async deleteAllThread() {
     const response = await apiClient.delete("/threads");
     return response.data;

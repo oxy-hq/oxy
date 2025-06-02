@@ -89,7 +89,7 @@ const WorkflowThread = ({ thread }: { thread: ThreadItem }) => {
         <OutputLogs
           isPending={isPending}
           logs={logs}
-          contentClassName="max-w-[742px] mx-auto"
+          contentClassName="max-w-page-content mx-auto"
         />
       </div>
     </div>

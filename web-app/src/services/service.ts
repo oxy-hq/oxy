@@ -18,6 +18,7 @@ export interface Service {
   listThreads(page?: number, limit?: number): Promise<ThreadsResponse>;
   createThread(request: ThreadCreateRequest): Promise<ThreadItem>;
   deleteThread(threadId: string): Promise<void>;
+  bulkDeleteThreads(threadIds: string[]): Promise<void>;
   runApp(pathb64: string): Promise<App>;
   deleteAllThread(): Promise<void>;
   getThread(threadId: string): Promise<ThreadItem>;

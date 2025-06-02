@@ -5,6 +5,10 @@ import relativeTime from "dayjs/plugin/relativeTime";
 dayjs.extend(relativeTime);
 dayjs.extend(duration);
 
+export function timeAgo(dateString: string): string {
+  return dayjs(dateString).fromNow();
+}
+
 /**
  * Checks if a given string is a valid date.
  * @param dateStr - The string to be checked.

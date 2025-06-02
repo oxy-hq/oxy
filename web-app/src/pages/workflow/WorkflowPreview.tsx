@@ -124,7 +124,7 @@ export const WorkflowPreview = ({ pathb64 }: { pathb64: string }) => {
   if (workflow === null) {
     return (
       <div className="w-full">
-        <div className="flex flex-col gap-10 max-w-[742px] mx-auto py-10">
+        <div className="flex flex-col gap-10 max-w-page-content mx-auto py-10">
           {Array.from({ length: 3 }).map((_, index) => (
             <div key={index} className="flex flex-col gap-4">
               <Skeleton className="h-4 max-w-[200px]" />

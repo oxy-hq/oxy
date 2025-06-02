@@ -140,7 +140,7 @@ const TaskThread = ({ thread }: { thread: ThreadItem }) => {
 
       <div className="flex flex-1 overflow-hidden">
         <div className="flex-1 flex flex-col h-full">
-          <div className="flex flex-col flex-1 w-full max-w-[742px] p-4 mx-auto h-full">
+          <div className="flex flex-col flex-1 w-full max-w-page-content p-4 mx-auto h-full">
             <div
               ref={messagesContainerRef}
               className="flex flex-col flex-1 [scrollbar-gutter:stable_both-edges] overflow-y-auto customScrollbar"

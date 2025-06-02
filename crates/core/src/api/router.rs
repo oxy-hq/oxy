@@ -50,6 +50,7 @@ pub async fn api_router(auth_mode: AuthMode) -> Result<Router, OxyError> {
             get(message::get_messages_by_thread),
         )
         .route("/threads", delete(thread::delete_all_threads))
+        .route("/threads/bulk-delete", post(thread::bulk_delete_threads))
         .route("/agents/{pathb64}/ask", post(thread::ask_agent))
         .route(
             "/threads/{id}/workflow",
