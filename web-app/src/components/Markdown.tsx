@@ -53,6 +53,17 @@ const extendedComponents: ExtendedComponents = {
       {children}
     </td>
   ),
+
+  a: ({ children, ...props }) => (
+    <a
+      className="text-primary hover:underline"
+      {...props}
+      target="_blank"
+      rel="noopener noreferrer"
+    >
+      {children}
+    </a>
+  ),
 };
 
 function Markdown({ children, plugins, components }: Props) {
