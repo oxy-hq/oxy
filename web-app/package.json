@@ -97,7 +97,8 @@
     "vega": "^6.1.2",
     "vega-lite": "^6.1.0",
     "yaml": "^2.8.0",
-    "zustand": "^5.0.5"
+    "zustand": "^5.0.5",
+    "@microsoft/fetch-event-source": "2.0.1"
   },
   "devDependencies": {
     "@types/invariant": "^2.2.37",

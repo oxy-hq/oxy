@@ -107,6 +107,9 @@ importers:
       '@lottiefiles/react-lottie-player':
         specifier: ^3.6.0
         version: 3.6.0(react@19.1.0)
+      '@microsoft/fetch-event-source':
+        specifier: 2.0.1
+        version: 2.0.1
       '@monaco-editor/react':
         specifier: ^4.7.0
         version: 4.7.0(monaco-editor@0.52.2)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
@@ -192,7 +195,7 @@ importers:
         specifier: ^12.6.4
         version: 12.6.4(@types/react@19.1.6)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
       axios:
-        specifier: ^1.9.0
+        specifier: ^1.8.2
         version: 1.9.0
       class-variance-authority:
         specifier: ^0.7.1
@@ -379,7 +382,7 @@ importers:
         specifier: ^5.8.3
         version: 5.8.3
       vite:
-        specifier: ^6.3.5
+        specifier: ^6.1.6
         version: 6.3.5(@types/node@22.15.29)(jiti@2.4.2)(lightningcss@1.30.1)(yaml@2.8.0)
       vite-plugin-node-polyfills:
         specifier: ^0.23.0
@@ -841,6 +844,9 @@ packages:
 
   '@marijn/find-cluster-break@1.0.2':
     resolution: {integrity: sha512-l0h88YhZFyKdXIFNfSWpyjStDjGHwZ/U7iobcK1cQQD8sejsONdQtTVU+1wVN1PBw40PiiHB1vA5S7VTfQiP9g==}
+
+  '@microsoft/fetch-event-source@2.0.1':
+    resolution: {integrity: sha512-W6CLUJ2eBMw3Rec70qrsEW0jOm/3twwJv21mrmj2yORiaVmVYGS4sSS5yUwvQc1ZlDLYGPnClVWmUUMagKNsfA==}
 
   '@monaco-editor/loader@1.5.0':
     resolution: {integrity: sha512-hKoGSM+7aAc7eRTRjpqAZucPmoNOC4UUbknb/VNoTkEIkCPhqV8LfbsgM1webRM7S/z21eHEx9Fkwx8Z/C/+Xw==}
@@ -5823,6 +5829,8 @@ snapshots:
       react: 19.1.0
 
   '@marijn/find-cluster-break@1.0.2': {}
+
+  '@microsoft/fetch-event-source@2.0.1': {}
 
   '@monaco-editor/loader@1.5.0':
     dependencies:

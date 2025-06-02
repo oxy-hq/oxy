@@ -1,12 +1,13 @@
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 use crate::errors::OxyError;
 
 use super::{Document, Output};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum ReferenceKind {
     SqlQuery(QueryReference),
@@ -14,7 +15,7 @@ pub enum ReferenceKind {
     DataApp(DataAppReference),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct QueryReference {
     pub sql_query: String,
     pub database: String,
@@ -22,7 +23,7 @@ pub struct QueryReference {
     pub is_result_truncated: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct RetrievalReference {
     pub documents: Vec<Document>,
 }
@@ -45,7 +46,8 @@ impl TryFrom<Output> for ReferenceKind {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct DataAppReference {
+    #[schema(value_type = String)]
     pub file_path: PathBuf,
 }

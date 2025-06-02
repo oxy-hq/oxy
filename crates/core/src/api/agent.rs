@@ -1,15 +1,27 @@
+use super::thread::ThreadStream;
+use crate::api::thread::AnswerStream;
 use crate::config::ConfigBuilder;
 use crate::config::model::AgentConfig;
 use crate::service::test::{TestStreamMessage, run_test as run_agent_test};
-use crate::utils::find_project_path;
+use crate::{
+    auth::extractor::AuthenticatedUserExtractor, execute::writer::MarkdownWriter,
+    service::agent::run_agent, utils::find_project_path,
+};
 use async_stream::stream;
-use axum::extract::{self, Path};
-use axum::http::StatusCode;
-use axum::response::IntoResponse;
+use axum::response::sse::{Event, Sse};
+use axum::{
+    extract::{self, Path},
+    http::StatusCode,
+    response::IntoResponse,
+};
 use axum_streams::StreamBodyAs;
-use base64::Engine;
-use base64::prelude::BASE64_STANDARD;
+use base64::{Engine, prelude::BASE64_STANDARD};
 use serde::{Deserialize, Serialize};
+use std::{
+    path::PathBuf,
+    sync::{Arc, Mutex},
+};
+use utoipa::ToSchema;
 
 #[derive(Serialize)]
 pub struct BuilderAvailabilityResponse {
@@ -170,4 +182,103 @@ pub async fn run_test(
 
     let stream = run_agent_test(project_path, path, test_index).await?;
     Ok(StreamBodyAs::json_nl(stream))
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct AskAgentRequest {
+    pub question: String,
+}
+
+#[utoipa::path(
+    method(post),
+    path = "/agents/{pathb64}/ask",
+    params(
+        ("pathb64" = String, Path, description = "Base64 encoded path to the agent")
+    ),
+    request_body = AskAgentRequest,
+    responses(
+        (status = OK, description = "Success", body = AnswerStream, content_type = "text/event-stream")
+    )
+)]
+pub async fn ask_agent(
+    Path(pathb64): Path<String>,
+    AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
+    extract::Json(payload): extract::Json<AskAgentRequest>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let decoded_path = BASE64_STANDARD.decode(pathb64).map_err(|e| {
+        tracing::info!("{:?}", e);
+        StatusCode::BAD_REQUEST
+    })?;
+
+    let path = String::from_utf8(decoded_path).map_err(|e| {
+        tracing::info!("{:?}", e);
+        StatusCode::BAD_REQUEST
+    })?;
+
+    let project_path = find_project_path().map_err(|e| {
+        tracing::error!("Failed to find project path: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    let (tx, rx) = tokio::sync::mpsc::channel(100);
+    let _ = tokio::spawn(async move {
+        let tx_clone = tx.clone();
+        let markdown_writer = Arc::new(tokio::sync::Mutex::new(MarkdownWriter::default()));
+        let references_arc = Arc::new(Mutex::new(vec![]));
+        let thread_stream = ThreadStream::new(tx, references_arc.clone(), markdown_writer.clone());
+        let result = run_agent(
+            &project_path,
+            &PathBuf::from(path),
+            payload.question,
+            thread_stream,
+            vec![],
+        )
+        .await;
+
+        if let Err(err) = result {
+            tracing::error!("Error running agent: {}", err);
+            let message = AnswerStream {
+                content: format!("Error running agent: {}", err),
+                references: vec![],
+                is_error: true,
+                step: "".to_string(),
+            };
+            let _ = tx_clone.send(message).await;
+        }
+    });
+
+    let stream = async_stream::stream! {
+        let mut receiver = rx;
+        while let Some(message) = receiver.recv().await {
+            match serde_json::to_string(&message) {
+                Ok(json_data) => {
+                    yield Ok::<_, axum::Error>(
+                        Event::default()
+                            .event("message")
+                            .data(json_data)
+                    );
+                }
+                Err(e) => {
+                    tracing::error!("Failed to serialize message: {}", e);
+                    let error_msg = serde_json::json!({
+                        "content": "Error serializing response",
+                        "references": [],
+                        "is_error": true,
+                        "step": ""
+                    });
+                    yield Ok::<_, axum::Error>(
+                        Event::default()
+                            .event("error")
+                            .data(error_msg.to_string())
+                    );
+                }
+            }
+        }
+    };
+
+    Ok(Sse::new(stream).keep_alive(
+        axum::response::sse::KeepAlive::new()
+            .interval(std::time::Duration::from_secs(15))
+            .text("keep-alive-text"),
+    ))
 }

@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
-#[derive(Clone, Serialize, Deserialize, Hash)]
+#[derive(Clone, Serialize, Deserialize, Hash, ToSchema)]
 pub struct Document {
     pub id: String,
     pub kind: String,

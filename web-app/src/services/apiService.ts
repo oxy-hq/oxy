@@ -7,6 +7,7 @@ import { apiBaseURL } from "./env";
 import { ThreadCreateRequest } from "@/types/chat";
 import { TestStreamMessage } from "@/types/eval";
 import { Workflow } from "@/types/workflow";
+import { fetchEventSource } from "@microsoft/fetch-event-source";
 
 export const apiService: Service = {
   async listThreads(page?: number, limit?: number) {
@@ -129,18 +130,27 @@ export const apiService: Service = {
     return response.data;
   },
   async askAgent(agentPathb64: string, question: string, onReadStream) {
-    const url = `/agents/${agentPathb64}/ask`;
-    const options = {
+    const url = `${apiBaseURL}/agents/${agentPathb64}/ask`;
+
+    await fetchEventSource(url, {
       method: "POST",
-      body: JSON.stringify({ question }),
       headers: {
         "Content-Type": "application/json",
       },
-    };
-    const response = await fetch(apiBaseURL + url, options);
-    if (response) {
-      await readMessageFromStreamData(response, onReadStream);
-    }
+      body: JSON.stringify({ question }),
+      onmessage(ev) {
+        try {
+          const data = JSON.parse(ev.data);
+          onReadStream(data);
+        } catch (error) {
+          console.error("Error parsing SSE data:", error);
+        }
+      },
+      onerror(err) {
+        console.error("SSE error:", err);
+        throw err;
+      },
+    });
   },
   async listApps(): Promise<AppItem[]> {
     const response = await apiClient.get("/apps");
