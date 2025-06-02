@@ -23,7 +23,7 @@ axum-streams = { version = "0.21.0", features = ["json", "csv", "protobuf", "tex
 base64 = "0.22"
 chrono = "*"
 clap = { version = "4.5.39", features = ["derive"] }
-clickhouse = { version = "0.13.2", features = ["rustls-tls"] }
+clickhouse = { version = "0.13.3", features = ["rustls-tls"] }
 colored = "3.0.0"
 connectorx = { version = "0.4.3", features = ["dst_arrow", "src_bigquery", "src_postgres", "src_mysql"] }
 csv = "1.3.1"
