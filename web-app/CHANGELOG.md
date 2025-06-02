@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.2.10](https://github.com/oxy-hq/oxy-internal/compare/0.2.9...0.2.10) (2025-06-02)
+
+
+### <!-- 0 -->🚀 Features
+
+* add bulk delete api and deletion ui ([#854](https://github.com/oxy-hq/oxy-internal/issues/854)) ([1bc9890](https://github.com/oxy-hq/oxy-internal/commit/1bc989065c5cad0650d9905a876cf73f296eae5d))
+* make ai artifact unverified ([#860](https://github.com/oxy-hq/oxy-internal/issues/860)) ([aa91fda](https://github.com/oxy-hq/oxy-internal/commit/aa91fda96abd1eb66c7dee76442faf4836b9e027))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* markdown link color ([#864](https://github.com/oxy-hq/oxy-internal/issues/864)) ([5bbf311](https://github.com/oxy-hq/oxy-internal/commit/5bbf311c72c0d48b3f3a0b4fdd1e93f4c5222791))
+* unnecessary messages fetches ([#865](https://github.com/oxy-hq/oxy-internal/issues/865)) ([858c5d6](https://github.com/oxy-hq/oxy-internal/commit/858c5d668f446f9129b20389635552c709a28136))
+
 ## [0.2.9](https://github.com/oxy-hq/oxy-internal/compare/0.2.8...0.2.9) (2025-05-29)
 
 
