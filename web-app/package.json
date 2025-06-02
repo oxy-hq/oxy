@@ -20,6 +20,7 @@
     "@formkit/auto-animate": "^0.8.2",
     "@lezer/highlight": "^1.2.1",
     "@lottiefiles/react-lottie-player": "^3.6.0",
+    "@microsoft/fetch-event-source": "2.0.1",
     "@monaco-editor/react": "^4.7.0",
     "@radix-ui/primitive": "^1.1.2",
     "@radix-ui/react-alert-dialog": "^1.1.14",
@@ -48,7 +49,7 @@
     "@uiw/codemirror-themes": "^4.23.12",
     "@uiw/react-codemirror": "^4.23.12",
     "@xyflow/react": "^12.6.4",
-    "axios": "^1.8.2",
+    "axios": "^1.9.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "dayjs": "^1.11.13",
@@ -71,7 +72,7 @@
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-error-boundary": "^6.0.0",
-    "react-hook-form": "^7.56.4",
+    "react-hook-form": "^7.57.0",
     "react-hotkeys-hook": "5.1.0",
     "react-intersection-observer": "^9.16.0",
     "react-markdown": "^10.1.0",
@@ -97,8 +98,7 @@
     "vega": "^6.1.2",
     "vega-lite": "^6.1.0",
     "yaml": "^2.8.0",
-    "zustand": "^5.0.5",
-    "@microsoft/fetch-event-source": "2.0.1"
+    "zustand": "^5.0.5"
   },
   "devDependencies": {
     "@types/invariant": "^2.2.37",
@@ -113,7 +113,7 @@
     "@vitejs/plugin-react-swc": "^3.10.0",
     "i": "^0.3.7",
     "typescript": "^5.8.3",
-    "vite": "^6.1.6",
+    "vite": "^6.3.5",
     "vite-plugin-node-polyfills": "^0.23.0"
   },
   "version": "0.2.9"
