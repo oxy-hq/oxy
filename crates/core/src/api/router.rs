@@ -51,7 +51,7 @@ pub async fn api_router(auth_mode: AuthMode) -> Result<Router, OxyError> {
         )
         .route("/threads", delete(thread::delete_all_threads))
         .route("/threads/bulk-delete", post(thread::bulk_delete_threads))
-        .route("/agents/{pathb64}/ask", post(thread::ask_agent))
+        .route("/agents/{pathb64}/ask", post(agent::ask_agent))
         .route(
             "/threads/{id}/workflow",
             post(workflow::run_workflow_thread),
@@ -120,6 +120,6 @@ pub async fn openapi_router() -> OpenApiRouter {
 
     OpenApiRouter::new()
         .routes(routes!(agent::get_agents))
-        .routes(routes!(workflow::list, workflow::run_workflow))
+        .routes(routes!(agent::ask_agent))
         .layer(cors)
 }
