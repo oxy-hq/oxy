@@ -1,7 +1,7 @@
 {
-  "crates/core": "0.2.9",
-  "crates/py": "0.2.9",
-  "crates/migration": "0.2.9",
-  "crates/entity": "0.2.9",
-  "web-app": "0.2.9"
+  "crates/core": "0.2.10",
+  "crates/py": "0.2.10",
+  "crates/migration": "0.2.10",
+  "crates/entity": "0.2.10",
+  "web-app": "0.2.10"
 }
