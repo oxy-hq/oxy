@@ -515,3 +515,37 @@ pub async fn ask_agent(
 
     Ok(StreamBodyAs::json_nl(ReceiverStream::new(rx)))
 }
+
+#[derive(Deserialize)]
+pub struct BulkDeleteThreadsRequest {
+    pub thread_ids: Vec<String>,
+}
+
+pub async fn bulk_delete_threads(
+    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
+    extract::Json(request): extract::Json<BulkDeleteThreadsRequest>,
+) -> Result<StatusCode, StatusCode> {
+    let connection = establish_connection().await;
+
+    let mut thread_uuids = Vec::new();
+    for thread_id in request.thread_ids {
+        let uuid = Uuid::parse_str(&thread_id).map_err(|_| StatusCode::BAD_REQUEST)?;
+        thread_uuids.push(uuid);
+    }
+
+    if thread_uuids.is_empty() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    Threads::delete_many()
+        .filter(
+            threads::Column::UserId
+                .eq(Some(user.id))
+                .and(threads::Column::Id.is_in(thread_uuids)),
+        )
+        .exec(&connection)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(StatusCode::OK)
+}

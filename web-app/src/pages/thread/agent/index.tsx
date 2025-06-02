@@ -92,7 +92,7 @@ const AgentThread = ({ thread }: { thread: ThreadItem }) => {
         ref={messagesContainerRef}
         className="overflow-y-auto p-4 [scrollbar-gutter:stable_both-edges] customScrollbar flex-1 flex items-center w-full justify-center"
       >
-        <div className="flex-1 max-w-[742px] w-full h-full">
+        <div className="flex-1 max-w-page-content w-full h-full">
           {thread && (
             <>
               <MessageHistory messages={messageHistory} />
@@ -102,7 +102,7 @@ const AgentThread = ({ thread }: { thread: ThreadItem }) => {
         </div>
       </div>
 
-      <div className="flex flex-col p-4 gap-1 pt-0 max-w-[742px] mx-auto w-full">
+      <div className="flex flex-col p-4 gap-1 pt-0 max-w-page-content mx-auto w-full">
         <MessageInput
           value={followUpQuestion}
           onChange={setFollowUpQuestion}
