@@ -92,17 +92,24 @@ const TaskThread = ({ thread }: { thread: ThreadItem }) => {
     setMessage((prev) => ({ ...prev, content: "", isStreaming: true }));
 
     try {
-      await service.askTask(thread.id, followUpQuestion, (answer) => {
-        setMessage((prev) => ({
-          ...prev,
-          content: prev.content + answer.content,
-          isStreaming: true,
-        }));
+      await service.askTask(
+        thread.id,
+        followUpQuestion,
+        (answer) => {
+          setMessage((prev) => ({
+            ...prev,
+            content: prev.content + answer.content,
+            isStreaming: true,
+          }));
 
-        if (answer.file_path) {
-          setFilePath(answer.file_path);
-        }
-      });
+          if (answer.file_path) {
+            setFilePath(answer.file_path);
+          }
+        },
+        () => {
+          fetchMessages();
+        },
+      );
 
       fetchMessages();
     } finally {

@@ -36,11 +36,13 @@ export interface Service {
     threadId: string,
     question: string | null,
     onReadStream: (answer: Answer) => void,
+    onMessageSent?: () => void,
   ): Promise<void>;
   askTask(
     taskId: string,
     question: string | null,
     onReadStream: (answer: Chunk) => void,
+    onMessageSent?: () => void,
   ): Promise<void>;
   askAgent(
     agentPath: string,

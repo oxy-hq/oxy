@@ -66,7 +66,12 @@ export const apiService: Service = {
       await readMessageFromStreamData(response, onReadStream);
     }
   },
-  async ask(threadId: string, question: string | null, onReadStream) {
+  async ask(
+    threadId: string,
+    question: string | null,
+    onReadStream,
+    onMessageSent,
+  ) {
     const url = `/threads/${threadId}/ask`;
     const options = {
       headers: {
@@ -79,10 +84,16 @@ export const apiService: Service = {
     };
     const response = await fetch(apiBaseURL + url, options);
     if (response) {
+      onMessageSent?.();
       await readMessageFromStreamData(response, onReadStream);
     }
   },
-  async askTask(threadId: string, question: string | null, onReadStream) {
+  async askTask(
+    threadId: string,
+    question: string | null,
+    onReadStream,
+    onMessageSent,
+  ) {
     const url = `/threads/${threadId}/task`;
     const options = {
       method: "POST",
@@ -95,6 +106,7 @@ export const apiService: Service = {
     };
     const response = await fetch(apiBaseURL + url, options);
     if (response) {
+      onMessageSent?.();
       await readMessageFromStreamData(response, onReadStream);
     }
   },

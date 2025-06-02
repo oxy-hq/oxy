@@ -45,38 +45,44 @@ const useSendMessageMutation = ({
     onStreamingMessage?.(initialStreamingMessage);
 
     try {
-      await service.ask(threadId, content, (answer) => {
-        if (content) {
-          const userMessage: MessageItem = {
-            id: `temp-${Date.now()}`,
-            content,
-            is_human: true,
-            created_at: new Date().toISOString(),
-            thread_id: threadId,
-          };
-          onMessageSent?.(userMessage);
-        }
-        setStreamingMessage((prevMessage) => {
-          const { content: prevContent, references, steps } = prevMessage;
-          const shouldAddStep =
-            answer.step &&
-            Object.keys(STEP_MAP).includes(answer.step) &&
-            steps.at(-1) !== answer.step;
+      await service.ask(
+        threadId,
+        content,
+        (answer) => {
+          setStreamingMessage((prevMessage) => {
+            const { content: prevContent, references, steps } = prevMessage;
+            const shouldAddStep =
+              answer.step &&
+              Object.keys(STEP_MAP).includes(answer.step) &&
+              steps.at(-1) !== answer.step;
 
-          const updatedMessage = {
-            content: prevContent + answer.content,
-            references: answer.references
-              ? [...references, ...answer.references]
-              : references,
-            steps: shouldAddStep ? [...steps, answer.step] : steps,
-            isUser: false,
-            isStreaming: true,
-          };
+            const updatedMessage = {
+              content: prevContent + answer.content,
+              references: answer.references
+                ? [...references, ...answer.references]
+                : references,
+              steps: shouldAddStep ? [...steps, answer.step] : steps,
+              isUser: false,
+              isStreaming: true,
+            };
 
-          onStreamingMessage?.(updatedMessage);
-          return updatedMessage;
-        });
-      });
+            onStreamingMessage?.(updatedMessage);
+            return updatedMessage;
+          });
+        },
+        () => {
+          if (content) {
+            const userMessage: MessageItem = {
+              id: `temp-${Date.now()}`,
+              content,
+              is_human: true,
+              created_at: new Date().toISOString(),
+              thread_id: threadId,
+            };
+            onMessageSent?.(userMessage);
+          }
+        },
+      );
     } catch (error) {
       console.error("Error asking question:", error);
       const errorMessage = {
