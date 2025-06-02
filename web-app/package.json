@@ -48,7 +48,7 @@
     "@uiw/codemirror-themes": "^4.23.12",
     "@uiw/react-codemirror": "^4.23.12",
     "@xyflow/react": "^12.6.4",
-    "axios": "^1.9.0",
+    "axios": "^1.8.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "dayjs": "^1.11.13",
@@ -112,7 +112,7 @@
     "@vitejs/plugin-react-swc": "^3.10.0",
     "i": "^0.3.7",
     "typescript": "^5.8.3",
-    "vite": "^6.3.5",
+    "vite": "^6.1.6",
     "vite-plugin-node-polyfills": "^0.23.0"
   },
   "version": "0.2.9"
