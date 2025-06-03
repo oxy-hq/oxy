@@ -15,7 +15,7 @@
   "dependencies": {
     "@codemirror/lang-python": "^6.2.1",
     "@codemirror/lang-sql": "^6.9.0",
-    "@codemirror/language": "^6.11.0",
+    "@codemirror/language": "^6.11.1",
     "@duckdb/duckdb-wasm": "1.29.1-dev132.0",
     "@formkit/auto-animate": "^0.8.2",
     "@lezer/highlight": "^1.2.1",
