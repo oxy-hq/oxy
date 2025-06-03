@@ -28,6 +28,7 @@ impl Engine for DuckDB {
         _dry_run_limit: Option<u64>,
     ) -> Result<(Vec<RecordBatch>, SchemaRef), OxyError> {
         let query = query.to_string();
+
         let conn = Connection::open_in_memory()
             .map_err(|err| connector_internal_error(CREATE_CONN, &err))?;
         let dir_set_stmt = format!("SET file_search_path = '{}'", &self.file_search_path);

@@ -5,12 +5,12 @@ databases:
     type: bigquery
     key_path: bigquery-sample.key
     datasets:
+      airbyte:
+        - "typeform_forms__links"
       dbt_prod_core:
         - "*"
       dbt_prod_metrics:
         - "monthly_active_*"
-      user_analytics:
-        - "company_activity_analytics_summary_view"
       python_prod:
         - "v1_*"
 

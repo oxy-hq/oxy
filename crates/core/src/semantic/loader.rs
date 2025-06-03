@@ -23,6 +23,7 @@ pub struct ColumnNames {
     data_type: String,
     is_partitioning_column: String,
     ddl: String,
+    description: String,
 }
 
 impl Default for ColumnNames {
@@ -34,6 +35,7 @@ impl Default for ColumnNames {
             data_type: "data_type".to_string(),
             is_partitioning_column: "is_partitioning_column".to_string(),
             ddl: "ddl".to_string(),
+            description: "column_comment".to_string(),
         }
     }
 }
@@ -66,6 +68,11 @@ impl ColumnNames {
 
     pub fn with_ddl(mut self, ddl: &str) -> Self {
         self.ddl = ddl.to_string();
+        self
+    }
+
+    pub fn with_description(mut self, description: &str) -> Self {
+        self.description = description.to_string();
         self
     }
 }
@@ -131,12 +138,13 @@ impl GetSchemaQueryBuilder {
 
     pub fn build(&self) -> String {
         let mut query = format!(
-            "SELECT {}, {}, {}, {}, {} FROM {}",
+            "SELECT {}, {}, {}, {}, {}, {} FROM {}",
             self.column_names.dataset,
             self.column_names.table,
             self.column_names.column,
             self.column_names.data_type,
             self.column_names.is_partitioning_column,
+            self.column_names.description,
             self.columns_table,
         );
         let where_clause = self.get_where_clause();
@@ -192,10 +200,29 @@ impl GetSchemaQuery for Database {
                 .datasets()
                 .iter()
                 .map(|(dataset, tables)| {
-                    let query = GetSchemaQueryBuilder::default()
-                        .with_columns_table(format!("{}.INFORMATION_SCHEMA.COLUMNS", dataset))
-                        .with_filter_tables(tables.clone())
-                        .build();
+                    let tables_filter = if tables.is_empty() {
+                        String::new()
+                    } else {
+                        let table_conditions = tables
+                            .iter()
+                            .map(|v| {
+                                if v.contains("*") {
+                                    format!("c.table_name LIKE '{}'", v.replace("*", "%"))
+                                } else {
+                                    format!("c.table_name = '{}'", v)
+                                }
+                            })
+                            .join(" OR ");
+                        format!(" WHERE {}", table_conditions)
+                    };
+
+                    let query = format!(
+                        "SELECT c.table_schema, c.table_name, c.column_name, c.data_type, c.is_partitioning_column, COALESCE(d.description, NULL) as description
+                         FROM `{}.INFORMATION_SCHEMA.COLUMNS` c
+                         LEFT JOIN `{}.INFORMATION_SCHEMA.COLUMN_FIELD_PATHS` d 
+                         ON c.table_name = d.table_name AND c.column_name = d.column_name{}",
+                        dataset, dataset, tables_filter
+                    );
                     Ok(query)
                 })
                 .collect::<Result<Vec<_>, OxyError>>(),
@@ -210,7 +237,8 @@ impl GetSchemaQuery for Database {
                                 .with_table("table")
                                 .with_column("name")
                                 .with_data_type("type")
-                                .with_is_partitioning_column("is_in_partition_key"),
+                                .with_is_partitioning_column("is_in_partition_key")
+                                .with_description("comment"),
                         )
                         .with_filter_dataset(dataset.to_string())
                         .with_filter_tables(tables.clone())
@@ -219,7 +247,7 @@ impl GetSchemaQuery for Database {
                     Ok(query)
                 })
                 .collect::<Result<Vec<_>, OxyError>>(),
-            DatabaseType::DuckDB(_) => Ok(vec!["DUCKDB_SCHEMA".to_string()]),
+
             _ => Err(OxyError::ConfigurationError(
                 "Unsupported database type".to_string(),
             )),
@@ -256,7 +284,7 @@ impl GetSchemaQuery for Database {
                     Ok(query)
                 })
                 .collect::<Result<Vec<_>, OxyError>>(),
-            DatabaseType::DuckDB(_) => Ok(vec!["DUCKDB_DDL".to_string()]),
+
             _ => Err(OxyError::ConfigurationError(
                 "Unsupported database type".to_string(),
             )),
@@ -311,6 +339,8 @@ pub(super) struct SchemaRecord {
     data_type: String,
     #[serde(alias = "is_in_partition_key", deserialize_with = "deserialize_bool")]
     is_partitioning_column: bool,
+    #[serde(alias = "column_comment", alias = "comment")]
+    description: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -362,12 +392,10 @@ impl SchemaLoader {
     ) -> Result<HashMap<String, HashMap<String, SemanticModels>>, OxyError> {
         match &self.database.database_type {
             DatabaseType::DuckDB(duckdb) => {
+                let path = Path::new(&duckdb.file_search_path);
                 let mut result = HashMap::new();
                 let mut tables = HashMap::new();
-                let path = Path::new(&duckdb.file_search_path);
-                if !path.exists() || !path.is_dir() {
-                    return Ok(result);
-                }
+
                 for entry in fs::read_dir(path).map_err(|e| {
                     OxyError::RuntimeError(format!("Failed to read DuckDB directory: {}", e))
                 })? {
@@ -427,6 +455,7 @@ impl SchemaLoader {
                         });
                     entry.dimensions.push(Dimension {
                         name: record.column_name.to_string(),
+                        description: record.description,
                         synonyms: None,
                         sample: vec![],
                         data_type: Some(record.data_type.to_string()),
@@ -449,16 +478,15 @@ impl SchemaLoader {
     pub async fn load_ddl(&self) -> Result<HashMap<String, String>, OxyError> {
         match &self.database.database_type {
             DatabaseType::DuckDB(duckdb) => {
-                let mut ddls = HashMap::new();
                 let path = Path::new(&duckdb.file_search_path);
-                if !path.exists() || !path.is_dir() {
-                    return Ok(ddls);
-                }
+                let mut ddls = HashMap::new();
                 let mut ddl_lines = Vec::new();
+
                 use duckdb::Connection;
                 let conn = Connection::open_in_memory().map_err(|e| {
                     OxyError::RuntimeError(format!("Failed to open in-memory DuckDB: {}", e))
                 })?;
+
                 for entry in fs::read_dir(path).map_err(|e| {
                     OxyError::RuntimeError(format!("Failed to read DuckDB directory: {}", e))
                 })? {
@@ -474,7 +502,7 @@ impl SchemaLoader {
                         .and_then(|e| e.to_str())
                         .unwrap_or("")
                         .to_lowercase();
-                    let file_name = path.file_name().unwrap().to_string_lossy().to_string();
+                    let file_name = path.file_stem().unwrap().to_string_lossy().to_string();
                     let columns = match ext.as_str() {
                         "csv" => {
                             let sql = format!(
@@ -488,6 +516,7 @@ impl SchemaLoader {
                                     e
                                 ))
                             })?;
+
                             let mut stmt =
                                 conn.prepare("PRAGMA table_info('auto_csv');")
                                     .map_err(|e| {

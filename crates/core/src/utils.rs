@@ -227,6 +227,7 @@ pub fn extract_csv_dimensions(
         .enumerate()
         .map(|(i, (name, dtype))| Dimension {
             name,
+            description: None,
             synonyms: None,
             sample: samples.get(i).cloned().unwrap_or_default(),
             data_type: Some(dtype),
