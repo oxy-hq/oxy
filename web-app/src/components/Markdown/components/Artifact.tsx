@@ -10,7 +10,7 @@ import {
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from "../ui/shadcn/tooltip";
+} from "@/components/ui/shadcn/tooltip";
 
 type Props = {
   kind: string;

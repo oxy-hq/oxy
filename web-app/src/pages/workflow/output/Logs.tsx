@@ -34,7 +34,6 @@ const OutputLogs: React.FC<OutputLogsProps> = ({
   const logsVirtualizer = useVirtualizer({
     count: logs.length,
     getScrollElement: () => parentRef.current,
-    overscan: 20,
     estimateSize: estimateSize,
     enabled: true,
   });
@@ -49,15 +48,13 @@ const OutputLogs: React.FC<OutputLogsProps> = ({
 
   useEffect(() => {
     scrollToBottom();
-    // sometimes the virtualizer takes a while to calculate the size
-    // so we need to scroll multiple times just in case
     requestAnimationFrame(() => {
       scrollToBottom();
       requestAnimationFrame(() => {
         scrollToBottom();
       });
     });
-  }, [logs, logsVirtualizer, scrollToBottom]);
+  }, [logs, scrollToBottom, logsVirtualizer]);
 
   const items = logsVirtualizer.getVirtualItems();
 
@@ -80,7 +77,7 @@ const OutputLogs: React.FC<OutputLogsProps> = ({
             const log = logs[item.index];
             return (
               <div
-                key={item.index}
+                key={item.key}
                 data-index={item.index}
                 ref={logsVirtualizer.measureElement}
               >
