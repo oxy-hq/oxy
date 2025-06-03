@@ -14,7 +14,7 @@ exclude.workspace = true
 anyhow = "1.0.98"
 arrow = { version = "53.4", default-features = false, features = ["json"] } # arrow version has to comply with duckdb version
 assert_cmd = "2.0.17"
-async-openai = {version = "0.28.1", features = ["byot"]}
+async-openai = {version = "0.28.2", features = ["byot"]}
 async-stream = "0.3.6"
 async-trait = "0.1.88"
 axum = { version = "0.8.4", features = ["macros"] }
@@ -69,11 +69,11 @@ tokio = { workspace = true }
 tokio-stream = "0.1.17"
 tokio-util = "0.7.15"
 tower = "0.5.2"
-tower-http = { version = "0.6.4", features = ["fs", "cors", "trace"] }
+tower-http = { version = "0.6.5", features = ["fs", "cors", "trace"] }
 tower-serve-static = "0.1.1"
 tqdm = "0.7.0"
 uuid = { version = "1.17.0", features = ["v4", "serde"] }
-reqwest = { version = "0.12.18" }
+reqwest = { version = "0.12.19" }
 secrecy = "0.10.3"
 fxhash = "0.2.1"
 deser-incomplete = "0.1.2"
