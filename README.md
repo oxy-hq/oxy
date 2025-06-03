@@ -10,7 +10,7 @@
 </div>
 
 > 📖 **Looking for up-to-date code documentation?**  
-> Check out our [repository wiki](https://deepwiki.com/oxy-hq/oxy), which auto-refreshes weekly with the latest code changes.
+> Check out our DeepWiki, which updates weekly with the latest code changes: [![DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/oxy-hq/oxy)
 
 ## The framework for agentic analytics
 
