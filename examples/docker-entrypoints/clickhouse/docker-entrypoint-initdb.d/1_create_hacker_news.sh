@@ -2,30 +2,32 @@
 set -e
 clickhouse client -n <<-EOSQL
 CREATE TABLE default.hacker_news_materialised (
-    id Int64,
-    deleted Int64,
-    type String,
-    by String,
-    time DateTime,
-    text String,
-    dead Int64,
-    parent Int64,
-    poll Int64,
-    kids Array(String),
-    url String,
-    score Int64,
-    title String,
-    parts Array(String),
-    descendants Int64
+    id Int64 COMMENT 'Unique identifier for each Hacker News item',
+    deleted Int64 COMMENT 'Flag indicating if the item has been deleted (1 = deleted, 0 = active)',
+    type String COMMENT 'Type of the item (story, comment, job, ask, poll, pollopt)',
+    by String COMMENT 'Username of the item author',
+    time DateTime COMMENT 'Timestamp when the item was created',
+    text String COMMENT 'Content text of the item (for comments, stories, etc.)',
+    dead Int64 COMMENT 'Flag indicating if the item is dead/killed (1 = dead, 0 = alive)',
+    parent Int64 COMMENT 'ID of the parent item (for comments, this is the story or comment being replied to)',
+    poll Int64 COMMENT 'ID of the poll this item belongs to (for poll options)',
+    kids Array(String) COMMENT 'Array of IDs of the item children/replies',
+    url String COMMENT 'URL associated with the story or item',
+    score Int64 COMMENT 'Score/points of the item based on upvotes',
+    title String COMMENT 'Title of the story or item',
+    parts Array(String) COMMENT 'Array of related poll option IDs (for polls)',
+    descendants Int64 COMMENT 'Total number of descendants/replies in the comment tree'
 ) ENGINE = MergeTree()
-ORDER BY (type, id);
+ORDER BY (type, id)
+COMMENT 'Main table storing all Hacker News items including stories, comments, jobs, and polls';
 
 CREATE TABLE default.hacker_news_subset (
-    id Int64,
-    text String,
-    by String
+    id Int64 COMMENT 'Unique identifier for each Hacker News item',
+    text String COMMENT 'Content text of the item',
+    by String COMMENT 'Username of the item author'
 ) ENGINE = MergeTree()
-ORDER BY id;
+ORDER BY id
+COMMENT 'Subset table containing only essential fields from Hacker News items for simplified queries';
 
 INSERT INTO default.hacker_news_materialised (id, deleted, type, by, time, text, dead, parent, poll, kids, url, score, title, parts, descendants) VALUES 
 (1, 0, 'story', 'user1', now(), 'Example text 1', 0, 0, 0, [], 'http://example.com/1', 10, 'Example Title 1', [], 0),

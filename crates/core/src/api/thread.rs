@@ -15,7 +15,6 @@ use axum::{
     response::IntoResponse,
 };
 use axum_streams::StreamBodyAs;
-use base64::{Engine, prelude::BASE64_STANDARD};
 use entity::threads;
 use entity::{prelude::Messages, prelude::Threads};
 use sea_orm::{
