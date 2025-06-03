@@ -12,5 +12,6 @@ declare module "react-markdown" {
       children: React.ReactNode;
     }>;
     reference?: React.ComponentType<{ children: React.ReactNode }>;
+    table_virtualized?: React.ComponentType<{ table_id: string }>;
   };
 }

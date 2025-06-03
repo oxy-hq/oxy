@@ -7,6 +7,18 @@ import directive from "remark-directive";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
+import ArtifactPlugin from "./plugins/ArtifactPlugin";
+import ChartPlugin from "./plugins/ChartPlugin";
+import ChartContainer from "./components/Chart";
+import ArtifactContainer from "./components/Artifact";
+import TableVirtualized from "./components/TableVirtualized";
+import CodeBlock from "./components/CodeBlock";
+import { extractLargeTables } from "./utils/extractLargeTables";
+import TableVirtualizedPlugin from "./plugins/TableVirtualizedPlugin";
+
+interface MarkdownData {
+  tables?: string[][][];
+}
 
 const sanitizeSchema = {
   ...defaultSchema,
@@ -14,17 +26,21 @@ const sanitizeSchema = {
     ...defaultSchema.attributes,
     chart: ["chart_src"],
     artifact: ["kind", "title", "is_verified"],
+    table_virtualized: ["table_id"],
   },
-  tagNames: [...(defaultSchema.tagNames || []), "chart", "artifact"],
+  tagNames: [
+    ...(defaultSchema.tagNames || []),
+    "chart",
+    "artifact",
+    "table_virtualized",
+  ],
 };
 
 type Props = {
   children: string;
-  plugins?: unknown[];
-  components?: ExtendedComponents;
 };
 
-const extendedComponents: ExtendedComponents = {
+const getExtendedComponents = (data?: MarkdownData): ExtendedComponents => ({
   table: ({ children, ...props }) => (
     <div className="overflow-auto customScrollbar">
       <table className="w-full border-collapse border-hidden" {...props}>
@@ -53,7 +69,12 @@ const extendedComponents: ExtendedComponents = {
       {children}
     </td>
   ),
-
+  code: (props) => <CodeBlock {...props} />,
+  chart: (props) => <ChartContainer {...props} />,
+  artifact: (props) => <ArtifactContainer {...props} />,
+  table_virtualized: (props) => (
+    <TableVirtualized {...props} tables={data?.tables ?? []} />
+  ),
   a: ({ children, ...props }) => (
     <a
       className="text-primary hover:underline"
@@ -64,20 +85,24 @@ const extendedComponents: ExtendedComponents = {
       {children}
     </a>
   ),
-};
+});
 
-function Markdown({ children, plugins, components }: Props) {
+function Markdown({ children }: Props) {
+  const { newMarkdown, tables } = extractLargeTables(children);
   return (
-    <p className="markdown">
-      <ReactMarkdown
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        remarkPlugins={[directive, remarkGfm, ...((plugins as any[]) || [])]}
-        rehypePlugins={[rehypeRaw, [rehypeSanitize, sanitizeSchema]]}
-        components={{ ...extendedComponents, ...components }}
-      >
-        {children}
-      </ReactMarkdown>
-    </p>
+    <ReactMarkdown
+      remarkPlugins={[
+        directive,
+        remarkGfm,
+        ChartPlugin,
+        ArtifactPlugin,
+        TableVirtualizedPlugin,
+      ]}
+      rehypePlugins={[rehypeRaw, [rehypeSanitize, sanitizeSchema]]}
+      components={getExtendedComponents({ tables })}
+    >
+      {newMarkdown}
+    </ReactMarkdown>
   );
 }
 

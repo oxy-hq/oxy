@@ -1,10 +1,7 @@
 import React from "react";
-import Markdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import directive from "remark-directive";
-import CodeBlock from "@/components/CodeBlock";
 import { DynamicIcon } from "lucide-react/dynamic";
 import { Button } from "@/components/ui/shadcn/button";
+import Markdown from "@/components/Markdown";
 
 const getFirstLine = (content: string) => {
   const lines = content.split("\n");
@@ -21,7 +18,6 @@ type ExpandableOutputProps = {
   content: string;
   timestamp: string;
 };
-
 const ExpandableOutput = ({ content, timestamp }: ExpandableOutputProps) => {
   const [expanded, setExpanded] = React.useState(true);
   const firstLine = getFirstLine(content);
@@ -58,28 +54,9 @@ const ExpandableOutput = ({ content, timestamp }: ExpandableOutputProps) => {
           <DynamicIcon name="chevron-up" size={14} />
         </Button>
       </div>
-      <div className="pb-2 pl-2 pr-2 flex-1 text-xs">
-        <MarkdownContent content={content}></MarkdownContent>
+      <div className="p-2 pt-3 flex-1 text-xs overflow-hidden">
+        <Markdown>{content}</Markdown>
       </div>
-    </div>
-  );
-};
-
-type MarkdownContentProps = {
-  content: string;
-};
-
-export const MarkdownContent = ({ content }: MarkdownContentProps) => {
-  return (
-    <div className="markdown">
-      <Markdown
-        components={{
-          code: CodeBlock,
-        }}
-        remarkPlugins={[remarkGfm, directive]}
-      >
-        {content}
-      </Markdown>
     </div>
   );
 };

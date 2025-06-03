@@ -5,7 +5,7 @@ import {
 } from "@/components/ui/shadcn/dialog";
 import { Code, Download, Loader2, Save, X } from "lucide-react";
 import { SqlQueryReference } from "@/types/chat";
-import CodeBlock from "@/components/CodeBlock";
+import CodeBlock from "@/components/Markdown/components/CodeBlock";
 import { ReferenceItemContainer } from "./ReferenceItemContainer";
 import { QueryResultTable } from "./QueryResultTable";
 import { Button } from "@/components/ui/shadcn/button";
