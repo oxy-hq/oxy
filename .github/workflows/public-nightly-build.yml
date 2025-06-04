@@ -225,19 +225,12 @@ jobs:
       - name: Get current date
         id: date
         run: echo "current_date=$(date -u +'%Y%m%d')" >> $GITHUB_OUTPUT
-      - name: Get short SHA
-        id: short_sha
-        run: echo "short_sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
       - name: Create and push multi-arch manifest
         run: |
           docker manifest create ghcr.io/${{ github.repository_owner }}/oxy:nightly-${{ steps.date.outputs.current_date }} \
             ghcr.io/${{ github.repository_owner }}/oxy:nightly-${{ steps.date.outputs.current_date }}-amd64 \
             ghcr.io/${{ github.repository_owner }}/oxy:nightly-${{ steps.date.outputs.current_date }}-arm64
           docker manifest push ghcr.io/${{ github.repository_owner }}/oxy:nightly-${{ steps.date.outputs.current_date }}
-          docker manifest create ghcr.io/${{ github.repository_owner }}/oxy:nightly-${{ steps.short_sha.outputs.short_sha }} \
-            ghcr.io/${{ github.repository_owner }}/oxy:nightly-${{ steps.short_sha.outputs.short_sha }}-amd64 \
-            ghcr.io/${{ github.repository_owner }}/oxy:nightly-${{ steps.short_sha.outputs.short_sha }}-arm64
-          docker manifest push ghcr.io/${{ github.repository_owner }}/oxy:nightly-${{ steps.short_sha.outputs.short_sha }}
           docker manifest create ghcr.io/${{ github.repository_owner }}/oxy:nightly-latest \
             ghcr.io/${{ github.repository_owner }}/oxy:nightly-latest-amd64 \
             ghcr.io/${{ github.repository_owner }}/oxy:nightly-latest-arm64
