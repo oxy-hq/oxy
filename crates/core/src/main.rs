@@ -24,7 +24,7 @@ enum LogFormat {
 impl LogFormat {
     fn detect() -> Self {
         // Check environment variables to determine the platform
-        if env::var("K_SERVICE").is_ok() && env::var("GOOGLE_CLOUD_PROJECT").is_ok() {
+        if env::var("K_SERVICE").is_ok() || env::var("CLOUD_RUN_JOB").is_ok() {
             LogFormat::CloudRun
         // TODO: use compact format where it matters, this is just a placeholder
         } else if env::var("AWS_LAMBDA_FUNCTION_NAME").is_ok() || env::var("VERCEL").is_ok() {
