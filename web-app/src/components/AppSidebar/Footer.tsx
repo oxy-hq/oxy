@@ -1,5 +1,5 @@
 import { LogOut, User2 } from "lucide-react";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState } from "react";
 import {
   SidebarMenu,
   SidebarMenuButton,
@@ -11,42 +11,24 @@ interface UserInfo {
   picture?: string;
 }
 
-function useCurrentUserInfo() {
-  const [userInfo, setUserInfo] = useState<UserInfo | null>(() => {
-    const cached = sessionStorage.getItem("current_user_info");
-    return cached ? JSON.parse(cached) : null;
-  });
-
-  const fetchUserInfo = useCallback(async () => {
-    try {
-      const res = await fetch("/api/user", { credentials: "include" });
-      if (!res.ok) throw new Error();
-      const data = await res.json();
-      const info: UserInfo = {
-        email: data && typeof data.email === "string" ? data.email : "unknown",
-        picture:
-          data && typeof data.picture === "string" ? data.picture : undefined,
-      };
-      setUserInfo(info);
-      sessionStorage.setItem("current_user_info", JSON.stringify(info));
-    } catch {
-      const fallbackInfo: UserInfo = { email: "unknown" };
-      setUserInfo(fallbackInfo);
-      sessionStorage.setItem("current_user_info", JSON.stringify(fallbackInfo));
-    }
-  }, []);
+export function Footer() {
+  const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
 
   useEffect(() => {
-    if (!userInfo) {
-      fetchUserInfo();
-    }
-  }, [userInfo, fetchUserInfo]);
-
-  return userInfo;
-}
-
-export function Footer() {
-  const userInfo = useCurrentUserInfo();
+    (async () => {
+      try {
+        const res = await fetch("/api/user", { credentials: "include" });
+        if (!res.ok) throw new Error();
+        const data = await res.json();
+        setUserInfo({
+          email: data?.email || "unknown",
+          picture: data?.picture,
+        });
+      } catch {
+        setUserInfo({ email: "unknown" });
+      }
+    })();
+  }, []);
 
   return (
     <div className="mt-auto px-2 pb-4">
@@ -82,13 +64,19 @@ export function Footer() {
         )}
         <SidebarMenuItem>
           <SidebarMenuButton asChild>
-            <a
-              href={`${window.location.origin}?gcp-iap-mode=CLEAR_LOGIN_COOKIE`}
+            <button
+              onClick={() => {
+                // Clear browser storage, we are not using anystorage, this is just to make sure
+                localStorage.clear();
+                sessionStorage.clear();
+                // Redirect to clear IAP cookie
+                window.location.href = `${window.location.origin}?gcp-iap-mode=CLEAR_LOGIN_COOKIE`;
+              }}
               className="flex items-center gap-2 w-full"
             >
               <LogOut className="w-4 h-4" />
               <span>Logout</span>
-            </a>
+            </button>
           </SidebarMenuButton>
         </SidebarMenuItem>
       </SidebarMenu>
