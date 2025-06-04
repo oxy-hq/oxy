@@ -26,13 +26,13 @@ impl LogFormat {
         // Check environment variables to determine the platform
         if env::var("K_SERVICE").is_ok() || env::var("CLOUD_RUN_JOB").is_ok() {
             LogFormat::CloudRun
-        // TODO: use compact format where it matters, this is just a placeholder
+        // TODO: use json format where it matters, this is just a placeholder
         } else if env::var("AWS_LAMBDA_FUNCTION_NAME").is_ok() || env::var("VERCEL").is_ok() {
-            LogFormat::Compact
+            LogFormat::Json
         } else if cfg!(debug_assertions) {
             LogFormat::Pretty
         } else {
-            LogFormat::Json
+            LogFormat::Compact
         }
     }
 }
@@ -105,6 +105,7 @@ fn init_tracing_logging(log_to_stdout: bool) {
                         .with_target(true)
                         .with_level(true)
                         .with_writer(non_blocking)
+                        .with_ansi(false)
                         .compact(),
                 )
                 .init();
