@@ -106,6 +106,7 @@ fn init_tracing_logging(log_to_stdout: bool) {
                         .with_level(true)
                         .with_writer(non_blocking)
                         .with_ansi(false)
+                        .without_time()
                         .compact(),
                 )
                 .init();
