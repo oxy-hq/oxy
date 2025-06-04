@@ -9,17 +9,55 @@ use once_cell::sync::OnceCell;
 use oxy::db::client;
 use oxy::theme::StyledText;
 use std::env;
-use tracing_subscriber::{EnvFilter, fmt};
+use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
 static LOG_GUARD: OnceCell<tracing_appender::non_blocking::WorkerGuard> = OnceCell::new();
 
+#[derive(Debug, Clone)]
+enum LogFormat {
+    Pretty, // Human-readable format for development
+    Json,
+    CloudRun, // Google Cloud Run optimized format
+    Compact,  // Compact format for other cloud platforms
+}
+
+impl LogFormat {
+    fn detect() -> Self {
+        // Check environment variables to determine the platform
+        if env::var("K_SERVICE").is_ok() && env::var("GOOGLE_CLOUD_PROJECT").is_ok() {
+            LogFormat::CloudRun
+        // TODO: use compact format where it matters, this is just a placeholder
+        } else if env::var("AWS_LAMBDA_FUNCTION_NAME").is_ok() || env::var("VERCEL").is_ok() {
+            LogFormat::Compact
+        } else if cfg!(debug_assertions) {
+            LogFormat::Pretty
+        } else {
+            LogFormat::Json
+        }
+    }
+}
+
 fn init_tracing_logging(log_to_stdout: bool) {
+    // Default all crates to WARN level to reduce noise, then selectively enable INFO for critical components
+    // This approach is more maintainable and ensures we don't miss any noisy dependencies
     let env_filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("info"))
+        .unwrap_or_else(|_| EnvFilter::new("warn"))
+        // Core Oxy components
         .add_directive("oxy=info".parse().unwrap())
-        .add_directive("deser_incomplete::options_impl=warn".parse().unwrap())
-        .add_directive("tower_http=info".parse().unwrap());
-    let is_debug = cfg!(debug_assertions);
+        .add_directive("tower_http=info".parse().unwrap())
+        .add_directive("tower_http::trace=debug".parse().unwrap()); // Request/response tracing
+    // Allow override via environment variable
+    // If not set, auto-detects based on environment (Cloud Run, AWS Lambda, etc.)
+    let log_format = env::var("OXY_LOG_FORMAT")
+        .ok()
+        .and_then(|f| match f.to_lowercase().as_str() {
+            "pretty" => Some(LogFormat::Pretty),
+            "json" => Some(LogFormat::Json),
+            "cloudrun" => Some(LogFormat::CloudRun),
+            "compact" => Some(LogFormat::Compact),
+            _ => None,
+        })
+        .unwrap_or_else(LogFormat::detect);
 
     let log_file_path = std::path::Path::new(&client::get_state_dir()).join("oxy.log");
     let file_appender = tracing_appender::rolling::never(
@@ -32,16 +70,57 @@ fn init_tracing_logging(log_to_stdout: bool) {
         tracing_appender::non_blocking(file_appender)
     };
     LOG_GUARD.set(guard).ok();
-    let log_builder = fmt()
-        .with_env_filter(env_filter)
-        .with_target(true)
-        .with_level(true)
-        .with_writer(non_blocking);
 
-    if !is_debug {
-        log_builder.json().init();
-    } else {
-        log_builder.init();
+    match log_format {
+        LogFormat::Pretty => {
+            tracing_subscriber::registry()
+                .with(env_filter)
+                .with(
+                    fmt::layer()
+                        .with_target(true)
+                        .with_level(true)
+                        .with_writer(non_blocking)
+                        .pretty(),
+                )
+                .init();
+        }
+        LogFormat::Json => {
+            tracing_subscriber::registry()
+                .with(env_filter)
+                .with(
+                    fmt::layer()
+                        .with_target(true)
+                        .with_level(true)
+                        .with_writer(non_blocking)
+                        .json(),
+                )
+                .init();
+        }
+        LogFormat::CloudRun => {
+            // the cloud run web ui log browser is optimized for compact logs
+            tracing_subscriber::registry()
+                .with(env_filter)
+                .with(
+                    fmt::layer()
+                        .with_target(true)
+                        .with_level(true)
+                        .with_writer(non_blocking)
+                        .compact(),
+                )
+                .init();
+        }
+        LogFormat::Compact => {
+            tracing_subscriber::registry()
+                .with(env_filter)
+                .with(
+                    fmt::layer()
+                        .with_target(false)
+                        .with_level(true)
+                        .with_writer(non_blocking)
+                        .compact(),
+                )
+                .init();
+        }
     }
 }
 
