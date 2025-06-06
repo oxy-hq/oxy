@@ -38,7 +38,7 @@ impl WorkflowAPILogger {
 
 impl WorkflowLogger for WorkflowAPILogger {
     fn log(&self, text: &str) {
-        let item = LogItem::new(strip_ansi_escapes::strip_str(text), LogType::Info);
+        let item = LogItem::new(strip_ansi_escapes::strip_str(text.trim()), LogType::Info);
         self.log(item)
     }
 
@@ -68,6 +68,11 @@ impl WorkflowLogger for WorkflowAPILogger {
         }
         let text = std::mem::take(&mut self.streaming_text);
         let item = LogItem::new(text, LogType::Info);
+        self.log(item)
+    }
+
+    fn log_error(&self, text: &str) {
+        let item = LogItem::new(strip_ansi_escapes::strip_str(text), LogType::Error);
         self.log(item)
     }
 }

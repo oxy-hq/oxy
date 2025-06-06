@@ -270,12 +270,29 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
                 tool_calls: tool_calls.into_values().collect(),
             })
         };
+        let func_with_log = async || {
+            let result = func().await;
+            match result {
+                Ok(rs) => Ok(rs),
+                Err(err) => {
+                    execution_context
+                        .write_kind(EventKind::Error {
+                            message: "🔴 Error while calling LLM model. Retrying..."
+                                .primary()
+                                .to_string(),
+                        })
+                        .await?;
+                    return Err(err);
+                }
+            }
+        };
+
         let mut attempt = 0;
         backoff::future::retry_notify(
             backoff::ExponentialBackoffBuilder::default()
                 .with_max_elapsed_time(Some(AGENT_RETRY_MAX_ELAPSED_TIME))
                 .build(),
-            func,
+            func_with_log,
             |err, b| {
                 attempt += 1;
                 tracing::error!("Error happened at {:?} in OpenAI executable: {:?}", b, err);

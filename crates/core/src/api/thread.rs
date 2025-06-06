@@ -7,14 +7,16 @@ use crate::{
         writer::{EventHandler, MarkdownWriter, OutputWriter},
     },
     service::agent::{Message, run_agent},
-    utils::{find_project_path, try_unwrap_arc_mutex, try_unwrap_arc_tokio_mutex},
+    utils::{
+        create_sse_stream, find_project_path, try_unwrap_arc_mutex, try_unwrap_arc_tokio_mutex,
+    },
 };
 use axum::{
     extract::{self, Path, Query},
     http::StatusCode,
     response::IntoResponse,
+    response::sse::Sse,
 };
-use axum_streams::StreamBodyAs;
 use entity::threads;
 use entity::{prelude::Messages, prelude::Threads};
 use sea_orm::{
@@ -27,7 +29,6 @@ use std::{
     sync::{Arc, Mutex},
 };
 use tokio::sync::mpsc::Sender;
-use tokio_stream::wrappers::ReceiverStream;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -319,7 +320,7 @@ impl EventHandler for ThreadStream {
                         }
                         None => vec![],
                     },
-                    is_error: false,
+                    is_error: event_format.is_error,
                     step: event.source.kind.to_string(),
                 })
                 .await?;
@@ -409,7 +410,8 @@ pub async fn ask_thread(
     })?;
 
     let agent_ref = thread.source.to_string();
-    let (tx, rx) = tokio::sync::mpsc::channel(100);
+    let (tx, mut rx) = tokio::sync::mpsc::channel(100);
+
     let _ = tokio::spawn(async move {
         let tx_clone = tx.clone();
         let markdown_writer = Arc::new(tokio::sync::Mutex::new(MarkdownWriter::default()));
@@ -444,21 +446,33 @@ pub async fn ask_thread(
             }
             Err(err) => {
                 tracing::error!("Error running agent: {}", err);
-                let message = AnswerStream {
-                    content: format!("Error running agent: {}", err),
+                let msg = format!("🔴 Error: {}", err);
+                let answer_message = entity::messages::ActiveModel {
+                    id: ActiveValue::Set(Uuid::new_v4()),
+                    content: ActiveValue::Set(msg.clone()),
+                    is_human: ActiveValue::Set(false),
+                    thread_id: ActiveValue::Set(thread.id),
+                    created_at: ActiveValue::default(),
+                };
+                answer_message.insert(&connection).await.map_err(|err| {
+                    OxyError::DBError(format!("Failed to insert message:\n{}", err))
+                })?;
+                let error_event = AnswerStream {
+                    content: msg,
                     references: vec![],
                     is_error: true,
                     step: "".to_string(),
                 };
                 tx_clone
-                    .send(message)
+                    .send(error_event)
                     .await
                     .map_err(|_| OxyError::RuntimeError("Failed to send message".to_string()))?;
                 Result::<(), OxyError>::Ok(())
             }
         }
     });
-    Ok(StreamBodyAs::json_nl(ReceiverStream::new(rx)))
+
+    Ok(Sse::new(create_sse_stream(rx)))
 }
 
 #[derive(Deserialize)]

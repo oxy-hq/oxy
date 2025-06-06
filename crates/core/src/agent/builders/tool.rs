@@ -62,8 +62,8 @@ impl Executable<OpenAIExecutableResponse> for OpenAITool {
         for tool_ret in response.iter() {
             if let Err(e) = tool_ret {
                 execution_context
-                    .write_kind(EventKind::Message {
-                        message: e.to_string().error().to_string(),
+                    .write_kind(EventKind::Error {
+                        message: e.to_string(),
                     })
                     .await?;
             }

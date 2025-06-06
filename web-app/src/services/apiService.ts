@@ -2,12 +2,56 @@ import { App, AppItem } from "./../types/app";
 import { DatabaseInfo } from "@/types/database";
 import { Service } from "./service";
 import { apiClient } from "./axios";
-import { readMessageFromStreamData } from "@/libs/utils/stream";
 import { apiBaseURL } from "./env";
 import { ThreadCreateRequest } from "@/types/chat";
 import { TestStreamMessage } from "@/types/eval";
 import { Workflow } from "@/types/workflow";
 import { fetchEventSource } from "@microsoft/fetch-event-source";
+import { LogItem } from "./types";
+
+const fetchSSE = async <T>(
+  url: string,
+  options: {
+    method?: string;
+    body?: unknown;
+    onMessage: (data: T) => void;
+    onOpen?: () => void;
+    eventTypes?: string[];
+  },
+) => {
+  const {
+    method = "POST",
+    body,
+    onMessage,
+    onOpen,
+    eventTypes = ["message"],
+  } = options;
+
+  await fetchEventSource(url, {
+    method,
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: body ? JSON.stringify(body) : undefined,
+    async onopen() {
+      onOpen?.();
+    },
+    onmessage(ev) {
+      if (!ev.event || eventTypes.includes(ev.event)) {
+        try {
+          const data = JSON.parse(ev.data);
+          onMessage(data);
+        } catch (error) {
+          console.error("Error parsing SSE data:", error);
+        }
+      }
+    },
+    onerror(err) {
+      console.error("SSE error:", err);
+      throw err;
+    },
+  });
+};
 
 export const apiService: Service = {
   async listThreads(page?: number, limit?: number) {
@@ -54,17 +98,10 @@ export const apiService: Service = {
     testIndex: number,
     onReadStream: (event: TestStreamMessage) => void,
   ) {
-    const url = `/agents/${pathb64}/tests/${testIndex}`;
-    const options = {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-    };
-    const response = await fetch(apiBaseURL + url, options);
-    if (response) {
-      await readMessageFromStreamData(response, onReadStream);
-    }
+    const url = `${apiBaseURL}/agents/${pathb64}/tests/${testIndex}`;
+    await fetchSSE(url, {
+      onMessage: onReadStream,
+    });
   },
   async ask(
     threadId: string,
@@ -72,21 +109,13 @@ export const apiService: Service = {
     onReadStream,
     onMessageSent,
   ) {
-    const url = `/threads/${threadId}/ask`;
-    const options = {
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        question: question,
-      }),
-      method: "POST",
-    };
-    const response = await fetch(apiBaseURL + url, options);
-    if (response) {
-      onMessageSent?.();
-      await readMessageFromStreamData(response, onReadStream);
-    }
+    const url = `${apiBaseURL}/threads/${threadId}/ask`;
+    await fetchSSE(url, {
+      body: { question },
+      onMessage: onReadStream,
+      onOpen: onMessageSent,
+      eventTypes: ["message", "error"],
+    });
   },
   async askTask(
     threadId: string,
@@ -94,21 +123,13 @@ export const apiService: Service = {
     onReadStream,
     onMessageSent,
   ) {
-    const url = `/threads/${threadId}/task`;
-    const options = {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        question: question,
-      }),
-    };
-    const response = await fetch(apiBaseURL + url, options);
-    if (response) {
-      onMessageSent?.();
-      await readMessageFromStreamData(response, onReadStream);
-    }
+    const url = `${apiBaseURL}/threads/${threadId}/task`;
+    await fetchSSE(url, {
+      body: { question },
+      onMessage: onReadStream,
+      onOpen: onMessageSent,
+      eventTypes: ["message", "error"],
+    });
   },
   async getAgent(pathb64: string) {
     const response = await apiClient.get("/agents/" + pathb64);
@@ -143,25 +164,9 @@ export const apiService: Service = {
   },
   async askAgent(agentPathb64: string, question: string, onReadStream) {
     const url = `${apiBaseURL}/agents/${agentPathb64}/ask`;
-
-    await fetchEventSource(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ question }),
-      onmessage(ev) {
-        try {
-          const data = JSON.parse(ev.data);
-          onReadStream(data);
-        } catch (error) {
-          console.error("Error parsing SSE data:", error);
-        }
-      },
-      onerror(err) {
-        console.error("SSE error:", err);
-        throw err;
-      },
+    await fetchSSE(url, {
+      body: { question },
+      onMessage: onReadStream,
     });
   },
   async listApps(): Promise<AppItem[]> {
@@ -246,5 +251,23 @@ export const apiService: Service = {
   async buildDatabase() {
     const response = await apiClient.post("/databases/build");
     return response.data;
+  },
+  async runWorkflow(
+    pathb64: string,
+    onLogItem: (logItem: LogItem) => void,
+  ): Promise<void> {
+    const url = `${apiBaseURL}/workflows/${pathb64}/run`;
+    await fetchSSE(url, {
+      onMessage: onLogItem,
+    });
+  },
+  async runWorkflowThread(
+    threadId: string,
+    onLogItem: (logItem: LogItem) => void,
+  ): Promise<void> {
+    const url = `${apiBaseURL}/threads/${threadId}/workflow`;
+    await fetchSSE(url, {
+      onMessage: onLogItem,
+    });
   },
 };

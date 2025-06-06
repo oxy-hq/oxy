@@ -2,10 +2,13 @@ use super::thread::ThreadStream;
 use crate::api::thread::AnswerStream;
 use crate::config::ConfigBuilder;
 use crate::config::model::AgentConfig;
-use crate::service::test::{TestStreamMessage, run_test as run_agent_test};
+use crate::service::test::run_test as run_agent_test;
+use crate::utils::create_sse_stream_from_stream;
 use crate::{
-    auth::extractor::AuthenticatedUserExtractor, execute::writer::MarkdownWriter,
-    service::agent::run_agent, utils::find_project_path,
+    auth::extractor::AuthenticatedUserExtractor,
+    execute::writer::MarkdownWriter,
+    service::agent::run_agent,
+    utils::{create_sse_stream, find_project_path},
 };
 use async_stream::stream;
 use axum::response::sse::{Event, Sse};
@@ -14,11 +17,12 @@ use axum::{
     http::StatusCode,
     response::IntoResponse,
 };
-use axum_streams::StreamBodyAs;
 use base64::{Engine, prelude::BASE64_STANDARD};
+use futures::Stream;
 use serde::{Deserialize, Serialize};
 use std::{
     path::PathBuf,
+    pin::Pin,
     sync::{Arc, Mutex},
 };
 use utoipa::ToSchema;
@@ -142,46 +146,57 @@ pub async fn get_agent(
     Ok(extract::Json(agent))
 }
 
+type EventStream = Pin<Box<dyn Stream<Item = Result<Event, axum::Error>> + Send>>;
+
+fn create_error_stream(error_message: String) -> EventStream {
+    Box::pin(stream! {
+        let error_msg = serde_json::json!({
+            "error": error_message,
+            "event": null
+        });
+        yield Ok::<_, axum::Error>(
+            Event::default()
+                .event("error")
+                .data(error_msg.to_string())
+        );
+    })
+}
+
+fn decode_path_from_base64(pathb64: String) -> Result<String, String> {
+    let decoded_path = BASE64_STANDARD
+        .decode(pathb64)
+        .map_err(|e| format!("Failed to decode path: {}", e))?;
+
+    String::from_utf8(decoded_path).map_err(|e| format!("Failed to decode path: {}", e))
+}
+
 pub async fn run_test(
     Path((pathb64, test_index)): Path<(String, usize)>,
 ) -> Result<impl IntoResponse, StatusCode> {
-    let decoded_path: Vec<u8> = match BASE64_STANDARD.decode(pathb64) {
-        Ok(decoded_path) => decoded_path,
-        Err(e) => {
-            return Ok(StreamBodyAs::json_nl(stream! {
-                yield TestStreamMessage {
-                    error: Some(format!("Failed to decode path: {}", e)),
-                    event: None,
-                };
-            }));
-        }
-    };
-    let path = match String::from_utf8(decoded_path) {
+    let path = match decode_path_from_base64(pathb64) {
         Ok(path) => path,
-        Err(e) => {
-            return Ok(StreamBodyAs::json_nl(stream! {
-                yield TestStreamMessage {
-                    error: Some(format!("Failed to decode path: {}", e)),
-                    event: None,
-                };
-            }));
-        }
+        Err(error) => return Ok(Sse::new(create_error_stream(error))),
     };
 
     let project_path = match find_project_path() {
         Ok(path) => path.to_string_lossy().to_string(),
         Err(e) => {
-            return Ok(StreamBodyAs::json_nl(stream! {
-                yield TestStreamMessage {
-                    error: Some(format!("Failed to find project path: {}", e)),
-                    event: None,
-                };
-            }));
+            let error = format!("Failed to find project path: {}", e);
+            return Ok(Sse::new(create_error_stream(error)));
         }
     };
 
-    let stream = run_agent_test(project_path, path, test_index).await?;
-    Ok(StreamBodyAs::json_nl(stream))
+    let test_stream = match run_agent_test(project_path, path, test_index).await {
+        Ok(stream) => stream,
+        Err(e) => {
+            let error = format!("Failed to run agent test: {}", e);
+            return Ok(Sse::new(create_error_stream(error)));
+        }
+    };
+
+    Ok(Sse::new(Box::pin(create_sse_stream_from_stream(Box::pin(
+        test_stream,
+    )))))
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -238,7 +253,7 @@ pub async fn ask_agent(
         if let Err(err) = result {
             tracing::error!("Error running agent: {}", err);
             let message = AnswerStream {
-                content: format!("Error running agent: {}", err),
+                content: format!("🔴 Error: {}", err),
                 references: vec![],
                 is_error: true,
                 step: "".to_string(),
@@ -247,38 +262,7 @@ pub async fn ask_agent(
         }
     });
 
-    let stream = async_stream::stream! {
-        let mut receiver = rx;
-        while let Some(message) = receiver.recv().await {
-            match serde_json::to_string(&message) {
-                Ok(json_data) => {
-                    yield Ok::<_, axum::Error>(
-                        Event::default()
-                            .event("message")
-                            .data(json_data)
-                    );
-                }
-                Err(e) => {
-                    tracing::error!("Failed to serialize message: {}", e);
-                    let error_msg = serde_json::json!({
-                        "content": "Error serializing response",
-                        "references": [],
-                        "is_error": true,
-                        "step": ""
-                    });
-                    yield Ok::<_, axum::Error>(
-                        Event::default()
-                            .event("error")
-                            .data(error_msg.to_string())
-                    );
-                }
-            }
-        }
-    };
+    let stream = create_sse_stream(rx);
 
-    Ok(Sse::new(stream).keep_alive(
-        axum::response::sse::KeepAlive::new()
-            .interval(std::time::Duration::from_secs(15))
-            .text("keep-alive-text"),
-    ))
+    Ok(Sse::new(stream))
 }

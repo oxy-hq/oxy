@@ -3,8 +3,12 @@ use std::path::{Path, PathBuf};
 use crate::config::model::Dimension;
 use crate::{errors::OxyError, theme::*};
 use arrow::array::RecordBatch;
+use async_stream::stream;
+use axum::response::sse::Event;
 use csv::StringRecord;
 use duckdb::Connection;
+use futures::Stream;
+use serde::Serialize;
 use slugify::slugify;
 use syntect::{
     easy::HighlightLines,
@@ -12,6 +16,7 @@ use syntect::{
     parsing::SyntaxSet,
     util::{LinesWithEndings, as_24_bit_terminal_escaped},
 };
+use tokio::sync::mpsc;
 use tokio::task::spawn_blocking;
 
 pub const MAX_DISPLAY_ROWS: usize = 100;
@@ -309,4 +314,62 @@ fn remove_file_extension(path: &Path) -> PathBuf {
     }
 
     result
+}
+
+pub fn create_sse_stream<T: Serialize>(
+    mut receiver: mpsc::Receiver<T>,
+) -> impl futures::Stream<Item = Result<Event, axum::Error>> {
+    stream! {
+        while let Some(item) = receiver.recv().await {
+            match serde_json::to_string(&item) {
+                Ok(json_data) => {
+                    yield Ok::<_, axum::Error>(
+                        Event::default()
+                            .event("message")
+                            .data(json_data)
+                    );
+                }
+                Err(e) => {
+                    tracing::error!("Failed to serialize data: {}", e);
+                    let error_event = serde_json::json!({
+                        "message": "Error serializing data"
+                    });
+                    yield Ok::<_, axum::Error>(
+                        Event::default()
+                            .event("error")
+                            .data(error_event.to_string())
+                    );
+                }
+            }
+        }
+    }
+}
+
+pub fn create_sse_stream_from_stream<T: Serialize>(
+    mut stream: impl Stream<Item = T> + Unpin,
+) -> impl futures::Stream<Item = Result<Event, axum::Error>> {
+    stream! {
+        while let Some(item) =futures::StreamExt::next( &mut stream).await {
+            match serde_json::to_string(&item) {
+                Ok(json_data) => {
+                    yield Ok::<_, axum::Error>(
+                        Event::default()
+                            .event("message")
+                            .data(json_data)
+                    );
+                }
+                Err(e) => {
+                    tracing::error!("Failed to serialize data: {}", e);
+                    let error_event = serde_json::json!({
+                        "message": "Error serializing log data",
+                    });
+                    yield Ok::<_, axum::Error>(
+                        Event::default()
+                            .event("error")
+                            .data(error_event.to_string())
+                    );
+                }
+            }
+        }
+    }
 }

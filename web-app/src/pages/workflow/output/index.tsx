@@ -1,8 +1,8 @@
 import React from "react";
-import { LogItem } from "@/hooks/api/runWorkflow";
 import Header from "./Header";
 import OutputLogs from "./Logs";
 import EmptyState from "@/components/ui/EmptyState";
+import { LogItem } from "@/services/types";
 
 interface WorkflowOutputProps {
   showOutput: boolean;

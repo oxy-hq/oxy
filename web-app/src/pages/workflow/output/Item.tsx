@@ -1,6 +1,6 @@
-import { LogType } from "@/hooks/api/runWorkflow";
 import { cx } from "class-variance-authority";
 import ExpandableOutput from "./ExpandableOutput";
+import { LogType } from "@/services/types";
 
 const getLogColor = (logType: LogType) => {
   switch (logType) {

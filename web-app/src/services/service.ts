@@ -13,6 +13,7 @@ import { FileTreeModel } from "@/types/file";
 import { App, AppItem, Chunk } from "@/types/app";
 import { Workflow } from "@/types/workflow";
 import { DatabaseInfo, DatabaseSyncResponse } from "@/types/database";
+import { LogItem } from "./types";
 
 export interface Service {
   listThreads(page?: number, limit?: number): Promise<ThreadsResponse>;
@@ -77,6 +78,14 @@ export interface Service {
     options?: { datasets?: string[] },
   ): Promise<DatabaseSyncResponse>;
   buildDatabase(): Promise<{ success: boolean; message?: string }>;
+  runWorkflow(
+    pathb64: string,
+    onLogItem: (logItem: LogItem) => void,
+  ): Promise<void>;
+  runWorkflowThread(
+    threadId: string,
+    onLogItem: (logItem: LogItem) => void,
+  ): Promise<void>;
 }
 
 export const service = apiService;

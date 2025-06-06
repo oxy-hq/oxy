@@ -1,6 +1,5 @@
+import { LogItem } from "@/services/types";
 import { create } from "zustand";
-
-import { LogItem } from "@/hooks/api/runWorkflow";
 
 export type NodeData = {
   task: TaskConfigWithId;
