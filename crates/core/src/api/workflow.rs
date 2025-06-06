@@ -15,21 +15,21 @@ use crate::config::model::Workflow;
 use crate::service::workflow as service;
 use crate::service::workflow::WorkflowInfo;
 use crate::service::workflow::get_workflow;
+use crate::utils::create_sse_stream;
 use crate::utils::find_project_path;
 use crate::workflow::loggers::api::WorkflowAPILogger;
 use crate::workflow::loggers::types::LogItem;
+use crate::workflow::loggers::types::WorkflowLogger;
 use axum::extract::{self, Path};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use axum_streams::StreamBodyAs;
+use axum::response::sse::Sse;
 use sea_orm::ActiveModelTrait;
 use serde::Serialize;
 use std::fs::OpenOptions;
 use tokio::sync::mpsc;
 
 use crate::db::client::establish_connection;
-
-use tokio_stream::wrappers::ReceiverStream;
 
 #[derive(Serialize)]
 pub struct GetWorkflowResponse {
@@ -125,7 +125,7 @@ pub async fn build_workflow_api_logger(
     method(post),
     path = "/workflows/{pathb64}/run",
     responses(
-        (status = 200, description = "Success", body = (), content_type = "application/json")
+        (status = 200, description = "Success", body = (), content_type = "text/event-stream")
     )
 )]
 pub async fn run_workflow(Path(pathb64): Path<String>) -> Result<impl IntoResponse, StatusCode> {
@@ -141,19 +141,29 @@ pub async fn run_workflow(Path(pathb64): Path<String>) -> Result<impl IntoRespon
 
     let full_workflow_path = project_path.join(&path);
     let (logger, receiver) = build_workflow_api_logger(&full_workflow_path).await;
+
     let _ = tokio::spawn(async move {
-        let _ = service::run_workflow(&path, logger, false, None).await;
         tracing::info!("Workflow run started");
+        let rs = service::run_workflow(&path, logger.clone(), false, None).await;
+        match rs {
+            Ok(_) => tracing::info!("Workflow run completed successfully"),
+            Err(e) => {
+                tracing::error!("Workflow run failed: {:?}", e);
+                logger.log_error(&format!("Workflow run failed: {:?}", e));
+            }
+        }
     });
-    let stream = ReceiverStream::new(receiver);
-    Ok(StreamBodyAs::json_nl(stream))
+
+    let stream = create_sse_stream(receiver);
+
+    Ok(Sse::new(stream))
 }
 
 #[utoipa::path(
     method(post),
     path = "/workflows/{pathb64}/run-thread",
     responses(
-        (status = 200, description = "Success", body = (), content_type = "application/json")
+        (status = 200, description = "Success", body = (), content_type = "text/event-stream")
     )
 )]
 pub async fn run_workflow_thread(Path(id): Path<String>) -> Result<impl IntoResponse, StatusCode> {
@@ -177,6 +187,7 @@ pub async fn run_workflow_thread(Path(id): Path<String>) -> Result<impl IntoResp
 
     let full_workflow_path = project_path.join(&workflow_ref);
     let (logger, receiver) = build_workflow_api_logger(&full_workflow_path).await;
+
     let _ = tokio::spawn(async move {
         let _ = service::run_workflow(&workflow_ref, logger, false, None).await;
 
@@ -188,8 +199,10 @@ pub async fn run_workflow_thread(Path(id): Path<String>) -> Result<impl IntoResp
             tracing::info!("Thread updated with logs");
         }
     });
-    let stream = ReceiverStream::new(receiver);
-    Ok(StreamBodyAs::json_nl(stream))
+
+    let stream = create_sse_stream(receiver);
+
+    Ok(Sse::new(stream))
 }
 
 #[derive(Serialize, Deserialize)]

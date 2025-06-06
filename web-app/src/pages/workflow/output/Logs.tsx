@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect } from "react";
 import { LoaderIcon } from "lucide-react";
-import { LogItem } from "@/hooks/api/runWorkflow";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import dayjs from "dayjs";
 import OutputItem from "./Item";
 import { cn } from "@/libs/shadcn/utils";
+import { LogItem } from "@/services/types";
 
 interface OutputLogsProps {
   isPending: boolean;

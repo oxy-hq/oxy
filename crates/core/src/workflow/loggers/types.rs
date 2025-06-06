@@ -34,6 +34,7 @@ impl LogItem {
 }
 pub trait WorkflowLogger: Send + Sync {
     fn log(&self, text: &str);
+    fn log_error(&self, text: &str);
     fn log_sql_query(&self, query: &str);
     fn log_table_result(&self, table: Table);
     fn log_text_chunk(&mut self, chunk: &str, is_finished: bool);

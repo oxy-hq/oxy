@@ -36,4 +36,8 @@ impl WorkflowLogger for WorkflowCLILogger {
             std::io::stdout().flush().unwrap();
         }
     }
+
+    fn log_error(&self, text: &str) {
+        println!("{}", text.error());
+    }
 }

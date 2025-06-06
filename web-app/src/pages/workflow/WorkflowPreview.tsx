@@ -7,13 +7,13 @@ import useWorkflow, {
   TaskConfigWithId,
 } from "@/stores/useWorkflow";
 import { useMutation } from "@tanstack/react-query";
-import runWorkflow, { LogItem } from "@/hooks/api/runWorkflow";
 import useWorkflowConfig from "@/hooks/api/useWorkflowConfig.ts";
 import useWorkflowLogs from "@/hooks/api/useWorkflowLogs";
 import WorkflowDiagram from "./WorkflowDiagram";
 import WorkflowOutput from "./output";
 import { throttle } from "lodash";
 import { ResizableHandle } from "@/components/ui/shadcn/resizable";
+import { service } from "@/services/service";
 import {
   ResizablePanel,
   ResizablePanelGroup,
@@ -22,6 +22,7 @@ import { cn } from "@/libs/shadcn/utils";
 import { Button } from "@/components/ui/shadcn/button";
 import { LoaderCircle, LogsIcon, PlayIcon } from "lucide-react";
 import { Skeleton } from "@/components/ui/shadcn/skeleton";
+import { LogItem } from "@/services/types";
 
 const getTaskId = (task_name: string) => {
   return task_name + "__" + uuidv4();
@@ -88,12 +89,7 @@ export const WorkflowPreview = ({ pathb64 }: { pathb64: string }) => {
   const appendLogs = useWorkflow((state) => state.appendLogs);
 
   const run = useMutation({
-    mutationFn: runWorkflow,
-    onMutate: () => {
-      setLogs([]);
-    },
-    onSuccess: async (data) => {
-      if (!data) return;
+    mutationFn: async ({ workflowPath }: { workflowPath: string }) => {
       let buffer: LogItem[] = [];
       const flushLogs = throttle(
         () => {
@@ -105,10 +101,19 @@ export const WorkflowPreview = ({ pathb64 }: { pathb64: string }) => {
         { leading: true, trailing: true },
       );
 
-      for await (const logItem of data) {
+      const pathBase64 = btoa(workflowPath);
+      await service.runWorkflow(pathBase64, (logItem: LogItem) => {
         buffer.push(logItem);
         flushLogs();
+      });
+
+      // Flush any remaining logs
+      if (buffer.length > 0) {
+        appendLogs(buffer);
       }
+    },
+    onMutate: () => {
+      setLogs([]);
     },
   });
 

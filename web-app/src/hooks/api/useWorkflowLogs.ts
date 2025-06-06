@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import queryKeys from "./queryKey";
 import { apiClient } from "@/services/axios";
-import { LogItem } from "./runWorkflow";
+import { LogItem } from "@/services/types";
 
 const fetchWorkflowLogs = async (relativePath: string) => {
   const pathb64 = btoa(relativePath);

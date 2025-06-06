@@ -32,6 +32,9 @@ pub enum EventKind {
     Message {
         message: String,
     },
+    Error {
+        message: String,
+    },
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

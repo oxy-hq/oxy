@@ -115,19 +115,27 @@ impl EventHandler for AgentCLIHandler {
             CONSISTENCY_SOURCE => match event.kind {
                 EventKind::Progress { progress } => match progress {
                     ProgressType::Started(total) => {
-                        self.pbar_handler.get_or_create_bar(&event.source.id, total);
+                        __self
+                            .pbar_handler
+                            .get_or_create_bar(&event.source.id, total);
                     }
                     ProgressType::Updated(progress) => {
-                        self.pbar_handler.update_bar(&event.source.id, progress)?;
+                        __self.pbar_handler.update_bar(&event.source.id, progress)?;
                     }
                     ProgressType::Finished => {
-                        self.pbar_handler.remove_bar(&event.source.id);
+                        __self.pbar_handler.remove_bar(&event.source.id);
                     }
                 },
                 EventKind::Message { message } => {
                     println!("{}", message);
                 }
-                _ => {}
+                EventKind::Error { message } => {
+                    println!("{}", message.error());
+                }
+                EventKind::Started { .. }
+                | EventKind::Updated { .. }
+                | EventKind::DataAppCreated { .. }
+                | EventKind::Finished { .. } => {}
             },
             CONCURRENCY_SOURCE => {}
             _ => match event.kind {
@@ -157,7 +165,13 @@ impl EventHandler for AgentCLIHandler {
                 EventKind::Message { message } => {
                     println!("{}", message);
                 }
-                _ => {}
+                EventKind::Error { message } => {
+                    println!("{}", message.error());
+                }
+                EventKind::Started { .. }
+                | EventKind::DataAppCreated { .. }
+                | EventKind::Finished { .. }
+                | EventKind::Progress { .. } => {}
             },
         }
         Ok(())

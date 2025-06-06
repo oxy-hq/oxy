@@ -111,6 +111,12 @@ impl OutputWriter<String> for MarkdownWriter {
                     }
                     _ => None,
                 },
+                EventKind::Error { message } => Some(EventFormat {
+                    content: format!("🔴 **Error:** {}\n\n", message),
+                    reference: None,
+                    is_error: true,
+                    kind: event.source.kind.to_string(),
+                }),
                 _ => None,
             },
         };

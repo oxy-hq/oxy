@@ -1,9 +1,9 @@
 import PageHeader from "@/components/PageHeader";
 import { Separator } from "@/components/ui/shadcn/separator";
 import queryKeys from "@/hooks/api/queryKey";
-import { LogItem } from "@/hooks/api/runWorkflow";
-import runWorkflowThread from "@/hooks/api/runWorkflowThread";
 import OutputLogs from "@/pages/workflow/output/Logs";
+import { service } from "@/services/service";
+import { LogItem } from "@/services/types";
 import { ThreadItem } from "@/types/chat";
 import { useQueryClient } from "@tanstack/react-query";
 import { throttle } from "lodash";
@@ -20,27 +20,27 @@ const WorkflowThread = ({ thread }: { thread: ThreadItem }) => {
   const hasRun = useRef(false);
   const [isPending, setIsPending] = useState(false);
 
-  const processLogs = useCallback(
-    async (data: AsyncGenerator<LogItem, void, unknown> | undefined) => {
-      if (!data) return;
-      let buffer: LogItem[] = [];
-      const flushLogs = throttle(
-        () => {
-          const logsToAppend = [...buffer];
-          setLogs((prev) => [...prev, ...logsToAppend]);
-          buffer = [];
-        },
-        500,
-        { leading: true, trailing: true },
-      );
+  const appendLogs = useCallback((newLogs: LogItem[]) => {
+    setLogs((prev) => [...prev, ...newLogs]);
+  }, []);
 
-      for await (const logItem of data) {
-        buffer.push(logItem);
-        flushLogs();
-      }
-    },
-    [],
-  );
+  const processLogs = useCallback(() => {
+    let buffer: LogItem[] = [];
+    const flushLogs = throttle(
+      () => {
+        const logsToAppend = [...buffer];
+        appendLogs(logsToAppend);
+        buffer = [];
+      },
+      500,
+      { leading: true, trailing: true },
+    );
+
+    return (logItem: LogItem) => {
+      buffer.push(logItem);
+      flushLogs();
+    };
+  }, [appendLogs]);
 
   useEffect(() => {
     if (hasRun.current) {
@@ -53,14 +53,23 @@ const WorkflowThread = ({ thread }: { thread: ThreadItem }) => {
       setLogs(JSON.parse(thread.output));
       return;
     }
-    // eslint-disable-next-line promise/catch-or-return
-    runWorkflowThread({ threadId: thread.id })
-      .then(async (data) => {
-        setIsPending(true);
-        setLogs([]);
-        return processLogs(data);
-      })
+
+    const onLogItem = processLogs();
+
+    setIsPending(true);
+    setLogs([]);
+
+    service
+      .runWorkflowThread(thread.id, onLogItem)
       .finally(() => {
+        setIsPending(false);
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.thread.list(),
+          type: "all",
+        });
+      })
+      .catch((error) => {
+        console.error("Error running workflow thread:", error);
         setIsPending(false);
         queryClient.invalidateQueries({
           queryKey: queryKeys.thread.list(),

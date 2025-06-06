@@ -9,20 +9,19 @@ use crate::{
         writer::EventHandler,
     },
     service::agent::run_agent,
-    utils::find_project_path,
+    utils::{create_sse_stream, find_project_path},
 };
 use axum::{
     extract::{self, Path},
     http::StatusCode,
     response::IntoResponse,
+    response::sse::Sse,
 };
-use axum_streams::StreamBodyAs;
 use entity::prelude::Threads;
 use sea_orm::ColumnTrait;
 use sea_orm::{ActiveModelTrait, ActiveValue, EntityTrait, QueryFilter, QueryOrder, QuerySelect};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::Sender;
-use tokio_stream::wrappers::ReceiverStream;
 use uuid::Uuid;
 
 #[derive(Serialize)]
@@ -183,7 +182,7 @@ pub async fn ask_task(
         .unwrap();
 
     let agent_ref = config.get_builder_agent_path().await.unwrap();
-    let (tx, rx) = tokio::sync::mpsc::channel(100);
+    let (tx, mut rx) = tokio::sync::mpsc::channel(100);
     let _ = tokio::spawn(async move {
         let tx_clone = tx.clone();
         let thread_stream = TaskStream::new(tx);
@@ -239,7 +238,7 @@ pub async fn ask_task(
                 tracing::error!("Error running agent: {}", e);
                 tx_clone
                     .send(AnswerStream {
-                        content: format!("Error running agent: {}", e),
+                        content: format!("🔴 Error: {}", e),
                         is_error: true,
                         step: "".to_string(),
                         file_path: "".to_string(),
@@ -249,5 +248,7 @@ pub async fn ask_task(
             }
         }
     });
-    Ok(StreamBodyAs::json_nl(ReceiverStream::new(rx)))
+
+    let stream = create_sse_stream(rx);
+    Ok(Sse::new(stream))
 }

@@ -133,7 +133,13 @@ where
                 EventKind::Message { message } => {
                     self.logger.log(&message);
                 }
-                _ => {}
+                EventKind::Error { message } => {
+                    self.logger.log_error(&message);
+                }
+                EventKind::Started { .. } => {}
+                EventKind::Updated { .. } => {}
+                EventKind::DataAppCreated { .. } => {}
+                EventKind::Finished { .. } => {}
             },
             CONCURRENCY_SOURCE => {}
             _ => match event.kind {
@@ -155,7 +161,12 @@ where
                 EventKind::Message { message } => {
                     self.logger.log(&message);
                 }
-                _ => {}
+                EventKind::Error { message } => {
+                    self.logger.log_error(&message);
+                }
+                EventKind::DataAppCreated { .. } => {}
+                EventKind::Finished { message, .. } => {}
+                EventKind::Progress { .. } => {}
             },
         }
         Ok(())
