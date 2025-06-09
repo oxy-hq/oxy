@@ -61,7 +61,7 @@
     "highlight.js": "^11.11.1",
     "invariant": "^2.2.4",
     "lodash": "^4.17.21",
-    "lucide-react": "^0.511.0",
+    "lucide-react": "^0.513.0",
     "memfs": "^4.17.2",
     "monaco-editor": "^0.52.2",
     "monaco-yaml": "^5.4.0",
