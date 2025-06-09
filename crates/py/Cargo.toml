@@ -24,4 +24,4 @@ name = "oxy_py"
 crate-type = ["cdylib"]
 
 [build-dependencies]
-pyo3-build-config = "=0.23.3"
+pyo3-build-config = "=0.25.0"
