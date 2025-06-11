@@ -11,7 +11,6 @@ use crate::{
         builders::{ExecutableBuilder, map::ParamMapper},
         types::{EventKind, OutputContainer},
     },
-    theme::StyledText,
     tools::{ToolInput, ToolLauncherExecutable},
 };
 

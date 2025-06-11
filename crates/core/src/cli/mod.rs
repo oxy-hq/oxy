@@ -160,6 +160,12 @@ struct McpSseArgs {
     /// web-based integrations. Default is 8000.
     #[clap(long, default_value_t = 8000)]
     port: u16,
+    /// Host address to bind the MCP SSE server
+    ///
+    /// Specify which host address to bind the MCP SSE server.
+    /// Default is 0.0.0.0 to listen on all interfaces.
+    #[clap(long, default_value = "0.0.0.0")]
+    host: String,
 }
 
 #[derive(Parser, Debug)]
@@ -434,6 +440,12 @@ struct ServeArgs {
     /// Default is 3000 if not specified.
     #[clap(long, default_value_t = 3000)]
     port: u16,
+    /// Host address to bind the web application server
+    ///
+    /// Specify which host address to bind the Oxy web interface.
+    /// Default is 0.0.0.0 to listen on all interfaces.
+    #[clap(long, default_value = "0.0.0.0")]
+    host: String,
     /// Authentication mode for the web application
     ///
     /// Choose between 'local' for development or 'oauth' for
@@ -630,10 +642,10 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             }
         }
         Some(SubCommand::Serve(serve_args)) => {
-            start_server_and_web_app(serve_args.port, serve_args.auth_mode).await;
+            start_server_and_web_app(serve_args.port, serve_args.host, serve_args.auth_mode).await;
         }
         Some(SubCommand::McpSse(mcp_sse_args)) => {
-            let cancellation_token = start_mcp_sse_server(mcp_sse_args.port)
+            let cancellation_token = start_mcp_sse_server(mcp_sse_args.port, mcp_sse_args.host)
                 .await
                 .expect("Failed to start MCP SSE server");
 
@@ -857,7 +869,10 @@ pub async fn start_mcp_stdio(project_path: PathBuf) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub async fn start_mcp_sse_server(mut port: u16) -> anyhow::Result<CancellationToken> {
+pub async fn start_mcp_sse_server(
+    mut port: u16,
+    host: String,
+) -> anyhow::Result<CancellationToken> {
     // require webserver to be started inside the project path
     let project_path = match find_project_path() {
         Ok(path) => path,
@@ -866,22 +881,56 @@ pub async fn start_mcp_sse_server(mut port: u16) -> anyhow::Result<CancellationT
             std::process::exit(1);
         }
     };
-    while tokio::net::TcpListener::bind(("0.0.0.0", port))
-        .await
-        .is_err()
-    {
-        println!("Port {} for mcp is occupied. Trying next port...", port);
-        port += 1;
+
+    let original_port = port;
+    let mut port_increment_count = 0;
+    const MAX_PORT_INCREMENTS: u16 = 10;
+
+    loop {
+        match tokio::net::TcpListener::bind((host.as_str(), port)).await {
+            Ok(_) => break,
+            Err(e) => {
+                if port <= 1024 && e.kind() == std::io::ErrorKind::PermissionDenied {
+                    eprintln!(
+                        "Permission denied binding to port {}. Try running with sudo or use a port above 1024.",
+                        port
+                    );
+                    std::process::exit(1);
+                }
+
+                if port_increment_count >= MAX_PORT_INCREMENTS {
+                    eprintln!(
+                        "Failed to bind to any port after trying {} ports starting from {}. Error: {}",
+                        port_increment_count + 1,
+                        original_port,
+                        e
+                    );
+                    std::process::exit(1);
+                }
+
+                println!("Port {} for mcp is occupied. Trying next port...", port);
+                port += 1;
+                port_increment_count += 1;
+            }
+        }
     }
+
     let service = OxyMcpServer::new(project_path.clone()).await?;
-    let bind = SocketAddr::from(([0, 0, 0, 0], port));
+    let bind = format!("{}:{}", host, port)
+        .parse::<SocketAddr>()
+        .unwrap_or_else(|_| SocketAddr::from(([0, 0, 0, 0], port)));
     let ct = SseServer::serve(bind)
         .await?
         .with_service(move || service.to_owned());
 
+    let display_host = if host == "0.0.0.0" {
+        "localhost"
+    } else {
+        &host
+    };
     println!(
         "{}",
-        format!("MCP server running at http://localhost:{}", port).secondary()
+        format!("MCP server running at http://{}:{}", display_host, port).secondary()
     );
     anyhow::Ok(ct)
 }
@@ -911,7 +960,7 @@ pub async fn handle_test_command(test_args: TestArgs) -> Result<(), OxyError> {
 #[derive(OpenApi)]
 struct ApiDoc;
 
-pub async fn start_server_and_web_app(mut web_port: u16, auth_mode: AuthMode) {
+pub async fn start_server_and_web_app(mut web_port: u16, web_host: String, auth_mode: AuthMode) {
     // require webserver to be started inside the project path
     match find_project_path() {
         Ok(path) => path,
@@ -945,15 +994,42 @@ pub async fn start_server_and_web_app(mut web_port: u16, auth_mode: AuthMode) {
     }
 
     let web_server_task = tokio::spawn(async move {
-        while tokio::net::TcpListener::bind(("0.0.0.0", web_port))
-            .await
-            .is_err()
-        {
-            println!(
-                "Port {} for web app is occupied. Trying next port...",
-                web_port
-            );
-            web_port += 1;
+        let original_port = web_port;
+        let mut port_increment_count = 0;
+        const MAX_PORT_INCREMENTS: u16 = 10;
+
+        loop {
+            match tokio::net::TcpListener::bind((web_host.as_str(), web_port)).await {
+                Ok(_) => break,
+                Err(e) => {
+                    // For privileged ports (1024 and below), don't auto-increment if it's a permission error
+                    if web_port <= 1024 && e.kind() == std::io::ErrorKind::PermissionDenied {
+                        eprintln!(
+                            "Permission denied binding to port {}. Try running with sudo or use a port above 1024.",
+                            web_port
+                        );
+                        std::process::exit(1);
+                    }
+
+                    // If we've tried too many increments, give up
+                    if port_increment_count >= MAX_PORT_INCREMENTS {
+                        eprintln!(
+                            "Failed to bind to any port after trying {} ports starting from {}. Error: {}",
+                            port_increment_count + 1,
+                            original_port,
+                            e
+                        );
+                        std::process::exit(1);
+                    }
+
+                    println!(
+                        "Port {} for web app is occupied. Trying next port...",
+                        web_port
+                    );
+                    web_port += 1;
+                    port_increment_count += 1;
+                }
+            }
         }
         let serve_with_fallback = service_fn(move |req: Request<Body>| {
             async move {
@@ -1011,12 +1087,19 @@ pub async fn start_server_and_web_app(mut web_port: u16, auth_mode: AuthMode) {
             .fallback_service(serve_with_fallback)
             .layer(trace_layer);
 
-        let web_addr = SocketAddr::from(([0, 0, 0, 0], web_port));
+        let web_addr = format!("{}:{}", web_host, web_port)
+            .parse::<SocketAddr>()
+            .unwrap_or_else(|_| SocketAddr::from(([0, 0, 0, 0], web_port)));
         let listener = tokio::net::TcpListener::bind(web_addr).await.unwrap();
+        let display_host = if web_host == "0.0.0.0" {
+            "localhost"
+        } else {
+            &web_host
+        };
         println!(
             "{} {}",
             "Web app running at".text(),
-            format!("http://localhost:{}", web_port).secondary()
+            format!("http://{}:{}", display_host, web_port).secondary()
         );
         axum::serve(listener, web_app)
             .with_graceful_shutdown(shutdown_signal())

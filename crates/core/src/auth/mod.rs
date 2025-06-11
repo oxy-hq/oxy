@@ -1,3 +1,4 @@
+pub mod cognito;
 pub mod extractor;
 pub mod iap;
 pub mod local;
