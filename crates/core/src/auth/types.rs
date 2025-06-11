@@ -7,6 +7,8 @@ pub enum AuthMode {
     IAP,
     // Use trusted Cloud Run identity headers for authentication
     IAPCloudRun,
+    // Use Amazon Cognito for authentication (supports both direct and ALB)
+    Cognito,
     // Use local authentication (default)
     Local,
 }

@@ -15,7 +15,6 @@ import Threads from "@/pages/threads";
 import ThreadPage from "@/pages/thread";
 import WorkflowPage from "@/pages/workflow";
 import "@xyflow/react/dist/style.css";
-import NotSignedIn from "@/pages/NotSignedIn";
 import React from "react";
 import IdePage from "./pages/ide";
 import EditorPage from "./pages/ide/Editor";
@@ -85,17 +84,14 @@ const MainLayout = React.memo(function MainLayout() {
 
 const router = createBrowserRouter(
   createRoutesFromElements(
-    <Route>
-      <Route path="/not_signed_in" element={<NotSignedIn />} />
-      <Route
-        path="*"
-        element={
-          <SidebarProvider>
-            <MainLayout />
-          </SidebarProvider>
-        }
-      />
-    </Route>,
+    <Route
+      path="*"
+      element={
+        <SidebarProvider>
+          <MainLayout />
+        </SidebarProvider>
+      }
+    />,
   ),
 );
 

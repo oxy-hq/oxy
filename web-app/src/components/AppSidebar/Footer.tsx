@@ -1,5 +1,6 @@
 import { LogOut, User2 } from "lucide-react";
 import { useEffect, useState } from "react";
+import Cookies from "js-cookie";
 import {
   SidebarMenu,
   SidebarMenuButton,
@@ -10,6 +11,31 @@ interface UserInfo {
   email: string;
   picture?: string;
 }
+
+const clearAllCookies = () => {
+  const cookies = document.cookie.split(";");
+  for (const cookie of cookies) {
+    const eqPos = cookie.indexOf("=");
+    const name = eqPos > -1 ? cookie.slice(0, eqPos).trim() : cookie.trim();
+
+    if (name) {
+      Cookies.remove(name);
+      Cookies.remove(name, { path: "/" });
+      Cookies.remove(name, { path: "/", domain: window.location.hostname });
+      const domain = window.location.hostname.split(".").slice(-2).join(".");
+      Cookies.remove(name, { path: "/", domain: `.${domain}` });
+    }
+  }
+};
+
+const handleLogout = async () => {
+  localStorage.clear();
+  sessionStorage.clear();
+  clearAllCookies();
+
+  // Redirect to home page
+  window.location.href = window.location.origin;
+};
 
 export function Footer() {
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
@@ -65,13 +91,7 @@ export function Footer() {
         <SidebarMenuItem>
           <SidebarMenuButton asChild>
             <button
-              onClick={() => {
-                // Clear browser storage, we are not using anystorage, this is just to make sure
-                localStorage.clear();
-                sessionStorage.clear();
-                // Redirect to clear IAP cookie
-                window.location.href = `${window.location.origin}?gcp-iap-mode=CLEAR_LOGIN_COOKIE`;
-              }}
+              onClick={handleLogout}
               className="flex items-center gap-2 w-full"
             >
               <LogOut className="w-4 h-4" />

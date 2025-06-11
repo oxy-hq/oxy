@@ -8,7 +8,7 @@ use std::env;
 use std::sync::Arc;
 
 use crate::{
-    auth::{iap::IAPValidator, user::UserService},
+    auth::{cognito::CognitoValidator, iap::IAPValidator, user::UserService},
     config::constants::GCP_IAP_AUD_ENV_VAR,
     errors::OxyError,
 };
@@ -44,6 +44,14 @@ impl AuthState<IAPValidator> {
     pub fn iap_cloud_run() -> Self {
         Self {
             validator: Arc::new(IAPValidator::new("".to_string(), true)),
+        }
+    }
+}
+
+impl AuthState<CognitoValidator> {
+    pub fn cognito() -> Self {
+        Self {
+            validator: Arc::new(CognitoValidator::new()),
         }
     }
 }

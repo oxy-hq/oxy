@@ -410,7 +410,7 @@ pub async fn ask_thread(
     })?;
 
     let agent_ref = thread.source.to_string();
-    let (tx, mut rx) = tokio::sync::mpsc::channel(100);
+    let (tx, rx) = tokio::sync::mpsc::channel(100);
 
     let _ = tokio::spawn(async move {
         let tx_clone = tx.clone();

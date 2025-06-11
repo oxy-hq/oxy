@@ -26,8 +26,13 @@ impl LogFormat {
         // Check environment variables to determine the platform
         if env::var("K_SERVICE").is_ok() || env::var("CLOUD_RUN_JOB").is_ok() {
             LogFormat::CloudRun
-        // TODO: use json format where it matters, this is just a placeholder
-        } else if env::var("AWS_LAMBDA_FUNCTION_NAME").is_ok() || env::var("VERCEL").is_ok() {
+        // AWS environments - use JSON for better CloudWatch integration
+        } else if env::var("AWS_LAMBDA_FUNCTION_NAME").is_ok()
+            || env::var("AWS_EXECUTION_ENV").is_ok()
+            || env::var("AWS_COGNITO_USER_POOL_ID").is_ok()
+        {
+            LogFormat::Json
+        } else if env::var("VERCEL").is_ok() {
             LogFormat::Json
         } else if cfg!(debug_assertions) {
             LogFormat::Pretty

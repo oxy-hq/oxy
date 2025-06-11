@@ -165,7 +165,7 @@ where
                     self.logger.log_error(&message);
                 }
                 EventKind::DataAppCreated { .. } => {}
-                EventKind::Finished { message, .. } => {}
+                EventKind::Finished { .. } => {}
                 EventKind::Progress { .. } => {}
             },
         }

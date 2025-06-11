@@ -282,7 +282,7 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
                                 .to_string(),
                         })
                         .await?;
-                    return Err(err);
+                    Err(err)
                 }
             }
         };

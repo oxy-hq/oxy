@@ -182,7 +182,7 @@ pub async fn ask_task(
         .unwrap();
 
     let agent_ref = config.get_builder_agent_path().await.unwrap();
-    let (tx, mut rx) = tokio::sync::mpsc::channel(100);
+    let (tx, rx) = tokio::sync::mpsc::channel(100);
     let _ = tokio::spawn(async move {
         let tx_clone = tx.clone();
         let thread_stream = TaskStream::new(tx);

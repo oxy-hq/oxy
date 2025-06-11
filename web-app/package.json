@@ -60,6 +60,7 @@
     "elkjs": "^0.10.0",
     "highlight.js": "^11.11.1",
     "invariant": "^2.2.4",
+    "js-cookie": "^3.0.5",
     "lodash": "^4.17.21",
     "lucide-react": "^0.511.0",
     "memfs": "^4.17.2",
@@ -102,6 +103,7 @@
   },
   "devDependencies": {
     "@types/invariant": "^2.2.37",
+    "@types/js-cookie": "^3.0.6",
     "@types/lodash": "^4.17.17",
     "@types/node": "^22.15.30",
     "@types/nunjucks": "3.2.6",

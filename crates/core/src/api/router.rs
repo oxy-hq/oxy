@@ -40,6 +40,7 @@ pub async fn api_router(auth_mode: AuthMode) -> Result<Router, OxyError> {
     let mut protected_routes = Router::new()
         .route("/user", get(user::get_current_user))
         .route("/user", put(user::update_current_user))
+        .route("/cognito-logout-url", get(user::get_cognito_logout_url))
         .route("/threads", get(thread::get_threads))
         .route("/threads/{id}", get(thread::get_thread))
         .route("/threads/{id}/ask", post(thread::ask_thread))
@@ -101,6 +102,10 @@ pub async fn api_router(auth_mode: AuthMode) -> Result<Router, OxyError> {
         )),
         AuthMode::IAPCloudRun => protected_routes.route_layer(middleware::from_fn_with_state(
             AuthState::iap_cloud_run(),
+            auth_middleware,
+        )),
+        AuthMode::Cognito => protected_routes.route_layer(middleware::from_fn_with_state(
+            AuthState::cognito(),
             auth_middleware,
         )),
         AuthMode::Local => protected_routes.route_layer(middleware::from_fn_with_state(
