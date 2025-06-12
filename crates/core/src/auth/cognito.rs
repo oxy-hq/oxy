@@ -4,7 +4,7 @@
 // to avoid complexity, we trust the alb and do not verify the signature or verify the signer
 
 use axum::http::StatusCode;
-use base64::{Engine as _, engine::general_purpose};
+use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use thiserror::Error;
@@ -61,49 +61,6 @@ impl CognitoValidator {
     pub fn new() -> Self {
         CognitoValidator
     }
-
-    fn decompose_jwt(&self, jwt: &str) -> Result<(CognitoPayload, String, String), CognitoError> {
-        // Sanity check JWT format
-        let parts: Vec<&str> = jwt.split('.').collect();
-        if parts.len() != 3 {
-            return Err(CognitoError::AuthError(
-                "JWT string does not consist of exactly 3 parts (header.payload.signature)"
-                    .to_string(),
-            ));
-        }
-
-        let (_header_b64, payload_b64, signature_b64) = (parts[0], parts[1], parts[2]);
-
-        let payload_bytes = self.decode_base64url(payload_b64)?;
-        let payload_json = String::from_utf8_lossy(&payload_bytes);
-        let payload: CognitoPayload = serde_json::from_slice(&payload_bytes).map_err(|e| {
-            CognitoError::AuthError(format!(
-                "Invalid JWT. Payload is not a valid JSON object: {}. Raw payload: {}",
-                e, payload_json
-            ))
-        })?;
-
-        Ok((payload, payload_b64.to_string(), signature_b64.to_string()))
-    }
-
-    fn decode_base64url(&self, input: &str) -> Result<Vec<u8>, CognitoError> {
-        general_purpose::URL_SAFE_NO_PAD
-            .decode(input)
-            .or_else(|_| {
-                // Fallback: Add padding if needed and try again
-                let padded = match input.len() % 4 {
-                    0 => input.to_string(),
-                    n => format!("{}{}", input, "=".repeat(4 - n)),
-                };
-                general_purpose::URL_SAFE.decode(&padded)
-            })
-            .map_err(|e| {
-                CognitoError::AuthError(format!(
-                    "Failed to decode base64url: {}. Input: {}",
-                    e, input
-                ))
-            })
-    }
 }
 
 impl Validator for CognitoValidator {
@@ -121,7 +78,27 @@ impl Validator for CognitoValidator {
     }
 
     fn validate(&self, encoded_jwt: &str) -> Result<Identity, Self::Error> {
-        let (payload, _payload_b64, _signature_b64) = self.decompose_jwt(encoded_jwt)?;
+        // Create a validation config that skips signature verification since we trust the ALB
+        let mut validation = Validation::new(Algorithm::ES256);
+        validation.insecure_disable_signature_validation();
+
+        // Since we trust the ALB, we don't need to validate standard JWT claims
+        validation.required_spec_claims.clear();
+        validation.validate_exp = false;
+        validation.validate_nbf = false;
+
+        // Use a dummy key since we're not validating the signature
+        let decoding_key = DecodingKey::from_secret(&[]);
+
+        let token =
+            decode::<CognitoPayload>(encoded_jwt, &decoding_key, &validation).map_err(|e| {
+                CognitoError::AuthError(format!(
+                    "Failed to decode JWT: {}. Original token: {}",
+                    e, encoded_jwt
+                ))
+            })?;
+
+        let payload = token.claims;
         let email = payload.email;
         let name = payload.name.filter(|n| !n.is_empty()).or_else(|| {
             match (payload.given_name.as_ref(), payload.family_name.as_ref()) {
