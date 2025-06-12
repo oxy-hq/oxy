@@ -1,3 +1,7 @@
+//! See: https://docs.aws.amazon.com/elasticloadbalancing/latest/application/listener-authenticate-users.html
+//! See: https://github.com/awslabs/aws-jwt-verify/blob/main/src/jwt-model.ts
+// to avoid complexity, we trust the alb and do not verify the signature or verify the signer
+
 use axum::http::StatusCode;
 use base64::{Engine as _, engine::general_purpose};
 use serde::{Deserialize, Serialize};
@@ -8,47 +12,30 @@ use super::{types::Identity, validator::Validator};
 
 #[derive(Debug, Error)]
 pub enum CognitoError {
-    #[error("Invalid JWT token: {0}")]
-    InvalidToken(String),
-    #[error("Missing auth header")]
-    MissingAuthHeader,
-    #[error("Base64 decode error: {0}")]
-    Base64Error(String),
-    #[error("JSON parse error: {0}")]
-    JsonError(String),
-    #[error("Email not found in payload")]
-    EmailMissing,
+    #[error("{0}")]
+    AuthError(String),
 }
 
 impl From<CognitoError> for StatusCode {
-    fn from(val: CognitoError) -> Self {
-        match val {
-            CognitoError::InvalidToken(_) => StatusCode::UNAUTHORIZED,
-            CognitoError::MissingAuthHeader => StatusCode::UNAUTHORIZED,
-            CognitoError::Base64Error(_) => StatusCode::BAD_REQUEST,
-            CognitoError::JsonError(_) => StatusCode::BAD_REQUEST,
-            CognitoError::EmailMissing => StatusCode::BAD_REQUEST,
-        }
+    fn from(_val: CognitoError) -> Self {
+        StatusCode::UNAUTHORIZED
     }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CognitoPayload {
+    // Required fields
     pub sub: String,
-    pub email: Option<String>,
-    pub email_verified: Option<bool>,
-    pub cognito_username: Option<String>,
+    pub email: String,
+    // Optional fields for building name
+    pub name: Option<String>,
     pub given_name: Option<String>,
     pub family_name: Option<String>,
-    pub name: Option<String>,
+    #[serde(rename = "cognito:username")]
+    pub cognito_username: Option<String>,
+    pub username: Option<String>,
+    // Optional profile picture
     pub picture: Option<String>,
-    // Optional fields that may or may not be present
-    pub aud: Option<String>,
-    pub iss: Option<String>,
-    pub token_use: Option<String>,
-    pub auth_time: Option<i64>,
-    pub exp: Option<i64>,
-    pub iat: Option<i64>,
 }
 
 impl fmt::Display for CognitoPayload {
@@ -79,48 +66,53 @@ impl Validator for CognitoValidator {
     type Error = CognitoError;
 
     fn extract_token(&self, header: &axum::http::HeaderMap) -> Result<String, Self::Error> {
-        // Try ALB header first (X-Amzn-Oidc-Data)
+        // Only support ALB header (X-Amzn-Oidc-Data)
         if let Some(token) = header.get("X-Amzn-Oidc-Data").and_then(|v| v.to_str().ok()) {
             return Ok(token.to_string());
         }
 
-        // Fall back to Authorization header for direct Cognito
-        if let Some(auth_header) = header.get("Authorization").and_then(|v| v.to_str().ok()) {
-            if let Some(token) = auth_header.strip_prefix("Bearer ") {
-                return Ok(token.to_string());
-            }
-        }
-
-        Err(CognitoError::MissingAuthHeader)
+        Err(CognitoError::AuthError(
+            "Missing authentication header".to_string(),
+        ))
     }
 
     fn validate(&self, encoded_jwt: &str) -> Result<Identity, Self::Error> {
-        let jwt_parts: Vec<&str> = encoded_jwt.split('.').collect();
-        if jwt_parts.len() != 3 {
-            return Err(CognitoError::InvalidToken("Invalid JWT format".to_string()));
+        // Decode JWT payload without signature verification
+        // Split the JWT into parts (header.payload.signature)
+        let parts: Vec<&str> = encoded_jwt.split('.').collect();
+        if parts.len() != 3 {
+            return Err(CognitoError::AuthError("Invalid JWT format".to_string()));
         }
 
-        // Decode payload directly (trust ALB/Cognito has already validated)
-        let payload_part = jwt_parts[1];
-        let decoded_payload = general_purpose::URL_SAFE_NO_PAD
-            .decode(payload_part)
-            .or_else(|_| general_purpose::STANDARD_NO_PAD.decode(payload_part))
-            .map_err(|e| CognitoError::Base64Error(e.to_string()))?;
+        // Decode the payload. JWT uses URL-safe base64 without padding
+        let payload_b64 = parts[1];
 
-        let payload_str = String::from_utf8(decoded_payload)
-            .map_err(|e| CognitoError::Base64Error(e.to_string()))?;
+        let payload_bytes = general_purpose::URL_SAFE_NO_PAD
+            .decode(payload_b64)
+            .map_err(|e| CognitoError::AuthError(format!("Failed to decode JWT payload: {}", e)))?;
 
-        let payload: CognitoPayload = serde_json::from_str(&payload_str)
-            .map_err(|e| CognitoError::JsonError(e.to_string()))?;
+        // Log the decoded payload for debugging
+        let payload_json = String::from_utf8_lossy(&payload_bytes);
+        log::debug!("Decoded JWT payload: {}", payload_json);
 
-        let email = payload.email.ok_or(CognitoError::EmailMissing)?;
+        let payload: CognitoPayload = serde_json::from_slice(&payload_bytes).map_err(|e| {
+            CognitoError::AuthError(format!(
+                "Failed to parse JWT payload: {}. Raw payload: {}",
+                e, payload_json
+            ))
+        })?;
 
-        let name = payload.name.or_else(|| {
+        // Extract user information
+        let email = payload.email;
+        let name = payload.name.filter(|n| !n.is_empty()).or_else(|| {
             match (payload.given_name.as_ref(), payload.family_name.as_ref()) {
                 (Some(first), Some(last)) => Some(format!("{} {}", first, last)),
                 (Some(first), None) => Some(first.clone()),
                 (None, Some(last)) => Some(last.clone()),
-                _ => payload.cognito_username.clone(),
+                _ => payload
+                    .cognito_username
+                    .clone()
+                    .or_else(|| payload.username.clone()),
             }
         });
 
@@ -130,5 +122,69 @@ impl Validator for CognitoValidator {
             name,
             picture: payload.picture,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::HeaderMap;
+
+    #[test]
+    fn test_extract_alb_header() {
+        // Test extracting JWT token from AWS ALB header
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "x-amzn-oidc-data",
+            "eyJhbGciOiJFUzI1NiIsImtpZCI6IjEyMzQ1Njc4LTEyMzQtMTIzNC0xMjM0LTEyMzQ1Njc4OTAxMiIsInNpZ25lciI6ImFybjphd3M6ZWxhc3RpY2xvYWRiYWxhbmNpbmc6dXMtZWFzdC0xOjEyMzQ1Njc4OTAxMjpsb2FkYmFsYW5jZXIvYXBwL215LWFsYi81MGRjNmM0OTVjMGM5MTg4IiwiaXNzIjoiaHR0cHM6Ly9jb2duaXRvLWlkcC51cy1lYXN0LTEuYW1hem9uYXdzLmNvbS91cy1lYXN0LTFfQUJDMTIzREVGIiwiY2xpZW50IjoiNGFiY2RlZmdoaWprbG1ub3BxcnN0dXZ3eHl6IiwiZXhwIjoxNzE4MjgwMDAwfQ.eyJzdWIiOiIxMjM0NTY3OC0xMjM0LTEyMzQtMTIzNC0xMjM0NTY3ODkwMTIiLCJuYW1lIjoiSm9obiBEb2UiLCJlbWFpbCI6ImpvaG4uZG9lQGV4YW1wbGUuY29tIiwiZW1haWxfdmVyaWZpZWQiOnRydWUsInBob25lX251bWJlciI6IisxMjM0NTY3ODkwIiwiY3VzdG9tOmRlcGFydG1lbnQiOiJFbmdpbmVlcmluZyIsImN1c3RvbTpyb2xlIjoiU2VuaW9yIERldmVsb3BlciJ9.fake_signature_for_testing_purposes_only".parse().unwrap(),
+        );
+
+        let validator = CognitoValidator::new();
+        let result = validator.extract_token(&headers);
+
+        assert!(result.is_ok());
+        let token = result.unwrap();
+        assert!(token.starts_with("eyJhbGciOiJFUzI1NiI"));
+    }
+
+    #[test]
+    fn test_decode_jwt_payload_structure() {
+        let payload_json = r#"{
+            "sub": "12345678-1234-1234-1234-123456789012",
+            "name": "John Doe", 
+            "email": "john.doe@example.com",
+            "email_verified": true,
+            "phone_number": "+12345678901",
+            "custom:department": "Engineering",
+            "custom:role": "Senior Developer"
+        }"#;
+
+        let payload: CognitoPayload = serde_json::from_str(payload_json).unwrap();
+
+        // Verify we extract the essential fields
+        assert_eq!(payload.sub, "12345678-1234-1234-1234-123456789012");
+        assert_eq!(payload.email, "john.doe@example.com");
+        assert_eq!(payload.name, Some("John Doe".to_string()));
+        assert_eq!(payload.picture, None);
+    }
+
+    #[test]
+    fn test_complete_alb_authentication_flow() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "x-amzn-oidc-data",
+            "eyJhbGciOiJFUzI1NiIsImtpZCI6IjEyMzQ1Njc4LTEyMzQtMTIzNC0xMjM0LTEyMzQ1Njc4OTAxMiIsInNpZ25lciI6ImFybjphd3M6ZWxhc3RpY2xvYWRiYWxhbmNpbmc6dXMtZWFzdC0xOjEyMzQ1Njc4OTAxMjpsb2FkYmFsYW5jZXIvYXBwL215LWFsYi81MGRjNmM0OTVjMGM5MTg4IiwiaXNzIjoiaHR0cHM6Ly9jb2duaXRvLWlkcC51cy1lYXN0LTEuYW1hem9uYXdzLmNvbS91cy1lYXN0LTFfQUJDMTIzREVGIiwiY2xpZW50IjoiNGFiY2RlZmdoaWprbG1ub3BxcnN0dXZ3eHl6IiwiZXhwIjoxNzE4MjgwMDAwfQ.eyJzdWIiOiIxMjM0NTY3OC0xMjM0LTEyMzQtMTIzNC0xMjM0NTY3ODkwMTIiLCJuYW1lIjoiSm9obiBEb2UiLCJlbWFpbCI6ImpvaG4uZG9lQGV4YW1wbGUuY29tIiwiZW1haWxfdmVyaWZpZWQiOnRydWUsInBob25lX251bWJlciI6IisxMjM0NTY3ODkwIiwiY3VzdG9tOmRlcGFydG1lbnQiOiJFbmdpbmVlcmluZyIsImN1c3RvbTpyb2xlIjoiU2VuaW9yIERldmVsb3BlciJ9.fake_signature_for_testing_purposes_only".parse().unwrap(),
+        );
+
+        let validator = CognitoValidator::new();
+        let token = validator.extract_token(&headers).unwrap();
+        let identity = validator.validate(&token).unwrap();
+        assert_eq!(identity.email, "john.doe@example.com");
+        assert_eq!(identity.name, Some("John Doe".to_string()));
+        assert_eq!(
+            identity.idp_id,
+            Some("12345678-1234-1234-1234-123456789012".to_string())
+        );
+        assert_eq!(identity.picture, None);
     }
 }
