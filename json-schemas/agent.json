@@ -34,6 +34,17 @@
       "default": true,
       "type": "boolean"
     },
+    "reasoning": {
+      "default": null,
+      "anyOf": [
+        {
+          "$ref": "#/definitions/ReasoningConfig"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "tests": {
       "default": [],
       "type": "array",
@@ -244,6 +255,25 @@
         "number",
         "string",
         "integer"
+      ]
+    },
+    "ReasoningConfig": {
+      "type": "object",
+      "required": [
+        "effort"
+      ],
+      "properties": {
+        "effort": {
+          "$ref": "#/definitions/ReasoningEffort"
+        }
+      }
+    },
+    "ReasoningEffort": {
+      "type": "string",
+      "enum": [
+        "low",
+        "medium",
+        "high"
       ]
     },
     "Schema": {
