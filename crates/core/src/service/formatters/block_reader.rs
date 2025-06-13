@@ -34,7 +34,7 @@ impl BlockHandlerReader {
         let blocks = try_unwrap_arc_tokio_mutex(self.blocks).await?;
         let content = blocks.into_iter().fold(String::new(), |mut acc, block| {
             acc.push_str(block.to_markdown(MARKDOWN_MAX_FENCES).as_str());
-            acc.push_str("\n");
+            acc.push('\n');
             acc
         });
         let message = entity::messages::ActiveModel {
