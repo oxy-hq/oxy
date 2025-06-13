@@ -17,8 +17,13 @@ const getFirstLine = (content: string) => {
 type ExpandableOutputProps = {
   content: string;
   timestamp: string;
+  onArtifactClick?: (id: string) => void;
 };
-const ExpandableOutput = ({ content, timestamp }: ExpandableOutputProps) => {
+const ExpandableOutput = ({
+  content,
+  timestamp,
+  onArtifactClick,
+}: ExpandableOutputProps) => {
   const [expanded, setExpanded] = React.useState(true);
   const firstLine = getFirstLine(content);
   const toggle = () => {
@@ -55,7 +60,7 @@ const ExpandableOutput = ({ content, timestamp }: ExpandableOutputProps) => {
         </Button>
       </div>
       <div className="p-2 pt-3 flex-1 text-xs overflow-hidden">
-        <Markdown>{content}</Markdown>
+        <Markdown onArtifactClick={onArtifactClick}>{content}</Markdown>
       </div>
     </div>
   );

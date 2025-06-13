@@ -373,3 +373,11 @@ pub fn create_sse_stream_from_stream<T: Serialize>(
         }
     }
 }
+
+pub fn get_file_stem<P: AsRef<Path>>(path: P) -> String {
+    path.as_ref()
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .map(|s| s.to_string())
+        .unwrap_or(path.as_ref().to_string_lossy().to_string())
+}

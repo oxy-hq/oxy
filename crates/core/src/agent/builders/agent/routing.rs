@@ -17,7 +17,9 @@ use crate::{
     },
     config::{
         constants::ARTIFACT_SOURCE,
-        model::{AgentTool, ExecuteSQLTool, Model, RoutingAgent, ToolType, WorkflowTool},
+        model::{
+            AgentTool, ExecuteSQLTool, Model, ReasoningConfig, RoutingAgent, ToolType, WorkflowTool,
+        },
     },
     errors::OxyError,
     execute::{
@@ -39,6 +41,7 @@ pub(super) struct RoutingAgentInput {
     pub routing_agent: RoutingAgent,
     pub prompt: String,
     pub memory: Vec<Message>,
+    pub reasoning_config: Option<ReasoningConfig>,
 }
 
 #[derive(Debug, Clone)]
@@ -157,6 +160,7 @@ impl Executable<RoutingAgentInput> for RoutingAgentExecutable {
             routing_agent,
             prompt,
             memory,
+            reasoning_config,
         } = input;
         let model = execution_context.config.resolve_model(&model)?;
         let tool_configs = self
@@ -173,6 +177,7 @@ impl Executable<RoutingAgentInput> for RoutingAgentExecutable {
             model,
             tool_configs,
             routing_agent.synthesize_results,
+            reasoning_config.clone(),
         )
         .await?;
         let one_shot_input = OneShotInput {
@@ -185,7 +190,8 @@ impl Executable<RoutingAgentInput> for RoutingAgentExecutable {
                 let fallback_tool = self
                     .resolve_tool(execution_context, &fallback, false)
                     .await?;
-                let fallback_route = FallbackAgent::new(&agent_name, model, fallback_tool).await?;
+                let fallback_route =
+                    FallbackAgent::new(&agent_name, model, fallback_tool, reasoning_config).await?;
                 let mut fallback_executable = build_fallback(react_loop_executable, fallback_route);
                 fallback_executable
                     .execute(execution_context, one_shot_input)
@@ -209,6 +215,7 @@ async fn build_react_loop(
     model: &Model,
     tool_configs: Vec<ToolType>,
     synthesize_results: bool,
+    reasoning_config: Option<ReasoningConfig>,
 ) -> Result<impl Executable<OneShotInput, Response = Vec<OpenAIExecutableResponse>> + Clone, OxyError>
 {
     let tools: Vec<ChatCompletionTool> =
@@ -231,6 +238,7 @@ async fn build_react_loop(
         model.model_name().to_string(),
         deduplicated_tools,
         None,
+        reasoning_config.map(|rc| rc.into()),
     )))
 }
 

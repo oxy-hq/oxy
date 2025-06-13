@@ -9,7 +9,7 @@ import { createTheme } from "@uiw/codemirror-themes";
 
 export type SupportedLanguages = "python" | "sql";
 
-export const getLangs = (name?: SupportedLanguages, codeContent?: string) => {
+const getLangs = (name?: SupportedLanguages, codeContent?: string) => {
   if (!name && codeContent) {
     // Simple heuristic to detect language based on code content
     if (codeContent.includes("def ") || codeContent.includes("import ")) {

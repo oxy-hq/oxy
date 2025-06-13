@@ -6,6 +6,7 @@ declare module "react-markdown" {
   export type ExtendedComponents = Components & {
     chart?: React.ComponentType<{ chart_src: string }>;
     artifact?: React.ComponentType<{
+      artifactId: string;
       kind: string;
       title: string;
       is_verified: string;

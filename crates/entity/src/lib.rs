@@ -1,3 +1,4 @@
+pub mod artifacts;
 pub mod messages;
 pub mod prelude;
 pub mod tasks;

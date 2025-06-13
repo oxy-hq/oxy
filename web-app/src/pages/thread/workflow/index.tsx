@@ -1,7 +1,7 @@
 import PageHeader from "@/components/PageHeader";
 import { Separator } from "@/components/ui/shadcn/separator";
+import OutputLogs from "@/components/workflow/output/Logs";
 import queryKeys from "@/hooks/api/queryKey";
-import OutputLogs from "@/pages/workflow/output/Logs";
 import { service } from "@/services/service";
 import { LogItem } from "@/services/types";
 import { ThreadItem } from "@/types/chat";

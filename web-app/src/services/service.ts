@@ -12,6 +12,7 @@ import { TestStreamMessage } from "@/types/eval";
 import { FileTreeModel } from "@/types/file";
 import { App, AppItem, Chunk } from "@/types/app";
 import { Workflow } from "@/types/workflow";
+import { Artifact } from "./mock";
 import { DatabaseInfo, DatabaseSyncResponse } from "@/types/database";
 import { LogItem } from "./types";
 
@@ -72,6 +73,7 @@ export interface Service {
     prompt: string;
     database: string;
   }): Promise<{ workflow: Workflow }>;
+  getArtifact(id: string): Promise<Artifact>;
   getThreadMessages(threadId: string): Promise<MessageItem[]>;
   syncDatabase(
     database?: string,

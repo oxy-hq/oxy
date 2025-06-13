@@ -73,19 +73,19 @@ impl Output {
         }
     }
 
-    pub fn to_markdown(&self) -> Result<String, OxyError> {
+    pub fn to_markdown(&self) -> String {
         match self {
-            Output::Text(text) => Ok(text.clone()),
-            Output::SQL(sql) => Ok(format!("```{}```", sql.0)),
+            Output::Text(text) => text.clone(),
+            Output::SQL(sql) => format!("```{}```", sql.0),
             Output::Table(table) => table.to_markdown(),
-            Output::Prompt(prompt) => Ok(prompt.to_string()),
-            Output::Bool(b) => Ok(b.to_string()),
+            Output::Prompt(prompt) => prompt.to_string(),
+            Output::Bool(b) => b.to_string(),
             Output::Documents(docs) => {
                 let mut markdown = String::new();
                 for doc in docs {
                     markdown.push_str(&format!("{}\n", doc));
                 }
-                Ok(markdown)
+                markdown
             }
         }
     }

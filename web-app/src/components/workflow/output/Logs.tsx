@@ -10,12 +10,14 @@ interface OutputLogsProps {
   isPending: boolean;
   logs: LogItem[];
   contentClassName?: string;
+  onArtifactClick?: (id: string) => void;
 }
 
 const OutputLogs: React.FC<OutputLogsProps> = ({
   isPending,
   logs,
   contentClassName,
+  onArtifactClick,
 }) => {
   const parentRef = React.useRef<HTMLDivElement | null>(null);
 
@@ -71,6 +73,7 @@ const OutputLogs: React.FC<OutputLogsProps> = ({
           className="absolute top-0 left-0 w-full"
           style={{
             transform: `translateY(${items[0]?.start ?? 0}px)`,
+            paddingBottom: 100,
           }}
         >
           {items.map((item) => {
@@ -82,6 +85,7 @@ const OutputLogs: React.FC<OutputLogsProps> = ({
                 ref={logsVirtualizer.measureElement}
               >
                 <OutputItem
+                  onArtifactClick={onArtifactClick}
                   content={log.content}
                   timestamp={dayjs(log.timestamp).format(
                     "ddd YYYY-MM-DD H:mm:ss",

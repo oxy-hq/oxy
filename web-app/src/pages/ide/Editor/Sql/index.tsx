@@ -28,7 +28,11 @@ const SqlEditor = ({ pathb64 }: { pathb64: string }) => {
       pageContentClassName="flex-col"
       editorClassName={"h-1/2 w-full"}
       headerActions={
-        <HeaderActions onExecuteSql={handleExecuteSql} loading={loading} />
+        <HeaderActions
+          onExecuteSql={handleExecuteSql}
+          loading={loading}
+          sql={sql}
+        />
       }
       preview={
         <div className="flex-1 overflow-hidden">

@@ -1,0 +1,43 @@
+import { SqlArtifact } from "@/services/mock";
+import Results from "@/pages/ide/Editor/Sql/Results";
+import { Editor } from "@monaco-editor/react";
+import { Loader2 } from "lucide-react";
+
+type Props = {
+  artifact: SqlArtifact;
+};
+
+const SqlArtifactPanel = ({ artifact }: Props) => {
+  return (
+    <div className="flex flex-col h-full">
+      <div className="flex-1">
+        <Editor
+          height="100%"
+          width="100%"
+          theme="vs-dark"
+          defaultValue={artifact.content.value.sql_query}
+          language="sql"
+          value={artifact.content.value.sql_query}
+          loading={
+            <Loader2 className="w-4 h-4 animate-[spin_0.2s_linear_infinite] text-[white]" />
+          }
+          options={{
+            readOnly: true,
+            scrollBeyondLastLine: true,
+            formatOnPaste: true,
+            formatOnType: true,
+            automaticLayout: true,
+          }}
+        />
+      </div>
+
+      <div className="flex-1">
+        {!!artifact.content.value.result && (
+          <Results result={artifact.content.value.result} />
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default SqlArtifactPanel;

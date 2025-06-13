@@ -235,7 +235,21 @@ impl ClickHouse {
     }
 }
 
-pub fn validate_agent_config() {}
+#[derive(Serialize, Deserialize, Debug, Clone, JsonSchema, Validate)]
+#[garde(context(AgentValidationContext))]
+#[serde(rename_all = "lowercase")]
+pub enum ReasoningEffort {
+    Low,
+    Medium,
+    High,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, JsonSchema, Validate)]
+#[garde(context(AgentValidationContext))]
+pub struct ReasoningConfig {
+    #[garde(dive)]
+    pub effort: ReasoningEffort,
+}
 
 #[derive(Serialize, Deserialize, Debug, Clone, JsonSchema, Validate)]
 #[garde(context(AgentValidationContext))]
@@ -262,6 +276,10 @@ pub struct AgentConfig {
     #[serde(default = "default_agent_public")]
     #[garde(skip)]
     pub public: bool,
+
+    #[serde(default)]
+    #[garde(dive)]
+    pub reasoning: Option<ReasoningConfig>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, JsonSchema, Validate)]

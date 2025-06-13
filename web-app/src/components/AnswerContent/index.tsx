@@ -8,12 +8,13 @@ import Markdown from "@/components/Markdown";
 type Props = {
   content: string;
   className?: string;
+  onArtifactClick?: (id: string) => void;
 };
 
-function AnswerContent({ content, className }: Props) {
+function AnswerContent({ content, className, onArtifactClick }: Props) {
   return (
     <div className={cn("flex flex-col gap-4", className)}>
-      <Markdown>{content}</Markdown>
+      <Markdown onArtifactClick={onArtifactClick}>{content}</Markdown>
     </div>
   );
 }

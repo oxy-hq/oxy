@@ -2,14 +2,13 @@ use crate::{
     auth::extractor::AuthenticatedUserExtractor,
     db::client::establish_connection,
     errors::OxyError,
-    execute::{
-        types::{Event, ReferenceKind},
-        writer::{EventHandler, MarkdownWriter, OutputWriter},
+    execute::types::ReferenceKind,
+    service::{
+        agent::{Message, run_agent},
+        formatters::BlockHandler,
+        types::{AnswerContent, AnswerStream},
     },
-    service::agent::{Message, run_agent},
-    utils::{
-        create_sse_stream, find_project_path, try_unwrap_arc_mutex, try_unwrap_arc_tokio_mutex,
-    },
+    utils::{create_sse_stream, find_project_path},
 };
 use axum::{
     extract::{self, Path, Query},
@@ -24,12 +23,7 @@ use sea_orm::{
     QueryFilter, QueryOrder, QuerySelect, prelude::DateTimeWithTimeZone,
 };
 use serde::{Deserialize, Serialize};
-use std::{
-    path::PathBuf,
-    sync::{Arc, Mutex},
-};
-use tokio::sync::mpsc::Sender;
-use utoipa::ToSchema;
+use std::path::PathBuf;
 use uuid::Uuid;
 
 #[derive(Serialize)]
@@ -72,14 +66,6 @@ pub struct CreateThreadRequest {
     pub input: String,
     pub source: String,
     pub source_type: String,
-}
-
-#[derive(Serialize, ToSchema)]
-pub struct AnswerStream {
-    pub content: String,
-    pub references: Vec<ReferenceKind>,
-    pub is_error: bool,
-    pub step: String,
 }
 
 pub async fn get_threads(
@@ -283,53 +269,6 @@ pub async fn delete_all_threads(
     Ok(StatusCode::OK)
 }
 
-pub struct ThreadStream {
-    references: Arc<Mutex<Vec<ReferenceKind>>>,
-    tx: Sender<AnswerStream>,
-    output_writer: Arc<tokio::sync::Mutex<MarkdownWriter>>,
-}
-
-impl ThreadStream {
-    pub fn new(
-        tx: Sender<AnswerStream>,
-        references: Arc<Mutex<Vec<ReferenceKind>>>,
-        writer: Arc<tokio::sync::Mutex<MarkdownWriter>>,
-    ) -> Self {
-        ThreadStream {
-            tx,
-            references,
-            output_writer: writer,
-        }
-    }
-}
-
-#[async_trait::async_trait]
-impl EventHandler for ThreadStream {
-    async fn handle_event(&mut self, event: Event) -> Result<(), OxyError> {
-        let mut output_writer = self.output_writer.lock().await;
-        let event_format = output_writer.write_event(&event).await?;
-
-        if let Some(event_format) = event_format {
-            self.tx
-                .send(AnswerStream {
-                    content: event_format.content,
-                    references: match event_format.reference {
-                        Some(reference) => {
-                            self.references.lock().unwrap().push(reference.clone());
-                            vec![reference]
-                        }
-                        None => vec![],
-                    },
-                    is_error: event_format.is_error,
-                    step: event.source.kind.to_string(),
-                })
-                .await?;
-        }
-
-        Ok(())
-    }
-}
-
 #[derive(Deserialize)]
 pub struct AskThreadRequest {
     pub question: Option<String>,
@@ -414,34 +353,38 @@ pub async fn ask_thread(
 
     let _ = tokio::spawn(async move {
         let tx_clone = tx.clone();
-        let markdown_writer = Arc::new(tokio::sync::Mutex::new(MarkdownWriter::default()));
-        let references_arc = Arc::new(Mutex::new(vec![]));
-        let thread_stream = ThreadStream::new(tx, references_arc.clone(), markdown_writer.clone());
+        let block_handler = BlockHandler::new(tx);
+        let block_handler_reader = block_handler.get_reader();
         let result = run_agent(
             &project_path,
             &PathBuf::from(agent_ref),
             user_question,
-            thread_stream,
+            block_handler,
             memory,
         )
         .await;
+        println!("Running agent with question: {:?}", result);
         match result {
             Ok(output_container) => {
-                let references = try_unwrap_arc_mutex(references_arc)?;
-                let markdown_writer = try_unwrap_arc_tokio_mutex(markdown_writer).await?;
                 tracing::debug!("Agent output: {:?}", output_container);
-                tracing::debug!("Agent references: {:?}", references);
-
-                let answer_message = entity::messages::ActiveModel {
-                    id: ActiveValue::Set(Uuid::new_v4()),
-                    content: ActiveValue::Set(markdown_writer.finish().await?),
-                    is_human: ActiveValue::Set(false),
-                    thread_id: ActiveValue::Set(thread.id),
-                    created_at: ActiveValue::default(),
-                };
-                answer_message.insert(&connection).await.map_err(|err| {
+                let (mut answer_message, artifacts) =
+                    block_handler_reader.into_active_models().await?;
+                answer_message.thread_id = ActiveValue::Set(thread.id);
+                let message_model = answer_message.insert(&connection).await.map_err(|err| {
                     OxyError::DBError(format!("Failed to insert message:\n{}", err))
                 })?;
+                println!("Inserted message: {:?}", message_model);
+
+                for mut artifact in artifacts {
+                    artifact.thread_id = ActiveValue::Set(thread.id);
+                    artifact.message_id = ActiveValue::Set(message_model.id);
+                    println!("Inserting artifact: {:?}", artifact);
+                    let response = artifact.insert(&connection).await.map_err(|err| {
+                        println!("Failed to insert artifact: {}", err);
+                        OxyError::DBError(format!("Failed to insert artifact:\n{}", err))
+                    })?;
+                    println!("Inserted artifact: {:?}", response);
+                }
                 Result::<(), OxyError>::Ok(())
             }
             Err(err) => {
@@ -458,7 +401,7 @@ pub async fn ask_thread(
                     OxyError::DBError(format!("Failed to insert message:\n{}", err))
                 })?;
                 let error_event = AnswerStream {
-                    content: msg,
+                    content: AnswerContent::Error { message: msg },
                     references: vec![],
                     is_error: true,
                     step: "".to_string(),

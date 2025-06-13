@@ -3,15 +3,19 @@ import { Message } from "@/types/chat";
 
 interface StreamingMessageProps {
   message: Message;
+  onArtifactClick?: (id: string) => void;
 }
 
-const StreamingMessage = ({ message }: StreamingMessageProps) => {
+const StreamingMessage = ({
+  message,
+  onArtifactClick,
+}: StreamingMessageProps) => {
   console.log("StreamingMessage", message);
   if (!message.isStreaming) return null;
 
   return (
     <div className="mb-6 p-4 rounded-lg bg-secondary/20">
-      <AgentMessage message={message} />
+      <AgentMessage message={message} onArtifactClick={onArtifactClick} />
     </div>
   );
 };

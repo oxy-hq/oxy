@@ -190,6 +190,7 @@ async fn create_agent_file(
         }),
         tests: vec![],
         description: "".to_string(),
+        reasoning: None,
     };
 
     serde_yaml::to_writer(std::fs::File::create(&agent_file)?, &agent_content)?;

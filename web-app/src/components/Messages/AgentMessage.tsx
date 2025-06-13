@@ -9,6 +9,7 @@ interface AgentMessageProps {
   message: Message;
   showAvatar?: boolean;
   prompt?: string;
+  onArtifactClick?: (id: string) => void;
   createdAt?: string;
 }
 
@@ -16,6 +17,7 @@ const AgentMessage = ({
   message,
   showAvatar,
   prompt,
+  onArtifactClick,
   createdAt,
 }: AgentMessageProps) => {
   const { content, references, steps, isStreaming } = message;
@@ -47,7 +49,10 @@ const AgentMessage = ({
           <div className="flex-1 w-full">
             <div className="p-4 w-full rounded-xl bg-base-card border border-base-border shadow-sm flex flex-col gap-2 overflow-x-auto">
               <ThreadSteps steps={steps} isLoading={isStreaming} />
-              <AnswerContent content={content || ""} />
+              <AnswerContent
+                content={content || ""}
+                onArtifactClick={onArtifactClick}
+              />
             </div>
             {references.length > 0 && (
               <div className="mt-2">

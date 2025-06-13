@@ -18,7 +18,7 @@ const ThreadHeader = ({ thread }: ThreadHeaderProps) => {
   return (
     <PageHeader className="border-b-1 border-border items-center">
       <div className="p-2 flex items-center justify-center flex-1 h-full">
-        <div className="flex gap-1 items-center text-muted-foreground">
+        <div className="flex flex-1 gap-1 items-center text-muted-foreground justify-end">
           <Bot className="w-4 h-4 min-w-4 min-h-4" />
           <p className="text-sm break-all">
             {isPending ? (
@@ -31,7 +31,7 @@ const ThreadHeader = ({ thread }: ThreadHeaderProps) => {
         <div className="px-4 h-full flex items-stretch">
           <Separator orientation="vertical" />
         </div>
-        <p className="text-sm text-base-foreground">{thread?.title}</p>
+        <p className="text-sm text-base-foreground flex-1">{thread?.title}</p>
       </div>
     </PageHeader>
   );

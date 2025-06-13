@@ -4,9 +4,10 @@ import MessageHistoryItem from "./MessageHistoryItem";
 
 interface MessageHistoryProps {
   messages: MessageItem[];
+  onArtifactClick?: (id: string) => void;
 }
 
-const MessageHistory = ({ messages }: MessageHistoryProps) => {
+const MessageHistory = ({ messages, onArtifactClick }: MessageHistoryProps) => {
   if (messages.length === 0) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -18,7 +19,11 @@ const MessageHistory = ({ messages }: MessageHistoryProps) => {
   return (
     <div className="mb-6">
       {messages.map((msg) => (
-        <MessageHistoryItem key={msg.id} msg={msg} />
+        <MessageHistoryItem
+          key={msg.id}
+          msg={msg}
+          onArtifactClick={onArtifactClick}
+        />
       ))}
     </div>
   );

@@ -18,6 +18,7 @@ import TableVirtualizedPlugin from "./plugins/TableVirtualizedPlugin";
 
 interface MarkdownData {
   tables?: string[][][];
+  onArtifactClick?: (id: string) => void;
 }
 
 const sanitizeSchema = {
@@ -25,7 +26,7 @@ const sanitizeSchema = {
   attributes: {
     ...defaultSchema.attributes,
     chart: ["chart_src"],
-    artifact: ["kind", "title", "is_verified"],
+    artifact: ["artifactId", "kind", "title", "is_verified"],
     table_virtualized: ["table_id"],
   },
   tagNames: [
@@ -38,6 +39,7 @@ const sanitizeSchema = {
 
 type Props = {
   children: string;
+  onArtifactClick?: (id: string) => void;
 };
 
 const getExtendedComponents = (data?: MarkdownData): ExtendedComponents => ({
@@ -71,7 +73,9 @@ const getExtendedComponents = (data?: MarkdownData): ExtendedComponents => ({
   ),
   code: (props) => <CodeBlock {...props} />,
   chart: (props) => <ChartContainer {...props} />,
-  artifact: (props) => <ArtifactContainer {...props} />,
+  artifact: (props) => (
+    <ArtifactContainer {...props} onClick={data?.onArtifactClick} />
+  ),
   table_virtualized: (props) => (
     <TableVirtualized {...props} tables={data?.tables ?? []} />
   ),
@@ -87,8 +91,8 @@ const getExtendedComponents = (data?: MarkdownData): ExtendedComponents => ({
   ),
 });
 
-function Markdown({ children }: Props) {
-  const { newMarkdown, tables } = extractLargeTables(children);
+function Markdown({ children, onArtifactClick }: Props) {
+  const { newMarkdown, tables } = extractLargeTables(children || "");
   return (
     <ReactMarkdown
       remarkPlugins={[
@@ -99,7 +103,7 @@ function Markdown({ children }: Props) {
         TableVirtualizedPlugin,
       ]}
       rehypePlugins={[rehypeRaw, [rehypeSanitize, sanitizeSchema]]}
-      components={getExtendedComponents({ tables })}
+      components={getExtendedComponents({ tables, onArtifactClick })}
     >
       {newMarkdown}
     </ReactMarkdown>

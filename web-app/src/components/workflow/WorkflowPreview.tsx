@@ -1,11 +1,6 @@
 import React, { useEffect, useMemo } from "react";
-import { v4 as uuidv4 } from "uuid";
 import { ReactFlowProvider } from "@xyflow/react";
-import useWorkflow, {
-  TaskConfig,
-  TaskType,
-  TaskConfigWithId,
-} from "@/stores/useWorkflow";
+import useWorkflow from "@/stores/useWorkflow";
 import { useMutation } from "@tanstack/react-query";
 import useWorkflowConfig from "@/hooks/api/useWorkflowConfig.ts";
 import useWorkflowLogs from "@/hooks/api/useWorkflowLogs";
@@ -24,48 +19,16 @@ import { LoaderCircle, LogsIcon, PlayIcon } from "lucide-react";
 import { Skeleton } from "@/components/ui/shadcn/skeleton";
 import { LogItem } from "@/services/types";
 
-const getTaskId = (task_name: string) => {
-  return task_name + "__" + uuidv4();
-};
-
 export interface WorkflowPreviewRef {
   run: () => void;
 }
 
-const addTaskId = (tasks: TaskConfig[]): TaskConfigWithId[] => {
-  return tasks.map((task) => {
-    if (task.type === TaskType.LOOP_SEQUENTIAL) {
-      return {
-        ...task,
-        type: TaskType.LOOP_SEQUENTIAL,
-        tasks: addTaskId(task.tasks),
-        id: getTaskId(task.name),
-      };
-    }
-    if (task.type === TaskType.CONDITIONAL) {
-      return {
-        ...task,
-        conditions: task.conditions.map((c) => ({
-          ...c,
-          tasks: addTaskId(c.tasks),
-        })),
-        type: TaskType.CONDITIONAL,
-        else: task.else ? addTaskId(task.else) : undefined,
-        id: getTaskId(task.name),
-      };
-    }
-    return { ...task, id: getTaskId(task.name) } as TaskConfigWithId;
-  });
-};
-
 export const WorkflowPreview = ({ pathb64 }: { pathb64: string }) => {
   const path = useMemo(() => atob(pathb64), [pathb64]);
   const relativePath = path;
-  const workflow = useWorkflow((state) => state.workflow);
   const setLogs = useWorkflow((state) => state.setLogs);
   const [showOutput, setShowOutput] = React.useState(false);
   const logs = useWorkflow((state) => state.logs);
-  const setWorkflow = useWorkflow((state) => state.setWorkflow);
 
   const { data: logsData } = useWorkflowLogs(relativePath);
 
@@ -73,18 +36,7 @@ export const WorkflowPreview = ({ pathb64 }: { pathb64: string }) => {
     setLogs(logsData || []);
   }, [logsData, setLogs]);
 
-  const setSelectedNodeId = useWorkflow((state) => state.setSelectedNodeId);
-
   const { data: workflowConfig } = useWorkflowConfig(path);
-
-  useEffect(() => {
-    if (workflowConfig) {
-      const tasks = addTaskId(workflowConfig.tasks);
-      const workflow = { ...workflowConfig, tasks, path };
-      setWorkflow(workflow);
-      setSelectedNodeId(null);
-    }
-  }, [workflowConfig, path, setWorkflow, setSelectedNodeId]);
 
   const appendLogs = useWorkflow((state) => state.appendLogs);
 
@@ -126,7 +78,7 @@ export const WorkflowPreview = ({ pathb64 }: { pathb64: string }) => {
     setShowOutput(!showOutput);
   };
 
-  if (workflow === null) {
+  if (!workflowConfig) {
     return (
       <div className="w-full">
         <div className="flex flex-col gap-10 max-w-page-content mx-auto py-10">
@@ -151,7 +103,7 @@ export const WorkflowPreview = ({ pathb64 }: { pathb64: string }) => {
       >
         <div className="relative h-full w-full">
           <ReactFlowProvider>
-            <WorkflowDiagram tasks={workflow.tasks} />
+            <WorkflowDiagram workflowConfig={workflowConfig} />
           </ReactFlowProvider>
           {!showOutput && (
             <Button

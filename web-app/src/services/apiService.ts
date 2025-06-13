@@ -8,6 +8,7 @@ import { TestStreamMessage } from "@/types/eval";
 import { Workflow } from "@/types/workflow";
 import { fetchEventSource } from "@microsoft/fetch-event-source";
 import { LogItem } from "./types";
+import { Artifact } from "./mock";
 
 const fetchSSE = async <T>(
   url: string,
@@ -228,6 +229,11 @@ export const apiService: Service = {
     database: string;
   }): Promise<{ workflow: Workflow }> {
     const response = await apiClient.post("/workflows/from-query", request);
+    return response.data;
+  },
+
+  async getArtifact(id: string): Promise<Artifact> {
+    const response = await apiClient.get(`/artifacts/${id}`);
     return response.data;
   },
   async getThreadMessages(threadId: string) {

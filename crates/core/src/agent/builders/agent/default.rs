@@ -5,7 +5,7 @@ use crate::agent::builders::tool::OpenAITool;
 use crate::agent::contexts::Contexts;
 use crate::agent::databases::DatabasesContext;
 use crate::config::constants::AGENT_SOURCE_PROMPT;
-use crate::config::model::{AgentContext, AgentToolsConfig, DefaultAgent};
+use crate::config::model::{AgentContext, AgentToolsConfig, DefaultAgent, ReasoningConfig};
 use crate::execute::builders::map::ParamMapper;
 use crate::execute::renderer::Renderer;
 use crate::execute::types::{Output, OutputContainer};
@@ -39,6 +39,7 @@ pub struct DefaultAgentInput {
     pub contexts: Option<Vec<AgentContext>>,
     pub prompt: String,
     pub memory: Vec<Message>,
+    pub reasoning_config: Option<ReasoningConfig>,
 }
 
 #[async_trait::async_trait]
@@ -66,6 +67,7 @@ impl Executable<DefaultAgentInput> for DefaultAgentExecutable {
                         },
                 },
             memory,
+            reasoning_config,
         } = input;
         println!("Default agent input: {:?}", &memory);
         let model_config = execution_context.config.resolve_model(&model)?;
@@ -116,6 +118,7 @@ impl Executable<DefaultAgentInput> for DefaultAgentExecutable {
             client,
             model_config.model_name().to_string(),
             max_tool_calls,
+            reasoning_config,
         )
         .await;
         let outputs = react_executable
@@ -135,6 +138,7 @@ async fn build_react_loop(
     client: OpenAIClient,
     model: String,
     max_iterations: usize,
+    reasoning_config: Option<ReasoningConfig>,
 ) -> impl Executable<Vec<ChatCompletionRequestMessage>, Response = Vec<OpenAIExecutableResponse>> {
     let tools: Vec<ChatCompletionTool> =
         futures::future::join_all(tool_configs.iter().map(ChatCompletionTool::from_tool_async))
@@ -147,7 +151,13 @@ async fn build_react_loop(
             max_iterations,
         )
         .memo(vec![])
-        .executable(OpenAIExecutable::new(client, model, tools, None))
+        .executable(OpenAIExecutable::new(
+            client,
+            model,
+            tools,
+            None,
+            reasoning_config.map(|c| c.into()),
+        ))
 }
 
 #[derive(Clone)]

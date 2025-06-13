@@ -1,5 +1,93 @@
-export type Answer = {
+import { LogItem } from "@/services/types";
+
+export interface TextContent {
+  type: "text";
   content: string;
+}
+
+export interface WorkflowArtifactKind {
+  type: "workflow";
+  value: {
+    ref: string;
+  };
+}
+
+export interface AgentArtifactKind {
+  type: "agent";
+  value: {
+    ref: string;
+  };
+}
+
+export interface ExecuteSQLArtifactKind {
+  type: "execute_sql";
+  value: {
+    database: string;
+  };
+}
+
+export type ArtifactKind =
+  | WorkflowArtifactKind
+  | AgentArtifactKind
+  | ExecuteSQLArtifactKind;
+
+export interface ArtifactStartedContent {
+  type: "artifact_started";
+  id: string;
+  title: string;
+  kind: ArtifactKind;
+}
+
+export interface WorkflowArtifactValue {
+  type: "log_item";
+  value: LogItem;
+}
+
+export interface AgentArtifactValue {
+  type: "content";
+  value: string;
+}
+
+export interface ExecuteSQLArtifactValue {
+  type: "execute_sql";
+  value: {
+    database: string;
+    sql_query: string;
+    result: string[][];
+    is_result_truncated: boolean;
+  };
+}
+
+export type ArtifactValue =
+  | WorkflowArtifactValue
+  | AgentArtifactValue
+  | ExecuteSQLArtifactValue;
+
+export interface ArtifactValueContent {
+  type: "artifact_value";
+  id: string;
+  value: ArtifactValue;
+}
+
+export interface ArtifactDoneContent {
+  type: "artifact_done";
+  id: string;
+}
+
+export interface ErrorContent {
+  type: "error";
+  message: string;
+}
+
+export type AnswerContent =
+  | TextContent
+  | ArtifactStartedContent
+  | ArtifactValueContent
+  | ArtifactDoneContent
+  | ErrorContent;
+
+export type Answer = {
+  content: AnswerContent;
   references: Reference[];
   step: string;
   is_error: boolean;

@@ -22,6 +22,7 @@ use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 
 use super::app;
+use super::artifacts;
 use super::message;
 use super::task;
 
@@ -43,6 +44,7 @@ pub async fn api_router(auth_mode: AuthMode) -> Result<Router, OxyError> {
         .route("/logout", get(user::logout))
         .route("/threads", get(thread::get_threads))
         .route("/threads/{id}", get(thread::get_thread))
+        .route("/artifacts/{id}", get(artifacts::get_artifact))
         .route("/threads/{id}/ask", post(thread::ask_thread))
         .route("/threads", post(thread::create_thread))
         .route("/threads/{id}", delete(thread::delete_thread))

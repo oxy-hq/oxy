@@ -194,14 +194,6 @@
   }
 }
 
-@layer components {
-  .markdown {
-    details {
-      padding-left: 0.5rem;
-    }
-  }
-}
-
 html,
 body {
   overflow: hidden;
@@ -250,6 +242,12 @@ body {
 
 .customScrollbar::-webkit-scrollbar-track {
   background: transparent;
+}
+
+.artifactContent {
+  details {
+    padding-left: 0.5rem;
+  }
 }
 
 .react-flow__edges {

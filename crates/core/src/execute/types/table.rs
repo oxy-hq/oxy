@@ -88,13 +88,20 @@ impl Table {
         })
     }
 
-    pub fn to_markdown(&self) -> Result<String, OxyError> {
-        let table = self.get_inner()?;
-        Ok(record_batches_to_markdown(&table.batches, &table.schema)
-            .map_err(|err| {
-                OxyError::RuntimeError(format!("Failed to render table result:\n{}", err))
-            })?
-            .to_string())
+    pub fn to_markdown(&self) -> String {
+        match self.get_inner() {
+            Ok(table) => match record_batches_to_markdown(&table.batches, &table.schema) {
+                Ok(markdown) => return markdown.to_string(),
+                Err(e) => {
+                    tracing::error!("Failed to convert table to markdown: {}", e);
+                    return format!("Table({}): {}", &self.file_path, e);
+                }
+            },
+            Err(e) => {
+                tracing::error!("Failed to get inner table: {}", e);
+                return format!("Table({}): {}", &self.file_path, e);
+            }
+        }
     }
 
     pub fn to_term(&self) -> Result<String, OxyError> {
@@ -104,6 +111,24 @@ impl Table {
                 OxyError::RuntimeError(format!("Failed to render table result:\n{}", err))
             })?
             .to_string())
+    }
+
+    pub fn to_2d_array(&self) -> Result<(Vec<Vec<String>>, bool), OxyError> {
+        let table = self.get_inner()?;
+        let (truncated_results, truncated) = truncate_datasets(&table.batches);
+        let table_2d_array = record_batches_to_2d_array(&truncated_results, &table.schema)
+            .map_err(|err| {
+                OxyError::RuntimeError(format!("Failed to convert table to 2D array: {}", err))
+            })?;
+        Ok((table_2d_array, truncated))
+    }
+
+    pub fn get_database_ref(&self) -> Option<String> {
+        self.reference.as_ref().map(|r| r.database_ref.clone())
+    }
+
+    pub fn get_sql_query(&self) -> Option<String> {
+        self.reference.as_ref().map(|r| r.sql.clone())
     }
 
     pub fn into_reference(self) -> Option<ReferenceKind> {
