@@ -253,16 +253,16 @@ impl Block {
             BlockValue::Children { kind, children } => {
                 let mut markdown = String::new();
                 let (block_opener, block_closer) =
-                    Block::container_opener_closer(&kind, &mut next_fences);
-                markdown.push_str("\n");
+                    Block::container_opener_closer(kind, &mut next_fences);
+                markdown.push('\n');
                 markdown.push_str(&block_opener);
-                markdown.push_str("\n");
+                markdown.push('\n');
                 for child in children {
                     markdown.push_str(&child.to_markdown(next_fences));
                 }
                 markdown.push_str("\n\n");
                 markdown.push_str(&block_closer);
-                markdown.push_str("\n");
+                markdown.push('\n');
                 markdown
             }
         }

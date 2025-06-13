@@ -91,15 +91,15 @@ impl Table {
     pub fn to_markdown(&self) -> String {
         match self.get_inner() {
             Ok(table) => match record_batches_to_markdown(&table.batches, &table.schema) {
-                Ok(markdown) => return markdown.to_string(),
+                Ok(markdown) => markdown.to_string(),
                 Err(e) => {
                     tracing::error!("Failed to convert table to markdown: {}", e);
-                    return format!("Table({}): {}", &self.file_path, e);
+                    format!("Table({}): {}", &self.file_path, e)
                 }
             },
             Err(e) => {
                 tracing::error!("Failed to get inner table: {}", e);
-                return format!("Table({}): {}", &self.file_path, e);
+                format!("Table({}): {}", &self.file_path, e)
             }
         }
     }

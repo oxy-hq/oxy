@@ -58,10 +58,10 @@ impl BlockManager {
     }
 
     pub async fn finish_block(&mut self, source: &Source) -> Result<bool, OxyError> {
-        if !self
+        if self
             .active_blocks
             .last()
-            .map_or(false, |b| b.id.as_str() == source.id.as_str())
+            .is_none_or(|b| b.id.as_str() != source.id.as_str())
         {
             return Ok(false);
         }
@@ -97,13 +97,13 @@ impl BlockManager {
 
     pub fn finalize_content(&mut self, chunk: &Output) -> Option<Output> {
         self.update_content(chunk);
-        let result = self.active_content.take();
-        result
+
+        self.active_content.take()
     }
 
     pub fn is_artifact_active(&self, artifact_id: &str) -> bool {
         self.active_blocks
             .last()
-            .map_or(false, |b| b.is_artifact() && b.id.as_str() == artifact_id)
+            .is_some_and(|b| b.is_artifact() && b.id.as_str() == artifact_id)
     }
 }

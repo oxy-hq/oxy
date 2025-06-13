@@ -101,7 +101,7 @@ impl ArtifactTracker {
                         r#ref: r#ref.to_string(),
                         output: children.iter().fold(String::new(), |mut acc, c| {
                             acc.push_str(&c.clone().to_markdown(MARKDOWN_MAX_FENCES));
-                            acc.push_str("\n");
+                            acc.push('\n');
                             acc
                         }),
                     }));
