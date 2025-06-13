@@ -1,13 +1,11 @@
-use super::thread::ThreadStream;
-use crate::api::thread::AnswerStream;
 use crate::config::ConfigBuilder;
 use crate::config::model::AgentConfig;
 use crate::service::test::run_test as run_agent_test;
+use crate::service::types::{AnswerContent, AnswerStream};
 use crate::utils::create_sse_stream_from_stream;
 use crate::{
     auth::extractor::AuthenticatedUserExtractor,
-    execute::writer::MarkdownWriter,
-    service::agent::run_agent,
+    service::{agent::run_agent, formatters::BlockHandler},
     utils::{create_sse_stream, find_project_path},
 };
 use async_stream::stream;
@@ -20,11 +18,7 @@ use axum::{
 use base64::{Engine, prelude::BASE64_STANDARD};
 use futures::Stream;
 use serde::{Deserialize, Serialize};
-use std::{
-    path::PathBuf,
-    pin::Pin,
-    sync::{Arc, Mutex},
-};
+use std::{path::PathBuf, pin::Pin};
 use utoipa::ToSchema;
 
 #[derive(Serialize)]
@@ -238,14 +232,12 @@ pub async fn ask_agent(
     let (tx, rx) = tokio::sync::mpsc::channel(100);
     let _ = tokio::spawn(async move {
         let tx_clone = tx.clone();
-        let markdown_writer = Arc::new(tokio::sync::Mutex::new(MarkdownWriter::default()));
-        let references_arc = Arc::new(Mutex::new(vec![]));
-        let thread_stream = ThreadStream::new(tx, references_arc.clone(), markdown_writer.clone());
+        let block_handler = BlockHandler::new(tx);
         let result = run_agent(
             &project_path,
             &PathBuf::from(path),
             payload.question,
-            thread_stream,
+            block_handler,
             vec![],
         )
         .await;
@@ -253,7 +245,9 @@ pub async fn ask_agent(
         if let Err(err) = result {
             tracing::error!("Error running agent: {}", err);
             let message = AnswerStream {
-                content: format!("🔴 Error: {}", err),
+                content: AnswerContent::Error {
+                    message: format!("🔴 Error: {}", err),
+                },
                 references: vec![],
                 is_error: true,
                 step: "".to_string(),

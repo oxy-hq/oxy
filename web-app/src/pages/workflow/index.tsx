@@ -1,7 +1,7 @@
 import React, { useMemo } from "react";
 import { useParams } from "react-router-dom";
-import WorkflowPageHeader from "./WorkflowPageHeader";
-import { WorkflowPreview } from "./WorkflowPreview";
+import WorkflowPageHeader from "./Header";
+import { WorkflowPreview } from "@/components/workflow/WorkflowPreview";
 
 export const Workflow: React.FC<{ pathb64: string }> = ({ pathb64 }) => {
   const path = useMemo(() => atob(pathb64), [pathb64]);

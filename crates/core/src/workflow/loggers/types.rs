@@ -21,6 +21,7 @@ pub struct LogItem {
     pub content: String,
     pub timestamp: DateTime<Utc>,
     pub log_type: LogType,
+    pub append: bool,
 }
 
 impl LogItem {
@@ -29,7 +30,22 @@ impl LogItem {
             content,
             timestamp: Utc::now(),
             log_type,
+            append: false,
         }
+    }
+
+    pub fn info(content: String) -> Self {
+        Self::new(content, LogType::Info)
+    }
+
+    pub fn append(content: String) -> Self {
+        let mut log_item = Self::new(content, LogType::Info);
+        log_item.append = true;
+        log_item
+    }
+
+    pub fn error(content: String) -> Self {
+        Self::new(content, LogType::Error)
     }
 }
 pub trait WorkflowLogger: Send + Sync {

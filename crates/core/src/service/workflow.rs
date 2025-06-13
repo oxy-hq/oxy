@@ -11,7 +11,7 @@ use super::eval::PBarsHandler;
 use crate::{
     config::{
         ConfigBuilder,
-        constants::{CONCURRENCY_SOURCE, CONSISTENCY_SOURCE, WORKFLOW_SOURCE},
+        constants::{CONCURRENCY_SOURCE, CONSISTENCY_SOURCE, TASK_SOURCE, WORKFLOW_SOURCE},
         model::{ExecuteSQLTask, SQL, Task, TaskType, Workflow},
     },
     constants::{WORKFLOW_FILE_EXTENSION, WORKFLOW_SAVED_FROM_QUERY_DIR},
@@ -136,15 +136,14 @@ where
                 EventKind::Error { message } => {
                     self.logger.log_error(&message);
                 }
-                EventKind::Started { .. } => {}
-                EventKind::Updated { .. } => {}
-                EventKind::DataAppCreated { .. } => {}
-                EventKind::Finished { .. } => {}
+                _ => {}
             },
             CONCURRENCY_SOURCE => {}
             _ => match event.kind {
                 EventKind::Started { name, .. } => {
-                    self.logger.log(&format!("\n⏳Starting {}", name));
+                    if event.source.kind.as_str() == TASK_SOURCE {
+                        self.logger.log(&format!("\n⏳Starting {}", name));
+                    }
                 }
                 EventKind::Updated { chunk } => match chunk.delta.clone() {
                     Output::SQL(sql) => {
@@ -164,9 +163,7 @@ where
                 EventKind::Error { message } => {
                     self.logger.log_error(&message);
                 }
-                EventKind::DataAppCreated { .. } => {}
-                EventKind::Finished { .. } => {}
-                EventKind::Progress { .. } => {}
+                _ => {}
             },
         }
         Ok(())

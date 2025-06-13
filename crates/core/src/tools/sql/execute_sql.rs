@@ -1,9 +1,11 @@
+use std::collections::HashMap;
+
 use crate::{
     adapters::connector::Connector,
     errors::OxyError,
     execute::{
         Executable, ExecutionContext,
-        types::{Chunk, Output, SQL, TableReference},
+        types::{Chunk, EventKind, Output, SQL, TableReference},
     },
     tools::types::SQLInput,
 };
@@ -26,6 +28,15 @@ impl Executable<SQLInput> for SQLExecutable {
         execution_context: &ExecutionContext,
         input: SQLInput,
     ) -> Result<Self::Response, OxyError> {
+        execution_context
+            .write_kind(EventKind::Started {
+                name: input.sql.to_string(),
+                attributes: HashMap::from_iter([
+                    ("database".to_string(), input.database.to_string()),
+                    ("sql_query".to_string(), input.sql.to_string()),
+                ]),
+            })
+            .await?;
         execution_context
             .write_chunk(Chunk {
                 key: None,
@@ -52,6 +63,11 @@ impl Executable<SQLInput> for SQLExecutable {
                 key: None,
                 delta: table.clone(),
                 finished: true,
+            })
+            .await?;
+        execution_context
+            .write_kind(EventKind::Finished {
+                message: "".to_string(),
             })
             .await?;
         Ok(table)

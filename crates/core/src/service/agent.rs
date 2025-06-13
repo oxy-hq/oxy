@@ -132,10 +132,7 @@ impl EventHandler for AgentCLIHandler {
                 EventKind::Error { message } => {
                     println!("{}", message.error());
                 }
-                EventKind::Started { .. }
-                | EventKind::Updated { .. }
-                | EventKind::DataAppCreated { .. }
-                | EventKind::Finished { .. } => {}
+                _ => {}
             },
             CONCURRENCY_SOURCE => {}
             _ => match event.kind {
@@ -168,10 +165,7 @@ impl EventHandler for AgentCLIHandler {
                 EventKind::Error { message } => {
                     println!("{}", message.error());
                 }
-                EventKind::Started { .. }
-                | EventKind::DataAppCreated { .. }
-                | EventKind::Finished { .. }
-                | EventKind::Progress { .. } => {}
+                _ => {}
             },
         }
         Ok(())

@@ -1,5 +1,7 @@
-model: "openai-4o-mini"
+model: "openai-o4-mini"
 type: routing
+reasoning:
+  effort: low
 # system_instructions: |
 #   You are a routing agent responsible for directing tasks to the appropriate tools. Follow the steps below to complete your task:
 #   1. Analyze the Task: Carefully assess the user's request to determine the most relevant tool for handling it.
@@ -7,6 +9,7 @@ type: routing
 #   3. Route to the Relevant Tool: If a suitable tool is identified, route the task to that tool for processing.
 #   4. Process and Respond: Synthesize the tool’s output into a clear and concise response for the user. Do not return raw or unprocessed tool results.
 routes:
+  - "agents/duckdb.agent.yml"
   - "workflows/*.workflow.yml"
   - "data_fruit/*.sql"
 route_fallback: agents/default.agent.yml

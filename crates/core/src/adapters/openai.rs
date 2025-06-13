@@ -4,6 +4,8 @@ use async_openai::{
     types::{
         ChatCompletionNamedToolChoice, ChatCompletionTool, ChatCompletionToolArgs,
         ChatCompletionToolType, FunctionName, FunctionObject, FunctionObjectArgs,
+        ReasoningEffort as OpenAIReasoningEffort,
+        responses::ReasoningConfig as OpenAIReasoningConfig,
     },
 };
 use axum::http::HeaderMap;
@@ -15,9 +17,10 @@ use crate::{
     adapters::create_app_schema,
     config::{
         constants::{ANTHROPIC_API_URL, GEMINI_API_URL},
-        model::{Model, RetrievalConfig, ToolType},
+        model::{Model, ReasoningConfig, ReasoningEffort, RetrievalConfig, ToolType},
     },
     errors::OxyError,
+    execute::types::event::ArtifactKind,
     service::workflow::get_workflow,
     tools::{
         types::{
@@ -203,7 +206,7 @@ pub trait OpenAIToolConfig {
     fn description(&self) -> String;
     fn tool_kind(&self) -> String;
     fn handle(&self) -> String;
-    fn artifact(&self) -> Option<(String, String)>;
+    fn artifact(&self) -> Option<(String, ArtifactKind)>;
     async fn params_schema(&self) -> Result<serde_json::Value, OxyError>;
 }
 
@@ -245,11 +248,27 @@ impl OpenAIToolConfig for &ToolType {
         }
     }
 
-    fn artifact(&self) -> Option<(String, String)> {
+    fn artifact(&self) -> Option<(String, ArtifactKind)> {
         match self {
-            ToolType::ExecuteSQL(_) | ToolType::Workflow(_) | ToolType::Agent(_) => {
-                Some((self.handle(), self.tool_kind()))
-            }
+            ToolType::ExecuteSQL(sql) => Some((
+                self.handle(),
+                ArtifactKind::ExecuteSQL {
+                    sql: sql.sql.clone().unwrap_or_default(),
+                    database: sql.database.to_string(),
+                },
+            )),
+            ToolType::Workflow(wf) => Some((
+                self.handle(),
+                ArtifactKind::Workflow {
+                    r#ref: wf.workflow_ref.clone(),
+                },
+            )),
+            ToolType::Agent(ag) => Some((
+                self.handle(),
+                ArtifactKind::Agent {
+                    r#ref: ag.agent_ref.clone(),
+                },
+            )),
             _ => None,
         }
     }
@@ -306,6 +325,25 @@ impl From<ToolType> for ChatCompletionNamedToolChoice {
             function: FunctionName {
                 name: (&val).handle(),
             },
+        }
+    }
+}
+
+impl From<ReasoningEffort> for OpenAIReasoningEffort {
+    fn from(effort: ReasoningEffort) -> Self {
+        match effort {
+            ReasoningEffort::Low => OpenAIReasoningEffort::Low,
+            ReasoningEffort::Medium => OpenAIReasoningEffort::Medium,
+            ReasoningEffort::High => OpenAIReasoningEffort::High,
+        }
+    }
+}
+
+impl From<ReasoningConfig> for OpenAIReasoningConfig {
+    fn from(reasoning_config: ReasoningConfig) -> Self {
+        OpenAIReasoningConfig {
+            effort: Some(reasoning_config.effort.into()),
+            ..Default::default()
         }
     }
 }

@@ -1,8 +1,10 @@
 pub mod agent;
 pub mod app;
 pub mod eval;
+pub mod formatters;
 pub mod message;
 pub mod retrieval;
 pub mod sync;
 pub mod test;
+pub mod types;
 pub mod workflow;

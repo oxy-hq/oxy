@@ -66,6 +66,7 @@ impl Executable<AgentInput> for AgentExecutable {
                         contexts: agent_config.context,
                         prompt,
                         memory,
+                        reasoning_config: agent_config.reasoning,
                     },
                     handler,
                 )
@@ -82,6 +83,7 @@ impl Executable<AgentInput> for AgentExecutable {
                         routing_agent,
                         prompt,
                         memory,
+                        reasoning_config: agent_config.reasoning,
                     },
                     handler,
                 )

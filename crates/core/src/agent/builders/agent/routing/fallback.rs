@@ -8,7 +8,7 @@ use crate::{
         OpenAIExecutableResponse,
         builders::{openai::OpenAIExecutable, tool::OpenAITool},
     },
-    config::model::{Model, ToolType},
+    config::model::{Model, ReasoningConfig, ToolType},
     errors::OxyError,
     execute::{Executable, ExecutionContext},
 };
@@ -24,6 +24,7 @@ impl FallbackAgent {
         agent_name: &str,
         model: &Model,
         tool_config: ToolType,
+        reasoning_config: Option<ReasoningConfig>,
     ) -> Result<Self, OxyError> {
         let model_name = model.model_name();
         Ok(Self {
@@ -34,6 +35,7 @@ impl FallbackAgent {
                 Some(ChatCompletionToolChoiceOption::Named(
                     tool_config.clone().into(),
                 )),
+                reasoning_config.map(|rc| rc.into()),
             ),
             tool_executable: OpenAITool::new(agent_name.to_string(), vec![tool_config], 1),
         })

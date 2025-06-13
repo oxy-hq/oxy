@@ -18,6 +18,7 @@ function ArtifactPlugin() {
       const kind = attributes.kind;
       const title = attributes.title;
       const is_verified = attributes.is_verified;
+      const id = attributes.id ?? "";
 
       if (!kind) {
         return;
@@ -26,6 +27,7 @@ function ArtifactPlugin() {
         ...node.data,
         hName: "artifact",
         hProperties: {
+          artifactId: id,
           kind,
           title,
           is_verified,

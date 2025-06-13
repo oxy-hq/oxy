@@ -9,6 +9,7 @@ interface WorkflowOutputProps {
   toggleOutput: () => void;
   isPending: boolean;
   logs: LogItem[];
+  onArtifactClick?: (id: string) => void;
 }
 
 const WorkflowOutput: React.FC<WorkflowOutputProps> = ({
@@ -16,6 +17,7 @@ const WorkflowOutput: React.FC<WorkflowOutputProps> = ({
   toggleOutput,
   isPending,
   logs,
+  onArtifactClick,
 }) => {
   return (
     <div className="bg-sidebar-background h-full flex flex-col">
@@ -30,7 +32,11 @@ const WorkflowOutput: React.FC<WorkflowOutputProps> = ({
 
       {logs.length > 0 && showOutput && (
         <div className="flex-1 min-h-0">
-          <OutputLogs isPending={isPending} logs={logs} />
+          <OutputLogs
+            onArtifactClick={onArtifactClick}
+            isPending={isPending}
+            logs={logs}
+          />
         </div>
       )}
     </div>

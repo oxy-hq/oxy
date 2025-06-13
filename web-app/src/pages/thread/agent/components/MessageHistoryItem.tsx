@@ -4,9 +4,13 @@ import { MessageItem } from "@/types/chat";
 
 interface MessageHistoryItemProps {
   msg: MessageItem;
+  onArtifactClick?: (id: string) => void;
 }
 
-const MessageHistoryItem = ({ msg }: MessageHistoryItemProps) => (
+const MessageHistoryItem = ({
+  msg,
+  onArtifactClick,
+}: MessageHistoryItemProps) => (
   <div
     key={msg.id}
     className={`mb-6 p-4 rounded-lg ${msg.is_human ? "bg-muted/50" : "bg-secondary/20"}`}
@@ -23,6 +27,7 @@ const MessageHistoryItem = ({ msg }: MessageHistoryItemProps) => (
           isStreaming: false,
         }}
         createdAt={msg.created_at}
+        onArtifactClick={onArtifactClick}
       />
     )}
   </div>

@@ -7,7 +7,7 @@ use crate::{
     execute::{
         Executable, ExecutionContext, ExecutionContextBuilder,
         renderer::{Renderer, TemplateRegister},
-        types::{OutputContainer, Source},
+        types::{EventKind, OutputContainer, Source},
         writer::{BufWriter, EventHandler},
     },
 };
@@ -88,9 +88,21 @@ impl AgentLauncher {
             ))?
             .with_child_source(agent_input.agent_ref.to_string(), AGENT_SOURCE.to_string());
         let handle = tokio::spawn(async move {
-            AgentExecutable
+            execution_context
+                .write_kind(EventKind::Started {
+                    name: agent_input.agent_ref.to_string(),
+                    attributes: Default::default(),
+                })
+                .await?;
+            let response = AgentExecutable
                 .execute(&execution_context, agent_input)
-                .await
+                .await;
+            execution_context
+                .write_kind(EventKind::Finished {
+                    message: Default::default(),
+                })
+                .await?;
+            response
         });
 
         let buf_writer = self.buf_writer;

@@ -97,14 +97,14 @@ impl DataContainer {
 }
 
 impl OutputContainer {
-    pub fn to_markdown(&self) -> Result<String, OxyError> {
+    pub fn to_markdown(&self) -> String {
         match self {
             OutputContainer::List(list) => {
                 let mut rs = String::new();
                 for item in list {
-                    rs.push_str(&format!("{}\n", item.to_markdown()?));
+                    rs.push_str(&format!("{}\n", item.to_markdown()));
                 }
-                Ok(rs)
+                rs
             }
             OutputContainer::Map(map) => {
                 let mut rs = String::new();
@@ -115,15 +115,15 @@ impl OutputContainer {
                     rs.push_str(&format!(
                         "<details open>\n<summary>{}</summary>\n\n{}\n\n</details>\n",
                         key,
-                        value.to_markdown()?
+                        value.to_markdown()
                     ));
                 }
-                Ok(rs)
+                rs
             }
             OutputContainer::Single(output) => output.to_markdown(),
             OutputContainer::Metadata { value, .. } => value.output.to_markdown(),
             OutputContainer::Consistency { value, .. } => value.output.to_markdown(),
-            OutputContainer::Variable(output) => Ok(output.to_string()),
+            OutputContainer::Variable(output) => output.to_string(),
         }
     }
 

@@ -21,12 +21,24 @@ type OutputItemProps = {
   content: string;
   timestamp: string;
   logType: LogType;
+  onArtifactClick?: (id: string) => void;
 };
 
-const OutputItem = ({ content, timestamp, logType }: OutputItemProps) => {
+const OutputItem = ({
+  content,
+  timestamp,
+  logType,
+  onArtifactClick,
+}: OutputItemProps) => {
   const lineNumbers = content.split("\n").length;
   if (lineNumbers > 1) {
-    return <ExpandableOutput content={content} timestamp={timestamp} />;
+    return (
+      <ExpandableOutput
+        onArtifactClick={onArtifactClick}
+        content={content}
+        timestamp={timestamp}
+      />
+    );
   }
 
   return (

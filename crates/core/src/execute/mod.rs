@@ -1,5 +1,6 @@
 pub mod builders;
 mod context;
+pub mod formatters;
 pub mod renderer;
 pub mod types;
 pub mod writer;

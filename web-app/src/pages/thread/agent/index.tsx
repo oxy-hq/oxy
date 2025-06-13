@@ -1,3 +1,5 @@
+import ArtifactPanel from "@/components/ArtifactPanel";
+import { Separator } from "@/components/ui/shadcn/separator";
 import MessageInput from "@/components/MessageInput";
 import useSendMessageMutation from "@/hooks/api/sendMessageMutation";
 import { service } from "@/services/service";
@@ -8,6 +10,7 @@ import relativeTime from "dayjs/plugin/relativeTime";
 import MessageHistory from "./components/MessageHistory";
 import ThreadHeader from "./components/ThreadHeader";
 import StreamingMessage from "./components/StreamingMessage";
+import { Artifact } from "@/services/mock";
 
 // Initialize dayjs plugins
 dayjs.extend(relativeTime);
@@ -34,6 +37,13 @@ const useThreadMessages = (threadId: string) => {
 
 // Main component
 const AgentThread = ({ thread }: { thread: ThreadItem }) => {
+  const [selectedArtifactIds, setSelectedArtifactIds] = useState<string[]>([]);
+  const onArtifactClick = useCallback(
+    (id: string) => {
+      setSelectedArtifactIds([id]);
+    },
+    [setSelectedArtifactIds],
+  );
   const [message, setMessage] = useState<Message>({
     content: "",
     references: [],
@@ -41,6 +51,9 @@ const AgentThread = ({ thread }: { thread: ThreadItem }) => {
     isUser: false,
     isStreaming: false,
   });
+  const [artifactStreamingData, setArtifactStreamingData] = useState<{
+    [key: string]: Artifact;
+  }>({});
 
   const [followUpQuestion, setFollowUpQuestion] = useState("");
   const hasRun = useRef(false);
@@ -58,6 +71,7 @@ const AgentThread = ({ thread }: { thread: ThreadItem }) => {
     onStreamingMessage: setMessage,
     onMessageSent: fetchMessages,
     onMessagesUpdated: setMessageHistory,
+    onStreamingArtifact: setArtifactStreamingData,
   });
 
   // Auto-scroll effect
@@ -84,33 +98,61 @@ const AgentThread = ({ thread }: { thread: ThreadItem }) => {
     setFollowUpQuestion("");
   }, [followUpQuestion, isLoading, sendMessage]);
 
+  const handleClose = () => {
+    setSelectedArtifactIds([]);
+  };
+
   return (
     <div className="flex flex-col h-full overflow-hidden">
       <ThreadHeader thread={thread} />
 
       <div
         ref={messagesContainerRef}
-        className="overflow-y-auto p-4 [scrollbar-gutter:stable_both-edges] customScrollbar flex-1 flex items-center w-full justify-center"
+        className="overflow-hidden flex-1 flex items-center w-full justify-center"
       >
-        <div className="flex-1 max-w-page-content w-full h-full">
-          {thread && (
-            <>
-              <MessageHistory messages={messageHistory} />
-              <StreamingMessage message={message} />
-            </>
-          )}
-        </div>
-      </div>
+        <div className="flex-1 w-full h-full overflow-hidden flex flex-col gap-4">
+          <div className="flex-1 w-full customScrollbar overflow-auto">
+            <div className="max-w-[742px] w-full p-4 mx-auto">
+              {thread && (
+                <>
+                  <MessageHistory
+                    messages={messageHistory}
+                    onArtifactClick={onArtifactClick}
+                  />
+                  <StreamingMessage
+                    message={message}
+                    onArtifactClick={onArtifactClick}
+                  />
+                </>
+              )}
+            </div>
+          </div>
 
-      <div className="flex flex-col p-4 gap-1 pt-0 max-w-page-content mx-auto w-full">
-        <MessageInput
-          value={followUpQuestion}
-          onChange={setFollowUpQuestion}
-          onSend={handleSendMessage}
-          disabled={isLoading}
-          showWarning={shouldShowWarning}
-          isLoading={message.isStreaming || isLoading}
-        />
+          <div className="flex flex-col p-4 gap-1 pt-0 max-w-[742px] mx-auto w-full">
+            <MessageInput
+              value={followUpQuestion}
+              onChange={setFollowUpQuestion}
+              onSend={handleSendMessage}
+              disabled={isLoading}
+              showWarning={shouldShowWarning}
+              isLoading={message.isStreaming || isLoading}
+            />
+          </div>
+        </div>
+
+        {!!selectedArtifactIds.length && (
+          <>
+            <Separator orientation="vertical" />
+            <div className="flex-1 h-full overflow-hidden">
+              <ArtifactPanel
+                selectedArtifactIds={selectedArtifactIds}
+                artifactStreamingData={artifactStreamingData}
+                onClose={handleClose}
+                setSelectedArtifactIds={setSelectedArtifactIds}
+              />
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

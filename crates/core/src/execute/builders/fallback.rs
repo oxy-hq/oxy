@@ -1,6 +1,10 @@
 use crate::{
     errors::OxyError,
-    execute::{Executable, ExecutionContext, types::Event, writer::BufWriter},
+    execute::{
+        Executable, ExecutionContext,
+        types::Event,
+        writer::{BufWriter, Writer},
+    },
 };
 
 use super::wrap::Wrap;
@@ -96,7 +100,7 @@ where
         if (self.condition_fn)(&response) {
             // Write remaining events if any
             for event in events {
-                execution_context.writer.send(event).await?;
+                execution_context.write(event).await?;
             }
             Ok(response)
         } else {

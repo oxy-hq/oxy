@@ -27,7 +27,7 @@ impl WorkflowAPILogger {
         }
     }
 
-    pub fn log(&self, log_item: LogItem) {
+    fn log(&self, log_item: LogItem) {
         if let Some(writer) = &self.writer {
             let mut file = writer.lock().unwrap();
             let _ = writeln!(file, "{}", serde_json::to_string(&log_item).unwrap());
@@ -48,17 +48,8 @@ impl WorkflowLogger for WorkflowAPILogger {
     }
 
     fn log_table_result(&self, table: Table) {
-        match table.to_markdown() {
-            Ok(table) => {
-                let item = LogItem::new(format!("Result:\n\n{}", table), LogType::Info);
-                self.log(item);
-            }
-            Err(e) => {
-                let err_log =
-                    LogItem::new(format!("Error displaying results: {}", e), LogType::Error);
-                self.log(err_log);
-            }
-        }
+        let item = LogItem::new(format!("Result:\n\n{}", table.to_markdown()), LogType::Info);
+        self.log(item);
     }
 
     fn log_text_chunk(&mut self, chunk: &str, is_finished: bool) {

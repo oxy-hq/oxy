@@ -8,6 +8,7 @@ use async_openai::{
         ChatCompletionRequestSystemMessageArgs, ChatCompletionRequestUserMessageArgs,
         ChatCompletionTool, ChatCompletionToolChoiceOption, ChatCompletionToolType,
         CreateChatCompletionRequestArgs, FunctionCall, ResponseFormat, ResponseFormatJsonSchema,
+        responses::ReasoningConfig,
     },
 };
 use deser_incomplete::from_json_str;
@@ -42,6 +43,7 @@ pub struct OpenAIExecutable {
     model: String,
     tool_configs: Vec<ChatCompletionTool>,
     tool_choice: Option<ChatCompletionToolChoiceOption>,
+    reasoning_config: Option<ReasoningConfig>,
 }
 
 impl OpenAIExecutable {
@@ -50,12 +52,14 @@ impl OpenAIExecutable {
         model: String,
         tool_configs: Vec<ChatCompletionTool>,
         tool_choice: Option<ChatCompletionToolChoiceOption>,
+        reasoning_config: Option<ReasoningConfig>,
     ) -> Self {
         Self {
             client: Arc::new(client),
             model,
             tool_configs,
             tool_choice,
+            reasoning_config,
         }
     }
 
@@ -142,8 +146,16 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
             .stream(true)
             .messages(input);
 
-        if self.tool_choice.is_some() {
-            request_builder.tool_choice(self.tool_choice.clone().unwrap());
+        if let Some(ReasoningConfig {
+            effort: Some(reasoning_effort),
+            ..
+        }) = &self.reasoning_config
+        {
+            request_builder.reasoning_effort(reasoning_effort.clone());
+        }
+
+        if let Some(tool_choice) = &self.tool_choice {
+            request_builder.tool_choice(tool_choice.clone());
         }
 
         if !self.tool_configs.is_empty() {
@@ -370,6 +382,7 @@ pub fn build_openai_executable_with_tools(
         OpenAIClient::with_config(model.try_into().unwrap()),
         model.model_name().to_string(),
         tools,
+        None,
         None,
     )
 }

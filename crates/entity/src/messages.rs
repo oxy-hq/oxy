@@ -16,6 +16,8 @@ pub struct Model {
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
+    #[sea_orm(has_many = "super::artifacts::Entity")]
+    Artifacts,
     #[sea_orm(
         belongs_to = "super::threads::Entity",
         from = "Column::ThreadId",
@@ -29,6 +31,12 @@ pub enum Relation {
 impl Related<super::threads::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Threads.def()
+    }
+}
+
+impl Related<super::artifacts::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Artifacts.def()
     }
 }
 

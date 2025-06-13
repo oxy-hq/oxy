@@ -13,10 +13,12 @@ import {
 } from "@/components/ui/shadcn/tooltip";
 
 type Props = {
+  artifactId: string;
   kind: string;
   title: string;
   is_verified: string;
   children: React.ReactNode;
+  onClick?: (id: string) => void;
 };
 
 export default function ArtifactContainer(props: Props) {
@@ -29,6 +31,7 @@ export default function ArtifactContainer(props: Props) {
       icon = <MessagesSquare />;
       break;
   }
+
   const isVerified = props.is_verified?.toLowerCase() === "true";
   const verifiedClassName = isVerified ? "text-green-500" : "text-yellow-500";
   const verifiedText = isVerified
@@ -49,14 +52,16 @@ export default function ArtifactContainer(props: Props) {
 
   return (
     <>
-      <div className="skip-revert w-fit flex items-center space-x-4 rounded-md border border-base-border shadow-sm p-4 mb-1">
+      <div
+        className="cursor-pointer hover:bg-muted transition-colors skip-revert w-fit flex items-center space-x-4 rounded-md border border-base-border shadow-sm p-4 mb-1"
+        onClick={() => props.onClick?.(props.artifactId)}
+      >
         {icon}
         <div className="flex-1 space-y-1">
           <p className="text-sm font-medium leading-none">{props.title}</p>
-          {/* TODO: bring back this when we have the backend for viewing artifacts */}
-          {/* <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             Click to view the artifact.
-          </p> */}
+          </p>
         </div>
         <div className={`flex items-start justify-center ${verifiedClassName}`}>
           <TooltipProvider>
@@ -71,7 +76,7 @@ export default function ArtifactContainer(props: Props) {
           </TooltipProvider>
         </div>
       </div>
-      {children ? <div className="mb-1">{children}</div> : null}
+      {children ? <div className="mb-1 artifactContent">{children}</div> : null}
     </>
   );
 }
