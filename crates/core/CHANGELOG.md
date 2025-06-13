@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.2.11](https://github.com/oxy-hq/oxy-internal/compare/0.2.10...0.2.11) (2025-06-13)
+
+
+### <!-- 0 -->🚀 Features
+
+* impl error handing and migrate json streaming to sse ([#876](https://github.com/oxy-hq/oxy-internal/issues/876)) ([d6f197b](https://github.com/oxy-hq/oxy-internal/commit/d6f197be4f257ec8cdb638dbe671b3208f8fb1f0))
+* implement artifact events handler ([#877](https://github.com/oxy-hq/oxy-internal/issues/877)) ([5a4f232](https://github.com/oxy-hq/oxy-internal/commit/5a4f2324ae47dcd09a476fc0e25f6c755b160876))
+* implement Cognito authentication and enhance logout functionality ([#882](https://github.com/oxy-hq/oxy-internal/issues/882)) ([009b592](https://github.com/oxy-hq/oxy-internal/commit/009b592a5172079991bafce8664efaea40de1d4a))
+* improve cognito jwt parsing process ([#889](https://github.com/oxy-hq/oxy-internal/issues/889)) ([705f712](https://github.com/oxy-hq/oxy-internal/commit/705f712bc93408f14b1398539fc124c0971d175e))
+* sync column description and table description ([#872](https://github.com/oxy-hq/oxy-internal/issues/872)) ([029f4fe](https://github.com/oxy-hq/oxy-internal/commit/029f4fe86c5a89deb71ed53ab2dbe8b9f81c9156))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* disable ANSI output in logging for better compatibility ([22916a3](https://github.com/oxy-hq/oxy-internal/commit/22916a3db2589a5a625509e89c75c9ea45bd4cb5))
+* disable timestamp in cloudrun logging for cleaner output ([3e3f296](https://github.com/oxy-hq/oxy-internal/commit/3e3f2965d7f307674730ef4899155e5d4a0a5bad))
+* improve logging in cloudrun ([#875](https://github.com/oxy-hq/oxy-internal/issues/875)) ([1e8798b](https://github.com/oxy-hq/oxy-internal/commit/1e8798b1dd4c720a2b8c4031eba36738eb7770a8))
+* jwt needs padding handler for alb ([0ff59ac](https://github.com/oxy-hq/oxy-internal/commit/0ff59aca0823f5a473b2ca4b2efb394a33039757))
+* revert to using base64 for amazon cognito ([73e1aab](https://github.com/oxy-hq/oxy-internal/commit/73e1aab817a97e85f2a4da81e35e44269abc0d61))
+* update log format detection for Cloud Run compatibility ([44b90fe](https://github.com/oxy-hq/oxy-internal/commit/44b90fe174af62c2f097a88fde1eb1c7c612bdba))
+
 ## [0.2.10](https://github.com/oxy-hq/oxy-internal/compare/0.2.9...0.2.10) (2025-06-02)
 
 

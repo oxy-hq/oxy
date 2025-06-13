@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.2.11](https://github.com/oxy-hq/oxy-internal/compare/0.2.10...0.2.11) (2025-06-13)
+
+
+### <!-- 0 -->🚀 Features
+
+* impl error handing and migrate json streaming to sse ([#876](https://github.com/oxy-hq/oxy-internal/issues/876)) ([d6f197b](https://github.com/oxy-hq/oxy-internal/commit/d6f197be4f257ec8cdb638dbe671b3208f8fb1f0))
+* implement artifact events handler ([#877](https://github.com/oxy-hq/oxy-internal/issues/877)) ([5a4f232](https://github.com/oxy-hq/oxy-internal/commit/5a4f2324ae47dcd09a476fc0e25f6c755b160876))
+* implement Cognito authentication and enhance logout functionality ([#882](https://github.com/oxy-hq/oxy-internal/issues/882)) ([009b592](https://github.com/oxy-hq/oxy-internal/commit/009b592a5172079991bafce8664efaea40de1d4a))
+
 ## [0.2.10](https://github.com/oxy-hq/oxy-internal/compare/0.2.9...0.2.10) (2025-06-02)
 
 
