@@ -68,9 +68,29 @@
               "deployment/install-oxy",
               "deployment/workspace-setup",
               "deployment/environment",
-              "deployment/reverse-proxy",
-              "deployment/authentication",
               "deployment/docker"
+            ]
+          },
+          {
+            "group": "Reference Architecture",
+            "pages": [
+              {
+                "group": "aws",
+                "pages": [
+                  "deployment/reference-architecture/aws/architecture",
+                  "deployment/reference-architecture/aws/ec2-architecture",
+                  "deployment/reference-architecture/aws/ecs-architecture",
+                  {
+                    "group": "AWS Step-by-Step Guides",
+                    "pages": [
+                      "deployment/reference-architecture/aws/step-by-step/ec2-builtin-auth",
+                      "deployment/reference-architecture/aws/step-by-step/ecs-builtin-auth",
+                      "deployment/reference-architecture/aws/step-by-step/ec2-cognito",
+                      "deployment/reference-architecture/aws/step-by-step/ecs-cognito"
+                    ]
+                  }
+                ]
+              }
             ]
           },
           {
@@ -79,6 +99,20 @@
               "deployment/hands-on/overview",
               "deployment/hands-on/gcp",
               "deployment/hands-on/aws"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Authentication",
+        "groups": [
+          {
+            "group": "Authentication",
+            "pages": [
+              "authentication/overview",
+              "authentication/built-in",
+              "authentication/cognito",
+              "authentication/iap"
             ]
           }
         ]

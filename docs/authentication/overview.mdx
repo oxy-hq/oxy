@@ -1,0 +1,73 @@
+---
+title: "Authentication Overview"
+description: "Overview of Oxy's four authentication modes: Built-in, Cognito, IAP, and IAP Cloud Run"
+sidebarTitle: "Overview"
+---
+
+# Authentication in Oxy
+
+Oxy supports four authentication modes designed for different deployment scenarios.
+
+## Authentication Modes
+
+### Built-in Authentication (Default)
+**Command**: `oxy serve --auth-mode built-in`
+
+Self-contained authentication with email/password and optional Google OAuth.
+
+- ✅ No external dependencies
+- ✅ Email verification via SMTP
+- ✅ Works with or without load balancer
+- ✅ Ideal for development and small deployments
+
+### AWS Cognito
+**Command**: `oxy serve --auth-mode cognito`
+
+Enterprise authentication through AWS Cognito + Application Load Balancer.
+
+- ✅ Enterprise SSO and MFA
+- ✅ AWS-native integration
+- ⚠️ Requires ALB setup
+- ✅ Best for AWS production deployments
+
+### Google IAP
+**Command**: `oxy serve --auth-mode iap`
+
+Zero-trust authentication via Google Identity-Aware Proxy.
+
+- ✅ Google Workspace SSO
+- ✅ Zero-trust security
+- ⚠️ Requires GCP setup
+- ✅ Best for Google Cloud deployments
+
+### IAP Cloud Run
+**Command**: `oxy serve --auth-mode iap-cloud-run`
+
+Cloud Run optimized IAP with enhanced container security.
+
+- ✅ Serverless-friendly
+- ✅ Auto-scaling compatible
+- ⚠️ Cloud Run specific
+- ✅ Best for GCP serverless deployments
+
+## Quick Comparison
+
+| Feature | Built-in (Recommended) | AWS Cognito | Google IAP | IAP Cloud Run |
+|---------|------------------------|-------------|------------|---------------|
+| **Setup Complexity** | 🟢 Low | 🟡 Medium | 🔴 High | 🟡 Medium |
+| **External Dependencies** | ✅ None | ☁️ AWS Services | ☁️ GCP Services | ☁️ GCP Services |
+| **Load Balancer Required** | ❌ No | ✅ Yes (ALB) | ✅ Yes (GLB) | ❌ No |
+| **Enterprise SSO** | 🔸 Limited | ✅ Full Support | ✅ Full Support | ✅ Full Support |
+| **Multi-factor Auth** | 🔸 Basic | ✅ Advanced | ✅ Advanced | ✅ Advanced |
+| **User Management** | 📧 Email-based | 👥 Advanced | 👥 Google Workspace | 👥 Google Workspace |
+| **Cost** | 💰 Low | 💰💰 Medium | 💰💰 Medium | 💰💰 Medium |
+| **Best For** | Quick Start | AWS Ecosystem | GCP Enterprise | GCP Serverless |
+
+
+## Next Steps
+
+Choose your authentication mode:
+- [Built-in Authentication](./built-in) - Self-contained setup
+- [AWS Cognito](./cognito) - Enterprise AWS integration
+- [Google IAP](./iap) - Google Cloud zero-trust
+- [IAP Cloud Run](./iap-cloud-run) - Serverless GCP deployment

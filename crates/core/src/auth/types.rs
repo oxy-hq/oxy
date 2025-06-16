@@ -7,7 +7,7 @@ pub enum AuthMode {
     IAP,
     // Use trusted Cloud Run identity headers for authentication
     IAPCloudRun,
-    // Use Amazon Cognito for authentication (supports both direct and ALB)
+    // Use Amazon Cognito for authentication (support ALB + congito setup)
     Cognito,
     // Use build-in authentication (default)
     BuiltIn,

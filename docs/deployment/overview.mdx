@@ -43,12 +43,6 @@ flowchart TD
   Manual[Manual Setup]
   Env[Configure Environment\n.env, API Key, etc.]
   Volumes[Mount Volumes\nWorkspace & Data]
-  Proxy[Configure Reverse Proxy\nCaddy]
-  AuthChoice{Authentication Required?}
-  Auth[Set Up Authentication]
-  AuthMethod{Auth Method?}
-  Basic[Configure Basic Auth]
-  OAuth2[Configure OAuth2 Proxy]
   Done[Deployment Complete]
 
   Start --> Choice
@@ -61,12 +55,7 @@ flowchart TD
   GitChoice -->|Yes| Git --> Env
   GitChoice -->|No| Manual --> Env
   Docker --> Volumes --> Env
-  Env --> Proxy
-  Proxy --> AuthChoice
-  AuthChoice -->|Yes| Auth --> AuthMethod
-  AuthChoice -->|No| Done
-  AuthMethod -->|Basic| Basic --> Done
-  AuthMethod -->|OAuth2| OAuth2 --> Done
+  Env --> Done
 ```
 
 ## Deployment Request Flow Diagram
@@ -74,16 +63,11 @@ flowchart TD
 ```mermaid
 flowchart TD
     User[User/Browser]
-    ReverseProxy["Caddy<br/>(Reverse Proxy, optional)"]
     OxyServer[Oxy Server]
-    OAuth2[OAuth2 Provider]
     Workspace[Oxy Workspace]
     Data[Persistent Data]
 
-    User -->|Web Request| ReverseProxy
-    ReverseProxy -->|Proxy Request| OxyServer
-    OxyServer -->|Authentication| OAuth2
-    OAuth2 -->|Token/Claims| OxyServer
+    User -->|Web Request| OxyServer
     OxyServer -->|Workspace Access| Workspace
     OxyServer -->|Data Access| Data
 ```
@@ -143,20 +127,6 @@ Follow these steps to deploy Oxy on your cloud environment:
     Set up environment variables and secrets management
   </Card>
   <Card
-    title="5. Set Up Reverse Proxy"
-    icon="shield-halved"
-    href="/deployment/reverse-proxy"
-  >
-    Configure Caddy as a reverse proxy for HTTPS, security, and performance
-  </Card>
-  <Card
-    title="6. Set Up Authentication"
-    icon="lock"
-    href="/deployment/authentication"
-  >
-    Configure authentication using Basic Auth or OAuth2
-  </Card>
-  <Card
     title="Docker Deployment"
     icon="docker"
     href="/deployment/docker"
@@ -197,10 +167,6 @@ GIT_REPO="git@github.com:your-org/your-oxy-repo.git"
 USE_GIT=true
 EMAIL="admin@your-domain.com"
 OPENAI_API_KEY="your-openai-api-key"
-USE_AUTH=true
-AUTH_METHOD="basic" # "basic" or "oauth2"
-AUTH_USERNAME="admin"
-AUTH_PASSWORD="secure-password"
 
 # ===== STEP 1: Create Machine =====
 echo "===== 1. Setting up server ====="
@@ -226,8 +192,7 @@ chmod 600 ~/.ssh/authorized_keys
 
 # Configure Firewall
 sudo ufw allow 22/tcp
-sudo ufw allow 80/tcp
-sudo ufw allow 443/tcp
+sudo ufw allow 3000/tcp
 sudo ufw --force enable
 
 # ===== STEP 2: Install Oxy CLI =====
@@ -280,60 +245,14 @@ touch .env
 chmod 600 .env
 echo "OPENAI_API_KEY=${OPENAI_API_KEY}" > .env
 
-# ===== STEP 5: Set Up Reverse Proxy =====
-echo "===== 5. Setting up Caddy reverse proxy ====="
-sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https curl
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
-sudo apt update -y
-sudo apt install -y caddy
-
-# ===== STEP 6: Configure Authentication =====
-echo "===== 6. Setting up authentication ====="
-
-if [ "$USE_AUTH" = true ]; then
-    if [ "$AUTH_METHOD" = "basic" ]; then
-        # Generate password hash
-        PASSWORD_HASH=$(caddy hash-password --plaintext ${AUTH_PASSWORD})
-        # Create Caddyfile with basic auth
-        cat <<EOF | sudo tee /etc/caddy/Caddyfile
-${DOMAIN_NAME} {
-    basicauth {
-        ${AUTH_USERNAME} ${PASSWORD_HASH}
-    }
-    reverse_proxy localhost:8080
-}
-EOF
-    else
-        # Install OAuth2 Proxy
-        OAUTH2_PROXY_VERSION="v7.8.2"
-        ARCH="linux-arm64"
-        wget "https://github.com/oauth2-proxy/oauth2-proxy/releases/download/${OAUTH2_PROXY_VERSION}/oauth2-proxy-${OAUTH2_PROXY_VERSION}.${ARCH}.tar.gz"
-        tar -xzf "oauth2-proxy-${OAUTH2_PROXY_VERSION}.${ARCH}.tar.gz"
-        sudo mv "oauth2-proxy-${OAUTH2_PROXY_VERSION}.${ARCH}/oauth2-proxy" /usr/local/bin/oauth2-proxy
-        sudo chmod +x /usr/local/bin/oauth2-proxy
-        rm -rf "oauth2-proxy-${OAUTH2_PROXY_VERSION}.${ARCH}"*
-        echo "OAuth2 setup requires manual configuration. Follow the documentation for detailed steps."
-    fi
-else
-    # Create simple Caddyfile without auth
-    cat <<EOF | sudo tee /etc/caddy/Caddyfile
-${DOMAIN_NAME} {
-    reverse_proxy localhost:8080
-}
-EOF
-fi
-
 # ===== Start Services =====
 echo "===== Starting services ====="
 sudo systemctl daemon-reload
 sudo systemctl enable oxy
 sudo systemctl start oxy
-sudo systemctl enable caddy
-sudo systemctl start caddy
 
 echo "===== Deployment Complete ====="
-echo "Your Oxy instance should now be available at: https://${DOMAIN_NAME}"
+echo "Your Oxy instance should now be available at: http://${DOMAIN_NAME}:3000"
 echo "Remember to update configuration variables in .env and restart the service if needed."
 ```
 
