@@ -23,7 +23,7 @@ axum-streams = { version = "0.21.0", features = ["json", "csv", "protobuf", "tex
 base64 = "0.22"
 bcrypt = "0.16"
 chrono = "*"
-clap = { version = "4.5.39", features = ["derive"] }
+clap = { version = "4.5.40", features = ["derive"] }
 clickhouse = { version = "0.13.3", features = ["rustls-tls"] }
 colored = "3.0.0"
 connectorx = { version = "0.4.3", features = ["dst_arrow", "src_bigquery", "src_postgres", "src_mysql"] }
@@ -56,7 +56,7 @@ pyo3-arrow = "0.6.0"
 schemars = { version = "0.8.22", features = ["derive", "impl_json_schema"] }
 sea-orm = { workspace = true }
 serde = { version = "1.0", features = ["derive"] }
-serde_arrow = { version = "0.13.3", features = ["arrow-53"] }
+serde_arrow = { version = "0.13.4", features = ["arrow-53"] }
 serde_json = "1.0"
 serde_yaml = "0.9"
 self_update = "0.42.0"
@@ -75,13 +75,13 @@ tower-http = { version = "0.6.6", features = ["fs", "cors", "trace"] }
 tower-serve-static = "0.1.1"
 tqdm = "0.7.0"
 uuid = { version = "1.17.0", features = ["v4", "serde"] }
-reqwest = { version = "0.12.19" }
+reqwest = { version = "0.12.20" }
 secrecy = "0.10.3"
 fxhash = "0.2.1"
 deser-incomplete = "0.1.2"
 snowflake-api = "0.10.0"
 rmcp = {git="https://github.com/modelcontextprotocol/rust-sdk.git", rev="9d6f9a2e0d199c6c7f2731bd6f8f7143af060a6b", features = ["server", "transport-sse-server", "transport-io"]}
-serde_with = "3.12.0"
+serde_with = "3.13.0"
 # we use chrono::DateTimeWithTimeZone, which is not currently supported by utoipa
 # need to use this until this PR is released https://github.com/juhaku/utoipa/pull/1367
 utoipa = {git="https://github.com/haitrr/utoipa.git", rev="7fbfdea", features = ["uuid", "chrono", "axum_extras"] }
