@@ -29,16 +29,3 @@ pub struct SqlParts {
     pub having_clauses: Vec<String>,
     pub limit: Option<u64>,
 }
-
-#[derive(Debug, Clone)]
-pub struct OmniValue {
-    pub value: Option<String>,
-    pub field_name: String,
-    pub view_name: String,
-}
-
-impl OmniValue {
-    pub fn get_full_field_name(&self) -> String {
-        format!("{}.{}", self.view_name, self.field_name)
-    }
-}

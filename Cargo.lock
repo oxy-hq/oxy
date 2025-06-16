@@ -166,6 +166,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "69f7f8c3906b62b754cd5326047894316021dcfe5a194c8ea52bdd94934a3457"
 
 [[package]]
+name = "argon2"
+version = "0.5.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3c3610892ee6e0cbce8ae2700349fcf8f98adb0dbfbee85aec3c9179d29cc072"
+dependencies = [
+ "base64ct",
+ "blake2",
+ "cpufeatures",
+ "password-hash",
+]
+
+[[package]]
 name = "arrayref"
 version = "0.3.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2890,6 +2902,7 @@ dependencies = [
 name = "entity"
 version = "0.2.11"
 dependencies = [
+ "chrono",
  "sea-orm",
 ]
 
@@ -5807,6 +5820,7 @@ name = "oxy"
 version = "0.2.11"
 dependencies = [
  "anyhow",
+ "argon2",
  "arrow",
  "assert_cmd",
  "async-openai",
@@ -5857,6 +5871,7 @@ dependencies = [
  "predicates",
  "pyo3",
  "pyo3-arrow",
+ "rand 0.8.5",
  "rapidfuzz",
  "regex",
  "reqwest",
@@ -6007,6 +6022,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1f2a05b18d44e2957b88f96ba460715e295bc1d7510468a2f3d3b44535d26c24"
 dependencies = [
  "regex",
+]
+
+[[package]]
+name = "password-hash"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "346f04948ba92c43e8469c1ee6736c7563d71012b17d40745260fe106aac2166"
+dependencies = [
+ "base64ct",
+ "rand_core 0.6.4",
+ "subtle",
 ]
 
 [[package]]

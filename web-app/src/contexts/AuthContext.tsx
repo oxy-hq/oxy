@@ -1,5 +1,6 @@
 import React, { createContext, useContext } from "react";
 import { AuthConfigResponse, UserInfo } from "@/types/auth";
+import { handleLogout, redirectToHome } from "@/libs/utils";
 
 interface AuthContextType {
   getUser: () => string | null;
@@ -35,8 +36,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({
   };
 
   const logout = () => {
-    localStorage.removeItem("auth_token");
-    localStorage.removeItem("user");
+    if (authConfig.is_built_in_mode) {
+      handleLogout();
+    } else {
+      localStorage.clear();
+      sessionStorage.clear();
+      redirectToHome();
+    }
   };
 
   const storedUser = () => localStorage.getItem("user");

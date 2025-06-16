@@ -1,3 +1,4 @@
+pub mod api_keys;
 pub mod artifacts;
 pub mod messages;
 pub mod prelude;

@@ -126,6 +126,17 @@
         ]
       },
       {
+        "tab": "Developer Guide",
+        "groups": [
+          {
+            "group": "Authentication",
+            "pages": [
+              "api-keys/API-Keys"
+            ]
+          }
+        ]
+      },
+      {
         "tab": "Oxy Community",
         "groups": [
           {

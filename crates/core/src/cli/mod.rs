@@ -49,6 +49,10 @@ use std::process::exit;
 use tokio::signal;
 use tokio_util::sync::CancellationToken;
 use utoipa::OpenApi;
+use utoipa::openapi::ComponentsBuilder;
+use utoipa::openapi::SecurityRequirement;
+use utoipa::openapi::security::ApiKeyValue;
+use utoipa::openapi::security::SecurityScheme;
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_swagger_ui::SwaggerUi;
 
@@ -962,13 +966,21 @@ struct ApiDoc;
 
 pub async fn start_server_and_web_app(mut web_port: u16, web_host: String, auth_mode: AuthMode) {
     // require webserver to be started inside the project path
-    match find_project_path() {
+    let project_path = match find_project_path() {
         Ok(path) => path,
         Err(e) => {
             eprintln!("Failed to find project path: {}", e);
             std::process::exit(1);
         }
     };
+
+    let config = ConfigBuilder::new()
+        .with_project_path(&project_path)
+        .expect("Failed to find project path")
+        .build()
+        .await
+        .expect("Failed to load configuration");
+
     async fn shutdown_signal() {
         let ctrl_c = async {
             signal::ctrl_c()
@@ -1077,12 +1089,38 @@ pub async fn start_server_and_web_app(mut web_port: u16, web_host: String, auth_
             }
         };
         let openapi_router = router::openapi_router().await.layer(trace_layer.clone());
-        let (_, openapi) = OpenApiRouter::with_openapi(ApiDoc::openapi())
+        let mut openapi_router = OpenApiRouter::with_openapi(ApiDoc::openapi())
             .nest("/api", openapi_router)
-            .fallback_service(serve_with_fallback)
-            .split_for_parts();
+            .fallback_service(serve_with_fallback);
+        let openapi = openapi_router.get_openapi_mut();
+        let authentication_config = config.get_authentication();
+        tracing::info!("Authentication config: {:?}", authentication_config);
+        if let Some(auth_config) = config.get_authentication() {
+            tracing::info!("Configuring OpenAPI documentation {:?}", auth_config);
+            if let Some(api_key_auth) = auth_config.api_key {
+                let security_schema_name = "ApiKey";
+                openapi.components = Some(
+                    ComponentsBuilder::new()
+                        .security_scheme(
+                            security_schema_name,
+                            SecurityScheme::ApiKey(utoipa::openapi::security::ApiKey::Header(
+                                ApiKeyValue::new(api_key_auth.header),
+                            )),
+                        )
+                        .build(),
+                );
+
+                // Apply for all endpoints
+                let scopes: Vec<String> = vec![];
+                openapi.security =
+                    Some(vec![SecurityRequirement::new(security_schema_name, scopes)]);
+            }
+        }
         let web_app = Router::new()
-            .merge(SwaggerUi::new("/apidoc").url("/apidoc/openapi.json", openapi))
+            .merge(SwaggerUi::new("/apidoc").url(
+                "/apidoc/openapi.json",
+                openapi_router.into_openapi().clone(),
+            ))
             .nest("/api", api_router)
             .fallback_service(serve_with_fallback)
             .layer(trace_layer);

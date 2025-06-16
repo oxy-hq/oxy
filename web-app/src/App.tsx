@@ -19,6 +19,7 @@ import React from "react";
 import IdePage from "./pages/ide";
 import EditorPage from "./pages/ide/Editor";
 import AppPage from "./pages/app";
+import ApiKeyManagement from "./pages/api-keys";
 import { HotkeysProvider } from "react-hotkeys-hook";
 import LoginPage from "./pages/login";
 import RegisterPage from "./pages/register";
@@ -85,6 +86,14 @@ const MainLayout = React.memo(function MainLayout() {
         <Route path="/ide" element={<IdePage />}>
           <Route path=":pathb64" element={<EditorPage />} />
         </Route>
+        <Route
+          path="/api-keys"
+          element={
+            <PageWrapper>
+              <ApiKeyManagement />
+            </PageWrapper>
+          }
+        />
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>
     </HotkeysProvider>

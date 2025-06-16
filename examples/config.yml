@@ -120,3 +120,5 @@ authentication:
   google:
     client_id: 557675988752-l0se3h3j85q1k51iritp9aqnlpkimepr.apps.googleusercontent.com
     client_secret_var: GOOGLE_CLIENT_SECRET
+  api_key:
+    header: X-API-KEY

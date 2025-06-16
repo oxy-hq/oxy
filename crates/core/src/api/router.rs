@@ -1,4 +1,5 @@
 use crate::api::agent;
+use crate::api::api_keys;
 use crate::api::auth;
 use crate::api::chart;
 use crate::api::data;
@@ -118,7 +119,12 @@ pub async fn api_router(auth_mode: AuthMode) -> Result<Router, OxyError> {
         .route("/sql/{pathb64}", post(data::execute_sql))
         .route("/databases", get(database::list_databases))
         .route("/databases/sync", post(database::sync_database))
-        .route("/databases/build", post(data::build_embeddings));
+        .route("/databases/build", post(data::build_embeddings))
+        // API Key management routes
+        .route("/api-keys", post(api_keys::create_api_key))
+        .route("/api-keys", get(api_keys::list_api_keys))
+        .route("/api-keys/{id}", get(api_keys::get_api_key))
+        .route("/api-keys/{id}", delete(api_keys::delete_api_key));
 
     protected_routes = match auth_mode {
         AuthMode::IAP => protected_routes.route_layer(middleware::from_fn_with_state(

@@ -49,10 +49,17 @@ const appKeys = {
   getData: (appPath: string) => [...appKeys.all, "getData", appPath] as const,
 };
 
+const apiKeyKeys = {
+  all: ["apiKey"] as const,
+  list: () => [...apiKeyKeys.all, "list"] as const,
+  item: (id: string) => [...apiKeyKeys.all, { id }] as const,
+};
+
 const queryKeys = {
   conversation: conversationKeys,
   agent: agentKeys,
   thread: threadKeys,
+  apiKey: apiKeyKeys,
   workflow: workflowKeys,
   chart: chartKeys,
   file: fileKeys,

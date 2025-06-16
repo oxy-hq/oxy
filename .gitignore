@@ -92,3 +92,4 @@ artifacts/
 .qodo
 examples/omni
 examples/omni_bigquery.json
+**/db.sqlite

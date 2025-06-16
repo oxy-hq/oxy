@@ -1,4 +1,5 @@
 pub mod agent;
+pub mod api_keys;
 pub mod app;
 pub mod artifacts;
 pub mod auth;

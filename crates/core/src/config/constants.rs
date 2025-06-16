@@ -30,6 +30,7 @@ pub const CONSISTENCY_SOURCE: &str = "consistency";
 pub const CONSISTENCY_THRESHOLD: f32 = 0.25;
 pub const MARKDOWN_MAX_FENCES: usize = 10;
 pub const AGENT_RETRY_MAX_ELAPSED_TIME: Duration = Duration::from_secs(60 * 2);
+pub const DEFAULT_API_KEY_HEADER: &str = "X-API-KEY";
 pub const GCP_IAP_HEADER_KEY: &str = "x-goog-iap-jwt-assertion";
 pub const GCP_IAP_SUB_HEADER_KEY: &str = "x-goog-authenticated-user-id";
 pub const GCP_IAP_EMAIL_HEADER_KEY: &str = "x-goog-authenticated-user-email";

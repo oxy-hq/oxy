@@ -1,13 +1,15 @@
-import { LogOut, User2 } from "lucide-react";
+import { User2, LogOut, Key } from "lucide-react";
 import { useEffect, useState } from "react";
-import {
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-} from "@/components/ui/shadcn/sidebar";
+import { SidebarMenu, SidebarMenuItem } from "@/components/ui/shadcn/sidebar";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
-import { handleLogout } from "@/libs/utils";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "../ui/shadcn/dropdown-menu";
 
 interface UserInfo {
   email: string;
@@ -40,58 +42,61 @@ export function Footer() {
 
   const parsedUser = JSON.parse(getUser() || "null");
 
-  const currentUser = authConfig.is_built_in_mode ? parsedUser : userIAPInfo;
+  const user = authConfig.is_built_in_mode ? parsedUser : userIAPInfo;
 
   return (
     <div className="mt-auto px-2 pb-4">
       <SidebarMenu>
-        {currentUser && (
+        {user && (
           <SidebarMenuItem>
-            <div
-              className="flex items-center gap-3 w-full px-2 py-3 text-sm border-t pt-4"
-              title={currentUser.email}
-            >
-              {currentUser.picture ? (
-                <img
-                  src={currentUser.picture}
-                  alt={currentUser.email}
-                  className="w-4 h-4 rounded-full object-cover"
-                  onError={(e) => {
-                    // Fallback to icon if image fails to load
-                    e.currentTarget.style.display = "none";
-                    e.currentTarget.nextElementSibling?.classList.remove(
-                      "hidden",
-                    );
-                  }}
-                />
-              ) : null}
-              <User2
-                className={`w-4 h-4 text-muted-foreground ${currentUser.picture ? "hidden" : ""}`}
-              />
-              <span className="truncate text-muted-foreground">
-                {currentUser?.email}
-              </span>
-            </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <div
+                  className="flex items-center gap-3 w-full px-2 py-3 text-sm border-t pt-4 cursor-pointer hover:bg-sidebar-accent hover:text-sidebar-accent-foreground rounded-md transition-colors"
+                  title={user.email}
+                >
+                  {user.picture ? (
+                    <img
+                      src={user.picture}
+                      alt={user.email}
+                      className="w-4 h-4 rounded-full object-cover"
+                      onError={(e) => {
+                        // Fallback to icon if image fails to load
+                        e.currentTarget.style.display = "none";
+                        e.currentTarget.nextElementSibling?.classList.remove(
+                          "hidden",
+                        );
+                      }}
+                    />
+                  ) : null}
+                  <User2
+                    className={`w-4 h-4 text-muted-foreground ${user.picture ? "hidden" : ""}`}
+                  />
+                  <span className="truncate text-muted-foreground">
+                    {user?.email}
+                  </span>
+                </div>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuItem
+                  className="cursor-pointer"
+                  onClick={() => navigate("/api-keys")}
+                >
+                  <Key className="w-4 h-4 mr-2" />
+                  <span>API Keys</span>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  className="cursor-pointer text-red-600 focus:text-red-600"
+                  onClick={logout}
+                >
+                  <LogOut className="w-4 h-4 mr-2" />
+                  <span>Logout</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </SidebarMenuItem>
         )}
-        <SidebarMenuItem>
-          <SidebarMenuButton asChild>
-            <button
-              onClick={() => {
-                if (!authConfig.is_built_in_mode) {
-                  handleLogout();
-                  return;
-                }
-                logout();
-                navigate("/login");
-              }}
-              className="flex items-center gap-2 w-full"
-            >
-              <LogOut className="w-4 h-4" />
-              <span>Logout</span>
-            </button>
-          </SidebarMenuButton>
-        </SidebarMenuItem>
       </SidebarMenu>
     </div>
   );

@@ -1,7 +1,7 @@
 use clap::ValueEnum;
 use entity::users;
 
-#[derive(Debug, Clone, ValueEnum, PartialEq)]
+#[derive(Debug, Clone, ValueEnum, PartialEq, Copy)]
 pub enum AuthMode {
     // Use Google IAP for authentication
     IAP,
