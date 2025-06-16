@@ -120,7 +120,7 @@ const ChatPanel = () => {
           "border-none shadow-none",
           "hover:border-none focus-visible:border-none focus-visible:shadow-none",
           "focus-visible:ring-0 focus-visible:ring-offset-0",
-          "outline-none resize-none max-h-[200px] customScrollbar",
+          "outline-none resize-none max-h-[200px] customScrollbar px-0",
         )}
         placeholder={placeholder}
       />
