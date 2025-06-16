@@ -21,9 +21,9 @@ axum = { version = "0.8.4", features = ["macros"] }
 axum-extra = { version = "0.10", features = ["typed-header"] }
 axum-streams = { version = "0.21.0", features = ["json", "csv", "protobuf", "text"] }
 base64 = "0.22"
-bcrypt = "0.16"
+bcrypt = "0.17"
 chrono = "*"
-clap = { version = "4.5.39", features = ["derive"] }
+clap = { version = "4.5.40", features = ["derive"] }
 clickhouse = { version = "0.13.3", features = ["rustls-tls"] }
 colored = "3.0.0"
 connectorx = { version = "0.4.3", features = ["dst_arrow", "src_bigquery", "src_postgres", "src_mysql"] }
@@ -43,27 +43,27 @@ include_dir = "0.7"
 indoc = "2.0.6"
 itertools = "0.14.0"
 jsonwebtoken = "9.3"
-lancedb = "0.17.0"
+lancedb = "0.19.1"
 lettre = "0.11"
-libduckdb-sys = "=1.1.1" # lock version to avoid breaking changes, such as https://github.com/duckdb/duckdb-rs/issues number 436
+libduckdb-sys = "=1.3.0" # lock version to avoid breaking changes, such as https://github.com/duckdb/duckdb-rs/issues number 436
 log = { workspace = true }
 migration = { path = "../migration" }
 minijinja = { version = "2.10.2", features = ["loader"] }
 once_cell = "1.21.3"
 predicates = "3.1.3"
 pyo3 = { version = "=0.23.3", features = ["experimental-async", "extension-module"] } # 0.23.4 causes a bug with pyo3-arrow
-pyo3-arrow = "0.6.0"
+pyo3-arrow = "0.7.0"
 schemars = { version = "0.8.22", features = ["derive", "impl_json_schema"] }
 sea-orm = { workspace = true }
 serde = { version = "1.0", features = ["derive"] }
-serde_arrow = { version = "0.13.3", features = ["arrow-53"] }
+serde_arrow = { version = "0.13.4", features = ["arrow-53"] }
 serde_json = "1.0"
 serde_yaml = "0.9"
 self_update = "0.42.0"
 slugify = "0.1.0"
 sqlformat = { git = "https://github.com/shssoichiro/sqlformat-rs.git", rev = "80255c7" }
 syntect = "5.2"
-tabled = "0.18.0"
+tabled = "0.20.0"
 terminal-light = "1.8.0"
 terminal_size = "0.4.2"
 thiserror = "2.0.12"
@@ -75,13 +75,13 @@ tower-http = { version = "0.6.6", features = ["fs", "cors", "trace"] }
 tower-serve-static = "0.1.1"
 tqdm = "0.7.0"
 uuid = { version = "1.17.0", features = ["v4", "serde"] }
-reqwest = { version = "0.12.19" }
+reqwest = { version = "0.12.20" }
 secrecy = "0.10.3"
 fxhash = "0.2.1"
 deser-incomplete = "0.1.2"
-snowflake-api = "0.10.0"
+snowflake-api = "0.11.0"
 rmcp = {git="https://github.com/modelcontextprotocol/rust-sdk.git", rev="9d6f9a2e0d199c6c7f2731bd6f8f7143af060a6b", features = ["server", "transport-sse-server", "transport-io"]}
-serde_with = "3.12.0"
+serde_with = "3.13.0"
 # we use chrono::DateTimeWithTimeZone, which is not currently supported by utoipa
 # need to use this until this PR is released https://github.com/juhaku/utoipa/pull/1367
 utoipa = {git="https://github.com/haitrr/utoipa.git", rev="7fbfdea", features = ["uuid", "chrono", "axum_extras"] }
@@ -92,7 +92,7 @@ regex = "1.11.1"
 url = "2.5.4"
 gcp-bigquery-client = "0.25.1"
 fehler = "1.0.0"
-sqlparser = "0.37.0"
+sqlparser = "0.54.0"
 backoff = { version = "0.4.0", features = ["tokio"] }
 rustc_version_runtime = "0.3.0"
 rustls = { version = "0.23.27", features = ["aws_lc_rs"] }
