@@ -12,6 +12,7 @@ use lettre::transport::smtp::authentication::Credentials;
 use lettre::{Message, SmtpTransport, Transport};
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set};
 use serde::{Deserialize, Serialize};
+use url::Url;
 use uuid::Uuid;
 
 use crate::auth::types::AuthMode;
@@ -272,6 +273,7 @@ pub async fn google_auth(
     extract::Json(google_request): extract::Json<GoogleAuthRequest>,
 ) -> Result<Json<AuthResponse>, StatusCode> {
     let base_url = extract_base_url_from_headers(&headers);
+    tracing::info!("Base URL for Google auth: {}", base_url);
     let user_info = exchange_google_code_for_user_info(&google_request.code, &base_url)
         .await
         .map_err(|e| {
@@ -389,33 +391,22 @@ fn verify_password(password: &str, hash: &str) -> bool {
 }
 
 fn extract_base_url_from_headers(headers: &HeaderMap) -> String {
-    let scheme = if headers.get("x-forwarded-proto").is_some() {
-        headers
-            .get("x-forwarded-proto")
-            .and_then(|h| h.to_str().ok())
-            .unwrap_or("https")
-    } else if headers.get("x-forwarded-ssl").is_some() {
-        "https"
-    } else {
-        let host = headers
-            .get("host")
-            .and_then(|h| h.to_str().ok())
-            .unwrap_or("localhost");
+    if let Some(origin) = headers.get("origin").and_then(|h| h.to_str().ok()) {
+        tracing::debug!("Using origin header for base URL: {}", origin);
+        return origin.to_string();
+    }
 
-        if host.starts_with("localhost") || host.starts_with("127.0.0.1") {
-            "http"
-        } else {
-            "https"
+    if let Some(referer) = headers.get("referer").and_then(|h| h.to_str().ok()) {
+        if let Ok(url) = Url::parse(referer) {
+            if let Some(host) = url.host_str() {
+                let port = url.port().map(|p| format!(":{}", p)).unwrap_or_default();
+                let origin = format!("{}://{}{}", url.scheme(), host, port);
+                tracing::debug!("Using referer header for base URL: {}", origin);
+                return origin;
+            }
         }
-    };
-
-    let host = headers
-        .get("x-forwarded-host")
-        .or_else(|| headers.get("host"))
-        .and_then(|h| h.to_str().ok())
-        .unwrap_or("localhost:5173");
-
-    format!("{}://{}", scheme, host)
+    }
+    "http://localhost:3000".to_string()
 }
 
 async fn send_verification_email(email: &str, token: &str, base_url: &str) -> Result<(), OxyError> {
