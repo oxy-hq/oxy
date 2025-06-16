@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.2.12](https://github.com/oxy-hq/oxy-internal/compare/0.2.11...0.2.12) (2025-06-16)
+
+
+### <!-- 0 -->🚀 Features
+
+* api keys support ([#888](https://github.com/oxy-hq/oxy-internal/issues/888)) ([08d748e](https://github.com/oxy-hq/oxy-internal/commit/08d748e698a8aeb0f989616667a93d911a456934))
+* closes [#883](https://github.com/oxy-hq/oxy-internal/issues/883) end user authentication ([#884](https://github.com/oxy-hq/oxy-internal/issues/884)) ([7262c59](https://github.com/oxy-hq/oxy-internal/commit/7262c597f9257b6edfa85a70998c343bbf95d0e6))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* get base url from origin header for google auth ([#893](https://github.com/oxy-hq/oxy-internal/issues/893)) ([c26ec82](https://github.com/oxy-hq/oxy-internal/commit/c26ec82187fc9834caaf17204a2695397caae149))
+
 ## [0.2.11](https://github.com/oxy-hq/oxy-internal/compare/0.2.10...0.2.11) (2025-06-13)
 
 

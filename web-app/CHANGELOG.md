@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.2.12](https://github.com/oxy-hq/oxy-internal/compare/0.2.11...0.2.12) (2025-06-16)
+
+
+### <!-- 0 -->🚀 Features
+
+* api keys support ([#888](https://github.com/oxy-hq/oxy-internal/issues/888)) ([08d748e](https://github.com/oxy-hq/oxy-internal/commit/08d748e698a8aeb0f989616667a93d911a456934))
+* closes [#883](https://github.com/oxy-hq/oxy-internal/issues/883) end user authentication ([#884](https://github.com/oxy-hq/oxy-internal/issues/884)) ([7262c59](https://github.com/oxy-hq/oxy-internal/commit/7262c597f9257b6edfa85a70998c343bbf95d0e6))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* add authorization token to fetchSSE headers ([#896](https://github.com/oxy-hq/oxy-internal/issues/896)) ([bae8068](https://github.com/oxy-hq/oxy-internal/commit/bae8068f2e00dfd5f4a5787b576ae9509c2ea372))
+* artifact view result table is big, it overrides the the sql view ([#895](https://github.com/oxy-hq/oxy-internal/issues/895)) ([eef1386](https://github.com/oxy-hq/oxy-internal/commit/eef1386ed74d0c44d23698b6aae9d8b7cc9159a7))
+* logout ([#894](https://github.com/oxy-hq/oxy-internal/issues/894)) ([f48a32a](https://github.com/oxy-hq/oxy-internal/commit/f48a32af4ea147e432337b39f80d24f40581abac))
+
 ## [0.2.11](https://github.com/oxy-hq/oxy-internal/compare/0.2.10...0.2.11) (2025-06-13)
 
 
