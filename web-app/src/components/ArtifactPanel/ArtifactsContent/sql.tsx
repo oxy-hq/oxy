@@ -31,7 +31,7 @@ const SqlArtifactPanel = ({ artifact }: Props) => {
         />
       </div>
 
-      <div className="flex-1">
+      <div className="flex-1 overflow-auto">
         {!!artifact.content.value.result && (
           <Results result={artifact.content.value.result} />
         )}
