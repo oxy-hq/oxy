@@ -36,7 +36,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({
   };
 
   const logout = () => {
-    if (authConfig.is_built_in_mode) {
+    if (!authConfig.is_built_in_mode) {
       handleLogout();
     } else {
       localStorage.clear();
