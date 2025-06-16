@@ -54,6 +54,4 @@ enum Messages {
 enum Threads {
     Table,
     Id,
-    Name,
-    CreatedAt,
 }

@@ -11,6 +11,7 @@ rust-version.workspace = true
 
 [dependencies]
 sea-orm = { workspace = true }
+chrono = "*"
 
 [lib]
 name = "entity"

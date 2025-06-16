@@ -163,7 +163,11 @@ where
                 EventKind::Error { message } => {
                     self.logger.log_error(&message);
                 }
-                _ => {}
+                EventKind::DataAppCreated { .. } => {}
+                EventKind::Finished { .. } => {}
+                EventKind::Progress { .. } => {}
+                EventKind::ArtifactStarted { .. } => {}
+                EventKind::ArtifactFinished { .. } => {}
             },
         }
         Ok(())

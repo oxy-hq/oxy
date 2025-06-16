@@ -16,7 +16,7 @@ impl MigrationTrait for Migration {
         Ok(())
     }
 
-    async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+    async fn down(&self, _: &SchemaManager) -> Result<(), DbErr> {
         Ok(())
     }
 }
@@ -24,20 +24,9 @@ impl MigrationTrait for Migration {
 #[derive(DeriveIden)]
 enum Messages {
     Table,
-    Id,
-    ConversationId,
-    Content,
-    IsHuman,
-    CreatedAt,
 }
 
 #[derive(DeriveIden)]
 enum Conversations {
     Table,
-    Id,
-    Title,
-    CreatedAt,
-    UpdatedAt,
-    DeletedAt,
-    Agent,
 }

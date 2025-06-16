@@ -1,4 +1,5 @@
 pub mod agent;
+pub mod api_key;
 pub mod app;
 pub mod eval;
 pub mod formatters;

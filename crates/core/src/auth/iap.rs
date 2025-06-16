@@ -9,7 +9,7 @@ use crate::config::constants::{
     GCP_IAP_SUB_HEADER_KEY,
 };
 
-use super::{types::Identity, validator::Validator};
+use super::{authenticator::Authenticator, types::Identity};
 
 #[derive(Debug, Error)]
 pub enum JwtError {
@@ -57,24 +57,24 @@ impl fmt::Display for IapClaims {
     }
 }
 
-pub struct IAPValidator {
+pub struct IAPAuthenticator {
     audience: String,
     is_cloud_run: bool,
 }
 
-impl IAPValidator {
+impl IAPAuthenticator {
     pub fn new(audience: String, is_cloud_run: bool) -> Self {
-        IAPValidator {
+        IAPAuthenticator {
             audience,
             is_cloud_run,
         }
     }
 }
 
-impl Validator for IAPValidator {
+impl Authenticator for IAPAuthenticator {
     type Error = JwtError;
 
-    fn verify(&self, header: &axum::http::HeaderMap) -> Result<Identity, Self::Error> {
+    async fn authenticate(&self, header: &axum::http::HeaderMap) -> Result<Identity, Self::Error> {
         match self.is_cloud_run {
             false => {
                 let token = self.extract_token(header)?;
@@ -101,8 +101,10 @@ impl Validator for IAPValidator {
             }
         }
     }
+}
 
-    fn extract_token(&self, header: &axum::http::HeaderMap) -> Result<String, Self::Error> {
+impl IAPAuthenticator {
+    fn extract_token(&self, header: &axum::http::HeaderMap) -> Result<String, JwtError> {
         tracing::info!("Extracting JWT token from header {:?}", header);
         header
             .get(GCP_IAP_HEADER_KEY)
@@ -111,7 +113,7 @@ impl Validator for IAPValidator {
             .ok_or(JwtError::MissingToken)
     }
 
-    fn validate(&self, value: &str) -> Result<Identity, Self::Error> {
+    fn validate(&self, value: &str) -> Result<Identity, JwtError> {
         tracing::info!("Validating JWT token: {}", value);
         let jwks: JwkSet = serde_json::from_str(GCP_IAP_PUBLIC_JWT_KEY)
             .map_err(|err| JwtError::JwkParseError(err.to_string()))?;

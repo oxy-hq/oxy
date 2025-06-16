@@ -25,6 +25,12 @@ pub enum OxyError {
     IOError(String),
     #[error("DB error:\n{0}")]
     DBError(String),
+    #[error("Authentication error:\n{0}")]
+    AuthenticationError(String),
+    #[error("Authorization error:\n{0}")]
+    AuthorizationError(String),
+    #[error("Validation error:\n{0}")]
+    ValidationError(String),
     #[error("LanceDB error:\n{0}")]
     LanceDBError(#[from] lancedb::Error),
     #[error("SerdeArrow error:\n{0}")]
@@ -105,6 +111,9 @@ impl From<OxyError> for StatusCode {
             OxyError::SerializerError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             OxyError::IOError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             OxyError::DBError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            OxyError::AuthenticationError(_) => StatusCode::UNAUTHORIZED,
+            OxyError::AuthorizationError(_) => StatusCode::FORBIDDEN,
+            OxyError::ValidationError(_) => StatusCode::BAD_REQUEST,
             OxyError::LanceDBError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             OxyError::SerdeArrowError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             OxyError::ToolCallError { .. } => StatusCode::INTERNAL_SERVER_ERROR,

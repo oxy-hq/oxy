@@ -47,9 +47,31 @@
     }
   },
   "definitions": {
+    "ApiKeyAuth": {
+      "type": "object",
+      "properties": {
+        "header": {
+          "default": "X-API-KEY",
+          "type": "string"
+        }
+      }
+    },
     "Authentication": {
       "type": "object",
       "properties": {
+        "api_key": {
+          "default": {
+            "header": "X-API-KEY"
+          },
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ApiKeyAuth"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "basic": {
           "anyOf": [
             {

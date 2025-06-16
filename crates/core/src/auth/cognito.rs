@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 use thiserror::Error;
 
-use super::{types::Identity, validator::Validator};
+use super::{authenticator::Authenticator, types::Identity};
 
 #[derive(Debug, Error)]
 pub enum CognitoError {
@@ -50,24 +50,31 @@ impl fmt::Display for CognitoPayload {
     }
 }
 
-pub struct CognitoValidator;
+pub struct CognitoAuthenticator;
 
-impl Default for CognitoValidator {
+impl Default for CognitoAuthenticator {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl CognitoValidator {
+impl CognitoAuthenticator {
     pub fn new() -> Self {
-        CognitoValidator
+        CognitoAuthenticator
     }
 }
 
-impl Validator for CognitoValidator {
+impl Authenticator for CognitoAuthenticator {
     type Error = CognitoError;
 
-    fn extract_token(&self, header: &axum::http::HeaderMap) -> Result<String, Self::Error> {
+    async fn authenticate(&self, header: &axum::http::HeaderMap) -> Result<Identity, Self::Error> {
+        let token = self.extract_token(header)?;
+        self.validate(&token)
+    }
+}
+
+impl CognitoAuthenticator {
+    fn extract_token(&self, header: &axum::http::HeaderMap) -> Result<String, CognitoError> {
         // Only support ALB header (X-Amzn-Oidc-Data)
         if let Some(token) = header.get("X-Amzn-Oidc-Data").and_then(|v| v.to_str().ok()) {
             return Ok(token.to_string());
@@ -78,7 +85,7 @@ impl Validator for CognitoValidator {
         ))
     }
 
-    fn validate(&self, encoded_jwt: &str) -> Result<Identity, Self::Error> {
+    fn validate(&self, encoded_jwt: &str) -> Result<Identity, CognitoError> {
         // AWS ALB uses standard base64 encoding with padding (=) for JWT tokens,
         // but the jsonwebtoken crate expects URL-safe base64 without padding per JWT spec.
         // Since we trust the ALB and don't need signature verification, we manually
@@ -142,9 +149,9 @@ mod tests {
             "eyJ0eXAiOiJKV1QiLCJraWQiOiIzMWY1NjZjNi05ZmVmLTQ2MDUtOWE2ZC1kMWIwNTMyODBjNzMiLCJhbGciOiJFUzI1NiIsImlzcyI6Imh0dHBzOi8vY29nbml0by1pZHAudXMtd2VzdC0yLmFtYXpvbmF3cy5jb20vdXMtd2VzdC0yX3NoWTAxTWhvZCIsImNsaWVudCI6InUyMXF2YmdkcHVtMzY2NjJhcWd2OG5nZjciLCJzaWduZXIiOiJhcm46YXdzOmVsYXN0aWNsb2FkYmFsYW5jaW5nOnVzLXdlc3QtMjozMzU3ODg2NDgwMzE6bG9hZGJhbGFuY2VyL2FwcC9veHktZGV2LXVzLXdlc3QtMi1veHktYWxiLzcyNDJkYTEyYzZlNzMzOTAiLCJleHAiOjE3NDk3MjkwMDR9.eyJzdWIiOiIxODExZDMyMC05MGYxLTcwYmQtZjZlMC05NTM1Y2FjZjU1ZGYiLCJlbWFpbF92ZXJpZmllZCI6ImZhbHNlIiwiaWRlbnRpdGllcyI6Ilt7XCJkYXRlQ3JlYXRlZFwiOlwiMTc0OTYyMzU1MzY0NlwiLFwidXNlcklkXCI6XCIxMDUxNTA2MDk3NzA3MDMwMTk5OTJcIixcInByb3ZpZGVyTmFtZVwiOlwiR29vZ2xlXCIsXCJwcm92aWRlclR5cGVcIjpcIkdvb2dsZVwiLFwiaXNzdWVyXCI6bnVsbCxcInByaW1hcnlcIjpcInRydWVcIn1dIiwibmFtZSI6Ikx1b25nIFZvIiwiZW1haWwiOiJsdW9uZ0BoeXBlcnF1ZXJ5LmFpIiwidXNlcm5hbWUiOiJnb29nbGVfMTA1MTUwNjA5NzcwNzAzMDE5OTkyIiwiZXhwIjoxNzQ5NzI5MDA0LCJpc3MiOiJodHRwczovL2NvZ25pdG8taWRwLnVzLXdlc3QtMi5hbWF6b25hd3MuY29tL3VzLXdlc3QtMl9zaFkwMU1ob2QifQ==.-4iv0Zfkz70RT_rC9Va_lZNVJeJjUDBjBOFX6qSdSHFsXwlTb4WAfK7oy8mrUQy5ircdDQ2pShnBsSkcRdYeKA==".parse().unwrap(),
         );
 
-        let validator = CognitoValidator::new();
-        let token = validator.extract_token(&headers).unwrap();
-        let identity = validator.validate(&token).unwrap();
+        let authenticator = CognitoAuthenticator::new();
+        let token = authenticator.extract_token(&headers).unwrap();
+        let identity = authenticator.validate(&token).unwrap();
 
         assert_eq!(identity.email, "luong@hyperquery.ai");
         assert_eq!(identity.name, Some("Luong Vo".to_string()));

@@ -1,7 +1,7 @@
 use garde::Validate;
 use serde::{Deserialize, Serialize};
 
-use crate::config::validate::{ValidationContext, validate_env_var};
+use crate::config::{constants::DEFAULT_API_KEY_HEADER, validate::ValidationContext};
 use schemars::JsonSchema;
 
 #[derive(Serialize, Deserialize, Validate, Debug, Clone, JsonSchema)]
@@ -11,6 +11,9 @@ pub struct Authentication {
     pub basic: Option<BasicAuth>,
     #[garde(dive)]
     pub google: Option<GoogleAuth>,
+    #[garde(dive)]
+    #[serde(default = "default_api_key_config")]
+    pub api_key: Option<ApiKeyAuth>,
 }
 
 #[derive(Serialize, Deserialize, Validate, Debug, Clone, JsonSchema)]
@@ -34,4 +37,22 @@ pub struct GoogleAuth {
     pub client_id: String,
     #[garde(length(min = 1))]
     pub client_secret_var: String,
+}
+
+#[derive(Serialize, Deserialize, Validate, Debug, Clone, JsonSchema)]
+#[garde(context(ValidationContext))]
+pub struct ApiKeyAuth {
+    #[garde(length(min = 1))]
+    #[serde(default = "default_api_key_header")]
+    pub header: String,
+}
+
+fn default_api_key_header() -> String {
+    DEFAULT_API_KEY_HEADER.to_string()
+}
+
+fn default_api_key_config() -> Option<ApiKeyAuth> {
+    Some(ApiKeyAuth {
+        header: default_api_key_header(),
+    })
 }

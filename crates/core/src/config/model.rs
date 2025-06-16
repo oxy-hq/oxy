@@ -1506,7 +1506,7 @@ impl OmniSemanticModel {
             }
             let pattern_fields = self.get_fields_by_pattern(&field_pattern_cleaned)?;
             if exclution {
-                for (name, field) in pattern_fields {
+                for (name, _) in pattern_fields {
                     fields.remove(&name);
                 }
             } else {
@@ -1575,7 +1575,7 @@ impl OmniTopicInfoTool {
         let semantic_model = self
             .load_semantic_model()
             .expect("Failed to load semantic model");
-        for (topic_name, topic) in semantic_model.topics {
+        for (topic_name, _) in semantic_model.topics {
             description.push_str(&format!("- {}\n", topic_name,));
         }
         description
@@ -1607,7 +1607,7 @@ impl OmniTopicInfoTool {
                 ))
             })?;
             match view.view_type.clone() {
-                OmniViewType::Table(omni_table_view) => {
+                OmniViewType::Table(_) => {
                     let view_name = entry
                         .strip_prefix(self.model_path.clone())
                         .unwrap()
@@ -1618,7 +1618,7 @@ impl OmniTopicInfoTool {
                         .replace("/", "__");
                     views.insert(view_name, view);
                 }
-                OmniViewType::Query(omni_query_view) => {
+                OmniViewType::Query(_) => {
                     let view_name = entry
                         .file_name()
                         .unwrap()
@@ -1720,7 +1720,7 @@ impl ExecuteOmniTool {
                 ))
             })?;
             match view.view_type.clone() {
-                OmniViewType::Table(omni_table_view) => {
+                OmniViewType::Table(_) => {
                     let view_name = entry
                         .strip_prefix(self.model_path.clone())
                         .unwrap()
@@ -1731,7 +1731,7 @@ impl ExecuteOmniTool {
                         .replace("/", "__");
                     views.insert(view_name, view);
                 }
-                OmniViewType::Query(omni_query_view) => {
+                OmniViewType::Query(_) => {
                     let view_name = entry
                         .file_name()
                         .unwrap()
