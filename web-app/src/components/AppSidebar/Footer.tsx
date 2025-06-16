@@ -5,6 +5,8 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/shadcn/sidebar";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
 import { handleLogout } from "@/libs/utils";
 
 interface UserInfo {
@@ -13,37 +15,46 @@ interface UserInfo {
 }
 
 export function Footer() {
-  const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
+  const [userIAPInfo, setUserIAPInfo] = useState<UserInfo | null>(null);
+  const navigate = useNavigate();
+  const { logout, getUser, authConfig } = useAuth();
 
   useEffect(() => {
     (async () => {
+      if (authConfig.is_built_in_mode) {
+        return;
+      }
       try {
         const res = await fetch("/api/user", { credentials: "include" });
         if (!res.ok) throw new Error();
         const data = await res.json();
-        setUserInfo({
+        setUserIAPInfo({
           email: data?.email || "unknown",
           picture: data?.picture,
         });
       } catch {
-        setUserInfo({ email: "unknown" });
+        setUserIAPInfo({ email: "unknown" });
       }
     })();
-  }, []);
+  }, [authConfig.is_built_in_mode]);
+
+  const parsedUser = JSON.parse(getUser() || "null");
+
+  const currentUser = authConfig.is_built_in_mode ? parsedUser : userIAPInfo;
 
   return (
     <div className="mt-auto px-2 pb-4">
       <SidebarMenu>
-        {userInfo && (
+        {currentUser && (
           <SidebarMenuItem>
             <div
               className="flex items-center gap-3 w-full px-2 py-3 text-sm border-t pt-4"
-              title={userInfo.email}
+              title={currentUser.email}
             >
-              {userInfo.picture ? (
+              {currentUser.picture ? (
                 <img
-                  src={userInfo.picture}
-                  alt={userInfo.email}
+                  src={currentUser.picture}
+                  alt={currentUser.email}
                   className="w-4 h-4 rounded-full object-cover"
                   onError={(e) => {
                     // Fallback to icon if image fails to load
@@ -55,10 +66,10 @@ export function Footer() {
                 />
               ) : null}
               <User2
-                className={`w-4 h-4 text-muted-foreground ${userInfo.picture ? "hidden" : ""}`}
+                className={`w-4 h-4 text-muted-foreground ${currentUser.picture ? "hidden" : ""}`}
               />
               <span className="truncate text-muted-foreground">
-                {userInfo.email}
+                {currentUser?.email}
               </span>
             </div>
           </SidebarMenuItem>
@@ -66,7 +77,14 @@ export function Footer() {
         <SidebarMenuItem>
           <SidebarMenuButton asChild>
             <button
-              onClick={handleLogout}
+              onClick={() => {
+                if (!authConfig.is_built_in_mode) {
+                  handleLogout();
+                  return;
+                }
+                logout();
+                navigate("/login");
+              }}
               className="flex items-center gap-2 w-full"
             >
               <LogOut className="w-4 h-4" />

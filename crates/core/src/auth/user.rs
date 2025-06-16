@@ -29,6 +29,9 @@ impl UserService {
                         .clone()
                         .unwrap_or_else(|| identity.email.clone())),
                     picture: Set(identity.picture.clone()),
+                    password_hash: ActiveValue::not_set(),
+                    email_verified: Set(true),
+                    email_verification_token: ActiveValue::not_set(),
                     created_at: ActiveValue::not_set(), // Will use database default
                     last_login_at: ActiveValue::not_set(), // Will use database default
                 };

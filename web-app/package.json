@@ -56,7 +56,6 @@
     "debounce": "^2.2.0",
     "dotenv": "^16.5.0",
     "echarts": "^5.6.0",
-    "echarts-for-react": "^3.0.2",
     "elkjs": "^0.10.0",
     "highlight.js": "^11.11.1",
     "invariant": "^2.2.4",
@@ -114,6 +113,7 @@
     "@types/react-window": "^1.8.8",
     "@vitejs/plugin-react-swc": "^3.10.1",
     "i": "^0.3.7",
+    "rollup-plugin-visualizer": "^6.0.3",
     "typescript": "^5.8.3",
     "vite": "^6.3.5",
     "vite-plugin-node-polyfills": "^0.23.0"

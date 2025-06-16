@@ -450,7 +450,7 @@ struct ServeArgs {
     ///
     /// Choose between 'local' for development or 'oauth' for
     /// production deployments with proper user authentication.
-    #[clap(long, default_value_t = AuthMode::Local, value_enum)]
+    #[clap(long, default_value_t = AuthMode::BuiltIn, value_enum)]
     auth_mode: AuthMode,
 }
 

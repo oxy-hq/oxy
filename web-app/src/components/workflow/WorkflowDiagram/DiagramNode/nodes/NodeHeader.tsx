@@ -4,12 +4,24 @@ import {
   TaskType,
   WorkflowTaskConfig,
 } from "@/stores/useWorkflow";
-import { DynamicIcon } from "lucide-react/dynamic";
 import { Button } from "@/components/ui/shadcn/button";
 import TruncatedText from "@/components/TruncatedText";
 import { useNavigate } from "react-router-dom";
 import { headerHeight } from "../../layout/constants";
-import { IconName } from "lucide-react/dynamic";
+import {
+  Bot,
+  CircleAlert,
+  CircleHelp,
+  Code,
+  FileText,
+  GitBranch,
+  LocateFixed,
+  Maximize,
+  Minimize,
+  RefreshCcw,
+  Split,
+} from "lucide-react";
+import { ReactElement } from "react";
 
 const nodeNameMap: Record<NodeType, string> = {
   execute_sql: "SQL",
@@ -22,15 +34,15 @@ const nodeNameMap: Record<NodeType, string> = {
   "conditional-if": "If",
 };
 
-const nodeIconMap: Record<NodeType, IconName> = {
-  execute_sql: "code",
-  loop_sequential: "refresh-ccw",
-  formatter: "file-text",
-  agent: "bot",
-  workflow: "git-branch",
-  conditional: "split",
-  "conditional-else": "circle-alert",
-  "conditional-if": "circle-help",
+const nodeIconMap: Record<NodeType, ReactElement> = {
+  execute_sql: <Code size={14} />,
+  loop_sequential: <RefreshCcw size={14} />,
+  formatter: <FileText size={14} />,
+  agent: <Bot size={14} />,
+  workflow: <GitBranch size={14} />,
+  conditional: <Split size={14} />,
+  "conditional-else": <CircleAlert size={14} />,
+  "conditional-if": <CircleHelp size={14} />,
 };
 
 type Props = {
@@ -61,7 +73,7 @@ export const NodeHeader = ({
     >
       <div className="flex items-center min-w-0">
         <div className="flex items-center justify-center p-2 bg-special rounded-md">
-          <DynamicIcon name={taskIcon} />
+          {taskIcon}
         </div>
       </div>
       <div className="flex items-center flex-1 min-w-0">
@@ -80,10 +92,7 @@ export const NodeHeader = ({
               variant="ghost"
               onClick={onExpandClick}
             >
-              <DynamicIcon
-                size={14}
-                name={expanded ? "minimize-2" : "maximize-2"}
-              />
+              {expanded ? <Minimize size={14} /> : <Maximize size={14} />}
             </Button>
           )}
           {type === TaskType.WORKFLOW && (
@@ -115,7 +124,7 @@ const SubWorkflowNavigateButton = ({
       title="Navigate to definition"
       onClick={handleClick}
     >
-      <DynamicIcon size={14} name="locate-fixed" />
+      <LocateFixed size={14} />
     </Button>
   );
 };

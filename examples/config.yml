@@ -110,3 +110,13 @@ defaults:
   database: local
 
 builder_agent: agents/builder.agent.yml
+
+authentication:
+  basic:
+    smtp_user: huyle1995x@gmail.com
+    smtp_password_var: AUTH_SMTP_PASSWORD
+    smtp_server: smtp.gmail.com
+    smtp_port: 587
+  google:
+    client_id: 557675988752-l0se3h3j85q1k51iritp9aqnlpkimepr.apps.googleusercontent.com
+    client_secret_var: GOOGLE_CLIENT_SECRET

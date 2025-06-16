@@ -1,4 +1,4 @@
-import ELK, { ElkNode } from "elkjs/lib/elk.bundled.js";
+import ELK, { ElkNode } from "elkjs";
 import { Node, Edge, LayoutedNode } from "@/stores/useWorkflow";
 import {
   contentPadding,

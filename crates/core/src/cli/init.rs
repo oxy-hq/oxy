@@ -368,6 +368,7 @@ fn create_config_file(config_path: &Path) -> Result<(), InitError> {
         }),
         project_path: PathBuf::new(),
         builder_agent: None,
+        authentication: None,
     };
 
     let yaml =

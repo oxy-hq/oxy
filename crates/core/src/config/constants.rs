@@ -35,6 +35,8 @@ pub const GCP_IAP_SUB_HEADER_KEY: &str = "x-goog-authenticated-user-id";
 pub const GCP_IAP_EMAIL_HEADER_KEY: &str = "x-goog-authenticated-user-email";
 pub const GCP_IAP_ISS: &str = "https://cloud.google.com/iap";
 pub const GCP_IAP_AUD_ENV_VAR: &str = "GCP_IAP_AUDIENCE";
+pub const AUTHENTICATION_HEADER_KEY: &str = "authorization";
+pub const AUTHENTICATION_SECRET_KEY: &str = "authentication_secret";
 // The public keys used to verify Google Cloud IAP JWT tokens.
 // https://www.gstatic.com/iap/verify/public_key-jwk
 pub const GCP_IAP_PUBLIC_JWT_KEY: &str = r#"

@@ -104,12 +104,12 @@ pub async fn logout(State(auth_mode): State<AuthMode>) -> Result<Json<LogoutResp
                 message: "IAP logout handled by identity provider".to_string(),
             }))
         }
-        AuthMode::Local => {
-            // For local auth, just indicate successful logout
+        AuthMode::BuiltIn => {
+            // For built-in auth, just indicate successful logout
             Ok(Json(LogoutResponse {
                 logout_url: None,
                 success: true,
-                message: "Local logout successful".to_string(),
+                message: "Build-in logout successful".to_string(),
             }))
         }
     }

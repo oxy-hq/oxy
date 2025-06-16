@@ -1,7 +1,7 @@
 use clap::ValueEnum;
 use entity::users;
 
-#[derive(Debug, Clone, ValueEnum)]
+#[derive(Debug, Clone, ValueEnum, PartialEq)]
 pub enum AuthMode {
     // Use Google IAP for authentication
     IAP,
@@ -9,8 +9,8 @@ pub enum AuthMode {
     IAPCloudRun,
     // Use Amazon Cognito for authentication (supports both direct and ALB)
     Cognito,
-    // Use local authentication (default)
-    Local,
+    // Use build-in authentication (default)
+    BuiltIn,
 }
 
 // Simple identity structure for email-based identity linking

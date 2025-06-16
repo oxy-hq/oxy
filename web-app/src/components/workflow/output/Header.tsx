@@ -1,6 +1,6 @@
 import React from "react";
-import { DynamicIcon } from "lucide-react/dynamic";
 import { Button } from "@/components/ui/shadcn/button";
+import { ChevronLeft, X } from "lucide-react";
 
 interface HeaderProps {
   showOutput: boolean;
@@ -14,12 +14,12 @@ const Header: React.FC<HeaderProps> = ({ showOutput, toggleOutput }) => {
         <>
           <span className="text-background-foreground text-sm">Output</span>
           <Button variant="ghost" content="icon" onClick={toggleOutput}>
-            <DynamicIcon name="x" size={14} />
+            <X size={14} />
           </Button>
         </>
       ) : (
         <Button variant="ghost" content="icon" size="sm" onClick={toggleOutput}>
-          <DynamicIcon name="chevrons-left" />
+          <ChevronLeft size={14} />
         </Button>
       )}
     </div>

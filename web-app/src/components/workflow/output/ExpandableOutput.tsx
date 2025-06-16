@@ -1,7 +1,7 @@
 import React from "react";
-import { DynamicIcon } from "lucide-react/dynamic";
 import { Button } from "@/components/ui/shadcn/button";
 import Markdown from "@/components/Markdown";
+import { ChevronDown, ChevronUp } from "lucide-react";
 
 const getFirstLine = (content: string) => {
   const lines = content.split("\n");
@@ -37,7 +37,7 @@ const ExpandableOutput = ({
       >
         <div className="w-10 flex items-center justify-center">
           <Button variant="link" content="icon">
-            <DynamicIcon name="chevron-down" size={14} />
+            <ChevronDown size={14} />
           </Button>
         </div>
         <div className="p-2 flex-1 text-xs flex justify-between items-center ">
@@ -56,7 +56,7 @@ const ExpandableOutput = ({
     >
       <div className="w-10 flex items-start justify-center">
         <Button variant="link" content="icon">
-          <DynamicIcon name="chevron-up" size={14} />
+          <ChevronUp size={14} />
         </Button>
       </div>
       <div className="p-2 pt-3 flex-1 text-xs overflow-hidden">
