@@ -6,7 +6,11 @@ sidebarTitle: "GCP Compute Engine"
 
 # Deploy Oxy on GCP
 
-This guide walks you through deploying Oxy on Google Cloud Platform using Compute Engine VM instances. We'll cover everything from setting up a virtual machine to configuring Oxy with proper data persistence and HTTPS access.
+This guide walks you through deploying Oxy on Google Cloud Platform using Compute Engine VM instances with direct access. We'll cover everything from setting up a virtual machine to configuring Oxy with proper data persistence.
+
+<Note>
+  This guide sets up Oxy for direct access on port 3000. For production deployments, consider implementing additional security measures such as HTTPS with SSL certificates, authentication, and network access controls.
+</Note>
 
 <Note>
   This is part of our [Hands-on Deployment Guides](/deployment/hands-on). For additional deployment options, see our [Docker Deployment Guide](/deployment/docker) or the [general deployment overview](/deployment/overview).
@@ -51,8 +55,8 @@ Follow these steps to create a VM instance in Google Cloud Platform:
       - Version: Latest stable (e.g., Ubuntu 22.04)
       - Size: recommended starting point 10 GB
     - **Firewall**:
-      - Check "Allow HTTP traffic"
-      - Check "Allow HTTPS traffic"
+      - Check "Allow HTTP traffic" to allow access on port 3000
+      - You may also check "Allow HTTPS traffic" if you plan to set up HTTPS later
     
     Click **Create** to provision your VM.
   </Step>
@@ -240,87 +244,44 @@ Let's use the built-in `oxy init` command to initialize a new workspace with all
   </Step>
 </Steps>
 
-## Installing and Configuring Caddy
+## Firewall Configuration
 
-Now, let's install and configure Caddy as a reverse proxy for HTTPS and authentication:
+To ensure your Oxy deployment is accessible, you need to create a firewall rule that allows traffic on port 3000:
 
 <Steps>
-  <Step title="Install Caddy">
-    ```bash
-    sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https
-    curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
-    curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
-    sudo apt update
-    sudo apt install -y caddy
-    ```
+  <Step title="Create Firewall Rule">
+    In the Google Cloud Console, navigate to **VPC network** > **Firewall**.
   </Step>
 
-  <Step title="Create Caddyfile">
-    ```bash
-    sudo nano /etc/caddy/Caddyfile
-    ```
+  <Step title="Create Rule for Port 3000">
+    Click **CREATE FIREWALL RULE** and configure:
     
-    For domain-based setup (recommended):
+    - **Name**: `allow-oxy-port-3000`
+    - **Direction**: Ingress
+    - **Action**: Allow
+    - **Targets**: Specified target tags
+    - **Target tags**: `oxy-server` (or the tag you want to use)
+    - **Source IP ranges**: `0.0.0.0/0` (for public access) or your specific IP range for restricted access
+    - **Protocols and ports**: 
+      - Check "Specified protocols and ports"
+      - Select "TCP"
+      - Enter port `3000`
     
-    ```caddy
-    yourdomain.com {
-        reverse_proxy localhost:3000 {
-            flush_interval -1
-        }
-    }
-    ```
-    
-    Replace `yourdomain.com` with your actual domain name.
-    
-    If you don't have a domain and want to use the IP address only, use:
-    
-    ```caddy
-    :80 {
-        reverse_proxy localhost:3000 {
-            flush_interval -1
-        }
-    }
-    ```
-    
-    Save and exit (Ctrl+X, then Y, then Enter).
+    Click **CREATE** to save the rule.
   </Step>
 
-  <Step title="Configure Authentication (Optional)">
-    To add basic authentication protection:
+  <Step title="Apply Tag to Your VM">
+    Go back to **Compute Engine** > **VM instances**, select your VM instance, and click **EDIT**.
     
-    ```bash
-    # Generate a password hash
-    sudo caddy hash-password
-    # Enter your desired password when prompted and copy the hash
+    In the **Network tags** field, add `oxy-server` (or whatever tag you used in the firewall rule).
     
-    # Edit Caddyfile to add authentication
-    sudo nano /etc/caddy/Caddyfile
-    ```
-    
-    Update your Caddyfile to add the basicauth directive. You'll need to choose a username and use the password hash:
-    
-    ```caddy
-    yourdomain.com {
-        basicauth {
-            your_chosen_username YOUR_PASSWORD_HASH
-        }
-        reverse_proxy localhost:3000 {
-            flush_interval -1
-        }
-    }
-    ```
-    
-    Replace `your_chosen_username` with your preferred username and `YOUR_PASSWORD_HASH` with the hash you generated.
-    
-    Save and exit (Ctrl+X, then Y, then Enter).
-  </Step>
-
-  <Step title="Reload Caddy">
-    ```bash
-    sudo systemctl reload caddy
-    ```
+    Click **SAVE**.
   </Step>
 </Steps>
+
+<Warning>
+  Opening port 3000 to 0.0.0.0/0 allows public access to your Oxy instance. For production deployments, consider restricting access to specific IP ranges or implementing additional authentication measures.
+</Warning>
 
 ## Setting Up and Starting Oxy as a Service
 
@@ -351,6 +312,10 @@ Let's configure Oxy to run automatically on system startup and restart if it fai
     [Install]
     WantedBy=multi-user.target
     ```
+    
+    <Note>
+      We specify port 3000 explicitly to match the firewall rule configuration. The service will be accessible directly on this port from the internet.
+    </Note>
     
     This configuration uses the default `ubuntu` user which is standard on GCP instances. If you're using a different username, adjust accordingly.
     
@@ -394,20 +359,20 @@ Let's configure Oxy to run automatically on system startup and restart if it fai
   </Step>
 
   <Step title="Access Your Deployment">
-    If you've set up a domain, open your browser and navigate to your domain:
+    You can now access your Oxy deployment using:
     
+    If you've configured a domain name:
     ```
-    https://yourdomain.com
-    ```
-    
-    Or if you're using the IP address directly:
-    
-    ```
-    http://YOUR_VM_IP
+    http://yourdomain.com:3000
     ```
     
+    Or directly using your VM's external IP:
+    ```
+    http://YOUR_VM_EXTERNAL_IP:3000
+    ```
+
     <Tip>
-      If you've set up a domain with DNS earlier, now is the exciting moment to see your work! Open your browser and visit your domain to see the Oxy interface up and running on your own server.
+      For production deployments with HTTPS, consider setting up a reverse proxy like nginx with Let's Encrypt certificates, or implementing additional GCP services for SSL termination and enhanced security.
     </Tip>
     
     You should see the Oxy interface. Congratulations! 🎉 You've successfully deployed Oxy on Google Cloud Platform.
@@ -436,17 +401,11 @@ It's important to understand how Oxy handles data persistence:
 ## Managing Your Deployment
 
 <Steps>
-  <Step title="Stopping the Services">
+  <Step title="Stopping the Service">
     If you need to stop the Oxy service temporarily:
     
     ```bash
     sudo systemctl stop oxy
-    ```
-    
-    To stop the Caddy service:
-    
-    ```bash
-    sudo systemctl stop caddy
     ```
   </Step>
 
@@ -503,10 +462,9 @@ As your usage grows, you may need to scale your deployment:
 1. Stop your VM from the GCP Console
 2. Edit the VM configuration to increase CPU and memory
 3. Start the VM again
-4. Reconnect and start your Oxy services:
+4. Reconnect and start your Oxy service:
    ```bash
    sudo systemctl start oxy
-   sudo systemctl start caddy
    ```
 
 ### Storage Scaling
@@ -540,15 +498,11 @@ If you need more storage for your Oxy data:
 
 <AccordionGroup>
   <Accordion title="Cannot access Oxy through the domain or IP">
-    - Check your GCP firewall rules: Go to VPC Network → Firewall in GCP Console and verify ports 80 and 443 are allowed
-    - For domain issues: Run `dig yourdomain.com` to verify DNS is pointing to your VM IP
-    - View Caddy logs: `sudo journalctl -u caddy -f`
-  </Accordion>
-  
-  <Accordion title="Caddy cannot obtain SSL certificate">
-    - Ensure your domain DNS records are correctly set up
-    - Verify Caddy has permissions to bind to ports 80 and 443: `sudo setcap CAP_NET_BIND_SERVICE=+ep /usr/bin/caddy`
-    - Check Caddy logs: `sudo journalctl -u caddy -f`
+    - Check your GCP firewall rules: Go to VPC Network → Firewall in GCP Console and verify port 3000 is allowed
+    - Verify VM network tags match the firewall rule target tags
+    - Test local connection: `curl http://localhost:3000`
+    - For domain issues: Run `dig yourdomain.com` to verify DNS is pointing to your VM's external IP
+    - Check if your VM's external IP has changed (this can happen after stop/start)
   </Accordion>
   
   <Accordion title="Oxy service won't start">
@@ -556,6 +510,7 @@ If you need more storage for your Oxy data:
     - Verify environment file exists: `cat ~/oxy-workspace/.env`
     - Check service file: `sudo cat /etc/systemd/system/oxy.service`
     - Ensure workspace exists: `ls -la ~/oxy-workspace`
+    - Verify Oxy binary is installed: `which oxy`
   </Accordion>
   
   <Accordion title="Data not persisting between restarts">
@@ -563,6 +518,14 @@ If you need more storage for your Oxy data:
     - Check environment variable is set: `grep OXY_STATE_DIR ~/oxy-workspace/.env`
     - If you didn't set `OXY_STATE_DIR`, check the default location: `ls -la ~/.local/share/oxy/`
     - Ensure proper permissions: `sudo chown -R ubuntu:ubuntu ~/oxy-data`
+  </Accordion>
+  
+  <Accordion title="Connection refused or timeout errors">
+    - Verify the VM instance is running in the GCP Console
+    - Check if the firewall rule allows traffic on port 3000
+    - Ensure Oxy service is running: `sudo systemctl status oxy`
+    - Test if the port is open: `sudo netstat -tlnp | grep :3000`
+    - Verify the VM has the correct network tag applied
   </Accordion>
 </AccordionGroup>
 
