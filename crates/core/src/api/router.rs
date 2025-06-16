@@ -1,4 +1,5 @@
 use crate::api::agent;
+use crate::api::auth;
 use crate::api::chart;
 use crate::api::data;
 use crate::api::database;
@@ -8,8 +9,10 @@ use crate::api::user;
 use crate::api::workflow;
 use crate::auth::middleware::{AuthState, auth_middleware};
 use crate::auth::types::AuthMode;
+use crate::config::ConfigBuilder;
 use crate::db::client::establish_connection;
 use crate::errors::OxyError;
+use crate::utils::find_project_path;
 use axum::Router;
 use axum::middleware;
 use axum::routing::delete;
@@ -33,10 +36,30 @@ pub async fn api_router(auth_mode: AuthMode) -> Result<Router, OxyError> {
         .allow_headers(tower_http::cors::Any);
 
     let db = establish_connection().await;
+
+    let project_path = find_project_path()
+        .map_err(|_| OxyError::ConfigurationError("Failed to find project path".to_owned()))?;
+
+    let config = ConfigBuilder::new()
+        .with_project_path(&project_path)
+        .map_err(|_| OxyError::ConfigurationError("Failed to build config".to_owned()))?
+        .build()
+        .await
+        .map_err(|_| OxyError::ConfigurationError("Failed to build config".to_owned()))?;
+
+    let auth = config.get_authentication();
+
     // migrate db
     Migrator::up(&db, None)
         .await
         .map_err(|err| OxyError::DBError(format!("Migration failed to apply: {}", err)))?;
+
+    let public_routes = Router::new()
+        .route("/auth/config", get(auth::get_config))
+        .route("/auth/login", post(auth::login))
+        .route("/auth/register", post(auth::register))
+        .route("/auth/google", post(auth::google_auth))
+        .route("/auth/validate_email", post(auth::validate_email));
 
     let mut protected_routes = Router::new()
         .route("/user", get(user::get_current_user))
@@ -110,13 +133,15 @@ pub async fn api_router(auth_mode: AuthMode) -> Result<Router, OxyError> {
             AuthState::cognito(),
             auth_middleware,
         )),
-        AuthMode::Local => protected_routes.route_layer(middleware::from_fn_with_state(
-            AuthState::local(),
+        AuthMode::BuiltIn => protected_routes.route_layer(middleware::from_fn_with_state(
+            AuthState::built_in(auth),
             auth_middleware,
         )),
     };
 
-    Ok(protected_routes.with_state(auth_mode).layer(cors))
+    let app_routes = public_routes.merge(protected_routes);
+
+    Ok(app_routes.with_state(auth_mode).layer(cors))
 }
 
 pub async fn openapi_router() -> OpenApiRouter {

@@ -9,11 +9,11 @@ use std::sync::Arc;
 
 use crate::{
     auth::{cognito::CognitoValidator, iap::IAPValidator, user::UserService},
-    config::constants::GCP_IAP_AUD_ENV_VAR,
+    config::{auth::Authentication, constants::GCP_IAP_AUD_ENV_VAR},
     errors::OxyError,
 };
 
-use super::{local::LocalValidator, validator::Validator};
+use super::{build_in::BuildInValidator, validator::Validator};
 
 pub struct AuthState<T> {
     validator: Arc<T>,
@@ -56,10 +56,10 @@ impl AuthState<CognitoValidator> {
     }
 }
 
-impl AuthState<LocalValidator> {
-    pub fn local() -> Self {
+impl AuthState<BuildInValidator> {
+    pub fn built_in(authentication: Option<Authentication>) -> Self {
         Self {
-            validator: Arc::new(LocalValidator::new()),
+            validator: Arc::new(BuildInValidator::new(authentication)),
         }
     }
 }

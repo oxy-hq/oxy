@@ -1,3 +1,4 @@
+use crate::config::auth::Authentication;
 use garde::Validate;
 use indoc::indoc;
 use itertools::Itertools;
@@ -39,6 +40,9 @@ pub struct Config {
     #[garde(skip)]
     #[schemars(skip)]
     pub project_path: PathBuf,
+
+    #[garde(dive)]
+    pub authentication: Option<Authentication>,
 }
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema)]

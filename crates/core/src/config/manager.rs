@@ -3,7 +3,7 @@ use std::{
     sync::Arc,
 };
 
-use crate::errors::OxyError;
+use crate::{config::auth::Authentication, errors::OxyError};
 
 use super::{
     model::{AgentConfig, AppConfig, Config, Database, Model, Workflow},
@@ -97,6 +97,10 @@ impl ConfigManager {
 
     pub fn list_databases(&self) -> Result<&[Database], OxyError> {
         Ok(self.config.databases.as_slice())
+    }
+
+    pub fn get_authentication(&self) -> Option<Authentication> {
+        self.config.authentication.clone()
     }
 
     pub async fn list_agents(&self) -> Result<Vec<PathBuf>, OxyError> {

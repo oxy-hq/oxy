@@ -7,6 +7,16 @@
     "models"
   ],
   "properties": {
+    "authentication": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/Authentication"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "builder_agent": {
       "type": [
         "string",
@@ -37,6 +47,60 @@
     }
   },
   "definitions": {
+    "Authentication": {
+      "type": "object",
+      "properties": {
+        "basic": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/BasicAuth"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "google": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/GoogleAuth"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "BasicAuth": {
+      "type": "object",
+      "required": [
+        "smtp_password_var",
+        "smtp_user"
+      ],
+      "properties": {
+        "smtp_password_var": {
+          "type": "string"
+        },
+        "smtp_port": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint16",
+          "minimum": 0.0
+        },
+        "smtp_server": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "smtp_user": {
+          "type": "string"
+        }
+      }
+    },
     "Database": {
       "type": "object",
       "oneOf": [
@@ -354,6 +418,21 @@
             "string",
             "null"
           ]
+        }
+      }
+    },
+    "GoogleAuth": {
+      "type": "object",
+      "required": [
+        "client_id",
+        "client_secret_var"
+      ],
+      "properties": {
+        "client_id": {
+          "type": "string"
+        },
+        "client_secret_var": {
+          "type": "string"
         }
       }
     },

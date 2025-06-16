@@ -66,6 +66,9 @@ pub async fn seed_test_users() -> Result<Vec<users::Model>, OxyError> {
             email: Set(test_user.email.clone()),
             name: Set(test_user.name),
             picture: Set(test_user.picture),
+            password_hash: ActiveValue::not_set(),
+            email_verified: Set(true),
+            email_verification_token: ActiveValue::not_set(),
             created_at: ActiveValue::not_set(), // Will use database default
             last_login_at: ActiveValue::not_set(), // Will use database default
         };

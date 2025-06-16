@@ -276,4 +276,24 @@ export const apiService: Service = {
       onMessage: onLogItem,
     });
   },
+  async login(request: { email: string; password: string }) {
+    const response = await apiClient.post("/auth/login", request);
+    return response.data;
+  },
+  async register(request: { email: string; password: string; name: string }) {
+    const response = await apiClient.post("/auth/register", request);
+    return response.data;
+  },
+  async googleAuth(request: { code: string }) {
+    const response = await apiClient.post("/auth/google", request);
+    return response.data;
+  },
+  async validateEmail(request: { token: string }) {
+    const response = await apiClient.post("/auth/validate_email", request);
+    return response.data;
+  },
+  async getAuthConfig() {
+    const response = await apiClient.get("/auth/config");
+    return response.data;
+  },
 };

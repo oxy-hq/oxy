@@ -11,6 +11,9 @@ pub struct Model {
     pub email: String,
     pub name: String,
     pub picture: Option<String>,
+    pub password_hash: Option<String>,
+    pub email_verified: bool,
+    pub email_verification_token: Option<String>,
     pub created_at: DateTimeWithTimeZone,
     pub last_login_at: DateTimeWithTimeZone,
 }

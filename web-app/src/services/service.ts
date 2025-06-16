@@ -15,6 +15,15 @@ import { Workflow } from "@/types/workflow";
 import { Artifact } from "./mock";
 import { DatabaseInfo, DatabaseSyncResponse } from "@/types/database";
 import { LogItem } from "./types";
+import {
+  LoginRequest,
+  RegisterRequest,
+  GoogleAuthRequest,
+  ValidateEmailRequest,
+  AuthResponse,
+  MessageResponse,
+  AuthConfigResponse,
+} from "@/types/auth";
 
 export interface Service {
   listThreads(page?: number, limit?: number): Promise<ThreadsResponse>;
@@ -88,6 +97,11 @@ export interface Service {
     threadId: string,
     onLogItem: (logItem: LogItem) => void,
   ): Promise<void>;
+  login(request: LoginRequest): Promise<AuthResponse>;
+  register(request: RegisterRequest): Promise<MessageResponse>;
+  googleAuth(request: GoogleAuthRequest): Promise<AuthResponse>;
+  validateEmail(request: ValidateEmailRequest): Promise<AuthResponse>;
+  getAuthConfig(): Promise<AuthConfigResponse>;
 }
 
 export const service = apiService;

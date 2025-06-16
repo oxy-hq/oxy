@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+pub mod auth;
 pub mod model;
 mod parser;
 pub mod validate;

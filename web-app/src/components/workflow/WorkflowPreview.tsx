@@ -1,12 +1,11 @@
-import React, { useEffect, useMemo } from "react";
+import React, { Suspense, useEffect, useMemo } from "react";
 import { ReactFlowProvider } from "@xyflow/react";
 import useWorkflow from "@/stores/useWorkflow";
 import { useMutation } from "@tanstack/react-query";
 import useWorkflowConfig from "@/hooks/api/useWorkflowConfig.ts";
 import useWorkflowLogs from "@/hooks/api/useWorkflowLogs";
-import WorkflowDiagram from "./WorkflowDiagram";
 import WorkflowOutput from "./output";
-import { throttle } from "lodash";
+import throttle from "lodash/throttle";
 import { ResizableHandle } from "@/components/ui/shadcn/resizable";
 import { service } from "@/services/service";
 import {
@@ -15,9 +14,16 @@ import {
 } from "@/components/ui/shadcn/resizable";
 import { cn } from "@/libs/shadcn/utils";
 import { Button } from "@/components/ui/shadcn/button";
-import { LoaderCircle, LogsIcon, PlayIcon } from "lucide-react";
+import {
+  LoaderCircle,
+  LoaderCircleIcon,
+  LogsIcon,
+  PlayIcon,
+} from "lucide-react";
 import { Skeleton } from "@/components/ui/shadcn/skeleton";
 import { LogItem } from "@/services/types";
+
+const WorkflowDiagram = React.lazy(() => import("./WorkflowDiagram"));
 
 export interface WorkflowPreviewRef {
   run: () => void;
@@ -103,7 +109,15 @@ export const WorkflowPreview = ({ pathb64 }: { pathb64: string }) => {
       >
         <div className="relative h-full w-full">
           <ReactFlowProvider>
-            <WorkflowDiagram workflowConfig={workflowConfig} />
+            <Suspense
+              fallback={
+                <div className="flex items-center justify-center h-full w-full">
+                  <LoaderCircleIcon className="animate-spin" />
+                </div>
+              }
+            >
+              <WorkflowDiagram workflowConfig={workflowConfig} />
+            </Suspense>
           </ReactFlowProvider>
           {!showOutput && (
             <Button

@@ -6,7 +6,7 @@ import { service } from "@/services/service";
 import { LogItem } from "@/services/types";
 import { ThreadItem } from "@/types/chat";
 import { useQueryClient } from "@tanstack/react-query";
-import { throttle } from "lodash";
+import throttle from "lodash/throttle";
 import { Workflow } from "lucide-react";
 import { useEffect } from "react";
 import { useCallback } from "react";

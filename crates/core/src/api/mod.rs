@@ -1,6 +1,7 @@
 pub mod agent;
 pub mod app;
 pub mod artifacts;
+pub mod auth;
 pub mod chart;
 pub mod data;
 pub mod database;

@@ -20,6 +20,15 @@ import IdePage from "./pages/ide";
 import EditorPage from "./pages/ide/Editor";
 import AppPage from "./pages/app";
 import { HotkeysProvider } from "react-hotkeys-hook";
+import LoginPage from "./pages/login";
+import RegisterPage from "./pages/register";
+import EmailVerificationPage from "./pages/auth/EmailVerification";
+import GoogleCallback from "./pages/auth/GoogleCallback";
+import ProtectedRoute from "./components/ProtectedRoute";
+import useAuthConfig from "./hooks/auth/useAuthConfig";
+import { Loader2 } from "lucide-react";
+import { AuthProvider } from "./contexts/AuthContext";
+import { AuthConfigResponse } from "./types/auth";
 
 const PageWrapper = ({ children }: { children: React.ReactNode }) => {
   return (
@@ -82,25 +91,49 @@ const MainLayout = React.memo(function MainLayout() {
   );
 });
 
-const router = createBrowserRouter(
-  createRoutesFromElements(
-    <Route
-      path="*"
-      element={
-        <SidebarProvider>
-          <MainLayout />
-        </SidebarProvider>
-      }
-    />,
-  ),
-);
+const getRouter = (authConfig: AuthConfigResponse) =>
+  createBrowserRouter(
+    createRoutesFromElements(
+      <Route>
+        {authConfig.is_built_in_mode && (
+          <>
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/register" element={<RegisterPage />} />
+            <Route path="/verify-email" element={<EmailVerificationPage />} />
+            <Route path="/auth/google/callback" element={<GoogleCallback />} />
+          </>
+        )}
+
+        <Route
+          path="*"
+          element={
+            <ProtectedRoute>
+              <SidebarProvider>
+                <MainLayout />
+              </SidebarProvider>
+            </ProtectedRoute>
+          }
+        />
+      </Route>,
+    ),
+  );
 
 function App() {
+  const { data: authConfig, isPending } = useAuthConfig();
+
+  if (isPending || !authConfig) {
+    return (
+      <div className="flex items-center justify-center h-full w-full">
+        <Loader2 className="animate-spin h-4 w-4" />
+      </div>
+    );
+  }
+
   return (
-    <>
-      <RouterProvider router={router} />
+    <AuthProvider authConfig={authConfig}>
+      <RouterProvider router={getRouter(authConfig)} />
       <ShadcnToaster />
-    </>
+    </AuthProvider>
   );
 }
 

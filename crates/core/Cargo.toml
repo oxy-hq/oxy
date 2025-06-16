@@ -21,6 +21,7 @@ axum = { version = "0.8.4", features = ["macros"] }
 axum-extra = { version = "0.10", features = ["typed-header"] }
 axum-streams = { version = "0.21.0", features = ["json", "csv", "protobuf", "text"] }
 base64 = "0.22"
+bcrypt = "0.16"
 chrono = "*"
 clap = { version = "4.5.39", features = ["derive"] }
 clickhouse = { version = "0.13.3", features = ["rustls-tls"] }
@@ -43,6 +44,7 @@ indoc = "2.0.6"
 itertools = "0.14.0"
 jsonwebtoken = "9.3"
 lancedb = "0.17.0"
+lettre = "0.11"
 libduckdb-sys = "=1.1.1" # lock version to avoid breaking changes, such as https://github.com/duckdb/duckdb-rs/issues number 436
 log = { workspace = true }
 migration = { path = "../migration" }
