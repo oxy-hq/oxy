@@ -1,15 +1,16 @@
 use std::sync::{Arc, Mutex};
+use tokio::sync::Mutex as TokioMutex;
 
 use crate::{
     config::ConfigBuilder,
     db::client::establish_connection,
     errors::OxyError,
     execute::{
-        types::{DataAppReference, Event, EventKind, Output, ReferenceKind},
+        types::{DataAppReference, Event, EventKind, Output, ReferenceKind, Usage},
         writer::EventHandler,
     },
     service::agent::run_agent,
-    utils::{create_sse_stream, find_project_path},
+    utils::{create_sse_stream, find_project_path, try_unwrap_arc_tokio_mutex},
 };
 use axum::{
     extract::{self, Path},
@@ -30,11 +31,13 @@ pub struct AnswerStream {
     pub file_path: String,
     pub is_error: bool,
     pub step: String,
+    pub usage: Usage,
 }
 
 struct TaskStream {
     references: Arc<Mutex<Vec<ReferenceKind>>>,
     tx: Sender<AnswerStream>,
+    usage: Arc<TokioMutex<Usage>>,
 }
 
 impl TaskStream {
@@ -42,13 +45,27 @@ impl TaskStream {
         TaskStream {
             tx,
             references: Arc::new(Mutex::new(vec![])),
+            usage: Arc::new(TokioMutex::new(Usage::new(0, 0))),
         }
+    }
+
+    async fn update_usage(&self, usage: Usage) -> Result<(), OxyError> {
+        let mut usage_lock = self.usage.lock().await;
+        usage_lock.input_tokens += usage.input_tokens;
+        usage_lock.output_tokens += usage.output_tokens;
+        Ok(())
     }
 }
 
 #[async_trait::async_trait]
 impl EventHandler for TaskStream {
     async fn handle_event(&mut self, event: Event) -> Result<(), OxyError> {
+        if let EventKind::Usage { usage } = &event.kind {
+            self.update_usage(usage.clone()).await?;
+        }
+
+        let usage = self.usage.lock().await.clone();
+
         if let EventKind::Updated { chunk } = &event.kind {
             match &chunk.delta {
                 Output::Prompt(_) => {
@@ -57,6 +74,7 @@ impl EventHandler for TaskStream {
                         is_error: false,
                         step: event.source.kind.to_string(),
                         file_path: "".to_string(),
+                        usage: usage.clone(),
                     };
                     self.tx.send(message).await?;
                 }
@@ -66,6 +84,7 @@ impl EventHandler for TaskStream {
                         is_error: false,
                         step: event.source.kind.to_string(),
                         file_path: "".to_string(),
+                        usage: usage.clone(),
                     };
                     self.tx.send(message).await?;
                 }
@@ -78,6 +97,7 @@ impl EventHandler for TaskStream {
                             is_error: false,
                             step: event.source.kind.to_string(),
                             file_path: "".to_string(),
+                            usage: usage.clone(),
                         };
                         self.tx.send(message).await?;
                     }
@@ -97,6 +117,7 @@ impl EventHandler for TaskStream {
                 is_error: false,
                 step: event.source.kind.to_string(),
                 file_path: data_app.file_path.to_string_lossy().to_string(),
+                usage: usage.clone(),
             };
             self.tx.send(message).await?;
         }
@@ -144,6 +165,7 @@ pub async fn ask_task(
                 is_human: ActiveValue::Set(true),
                 thread_id: ActiveValue::Set(thread.id),
                 created_at: ActiveValue::default(),
+                ..Default::default()
             };
             new_message
                 .insert(&connection)
@@ -187,6 +209,7 @@ pub async fn ask_task(
         let tx_clone = tx.clone();
         let thread_stream = TaskStream::new(tx);
         let references = thread_stream.references.clone();
+        let usage_arc = thread_stream.usage.clone();
         let agent_result = run_agent(
             &project_path,
             &agent_ref,
@@ -206,8 +229,12 @@ pub async fn ask_task(
                     .map_err(|_| {
                         OxyError::RuntimeError("Failed to lock agent references".to_string())
                     })?;
+
+                let usage = usage_arc.lock().await.clone();
+
                 tracing::debug!("Agent output: {:?}", output_container);
                 tracing::debug!("Agent references: {:?}", references);
+                tracing::info!("Token usage: {:?}", usage);
 
                 // Save the agent response to messages table
                 let answer_message = entity::messages::ActiveModel {
@@ -216,6 +243,8 @@ pub async fn ask_task(
                     is_human: ActiveValue::Set(false),
                     thread_id: ActiveValue::Set(thread.id),
                     created_at: ActiveValue::default(),
+                    input_tokens: ActiveValue::Set(usage.input_tokens),
+                    output_tokens: ActiveValue::Set(usage.output_tokens),
                 };
                 answer_message.insert(&connection).await.map_err(|err| {
                     OxyError::DBError(format!("Failed to insert agent message:\n{}", err))
@@ -236,12 +265,14 @@ pub async fn ask_task(
             }
             Err(e) => {
                 tracing::error!("Error running agent: {}", e);
+                let usage = usage_arc.lock().await.clone();
                 tx_clone
                     .send(AnswerStream {
                         content: format!("🔴 Error: {}", e),
                         is_error: true,
                         step: "".to_string(),
                         file_path: "".to_string(),
+                        usage: usage,
                     })
                     .await?;
                 Result::<(), OxyError>::Ok(())

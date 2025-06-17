@@ -2,7 +2,7 @@ use tokio::sync::mpsc::Sender;
 
 use crate::{
     errors::OxyError,
-    execute::types::event::ArtifactKind,
+    execute::types::{Usage, event::ArtifactKind},
     service::types::{AnswerContent, AnswerStream, ArtifactValue},
 };
 
@@ -75,6 +75,18 @@ impl StreamDispatcher {
                     id: id.to_string(),
                     value,
                 },
+                references: vec![],
+                is_error: false,
+                step: step.to_string(),
+            })
+            .await?;
+        Ok(())
+    }
+
+    pub async fn send_usage(&self, usage: Usage, step: &str) -> Result<(), OxyError> {
+        self.sender
+            .send(AnswerStream {
+                content: AnswerContent::Usage { usage },
                 references: vec![],
                 is_error: false,
                 step: step.to_string(),

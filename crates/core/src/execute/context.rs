@@ -7,7 +7,7 @@ use crate::{
     adapters::checkpoint::CheckpointContext,
     config::{ConfigBuilder, ConfigManager},
     errors::OxyError,
-    execute::renderer::Renderer,
+    execute::{renderer::Renderer, types::Usage},
 };
 
 use super::{
@@ -125,6 +125,10 @@ impl ExecutionContext {
     ) -> Result<(), OxyError> {
         self.write_kind(EventKind::DataAppCreated { data_app })
             .await
+    }
+
+    pub async fn write_usage(&self, usage: Usage) -> Result<(), OxyError> {
+        self.write_kind(EventKind::Usage { usage }).await
     }
 
     pub async fn write_progress(&self, progress: ProgressType) -> Result<(), OxyError> {

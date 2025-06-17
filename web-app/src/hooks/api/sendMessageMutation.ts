@@ -9,6 +9,7 @@ import {
   Message,
   MessageItem,
   TextContent,
+  UsageContent,
 } from "@/types/chat";
 import { STEP_MAP } from "@/types/agent";
 import { AgentArtifact, Artifact, WorkflowArtifact } from "@/services/mock";
@@ -78,6 +79,10 @@ const useSendMessageMutation = ({
     steps: [],
     isUser: false,
     isStreaming: false,
+    usage: {
+      inputTokens: 0,
+      outputTokens: 0,
+    },
   });
   const artifactStreamingDataRef = useRef<{ [key: string]: Artifact }>({});
 
@@ -93,6 +98,10 @@ const useSendMessageMutation = ({
       steps: [],
       isUser: false,
       isStreaming: true,
+      usage: {
+        inputTokens: 0,
+        outputTokens: 0,
+      },
     };
     setStreamingMessage(initialStreamingMessage);
     onStreamingMessage?.(initialStreamingMessage);
@@ -120,6 +129,7 @@ const useSendMessageMutation = ({
                   steps: shouldAddStep ? [...steps, answer.step] : steps,
                   isUser: false,
                   isStreaming: true,
+                  usage: prevMessage.usage,
                 };
 
                 onStreamingMessage?.(updatedMessage);
@@ -180,6 +190,19 @@ const useSendMessageMutation = ({
               onStreamingArtifact?.(artifactStreamingDataRef.current);
               break;
             }
+
+            case "usage": {
+              setStreamingMessage((prevMessage) => {
+                const updatedMessage = {
+                  ...prevMessage,
+                  usage: (answer.content as UsageContent).usage,
+                };
+
+                onStreamingMessage?.(updatedMessage);
+                return updatedMessage;
+              });
+              break;
+            }
           }
         },
         () => {
@@ -190,6 +213,10 @@ const useSendMessageMutation = ({
               is_human: true,
               created_at: new Date().toISOString(),
               thread_id: threadId,
+              usage: {
+                inputTokens: 0,
+                outputTokens: 0,
+              },
             };
             onMessageSent?.(userMessage);
           }
@@ -226,6 +253,10 @@ const useSendMessageMutation = ({
           steps: [],
           isUser: false,
           isStreaming: false,
+          usage: {
+            inputTokens: 0,
+            outputTokens: 0,
+          },
         };
         setStreamingMessage(resetMessage);
         onStreamingMessage?.(resetMessage);

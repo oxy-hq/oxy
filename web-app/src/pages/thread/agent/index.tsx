@@ -50,6 +50,10 @@ const AgentThread = ({ thread }: { thread: ThreadItem }) => {
     steps: [],
     isUser: false,
     isStreaming: false,
+    usage: {
+      inputTokens: 0,
+      outputTokens: 0,
+    },
   });
   const [artifactStreamingData, setArtifactStreamingData] = useState<{
     [key: string]: Artifact;

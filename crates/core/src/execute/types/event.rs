@@ -3,6 +3,8 @@ use std::{collections::HashMap, path::PathBuf};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+use crate::execute::types::Usage;
+
 use super::{Chunk, ProgressType, ReferenceKind};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -62,6 +64,9 @@ pub enum EventKind {
     Message {
         message: String,
     },
+    Usage {
+        usage: Usage,
+    },
     Error {
         message: String,
     },
@@ -80,6 +85,7 @@ pub struct Source {
     pub parent_id: Option<String>,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct EventFormat {
     pub content: String,
     pub reference: Option<ReferenceKind>,

@@ -5,12 +5,15 @@ This directory contains the frontend implementation for API key management in th
 ## Components
 
 ### Pages
+
 - **`/src/pages/api-keys/index.tsx`** - Main API key management page with full CRUD functionality
 
 ### Sidebar Navigation
+
 - **`/src/components/AppSidebar/ApiKeys.tsx`** - Sidebar navigation component for API keys
 
 ### Services
+
 - **`/src/services/apiKeyService.ts`** - Service layer for API key operations
 - **`/src/types/apiKey.ts`** - TypeScript type definitions for API keys
 
@@ -19,6 +22,7 @@ This directory contains the frontend implementation for API key management in th
 ### ✅ Implemented Features
 
 1. **API Key List View**
+
    - Display all user's API keys in a table format
    - Show masked keys for security
    - Display key status (Active, Expired, Revoked)
@@ -26,6 +30,7 @@ This directory contains the frontend implementation for API key management in th
    - Responsive design for mobile devices
 
 2. **Create New API Key**
+
    - Modal dialog for creating new API keys
    - Name input with validation
    - Optional expiration date selection
@@ -33,11 +38,13 @@ This directory contains the frontend implementation for API key management in th
    - Security warning to copy key immediately
 
 3. **Key Management Actions**
+
    - Copy key to clipboard functionality
    - Revoke/delete keys with confirmation dialog
    - Show/hide key visibility toggle for newly created keys
 
 4. **Security Features**
+
    - Keys are masked in the UI after creation
    - One-time display of full key on creation
    - Confirmation dialogs for destructive actions
@@ -98,6 +105,7 @@ The frontend integrates with the following API endpoints:
 ### 🔄 Future Enhancements
 
 Potential improvements that could be added:
+
 - Key usage analytics and charts
 - Bulk key operations
 - Key rotation functionality

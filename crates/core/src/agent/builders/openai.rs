@@ -6,9 +6,9 @@ use async_openai::{
         ChatCompletionMessageToolCall, ChatCompletionMessageToolCallChunk,
         ChatCompletionRequestAssistantMessageArgs, ChatCompletionRequestMessage,
         ChatCompletionRequestSystemMessageArgs, ChatCompletionRequestUserMessageArgs,
-        ChatCompletionTool, ChatCompletionToolChoiceOption, ChatCompletionToolType,
-        CreateChatCompletionRequestArgs, FunctionCall, ResponseFormat, ResponseFormatJsonSchema,
-        responses::ReasoningConfig,
+        ChatCompletionStreamOptions, ChatCompletionTool, ChatCompletionToolChoiceOption,
+        ChatCompletionToolType, CreateChatCompletionRequestArgs, FunctionCall, ResponseFormat,
+        ResponseFormatJsonSchema, responses::ReasoningConfig,
     },
 };
 use deser_incomplete::from_json_str;
@@ -36,6 +36,8 @@ use crate::{
     theme::StyledText,
     utils::variant_eq,
 };
+
+use crate::execute::types::Usage;
 
 #[derive(Clone, Debug)]
 pub struct OpenAIExecutable {
@@ -135,6 +137,9 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
         let schema = json!(schema_for!(AgentResponse));
         request_builder
             .model(self.model.clone())
+            .stream_options(ChatCompletionStreamOptions {
+                include_usage: true,
+            })
             .response_format(ResponseFormat::JsonSchema {
                 json_schema: ResponseFormatJsonSchema {
                     name: "AgentResponse".to_string(),
@@ -193,6 +198,14 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
                     _ => backoff::Error::<OxyError>::Permanent(err.into()),
                 })?
             {
+                if let Some(usage_data) = response.usage {
+                    execution_context
+                        .write_usage(Usage::new(
+                            usage_data.prompt_tokens,
+                            usage_data.completion_tokens,
+                        ))
+                        .await?;
+                }
                 if let Some(chunk) = response.choices.first() {
                     if let Some(tool_call_chunks) = &chunk.delta.tool_calls {
                         self.parse_tool_call_chunks(&mut tool_calls, chunk.index, tool_call_chunks);
@@ -237,10 +250,6 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
                                     .await?;
                             }
                         }
-                    }
-
-                    if chunk.finish_reason.is_some() {
-                        break;
                     }
                 }
             }

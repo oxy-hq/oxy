@@ -79,11 +79,17 @@ export interface ErrorContent {
   message: string;
 }
 
+export interface UsageContent {
+  type: "usage";
+  usage: Usage;
+}
+
 export type AnswerContent =
   | TextContent
   | ArtifactStartedContent
   | ArtifactValueContent
   | ArtifactDoneContent
+  | UsageContent
   | ErrorContent;
 
 export type Answer = {
@@ -149,12 +155,18 @@ export type ThreadsResponse = {
   pagination: PaginationInfo;
 };
 
+export type Usage = {
+  inputTokens: number;
+  outputTokens: number;
+};
+
 export interface Message {
   content: string;
   references: Reference[];
   steps: string[];
   isUser: boolean;
   isStreaming: boolean;
+  usage: Usage;
 }
 
 export interface MessageItem {
@@ -163,4 +175,5 @@ export interface MessageItem {
   is_human: boolean;
   thread_id: string;
   created_at: string;
+  usage: Usage;
 }
