@@ -152,6 +152,7 @@ jobs:
 
   build-and-publish-docker:
     if: github.repository == 'oxy-hq/oxy'
+    needs: [build-nightly]
     concurrency:
       group: docker-publish-nightly-${{ matrix.arch }}
       cancel-in-progress: true
@@ -204,11 +205,24 @@ jobs:
           DATE_TAG=${{ steps.date.outputs.current_date }}
           SHA_TAG=${{ steps.short_sha.outputs.short_sha }}
           ARCH_TAG=$(echo "${{ matrix.arch }}" | awk -F'/' '{print $2}')
-          docker build -t ghcr.io/${{ github.repository_owner }}/oxy:nightly-$DATE_TAG-$ARCH_TAG .
+
+          # Use Dockerfile.simple for faster builds with nightly upstream
+          docker build -f Dockerfile.simple \
+            --build-arg UPSTREAM=nightly.oxy.tech \
+            --platform ${{ matrix.arch }} \
+            -t ghcr.io/${{ github.repository_owner }}/oxy:nightly-$DATE_TAG-$ARCH_TAG .
           docker push ghcr.io/${{ github.repository_owner }}/oxy:nightly-$DATE_TAG-$ARCH_TAG
-          docker build -t ghcr.io/${{ github.repository_owner }}/oxy:nightly-$SHA_TAG-$ARCH_TAG .
+
+          docker build -f Dockerfile.simple \
+            --build-arg UPSTREAM=nightly.oxy.tech \
+            --platform ${{ matrix.arch }} \
+            -t ghcr.io/${{ github.repository_owner }}/oxy:nightly-$SHA_TAG-$ARCH_TAG .
           docker push ghcr.io/${{ github.repository_owner }}/oxy:nightly-$SHA_TAG-$ARCH_TAG
-          docker build -t ghcr.io/${{ github.repository_owner }}/oxy:nightly-latest-$ARCH_TAG .
+
+          docker build -f Dockerfile.simple \
+            --build-arg UPSTREAM=nightly.oxy.tech \
+            --platform ${{ matrix.arch }} \
+            -t ghcr.io/${{ github.repository_owner }}/oxy:nightly-latest-$ARCH_TAG .
           docker push ghcr.io/${{ github.repository_owner }}/oxy:nightly-latest-$ARCH_TAG
 
   create-and-push-nightly-manifest:

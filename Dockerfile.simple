@@ -1,0 +1,22 @@
+# Simple Dockerfile that installs Oxy using the curl method from get.oxy.tech
+FROM debian:bookworm-slim AS runtime
+WORKDIR /app
+
+ARG VERSION
+ARG UPSTREAM=get.oxy.tech
+
+RUN apt-get update && \
+    apt-get install -y ca-certificates curl tini && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN if [ -n "$VERSION" ]; then \
+        OXY_VERSION="$VERSION" bash <(curl --proto '=https' --tlsv1.2 -LsSf https://${UPSTREAM}); \
+    else \
+        bash <(curl --proto '=https' --tlsv1.2 -LsSf https://${UPSTREAM}); \
+    fi
+
+# Set tini as the entrypoint
+ENTRYPOINT ["/usr/bin/tini", "--"]
+
+EXPOSE 3000
+CMD ["oxy", "serve", "--port", "3000"]

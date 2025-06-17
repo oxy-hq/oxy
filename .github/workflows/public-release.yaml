@@ -1,4 +1,5 @@
 name: Public Release
+
 on:
   workflow_dispatch:
     inputs:
@@ -11,6 +12,7 @@ on:
       - "[0-9]+.[0-9]+.[0-9]+"
     paths-ignore:
       - "docs/**"
+
 env:
   CARGO_TERM_COLOR: always
   MACOSX_DEPLOYMENT_TARGET: "11.0"
@@ -26,11 +28,11 @@ permissions:
 jobs:
   build-cli:
     if: github.repository == 'oxy-hq/oxy'
-    concurrency:
-      group: public-oxy-build-cli-${{ inputs.tag || github.ref_name  }}-${{ matrix.job.os }}-${{ matrix.job.target }}
-      cancel-in-progress: true
-    name: Build CLI version ${{ inputs.tag || github.ref_name  }} for target ${{ matrix.job.target }}
+    name: Build CLI version ${{ inputs.tag || github.ref_name }} for ${{ matrix.job.target }}
     runs-on: ${{ matrix.job.os }}
+    concurrency:
+      group: public-oxy-build-cli-${{ inputs.tag || github.ref_name }}-${{ matrix.job.os }}-${{ matrix.job.target }}
+      cancel-in-progress: true
     strategy:
       fail-fast: false
       matrix:
@@ -48,9 +50,8 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          ref: ${{ inputs.tag || github.ref_name  }}
+          ref: ${{ inputs.tag || github.ref_name }}
 
-      #-- Create common artifacts folder
       - name: Create artifacts folder
         run: mkdir -p artifacts
 
@@ -58,37 +59,39 @@ jobs:
         if: runner.os == 'Linux'
         with:
           make-default: true
-      #-- Prep rust
-      - name: Prep Rust
+
+      - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.87.0
           targets: ${{ matrix.job.target }}
-      - name: Prep cargo cache
+
+      - name: Setup Rust cache
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: build-cli-${{ matrix.job.os }}-${{ matrix.job.target }}
           cache-all-crates: "true"
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      # protobuf is required by lance https://github.com/lancedb/lance/issues/3073
+
       - name: Install Protoc
         uses: arduino/setup-protoc@v3
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
-      #-- Prep node
-      - name: Prep Node
+      - name: Setup Node.js
         uses: actions/setup-node@v4
-        id: setup-node
         with:
           node-version: lts/*
+
       - uses: pnpm/action-setup@v4
         with:
           run_install: false
+
       - name: Get pnpm store directory
         shell: bash
         run: |
           echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
       - uses: actions/cache@v4
         name: Setup pnpm cache
         with:
@@ -96,6 +99,7 @@ jobs:
           key: pnpm-store-${{ matrix.job.os }}-${{ matrix.job.target }}-${{ hashFiles('**/pnpm-lock.yaml') }}
           restore-keys: |
             pnpm-store-${{ matrix.job.os }}-${{ matrix.job.target }}
+
       - name: Install dependencies & Build web-app
         env:
           NODE_OPTIONS: "--max_old_space_size=4096"
@@ -103,14 +107,12 @@ jobs:
           pnpm install --prefer-frozen-lockfile
           pnpm -C web-app build
 
-      #-- Build oxy cli binary
-      - name: Build oxy cli
+      - name: Build oxy CLI
         shell: bash
         run: |
           cargo build --release --target ${{ matrix.job.target }}
           mv target/${{ matrix.job.target }}/release/oxy artifacts/oxy-${{ matrix.job.target }}
 
-      #-- Build json schema
       - name: Generate config schema (once)
         if: ${{ matrix.job.target == 'aarch64-apple-darwin' }}
         run: |
@@ -118,18 +120,16 @@ jobs:
           cp -a json-schemas/. artifacts/
           cp Cargo.lock artifacts/
 
-      #-- Build checksum
       - name: Create binary checksum
         run: shasum --algorithm 256 --binary oxy-${{ matrix.job.target }} | tee SHA256SUM-oxy-${{ matrix.job.target }}.txt
         working-directory: artifacts
 
-      #-- Build python lib
-      - name: Set up Python 3.11
-        id: setup-python
+      - name: Setup Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: 3.11
           cache: "pip"
+
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
@@ -137,10 +137,10 @@ jobs:
           target: ${{ matrix.job.target }}
           args: --release --out dist
           sccache: "true"
-          # manylinux: auto
           container: off
           working-directory: crates/py
-      - name: Move wheels
+
+      - name: Move wheels to artifacts
         run: mv crates/py/dist/* artifacts/
 
       - name: Copy backend changelog (once)
@@ -155,42 +155,120 @@ jobs:
         if: ${{ matrix.job.target == 'aarch64-apple-darwin' }}
         run: |
           echo "## Backend" > artifacts/CHANGELOG.md
-          awk '/^## \[/{flag=0} /^## \[${{ inputs.tag || github.ref_name  }}\]/{flag=1} flag' artifacts/backend-CHANGELOG.md >> artifacts/CHANGELOG.md
+          awk '/^## \[/{flag=0} /^## \[${{ inputs.tag || github.ref_name }}\]/{flag=1} flag' artifacts/backend-CHANGELOG.md >> artifacts/CHANGELOG.md
           echo "" >> artifacts/CHANGELOG.md
           echo "## Frontend" >> artifacts/CHANGELOG.md
-          awk '/^## \[/{flag=0} /^## \[${{ inputs.tag || github.ref_name  }}\]/{flag=1} flag' artifacts/frontend-CHANGELOG.md >> artifacts/CHANGELOG.md
+          awk '/^## \[/{flag=0} /^## \[${{ inputs.tag || github.ref_name }}\]/{flag=1} flag' artifacts/frontend-CHANGELOG.md >> artifacts/CHANGELOG.md
 
-      #-- Upload release artifacts
       - name: Upload release artifacts
         uses: actions/upload-artifact@v4
         with:
           name: cli-${{ matrix.job.target }}
-          path: |
-            artifacts/**/*
+          path: artifacts/**/*
           if-no-files-found: error
           retention-days: 1
 
   release:
+    name: Create GitHub Release
     runs-on: ubuntu-latest
     needs: [build-cli]
     steps:
-      - name: Download release assets from artifact
+      - name: Download release assets from artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
           merge-multiple: true
+
       - name: List all artifacts
         run: ls -R ./artifacts
+
       - name: Combine checksums
         run: cat artifacts/SHA256SUM-oxy-*.txt | tee artifacts/SHA256SUMS.txt
+
       - name: Ensure binaries are executable
         run: chmod +x artifacts/oxy-*
 
-      - name: Upload files to github release
+      - name: Upload files to GitHub release
         uses: softprops/action-gh-release@v2
         with:
           draft: false
           prerelease: true
-          tag_name: ${{ inputs.tag || github.ref_name  }}
+          tag_name: ${{ inputs.tag || github.ref_name }}
           body_path: artifacts/CHANGELOG.md
           files: artifacts/**/*
+
+  build-and-publish-simple:
+    name: Build simple Docker image for ${{ matrix.arch }}
+    if: github.repository == 'oxy-hq/oxy'
+    needs: [release]
+    runs-on: ${{ matrix.os }}
+    concurrency:
+      group: docker-publish-simple-release-${{ inputs.tag || github.ref_name }}-${{ matrix.arch }}
+      cancel-in-progress: true
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - arch: linux/amd64
+            os: ubuntu-latest
+          - arch: linux/arm64
+            os: ubuntu-24.04-arm
+    permissions:
+      packages: write
+      contents: read
+      attestations: write
+      id-token: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.tag || github.ref_name }}
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set Docker tag
+        id: docker_tag
+        run: |
+          TAG_NAME="${{ inputs.tag || github.ref_name }}"
+          echo "tag=$TAG_NAME" >> $GITHUB_OUTPUT
+
+      - name: Build and push simple ${{ matrix.arch }} image
+        run: |
+          ARCH_TAG=$(echo "${{ matrix.arch }}" | awk -F'/' '{print $2}')
+          docker build -f Dockerfile.simple \
+            --build-arg VERSION=${{ steps.docker_tag.outputs.tag }} \
+            --build-arg UPSTREAM="get.oxy.tech" \
+            -t ghcr.io/${{ github.repository_owner }}/oxy:${{ steps.docker_tag.outputs.tag }}-simple-$ARCH_TAG .
+          docker push ghcr.io/${{ github.repository_owner }}/oxy:${{ steps.docker_tag.outputs.tag }}-simple-$ARCH_TAG
+
+  create-and-push-simple-manifest:
+    name: Create simple Docker manifest
+    if: github.repository == 'oxy-hq/oxy'
+    needs: [build-and-publish-simple]
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set Docker tag
+        id: docker_tag
+        run: |
+          TAG_NAME="${{ inputs.tag || github.ref_name }}"
+          echo "tag=$TAG_NAME" >> $GITHUB_OUTPUT
+
+      - name: Create and push multi-arch manifest for simple image
+        run: |
+          docker manifest create ghcr.io/${{ github.repository_owner }}/oxy:${{ steps.docker_tag.outputs.tag }}-simple \
+            ghcr.io/${{ github.repository_owner }}/oxy:${{ steps.docker_tag.outputs.tag }}-simple-amd64 \
+            ghcr.io/${{ github.repository_owner }}/oxy:${{ steps.docker_tag.outputs.tag }}-simple-arm64
+          docker manifest push ghcr.io/${{ github.repository_owner }}/oxy:${{ steps.docker_tag.outputs.tag }}-simple
