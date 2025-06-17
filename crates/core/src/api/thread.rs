@@ -8,7 +8,7 @@ use crate::{
         formatters::BlockHandler,
         types::{AnswerContent, AnswerStream},
     },
-    utils::{create_sse_stream, find_project_path, try_unwrap_arc_tokio_mutex},
+    utils::{create_sse_stream, find_project_path},
 };
 use axum::{
     extract::{self, Path, Query},

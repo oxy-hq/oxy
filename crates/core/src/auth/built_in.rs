@@ -39,25 +39,23 @@ impl Authenticator for BuiltInAuthenticator {
 
     async fn authenticate(&self, header: &axum::http::HeaderMap) -> Result<Identity, Self::Error> {
         match self.authentication {
-            None => {
-                return Ok(Identity {
-                    idp_id: None,
-                    picture: None,
-                    email: "guest@oxy.local".to_string(),
-                    name: Some("Guest".to_string()),
-                });
-            }
+            None => Ok(Identity {
+                idp_id: None,
+                picture: None,
+                email: "guest@oxy.local".to_string(),
+                name: Some("Guest".to_string()),
+            }),
             Some(ref auth) => match try_api_authentication(header, auth.api_key.clone()).await {
                 Some(identity) => {
                     tracing::info!(
                         "API key authentication successful for user: {}",
                         identity.email
                     );
-                    return Ok(identity);
+                    Ok(identity)
                 }
                 None => {
                     let token = self.extract_token(header)?;
-                    return self.validate(&token);
+                    self.validate(&token)
                 }
             },
         }
@@ -109,7 +107,7 @@ async fn try_api_authentication(
         Some(api_key_auth) => {
             let authenticator = ApiKeyAuthenticator::from_config(api_key_auth);
             let rs = authenticator.authenticate(header).await;
-            return rs.ok();
+            rs.ok()
         }
     }
 }
