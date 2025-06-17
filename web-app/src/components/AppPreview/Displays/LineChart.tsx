@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { EChartsOption, LineSeriesOption } from "echarts";
 import { DataContainer, LineChartDisplay, TableData } from "@/types/app";
-import { getArrowValue, getData, getDataFileUrl } from "./utils";
+import { getArrowValue, getData, registerAuthenticatedFile } from "./utils";
 import { Echarts } from "@/components/Echarts";
 import { getDuckDB } from "@/libs/duckdb";
 import useTheme from "@/stores/useTheme";
@@ -22,14 +22,8 @@ export const LineChart = ({
   useEffect(() => {
     (async () => {
       const db = await getDuckDB();
-      const file_name = `${btoa(dt.file_path)}.parquet`;
+      const file_name = await registerAuthenticatedFile(dt.file_path);
       const conn = await db.connect();
-      await db.registerFileURL(
-        file_name,
-        getDataFileUrl(dt.file_path),
-        4,
-        true,
-      );
 
       let options: EChartsOption = {
         darkMode: isDarkMode,

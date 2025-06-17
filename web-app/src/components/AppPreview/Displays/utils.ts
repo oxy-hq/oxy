@@ -1,5 +1,7 @@
 import { apiBaseURL } from "@/services/env";
 import { DataContainer } from "@/types/app";
+import { apiClient } from "@/services/axios";
+import { getDuckDB } from "@/libs/duckdb";
 
 export const getArrowValue = (value: unknown): number | string | unknown => {
   if (value instanceof Uint32Array) return formatNumber(value[0]);
@@ -123,4 +125,21 @@ export const getData = (data: DataContainer, key: string) => {
 export const getDataFileUrl = (file_path: string) => {
   const pathb64 = btoa(file_path);
   return `${apiBaseURL}/app/file/${pathb64}`;
+};
+
+export const registerAuthenticatedFile = async (
+  filePath: string,
+): Promise<string> => {
+  const db = await getDuckDB();
+  const file_name = `${btoa(filePath)}.parquet`;
+
+  const pathb64 = btoa(filePath);
+  const response = await apiClient.get(`/app/file/${pathb64}`, {
+    responseType: "arraybuffer",
+  });
+  const fileData = new Uint8Array(response.data);
+
+  await db.registerFileBuffer(file_name, fileData);
+
+  return file_name;
 };
