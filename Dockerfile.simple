@@ -10,9 +10,9 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 RUN if [ -n "$VERSION" ]; then \
-        OXY_VERSION="$VERSION" bash <(curl --proto '=https' --tlsv1.2 -LsSf https://${UPSTREAM}); \
+        OXY_VERSION="$VERSION" curl --proto '=https' --tlsv1.2 -LsSf https://${UPSTREAM} | bash; \
     else \
-        bash <(curl --proto '=https' --tlsv1.2 -LsSf https://${UPSTREAM}); \
+        curl --proto '=https' --tlsv1.2 -LsSf https://${UPSTREAM} | bash; \
     fi
 
 # Set tini as the entrypoint
