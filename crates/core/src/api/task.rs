@@ -10,7 +10,7 @@ use crate::{
         writer::EventHandler,
     },
     service::agent::run_agent,
-    utils::{create_sse_stream, find_project_path, try_unwrap_arc_tokio_mutex},
+    utils::{create_sse_stream, find_project_path},
 };
 use axum::{
     extract::{self, Path},
@@ -272,7 +272,7 @@ pub async fn ask_task(
                         is_error: true,
                         step: "".to_string(),
                         file_path: "".to_string(),
-                        usage: usage,
+                        usage,
                     })
                     .await?;
                 Result::<(), OxyError>::Ok(())

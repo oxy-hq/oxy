@@ -167,7 +167,7 @@ where
                 EventKind::Finished { .. } => {}
                 EventKind::Progress { .. } => {}
                 EventKind::ArtifactStarted { .. } => {}
-                EventKind::ArtifactFinished { .. } => {}
+                EventKind::ArtifactFinished => {}
                 EventKind::Usage { .. } => {}
             },
         }
