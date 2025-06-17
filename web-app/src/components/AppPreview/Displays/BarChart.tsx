@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import type { BarSeriesOption } from "echarts";
 import type { EChartsOption } from "echarts";
 import { BarChartDisplay, DataContainer, TableData } from "@/types/app";
-import { getArrowValue, getData, getDataFileUrl } from "./utils";
+import { getArrowValue, getData, registerAuthenticatedFile } from "./utils";
 import { Echarts } from "@/components/Echarts";
 import { getDuckDB } from "@/libs/duckdb";
 import useTheme from "@/stores/useTheme";
@@ -23,14 +23,8 @@ export const BarChart = ({
   useEffect(() => {
     (async (): Promise<void> => {
       const db = await getDuckDB();
-      const file_name = `${btoa(value.file_path)}.parquet`;
+      const file_name = await registerAuthenticatedFile(value.file_path);
       const conn = await db.connect();
-      await db.registerFileURL(
-        file_name,
-        getDataFileUrl(value.file_path),
-        4,
-        true,
-      );
 
       const options: EChartsOption = {
         darkMode: isDarkMode,

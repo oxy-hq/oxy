@@ -9,13 +9,12 @@ import {
 } from "@/components/ui/shadcn/table";
 import { getDuckDB } from "@/libs/duckdb";
 import { DataContainer, TableData, TableDisplay } from "@/types/app";
-import { getData, getDataFileUrl } from "./utils";
+import { getData, registerAuthenticatedFile } from "./utils";
 
 const load_table = async (filePath: string) => {
   const db = await getDuckDB();
   const conn = await db.connect();
-  const file_name = `${btoa(filePath)}.parquet`;
-  await db.registerFileURL(file_name, getDataFileUrl(filePath), 4, true);
+  const file_name = await registerAuthenticatedFile(filePath);
   const rs = await conn.query(`select * from "${file_name}"`);
   return rs;
 };
