@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.13](https://github.com/oxy-hq/oxy-internal/compare/0.2.12...0.2.13) (2025-06-17)
+
+
+### <!-- 0 -->🚀 Features
+
+* token counter ([#885](https://github.com/oxy-hq/oxy-internal/issues/885)) ([0b8f76e](https://github.com/oxy-hq/oxy-internal/commit/0b8f76ebb5491d71adbf3ec0d47f0413153acd61))
+
 ## [0.2.12](https://github.com/oxy-hq/oxy-internal/compare/0.2.11...0.2.12) (2025-06-16)
 
 
