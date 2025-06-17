@@ -10,7 +10,6 @@ const StreamingMessage = ({
   message,
   onArtifactClick,
 }: StreamingMessageProps) => {
-  console.log("StreamingMessage", message);
   if (!message.isStreaming) return null;
 
   return (

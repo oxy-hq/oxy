@@ -168,6 +168,7 @@ where
                 EventKind::Progress { .. } => {}
                 EventKind::ArtifactStarted { .. } => {}
                 EventKind::ArtifactFinished { .. } => {}
+                EventKind::Usage { .. } => {}
             },
         }
         Ok(())

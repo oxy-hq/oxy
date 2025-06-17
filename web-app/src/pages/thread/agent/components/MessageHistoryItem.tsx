@@ -25,6 +25,7 @@ const MessageHistoryItem = ({
           references: [],
           steps: [],
           isStreaming: false,
+          usage: msg.usage,
         }}
         createdAt={msg.created_at}
         onArtifactClick={onArtifactClick}

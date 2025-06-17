@@ -26,6 +26,10 @@ const TaskThread = ({ thread }: { thread: ThreadItem }) => {
     steps: [],
     isUser: false,
     isStreaming: false,
+    usage: {
+      inputTokens: 0,
+      outputTokens: 0,
+    },
   });
   const hasRun = useRef(false);
   const messagesContainerRef = useRef<HTMLDivElement>(null);

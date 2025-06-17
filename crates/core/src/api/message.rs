@@ -1,4 +1,4 @@
-use crate::db::client::establish_connection;
+use crate::{db::client::establish_connection, execute::types::Usage};
 use axum::{
     extract::{self, Path},
     http::StatusCode,
@@ -16,6 +16,7 @@ pub struct MessageItem {
     pub is_human: bool,
     pub thread_id: String,
     pub created_at: DateTimeWithTimeZone,
+    pub usage: Usage,
 }
 
 pub async fn get_messages_by_thread(
@@ -39,12 +40,16 @@ pub async fn get_messages_by_thread(
 
     let message_items = messages
         .into_iter()
-        .map(|m| MessageItem {
+        .map(|m: entity::messages::Model| MessageItem {
             id: m.id.to_string(),
             content: m.content,
             is_human: m.is_human,
             thread_id: m.thread_id.to_string(),
             created_at: m.created_at,
+            usage: Usage {
+                input_tokens: m.input_tokens,
+                output_tokens: m.output_tokens,
+            },
         })
         .collect();
 

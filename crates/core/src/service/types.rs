@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::{
-    execute::types::{ReferenceKind, Table, event::ArtifactKind},
+    execute::types::{ReferenceKind, Table, Usage, event::ArtifactKind},
     utils::get_file_stem,
     workflow::loggers::types::LogItem,
 };
@@ -108,6 +108,9 @@ pub enum AnswerContent {
     },
     Error {
         message: String,
+    },
+    Usage {
+        usage: Usage,
     },
 }
 

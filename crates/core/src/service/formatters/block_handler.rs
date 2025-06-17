@@ -1,3 +1,6 @@
+use std::sync::Arc;
+
+use tokio::sync::Mutex;
 use tokio::sync::mpsc::Sender;
 
 use crate::config::constants::{
@@ -6,7 +9,7 @@ use crate::config::constants::{
 use crate::errors::OxyError;
 use crate::execute::formatters::{FormatterResult, SourceHandler};
 use crate::execute::types::event::ArtifactKind;
-use crate::execute::types::{EventKind, Output, Source};
+use crate::execute::types::{EventKind, Output, Source, Usage};
 use crate::service::types::{AnswerStream, ArtifactValue, ContainerKind, ExecuteSQL};
 use crate::workflow::loggers::types::LogItem;
 
@@ -21,6 +24,7 @@ pub struct BlockHandler {
     content_processor: ContentProcessor,
     stream_dispatcher: StreamDispatcher,
     artifact_tracker: ArtifactTracker,
+    pub usage: Arc<Mutex<Usage>>,
 }
 
 impl BlockHandler {
@@ -30,6 +34,7 @@ impl BlockHandler {
             content_processor: ContentProcessor::new(),
             stream_dispatcher: StreamDispatcher::new(sender.clone()),
             artifact_tracker: ArtifactTracker::new(),
+            usage: Arc::new(Mutex::new(Usage::new(0, 0))),
         }
     }
 
@@ -37,6 +42,7 @@ impl BlockHandler {
         BlockHandlerReader::new(
             self.block_manager.get_blocks_clone(),
             self.artifact_tracker.get_artifacts_clone(),
+            self.usage.clone(),
         )
     }
 
@@ -318,6 +324,15 @@ impl SourceHandler for BlockHandler {
 
             EventKind::Updated { chunk } => {
                 self.handle_content_update(source, chunk).await?;
+            }
+
+            EventKind::Usage { usage } => {
+                // Update the usage statistics
+                let mut current_usage = self.usage.lock().await;
+                current_usage.add(usage);
+                self.stream_dispatcher
+                    .send_usage(usage.clone(), &source.kind)
+                    .await?;
             }
 
             _ => {}

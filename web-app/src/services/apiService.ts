@@ -27,7 +27,6 @@ const fetchSSE = async <T>(
     onOpen,
     eventTypes = ["message"],
   } = options;
-
   const token = localStorage.getItem("auth_token");
 
   await fetchEventSource(url, {

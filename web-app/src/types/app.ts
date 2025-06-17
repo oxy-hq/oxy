@@ -69,7 +69,9 @@ export type AppItem = {
 
 export type Chunk = {
   content: string;
-  step: string;
   file_path: string;
   is_error: boolean;
+  step: string;
+  input_tokens: number;
+  output_tokens: number;
 };

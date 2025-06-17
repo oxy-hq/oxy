@@ -1,26 +1,30 @@
 import { Bot, User } from "lucide-react";
-import dayjs from "dayjs";
+
+import MessageInfo from "./MessageInfo";
+
+type TokensUsage = {
+  inputTokens: number;
+  outputTokens: number;
+};
 
 interface MessageHeaderProps {
   isHuman: boolean;
   createdAt?: string;
-  showTimestamp?: boolean;
+  tokensUsage?: TokensUsage;
 }
 
 const MessageHeader = ({
   isHuman,
   createdAt,
-  showTimestamp = true,
-}: MessageHeaderProps) => (
-  <div className="flex items-center gap-2 mb-2">
-    {isHuman ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4 " />}
-    <span className="text-sm font-medium">{isHuman ? "You" : "Agent"}</span>
-    {showTimestamp && createdAt && (
-      <span className="text-xs text-muted-foreground ml-auto">
-        {dayjs(createdAt).fromNow()}
-      </span>
-    )}
-  </div>
-);
+  tokensUsage,
+}: MessageHeaderProps) => {
+  return (
+    <div className="flex items-center gap-2 mb-2">
+      {isHuman ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
+      <span className="text-sm font-medium">{isHuman ? "You" : "Agent"}</span>
+      <MessageInfo createdAt={createdAt} tokensUsage={tokensUsage} />
+    </div>
+  );
+};
 
 export default MessageHeader;

@@ -8,7 +8,7 @@ use crate::{
         formatters::BlockHandler,
         types::{AnswerContent, AnswerStream},
     },
-    utils::{create_sse_stream, find_project_path},
+    utils::{create_sse_stream, find_project_path, try_unwrap_arc_tokio_mutex},
 };
 use axum::{
     extract::{self, Path, Query},
@@ -203,6 +203,7 @@ pub async fn create_thread(
         is_human: ActiveValue::Set(true),
         thread_id: ActiveValue::Set(thread.id),
         created_at: ActiveValue::default(),
+        ..Default::default()
     };
     message.insert(&connection).await.map_err(|e| {
         tracing::error!("Failed to insert message: {}", e);
@@ -309,18 +310,18 @@ pub async fn ask_thread(
     messages.sort_by(|a, b| a.created_at.cmp(&b.created_at));
 
     let user_question;
-
     match payload.question {
         Some(question) => {
             user_question = question.clone();
-            let new_message = entity::messages::ActiveModel {
+            let message = entity::messages::ActiveModel {
                 id: ActiveValue::Set(Uuid::new_v4()),
                 content: ActiveValue::Set(question),
                 is_human: ActiveValue::Set(true),
                 thread_id: ActiveValue::Set(thread.id),
                 created_at: ActiveValue::default(),
+                ..Default::default()
             };
-            new_message
+            message
                 .insert(&connection)
                 .await
                 .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -390,12 +391,15 @@ pub async fn ask_thread(
             Err(err) => {
                 tracing::error!("Error running agent: {}", err);
                 let msg = format!("🔴 Error: {}", err);
+                let usage = block_handler_reader.usage().await?;
                 let answer_message = entity::messages::ActiveModel {
                     id: ActiveValue::Set(Uuid::new_v4()),
                     content: ActiveValue::Set(msg.clone()),
                     is_human: ActiveValue::Set(false),
                     thread_id: ActiveValue::Set(thread.id),
                     created_at: ActiveValue::default(),
+                    input_tokens: ActiveValue::Set(usage.input_tokens),
+                    output_tokens: ActiveValue::Set(usage.output_tokens),
                 };
                 answer_message.insert(&connection).await.map_err(|err| {
                     OxyError::DBError(format!("Failed to insert message:\n{}", err))

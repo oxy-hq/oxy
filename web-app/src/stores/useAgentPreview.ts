@@ -33,6 +33,10 @@ const createMessage = (
   steps: [],
   isUser,
   isStreaming,
+  usage: {
+    inputTokens: 0,
+    outputTokens: 0,
+  },
 });
 
 const useAgentPreview = create<AgentPreviewState>()((set, get) => {

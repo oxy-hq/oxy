@@ -9,6 +9,7 @@ mod prompt;
 mod reference;
 mod sql;
 mod table;
+mod usage;
 pub mod utils;
 
 pub use data_app::DataApp;
@@ -24,3 +25,4 @@ pub use reference::DataAppReference;
 pub use reference::ReferenceKind;
 pub use sql::SQL;
 pub use table::{Table, TableReference};
+pub use usage::Usage;
