@@ -112,7 +112,8 @@
               "authentication/overview",
               "authentication/built-in",
               "authentication/cognito",
-              "authentication/iap"
+              "authentication/iap",
+              "api-keys/API-Keys"
             ]
           }
         ]
@@ -155,17 +156,6 @@
                   "integrations/models/anthropic"
                 ]
               }
-            ]
-          }
-        ]
-      },
-      {
-        "tab": "Developer Guide",
-        "groups": [
-          {
-            "group": "Authentication",
-            "pages": [
-              "api-keys/API-Keys"
             ]
           }
         ]
