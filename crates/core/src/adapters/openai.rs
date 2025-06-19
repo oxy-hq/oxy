@@ -14,7 +14,7 @@ use secrecy::SecretString;
 use std::path::PathBuf;
 
 use crate::{
-    adapters::create_app_schema,
+    adapters::{create_app_schema, viz_schema},
     config::{
         constants::{ANTHROPIC_API_URL, GEMINI_API_URL},
         model::{Model, ReasoningConfig, ReasoningEffort, RetrievalConfig, ToolType},
@@ -299,9 +299,7 @@ impl OpenAIToolConfig for &ToolType {
             }
             ToolType::Workflow(w) => generate_workflow_run_schema(&w.workflow_ref.clone()).await,
             ToolType::Agent(_) => Ok(serde_json::json!(&schemars::schema_for!(AgentParams))),
-            ToolType::Visualize(_) => {
-                Ok(serde_json::json!(&schemars::schema_for!(VisualizeParams)))
-            }
+            ToolType::Visualize(_) => Ok(serde_json::from_str(viz_schema::VIZ_SCHEMA).unwrap()),
             ToolType::ExecuteOmni(_) => {
                 Ok(serde_json::json!(&schemars::schema_for!(ExecuteOmniParams)))
             }

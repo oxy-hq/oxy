@@ -10,7 +10,7 @@ use crate::{
     tools::types::VisualizeInput,
 };
 
-use serde_json::{Map, json};
+use serde_json::json;
 use uuid::Uuid;
 
 #[derive(Debug, Clone)]
@@ -38,35 +38,19 @@ impl Executable<VisualizeInput> for VisualizeExecutable {
                 finished: true,
             })
             .await?;
-        serde_json::from_str::<serde_json::Value>(&param.data)
-            .map_err(|e| anyhow::anyhow!("Invalid JSON data: {}", e))?;
+
+        let chart_config = json!({
+            "xAxis": param.x_axis,
+            "yAxis": param.y_axis,
+            "series": param.series,
+            "title": param.title,
+        });
 
         let tmp_chart_dir = get_charts_dir();
         let file_path = tmp_chart_dir.join(format!("{}.json", Uuid::new_v4()));
 
-        let mut encoding = Map::new();
-
-        if let Some(x) = &param.x {
-            encoding.insert("x".to_string(), json!(x.to_spec()));
-        }
-        if let Some(y) = &param.y {
-            encoding.insert("y".to_string(), json!(y.to_spec()));
-        }
-        if let Some(color) = &param.color {
-            encoding.insert("color".to_string(), json!(color.to_spec()));
-        }
-
-        let spec = json!({
-            "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
-            "data": {
-                "values": param.data
-            },
-            "mark": param.chart_type.as_str(),
-            "encoding": encoding
-        });
-
         let mut file = File::create(&file_path).map_err(|e| anyhow::anyhow!(e))?;
-        file.write_all(spec.to_string().as_bytes())
+        file.write_all(chart_config.to_string().as_bytes())
             .map_err(|e| anyhow::anyhow!(e))?;
 
         Ok(Output::Text(format!(

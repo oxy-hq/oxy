@@ -92,12 +92,6 @@ export default defineConfig({
             'echarts'
           ],
 
-          'vega-chart-vendor': [
-            'vega',
-            'vega-lite',
-            'react-vega'
-          ],
-
           // Icons and animations
           'icon-vendor': [
             'lucide-react',
