@@ -36,7 +36,18 @@ export const Echarts = ({
   useEffect(() => {
     if (chartRef.current) {
       const chart = getInstanceByDom(chartRef.current);
-      chart?.setOption(options);
+
+      chart?.setOption({
+        ...options,
+        toolbox: options.toolbox || {
+          feature: {
+            dataZoom: {
+              yAxisIndex: "none",
+            },
+            saveAsImage: {},
+          },
+        },
+      });
       chart?.resize();
     }
   }, [options]);
