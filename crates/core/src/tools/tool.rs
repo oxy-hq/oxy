@@ -191,11 +191,14 @@ impl Executable<(String, Option<ToolType>, ToolRawInput)> for ToolExecutable {
                 handle,
                 param,
             } = input;
-            return tool_ret.map_err(|err| OxyError::ToolCallError {
-                call_id,
-                handle,
-                param,
-                msg: err.to_string(),
+            return tool_ret.map_err(|err| {
+                tracing::error!("Tool execution {} error: {}", handle, err);
+                OxyError::ToolCallError {
+                    call_id,
+                    handle,
+                    param,
+                    msg: err.to_string(),
+                }
             });
         } else {
             let ToolRawInput {
