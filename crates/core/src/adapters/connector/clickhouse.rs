@@ -2,6 +2,7 @@ use arrow::datatypes::SchemaRef;
 use arrow::ipc::reader::FileReader;
 use arrow::record_batch::RecordBatch;
 use clickhouse::Client;
+use sqlparser::{dialect::ClickHouseDialect, parser::Parser};
 use std::io::Cursor;
 
 use crate::config::model::ClickHouse as ConfigClickHouse;
@@ -20,6 +21,17 @@ impl ClickHouse {
     pub fn new(config: ConfigClickHouse) -> Self {
         ClickHouse { config }
     }
+
+    pub fn strip_comments(query: &str) -> Result<String, OxyError> {
+        let ast = Parser::parse_sql(&ClickHouseDialect {}, query).map_err(|err| {
+            OxyError::DBError(format!("Failed to parse ClickHouse query: {}", err))
+        })?;
+        Ok(ast
+            .iter()
+            .map(|stmt| stmt.to_string())
+            .collect::<Vec<_>>()
+            .join("\n"))
+    }
 }
 
 impl Engine for ClickHouse {
@@ -34,7 +46,11 @@ impl Engine for ClickHouse {
             .with_password(self.config.get_password().unwrap_or_default())
             .with_database(self.config.database.clone());
 
-        let mut cursor = client.query(query).fetch_bytes("arrow").unwrap();
+        let cleaned_query = ClickHouse::strip_comments(query)?;
+        let mut cursor = client
+            .query(&cleaned_query)
+            .fetch_bytes("arrow")
+            .map_err(|err| OxyError::DBError(format!("ClickHouse query error: {}", err)))?;
         let chunks = cursor.collect().await;
         match chunks {
             Ok(chunks) => {
