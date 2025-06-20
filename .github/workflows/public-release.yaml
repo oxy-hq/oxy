@@ -23,7 +23,9 @@ defaults:
 
 permissions:
   contents: write
-  actions: read
+  packages: write
+  attestations: write
+  id-token: write
 
 jobs:
   build-cli:
@@ -213,11 +215,6 @@ jobs:
             os: ubuntu-latest
           - arch: linux/arm64
             os: ubuntu-24.04-arm
-    permissions:
-      packages: write
-      contents: read
-      attestations: write
-      id-token: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
