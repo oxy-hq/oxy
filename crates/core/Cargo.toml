@@ -97,7 +97,7 @@ fehler = "1.0.0"
 sqlparser = "0.37.0"
 backoff = { version = "0.4.0", features = ["tokio"] }
 rustc_version_runtime = "0.3.0"
-rustls = { version = "0.23.27", features = ["aws_lc_rs"] }
+rustls = { version = "0.23.28", features = ["aws_lc_rs"] }
 parquet = "53.4"
 short-uuid = "0.2.0"
 rapidfuzz = "0.5.0"
