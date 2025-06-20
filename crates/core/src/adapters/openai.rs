@@ -22,12 +22,9 @@ use crate::{
     errors::OxyError,
     execute::types::event::ArtifactKind,
     service::workflow::get_workflow,
-    tools::{
-        types::{
-            AgentParams, EmptySQLParams, ExecuteOmniParams, OmniTopicInfoParams, RetrievalParams,
-            SQLParams,
-        },
-        visualize::types::VisualizeParams,
+    tools::types::{
+        AgentParams, EmptySQLParams, ExecuteOmniParams, OmniTopicInfoParams, RetrievalParams,
+        SQLParams,
     },
     utils::find_project_path,
 };
