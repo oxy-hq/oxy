@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.14](https://github.com/oxy-hq/oxy-internal/compare/0.2.13...0.2.14) (2025-06-19)
+
+
+### <!-- 0 -->🚀 Features
+
+* closes [#848](https://github.com/oxy-hq/oxy-internal/issues/848) use data app primitives to power visualize tool  ([#906](https://github.com/oxy-hq/oxy-internal/issues/906)) ([f88afe0](https://github.com/oxy-hq/oxy-internal/commit/f88afe01c1f62f057c221ae2cc46d0a4bfc2f8a4))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* clickhouse connector panick ([#909](https://github.com/oxy-hq/oxy-internal/issues/909)) ([1e17c00](https://github.com/oxy-hq/oxy-internal/commit/1e17c00337be79d399981e7d91936dba05051489))
+
 ## [0.2.13](https://github.com/oxy-hq/oxy-internal/compare/0.2.12...0.2.13) (2025-06-17)
 
 
