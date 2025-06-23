@@ -43,7 +43,7 @@
     "@radix-ui/react-tooltip": "^1.2.7",
     "@radix-ui/react-visually-hidden": "^1.2.3",
     "@tailwindcss/vite": "^4.1.10",
-    "@tanstack/react-query": "^5.80.10",
+    "@tanstack/react-query": "^5.81.2",
     "@tanstack/react-table": "^8.21.3",
     "@tanstack/react-virtual": "^3.13.10",
     "@types/mdast": "^4.0.4",
