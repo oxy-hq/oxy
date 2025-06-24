@@ -108,21 +108,26 @@ fn parse_variable(env: &str) -> Result<Variable, OxyError> {
         Box::leak(format!(
             "version: {}\n\
             rust version: {}\n\
-            commit SHA: {}\n\
-            branch: {}\n\
-            repository: {}\n\
-            \
-            triggered by: {}\n\
-            event: {}\n\
-            build timestamp: {}",
+            commit: {commit_link}\n\
+            workflow url: {workflow_link}\n",
             env!("CARGO_PKG_VERSION"),
             rustc_version_runtime::version(),
-            option_env!("GITHUB_SHA").unwrap_or("unknown"),
-            option_env!("GITHUB_REF_NAME").unwrap_or("unknown"),
-            option_env!("GITHUB_REPOSITORY").unwrap_or("unknown"),
-            option_env!("GITHUB_ACTOR").unwrap_or("unknown"),
-            option_env!("GITHUB_EVENT_NAME").unwrap_or("unknown"),
-            chrono::Utc::now().to_rfc3339(),
+            commit_link = match (
+                option_env!("GITHUB_SERVER_URL"),
+                option_env!("GITHUB_REPOSITORY"),
+                option_env!("GITHUB_SHA")
+            ) {
+                (Some(server), Some(repo), Some(sha)) => format!("{}/repo/{}/commit/{} ({})", server, repo, sha, sha),
+                _ => option_env!("GITHUB_SHA").unwrap_or("unknown").to_string(),
+            },
+            workflow_link = match (
+                option_env!("GITHUB_SERVER_URL"),
+                option_env!("GITHUB_REPOSITORY"),
+                option_env!("GITHUB_RUN_ID")
+            ) {
+                (Some(server), Some(repo), Some(run_id)) => format!("{}/repo/{}/actions/runs/{} ({})", server, repo, run_id, run_id),
+                _ => option_env!("GITHUB_RUN_ID").unwrap_or("unknown").to_string(),
+            },
         ).into_boxed_str()) as &'static str
     },
 )]
