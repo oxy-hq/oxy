@@ -257,6 +257,9 @@ importers:
       papaparse:
         specifier: ^5.5.3
         version: 5.5.3
+      persist-and-sync:
+        specifier: ^1.2.3
+        version: 1.2.3(zustand@5.0.5(@types/react@19.1.8)(react@19.1.0)(use-sync-external-store@1.5.0(react@19.1.0)))
       prism-react-renderer:
         specifier: ^2.4.1
         version: 2.4.1(react@19.1.0)
@@ -3991,6 +3994,11 @@ packages:
   pbkdf2@3.1.3:
     resolution: {integrity: sha512-wfRLBZ0feWRhCIkoMB6ete7czJcnNnqRpcoWQBLqatqXXmelSRqfdDK4F3u9T2s2cXas/hQJcryI/4lAL+XTlA==}
     engines: {node: '>=0.12'}
+
+  persist-and-sync@1.2.3:
+    resolution: {integrity: sha512-narBnOLMCSNbQ8Jw0uElpl78ALkPNFvDiz0tUV/7JM/q90E9dntblDYz9mgEO8F9JT/S5pU7B7jltEDDdidbBw==}
+    peerDependencies:
+      zustand: '>=3'
 
   picocolors@1.1.1:
     resolution: {integrity: sha512-xceH2snhtb5M9liqDsmEw56le376mTZkEX/jEb/RxNFyegNul7eNslCXP9FDj/Lcu0X8KEyMceP2ntpaHrDEVA==}
@@ -9390,6 +9398,10 @@ snapshots:
       safe-buffer: 5.2.1
       sha.js: 2.4.11
       to-buffer: 1.2.1
+
+  persist-and-sync@1.2.3(zustand@5.0.5(@types/react@19.1.8)(react@19.1.0)(use-sync-external-store@1.5.0(react@19.1.0))):
+    dependencies:
+      zustand: 5.0.5(@types/react@19.1.8)(react@19.1.0)(use-sync-external-store@1.5.0(react@19.1.0))
 
   picocolors@1.1.1: {}
 
