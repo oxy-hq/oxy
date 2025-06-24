@@ -1,4 +1,4 @@
-import { User2, LogOut, Key } from "lucide-react";
+import { User2, LogOut, Key, Database } from "lucide-react";
 import { useEffect, useState } from "react";
 import { SidebarMenu, SidebarMenuItem } from "@/components/ui/shadcn/sidebar";
 import { useNavigate } from "react-router-dom";
@@ -84,6 +84,13 @@ export function Footer() {
                 >
                   <Key className="w-4 h-4 mr-2" />
                   <span>API Keys</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="cursor-pointer"
+                  onClick={() => navigate("/databases")}
+                >
+                  <Database className="w-4 h-4 mr-2" />
+                  <span>Data Management</span>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem

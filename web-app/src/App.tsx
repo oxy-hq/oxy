@@ -20,6 +20,7 @@ import IdePage from "./pages/ide";
 import EditorPage from "./pages/ide/Editor";
 import AppPage from "./pages/app";
 import ApiKeyManagement from "./pages/api-keys";
+import DatabaseManagement from "./pages/databases";
 import { HotkeysProvider } from "react-hotkeys-hook";
 import LoginPage from "./pages/login";
 import RegisterPage from "./pages/register";
@@ -91,6 +92,14 @@ const MainLayout = React.memo(function MainLayout() {
           element={
             <PageWrapper>
               <ApiKeyManagement />
+            </PageWrapper>
+          }
+        />
+        <Route
+          path="/databases"
+          element={
+            <PageWrapper>
+              <DatabaseManagement />
             </PageWrapper>
           }
         />
