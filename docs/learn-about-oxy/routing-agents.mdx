@@ -1,0 +1,154 @@
+---
+title: Routing Agents
+description: Learn how to create and configure routing agents to direct tasks to specialized tools and agents
+---
+
+# Routing Agents
+
+Routing agents are a special type of agent in Oxy that act as intelligent dispatchers, analyzing incoming tasks and directing them to the most appropriate specialized agent, workflow, or SQL query based on the request content. They serve as the entry point for complex multi-agent systems.
+
+## Overview
+
+A routing agent uses vector embeddings and semantic similarity to match user requests with the best available tool. When a task is received, the routing agent:
+
+1. **Analyzes the Task**: Evaluates the user's request to understand the intent and requirements
+2. **Finds the Best Match**: Uses semantic search to identify the most relevant route from available options
+3. **Routes the Task**: Forwards the task to the selected specialized agent or tool
+4. **Synthesizes Results**: Processes and formats the output from the specialized tool into a coherent response
+
+## How Routing Works
+
+### Tool Discovery Process
+1. **Semantic Search**: Uses vector embeddings to find the most relevant routes for the user's query
+2. **Tool Resolution**: Converts found routes into executable tools (agents, workflows, or SQL queries)
+3. **Execution**: The selected tool processes the request
+4. **Result Synthesis**: Optionally processes and formats the tool's output (controlled by `synthesize_results`)
+
+### Vector Database Management
+Each routing agent maintains its own vector database named `{agent_name}-routing` in LanceDB, storing embeddings of available routes for fast semantic similarity matching.
+
+## Configuration
+
+Routing agents are defined in `.agent.yml` files with `type: routing`. Here's the basic structure:
+
+```yaml
+model: "openai-4o-mini"
+type: routing
+reasoning:
+  effort: low
+routes:
+  - "agents/duckdb.agent.yml"
+  - "workflows/*.workflow.yml" 
+  - "data_fruit/*.sql"
+route_fallback: agents/default.agent.yml
+```
+
+### Required Fields
+
+- **`model`**: The LLM model to use for routing decisions  
+- **`type`**: Must be set to `routing` to identify this as a routing agent (agent-level field)
+- **`routes`**: Array of paths to agents, workflows, or SQL files that can handle tasks
+
+### Optional Fields
+
+- **`route_fallback`**: Default agent to use when no specific route matches
+- **`reasoning`**: Configuration for the reasoning process
+- **`system_instructions`**: Custom instructions for the routing behavior (has a default value)
+- **`embed_model`**: Embedding model for semantic similarity (default: "text-embedding-3-small")
+- **`n_dims`**: Embedding dimensions (default: 512)
+- **`top_k`**: Number of top matches to consider (default: 4)
+- **`factor`**: Scaling factor for similarity scoring (default: 5)
+- **`table`**: Vector database table name (default: "documents")
+- **`db_path`**: LanceDB database path (default: ".lancedb")
+- **`synthesize_results`**: Whether to process and format tool outputs (default: true)
+
+## Route Types
+
+### Agent Routes
+Point to other `.agent.yml` files for specialized tasks:
+```yaml
+routes:
+  - "agents/sql-analyst.agent.yml"
+  - "agents/data-scientist.agent.yml"
+  - "agents/report-generator.agent.yml"
+```
+
+### Workflow Routes  
+Include workflow files using glob patterns:
+```yaml
+routes:
+  - "workflows/*.workflow.yml"
+  - "workflows/data-processing/*.workflow.yml"
+```
+
+### SQL Query Routes
+Direct access to SQL files for data queries:
+```yaml
+routes:
+  - "queries/*.sql"
+  - "reports/monthly/*.sql"
+```
+
+<Note>
+SQL files used in routing must have appropriate database source type metadata to determine which database connection to use. The routing agent automatically detects the database type from the SQL file's metadata.
+</Note>
+
+## Examples
+
+### Simple Routing Agent
+
+Here's a minimal routing agent with just the required fields:
+
+```yaml
+model: "openai-4o-mini"
+type: routing
+
+routes:
+  - "agents/sql-analyst.agent.yml"
+  - "workflows/data-processing.workflow.yml"
+  - "queries/reports.sql"
+```
+
+### Complete Routing Agent
+
+Here's a full-featured routing agent with all available configuration options:
+
+```yaml
+model: "openai-4o-mini"
+type: routing
+description: "Main routing agent for data analysis tasks"
+
+# Reasoning configuration - controls analysis depth
+reasoning:
+  effort: high                         # Options: low, medium, high
+
+# Custom system instructions (optional - has sensible defaults)
+system_instructions: |
+  You are an intelligent routing agent for a data analysis platform.
+  Route tasks to the most appropriate tool based on the request content.
+  Prioritize SQL tools for data queries and workflows for complex processing.
+
+# Route definitions
+routes:
+  - "agents/duckdb.agent.yml"           # For SQL queries and data analysis
+  - "agents/visualization.agent.yml"    # For creating charts and graphs  
+  - "workflows/etl/*.workflow.yml"      # For data processing workflows
+  - "queries/reports/*.sql"             # For standard report queries
+
+# Fallback agent when no route matches
+route_fallback: agents/default.agent.yml
+
+# Vector embedding configuration for semantic search
+embed_model: "text-embedding-3-large"  # Higher quality embeddings
+n_dims: 1024                           # Higher dimensional space for better accuracy
+top_k: 8                               # Consider more matches for better routing
+factor: 10                             # Higher scaling factor for similarity scoring
+
+# Vector database configuration
+db_path: ".custom_lancedb"             # Custom vector database location
+table: "routing_vectors"               # Custom table name for this agent
+
+# Result processing
+synthesize_results: true               # Process and format tool outputs (recommended)
+```
+
