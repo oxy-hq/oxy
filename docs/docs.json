@@ -43,7 +43,8 @@
                   "learn-about-oxy/debugging",
                   "learn-about-oxy/semantic-model",
                   "learn-about-oxy/testing",
-                  "learn-about-oxy/workflows"
+                  "learn-about-oxy/workflows",
+                  "learn-about-oxy/routing-agents"
                 ]
               },
               "learn-about-oxy/config"
