@@ -6,6 +6,9 @@ import { service } from "@/services/service";
 import Header from "./Header";
 import { Artifact } from "@/services/mock";
 import { useCallback } from "react";
+import { Button } from "../ui/shadcn/button";
+import { Alert, AlertDescription, AlertTitle } from "../ui/shadcn/alert";
+import { Loader2, XCircle } from "lucide-react";
 
 type Props = {
   selectedArtifactIds: string[];
@@ -32,6 +35,10 @@ const ArtifactPanel = ({
       queryFn: () => service.getArtifact(id),
     })),
   });
+
+  const isLoading = artifactQueries.some((query) => query.isLoading);
+  const hasError = artifactQueries.some((query) => query.isError);
+
   const artifactAPIData: { [key: string]: Artifact } = artifactQueries
     .map((result) => result.data)
     .reduce(
@@ -48,12 +55,47 @@ const ArtifactPanel = ({
     ...artifactAPIData,
   };
 
-  const currentArtifact =
-    artifactData[selectedArtifactIds[selectedArtifactIds.length - 1]];
+  const currentArtifactId = selectedArtifactIds[selectedArtifactIds.length - 1];
+  const currentArtifact = artifactData[currentArtifactId];
+
+  const isCurrentArtifactLoading =
+    isLoading && !currentArtifact && !artifactStreamingData[currentArtifactId];
+
+  if (isCurrentArtifactLoading) {
+    return (
+      <div className="h-full flex items-center justify-center">
+        <div className="flex flex-col items-center space-y-4 text-gray-600">
+          <Loader2 className="animate-spin" />
+          <p>Loading artifact...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (hasError && !currentArtifact) {
+    return (
+      <div className="flex h-full w-full flex-col items-center justify-center p-4 gap-4">
+        <Alert variant="destructive">
+          <XCircle />
+          <AlertTitle>Error</AlertTitle>
+          <AlertDescription>
+            Unable to load the selected artifact. Please check your connection
+            or try again later.
+          </AlertDescription>
+        </Alert>
+        <Button
+          onClick={() => artifactQueries.forEach((query) => query.refetch())}
+        >
+          Retry
+        </Button>
+      </div>
+    );
+  }
 
   if (!currentArtifact) {
     return null;
   }
+
   const renderContent = () => {
     if (currentArtifact.kind === "execute_sql") {
       return <SqlArtifactPanel artifact={currentArtifact} />;
@@ -88,7 +130,7 @@ const ArtifactPanel = ({
   };
 
   return (
-    <div className="h-full ">
+    <div className="h-full flex flex-col">
       <Header
         currentArtifact={currentArtifact}
         artifactData={artifactData}
@@ -96,7 +138,7 @@ const ArtifactPanel = ({
         selectedArtifactIds={selectedArtifactIds}
         onClose={handleClose}
       />
-      <div className="h-full">{renderContent()}</div>
+      <div className="flex-1 min-h-0">{renderContent()}</div>
     </div>
   );
 };
