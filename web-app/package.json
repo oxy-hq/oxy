@@ -119,5 +119,5 @@
     "vite": "^6.3.5",
     "vite-plugin-node-polyfills": "^0.23.0"
   },
-  "version": "0.2.14"
+  "version": "0.2.15"
 }
