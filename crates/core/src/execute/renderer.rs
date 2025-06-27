@@ -123,7 +123,10 @@ impl Renderer {
         })?;
         let context = self.get_context();
         let value = expression.eval(&context).map_err(|err| {
-            OxyError::RuntimeError(format!("Error evaluating expression: {}", err))
+            OxyError::RuntimeError(format!(
+                "Error evaluating expression: {} with context: {:?}",
+                err, &context
+            ))
         })?;
         tracing::info!(
             "Evaluated expression: {} -> {:?} with context: {:?}",
@@ -204,7 +207,7 @@ impl Renderer {
 
     pub fn get_context(&self) -> Value {
         context! {
-          ..Value::from_serialize(self.global_context.to_owned()),
+          ..Value::from_serialize(self.global_context.as_ref()),
           ..Value::from_serialize(&self.current_context),
         }
     }

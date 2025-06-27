@@ -347,7 +347,7 @@ async fn generate_workflow_run_schema(workflow_path: &str) -> Result<serde_json:
     let project_path = find_project_path().unwrap();
     let workflow_config =
         get_workflow(PathBuf::from(workflow_path), Some(project_path.clone())).await?;
-    let schema = Into::<RootSchema>::into(workflow_config.variables.unwrap_or_default());
+    let schema = Into::<RootSchema>::into(&workflow_config.variables.unwrap_or_default());
     let json_schema = serde_json::json!(schema);
     Ok(json_schema)
 }

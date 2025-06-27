@@ -219,7 +219,7 @@ impl GetSchemaQuery for Database {
                     let query = format!(
                         "SELECT c.table_schema, c.table_name, c.column_name, c.data_type, c.is_partitioning_column, COALESCE(d.description, NULL) as description
                          FROM `{}.INFORMATION_SCHEMA.COLUMNS` c
-                         LEFT JOIN `{}.INFORMATION_SCHEMA.COLUMN_FIELD_PATHS` d 
+                         LEFT JOIN `{}.INFORMATION_SCHEMA.COLUMN_FIELD_PATHS` d
                          ON c.table_name = d.table_name AND c.column_name = d.column_name{}",
                         dataset, dataset, tables_filter
                     );
@@ -411,7 +411,7 @@ impl SchemaLoader {
                         .and_then(|e| e.to_str())
                         .unwrap_or("")
                         .to_lowercase();
-                    let table_name = path.file_stem().unwrap().to_string_lossy().to_string();
+                    let table_name = path.file_name().unwrap().to_string_lossy().to_string();
                     let dimensions = match ext.as_str() {
                         "csv" => extract_csv_dimensions(&path),
                         // "parquet" | "json" => not supported for now
@@ -419,7 +419,7 @@ impl SchemaLoader {
                     }?;
                     if !dimensions.is_empty() {
                         tables.insert(
-                            table_name.clone(),
+                            path.file_stem().unwrap().to_string_lossy().to_string(),
                             SemanticModels {
                                 database: self.database.name.clone(),
                                 table: table_name.clone(),

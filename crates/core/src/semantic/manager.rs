@@ -1,4 +1,8 @@
+use itertools::Itertools;
 use std::{
+    collections::HashSet,
+    path::PathBuf,
+    str::FromStr,
     sync::{Arc, Mutex},
     time::Instant,
 };
@@ -7,14 +11,19 @@ use futures::StreamExt;
 use tqdm::{Pbar, pbar};
 
 use crate::{
-    config::{ConfigManager, model::Database},
+    config::{
+        ConfigManager,
+        model::{Database, SemanticDimension, SemanticModels},
+    },
     errors::OxyError,
     semantic::{loader::SchemaLoader, types::SemanticKey},
 };
 
 use super::{
+    SemanticContexts, SemanticVariablesContexts,
+    contexts::SemanticDimensionsContexts,
     storage::SemanticStorage,
-    types::{DatabaseInfo, SyncMetrics},
+    types::{DatabaseInfo, SemanticTableRef, SyncDimension, SyncMetrics},
 };
 
 pub struct SemanticManager {
@@ -52,13 +61,71 @@ impl SemanticManager {
         })
     }
 
+    async fn load_global_semantics(
+        &self,
+    ) -> Result<Vec<Result<(String, SemanticModels), OxyError>>, OxyError> {
+        let semantics = self.storage.load_global_semantics().await?;
+        let models = async_stream::stream! {
+            for target in semantics.list_targets() {
+                yield async move {
+                    let semantic_table_ref = SemanticTableRef::from_str(&target)
+                        .map_err(|err| {
+                            tracing::error!("Failed to parse semantic table reference {}: {:?}", target, err);
+                            err
+                        })?;
+
+                    self.storage.load_model(&semantic_table_ref).await.map_err(|err| {
+                        tracing::error!("Failed to load model for entity {}: {:?}", target, err);
+                        err
+                    }).map(|model| {
+                        (
+                            semantic_table_ref.table,
+                            model
+                        )
+                    })
+                };
+            }
+        }
+        .buffered(10)
+        .collect::<Vec<_>>()
+        .await;
+        Ok(models)
+    }
+
+    pub async fn get_semantic_contexts(&self) -> Result<SemanticContexts, OxyError> {
+        let models = self.load_global_semantics().await?;
+        Ok(SemanticContexts::new(
+            models.into_iter().filter_map(Result::ok).collect(),
+        ))
+    }
+
+    pub async fn get_semantic_variables_contexts(
+        &self,
+    ) -> Result<SemanticVariablesContexts, OxyError> {
+        let models = self.load_global_semantics().await?;
+        SemanticVariablesContexts::new(models.into_iter().filter_map(Result::ok).collect())
+    }
+
+    pub async fn get_semantic_dimensions_contexts(
+        &self,
+        variables_contexts: &SemanticVariablesContexts,
+    ) -> Result<SemanticDimensionsContexts, OxyError> {
+        let semantics = self.storage.load_global_semantics().await?;
+        Ok(SemanticDimensionsContexts::new(
+            semantics
+                .dimensions
+                .into_iter()
+                .map(|dim| (dim.name.clone(), dim))
+                .collect(),
+            variables_contexts,
+        ))
+    }
+
     async fn sync(
         &self,
         database: &Database,
         pbar: Option<Arc<Mutex<Pbar>>>,
     ) -> Result<SyncMetrics, OxyError> {
-        use itertools::Itertools;
-
         let start_time = Instant::now();
         let loader = SchemaLoader::from_database(database, &self.config).await?;
         let semantics = loader.load_schema().await?;
@@ -67,6 +134,7 @@ impl SemanticManager {
         let mut overwritten_files = vec![];
         let mut deleted_files = vec![];
         let mut created_files = vec![];
+        let mut dimensions = vec![];
 
         for (dataset, semantic_models) in semantics {
             let key = SemanticKey::new(database.name.to_string(), dataset);
@@ -77,6 +145,7 @@ impl SemanticManager {
             overwritten_files.extend(result.overwritten_files.clone());
             created_files.extend(result.created_files.clone());
             deleted_files.extend(result.deleted_files.clone());
+            dimensions.extend_from_slice(result.dimensions.as_slice());
         }
 
         let ddls = loader.load_ddl().await?;
@@ -137,12 +206,14 @@ impl SemanticManager {
             overwritten_files,
             created_files,
             would_overwrite_files,
+            dimensions,
         })
     }
     pub async fn sync_all(
         &self,
         filter: Option<(String, Vec<String>)>,
     ) -> Result<Vec<Result<SyncMetrics, OxyError>>, OxyError> {
+        let mut global_semantics = self.storage.load_global_semantics().await?;
         let databases = match filter {
             Some((db, datasets)) => vec![
                 self.config
@@ -153,7 +224,7 @@ impl SemanticManager {
             None => self.config.list_databases()?.to_vec(),
         };
         let pbar = Arc::new(Mutex::new(pbar(Some(databases.len()))));
-        Ok(async_stream::stream! {
+        let metrics = async_stream::stream! {
           for database in databases {
             let db = database.clone();
             let pbar = pbar.clone();
@@ -164,6 +235,68 @@ impl SemanticManager {
         }
         .buffered(10)
         .collect::<Vec<_>>()
-        .await)
+        .await;
+
+        for result in metrics.iter() {
+            if let Ok(metrics) = result {
+                for model in &metrics.dimensions {
+                    match model {
+                        SyncDimension::Created { dimensions, src } => {
+                            let dimension_names = dimensions
+                                .iter()
+                                .map(|d| d.name.clone())
+                                .collect::<HashSet<_>>();
+                            // Remove targets that no longer exist
+                            global_semantics.dimensions.iter_mut().for_each(|dim| {
+                                for target in dim.targets.clone().iter() {
+                                    if let Some(target_dim_name) =
+                                        target.strip_prefix(&src.table_ref())
+                                    {
+                                        if !dimension_names.contains(target_dim_name) {
+                                            dim.targets.retain(|t| t != target);
+                                        }
+                                    }
+                                }
+                            });
+                            // Add new dimensions
+                            for dim in dimension_names {
+                                // Find if the dimension already exists and update it or create a new one
+                                match global_semantics
+                                    .dimensions
+                                    .iter_mut()
+                                    .find(|d| d.name == dim)
+                                {
+                                    Some(existing_dim) => {
+                                        existing_dim.targets.push(src.to_target(&dim));
+                                    }
+                                    None => {
+                                        global_semantics.dimensions.push(SemanticDimension {
+                                            name: dim.clone(),
+                                            targets: vec![src.to_target(&dim)],
+                                            ..Default::default()
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                        SyncDimension::DeletedRef { src } => {
+                            global_semantics.dimensions.iter_mut().for_each(|dim| {
+                                dim.targets
+                                    .retain(|target| !target.starts_with(&src.table_ref()));
+                            })
+                        }
+                    }
+                }
+            }
+        }
+
+        // Save the updated global semantics
+        global_semantics
+            .dimensions
+            .retain(|dim| !dim.targets.is_empty());
+        self.storage
+            .save_global_semantics(&global_semantics)
+            .await?;
+        Ok(metrics)
     }
 }

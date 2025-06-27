@@ -36,6 +36,7 @@ impl FallbackAgent {
                     tool_config.clone().into(),
                 )),
                 reasoning_config.map(|rc| rc.into()),
+                true,
             ),
             tool_executable: OpenAITool::new(agent_name.to_string(), vec![tool_config], 1),
         })
@@ -60,7 +61,6 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for FallbackAgent {
         match tool_rets {
             Some(tool_calls) => {
                 memo.extend(tool_calls);
-                self.agent.clear_tools();
                 let fallback_response = self.agent.execute(execution_context, memo).await?;
                 Ok(vec![response, fallback_response])
             }

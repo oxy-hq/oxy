@@ -1,9 +1,9 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, str::FromStr};
 
 use itertools::Itertools;
 use serde::{Serialize, ser::SerializeStruct};
 
-use crate::theme::StyledText;
+use crate::{config::model::Dimension, errors::OxyError, theme::StyledText};
 
 pub struct SemanticKey {
     pub database: String,
@@ -17,6 +17,56 @@ impl SemanticKey {
 }
 
 #[derive(Debug, Clone)]
+pub struct SemanticTableRef {
+    pub database: String,
+    pub dataset: String,
+    pub table: String,
+}
+
+impl SemanticTableRef {
+    pub fn table_ref(&self) -> String {
+        format!("{}.{}.{}.", self.database, self.dataset, self.table)
+    }
+
+    pub fn to_target(&self, dimension: &str) -> String {
+        format!(
+            "{}.{}.{}.{}",
+            self.database, self.dataset, self.table, dimension
+        )
+    }
+}
+
+impl FromStr for SemanticTableRef {
+    type Err = OxyError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let parts: Vec<&str> = s.split('.').collect();
+        if parts.len() < 3 {
+            return Err(OxyError::SerializerError(format!(
+                "Invalid semantic table reference format: '{}'. Expected format: 'database.dataset.table'",
+                s
+            )));
+        }
+        Ok(SemanticTableRef {
+            database: parts[0].to_string(),
+            dataset: parts[1].to_string(),
+            table: parts[2].to_string(),
+        })
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum SyncDimension {
+    Created {
+        dimensions: Vec<Dimension>,
+        src: SemanticTableRef,
+    },
+    DeletedRef {
+        src: SemanticTableRef,
+    },
+}
+
+#[derive(Debug, Clone)]
 pub struct SyncMetrics {
     pub database_ref: String,
     pub sync_time_secs: f64,
@@ -25,6 +75,7 @@ pub struct SyncMetrics {
     pub overwritten_files: Vec<String>,
     pub created_files: Vec<String>,
     pub would_overwrite_files: Vec<String>,
+    pub dimensions: Vec<SyncDimension>,
 }
 
 #[derive(Debug, Clone)]
@@ -34,6 +85,7 @@ pub struct SyncOperationResult {
     pub overwritten_files: Vec<String>,
     pub created_files: Vec<String>,
     pub would_overwrite_files: Vec<String>,
+    pub dimensions: Vec<SyncDimension>,
 }
 
 impl SyncOperationResult {
@@ -44,6 +96,7 @@ impl SyncOperationResult {
             overwritten_files: Vec::new(),
             created_files: Vec::new(),
             would_overwrite_files: Vec::new(),
+            dimensions: Vec::new(),
         }
     }
 
@@ -53,6 +106,7 @@ impl SyncOperationResult {
         overwritten_files: Vec<String>,
         created_files: Vec<String>,
         would_overwrite_files: Vec<String>,
+        dimensions: Vec<SyncDimension>,
     ) -> Self {
         Self {
             base_path,
@@ -60,6 +114,7 @@ impl SyncOperationResult {
             overwritten_files,
             created_files,
             would_overwrite_files,
+            dimensions,
         }
     }
 

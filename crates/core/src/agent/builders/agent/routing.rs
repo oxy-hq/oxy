@@ -239,6 +239,7 @@ async fn build_react_loop(
         deduplicated_tools,
         None,
         reasoning_config.map(|rc| rc.into()),
+        synthesize_results,
     )))
 }
 

@@ -1,7 +1,7 @@
-use crate::config::auth::Authentication;
 use garde::Validate;
 use indoc::indoc;
 use itertools::Itertools;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use serde_with::skip_serializing_none;
@@ -10,19 +10,22 @@ use std::collections::HashMap;
 use std::hash::Hash;
 use std::path::PathBuf;
 use std::{env, fs};
-pub use variables::Variables;
 
+use super::validate::{AgentValidationContext, validate_model, validate_task};
+use crate::config::auth::Authentication;
 use crate::config::validate::validate_file_path;
 use crate::config::validate::{
     ValidationContext, validate_agent_exists, validate_database_exists, validate_env_var,
 };
 use crate::errors::OxyError;
 use crate::utils::list_by_sub_extension;
-use schemars::JsonSchema;
+pub use semantics::{SemanticDimension, Semantics};
+pub use variables::{Variable, Variables};
+pub use workflow::WorkflowWithRawVariables;
 
-use super::validate::{AgentValidationContext, validate_model, validate_task};
-
+mod semantics;
 mod variables;
+mod workflow;
 
 #[derive(Serialize, Deserialize, Validate, Debug, Clone, JsonSchema)]
 #[garde(context(ValidationContext))]
@@ -45,35 +48,35 @@ pub struct Config {
     pub authentication: Option<Authentication>,
 }
 
-#[derive(Serialize, Deserialize, Debug, JsonSchema)]
+#[derive(Clone, Serialize, Deserialize, Debug, JsonSchema)]
 pub struct SemanticModels {
     pub table: String,
     pub database: String,
-    #[serde(skip_serializing_if = "String::is_empty")]
+    #[serde(skip_serializing_if = "String::is_empty", default)]
     pub description: String,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub entities: Vec<Entity>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub dimensions: Vec<Dimension>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub measures: Vec<Measure>,
 }
 
-#[derive(Serialize, Deserialize, Debug, JsonSchema)]
+#[derive(Clone, Serialize, Deserialize, Debug, JsonSchema)]
 pub struct Entity {
     pub name: String,
     pub description: String,
     pub sample: Vec<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug, JsonSchema)]
+#[derive(Clone, Serialize, Deserialize, Debug, JsonSchema)]
 pub struct Dimension {
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub synonyms: Option<Vec<String>>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub sample: Vec<String>,
     #[serde(rename = "type", alias = "type")]
     pub data_type: Option<String>,
@@ -81,7 +84,7 @@ pub struct Dimension {
     pub is_partition_key: Option<bool>,
 }
 
-#[derive(Serialize, Deserialize, Debug, JsonSchema)]
+#[derive(Clone, Serialize, Deserialize, Debug, JsonSchema)]
 pub struct Measure {
     pub name: String,
     pub sql: String,

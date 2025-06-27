@@ -1,6 +1,7 @@
 use crate::{
     adapters::checkpoint::{CheckpointBuilder, CheckpointManager},
     config::{
+        ConfigBuilder, ConfigManager,
         constants::{CHECKPOINT_ROOT_PATH, WORKFLOW_SOURCE},
         model::Task,
     },
@@ -11,10 +12,11 @@ use crate::{
         types::{EventKind, OutputContainer, Source},
         writer::{BufWriter, EventHandler},
     },
+    semantic::SemanticManager,
     theme::StyledText,
 };
 use itertools::Itertools;
-use minijinja::Value;
+use minijinja::context;
 use serde_json::Value as JsonValue;
 use std::{
     collections::HashMap,
@@ -72,12 +74,35 @@ impl WorkflowLauncher {
         }
     }
 
+    async fn get_global_context(
+        &self,
+        config: ConfigManager,
+    ) -> Result<minijinja::Value, OxyError> {
+        let semantic_manager = SemanticManager::from_config(config, false).await?;
+        let semantic_variables_contexts =
+            semantic_manager.get_semantic_variables_contexts().await?;
+        let semantic_dimensions_contexts = semantic_manager
+            .get_semantic_dimensions_contexts(&semantic_variables_contexts)
+            .await?;
+        let global_context = context! {
+            models => minijinja::Value::from_object(semantic_variables_contexts),
+            dimensions => minijinja::Value::from_object(semantic_dimensions_contexts),
+        };
+        Ok(global_context)
+    }
+
     pub async fn with_external_context(
         mut self,
         execution_context: &ExecutionContext,
     ) -> Result<Self, OxyError> {
         let tx = self.buf_writer.create_writer(None)?;
-        self.execution_context = Some(execution_context.wrap_writer(tx));
+        let global_context = self
+            .get_global_context(execution_context.config.clone())
+            .await?;
+        let renderer = execution_context
+            .renderer
+            .switch_context(global_context, minijinja::Value::UNDEFINED);
+        self.execution_context = Some(execution_context.wrap_writer(tx).wrap_renderer(renderer));
         self.checkpoint_manager = CheckpointBuilder::from_config(&execution_context.config)
             .await
             .ok();
@@ -90,11 +115,17 @@ impl WorkflowLauncher {
     ) -> Result<Self, OxyError> {
         let checkpoint_path = project_path.as_ref().join(CHECKPOINT_ROOT_PATH);
         let tx = self.buf_writer.create_writer(None)?;
+        let config = ConfigBuilder::new()
+            .with_project_path(project_path.as_ref())?
+            .build()
+            .await?;
+        let global_context = self.get_global_context(config).await?;
+
         self.execution_context = Some(
             ExecutionContextBuilder::new()
                 .with_project_path(project_path)
                 .await?
-                .with_global_context(Value::UNDEFINED)
+                .with_global_context(global_context)
                 .with_writer(tx)
                 .with_source(Source {
                     parent_id: None,
@@ -165,13 +196,13 @@ impl WorkflowLauncher {
                         .execute(&execution_context, (workflow_ref, variables))
                         .await
                 }
-            }?;
+            };
             execution_context
                 .write_kind(EventKind::Finished {
                     message: "\n✅Workflow executed successfully".success().to_string(),
                 })
                 .await?;
-            Ok(response)
+            response
         });
         let buf_writer = self.buf_writer;
         let event_handle =

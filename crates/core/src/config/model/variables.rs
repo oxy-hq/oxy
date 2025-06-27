@@ -76,9 +76,9 @@ impl From<Variables> for serde_json::Map<String, Value> {
     }
 }
 
-impl From<Variables> for RootSchema {
-    fn from(val: Variables) -> Self {
-        val.variables.into_iter().fold(
+impl From<&Variables> for RootSchema {
+    fn from(val: &Variables) -> Self {
+        val.variables.iter().fold(
             RootSchema {
                 schema: SchemaObject {
                     instance_type: Some(SingleOrVec::Single(Box::new(InstanceType::Object))),
@@ -86,20 +86,21 @@ impl From<Variables> for RootSchema {
                 },
                 ..Default::default()
             },
-            |mut root, (key, mut value)| {
+            |mut root, (key, value)| {
                 let object = root.schema.object();
+                let mut value = value.clone();
                 if value.metadata().default.is_some() {
                     object.required.insert(key.clone());
                 }
-                object.properties.insert(key, value.into());
+                object.properties.insert(key.clone(), value.into());
                 root
             },
         )
     }
 }
 
-impl From<Variables> for serde_json::Value {
-    fn from(val: Variables) -> Self {
+impl From<&Variables> for serde_json::Value {
+    fn from(val: &Variables) -> Self {
         let root_schema: RootSchema = val.into();
         serde_json::json!(&root_schema)
     }

@@ -140,6 +140,12 @@ impl BlockHandler {
     async fn handle_container_finished(&mut self, source: &Source) -> Result<(), OxyError> {
         // Close the block
         let is_closed = self.block_manager.finish_block(source).await?;
+        tracing::info!(
+            "Block finished for source {}({}): is_closed={}",
+            source.kind,
+            source.id,
+            is_closed
+        );
         if !is_closed {
             return Ok(());
         }
@@ -287,11 +293,23 @@ impl SourceHandler for BlockHandler {
                 title,
                 is_verified,
             } => {
+                tracing::info!(
+                    "Handling artifact started: source_id={}, kind={}, title={}, is_verified={}",
+                    source.id,
+                    kind,
+                    title,
+                    is_verified
+                );
                 self.handle_artifact_started(source, kind, title, *is_verified)
                     .await?;
             }
 
             EventKind::ArtifactFinished => {
+                tracing::info!(
+                    "Handling artifact finished: source_id={}, kind={}",
+                    source.id,
+                    source.kind
+                );
                 self.handle_artifact_finished(source).await?;
             }
 
@@ -313,6 +331,11 @@ impl SourceHandler for BlockHandler {
 
                 if let Some(kind) = container_kind {
                     if self.artifact_tracker.has_active_artifact() {
+                        tracing::info!(
+                            "Handling container started for active artifact: source_id={}, kind={}",
+                            source.id,
+                            kind
+                        );
                         self.handle_container_started(source, &kind).await?;
                     }
                 }

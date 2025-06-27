@@ -183,14 +183,14 @@ impl Executable<TaskInput> for TaskExecutable {
             }
             TaskType::Conditional(_) => todo!(),
             TaskType::Unknown => Err(OxyError::RuntimeError("Unknown task type".to_string())),
-        }?;
+        };
         task_execution_context
             .write_kind(EventKind::Finished {
                 message: "".to_string(),
             })
             .await?;
 
-        Ok(new_value)
+        new_value
     }
 }
 

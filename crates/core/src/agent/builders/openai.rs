@@ -46,6 +46,7 @@ pub struct OpenAIExecutable {
     tool_configs: Vec<ChatCompletionTool>,
     tool_choice: Option<ChatCompletionToolChoiceOption>,
     reasoning_config: Option<ReasoningConfig>,
+    synthesize_mode: bool,
 }
 
 impl OpenAIExecutable {
@@ -55,6 +56,7 @@ impl OpenAIExecutable {
         tool_configs: Vec<ChatCompletionTool>,
         tool_choice: Option<ChatCompletionToolChoiceOption>,
         reasoning_config: Option<ReasoningConfig>,
+        synthesize_mode: bool,
     ) -> Self {
         Self {
             client: Arc::new(client),
@@ -62,10 +64,11 @@ impl OpenAIExecutable {
             tool_configs,
             tool_choice,
             reasoning_config,
+            synthesize_mode,
         }
     }
 
-    pub fn clear_tools(&mut self) {
+    fn clear_tools(&mut self) {
         self.tool_choice = None;
         self.tool_configs.clear();
     }
@@ -309,7 +312,7 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
         };
 
         let mut attempt = 0;
-        backoff::future::retry_notify(
+        let response = backoff::future::retry_notify(
             backoff::ExponentialBackoffBuilder::default()
                 .with_max_elapsed_time(Some(AGENT_RETRY_MAX_ELAPSED_TIME))
                 .build(),
@@ -320,7 +323,14 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
                 tracing::warn!("Retrying({})...", attempt);
             },
         )
-        .await
+        .await;
+
+        // Clear tools if we are in synthesize mode
+        if self.synthesize_mode {
+            self.clear_tools();
+        }
+
+        response
     }
 }
 
@@ -393,6 +403,7 @@ pub fn build_openai_executable_with_tools(
         tools,
         None,
         None,
+        false,
     )
 }
 
