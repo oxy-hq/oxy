@@ -6,7 +6,7 @@ use std::{
 use crate::{config::auth::Authentication, errors::OxyError};
 
 use super::{
-    model::{AgentConfig, AppConfig, Config, Database, Model, Workflow},
+    model::{AgentConfig, AppConfig, Config, Database, Model, Workflow, WorkflowWithRawVariables},
     storage::{ConfigSource, ConfigStorage},
 };
 
@@ -86,6 +86,15 @@ impl ConfigManager {
         workflow_name: P,
     ) -> Result<Workflow, OxyError> {
         self.storage.load_workflow_config(workflow_name).await
+    }
+
+    pub async fn resolve_workflow_with_raw_variables<P: AsRef<Path>>(
+        &self,
+        workflow_name: P,
+    ) -> Result<WorkflowWithRawVariables, OxyError> {
+        self.storage
+            .load_workflow_config_with_raw_variables(workflow_name)
+            .await
     }
 
     pub async fn resolve_agent<P: AsRef<Path>>(

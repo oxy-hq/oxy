@@ -3,7 +3,7 @@ use tokio::fs;
 
 use crate::{constants::UNPUBLISH_APP_DIR, errors::OxyError};
 
-use super::model::{AgentConfig, AppConfig, Config, Workflow};
+use super::model::{AgentConfig, AppConfig, Config, Workflow, WorkflowWithRawVariables};
 
 const DEFAULT_CONFIG_PATH: &str = "config.yml";
 const WORKFLOW_EXTENSION: &str = ".workflow";
@@ -20,6 +20,10 @@ pub(super) trait ConfigStorage {
         &self,
         workflow_ref: P,
     ) -> Result<Workflow, OxyError>;
+    async fn load_workflow_config_with_raw_variables<P: AsRef<Path>>(
+        &self,
+        workflow_ref: P,
+    ) -> Result<WorkflowWithRawVariables, OxyError>;
     async fn fs_link<P: AsRef<Path>>(&self, file_ref: P) -> Result<String, OxyError>;
     async fn glob<P: AsRef<Path>>(&self, path: P) -> Result<Vec<String>, OxyError>;
     async fn list_agents(&self) -> Result<Vec<PathBuf>, OxyError>;
@@ -129,6 +133,22 @@ impl ConfigStorage for LocalSource {
         })?;
         workflow_config.name = self.get_stem_by_extension(&resolved_path, WORKFLOW_EXTENSION);
         Ok(workflow_config)
+    }
+
+    async fn load_workflow_config_with_raw_variables<P: AsRef<Path>>(
+        &self,
+        workflow_ref: P,
+    ) -> Result<WorkflowWithRawVariables, OxyError> {
+        let resolved_path = PathBuf::from(&self.project_path).join(workflow_ref);
+        let workflow_yml = fs::read_to_string(&resolved_path).await.map_err(|e| {
+            OxyError::ConfigurationError(format!("Failed to read workflow config from file: {e}"))
+        })?;
+        let mut temp_workflow: WorkflowWithRawVariables = serde_yaml::from_str(&workflow_yml)
+            .map_err(|e| {
+                OxyError::ConfigurationError(format!("Failed to deserialize workflow config: {e}"))
+            })?;
+        temp_workflow.name = self.get_stem_by_extension(&resolved_path, WORKFLOW_EXTENSION);
+        Ok(temp_workflow)
     }
 
     async fn fs_link<P: AsRef<Path>>(&self, file_ref: P) -> Result<String, OxyError> {

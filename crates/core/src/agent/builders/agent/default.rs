@@ -9,6 +9,7 @@ use crate::config::model::{AgentContext, AgentToolsConfig, DefaultAgent, Reasoni
 use crate::execute::builders::map::ParamMapper;
 use crate::execute::renderer::Renderer;
 use crate::execute::types::{Output, OutputContainer};
+use crate::semantic::SemanticManager;
 use crate::service::agent::Message;
 use crate::tools::ToolsContext;
 use crate::{
@@ -75,6 +76,12 @@ impl Executable<DefaultAgentInput> for DefaultAgentExecutable {
             .renderer
             .render_async(&system_instructions)
             .await?;
+        tracing::info!(
+            "Executing default agent: {} with model: {}",
+            agent_name,
+            model_config.model_name()
+        );
+        tracing::info!("System instructions: {}", system_instructions);
         let client = OpenAIClient::with_config(model_config.try_into()?);
         let mut messages = memory
             .into_iter()
@@ -157,6 +164,7 @@ async fn build_react_loop(
             tools,
             None,
             reasoning_config.map(|c| c.into()),
+            false,
         ))
 }
 
@@ -177,7 +185,8 @@ impl ParamMapper<DefaultAgentInput, DefaultAgentInput> for DefaultAgentMapper {
             default_agent,
             input.contexts.clone().unwrap_or_default(),
             &input.prompt,
-        )?;
+        )
+        .await?;
         let renderer = Renderer::from_template(
             global_context,
             &input.default_agent.system_instructions.as_str(),
@@ -187,7 +196,7 @@ impl ParamMapper<DefaultAgentInput, DefaultAgentInput> for DefaultAgentMapper {
     }
 }
 
-fn build_global_context(
+async fn build_global_context(
     execution_context: &ExecutionContext,
     agent_name: &str,
     default_agent: &DefaultAgent,
@@ -202,9 +211,13 @@ fn build_global_context(
         default_agent.tools_config.tools.clone(),
         prompt.to_string(),
     );
+    let semantic_manager =
+        SemanticManager::from_config(execution_context.config.clone(), false).await?;
+    let semantic_contexts = semantic_manager.get_semantic_contexts().await?;
     Ok(context! {
         context => Value::from_object(contexts),
         databases => Value::from_object(databases),
+        entities => Value::from_object(semantic_contexts),
         tools => Value::from_object(tools)
     })
 }

@@ -35,23 +35,34 @@ pub struct Memo<E, M> {
     memo: M,
 }
 
+pub trait Memorable {
+    fn memo(&mut self, input: Self) -> &mut Self;
+}
+
 #[async_trait::async_trait]
-impl<I, E> Executable<Vec<I>> for Memo<E, Vec<I>>
+impl<E, M> Executable<M> for Memo<E, M>
 where
-    E: Executable<Vec<I>> + Send,
-    I: Clone + Send,
+    E: Executable<M> + Send,
+    M: Memorable + Clone + Send,
 {
     type Response = E::Response;
 
     async fn execute(
         &mut self,
         execution_context: &ExecutionContext,
-        input: Vec<I>,
+        input: M,
     ) -> Result<Self::Response, OxyError> {
-        self.memo.extend(input);
+        self.memo.memo(input);
 
         self.inner
             .execute(execution_context, self.memo.clone())
             .await
+    }
+}
+
+impl<I> Memorable for Vec<I> {
+    fn memo(&mut self, input: Self) -> &mut std::vec::Vec<I> {
+        self.extend(input);
+        self
     }
 }
