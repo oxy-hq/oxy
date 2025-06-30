@@ -105,7 +105,7 @@
     "@types/invariant": "^2.2.37",
     "@types/js-cookie": "^3.0.6",
     "@types/lodash": "^4.17.19",
-    "@types/node": "^22.15.34",
+    "@types/node": "^24.0.7",
     "@types/nunjucks": "3.2.6",
     "@types/papaparse": "^5.3.16",
     "@types/react": "^19.1.8",
@@ -116,7 +116,7 @@
     "i": "^0.3.7",
     "rollup-plugin-visualizer": "^6.0.3",
     "typescript": "^5.8.3",
-    "vite": "^6.3.5",
+    "vite": "^7.0.0",
     "vite-plugin-node-polyfills": "^0.23.0"
   },
   "version": "0.2.15"
