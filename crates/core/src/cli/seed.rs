@@ -1,6 +1,6 @@
 use crate::{db::client::establish_connection, errors::OxyError, theme::StyledText};
 use entity::prelude::{Threads, Users};
-use entity::users;
+use entity::users::{self, UserRole, UserStatus};
 use sea_orm::{ActiveModelTrait, ActiveValue, ColumnTrait, EntityTrait, QueryFilter, Set};
 use uuid::Uuid;
 
@@ -71,6 +71,8 @@ pub async fn seed_test_users() -> Result<Vec<users::Model>, OxyError> {
             email_verification_token: ActiveValue::not_set(),
             created_at: ActiveValue::not_set(), // Will use database default
             last_login_at: ActiveValue::not_set(), // Will use database default
+            role: ActiveValue::Set(UserRole::Member),
+            status: ActiveValue::Set(UserStatus::Active),
         };
 
         let user = new_user

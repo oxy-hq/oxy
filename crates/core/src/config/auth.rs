@@ -1,8 +1,24 @@
+use email_address::EmailAddress;
 use garde::Validate;
 use serde::{Deserialize, Serialize};
 
 use crate::config::{constants::DEFAULT_API_KEY_HEADER, validate::ValidationContext};
 use schemars::JsonSchema;
+
+fn is_valid_email(email: &str) -> bool {
+    EmailAddress::is_valid(email)
+}
+
+fn validate_admin_emails(admins: &Option<Vec<String>>, _ctx: &ValidationContext) -> garde::Result {
+    if let Some(admins) = admins {
+        for email in admins {
+            if !is_valid_email(email) {
+                return Err(garde::Error::new("Invalid email in admins"));
+            }
+        }
+    }
+    Ok(())
+}
 
 #[derive(Serialize, Deserialize, Validate, Debug, Clone, JsonSchema)]
 #[garde(context(ValidationContext))]
@@ -14,6 +30,8 @@ pub struct Authentication {
     #[garde(dive)]
     #[serde(default = "default_api_key_config")]
     pub api_key: Option<ApiKeyAuth>,
+    #[garde(custom(validate_admin_emails))]
+    pub admins: Option<Vec<String>>,
 }
 
 #[derive(Serialize, Deserialize, Validate, Debug, Clone, JsonSchema)]

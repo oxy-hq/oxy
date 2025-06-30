@@ -1,5 +1,5 @@
 use clap::ValueEnum;
-use entity::users;
+use entity::users::{self, UserRole, UserStatus};
 
 #[derive(Debug, Clone, ValueEnum, PartialEq, Copy)]
 pub enum AuthMode {
@@ -28,6 +28,8 @@ pub struct AuthenticatedUser {
     pub email: String,
     pub name: String,
     pub picture: Option<String>,
+    pub role: UserRole,
+    pub status: UserStatus,
 }
 
 impl From<users::Model> for AuthenticatedUser {
@@ -37,6 +39,8 @@ impl From<users::Model> for AuthenticatedUser {
             email: user.email,
             name: user.name,
             picture: user.picture,
+            role: user.role,
+            status: user.status,
         }
     }
 }

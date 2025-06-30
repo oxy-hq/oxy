@@ -1,8 +1,4 @@
-use std::{
-    collections::HashMap,
-    fs::File,
-    path::{Path, PathBuf},
-};
+use std::{collections::HashMap, fs::File, path::PathBuf};
 
 use futures::StreamExt;
 use tokio::fs::{create_dir_all, read_dir, read_to_string};
@@ -396,7 +392,7 @@ impl Storage for SemanticFileStorage {
             Vec::new()
         };
         for file in &deleted_files {
-            get_file_stem(file).split('.').next().map(|name| {
+            if let Some(name) = get_file_stem(file).split('.').next() {
                 dimensions.push(SyncDimension::DeletedRef {
                     src: SemanticTableRef {
                         database: key.database.clone(),
@@ -404,7 +400,7 @@ impl Storage for SemanticFileStorage {
                         table: name.to_string(),
                     },
                 });
-            });
+            }
         }
 
         Ok(SyncOperationResult::with_tracking(

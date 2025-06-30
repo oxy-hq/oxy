@@ -55,11 +55,18 @@ const apiKeyKeys = {
   item: (id: string) => [...apiKeyKeys.all, { id }] as const,
 };
 
+const userKeys = {
+  all: ["user"] as const,
+  list: () => [...userKeys.all, "list"] as const,
+  current: () => [...userKeys.all, "current"] as const,
+};
+
 const queryKeys = {
   conversation: conversationKeys,
   agent: agentKeys,
   thread: threadKeys,
   apiKey: apiKeyKeys,
+  user: userKeys,
   workflow: workflowKeys,
   chart: chartKeys,
   file: fileKeys,

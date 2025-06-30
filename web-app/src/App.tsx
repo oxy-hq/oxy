@@ -21,6 +21,7 @@ import EditorPage from "./pages/ide/Editor";
 import AppPage from "./pages/app";
 import ApiKeyManagement from "./pages/api-keys";
 import DatabaseManagement from "./pages/databases";
+import UserManagement from "./pages/users";
 import { HotkeysProvider } from "react-hotkeys-hook";
 import LoginPage from "./pages/login";
 import RegisterPage from "./pages/register";
@@ -100,6 +101,14 @@ const MainLayout = React.memo(function MainLayout() {
           element={
             <PageWrapper>
               <DatabaseManagement />
+            </PageWrapper>
+          }
+        />
+        <Route
+          path="/users"
+          element={
+            <PageWrapper>
+              <UserManagement />
             </PageWrapper>
           }
         />

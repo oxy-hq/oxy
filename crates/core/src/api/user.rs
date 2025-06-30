@@ -1,27 +1,32 @@
 use crate::auth::extractor::AuthenticatedUserExtractor;
-use crate::auth::types::AuthMode;
-use axum::{Json, extract, extract::State, http::StatusCode};
+use crate::auth::types::{AuthMode, AuthenticatedUser};
+use crate::auth::user::UserService;
+use axum::{
+    extract::{Json as JsonExtractor, Path, State},
+    http::StatusCode,
+    response::Json,
+};
+use entity::users::{UserRole, UserStatus};
+use sea_orm::EntityTrait;
 use serde::{Deserialize, Serialize};
 use std::env;
 use url::Url;
+use uuid::Uuid;
 
 #[derive(Serialize)]
-pub struct UserResponse {
+pub struct UserListResponse {
+    pub users: Vec<UserInfo>,
+    pub total: usize,
+}
+
+#[derive(Serialize)]
+pub struct UserInfo {
     pub id: String,
     pub email: String,
     pub name: String,
     pub picture: Option<String>,
-}
-
-#[derive(Deserialize)]
-pub struct UpdateUserRequest {
-    pub name: Option<String>,
-    pub picture: Option<String>,
-}
-
-#[derive(Serialize)]
-pub struct CognitoLogoutResponse {
-    pub logout_url: String,
+    pub role: String,
+    pub status: String,
 }
 
 #[derive(Serialize)]
@@ -31,44 +36,135 @@ pub struct LogoutResponse {
     pub message: String,
 }
 
-/// Get current authenticated user information
-pub async fn get_current_user(
-    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
-) -> Result<extract::Json<UserResponse>, StatusCode> {
-    let user_response = UserResponse {
-        id: user.id.to_string(),
-        email: user.email,
-        name: user.name,
-        picture: user.picture,
-    };
-    Ok(extract::Json(user_response))
+#[derive(Serialize)]
+pub struct MessageResponse {
+    pub message: String,
 }
 
-/// Update current user profile
-pub async fn update_current_user(
-    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
-    extract::Json(update_request): extract::Json<UpdateUserRequest>,
-) -> Result<extract::Json<UserResponse>, StatusCode> {
-    use crate::auth::user::UserService;
+#[derive(Deserialize)]
+pub struct UpdateUserRequest {
+    pub status: Option<String>,
+    pub role: Option<String>,
+}
 
-    let updated_user =
-        UserService::update_user_profile(user.id, update_request.name, update_request.picture)
+impl From<AuthenticatedUser> for UserInfo {
+    fn from(user: AuthenticatedUser) -> Self {
+        Self {
+            id: user.id.to_string(),
+            email: user.email,
+            name: user.name,
+            picture: user.picture,
+            role: user.role.as_str().to_string(),
+            status: user.status.as_str().to_string(),
+        }
+    }
+}
+
+pub async fn list_users(
+    _user: AuthenticatedUserExtractor,
+) -> Result<Json<UserListResponse>, StatusCode> {
+    let users = UserService::list_all_users().await.map_err(|e| {
+        tracing::error!("Failed to list users: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    let user_infos: Vec<UserInfo> = users.into_iter().map(|user| user.into()).collect();
+    let total = user_infos.len();
+
+    Ok(Json(UserListResponse {
+        users: user_infos,
+        total,
+    }))
+}
+
+pub async fn delete_user(
+    AuthenticatedUserExtractor(current_user): AuthenticatedUserExtractor,
+    Path(user_id): Path<String>,
+) -> Result<Json<MessageResponse>, StatusCode> {
+    let user_uuid = Uuid::parse_str(&user_id).map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    // Prevent users from deleting themselves
+    if current_user.id == user_uuid {
+        tracing::warn!(
+            "User {} attempted to delete their own account",
+            current_user.email
+        );
+        return Err(StatusCode::FORBIDDEN);
+    }
+
+    UserService::delete_user(user_uuid).await.map_err(|e| {
+        tracing::error!("Failed to delete user: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    Ok(Json(MessageResponse {
+        message: "User deleted successfully".to_string(),
+    }))
+}
+
+pub async fn update_user(
+    AuthenticatedUserExtractor(current_user): AuthenticatedUserExtractor,
+    Path(user_id): Path<String>,
+    JsonExtractor(payload): JsonExtractor<UpdateUserRequest>,
+) -> Result<Json<MessageResponse>, StatusCode> {
+    let user_uuid = Uuid::parse_str(&user_id).map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    // Validate status if provided
+    if let Some(ref status_str) = payload.status {
+        if ![UserStatus::Active.as_str(), UserStatus::Deleted.as_str()]
+            .contains(&status_str.as_str())
+        {
+            return Err(StatusCode::BAD_REQUEST);
+        }
+
+        let status = UserStatus::from_str(status_str).map_err(|_| StatusCode::BAD_REQUEST)?;
+
+        // Prevent users from setting their own status to "deleted"
+        if current_user.id == user_uuid && status == UserStatus::Deleted {
+            tracing::warn!(
+                "User {} attempted to delete their own account via status update",
+                current_user.email
+            );
+            return Err(StatusCode::FORBIDDEN);
+        }
+
+        // Prevent admins from being deactivated
+        if status == UserStatus::Deleted && current_user.id != user_uuid {
+            // Get the target user to check their role
+            let connection = crate::db::client::establish_connection().await;
+            let target_user = entity::prelude::Users::find_by_id(user_uuid)
+                .one(&connection)
+                .await
+                .map_err(|e| {
+                    tracing::error!("Failed to get target user: {}", e);
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?;
+
+            if let Some(target_user) = target_user {
+                if target_user.role == UserRole::Admin {
+                    tracing::warn!(
+                        "User {} attempted to deactivate admin {}",
+                        current_user.email,
+                        target_user.email
+                    );
+                    return Err(StatusCode::FORBIDDEN);
+                }
+            }
+        }
+
+        UserService::update_user_status(user_uuid, status)
             .await
             .map_err(|e| {
-                tracing::error!("Failed to update user profile: {}", e);
+                tracing::error!("Failed to update user status: {}", e);
                 StatusCode::INTERNAL_SERVER_ERROR
             })?;
+    }
 
-    let user_response = UserResponse {
-        id: updated_user.id.to_string(),
-        email: updated_user.email,
-        name: updated_user.name,
-        picture: updated_user.picture,
-    };
-    Ok(extract::Json(user_response))
+    Ok(Json(MessageResponse {
+        message: "User updated successfully".to_string(),
+    }))
 }
 
-/// General logout endpoint that handles different authentication modes
 pub async fn logout(State(auth_mode): State<AuthMode>) -> Result<Json<LogoutResponse>, StatusCode> {
     match auth_mode {
         AuthMode::Cognito => {
@@ -113,4 +209,10 @@ pub async fn logout(State(auth_mode): State<AuthMode>) -> Result<Json<LogoutResp
             }))
         }
     }
+}
+
+pub async fn get_current_user(
+    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
+) -> Result<Json<UserInfo>, StatusCode> {
+    Ok(Json(user.into()))
 }

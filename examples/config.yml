@@ -122,3 +122,10 @@ authentication:
     client_secret_var: GOOGLE_CLIENT_SECRET
   api_key:
     header: X-API-KEY
+  admins:
+    - luong@hyperquery.ai
+    - tay@hyperquery.ai
+    - mars@hyperquery.ai
+    - hai@hyperquery.ai
+    - nick@oxy.tech
+    - robert@oxy.tech

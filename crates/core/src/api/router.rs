@@ -8,7 +8,7 @@ use crate::api::file;
 use crate::api::thread;
 use crate::api::user;
 use crate::api::workflow;
-use crate::auth::middleware::{AuthState, auth_middleware};
+use crate::auth::middleware::{AuthState, admin_middleware, auth_middleware};
 use crate::auth::types::AuthMode;
 use crate::config::ConfigBuilder;
 use crate::db::client::establish_connection;
@@ -21,6 +21,7 @@ use axum::routing::put;
 use axum::routing::{get, post};
 use migration::Migrator;
 use migration::MigratorTrait;
+use tower::ServiceBuilder;
 use tower_http::cors::{Any, CorsLayer};
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
@@ -62,10 +63,11 @@ pub async fn api_router(auth_mode: AuthMode) -> Result<Router, OxyError> {
         .route("/auth/google", post(auth::google_auth))
         .route("/auth/validate_email", post(auth::validate_email));
 
-    let mut protected_routes = Router::new()
-        .route("/user", get(user::get_current_user))
-        .route("/user", put(user::update_current_user))
+    // Regular protected routes (only auth_middleware)
+    let regular_routes = Router::new()
+        .route("/users", get(user::list_users))
         .route("/logout", get(user::logout))
+        .route("/me", get(user::get_current_user))
         .route("/threads", get(thread::get_threads))
         .route("/threads/{id}", get(thread::get_thread))
         .route("/artifacts/{id}", get(artifacts::get_artifact))
@@ -120,30 +122,74 @@ pub async fn api_router(auth_mode: AuthMode) -> Result<Router, OxyError> {
         .route("/databases", get(database::list_databases))
         .route("/databases/sync", post(database::sync_database))
         .route("/databases/build", post(data::build_embeddings))
-        // API Key management routes
         .route("/api-keys", post(api_keys::create_api_key))
         .route("/api-keys", get(api_keys::list_api_keys))
         .route("/api-keys/{id}", get(api_keys::get_api_key))
         .route("/api-keys/{id}", delete(api_keys::delete_api_key));
 
-    protected_routes = match auth_mode {
-        AuthMode::IAP => protected_routes.route_layer(middleware::from_fn_with_state(
+    // Admin-only routes with explicit middleware ordering: auth_middleware -> admin_middleware
+    let admin_routes = Router::new()
+        .route("/users/{id}", delete(user::delete_user))
+        .route("/users/{id}", put(user::update_user));
+
+    // Apply middleware to regular routes (only auth)
+    let protected_regular_routes = match auth_mode {
+        AuthMode::IAP => regular_routes.layer(middleware::from_fn_with_state(
             AuthState::iap()?,
             auth_middleware,
         )),
-        AuthMode::IAPCloudRun => protected_routes.route_layer(middleware::from_fn_with_state(
+        AuthMode::IAPCloudRun => regular_routes.layer(middleware::from_fn_with_state(
             AuthState::iap_cloud_run(),
             auth_middleware,
         )),
-        AuthMode::Cognito => protected_routes.route_layer(middleware::from_fn_with_state(
+        AuthMode::Cognito => regular_routes.layer(middleware::from_fn_with_state(
             AuthState::cognito(),
             auth_middleware,
         )),
-        AuthMode::BuiltIn => protected_routes.route_layer(middleware::from_fn_with_state(
-            AuthState::built_in(auth),
+        AuthMode::BuiltIn => regular_routes.layer(middleware::from_fn_with_state(
+            AuthState::built_in(auth.clone()),
             auth_middleware,
         )),
     };
+
+    // Apply middleware to admin routes (auth + admin) with explicit ordering
+    let protected_admin_routes = match auth_mode {
+        AuthMode::IAP => {
+            let auth_state = AuthState::iap()?;
+            admin_routes.layer(
+                ServiceBuilder::new()
+                    .layer(middleware::from_fn_with_state(auth_state, auth_middleware))
+                    .layer(middleware::from_fn(admin_middleware)),
+            )
+        }
+        AuthMode::IAPCloudRun => {
+            let auth_state = AuthState::iap_cloud_run();
+            admin_routes.layer(
+                ServiceBuilder::new()
+                    .layer(middleware::from_fn_with_state(auth_state, auth_middleware))
+                    .layer(middleware::from_fn(admin_middleware)),
+            )
+        }
+        AuthMode::Cognito => {
+            let auth_state = AuthState::cognito();
+            admin_routes.layer(
+                ServiceBuilder::new()
+                    .layer(middleware::from_fn_with_state(auth_state, auth_middleware))
+                    .layer(middleware::from_fn(admin_middleware)),
+            )
+        }
+        AuthMode::BuiltIn => {
+            let auth_state = AuthState::built_in(auth);
+            admin_routes.layer(
+                ServiceBuilder::new()
+                    .layer(middleware::from_fn_with_state(auth_state, auth_middleware))
+                    .layer(middleware::from_fn(admin_middleware)),
+            )
+        }
+    };
+
+    // Merge all protected routes
+    let protected_routes = protected_regular_routes.merge(protected_admin_routes);
 
     let app_routes = public_routes.merge(protected_routes);
 
