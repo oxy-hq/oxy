@@ -86,9 +86,9 @@ rmcp = {git="https://github.com/modelcontextprotocol/rust-sdk.git", rev="9d6f9a2
 serde_with = "3.13.0"
 # we use chrono::DateTimeWithTimeZone, which is not currently supported by utoipa
 # need to use this until this PR is released https://github.com/juhaku/utoipa/pull/1367
-utoipa = {git="https://github.com/haitrr/utoipa.git", rev="7fbfdea", features = ["uuid", "chrono", "axum_extras"] }
-utoipa-axum = {git="https://github.com/haitrr/utoipa.git",rev="7fbfdea" }
-utoipa-swagger-ui={git="https://github.com/haitrr/utoipa.git",rev="7fbfdea", features = ["axum"] }
+utoipa = {git="https://github.com/haitrr/utoipa.git", rev="776f86e", features = ["uuid", "chrono", "axum_extras"] }
+utoipa-axum = {git="https://github.com/haitrr/utoipa.git",rev="776f86e" }
+utoipa-swagger-ui={git="https://github.com/haitrr/utoipa.git",rev="776f86e", features = ["axum"] }
 strip-ansi-escapes = "=0.2.1"
 regex = "1.11.1"
 url = "2.5.4"
