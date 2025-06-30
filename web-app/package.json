@@ -50,7 +50,7 @@
     "@uiw/codemirror-themes": "^4.23.14",
     "@uiw/react-codemirror": "^4.23.14",
     "@xyflow/react": "^12.8.1",
-    "axios": "^1.10.0",
+    "axios": "^1.8.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
@@ -116,7 +116,7 @@
     "i": "^0.3.7",
     "rollup-plugin-visualizer": "^6.0.3",
     "typescript": "^5.8.3",
-    "vite": "^6.3.5",
+    "vite": "^6.1.6",
     "vite-plugin-node-polyfills": "^0.23.0"
   },
   "version": "0.2.15"
