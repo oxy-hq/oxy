@@ -15,6 +15,8 @@ mod m20250609_000001_create_api_keys_table;
 mod m20250609_015141_Add_artifacts;
 mod m20250611_015638_add_tokens_to_messages;
 mod m20250613_090405_add_auth_fields_to_users;
+mod m20250624_100000_add_role_to_users;
+mod m20250625_000001_add_status_to_users;
 
 pub struct Migrator;
 
@@ -37,6 +39,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20250609_015141_Add_artifacts::Migration),
             Box::new(m20250611_015638_add_tokens_to_messages::Migration),
             Box::new(m20250613_090405_add_auth_fields_to_users::Migration),
+            Box::new(m20250624_100000_add_role_to_users::Migration),
+            Box::new(m20250625_000001_add_status_to_users::Migration),
         ]
     }
 }

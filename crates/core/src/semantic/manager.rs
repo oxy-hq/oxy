@@ -1,7 +1,6 @@
 use itertools::Itertools;
 use std::{
     collections::HashSet,
-    path::PathBuf,
     str::FromStr,
     sync::{Arc, Mutex},
     time::Instant,

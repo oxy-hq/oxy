@@ -32,7 +32,7 @@ impl Object for SemanticModels {
         self.dimensions
             .iter()
             .find(|dim| dim.name == key)
-            .map(|dim| minijinja::value::Value::from_serialize(dim))
+            .map(minijinja::value::Value::from_serialize)
     }
 
     fn render(self: &Arc<Self>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result
@@ -141,13 +141,12 @@ impl SemanticVariablesContexts {
     }
 
     pub fn get_base_schema(&self, target: &str) -> Option<&SchemaObject> {
-        let dim = target.split('.').last()?;
+        let dim = target.split('.').next_back()?;
         let table_ref = SemanticTableRef::from_str(target).ok()?;
         match self
             .variables
             .get(&table_ref.table)
-            .map(|v| v.variables.get(dim))
-            .flatten()
+            .and_then(|v| v.variables.get(dim))
         {
             Some(variable) => Some(variable),
             None => {

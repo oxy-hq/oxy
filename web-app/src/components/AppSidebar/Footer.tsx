@@ -1,4 +1,4 @@
-import { User2, LogOut, Key, Database } from "lucide-react";
+import { User2, LogOut, Key, Database, Users } from "lucide-react";
 import { useEffect, useState } from "react";
 import { SidebarMenu, SidebarMenuItem } from "@/components/ui/shadcn/sidebar";
 import { useNavigate } from "react-router-dom";
@@ -11,13 +11,13 @@ import {
   DropdownMenuTrigger,
 } from "../ui/shadcn/dropdown-menu";
 
-interface UserInfo {
+interface IAPUserInfo {
   email: string;
   picture?: string;
 }
 
 export function Footer() {
-  const [userIAPInfo, setUserIAPInfo] = useState<UserInfo | null>(null);
+  const [userIAPInfo, setUserIAPInfo] = useState<IAPUserInfo | null>(null);
   const navigate = useNavigate();
   const { logout, getUser, authConfig } = useAuth();
 
@@ -90,7 +90,14 @@ export function Footer() {
                   onClick={() => navigate("/databases")}
                 >
                   <Database className="w-4 h-4 mr-2" />
-                  <span>Data Management</span>
+                  <span>Databases</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="cursor-pointer"
+                  onClick={() => navigate("/users")}
+                >
+                  <Users className="w-4 h-4 mr-2" />
+                  <span>Users</span>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem

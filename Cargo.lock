@@ -2901,6 +2901,7 @@ version = "0.2.15"
 dependencies = [
  "chrono",
  "sea-orm",
+ "serde",
 ]
 
 [[package]]
@@ -5850,6 +5851,7 @@ dependencies = [
  "dirs 6.0.0",
  "dotenv",
  "duckdb",
+ "email_address",
  "entity",
  "enum_dispatch",
  "fehler",

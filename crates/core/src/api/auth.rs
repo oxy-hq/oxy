@@ -6,19 +6,20 @@ use axum::{
 };
 use bcrypt::{DEFAULT_COST, hash, verify};
 use chrono::{Duration, Utc};
-use entity::{prelude::Users, users};
+use entity::{prelude::Users, users, users::UserStatus};
 use jsonwebtoken::{EncodingKey, Header, encode};
 use lettre::transport::smtp::authentication::Credentials;
 use lettre::{Message, SmtpTransport, Transport};
-use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set};
+use sea_orm::{ActiveModelTrait, EntityTrait, Set};
 use serde::{Deserialize, Serialize};
 use url::Url;
 use uuid::Uuid;
 
 use crate::auth::types::AuthMode;
+use crate::auth::user::UserService;
 use crate::{
     config::{ConfigBuilder, constants::AUTHENTICATION_SECRET_KEY},
-    db::client::establish_connection,
+    db::{client::establish_connection, filters::UserQueryFilterExt},
     errors::OxyError,
     utils::find_project_path,
 };
@@ -141,7 +142,7 @@ pub async fn login(
     let connection = establish_connection().await;
 
     let user = Users::find()
-        .filter(users::Column::Email.eq(&login_request.email))
+        .filter_active_by_email(&login_request.email)
         .one(&connection)
         .await
         .map_err(|e| {
@@ -218,7 +219,7 @@ pub async fn register(
     let connection = establish_connection().await;
 
     let existing_user = Users::find()
-        .filter(users::Column::Email.eq(&register_request.email))
+        .filter_by_email(&register_request.email)
         .one(&connection)
         .await
         .map_err(|e| {
@@ -226,13 +227,27 @@ pub async fn register(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
-    if existing_user.is_some() {
-        return Err(StatusCode::CONFLICT);
+    match existing_user {
+        Some(user) if user.status == UserStatus::Active => {
+            return Err(StatusCode::CONFLICT);
+        }
+        Some(user) if user.status == UserStatus::Deleted => {
+            // User account has been deleted - unauthorized
+            tracing::warn!(
+                "Deleted user {} attempted to register again",
+                register_request.email
+            );
+            return Err(StatusCode::UNAUTHORIZED);
+        }
+        _ => {
+            // No existing user or other status, proceed with normal registration
+        }
     }
 
     let password_hash = hash_password(&register_request.password);
-
     let verification_token = Uuid::new_v4().to_string();
+
+    let role = UserService::determine_user_role(&register_request.email).await;
 
     let new_user = users::ActiveModel {
         id: Set(Uuid::new_v4()),
@@ -242,6 +257,8 @@ pub async fn register(
         password_hash: Set(Some(password_hash)),
         email_verified: Set(false),
         email_verification_token: Set(Some(verification_token.clone())),
+        role: Set(role),
+        status: Set(UserStatus::Active),
         created_at: sea_orm::ActiveValue::NotSet,
         last_login_at: sea_orm::ActiveValue::NotSet,
     };
@@ -260,7 +277,12 @@ pub async fn register(
         }
     });
 
-    tracing::info!("Created new user: {} ({})", user.email, user.id);
+    tracing::info!(
+        "Created new user: {} ({}) with role: {}",
+        user.email,
+        user.id,
+        user.role.as_str()
+    );
 
     Ok(Json(MessageResponse {
         message: "User registered successfully. Please check your email for verification."
@@ -284,14 +306,35 @@ pub async fn google_auth(
     let connection = establish_connection().await;
 
     let user = match Users::find()
-        .filter(users::Column::Email.eq(&user_info.email))
+        .filter_by_email(&user_info.email)
         .one(&connection)
         .await
         .map_err(|e| {
             tracing::error!("Failed to query user: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
         })? {
+        Some(existing_user) if existing_user.status == UserStatus::Active => {
+            // Update existing active user
+            let mut user_update: users::ActiveModel = existing_user.clone().into();
+            user_update.name = Set(user_info.name.clone());
+            user_update.picture = Set(user_info.picture.clone());
+            user_update.email_verified = Set(true);
+            user_update.last_login_at = Set(chrono::Utc::now().into());
+            user_update.update(&connection).await.map_err(|e| {
+                tracing::error!("Failed to update user: {}", e);
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?
+        }
+        Some(existing_user) if existing_user.status == UserStatus::Deleted => {
+            // User account has been deleted - unauthorized
+            tracing::warn!(
+                "Deleted user {} attempted to authenticate via Google",
+                user_info.email
+            );
+            return Err(StatusCode::UNAUTHORIZED);
+        }
         Some(existing_user) => {
+            // Handle any other status - update existing user info
             let mut user_update: users::ActiveModel = existing_user.clone().into();
             user_update.name = Set(user_info.name.clone());
             user_update.picture = Set(user_info.picture.clone());
@@ -303,6 +346,8 @@ pub async fn google_auth(
             })?
         }
         None => {
+            let role = UserService::determine_user_role(&user_info.email).await;
+
             let new_user = users::ActiveModel {
                 id: Set(Uuid::new_v4()),
                 email: Set(user_info.email.clone()),
@@ -311,6 +356,8 @@ pub async fn google_auth(
                 password_hash: Set(None),
                 email_verified: Set(true),
                 email_verification_token: Set(None),
+                role: Set(role),
+                status: Set(UserStatus::Active),
                 created_at: sea_orm::ActiveValue::NotSet,
                 last_login_at: sea_orm::ActiveValue::NotSet,
             };
@@ -346,7 +393,7 @@ pub async fn validate_email(
     let connection = establish_connection().await;
 
     let user = Users::find()
-        .filter(users::Column::EmailVerificationToken.eq(&validate_request.token))
+        .filter_active_by_verification_token(&validate_request.token)
         .one(&connection)
         .await
         .map_err(|e| {

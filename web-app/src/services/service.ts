@@ -23,6 +23,8 @@ import {
   AuthResponse,
   MessageResponse,
   AuthConfigResponse,
+  UserListResponse,
+  UserInfo,
 } from "@/types/auth";
 
 export interface Service {
@@ -102,6 +104,14 @@ export interface Service {
   googleAuth(request: GoogleAuthRequest): Promise<AuthResponse>;
   validateEmail(request: ValidateEmailRequest): Promise<AuthResponse>;
   getAuthConfig(): Promise<AuthConfigResponse>;
+  getUsers(): Promise<UserListResponse>;
+  getCurrentUser(): Promise<UserInfo>;
+  updateUserRole(userId: string, role: string): Promise<void>;
+  updateUser(
+    userId: string,
+    updates: { status?: string; role?: string },
+  ): Promise<void>;
+  deleteUser(userId: string): Promise<void>;
 }
 
 export const service = apiService;

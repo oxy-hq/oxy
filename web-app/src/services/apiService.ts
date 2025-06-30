@@ -298,4 +298,28 @@ export const apiService: Service = {
     const response = await apiClient.get("/auth/config");
     return response.data;
   },
+
+  async getUsers() {
+    const response = await apiClient.get("/users");
+    return response.data;
+  },
+  async getCurrentUser() {
+    const response = await apiClient.get("/me");
+    return response.data;
+  },
+  async updateUserRole(userId: string, role: string) {
+    const response = await apiClient.put(`/users/${userId}/role`, { role });
+    return response.data;
+  },
+  async updateUser(
+    userId: string,
+    updates: { status?: string; role?: string },
+  ) {
+    const response = await apiClient.put(`/users/${userId}`, updates);
+    return response.data;
+  },
+  async deleteUser(userId: string) {
+    const response = await apiClient.delete(`/users/${userId}`);
+    return response.data;
+  },
 };

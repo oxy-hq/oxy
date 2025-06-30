@@ -27,6 +27,8 @@ export interface UserInfo {
   email: string;
   name: string;
   picture?: string;
+  role: string;
+  status: string;
 }
 
 export interface MessageResponse {
@@ -40,4 +42,19 @@ export interface AuthConfigResponse {
     client_id: string;
   };
   basic?: boolean;
+}
+
+export interface UserListResponse {
+  users: UserInfo[];
+  total: number;
+}
+
+export interface CreateUserRequest {
+  email: string;
+  name: string;
+  role?: string;
+}
+
+export interface UpdateUserRoleRequest {
+  role: string;
 }

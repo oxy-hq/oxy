@@ -1144,6 +1144,13 @@ pub async fn start_server_and_web_app(mut web_port: u16, web_host: String, auth_
             "Web app running at".text(),
             format!("http://{}:{}", display_host, web_port).secondary()
         );
+
+        if let Err(e) = crate::auth::user::UserService::sync_admin_roles_from_config().await {
+            tracing::warn!("Failed to sync admin roles: {}", e);
+        } else {
+            tracing::info!("Admin roles synced successfully");
+        }
+
         axum::serve(listener, web_app)
             .with_graceful_shutdown(shutdown_signal())
             .await

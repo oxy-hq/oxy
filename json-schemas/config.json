@@ -59,6 +59,15 @@
     "Authentication": {
       "type": "object",
       "properties": {
+        "admins": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
         "api_key": {
           "default": {
             "header": "X-API-KEY"

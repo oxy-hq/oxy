@@ -1,6 +1,6 @@
 use axum::{
-    extract::{Request, State},
-    http::StatusCode,
+    extract::State,
+    http::{Request, StatusCode},
     middleware::Next,
     response::Response,
 };
@@ -13,7 +13,10 @@ use crate::{
     errors::OxyError,
 };
 
-use super::{authenticator::Authenticator, built_in::BuiltInAuthenticator};
+use super::{
+    authenticator::Authenticator, built_in::BuiltInAuthenticator, types::AuthenticatedUser,
+};
+use entity::users::{UserRole, UserStatus};
 
 pub struct AuthState<T> {
     authenticator: Arc<T>,
@@ -67,7 +70,7 @@ impl AuthState<BuiltInAuthenticator> {
 /// Authentication middleware that validates JWT tokens from Google IAP
 pub async fn auth_middleware<T: Authenticator>(
     State(auth_state): State<AuthState<T>>,
-    mut request: Request,
+    mut request: Request<axum::body::Body>,
     next: Next,
 ) -> Result<Response, StatusCode> {
     let headers = request.headers();
@@ -90,8 +93,38 @@ pub async fn auth_middleware<T: Authenticator>(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
+    // Check if user is active
+    if user.status != UserStatus::Active {
+        tracing::warn!(
+            "Inactive user {} (status: {}) attempted to access protected route",
+            user.email,
+            user.status.as_str()
+        );
+        return Err(StatusCode::FORBIDDEN);
+    }
+
     // Add user to request extensions for downstream handlers
     request.extensions_mut().insert(user);
+
+    Ok(next.run(request).await)
+}
+
+pub async fn admin_middleware(
+    request: Request<axum::body::Body>,
+    next: Next,
+) -> Result<Response, StatusCode> {
+    let user = request
+        .extensions()
+        .get::<AuthenticatedUser>()
+        .ok_or(StatusCode::UNAUTHORIZED)?;
+
+    if user.role != UserRole::Admin {
+        tracing::warn!(
+            "Non-admin user {} attempted to access admin route",
+            user.email
+        );
+        return Err(StatusCode::FORBIDDEN);
+    }
 
     Ok(next.run(request).await)
 }
