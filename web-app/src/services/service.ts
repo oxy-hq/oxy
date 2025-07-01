@@ -2,8 +2,8 @@ import {
   ThreadCreateRequest,
   ThreadItem,
   Answer,
-  MessageItem,
   ThreadsResponse,
+  Message,
 } from "@/types/chat";
 
 import { apiService } from "./apiService";
@@ -85,7 +85,7 @@ export interface Service {
     database: string;
   }): Promise<{ workflow: Workflow }>;
   getArtifact(id: string): Promise<Artifact>;
-  getThreadMessages(threadId: string): Promise<MessageItem[]>;
+  getThreadMessages(threadId: string): Promise<Message[]>;
   syncDatabase(
     database?: string,
     options?: { datasets?: string[] },

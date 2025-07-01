@@ -12,6 +12,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 
 use crate::config::model::Workflow;
+use crate::service::thread::streaming_workflow_persister::StreamingWorkflowPersister;
 use crate::service::workflow as service;
 use crate::service::workflow::WorkflowInfo;
 use crate::service::workflow::get_workflow;
@@ -101,6 +102,7 @@ pub async fn get_logs(
 
 pub async fn build_workflow_api_logger(
     full_workflow_path: &PathBuf,
+    handler: Option<Arc<StreamingWorkflowPersister>>,
 ) -> (WorkflowAPILogger, mpsc::Receiver<LogItem>) {
     let full_workflow_path_b64: String =
         BASE64_STANDARD.encode(full_workflow_path.to_str().unwrap());
@@ -118,6 +120,12 @@ pub async fn build_workflow_api_logger(
         .unwrap();
     let api_logger: WorkflowAPILogger =
         WorkflowAPILogger::new(sender, Some(Arc::new(Mutex::new(file))));
+
+    let api_logger = if let Some(handler) = handler {
+        api_logger.with_streaming_persister(handler)
+    } else {
+        api_logger
+    };
     (api_logger, receiver)
 }
 
@@ -140,7 +148,7 @@ pub async fn run_workflow(Path(pathb64): Path<String>) -> Result<impl IntoRespon
     let project_path = find_project_path()?;
 
     let full_workflow_path = project_path.join(&path);
-    let (logger, receiver) = build_workflow_api_logger(&full_workflow_path).await;
+    let (logger, receiver) = build_workflow_api_logger(&full_workflow_path, None).await;
 
     let _ = tokio::spawn(async move {
         tracing::info!("Workflow run started");
@@ -178,6 +186,17 @@ pub async fn run_workflow_thread(Path(id): Path<String>) -> Result<impl IntoResp
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let thread = thread.ok_or(StatusCode::NOT_FOUND)?;
 
+    if thread.is_processing {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    let mut thread_model: entity::threads::ActiveModel = thread.clone().into();
+    thread_model.is_processing = ActiveValue::Set(true);
+    thread_model
+        .update(&connection)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
     let project_path = find_project_path().map_err(|e| {
         tracing::info!("Failed to find project path: {}", e);
         StatusCode::INTERNAL_SERVER_ERROR
@@ -186,7 +205,17 @@ pub async fn run_workflow_thread(Path(id): Path<String>) -> Result<impl IntoResp
     let workflow_ref = PathBuf::from(thread.source.to_string());
 
     let full_workflow_path = project_path.join(&workflow_ref);
-    let (logger, receiver) = build_workflow_api_logger(&full_workflow_path).await;
+    let streaming_workflow_persister = Arc::new(
+        StreamingWorkflowPersister::new(connection.clone(), thread.clone())
+            .await
+            .map_err(|err| {
+                tracing::info!("Failed to create streaming workflow handler: {}", err);
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?,
+    );
+
+    let (logger, receiver) =
+        build_workflow_api_logger(&full_workflow_path, Some(streaming_workflow_persister)).await;
 
     let _ = tokio::spawn(async move {
         let _ = service::run_workflow(&workflow_ref, logger, false, None).await;
@@ -195,6 +224,7 @@ pub async fn run_workflow_thread(Path(id): Path<String>) -> Result<impl IntoResp
             let mut thread_model: entity::threads::ActiveModel = thread.into();
             let logs_json = serde_json::to_string(&logs).unwrap_or_default();
             thread_model.output = ActiveValue::Set(logs_json);
+            thread_model.is_processing = ActiveValue::Set(false);
             let _ = thread_model.update(&connection).await;
             tracing::info!("Thread updated with logs");
         }

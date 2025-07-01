@@ -16,14 +16,16 @@ impl StreamDispatcher {
     }
 
     pub async fn send_text(&self, content: String, step: &str) -> Result<(), OxyError> {
-        self.sender
+        let _ = self
+            .sender
             .send(AnswerStream {
                 content: AnswerContent::Text { content },
                 references: vec![],
                 is_error: false,
                 step: step.to_string(),
             })
-            .await?;
+            .await
+            .map_err(|_| ());
         Ok(())
     }
 
@@ -35,7 +37,8 @@ impl StreamDispatcher {
         is_verified: bool,
         step: &str,
     ) -> Result<(), OxyError> {
-        self.sender
+        let _ = self
+            .sender
             .send(AnswerStream {
                 content: AnswerContent::ArtifactStarted {
                     id: id.to_string(),
@@ -47,19 +50,22 @@ impl StreamDispatcher {
                 is_error: false,
                 step: step.to_string(),
             })
-            .await?;
+            .await
+            .map_err(|_| ());
         Ok(())
     }
 
     pub async fn send_artifact_done(&self, id: &str, step: &str) -> Result<(), OxyError> {
-        self.sender
+        let _ = self
+            .sender
             .send(AnswerStream {
                 content: AnswerContent::ArtifactDone { id: id.to_string() },
                 references: vec![],
                 is_error: false,
                 step: step.to_string(),
             })
-            .await?;
+            .await
+            .map_err(|_| ());
         Ok(())
     }
 
@@ -69,7 +75,8 @@ impl StreamDispatcher {
         value: ArtifactValue,
         step: &str,
     ) -> Result<(), OxyError> {
-        self.sender
+        let _ = self
+            .sender
             .send(AnswerStream {
                 content: AnswerContent::ArtifactValue {
                     id: id.to_string(),
@@ -79,19 +86,22 @@ impl StreamDispatcher {
                 is_error: false,
                 step: step.to_string(),
             })
-            .await?;
+            .await
+            .map_err(|_| ());
         Ok(())
     }
 
     pub async fn send_usage(&self, usage: Usage, step: &str) -> Result<(), OxyError> {
-        self.sender
+        let _ = self
+            .sender
             .send(AnswerStream {
                 content: AnswerContent::Usage { usage },
                 references: vec![],
                 is_error: false,
                 step: step.to_string(),
             })
-            .await?;
+            .await
+            .map_err(|_| ());
         Ok(())
     }
 }

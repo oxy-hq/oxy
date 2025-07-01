@@ -5,7 +5,7 @@ use crate::{
     execute::types::ReferenceKind,
     service::{
         agent::{Message, run_agent},
-        formatters::BlockHandler,
+        formatters::{BlockHandler, streaming_message_persister::StreamingMessagePersister},
         types::{AnswerContent, AnswerStream},
     },
     utils::{create_sse_stream, find_project_path},
@@ -23,7 +23,7 @@ use sea_orm::{
     QueryFilter, QueryOrder, QuerySelect, prelude::DateTimeWithTimeZone,
 };
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::{path::PathBuf, sync::Arc};
 use uuid::Uuid;
 
 #[derive(Serialize)]
@@ -36,6 +36,7 @@ pub struct ThreadItem {
     pub source: String,
     pub created_at: DateTimeWithTimeZone,
     pub references: Vec<ReferenceKind>,
+    pub is_processing: bool,
 }
 
 #[derive(Serialize)]
@@ -122,6 +123,7 @@ pub async fn get_threads(
             source_type: t.source_type.clone(),
             created_at: t.created_at,
             references: serde_json::from_str(&t.references).unwrap_or_default(),
+            is_processing: t.is_processing.clone(),
         })
         .collect();
 
@@ -161,6 +163,7 @@ pub async fn get_thread(
         source: thread.source,
         created_at: thread.created_at,
         references: serde_json::from_str(&thread.references).unwrap_or_default(),
+        is_processing: thread.is_processing,
     };
     Ok(extract::Json(thread_item))
 }
@@ -180,6 +183,7 @@ pub async fn create_thread(
         source_type: ActiveValue::Set(thread_request.source_type),
         source: ActiveValue::Set(thread_request.source),
         references: ActiveValue::Set("[]".to_string()),
+        is_processing: ActiveValue::Set(false),
     };
     let thread = new_thread
         .insert(&connection)
@@ -195,20 +199,8 @@ pub async fn create_thread(
         source: thread.source,
         created_at: thread.created_at,
         references: serde_json::from_str(&thread.references).unwrap_or_default(),
+        is_processing: thread.is_processing,
     };
-
-    let message = entity::messages::ActiveModel {
-        id: ActiveValue::Set(Uuid::new_v4()),
-        content: ActiveValue::Set(thread_request.input),
-        is_human: ActiveValue::Set(true),
-        thread_id: ActiveValue::Set(thread.id),
-        created_at: ActiveValue::default(),
-        ..Default::default()
-    };
-    message.insert(&connection).await.map_err(|e| {
-        tracing::error!("Failed to insert message: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
     Ok(extract::Json(thread_item))
 }
 
@@ -292,6 +284,18 @@ pub async fn ask_thread(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let thread = thread.ok_or(StatusCode::NOT_FOUND)?;
+
+    if thread.is_processing {
+        return Err(StatusCode::CONFLICT);
+    }
+
+    let mut thread_model: entity::threads::ActiveModel = thread.clone().into();
+    thread_model.is_processing = ActiveValue::Set(true);
+    thread_model
+        .update(&connection)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
     let mut messages = Messages::find()
         .filter(
             Condition::all()
@@ -327,11 +331,7 @@ pub async fn ask_thread(
                 .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
         }
         None => {
-            if messages.len() > 1 {
-                return Err(StatusCode::BAD_REQUEST);
-            } else {
-                user_question = thread.input.clone();
-            }
+            return Err(StatusCode::BAD_REQUEST);
         }
     }
 
@@ -354,7 +354,19 @@ pub async fn ask_thread(
 
     let _ = tokio::spawn(async move {
         let tx_clone = tx.clone();
-        let block_handler = BlockHandler::new(tx);
+        let streaming_message_persister = Arc::new(
+            StreamingMessagePersister::new(connection.clone(), thread.id, "".to_owned())
+                .await
+                .map_err(|err| {
+                    OxyError::DBError(format!(
+                        "Failed to create streaming message handler: {}",
+                        err
+                    ))
+                })?,
+        );
+
+        let block_handler =
+            BlockHandler::new(tx).with_streaming_persister(streaming_message_persister.clone());
         let block_handler_reader = block_handler.get_reader();
         let result = run_agent(
             &project_path,
@@ -371,10 +383,12 @@ pub async fn ask_thread(
                 let (mut answer_message, artifacts) =
                     block_handler_reader.into_active_models().await?;
                 answer_message.thread_id = ActiveValue::Set(thread.id);
-                let message_model = answer_message.insert(&connection).await.map_err(|err| {
+                answer_message.id = ActiveValue::Set(streaming_message_persister.get_message_id());
+
+                let message_model = answer_message.update(&connection).await.map_err(|err| {
                     OxyError::DBError(format!("Failed to insert message:\n{}", err))
                 })?;
-                println!("Inserted message: {:?}", message_model);
+                println!("Updated message: {:?}", message_model);
 
                 for mut artifact in artifacts {
                     artifact.thread_id = ActiveValue::Set(thread.id);
@@ -386,24 +400,32 @@ pub async fn ask_thread(
                     })?;
                     println!("Inserted artifact: {:?}", response);
                 }
+                let mut thread_model: entity::threads::ActiveModel = thread.into();
+                thread_model.is_processing = ActiveValue::Set(false);
+                let _ = thread_model.update(&connection).await;
+
                 Result::<(), OxyError>::Ok(())
             }
             Err(err) => {
                 tracing::error!("Error running agent: {}", err);
+
                 let msg = format!("🔴 Error: {}", err);
-                let usage = block_handler_reader.usage().await?;
+
+                // Fallback: create error message normally
                 let answer_message = entity::messages::ActiveModel {
-                    id: ActiveValue::Set(Uuid::new_v4()),
+                    id: ActiveValue::Set(streaming_message_persister.get_message_id()),
                     content: ActiveValue::Set(msg.clone()),
                     is_human: ActiveValue::Set(false),
                     thread_id: ActiveValue::Set(thread.id),
                     created_at: ActiveValue::default(),
-                    input_tokens: ActiveValue::Set(usage.input_tokens),
-                    output_tokens: ActiveValue::Set(usage.output_tokens),
+                    input_tokens: ActiveValue::Set(0),
+                    output_tokens: ActiveValue::Set(0),
                 };
-                answer_message.insert(&connection).await.map_err(|err| {
+
+                let _ = answer_message.update(&connection).await.map_err(|err| {
                     OxyError::DBError(format!("Failed to insert message:\n{}", err))
                 })?;
+
                 let error_event = AnswerStream {
                     content: AnswerContent::Error { message: msg },
                     references: vec![],
@@ -414,6 +436,11 @@ pub async fn ask_thread(
                     .send(error_event)
                     .await
                     .map_err(|_| OxyError::RuntimeError("Failed to send message".to_string()))?;
+
+                let mut thread_model: entity::threads::ActiveModel = thread.into();
+                thread_model.is_processing = ActiveValue::Set(false);
+                let _ = thread_model.update(&connection).await;
+
                 Result::<(), OxyError>::Ok(())
             }
         }

@@ -4,7 +4,10 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use crate::execute::types::Table;
+use crate::{
+    execute::types::Table,
+    service::thread::streaming_workflow_persister::StreamingWorkflowPersister,
+};
 
 use super::types::{LogItem, LogType, WorkflowLogger};
 
@@ -13,6 +16,7 @@ pub struct WorkflowAPILogger {
     streaming_text: String,
     sender: tokio::sync::mpsc::Sender<LogItem>,
     writer: Option<Arc<Mutex<File>>>,
+    streaming_persister: Option<Arc<StreamingWorkflowPersister>>,
 }
 
 impl WorkflowAPILogger {
@@ -24,6 +28,7 @@ impl WorkflowAPILogger {
             sender,
             writer,
             streaming_text: String::new(),
+            streaming_persister: None,
         }
     }
 
@@ -32,7 +37,20 @@ impl WorkflowAPILogger {
             let mut file = writer.lock().unwrap();
             let _ = writeln!(file, "{}", serde_json::to_string(&log_item).unwrap());
         }
-        let _ = self.sender.try_send(log_item);
+        let _ = self.sender.try_send(log_item.clone());
+        if let Some(streaming_handler) = &self.streaming_persister {
+            let streaming_handler = Arc::clone(streaming_handler);
+            tokio::spawn(async move {
+                if let Err(e) = streaming_handler.append_output(&log_item).await {
+                    eprintln!("Failed to persist log item: {}", e);
+                }
+            });
+        }
+    }
+
+    pub fn with_streaming_persister(mut self, handler: Arc<StreamingWorkflowPersister>) -> Self {
+        self.streaming_persister = Some(handler);
+        self
     }
 }
 

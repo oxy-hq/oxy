@@ -46,7 +46,7 @@ const Header = ({
             const artifact = artifactData[artifact_id];
             return (
               artifact && (
-                <>
+                <div key={artifact.id}>
                   <BreadcrumbItem key={artifact.id}>
                     <BreadcrumbLink
                       onClick={() => {
@@ -61,7 +61,7 @@ const Header = ({
                   {index < selectedArtifactIds.length - 1 && (
                     <BreadcrumbSeparator />
                   )}
-                </>
+                </div>
               )
             );
           })}

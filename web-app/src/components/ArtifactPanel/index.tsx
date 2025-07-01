@@ -8,7 +8,7 @@ import { Artifact } from "@/services/mock";
 import { useCallback } from "react";
 import { Button } from "../ui/shadcn/button";
 import { Alert, AlertDescription, AlertTitle } from "../ui/shadcn/alert";
-import { Loader2, XCircle } from "lucide-react";
+import { Loader2, X, XCircle } from "lucide-react";
 
 type Props = {
   selectedArtifactIds: string[];
@@ -63,8 +63,14 @@ const ArtifactPanel = ({
 
   if (isCurrentArtifactLoading) {
     return (
-      <div className="h-full flex items-center justify-center">
-        <div className="flex flex-col items-center space-y-4 text-gray-600">
+      <div className="h-full flex flex-col">
+        <div className="w-fill flex px-4 py-2 flex justify-end">
+          <Button variant="outline" size="icon" onClick={onClose}>
+            <X />
+          </Button>
+        </div>
+
+        <div className="flex-1 flex flex-col items-center justify-center space-y-4 text-gray-600">
           <Loader2 className="animate-spin" />
           <p>Loading artifact...</p>
         </div>
@@ -74,20 +80,28 @@ const ArtifactPanel = ({
 
   if (hasError && !currentArtifact) {
     return (
-      <div className="flex h-full w-full flex-col items-center justify-center p-4 gap-4">
-        <Alert variant="destructive">
-          <XCircle />
-          <AlertTitle>Error</AlertTitle>
-          <AlertDescription>
-            Unable to load the selected artifact. Please check your connection
-            or try again later.
-          </AlertDescription>
-        </Alert>
-        <Button
-          onClick={() => artifactQueries.forEach((query) => query.refetch())}
-        >
-          Retry
-        </Button>
+      <div className="flex h-full w-full flex-col">
+        <div className="w-fill flex px-4 py-2 flex justify-end">
+          <Button variant="outline" size="icon" onClick={onClose}>
+            <X />
+          </Button>
+        </div>
+
+        <div className="p-4 gap-4 flex-1 flex-col flex items-center justify-center">
+          <Alert variant="destructive">
+            <XCircle />
+            <AlertTitle>Error</AlertTitle>
+            <AlertDescription>
+              Unable to load the selected artifact. Please check your connection
+              or try again later.
+            </AlertDescription>
+          </Alert>
+          <Button
+            onClick={() => artifactQueries.forEach((query) => query.refetch())}
+          >
+            Retry
+          </Button>
+        </div>
       </div>
     );
   }

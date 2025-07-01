@@ -228,6 +228,10 @@ body {
   scrollbar-gutter: stable both-edges;
 }
 
+.scrollbar-gutter-auto {
+  scrollbar-gutter: auto;
+}
+
 .customScrollbar::-webkit-scrollbar {
   height: 6px;
   width: 6px;

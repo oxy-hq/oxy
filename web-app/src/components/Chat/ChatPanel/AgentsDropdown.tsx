@@ -48,7 +48,7 @@ const AgentsDropdown = ({
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger disabled={isPending || disabled}>
+      <DropdownMenuTrigger disabled={isPending || disabled} asChild>
         <Button
           disabled={isPending || disabled}
           variant="outline"

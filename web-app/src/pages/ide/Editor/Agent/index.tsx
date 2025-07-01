@@ -8,16 +8,18 @@ import {
 } from "@/components/ui/shadcn/toggle-group";
 import AgentTests from "./Tests";
 import { Button } from "@/components/ui/shadcn/button";
-import { Play } from "lucide-react";
+import { BrushCleaning, Play } from "lucide-react";
 import useAgent from "@/hooks/api/useAgent";
 import useTests from "@/stores/useTests";
 import { useQueryClient } from "@tanstack/react-query";
 import queryKeys from "@/hooks/api/queryKey";
+import useAgentThreadStore from "@/stores/useAgentThread";
 
 const AgentEditor = ({ pathb64 }: { pathb64: string }) => {
   const [previewKey, setPreviewKey] = useState<string>(randomKey());
   const [selected, setSelected] = useState<string>("preview");
   const queryClient = useQueryClient();
+  const { setMessages } = useAgentThreadStore();
 
   const { data: agent, isLoading } = useAgent(pathb64);
   const { runTest } = useTests();
@@ -59,6 +61,18 @@ const AgentEditor = ({ pathb64 }: { pathb64: string }) => {
               <Button size="sm" variant="ghost" onClick={handleRunAllTests}>
                 <Play className="w-4 h-4" />
                 Run all tests
+              </Button>
+            )}
+            {selected === "preview" && (
+              <Button
+                size="sm"
+                variant={"ghost"}
+                onClick={() => {
+                  setMessages(pathb64, []);
+                }}
+              >
+                <BrushCleaning className="w-4 h-4" />
+                Clean
               </Button>
             )}
           </div>
