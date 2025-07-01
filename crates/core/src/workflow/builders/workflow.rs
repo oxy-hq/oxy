@@ -87,11 +87,19 @@ impl ParamMapper<(String, Option<HashMap<String, Value>>), (Vec<TaskInput>, Outp
         let variables_schema = workflow.variables.clone().unwrap_or_default();
         let variables = variables_schema.resolve_params(variables)?;
         let json_schema: serde_json::Value = (&variables_schema).into();
-        let instance = serde_json::to_value(&variables)
-            .map_err(|err| OxyError::ArgumentError(err.to_string()))?;
+        let instance = serde_json::to_value(&variables).map_err(|err| {
+            OxyError::ArgumentError(format!(
+                "Failed to serialize workflow variables for workflow '{}': {}\nVariables: {:#?}",
+                workflow.name, err, variables
+            ))
+        })?;
 
-        jsonschema::validate(&json_schema, &instance)
-            .map_err(|err| OxyError::ArgumentError(err.to_string()))?;
+        jsonschema::validate(&json_schema, &instance).map_err(|err| {
+            OxyError::ArgumentError(format!(
+                "Workflow variable validation failed for workflow '{}': {}\nSchema: {:#?}\nInstance: {:#?}",
+                workflow.name, err, json_schema, instance
+            ))
+        })?;
 
         // Create the OutputContainer and Renderer
         let value: OutputContainer = variables
