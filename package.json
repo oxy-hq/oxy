@@ -31,7 +31,7 @@
     "prettier-plugin-tailwindcss": "^0.6.13",
     "turbo": "^2.5.4",
     "typescript": "^5.8.3",
-    "typescript-eslint": "^8.35.0"
+    "typescript-eslint": "^8.35.1"
   },
   "name": "oxy",
   "packageManager": "pnpm@10.12.3+sha256.e97173946a1f175e1d6c224527967a5f468b4821572faf6ac527fdecefac64cd"
