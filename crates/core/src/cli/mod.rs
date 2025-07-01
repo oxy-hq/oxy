@@ -30,7 +30,7 @@ use clap::builder::ValueParser;
 use make::handle_make_command;
 use minijinja::{Environment, Value};
 use model::AgentConfig;
-use model::{Config, Workflow};
+use model::{Config, Semantics, Workflow};
 use pyo3::Bound;
 use pyo3::FromPyObject;
 use pyo3::IntoPyObject;
@@ -544,6 +544,10 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                 (
                     "app.json",
                     serde_json::to_string_pretty(&schemars::schema_for!(AppConfig))?,
+                ),
+                (
+                    "global-semantics.json",
+                    serde_json::to_string_pretty(&schemars::schema_for!(Semantics))?,
                 ),
             ];
 
