@@ -1,82 +1,30 @@
 import PageHeader from "@/components/PageHeader";
 import { Separator } from "@/components/ui/shadcn/separator";
 import OutputLogs from "@/components/workflow/output/Logs";
-import queryKeys from "@/hooks/api/queryKey";
-import { service } from "@/services/service";
-import { LogItem } from "@/services/types";
+import useWorkflowThreadStore from "@/stores/useWorkflowThread";
 import { ThreadItem } from "@/types/chat";
-import { useQueryClient } from "@tanstack/react-query";
-import throttle from "lodash/throttle";
 import { Workflow } from "lucide-react";
 import { useEffect } from "react";
-import { useCallback } from "react";
-import { useRef } from "react";
-import { useState } from "react";
+import ProcessingWarning from "../ProcessingWarning";
 
-const WorkflowThread = ({ thread }: { thread: ThreadItem }) => {
-  const queryClient = useQueryClient();
-
-  const [logs, setLogs] = useState<LogItem[]>([]);
-  const hasRun = useRef(false);
-  const [isPending, setIsPending] = useState(false);
-
-  const appendLogs = useCallback((newLogs: LogItem[]) => {
-    setLogs((prev) => [...prev, ...newLogs]);
-  }, []);
-
-  const processLogs = useCallback(() => {
-    let buffer: LogItem[] = [];
-    const flushLogs = throttle(
-      () => {
-        const logsToAppend = [...buffer];
-        appendLogs(logsToAppend);
-        buffer = [];
-      },
-      500,
-      { leading: true, trailing: true },
-    );
-
-    return (logItem: LogItem) => {
-      buffer.push(logItem);
-      flushLogs();
-    };
-  }, [appendLogs]);
+const WorkflowThread = ({
+  thread,
+  refetchThread,
+}: {
+  thread: ThreadItem;
+  refetchThread: () => void;
+}) => {
+  const { setLogs } = useWorkflowThreadStore();
+  const { logs, isLoading } = useWorkflowThreadStore(
+    (state) =>
+      state.workflowThread.get(thread.id) || { logs: [], isLoading: false },
+  );
 
   useEffect(() => {
-    if (hasRun.current) {
-      return;
+    if (thread.output && !isLoading) {
+      setLogs(thread.id, () => JSON.parse(thread.output));
     }
-
-    hasRun.current = true;
-
-    if (thread.output) {
-      setLogs(JSON.parse(thread.output));
-      return;
-    }
-
-    const onLogItem = processLogs();
-
-    setIsPending(true);
-    setLogs([]);
-
-    service
-      .runWorkflowThread(thread.id, onLogItem)
-      .finally(() => {
-        setIsPending(false);
-        queryClient.invalidateQueries({
-          queryKey: queryKeys.thread.list(),
-          type: "all",
-        });
-      })
-      .catch((error) => {
-        console.error("Error running workflow thread:", error);
-        setIsPending(false);
-        queryClient.invalidateQueries({
-          queryKey: queryKeys.thread.list(),
-          type: "all",
-        });
-      });
-  }, [queryClient, thread, processLogs]);
+  }, [thread, isLoading, setLogs]);
 
   return (
     <div className="flex flex-col h-full">
@@ -95,8 +43,15 @@ const WorkflowThread = ({ thread }: { thread: ThreadItem }) => {
       </PageHeader>
 
       <div className="flex-1 w-full">
+        <ProcessingWarning
+          className="max-w-page-content mx-auto w-full mt-2"
+          thread={thread}
+          isLoading={isLoading}
+          onRefresh={refetchThread}
+        />
+
         <OutputLogs
-          isPending={isPending}
+          isPending={isLoading}
           logs={logs}
           contentClassName="max-w-page-content mx-auto"
         />

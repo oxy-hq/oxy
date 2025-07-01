@@ -10,6 +10,7 @@ use crate::errors::OxyError;
 use crate::execute::formatters::{FormatterResult, SourceHandler};
 use crate::execute::types::event::ArtifactKind;
 use crate::execute::types::{EventKind, Output, Source, Usage};
+use crate::service::formatters::streaming_message_persister::StreamingMessagePersister;
 use crate::service::types::{AnswerStream, ArtifactValue, ContainerKind, ExecuteSQL};
 use crate::workflow::loggers::types::LogItem;
 
@@ -25,6 +26,7 @@ pub struct BlockHandler {
     stream_dispatcher: StreamDispatcher,
     artifact_tracker: ArtifactTracker,
     pub usage: Arc<Mutex<Usage>>,
+    streaming_message_persister: Option<Arc<StreamingMessagePersister>>,
 }
 
 impl BlockHandler {
@@ -35,7 +37,13 @@ impl BlockHandler {
             stream_dispatcher: StreamDispatcher::new(sender.clone()),
             artifact_tracker: ArtifactTracker::new(),
             usage: Arc::new(Mutex::new(Usage::new(0, 0))),
+            streaming_message_persister: None,
         }
+    }
+
+    pub fn with_streaming_persister(mut self, handler: Arc<StreamingMessagePersister>) -> Self {
+        self.streaming_message_persister = Some(handler);
+        self
     }
 
     pub fn get_reader(&self) -> BlockHandlerReader {
@@ -106,9 +114,14 @@ impl BlockHandler {
     ) -> Result<(), OxyError> {
         // Prepare and send container opener
         let (opener, _) = self.content_processor.prepare_container(kind);
+        let text = format!("\n{}\n", opener);
         self.stream_dispatcher
-            .send_text(format!("\n{}\n", opener), &source.kind)
+            .send_text(text.clone(), &source.kind)
             .await?;
+
+        if let Some(streaming_handler) = &self.streaming_message_persister {
+            streaming_handler.append_content(&text).await?;
+        }
 
         // If there's an active artifact, send artifact value
         if let Some((artifact_id, artifact_kind)) = self.artifact_tracker.get_active_artifact() {
@@ -152,9 +165,14 @@ impl BlockHandler {
 
         // Send the closing marker
         if let Some(closer) = self.content_processor.get_next_closer() {
+            let text = format!("\n{}\n", closer);
             self.stream_dispatcher
-                .send_text(format!("\n{}\n", closer), &source.kind)
+                .send_text(text.clone(), &source.kind)
                 .await?;
+
+            if let Some(streaming_handler) = &self.streaming_message_persister {
+                streaming_handler.append_content(&text).await?;
+            }
 
             // If there's an active artifact, send container closer
             if let Some((artifact_id, artifact_kind)) = self.artifact_tracker.get_active_artifact()
@@ -206,6 +224,10 @@ impl BlockHandler {
             self.stream_dispatcher
                 .send_text(text.clone(), &source.kind)
                 .await?;
+
+            if let Some(streaming_handler) = &self.streaming_message_persister {
+                streaming_handler.append_content(&text).await?;
+            }
 
             // If there's an active artifact, send to artifact stream
             if let Some((artifact_id, artifact_kind)) = self.artifact_tracker.get_active_artifact()
@@ -356,6 +378,12 @@ impl SourceHandler for BlockHandler {
                 self.stream_dispatcher
                     .send_usage(usage.clone(), &source.kind)
                     .await?;
+
+                if let Some(streaming_handler) = &self.streaming_message_persister {
+                    streaming_handler
+                        .update_usage(current_usage.input_tokens, current_usage.output_tokens)
+                        .await?;
+                }
             }
 
             _ => {}

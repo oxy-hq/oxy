@@ -10,7 +10,6 @@ interface AgentMessageProps {
   showAvatar?: boolean;
   prompt?: string;
   onArtifactClick?: (id: string) => void;
-  createdAt?: string;
 }
 
 const AgentMessage = ({
@@ -18,10 +17,9 @@ const AgentMessage = ({
   showAvatar,
   prompt,
   onArtifactClick,
-  createdAt,
 }: AgentMessageProps) => {
   const { content, references, steps, isStreaming } = message;
-  const showAnswer = content || steps.length > 0;
+  const showAnswer = content || steps?.length > 0;
   const showAgentThinking = isStreaming && !showAnswer;
   const { theme } = useTheme();
 
@@ -29,7 +27,7 @@ const AgentMessage = ({
     <div className="flex flex-col gap-2 w-full mb-4">
       <MessageHeader
         isHuman={false}
-        createdAt={createdAt}
+        createdAt={message.created_at}
         tokensUsage={{
           inputTokens: message.usage.inputTokens,
           outputTokens: message.usage.outputTokens,

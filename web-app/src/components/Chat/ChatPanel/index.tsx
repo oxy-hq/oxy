@@ -22,6 +22,9 @@ import {
 import WorkflowsDropdown from "./WorkflowsDropdown";
 import { WorkflowOption } from "./WorkflowsDropdown";
 import { getShortTitle } from "@/libs/utils/string";
+import useAskAgent from "@/hooks/messaging/agent";
+import useAskTask from "@/hooks/messaging/task";
+import useRunWorkflowThread from "@/hooks/workflow/useRunWorkflowThread";
 
 const ToggleGroupItemClasses =
   "data-[state=on]:border data-[state=on]:border-blue-500 data-[state=on]:bg-blue-500 data-[state=on]:text-white hover:bg-blue-500/20 hover:text-blue-300 hover:border-blue-400/50 transition-colors border-gray-600 rounded-md text-gray-400";
@@ -29,10 +32,27 @@ const ToggleGroupItemClasses =
 const ChatPanel = () => {
   const navigate = useNavigate();
 
+  const { sendMessage } = useAskAgent();
+
+  const { sendMessage: sendTaskMessage } = useAskTask();
+
+  const { run: runWorkflow } = useRunWorkflowThread();
+
   const [agent, setAgent] = useState<Agent | null>(null);
   const [workflow, setWorkflow] = useState<WorkflowOption | null>(null);
 
   const { mutate: createThread, isPending } = useThreadMutation((data) => {
+    switch (data.source_type) {
+      case "agent":
+        sendMessage(data.input, data.id);
+        break;
+      case "task":
+        sendTaskMessage(data.input, data.id);
+        break;
+      case "workflow":
+        runWorkflow(data.id);
+        break;
+    }
     navigate(`/threads/${data.id}`);
   });
 

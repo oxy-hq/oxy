@@ -16,6 +16,7 @@ pub struct Model {
     pub references: String,
     pub source_type: String,
     pub user_id: Option<Uuid>,
+    pub is_processing: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -1,3 +1,4 @@
+import { Artifact } from "@/services/mock";
 import { LogItem } from "@/services/types";
 
 export interface TextContent {
@@ -132,6 +133,7 @@ export type ThreadItem = {
   source_type: string;
   created_at: string;
   references: Reference[];
+  is_processing: boolean;
 };
 
 export type ThreadCreateRequest = {
@@ -161,19 +163,14 @@ export type Usage = {
 };
 
 export interface Message {
+  id: string;
   content: string;
   references: Reference[];
   steps: string[];
-  isUser: boolean;
-  isStreaming: boolean;
-  usage: Usage;
-}
-
-export interface MessageItem {
-  id: string;
-  content: string;
   is_human: boolean;
+  isStreaming: boolean;
   thread_id: string;
-  created_at: string;
   usage: Usage;
+  artifacts: { [key: string]: Artifact };
+  created_at: string;
 }

@@ -9,7 +9,9 @@ use crate::{
         types::{DataAppReference, Event, EventKind, Output, ReferenceKind, Usage},
         writer::EventHandler,
     },
-    service::agent::run_agent,
+    service::{
+        agent::run_agent, formatters::streaming_message_persister::StreamingMessagePersister,
+    },
     utils::{create_sse_stream, find_project_path},
 };
 use axum::{
@@ -38,14 +40,19 @@ struct TaskStream {
     references: Arc<Mutex<Vec<ReferenceKind>>>,
     tx: Sender<AnswerStream>,
     usage: Arc<TokioMutex<Usage>>,
+    streaming_message_persister: Arc<StreamingMessagePersister>,
 }
 
 impl TaskStream {
-    fn new(tx: Sender<AnswerStream>) -> Self {
+    fn new(
+        tx: Sender<AnswerStream>,
+        streaming_message_persister: Arc<StreamingMessagePersister>,
+    ) -> Self {
         TaskStream {
             tx,
             references: Arc::new(Mutex::new(vec![])),
             usage: Arc::new(TokioMutex::new(Usage::new(0, 0))),
+            streaming_message_persister,
         }
     }
 
@@ -76,9 +83,10 @@ impl EventHandler for TaskStream {
                         file_path: "".to_string(),
                         usage: usage.clone(),
                     };
-                    self.tx.send(message).await?;
+                    let _ = self.tx.send(message).await.map_err(|_| ());
                 }
                 Output::Text(text) => {
+                    let content = text.clone();
                     let message = AnswerStream {
                         content: text.to_owned(),
                         is_error: false,
@@ -86,7 +94,10 @@ impl EventHandler for TaskStream {
                         file_path: "".to_string(),
                         usage: usage.clone(),
                     };
-                    self.tx.send(message).await?;
+                    let _ = self.tx.send(message).await.map_err(|_| ());
+                    self.streaming_message_persister
+                        .append_content(&content)
+                        .await?;
                 }
                 Output::Table(table) => {
                     let reference = table.clone().into_reference();
@@ -99,7 +110,7 @@ impl EventHandler for TaskStream {
                             file_path: "".to_string(),
                             usage: usage.clone(),
                         };
-                        self.tx.send(message).await?;
+                        let _ = self.tx.send(message).await.map_err(|_| ());
                     }
                 }
                 _ => {}
@@ -119,7 +130,7 @@ impl EventHandler for TaskStream {
                 file_path: data_app.file_path.to_string_lossy().to_string(),
                 usage: usage.clone(),
             };
-            self.tx.send(message).await?;
+            let _ = self.tx.send(message).await.map_err(|_| ());
         }
         Ok(())
     }
@@ -144,6 +155,17 @@ pub async fn ask_task(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let thread = thread.ok_or(StatusCode::NOT_FOUND)?;
+
+    if thread.is_processing {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    let mut thread_model: entity::threads::ActiveModel = thread.clone().into();
+    thread_model.is_processing = ActiveValue::Set(true);
+    thread_model
+        .update(&connection)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     // Get existing messages for context
     let mut messages = entity::prelude::Messages::find()
@@ -207,7 +229,17 @@ pub async fn ask_task(
     let (tx, rx) = tokio::sync::mpsc::channel(100);
     let _ = tokio::spawn(async move {
         let tx_clone = tx.clone();
-        let thread_stream = TaskStream::new(tx);
+        let streaming_message_handler = Arc::new(
+            StreamingMessagePersister::new(connection.clone(), thread.id, "".to_owned())
+                .await
+                .map_err(|err| {
+                    OxyError::DBError(format!(
+                        "Failed to create streaming message handler: {}",
+                        err
+                    ))
+                })?,
+        );
+        let thread_stream = TaskStream::new(tx, streaming_message_handler.clone());
         let references = thread_stream.references.clone();
         let usage_arc = thread_stream.usage.clone();
         let agent_result = run_agent(
@@ -238,7 +270,7 @@ pub async fn ask_task(
 
                 // Save the agent response to messages table
                 let answer_message = entity::messages::ActiveModel {
-                    id: ActiveValue::Set(Uuid::new_v4()),
+                    id: ActiveValue::Set(streaming_message_handler.get_message_id()),
                     content: ActiveValue::Set(output_container.to_string()),
                     is_human: ActiveValue::Set(false),
                     thread_id: ActiveValue::Set(thread.id),
@@ -246,7 +278,7 @@ pub async fn ask_task(
                     input_tokens: ActiveValue::Set(usage.input_tokens),
                     output_tokens: ActiveValue::Set(usage.output_tokens),
                 };
-                answer_message.insert(&connection).await.map_err(|err| {
+                answer_message.update(&connection).await.map_err(|err| {
                     OxyError::DBError(format!("Failed to insert agent message:\n{}", err))
                 })?;
 
@@ -258,6 +290,7 @@ pub async fn ask_task(
                     }
                 }
                 thread_model.output = ActiveValue::Set(output_container.to_string());
+                thread_model.is_processing = ActiveValue::Set(false);
                 thread_model.update(&connection).await.map_err(|err| {
                     OxyError::DBError(format!("Failed to update thread:\n{}", err))
                 })?;
@@ -265,16 +298,35 @@ pub async fn ask_task(
             }
             Err(e) => {
                 tracing::error!("Error running agent: {}", e);
-                let usage = usage_arc.lock().await.clone();
+                let msg = format!("🔴 Error: {}", e);
+
+                // Fallback: create error message normally
+                let answer_message = entity::messages::ActiveModel {
+                    id: ActiveValue::Set(streaming_message_handler.get_message_id()),
+                    content: ActiveValue::Set(msg.clone()),
+                    is_human: ActiveValue::Set(false),
+                    thread_id: ActiveValue::Set(thread.id),
+                    created_at: ActiveValue::default(),
+                    input_tokens: ActiveValue::Set(0),
+                    output_tokens: ActiveValue::Set(0),
+                };
+
+                let _ = answer_message.update(&connection).await.map_err(|err| {
+                    OxyError::DBError(format!("Failed to insert message:\n{}", err))
+                })?;
                 tx_clone
                     .send(AnswerStream {
-                        content: format!("🔴 Error: {}", e),
+                        content: msg,
                         is_error: true,
                         step: "".to_string(),
                         file_path: "".to_string(),
-                        usage,
+                        usage: Usage::new(0, 0),
                     })
                     .await?;
+
+                let mut thread_model: entity::threads::ActiveModel = thread.into();
+                thread_model.is_processing = ActiveValue::Set(false);
+                let _ = thread_model.update(&connection).await;
                 Result::<(), OxyError>::Ok(())
             }
         }

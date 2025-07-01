@@ -42,7 +42,7 @@ const WorkflowsDropdown = ({ onSelect, workflow, disabled = false }: Props) => {
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger disabled={isLoading || disabled}>
+      <DropdownMenuTrigger disabled={isLoading || disabled} asChild>
         <Button
           disabled={isLoading || disabled}
           variant="outline"

@@ -17,6 +17,7 @@ mod m20250611_015638_add_tokens_to_messages;
 mod m20250613_090405_add_auth_fields_to_users;
 mod m20250624_100000_add_role_to_users;
 mod m20250625_000001_add_status_to_users;
+mod m20250625_151048_add_is_processing_to_thread;
 
 pub struct Migrator;
 
@@ -41,6 +42,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20250613_090405_add_auth_fields_to_users::Migration),
             Box::new(m20250624_100000_add_role_to_users::Migration),
             Box::new(m20250625_000001_add_status_to_users::Migration),
+            Box::new(m20250625_151048_add_is_processing_to_thread::Migration),
         ]
     }
 }

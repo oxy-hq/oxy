@@ -7,7 +7,7 @@ const Messages = ({ messages }: { messages: Message[] }) => {
     <>
       {messages.map((message, index) => (
         <div key={index}>
-          {message.isUser ? (
+          {message.is_human ? (
             <UserMessage message={message} />
           ) : (
             <AgentMessage showAvatar message={message} />

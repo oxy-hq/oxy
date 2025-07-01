@@ -5,8 +5,10 @@ import { ArrowUp, Loader2 } from "lucide-react";
 import { useEnterSubmit } from "@/hooks/useEnterSubmit";
 import Messages from "./Messages";
 import useAgent from "@/hooks/api/useAgent";
-import useAgentPreview from "@/stores/useAgentPreview";
 import EmptyState from "@/components/ui/EmptyState";
+import useAskAgent from "@/hooks/messaging/agent";
+import useAgentThreadStore from "@/stores/useAgentThread";
+import { useState } from "react";
 
 const getAgentNameFromPath = (path: string) => {
   const parts = path.split("/");
@@ -16,20 +18,26 @@ const getAgentNameFromPath = (path: string) => {
 const AgentPreview = ({ agentPathb64 }: { agentPathb64: string }) => {
   const path = atob(agentPathb64);
   const { data: agent } = useAgent(agentPathb64);
+  const [question, setQuestion] = useState("");
   const { formRef, onKeyDown } = useEnterSubmit();
-  const { getAgentPreview, askAgent, setQuestion } = useAgentPreview();
-  const { messages, question, isLoading } = getAgentPreview(agentPathb64);
+  const { getAgentThread } = useAgentThreadStore();
+  const { sendMessage } = useAskAgent();
+
+  const agentThread = getAgentThread(agentPathb64);
+  const { messages, isLoading } = agentThread;
 
   const handleFormSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    askAgent(agentPathb64);
+    if (!question.trim() || isLoading) return;
+    sendMessage(question, agentPathb64, true);
+    setQuestion("");
   };
 
   const agentName = agent?.name ?? getAgentNameFromPath(path);
 
   return (
-    <div className="flex flex-col h-full justify-between overflow-hidden px-4 pb-4">
-      <div className="flex flex-col gap-4 flex-1 overflow-auto customScrollbar py-6">
+    <div className="flex flex-col h-full justify-between overflow-hidden p-4">
+      <div className="flex flex-col gap-4 flex-1 overflow-auto customScrollbar scrollbar-gutter-auto">
         {messages.length === 0 ? (
           <EmptyState
             className="h-full"
@@ -50,8 +58,8 @@ const AgentPreview = ({ agentPathb64 }: { agentPathb64: string }) => {
           name="question"
           autoFocus
           onKeyDown={onKeyDown}
+          onChange={(e) => setQuestion(e.target.value)}
           value={question}
-          onChange={(e) => setQuestion(agentPathb64, e.target.value)}
           className={cx(
             "border-none shadow-none",
             "hover:border-none focus-visible:border-none focus-visible:shadow-none",

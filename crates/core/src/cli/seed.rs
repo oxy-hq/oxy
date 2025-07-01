@@ -213,6 +213,7 @@ pub async fn create_sample_threads_for_users() -> Result<(), OxyError> {
                 source: ActiveValue::Set("sample_analysis.sql".to_string()),
                 references: ActiveValue::Set("[]".to_string()),
                 created_at: ActiveValue::not_set(),
+                is_processing: ActiveValue::Set(false),
             };
 
             let _thread = new_thread

@@ -20,13 +20,13 @@ const ThreadHeader = ({ thread }: ThreadHeaderProps) => {
       <div className="p-2 flex items-center justify-center flex-1 h-full">
         <div className="flex flex-1 gap-1 items-center text-muted-foreground justify-end">
           <Bot className="w-4 h-4 min-w-4 min-h-4" />
-          <p className="text-sm break-all">
+          <div className="text-sm break-all">
             {isPending ? (
               <Skeleton className="w-[80px] h-[16px] rounded-full" />
             ) : (
               agentName
             )}
-          </p>
+          </div>
         </div>
         <div className="px-4 h-full flex items-stretch">
           <Separator orientation="vertical" />

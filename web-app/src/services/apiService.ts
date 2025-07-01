@@ -3,7 +3,7 @@ import { DatabaseInfo } from "@/types/database";
 import { Service } from "./service";
 import { apiClient } from "./axios";
 import { apiBaseURL } from "./env";
-import { ThreadCreateRequest } from "@/types/chat";
+import { Message, ThreadCreateRequest } from "@/types/chat";
 import { TestStreamMessage } from "@/types/eval";
 import { Workflow } from "@/types/workflow";
 import { fetchEventSource } from "@microsoft/fetch-event-source";
@@ -113,10 +113,16 @@ export const apiService: Service = {
     onMessageSent,
   ) {
     const url = `${apiBaseURL}/threads/${threadId}/ask`;
+    let isOpened = false;
     await fetchSSE(url, {
       body: { question },
       onMessage: onReadStream,
-      onOpen: onMessageSent,
+      onOpen: () => {
+        if (!isOpened) {
+          onMessageSent?.();
+          isOpened = true;
+        }
+      },
       eventTypes: ["message", "error"],
     });
   },
@@ -127,10 +133,16 @@ export const apiService: Service = {
     onMessageSent,
   ) {
     const url = `${apiBaseURL}/threads/${threadId}/task`;
+    let isOpened = false;
     await fetchSSE(url, {
       body: { question },
       onMessage: onReadStream,
-      onOpen: onMessageSent,
+      onOpen: () => {
+        if (!isOpened) {
+          onMessageSent?.();
+          isOpened = true;
+        }
+      },
       eventTypes: ["message", "error"],
     });
   },
@@ -238,9 +250,25 @@ export const apiService: Service = {
     const response = await apiClient.get(`/artifacts/${id}`);
     return response.data;
   },
-  async getThreadMessages(threadId: string) {
+  async getThreadMessages(threadId: string): Promise<Message[]> {
     const response = await apiClient.get(`/threads/${threadId}/messages`);
-    return response.data;
+    if (!response.data || !Array.isArray(response.data)) {
+      throw new Error("Invalid response format for thread messages");
+    }
+    const messages: Message[] = response.data.map((message) => ({
+      ...message,
+      created_at: new Date(message.created_at).toISOString(),
+      isStreaming: false,
+      artifacts: message.artifacts || {},
+      references: message.references || [],
+      steps: message.steps || [],
+      usage: {
+        inputTokens: message.usage?.inputTokens || 0,
+        outputTokens: message.usage?.outputTokens || 0,
+      },
+      is_human: message.is_human || false,
+    }));
+    return messages;
   },
   async syncDatabase(database?: string, options?: { datasets?: string[] }) {
     const params = new URLSearchParams();

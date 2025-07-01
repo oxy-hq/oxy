@@ -5,6 +5,8 @@ import AgentThread from "./agent";
 import TaskThread from "./task";
 import PageSkeleton from "@/components/PageSkeleton";
 import { AlertTriangle } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import queryKeys from "@/hooks/api/queryKey";
 
 const ThreadNotFound = () => (
   <div className="flex flex-col items-center justify-center h-64 p-8 text-center">
@@ -26,7 +28,13 @@ const ThreadNotFound = () => (
 
 const Thread = () => {
   const { threadId } = useParams();
-  const { data: thread, isPending, isSuccess } = useThread(threadId ?? "");
+  const queryClient = useQueryClient();
+  const {
+    data: thread,
+    isPending,
+    isSuccess,
+    refetch,
+  } = useThread(threadId ?? "", true, false);
 
   if (isPending) {
     return <PageSkeleton />;
@@ -36,16 +44,23 @@ const Thread = () => {
     return <ThreadNotFound />;
   }
 
+  const refetchThread = () => {
+    queryClient.invalidateQueries({
+      queryKey: queryKeys.thread.all,
+    });
+    refetch();
+  };
+
   if (isSuccess && thread) {
     switch (thread.source_type) {
       case "workflow":
-        return <WorkflowThread thread={thread} />;
+        return <WorkflowThread thread={thread} refetchThread={refetchThread} />;
       case "agent":
-        return <AgentThread thread={thread} />;
+        return <AgentThread thread={thread} refetchThread={refetchThread} />;
       case "task":
-        return <TaskThread thread={thread} />;
+        return <TaskThread thread={thread} refetchThread={refetchThread} />;
       default:
-        return <AgentThread thread={thread} />;
+        return <AgentThread thread={thread} refetchThread={refetchThread} />;
     }
   }
 
