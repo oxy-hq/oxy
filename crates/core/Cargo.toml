@@ -15,14 +15,14 @@ anyhow = "1.0.98"
 argon2 = "0.5"
 arrow = { version = "53.4", default-features = false, features = ["json"] } # arrow version has to comply with duckdb version
 assert_cmd = "2.0.17"
-async-openai = {version = "0.28.3", features = ["byot"]}
+async-openai = {version = "0.29.0", features = ["byot"]}
 async-stream = "0.3.6"
 async-trait = "0.1.88"
 axum = { version = "0.8.4", features = ["macros"] }
 axum-extra = { version = "0.10", features = ["typed-header"] }
 axum-streams = { version = "0.21.0", features = ["json", "csv", "protobuf", "text"] }
 base64 = "0.22"
-bcrypt = "0.16"
+bcrypt = "0.17"
 chrono = "*"
 clap = { version = "4.5.40", features = ["derive"] }
 clickhouse = { version = "0.13.3", features = ["rustls-tls"] }
@@ -55,7 +55,7 @@ once_cell = "1.21.3"
 predicates = "3.1.3"
 pyo3 = { version = "=0.23.3", features = ["experimental-async", "extension-module"] } # 0.23.4 causes a bug with pyo3-arrow
 pyo3-arrow = "0.6.0"
-rand = "0.8"
+rand = "0.9"
 schemars = { version = "0.8.22", features = ["derive", "impl_json_schema"] }
 sea-orm = { workspace = true }
 serde = { version = "1.0", features = ["derive"] }
@@ -66,7 +66,7 @@ self_update = "0.42.0"
 slugify = "0.1.0"
 sqlformat = { git = "https://github.com/shssoichiro/sqlformat-rs.git", rev = "80255c7" }
 syntect = "5.2"
-tabled = "0.18.0"
+tabled = "0.20.0"
 terminal-light = "1.8.0"
 terminal_size = "0.4.2"
 thiserror = "2.0.12"
@@ -95,7 +95,7 @@ regex = "1.11.1"
 url = "2.5.4"
 gcp-bigquery-client = "0.25.1"
 fehler = "1.0.0"
-sqlparser = "0.37.0"
+sqlparser = "0.53"
 backoff = { version = "0.4.0", features = ["tokio"] }
 rustc_version_runtime = "0.3.0"
 rustls = { version = "0.23.28", features = ["aws_lc_rs"] }
