@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.2.16](https://github.com/oxy-hq/oxy-internal/compare/0.2.15...0.2.16) (2025-07-02)
+
+
+### <!-- 0 -->🚀 Features
+
+* add user role to db and entity ([#922](https://github.com/oxy-hq/oxy-internal/issues/922)) ([c903c12](https://github.com/oxy-hq/oxy-internal/commit/c903c12818b93e24d2bd78c1466f45b803e05346))
+* implement semantic typing ([#913](https://github.com/oxy-hq/oxy-internal/issues/913)) ([24e1861](https://github.com/oxy-hq/oxy-internal/commit/24e18616b1794d4ed0084bdad12d1dfb80020717))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* openapi doc not accessible ([#939](https://github.com/oxy-hq/oxy-internal/issues/939)) ([a0ed7a0](https://github.com/oxy-hq/oxy-internal/commit/a0ed7a06c1a962dc8ad483ea5c5e8b14362a8395))
+
 ## [0.2.15](https://github.com/oxy-hq/oxy-internal/compare/0.2.14...0.2.15) (2025-06-26)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.16](https://github.com/oxy-hq/oxy-internal/compare/0.2.15...0.2.16) (2025-07-02)
+
+
+### <!-- 0 -->🚀 Features
+
+* add user role to db and entity ([#922](https://github.com/oxy-hq/oxy-internal/issues/922)) ([c903c12](https://github.com/oxy-hq/oxy-internal/commit/c903c12818b93e24d2bd78c1466f45b803e05346))
+
 ## [0.2.15](https://github.com/oxy-hq/oxy-internal/compare/0.2.14...0.2.15) (2025-06-26)
 
 
