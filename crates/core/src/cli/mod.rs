@@ -1102,22 +1102,19 @@ pub async fn start_server_and_web_app(mut web_port: u16, web_host: String, auth_
             .nest("/api", openapi_router)
             .fallback_service(serve_with_fallback);
         let openapi = openapi_router.get_openapi_mut();
-        let authentication_config = config.get_authentication();
-        tracing::info!("Authentication config: {:?}", authentication_config);
         if let Some(auth_config) = config.get_authentication() {
-            tracing::info!("Configuring OpenAPI documentation {:?}", auth_config);
             if let Some(api_key_auth) = auth_config.api_key {
                 let security_schema_name = "ApiKey";
-                openapi.components = Some(
-                    ComponentsBuilder::new()
-                        .security_scheme(
-                            security_schema_name,
-                            SecurityScheme::ApiKey(utoipa::openapi::security::ApiKey::Header(
-                                ApiKeyValue::new(api_key_auth.header),
-                            )),
-                        )
-                        .build(),
+
+                // Get existing components or create new ones, then add the security scheme
+                let mut components = openapi.components.take().unwrap_or_default();
+                components.security_schemes.insert(
+                    security_schema_name.to_string(),
+                    SecurityScheme::ApiKey(utoipa::openapi::security::ApiKey::Header(
+                        ApiKeyValue::new(api_key_auth.header),
+                    )),
                 );
+                openapi.components = Some(components);
 
                 // Apply for all endpoints
                 let scopes: Vec<String> = vec![];
