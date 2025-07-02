@@ -203,7 +203,20 @@ pub async fn openapi_router() -> OpenApiRouter {
         .allow_headers(tower_http::cors::Any);
 
     OpenApiRouter::new()
+        // Agent routes
         .routes(routes!(agent::get_agents))
         .routes(routes!(agent::ask_agent))
+        // API Keys routes
+        .routes(routes!(api_keys::create_api_key))
+        .routes(routes!(api_keys::list_api_keys))
+        .routes(routes!(api_keys::get_api_key))
+        .routes(routes!(api_keys::delete_api_key))
+        // App routes
+        .routes(routes!(app::list_apps))
+        // Workflow routes
+        .routes(routes!(workflow::list))
+        .routes(routes!(workflow::get_logs))
+        .routes(routes!(workflow::run_workflow))
+        .routes(routes!(workflow::run_workflow_thread))
         .layer(cors)
 }
