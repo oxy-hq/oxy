@@ -44,8 +44,8 @@ impl TemplateRegister for &Task {
                 if let Some(variables) = &execute_sql.variables {
                     register.entries(
                         variables
-                            .iter()
-                            .map(|(_key, value)| value.as_str())
+                            .values()
+                            .map(|value| value.as_str())
                             .collect::<Vec<&str>>(),
                     )?;
                 }

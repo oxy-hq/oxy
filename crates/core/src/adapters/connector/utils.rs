@@ -11,7 +11,7 @@ use crate::errors::OxyError;
 
 pub(super) fn connector_internal_error(message: &str, e: impl std::fmt::Display) -> OxyError {
     tracing::error!("{}: {}", message, e);
-    OxyError::DBError(format!("{}: {}", message, e))
+    OxyError::DBError(format!("{message}: {e}"))
 }
 
 pub fn load_result(file_path: &str) -> anyhow::Result<(Vec<RecordBatch>, SchemaRef)> {

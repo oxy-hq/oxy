@@ -233,10 +233,7 @@ pub async fn ask_task(
             StreamingMessagePersister::new(connection.clone(), thread.id, "".to_owned())
                 .await
                 .map_err(|err| {
-                    OxyError::DBError(format!(
-                        "Failed to create streaming message handler: {}",
-                        err
-                    ))
+                    OxyError::DBError(format!("Failed to create streaming message handler: {err}"))
                 })?,
         );
         let thread_stream = TaskStream::new(tx, streaming_message_handler.clone());
@@ -279,7 +276,7 @@ pub async fn ask_task(
                     output_tokens: ActiveValue::Set(usage.output_tokens),
                 };
                 answer_message.update(&connection).await.map_err(|err| {
-                    OxyError::DBError(format!("Failed to insert agent message:\n{}", err))
+                    OxyError::DBError(format!("Failed to insert agent message:\n{err}"))
                 })?;
 
                 let mut thread_model: entity::threads::ActiveModel = thread.into();
@@ -291,14 +288,15 @@ pub async fn ask_task(
                 }
                 thread_model.output = ActiveValue::Set(output_container.to_string());
                 thread_model.is_processing = ActiveValue::Set(false);
-                thread_model.update(&connection).await.map_err(|err| {
-                    OxyError::DBError(format!("Failed to update thread:\n{}", err))
-                })?;
+                thread_model
+                    .update(&connection)
+                    .await
+                    .map_err(|err| OxyError::DBError(format!("Failed to update thread:\n{err}")))?;
                 Result::<(), OxyError>::Ok(())
             }
             Err(e) => {
                 tracing::error!("Error running agent: {}", e);
-                let msg = format!("🔴 Error: {}", e);
+                let msg = format!("🔴 Error: {e}");
 
                 // Fallback: create error message normally
                 let answer_message = entity::messages::ActiveModel {
@@ -312,7 +310,7 @@ pub async fn ask_task(
                 };
 
                 let _ = answer_message.update(&connection).await.map_err(|err| {
-                    OxyError::DBError(format!("Failed to insert message:\n{}", err))
+                    OxyError::DBError(format!("Failed to insert message:\n{err}"))
                 })?;
                 tx_clone
                     .send(AnswerStream {

@@ -40,7 +40,7 @@ pub async fn ask_adhoc(
     let agent_path = get_path_by_name(project_path.clone(), agent).await?;
     let result = match run_agent(&project_path, &agent_path, question, NoopHandler, vec![]).await {
         Ok(output) => output.to_string(),
-        Err(e) => format!("Error running agent: {}", e),
+        Err(e) => format!("Error running agent: {e}"),
     };
     Ok(result)
 }
@@ -89,8 +89,7 @@ pub async fn get_path_by_name(
         }
     }
     Err(OxyError::ArgumentError(format!(
-        "Agent with name {} not found",
-        agent_name
+        "Agent with name {agent_name} not found"
     )))
 }
 
@@ -105,10 +104,10 @@ impl EventHandler for AgentCLIHandler {
         match event.source.kind.as_str() {
             WORKFLOW_SOURCE => match event.kind {
                 EventKind::Started { name, .. } => {
-                    println!("\n⏳Running workflow: {}", name);
+                    println!("\n⏳Running workflow: {name}");
                 }
                 EventKind::Finished { message } => {
-                    println!("{}", message);
+                    println!("{message}");
                 }
                 _ => {}
             },
@@ -127,7 +126,7 @@ impl EventHandler for AgentCLIHandler {
                     }
                 },
                 EventKind::Message { message } => {
-                    println!("{}", message);
+                    println!("{message}");
                 }
                 EventKind::Error { message } => {
                     println!("{}", message.error());
@@ -143,24 +142,24 @@ impl EventHandler for AgentCLIHandler {
                     Output::Table(table) => match table.to_term() {
                         Ok(table) => {
                             println!("{}", "\nResult:".primary());
-                            println!("{}", table);
+                            println!("{table}");
                         }
                         Err(e) => {
-                            println!("{}", format!("Error displaying results: {}", e).error());
+                            println!("{}", format!("Error displaying results: {e}").error());
                         }
                     },
                     Output::Text(text) => {
                         if chunk.finished {
-                            println!("{}", text);
+                            println!("{text}");
                         } else {
-                            print!("{}", text);
+                            print!("{text}");
                             std::io::stdout().flush().unwrap();
                         }
                     }
                     _ => {}
                 },
                 EventKind::Message { message } => {
-                    println!("{}", message);
+                    println!("{message}");
                 }
                 EventKind::Error { message } => {
                     println!("{}", message.error());

@@ -170,7 +170,7 @@ fn export_sql<P: AsRef<Path>>(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut file = File::create(file_path)?;
     if !prompt.is_empty() {
-        writeln!(file, "-- Prompt: {}\n", prompt)?;
+        writeln!(file, "-- Prompt: {prompt}\n")?;
     }
     file.write_all(sql.as_bytes())?;
     Ok(())

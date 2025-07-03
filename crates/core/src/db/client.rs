@@ -21,7 +21,7 @@ fn resolve_state_dir() -> PathBuf {
 fn ensure_dir_exists(path: &Path) {
     if !path.exists() {
         if let Err(e) = fs::create_dir_all(path) {
-            eprintln!("Error: Could not create directory: {}", e);
+            eprintln!("Error: Could not create directory: {e}");
             std::process::exit(1);
         }
     }

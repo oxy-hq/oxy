@@ -1337,7 +1337,7 @@ impl OmniView {
                 format!("{}.{}", v.table_name, field_name)
             }
             OmniViewType::Query(_) => {
-                format!("{}.{}", view_name, field_name)
+                format!("{view_name}.{field_name}")
             }
         }
     }
@@ -1424,11 +1424,11 @@ impl OmniSemanticModel {
 
         for (view_name, view) in &self.views {
             for (name, dimension) in &view.dimensions {
-                let field_name = format!("{}.{}", view_name, name);
+                let field_name = format!("{view_name}.{name}");
                 fields.insert(field_name, OmniField::Dimension(dimension.clone()));
             }
             for (name, measure) in &view.measures {
-                let field_name = format!("{}.{}", view_name, name);
+                let field_name = format!("{view_name}.{name}");
                 fields.insert(field_name, OmniField::Measure(measure.clone()));
             }
         }
@@ -1447,11 +1447,11 @@ impl OmniSemanticModel {
         let mut fields = HashMap::new();
 
         for (name, dimension) in &view.dimensions {
-            let field_name = format!("{}.{}", view_name, name);
+            let field_name = format!("{view_name}.{name}");
             fields.insert(field_name, OmniField::Dimension(dimension.clone()));
         }
         for (name, measure) in &view.measures {
-            let field_name = format!("{}.{}", view_name, name);
+            let field_name = format!("{view_name}.{name}");
             fields.insert(field_name, OmniField::Measure(measure.clone()));
         }
 
@@ -1469,11 +1469,11 @@ impl OmniSemanticModel {
         let mut fields = HashMap::new();
 
         for (name, dimension) in &view.dimensions {
-            let field_name = format!("{}.{}", view_name, name);
+            let field_name = format!("{view_name}.{name}");
             fields.insert(field_name, OmniField::Dimension(dimension.clone()));
         }
         for (name, measure) in &view.measures {
-            let field_name = format!("{}.{}", view_name, name);
+            let field_name = format!("{view_name}.{name}");
             fields.insert(field_name, OmniField::Measure(measure.clone()));
         }
 
@@ -1579,7 +1579,7 @@ impl OmniTopicInfoTool {
             .load_semantic_model()
             .expect("Failed to load semantic model");
         for (topic_name, _) in semantic_model.topics {
-            description.push_str(&format!("- {}\n", topic_name,));
+            description.push_str(&format!("- {topic_name}\n",));
         }
         description
     }
@@ -1601,8 +1601,8 @@ impl OmniTopicInfoTool {
         for view_path in view_paths {
             let entry = view_path;
             let file_bytes = fs::read(entry.clone())
-                .map_err(|e| OxyError::AgentError(format!("Failed to read model path: {}", e)))?;
-            let view: OmniView = serde_yaml::from_slice(&file_bytes).map_err(|e| {
+                .map_err(|e| OxyError::AgentError(format!("Failed to read model path: {e}")))?;
+            let view: OmniView = serde_yml::from_slice(&file_bytes).map_err(|e| {
                 OxyError::AgentError(format!(
                     "Failed to parse view: {} {}",
                     entry.to_string_lossy(),
@@ -1636,14 +1636,14 @@ impl OmniTopicInfoTool {
         for topic_path in topic_paths {
             let entry = topic_path;
             let file_bytes = fs::read(entry.clone())
-                .map_err(|e| OxyError::AgentError(format!("Failed to read model path: {}", e)))?;
+                .map_err(|e| OxyError::AgentError(format!("Failed to read model path: {e}")))?;
             let topic_name = entry
                 .file_name()
                 .unwrap()
                 .to_string_lossy()
                 .to_string()
                 .replace(".topic.yaml", "");
-            let topic = serde_yaml::from_slice(&file_bytes);
+            let topic = serde_yml::from_slice(&file_bytes);
 
             match topic {
                 Ok(topic) => {
@@ -1659,10 +1659,9 @@ impl OmniTopicInfoTool {
 
         let relationships: Vec<OmniRelationShip> = if relationships_file_path.exists() {
             let file_bytes = fs::read(relationships_file_path)
-                .map_err(|e| OxyError::AgentError(format!("Failed to read model path: {}", e)))?;
-            serde_yaml::from_slice(&file_bytes).map_err(|e| {
-                OxyError::AgentError(format!("Failed to parse relationships: {}", e))
-            })?
+                .map_err(|e| OxyError::AgentError(format!("Failed to read model path: {e}")))?;
+            serde_yml::from_slice(&file_bytes)
+                .map_err(|e| OxyError::AgentError(format!("Failed to parse relationships: {e}")))?
         } else {
             vec![]
         };
@@ -1681,16 +1680,16 @@ impl OmniView {
         for (name, dimension) in &self.dimensions {
             let mut dimension_str = name.to_owned();
             if let Some(ref description) = dimension.description {
-                dimension_str.push_str(&format!(" -  {}", description));
+                dimension_str.push_str(&format!(" -  {description}"));
             }
-            description.push_str(&format!("Dimension: {}\n", dimension_str));
+            description.push_str(&format!("Dimension: {dimension_str}\n"));
         }
         for (name, measure) in &self.measures {
             let mut measure_str = name.to_owned();
             if let Some(ref description) = measure.description {
-                measure_str.push_str(&format!(" -  {})", description));
+                measure_str.push_str(&format!(" -  {description})"));
             }
-            description.push_str(&format!("Measure: {}\n", measure_str));
+            description.push_str(&format!("Measure: {measure_str}\n"));
         }
         description
     }
@@ -1714,8 +1713,8 @@ impl ExecuteOmniTool {
         for view_path in view_paths {
             let entry = view_path;
             let file_bytes = fs::read(entry.clone())
-                .map_err(|e| OxyError::AgentError(format!("Failed to read model path: {}", e)))?;
-            let view: OmniView = serde_yaml::from_slice(&file_bytes).map_err(|e| {
+                .map_err(|e| OxyError::AgentError(format!("Failed to read model path: {e}")))?;
+            let view: OmniView = serde_yml::from_slice(&file_bytes).map_err(|e| {
                 OxyError::AgentError(format!(
                     "Failed to parse view: {} {}",
                     entry.to_string_lossy(),
@@ -1749,14 +1748,14 @@ impl ExecuteOmniTool {
         for topic_path in topic_paths {
             let entry = topic_path;
             let file_bytes = fs::read(entry.clone())
-                .map_err(|e| OxyError::AgentError(format!("Failed to read model path: {}", e)))?;
+                .map_err(|e| OxyError::AgentError(format!("Failed to read model path: {e}")))?;
             let topic_name = entry
                 .file_name()
                 .unwrap()
                 .to_string_lossy()
                 .to_string()
                 .replace(".topic.yaml", "");
-            let topic = serde_yaml::from_slice(&file_bytes);
+            let topic = serde_yml::from_slice(&file_bytes);
 
             match topic {
                 Ok(topic) => {
@@ -1772,10 +1771,9 @@ impl ExecuteOmniTool {
 
         let relationships: Vec<OmniRelationShip> = if relationships_file_path.exists() {
             let file_bytes = fs::read(relationships_file_path)
-                .map_err(|e| OxyError::AgentError(format!("Failed to read model path: {}", e)))?;
-            serde_yaml::from_slice(&file_bytes).map_err(|e| {
-                OxyError::AgentError(format!("Failed to parse relationships: {}", e))
-            })?
+                .map_err(|e| OxyError::AgentError(format!("Failed to read model path: {e}")))?;
+            serde_yml::from_slice(&file_bytes)
+                .map_err(|e| OxyError::AgentError(format!("Failed to parse relationships: {e}")))?
         } else {
             vec![]
         };

@@ -125,7 +125,7 @@ impl IAPAuthenticator {
             Some(kid) => {
                 tracing::info!("JWT header kid: {}", kid);
                 jwks.find(&kid)
-                    .ok_or_else(|| JwtError::InvalidToken(format!("No JWK found for kid: {}", kid)))
+                    .ok_or_else(|| JwtError::InvalidToken(format!("No JWK found for kid: {kid}")))
             }
             None => Err(JwtError::InvalidToken("JWT header has no kid".to_string())),
         }?;

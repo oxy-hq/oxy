@@ -95,8 +95,7 @@ impl TryFrom<&Model> for ConfigType {
             } => {
                 let api_key = std::env::var(key_var).map_err(|e| {
                     OxyError::ConfigurationError(format!(
-                        "OpenAI key not found in environment variable {}:\n{}",
-                        key_var, e
+                        "OpenAI key not found in environment variable {key_var}:\n{e}"
                     ))
                 })?;
 
@@ -138,8 +137,7 @@ impl TryFrom<&Model> for ConfigType {
             } => {
                 let api_key = std::env::var(key_var).map_err(|e| {
                     OxyError::ConfigurationError(format!(
-                        "Gemini API key not found in environment variable {}:\n{}",
-                        key_var, e
+                        "Gemini API key not found in environment variable {key_var}:\n{e}"
                     ))
                 })?;
                 let config = OpenAIConfig::new()
@@ -155,8 +153,7 @@ impl TryFrom<&Model> for ConfigType {
             } => {
                 let api_key = std::env::var(key_var).map_err(|e| {
                     OxyError::ConfigurationError(format!(
-                        "Anthropic API key not found in environment variable {}:\n{}",
-                        key_var, e
+                        "Anthropic API key not found in environment variable {key_var}:\n{e}"
                     ))
                 })?;
                 let config = OpenAIConfig::new()
@@ -219,7 +216,7 @@ impl OpenAIToolConfig for &ToolType {
                 match model {
                     Ok(model) => model.get_description(),
                     Err(e) => {
-                        format!("Failed to load semantic model: {}", e)
+                        format!("Failed to load semantic model: {e}")
                     }
                 }
             }

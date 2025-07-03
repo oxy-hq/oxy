@@ -39,7 +39,7 @@ impl UserService {
             .filter_by_email(&identity.email)
             .one(&connection)
             .await
-            .map_err(|e| OxyError::DBError(format!("Failed to query user: {}", e)))?
+            .map_err(|e| OxyError::DBError(format!("Failed to query user: {e}")))?
         {
             Some(existing_user) => Ok(existing_user.into()),
             None => {
@@ -66,7 +66,7 @@ impl UserService {
                 let user = new_user
                     .insert(&connection)
                     .await
-                    .map_err(|e| OxyError::DBError(format!("Failed to create user: {}", e)))?;
+                    .map_err(|e| OxyError::DBError(format!("Failed to create user: {e}")))?;
 
                 tracing::info!(
                     "Created new user: {} ({}) with role: {}",
@@ -89,7 +89,7 @@ impl UserService {
         let user = Users::find_by_id(user_id)
             .one(&connection)
             .await
-            .map_err(|e| OxyError::DBError(format!("Failed to query user: {}", e)))?
+            .map_err(|e| OxyError::DBError(format!("Failed to query user: {e}")))?
             .ok_or_else(|| OxyError::DBError("User not found".to_string()))?;
 
         let mut user: users::ActiveModel = user.into();
@@ -105,7 +105,7 @@ impl UserService {
         let updated_user = user
             .update(&connection)
             .await
-            .map_err(|e| OxyError::DBError(format!("Failed to update user: {}", e)))?;
+            .map_err(|e| OxyError::DBError(format!("Failed to update user: {e}")))?;
 
         Ok(updated_user.into())
     }
@@ -116,7 +116,7 @@ impl UserService {
         let users = Users::find()
             .all(&connection)
             .await
-            .map_err(|e| OxyError::DBError(format!("Failed to query users: {}", e)))?;
+            .map_err(|e| OxyError::DBError(format!("Failed to query users: {e}")))?;
 
         Ok(users.into_iter().map(|user| user.into()).collect())
     }
@@ -129,7 +129,7 @@ impl UserService {
             .filter_active()
             .one(&connection)
             .await
-            .map_err(|e| OxyError::DBError(format!("Failed to query user: {}", e)))?
+            .map_err(|e| OxyError::DBError(format!("Failed to query user: {e}")))?
             .ok_or_else(|| OxyError::DBError("User not found or already deleted".to_string()))?;
 
         let mut user: users::ActiveModel = user.into();
@@ -137,7 +137,7 @@ impl UserService {
 
         user.update(&connection)
             .await
-            .map_err(|e| OxyError::DBError(format!("Failed to delete user: {}", e)))?;
+            .map_err(|e| OxyError::DBError(format!("Failed to delete user: {e}")))?;
 
         Ok(())
     }
@@ -149,7 +149,7 @@ impl UserService {
         let user = Users::find_by_id(user_id)
             .one(&connection)
             .await
-            .map_err(|e| OxyError::DBError(format!("Failed to query user: {}", e)))?
+            .map_err(|e| OxyError::DBError(format!("Failed to query user: {e}")))?
             .ok_or_else(|| OxyError::DBError("User not found".to_string()))?;
 
         let mut user: users::ActiveModel = user.into();
@@ -157,7 +157,7 @@ impl UserService {
 
         user.update(&connection)
             .await
-            .map_err(|e| OxyError::DBError(format!("Failed to update user status: {}", e)))?;
+            .map_err(|e| OxyError::DBError(format!("Failed to update user status: {e}")))?;
 
         Ok(())
     }
@@ -168,7 +168,7 @@ impl UserService {
         let user = Users::find_by_id(user_id)
             .one(&connection)
             .await
-            .map_err(|e| OxyError::DBError(format!("Failed to query user: {}", e)))?
+            .map_err(|e| OxyError::DBError(format!("Failed to query user: {e}")))?
             .ok_or_else(|| OxyError::DBError("User not found".to_string()))?;
 
         let mut user: users::ActiveModel = user.into();
@@ -176,7 +176,7 @@ impl UserService {
 
         user.update(&connection)
             .await
-            .map_err(|e| OxyError::DBError(format!("Failed to update user role: {}", e)))?;
+            .map_err(|e| OxyError::DBError(format!("Failed to update user role: {e}")))?;
 
         Ok(())
     }
@@ -215,7 +215,7 @@ impl UserService {
             .filter_active()
             .all(&connection)
             .await
-            .map_err(|e| OxyError::DBError(format!("Failed to query users: {}", e)))?;
+            .map_err(|e| OxyError::DBError(format!("Failed to query users: {e}")))?;
 
         let mut updates_count = 0;
 
@@ -229,7 +229,7 @@ impl UserService {
                 user_model.role = Set(UserRole::Admin);
 
                 user_model.update(&connection).await.map_err(|e| {
-                    OxyError::DBError(format!("Failed to promote user to admin: {}", e))
+                    OxyError::DBError(format!("Failed to promote user to admin: {e}"))
                 })?;
 
                 tracing::info!("Promoted user {} to admin role", user_email);
@@ -239,7 +239,7 @@ impl UserService {
                 user_model.role = Set(UserRole::Member);
 
                 user_model.update(&connection).await.map_err(|e| {
-                    OxyError::DBError(format!("Failed to demote user from admin: {}", e))
+                    OxyError::DBError(format!("Failed to demote user from admin: {e}"))
                 })?;
 
                 tracing::info!("Demoted user {} from admin role", user_email);

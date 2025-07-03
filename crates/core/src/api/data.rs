@@ -71,7 +71,7 @@ pub async fn build_embeddings(
             tracing::error!("Embeddings build failed: {}", e);
             Ok(extract::Json(EmbeddingsBuildResponse {
                 success: false,
-                message: format!("Embeddings build failed: {}", e),
+                message: format!("Embeddings build failed: {e}"),
             }))
         }
     }

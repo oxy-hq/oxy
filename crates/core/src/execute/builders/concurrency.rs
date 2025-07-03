@@ -136,7 +136,7 @@ where
                     execution_context
                         .wrap_writer(ordered_writer.create_writer(None))
                         .with_child_source(
-                            format!("{}{}", CONCURRENCY_ITEM_ID_PREFIX, idx),
+                            format!("{CONCURRENCY_ITEM_ID_PREFIX}{idx}"),
                             CONCURRENCY_SOURCE.to_string(),
                         ),
                 )

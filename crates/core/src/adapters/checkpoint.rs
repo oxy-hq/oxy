@@ -148,8 +148,7 @@ impl CheckpointContext {
     pub async fn write_events(&self, events: Vec<Event>) -> Result<(), OxyError> {
         self.tx.send(events).await.map_err(|err| {
             OxyError::IOError(format!(
-                "Failed to send events to checkpoint writer:\n{}",
-                err
+                "Failed to send events to checkpoint writer:\n{err}"
             ))
         })?;
         Ok(())
@@ -173,7 +172,7 @@ pub struct CheckpointData<T> {
 pub trait CheckpointStorage {
     fn checkpoint_id<I: Hash>(&self, input: &I) -> String {
         let output = hash(input);
-        format!("{:x}", output)
+        format!("{output:x}")
     }
     async fn last_run(&self, root_id: &str) -> Result<RunInfo, OxyError>;
     async fn create_run(&self, root_id: &str) -> Result<RunInfo, OxyError>;
@@ -212,7 +211,7 @@ impl FileStorage {
     async fn get_root_path(&self, root_id: &str) -> Result<PathBuf, OxyError> {
         let root_path = self.dir.join(root_id);
         create_dir_all(&root_path).await.map_err(|err| {
-            OxyError::IOError(format!("Failed to create checkpoint directory:\n{}", err))
+            OxyError::IOError(format!("Failed to create checkpoint directory:\n{err}"))
         })?;
         Ok(root_path)
     }
@@ -220,7 +219,7 @@ impl FileStorage {
     async fn get_base_path(&self, run_info: &RunInfo) -> Result<PathBuf, OxyError> {
         let base_path = self.dir.join(&run_info.root_id).join(&run_info.run_id);
         create_dir_all(&base_path).await.map_err(|err| {
-            OxyError::IOError(format!("Failed to create checkpoint directory:\n{}", err))
+            OxyError::IOError(format!("Failed to create checkpoint directory:\n{err}"))
         })?;
         Ok(base_path)
     }
@@ -228,7 +227,7 @@ impl FileStorage {
     async fn get_data_path(&self, run_info: &RunInfo) -> Result<PathBuf, OxyError> {
         let data_path = self.get_base_path(run_info).await?.join(&self.data_path);
         create_dir_all(&data_path).await.map_err(|err| {
-            OxyError::IOError(format!("Failed to create checkpoint directory:\n{}", err))
+            OxyError::IOError(format!("Failed to create checkpoint directory:\n{err}"))
         })?;
         Ok(data_path)
     }
@@ -246,18 +245,18 @@ impl CheckpointStorage for FileStorage {
             .join(&checkpoint.checkpoint_id);
         let file = tokio::fs::File::create(data_path)
             .await
-            .map_err(|err| OxyError::IOError(format!("Failed to create checkpoint:\n{}", err)))?;
+            .map_err(|err| OxyError::IOError(format!("Failed to create checkpoint:\n{err}")))?;
         let mut writer = tokio::io::BufWriter::new(file);
         let mut bytes: Vec<u8> = Vec::new();
         serde_json::to_writer(&mut bytes, &checkpoint)?;
         writer
             .write_all(&bytes)
             .await
-            .map_err(|err| OxyError::IOError(format!("Failed to write checkpoint:\n{}", err)))?;
+            .map_err(|err| OxyError::IOError(format!("Failed to write checkpoint:\n{err}")))?;
         writer
             .flush()
             .await
-            .map_err(|err| OxyError::IOError(format!("Failed to flush checkpoint:\n{}", err)))?;
+            .map_err(|err| OxyError::IOError(format!("Failed to flush checkpoint:\n{err}")))?;
         Ok(())
     }
 
@@ -269,7 +268,7 @@ impl CheckpointStorage for FileStorage {
         let path = self.get_data_path(run_info).await?.join(checkpoint_id);
         let bytes = tokio::fs::read(path)
             .await
-            .map_err(|err| OxyError::IOError(format!("Failed to read checkpoint:\n{}", err)))?;
+            .map_err(|err| OxyError::IOError(format!("Failed to read checkpoint:\n{err}")))?;
         let checkpoint: CheckpointData<T> = serde_json::from_slice(&bytes)?;
         Ok(checkpoint)
     }
@@ -278,10 +277,10 @@ impl CheckpointStorage for FileStorage {
         let root_dir = self.get_root_path(root_id).await?;
         let mut read_dir = tokio::fs::read_dir(&root_dir)
             .await
-            .map_err(|err| OxyError::IOError(format!("Failed to read root directory:\n{}", err)))?;
+            .map_err(|err| OxyError::IOError(format!("Failed to read root directory:\n{err}")))?;
         let mut run_ids = vec![];
         while let Some(entry) = read_dir.next_entry().await.map_err(|err| {
-            OxyError::IOError(format!("Failed to traverse {:?} dir:\n{}", root_dir, err))
+            OxyError::IOError(format!("Failed to traverse {root_dir:?} dir:\n{err}"))
         })? {
             let entry_path = entry.path();
             if let (true, Some(run_id)) = (
@@ -333,14 +332,14 @@ impl CheckpointStorage for FileStorage {
             .read(true)
             .open(&events_file)
             .await
-            .map_err(|err| OxyError::IOError(format!("Failed to open events file:\n{:?}", err)))?;
+            .map_err(|err| OxyError::IOError(format!("Failed to open events file:\n{err:?}")))?;
         let buf_reader = BufReader::new(file);
         let mut lines = buf_reader.lines();
         let mut events = vec![];
         while let Some(line) = lines
             .next_line()
             .await
-            .map_err(|err| OxyError::IOError(format!("Failed to read events file:\n{:?}", err)))?
+            .map_err(|err| OxyError::IOError(format!("Failed to read events file:\n{err:?}")))?
         {
             let event: Event = serde_json::from_str(&line)?;
             events.push(event);
@@ -363,16 +362,16 @@ impl CheckpointStorage for FileStorage {
             .append(true)
             .open(&events_file)
             .await
-            .map_err(|err| OxyError::IOError(format!("Failed to open events file:\n{}", err)))?;
+            .map_err(|err| OxyError::IOError(format!("Failed to open events file:\n{err}")))?;
         while let Some(events) = receiver.recv().await {
             let mut buffer = vec![];
             for event in events {
                 serde_json::to_writer(&mut buffer, &event)?;
                 buffer.extend_from_slice(b"\r\n");
             }
-            file.write_all(&buffer).await.map_err(|err| {
-                OxyError::IOError(format!("Failed to write events file:\n{}", err))
-            })?;
+            file.write_all(&buffer)
+                .await
+                .map_err(|err| OxyError::IOError(format!("Failed to write events file:\n{err}")))?;
         }
         Ok(())
     }
@@ -384,9 +383,7 @@ impl CheckpointStorage for FileStorage {
             .join(CHECKPOINT_SUCCESS_MARKER);
         tokio::fs::File::create(success_marker_file)
             .await
-            .map_err(|err| {
-                OxyError::IOError(format!("Failed to create success marker:\n{}", err))
-            })?;
+            .map_err(|err| OxyError::IOError(format!("Failed to create success marker:\n{err}")))?;
         Ok(())
     }
 }

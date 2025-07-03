@@ -38,7 +38,7 @@ impl StreamingMessagePersister {
         let insert_message = new_message.clone();
 
         insert_message.insert(&connection).await.map_err(|err| {
-            OxyError::DBError(format!("Failed to create streaming message: {}", err))
+            OxyError::DBError(format!("Failed to create streaming message: {err}"))
         })?;
 
         Ok(Self {
@@ -94,7 +94,7 @@ impl StreamingMessagePersister {
         temp_model.content = ActiveValue::Set(current_content.clone());
 
         temp_model.update(&self.connection).await.map_err(|err| {
-            OxyError::DBError(format!("Failed to update streaming message: {}", err))
+            OxyError::DBError(format!("Failed to update streaming message: {err}"))
         })?;
 
         message_guard.content = ActiveValue::Set(current_content);
@@ -119,9 +119,10 @@ impl StreamingMessagePersister {
         temp_model.input_tokens = ActiveValue::Set(input_tokens);
         temp_model.output_tokens = ActiveValue::Set(output_tokens);
 
-        temp_model.update(&self.connection).await.map_err(|err| {
-            OxyError::DBError(format!("Failed to update message tokens: {}", err))
-        })?;
+        temp_model
+            .update(&self.connection)
+            .await
+            .map_err(|err| OxyError::DBError(format!("Failed to update message tokens: {err}")))?;
 
         message_guard.input_tokens = ActiveValue::Set(input_tokens);
         message_guard.output_tokens = ActiveValue::Set(output_tokens);

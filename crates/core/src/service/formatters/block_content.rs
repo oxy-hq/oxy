@@ -29,7 +29,7 @@ impl ContentProcessor {
     pub fn output_to_text(&self, output: &Output) -> Option<String> {
         match output {
             Output::Text(text) => Some(text.to_string()),
-            Output::SQL(sql) => Some(format!("Query:\n```sql\n{}\n```\n", sql)),
+            Output::SQL(sql) => Some(format!("Query:\n```sql\n{sql}\n```\n")),
             Output::Table(table) => Some(format!("Result:\n{}\n", table.to_markdown())),
             _ => None,
         }

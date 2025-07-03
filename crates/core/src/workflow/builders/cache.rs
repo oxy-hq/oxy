@@ -247,8 +247,7 @@ impl CacheWriter for FileCache {
     ) -> Result<(), OxyError> {
         let json = serde_json::to_string(value).map_err(|e| {
             OxyError::SerializerError(format!(
-                "Error serializing cache value for key '{}': {}",
-                key, e
+                "Error serializing cache value for key '{key}': {e}"
             ))
         })?;
         self.write_bytes(key, json.as_bytes())

@@ -97,7 +97,7 @@ impl ApiKeyService {
         let argon2 = Argon2::default();
 
         let password_hash = argon2.hash_password(key.as_bytes(), &salt).map_err(|err| {
-            OxyError::ConfigurationError(format!("Failed to hash API key: {}", err))
+            OxyError::ConfigurationError(format!("Failed to hash API key: {err}"))
         })?;
 
         Ok(password_hash.to_string())
@@ -105,9 +105,8 @@ impl ApiKeyService {
 
     /// Verify an API key against its hash
     fn verify_key(key: &str, hash: &str) -> Result<bool, OxyError> {
-        let parsed_hash = PasswordHash::new(hash).map_err(|err| {
-            OxyError::ConfigurationError(format!("Invalid password hash: {}", err))
-        })?;
+        let parsed_hash = PasswordHash::new(hash)
+            .map_err(|err| OxyError::ConfigurationError(format!("Invalid password hash: {err}")))?;
 
         let argon2 = Argon2::default();
         Ok(argon2.verify_password(key.as_bytes(), &parsed_hash).is_ok())
@@ -151,7 +150,7 @@ impl ApiKeyService {
         let api_key_model = ApiKey::insert(active_model)
             .exec_with_returning(db)
             .await
-            .map_err(|err| OxyError::DBError(format!("Failed to create API key: {}", err)))?;
+            .map_err(|err| OxyError::DBError(format!("Failed to create API key: {err}")))?;
 
         Ok(CreateApiKeyResponse {
             id: api_key_model.id,
@@ -177,7 +176,7 @@ impl ApiKeyService {
             .filter(api_keys::Column::IsActive.eq(true))
             .one(db)
             .await
-            .map_err(|err| OxyError::DBError(format!("Failed to fetch API key: {}", err)))?;
+            .map_err(|err| OxyError::DBError(format!("Failed to fetch API key: {err}")))?;
 
         let Some(api_key_model) = api_key else {
             return Ok(None);
@@ -221,7 +220,7 @@ impl ApiKeyService {
             .filter(api_keys::Column::UserId.eq(user_id))
             .one(db)
             .await
-            .map_err(|err| OxyError::DBError(format!("Failed to find API key: {}", err)))?;
+            .map_err(|err| OxyError::DBError(format!("Failed to find API key: {err}")))?;
 
         let Some(api_key_model) = api_key else {
             return Err(OxyError::ValidationError("API key not found".to_string()));
@@ -234,7 +233,7 @@ impl ApiKeyService {
         ApiKey::update(active_model)
             .exec(db)
             .await
-            .map_err(|err| OxyError::DBError(format!("Failed to revoke API key: {}", err)))?;
+            .map_err(|err| OxyError::DBError(format!("Failed to revoke API key: {err}")))?;
 
         Ok(())
     }
@@ -249,7 +248,7 @@ impl ApiKeyService {
             .filter(api_keys::Column::IsActive.eq(true))
             .all(db)
             .await
-            .map_err(|err| OxyError::DBError(format!("Failed to fetch user API keys: {}", err)))?;
+            .map_err(|err| OxyError::DBError(format!("Failed to fetch user API keys: {err}")))?;
 
         Ok(api_keys)
     }
@@ -271,10 +270,7 @@ impl ApiKeyService {
                 ..Default::default()
             };
             if let Err(err) = ApiKey::update(active_model).exec(&db).await {
-                eprintln!(
-                    "Failed to update last_used_at for API key {}: {}",
-                    key_id, err
-                );
+                eprintln!("Failed to update last_used_at for API key {key_id}: {err}");
             }
         });
     }

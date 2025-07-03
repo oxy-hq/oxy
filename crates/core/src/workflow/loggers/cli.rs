@@ -9,7 +9,7 @@ pub struct WorkflowCLILogger;
 
 impl WorkflowLogger for WorkflowCLILogger {
     fn log(&self, text: &str) {
-        println!("{}", text);
+        println!("{text}");
     }
 
     fn log_sql_query(&self, query: &str) {
@@ -20,19 +20,19 @@ impl WorkflowLogger for WorkflowCLILogger {
         match table.to_term() {
             Ok(table) => {
                 println!("{}", "\nResult:".primary());
-                println!("{}", table);
+                println!("{table}");
             }
             Err(e) => {
-                println!("{}", format!("Error displaying results: {}", e).error());
+                println!("{}", format!("Error displaying results: {e}").error());
             }
         }
     }
 
     fn log_text_chunk(&mut self, chunk: &str, is_finished: bool) {
         if is_finished {
-            println!("{}", chunk);
+            println!("{chunk}");
         } else {
-            print!("{}", chunk);
+            print!("{chunk}");
             std::io::stdout().flush().unwrap();
         }
     }

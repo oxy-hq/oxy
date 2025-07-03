@@ -86,7 +86,7 @@ impl BuiltInAuthenticator {
         )
         .map_err(|err| {
             tracing::error!("JWT validation failed: {}", err);
-            OxyError::AuthenticationError(format!("Invalid JWT token: {}", err))
+            OxyError::AuthenticationError(format!("Invalid JWT token: {err}"))
         })?;
 
         Ok(Identity {

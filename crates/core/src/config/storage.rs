@@ -80,7 +80,7 @@ impl LocalSource {
                     && path
                         .file_name()
                         .and_then(|s| s.to_str())
-                        .map(|s| s.ends_with(format!(".{}.yml", sub_extension).as_str()))
+                        .map(|s| s.ends_with(format!(".{sub_extension}.yml").as_str()))
                         .unwrap_or(false)
                 {
                     files.push(path);
@@ -97,7 +97,7 @@ impl ConfigStorage for LocalSource {
         let config_yml = fs::read_to_string(resolved_path).await.map_err(|e| {
             OxyError::ConfigurationError(format!("Failed to read config from file: {e}"))
         })?;
-        let config: Config = serde_yaml::from_str(&config_yml).map_err(|e| {
+        let config: Config = serde_yml::from_str(&config_yml).map_err(|e| {
             OxyError::ConfigurationError(format!("Failed to deserialize config: {e}"))
         })?;
         Ok(config)
@@ -111,7 +111,7 @@ impl ConfigStorage for LocalSource {
         let agent_yml = fs::read_to_string(&resolved_path).await.map_err(|e| {
             OxyError::ConfigurationError(format!("Failed to read agent config from file: {e}"))
         })?;
-        let mut agent_config: AgentConfig = serde_yaml::from_str(&agent_yml).map_err(|e| {
+        let mut agent_config: AgentConfig = serde_yml::from_str(&agent_yml).map_err(|e| {
             OxyError::ConfigurationError(format!("Failed to deserialize agent config: {e}"))
         })?;
         if agent_config.name.is_empty() {
@@ -128,7 +128,7 @@ impl ConfigStorage for LocalSource {
         let workflow_yml = fs::read_to_string(&resolved_path).await.map_err(|e| {
             OxyError::ConfigurationError(format!("Failed to read workflow config from file: {e}"))
         })?;
-        let mut workflow_config: Workflow = serde_yaml::from_str(&workflow_yml).map_err(|e| {
+        let mut workflow_config: Workflow = serde_yml::from_str(&workflow_yml).map_err(|e| {
             OxyError::ConfigurationError(format!("Failed to deserialize workflow config: {e}"))
         })?;
         workflow_config.name = self.get_stem_by_extension(&resolved_path, WORKFLOW_EXTENSION);
@@ -143,7 +143,7 @@ impl ConfigStorage for LocalSource {
         let workflow_yml = fs::read_to_string(&resolved_path).await.map_err(|e| {
             OxyError::ConfigurationError(format!("Failed to read workflow config from file: {e}"))
         })?;
-        let mut temp_workflow: WorkflowWithRawVariables = serde_yaml::from_str(&workflow_yml)
+        let mut temp_workflow: WorkflowWithRawVariables = serde_yml::from_str(&workflow_yml)
             .map_err(|e| {
                 OxyError::ConfigurationError(format!("Failed to deserialize workflow config: {e}"))
             })?;
@@ -160,10 +160,7 @@ impl ConfigStorage for LocalSource {
         let path = self.project_path.join(path);
         let pattern = path.to_str().unwrap();
         let glob = glob::glob(pattern).map_err(|err| {
-            OxyError::IOError(format!(
-                "Failed to expand glob pattern '{}': {}",
-                pattern, err
-            ))
+            OxyError::IOError(format!("Failed to expand glob pattern '{pattern}': {err}"))
         })?;
         Ok(glob
             .filter_map(|entry| entry.ok())
@@ -189,7 +186,7 @@ impl ConfigStorage for LocalSource {
                 path.strip_prefix(&project_path)
                     .map(|p| {
                         !p.to_string_lossy()
-                            .starts_with(&format!("{}/", UNPUBLISH_APP_DIR))
+                            .starts_with(&format!("{UNPUBLISH_APP_DIR}/"))
                     })
                     .unwrap_or(true)
             })
@@ -202,7 +199,7 @@ impl ConfigStorage for LocalSource {
         let agent_yml = fs::read_to_string(&resolved_path).await.map_err(|e| {
             OxyError::ConfigurationError(format!("Failed to read agent config from file: {e}"))
         })?;
-        let app_config: AppConfig = serde_yaml::from_str(&agent_yml).map_err(|e| {
+        let app_config: AppConfig = serde_yml::from_str(&agent_yml).map_err(|e| {
             OxyError::ConfigurationError(format!("Failed to deserialize agent config: {e}"))
         })?;
 

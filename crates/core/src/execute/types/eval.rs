@@ -66,8 +66,7 @@ impl TryFrom<OutputGetter<'_>> for TargetOutput {
             }
             _ => {
                 return Err(OxyError::RuntimeError(format!(
-                    "Failed to convert OutputContainer to TargetOutput: {:?}",
-                    getter
+                    "Failed to convert OutputContainer to TargetOutput: {getter:?}"
                 )));
             }
         };

@@ -108,7 +108,7 @@ pub async fn build_workflow_api_logger(
         BASE64_STANDARD.encode(full_workflow_path.to_str().unwrap());
     // Create a channel to send logs to the client
     let (sender, receiver) = mpsc::channel(100);
-    let log_file_path = format!("/var/tmp/oxy-{}.log.json", full_workflow_path_b64);
+    let log_file_path = format!("/var/tmp/oxy-{full_workflow_path_b64}.log.json");
     File::create(log_file_path.clone()).unwrap();
     let file = OpenOptions::new()
         .append(true)
@@ -157,7 +157,7 @@ pub async fn run_workflow(Path(pathb64): Path<String>) -> Result<impl IntoRespon
             Ok(_) => tracing::info!("Workflow run completed successfully"),
             Err(e) => {
                 tracing::error!("Workflow run failed: {:?}", e);
-                logger.log_error(&format!("Workflow run failed: {:?}", e));
+                logger.log_error(&format!("Workflow run failed: {e:?}"));
             }
         }
     });

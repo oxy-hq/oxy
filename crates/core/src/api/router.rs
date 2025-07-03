@@ -54,7 +54,7 @@ pub async fn api_router(auth_mode: AuthMode) -> Result<Router, OxyError> {
     // migrate db
     Migrator::up(&db, None)
         .await
-        .map_err(|err| OxyError::DBError(format!("Migration failed to apply: {}", err)))?;
+        .map_err(|err| OxyError::DBError(format!("Migration failed to apply: {err}")))?;
 
     let public_routes = Router::new()
         .route("/auth/config", get(auth::get_config))

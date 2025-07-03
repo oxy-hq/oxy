@@ -71,12 +71,11 @@ impl Executable<(EvalKind, EvalTarget, Option<String>)> for GeneratorExecutable 
 
                 let records = asyncify(move || {
                     let rdr = std::fs::File::open(dataset_path).map_err(|err| {
-                        OxyError::RuntimeError(format!("Failed to open file: {}", err))
+                        OxyError::RuntimeError(format!("Failed to open file: {err}"))
                     })?;
-                    let records: Vec<EvalRecord> = serde_yaml::from_reader(rdr).map_err(|err| {
+                    let records: Vec<EvalRecord> = serde_yml::from_reader(rdr).map_err(|err| {
                         OxyError::SerializerError(format!(
-                            "Failed to deserialize EvalRecord: {}",
-                            err
+                            "Failed to deserialize EvalRecord: {err}"
                         ))
                     })?;
                     Ok(records)

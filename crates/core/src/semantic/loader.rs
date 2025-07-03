@@ -180,9 +180,9 @@ impl GetSchemaQueryBuilder {
         let dataset_filter = self.get_dataset_filter();
         let table_filter = self.get_table_filter();
         match (dataset_filter, table_filter) {
-            (Some(dataset), Some(table)) => format!(" WHERE {} AND {}", dataset, table),
-            (Some(dataset), None) => format!(" WHERE {}", dataset),
-            (None, Some(table)) => format!(" WHERE {}", table),
+            (Some(dataset), Some(table)) => format!(" WHERE {dataset} AND {table}"),
+            (Some(dataset), None) => format!(" WHERE {dataset}"),
+            (None, Some(table)) => format!(" WHERE {table}"),
             (None, None) => String::new(),
         }
     }
@@ -209,19 +209,18 @@ impl GetSchemaQuery for Database {
                                 if v.contains("*") {
                                     format!("c.table_name LIKE '{}'", v.replace("*", "%"))
                                 } else {
-                                    format!("c.table_name = '{}'", v)
+                                    format!("c.table_name = '{v}'")
                                 }
                             })
                             .join(" OR ");
-                        format!(" WHERE {}", table_conditions)
+                        format!(" WHERE {table_conditions}")
                     };
 
                     let query = format!(
                         "SELECT c.table_schema, c.table_name, c.column_name, c.data_type, c.is_partitioning_column, COALESCE(d.description, NULL) as description
-                         FROM `{}.INFORMATION_SCHEMA.COLUMNS` c
-                         LEFT JOIN `{}.INFORMATION_SCHEMA.COLUMN_FIELD_PATHS` d
-                         ON c.table_name = d.table_name AND c.column_name = d.column_name{}",
-                        dataset, dataset, tables_filter
+                         FROM `{dataset}.INFORMATION_SCHEMA.COLUMNS` c
+                         LEFT JOIN `{dataset}.INFORMATION_SCHEMA.COLUMN_FIELD_PATHS` d
+                         ON c.table_name = d.table_name AND c.column_name = d.column_name{tables_filter}"
                     );
                     Ok(query)
                 })
@@ -260,7 +259,7 @@ impl GetSchemaQuery for Database {
                 .iter()
                 .map(|(dataset, tables)| {
                     let query = GetSchemaQueryBuilder::default()
-                        .with_tables_table(format!("{}.INFORMATION_SCHEMA.TABLES", dataset))
+                        .with_tables_table(format!("{dataset}.INFORMATION_SCHEMA.TABLES"))
                         .with_filter_tables(tables.clone())
                         .build_ddl();
                     Ok(query)
@@ -303,7 +302,7 @@ async fn fetch_schema_models<T: for<'de> Deserialize<'de>>(
                 let mut results = vec![];
                 for record_batch in record_batches {
                     let records: Vec<T> = from_record_batch(&record_batch).map_err(|e| {
-                        OxyError::RuntimeError(format!("Failed to parse schema information: {}", e))
+                        OxyError::RuntimeError(format!("Failed to parse schema information: {e}"))
                     })?;
                     results.extend(records);
                 }
@@ -397,12 +396,11 @@ impl SchemaLoader {
                 let mut tables = HashMap::new();
 
                 for entry in fs::read_dir(path).map_err(|e| {
-                    OxyError::RuntimeError(format!("Failed to read DuckDB directory: {}", e))
+                    OxyError::RuntimeError(format!("Failed to read DuckDB directory: {e}"))
                 })? {
                     let entry = entry.map_err(|e| {
                         OxyError::RuntimeError(format!(
-                            "Failed to read DuckDB directory entry: {}",
-                            e
+                            "Failed to read DuckDB directory entry: {e}"
                         ))
                     })?;
                     let path = entry.path();
@@ -484,16 +482,15 @@ impl SchemaLoader {
 
                 use duckdb::Connection;
                 let conn = Connection::open_in_memory().map_err(|e| {
-                    OxyError::RuntimeError(format!("Failed to open in-memory DuckDB: {}", e))
+                    OxyError::RuntimeError(format!("Failed to open in-memory DuckDB: {e}"))
                 })?;
 
                 for entry in fs::read_dir(path).map_err(|e| {
-                    OxyError::RuntimeError(format!("Failed to read DuckDB directory: {}", e))
+                    OxyError::RuntimeError(format!("Failed to read DuckDB directory: {e}"))
                 })? {
                     let entry = entry.map_err(|e| {
                         OxyError::RuntimeError(format!(
-                            "Failed to read DuckDB directory entry: {}",
-                            e
+                            "Failed to read DuckDB directory entry: {e}"
                         ))
                     })?;
                     let path = entry.path();
@@ -521,30 +518,27 @@ impl SchemaLoader {
                                 conn.prepare("PRAGMA table_info('auto_csv');")
                                     .map_err(|e| {
                                         OxyError::RuntimeError(format!(
-                                            "DuckDB failed to prepare schema query: {}",
-                                            e
+                                            "DuckDB failed to prepare schema query: {e}"
                                         ))
                                     })?;
                             let mut rows = stmt.query([]).map_err(|e| {
                                 OxyError::RuntimeError(format!(
-                                    "DuckDB failed to query schema: {}",
-                                    e
+                                    "DuckDB failed to query schema: {e}"
                                 ))
                             })?;
                             let mut columns: Vec<String> = Vec::new();
                             while let Some(row) = rows.next().map_err(|e| {
                                 OxyError::RuntimeError(format!(
-                                    "DuckDB failed to read schema row: {}",
-                                    e
+                                    "DuckDB failed to read schema row: {e}"
                                 ))
                             })? {
                                 let name: String = row.get(1).map_err(|e| {
-                                    OxyError::RuntimeError(format!("DuckDB schema row: {}", e))
+                                    OxyError::RuntimeError(format!("DuckDB schema row: {e}"))
                                 })?;
                                 let dtype: String = row.get(2).map_err(|e| {
-                                    OxyError::RuntimeError(format!("DuckDB schema row: {}", e))
+                                    OxyError::RuntimeError(format!("DuckDB schema row: {e}"))
                                 })?;
-                                columns.push(format!("\"{}\" {}", name, dtype));
+                                columns.push(format!("\"{name}\" {dtype}"));
                             }
                             Ok::<Vec<String>, OxyError>(columns)
                         }

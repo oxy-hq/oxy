@@ -142,7 +142,7 @@ impl Writer for ExecutionContext {
         self.writer
             .send(event)
             .await
-            .map_err(|err| OxyError::RuntimeError(format!("Failed to send event:\n{}", err)))
+            .map_err(|err| OxyError::RuntimeError(format!("Failed to send event:\n{err}")))
     }
 }
 

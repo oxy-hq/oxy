@@ -117,8 +117,7 @@ async fn make_documents_from_routing_agent(
                 Ok(documents)
             }
             _ => Err(OxyError::ConfigurationError(format!(
-                "Unsupported file format for path: {}",
-                path
+                "Unsupported file format for path: {path}"
             ))),
         }
     };

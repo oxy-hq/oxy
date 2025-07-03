@@ -34,8 +34,7 @@ impl AuthState<IAPAuthenticator> {
     pub fn iap() -> Result<Self, OxyError> {
         let audience = env::var(GCP_IAP_AUD_ENV_VAR).map_err(|err| {
             OxyError::ConfigurationError(format!(
-                "Failed to read {} environment variable: {}",
-                GCP_IAP_AUD_ENV_VAR, err
+                "Failed to read {GCP_IAP_AUD_ENV_VAR} environment variable: {err}"
             ))
         })?;
 

@@ -69,7 +69,7 @@ mod tests {
         let condition = UserFilters::active();
         let expected = Condition::all().add(users::Column::Status.eq(UserStatus::Active));
 
-        assert_eq!(format!("{:?}", condition), format!("{:?}", expected));
+        assert_eq!(format!("{condition:?}"), format!("{:?}", expected));
     }
 
     #[test]
@@ -78,7 +78,7 @@ mod tests {
         let condition = UserFilters::by_email(email);
         let expected = Condition::all().add(users::Column::Email.eq(email));
 
-        assert_eq!(format!("{:?}", condition), format!("{:?}", expected));
+        assert_eq!(format!("{condition:?}"), format!("{:?}", expected));
     }
 
     #[test]
@@ -89,7 +89,7 @@ mod tests {
             .add(users::Column::Status.eq(UserStatus::Active))
             .add(users::Column::Email.eq(email));
 
-        assert_eq!(format!("{:?}", condition), format!("{:?}", expected));
+        assert_eq!(format!("{condition:?}"), format!("{:?}", expected));
     }
 
     #[test]
@@ -98,7 +98,7 @@ mod tests {
         let condition = UserFilters::by_verification_token(token);
         let expected = Condition::all().add(users::Column::EmailVerificationToken.eq(token));
 
-        assert_eq!(format!("{:?}", condition), format!("{:?}", expected));
+        assert_eq!(format!("{condition:?}"), format!("{:?}", expected));
     }
 
     #[test]
@@ -109,7 +109,7 @@ mod tests {
             .add(users::Column::Status.eq(UserStatus::Active))
             .add(users::Column::EmailVerificationToken.eq(token));
 
-        assert_eq!(format!("{:?}", condition), format!("{:?}", expected));
+        assert_eq!(format!("{condition:?}"), format!("{:?}", expected));
     }
 
     #[test]
@@ -120,7 +120,7 @@ mod tests {
         let condition1 = UserFilters::by_email(email1);
         let condition2 = UserFilters::by_email(email2);
 
-        assert_ne!(format!("{:?}", condition1), format!("{:?}", condition2));
+        assert_ne!(format!("{condition1:?}"), format!("{:?}", condition2));
     }
 
     #[test]
@@ -131,7 +131,7 @@ mod tests {
         let email_only_condition = UserFilters::by_email(email);
 
         assert_ne!(
-            format!("{:?}", active_condition),
+            format!("{active_condition:?}"),
             format!("{:?}", email_only_condition)
         );
     }

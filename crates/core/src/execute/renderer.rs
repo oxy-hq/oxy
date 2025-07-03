@@ -146,8 +146,7 @@ impl Renderer {
             Some(obj) => obj,
             None => {
                 return Err(OxyError::RuntimeError(format!(
-                    "Values {} did not resolve to an object",
-                    template,
+                    "Values {template} did not resolve to an object",
                 )));
             }
         };
@@ -188,11 +187,10 @@ impl Renderer {
                     )));
                 }
             };
-            tmpl.render(context).map_err(|err| {
-                OxyError::RuntimeError(format!("Error rendering template: {:?}", err))
-            })
+            tmpl.render(context)
+                .map_err(|err| OxyError::RuntimeError(format!("Error rendering template: {err:?}")))
         })
-        .map_err(|err| OxyError::RuntimeError(format!("Error rendering template: {:?}", err)))
+        .map_err(|err| OxyError::RuntimeError(format!("Error rendering template: {err:?}")))
         .await?
     }
 
@@ -202,7 +200,7 @@ impl Renderer {
             OxyError::ConfigurationError(format!("Template \"{template}\" not found: {err}"))
         })?;
         tmpl.render(context)
-            .map_err(|err| OxyError::RuntimeError(format!("Error rendering template: {:?}", err)))
+            .map_err(|err| OxyError::RuntimeError(format!("Error rendering template: {err:?}")))
     }
 
     pub fn get_context(&self) -> Value {

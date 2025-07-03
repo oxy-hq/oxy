@@ -71,16 +71,15 @@ pub mod sync {
 
         for sem_file in &sem_files {
             let sem_path = models_dir.join(sem_file);
-            assert!(sem_path.exists(), "Missing .sem.yml file: {}", sem_file);
+            assert!(sem_path.exists(), "Missing .sem.yml file: {sem_file}");
 
             let file_name_without_ext = sem_file.replace(".sem.yml", "");
             assert!(
                 file_contains(
                     &sem_path,
-                    &format!("table: dbt_prod_metrics.{}", file_name_without_ext)
+                    &format!("table: dbt_prod_metrics.{file_name_without_ext}")
                 ),
-                "{} does not contain expected table definition",
-                sem_file
+                "{sem_file} does not contain expected table definition"
             );
         }
     }

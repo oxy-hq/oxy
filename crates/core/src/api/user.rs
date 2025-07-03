@@ -177,8 +177,7 @@ pub async fn logout(State(auth_mode): State<AuthMode>) -> Result<Json<LogoutResp
                 env::var("AWS_COGNITO_CLIENT_ID").map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
             let mut logout_url = Url::parse(&format!(
-                "https://{}.auth.{}.amazoncognito.com/logout",
-                user_pool_id, region
+                "https://{user_pool_id}.auth.{region}.amazoncognito.com/logout"
             ))
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 

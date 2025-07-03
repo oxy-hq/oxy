@@ -79,8 +79,7 @@ impl RoutingAgentExecutable {
                 }))
             }
             _ => Err(OxyError::AgentError(format!(
-                "Unsupported tool type for path: {}",
-                file_ref
+                "Unsupported tool type for path: {file_ref}"
             ))),
         }
     }
@@ -130,7 +129,7 @@ impl RoutingAgentExecutable {
                 RetrievalInput {
                     query: query.to_string(),
                     db_config: routing_agent.db_config.clone(),
-                    db_name: format!("{}-routing", agent_name),
+                    db_name: format!("{agent_name}-routing"),
                     openai_config: model.clone(),
                     embedding_config: routing_agent.embedding_config.clone(),
                 },
@@ -314,7 +313,7 @@ fn generate_unique_tool_name(
 ) -> String {
     let mut suffix = 1;
     loop {
-        let candidate_name = format!("{}_{}", base_name, suffix);
+        let candidate_name = format!("{base_name}_{suffix}");
         if !seen_names.contains(&candidate_name) {
             return candidate_name;
         }

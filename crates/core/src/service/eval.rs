@@ -39,7 +39,7 @@ impl PBarsHandler {
     pub fn update_bar(&mut self, name: &str, progress: usize) -> Result<(), OxyError> {
         if let Some(bar) = self.bars.get_mut(name) {
             bar.update(progress).map_err(|err| {
-                OxyError::RuntimeError(format!("Failed to update progress bar:\n{:?}", err))
+                OxyError::RuntimeError(format!("Failed to update progress bar:\n{err:?}"))
             })?;
         }
         Ok(())
@@ -71,11 +71,11 @@ impl EventHandler for EvalEventsHandler {
         match event.source.kind.as_str() {
             EVAL_SOURCE => match event.kind {
                 EventKind::Started { name, .. } => {
-                    println!("⏳Starting {}", name);
+                    println!("⏳Starting {name}");
                 }
                 EventKind::Finished { message } => {
                     if !self.quiet {
-                        println!("{}", message);
+                        println!("{message}");
                     }
                 }
                 EventKind::Progress { progress } => match progress {
@@ -90,7 +90,7 @@ impl EventHandler for EvalEventsHandler {
                     }
                 },
                 EventKind::Message { message } => {
-                    println!("{}", message);
+                    println!("{message}");
                 }
                 _ => {}
             },

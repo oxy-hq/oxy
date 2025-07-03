@@ -49,7 +49,7 @@ pub async fn seed_test_users() -> Result<Vec<users::Model>, OxyError> {
             .filter(users::Column::Email.eq(&test_user.email))
             .one(&connection)
             .await
-            .map_err(|e| OxyError::DBError(format!("Failed to query existing user: {}", e)))?;
+            .map_err(|e| OxyError::DBError(format!("Failed to query existing user: {e}")))?;
 
         if existing_user.is_some() {
             println!(
@@ -78,7 +78,7 @@ pub async fn seed_test_users() -> Result<Vec<users::Model>, OxyError> {
         let user = new_user
             .insert(&connection)
             .await
-            .map_err(|e| OxyError::DBError(format!("Failed to create user: {}", e)))?;
+            .map_err(|e| OxyError::DBError(format!("Failed to create user: {e}")))?;
 
         println!(
             "  {} Created user: {} ({})",
@@ -105,7 +105,7 @@ pub async fn clear_test_data() -> Result<(), OxyError> {
     let threads_deleted = Threads::delete_many()
         .exec(&connection)
         .await
-        .map_err(|e| OxyError::DBError(format!("Failed to delete threads: {}", e)))?;
+        .map_err(|e| OxyError::DBError(format!("Failed to delete threads: {e}")))?;
     println!(
         "  {} Deleted {} threads",
         "🗑️".warning(),
@@ -121,7 +121,7 @@ pub async fn clear_test_data() -> Result<(), OxyError> {
         )
         .exec(&connection)
         .await
-        .map_err(|e| OxyError::DBError(format!("Failed to delete test users: {}", e)))?;
+        .map_err(|e| OxyError::DBError(format!("Failed to delete test users: {e}")))?;
     println!(
         "  {} Deleted {} test users",
         "🗑️".warning(),
@@ -146,7 +146,7 @@ pub async fn create_sample_threads_for_users() -> Result<(), OxyError> {
         )
         .all(&connection)
         .await
-        .map_err(|e| OxyError::DBError(format!("Failed to query test users: {}", e)))?;
+        .map_err(|e| OxyError::DBError(format!("Failed to query test users: {e}")))?;
 
     if test_users.is_empty() {
         println!("No test users found. Run seed command first.");
@@ -219,7 +219,7 @@ pub async fn create_sample_threads_for_users() -> Result<(), OxyError> {
             let _thread = new_thread
                 .insert(&connection)
                 .await
-                .map_err(|e| OxyError::DBError(format!("Failed to create thread: {}", e)))?;
+                .map_err(|e| OxyError::DBError(format!("Failed to create thread: {e}")))?;
 
             // Progress reporting every 100 threads
             if (thread_index + 1) % 100 == 0 {

@@ -44,14 +44,13 @@ impl Executable<WorkflowToolInput> for WorkflowExecutable {
                 },
             )
             .await
-            .map_err(|e| OxyError::RuntimeError(format!("Failed to run workflow: {}", e)))?;
+            .map_err(|e| OxyError::RuntimeError(format!("Failed to run workflow: {e}")))?;
         let output = match input.workflow_config.output_task_ref {
             Some(task_ref) => output
                 .project_ref(&task_ref)?
                 .first()
                 .ok_or(OxyError::RuntimeError(format!(
-                    "Workflow output task {} not found",
-                    task_ref
+                    "Workflow output task {task_ref} not found"
                 )))?
                 .to_owned()
                 .clone(),
