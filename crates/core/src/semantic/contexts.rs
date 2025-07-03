@@ -39,7 +39,7 @@ impl Object for SemanticModels {
     where
         Self: Sized + 'static,
     {
-        writeln!(f, "{:?}", self)
+        writeln!(f, "{self:?}")
     }
 }
 
@@ -74,8 +74,7 @@ impl TryInto<SchemaObject> for Dimension {
                 .map(|v| {
                     serde_json::to_value(v).map_err(|err| {
                         OxyError::SerializerError(format!(
-                            "Failed to convert dimension into schema object: {}",
-                            err
+                            "Failed to convert dimension into schema object: {err}"
                         ))
                     })
                 })
@@ -87,8 +86,7 @@ impl TryInto<SchemaObject> for Dimension {
                 "synonyms".to_string(),
                 serde_json::to_value(synonyms).map_err(|err| {
                     OxyError::SerializerError(format!(
-                        "Failed to convert dimension into schema object: {}",
-                        err
+                        "Failed to convert dimension into schema object: {err}"
                     ))
                 })?,
             );
@@ -98,8 +96,7 @@ impl TryInto<SchemaObject> for Dimension {
                 "is_partition_key".to_string(),
                 serde_json::to_value(is_partition_key).map_err(|err| {
                     OxyError::SerializerError(format!(
-                        "Failed to convert dimension into schema object: {}",
-                        err
+                        "Failed to convert dimension into schema object: {err}"
                     ))
                 })?,
             );
@@ -240,7 +237,7 @@ impl Object for Variables {
         Self: Sized + 'static,
     {
         let schema_value: serde_json::Value = self.as_ref().into();
-        writeln!(f, "{}", schema_value)
+        writeln!(f, "{schema_value}")
     }
 }
 

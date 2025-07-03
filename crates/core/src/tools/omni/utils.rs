@@ -7,7 +7,7 @@ pub fn omni_template_to_jinja2(input: &str) -> String {
         .replace_all(input, |caps: &regex::Captures<'_>| {
             let mut var = caps.get(1).unwrap().as_str().to_owned();
             var = var.replace(".", DELIMITER);
-            format!("{{{{ ({}) }}}}", var)
+            format!("{{{{ ({var}) }}}}")
         })
         .to_string()
 }

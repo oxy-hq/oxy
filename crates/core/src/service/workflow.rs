@@ -110,8 +110,7 @@ where
         match event.source.kind.as_str() {
             WORKFLOW_SOURCE => match event.kind {
                 EventKind::Started { name, .. } => {
-                    self.logger
-                        .log(&format!("\n\n⏳Running workflow: {}", name));
+                    self.logger.log(&format!("\n\n⏳Running workflow: {name}"));
                 }
                 EventKind::Finished { message, .. } => {
                     self.logger.log(&message);
@@ -142,7 +141,7 @@ where
             _ => match event.kind {
                 EventKind::Started { name, .. } => {
                     if event.source.kind.as_str() == TASK_SOURCE {
-                        self.logger.log(&format!("\n⏳Starting {}", name));
+                        self.logger.log(&format!("\n⏳Starting {name}"));
                     }
                 }
                 EventKind::Updated { chunk } => match chunk.delta.clone() {
@@ -201,7 +200,7 @@ pub async fn get_workflow_logs(path: &PathBuf) -> Result<Vec<LogItem>, OxyError>
     let full_workflow_path = project_path.join(path);
     let full_workflow_path_b64: String =
         BASE64_STANDARD.encode(full_workflow_path.to_str().unwrap());
-    let log_file_path = format!("/var/tmp/oxy-{}.log.json", full_workflow_path_b64);
+    let log_file_path = format!("/var/tmp/oxy-{full_workflow_path_b64}.log.json");
     let content = std::fs::read_to_string(log_file_path);
     match content {
         Ok(content) => {
@@ -252,7 +251,7 @@ pub async fn create_workflow_from_query(
     }
     let workflow_path = workflow_dir.join(format!("{}{}", &workflow_name, WORKFLOW_FILE_EXTENSION));
 
-    let _ = serde_yaml::to_writer(std::fs::File::create(&workflow_path)?, &workflow);
+    let _ = serde_yml::to_writer(std::fs::File::create(&workflow_path)?, &workflow);
 
     Ok(workflow)
 }

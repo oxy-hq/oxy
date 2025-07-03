@@ -43,8 +43,7 @@ impl FromStr for SemanticTableRef {
         let parts: Vec<&str> = s.split('.').collect();
         if parts.len() < 3 {
             return Err(OxyError::SerializerError(format!(
-                "Invalid semantic table reference format: '{}'. Expected format: 'database.dataset.table'",
-                s
+                "Invalid semantic table reference format: '{s}'. Expected format: 'database.dataset.table'"
             )));
         }
         Ok(SemanticTableRef {
@@ -136,7 +135,7 @@ impl std::fmt::Display for SyncMetrics {
             self.sync_time_secs,
             self.output_files
                 .iter()
-                .map(|f| format!("- {}", f))
+                .map(|f| format!("- {f}"))
                 .join("\n"),
         )?;
 
@@ -147,7 +146,7 @@ impl std::fmt::Display for SyncMetrics {
                 "Created files:".success(),
                 self.created_files
                     .iter()
-                    .map(|f| format!("- {}", f))
+                    .map(|f| format!("- {f}"))
                     .join("\n"),
             )?;
         }
@@ -159,7 +158,7 @@ impl std::fmt::Display for SyncMetrics {
                 "Skipped files (already exist):".warning(),
                 self.would_overwrite_files
                     .iter()
-                    .map(|f| format!("- {}", f))
+                    .map(|f| format!("- {f}"))
                     .join("\n"),
             )?;
         }
@@ -171,7 +170,7 @@ impl std::fmt::Display for SyncMetrics {
                 "Overwritten files:".warning(),
                 self.overwritten_files
                     .iter()
-                    .map(|f| format!("- {}", f))
+                    .map(|f| format!("- {f}"))
                     .join("\n"),
             )?;
         }
@@ -183,7 +182,7 @@ impl std::fmt::Display for SyncMetrics {
                 "Deleted files (not in output):".warning(),
                 self.deleted_files
                     .iter()
-                    .map(|f| format!("- {}", f))
+                    .map(|f| format!("- {f}"))
                     .join("\n"),
             )?;
         }

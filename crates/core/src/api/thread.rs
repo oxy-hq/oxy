@@ -123,7 +123,7 @@ pub async fn get_threads(
             source_type: t.source_type.clone(),
             created_at: t.created_at,
             references: serde_json::from_str(&t.references).unwrap_or_default(),
-            is_processing: t.is_processing.clone(),
+            is_processing: t.is_processing,
         })
         .collect();
 
@@ -358,10 +358,7 @@ pub async fn ask_thread(
             StreamingMessagePersister::new(connection.clone(), thread.id, "".to_owned())
                 .await
                 .map_err(|err| {
-                    OxyError::DBError(format!(
-                        "Failed to create streaming message handler: {}",
-                        err
-                    ))
+                    OxyError::DBError(format!("Failed to create streaming message handler: {err}"))
                 })?,
         );
 
@@ -376,7 +373,7 @@ pub async fn ask_thread(
             memory,
         )
         .await;
-        println!("Running agent with question: {:?}", result);
+        println!("Running agent with question: {result:?}");
         match result {
             Ok(output_container) => {
                 tracing::debug!("Agent output: {:?}", output_container);
@@ -386,19 +383,19 @@ pub async fn ask_thread(
                 answer_message.id = ActiveValue::Set(streaming_message_persister.get_message_id());
 
                 let message_model = answer_message.update(&connection).await.map_err(|err| {
-                    OxyError::DBError(format!("Failed to insert message:\n{}", err))
+                    OxyError::DBError(format!("Failed to insert message:\n{err}"))
                 })?;
-                println!("Updated message: {:?}", message_model);
+                println!("Updated message: {message_model:?}");
 
                 for mut artifact in artifacts {
                     artifact.thread_id = ActiveValue::Set(thread.id);
                     artifact.message_id = ActiveValue::Set(message_model.id);
-                    println!("Inserting artifact: {:?}", artifact);
+                    println!("Inserting artifact: {artifact:?}");
                     let response = artifact.insert(&connection).await.map_err(|err| {
-                        println!("Failed to insert artifact: {}", err);
-                        OxyError::DBError(format!("Failed to insert artifact:\n{}", err))
+                        println!("Failed to insert artifact: {err}");
+                        OxyError::DBError(format!("Failed to insert artifact:\n{err}"))
                     })?;
-                    println!("Inserted artifact: {:?}", response);
+                    println!("Inserted artifact: {response:?}");
                 }
                 let mut thread_model: entity::threads::ActiveModel = thread.into();
                 thread_model.is_processing = ActiveValue::Set(false);
@@ -409,7 +406,7 @@ pub async fn ask_thread(
             Err(err) => {
                 tracing::error!("Error running agent: {}", err);
 
-                let msg = format!("🔴 Error: {}", err);
+                let msg = format!("🔴 Error: {err}");
 
                 // Fallback: create error message normally
                 let answer_message = entity::messages::ActiveModel {
@@ -423,7 +420,7 @@ pub async fn ask_thread(
                 };
 
                 let _ = answer_message.update(&connection).await.map_err(|err| {
-                    OxyError::DBError(format!("Failed to insert message:\n{}", err))
+                    OxyError::DBError(format!("Failed to insert message:\n{err}"))
                 })?;
 
                 let error_event = AnswerStream {

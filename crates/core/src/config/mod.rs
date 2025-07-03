@@ -63,8 +63,7 @@ impl Config {
         match agent.validate_with(&context) {
             Ok(_) => Ok(()),
             Err(e) => anyhow::bail!(OxyError::ConfigurationError(format!(
-                "Invalid agent: {} \n{}",
-                path, e
+                "Invalid agent: {path} \n{e}"
             ))),
         }
     }
@@ -92,8 +91,7 @@ impl Config {
         let agent_file = agent_file.unwrap();
         if !agent_file.exists() {
             return Err(OxyError::ConfigurationError(format!(
-                "Agent configuration file not found: {:?}",
-                agent_file
+                "Agent configuration file not found: {agent_file:?}"
             )));
         }
 
@@ -118,7 +116,7 @@ impl Config {
                     && path
                         .file_name()
                         .and_then(|s| s.to_str())
-                        .map(|s| s.ends_with(format!(".{}.yml", sub_extension).as_str()))
+                        .map(|s| s.ends_with(format!(".{sub_extension}.yml").as_str()))
                         .unwrap_or(false)
                 {
                     files.push(path);
@@ -144,8 +142,7 @@ impl Config {
     pub fn load_workflow(&self, workflow_path: &PathBuf) -> Result<Workflow, OxyError> {
         if !workflow_path.exists() {
             return Err(OxyError::ArgumentError(format!(
-                "Workflow configuration file not found: {:?}",
-                workflow_path
+                "Workflow configuration file not found: {workflow_path:?}"
             )));
         }
 
@@ -166,8 +163,7 @@ impl Config {
     ) -> anyhow::Result<SemanticModels> {
         if !semantic_model_path.exists() {
             anyhow::bail!(OxyError::ConfigurationError(format!(
-                "Semantic model file not found: {:?}",
-                semantic_model_path
+                "Semantic model file not found: {semantic_model_path:?}"
             )));
         }
 
@@ -216,9 +212,7 @@ impl Config {
 pub fn load_config(project_path: Option<PathBuf>) -> Result<Config, OxyError> {
     let root = project_path.unwrap_or_else(|| {
         find_project_path()
-            .map_err(|e| {
-                OxyError::ConfigurationError(format!("Failed to find project path: {}", e))
-            })
+            .map_err(|e| OxyError::ConfigurationError(format!("Failed to find project path: {e}")))
             .unwrap()
     });
     let config_path: PathBuf = root.join("config.yml");
@@ -231,7 +225,7 @@ pub fn parse_config(config_path: &PathBuf, project_path: PathBuf) -> Result<Conf
     let config_str = fs::read_to_string(config_path)
         .map_err(|_e| OxyError::ConfigurationError("Unable to read config file".into()))?;
 
-    let result = serde_yaml::from_str::<Config>(&config_str);
+    let result = serde_yml::from_str::<Config>(&config_str);
     match result {
         Ok(mut config) => {
             config.project_path = project_path;
@@ -250,8 +244,7 @@ pub fn parse_config(config_path: &PathBuf, project_path: PathBuf) -> Result<Conf
             let mut raw_error = e.to_string();
             raw_error = raw_error.replace("usize", "unsigned integer");
             Err(OxyError::ConfigurationError(format!(
-                "Failed to parse config file:\n{}",
-                raw_error
+                "Failed to parse config file:\n{raw_error}"
             )))
         }
     }

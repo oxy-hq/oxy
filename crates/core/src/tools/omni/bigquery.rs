@@ -73,7 +73,7 @@ impl BigquerySqlGenerationEngine {
             field.to_owned()
         } else {
             match view_name {
-                Some(view_name) => format!("{}.{}", view_name, field),
+                Some(view_name) => format!("{view_name}.{field}"),
                 None => {
                     tracing::error!(
                         "Field {} does not have view name, please check your semantic model",
@@ -164,8 +164,8 @@ impl BigquerySqlGenerationEngine {
         filter_value: Option<OmniFilterValue>,
     ) -> anyhow::Result<String> {
         match filter_value {
-            Some(OmniFilterValue::String(value)) => Ok(format!("'{}'", value)),
-            Some(OmniFilterValue::Int(value)) => Ok(format!("{}", value)),
+            Some(OmniFilterValue::String(value)) => Ok(format!("'{value}'")),
+            Some(OmniFilterValue::Int(value)) => Ok(format!("{value}")),
             Some(OmniFilterValue::Array(value)) => {
                 let mut values = vec![];
                 for v in value {
@@ -400,7 +400,7 @@ impl BigquerySqlGenerationEngine {
                         value = "1".to_string();
                     }
                     Ok(CompiledField {
-                        sql: format!("COUNT({})", value),
+                        sql: format!("COUNT({value})"),
                         required_views,
                         filters,
                     })
@@ -408,7 +408,7 @@ impl BigquerySqlGenerationEngine {
                 AggregateType::Sum => {
                     if measure.sql.is_some() {
                         Ok(CompiledField {
-                            sql: format!("SUM({})", compiled_sql),
+                            sql: format!("SUM({compiled_sql})"),
                             required_views,
                             filters,
                         })
@@ -422,7 +422,7 @@ impl BigquerySqlGenerationEngine {
                 AggregateType::Avg => {
                     if measure.sql.is_some() {
                         Ok(CompiledField {
-                            sql: format!("AVG({})", compiled_sql),
+                            sql: format!("AVG({compiled_sql})"),
                             required_views,
                             filters,
                         })
@@ -436,7 +436,7 @@ impl BigquerySqlGenerationEngine {
                 AggregateType::Max => {
                     if let Some(_sql) = &measure.sql {
                         Ok(CompiledField {
-                            sql: format!("MAX({})", compiled_sql),
+                            sql: format!("MAX({compiled_sql})"),
                             required_views,
                             filters,
                         })
@@ -450,7 +450,7 @@ impl BigquerySqlGenerationEngine {
                 AggregateType::Min => {
                     if let Some(_sql) = &measure.sql {
                         Ok(CompiledField {
-                            sql: format!("MIN({})", compiled_sql),
+                            sql: format!("MIN({compiled_sql})"),
                             required_views,
                             filters,
                         })
@@ -464,7 +464,7 @@ impl BigquerySqlGenerationEngine {
                 AggregateType::CountDistinct => {
                     if measure.sql.is_some() {
                         Ok(CompiledField {
-                            sql: format!("COUNT(DISTINCT {})", compiled_sql),
+                            sql: format!("COUNT(DISTINCT {compiled_sql})"),
                             required_views,
                             filters,
                         })
@@ -526,7 +526,7 @@ impl BigquerySqlGenerationEngine {
                 AggregateType::Median => {
                     if measure.sql.is_some() {
                         Ok(CompiledField {
-                            sql: format!("MEDIAN({})", compiled_sql),
+                            sql: format!("MEDIAN({compiled_sql})"),
                             required_views,
                             filters,
                         })
@@ -550,7 +550,7 @@ impl BigquerySqlGenerationEngine {
         let topic_fields = self.semantic_model.get_all_fields();
         let (_, _) = topic_fields
             .iter()
-            .find(|f| f.0 == &field_name)
+            .find(|f| f.0 == field_name)
             .ok_or(anyhow::anyhow!("Field {} not found", field_name,))?;
 
         let (view_name, field_name) = field_name

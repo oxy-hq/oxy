@@ -67,7 +67,7 @@ fn convert_json_result_to_arrow(
     let json_objects = convert_to_json_objects(json);
     let infer_cursor = std::io::Cursor::new(json_objects[0].to_string());
     let (arrow_schema, _) = infer_json_schema(infer_cursor, None)
-        .map_err(|err| OxyError::DBError(format!("Failed to infer JSON schema: {}", err)))?;
+        .map_err(|err| OxyError::DBError(format!("Failed to infer JSON schema: {err}")))?;
 
     let json_string = json_objects.to_string();
     let json_stream_string = json_string[1..json_string.len() - 1]
@@ -77,10 +77,10 @@ fn convert_json_result_to_arrow(
     let cursor = std::io::Cursor::new(json_stream_string);
     let reader = ReaderBuilder::new(Arc::new(arrow_schema))
         .build(cursor)
-        .map_err(|err| OxyError::DBError(format!("Failed to create JSON reader: {}", err)))?;
+        .map_err(|err| OxyError::DBError(format!("Failed to create JSON reader: {err}")))?;
     reader
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|err| OxyError::DBError(format!("Failed to convert JSON to Arrow: {}", err)))
+        .map_err(|err| OxyError::DBError(format!("Failed to convert JSON to Arrow: {err}")))
 }
 
 fn convert_to_json_objects(json: &snowflake_api::JsonResult) -> serde_json::Value {

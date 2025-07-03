@@ -126,8 +126,7 @@ impl ParamMapper<EvalInput, Vec<(usize, EvalConfig, EvalTarget)>> for EvalMapper
             }
             _ => {
                 return Err(OxyError::ConfigurationError(format!(
-                    "Invalid file extension: {}. Expected .workflow.yml",
-                    target_ref
+                    "Invalid file extension: {target_ref}. Expected .workflow.yml"
                 )));
             }
         };
@@ -149,10 +148,10 @@ impl Executable<(usize, EvalConfig, EvalTarget)> for EvalExecutable {
     ) -> Result<Self::Response, OxyError> {
         let (idx, eval, target) = input;
         let eval_context =
-            execution_context.with_child_source(format!("eval-{}", idx), EVAL_SOURCE.to_string());
+            execution_context.with_child_source(format!("eval-{idx}"), EVAL_SOURCE.to_string());
         eval_context
             .write_kind(EventKind::Started {
-                name: format!("{}::Test{}", target, idx),
+                name: format!("{target}::Test{idx}"),
                 attributes: Default::default(),
             })
             .await?;
@@ -192,12 +191,12 @@ impl Executable<(usize, EvalConfig, EvalTarget)> for EvalExecutable {
         let result = EvalResult::new(errors, metrics);
         eval_context
             .write_kind(EventKind::Message {
-                message: format!("{}", result).primary().to_string(),
+                message: format!("{result}").primary().to_string(),
             })
             .await?;
         eval_context
             .write_kind(EventKind::Finished {
-                message: format!("{:?}", result),
+                message: format!("{result:?}"),
             })
             .await?;
         Ok(result)

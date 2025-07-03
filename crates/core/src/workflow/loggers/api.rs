@@ -42,7 +42,7 @@ impl WorkflowAPILogger {
             let streaming_handler = Arc::clone(streaming_handler);
             tokio::spawn(async move {
                 if let Err(e) = streaming_handler.append_output(&log_item).await {
-                    eprintln!("Failed to persist log item: {}", e);
+                    eprintln!("Failed to persist log item: {e}");
                 }
             });
         }
@@ -61,7 +61,7 @@ impl WorkflowLogger for WorkflowAPILogger {
     }
 
     fn log_sql_query(&self, query: &str) {
-        let item = LogItem::new(format!("Query: \n\n```sql\n{}\n```", query), LogType::Info);
+        let item = LogItem::new(format!("Query: \n\n```sql\n{query}\n```"), LogType::Info);
         self.log(item)
     }
 

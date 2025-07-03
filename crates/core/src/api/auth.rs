@@ -446,7 +446,7 @@ fn extract_base_url_from_headers(headers: &HeaderMap) -> String {
     if let Some(referer) = headers.get("referer").and_then(|h| h.to_str().ok()) {
         if let Ok(url) = Url::parse(referer) {
             if let Some(host) = url.host_str() {
-                let port = url.port().map(|p| format!(":{}", p)).unwrap_or_default();
+                let port = url.port().map(|p| format!(":{p}")).unwrap_or_default();
                 let origin = format!("{}://{}{}", url.scheme(), host, port);
                 tracing::debug!("Using referer header for base URL: {}", origin);
                 return origin;
@@ -471,25 +471,22 @@ async fn send_verification_email(email: &str, token: &str, base_url: &str) -> Re
 
     if let Some(auth) = auth_config {
         if let Some(basic_auth) = &auth.basic {
-            let verification_url = format!("{}/verify-email?token={}", base_url, token);
+            let verification_url = format!("{base_url}/verify-email?token={token}");
 
             let email_body = format!(
-                "Welcome to Onyx!\n\nPlease verify your email address by clicking the link below:\n\n{}\n\nIf you didn't create an account, please ignore this email.",
-                verification_url
+                "Welcome to Onyx!\n\nPlease verify your email address by clicking the link below:\n\n{verification_url}\n\nIf you didn't create an account, please ignore this email."
             );
 
             let email_message = Message::builder()
                 .from(basic_auth.smtp_user.parse().map_err(|e| {
-                    OxyError::ConfigurationError(format!("Invalid from email: {}", e))
+                    OxyError::ConfigurationError(format!("Invalid from email: {e}"))
                 })?)
-                .to(email.parse().map_err(|e| {
-                    OxyError::ConfigurationError(format!("Invalid to email: {}", e))
-                })?)
+                .to(email
+                    .parse()
+                    .map_err(|e| OxyError::ConfigurationError(format!("Invalid to email: {e}")))?)
                 .subject("Verify your email address")
                 .body(email_body)
-                .map_err(|e| {
-                    OxyError::ConfigurationError(format!("Failed to build email: {}", e))
-                })?;
+                .map_err(|e| OxyError::ConfigurationError(format!("Failed to build email: {e}")))?;
 
             let smtp_password =
                 std::env::var(basic_auth.smtp_password_var.as_str()).map_err(|e| {
@@ -509,15 +506,15 @@ async fn send_verification_email(email: &str, token: &str, base_url: &str) -> Re
 
             let mailer = SmtpTransport::starttls_relay(smtp_server)
                 .map_err(|e| {
-                    OxyError::ConfigurationError(format!("Failed to connect to SMTP server: {}", e))
+                    OxyError::ConfigurationError(format!("Failed to connect to SMTP server: {e}"))
                 })?
                 .credentials(creds)
                 .port(smtp_port)
                 .build();
 
-            mailer.send(&email_message).map_err(|e| {
-                OxyError::ConfigurationError(format!("Failed to send email: {}", e))
-            })?;
+            mailer
+                .send(&email_message)
+                .map_err(|e| OxyError::ConfigurationError(format!("Failed to send email: {e}")))?;
 
             tracing::info!("Verification email sent to {}", email);
         } else {
@@ -559,9 +556,9 @@ async fn exchange_google_code_for_user_info(
 
     let client = reqwest::Client::new();
 
-    let redirect_uri = format!("{}/auth/google/callback", base_url);
+    let redirect_uri = format!("{base_url}/auth/google/callback");
 
-    println!("Redirect URI: {}", redirect_uri);
+    println!("Redirect URI: {redirect_uri}");
 
     let client_secret = std::env::var(google_config.client_secret_var.as_str()).map_err(|e| {
         OxyError::ConfigurationError(format!(
@@ -585,11 +582,11 @@ async fn exchange_google_code_for_user_info(
         .send()
         .await
         .map_err(|e| {
-            OxyError::ConfigurationError(format!("Failed to exchange code for token: {}", e))
+            OxyError::ConfigurationError(format!("Failed to exchange code for token: {e}"))
         })?;
 
     let token_data: serde_json::Value = token_response.json().await.map_err(|e| {
-        OxyError::ConfigurationError(format!("Failed to parse token response: {}", e))
+        OxyError::ConfigurationError(format!("Failed to parse token response: {e}"))
     })?;
 
     let access_token = token_data["access_token"]
@@ -598,15 +595,15 @@ async fn exchange_google_code_for_user_info(
 
     let user_info_response = client
         .get("https://www.googleapis.com/oauth2/v2/userinfo")
-        .header("Authorization", format!("Bearer {}", access_token))
+        .header("Authorization", format!("Bearer {access_token}"))
         .send()
         .await
-        .map_err(|e| OxyError::ConfigurationError(format!("Failed to get user info: {}", e)))?;
+        .map_err(|e| OxyError::ConfigurationError(format!("Failed to get user info: {e}")))?;
 
     let user_info: GoogleUserInfo = user_info_response
         .json()
         .await
-        .map_err(|e| OxyError::ConfigurationError(format!("Failed to parse user info: {}", e)))?;
+        .map_err(|e| OxyError::ConfigurationError(format!("Failed to parse user info: {e}")))?;
 
     tracing::info!(
         "Successfully exchanged Google authorization code for user: {}",

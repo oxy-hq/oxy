@@ -159,9 +159,9 @@ fn create_error_stream(error_message: String) -> EventStream {
 fn decode_path_from_base64(pathb64: String) -> Result<String, String> {
     let decoded_path = BASE64_STANDARD
         .decode(pathb64)
-        .map_err(|e| format!("Failed to decode path: {}", e))?;
+        .map_err(|e| format!("Failed to decode path: {e}"))?;
 
-    String::from_utf8(decoded_path).map_err(|e| format!("Failed to decode path: {}", e))
+    String::from_utf8(decoded_path).map_err(|e| format!("Failed to decode path: {e}"))
 }
 
 pub async fn run_test(
@@ -175,7 +175,7 @@ pub async fn run_test(
     let project_path = match find_project_path() {
         Ok(path) => path.to_string_lossy().to_string(),
         Err(e) => {
-            let error = format!("Failed to find project path: {}", e);
+            let error = format!("Failed to find project path: {e}");
             return Ok(Sse::new(create_error_stream(error)));
         }
     };
@@ -183,7 +183,7 @@ pub async fn run_test(
     let test_stream = match run_agent_test(project_path, path, test_index).await {
         Ok(stream) => stream,
         Err(e) => {
-            let error = format!("Failed to run agent test: {}", e);
+            let error = format!("Failed to run agent test: {e}");
             return Ok(Sse::new(create_error_stream(error)));
         }
     };
@@ -246,7 +246,7 @@ pub async fn ask_agent(
             tracing::error!("Error running agent: {}", err);
             let message = AnswerStream {
                 content: AnswerContent::Error {
-                    message: format!("🔴 Error: {}", err),
+                    message: format!("🔴 Error: {err}"),
                 },
                 references: vec![],
                 is_error: true,

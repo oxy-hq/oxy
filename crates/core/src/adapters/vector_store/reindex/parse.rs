@@ -54,14 +54,14 @@ pub(super) fn parse_embed_document(id: &str, content: &str) -> Vec<Document> {
     };
     let comment_content = context_match[1].replace("\n*", "\n");
     let context_content = context_match[2].to_string();
-    let header_data: Result<ContextHeader, serde_yaml::Error> =
-        serde_yaml::from_str(comment_content.as_str());
+    let header_data: Result<ContextHeader, serde_yml::Error> =
+        serde_yml::from_str(comment_content.as_str());
 
     match header_data {
         Ok(header_data) => match &header_data.oxy.embed {
             Embed::String(embed) => {
                 let doc = Document {
-                    content: format!("{}\n\n{}", embed, context_content),
+                    content: format!("{embed}\n\n{context_content}"),
                     source_type: generate_sql_source_type(&header_data.oxy.database),
                     source_identifier: id.to_string(),
                     embedding_content: embed.to_string(),
@@ -72,7 +72,7 @@ pub(super) fn parse_embed_document(id: &str, content: &str) -> Vec<Document> {
             Embed::Multiple(embeds) => {
                 for embed in embeds {
                     let doc = Document {
-                        content: format!("{}\n\n{}", embed, context_content),
+                        content: format!("{embed}\n\n{context_content}"),
                         source_type: generate_sql_source_type(&header_data.oxy.database),
                         source_identifier: id.to_string(),
                         embedding_content: embed.to_string(),
@@ -102,7 +102,7 @@ pub(super) fn parse_embed_document(id: &str, content: &str) -> Vec<Document> {
 
 fn generate_sql_source_type(database: &Option<String>) -> String {
     match database {
-        Some(db) => format!("sql::{}", db),
+        Some(db) => format!("sql::{db}"),
         None => "file".to_string(),
     }
 }

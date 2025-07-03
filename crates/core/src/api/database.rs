@@ -107,12 +107,12 @@ pub async fn sync_database(
                 if success_count == 1 {
                     "Database synced successfully".to_string()
                 } else {
-                    format!("{} databases synced successfully", success_count)
+                    format!("{success_count} databases synced successfully")
                 }
             } else if success_count == 0 {
                 "Failed to sync databases".to_string()
             } else {
-                format!("{} databases synced, {} failed", success_count, error_count)
+                format!("{success_count} databases synced, {error_count} failed")
             };
 
             Ok(Json(DatabaseSyncResponse {
@@ -125,7 +125,7 @@ pub async fn sync_database(
             tracing::error!("Database sync failed: {}", e);
             Ok(Json(DatabaseSyncResponse {
                 success: false,
-                message: format!("Database sync failed: {}", e),
+                message: format!("Database sync failed: {e}"),
                 sync_time_secs: None,
             }))
         }

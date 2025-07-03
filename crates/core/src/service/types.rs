@@ -35,9 +35,9 @@ impl std::fmt::Display for ContainerKind {
             }
             ContainerKind::Agent { r#ref } => write!(f, "⏳Starting {}", get_file_stem(r#ref)),
             ContainerKind::ExecuteSQL { database } => {
-                write!(f, "⏳Execute SQL on Database: {}", database)
+                write!(f, "⏳Execute SQL on Database: {database}")
             }
-            ContainerKind::Task { name } => write!(f, "⏳Starting {}", name),
+            ContainerKind::Task { name } => write!(f, "⏳Starting {name}"),
             ContainerKind::Artifact {
                 kind,
                 title,
@@ -45,8 +45,7 @@ impl std::fmt::Display for ContainerKind {
                 artifact_id,
             } => write!(
                 f,
-                ":::artifact{{id={} kind={} title={} verified={}}}\n:::\n",
-                artifact_id, kind, title, is_verified
+                ":::artifact{{id={artifact_id} kind={kind} title={title} verified={is_verified}}}\n:::\n"
             ),
         }
     }
@@ -134,7 +133,7 @@ impl Content {
     fn to_markdown(&self) -> String {
         match self {
             Content::Text(text) => text.clone(),
-            Content::SQL(sql) => format!("\n```sql\n{}\n```\n", sql),
+            Content::SQL(sql) => format!("\n```sql\n{sql}\n```\n"),
             Content::Table(table) => table.to_markdown(),
         }
     }
@@ -180,7 +179,7 @@ impl Block {
         }
     }
     fn details_opener(summary: &str) -> String {
-        format!("<details>\n<summary>{}</summary>\n", summary)
+        format!("<details>\n<summary>{summary}</summary>\n")
     }
     fn details_closer() -> String {
         "</details>".to_string()
@@ -276,7 +275,7 @@ impl Block {
             BlockValue::Content { content } => match content {
                 Content::Text(text) => log_items.push(LogItem::info(text.clone())),
                 Content::SQL(sql) => {
-                    log_items.push(LogItem::info(format!("Query:\n```sql\n{}\n```\n", sql)))
+                    log_items.push(LogItem::info(format!("Query:\n```sql\n{sql}\n```\n")))
                 }
                 Content::Table(table) => {
                     log_items.push(LogItem::info(
@@ -301,13 +300,12 @@ impl Block {
                 }
                 ContainerKind::ExecuteSQL { database } => {
                     log_items.push(LogItem::info(format!(
-                        "⏳Execute SQL on Database: {}",
-                        database
+                        "⏳Execute SQL on Database: {database}"
                     )));
                     log_items.extend(children.iter().flat_map(|child| child.as_log_items()));
                 }
                 ContainerKind::Task { name } => {
-                    log_items.push(LogItem::info(format!("⏳Starting {}", name)));
+                    log_items.push(LogItem::info(format!("⏳Starting {name}")));
                     log_items.extend(children.iter().flat_map(|child| child.as_log_items()));
                 }
                 ContainerKind::Artifact { .. } => {

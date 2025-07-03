@@ -54,8 +54,7 @@ impl OutputContainer {
             OutputContainer::Consistency { value, .. } => Ok(value.clone()),
             OutputContainer::Metadata { value, .. } => Ok(value.clone()),
             _ => Err(OxyError::RuntimeError(format!(
-                "Cannot get metadata from {:?}",
-                self
+                "Cannot get metadata from {self:?}"
             ))),
         }
     }
@@ -90,8 +89,8 @@ impl DataContainer {
             OxyError::RuntimeError(format!("Error opening file {}: {}", file_path.display(), e))
         })?;
         let reader = std::io::BufReader::new(file);
-        let output_container: DataContainer = serde_yaml::from_reader(reader)
-            .map_err(|e| OxyError::RuntimeError(format!("Error deserializing yaml: {}", e)))?;
+        let output_container: DataContainer = serde_yml::from_reader(reader)
+            .map_err(|e| OxyError::RuntimeError(format!("Error deserializing yaml: {e}")))?;
         Ok(output_container)
     }
 }
@@ -191,13 +190,11 @@ impl OutputContainer {
                 map.get(task_ref)
                     .map(|item| vec![item])
                     .ok_or(OxyError::RuntimeError(format!(
-                        "Task ref `{}` not found",
-                        task_ref
+                        "Task ref `{task_ref}` not found"
                     )))
             }
             _ => Err(OxyError::RuntimeError(format!(
-                "Cannot find `{}` in {:?}",
-                task_ref, self
+                "Cannot find `{task_ref}` in {self:?}"
             ))),
         }
     }
@@ -208,22 +205,22 @@ impl std::fmt::Display for OutputContainer {
         match self {
             OutputContainer::List(list) => {
                 for item in list {
-                    writeln!(f, "{}", item)?;
+                    writeln!(f, "{item}")?;
                 }
                 Ok(())
             }
             OutputContainer::Map(map) => {
                 for (key, value) in map {
-                    writeln!(f, "{}: {}", key, value)?;
+                    writeln!(f, "{key}: {value}")?;
                 }
                 Ok(())
             }
-            OutputContainer::Single(output) => writeln!(f, "{}", output),
-            OutputContainer::Metadata { value, .. } => writeln!(f, "{}", value),
+            OutputContainer::Single(output) => writeln!(f, "{output}"),
+            OutputContainer::Metadata { value, .. } => writeln!(f, "{value}"),
             OutputContainer::Consistency { value, .. } => {
-                writeln!(f, "{}", value)
+                writeln!(f, "{value}")
             }
-            OutputContainer::Variable(output) => writeln!(f, "{}", output),
+            OutputContainer::Variable(output) => writeln!(f, "{output}"),
         }
     }
 }
@@ -255,7 +252,7 @@ impl TryFrom<OutputContainer> for Content {
 
     fn try_from(value: OutputContainer) -> Result<Self, Self::Error> {
         let value = serde_json::to_string(&value).map_err(|e| {
-            OxyError::SerializerError(format!("Error serializing OutputContainer to JSON: {}", e))
+            OxyError::SerializerError(format!("Error serializing OutputContainer to JSON: {e}"))
         })?;
         Ok(Content::text(value))
     }

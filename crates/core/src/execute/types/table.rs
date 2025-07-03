@@ -35,8 +35,8 @@ struct ArrowTable {
 impl Display for ArrowTable {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match record_batches_to_table(&self.batches, &self.schema) {
-            Ok(table) => write!(f, "{}", table),
-            Err(e) => write!(f, "ArrowTable: {}", e),
+            Ok(table) => write!(f, "{table}"),
+            Err(e) => write!(f, "ArrowTable: {e}"),
         }
     }
 }
@@ -108,7 +108,7 @@ impl Table {
         let table = self.get_inner()?;
         Ok(record_batches_to_table(&table.batches, &table.schema)
             .map_err(|err| {
-                OxyError::RuntimeError(format!("Failed to render table result:\n{}", err))
+                OxyError::RuntimeError(format!("Failed to render table result:\n{err}"))
             })?
             .to_string())
     }
@@ -118,7 +118,7 @@ impl Table {
         let (truncated_results, truncated) = truncate_datasets(&table.batches);
         let table_2d_array = record_batches_to_2d_array(&truncated_results, &table.schema)
             .map_err(|err| {
-                OxyError::RuntimeError(format!("Failed to convert table to 2D array: {}", err))
+                OxyError::RuntimeError(format!("Failed to convert table to 2D array: {err}"))
             })?;
         Ok((table_2d_array, truncated))
     }
@@ -167,19 +167,19 @@ impl Table {
             .build();
 
         let mut writer = ArrowWriter::try_new(file, table.schema.clone(), Some(props))
-            .map_err(|e| OxyError::RuntimeError(format!("Failed to create Arrow writer: {}", e)))?;
+            .map_err(|e| OxyError::RuntimeError(format!("Failed to create Arrow writer: {e}")))?;
         for batch in batches {
             writer
                 .write(batch)
-                .map_err(|e| OxyError::RuntimeError(format!("Failed to write batch: {}", e)))?;
+                .map_err(|e| OxyError::RuntimeError(format!("Failed to write batch: {e}")))?;
         }
         writer
             .close()
-            .map_err(|e| OxyError::RuntimeError(format!("Failed to close writer: {}", e)))?;
+            .map_err(|e| OxyError::RuntimeError(format!("Failed to close writer: {e}")))?;
 
         tracing::debug!("Exported table to: {}", full_file_path.display());
         let relative_file_path = full_file_path.strip_prefix(state_dir).map_err(|e| {
-            OxyError::RuntimeError(format!("Failed to strip prefix from file path: {}", e))
+            OxyError::RuntimeError(format!("Failed to strip prefix from file path: {e}"))
         })?;
 
         Ok(TableData {
@@ -207,7 +207,7 @@ impl Display for Table {
                 let (truncated_results, truncated) = truncate_datasets(&inner.batches);
                 match record_batches_to_json(&truncated_results) {
                     Ok(json) => {
-                        writeln!(f, "{}", json)?;
+                        writeln!(f, "{json}")?;
                         if truncated {
                             writeln!(f, "Table results has been truncated.")?;
                         }

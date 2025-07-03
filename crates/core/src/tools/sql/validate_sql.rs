@@ -28,7 +28,7 @@ impl Executable<SQLInput> for ValidateSQLExecutable {
         let success = match connector.explain_query(&input.sql).await {
             Ok(_) => Output::Bool(true),
             Err(err) => {
-                let error_message = format!("SQL validation failed: {}", err);
+                let error_message = format!("SQL validation failed: {err}");
                 Output::Text(error_message)
             }
         };

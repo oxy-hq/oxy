@@ -106,7 +106,7 @@ impl Verbose for Similarity {
                     writeln!(f, "**********\n")?;
                     is_header_printed = true;
                 }
-                write!(f, "{}", record)?;
+                write!(f, "{record}")?;
                 writeln!(f, "**********\n")?;
             }
         }
@@ -127,11 +127,11 @@ impl std::fmt::Display for RecallRecord {
         writeln!(f, "Distance score: {}", self.score)?;
         writeln!(f, "Retrieved Contexts:")?;
         for context in &self.retrieved_contexts {
-            writeln!(f, "- {:?}", context)?;
+            writeln!(f, "- {context:?}")?;
         }
         writeln!(f, "Reference Contexts:")?;
         for context in &self.reference_contexts {
-            writeln!(f, "- {:?}", context)?;
+            writeln!(f, "- {context:?}")?;
         }
         Ok(())
     }
@@ -153,7 +153,7 @@ impl Verbose for Recall {
                     writeln!(f, "**********\n")?;
                     is_header_printed = true;
                 }
-                write!(f, "{}", record)?;
+                write!(f, "{record}")?;
                 writeln!(f, "**********\n")?;
             }
         }
@@ -252,7 +252,7 @@ impl std::fmt::Debug for EvalResult {
             )?;
             writeln!(f, "**********\n")?;
             for error in &self.errors {
-                writeln!(f, "{}", error)?;
+                writeln!(f, "{error}")?;
                 writeln!(f, "**********\n")?;
             }
             writeln!(f)?;
@@ -268,7 +268,7 @@ impl std::fmt::Display for EvalResult {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "{}", "✅Eval finished with metrics:".primary())?;
         for metric in &self.metrics {
-            writeln!(f, "{}", format!("{}", metric).primary())?;
+            writeln!(f, "{}", format!("{metric}").primary())?;
         }
         Ok(())
     }

@@ -49,7 +49,6 @@ use std::process::exit;
 use tokio::signal;
 use tokio_util::sync::CancellationToken;
 use utoipa::OpenApi;
-use utoipa::openapi::ComponentsBuilder;
 use utoipa::openapi::SecurityRequirement;
 use utoipa::openapi::security::ApiKeyValue;
 use utoipa::openapi::security::SecurityScheme;
@@ -571,7 +570,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                 let changed_files = String::from_utf8(output.stdout)?;
                 let schema_files: Vec<String> = schemas
                     .iter()
-                    .map(|(filename, _)| format!("json-schemas/{}", filename))
+                    .map(|(filename, _)| format!("json-schemas/{filename}"))
                     .collect();
 
                 for file in schema_files {
@@ -587,7 +586,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
         }
         Some(SubCommand::Init) => match init() {
             Ok(_) => println!("{}", "Initialization complete.".success()),
-            Err(e) => eprintln!("{}", format!("Initialization failed: {}", e).error()),
+            Err(e) => eprintln!("{}", format!("Initialization failed: {e}").error()),
         },
         Some(SubCommand::Run(run_args)) => {
             handle_run_command(run_args).await?;
@@ -674,7 +673,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
         Some(SubCommand::SelfUpdate) => {
             if let Err(e) = handle_check_for_updates().await {
                 error!(error = %e, "Failed to update");
-                eprintln!("{}", format!("Failed to update: {}", e).error());
+                eprintln!("{}", format!("Failed to update: {e}").error());
                 exit(1);
             }
         }
@@ -752,14 +751,14 @@ async fn handle_sql_file(
         )
     })?;
     let content = std::fs::read_to_string(file_path)
-        .map_err(|e| OxyError::RuntimeError(format!("Failed to read SQL file: {}", e)))?;
+        .map_err(|e| OxyError::RuntimeError(format!("Failed to read SQL file: {e}")))?;
     let mut env = Environment::new();
     let mut query = content.clone();
 
     // Handle variable templating if variables are provided
     if !variables.is_empty() {
         env.add_template("query", &query)
-            .map_err(|e| OxyError::RuntimeError(format!("Failed to parse SQL template: {}", e)))?;
+            .map_err(|e| OxyError::RuntimeError(format!("Failed to parse SQL template: {e}")))?;
         let tmpl = env.get_template("query").unwrap();
         let ctx = Value::from({
             let mut m = BTreeMap::new();
@@ -770,7 +769,7 @@ async fn handle_sql_file(
         });
         query = tmpl
             .render(ctx)
-            .map_err(|e| OxyError::RuntimeError(format!("Failed to render SQL template: {}", e)))?
+            .map_err(|e| OxyError::RuntimeError(format!("Failed to render SQL template: {e}")))?
     }
 
     // Print colored SQL and execute query
@@ -781,9 +780,9 @@ async fn handle_sql_file(
         true => connector.dry_run(&query).await,
     }?;
     let batches_display = record_batches_to_table(&datasets, &schema)
-        .map_err(|e| OxyError::RuntimeError(format!("Failed to display query results: {}", e)))?;
+        .map_err(|e| OxyError::RuntimeError(format!("Failed to display query results: {e}")))?;
     println!("\n\x1b[1;32mResults:\x1b[0m");
-    println!("{}", batches_display);
+    println!("{batches_display}");
 
     Ok(batches_display.to_string())
 }
@@ -818,8 +817,7 @@ pub async fn handle_run_command(run_args: RunArgs) -> Result<RunResult, OxyError
     let file_path = current_dir.join(file);
     if !file_path.exists() {
         return Err(OxyError::ConfigurationError(format!(
-            "File not found: {:?}",
-            file_path
+            "File not found: {file_path:?}"
         )));
     }
 
@@ -890,7 +888,7 @@ pub async fn start_mcp_sse_server(
     let project_path = match find_project_path() {
         Ok(path) => path,
         Err(e) => {
-            eprintln!("Failed to find project path: {}", e);
+            eprintln!("Failed to find project path: {e}");
             std::process::exit(1);
         }
     };
@@ -905,8 +903,7 @@ pub async fn start_mcp_sse_server(
             Err(e) => {
                 if port <= 1024 && e.kind() == std::io::ErrorKind::PermissionDenied {
                     eprintln!(
-                        "Permission denied binding to port {}. Try running with sudo or use a port above 1024.",
-                        port
+                        "Permission denied binding to port {port}. Try running with sudo or use a port above 1024."
                     );
                     std::process::exit(1);
                 }
@@ -921,7 +918,7 @@ pub async fn start_mcp_sse_server(
                     std::process::exit(1);
                 }
 
-                println!("Port {} for mcp is occupied. Trying next port...", port);
+                println!("Port {port} for mcp is occupied. Trying next port...");
                 port += 1;
                 port_increment_count += 1;
             }
@@ -929,7 +926,7 @@ pub async fn start_mcp_sse_server(
     }
 
     let service = OxyMcpServer::new(project_path.clone()).await?;
-    let bind = format!("{}:{}", host, port)
+    let bind = format!("{host}:{port}")
         .parse::<SocketAddr>()
         .unwrap_or_else(|_| SocketAddr::from(([0, 0, 0, 0], port)));
     let ct = SseServer::serve(bind)
@@ -943,7 +940,7 @@ pub async fn start_mcp_sse_server(
     };
     println!(
         "{}",
-        format!("MCP server running at http://{}:{}", display_host, port).secondary()
+        format!("MCP server running at http://{display_host}:{port}").secondary()
     );
     anyhow::Ok(ct)
 }
@@ -955,8 +952,7 @@ pub async fn handle_test_command(test_args: TestArgs) -> Result<(), OxyError> {
 
     if !file_path.exists() {
         return Err(OxyError::ConfigurationError(format!(
-            "File not found: {:?}",
-            file_path
+            "File not found: {file_path:?}"
         )));
     }
 
@@ -978,7 +974,7 @@ pub async fn start_server_and_web_app(mut web_port: u16, web_host: String, auth_
     let project_path = match find_project_path() {
         Ok(path) => path,
         Err(e) => {
-            eprintln!("Failed to find project path: {}", e);
+            eprintln!("Failed to find project path: {e}");
             std::process::exit(1);
         }
     };
@@ -1026,8 +1022,7 @@ pub async fn start_server_and_web_app(mut web_port: u16, web_host: String, auth_
                     // For privileged ports (1024 and below), don't auto-increment if it's a permission error
                     if web_port <= 1024 && e.kind() == std::io::ErrorKind::PermissionDenied {
                         eprintln!(
-                            "Permission denied binding to port {}. Try running with sudo or use a port above 1024.",
-                            web_port
+                            "Permission denied binding to port {web_port}. Try running with sudo or use a port above 1024."
                         );
                         std::process::exit(1);
                     }
@@ -1043,10 +1038,7 @@ pub async fn start_server_and_web_app(mut web_port: u16, web_host: String, auth_
                         std::process::exit(1);
                     }
 
-                    println!(
-                        "Port {} for web app is occupied. Trying next port...",
-                        web_port
-                    );
+                    println!("Port {web_port} for web app is occupied. Trying next port...");
                     web_port += 1;
                     port_increment_count += 1;
                 }
@@ -1093,7 +1085,7 @@ pub async fn start_server_and_web_app(mut web_port: u16, web_host: String, auth_
         let api_router = match router::api_router(auth_mode).await {
             Ok(router) => router.layer(trace_layer.clone()),
             Err(e) => {
-                eprintln!("Failed to create API router: {}", e);
+                eprintln!("Failed to create API router: {e}");
                 std::process::exit(1);
             }
         };
@@ -1131,7 +1123,7 @@ pub async fn start_server_and_web_app(mut web_port: u16, web_host: String, auth_
             .fallback_service(serve_with_fallback)
             .layer(trace_layer);
 
-        let web_addr = format!("{}:{}", web_host, web_port)
+        let web_addr = format!("{web_host}:{web_port}")
             .parse::<SocketAddr>()
             .unwrap_or_else(|_| SocketAddr::from(([0, 0, 0, 0], web_port)));
         let listener = tokio::net::TcpListener::bind(web_addr).await.unwrap();
@@ -1143,7 +1135,7 @@ pub async fn start_server_and_web_app(mut web_port: u16, web_host: String, auth_
         println!(
             "{} {}",
             "Web app running at".text(),
-            format!("http://{}:{}", display_host, web_port).secondary()
+            format!("http://{display_host}:{web_port}").secondary()
         );
 
         if let Err(e) = crate::auth::user::UserService::sync_admin_roles_from_config().await {
@@ -1175,16 +1167,16 @@ async fn handle_check_for_updates() -> Result<(), OxyError> {
         self_update::backends::github::Update::configure()
             .repo_owner("oxy-hq")
             .repo_name("oxy")
-            .bin_name(&format!("oxy-{}", target))
+            .bin_name(&format!("oxy-{target}"))
             .show_download_progress(true)
             .current_version(self_update::cargo_crate_version!())
             .build()
-            .map_err(|e| OxyError::RuntimeError(format!("Update configuration failed: {}", e)))?
+            .map_err(|e| OxyError::RuntimeError(format!("Update configuration failed: {e}")))?
             .update()
-            .map_err(|e| OxyError::RuntimeError(format!("Update failed: {}", e)))
+            .map_err(|e| OxyError::RuntimeError(format!("Update failed: {e}")))
     })
     .await
-    .map_err(|e| OxyError::RuntimeError(format!("Task join error: {}", e)))??;
+    .map_err(|e| OxyError::RuntimeError(format!("Task join error: {e}")))??;
 
     if status.updated() {
         println!(

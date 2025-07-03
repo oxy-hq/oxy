@@ -24,8 +24,8 @@ const REQUIRED_FIELDS_ERROR: &str =
 impl fmt::Display for InitError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            InitError::IoError(err) => write!(f, "{}: {}", IO_ERROR, err),
-            InitError::ExtractionError(err) => write!(f, "{}: {}", EXTRACTION_ERROR, err),
+            InitError::IoError(err) => write!(f, "{IO_ERROR}: {err}"),
+            InitError::ExtractionError(err) => write!(f, "{EXTRACTION_ERROR}: {err}"),
         }
     }
 }
@@ -48,7 +48,7 @@ fn prompt_with_default(prompt: &str, default: &str, info: Option<&str>) -> io::R
     if let Some(info) = info {
         println!("\n  {}", info.info())
     }
-    print!("  {} (default: {}): ", prompt, default);
+    print!("  {prompt} (default: {default}): ");
     io::stdout().flush()?;
     let mut input = String::new();
     io::stdin().read_line(&mut input)?;
@@ -286,7 +286,7 @@ fn collect_models() -> Result<Vec<Model>, InitError> {
 
 // Helper function to prompt for continuation
 fn prompt_continue(message: &str) -> io::Result<bool> {
-    print!("{} (y/N): ", message);
+    print!("{message} (y/N): ");
     io::stdout().flush()?;
     let mut answer = String::new();
     io::stdin().read_line(&mut answer)?;
@@ -372,11 +372,10 @@ fn create_config_file(config_path: &Path) -> Result<(), InitError> {
     };
 
     let yaml =
-        serde_yaml::to_string(&config).map_err(|e| InitError::ExtractionError(e.to_string()))?;
+        serde_yml::to_string(&config).map_err(|e| InitError::ExtractionError(e.to_string()))?;
 
     let content = format!(
-        "# yaml-language-server: $schema=https://raw.githubusercontent.com/oxy-hq/oxy/refs/heads/main/json-schemas/config.json\n{}",
-        yaml
+        "# yaml-language-server: $schema=https://raw.githubusercontent.com/oxy-hq/oxy/refs/heads/main/json-schemas/config.json\n{yaml}"
     );
 
     fs::write(config_path, content)?;

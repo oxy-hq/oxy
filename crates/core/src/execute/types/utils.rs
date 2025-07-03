@@ -140,8 +140,7 @@ pub fn record_batches_to_table(
 
     if total_column > displayed_column as usize {
         table.with(Panel::footer(format!(
-            "{} columns ({} shown)",
-            total_column, displayed_column
+            "{total_column} columns ({displayed_column} shown)"
         )));
     }
 

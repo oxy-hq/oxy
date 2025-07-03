@@ -86,7 +86,7 @@ impl ServerHandler for OxyMcpServer {
             .tools
             .get(tool_name.as_str())
             .ok_or(rmcp::Error::invalid_request(
-                format!("Tool {} not found", tool_name),
+                format!("Tool {tool_name} not found"),
                 None,
             ))?;
         match oxy_tool.tool_type {
@@ -119,7 +119,7 @@ impl OxyMcpServer {
         arguments: Option<Map<String, Value>>,
     ) -> Result<CallToolResult, rmcp::Error> {
         std::env::set_current_dir(&self.project_path).map_err(|e| {
-            rmcp::Error::internal_error(format!("Failed to set current directory: {}", e), None)
+            rmcp::Error::internal_error(format!("Failed to set current directory: {e}"), None)
         })?;
 
         match arguments {
@@ -135,7 +135,7 @@ impl OxyMcpServer {
                 let output = ask_adhoc(question.to_string(), self.project_path.clone(), agent_name)
                     .await
                     .map_err(|e| {
-                        rmcp::Error::internal_error(format!("Failed to ask agent: {}", e), None)
+                        rmcp::Error::internal_error(format!("Failed to ask agent: {e}"), None)
                     })?;
                 Ok(CallToolResult {
                     content: vec![Content::text(output)],
@@ -151,7 +151,7 @@ impl OxyMcpServer {
         arguments: Option<Map<String, Value>>,
     ) -> Result<CallToolResult, rmcp::Error> {
         std::env::set_current_dir(&self.project_path).map_err(|e| {
-            rmcp::Error::internal_error(format!("Failed to set current directory: {}", e), None)
+            rmcp::Error::internal_error(format!("Failed to set current directory: {e}"), None)
         })?;
 
         let variables = match arguments {
@@ -165,11 +165,11 @@ impl OxyMcpServer {
         let workflows = list_workflows(Some(self.project_path.clone()))
             .await
             .map_err(|e| {
-                rmcp::Error::internal_error(format!("Failed to list workflows: {}", e), None)
+                rmcp::Error::internal_error(format!("Failed to list workflows: {e}"), None)
             })?;
 
         let workflow_info = workflows.iter().find(|w| w.name == workflow_name).ok_or(
-            rmcp::Error::invalid_request(format!("Workflow {} not found", workflow_name), None),
+            rmcp::Error::invalid_request(format!("Workflow {workflow_name} not found"), None),
         )?;
 
         let output = run_workflow(
@@ -179,7 +179,7 @@ impl OxyMcpServer {
             variables,
         )
         .await
-        .map_err(|e| rmcp::Error::internal_error(format!("Failed to run workflow: {}", e), None))?;
+        .map_err(|e| rmcp::Error::internal_error(format!("Failed to run workflow: {e}"), None))?;
 
         Ok(CallToolResult {
             content: vec![output.try_into().map_err(|_err| {
@@ -272,8 +272,8 @@ const AGENT_TOOL_PREFIX: &str = "agent-";
 const WORKFLOW_TOOL_PREFIX: &str = "workflow-";
 
 fn get_agent_tool_name(agent_name: &str) -> String {
-    format!("{}{}", AGENT_TOOL_PREFIX, agent_name)
+    format!("{AGENT_TOOL_PREFIX}{agent_name}")
 }
 fn get_workflow_tool_name(workflow_name: &str) -> String {
-    format!("{}{}", WORKFLOW_TOOL_PREFIX, workflow_name)
+    format!("{WORKFLOW_TOOL_PREFIX}{workflow_name}")
 }

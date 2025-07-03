@@ -65,7 +65,7 @@ impl StreamingWorkflowPersister {
             ActiveValue::Set(serde_json::to_string(&current_output.clone()).unwrap());
 
         temp_model.update(&self.connection).await.map_err(|err| {
-            OxyError::DBError(format!("Failed to update streaming message: {}", err))
+            OxyError::DBError(format!("Failed to update streaming message: {err}"))
         })?;
 
         thread_guard.output = ActiveValue::Set(serde_json::to_string(&*current_output).unwrap());

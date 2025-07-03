@@ -45,9 +45,7 @@ impl Output {
 
     pub fn merge(&self, other: &Self) -> Self {
         match (self, other) {
-            (Output::Text(text1), Output::Text(text2)) => {
-                Output::Text(format!("{}{}", text1, text2))
-            }
+            (Output::Text(text1), Output::Text(text2)) => Output::Text(format!("{text1}{text2}")),
             _ => other.clone(),
         }
     }
@@ -83,7 +81,7 @@ impl Output {
             Output::Documents(docs) => {
                 let mut markdown = String::new();
                 for doc in docs {
-                    markdown.push_str(&format!("{}\n", doc));
+                    markdown.push_str(&format!("{doc}\n"));
                 }
                 markdown
             }
@@ -133,14 +131,14 @@ impl From<bool> for Output {
 impl std::fmt::Display for Output {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Output::Text(text) => write!(f, "{}", text),
-            Output::SQL(sql) => write!(f, "{}", sql),
-            Output::Table(table) => write!(f, "{}", table),
-            Output::Prompt(prompt) => write!(f, "{}", prompt),
-            Output::Bool(b) => write!(f, "{}", b),
+            Output::Text(text) => write!(f, "{text}"),
+            Output::SQL(sql) => write!(f, "{sql}"),
+            Output::Table(table) => write!(f, "{table}"),
+            Output::Prompt(prompt) => write!(f, "{prompt}"),
+            Output::Bool(b) => write!(f, "{b}"),
             Output::Documents(docs) => {
                 for doc in docs {
-                    writeln!(f, "{}", doc)?;
+                    writeln!(f, "{doc}")?;
                 }
                 Ok(())
             }
@@ -179,14 +177,14 @@ impl Object for Output {
         Self: Sized + 'static,
     {
         match self.as_ref() {
-            Output::Text(text) => write!(f, "{}", text),
-            Output::SQL(sql) => write!(f, "{:?}", sql),
+            Output::Text(text) => write!(f, "{text}"),
+            Output::SQL(sql) => write!(f, "{sql:?}"),
             Output::Table(table) => Arc::new(table.clone()).render(f),
-            Output::Prompt(prompt) => write!(f, "{}", prompt),
-            Output::Bool(b) => write!(f, "{}", b),
+            Output::Prompt(prompt) => write!(f, "{prompt}"),
+            Output::Bool(b) => write!(f, "{b}"),
             Output::Documents(docs) => {
                 for doc in docs {
-                    writeln!(f, "{}", doc)?;
+                    writeln!(f, "{doc}")?;
                 }
                 Ok(())
             }

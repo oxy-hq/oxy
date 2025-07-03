@@ -114,7 +114,7 @@ impl BlockHandler {
     ) -> Result<(), OxyError> {
         // Prepare and send container opener
         let (opener, _) = self.content_processor.prepare_container(kind);
-        let text = format!("\n{}\n", opener);
+        let text = format!("\n{opener}\n");
         self.stream_dispatcher
             .send_text(text.clone(), &source.kind)
             .await?;
@@ -129,7 +129,7 @@ impl BlockHandler {
 
             let artifact_value = match (artifact_kind, is_artifact_active) {
                 (ArtifactKind::Agent { .. }, false) => {
-                    Some(ArtifactValue::Content(format!("\n{}\n", opener)))
+                    Some(ArtifactValue::Content(format!("\n{opener}\n")))
                 }
                 (ArtifactKind::Workflow { .. }, false) => {
                     Some(ArtifactValue::LogItem(LogItem::info(kind.to_string())))
@@ -165,7 +165,7 @@ impl BlockHandler {
 
         // Send the closing marker
         if let Some(closer) = self.content_processor.get_next_closer() {
-            let text = format!("\n{}\n", closer);
+            let text = format!("\n{closer}\n");
             self.stream_dispatcher
                 .send_text(text.clone(), &source.kind)
                 .await?;
@@ -181,7 +181,7 @@ impl BlockHandler {
 
                 let artifact_value = match (artifact_kind, is_artifact_active) {
                     (ArtifactKind::Agent { .. }, false) => {
-                        Some(ArtifactValue::Content(format!("\n{}\n", closer)))
+                        Some(ArtifactValue::Content(format!("\n{closer}\n")))
                     }
                     _ => None,
                 };

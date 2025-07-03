@@ -158,8 +158,7 @@ where
     match spawn_blocking(f).await {
         Ok(res) => res,
         Err(err) => Err(OxyError::RuntimeError(format!(
-            "Failed to spawn blocking task: {}",
-            err
+            "Failed to spawn blocking task: {err}"
         ))),
     }
 }
@@ -168,7 +167,7 @@ pub fn extract_csv_dimensions(
     path: &std::path::Path,
 ) -> Result<Vec<Dimension>, crate::errors::OxyError> {
     let conn = Connection::open_in_memory().map_err(|e| {
-        crate::errors::OxyError::RuntimeError(format!("Failed to open in-memory DuckDB: {}", e))
+        crate::errors::OxyError::RuntimeError(format!("Failed to open in-memory DuckDB: {e}"))
     })?;
 
     let sql = format!(
@@ -187,23 +186,22 @@ pub fn extract_csv_dimensions(
         .prepare("PRAGMA table_info('auto_csv');")
         .map_err(|e| {
             crate::errors::OxyError::RuntimeError(format!(
-                "DuckDB failed to prepare schema query: {}",
-                e
+                "DuckDB failed to prepare schema query: {e}"
             ))
         })?;
     let mut rows = stmt.query([]).map_err(|e| {
-        crate::errors::OxyError::RuntimeError(format!("DuckDB failed to query schema: {}", e))
+        crate::errors::OxyError::RuntimeError(format!("DuckDB failed to query schema: {e}"))
     })?;
 
     let mut columns = Vec::new();
     while let Some(row) = rows.next().map_err(|e| {
-        crate::errors::OxyError::RuntimeError(format!("DuckDB failed to read schema row: {}", e))
+        crate::errors::OxyError::RuntimeError(format!("DuckDB failed to read schema row: {e}"))
     })? {
         let name: String = row.get(1).map_err(|e| {
-            crate::errors::OxyError::RuntimeError(format!("DuckDB schema row: {}", e))
+            crate::errors::OxyError::RuntimeError(format!("DuckDB schema row: {e}"))
         })?;
         let dtype: String = row.get(2).map_err(|e| {
-            crate::errors::OxyError::RuntimeError(format!("DuckDB schema row: {}", e))
+            crate::errors::OxyError::RuntimeError(format!("DuckDB schema row: {e}"))
         })?;
         columns.push((name, dtype));
     }
@@ -215,7 +213,7 @@ pub fn extract_csv_dimensions(
             let mut row = StringRecord::new();
             if !reader
                 .read_record(&mut row)
-                .map_err(|e| OxyError::RuntimeError(format!("CSV read error: {}", e)))?
+                .map_err(|e| OxyError::RuntimeError(format!("CSV read error: {e}")))?
             {
                 break;
             }
@@ -247,7 +245,7 @@ pub fn try_unwrap_arc_mutex<T>(arc: std::sync::Arc<std::sync::Mutex<T>>) -> Resu
     std::sync::Arc::try_unwrap(arc)
         .map_err(|_| OxyError::RuntimeError("Failed to unwrap arc mutex".to_string()))?
         .into_inner()
-        .map_err(|err| OxyError::RuntimeError(format!("Failed to unwrap arc mutex: {}", err)))
+        .map_err(|err| OxyError::RuntimeError(format!("Failed to unwrap arc mutex: {err}")))
 }
 
 pub async fn try_unwrap_arc_tokio_mutex<T>(

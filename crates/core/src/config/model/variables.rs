@@ -24,24 +24,215 @@ impl Variables {
         params: Option<HashMap<String, Value>>,
     ) -> Result<HashMap<String, Value>, OxyError> {
         match params {
-            Some(params) => {
-                let mut resolved = HashMap::new();
-                for (key, value) in self.variables.iter() {
-                    if let Some(param_value) = params.get(key) {
-                        resolved.insert(key.clone(), param_value.clone());
-                    } else if let Some(default_value) = &value.clone().metadata().default {
-                        resolved.insert(key.clone(), default_value.clone());
-                    } else {
-                        return Err(OxyError::ArgumentError(format!(
-                            "Missing required variable: {}",
-                            key
-                        )));
-                    }
-                }
-                Ok(resolved)
-            }
+            Some(params) => self.convert_params(params),
             None => Ok(self.into()),
         }
+    }
+
+    fn convert_value_to_schema_type(
+        &self,
+        value: &Value,
+        schema: &SchemaObject,
+    ) -> Result<Value, OxyError> {
+        if let Some(instance_type) = &schema.instance_type {
+            match instance_type {
+                SingleOrVec::Single(instance_type) => {
+                    Self::convert_to_single_type(value, instance_type.as_ref())
+                }
+                SingleOrVec::Vec(types) => {
+                    // Try each type in order until one succeeds
+                    for instance_type in types {
+                        if let Ok(converted) = Self::convert_to_single_type(value, instance_type) {
+                            return Ok(converted);
+                        }
+                    }
+                    Err(OxyError::ArgumentError(format!(
+                        "Cannot convert {value:?} to any of the allowed types: {types:?}"
+                    )))
+                }
+            }
+        } else {
+            Ok(value.clone())
+        }
+    }
+
+    fn convert_to_single_type(
+        value: &Value,
+        target_type: &InstanceType,
+    ) -> Result<Value, OxyError> {
+        match target_type {
+            InstanceType::Integer => Self::to_integer(value),
+            InstanceType::Number => Self::to_number(value),
+            InstanceType::Boolean => Self::to_boolean(value),
+            InstanceType::String => Self::to_string(value),
+            InstanceType::Array => match value {
+                Value::Array(_) => Ok(value.clone()),
+                _ => Self::type_error("array", value),
+            },
+            InstanceType::Object => match value {
+                Value::Object(_) => Ok(value.clone()),
+                _ => Self::type_error("object", value),
+            },
+            InstanceType::Null => match value {
+                Value::Null => Ok(value.clone()),
+                _ => Self::type_error("null", value),
+            },
+        }
+    }
+
+    fn to_integer(value: &Value) -> Result<Value, OxyError> {
+        match value {
+            Value::String(s) => {
+                let trimmed = s.trim();
+
+                // Try parsing as integer first
+                if let Ok(i) = trimmed.parse::<i64>() {
+                    return Ok(Value::Number(serde_json::Number::from(i)));
+                }
+
+                // Try parsing as float and converting to int
+                if let Ok(f) = trimmed.parse::<f64>() {
+                    if f.fract() == 0.0 && f >= i64::MIN as f64 && f <= i64::MAX as f64 {
+                        return Ok(Value::Number(serde_json::Number::from(f as i64)));
+                    }
+                }
+
+                Err(OxyError::ArgumentError(format!(
+                    "Cannot convert '{s}' to integer"
+                )))
+            }
+            Value::Number(n) => {
+                if n.is_i64() || n.is_u64() {
+                    Ok(value.clone())
+                } else if let Some(f) = n.as_f64() {
+                    if f.fract() == 0.0 && f >= i64::MIN as f64 && f <= i64::MAX as f64 {
+                        Ok(Value::Number(serde_json::Number::from(f as i64)))
+                    } else {
+                        Err(OxyError::ArgumentError(format!(
+                            "Cannot convert float {f} to integer without precision loss"
+                        )))
+                    }
+                } else {
+                    Err(OxyError::ArgumentError(format!(
+                        "Invalid number format: {n:?}"
+                    )))
+                }
+            }
+            _ => Self::type_error("integer", value),
+        }
+    }
+
+    fn to_number(value: &Value) -> Result<Value, OxyError> {
+        match value {
+            Value::String(s) => {
+                let trimmed = s.trim();
+                trimmed
+                    .parse::<f64>()
+                    .ok()
+                    .and_then(|f| serde_json::Number::from_f64(f))
+                    .map(Value::Number)
+                    .ok_or_else(|| {
+                        OxyError::ArgumentError(format!("Cannot convert '{s}' to number"))
+                    })
+            }
+            Value::Number(_) => Ok(value.clone()),
+            _ => Self::type_error("number", value),
+        }
+    }
+
+    fn to_boolean(value: &Value) -> Result<Value, OxyError> {
+        match value {
+            Value::String(s) => match s.to_lowercase().trim() {
+                "true" | "yes" | "1" | "on" | "y" => Ok(Value::Bool(true)),
+                "false" | "no" | "0" | "off" | "n" => Ok(Value::Bool(false)),
+                _ => Err(OxyError::ArgumentError(format!(
+                    "Cannot convert '{s}' to boolean"
+                ))),
+            },
+            Value::Bool(_) => Ok(value.clone()),
+            Value::Number(n) => {
+                let is_truthy = n
+                    .as_i64()
+                    .map(|i| i != 0)
+                    .or_else(|| n.as_f64().map(|f| f != 0.0))
+                    .ok_or_else(|| {
+                        OxyError::ArgumentError(format!("Cannot convert number {n:?} to boolean"))
+                    })?;
+                Ok(Value::Bool(is_truthy))
+            }
+            _ => Self::type_error("boolean", value),
+        }
+    }
+
+    fn to_string(value: &Value) -> Result<Value, OxyError> {
+        let string_value = match value {
+            Value::String(_) => value.clone(),
+            Value::Number(n) => Value::String(n.to_string()),
+            Value::Bool(b) => Value::String(b.to_string()),
+            Value::Null => Value::String("null".to_string()),
+            Value::Array(_) | Value::Object(_) => Value::String(
+                serde_json::to_string(value)
+                    .map_err(|e| OxyError::ArgumentError(format!("Serialization error: {e}")))?,
+            ),
+        };
+        Ok(string_value)
+    }
+
+    fn type_error(expected_type: &str, actual_value: &Value) -> Result<Value, OxyError> {
+        Err(OxyError::ArgumentError(format!(
+            "Expected {expected_type} value, got {actual_value:?}"
+        )))
+    }
+
+    // Parse YAML and directly convert to JSON Value without intermediate string conversion
+    pub fn parse_yaml_to_value(yaml_str: &str) -> Result<Value, OxyError> {
+        serde_yml::from_str(yaml_str)
+            .map_err(|e| OxyError::ArgumentError(format!("YAML parsing error: {e}")))
+    }
+
+    /// Process YAML document with schema validation and type conversion
+    pub fn process_yaml_with_schema(
+        yaml_str: &str,
+        variables: &Variables,
+    ) -> Result<HashMap<String, Value>, OxyError> {
+        let value = Self::parse_yaml_to_value(yaml_str)?;
+
+        let Value::Object(obj) = value else {
+            return Err(OxyError::ArgumentError(
+                "Expected YAML object at root level".to_string(),
+            ));
+        };
+
+        variables.convert_params(obj.into_iter().collect())
+    }
+
+    /// Convert parameters using schema definitions
+    fn convert_params(
+        &self,
+        params: HashMap<String, Value>,
+    ) -> Result<HashMap<String, Value>, OxyError> {
+        let mut result = HashMap::new();
+
+        for (key, schema) in &self.variables {
+            if let Some(param_value) = params.get(key) {
+                let converted_value = self.convert_value_to_schema_type(param_value, schema)?;
+                result.insert(key.clone(), converted_value);
+            } else if let Some(metadata) = &schema.metadata {
+                if let Some(default_value) = &metadata.default {
+                    result.insert(key.clone(), default_value.clone());
+                } else {
+                    return Err(OxyError::ArgumentError(format!(
+                        "Missing required variable: {key}"
+                    )));
+                }
+            } else {
+                return Err(OxyError::ArgumentError(format!(
+                    "Missing required variable: {key}"
+                )));
+            }
+        }
+
+        Ok(result)
     }
 }
 

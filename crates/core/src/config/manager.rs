@@ -36,7 +36,7 @@ impl ConfigManager {
                 Model::Anthropic { name, .. } => name,
             } == model_name)
             .ok_or_else(|| {
-                OxyError::ConfigurationError(format!("Model '{}' not found in config", model_name))
+                OxyError::ConfigurationError(format!("Model '{model_name}' not found in config"))
             })?;
         Ok(model)
     }
@@ -58,8 +58,7 @@ impl ConfigManager {
             .find(|w| w.name == database_name)
             .ok_or_else(|| {
                 OxyError::ConfigurationError(format!(
-                    "Database '{}' not found in config",
-                    database_name
+                    "Database '{database_name}' not found in config"
                 ))
             })?;
         Ok(database)

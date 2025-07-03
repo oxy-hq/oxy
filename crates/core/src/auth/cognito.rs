@@ -103,13 +103,12 @@ impl CognitoAuthenticator {
 
         let payload_bytes = general_purpose::STANDARD
             .decode(payload_b64)
-            .map_err(|e| CognitoError::AuthError(format!("Failed to decode JWT payload: {}", e)))?;
+            .map_err(|e| CognitoError::AuthError(format!("Failed to decode JWT payload: {e}")))?;
 
         let payload_json = String::from_utf8_lossy(&payload_bytes);
         let payload: CognitoPayload = serde_json::from_slice(&payload_bytes).map_err(|e| {
             CognitoError::AuthError(format!(
-                "Failed to parse JWT payload: {}. Raw payload: {}",
-                e, payload_json
+                "Failed to parse JWT payload: {e}. Raw payload: {payload_json}"
             ))
         })?;
 
@@ -117,7 +116,7 @@ impl CognitoAuthenticator {
         let email = payload.email;
         let name = payload.name.filter(|n| !n.is_empty()).or_else(|| {
             match (payload.given_name.as_ref(), payload.family_name.as_ref()) {
-                (Some(first), Some(last)) => Some(format!("{} {}", first, last)),
+                (Some(first), Some(last)) => Some(format!("{first} {last}")),
                 (Some(first), None) => Some(first.clone()),
                 (None, Some(last)) => Some(last.clone()),
                 _ => payload

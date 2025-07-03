@@ -133,6 +133,6 @@ impl From<OpenAIError> for OxyError {
                 );
             }
         }
-        OxyError::RuntimeError(format!("Error in completion request: {:?}", value))
+        OxyError::RuntimeError(format!("Error in completion request: {value:?}"))
     }
 }

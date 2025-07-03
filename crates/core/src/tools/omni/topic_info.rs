@@ -28,16 +28,16 @@ impl Executable<OmniTopicInfoInput> for OmniTopicInfoExecutable {
             match field {
                 OmniField::Dimension(dimension) => {
                     if let Some(description) = &dimension.description {
-                        detail.push_str(format!("  - {} : {}\n", field_name, description).as_str());
+                        detail.push_str(format!("  - {field_name} : {description}\n").as_str());
                     } else {
-                        detail.push_str(format!("  - {}", field_name).as_str());
+                        detail.push_str(format!("  - {field_name}").as_str());
                     }
                 }
                 OmniField::Measure(measure) => {
                     if let Some(description) = &measure.description {
-                        detail.push_str(format!("  - {} : {}\n", field_name, description).as_str());
+                        detail.push_str(format!("  - {field_name} : {description}\n").as_str());
                     } else {
-                        detail.push_str(format!("  - {}", field_name).as_str());
+                        detail.push_str(format!("  - {field_name}").as_str());
                     }
                 }
             }

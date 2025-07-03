@@ -18,7 +18,7 @@ pub async fn get_app(path: &PathBuf) -> Result<AppConfig, OxyError> {
 }
 
 pub async fn run_app(app_file_relative_path: &PathBuf) -> Result<DataContainer, OxyError> {
-    println!("Running app: {:?}", app_file_relative_path);
+    println!("Running app: {app_file_relative_path:?}");
     let (data_path, data_file_path) = get_app_data_path(app_file_relative_path)?;
     let project_path = find_project_path()?;
 
@@ -34,18 +34,17 @@ pub async fn run_app(app_file_relative_path: &PathBuf) -> Result<DataContainer, 
         .await?;
 
     if !data_path.exists() {
-        std::fs::create_dir_all(&data_path).map_err(|e| {
-            OxyError::RuntimeError(format!("Failed to create data directory: {}", e))
-        })?;
+        std::fs::create_dir_all(&data_path)
+            .map_err(|e| OxyError::RuntimeError(format!("Failed to create data directory: {e}")))?;
     }
 
     // write the data to the file
     let data = rs.to_data(&data_path)?;
     let data_file = std::fs::File::create(&data_file_path)
-        .map_err(|e| OxyError::RuntimeError(format!("Failed to create data file: {}", e)))?;
+        .map_err(|e| OxyError::RuntimeError(format!("Failed to create data file: {e}")))?;
     let writer = std::io::BufWriter::new(data_file);
-    serde_yaml::to_writer(writer, &data)
-        .map_err(|e| OxyError::RuntimeError(format!("Failed to write data to file: {}", e)))?;
+    serde_yml::to_writer(writer, &data)
+        .map_err(|e| OxyError::RuntimeError(format!("Failed to write data to file: {e}")))?;
 
     Ok(data)
 }
@@ -53,9 +52,8 @@ pub async fn run_app(app_file_relative_path: &PathBuf) -> Result<DataContainer, 
 pub async fn clean_up_app_data(app_file_relative_path: &PathBuf) -> Result<(), OxyError> {
     let (data_path, _) = get_app_data_path(app_file_relative_path)?;
     if data_path.exists() {
-        std::fs::remove_dir_all(&data_path).map_err(|e| {
-            OxyError::RuntimeError(format!("Failed to remove data directory: {}", e))
-        })?;
+        std::fs::remove_dir_all(&data_path)
+            .map_err(|e| OxyError::RuntimeError(format!("Failed to remove data directory: {e}")))?;
     }
     Ok(())
 }
@@ -69,7 +67,7 @@ pub fn try_load_cached_data(app_file_path: &PathBuf) -> Option<DataContainer> {
         match data_file {
             Ok(file) => {
                 let reader = std::io::BufReader::new(file);
-                let data: Option<DataContainer> = serde_yaml::from_reader(reader).ok();
+                let data: Option<DataContainer> = serde_yml::from_reader(reader).ok();
                 if data.is_none() {
                     tracing::warn!("Failed to parse data file");
                 }
@@ -87,7 +85,7 @@ pub fn try_load_cached_data(app_file_path: &PathBuf) -> Option<DataContainer> {
 }
 
 pub fn get_app_data_path(app_file_relative_path: &PathBuf) -> Result<(PathBuf, PathBuf), OxyError> {
-    print!("Getting app data path: {:?}", app_file_relative_path);
+    print!("Getting app data path: {app_file_relative_path:?}");
     let state_dir = get_state_dir();
     let full_path = state_dir.join(app_file_relative_path);
     let file_name = full_path.file_name().unwrap().to_string_lossy().to_string();

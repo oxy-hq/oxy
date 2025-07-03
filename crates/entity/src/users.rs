@@ -24,7 +24,7 @@ impl UserStatus {
         match s {
             "active" => Ok(UserStatus::Active),
             "deleted" => Ok(UserStatus::Deleted),
-            _ => Err(format!("Invalid status: {}", s)),
+            _ => Err(format!("Invalid status: {s}")),
         }
     }
 }
@@ -50,7 +50,7 @@ impl UserRole {
         match s {
             "member" => Ok(UserRole::Member),
             "admin" => Ok(UserRole::Admin),
-            _ => Err(format!("Invalid role: {}", s)),
+            _ => Err(format!("Invalid role: {s}")),
         }
     }
 }

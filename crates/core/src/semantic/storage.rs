@@ -77,7 +77,7 @@ impl SemanticFileStorage {
 
     fn get_semantic_file_path(&self, key: &SemanticKey, model: &str) -> PathBuf {
         self.get_dataset_semantic_dir(key)
-            .join(format!("{}.sem.yml", model))
+            .join(format!("{model}.sem.yml"))
     }
 }
 
@@ -85,34 +85,34 @@ impl Storage for SemanticFileStorage {
     async fn load_global_semantics(&self) -> Result<Semantics, OxyError> {
         let global_semantic_path = PathBuf::from(&self.global_semantic_path);
         if !global_semantic_path.exists() {
-            serde_yaml::to_writer(File::create(&global_semantic_path)?, &Semantics::default())
-                .map_err(|err| format!("Failed to create default semantics file: {}", err))?;
+            serde_yml::to_writer(File::create(&global_semantic_path)?, &Semantics::default())
+                .map_err(|err| format!("Failed to create default semantics file: {err}"))?;
         }
-        let semantics = serde_yaml::from_str::<Semantics>(
+        let semantics = serde_yml::from_str::<Semantics>(
             &read_to_string(&global_semantic_path).await.map_err(|err| {
-                OxyError::IOError(format!("Failed to load global semantics: {}", err))
+                OxyError::IOError(format!("Failed to load global semantics: {err}"))
             })?,
         )
         .map_err(|err| {
-            OxyError::SerializerError(format!("Failed to deserialize global semantics: {}", err))
+            OxyError::SerializerError(format!("Failed to deserialize global semantics: {err}"))
         })?;
         Ok(semantics)
     }
 
     async fn save_global_semantics(&self, semantics: &Semantics) -> Result<(), OxyError> {
         println!("Saving global semantics to: {}", self.global_semantic_path);
-        println!("Semantics: {:?}", semantics);
+        println!("Semantics: {semantics:?}");
         let global_semantic_path = PathBuf::from(&self.global_semantic_path);
         create_dir_all(global_semantic_path.parent().ok_or(OxyError::IOError(
             "Failed to resolve global semantic path".to_string(),
         ))?)
         .await
         .map_err(|err| {
-            OxyError::IOError(format!("Failed to create global semantic path: {}", err))
+            OxyError::IOError(format!("Failed to create global semantic path: {err}"))
         })?;
 
-        serde_yaml::to_writer(File::create(&global_semantic_path)?, semantics).map_err(|err| {
-            OxyError::SerializerError(format!("Failed to save global semantics: {}", err))
+        serde_yml::to_writer(File::create(&global_semantic_path)?, semantics).map_err(|err| {
+            OxyError::SerializerError(format!("Failed to save global semantics: {err}"))
         })?;
         Ok(())
     }
@@ -126,10 +126,10 @@ impl Storage for SemanticFileStorage {
             &table_ref.table,
         );
         let content = read_to_string(path).await.map_err(|err| {
-            OxyError::IOError(format!("Failed to read semantic entity file: {}", err))
+            OxyError::IOError(format!("Failed to read semantic entity file: {err}"))
         })?;
-        serde_yaml::from_str(&content).map_err(|err| {
-            OxyError::SerializerError(format!("Failed to deserialize semantic entity: {}", err))
+        serde_yml::from_str(&content).map_err(|err| {
+            OxyError::SerializerError(format!("Failed to deserialize semantic entity: {err}"))
         })
     }
 
@@ -143,14 +143,16 @@ impl Storage for SemanticFileStorage {
         }
         let mut read_dir = read_dir(db_dir)
             .await
-            .map_err(|err| OxyError::IOError(format!("Failed to list database path: {}", err)))?;
+            .map_err(|err| OxyError::IOError(format!("Failed to list database path: {err}")))?;
 
         let mut results = vec![];
-        while let Some(entry) = read_dir.next_entry().await.map_err(|err| {
-            OxyError::IOError(format!("Failed to read database directory: {}", err))
-        })? {
+        while let Some(entry) = read_dir
+            .next_entry()
+            .await
+            .map_err(|err| OxyError::IOError(format!("Failed to read database directory: {err}")))?
+        {
             let file_type = entry.file_type().await.map_err(|err| {
-                OxyError::IOError(format!("Failed to read database file type: {}", err))
+                OxyError::IOError(format!("Failed to read database file type: {err}"))
             })?;
             if file_type.is_dir() {
                 let dataset = entry.file_name().to_string_lossy().to_string();
@@ -178,7 +180,7 @@ impl Storage for SemanticFileStorage {
         }
         let ddl = read_to_string(ddl_path)
             .await
-            .map_err(|err| OxyError::IOError(format!("Failed to load ddl file: {}", err)))?;
+            .map_err(|err| OxyError::IOError(format!("Failed to load ddl file: {err}")))?;
         Ok(ddl)
     }
 
@@ -203,11 +205,11 @@ impl Storage for SemanticFileStorage {
             "Failed to resolve database semantic path".to_string(),
         ))?)
         .await
-        .map_err(|err| OxyError::IOError(format!("Failed to create ddl parent path: {}", err)))?;
+        .map_err(|err| OxyError::IOError(format!("Failed to create ddl parent path: {err}")))?;
 
         if existed && self.override_mode {
             tokio::fs::remove_file(&ddl_path).await.map_err(|err| {
-                OxyError::IOError(format!("Failed to delete existing ddl file: {}", err))
+                OxyError::IOError(format!("Failed to delete existing ddl file: {err}"))
             })?;
             result.overwritten_files.push(output.clone());
         } else {
@@ -216,7 +218,7 @@ impl Storage for SemanticFileStorage {
 
         tokio::fs::write(ddl_path, value)
             .await
-            .map_err(|err| OxyError::IOError(format!("Failed to write ddl file: {}", err)))?;
+            .map_err(|err| OxyError::IOError(format!("Failed to write ddl file: {err}")))?;
 
         Ok(result)
     }
@@ -235,13 +237,15 @@ impl Storage for SemanticFileStorage {
         }
         let mut read_dir = read_dir(semantic_path)
             .await
-            .map_err(|err| OxyError::IOError(format!("Failed to list semantic path: {}", err)))?;
+            .map_err(|err| OxyError::IOError(format!("Failed to list semantic path: {err}")))?;
         let mut results = HashMap::new();
-        while let Some(entry) = read_dir.next_entry().await.map_err(|err| {
-            OxyError::IOError(format!("Failed to read semantic directory: {}", err))
-        })? {
+        while let Some(entry) = read_dir
+            .next_entry()
+            .await
+            .map_err(|err| OxyError::IOError(format!("Failed to read semantic directory: {err}")))?
+        {
             let file_type = entry.file_type().await.map_err(|err| {
-                OxyError::IOError(format!("Failed to read semantic file type: {}", err))
+                OxyError::IOError(format!("Failed to read semantic file type: {err}"))
             })?;
             if file_type.is_file()
                 && entry
@@ -260,7 +264,7 @@ impl Storage for SemanticFileStorage {
                     .unwrap_or_default()
                     .to_string();
                 let semantic_model = read_to_string(semantic_file_path).await.map_err(|err| {
-                    OxyError::IOError(format!("Failed to load semantic file: {}", err))
+                    OxyError::IOError(format!("Failed to load semantic file: {err}"))
                 })?;
                 results.insert(key, semantic_model);
             }
@@ -299,8 +303,7 @@ impl Storage for SemanticFileStorage {
                     .await
                     .map_err(|err| {
                         OxyError::IOError(format!(
-                            "Failed to delete existing semantic directory: {}",
-                            err
+                            "Failed to delete existing semantic directory: {err}"
                         ))
                     })?;
             }
@@ -308,7 +311,7 @@ impl Storage for SemanticFileStorage {
 
         if self.override_mode || !semantic_path.exists() {
             create_dir_all(&semantic_path).await.map_err(|err| {
-                OxyError::IOError(format!("Failed to create semantic directory: {}", err))
+                OxyError::IOError(format!("Failed to create semantic directory: {err}"))
             })?;
         }
 
@@ -323,8 +326,8 @@ impl Storage for SemanticFileStorage {
                 let mut sync_dimension = None;
 
                 yield async move {
-                  let content = serde_yaml::to_string(&model).map_err(|err| {
-                    OxyError::IOError(format!("Failed to serialize semantic model: {}", err))
+                  let content = serde_yml::to_string(&model).map_err(|err| {
+                    OxyError::IOError(format!("Failed to serialize semantic model: {err}"))
                   })?;
 
                   let existed = potential_deleted.iter().any(|path| path == &file_path_str);
@@ -343,7 +346,7 @@ impl Storage for SemanticFileStorage {
                             },
                         });
                       tokio::fs::write(file_path, content).await.map_err(|err| {
-                          OxyError::IOError(format!("Failed to write semantic file: {}", err))
+                          OxyError::IOError(format!("Failed to write semantic file: {err}"))
                       })?;
                   }
 

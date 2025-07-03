@@ -47,7 +47,7 @@ impl Object for DatabasesContext {
                                 Err(e) => {
                                     println!(
                                         "{}",
-                                        format!("Failed to get database info: \n{}\n", e).error()
+                                        format!("Failed to get database info: \n{e}\n").error()
                                     );
                                     return None;
                                 }

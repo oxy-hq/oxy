@@ -84,7 +84,7 @@ impl VectorStore {
         VectorStore::new(
             config_manager,
             &routing_agent.db_config,
-            &format!("{}-routing", agent_name),
+            &format!("{agent_name}-routing"),
             model,
             routing_agent.embedding_config.clone(),
         )

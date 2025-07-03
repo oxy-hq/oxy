@@ -23,9 +23,8 @@ impl ClickHouse {
     }
 
     pub fn strip_comments(query: &str) -> Result<String, OxyError> {
-        let ast = Parser::parse_sql(&ClickHouseDialect {}, query).map_err(|err| {
-            OxyError::DBError(format!("Failed to parse ClickHouse query: {}", err))
-        })?;
+        let ast = Parser::parse_sql(&ClickHouseDialect {}, query)
+            .map_err(|err| OxyError::DBError(format!("Failed to parse ClickHouse query: {err}")))?;
         Ok(ast
             .iter()
             .map(|stmt| stmt.to_string())
@@ -50,7 +49,7 @@ impl Engine for ClickHouse {
         let mut cursor = client
             .query(&cleaned_query)
             .fetch_bytes("arrow")
-            .map_err(|err| OxyError::DBError(format!("ClickHouse query error: {}", err)))?;
+            .map_err(|err| OxyError::DBError(format!("ClickHouse query error: {err}")))?;
         let chunks = cursor.collect().await;
         match chunks {
             Ok(chunks) => {
@@ -63,7 +62,7 @@ impl Engine for ClickHouse {
                 let schema = batches[0].schema();
                 Ok((batches, schema))
             }
-            Err(e) => Err(OxyError::DBError(format!("Error fetching data: {}", e)))?,
+            Err(e) => Err(OxyError::DBError(format!("Error fetching data: {e}")))?,
         }
     }
 }

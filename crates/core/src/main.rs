@@ -154,7 +154,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Ok(_) => {}
         Err(e) => {
             tracing::error!(error = %e, "Application error");
-            eprintln!("{}", format!("{}", e).error());
+            eprintln!("{}", format!("{e}").error());
             exit(1)
         }
     };

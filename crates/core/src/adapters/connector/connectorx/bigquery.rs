@@ -1179,7 +1179,7 @@ impl<'a> Produce<'_, DateTime<Utc>> for BigQuerySourceParser {
         let secs = timestamp_ns / 1000000000;
         let nsecs = (timestamp_ns % 1000000000) as u32;
         DateTime::from_timestamp(secs, nsecs)
-            .unwrap_or_else(|| panic!("out of range number: {} {}", secs, nsecs))
+            .unwrap_or_else(|| panic!("out of range number: {secs} {nsecs}"))
     }
 }
 

@@ -174,10 +174,7 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
             let request = request_builder
                 .build()
                 .map_err(|err| {
-                    OxyError::RuntimeError(format!(
-                        "Error in building completion request: {:?}",
-                        err
-                    ))
+                    OxyError::RuntimeError(format!("Error in building completion request: {err:?}"))
                 })
                 .map_err(backoff::Error::Permanent)?;
             tracing::debug!("OpenAI request: {:?}", request);
@@ -185,7 +182,7 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
                 .create_stream(request)
                 .await
                 .map_err(|err| {
-                    OxyError::RuntimeError(format!("Error in completion request: {:?}", err))
+                    OxyError::RuntimeError(format!("Error in completion request: {err:?}"))
                 })
                 .map_err(backoff::Error::Permanent)?;
             let mut content = String::new();
@@ -262,8 +259,7 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
                 } else {
                     serde_json::from_str::<AgentResponse>(&content).map_err(|err| {
                         OxyError::SerializerError(format!(
-                            "Failed to deserialize OpenAI response: \"{}\"\n{}",
-                            content, err
+                            "Failed to deserialize OpenAI response: \"{content}\"\n{err}"
                         ))
                     })?
                 }

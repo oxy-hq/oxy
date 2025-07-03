@@ -122,7 +122,7 @@ pub async fn get_data(Path(pathb64): Path<String>) -> impl IntoResponse {
     let full_file_path = state_path.join(path);
     let file = match tokio::fs::File::open(full_file_path).await {
         Ok(file) => file,
-        Err(err) => return Err((StatusCode::NOT_FOUND, format!("File not found: {}", err))),
+        Err(err) => return Err((StatusCode::NOT_FOUND, format!("File not found: {err}"))),
     };
     let stream = ReaderStream::new(file);
     let body = Body::from_stream(stream);

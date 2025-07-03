@@ -168,7 +168,7 @@ impl SemanticManager {
                 "Some files were skipped because they already exist: \n{}",
                 would_overwrite_files
                     .iter()
-                    .map(|f| format!("- {}", f))
+                    .map(|f| format!("- {f}"))
                     .join("\n")
             );
         }
@@ -178,7 +178,7 @@ impl SemanticManager {
                 "Some existing files were overwritten (--overwrite flag was used): \n{}",
                 overwritten_files
                     .iter()
-                    .map(|f| format!("- {}", f))
+                    .map(|f| format!("- {f}"))
                     .join("\n")
             );
         }
@@ -186,14 +186,14 @@ impl SemanticManager {
         if !deleted_files.is_empty() {
             tracing::warn!(
                 "Some files were deleted (not in output): \n{}",
-                deleted_files.iter().map(|f| format!("- {}", f)).join("\n")
+                deleted_files.iter().map(|f| format!("- {f}")).join("\n")
             );
         }
 
         if !created_files.is_empty() {
             tracing::debug!(
                 "New files created: \n{}",
-                created_files.iter().map(|f| format!("- {}", f)).join("\n")
+                created_files.iter().map(|f| format!("- {f}")).join("\n")
             );
         }
 

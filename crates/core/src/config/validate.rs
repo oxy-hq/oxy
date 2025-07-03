@@ -11,7 +11,7 @@ const AGENT_NOT_FOUND_ERROR: &str = "Agent not found";
 const INVALID_EXPORT_FORMAT_ERROR: &str = "Invalid export format";
 
 fn format_error_message(error_message: &str, value: impl Display) -> garde::Error {
-    garde::Error::new(format!("{} ({})", error_message, value))
+    garde::Error::new(format!("{error_message} ({value})"))
 }
 
 pub fn validate_file_path(path: &PathBuf, context: &ValidationContext) -> garde::Result {
