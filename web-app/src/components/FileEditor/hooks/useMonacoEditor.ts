@@ -2,7 +2,7 @@ import { useMonaco, OnMount } from "@monaco-editor/react";
 import { useCallback, useEffect, useRef } from "react";
 import { monacoGitHubDarkDefaultTheme } from "@/components/FileEditor/hooks/github-dark-theme";
 import { FileState } from "@/components/FileEditor";
-import useSaveFile from "@/hooks/api/useSaveFile";
+import useSaveFile from "@/hooks/api/files/useSaveFile";
 
 interface UseMonacoEditorProps {
   fileState: FileState;

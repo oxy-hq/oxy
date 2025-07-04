@@ -1,4 +1,4 @@
-import { AgentArtifact } from "@/services/mock";
+import { AgentArtifact } from "@/types/artifact";
 import AnswerContent from "@/components/AnswerContent";
 
 type Props = {

@@ -10,7 +10,7 @@ import { ReferenceItemContainer } from "./ReferenceItemContainer";
 import { QueryResultTable } from "./QueryResultTable";
 import { Button } from "@/components/ui/shadcn/button";
 import { useState } from "react";
-import useCreateWorkflowFromQueryMutation from "@/hooks/api/useCreateWorkflowFromQueryMutation";
+import useCreateWorkflowFromQueryMutation from "@/hooks/api/workflows/useCreateWorkflowFromQueryMutation";
 import { toast } from "sonner";
 
 export type QueryReferenceProps = {

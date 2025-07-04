@@ -7,7 +7,7 @@ import {
   UsageContent,
 } from "@/types/chat";
 import { STEP_MAP } from "@/types/agent";
-import { Artifact } from "@/services/mock";
+import { Artifact } from "@/types/artifact";
 import { extractUpdatedValue } from "./artifact";
 import { MessageProcessor } from "../../core/types";
 

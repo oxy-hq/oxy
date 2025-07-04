@@ -1,4 +1,4 @@
-import { SqlArtifact } from "@/services/mock";
+import { SqlArtifact } from "@/types/artifact";
 import Results from "@/pages/ide/Editor/Sql/Results";
 import { Editor } from "@monaco-editor/react";
 import { Loader2 } from "lucide-react";

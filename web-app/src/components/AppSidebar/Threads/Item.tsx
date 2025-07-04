@@ -13,7 +13,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/shadcn/dropdown-menu";
 import { useCallback } from "react";
-import useDeleteThread from "@/hooks/api/useDeleteThread";
+import useDeleteThread from "@/hooks/api/threads/useDeleteThread";
 import { cn } from "@/libs/shadcn/utils";
 
 interface ItemProps {

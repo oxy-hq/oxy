@@ -59,7 +59,7 @@ const AgentMessage = ({
                 onArtifactClick={onArtifactClick}
               />
             </div>
-            {references.length > 0 && (
+            {references?.length > 0 && (
               <div className="mt-2">
                 <ThreadReferences references={references} prompt={prompt} />
               </div>

@@ -1,5 +1,5 @@
 import { useMutation } from "@tanstack/react-query";
-import { service } from "@/services/service";
+import { AuthService } from "@/services/api";
 import { GoogleAuthRequest, AuthResponse } from "@/types/auth";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
@@ -11,7 +11,7 @@ export const useGoogleAuth = () => {
   const navigate = useNavigate();
 
   return useMutation<AuthResponse, Error, GoogleAuthRequest>({
-    mutationFn: service.googleAuth,
+    mutationFn: AuthService.googleAuth,
     onSuccess: (data) => {
       login(data.token, data.user);
       navigate("/");

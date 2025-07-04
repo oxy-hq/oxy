@@ -7,7 +7,7 @@ import {
   SidebarMenuSubButton,
   SidebarMenuSubItem,
 } from "@/components/ui/shadcn/sidebar";
-import useWorkflows from "@/hooks/api/useWorkflows";
+import useWorkflows from "@/hooks/api/workflows/useWorkflows";
 import { useState } from "react";
 import { Button } from "@/components/ui/shadcn/button";
 import ItemsSkeleton from "./ItemsSkeleton";

@@ -1,5 +1,6 @@
-import { service } from "@/services/service";
+import { ThreadService } from "@/services/api";
 import { Chunk } from "@/types/app";
+import { Answer } from "@/types/chat";
 import {
   MessageSender,
   SendMessageOptions,
@@ -20,18 +21,18 @@ export class TaskMessageSender implements MessageSender {
 
     let streamingMessage = MessageFactory.createStreamingMessage(threadId);
 
-    await service.askTask(
+    await ThreadService.askTask(
       threadId,
       content,
-      (chunk: Chunk) => {
+      (answer: Answer) => {
         streamingMessage = this.processor.processContent(
           streamingMessage,
-          chunk,
+          answer as unknown as Chunk,
         );
         onMessageUpdate(streamingMessage);
 
-        if (chunk.file_path && onFilePathUpdate) {
-          onFilePathUpdate(chunk.file_path);
+        if ((answer as unknown as Chunk).file_path && onFilePathUpdate) {
+          onFilePathUpdate((answer as unknown as Chunk).file_path);
         }
       },
       () => {

@@ -1,5 +1,5 @@
 import React from "react";
-import useUsers from "@/hooks/api/useUsers";
+import useUsers from "@/hooks/api/users/useUsers";
 import {
   UserManagementHeader,
   UserTable,

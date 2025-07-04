@@ -5,7 +5,7 @@ import useWorkflowThreadStore from "@/stores/useWorkflowThread";
 import { LogItem } from "@/services/types";
 import { useCallback } from "react";
 import throttle from "lodash/throttle";
-import { service } from "@/services/service";
+import { WorkflowService } from "@/services/api";
 import { toast } from "sonner";
 
 const useRunWorkflowThread = () => {
@@ -63,8 +63,7 @@ const useRunWorkflowThread = () => {
     setIsLoading(threadId, true);
     setLogs(threadId, () => []);
 
-    service
-      .runWorkflowThread(threadId, processLogs(threadId))
+    WorkflowService.runWorkflowThread(threadId, processLogs(threadId))
       .finally(() => {
         queryClient.setQueryData(
           queryKeys.thread.item(threadId),

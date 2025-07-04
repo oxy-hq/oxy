@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/shadcn/card";
 import { Hammer, Loader2, Zap } from "lucide-react";
 import useDatabaseOperation from "@/stores/useDatabaseOperation";
-import { useDataBuild } from "@/hooks/api/useDataBuild";
+import { useDataBuild } from "@/hooks/api/databases/useDataBuild";
 
 export const EmbeddingsManagement: React.FC = () => {
   const { isBuilding } = useDatabaseOperation();

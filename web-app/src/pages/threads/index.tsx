@@ -1,4 +1,4 @@
-import useThreads from "@/hooks/api/useThreads";
+import useThreads from "@/hooks/api/threads/useThreads";
 import { useSearchParams } from "react-router-dom";
 import BulkActionToolbar from "@/pages/threads/BulkActionToolbar";
 import { useState } from "react";

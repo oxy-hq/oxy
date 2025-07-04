@@ -4,8 +4,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { X } from "lucide-react";
 import { cn } from "@/libs/shadcn/utils";
 import DeleteAction from "./DeleteAction";
-import useDeleteAllThread from "@/hooks/api/useDeleteAllThread";
-import useBulkDeleteThreads from "@/hooks/api/useBulkDeleteThreads";
+import useDeleteAllThread from "@/hooks/api/threads/useDeleteAllThread";
+import useBulkDeleteThreads from "@/hooks/api/threads/useBulkDeleteThreads";
 
 interface BulkActionToolbarProps {
   totalOnPage: number;

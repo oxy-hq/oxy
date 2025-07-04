@@ -4,7 +4,7 @@ import { cx } from "class-variance-authority";
 import { ArrowUp, Loader2 } from "lucide-react";
 import { useEnterSubmit } from "@/hooks/useEnterSubmit";
 import Messages from "./Messages";
-import useAgent from "@/hooks/api/useAgent";
+import useAgent from "@/hooks/api/agents/useAgent";
 import EmptyState from "@/components/ui/EmptyState";
 import useAskAgent from "@/hooks/messaging/agent";
 import useAgentThreadStore from "@/stores/useAgentThread";

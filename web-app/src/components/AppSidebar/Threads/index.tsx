@@ -7,7 +7,7 @@ import {
   SidebarMenuItem,
   SidebarMenuSub,
 } from "@/components/ui/shadcn/sidebar";
-import useThreads from "@/hooks/api/useThreads";
+import useThreads from "@/hooks/api/threads/useThreads";
 import {
   DropdownMenu,
   DropdownMenuContent,

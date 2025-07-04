@@ -7,7 +7,7 @@ import {
   SidebarMenuSubButton,
   SidebarMenuSubItem,
 } from "@/components/ui/shadcn/sidebar";
-import useApps from "@/hooks/api/useApps";
+import useApps from "@/hooks/api/apps/useApps";
 import ItemsSkeleton from "./ItemsSkeleton";
 
 export function Apps() {

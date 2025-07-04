@@ -17,7 +17,7 @@ import {
   CreateApiKeyRequest,
   CreateApiKeyResponse,
 } from "@/types/apiKey";
-import { useCreateApiKey } from "@/hooks/api/useApiKeyMutations";
+import { useCreateApiKey } from "@/hooks/api/apiKeys/useApiKeyMutations";
 
 interface CreateApiKeyDialogProps {
   open: boolean;

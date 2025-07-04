@@ -1,4 +1,4 @@
-import { service } from "@/services/service";
+import { AuthService } from "@/services/api";
 import { useQuery } from "@tanstack/react-query";
 
 export default function useAuthConfig(
@@ -8,7 +8,7 @@ export default function useAuthConfig(
 ) {
   return useQuery({
     queryKey: ["authConfig"],
-    queryFn: () => service.getAuthConfig(),
+    queryFn: () => AuthService.getAuthConfig(),
     enabled,
     refetchOnWindowFocus: refetchOnWindowFocus,
     refetchOnMount,
