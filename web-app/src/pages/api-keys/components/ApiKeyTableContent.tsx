@@ -3,7 +3,7 @@ import { Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/shadcn/button";
 import { TableCell, TableRow } from "@/components/ui/shadcn/table";
 import { Badge } from "@/components/ui/shadcn/badge";
-import { ApiKeyService } from "@/services/apiKeyService";
+import { ApiKeyService } from "@/services/api/apiKey";
 import { ApiKey } from "@/types/apiKey";
 
 interface ApiKeyTableContentProps {

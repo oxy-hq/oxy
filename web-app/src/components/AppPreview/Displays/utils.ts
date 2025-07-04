@@ -1,6 +1,6 @@
 import { apiBaseURL } from "@/services/env";
 import { DataContainer } from "@/types/app";
-import { apiClient } from "@/services/axios";
+import { apiClient } from "@/services/api/axios";
 import { getDuckDB } from "@/libs/duckdb";
 
 export const getArrowValue = (value: unknown): number | string | unknown => {

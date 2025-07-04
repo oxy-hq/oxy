@@ -1,7 +1,7 @@
 import MessageInput from "@/components/MessageInput";
 import EditorTab from "@/pages/thread/task/EditorTab";
 import Messages from "@/pages/thread/messages";
-import { service } from "@/services/service";
+import { ThreadService } from "@/services/api";
 import { ThreadItem } from "@/types/chat";
 import { useRef, useCallback } from "react";
 import { useEffect } from "react";
@@ -37,7 +37,7 @@ const TaskThread = ({
 
   const fetchMessages = useCallback(async () => {
     try {
-      const messages = await service.getThreadMessages(thread.id);
+      const messages = await ThreadService.getThreadMessages(thread.id);
       setMessages(thread.id, messages);
       setFilePath(thread.id, thread.source);
     } catch (error) {

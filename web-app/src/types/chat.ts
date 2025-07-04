@@ -1,4 +1,4 @@
-import { Artifact } from "@/services/mock";
+import { Artifact } from "@/types/artifact";
 import { LogItem } from "@/services/types";
 
 export interface TextContent {

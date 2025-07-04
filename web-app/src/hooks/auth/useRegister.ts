@@ -1,10 +1,10 @@
 import { useMutation } from "@tanstack/react-query";
-import { service } from "@/services/service";
+import { AuthService } from "@/services/api";
 import { RegisterRequest, MessageResponse } from "@/types/auth";
 
 export const useRegister = () => {
   return useMutation<MessageResponse, Error, RegisterRequest>({
-    mutationFn: service.register,
+    mutationFn: AuthService.register,
     onSuccess: (data) => {
       console.log("Registration successful:", data.message);
     },

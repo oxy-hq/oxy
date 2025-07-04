@@ -1,7 +1,7 @@
 import PageHeader from "@/components/PageHeader";
 import { Separator } from "@/components/ui/shadcn/separator";
 import { Skeleton } from "@/components/ui/shadcn/skeleton";
-import useAgent from "@/hooks/api/useAgent";
+import useAgent from "@/hooks/api/agents/useAgent";
 import { ThreadItem } from "@/types/chat";
 import { Bot } from "lucide-react";
 

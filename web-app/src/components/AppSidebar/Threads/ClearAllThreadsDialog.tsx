@@ -1,6 +1,6 @@
 import { useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import useDeleteAllThread from "@/hooks/api/useDeleteAllThread";
+import useDeleteAllThread from "@/hooks/api/threads/useDeleteAllThread";
 import {
   AlertDialog,
   AlertDialogAction,

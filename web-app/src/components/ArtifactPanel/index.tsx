@@ -2,13 +2,13 @@ import SqlArtifactPanel from "./ArtifactsContent/sql";
 import AgentArtifactPanel from "./ArtifactsContent/agent";
 import WorkflowArtifactPanel from "./ArtifactsContent/workflow";
 import { useQueries } from "@tanstack/react-query";
-import { service } from "@/services/service";
+import { ArtifactService } from "@/services/api";
 import Header from "./Header";
-import { Artifact } from "@/services/mock";
 import { useCallback } from "react";
 import { Button } from "../ui/shadcn/button";
 import { Alert, AlertDescription, AlertTitle } from "../ui/shadcn/alert";
 import { Loader2, X, XCircle } from "lucide-react";
+import { Artifact } from "@/types/artifact";
 
 type Props = {
   selectedArtifactIds: string[];
@@ -32,7 +32,7 @@ const ArtifactPanel = ({
   const artifactQueries = useQueries({
     queries: selectedArtifactIds.map((id) => ({
       queryKey: ["artifact", id],
-      queryFn: () => service.getArtifact(id),
+      queryFn: () => ArtifactService.getArtifact(id),
     })),
   });
 

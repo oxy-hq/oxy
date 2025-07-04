@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/shadcn/button";
 import { Textarea } from "@/components/ui/shadcn/textarea";
-import useThreadMutation from "@/hooks/api/useThreadMutation";
+import useThreadMutation from "@/hooks/api/threads/useThreadMutation";
 import { useEnterSubmit } from "@/hooks/useEnterSubmit";
 import { cx } from "class-variance-authority";
 import {

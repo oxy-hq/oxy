@@ -7,7 +7,7 @@ import {
 import { DropdownMenu } from "@/components/ui/shadcn/dropdown-menu";
 import { ChevronDown, Loader2 } from "lucide-react";
 import { useEffect, useMemo } from "react";
-import useWorkflows from "@/hooks/api/useWorkflows";
+import useWorkflows from "@/hooks/api/workflows/useWorkflows";
 
 export type WorkflowOption = {
   id: string;

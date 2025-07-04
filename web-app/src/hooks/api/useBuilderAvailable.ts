@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { service } from "@/services/service";
+import { BuilderService } from "@/services/api";
 
 /**
  * Hook to check if the builder agent is available
@@ -13,7 +13,7 @@ export default function useBuilderAvailable() {
     const checkBuilderAvailability = async () => {
       try {
         setIsLoading(true);
-        const result = await service.checkBuilderAvailability();
+        const result = await BuilderService.checkBuilderAvailability();
         setIsAvailable(result.available);
       } catch (error) {
         // If there's an error checking availability, assume builder is not available

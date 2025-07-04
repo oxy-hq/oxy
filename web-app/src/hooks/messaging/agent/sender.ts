@@ -1,4 +1,4 @@
-import { service } from "@/services/service";
+import { ThreadService } from "@/services/api";
 import { Answer } from "@/types/chat";
 import {
   MessageSender,
@@ -40,7 +40,7 @@ export class AgentMessageSender implements MessageSender {
 
     onMessageUpdate(streamingMessage);
 
-    await service.askAgent(threadId, content ?? "", (answer: Answer) => {
+    await ThreadService.ask(threadId, content ?? "", (answer: Answer) => {
       streamingMessage = this.processor.processContent(
         streamingMessage,
         answer,
@@ -58,7 +58,7 @@ export class AgentMessageSender implements MessageSender {
 
     let streamingMessage = MessageFactory.createStreamingMessage(threadId);
 
-    await service.ask(
+    await ThreadService.ask(
       threadId,
       content,
       (answer: Answer) => {

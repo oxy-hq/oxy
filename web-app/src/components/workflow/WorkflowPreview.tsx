@@ -2,12 +2,12 @@ import React, { Suspense, useEffect, useMemo } from "react";
 import { ReactFlowProvider } from "@xyflow/react";
 import useWorkflow from "@/stores/useWorkflow";
 import { useMutation } from "@tanstack/react-query";
-import useWorkflowConfig from "@/hooks/api/useWorkflowConfig.ts";
-import useWorkflowLogs from "@/hooks/api/useWorkflowLogs";
+import useWorkflowConfig from "@/hooks/api/workflows/useWorkflowConfig";
+import useWorkflowLogs from "@/hooks/api/workflows/useWorkflowLogs";
 import WorkflowOutput from "./output";
 import throttle from "lodash/throttle";
 import { ResizableHandle } from "@/components/ui/shadcn/resizable";
-import { service } from "@/services/service";
+import { WorkflowService } from "@/services/api";
 import {
   ResizablePanel,
   ResizablePanelGroup,
@@ -60,7 +60,7 @@ export const WorkflowPreview = ({ pathb64 }: { pathb64: string }) => {
       );
 
       const pathBase64 = btoa(workflowPath);
-      await service.runWorkflow(pathBase64, (logItem: LogItem) => {
+      await WorkflowService.runWorkflow(pathBase64, (logItem: LogItem) => {
         buffer.push(logItem);
         flushLogs();
       });

@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 
-import { service } from "@/services/service";
+import { FileService } from "@/services/api";
 
 export default function useFileTree(
   enabled = true,
@@ -9,7 +9,7 @@ export default function useFileTree(
 ) {
   return useQuery({
     queryKey: ["fileTree"],
-    queryFn: service.getFileTree,
+    queryFn: FileService.getFileTree,
     enabled,
     refetchOnWindowFocus: refetchOnWindowFocus,
     refetchOnMount,

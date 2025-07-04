@@ -1,6 +1,6 @@
 import { AlertCircle, HardDrive } from "lucide-react";
 import DatabaseTable, { EmbeddingsManagement } from "@/components/Database";
-import useDatabases from "@/hooks/api/useDatabases";
+import useDatabases from "@/hooks/api/databases/useDatabases";
 
 const DatabaseManagement = () => {
   const {

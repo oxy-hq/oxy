@@ -9,7 +9,7 @@ import {
 import AgentTests from "./Tests";
 import { Button } from "@/components/ui/shadcn/button";
 import { BrushCleaning, Play } from "lucide-react";
-import useAgent from "@/hooks/api/useAgent";
+import useAgent from "@/hooks/api/agents/useAgent";
 import useTests from "@/stores/useTests";
 import { useQueryClient } from "@tanstack/react-query";
 import queryKeys from "@/hooks/api/queryKey";

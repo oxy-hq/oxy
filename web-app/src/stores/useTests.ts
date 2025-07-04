@@ -1,4 +1,4 @@
-import { service } from "@/services/service";
+import { AgentService } from "@/services/api";
 import { EvalEventState, MetricValue } from "@/types/eval";
 import { create } from "zustand";
 
@@ -51,7 +51,7 @@ const useTests = create<TestsState>()((set, get) => ({
   },
   runTest: (agentPathb64: string, index: number) => {
     get().setTest(agentPathb64, index, { ...defaultTestState });
-    service.runTestAgent(agentPathb64, index, (message) => {
+    AgentService.runTestAgent(agentPathb64, index, (message) => {
       const test = get().getTest(agentPathb64, index);
 
       if (message.error) {

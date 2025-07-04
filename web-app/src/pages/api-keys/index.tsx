@@ -7,8 +7,8 @@ import { ApiKeyTable } from "./components/ApiKeyTable";
 import { CreateApiKeyDialog } from "./components/CreateApiKeyDialog";
 import { DeleteApiKeyDialog } from "./components/DeleteApiKeyDialog";
 import { NewApiKeyBanner } from "./components/NewApiKeyBanner";
-import useApiKeys from "@/hooks/api/useApiKeys";
-import { useRevokeApiKey } from "@/hooks/api/useApiKeyMutations";
+import useApiKeys from "@/hooks/api/apiKeys/useApiKeys";
+import { useRevokeApiKey } from "@/hooks/api/apiKeys/useApiKeyMutations";
 
 const ApiKeyManagement: React.FC = () => {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);

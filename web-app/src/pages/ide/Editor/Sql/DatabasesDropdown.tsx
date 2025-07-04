@@ -7,7 +7,7 @@ import {
 import { DropdownMenu } from "@/components/ui/shadcn/dropdown-menu";
 import { ChevronDown, Loader2 } from "lucide-react";
 import { useEffect, useMemo } from "react";
-import useDatabases from "@/hooks/api/useDatabases";
+import useDatabases from "@/hooks/api/databases/useDatabases";
 import { DatabaseInfo } from "@/types/database";
 
 interface DatabaseDropdownProps {

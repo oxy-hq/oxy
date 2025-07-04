@@ -1,4 +1,4 @@
-import { AgentArtifact, Artifact, WorkflowArtifact } from "@/services/mock";
+import { AgentArtifact, Artifact, WorkflowArtifact } from "@/types/artifact";
 import { ArtifactValueContent } from "@/types/chat";
 
 export const extractUpdatedValue = (

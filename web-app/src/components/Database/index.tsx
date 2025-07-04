@@ -12,7 +12,7 @@ import {
   DatabaseTableLoading,
   DatabaseTableEmpty,
 } from "./Table";
-import { useDatabaseSync } from "@/hooks/api/useDatabaseSync";
+import { useDatabaseSync } from "@/hooks/api/databases/useDatabaseSync";
 
 interface DatabaseTableProps {
   databases: DatabaseInfo[];

@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo } from "react";
 import { useParams } from "react-router-dom";
 import AppPageHeader from "./AppPageHeader";
-import useApp from "@/hooks/api/useApp";
-import useRunAppMutation from "@/hooks/api/useRunAppMutation";
+import useApp from "@/hooks/api/apps/useApp";
+import useRunAppMutation from "@/hooks/api/apps/useRunAppMutation";
 import { Displays } from "../../components/AppPreview/Displays";
 import { toast } from "sonner";
 import { ErrorBoundary } from "react-error-boundary";

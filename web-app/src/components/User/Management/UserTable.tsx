@@ -10,7 +10,7 @@ import {
 import { UserTableRow } from "./UserTableRow";
 import { UserInfo } from "@/types/auth";
 import { useAuth } from "@/contexts/AuthContext";
-import useCurrentUser from "@/hooks/api/useCurrentUser";
+import useCurrentUser from "@/hooks/api/users/useCurrentUser";
 
 interface UserTableProps {
   users: UserInfo[];

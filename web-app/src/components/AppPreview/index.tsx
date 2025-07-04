@@ -1,7 +1,7 @@
 import { ErrorBoundary } from "react-error-boundary";
 import { Button } from "@/components/ui/shadcn/button";
-import useApp from "@/hooks/api/useApp";
-import useRunAppMutation from "@/hooks/api/useRunAppMutation";
+import useApp from "@/hooks/api/apps/useApp";
+import useRunAppMutation from "@/hooks/api/apps/useRunAppMutation";
 import { Displays } from "@/components/AppPreview/Displays";
 import { LoaderCircle, RefreshCw } from "lucide-react";
 import { useEffect } from "react";

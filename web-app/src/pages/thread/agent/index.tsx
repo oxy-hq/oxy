@@ -4,7 +4,7 @@ import relativeTime from "dayjs/plugin/relativeTime";
 
 import MessageInput from "@/components/MessageInput";
 import useAskAgent from "@/hooks/messaging/agent";
-import { service } from "@/services/service";
+import { ThreadService } from "@/services/api";
 import useAgentThreadStore from "@/stores/useAgentThread";
 import { Message, ThreadItem } from "@/types/chat";
 import Messages from "@/pages/thread/messages";
@@ -45,7 +45,7 @@ const AgentThread = ({ thread, refetchThread }: AgentThreadProps) => {
 
   const fetchMessages = useCallback(async () => {
     try {
-      const history = await service.getThreadMessages(thread.id);
+      const history = await ThreadService.getThreadMessages(thread.id);
       setMessages(thread.id, history as unknown as Message[]);
     } catch (error) {
       console.error("Failed to fetch message history:", error);

@@ -5,7 +5,7 @@ import {
   BreadcrumbList,
   BreadcrumbSeparator,
 } from "@/components/ui/shadcn/breadcrumb";
-import { Artifact } from "@/services/mock";
+import { Artifact } from "@/types/artifact";
 import { Button } from "../ui/shadcn/button";
 import { Download, X } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/shadcn/tooltip";

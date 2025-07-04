@@ -1,6 +1,6 @@
-import { WorkflowArtifact } from "@/services/mock";
+import { WorkflowArtifact } from "@/types/artifact";
 import { ReactFlowProvider } from "@xyflow/react";
-import useWorkflowConfig from "@/hooks/api/useWorkflowConfig";
+import useWorkflowConfig from "@/hooks/api/workflows/useWorkflowConfig";
 import { Skeleton } from "@/components/ui/shadcn/skeleton";
 import WorkflowDiagram from "@/components/workflow/WorkflowDiagram";
 import WorkflowOutput from "@/components/workflow/output";

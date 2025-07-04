@@ -1,4 +1,4 @@
-import useAgent from "@/hooks/api/useAgent";
+import useAgent from "@/hooks/api/agents/useAgent";
 import TestSkeleton from "./TestSkeleton";
 import TestItem from "./TestItem";
 import EmptyState from "@/components/ui/EmptyState";

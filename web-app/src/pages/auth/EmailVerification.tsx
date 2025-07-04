@@ -10,7 +10,7 @@ import {
   CardTitle,
 } from "@/components/ui/shadcn/card";
 import { CheckCircle, XCircle, Loader2 } from "lucide-react";
-import useEmailVerification from "@/hooks/api/useEmailVerification";
+import useEmailVerification from "@/hooks/api/users/useEmailVerification";
 
 const EmailVerificationPage: React.FC = () => {
   const [searchParams] = useSearchParams();

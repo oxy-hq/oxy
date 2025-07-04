@@ -1,4 +1,4 @@
-import useThread from "@/hooks/api/useThread";
+import useThread from "@/hooks/api/threads/useThread";
 import { useParams } from "react-router-dom";
 import WorkflowThread from "./workflow";
 import AgentThread from "./agent";

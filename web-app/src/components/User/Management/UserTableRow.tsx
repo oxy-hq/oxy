@@ -4,7 +4,10 @@ import { Badge } from "@/components/ui/shadcn/badge";
 import { UserActions } from "../UserActions";
 import { UserInfo } from "@/types/auth";
 import { capitalize } from "@/libs/utils/string";
-import { useDeleteUser, useUpdateUser } from "@/hooks/api/useUserMutations";
+import {
+  useDeleteUser,
+  useUpdateUser,
+} from "@/hooks/api/users/useUserMutations";
 import { toast } from "sonner";
 
 interface UserTableRowProps {

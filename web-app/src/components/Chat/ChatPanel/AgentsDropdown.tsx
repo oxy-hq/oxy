@@ -5,7 +5,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/shadcn/dropdown-menu";
 import { DropdownMenu } from "@/components/ui/shadcn/dropdown-menu";
-import useAgents from "@/hooks/api/useAgents";
+import useAgents from "@/hooks/api/agents/useAgents";
 import { ChevronDown, Loader2 } from "lucide-react";
 import { useEffect, useMemo } from "react";
 import { getAgentNameFromPath } from "@/libs/utils/string";
