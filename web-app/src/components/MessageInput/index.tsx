@@ -1,12 +1,13 @@
 import { Button } from "@/components/ui/shadcn/button";
 import { Textarea } from "@/components/ui/shadcn/textarea";
-import { ArrowRight, Loader2 } from "lucide-react";
+import { ArrowRight, CircleX } from "lucide-react";
 import { useRef } from "react";
 
 interface MessageInputProps {
   value: string;
   onChange: (value: string) => void;
   onSend: () => void;
+  onStop: () => void;
   disabled: boolean;
   isLoading?: boolean;
   showWarning?: boolean;
@@ -16,6 +17,7 @@ const MessageInput = ({
   value,
   onChange,
   onSend,
+  onStop,
   disabled,
   isLoading = false,
   showWarning = false,
@@ -63,18 +65,24 @@ const MessageInput = ({
             disabled={disabled}
             onKeyDown={handleKeyDown}
           />
-          <Button
-            size="icon"
-            className="absolute right-2 transform top-1/2 -translate-y-1/2"
-            onClick={onSend}
-            disabled={!value.trim() || disabled}
-          >
-            {isLoading ? (
-              <Loader2 className="animate-spin h-5 w-5" />
-            ) : (
+          {isLoading ? (
+            <Button
+              size="icon"
+              className="absolute right-2 transform top-1/2 -translate-y-1/2"
+              onClick={onStop}
+            >
+              <CircleX />
+            </Button>
+          ) : (
+            <Button
+              size="icon"
+              className="absolute right-2 transform top-1/2 -translate-y-1/2"
+              onClick={onSend}
+              disabled={!value.trim() || disabled}
+            >
               <ArrowRight className="h-5 w-5" />
-            )}
-          </Button>
+            </Button>
+          )}
         </div>
       </div>
     </div>

@@ -111,6 +111,9 @@ pub enum AnswerContent {
     Usage {
         usage: Usage,
     },
+    DataApp {
+        file_path: String,
+    },
 }
 
 #[derive(Serialize, ToSchema)]

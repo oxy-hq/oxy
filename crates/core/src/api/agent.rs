@@ -1,24 +1,33 @@
-use crate::config::ConfigBuilder;
-use crate::config::model::AgentConfig;
-use crate::service::test::run_test as run_agent_test;
-use crate::service::types::{AnswerContent, AnswerStream};
-use crate::utils::create_sse_stream_from_stream;
+use std::{path::PathBuf, pin::Pin};
+
 use crate::{
     auth::extractor::AuthenticatedUserExtractor,
-    service::{agent::run_agent, formatters::BlockHandler},
-    utils::{create_sse_stream, find_project_path},
+    config::{ConfigBuilder, model::AgentConfig},
+    errors::OxyError,
+    execute::types::Usage,
+    service::{
+        agent::run_agent,
+        chat::{ChatExecutionContext, ChatExecutionRequest, ChatHandler, ChatService},
+        formatters::BlockHandler,
+        test::run_test as run_agent_test,
+        types::{AnswerContent, AnswerStream},
+    },
+    utils::{create_sse_stream, create_sse_stream_from_stream, find_project_path},
 };
 use async_stream::stream;
-use axum::response::sse::{Event, Sse};
+use async_trait::async_trait;
 use axum::{
     extract::{self, Path},
     http::StatusCode,
-    response::IntoResponse,
+    response::{
+        IntoResponse,
+        sse::{Event, Sse},
+    },
 };
 use base64::{Engine, prelude::BASE64_STANDARD};
 use futures::Stream;
+use sea_orm::{ActiveModelTrait, ActiveValue};
 use serde::{Deserialize, Serialize};
-use std::{path::PathBuf, pin::Pin};
 use utoipa::ToSchema;
 
 #[derive(Serialize)]
@@ -209,7 +218,7 @@ pub struct AskAgentRequest {
         (status = OK, description = "Success", body = AnswerStream, content_type = "text/event-stream")
     )
 )]
-pub async fn ask_agent(
+pub async fn ask_agent_preview(
     Path(pathb64): Path<String>,
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
     extract::Json(payload): extract::Json<AskAgentRequest>,
@@ -259,4 +268,89 @@ pub async fn ask_agent(
     let stream = create_sse_stream(rx);
 
     Ok(Sse::new(stream))
+}
+
+#[derive(Deserialize)]
+pub struct AskThreadRequest {
+    pub question: Option<String>,
+}
+
+impl ChatExecutionRequest for AskThreadRequest {
+    fn get_question(&self) -> Option<String> {
+        self.question.clone()
+    }
+}
+
+struct AgentExecutor;
+
+#[async_trait]
+impl ChatHandler for AgentExecutor {
+    async fn execute(
+        &self,
+        context: ChatExecutionContext,
+        tx: tokio::sync::mpsc::Sender<AnswerStream>,
+    ) -> Result<(String, Usage), OxyError> {
+        let thread = context.thread.clone();
+        let agent_path = PathBuf::from(thread.source);
+        let connection = context.streaming_persister.get_connection();
+
+        let block_handler = BlockHandler::new(tx.clone())
+            .with_streaming_persister(context.streaming_persister.clone());
+        let block_handler_reader = block_handler.get_reader();
+
+        let result = run_agent(
+            &context.project_path,
+            &agent_path,
+            context.user_question.clone(),
+            block_handler,
+            context.memory.clone(),
+        )
+        .await;
+
+        match result {
+            Ok(_output_container) => {
+                let (answer_message, artifacts) = block_handler_reader
+                    .into_active_models()
+                    .await
+                    .map_err(OxyError::from)?;
+
+                let content = answer_message.content.clone().unwrap();
+                let input_tokens = answer_message.input_tokens.unwrap();
+                let output_tokens = answer_message.output_tokens.unwrap();
+
+                for mut artifact in artifacts {
+                    artifact.thread_id = ActiveValue::Set(thread.id);
+                    artifact.message_id =
+                        ActiveValue::Set(context.streaming_persister.get_message_id());
+
+                    artifact
+                        .insert(connection)
+                        .await
+                        .map_err(|e| OxyError::from(anyhow::Error::from(e)))?;
+                }
+
+                Ok((
+                    content,
+                    Usage {
+                        input_tokens,
+                        output_tokens,
+                    },
+                ))
+            }
+            Err(err) => Err(OxyError::RuntimeError(err.to_string())),
+        }
+    }
+}
+
+pub async fn ask_agent(
+    Path(id): Path<String>,
+    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
+    extract::Json(payload): extract::Json<AskThreadRequest>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let execution_manager = ChatService::new().await?;
+    let executor = AgentExecutor;
+
+    execution_manager
+        .execute_request(id, payload, executor, user.id)
+        .await
 }

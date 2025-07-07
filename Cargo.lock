@@ -5875,6 +5875,7 @@ dependencies = [
  "jsonschema",
  "jsonwebtoken",
  "lancedb",
+ "lazy_static",
  "lettre",
  "libduckdb-sys",
  "log",

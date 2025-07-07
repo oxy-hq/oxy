@@ -1,29 +1,18 @@
 use crate::{
-    auth::extractor::AuthenticatedUserExtractor,
-    db::client::establish_connection,
-    errors::OxyError,
-    execute::types::ReferenceKind,
-    service::{
-        agent::{Message, run_agent},
-        formatters::{BlockHandler, streaming_message_persister::StreamingMessagePersister},
-        types::{AnswerContent, AnswerStream},
-    },
-    utils::{create_sse_stream, find_project_path},
+    auth::extractor::AuthenticatedUserExtractor, db::client::establish_connection,
+    execute::types::ReferenceKind, service::task_manager::TASK_MANAGER,
 };
 use axum::{
     extract::{self, Path, Query},
     http::StatusCode,
-    response::IntoResponse,
-    response::sse::Sse,
 };
+use entity::prelude::Threads;
 use entity::threads;
-use entity::{prelude::Messages, prelude::Threads};
 use sea_orm::{
-    ActiveModelTrait, ActiveValue, ColumnTrait, Condition, EntityTrait, Order, PaginatorTrait,
-    QueryFilter, QueryOrder, QuerySelect, prelude::DateTimeWithTimeZone,
+    ActiveModelTrait, ActiveValue, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter,
+    QueryOrder, QuerySelect, prelude::DateTimeWithTimeZone,
 };
 use serde::{Deserialize, Serialize};
-use std::{path::PathBuf, sync::Arc};
 use uuid::Uuid;
 
 #[derive(Serialize)]
@@ -262,188 +251,37 @@ pub async fn delete_all_threads(
     Ok(StatusCode::OK)
 }
 
-#[derive(Deserialize)]
-pub struct AskThreadRequest {
-    pub question: Option<String>,
-}
-
-pub async fn ask_thread(
+pub async fn stop_thread(
     Path(id): Path<String>,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
-    extract::Json(payload): extract::Json<AskThreadRequest>,
-) -> Result<impl IntoResponse, StatusCode> {
-    let connection = establish_connection().await;
-    let thread_id = Uuid::parse_str(&id).map_err(|e| {
-        tracing::info!("{:?}", e);
-        StatusCode::BAD_REQUEST
-    })?;
+) -> Result<StatusCode, StatusCode> {
+    let thread_id = Uuid::parse_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
 
+    // Verify the user owns this thread
+    let connection = establish_connection().await;
     let thread = Threads::find_by_id(thread_id)
         .filter(threads::Column::UserId.eq(Some(user.id)))
         .one(&connection)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let thread = thread.ok_or(StatusCode::NOT_FOUND)?;
 
-    if thread.is_processing {
-        return Err(StatusCode::CONFLICT);
+    if thread.is_none() {
+        return Err(StatusCode::NOT_FOUND);
     }
 
-    let mut thread_model: entity::threads::ActiveModel = thread.clone().into();
-    thread_model.is_processing = ActiveValue::Set(true);
-    thread_model
-        .update(&connection)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let mut thread_model: entity::threads::ActiveModel = thread.unwrap().into();
+    thread_model.is_processing = ActiveValue::Set(false);
+    let _ = thread_model.update(&connection).await;
 
-    let mut messages = Messages::find()
-        .filter(
-            Condition::all()
-                .add(<entity::prelude::Messages as EntityTrait>::Column::ThreadId.eq(thread.id)),
-        )
-        .order_by(
-            <entity::prelude::Messages as EntityTrait>::Column::CreatedAt,
-            Order::Desc,
-        )
-        .limit(10)
-        .all(&connection)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    match TASK_MANAGER.cancel_task(thread_id).await {
+        Ok(true) => {
+            TASK_MANAGER.remove_task(thread_id).await;
 
-    // sort the 10 most recent messages by created_at asc
-    messages.sort_by(|a, b| a.created_at.cmp(&b.created_at));
-
-    let user_question;
-    match payload.question {
-        Some(question) => {
-            user_question = question.clone();
-            let message = entity::messages::ActiveModel {
-                id: ActiveValue::Set(Uuid::new_v4()),
-                content: ActiveValue::Set(question),
-                is_human: ActiveValue::Set(true),
-                thread_id: ActiveValue::Set(thread.id),
-                created_at: ActiveValue::default(),
-                ..Default::default()
-            };
-            message
-                .insert(&connection)
-                .await
-                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+            Ok(StatusCode::OK)
         }
-        None => {
-            return Err(StatusCode::BAD_REQUEST);
-        }
+        Ok(false) => Err(StatusCode::NOT_FOUND),
+        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
     }
-
-    let memory = messages
-        .into_iter()
-        .map(|message| Message {
-            content: message.content,
-            is_human: message.is_human,
-            created_at: message.created_at,
-        })
-        .collect::<Vec<Message>>();
-
-    let project_path = find_project_path().map_err(|e| {
-        tracing::info!("Failed to find project path: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-
-    let agent_ref = thread.source.to_string();
-    let (tx, rx) = tokio::sync::mpsc::channel(100);
-
-    let _ = tokio::spawn(async move {
-        let tx_clone = tx.clone();
-        let streaming_message_persister = Arc::new(
-            StreamingMessagePersister::new(connection.clone(), thread.id, "".to_owned())
-                .await
-                .map_err(|err| {
-                    OxyError::DBError(format!("Failed to create streaming message handler: {err}"))
-                })?,
-        );
-
-        let block_handler =
-            BlockHandler::new(tx).with_streaming_persister(streaming_message_persister.clone());
-        let block_handler_reader = block_handler.get_reader();
-        let result = run_agent(
-            &project_path,
-            &PathBuf::from(agent_ref),
-            user_question,
-            block_handler,
-            memory,
-        )
-        .await;
-        println!("Running agent with question: {result:?}");
-        match result {
-            Ok(output_container) => {
-                tracing::debug!("Agent output: {:?}", output_container);
-                let (mut answer_message, artifacts) =
-                    block_handler_reader.into_active_models().await?;
-                answer_message.thread_id = ActiveValue::Set(thread.id);
-                answer_message.id = ActiveValue::Set(streaming_message_persister.get_message_id());
-
-                let message_model = answer_message.update(&connection).await.map_err(|err| {
-                    OxyError::DBError(format!("Failed to insert message:\n{err}"))
-                })?;
-                println!("Updated message: {message_model:?}");
-
-                for mut artifact in artifacts {
-                    artifact.thread_id = ActiveValue::Set(thread.id);
-                    artifact.message_id = ActiveValue::Set(message_model.id);
-                    println!("Inserting artifact: {artifact:?}");
-                    let response = artifact.insert(&connection).await.map_err(|err| {
-                        println!("Failed to insert artifact: {err}");
-                        OxyError::DBError(format!("Failed to insert artifact:\n{err}"))
-                    })?;
-                    println!("Inserted artifact: {response:?}");
-                }
-                let mut thread_model: entity::threads::ActiveModel = thread.into();
-                thread_model.is_processing = ActiveValue::Set(false);
-                let _ = thread_model.update(&connection).await;
-
-                Result::<(), OxyError>::Ok(())
-            }
-            Err(err) => {
-                tracing::error!("Error running agent: {}", err);
-
-                let msg = format!("🔴 Error: {err}");
-
-                // Fallback: create error message normally
-                let answer_message = entity::messages::ActiveModel {
-                    id: ActiveValue::Set(streaming_message_persister.get_message_id()),
-                    content: ActiveValue::Set(msg.clone()),
-                    is_human: ActiveValue::Set(false),
-                    thread_id: ActiveValue::Set(thread.id),
-                    created_at: ActiveValue::default(),
-                    input_tokens: ActiveValue::Set(0),
-                    output_tokens: ActiveValue::Set(0),
-                };
-
-                let _ = answer_message.update(&connection).await.map_err(|err| {
-                    OxyError::DBError(format!("Failed to insert message:\n{err}"))
-                })?;
-
-                let error_event = AnswerStream {
-                    content: AnswerContent::Error { message: msg },
-                    references: vec![],
-                    is_error: true,
-                    step: "".to_string(),
-                };
-                tx_clone
-                    .send(error_event)
-                    .await
-                    .map_err(|_| OxyError::RuntimeError("Failed to send message".to_string()))?;
-
-                let mut thread_model: entity::threads::ActiveModel = thread.into();
-                thread_model.is_processing = ActiveValue::Set(false);
-                let _ = thread_model.update(&connection).await;
-
-                Result::<(), OxyError>::Ok(())
-            }
-        }
-    });
-
-    Ok(Sse::new(create_sse_stream(rx)))
 }
 
 #[derive(Deserialize)]

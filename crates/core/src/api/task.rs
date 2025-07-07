@@ -1,39 +1,40 @@
+use async_trait::async_trait;
 use std::sync::{Arc, Mutex};
 use tokio::sync::Mutex as TokioMutex;
 
 use crate::{
+    auth::extractor::AuthenticatedUserExtractor,
     config::ConfigBuilder,
-    db::client::establish_connection,
     errors::OxyError,
     execute::{
         types::{DataAppReference, Event, EventKind, Output, ReferenceKind, Usage},
         writer::EventHandler,
     },
     service::{
-        agent::run_agent, formatters::streaming_message_persister::StreamingMessagePersister,
+        agent::run_agent,
+        chat::{ChatExecutionContext, ChatExecutionRequest, ChatHandler, ChatService},
+        formatters::streaming_message_persister::StreamingMessagePersister,
+        types::{AnswerContent, AnswerStream},
     },
-    utils::{create_sse_stream, find_project_path},
 };
 use axum::{
     extract::{self, Path},
     http::StatusCode,
     response::IntoResponse,
-    response::sse::Sse,
 };
-use entity::prelude::Threads;
-use sea_orm::ColumnTrait;
-use sea_orm::{ActiveModelTrait, ActiveValue, EntityTrait, QueryFilter, QueryOrder, QuerySelect};
-use serde::{Deserialize, Serialize};
+use sea_orm::{ActiveModelTrait, ActiveValue};
+use serde::Deserialize;
 use tokio::sync::mpsc::Sender;
-use uuid::Uuid;
 
-#[derive(Serialize)]
-pub struct AnswerStream {
-    pub content: String,
-    pub file_path: String,
-    pub is_error: bool,
-    pub step: String,
-    pub usage: Usage,
+#[derive(Deserialize)]
+pub struct AskTaskRequest {
+    pub question: Option<String>,
+}
+
+impl ChatExecutionRequest for AskTaskRequest {
+    fn get_question(&self) -> Option<String> {
+        self.question.clone()
+    }
 }
 
 struct TaskStream {
@@ -69,30 +70,39 @@ impl EventHandler for TaskStream {
     async fn handle_event(&mut self, event: Event) -> Result<(), OxyError> {
         if let EventKind::Usage { usage } = &event.kind {
             self.update_usage(usage.clone()).await?;
+            let message = AnswerStream {
+                content: AnswerContent::Usage {
+                    usage: usage.clone(),
+                },
+                references: vec![],
+                is_error: false,
+                step: event.source.kind.to_string(),
+            };
+            let _ = self.tx.send(message).await.map_err(|_| ());
         }
-
-        let usage = self.usage.lock().await.clone();
 
         if let EventKind::Updated { chunk } = &event.kind {
             match &chunk.delta {
                 Output::Prompt(_) => {
                     let message = AnswerStream {
-                        content: "".to_string(),
+                        content: AnswerContent::Text {
+                            content: "".to_string(),
+                        },
+                        references: vec![],
                         is_error: false,
                         step: event.source.kind.to_string(),
-                        file_path: "".to_string(),
-                        usage: usage.clone(),
                     };
                     let _ = self.tx.send(message).await.map_err(|_| ());
                 }
                 Output::Text(text) => {
                     let content = text.clone();
                     let message = AnswerStream {
-                        content: text.to_owned(),
+                        content: AnswerContent::Text {
+                            content: text.to_owned(),
+                        },
+                        references: vec![],
                         is_error: false,
                         step: event.source.kind.to_string(),
-                        file_path: "".to_string(),
-                        usage: usage.clone(),
                     };
                     let _ = self.tx.send(message).await.map_err(|_| ());
                     self.streaming_message_persister
@@ -104,11 +114,12 @@ impl EventHandler for TaskStream {
                     if let Some(r) = reference {
                         self.references.lock().unwrap().push(r);
                         let message = AnswerStream {
-                            content: "".to_string(),
+                            content: AnswerContent::Text {
+                                content: "".to_string(),
+                            },
+                            references: vec![],
                             is_error: false,
                             step: event.source.kind.to_string(),
-                            file_path: "".to_string(),
-                            usage: usage.clone(),
                         };
                         let _ = self.tx.send(message).await.map_err(|_| ());
                     }
@@ -124,11 +135,12 @@ impl EventHandler for TaskStream {
                     file_path: data_app.file_path.clone(),
                 }));
             let message = AnswerStream {
-                content: "".to_string(),
+                content: AnswerContent::DataApp {
+                    file_path: data_app.file_path.to_string_lossy().to_string(),
+                },
+                references: vec![],
                 is_error: false,
                 step: event.source.kind.to_string(),
-                file_path: data_app.file_path.to_string_lossy().to_string(),
-                usage: usage.clone(),
             };
             let _ = self.tx.send(message).await.map_err(|_| ());
         }
@@ -136,150 +148,54 @@ impl EventHandler for TaskStream {
     }
 }
 
-#[derive(Deserialize)]
-pub struct AskTaskRequest {
-    pub question: Option<String>,
-}
+struct TaskExecutor;
 
-pub async fn ask_task(
-    Path(id): Path<String>,
-    extract::Json(payload): extract::Json<AskTaskRequest>,
-) -> Result<impl IntoResponse, StatusCode> {
-    let connection = establish_connection().await;
-    let thread_id = Uuid::parse_str(&id).map_err(|e| {
-        tracing::info!("{:?}", e);
-        StatusCode::BAD_REQUEST
-    })?;
-    let thread = Threads::find_by_id(thread_id)
-        .one(&connection)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let thread = thread.ok_or(StatusCode::NOT_FOUND)?;
+#[async_trait]
+impl ChatHandler for TaskExecutor {
+    async fn execute(
+        &self,
+        context: ChatExecutionContext,
+        tx: tokio::sync::mpsc::Sender<AnswerStream>,
+    ) -> Result<(String, Usage), OxyError> {
+        let connection = context.streaming_persister.get_connection();
+        let thread = context.thread.clone();
+        let config = ConfigBuilder::new()
+            .with_project_path(&context.project_path)
+            .map_err(|e| OxyError::RuntimeError(format!("Failed to create config: {}", e)))?
+            .build()
+            .await
+            .map_err(|e| OxyError::RuntimeError(format!("Failed to build config: {}", e)))?;
 
-    if thread.is_processing {
-        return Err(StatusCode::BAD_REQUEST);
-    }
+        let agent_ref = config.get_builder_agent_path().await.map_err(|e| {
+            OxyError::RuntimeError(format!("Failed to get builder agent path: {}", e))
+        })?;
 
-    let mut thread_model: entity::threads::ActiveModel = thread.clone().into();
-    thread_model.is_processing = ActiveValue::Set(true);
-    thread_model
-        .update(&connection)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        let task_stream = TaskStream::new(tx.clone(), context.streaming_persister.clone());
+        let references = task_stream.references.clone();
+        let usage_arc = task_stream.usage.clone();
 
-    // Get existing messages for context
-    let mut messages = entity::prelude::Messages::find()
-        .filter(entity::messages::Column::ThreadId.eq(thread.id))
-        .order_by(entity::messages::Column::CreatedAt, sea_orm::Order::Desc)
-        .limit(10)
-        .all(&connection)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    messages.sort_by(|a, b| a.created_at.cmp(&b.created_at));
-
-    let user_question = match payload.question {
-        Some(question) => {
-            // Save the new user message
-            let new_message = entity::messages::ActiveModel {
-                id: ActiveValue::Set(Uuid::new_v4()),
-                content: ActiveValue::Set(question.clone()),
-                is_human: ActiveValue::Set(true),
-                thread_id: ActiveValue::Set(thread.id),
-                created_at: ActiveValue::default(),
-                ..Default::default()
-            };
-            new_message
-                .insert(&connection)
-                .await
-                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-            question
-        }
-        None => {
-            if messages.len() > 1 {
-                return Err(StatusCode::BAD_REQUEST);
-            } else {
-                thread.input.clone()
-            }
-        }
-    };
-
-    let memory = messages
-        .into_iter()
-        .map(|message| crate::service::agent::Message {
-            content: message.content,
-            is_human: message.is_human,
-            created_at: message.created_at,
-        })
-        .collect::<Vec<_>>();
-
-    let project_path = find_project_path().map_err(|e| {
-        tracing::info!("Failed to find project path: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-
-    let config = ConfigBuilder::new()
-        .with_project_path(&project_path)
-        .unwrap()
-        .build()
-        .await
-        .unwrap();
-
-    let agent_ref = config.get_builder_agent_path().await.unwrap();
-    let (tx, rx) = tokio::sync::mpsc::channel(100);
-    let _ = tokio::spawn(async move {
-        let tx_clone = tx.clone();
-        let streaming_message_handler = Arc::new(
-            StreamingMessagePersister::new(connection.clone(), thread.id, "".to_owned())
-                .await
-                .map_err(|err| {
-                    OxyError::DBError(format!("Failed to create streaming message handler: {err}"))
-                })?,
-        );
-        let thread_stream = TaskStream::new(tx, streaming_message_handler.clone());
-        let references = thread_stream.references.clone();
-        let usage_arc = thread_stream.usage.clone();
-        let agent_result = run_agent(
-            &project_path,
+        let result = run_agent(
+            &context.project_path,
             &agent_ref,
-            user_question,
-            thread_stream,
-            memory,
+            context.user_question.clone(),
+            task_stream,
+            context.memory.clone(),
         )
         .await;
 
-        match agent_result {
+        match result {
             Ok(output_container) => {
+                let output_string = output_container.to_string();
                 let references = Arc::try_unwrap(references)
                     .map_err(|_| {
-                        OxyError::RuntimeError("Failed to unwrap agent references".to_string())
+                        OxyError::RuntimeError("Failed to unwrap task references".to_string())
                     })?
                     .into_inner()
                     .map_err(|_| {
-                        OxyError::RuntimeError("Failed to lock agent references".to_string())
+                        OxyError::RuntimeError("Failed to lock task references".to_string())
                     })?;
 
-                let usage = usage_arc.lock().await.clone();
-
-                tracing::debug!("Agent output: {:?}", output_container);
-                tracing::debug!("Agent references: {:?}", references);
-                tracing::info!("Token usage: {:?}", usage);
-
-                // Save the agent response to messages table
-                let answer_message = entity::messages::ActiveModel {
-                    id: ActiveValue::Set(streaming_message_handler.get_message_id()),
-                    content: ActiveValue::Set(output_container.to_string()),
-                    is_human: ActiveValue::Set(false),
-                    thread_id: ActiveValue::Set(thread.id),
-                    created_at: ActiveValue::default(),
-                    input_tokens: ActiveValue::Set(usage.input_tokens),
-                    output_tokens: ActiveValue::Set(usage.output_tokens),
-                };
-                answer_message.update(&connection).await.map_err(|err| {
-                    OxyError::DBError(format!("Failed to insert agent message:\n{err}"))
-                })?;
-
-                let mut thread_model: entity::threads::ActiveModel = thread.into();
+                let mut thread_model: entity::threads::ActiveModel = thread.clone().into();
                 for r in references {
                     if let ReferenceKind::DataApp(data_app) = r {
                         let file_path = data_app.file_path.to_string_lossy().to_string();
@@ -287,49 +203,28 @@ pub async fn ask_task(
                     }
                 }
                 thread_model.output = ActiveValue::Set(output_container.to_string());
-                thread_model.is_processing = ActiveValue::Set(false);
                 thread_model
-                    .update(&connection)
+                    .update(connection)
                     .await
-                    .map_err(|err| OxyError::DBError(format!("Failed to update thread:\n{err}")))?;
-                Result::<(), OxyError>::Ok(())
+                    .map_err(|err| OxyError::DBError(format!("Update thread:\n{}", err)))?;
+
+                let usage = usage_arc.lock().await.clone();
+                Ok((output_string, usage))
             }
-            Err(e) => {
-                tracing::error!("Error running agent: {}", e);
-                let msg = format!("🔴 Error: {e}");
-
-                // Fallback: create error message normally
-                let answer_message = entity::messages::ActiveModel {
-                    id: ActiveValue::Set(streaming_message_handler.get_message_id()),
-                    content: ActiveValue::Set(msg.clone()),
-                    is_human: ActiveValue::Set(false),
-                    thread_id: ActiveValue::Set(thread.id),
-                    created_at: ActiveValue::default(),
-                    input_tokens: ActiveValue::Set(0),
-                    output_tokens: ActiveValue::Set(0),
-                };
-
-                let _ = answer_message.update(&connection).await.map_err(|err| {
-                    OxyError::DBError(format!("Failed to insert message:\n{err}"))
-                })?;
-                tx_clone
-                    .send(AnswerStream {
-                        content: msg,
-                        is_error: true,
-                        step: "".to_string(),
-                        file_path: "".to_string(),
-                        usage: Usage::new(0, 0),
-                    })
-                    .await?;
-
-                let mut thread_model: entity::threads::ActiveModel = thread.into();
-                thread_model.is_processing = ActiveValue::Set(false);
-                let _ = thread_model.update(&connection).await;
-                Result::<(), OxyError>::Ok(())
-            }
+            Err(err) => Err(OxyError::RuntimeError(err.to_string())),
         }
-    });
+    }
+}
 
-    let stream = create_sse_stream(rx);
-    Ok(Sse::new(stream))
+pub async fn ask_task(
+    Path(id): Path<String>,
+    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
+    extract::Json(payload): extract::Json<AskTaskRequest>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let execution_manager = ChatService::new().await?;
+    let executor = TaskExecutor;
+
+    execution_manager
+        .execute_request(id, payload, executor, user.id)
+        .await
 }

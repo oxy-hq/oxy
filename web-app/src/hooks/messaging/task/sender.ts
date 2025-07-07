@@ -1,5 +1,4 @@
 import { ThreadService } from "@/services/api";
-import { Chunk } from "@/types/app";
 import { Answer } from "@/types/chat";
 import {
   MessageSender,
@@ -7,10 +6,10 @@ import {
   MessageHandlers,
 } from "../core/types";
 import { MessageFactory } from "../core/messageFactory";
-import { TaskMessageProcessor } from "./processors/processor";
+import { MessageProcessor } from "../core/processors/processor";
 
 export class TaskMessageSender implements MessageSender {
-  private processor = new TaskMessageProcessor();
+  private processor = new MessageProcessor();
 
   async sendMessage(
     options: SendMessageOptions,
@@ -27,12 +26,12 @@ export class TaskMessageSender implements MessageSender {
       (answer: Answer) => {
         streamingMessage = this.processor.processContent(
           streamingMessage,
-          answer as unknown as Chunk,
+          answer,
         );
         onMessageUpdate(streamingMessage);
 
-        if ((answer as unknown as Chunk).file_path && onFilePathUpdate) {
-          onFilePathUpdate((answer as unknown as Chunk).file_path);
+        if (streamingMessage.file_path && onFilePathUpdate) {
+          onFilePathUpdate(streamingMessage.file_path);
         }
       },
       () => {

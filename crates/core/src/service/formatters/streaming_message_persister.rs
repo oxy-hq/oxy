@@ -15,6 +15,7 @@ pub struct StreamingMessagePersister {
     pending_content: Arc<Mutex<String>>,
     last_flush: Arc<Mutex<Instant>>,
     message_id: Uuid,
+    cancelled: Arc<Mutex<bool>>,
 }
 
 impl StreamingMessagePersister {
@@ -47,10 +48,27 @@ impl StreamingMessagePersister {
             pending_content: Arc::new(Mutex::new(String::new())),
             last_flush: Arc::new(Mutex::new(Instant::now())),
             message_id,
+            cancelled: Arc::new(Mutex::new(false)),
         })
     }
 
+    pub async fn cancel(&self, content: &str) -> Result<(), OxyError> {
+        self.append_content(content).await?;
+        self.flush_pending_content().await?;
+        {
+            let mut cancelled = self.cancelled.lock().await;
+            *cancelled = true;
+        }
+        Ok(())
+    }
+
     pub async fn append_content(&self, content: &str) -> Result<(), OxyError> {
+        {
+            let cancelled = self.cancelled.lock().await;
+            if *cancelled {
+                return Ok(());
+            }
+        }
         {
             let mut pending = self.pending_content.lock().await;
             pending.push_str(content);
@@ -70,7 +88,7 @@ impl StreamingMessagePersister {
         Ok(())
     }
 
-    pub async fn flush_pending_content(&self) -> Result<(), OxyError> {
+    async fn flush_pending_content(&self) -> Result<(), OxyError> {
         let pending_content = {
             let mut pending = self.pending_content.lock().await;
             if pending.is_empty() {
@@ -111,6 +129,12 @@ impl StreamingMessagePersister {
         input_tokens: u32,
         output_tokens: u32,
     ) -> Result<(), OxyError> {
+        {
+            let cancelled = self.cancelled.lock().await;
+            if *cancelled {
+                return Ok(());
+            }
+        }
         self.flush_pending_content().await?;
 
         let mut message_guard = self.message.lock().await;
@@ -132,5 +156,9 @@ impl StreamingMessagePersister {
 
     pub fn get_message_id(&self) -> Uuid {
         self.message_id
+    }
+
+    pub fn get_connection(&self) -> &DatabaseConnection {
+        &self.connection
     }
 }

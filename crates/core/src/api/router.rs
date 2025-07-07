@@ -65,42 +65,30 @@ pub async fn api_router(auth_mode: AuthMode) -> Result<Router, OxyError> {
 
     // Regular protected routes (only auth_middleware)
     let regular_routes = Router::new()
-        .route("/users", get(user::list_users))
-        .route("/logout", get(user::logout))
-        .route("/me", get(user::get_current_user))
-        .route("/threads", get(thread::get_threads))
-        .route("/threads/{id}", get(thread::get_thread))
-        .route("/artifacts/{id}", get(artifacts::get_artifact))
-        .route("/threads/{id}/ask", post(thread::ask_thread))
-        .route("/threads", post(thread::create_thread))
-        .route("/threads/{id}", delete(thread::delete_thread))
-        .route(
-            "/threads/{id}/messages",
-            get(message::get_messages_by_thread),
-        )
-        .route("/threads", delete(thread::delete_all_threads))
-        .route("/threads/bulk-delete", post(thread::bulk_delete_threads))
-        .route("/agents/{pathb64}/ask", post(agent::ask_agent))
-        .route(
-            "/threads/{id}/workflow",
-            post(workflow::run_workflow_thread),
-        )
-        .route("/threads/{id}/task", post(task::ask_task))
         .route("/agents", get(agent::get_agents))
+        .route("/agents/{pathb64}", get(agent::get_agent))
+        .route("/agents/{pathb64}/ask", post(agent::ask_agent_preview))
+        .route(
+            "/agents/{pathb64}/tests/{test_index}",
+            post(agent::run_test),
+        )
+        .route("/api-keys", get(api_keys::list_api_keys))
+        .route("/api-keys", post(api_keys::create_api_key))
+        .route("/api-keys/{id}", get(api_keys::get_api_key))
+        .route("/api-keys/{id}", delete(api_keys::delete_api_key))
+        .route("/app/{pathb64}", get(app::get_app))
+        .route("/app/{pathb64}/run", post(app::run_app))
+        .route("/app/file/{pathb64}", get(app::get_data))
+        .route("/apps", get(app::list_apps))
+        .route("/artifacts/{id}", get(artifacts::get_artifact))
         .route(
             "/builder-availability",
             get(agent::check_builder_availability),
         )
-        .route("/apps", get(app::list_apps))
-        .route("/app/{pathb64}", get(app::get_app))
-        .route("/app/file/{pathb64}", get(app::get_data))
-        .route("/app/{pathb64}/run", post(app::run_app))
-        .route("/workflows", get(workflow::list))
-        .route("/workflows/from-query", post(workflow::create_from_query))
-        .route("/workflows/{pathb64}", get(workflow::get))
-        .route("/workflows/{pathb64}/logs", get(workflow::get_logs))
-        .route("/workflows/{pathb64}/run", post(workflow::run_workflow))
-        .route("/agents/{pathb64}", get(agent::get_agent))
+        .route("/charts/{file_path}", get(chart::get_chart))
+        .route("/databases", get(database::list_databases))
+        .route("/databases/build", post(data::build_embeddings))
+        .route("/databases/sync", post(database::sync_database))
         .route("/files", get(file::get_file_tree))
         .route("/files/{pathb64}", get(file::get_file))
         .route("/files/{pathb64}", post(file::save_file))
@@ -109,23 +97,36 @@ pub async fn api_router(auth_mode: AuthMode) -> Result<Router, OxyError> {
             "/files/{pathb64}/delete-folder",
             delete(file::delete_folder),
         )
-        .route("/files/{pathb64}/rename-file", put(file::rename_file))
-        .route("/files/{pathb64}/rename-folder", put(file::rename_folder))
         .route("/files/{pathb64}/new-file", post(file::create_file))
         .route("/files/{pathb64}/new-folder", post(file::create_folder))
-        .route(
-            "/agents/{pathb64}/tests/{test_index}",
-            post(agent::run_test),
-        )
-        .route("/charts/{file_path}", get(chart::get_chart))
+        .route("/files/{pathb64}/rename-file", put(file::rename_file))
+        .route("/files/{pathb64}/rename-folder", put(file::rename_folder))
+        .route("/logout", get(user::logout))
+        .route("/me", get(user::get_current_user))
         .route("/sql/{pathb64}", post(data::execute_sql))
-        .route("/databases", get(database::list_databases))
-        .route("/databases/sync", post(database::sync_database))
-        .route("/databases/build", post(data::build_embeddings))
-        .route("/api-keys", post(api_keys::create_api_key))
-        .route("/api-keys", get(api_keys::list_api_keys))
-        .route("/api-keys/{id}", get(api_keys::get_api_key))
-        .route("/api-keys/{id}", delete(api_keys::delete_api_key));
+        .route("/threads", get(thread::get_threads))
+        .route("/threads", post(thread::create_thread))
+        .route("/threads", delete(thread::delete_all_threads))
+        .route("/threads/{id}", get(thread::get_thread))
+        .route("/threads/{id}", delete(thread::delete_thread))
+        .route("/threads/{id}/agent", post(agent::ask_agent))
+        .route(
+            "/threads/{id}/messages",
+            get(message::get_messages_by_thread),
+        )
+        .route("/threads/{id}/stop", post(thread::stop_thread))
+        .route("/threads/{id}/task", post(task::ask_task))
+        .route(
+            "/threads/{id}/workflow",
+            post(workflow::run_workflow_thread),
+        )
+        .route("/threads/bulk-delete", post(thread::bulk_delete_threads))
+        .route("/users", get(user::list_users))
+        .route("/workflows", get(workflow::list))
+        .route("/workflows/{pathb64}", get(workflow::get))
+        .route("/workflows/{pathb64}/logs", get(workflow::get_logs))
+        .route("/workflows/{pathb64}/run", post(workflow::run_workflow))
+        .route("/workflows/from-query", post(workflow::create_from_query));
 
     // Admin-only routes with explicit middleware ordering: auth_middleware -> admin_middleware
     let admin_routes = Router::new()
@@ -205,7 +206,7 @@ pub async fn openapi_router() -> OpenApiRouter {
     OpenApiRouter::new()
         // Agent routes
         .routes(routes!(agent::get_agents))
-        .routes(routes!(agent::ask_agent))
+        .routes(routes!(agent::ask_agent_preview))
         // API Keys routes
         .routes(routes!(api_keys::create_api_key))
         .routes(routes!(api_keys::list_api_keys))
