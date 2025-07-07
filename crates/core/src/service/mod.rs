@@ -1,11 +1,13 @@
 pub mod agent;
 pub mod api_key;
 pub mod app;
+pub mod chat;
 pub mod eval;
 pub mod formatters;
 pub mod message;
 pub mod retrieval;
 pub mod sync;
+pub mod task_manager;
 pub mod test;
 pub mod thread;
 pub mod types;

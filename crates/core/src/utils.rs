@@ -17,7 +17,9 @@ use syntect::{
     util::{LinesWithEndings, as_24_bit_terminal_escaped},
 };
 use tokio::sync::mpsc;
-use tokio::task::spawn_blocking;
+use tokio::task::{JoinHandle, spawn_blocking};
+use tokio::time;
+use tokio_util::sync::CancellationToken;
 
 pub const MAX_DISPLAY_ROWS: usize = 100;
 pub const MAX_OUTPUT_LENGTH: usize = 1000;
@@ -337,6 +339,49 @@ pub fn create_sse_stream<T: Serialize>(
                             .event("error")
                             .data(error_event.to_string())
                     );
+                }
+            }
+        }
+    }
+}
+
+pub fn create_sse_stream_with_cancellation<T: Serialize>(
+    mut receiver: mpsc::Receiver<T>,
+    cancellation_token: CancellationToken,
+) -> impl futures::Stream<Item = Result<Event, axum::Error>> {
+    stream! {
+        loop {
+            tokio::select! {
+                item = receiver.recv() => {
+                    match item {
+                        Some(item) => {
+                            match serde_json::to_string(&item) {
+                                Ok(json_data) => {
+                                    yield Ok::<_, axum::Error>(
+                                        Event::default()
+                                            .event("message")
+                                            .data(json_data)
+                                    );
+                                }
+                                Err(e) => {
+                                    tracing::error!("Failed to serialize data: {}", e);
+                                    let error_event = serde_json::json!({
+                                        "message": "Error serializing data"
+                                    });
+                                    yield Ok::<_, axum::Error>(
+                                        Event::default()
+                                            .event("error")
+                                            .data(error_event.to_string())
+                                    );
+                                }
+                            }
+                        }
+                        None => break,
+                    }
+                }
+                _ = cancellation_token.cancelled() => {
+                    tracing::debug!("Stream cancelled");
+                    break;
                 }
             }
         }

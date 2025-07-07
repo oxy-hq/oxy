@@ -10,6 +10,7 @@ import useTaskThreadStore from "@/stores/useTaskThread";
 import useAskTask from "@/hooks/messaging/task";
 import Header from "./Header";
 import ProcessingWarning from "../ProcessingWarning";
+import { toast } from "sonner";
 
 const TaskThread = ({
   thread,
@@ -69,6 +70,19 @@ const TaskThread = ({
 
   const filePathB64 = filePath ? btoa(filePath) : undefined;
 
+  const onStop = useCallback(() => {
+    ThreadService.stopThread(thread.id)
+      // eslint-disable-next-line promise/always-return
+      .then(() => {
+        refetchThread();
+        fetchMessages();
+      })
+      .catch((error) => {
+        toast.error(`Failed to stop thread: ${error.message}`);
+        console.error("Failed to stop thread:", error);
+      });
+  }, [fetchMessages, refetchThread, thread.id]);
+
   return (
     <div className="flex flex-col h-full">
       <Header thread={thread} />
@@ -95,9 +109,10 @@ const TaskThread = ({
                 value={followUpQuestion}
                 onChange={setFollowUpQuestion}
                 onSend={handleSendMessage}
-                disabled={isLoading}
-                isLoading={isLoading}
+                disabled={isLoading || thread.is_processing}
+                isLoading={isLoading || thread.is_processing}
                 showWarning={shouldShowWarning}
+                onStop={onStop}
               />
             </div>
           </div>

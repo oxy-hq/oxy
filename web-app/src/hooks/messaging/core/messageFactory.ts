@@ -23,6 +23,7 @@ export class MessageFactory {
       artifacts: {},
       thread_id: threadId,
       created_at: new Date().toISOString(),
+      file_path: "",
     };
   }
 
@@ -38,6 +39,7 @@ export class MessageFactory {
       artifacts: {},
       thread_id: threadId,
       created_at: new Date().toISOString(),
+      file_path: "",
     };
   }
 
@@ -57,6 +59,7 @@ export class MessageFactory {
       artifacts: {},
       thread_id: threadId,
       created_at: new Date().toISOString(),
+      file_path: "",
     };
   }
 

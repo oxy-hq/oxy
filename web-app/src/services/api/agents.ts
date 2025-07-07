@@ -27,7 +27,7 @@ export class AgentService {
     });
   }
 
-  static async askAgent(
+  static async askAgentPreview(
     agentPathb64: string,
     question: string,
     onReadStream: (answer: Answer) => void,

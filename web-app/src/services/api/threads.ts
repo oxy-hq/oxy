@@ -59,21 +59,6 @@ export class ThreadService {
     return response.data;
   }
 
-  static async ask(
-    threadId: string,
-    question: string | null,
-    onReadStream: (answer: Answer) => void,
-    onMessageSent?: () => void,
-  ): Promise<void> {
-    const url = `${apiBaseURL}/threads/${threadId}/ask`;
-    await fetchSSE(url, {
-      body: { question },
-      onMessage: onReadStream,
-      onOpen: onMessageSent,
-      eventTypes: ["message", "error"],
-    });
-  }
-
   static async askTask(
     taskId: string,
     question: string | null,
@@ -87,5 +72,25 @@ export class ThreadService {
       onOpen: onMessageSent,
       eventTypes: ["message", "error"],
     });
+  }
+
+  static async askAgent(
+    threadId: string,
+    question: string | null,
+    onReadStream: (answer: Answer) => void,
+    onMessageSent?: () => void,
+  ): Promise<void> {
+    const url = `${apiBaseURL}/threads/${threadId}/agent`;
+    await fetchSSE(url, {
+      body: { question },
+      onMessage: onReadStream,
+      onOpen: onMessageSent,
+      eventTypes: ["message", "error"],
+    });
+  }
+
+  static async stopThread(threadId: string): Promise<void> {
+    const url = `${apiBaseURL}/threads/${threadId}/stop`;
+    await apiClient.post(url);
   }
 }

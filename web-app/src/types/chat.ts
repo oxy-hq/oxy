@@ -6,6 +6,11 @@ export interface TextContent {
   content: string;
 }
 
+export interface DataAppContent {
+  type: "data_app";
+  content: string;
+}
+
 export interface WorkflowArtifactKind {
   type: "workflow";
   value: {
@@ -91,7 +96,8 @@ export type AnswerContent =
   | ArtifactValueContent
   | ArtifactDoneContent
   | UsageContent
-  | ErrorContent;
+  | ErrorContent
+  | DataAppContent;
 
 export type Answer = {
   content: AnswerContent;
@@ -173,4 +179,5 @@ export interface Message {
   usage: Usage;
   artifacts: { [key: string]: Artifact };
   created_at: string;
+  file_path: string;
 }

@@ -1,4 +1,4 @@
-import { Message, Answer } from "@/types/chat";
+import { Message, Answer, DataAppContent } from "@/types/chat";
 import {
   ArtifactDoneContent,
   ArtifactStartedContent,
@@ -9,9 +9,8 @@ import {
 import { STEP_MAP } from "@/types/agent";
 import { Artifact } from "@/types/artifact";
 import { extractUpdatedValue } from "./artifact";
-import { MessageProcessor } from "../../core/types";
 
-export class AgentMessageProcessor implements MessageProcessor {
+export class MessageProcessor {
   processContent(streamingMessage: Message, answer: Answer): Message {
     switch (answer.content.type) {
       case "error":
@@ -29,9 +28,21 @@ export class AgentMessageProcessor implements MessageProcessor {
         return this.handleArtifactValue(streamingMessage, answer.content);
       case "usage":
         return this.handleUsageContent(streamingMessage, answer.content);
+      case "data_app":
+        return this.handleDataApp(streamingMessage, answer.content);
       default:
         return streamingMessage;
     }
+  }
+
+  private handleDataApp(
+    streamingMessage: Message,
+    content: DataAppContent,
+  ): Message {
+    return {
+      ...streamingMessage,
+      file_path: content.content,
+    };
   }
 
   private handleTextContent(

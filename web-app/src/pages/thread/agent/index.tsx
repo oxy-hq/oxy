@@ -4,13 +4,14 @@ import relativeTime from "dayjs/plugin/relativeTime";
 
 import MessageInput from "@/components/MessageInput";
 import useAskAgent from "@/hooks/messaging/agent";
-import { ThreadService } from "@/services/api";
 import useAgentThreadStore from "@/stores/useAgentThread";
 import { Message, ThreadItem } from "@/types/chat";
 import Messages from "@/pages/thread/messages";
 import ThreadHeader from "./components/ThreadHeader";
 import ProcessingWarning from "../ProcessingWarning";
 import ArtifactPanelContainer from "./components/ArtifactPanelContainer";
+import { ThreadService } from "@/services/api";
+import { toast } from "sonner";
 
 dayjs.extend(relativeTime);
 
@@ -60,6 +61,19 @@ const AgentThread = ({ thread, refetchThread }: AgentThreadProps) => {
     fetchMessages();
   }, [fetchMessages, isLoading, messages]);
 
+  const onStop = useCallback(() => {
+    ThreadService.stopThread(thread.id)
+      // eslint-disable-next-line promise/always-return
+      .then(() => {
+        refetchThread();
+        fetchMessages();
+      })
+      .catch((error) => {
+        toast.error(`Failed to stop thread: ${error.message}`);
+        console.error("Failed to stop thread:", error);
+      });
+  }, [fetchMessages, refetchThread, thread.id]);
+
   return (
     <div className="flex flex-col h-full overflow-hidden">
       <ThreadHeader thread={thread} />
@@ -89,9 +103,10 @@ const AgentThread = ({ thread, refetchThread }: AgentThreadProps) => {
               value={followUpQuestion}
               onChange={setFollowUpQuestion}
               onSend={handleSendMessage}
-              disabled={isLoading}
+              onStop={onStop}
+              disabled={isLoading || thread.is_processing}
               showWarning={shouldShowWarning}
-              isLoading={isLoading}
+              isLoading={isLoading || thread.is_processing}
             />
           </div>
         </div>

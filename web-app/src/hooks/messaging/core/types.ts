@@ -1,9 +1,4 @@
-import { Message, Answer } from "@/types/chat";
-import { Chunk } from "@/types/app";
-
-export interface MessageProcessor {
-  processContent(streamingMessage: Message, data: Answer | Chunk): Message;
-}
+import { Message } from "@/types/chat";
 
 export interface MessageHandlers {
   onMessageUpdate: (message: Message) => void;

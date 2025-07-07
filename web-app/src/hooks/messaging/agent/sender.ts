@@ -1,4 +1,4 @@
-import { ThreadService } from "@/services/api";
+import { ThreadService, AgentService } from "@/services/api";
 import { Answer } from "@/types/chat";
 import {
   MessageSender,
@@ -6,10 +6,10 @@ import {
   MessageHandlers,
 } from "../core/types";
 import { MessageFactory } from "../core/messageFactory";
-import { AgentMessageProcessor } from "./processors/processor";
+import { MessageProcessor } from "../core/processors/processor";
 
 export class AgentMessageSender implements MessageSender {
-  private processor = new AgentMessageProcessor();
+  private processor = new MessageProcessor();
 
   async sendMessage(
     options: SendMessageOptions,
@@ -40,13 +40,17 @@ export class AgentMessageSender implements MessageSender {
 
     onMessageUpdate(streamingMessage);
 
-    await ThreadService.ask(threadId, content ?? "", (answer: Answer) => {
-      streamingMessage = this.processor.processContent(
-        streamingMessage,
-        answer,
-      );
-      onMessageUpdate(streamingMessage);
-    });
+    await AgentService.askAgentPreview(
+      threadId,
+      content ?? "",
+      (answer: Answer) => {
+        streamingMessage = this.processor.processContent(
+          streamingMessage,
+          answer,
+        );
+        onMessageUpdate(streamingMessage);
+      },
+    );
   }
 
   private async sendRegularMessage(
@@ -58,7 +62,7 @@ export class AgentMessageSender implements MessageSender {
 
     let streamingMessage = MessageFactory.createStreamingMessage(threadId);
 
-    await ThreadService.ask(
+    await ThreadService.askAgent(
       threadId,
       content,
       (answer: Answer) => {
