@@ -6,6 +6,8 @@ pub mod eval;
 pub mod formatters;
 pub mod message;
 pub mod retrieval;
+pub mod secret_manager;
+pub mod secret_resolver;
 pub mod sync;
 pub mod task_manager;
 pub mod test;

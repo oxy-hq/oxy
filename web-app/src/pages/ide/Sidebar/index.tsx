@@ -18,6 +18,7 @@ import {
 import { Button } from "@/components/ui/shadcn/button";
 import React from "react";
 import NewNode, { CreationType } from "./NewNode";
+import { useReadonly } from "@/hooks/useReadonly";
 
 const ignoreFilesRegex = [/^docker-entrypoints/, /^output/, /^\./];
 
@@ -29,6 +30,7 @@ const Sidebar = ({
   setSidebarOpen: (open: boolean) => void;
 }) => {
   const { data, refetch } = useFileTree();
+  const { isReadonly } = useReadonly();
   const fileTree = data
     ?.filter((f) => !ignoreFilesRegex.some((r) => f.name.match(r)))
     .sort((a) => (a.is_dir ? -1 : 1));
@@ -37,11 +39,13 @@ const Sidebar = ({
   const [isCreating, setIsCreating] = React.useState(false);
   const [creationType, setCreationType] = React.useState<CreationType>("file");
   const handleCreateFile = () => {
+    if (isReadonly) return;
     setCreationType("file");
     setIsCreating(true);
   };
 
   const handleCreateFolder = () => {
+    if (isReadonly) return;
     setCreationType("folder");
     setIsCreating(true);
   };
@@ -61,7 +65,8 @@ const Sidebar = ({
                 variant="ghost"
                 size="sm"
                 onClick={handleCreateFile}
-                tooltip="New File"
+                disabled={isReadonly}
+                tooltip={isReadonly ? "Read-only mode" : "New File"}
               >
                 <FilePlus />
               </Button>
@@ -70,7 +75,8 @@ const Sidebar = ({
                 variant="ghost"
                 size="sm"
                 onClick={handleCreateFolder}
-                tooltip="New Folder"
+                disabled={isReadonly}
+                tooltip={isReadonly ? "Read-only mode" : "New Folder"}
               >
                 <FolderPlus />
               </Button>
@@ -98,7 +104,7 @@ const Sidebar = ({
           <SidebarContent className="customScrollbar h-full flex-1 overflow-y-auto">
             <SidebarGroup>
               <SidebarMenu>
-                {isCreating && (
+                {isCreating && !isReadonly && (
                   <NewNode
                     creationType={creationType}
                     onCreated={() => {

@@ -9,6 +9,7 @@ import { useEffect, useRef, useState } from "react";
 import { cn } from "@/libs/shadcn/utils";
 import { useSidebar } from "@/components/ui/shadcn/sidebar";
 import EmptyState from "@/components/ui/EmptyState";
+
 const Ide = () => {
   const { pathb64 } = useParams();
   const [sidebarOpen, setSidebarOpen] = useState(true);

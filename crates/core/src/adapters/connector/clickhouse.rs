@@ -42,7 +42,7 @@ impl Engine for ClickHouse {
         let client = Client::default()
             .with_url(self.config.host.clone())
             .with_user(self.config.user.clone())
-            .with_password(self.config.get_password().unwrap_or_default())
+            .with_password(self.config.get_password().await?)
             .with_database(self.config.database.clone());
 
         let cleaned_query = ClickHouse::strip_comments(query)?;

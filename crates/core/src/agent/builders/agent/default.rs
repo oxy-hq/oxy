@@ -1,4 +1,4 @@
-use crate::adapters::openai::AsyncFunctionObject;
+use crate::adapters::openai::{AsyncFunctionObject, IntoOpenAIConfig};
 use crate::agent::OpenAIExecutableResponse;
 use crate::agent::builders::openai::OpenAIExecutable;
 use crate::agent::builders::tool::OpenAITool;
@@ -82,7 +82,7 @@ impl Executable<DefaultAgentInput> for DefaultAgentExecutable {
             model_config.model_name()
         );
         tracing::info!("System instructions: {}", system_instructions);
-        let client = OpenAIClient::with_config(model_config.try_into()?);
+        let client = OpenAIClient::with_config(model_config.into_openai_config().await?);
         let mut messages = memory
             .into_iter()
             .map(|message| {

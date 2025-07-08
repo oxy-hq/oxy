@@ -102,7 +102,7 @@ impl Executable<(SolverKind, Vec<(TargetOutput, TargetOutput)>)> for SolverExecu
                     },
                 };
                 let model = execution_context.config.resolve_model(model_ref)?;
-                let agent = build_openai_executable(model);
+                let agent = build_openai_executable(model).await?;
                 let mut eval_executable = ExecutableBuilder::new()
                     .concurrency(self.concurrency)
                     .map(LLMSolverMapper {

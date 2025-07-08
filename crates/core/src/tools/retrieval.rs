@@ -1,6 +1,6 @@
 use crate::{
     adapters::{
-        openai::ConfigType,
+        openai::IntoOpenAIConfig,
         vector_store::{VectorStore, parse_sql_source_type},
     },
     errors::OxyError,
@@ -24,7 +24,7 @@ impl RetrievalExecutable {
 #[async_trait::async_trait]
 impl<C> Executable<RetrievalInput<C>> for RetrievalExecutable
 where
-    C: TryInto<ConfigType, Error = OxyError> + Send + 'static,
+    C: IntoOpenAIConfig + Send + Sync + 'static,
 {
     type Response = Output;
 

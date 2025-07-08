@@ -1,4 +1,4 @@
-use crate::utils::find_project_path;
+use crate::project::resolve_project_path;
 use axum::extract::{self, Path};
 use axum::http::StatusCode;
 use base64::Engine;
@@ -23,7 +23,7 @@ pub async fn create_file(Path(pathb64): Path<String>) -> Result<extract::Json<St
         tracing::info!("{:?}", e);
         StatusCode::BAD_REQUEST
     })?;
-    let project_path = find_project_path().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let project_path = resolve_project_path().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let file_path = project_path.join(path);
 
     if let Some(parent) = file_path.parent() {
@@ -51,7 +51,7 @@ pub async fn create_folder(
         tracing::info!("{:?}", e);
         StatusCode::BAD_REQUEST
     })?;
-    let project_path = find_project_path().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let project_path = resolve_project_path().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let file_path = project_path.join(path);
     fs::create_dir_all(file_path).map_err(|e| {
         tracing::info!("{:?}", e);
@@ -69,7 +69,7 @@ pub async fn delete_file(Path(pathb64): Path<String>) -> Result<extract::Json<St
         tracing::info!("{:?}", e);
         StatusCode::BAD_REQUEST
     })?;
-    let project_path = find_project_path().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let project_path = resolve_project_path().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let file_path = project_path.join(path);
     fs::remove_file(file_path).map_err(|e| {
         tracing::info!("{:?}", e);
@@ -89,7 +89,7 @@ pub async fn delete_folder(
         tracing::info!("{:?}", e);
         StatusCode::BAD_REQUEST
     })?;
-    let project_path = find_project_path().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let project_path = resolve_project_path().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let file_path = project_path.join(path);
     fs::remove_dir_all(file_path).map_err(|e| {
         tracing::info!("{:?}", e);
@@ -115,7 +115,7 @@ pub async fn rename_file(
         tracing::info!("{:?}", e);
         StatusCode::BAD_REQUEST
     })?;
-    let project_path = find_project_path().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let project_path = resolve_project_path().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let file_path = project_path.join(path);
     fs::rename(file_path, project_path.join(payload.new_name)).map_err(|e| {
         tracing::info!("{:?}", e);
@@ -136,7 +136,7 @@ pub async fn rename_folder(
         tracing::info!("{:?}", e);
         StatusCode::BAD_REQUEST
     })?;
-    let project_path = find_project_path().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let project_path = resolve_project_path().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let file_path = project_path.join(path);
     fs::rename(file_path, project_path.join(payload.new_name)).map_err(|e| {
         tracing::info!("{:?}", e);
@@ -158,7 +158,7 @@ pub async fn save_file(
         tracing::info!("{:?}", e);
         StatusCode::BAD_REQUEST
     })?;
-    let project_path = find_project_path().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let project_path = resolve_project_path().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let file_path = project_path.join(path);
     fs::write(file_path, payload.data).map_err(|e| {
         tracing::info!("{:?}", e);
@@ -176,7 +176,7 @@ pub async fn get_file(Path(pathb64): Path<String>) -> Result<extract::Json<Strin
         tracing::info!("{:?}", e);
         StatusCode::BAD_REQUEST
     })?;
-    let project_path = find_project_path().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let project_path = resolve_project_path().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let file_path = project_path.join(path);
     let file_content = fs::read_to_string(file_path).map_err(|e| {
         tracing::info!("{:?}", e);
@@ -200,7 +200,7 @@ impl Display for FileTree {
 }
 
 pub async fn get_file_tree() -> Result<extract::Json<Vec<FileTree>>, StatusCode> {
-    let project_path = find_project_path().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let project_path = resolve_project_path().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let file_tree = get_file_tree_recursive(&project_path, &project_path);
     Ok(extract::Json(file_tree.children))
 }

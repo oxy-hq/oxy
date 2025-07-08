@@ -4,6 +4,7 @@ pub mod prelude;
 
 pub mod artifacts;
 pub mod messages;
+pub mod secrets;
 pub mod tasks;
 pub mod threads;
 pub mod users;

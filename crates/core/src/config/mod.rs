@@ -2,6 +2,7 @@ use std::path::PathBuf;
 pub mod auth;
 pub mod model;
 mod parser;
+pub mod secret;
 pub mod validate;
 use garde::Validate;
 mod builder;
@@ -18,7 +19,7 @@ use serde::Deserialize;
 use std::{fs, io};
 use validate::{AgentValidationContext, ValidationContext};
 
-use crate::{errors::OxyError, utils::find_project_path};
+use crate::{errors::OxyError, project::resolve_project_path};
 
 pub use builder::ConfigBuilder;
 pub use manager::ConfigManager;
@@ -211,8 +212,10 @@ impl Config {
 
 pub fn load_config(project_path: Option<PathBuf>) -> Result<Config, OxyError> {
     let root = project_path.unwrap_or_else(|| {
-        find_project_path()
-            .map_err(|e| OxyError::ConfigurationError(format!("Failed to find project path: {e}")))
+        resolve_project_path()
+            .map_err(|e| {
+                OxyError::ConfigurationError(format!("Failed to find project path: {}", e))
+            })
             .unwrap()
     });
     let config_path: PathBuf = root.join("config.yml");

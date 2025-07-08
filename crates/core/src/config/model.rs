@@ -1,3 +1,5 @@
+use crate::config::auth::Authentication;
+use crate::service::secret_resolver::SecretResolverService;
 use garde::Validate;
 use indoc::indoc;
 use itertools::Itertools;
@@ -7,12 +9,12 @@ use serde_json::Value;
 use serde_with::skip_serializing_none;
 use std::cmp::PartialEq;
 use std::collections::HashMap;
+use std::fs;
 use std::hash::Hash;
 use std::path::PathBuf;
-use std::{env, fs};
+pub use variables::Variables;
 
 use super::validate::{AgentValidationContext, validate_model, validate_task};
-use crate::config::auth::Authentication;
 use crate::config::validate::validate_file_path;
 use crate::config::validate::{
     ValidationContext, validate_agent_exists, validate_database_exists, validate_env_var,
@@ -20,7 +22,7 @@ use crate::config::validate::{
 use crate::errors::OxyError;
 use crate::utils::list_by_sub_extension;
 pub use semantics::{SemanticDimension, Semantics};
-pub use variables::{Variable, Variables};
+pub use variables::Variable;
 pub use workflow::WorkflowWithRawVariables;
 
 mod semantics;
@@ -115,16 +117,20 @@ pub struct Postgres {
 }
 
 impl Postgres {
-    pub fn get_password(&self) -> Option<String> {
+    pub async fn get_password(&self) -> Result<String, OxyError> {
         if let Some(password) = &self.password {
             if !password.is_empty() {
-                return Some(password.clone());
+                return Ok(password.clone());
             }
         }
-        if let Some(password_var) = &self.password_var {
-            return env::var(password_var).ok();
+        let secret_resolver = SecretResolverService::new();
+        let value = secret_resolver
+            .resolve_secret(self.password_var.as_deref().unwrap_or(""))
+            .await?;
+        match value {
+            Some(res) => Ok(res.value),
+            None => Err(OxyError::SecretNotFound(self.password_var.clone())),
         }
-        None
     }
 }
 
@@ -153,16 +159,20 @@ pub struct Redshift {
 }
 
 impl Redshift {
-    pub fn get_password(&self) -> Option<String> {
+    pub async fn get_password(&self) -> Result<String, OxyError> {
         if let Some(password) = &self.password {
             if !password.is_empty() {
-                return Some(password.clone());
+                return Ok(password.clone());
             }
         }
-        if let Some(password_var) = &self.password_var {
-            return env::var(password_var).ok();
+        let secret_resolver = SecretResolverService::new();
+        let value = secret_resolver
+            .resolve_secret(self.password_var.as_deref().unwrap_or(""))
+            .await?;
+        match value {
+            Some(res) => Ok(res.value),
+            None => Err(OxyError::SecretNotFound(self.password_var.clone())),
         }
-        None
     }
 }
 
@@ -191,16 +201,20 @@ pub struct Mysql {
 }
 
 impl Mysql {
-    pub fn get_password(&self) -> Option<String> {
+    pub async fn get_password(&self) -> Result<String, OxyError> {
         if let Some(password) = &self.password {
             if !password.is_empty() {
-                return Some(password.clone());
+                return Ok(password.clone());
             }
         }
-        if let Some(password_var) = &self.password_var {
-            return env::var(password_var).ok();
+        let secret_resolver = SecretResolverService::new();
+        let value = secret_resolver
+            .resolve_secret(self.password_var.as_deref().unwrap_or(""))
+            .await?;
+        match value {
+            Some(res) => Ok(res.value),
+            None => Err(OxyError::SecretNotFound(self.password_var.clone())),
         }
-        None
     }
 }
 
@@ -229,16 +243,20 @@ pub struct ClickHouse {
 }
 
 impl ClickHouse {
-    pub fn get_password(&self) -> Option<String> {
+    pub async fn get_password(&self) -> Result<String, OxyError> {
         if let Some(password) = &self.password {
             if !password.is_empty() {
-                return Some(password.clone());
+                return Ok(password.clone());
             }
         }
-        if let Some(password_var) = &self.password_var {
-            return env::var(password_var).ok();
+        let secret_resolver = SecretResolverService::new();
+        let value = secret_resolver
+            .resolve_secret(self.password_var.as_deref().unwrap_or(""))
+            .await?;
+        match value {
+            Some(res) => Ok(res.value),
+            None => Err(OxyError::SecretNotFound(self.password_var.clone())),
         }
-        None
     }
 }
 
@@ -456,16 +474,18 @@ pub struct Snowflake {
 }
 
 impl Snowflake {
-    pub fn get_password(&self) -> Option<String> {
+    pub async fn get_password(&self) -> Result<String, OxyError> {
         if let Some(password) = &self.password {
             if !password.is_empty() {
-                return Some(password.clone());
+                return Ok(password.clone());
             }
         }
-        if !self.password_var.is_empty() {
-            return env::var(&self.password_var).ok();
+        let secret_resolver = SecretResolverService::new();
+        let value = secret_resolver.resolve_secret(&self.password_var).await?;
+        match value {
+            Some(res) => Ok(res.value),
+            None => Err(OxyError::SecretNotFound(Some(self.password_var.clone()))),
         }
-        None
     }
 }
 

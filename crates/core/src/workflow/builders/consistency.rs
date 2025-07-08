@@ -164,7 +164,7 @@ impl ConsistencyPicker<OutputContainer> for AgentPicker {
         let model = execution_context
             .config
             .resolve_model(&agent_config.model)?;
-        let agent = build_openai_executable(model);
+        let agent = build_openai_executable(model).await?;
         let mut consistency_evaluator = ExecutableBuilder::new()
             .concurrency_control(
                 10,

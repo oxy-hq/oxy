@@ -5,6 +5,7 @@ use crate::{
     config::{ConfigBuilder, model::AgentConfig},
     errors::OxyError,
     execute::types::Usage,
+    project::resolve_project_path,
     service::{
         agent::run_agent,
         chat::{ChatExecutionContext, ChatExecutionRequest, ChatHandler, ChatService},
@@ -12,7 +13,7 @@ use crate::{
         test::run_test as run_agent_test,
         types::{AnswerContent, AnswerStream},
     },
-    utils::{create_sse_stream, create_sse_stream_from_stream, find_project_path},
+    utils::{create_sse_stream, create_sse_stream_from_stream},
 };
 use async_stream::stream;
 use async_trait::async_trait;
@@ -37,7 +38,7 @@ pub struct BuilderAvailabilityResponse {
 
 pub async fn check_builder_availability()
 -> Result<extract::Json<BuilderAvailabilityResponse>, StatusCode> {
-    let project_path = find_project_path().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let project_path = resolve_project_path().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let config_builder = ConfigBuilder::new()
         .with_project_path(&project_path)
@@ -79,7 +80,7 @@ impl AgentConfigResponse {
     )
 )]
 pub async fn get_agents() -> Result<extract::Json<Vec<AgentConfigResponse>>, StatusCode> {
-    let project_path = find_project_path().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let project_path = resolve_project_path().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let config = ConfigBuilder::new()
         .with_project_path(&project_path)
@@ -135,7 +136,7 @@ pub async fn get_agent(
         tracing::info!("{:?}", e);
         StatusCode::BAD_REQUEST
     })?;
-    let project_path = find_project_path().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let project_path = resolve_project_path().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let config = ConfigBuilder::new()
         .with_project_path(&project_path)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
@@ -181,7 +182,7 @@ pub async fn run_test(
         Err(error) => return Ok(Sse::new(create_error_stream(error))),
     };
 
-    let project_path = match find_project_path() {
+    let project_path = match resolve_project_path() {
         Ok(path) => path.to_string_lossy().to_string(),
         Err(e) => {
             let error = format!("Failed to find project path: {e}");
@@ -233,7 +234,7 @@ pub async fn ask_agent_preview(
         StatusCode::BAD_REQUEST
     })?;
 
-    let project_path = find_project_path().map_err(|e| {
+    let project_path = resolve_project_path().map_err(|e| {
         tracing::error!("Failed to find project path: {}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;

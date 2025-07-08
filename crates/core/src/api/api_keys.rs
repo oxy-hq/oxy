@@ -159,7 +159,7 @@ pub async fn create_api_key(
             .into_response());
     }
 
-    let db = establish_connection().await;
+    let db = establish_connection().await?;
     let config = ApiKeyConfig::default();
 
     let create_request = CreateApiKeyParams {
@@ -210,7 +210,7 @@ pub async fn create_api_key(
 pub async fn list_api_keys(
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
 ) -> Result<impl IntoResponse, StatusCode> {
-    let db = establish_connection().await;
+    let db = establish_connection().await?;
 
     match ApiKeyService::list_user_api_keys(&db, user.id).await {
         Ok(api_keys) => {
@@ -253,7 +253,7 @@ pub async fn get_api_key(
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let key_id = Uuid::parse_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
-    let db = establish_connection().await;
+    let db = establish_connection().await?;
 
     // Get all user's API keys and find the requested one
     match ApiKeyService::list_user_api_keys(&db, user.id).await {
@@ -292,7 +292,7 @@ pub async fn delete_api_key(
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let key_id = Uuid::parse_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
-    let db = establish_connection().await;
+    let db = establish_connection().await?;
 
     match ApiKeyService::revoke_api_key(&db, key_id, user.id).await {
         Ok(()) => Ok(StatusCode::NO_CONTENT),

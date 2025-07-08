@@ -18,6 +18,7 @@ interface HeaderProps {
   fileState: FileState;
   actions?: React.ReactNode;
   onSave: () => void;
+  isReadonly?: boolean;
 }
 
 const EditorHeader = ({
@@ -25,6 +26,7 @@ const EditorHeader = ({
   fileState,
   actions,
   onSave,
+  isReadonly = false,
 }: HeaderProps) => {
   return (
     <div
@@ -59,7 +61,7 @@ const EditorHeader = ({
       </div>
 
       <div className="flex gap-2 items-center p-2">
-        {fileState == "modified" && (
+        {fileState == "modified" && !isReadonly && (
           <Button
             variant="secondary"
             size="sm"
@@ -68,6 +70,9 @@ const EditorHeader = ({
           >
             Save changes
           </Button>
+        )}
+        {fileState == "modified" && isReadonly && (
+          <span className="text-sm text-muted-foreground">Read-only mode</span>
         )}
         {fileState == "saving" && (
           <Loader2 className="w-4 h-4 text-yellow-500 animate-[spin_0.2s_linear_infinite]" />

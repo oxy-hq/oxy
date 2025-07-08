@@ -21,6 +21,8 @@ import EditorPage from "./pages/ide/Editor";
 import AppPage from "./pages/app";
 import ApiKeyManagement from "./pages/api-keys";
 import DatabaseManagement from "./pages/databases";
+import SecretsPage from "./pages/secrets";
+import RequiredSecretsSetup from "./pages/secrets/RequiredSecretsSetup";
 import UserManagement from "./pages/users";
 import { HotkeysProvider } from "react-hotkeys-hook";
 import LoginPage from "./pages/login";
@@ -28,10 +30,14 @@ import RegisterPage from "./pages/register";
 import EmailVerificationPage from "./pages/auth/EmailVerification";
 import GoogleCallback from "./pages/auth/GoogleCallback";
 import ProtectedRoute from "./components/ProtectedRoute";
+import ProjectStatusWrapper from "./components/ProjectStatusWrapper";
 import useAuthConfig from "./hooks/auth/useAuthConfig";
 import { Loader2 } from "lucide-react";
 import { AuthProvider } from "./contexts/AuthContext";
+import { ReadonlyProvider } from "./contexts/ReadonlyContext";
 import { AuthConfigResponse } from "./types/auth";
+import { WelcomeScreen, SetupPage, SetupComplete } from "./pages/onboarding";
+import GithubSettingsPage from "./pages/github-settings";
 
 const PageWrapper = ({ children }: { children: React.ReactNode }) => {
   return (
@@ -97,10 +103,26 @@ const MainLayout = React.memo(function MainLayout() {
           }
         />
         <Route
+          path="/github-settings"
+          element={
+            <PageWrapper>
+              <GithubSettingsPage />
+            </PageWrapper>
+          }
+        />
+        <Route
           path="/databases"
           element={
             <PageWrapper>
               <DatabaseManagement />
+            </PageWrapper>
+          }
+        />
+        <Route
+          path="/secrets"
+          element={
+            <PageWrapper>
+              <SecretsPage />
             </PageWrapper>
           }
         />
@@ -131,13 +153,44 @@ const getRouter = (authConfig: AuthConfigResponse) =>
           </>
         )}
 
+        {/* Onboarding routes - accessible to authenticated users */}
+        <Route
+          path="/onboarding"
+          element={
+            <ProtectedRoute>
+              <WelcomeScreen />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/onboarding/setup"
+          element={
+            <ProtectedRoute>
+              <SetupPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/onboarding/complete"
+          element={
+            <ProtectedRoute>
+              <SetupComplete />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Special route for required secrets setup - bypasses normal wrappers */}
+        <Route path="/secrets/setup" element={<RequiredSecretsSetup />} />
+
         <Route
           path="*"
           element={
             <ProtectedRoute>
-              <SidebarProvider>
-                <MainLayout />
-              </SidebarProvider>
+              <ProjectStatusWrapper>
+                <SidebarProvider>
+                  <MainLayout />
+                </SidebarProvider>
+              </ProjectStatusWrapper>
             </ProtectedRoute>
           }
         />
@@ -158,8 +211,10 @@ function App() {
 
   return (
     <AuthProvider authConfig={authConfig}>
-      <RouterProvider router={getRouter(authConfig)} />
-      <ShadcnToaster />
+      <ReadonlyProvider>
+        <RouterProvider router={getRouter(authConfig)} />
+        <ShadcnToaster />
+      </ReadonlyProvider>
     </AuthProvider>
   );
 }

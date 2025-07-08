@@ -37,7 +37,7 @@ pub fn get_test_users() -> Vec<TestUser> {
 }
 
 pub async fn seed_test_users() -> Result<Vec<users::Model>, OxyError> {
-    let connection = establish_connection().await;
+    let connection = establish_connection().await?;
     let test_users = get_test_users();
     let mut created_users = Vec::new();
 
@@ -97,7 +97,7 @@ pub async fn seed_test_users() -> Result<Vec<users::Model>, OxyError> {
 }
 
 pub async fn clear_test_data() -> Result<(), OxyError> {
-    let connection = establish_connection().await;
+    let connection = establish_connection().await?;
 
     println!("🧹 Clearing test data...");
 
@@ -135,7 +135,7 @@ pub async fn clear_test_data() -> Result<(), OxyError> {
 pub async fn create_sample_threads_for_users() -> Result<(), OxyError> {
     use entity::threads;
 
-    let connection = establish_connection().await;
+    let connection = establish_connection().await?;
 
     // Get all test users
     let test_users = Users::find()

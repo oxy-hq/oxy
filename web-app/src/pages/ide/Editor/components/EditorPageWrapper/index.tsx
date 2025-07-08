@@ -2,6 +2,7 @@ import { JSX, useRef, useState } from "react";
 import FileEditor, { FileEditorRef, FileState } from "@/components/FileEditor";
 import EditorHeader from "../EditorHeader";
 import { cn } from "@/libs/shadcn/utils";
+import { useReadonly } from "@/hooks/useReadonly";
 
 export interface EditorPageWrapperProps {
   pathb64: string;
@@ -25,10 +26,12 @@ const EditorPageWrapper = ({
   onFileValueChange,
 }: EditorPageWrapperProps) => {
   const filePath = atob(pathb64 ?? "");
+  const { isReadonly } = useReadonly();
   const [fileState, setFileState] = useState<FileState>("saved");
   const fileEditorRef = useRef<FileEditorRef>(null);
 
   const onSave = () => {
+    if (isReadonly) return;
     if (fileEditorRef.current) {
       fileEditorRef.current.save();
     }
@@ -48,6 +51,7 @@ const EditorPageWrapper = ({
             fileState={fileState}
             actions={headerActions}
             onSave={onSave}
+            isReadonly={isReadonly}
           />
           <FileEditor
             ref={fileEditorRef}
@@ -56,6 +60,7 @@ const EditorPageWrapper = ({
             onFileStateChange={setFileState}
             onSaved={onSaved}
             onValueChange={onFileValueChange}
+            isReadonly={isReadonly}
           />
         </div>
         {preview}

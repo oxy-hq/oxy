@@ -11,3 +11,12 @@ export {
   performLogoutCleanup,
   type LogoutResponse,
 } from "./auth";
+
+// Secret masking utilities
+export {
+  maskSecret,
+  maskSecretForTable,
+  maskSecretCompletely,
+  isLikelySecret,
+  validateSecretName,
+} from "./secretMaskingUtils";

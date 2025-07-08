@@ -38,7 +38,7 @@ impl Engine for Snowflake {
             None,
             &config.username,
             config.role.as_deref(),
-            &config.get_password().unwrap_or("".to_string()),
+            &config.get_password().await?,
         )
         .map_err(|err| connector_internal_error(CREATE_CONN, &err))?;
         let res = api

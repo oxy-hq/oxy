@@ -131,7 +131,7 @@ pub async fn update_user(
         // Prevent admins from being deactivated
         if status == UserStatus::Deleted && current_user.id != user_uuid {
             // Get the target user to check their role
-            let connection = crate::db::client::establish_connection().await;
+            let connection = crate::db::client::establish_connection().await?;
             let target_user = entity::prelude::Users::find_by_id(user_uuid)
                 .one(&connection)
                 .await

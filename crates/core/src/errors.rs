@@ -25,12 +25,24 @@ pub enum OxyError {
     IOError(String),
     #[error("DB error:\n{0}")]
     DBError(String),
+    #[error("Database error:\n{0}")]
+    Database(String),
+    #[error("Secret manager error:\n{0}")]
+    SecretManager(String),
+    #[error("Secret not found: {0:?}")]
+    SecretNotFound(Option<String>),
     #[error("Authentication error:\n{0}")]
     AuthenticationError(String),
     #[error("Authorization error:\n{0}")]
     AuthorizationError(String),
     #[error("Validation error:\n{0}")]
     ValidationError(String),
+    #[error("Cryptography error:\n{0}")]
+    CryptographyError(String),
+    #[error("Initialization error:\n{0}")]
+    InitializationError(String),
+    #[error("Job error:\n{0}")]
+    JobError(String),
     #[error("LanceDB error:\n{0}")]
     LanceDBError(#[from] lancedb::Error),
     #[error("SerdeArrow error:\n{0}")]
@@ -111,9 +123,15 @@ impl From<OxyError> for StatusCode {
             OxyError::SerializerError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             OxyError::IOError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             OxyError::DBError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            OxyError::Database(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            OxyError::SecretManager(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            OxyError::SecretNotFound(_) => StatusCode::INTERNAL_SERVER_ERROR,
             OxyError::AuthenticationError(_) => StatusCode::UNAUTHORIZED,
             OxyError::AuthorizationError(_) => StatusCode::FORBIDDEN,
             OxyError::ValidationError(_) => StatusCode::BAD_REQUEST,
+            OxyError::CryptographyError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            OxyError::InitializationError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            OxyError::JobError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             OxyError::LanceDBError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             OxyError::SerdeArrowError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             OxyError::ToolCallError { .. } => StatusCode::INTERNAL_SERVER_ERROR,

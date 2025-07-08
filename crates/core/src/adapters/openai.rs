@@ -21,12 +21,12 @@ use crate::{
     },
     errors::OxyError,
     execute::types::event::ArtifactKind,
-    service::workflow::get_workflow,
+    project::resolve_project_path,
+    service::{secret_resolver::SecretResolverService, workflow::get_workflow},
     tools::types::{
         AgentParams, EmptySQLParams, ExecuteOmniParams, OmniTopicInfoParams, RetrievalParams,
         SQLParams,
     },
-    utils::find_project_path,
 };
 
 #[derive(Debug, Clone)]
@@ -73,19 +73,16 @@ impl Config for ConfigType {
     }
 }
 
-impl TryFrom<Model> for ConfigType {
-    type Error = OxyError;
-
-    fn try_from(model: Model) -> Result<Self, Self::Error> {
-        TryFrom::try_from(&model)
-    }
+pub trait IntoOpenAIConfig {
+    fn into_openai_config(
+        &self,
+    ) -> impl std::future::Future<Output = Result<ConfigType, OxyError>> + std::marker::Send;
 }
 
-impl TryFrom<&Model> for ConfigType {
-    type Error = OxyError;
-
-    fn try_from(model: &Model) -> Result<Self, Self::Error> {
-        match model {
+impl IntoOpenAIConfig for Model {
+    async fn into_openai_config(&self) -> Result<ConfigType, OxyError> {
+        let secret_resolver = SecretResolverService::new();
+        match self {
             Model::OpenAI {
                 name: _,
                 model_ref: _,
@@ -93,11 +90,17 @@ impl TryFrom<&Model> for ConfigType {
                 azure,
                 key_var,
             } => {
-                let api_key = std::env::var(key_var).map_err(|e| {
-                    OxyError::ConfigurationError(format!(
-                        "OpenAI key not found in environment variable {key_var}:\n{e}"
-                    ))
+                let api_key = secret_resolver.resolve_secret(key_var).await.map_err(|_| {
+                    OxyError::ConfigurationError("OpenAI key not found".to_string())
                 })?;
+                let api_key = match api_key {
+                    Some(secret) => secret.value,
+                    None => {
+                        return Err(OxyError::ConfigurationError(
+                            "OpenAI key not found in environment variable".to_string(),
+                        ));
+                    }
+                };
 
                 match azure {
                     Some(azure) => {
@@ -135,11 +138,19 @@ impl TryFrom<&Model> for ConfigType {
                 model_ref: _,
                 key_var,
             } => {
-                let api_key = std::env::var(key_var).map_err(|e| {
+                let api_key = secret_resolver.resolve_secret(key_var).await.map_err(|e| {
                     OxyError::ConfigurationError(format!(
                         "Gemini API key not found in environment variable {key_var}:\n{e}"
                     ))
                 })?;
+                let api_key = match api_key {
+                    Some(secret) => secret.value,
+                    None => {
+                        return Err(OxyError::ConfigurationError(
+                            "Gemini API key not found in environment variable".to_string(),
+                        ));
+                    }
+                };
                 let config = OpenAIConfig::new()
                     .with_api_base(GEMINI_API_URL)
                     .with_api_key(api_key);
@@ -151,11 +162,19 @@ impl TryFrom<&Model> for ConfigType {
                 key_var,
                 api_url,
             } => {
-                let api_key = std::env::var(key_var).map_err(|e| {
+                let api_key = secret_resolver.resolve_secret(key_var).await.map_err(|e| {
                     OxyError::ConfigurationError(format!(
                         "Anthropic API key not found in environment variable {key_var}:\n{e}"
                     ))
                 })?;
+                let api_key = match api_key {
+                    Some(secret) => secret.value,
+                    None => {
+                        return Err(OxyError::ConfigurationError(
+                            "Gemini API key not found in environment variable".to_string(),
+                        ));
+                    }
+                };
                 let config = OpenAIConfig::new()
                     .with_api_base(api_url.clone().unwrap_or(ANTHROPIC_API_URL.to_string()))
                     .with_api_key(api_key);
@@ -165,31 +184,33 @@ impl TryFrom<&Model> for ConfigType {
     }
 }
 
-impl TryFrom<RetrievalConfig> for ConfigType {
-    type Error = OxyError;
-
-    fn try_from(retrieval: RetrievalConfig) -> Result<Self, Self::Error> {
-        TryFrom::try_from(&retrieval)
-    }
-}
-
-impl TryFrom<&RetrievalConfig> for ConfigType {
-    type Error = OxyError;
-
-    fn try_from(retrieval: &RetrievalConfig) -> Result<Self, Self::Error> {
-        let api_key = match &retrieval.api_key {
-            Some(key) => key,
-            None => &std::env::var(&retrieval.key_var).map_err(|e| {
+impl IntoOpenAIConfig for RetrievalConfig {
+    async fn into_openai_config(&self) -> Result<ConfigType, OxyError> {
+        let secret_resolver = SecretResolverService::new();
+        let key_var = self.key_var.clone();
+        let api_url = self.api_url.clone();
+        let api_key = secret_resolver
+            .resolve_secret(&key_var)
+            .await
+            .map_err(|e| {
                 OxyError::ConfigurationError(format!(
-                    "OpenAI key not found in environment variable {}:\n{}",
-                    retrieval.key_var, e
+                    "Retrieval API key not found in environment variable {}:\n{}",
+                    key_var, e
                 ))
-            })?,
+            })?;
+        let api_key = match api_key {
+            Some(secret) => secret.value,
+            None => {
+                return Err(OxyError::ConfigurationError(format!(
+                    "Retrieval API key not found in environment variable {}",
+                    key_var
+                )));
+            }
         };
         Ok(ConfigType::Default(
             OpenAIConfig::new()
                 .with_api_key(api_key)
-                .with_api_base(retrieval.api_url.to_string()),
+                .with_api_base(api_url.to_string()),
         ))
     }
 }
@@ -341,7 +362,7 @@ impl From<ReasoningConfig> for OpenAIReasoningConfig {
 }
 
 async fn generate_workflow_run_schema(workflow_path: &str) -> Result<serde_json::Value, OxyError> {
-    let project_path = find_project_path().unwrap();
+    let project_path = resolve_project_path().unwrap();
     let workflow_config =
         get_workflow(PathBuf::from(workflow_path), Some(project_path.clone())).await?;
     let schema = Into::<RootSchema>::into(&workflow_config.variables.unwrap_or_default());

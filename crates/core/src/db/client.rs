@@ -3,6 +3,8 @@ use sea_orm::{Database, DatabaseConnection};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::errors::OxyError;
+
 fn resolve_state_dir() -> PathBuf {
     if let Ok(env_dir) = std::env::var("OXY_STATE_DIR") {
         let path = PathBuf::from(env_dir);
@@ -44,17 +46,24 @@ pub fn get_charts_dir() -> &'static Path {
     CHARTS_DIR.as_path()
 }
 
-pub async fn establish_connection() -> DatabaseConnection {
-    let db_url = std::env::var("OXY_DATABASE_URL").ok();
+pub async fn establish_connection() -> Result<DatabaseConnection, OxyError> {
+    let db_url: Option<String> = std::env::var("OXY_DATABASE_URL").ok();
     if let Some(url) = db_url {
         tracing::info!("Using database URL from environment: {}", url);
-        Database::connect(url).await.unwrap()
+        Database::connect(url).await.map_err(|e| {
+            tracing::error!("Failed to connect to database: {}", e);
+            OxyError::Database(e.to_string())
+        })
     } else {
+        let state_dir = get_state_dir();
         let db_path = format!(
             "sqlite://{}/db.sqlite?mode=rwc",
-            get_state_dir().to_str().unwrap()
+            state_dir.to_string_lossy()
         );
         tracing::info!("Using default database path: {}", db_path);
-        Database::connect(db_path).await.unwrap()
+        Database::connect(db_path).await.map_err(|e| {
+            tracing::error!("Failed to connect to database: {}", e);
+            OxyError::Database(e.to_string())
+        })
     }
 }

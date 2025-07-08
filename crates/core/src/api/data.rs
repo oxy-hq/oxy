@@ -2,8 +2,8 @@ use crate::adapters::connector::{Connector, load_result};
 use crate::auth::extractor::AuthenticatedUserExtractor;
 use crate::config::ConfigBuilder;
 use crate::execute::types::utils::record_batches_to_2d_array;
+use crate::project::resolve_project_path;
 use crate::service::retrieval::{ReindexInput, reindex};
-use crate::utils::find_project_path;
 use axum::extract::{self, Path};
 use axum::http::StatusCode;
 use serde::{Deserialize, Serialize};
@@ -25,7 +25,7 @@ pub async fn execute_sql(
     Path(_pathb64): Path<String>,
     extract::Json(payload): extract::Json<SQLParams>,
 ) -> Result<extract::Json<Vec<Vec<String>>>, StatusCode> {
-    let project_path = find_project_path().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let project_path = resolve_project_path().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let config_builder = ConfigBuilder::new()
         .with_project_path(&project_path)
@@ -50,7 +50,7 @@ pub async fn execute_sql(
 pub async fn build_embeddings(
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
 ) -> Result<extract::Json<EmbeddingsBuildResponse>, StatusCode> {
-    let project_path = find_project_path().map_err(|e| {
+    let project_path = resolve_project_path().map_err(|e| {
         tracing::error!("Failed to find project path: {}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;

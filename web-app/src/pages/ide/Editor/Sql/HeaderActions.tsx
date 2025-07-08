@@ -52,6 +52,7 @@ const HeaderActions = ({ onExecuteSql, sql, loading }: HeaderActionsProps) => {
         variant="ghost"
         disabled={loading || !database}
         onClick={handleExecuteSql}
+        title="Run query"
       >
         {loading ? (
           <Loader2 className="w-4 h-4 animate-[spin_0.3s_linear_infinite]" />

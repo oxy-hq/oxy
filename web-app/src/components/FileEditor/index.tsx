@@ -19,10 +19,21 @@ interface Props {
   onFileStateChange: (state: FileState) => void;
   onValueChange?: (value: string) => void;
   onSaved?: () => void;
+  isReadonly?: boolean;
 }
 
 const FileEditor = forwardRef<FileEditorRef, Props>(
-  ({ pathb64, fileState, onFileStateChange, onValueChange, onSaved }, ref) => {
+  (
+    {
+      pathb64,
+      fileState,
+      onFileStateChange,
+      onValueChange,
+      onSaved,
+      isReadonly = false,
+    },
+    ref,
+  ) => {
     const fileName = atob(pathb64);
     const { data: fileContent } = useFile(pathb64);
 
@@ -70,8 +81,10 @@ const FileEditor = forwardRef<FileEditorRef, Props>(
             formatOnPaste: true,
             formatOnType: true,
             automaticLayout: true,
+            readOnly: isReadonly,
           }}
           onChange={(value) => {
+            if (isReadonly) return;
             onValueChange?.(value || "");
             onFileStateChange("modified");
           }}
