@@ -12,12 +12,12 @@ use std::sync::Arc;
 use std::sync::Mutex;
 
 use crate::config::model::Workflow;
+use crate::project::resolve_project_path;
 use crate::service::thread::streaming_workflow_persister::StreamingWorkflowPersister;
 use crate::service::workflow as service;
 use crate::service::workflow::WorkflowInfo;
 use crate::service::workflow::get_workflow;
 use crate::utils::create_sse_stream;
-use crate::utils::find_project_path;
 use crate::workflow::loggers::api::WorkflowAPILogger;
 use crate::workflow::loggers::types::LogItem;
 use crate::workflow::loggers::types::WorkflowLogger;
@@ -145,7 +145,7 @@ pub async fn run_workflow(Path(pathb64): Path<String>) -> Result<impl IntoRespon
         tracing::info!("{:?}", e);
         StatusCode::BAD_REQUEST
     })?);
-    let project_path = find_project_path()?;
+    let project_path = resolve_project_path()?;
 
     let full_workflow_path = project_path.join(&path);
     let (logger, receiver) = build_workflow_api_logger(&full_workflow_path, None).await;
@@ -175,7 +175,10 @@ pub async fn run_workflow(Path(pathb64): Path<String>) -> Result<impl IntoRespon
     )
 )]
 pub async fn run_workflow_thread(Path(id): Path<String>) -> Result<impl IntoResponse, StatusCode> {
-    let connection = establish_connection().await;
+    let connection = establish_connection().await.map_err(|e| {
+        tracing::error!("Failed to establish database connection: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
     let thread_id = Uuid::parse_str(&id).map_err(|e| {
         tracing::info!("{:?}", e);
         StatusCode::BAD_REQUEST
@@ -197,7 +200,7 @@ pub async fn run_workflow_thread(Path(id): Path<String>) -> Result<impl IntoResp
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let project_path = find_project_path().map_err(|e| {
+    let project_path = resolve_project_path().map_err(|e| {
         tracing::info!("Failed to find project path: {}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;

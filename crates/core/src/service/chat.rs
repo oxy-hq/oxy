@@ -13,13 +13,14 @@ use crate::{
     db::client::establish_connection,
     errors::OxyError,
     execute::types::Usage,
+    project::resolve_project_path,
     service::{
         agent::Message,
         formatters::streaming_message_persister::StreamingMessagePersister,
         task_manager::TASK_MANAGER,
         types::{AnswerContent, AnswerStream},
     },
-    utils::{create_sse_stream_with_cancellation, find_project_path},
+    utils::create_sse_stream_with_cancellation,
 };
 
 pub trait ChatExecutionRequest {
@@ -86,7 +87,7 @@ pub struct ChatService {
 
 impl ChatService {
     pub async fn new() -> Result<Self, StatusCode> {
-        let connection = establish_connection().await;
+        let connection = establish_connection().await?;
         Ok(Self { connection })
     }
 
@@ -102,7 +103,7 @@ impl ChatService {
 
         let user_question = self.handle_user_question(&payload, &thread).await?;
         let memory = self.build_conversation_memory(thread.id).await?;
-        let project_path = find_project_path().map_err(|e| {
+        let project_path = resolve_project_path().map_err(|e| {
             tracing::error!("Failed to find project path: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
         })?;

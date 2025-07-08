@@ -40,7 +40,7 @@ impl ApiKeyAuthenticator {
         match &self.db_connection {
             Some(conn) => Ok(Arc::clone(conn)),
             None => {
-                let conn = establish_connection().await;
+                let conn = establish_connection().await?;
                 Ok(Arc::new(conn))
             }
         }

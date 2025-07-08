@@ -60,7 +60,7 @@ impl Connector {
                 let db_path = format!(
                     "{}:{}@{}:{}/{}",
                     pg.user.clone().unwrap_or_default(),
-                    pg.get_password().unwrap_or_default(),
+                    pg.get_password().await?,
                     pg.host.clone().unwrap_or_default(),
                     pg.port.clone().unwrap_or_default(),
                     db_name,
@@ -72,7 +72,7 @@ impl Connector {
                 let db_path = format!(
                     "{}:{}@{}:{}/{}?cxprotocol={}",
                     rs.user.clone().unwrap_or_default(),
-                    rs.get_password().unwrap_or_default(),
+                    rs.get_password().await?,
                     rs.host.clone().unwrap_or_default(),
                     rs.port.clone().unwrap_or_default(),
                     db_name,
@@ -87,7 +87,7 @@ impl Connector {
                 let db_path = format!(
                     "{}:{}@{}:{}/{}",
                     my.user.clone().unwrap_or_default(),
-                    my.get_password().unwrap_or_default(),
+                    my.get_password().await?,
                     my.host.clone().unwrap_or_default(),
                     my.port.clone().unwrap_or_default(),
                     db_name

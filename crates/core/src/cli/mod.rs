@@ -6,9 +6,12 @@ use crate::adapters::connector::Connector;
 use crate::auth::types::AuthMode;
 use crate::config::model::AppConfig;
 use crate::config::*;
+use crate::db::client::establish_connection;
 use crate::errors::OxyError;
 use crate::execute::types::utils::record_batches_to_table;
 use crate::mcp::service::OxyMcpServer;
+use crate::project::initialize_project_manager;
+use crate::project::resolve_project_path;
 use crate::service::agent::AgentCLIHandler;
 use crate::service::agent::run_agent;
 use crate::service::eval::EvalEventsHandler;
@@ -19,7 +22,6 @@ use crate::service::workflow::run_workflow;
 use crate::theme::StyledText;
 use crate::theme::detect_true_color_support;
 use crate::theme::get_current_theme_mode;
-use crate::utils::find_project_path;
 use crate::utils::print_colored_sql;
 use crate::workflow::loggers::cli::WorkflowCLILogger;
 use axum::handler::Handler;
@@ -28,6 +30,8 @@ use clap::CommandFactory;
 use clap::Parser;
 use clap::builder::ValueParser;
 use make::handle_make_command;
+use migration::Migrator;
+use migration::MigratorTrait;
 use minijinja::{Environment, Value};
 use model::AgentConfig;
 use model::{Config, Semantics, Workflow};
@@ -460,6 +464,12 @@ struct ServeArgs {
     /// production deployments with proper user authentication.
     #[clap(long, default_value_t = AuthMode::BuiltIn, value_enum)]
     auth_mode: AuthMode,
+    /// Enable git-based project detection and onboarding
+    ///
+    /// When enabled, allows starting the server outside of an Oxy project
+    /// directory and provides git-based onboarding functionality.
+    #[clap(long, default_value_t = false)]
+    readonly: bool,
 }
 
 #[derive(Parser, Debug)]
@@ -519,6 +529,35 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             "panic occurred"
         );
     }));
+
+    let readonly_mode = match &args.command {
+        Some(SubCommand::Serve(serve_args)) => serve_args.readonly,
+        _ => false, // For other commands, try to auto-detect
+    };
+
+    // Initialize project manager early for most commands (except Init and GenConfigSchema)
+    let needs_project_manager = match &args.command {
+        Some(SubCommand::Init)
+        | Some(SubCommand::GenConfigSchema(_))
+        | Some(SubCommand::SelfUpdate)
+        | Some(SubCommand::TestTheme) => false,
+        _ => true,
+    };
+
+    if needs_project_manager {
+        if let Err(e) = initialize_project_manager(readonly_mode).await {
+            // For some commands, not having a project is acceptable
+            match &args.command {
+                Some(SubCommand::Serve(_)) if readonly_mode => {
+                    // In git mode, we'll handle this in the serve command
+                }
+                _ => {
+                    tracing::debug!("Failed to initialize project manager: {}", e);
+                    // For non-git commands, we may still want to proceed in some cases
+                }
+            }
+        }
+    }
 
     match args.command {
         Some(SubCommand::GenConfigSchema(args)) => {
@@ -596,13 +635,13 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
         }
         Some(SubCommand::Build(build_args)) => {
             reindex(ReindexInput {
-                project_path: find_project_path()?.to_string_lossy().to_string(),
+                project_path: resolve_project_path()?.to_string_lossy().to_string(),
                 drop_all_tables: build_args.drop_all_tables,
             })
             .await?;
         }
         Some(SubCommand::VecSearch(search_args)) => {
-            let project_path = find_project_path()?.to_string_lossy().to_string();
+            let project_path = resolve_project_path()?.to_string_lossy().to_string();
             search(SearchInput {
                 project_path,
                 agent_ref: search_args.agent.to_string(),
@@ -612,7 +651,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
         }
         Some(SubCommand::Sync(sync_args)) => {
             let config = ConfigBuilder::new()
-                .with_project_path(&find_project_path()?)?
+                .with_project_path(&resolve_project_path()?)?
                 .build()
                 .await?;
             let filter = sync_args
@@ -654,7 +693,13 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             }
         }
         Some(SubCommand::Serve(serve_args)) => {
-            start_server_and_web_app(serve_args.port, serve_args.host, serve_args.auth_mode).await;
+            start_server_and_web_app(
+                serve_args.port,
+                serve_args.host,
+                serve_args.auth_mode,
+                serve_args.readonly,
+            )
+            .await;
         }
         Some(SubCommand::McpSse(mcp_sse_args)) => {
             let cancellation_token = start_mcp_sse_server(mcp_sse_args.port, mcp_sse_args.host)
@@ -694,7 +739,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
         }
 
         Some(SubCommand::Ask(ask_args)) => {
-            let project_path = find_project_path()?;
+            let project_path = resolve_project_path()?;
             let config = ConfigBuilder::new()
                 .with_project_path(&project_path)?
                 .build()
@@ -726,7 +771,7 @@ async fn handle_agent_file(file_path: &PathBuf, question: Option<String>) -> Res
     let question = question.ok_or_else(|| {
         OxyError::ArgumentError("Question is required for agent files".to_string())
     })?;
-    let project_path = find_project_path()?;
+    let project_path = resolve_project_path()?;
     let _ = run_agent(
         &project_path,
         file_path,
@@ -839,7 +884,7 @@ pub async fn handle_run_command(run_args: RunArgs) -> Result<RunResult, OxyError
         }
         Some("sql") => {
             let config = ConfigBuilder::new()
-                .with_project_path(&find_project_path()?)?
+                .with_project_path(&resolve_project_path()?)?
                 .build()
                 .await?;
             let database = run_args
@@ -885,7 +930,7 @@ pub async fn start_mcp_sse_server(
     host: String,
 ) -> anyhow::Result<CancellationToken> {
     // require webserver to be started inside the project path
-    let project_path = match find_project_path() {
+    let project_path = match resolve_project_path() {
         Ok(path) => path,
         Err(e) => {
             eprintln!("Failed to find project path: {e}");
@@ -957,7 +1002,7 @@ pub async fn handle_test_command(test_args: TestArgs) -> Result<(), OxyError> {
     }
 
     run_eval(
-        &find_project_path()?,
+        &resolve_project_path()?,
         &file_path,
         None,
         EvalEventsHandler::new(test_args.quiet),
@@ -969,22 +1014,82 @@ pub async fn handle_test_command(test_args: TestArgs) -> Result<(), OxyError> {
 #[derive(OpenApi)]
 struct ApiDoc;
 
-pub async fn start_server_and_web_app(mut web_port: u16, web_host: String, auth_mode: AuthMode) {
-    // require webserver to be started inside the project path
-    let project_path = match find_project_path() {
-        Ok(path) => path,
+pub async fn start_server_and_web_app(
+    mut web_port: u16,
+    web_host: String,
+    auth_mode: AuthMode,
+    readonly_mode: bool,
+) {
+    // Set global readonly mode
+    crate::readonly::set_readonly_mode(readonly_mode);
+
+    // migrate database if needed
+    let db = establish_connection()
+        .await
+        .expect("Failed to connect to database");
+    Migrator::up(&db, None)
+        .await
+        .expect("Failed to run database migrations");
+
+    // Initialize background task manager singleton
+    if let Err(e) = crate::github::background_tasks::initialize_background_task_manager().await {
+        tracing::warn!("Failed to initialize background task manager: {}", e);
+    }
+
+    // Initialize project manager for the web app
+    let project_manager_initialized = match initialize_project_manager(readonly_mode).await {
+        Ok(()) => true,
         Err(e) => {
-            eprintln!("Failed to find project path: {e}");
-            std::process::exit(1);
+            tracing::warn!("Failed to initialize project manager: {}", e);
+            false
         }
     };
 
-    let config = ConfigBuilder::new()
-        .with_project_path(&project_path)
-        .expect("Failed to find project path")
-        .build()
-        .await
-        .expect("Failed to load configuration");
+    // Check if we're in a valid project
+    let project_path = if project_manager_initialized {
+        match resolve_project_path() {
+            Ok(path) => Some(path),
+            Err(e) => {
+                tracing::warn!(
+                    "Project manager initialized but failed to resolve path: {}",
+                    e
+                );
+                None
+            }
+        }
+    } else {
+        // Fallback to old behavior for backward compatibility
+        let project_path_result = resolve_project_path();
+        match project_path_result {
+            Ok(path) => Some(path),
+            Err(_) => {
+                if readonly_mode {
+                    tracing::info!("Readonly mode enabled");
+                    None
+                } else {
+                    // Old behavior - exit if not in an Oxy project
+                    eprintln!(
+                        "Error: Not in an Oxy project directory. Run 'oxy init' first or use --readonly to use git integration."
+                    );
+                    std::process::exit(1);
+                }
+            }
+        }
+    };
+
+    // Only build config if we have a valid project path
+    let config = if let Some(ref path) = project_path {
+        Some(
+            ConfigBuilder::new()
+                .with_project_path(path)
+                .expect("Failed to find project path")
+                .build()
+                .await
+                .expect("Failed to load configuration"),
+        )
+    } else {
+        None
+    };
 
     async fn shutdown_signal() {
         let ctrl_c = async {
@@ -1082,36 +1187,40 @@ pub async fn start_server_and_web_app(mut web_port: u16, web_host: String, auth_
                     .latency_unit(tower_http::LatencyUnit::Millis),
             )
             .on_failure(trace::DefaultOnFailure::new().level(tracing::Level::ERROR));
-        let api_router = match router::api_router(auth_mode).await {
+        let api_router = match router::api_router(auth_mode, readonly_mode).await {
             Ok(router) => router.layer(trace_layer.clone()),
             Err(e) => {
                 eprintln!("Failed to create API router: {e}");
                 std::process::exit(1);
             }
         };
-        let openapi_router = router::openapi_router().await.layer(trace_layer.clone());
+        let openapi_router = router::openapi_router(readonly_mode)
+            .await
+            .layer(trace_layer.clone());
         let mut openapi_router = OpenApiRouter::with_openapi(ApiDoc::openapi())
             .nest("/api", openapi_router)
             .fallback_service(serve_with_fallback);
         let openapi = openapi_router.get_openapi_mut();
-        if let Some(auth_config) = config.get_authentication() {
-            if let Some(api_key_auth) = auth_config.api_key {
-                let security_schema_name = "ApiKey";
+        if let Some(cfg) = config {
+            if let Some(auth_config) = cfg.get_authentication() {
+                if let Some(api_key_auth) = auth_config.api_key {
+                    let security_schema_name = "ApiKey";
 
-                // Get existing components or create new ones, then add the security scheme
-                let mut components = openapi.components.take().unwrap_or_default();
-                components.security_schemes.insert(
-                    security_schema_name.to_string(),
-                    SecurityScheme::ApiKey(utoipa::openapi::security::ApiKey::Header(
-                        ApiKeyValue::new(api_key_auth.header),
-                    )),
-                );
-                openapi.components = Some(components);
+                    // Get existing components or create new ones, then add the security scheme
+                    let mut components = openapi.components.take().unwrap_or_default();
+                    components.security_schemes.insert(
+                        security_schema_name.to_string(),
+                        SecurityScheme::ApiKey(utoipa::openapi::security::ApiKey::Header(
+                            ApiKeyValue::new(api_key_auth.header),
+                        )),
+                    );
+                    openapi.components = Some(components);
 
-                // Apply for all endpoints
-                let scopes: Vec<String> = vec![];
-                openapi.security =
-                    Some(vec![SecurityRequirement::new(security_schema_name, scopes)]);
+                    // Apply for all endpoints
+                    let scopes: Vec<String> = vec![];
+                    openapi.security =
+                        Some(vec![SecurityRequirement::new(security_schema_name, scopes)]);
+                }
             }
         }
         let web_app = Router::new()
@@ -1132,6 +1241,21 @@ pub async fn start_server_and_web_app(mut web_port: u16, web_host: String, auth_
         } else {
             &web_host
         };
+
+        if readonly_mode {
+            println!(
+                "{} {} {}",
+                "Web app running at".text(),
+                format!("http://{}:{}", display_host, web_port).secondary(),
+                "(readonly mode)".tertiary()
+            );
+        } else {
+            println!(
+                "{} {}",
+                "Web app running at".text(),
+                format!("http://{}:{}", display_host, web_port).secondary()
+            );
+        }
         println!(
             "{} {}",
             "Web app running at".text(),
@@ -1150,7 +1274,26 @@ pub async fn start_server_and_web_app(mut web_port: u16, web_host: String, auth_
             .unwrap();
     });
 
-    web_server_task.await.unwrap();
+    // Start Apalis worker in readonly mode for background tasks
+    let worker_task = if readonly_mode {
+        Some(tokio::spawn(async move {
+            if let Err(e) = crate::github::start_apalis_worker().await {
+                tracing::error!("Failed to start Apalis worker: {}", e);
+            }
+        }))
+    } else {
+        None
+    };
+
+    // Wait for web server to complete
+    let web_result = web_server_task.await;
+
+    // If we started a worker, cancel it when web server stops
+    if let Some(worker) = worker_task {
+        worker.abort();
+    }
+
+    web_result.unwrap();
 }
 
 async fn handle_check_for_updates() -> Result<(), OxyError> {

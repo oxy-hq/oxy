@@ -55,6 +55,29 @@ const apiKeyKeys = {
   item: (id: string) => [...apiKeyKeys.all, { id }] as const,
 };
 
+const secretKeys = {
+  all: ["secret"] as const,
+  list: () => [...secretKeys.all, "list"] as const,
+  item: (id: string) => [...secretKeys.all, { id }] as const,
+};
+
+const settingsKeys = {
+  all: ["settings"] as const,
+  revisionInfo: () => [...settingsKeys.all, "revision-info"] as const,
+  projectStatus: () => [...settingsKeys.all, "project-status"] as const,
+  currentProject: () => [...settingsKeys.all, "current-project"] as const,
+};
+
+const repositoryKeys = {
+  all: ["repositories"] as const,
+};
+
+const configKeys = {
+  all: ["config"] as const,
+  validation: () => [...configKeys.all, "validation"] as const,
+  status: () => [...configKeys.all, "status"] as const,
+};
+
 const userKeys = {
   all: ["user"] as const,
   list: () => [...userKeys.all, "list"] as const,
@@ -66,12 +89,16 @@ const queryKeys = {
   agent: agentKeys,
   thread: threadKeys,
   apiKey: apiKeyKeys,
+  secret: secretKeys,
   user: userKeys,
   workflow: workflowKeys,
   chart: chartKeys,
   file: fileKeys,
   database: databaseKeys,
   app: appKeys,
+  settings: settingsKeys,
+  repositories: repositoryKeys,
+  config: configKeys,
 };
 
 export default queryKeys;

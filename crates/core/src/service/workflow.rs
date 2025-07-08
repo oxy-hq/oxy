@@ -20,7 +20,7 @@ use crate::{
         types::{Event, EventKind, Output, OutputContainer, ProgressType},
         writer::EventHandler,
     },
-    utils::find_project_path,
+    project::resolve_project_path,
     workflow::{
         WorkflowInput, WorkflowLauncher,
         loggers::types::{LogItem, WorkflowLogger},
@@ -36,7 +36,7 @@ pub struct WorkflowInfo {
 pub async fn list_workflows(project_path: Option<PathBuf>) -> Result<Vec<WorkflowInfo>, OxyError> {
     let project_path = match project_path {
         Some(path) => path,
-        None => find_project_path()?,
+        None => resolve_project_path()?,
     };
     let config = ConfigBuilder::new()
         .with_project_path(project_path.clone())?
@@ -72,7 +72,7 @@ pub async fn get_workflow(
 ) -> Result<Workflow, OxyError> {
     let project_path = match project_path {
         Some(path) => path,
-        None => find_project_path()?,
+        None => resolve_project_path()?,
     };
 
     let config = ConfigBuilder::new()
@@ -180,7 +180,7 @@ pub async fn run_workflow<P: AsRef<Path>, L: WorkflowLogger + 'static>(
     restore_from_checkpoint: bool,
     variables: Option<HashMap<String, serde_json::Value>>,
 ) -> Result<OutputContainer, OxyError> {
-    let project_path = find_project_path()?.to_string_lossy().to_string();
+    let project_path = resolve_project_path()?.to_string_lossy().to_string();
     WorkflowLauncher::new()
         .with_local_context(&project_path)
         .await?
@@ -196,7 +196,7 @@ pub async fn run_workflow<P: AsRef<Path>, L: WorkflowLogger + 'static>(
 }
 
 pub async fn get_workflow_logs(path: &PathBuf) -> Result<Vec<LogItem>, OxyError> {
-    let project_path = find_project_path()?;
+    let project_path = resolve_project_path()?;
     let full_workflow_path = project_path.join(path);
     let full_workflow_path_b64: String =
         BASE64_STANDARD.encode(full_workflow_path.to_str().unwrap());
@@ -221,7 +221,7 @@ pub async fn create_workflow_from_query(
     prompt: &str,
     database: &str,
 ) -> Result<Workflow, OxyError> {
-    let project_path = find_project_path()?;
+    let project_path = resolve_project_path()?;
 
     let task = Task {
         task_type: TaskType::ExecuteSQL(ExecuteSQLTask {

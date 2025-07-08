@@ -20,6 +20,7 @@ import NewNode, { CreationType } from "../NewNode";
 import AlertDeleteDialog from "../AlertDeleteDialog";
 import RenameNode from "../RenameNode";
 import { cn } from "@/libs/shadcn/utils";
+import { useReadonly } from "@/hooks/useReadonly";
 
 const FileTreeNode = ({ fileTree }: { fileTree: FileTreeModel }) => {
   if (fileTree.is_dir) {
@@ -32,6 +33,7 @@ const FileTreeNode = ({ fileTree }: { fileTree: FileTreeModel }) => {
 export default FileTreeNode;
 
 const DirNode = ({ fileTree }: { fileTree: FileTreeModel }) => {
+  const { isReadonly } = useReadonly();
   const [isContextMenuOpen, setIsContextMenuOpen] = React.useState(false);
   const [isEditing, setIsEditing] = React.useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = React.useState(false);
@@ -43,21 +45,25 @@ const DirNode = ({ fileTree }: { fileTree: FileTreeModel }) => {
   const [isOpen, setIsOpen] = React.useState(false);
 
   const handleRename = () => {
+    if (isReadonly) return;
     setIsEditing(true);
   };
 
   const handleDelete = () => {
+    if (isReadonly) return;
     setPendingDelete(true);
     setIsContextMenuOpen(false);
   };
 
   const handleCreateFile = () => {
+    if (isReadonly) return;
     setCreationType("file");
     setIsCreating(true);
     setIsOpen(true);
   };
 
   const handleCreateFolder = () => {
+    if (isReadonly) return;
     setCreationType("folder");
     setIsCreating(true);
     setIsOpen(true);
@@ -114,7 +120,7 @@ const DirNode = ({ fileTree }: { fileTree: FileTreeModel }) => {
 
             {isOpen && (
               <SidebarMenuSub className="translate-none">
-                {isCreating && (
+                {isCreating && !isReadonly && (
                   <NewNode
                     ref={newItemInputRef}
                     creationType={creationType}
@@ -148,31 +154,43 @@ const DirNode = ({ fileTree }: { fileTree: FileTreeModel }) => {
             }
           }}
         >
-          <ContextMenuItem
-            className="cursor-pointer"
-            onClick={handleCreateFile}
-          >
-            <FilePlus className="mr-2 h-4 w-4" />
-            <span>New File</span>
-          </ContextMenuItem>
-          <ContextMenuItem
-            className="cursor-pointer"
-            onClick={handleCreateFolder}
-          >
-            <FolderPlus className="mr-2 h-4 w-4" />
-            <span>New Folder</span>
-          </ContextMenuItem>
-          <ContextMenuItem className="cursor-pointer" onClick={handleRename}>
-            <Pencil className="mr-2 h-4 w-4" />
-            <span>Rename</span>
-          </ContextMenuItem>
-          <ContextMenuItem
-            className="text-red-600 cursor-pointer"
-            onClick={handleDelete}
-          >
-            <Trash2 className="mr-2 h-4 w-4" />
-            <span>Delete</span>
-          </ContextMenuItem>
+          {!isReadonly && (
+            <>
+              <ContextMenuItem
+                className="cursor-pointer"
+                onClick={handleCreateFile}
+              >
+                <FilePlus className="mr-2 h-4 w-4" />
+                <span>New File</span>
+              </ContextMenuItem>
+              <ContextMenuItem
+                className="cursor-pointer"
+                onClick={handleCreateFolder}
+              >
+                <FolderPlus className="mr-2 h-4 w-4" />
+                <span>New Folder</span>
+              </ContextMenuItem>
+              <ContextMenuItem
+                className="cursor-pointer"
+                onClick={handleRename}
+              >
+                <Pencil className="mr-2 h-4 w-4" />
+                <span>Rename</span>
+              </ContextMenuItem>
+              <ContextMenuItem
+                className="text-red-600 cursor-pointer"
+                onClick={handleDelete}
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                <span>Delete</span>
+              </ContextMenuItem>
+            </>
+          )}
+          {isReadonly && (
+            <ContextMenuItem disabled>
+              <span className="text-muted-foreground">Read-only mode</span>
+            </ContextMenuItem>
+          )}
         </ContextMenuContent>
       </ContextMenu>
     </div>

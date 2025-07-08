@@ -1,15 +1,22 @@
 use std::path::{Path, PathBuf};
 
 use crate::config::model::Dimension;
-use crate::{errors::OxyError, theme::*};
+use crate::project::resolve_project_path;
+use crate::{constants::OXY_ENCRYPTION_KEY_VAR, errors::OxyError, theme::*};
+use aes_gcm::aead::Aead;
+use aes_gcm::{AeadCore, Aes256Gcm, Key, KeyInit, Nonce};
 use arrow::array::RecordBatch;
 use async_stream::stream;
 use axum::response::sse::Event;
+use base64::engine::general_purpose;
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use csv::StringRecord;
 use duckdb::Connection;
 use futures::Stream;
+use rand::rngs::OsRng;
 use serde::Serialize;
 use slugify::slugify;
+use std::fs;
 use syntect::{
     easy::HighlightLines,
     highlighting::{Style, ThemeSet},
@@ -23,6 +30,80 @@ use tokio_util::sync::CancellationToken;
 
 pub const MAX_DISPLAY_ROWS: usize = 100;
 pub const MAX_OUTPUT_LENGTH: usize = 1000;
+
+fn get_key_file_path() -> PathBuf {
+    let home_dir = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+    PathBuf::from(home_dir)
+        .join(".local")
+        .join("share")
+        .join("oxy")
+        .join("encryption_key.txt")
+}
+
+fn decode_key_from_string(key_str: &str) -> [u8; 32] {
+    let decoded = general_purpose::STANDARD
+        .decode(key_str)
+        .map_err(|e| OxyError::SecretManager(format!("Invalid encryption key format: {}", e)))
+        .expect("Failed to decode encryption key");
+
+    if decoded.len() != 32 {
+        panic!(
+            "Invalid encryption key length: expected 32 bytes, got {}",
+            decoded.len()
+        );
+    }
+
+    let mut key = [0u8; 32];
+    key.copy_from_slice(&decoded);
+    key
+}
+
+/// Get the encryption key from environment variable
+/// Falls back to a development key for development (NOT secure for production)
+pub fn get_encryption_key() -> [u8; 32] {
+    // First try environment variable
+    if let Ok(key_str) = std::env::var(OXY_ENCRYPTION_KEY_VAR) {
+        return decode_key_from_string(&key_str);
+    }
+
+    // Try loading from file
+    let key_file_path = get_key_file_path();
+    if let Ok(key_str) = fs::read_to_string(&key_file_path) {
+        let key_str = key_str.trim();
+        if !key_str.is_empty() {
+            tracing::info!("Loading encryption key from file: {:?}", key_file_path);
+            return decode_key_from_string(key_str);
+        }
+    }
+
+    // Generate a new key and save it to file
+    let key = Aes256Gcm::generate_key(&mut OsRng);
+
+    // Ensure directory exists
+    if let Some(parent) = key_file_path.parent() {
+        if let Err(e) = fs::create_dir_all(parent) {
+            tracing::error!("Failed to create directory for encryption key: {}", e);
+        }
+    }
+    // Encode key as base64 string
+    let key_string = BASE64.encode(key);
+
+    // Save key to file
+    if let Err(e) = fs::write(&key_file_path, &key_string) {
+        tracing::error!("Failed to save encryption key to file: {}", e);
+    } else {
+        tracing::info!(
+            "Generated new encryption key and saved to: {:?}",
+            key_file_path
+        );
+    }
+
+    tracing::warn!(
+        "No encryption key found. Generated new key and saved to: {:?}",
+        key_file_path
+    );
+    key.into()
+}
 
 pub fn truncate_with_ellipsis(s: &str, max_width: Option<usize>) -> String {
     // We should truncate at grapheme-boundary and compute character-widths,
@@ -78,25 +159,6 @@ pub fn get_colored_sql(sql: &str) -> String {
         colored_sql.push_str(&escaped);
     }
     colored_sql
-}
-
-pub fn find_project_path() -> Result<PathBuf, OxyError> {
-    let mut current_dir = std::env::current_dir().expect("Could not get current directory");
-
-    for _ in 0..10 {
-        let config_path = current_dir.join("config.yml");
-        if config_path.exists() {
-            return Ok(current_dir);
-        }
-
-        if !current_dir.pop() {
-            break;
-        }
-    }
-
-    Err(OxyError::RuntimeError(
-        "Could not find config.yml".to_string(),
-    ))
 }
 
 pub fn get_relative_path(path: PathBuf, root: PathBuf) -> Result<String, OxyError> {
@@ -280,7 +342,7 @@ pub async fn try_unwrap_arc_tokio_mutex<T>(
 pub fn to_openai_function_name(file_path: &PathBuf) -> Result<String, OxyError> {
     // Get the relative path from project root, falling back to the original path
     let relative_path = file_path
-        .strip_prefix(find_project_path()?)
+        .strip_prefix(resolve_project_path()?)
         .unwrap_or(file_path);
 
     // Remove the file extension to get a clean path
@@ -423,4 +485,43 @@ pub fn get_file_stem<P: AsRef<Path>>(path: P) -> String {
         .and_then(|s| s.to_str())
         .map(|s| s.to_string())
         .unwrap_or(path.as_ref().to_string_lossy().to_string())
+}
+
+pub fn encrypt_value(key: &[u8; 32], value: &str) -> Result<String, OxyError> {
+    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key));
+    let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
+
+    let ciphertext = cipher
+        .encrypt(&nonce, value.as_bytes())
+        .map_err(|e| OxyError::SecretManager(format!("Encryption failed: {}", e)))?;
+
+    // Combine nonce and ciphertext, then base64 encode
+    let mut combined = nonce.to_vec();
+    combined.extend_from_slice(&ciphertext);
+
+    Ok(general_purpose::STANDARD.encode(&combined))
+}
+
+/// Decrypt a secret value
+pub fn decrypt_value(key: &[u8; 32], encrypted_value: &str) -> Result<String, OxyError> {
+    let combined = general_purpose::STANDARD
+        .decode(encrypted_value)
+        .map_err(|e| OxyError::SecretManager(format!("Invalid encrypted value format: {}", e)))?;
+
+    if combined.len() < 12 {
+        return Err(OxyError::SecretManager(
+            "Invalid encrypted value: too short".to_string(),
+        ));
+    }
+
+    let (nonce_bytes, ciphertext) = combined.split_at(12);
+    let nonce = Nonce::from_slice(nonce_bytes);
+
+    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key));
+    let plaintext = cipher
+        .decrypt(nonce, ciphertext)
+        .map_err(|e| OxyError::SecretManager(format!("Decryption failed: {}", e)))?;
+
+    String::from_utf8(plaintext)
+        .map_err(|e| OxyError::SecretManager(format!("Invalid UTF-8 in decrypted value: {}", e)))
 }

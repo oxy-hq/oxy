@@ -3,7 +3,7 @@ use async_openai::types::{
 };
 
 use crate::{
-    adapters::openai::{AsyncFunctionObject, OpenAIClient},
+    adapters::openai::{AsyncFunctionObject, IntoOpenAIConfig, OpenAIClient},
     agent::{
         OpenAIExecutableResponse,
         builders::{openai::OpenAIExecutable, tool::OpenAITool},
@@ -29,7 +29,7 @@ impl FallbackAgent {
         let model_name = model.model_name();
         Ok(Self {
             agent: OpenAIExecutable::new(
-                OpenAIClient::with_config(model.try_into()?),
+                OpenAIClient::with_config(model.into_openai_config().await?),
                 model_name.to_string(),
                 vec![ChatCompletionTool::from_tool_async(&tool_config).await],
                 Some(ChatCompletionToolChoiceOption::Named(

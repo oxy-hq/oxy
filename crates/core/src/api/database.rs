@@ -1,6 +1,6 @@
 use crate::{
     auth::extractor::AuthenticatedUserExtractor, config::ConfigBuilder,
-    service::sync::sync_databases, utils::find_project_path,
+    project::resolve_project_path, service::sync::sync_databases,
 };
 use axum::{
     extract::{Json, Query},
@@ -58,7 +58,7 @@ pub async fn sync_database(
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
     Query(params): Query<SyncDatabaseQuery>,
 ) -> Result<Json<DatabaseSyncResponse>, StatusCode> {
-    let project_path = find_project_path().map_err(|e| {
+    let project_path = resolve_project_path().map_err(|e| {
         tracing::error!("Failed to find project path: {}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
@@ -135,7 +135,7 @@ pub async fn sync_database(
 pub async fn list_databases(
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
 ) -> Result<Json<Vec<DatabaseInfo>>, StatusCode> {
-    let project_path = find_project_path().map_err(|e| {
+    let project_path = resolve_project_path().map_err(|e| {
         tracing::error!("Failed to find project path: {}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;

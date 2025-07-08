@@ -18,7 +18,7 @@ use serde::Deserialize;
 use serde_json::json;
 
 use crate::{
-    adapters::openai::OpenAIClient,
+    adapters::openai::{IntoOpenAIConfig, OpenAIClient},
     config::{
         constants::{AGENT_RETRY_MAX_ELAPSED_TIME, AGENT_SOURCE_CONTENT},
         model::Model,
@@ -381,26 +381,26 @@ impl ParamMapper<OneShotInput, Vec<ChatCompletionRequestMessage>> for SimpleMapp
     }
 }
 
-pub fn build_openai_executable(
+pub async fn build_openai_executable(
     model: &Model,
-) -> MapInput<OpenAIExecutable, SimpleMapper, Vec<ChatCompletionRequestMessage>> {
-    ExecutableBuilder::new()
+) -> Result<MapInput<OpenAIExecutable, SimpleMapper, Vec<ChatCompletionRequestMessage>>, OxyError> {
+    Ok(ExecutableBuilder::new()
         .map(SimpleMapper)
-        .executable(build_openai_executable_with_tools(model, vec![]))
+        .executable(build_openai_executable_with_tools(model, vec![]).await?))
 }
 
-pub fn build_openai_executable_with_tools(
+pub async fn build_openai_executable_with_tools(
     model: &Model,
     tools: Vec<ChatCompletionTool>,
-) -> OpenAIExecutable {
-    OpenAIExecutable::new(
-        OpenAIClient::with_config(model.try_into().unwrap()),
+) -> Result<OpenAIExecutable, OxyError> {
+    Ok(OpenAIExecutable::new(
+        OpenAIClient::with_config(model.into_openai_config().await?),
         model.model_name().to_string(),
         tools,
         None,
         None,
         false,
-    )
+    ))
 }
 
 #[derive(JsonSchema, Deserialize, Debug, Clone)]

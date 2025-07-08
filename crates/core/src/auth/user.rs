@@ -2,6 +2,7 @@ use crate::{
     config::ConfigBuilder,
     db::{client::establish_connection, filters::UserQueryFilterExt},
     errors::OxyError,
+    project::resolve_project_path,
 };
 use entity::prelude::Users;
 use entity::users;
@@ -15,7 +16,7 @@ pub struct UserService;
 
 impl UserService {
     pub async fn determine_user_role(email: &str) -> UserRole {
-        if let Ok(project_path) = crate::utils::find_project_path() {
+        if let Ok(project_path) = resolve_project_path() {
             if let Ok(config_builder) = ConfigBuilder::new().with_project_path(&project_path) {
                 if let Ok(config) = config_builder.build().await {
                     if let Some(auth_config) = config.get_authentication() {
@@ -33,7 +34,7 @@ impl UserService {
     }
 
     pub async fn get_or_create_user(identity: &Identity) -> Result<AuthenticatedUser, OxyError> {
-        let connection = establish_connection().await;
+        let connection = establish_connection().await?;
 
         match Users::find()
             .filter_by_email(&identity.email)
@@ -84,7 +85,7 @@ impl UserService {
         name: Option<String>,
         picture: Option<String>,
     ) -> Result<AuthenticatedUser, OxyError> {
-        let connection = establish_connection().await;
+        let connection = establish_connection().await?;
 
         let user = Users::find_by_id(user_id)
             .one(&connection)
@@ -111,7 +112,7 @@ impl UserService {
     }
 
     pub async fn list_all_users() -> Result<Vec<AuthenticatedUser>, OxyError> {
-        let connection = establish_connection().await;
+        let connection = establish_connection().await?;
 
         let users = Users::find()
             .all(&connection)
@@ -123,7 +124,7 @@ impl UserService {
 
     /// Soft delete user
     pub async fn delete_user(user_id: Uuid) -> Result<(), OxyError> {
-        let connection = establish_connection().await;
+        let connection = establish_connection().await?;
 
         let user = Users::find_by_id(user_id)
             .filter_active()
@@ -144,7 +145,7 @@ impl UserService {
 
     /// Update user status
     pub async fn update_user_status(user_id: Uuid, status: UserStatus) -> Result<(), OxyError> {
-        let connection = establish_connection().await;
+        let connection = establish_connection().await?;
 
         let user = Users::find_by_id(user_id)
             .one(&connection)
@@ -163,7 +164,7 @@ impl UserService {
     }
 
     pub async fn update_user_role(user_id: Uuid, role: UserRole) -> Result<(), OxyError> {
-        let connection = establish_connection().await;
+        let connection = establish_connection().await?;
 
         let user = Users::find_by_id(user_id)
             .one(&connection)
@@ -185,10 +186,10 @@ impl UserService {
     /// This function ensures that users listed in config.authentication.admins are given admin role
     /// and users not in the list are demoted to regular user role
     pub async fn sync_admin_roles_from_config() -> Result<(), OxyError> {
-        let connection = establish_connection().await;
+        let connection = establish_connection().await?;
 
         // Get current admin emails from config
-        let admin_emails = if let Ok(project_path) = crate::utils::find_project_path() {
+        let admin_emails = if let Ok(project_path) = resolve_project_path() {
             if let Ok(config_builder) = ConfigBuilder::new().with_project_path(&project_path) {
                 if let Ok(config) = config_builder.build().await {
                     if let Some(auth_config) = config.get_authentication() {

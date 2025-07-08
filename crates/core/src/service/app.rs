@@ -5,13 +5,13 @@ use crate::config::model::AppConfig;
 use crate::db::client::get_state_dir;
 use crate::errors::OxyError;
 use crate::execute::types::DataContainer;
+use crate::project::resolve_project_path;
 use crate::service::workflow::WorkflowEventHandler;
-use crate::utils::find_project_path;
 use crate::workflow::WorkflowLauncher;
 use crate::workflow::loggers::NoopLogger;
 
 pub async fn get_app(path: &PathBuf) -> Result<AppConfig, OxyError> {
-    let config_builder = ConfigBuilder::new().with_project_path(find_project_path()?)?;
+    let config_builder = ConfigBuilder::new().with_project_path(resolve_project_path()?)?;
     let config = config_builder.build().await?;
     let app = config.resolve_app(path).await?;
     Ok(app)
@@ -20,7 +20,7 @@ pub async fn get_app(path: &PathBuf) -> Result<AppConfig, OxyError> {
 pub async fn run_app(app_file_relative_path: &PathBuf) -> Result<DataContainer, OxyError> {
     println!("Running app: {app_file_relative_path:?}");
     let (data_path, data_file_path) = get_app_data_path(app_file_relative_path)?;
-    let project_path = find_project_path()?;
+    let project_path = resolve_project_path()?;
 
     let app_config = get_app(app_file_relative_path).await?;
 

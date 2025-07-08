@@ -9,9 +9,9 @@ use crate::{
         Executable, ExecutionContext,
         types::{Output, event::DataApp},
     },
+    project::resolve_project_path,
     service,
     tools::types::CreateDataAppInput,
-    utils::find_project_path,
 };
 use short_uuid::ShortUuid;
 use tokio::fs;
@@ -30,7 +30,7 @@ impl Executable<CreateDataAppInput> for CreateDataAppExecutable {
     ) -> Result<Self::Response, OxyError> {
         tracing::debug!("Creating data app with input: {:?}", &input);
         let CreateDataAppInput { param } = input;
-        let project_path = find_project_path()?;
+        let project_path = resolve_project_path()?;
         let mut full_file_name = format!("{}.app.yml", param.file_name);
         let file_dir = project_path.join(UNPUBLISH_APP_DIR);
         if !file_dir.exists() {

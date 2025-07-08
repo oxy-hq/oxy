@@ -22,7 +22,9 @@ pub struct MessageItem {
 pub async fn get_messages_by_thread(
     Path(thread_id): Path<String>,
 ) -> Result<extract::Json<Vec<MessageItem>>, StatusCode> {
-    let connection = establish_connection().await;
+    let connection = establish_connection()
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let uuid = Uuid::parse_str(&thread_id).map_err(|_| StatusCode::BAD_REQUEST)?;
 
     let messages = Messages::find()

@@ -5,7 +5,7 @@ use fallback::FallbackAgent;
 
 use crate::{
     adapters::{
-        openai::{AsyncFunctionObject, OpenAIClient},
+        openai::{AsyncFunctionObject, IntoOpenAIConfig, OpenAIClient},
         vector_store::parse_sql_source_type,
     },
     agent::{
@@ -230,7 +230,7 @@ async fn build_react_loop(
             .map(SimpleMapper)
             .react_once(OpenAITool::new(agent_name, tool_configs, 1)),
     };
-    let client = OpenAIClient::with_config(model.try_into()?);
+    let client = OpenAIClient::with_config(model.into_openai_config().await?);
     let deduplicated_tools = deduplicate_tools(tools)?;
     Ok(builder.memo(vec![]).executable(OpenAIExecutable::new(
         client,

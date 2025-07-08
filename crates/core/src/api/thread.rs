@@ -62,7 +62,10 @@ pub async fn get_threads(
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     Query(pagination): Query<PaginationQuery>,
 ) -> Result<extract::Json<ThreadsResponse>, StatusCode> {
-    let connection = establish_connection().await;
+    let connection = establish_connection().await.map_err(|e| {
+        tracing::error!("Failed to establish database connection: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     let page = pagination.page.unwrap_or(1);
     let limit = pagination.limit.unwrap_or(100).clamp(1, 100);
@@ -133,7 +136,10 @@ pub async fn get_thread(
     Path(id): Path<String>,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
 ) -> Result<extract::Json<ThreadItem>, StatusCode> {
-    let connection = establish_connection().await;
+    let connection = establish_connection().await.map_err(|e| {
+        tracing::error!("Failed to establish database connection: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
     let thread_id = Uuid::parse_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
 
     let thread = Threads::find_by_id(thread_id)
@@ -161,7 +167,10 @@ pub async fn create_thread(
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     extract::Json(thread_request): extract::Json<CreateThreadRequest>,
 ) -> Result<extract::Json<ThreadItem>, StatusCode> {
-    let connection = establish_connection().await;
+    let connection = establish_connection().await.map_err(|e| {
+        tracing::error!("Failed to establish database connection: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
     let new_thread = entity::threads::ActiveModel {
         id: ActiveValue::Set(Uuid::new_v4()),
         user_id: ActiveValue::Set(Some(user.id)),
@@ -197,7 +206,10 @@ pub async fn delete_thread(
     Path(id): Path<String>,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
 ) -> Result<StatusCode, StatusCode> {
-    let connection = establish_connection().await;
+    let connection = establish_connection().await.map_err(|e| {
+        tracing::error!("Failed to establish database connection: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
     let thread_id = Uuid::parse_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
 
     let thread = Threads::find_by_id(thread_id)
@@ -234,7 +246,10 @@ fn remove_all_files_in_dir<P: AsRef<std::path::Path>>(dir: P) {
 pub async fn delete_all_threads(
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
 ) -> Result<StatusCode, StatusCode> {
-    let connection = establish_connection().await;
+    let connection = establish_connection().await.map_err(|e| {
+        tracing::error!("Failed to establish database connection: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
     Threads::delete_many()
         .filter(threads::Column::UserId.eq(Some(user.id)))
         .exec(&connection)
@@ -258,7 +273,7 @@ pub async fn stop_thread(
     let thread_id = Uuid::parse_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
 
     // Verify the user owns this thread
-    let connection = establish_connection().await;
+    let connection = establish_connection().await?;
     let thread = Threads::find_by_id(thread_id)
         .filter(threads::Column::UserId.eq(Some(user.id)))
         .one(&connection)
@@ -293,7 +308,10 @@ pub async fn bulk_delete_threads(
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     extract::Json(request): extract::Json<BulkDeleteThreadsRequest>,
 ) -> Result<StatusCode, StatusCode> {
-    let connection = establish_connection().await;
+    let connection = establish_connection().await.map_err(|e| {
+        tracing::error!("Failed to establish database connection: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     let mut thread_uuids = Vec::new();
     for thread_id in request.thread_ids {

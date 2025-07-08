@@ -4,8 +4,8 @@ use crate::config::ConfigBuilder;
 use crate::config::model::Display;
 use crate::db::client::get_state_dir;
 use crate::execute::types::DataContainer;
+use crate::project::resolve_project_path;
 use crate::service;
-use crate::utils::find_project_path;
 use axum::body::Body;
 use axum::extract::{self, Path};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
@@ -31,7 +31,7 @@ pub struct AppItem {
     )
 )]
 pub async fn list_apps() -> Result<extract::Json<Vec<AppItem>>, StatusCode> {
-    let project_path = find_project_path().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let project_path = resolve_project_path().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let config_builder = ConfigBuilder::new()
         .with_project_path(&project_path)

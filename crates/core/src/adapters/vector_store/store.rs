@@ -6,7 +6,7 @@ use super::{
     types::{Document, SearchRecord},
 };
 use crate::{
-    adapters::openai::{ConfigType, OpenAIClient},
+    adapters::openai::{IntoOpenAIConfig, OpenAIClient},
     config::{
         ConfigManager,
         model::{EmbeddingConfig, RetrievalConfig, RoutingAgent, VectorDBConfig},
@@ -39,10 +39,10 @@ impl VectorStore {
         config_manager: &ConfigManager,
         db_config: &VectorDBConfig,
         name: &str,
-        openai_config: impl TryInto<ConfigType, Error = OxyError>,
+        openai_config: impl IntoOpenAIConfig,
         embedding_config: EmbeddingConfig,
     ) -> Result<Self, OxyError> {
-        let client = OpenAIClient::with_config(openai_config.try_into()?);
+        let client = OpenAIClient::with_config(openai_config.into_openai_config().await?);
         let connection = match &db_config {
             VectorDBConfig::LanceDB { db_path } => {
                 let path = config_manager.resolve_file(db_path).await?;
@@ -69,7 +69,7 @@ impl VectorStore {
             config_manager,
             &retrieval.db_config,
             &format!("{}-{}", agent_name, retrieval.name),
-            retrieval,
+            retrieval.clone(),
             retrieval.embedding_config.clone(),
         )
         .await
@@ -85,7 +85,7 @@ impl VectorStore {
             config_manager,
             &routing_agent.db_config,
             &format!("{agent_name}-routing"),
-            model,
+            model.clone(),
             routing_agent.embedding_config.clone(),
         )
         .await

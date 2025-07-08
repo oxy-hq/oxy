@@ -17,11 +17,11 @@ use uuid::Uuid;
 
 use crate::auth::types::AuthMode;
 use crate::auth::user::UserService;
+use crate::project::resolve_project_path;
 use crate::{
     config::{ConfigBuilder, constants::AUTHENTICATION_SECRET_KEY},
     db::{client::establish_connection, filters::UserQueryFilterExt},
     errors::OxyError,
-    utils::find_project_path,
 };
 
 #[derive(Deserialize)]
@@ -99,16 +99,22 @@ pub async fn get_config(
         }));
     }
 
-    let project_path = find_project_path().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let auth_config = match resolve_project_path() {
+        Ok(project_path) => {
+            let config = ConfigBuilder::new()
+                .with_project_path(&project_path)
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+                .build()
+                .await
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let config = ConfigBuilder::new()
-        .with_project_path(&project_path)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-        .build()
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    let auth_config = config.get_authentication();
+            config.get_authentication()
+        }
+        Err(_) => {
+            // No project path found, default to no auth config
+            None
+        }
+    };
     if auth_config.is_none() {
         return Ok(Json(AuthConfigResponse {
             is_built_in_mode: true,
@@ -139,7 +145,10 @@ pub async fn get_config(
 pub async fn login(
     extract::Json(login_request): extract::Json<LoginRequest>,
 ) -> Result<Json<AuthResponse>, StatusCode> {
-    let connection = establish_connection().await;
+    let connection = establish_connection().await.map_err(|e| {
+        tracing::error!("Failed to establish database connection: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     let user = Users::find()
         .filter_active_by_email(&login_request.email)
@@ -179,7 +188,10 @@ pub async fn login(
 }
 
 pub async fn create_auth_token(user: users::Model) -> Result<String, StatusCode> {
-    let connection = establish_connection().await;
+    let connection = establish_connection().await.map_err(|e| {
+        tracing::error!("Failed to establish database connection: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     let user_clone = user.clone();
     let mut user_update: users::ActiveModel = user.into();
@@ -216,7 +228,10 @@ pub async fn register(
     headers: HeaderMap,
     extract::Json(register_request): extract::Json<RegisterRequest>,
 ) -> Result<Json<MessageResponse>, StatusCode> {
-    let connection = establish_connection().await;
+    let connection = establish_connection().await.map_err(|e| {
+        tracing::error!("Failed to establish database connection: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     let existing_user = Users::find()
         .filter_by_email(&register_request.email)
@@ -303,7 +318,10 @@ pub async fn google_auth(
             StatusCode::UNAUTHORIZED
         })?;
 
-    let connection = establish_connection().await;
+    let connection = establish_connection().await.map_err(|e| {
+        tracing::error!("Failed to establish database connection: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     let user = match Users::find()
         .filter_by_email(&user_info.email)
@@ -390,7 +408,10 @@ pub async fn google_auth(
 pub async fn validate_email(
     extract::Json(validate_request): extract::Json<ValidateEmailRequest>,
 ) -> Result<Json<AuthResponse>, StatusCode> {
-    let connection = establish_connection().await;
+    let connection = establish_connection().await.map_err(|e| {
+        tracing::error!("Failed to establish database connection: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     let user = Users::find()
         .filter_active_by_verification_token(&validate_request.token)
@@ -457,7 +478,7 @@ fn extract_base_url_from_headers(headers: &HeaderMap) -> String {
 }
 
 async fn send_verification_email(email: &str, token: &str, base_url: &str) -> Result<(), OxyError> {
-    let project_path = find_project_path()
+    let project_path = resolve_project_path()
         .map_err(|_| OxyError::ConfigurationError("Failed to find project path".to_owned()))?;
 
     let config = ConfigBuilder::new()
@@ -488,13 +509,22 @@ async fn send_verification_email(email: &str, token: &str, base_url: &str) -> Re
                 .body(email_body)
                 .map_err(|e| OxyError::ConfigurationError(format!("Failed to build email: {e}")))?;
 
-            let smtp_password =
-                std::env::var(basic_auth.smtp_password_var.as_str()).map_err(|e| {
-                    OxyError::ConfigurationError(format!(
-                        "SMTP password key not found in environment variable {}:\n{}",
-                        basic_auth.smtp_password_var, e
-                    ))
-                })?;
+            // Try to resolve SMTP password using secret manager with fallback to environment variable
+            let secret_resolver = crate::service::secret_resolver::SecretResolverService::new();
+            let smtp_password = match secret_resolver
+                .resolve_secret(&basic_auth.smtp_password_var)
+                .await
+                .map_err(|e| {
+                    OxyError::ConfigurationError(format!("Failed to resolve SMTP password: {}", e))
+                })? {
+                Some(result) => result.value,
+                None => {
+                    return Err(OxyError::ConfigurationError(format!(
+                        "SMTP password not found in secret manager or environment variable: {}",
+                        basic_auth.smtp_password_var
+                    )));
+                }
+            };
 
             let creds = Credentials::new(basic_auth.smtp_user.clone(), smtp_password.clone());
 
@@ -538,7 +568,7 @@ async fn exchange_google_code_for_user_info(
     code: &str,
     base_url: &str,
 ) -> Result<GoogleUserInfo, OxyError> {
-    let project_path = find_project_path()
+    let project_path = resolve_project_path()
         .map_err(|_| OxyError::ConfigurationError("Failed to find project path".to_owned()))?;
 
     let config = ConfigBuilder::new()
@@ -560,12 +590,27 @@ async fn exchange_google_code_for_user_info(
 
     println!("Redirect URI: {redirect_uri}");
 
-    let client_secret = std::env::var(google_config.client_secret_var.as_str()).map_err(|e| {
-        OxyError::ConfigurationError(format!(
-            "Google client secret key not found in environment variable {}:\n{}",
-            google_config.client_secret_var, e
-        ))
-    })?;
+    // Try to resolve Google client secret using secret manager with fallback to environment variable
+    let secret_resolver = crate::service::secret_resolver::SecretResolverService::new();
+    let client_secret = match secret_resolver
+        .resolve_secret(&google_config.client_secret_var)
+        .await
+        .map_err(|e| {
+            OxyError::ConfigurationError(format!("Failed to resolve Google client secret: {}", e))
+        })? {
+        Some(result) => result.value,
+        None => {
+            return Err(OxyError::ConfigurationError(format!(
+                "Google client secret not found in secret manager or environment variable: {}",
+                google_config.client_secret_var
+            )));
+        }
+    };
+    tracing::info!(
+        "Using Google client secret from secret manager: {} {}",
+        google_config.client_secret_var,
+        &client_secret
+    );
 
     let token_request = serde_json::json!({
         "client_id": google_config.client_id,

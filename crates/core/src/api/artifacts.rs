@@ -23,7 +23,7 @@ pub async fn get_artifact(
     Path(id): Path<String>,
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
 ) -> Result<extract::Json<ArtifactItem>, StatusCode> {
-    let connection = establish_connection().await;
+    let connection = establish_connection().await?;
     let artifact_id = Uuid::parse_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
 
     let artifact = Artifacts::find_by_id(artifact_id)

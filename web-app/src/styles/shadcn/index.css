@@ -72,10 +72,10 @@
   --muted-foreground: oklch(0.708 0 0);
   --accent: oklch(0.269 0 0);
   --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.396 0.141 25.723);
+  --destructive: oklch(0.704 0.191 22.216);
   --destructive-foreground: oklch(0.637 0.237 25.331);
   --border: #383838;
-  --input: #212121;
+  --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.439 0 0);
   --chart-1: oklch(0.488 0.243 264.376);
   --chart-2: oklch(0.696 0.17 162.48);
@@ -157,6 +157,39 @@
   --color-warning: var(--warning);
 
   --color-special: var(--special);
+}
+
+/* Onboarding step expansion animation */
+.step-expand-enter {
+  animation: expandStep 0.3s ease-out forwards;
+}
+
+.step-expand-exit {
+  animation: collapseStep 0.3s ease-out forwards;
+}
+
+@keyframes expandStep {
+  from {
+    opacity: 0;
+    max-height: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes collapseStep {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    max-height: 0;
+    transform: translateY(-10px);
+  }
 }
 
 @layer base {

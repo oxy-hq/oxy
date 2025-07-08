@@ -1,5 +1,4 @@
-import { Button } from "@/components/ui/shadcn/button";
-import { Link, MessageSquare } from "lucide-react";
+import { MessageSquare } from "lucide-react";
 
 const EmptyThreads = () => {
   return (
@@ -13,9 +12,6 @@ const EmptyThreads = () => {
           Start by asking an agent of your choice a question
         </p>
       </div>
-      <Button variant="outline" asChild>
-        <Link to="/">Start a new thread</Link>
-      </Button>
     </div>
   );
 };
