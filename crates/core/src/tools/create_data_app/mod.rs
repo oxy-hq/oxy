@@ -46,7 +46,7 @@ impl Executable<CreateDataAppInput> for CreateDataAppExecutable {
         let mut file = File::create(&file_path).map_err(|e| anyhow::anyhow!(e))?;
         let config = param.app_config;
         // write config to file
-        serde_yml::to_writer(&mut file, &config).map_err(|e| anyhow::anyhow!(e))?;
+        serde_yaml::to_writer(&mut file, &config).map_err(|e| anyhow::anyhow!(e))?;
         println!("Data app created at: {}", file_path.display());
         let file_relative_path = PathBuf::from(UNPUBLISH_APP_DIR).join(&full_file_name);
         service::app::clean_up_app_data(&file_relative_path).await?;

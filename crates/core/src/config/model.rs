@@ -1622,7 +1622,7 @@ impl OmniTopicInfoTool {
             let entry = view_path;
             let file_bytes = fs::read(entry.clone())
                 .map_err(|e| OxyError::AgentError(format!("Failed to read model path: {e}")))?;
-            let view: OmniView = serde_yml::from_slice(&file_bytes).map_err(|e| {
+            let view: OmniView = serde_yaml::from_slice(&file_bytes).map_err(|e| {
                 OxyError::AgentError(format!(
                     "Failed to parse view: {} {}",
                     entry.to_string_lossy(),
@@ -1663,7 +1663,7 @@ impl OmniTopicInfoTool {
                 .to_string_lossy()
                 .to_string()
                 .replace(".topic.yaml", "");
-            let topic = serde_yml::from_slice(&file_bytes);
+            let topic = serde_yaml::from_slice(&file_bytes);
 
             match topic {
                 Ok(topic) => {
@@ -1680,7 +1680,7 @@ impl OmniTopicInfoTool {
         let relationships: Vec<OmniRelationShip> = if relationships_file_path.exists() {
             let file_bytes = fs::read(relationships_file_path)
                 .map_err(|e| OxyError::AgentError(format!("Failed to read model path: {e}")))?;
-            serde_yml::from_slice(&file_bytes)
+            serde_yaml::from_slice(&file_bytes)
                 .map_err(|e| OxyError::AgentError(format!("Failed to parse relationships: {e}")))?
         } else {
             vec![]
@@ -1734,7 +1734,7 @@ impl ExecuteOmniTool {
             let entry = view_path;
             let file_bytes = fs::read(entry.clone())
                 .map_err(|e| OxyError::AgentError(format!("Failed to read model path: {e}")))?;
-            let view: OmniView = serde_yml::from_slice(&file_bytes).map_err(|e| {
+            let view: OmniView = serde_yaml::from_slice(&file_bytes).map_err(|e| {
                 OxyError::AgentError(format!(
                     "Failed to parse view: {} {}",
                     entry.to_string_lossy(),
@@ -1775,7 +1775,7 @@ impl ExecuteOmniTool {
                 .to_string_lossy()
                 .to_string()
                 .replace(".topic.yaml", "");
-            let topic = serde_yml::from_slice(&file_bytes);
+            let topic = serde_yaml::from_slice(&file_bytes);
 
             match topic {
                 Ok(topic) => {
@@ -1792,7 +1792,7 @@ impl ExecuteOmniTool {
         let relationships: Vec<OmniRelationShip> = if relationships_file_path.exists() {
             let file_bytes = fs::read(relationships_file_path)
                 .map_err(|e| OxyError::AgentError(format!("Failed to read model path: {e}")))?;
-            serde_yml::from_slice(&file_bytes)
+            serde_yaml::from_slice(&file_bytes)
                 .map_err(|e| OxyError::AgentError(format!("Failed to parse relationships: {e}")))?
         } else {
             vec![]

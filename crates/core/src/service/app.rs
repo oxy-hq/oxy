@@ -43,7 +43,7 @@ pub async fn run_app(app_file_relative_path: &PathBuf) -> Result<DataContainer, 
     let data_file = std::fs::File::create(&data_file_path)
         .map_err(|e| OxyError::RuntimeError(format!("Failed to create data file: {e}")))?;
     let writer = std::io::BufWriter::new(data_file);
-    serde_yml::to_writer(writer, &data)
+    serde_yaml::to_writer(writer, &data)
         .map_err(|e| OxyError::RuntimeError(format!("Failed to write data to file: {e}")))?;
 
     Ok(data)
@@ -67,7 +67,7 @@ pub fn try_load_cached_data(app_file_path: &PathBuf) -> Option<DataContainer> {
         match data_file {
             Ok(file) => {
                 let reader = std::io::BufReader::new(file);
-                let data: Option<DataContainer> = serde_yml::from_reader(reader).ok();
+                let data: Option<DataContainer> = serde_yaml::from_reader(reader).ok();
                 if data.is_none() {
                     tracing::warn!("Failed to parse data file");
                 }

@@ -66,7 +66,7 @@ impl Object for Contexts {
                             .block_on(self.config.resolve_file(&semantic_model_context.src))
                             .ok()?;
                         match fs::read_to_string(semantic_model_path) {
-                            Ok(content) => match serde_yml::from_str::<SemanticModels>(&content) {
+                            Ok(content) => match serde_yaml::from_str::<SemanticModels>(&content) {
                                 Ok(semantic_model) => Some(Value::from_serialize(semantic_model)),
                                 Err(e) => {
                                     println!(

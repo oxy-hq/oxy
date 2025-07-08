@@ -186,7 +186,7 @@ impl Variables {
 
     // Parse YAML and directly convert to JSON Value without intermediate string conversion
     pub fn parse_yaml_to_value(yaml_str: &str) -> Result<Value, OxyError> {
-        serde_yml::from_str(yaml_str)
+        serde_yaml::from_str(yaml_str)
             .map_err(|e| OxyError::ArgumentError(format!("YAML parsing error: {e}")))
     }
 

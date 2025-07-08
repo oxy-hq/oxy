@@ -63,7 +63,6 @@ sea-orm = { workspace = true }
 serde = { version = "1.0", features = ["derive"] }
 serde_arrow = { version = "0.13.4", features = ["arrow-53"] }
 serde_json = "1.0"
-serde_yml = "0.0.12"
 self_update = "0.42.0"
 slugify = "0.1.0"
 sqlformat = { git = "https://github.com/shssoichiro/sqlformat-rs.git", rev = "80255c7" }
@@ -119,6 +118,7 @@ google-oauth = "1.11.3"
 hmac = "0.12.1"
 sha2 = "0.10.8"
 hex = "0.4.3"
+serde_yaml = "0.9.34"
 
 [lib]
 name = "oxy"

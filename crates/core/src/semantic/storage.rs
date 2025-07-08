@@ -85,10 +85,10 @@ impl Storage for SemanticFileStorage {
     async fn load_global_semantics(&self) -> Result<Semantics, OxyError> {
         let global_semantic_path = PathBuf::from(&self.global_semantic_path);
         if !global_semantic_path.exists() {
-            serde_yml::to_writer(File::create(&global_semantic_path)?, &Semantics::default())
+            serde_yaml::to_writer(File::create(&global_semantic_path)?, &Semantics::default())
                 .map_err(|err| format!("Failed to create default semantics file: {err}"))?;
         }
-        let semantics = serde_yml::from_str::<Semantics>(
+        let semantics = serde_yaml::from_str::<Semantics>(
             &read_to_string(&global_semantic_path).await.map_err(|err| {
                 OxyError::IOError(format!("Failed to load global semantics: {err}"))
             })?,
@@ -111,7 +111,7 @@ impl Storage for SemanticFileStorage {
             OxyError::IOError(format!("Failed to create global semantic path: {err}"))
         })?;
 
-        serde_yml::to_writer(File::create(&global_semantic_path)?, semantics).map_err(|err| {
+        serde_yaml::to_writer(File::create(&global_semantic_path)?, semantics).map_err(|err| {
             OxyError::SerializerError(format!("Failed to save global semantics: {err}"))
         })?;
         Ok(())
@@ -128,7 +128,7 @@ impl Storage for SemanticFileStorage {
         let content = read_to_string(path).await.map_err(|err| {
             OxyError::IOError(format!("Failed to read semantic entity file: {err}"))
         })?;
-        serde_yml::from_str(&content).map_err(|err| {
+        serde_yaml::from_str(&content).map_err(|err| {
             OxyError::SerializerError(format!("Failed to deserialize semantic entity: {err}"))
         })
     }
@@ -326,7 +326,7 @@ impl Storage for SemanticFileStorage {
                 let mut sync_dimension = None;
 
                 yield async move {
-                  let content = serde_yml::to_string(&model).map_err(|err| {
+                  let content = serde_yaml::to_string(&model).map_err(|err| {
                     OxyError::IOError(format!("Failed to serialize semantic model: {err}"))
                   })?;
 
