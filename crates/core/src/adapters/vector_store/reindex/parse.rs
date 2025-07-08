@@ -54,8 +54,8 @@ pub(super) fn parse_embed_document(id: &str, content: &str) -> Vec<Document> {
     };
     let comment_content = context_match[1].replace("\n*", "\n");
     let context_content = context_match[2].to_string();
-    let header_data: Result<ContextHeader, serde_yml::Error> =
-        serde_yml::from_str(comment_content.as_str());
+    let header_data: Result<ContextHeader, serde_yaml::Error> =
+        serde_yaml::from_str(comment_content.as_str());
 
     match header_data {
         Ok(header_data) => match &header_data.oxy.embed {

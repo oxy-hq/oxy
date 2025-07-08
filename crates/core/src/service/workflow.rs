@@ -251,7 +251,7 @@ pub async fn create_workflow_from_query(
     }
     let workflow_path = workflow_dir.join(format!("{}{}", &workflow_name, WORKFLOW_FILE_EXTENSION));
 
-    let _ = serde_yml::to_writer(std::fs::File::create(&workflow_path)?, &workflow);
+    let _ = serde_yaml::to_writer(std::fs::File::create(&workflow_path)?, &workflow);
 
     Ok(workflow)
 }

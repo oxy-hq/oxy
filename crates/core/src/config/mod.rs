@@ -228,7 +228,7 @@ pub fn parse_config(config_path: &PathBuf, project_path: PathBuf) -> Result<Conf
     let config_str = fs::read_to_string(config_path)
         .map_err(|_e| OxyError::ConfigurationError("Unable to read config file".into()))?;
 
-    let result = serde_yml::from_str::<Config>(&config_str);
+    let result = serde_yaml::from_str::<Config>(&config_str);
     match result {
         Ok(mut config) => {
             config.project_path = project_path;

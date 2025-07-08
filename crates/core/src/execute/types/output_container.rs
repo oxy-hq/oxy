@@ -89,7 +89,7 @@ impl DataContainer {
             OxyError::RuntimeError(format!("Error opening file {}: {}", file_path.display(), e))
         })?;
         let reader = std::io::BufReader::new(file);
-        let output_container: DataContainer = serde_yml::from_reader(reader)
+        let output_container: DataContainer = serde_yaml::from_reader(reader)
             .map_err(|e| OxyError::RuntimeError(format!("Error deserializing yaml: {e}")))?;
         Ok(output_container)
     }
