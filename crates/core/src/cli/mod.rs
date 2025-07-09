@@ -1256,11 +1256,6 @@ pub async fn start_server_and_web_app(
                 format!("http://{}:{}", display_host, web_port).secondary()
             );
         }
-        println!(
-            "{} {}",
-            "Web app running at".text(),
-            format!("http://{display_host}:{web_port}").secondary()
-        );
 
         if let Err(e) = crate::auth::user::UserService::sync_admin_roles_from_config().await {
             tracing::warn!("Failed to sync admin roles: {}", e);
