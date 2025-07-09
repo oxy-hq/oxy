@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.17](https://github.com/oxy-hq/oxy-internal/compare/0.2.16...0.2.17) (2025-07-09)
+
+
+### <!-- 0 -->🚀 Features
+
+* git integration/readonly mode ([#915](https://github.com/oxy-hq/oxy-internal/issues/915)) ([da2bd58](https://github.com/oxy-hq/oxy-internal/commit/da2bd582226c55d7c70ab67166361f954cea8889))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* add back altifacts ([#948](https://github.com/oxy-hq/oxy-internal/issues/948)) ([4a29c26](https://github.com/oxy-hq/oxy-internal/commit/4a29c26acae34cc4883e2d4fca9ae26d64fa25b6))
+
 ## [0.2.16](https://github.com/oxy-hq/oxy-internal/compare/0.2.15...0.2.16) (2025-07-02)
 
 

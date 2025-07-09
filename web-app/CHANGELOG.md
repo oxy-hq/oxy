@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.17](https://github.com/oxy-hq/oxy-internal/compare/0.2.16...0.2.17) (2025-07-09)
+
+
+### <!-- 0 -->🚀 Features
+
+* git integration/readonly mode ([#915](https://github.com/oxy-hq/oxy-internal/issues/915)) ([da2bd58](https://github.com/oxy-hq/oxy-internal/commit/da2bd582226c55d7c70ab67166361f954cea8889))
+
 ## [0.2.16](https://github.com/oxy-hq/oxy-internal/compare/0.2.15...0.2.16) (2025-07-02)
 
 
