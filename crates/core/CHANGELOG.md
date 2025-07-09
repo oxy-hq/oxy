@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.17](https://github.com/oxy-hq/oxy-internal/compare/0.2.16...0.2.17) (2025-07-09)
+
+
+### <!-- 0 -->🚀 Features
+
+* enhance parameter resolution with type conversion for schema validation ([#941](https://github.com/oxy-hq/oxy-internal/issues/941)) ([bab0ec4](https://github.com/oxy-hq/oxy-internal/commit/bab0ec424f4b0693907924368a820c4d05173f2e))
+* git integration/readonly mode ([#915](https://github.com/oxy-hq/oxy-internal/issues/915)) ([da2bd58](https://github.com/oxy-hq/oxy-internal/commit/da2bd582226c55d7c70ab67166361f954cea8889))
+
 ## [0.2.16](https://github.com/oxy-hq/oxy-internal/compare/0.2.15...0.2.16) (2025-07-02)
 
 
