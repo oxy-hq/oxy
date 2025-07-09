@@ -50,7 +50,8 @@ fn init_tracing_logging(log_to_stdout: bool) {
         // Core Oxy components
         .add_directive("oxy=info".parse().unwrap())
         .add_directive("tower_http=info".parse().unwrap())
-        .add_directive("tower_http::trace=debug".parse().unwrap()); // Request/response tracing
+        .add_directive("tower_http::trace=debug".parse().unwrap()) // Request/response tracing
+        .add_directive("deser_incomplete=warn".parse().unwrap()); // Keep deser_incomplete quiet
     // Allow override via environment variable
     // If not set, auto-detects based on environment (Cloud Run, AWS Lambda, etc.)
     let log_format = env::var("OXY_LOG_FORMAT")
