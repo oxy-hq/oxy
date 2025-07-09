@@ -243,6 +243,7 @@ pub async fn create_workflow_from_query(
         tasks: vec![task],
         tests: vec![],
         variables: None,
+        retrieval: Default::default(),
     };
     // write workflow to file
     let workflow_dir = project_path.join(WORKFLOW_SAVED_FROM_QUERY_DIR);

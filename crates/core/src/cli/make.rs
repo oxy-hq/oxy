@@ -190,6 +190,7 @@ async fn create_agent_file(
         }),
         tests: vec![],
         description: "".to_string(),
+        retrieval: Default::default(),
         reasoning: None,
     };
 

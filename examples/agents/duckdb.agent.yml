@@ -4,7 +4,6 @@ description: "An agent that can execute SQL queries on a database and retrieve d
 name: duckdb
 
 model: "openai-4o-mini"
-retrieval: "default"
 
 system_instructions: |
   ## Instructions

@@ -1,7 +1,7 @@
 use crate::{
     adapters::{
         openai::IntoOpenAIConfig,
-        vector_store::{VectorStore, parse_sql_source_type},
+        vector_store::{VectorStore, parse_sql_source_type, build_content_for_llm_retrieval},
     },
     errors::OxyError,
     execute::{
@@ -62,7 +62,7 @@ where
                 .map(
                     |record| match parse_sql_source_type(&record.document.source_type) {
                         Some(_) => Document {
-                            content: record.document.embedding_content.clone(),
+                            content: build_content_for_llm_retrieval(&record.document),
                             id: record.document.source_identifier.clone(),
                             kind: record.document.source_type.clone(),
                         },

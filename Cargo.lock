@@ -5989,6 +5989,7 @@ dependencies = [
  "log",
  "migration",
  "minijinja",
+ "ndarray",
  "once_cell",
  "parquet",
  "predicates",

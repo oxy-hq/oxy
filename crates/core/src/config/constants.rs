@@ -31,6 +31,13 @@ pub const CONSISTENCY_SOURCE: &str = "consistency";
 pub const CONSISTENCY_THRESHOLD: f32 = 0.25;
 pub const MARKDOWN_MAX_FENCES: usize = 10;
 pub const AGENT_RETRY_MAX_ELAPSED_TIME: Duration = Duration::from_secs(60 * 2);
+
+pub const RETRIEVAL_INCLUSION_MIDPOINT_COLUMN: &str = "inclusion_midpoint";
+pub const RETRIEVAL_EXCLUSION_BUFFER_MULTIPLIER: f32 = 0.9;
+pub const RETRIEVAL_DEFAULT_INCLUSION_RADIUS: f32 = 0.2;
+pub const VECTOR_INDEX_MIN_ROWS: usize = 1000;
+pub const FTS_INDEX_MIN_ROWS: usize = 50;
+
 pub const DEFAULT_API_KEY_HEADER: &str = "X-API-KEY";
 pub const GCP_IAP_HEADER_KEY: &str = "x-goog-iap-jwt-assertion";
 pub const GCP_IAP_SUB_HEADER_KEY: &str = "x-goog-authenticated-user-id";

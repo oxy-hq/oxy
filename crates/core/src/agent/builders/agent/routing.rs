@@ -52,29 +52,35 @@ impl RoutingAgentExecutable {
         &self,
         execution_context: &ExecutionContext,
         file_ref: &str,
+        description: Option<&str>,
         is_verified: bool,
     ) -> Result<ToolType, OxyError> {
         match file_ref {
             workflow_path if workflow_path.ends_with(".workflow.yml") => {
-                let workflow = execution_context
-                    .config
-                    .resolve_workflow(workflow_path)
-                    .await?;
+                let workflow = execution_context.config.resolve_workflow(workflow_path).await?;
+                let tool_description = match description {
+                     Some(desc) => desc.to_string(),
+                     None => workflow.description.clone(),
+                 };
                 Ok(ToolType::Workflow(WorkflowTool {
                     name: to_openai_function_name(&PathBuf::from(workflow_path))?,
                     workflow_ref: workflow_path.to_string(),
                     variables: workflow.variables,
-                    description: workflow.description,
+                    description: tool_description,
                     output_task_ref: None,
                     is_verified,
                 }))
             }
             agent_path if agent_path.ends_with(".agent.yml") => {
                 let agent = execution_context.config.resolve_agent(agent_path).await?;
+                let tool_description = match description {
+                     Some(desc) => desc.to_string(),
+                     None => agent.description.clone(),
+                 };
                 Ok(ToolType::Agent(AgentTool {
                     name: to_openai_function_name(&PathBuf::from(agent_path))?,
                     agent_ref: agent_path.to_string(),
-                    description: agent.description,
+                    description: tool_description,
                     is_verified,
                 }))
             }
@@ -108,7 +114,7 @@ impl RoutingAgentExecutable {
                 }
             }
             _ => {
-                self.resolve_tool(execution_context, &document.id, true)
+                self.resolve_tool(execution_context, &document.id, Some(&document.content), true)
                     .await
             }
         }
@@ -135,11 +141,15 @@ impl RoutingAgentExecutable {
                 },
             )
             .await?;
+
         for document in output.to_documents() {
             if let Ok(tool) = self.resolve_document(execution_context, &document).await {
                 resolved_routes.push(tool);
             }
         }
+
+        tracing::info!("Resolved {} routes from vector search", resolved_routes.len());
+
         Ok(resolved_routes)
     }
 }
@@ -187,7 +197,7 @@ impl Executable<RoutingAgentInput> for RoutingAgentExecutable {
         let outputs = match routing_agent.route_fallback {
             Some(fallback) => {
                 let fallback_tool = self
-                    .resolve_tool(execution_context, &fallback, false)
+                    .resolve_tool(execution_context, &fallback, None, false)
                     .await?;
                 let fallback_route =
                     FallbackAgent::new(&agent_name, model, fallback_tool, reasoning_config).await?;

@@ -35,10 +35,20 @@
       "type": "boolean"
     },
     "reasoning": {
-      "default": null,
       "anyOf": [
         {
           "$ref": "#/definitions/ReasoningConfig"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "retrieval": {
+      "default": null,
+      "anyOf": [
+        {
+          "$ref": "#/definitions/RouteRetrievalConfig"
         },
         {
           "type": "null"
@@ -275,6 +285,27 @@
         "medium",
         "high"
       ]
+    },
+    "RouteRetrievalConfig": {
+      "type": "object",
+      "properties": {
+        "exclude": {
+          "description": "List of prompts that exclude this document / route for retrieval",
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "include": {
+          "description": "List of prompts that include this document / route for retrieval",
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
     },
     "Schema": {
       "description": "A JSON Schema.",
@@ -1108,7 +1139,7 @@
           "type": "boolean"
         },
         "system_instructions": {
-          "default": "You are a routing agent. Your job is to route the task to the correct tool. Follow the steps below:\n1. Reasoning the task to find the most relevant tools.\n2. If the task is not relevant to any tool, explain why.\n3. If the task is relevant to a tool, route it to the tool.\n4. Synthesize the results from the tool and return it to the user. DO NOT return the raw results from the tool.\nYour task:",
+          "default": "You are a routing agent. Your job is to route the task to the correct tool. Follow the steps below:\n1. Reasoning the task to find the most relevant tools.\n2. If tools were found that match the query (even partially), USE THEM immediately. Do not ask for clarification.\n3. Only if NO relevant tools are found, explain why.\n4. Synthesize the results from the tool and return it to the user. DO NOT return the raw results from the tool.\nYour task:",
           "type": "string"
         },
         "table": {

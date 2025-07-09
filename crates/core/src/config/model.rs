@@ -277,6 +277,28 @@ pub struct ReasoningConfig {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, JsonSchema, Validate)]
+#[garde(context(ValidationContext))]
+pub struct RouteRetrievalConfig {
+    /// List of prompts that include this document / route for retrieval
+    #[garde(skip)]
+    #[serde(default)]
+    pub include: Vec<String>,
+    /// List of prompts that exclude this document / route for retrieval
+    #[garde(skip)]
+    #[serde(default)]
+    pub exclude: Vec<String>,
+}
+
+impl Default for RouteRetrievalConfig {
+    fn default() -> Self {
+        Self {
+            include: vec![],
+            exclude: vec![],
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, JsonSchema, Validate)]
 #[garde(context(AgentValidationContext))]
 pub struct AgentConfig {
     #[serde(default = "default_agent_name")]
@@ -303,6 +325,8 @@ pub struct AgentConfig {
     pub public: bool,
 
     #[serde(default)]
+    #[garde(skip)]
+    pub retrieval: Option<RouteRetrievalConfig>,
     #[garde(dive)]
     pub reasoning: Option<ReasoningConfig>,
 }
@@ -952,6 +976,8 @@ pub struct TempWorkflow {
     pub tests: Vec<EvalConfig>,
     #[serde(default)]
     pub description: String,
+    #[serde(default)]
+    pub retrieval: Option<RouteRetrievalConfig>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
@@ -1133,6 +1159,9 @@ pub struct Workflow {
     #[garde(skip)]
     #[serde(default)]
     pub description: String,
+    #[serde(default)]
+    #[garde(dive)]
+    pub retrieval: Option<RouteRetrievalConfig>,
 }
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
@@ -1804,23 +1833,6 @@ impl ExecuteOmniTool {
             topics,
         })
     }
-    // pub fn get_description(&self) -> Result<String, OxyError> {
-    //     if self.models.is_empty() {
-    //         tracing::warn!("No semantic models for Omni");
-    //         return Err(OxyError::AgentError(
-    //             "No semantic models for Omni tool. Please add models to the config file."
-    //                 .to_owned(),
-    //         ));
-    //     }
-    //     let mut description =
-    //         "Execute query on the database. Construct from Omni semantic model. Dimension/Measure must be full name: {table}.{dimension/measure name}".to_string();
-    //     for omni_model in &self.load_semantic_model()? {
-    //         let model_description = omni_model.get_model_description();
-    //         description.push_str(&format!("{}\n\n", model_description));
-    //     }
-
-    //     Ok(description)
-    // }
 }
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
@@ -2072,8 +2084,8 @@ fn default_solvers() -> Vec<SolverKind> {
 fn default_routing_agent_instructions() -> String {
     indoc! {"You are a routing agent. Your job is to route the task to the correct tool. Follow the steps below:
   1. Reasoning the task to find the most relevant tools.
-  2. If the task is not relevant to any tool, explain why.
-  3. If the task is relevant to a tool, route it to the tool.
+  2. If tools were found that match the query (even partially), USE THEM immediately. Do not ask for clarification.
+  3. Only if NO relevant tools are found, explain why.
   4. Synthesize the results from the tool and return it to the user. DO NOT return the raw results from the tool.
   Your task:"
     }
