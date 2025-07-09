@@ -45,13 +45,22 @@ impl LogFormat {
 fn init_tracing_logging(log_to_stdout: bool) {
     // Default all crates to WARN level to reduce noise, then selectively enable INFO for critical components
     // This approach is more maintainable and ensures we don't miss any noisy dependencies
-    let env_filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("warn"))
-        // Core Oxy components
-        .add_directive("oxy=info".parse().unwrap())
-        .add_directive("tower_http=info".parse().unwrap())
-        .add_directive("tower_http::trace=debug".parse().unwrap()) // Request/response tracing
-        .add_directive("deser_incomplete=warn".parse().unwrap()); // Keep deser_incomplete quiet
+    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+        EnvFilter::new("warn")
+            // Core Oxy components
+            .add_directive("oxy=info".parse().unwrap())
+            .add_directive("tower_http=info".parse().unwrap())
+            // Only enable trace-level HTTP logging in debug builds or when explicitly requested
+            .add_directive(if cfg!(debug_assertions) {
+                "tower_http::trace=info".parse().unwrap()
+            } else {
+                "tower_http::trace=warn".parse().unwrap()
+            })
+            // Database-related logging - SQLx can be very verbose
+            .add_directive("sqlx=warn".parse().unwrap()) // Reduce SQLx query logging noise
+            .add_directive("sea_orm=info".parse().unwrap()) // Keep SeaORM at info level if used
+            .add_directive("deser_incomplete=warn".parse().unwrap()) // Keep deser_incomplete quiet
+    });
     // Allow override via environment variable
     // If not set, auto-detects based on environment (Cloud Run, AWS Lambda, etc.)
     let log_format = env::var("OXY_LOG_FORMAT")
