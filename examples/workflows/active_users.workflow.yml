@@ -1,6 +1,11 @@
 name: active_users
 description: |
   This workflow generates a report on active users.
+retrieval:
+  include:
+    - "Create monthly report for active users"
+  exclude:
+    - "Create annual user report"
 variables:
   month: "{{ dimensions.month }}"
   # platform: "{{ models.monthly_active_user_by_platform.platform }}"

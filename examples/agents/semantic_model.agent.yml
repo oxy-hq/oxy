@@ -3,7 +3,6 @@
 description: "An agent for generating and executing SQL queries using semantic models."
 
 model: "openai-4o-mini"
-retrieval: "default"
 
 context:
   - name: anon_youtube_model

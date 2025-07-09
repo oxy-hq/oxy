@@ -64,6 +64,7 @@ impl WorkflowMapper {
             tests: temp_workflow.tests,
             variables,
             description: temp_workflow.description,
+            retrieval: temp_workflow.retrieval,
         })
     }
 }

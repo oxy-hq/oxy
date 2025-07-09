@@ -10,6 +10,17 @@
       "default": "",
       "type": "string"
     },
+    "retrieval": {
+      "default": null,
+      "anyOf": [
+        {
+          "$ref": "#/definitions/RouteRetrievalConfig"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "tasks": {
       "type": "array",
       "items": {
@@ -192,6 +203,27 @@
           }
         }
       ]
+    },
+    "RouteRetrievalConfig": {
+      "type": "object",
+      "properties": {
+        "exclude": {
+          "description": "List of prompts that exclude this document / route for retrieval",
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "include": {
+          "description": "List of prompts that include this document / route for retrieval",
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
     },
     "Schema": {
       "description": "A JSON Schema.",

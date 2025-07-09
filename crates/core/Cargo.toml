@@ -115,6 +115,7 @@ tracing-log = "0.2.0"
 jsonschema = "0.30.0"
 sanitize-filename="0.6.0"
 google-oauth = "1.11.3"
+ndarray = { version = "0.16.0" }
 hmac = "0.12.1"
 sha2 = "0.10.8"
 hex = "0.4.3"

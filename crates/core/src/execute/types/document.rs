@@ -1,7 +1,22 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-#[derive(Clone, Serialize, Deserialize, Hash, ToSchema)]
+#[derive(Clone, Serialize, Deserialize, ToSchema, Debug)]
+pub struct RetrievalContent {
+    pub embedding_content: String,
+    pub embeddings: Vec<f32>,
+}
+
+impl From<crate::adapters::vector_store::RetrievalContent> for RetrievalContent {
+    fn from(vs_content: crate::adapters::vector_store::RetrievalContent) -> Self {
+        Self {
+            embedding_content: vs_content.embedding_content,
+            embeddings: vs_content.embeddings,
+        }
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize, ToSchema, Hash)]
 pub struct Document {
     pub id: String,
     pub kind: String,
