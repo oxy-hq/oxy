@@ -1,5 +1,6 @@
 /*
  oxy:
+    database: local
     embed:
         - fruit sales
         - apple sales
