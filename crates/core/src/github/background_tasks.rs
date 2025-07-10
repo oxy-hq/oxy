@@ -32,7 +32,7 @@ impl BackgroundTaskManager {
         });
 
         let pool = SqlitePool::connect(&db_url).await.map_err(|e| {
-            OxyError::InitializationError(format!("Failed to connect to SQLite: {}", e))
+            OxyError::InitializationError(format!("Failed to connect to SQLite: {e}"))
         })?;
 
         let _ = SqliteStorage::setup(&pool).await;
@@ -57,7 +57,7 @@ impl BackgroundTaskManager {
         self.storage
             .push(job)
             .await
-            .map_err(|e| OxyError::JobError(format!("Failed to enqueue clone job: {}", e)))?;
+            .map_err(|e| OxyError::JobError(format!("Failed to enqueue clone job: {e}")))?;
 
         Ok(task_id)
     }
@@ -83,8 +83,7 @@ pub async fn process_clone_job(job: CloneRepositoryJob, _data: Data<usize>) -> R
         .map_err(|e| {
             error!("Failed to clone or update repository: {}", e);
             Error::Failed(Arc::new(Box::new(std::io::Error::other(format!(
-                "Failed to clone or update repository: {}",
-                e
+                "Failed to clone or update repository: {e}"
             )))))
         })?;
 
@@ -155,8 +154,7 @@ pub async fn handle_clone_repository_job(
             error!("Failed to create repository directory: {}", e);
             update_sync_status_to_error().await?;
             return Err(OxyError::IOError(format!(
-                "Failed to create directory: {}",
-                e
+                "Failed to create directory: {e}"
             )));
         }
     }
@@ -192,7 +190,7 @@ async fn update_repository_sync_status(
     let settings = Settings::find()
         .one(&db)
         .await
-        .map_err(|e| OxyError::DBError(format!("Failed to query settings: {}", e)))?
+        .map_err(|e| OxyError::DBError(format!("Failed to query settings: {e}")))?
         .ok_or_else(|| OxyError::ConfigurationError("GitHub settings not found".to_string()))?;
 
     let mut active_model: settings::ActiveModel = settings.into();
@@ -203,7 +201,7 @@ async fn update_repository_sync_status(
     active_model
         .update(&db)
         .await
-        .map_err(|e| OxyError::DBError(format!("Failed to update sync status: {}", e)))?;
+        .map_err(|e| OxyError::DBError(format!("Failed to update sync status: {e}")))?;
 
     Ok(())
 }
@@ -220,7 +218,7 @@ async fn update_sync_status_to_error() -> Result<(), OxyError> {
     let settings = Settings::find()
         .one(&db)
         .await
-        .map_err(|e| OxyError::DBError(format!("Failed to query settings: {}", e)))?
+        .map_err(|e| OxyError::DBError(format!("Failed to query settings: {e}")))?
         .ok_or_else(|| OxyError::ConfigurationError("GitHub settings not found".to_string()))?;
 
     let mut active_model: settings::ActiveModel = settings.into();
@@ -230,7 +228,7 @@ async fn update_sync_status_to_error() -> Result<(), OxyError> {
     active_model
         .update(&db)
         .await
-        .map_err(|e| OxyError::DBError(format!("Failed to update sync status to error: {}", e)))?;
+        .map_err(|e| OxyError::DBError(format!("Failed to update sync status to error: {e}")))?;
 
     Ok(())
 }

@@ -1,9 +1,7 @@
 use super::Document;
 use crate::{
     adapters::vector_store::{
-        VectorStore,
-        types::RetrievalContent,
-        utils::build_content_for_llm_retrieval,
+        VectorStore, types::RetrievalContent, utils::build_content_for_llm_retrieval,
     },
     config::{
         ConfigManager,
@@ -49,33 +47,38 @@ fn create_document_from_source<T: DocumentSource>(
     source_type: &str,
     file_path: &str,
 ) -> Result<Option<Document>, OxyError> {
-    let nothing_to_embed = source.description().is_empty() && 
-        source.retrieval().as_ref()
-            .map_or(true, |retrieval| retrieval.include.is_empty());
-    
+    let nothing_to_embed = source.description().is_empty()
+        && source
+            .retrieval()
+            .as_ref()
+            .is_none_or(|retrieval| retrieval.include.is_empty());
+
     if nothing_to_embed {
-        println!("WARNING: {} {} has empty description and no retrieval include patterns, skipping", source_type, file_path);
+        println!(
+            "WARNING: {source_type} {file_path} has empty description and no retrieval include patterns, skipping"
+        );
         return Ok(None);
     }
 
     let (retrieval_inclusions, retrieval_exclusions) = if let Some(retrieval) = source.retrieval() {
         let mut inclusions = vec![];
-        
+
         if !source.description().is_empty() {
             inclusions.push(RetrievalContent {
                 embedding_content: source.description().to_string(),
                 embeddings: vec![],
             });
         }
-        
+
         for pattern in &retrieval.include {
             inclusions.push(RetrievalContent {
                 embedding_content: pattern.clone(),
                 embeddings: vec![],
             });
         }
-        
-        let exclusions = retrieval.exclude
+
+        let exclusions = retrieval
+            .exclude
             .iter()
             .map(|pattern| RetrievalContent {
                 embedding_content: pattern.clone(),
@@ -84,23 +87,26 @@ fn create_document_from_source<T: DocumentSource>(
             .collect();
         (inclusions, exclusions)
     } else {
-        println!("{} {} has no retrieval config, using description as inclusion and empty exclusions", source_type, file_path);
+        println!(
+            "{source_type} {file_path} has no retrieval config, using description as inclusion and empty exclusions"
+        );
         if source.description().is_empty() {
             return Err(OxyError::ConfigurationError(format!(
-                "Unexpected state: {} {} has empty description and no retrieval config", 
-                source_type, file_path
+                "Unexpected state: {source_type} {file_path} has empty description and no retrieval config"
             )));
         }
-        (vec![RetrievalContent {
-            embedding_content: source.description().to_string(),
-            embeddings: vec![],
-        }], vec![])
+        (
+            vec![RetrievalContent {
+                embedding_content: source.description().to_string(),
+                embeddings: vec![],
+            }],
+            vec![],
+        )
     };
-    
+
     if retrieval_inclusions.is_empty() {
         return Err(OxyError::ConfigurationError(format!(
-            "No embeddable content found for {} {}", 
-            source_type, file_path
+            "No embeddable content found for {source_type} {file_path}"
         )));
     }
 
@@ -113,10 +119,15 @@ fn create_document_from_source<T: DocumentSource>(
         inclusion_midpoint: vec![],
         inclusion_radius: 0.0,
     };
-    
+
     document.content = build_content_for_llm_retrieval(&document);
-    
-    println!("Created document for {}: {} with {} exclusions", source_type, file_path, document.retrieval_exclusions.len());
+
+    println!(
+        "Created document for {}: {} with {} exclusions",
+        source_type,
+        file_path,
+        document.retrieval_exclusions.len()
+    );
     Ok(Some(document))
 }
 
@@ -125,7 +136,7 @@ async fn process_workflow_file(
     workflow_path: &str,
 ) -> Result<Vec<Document>, OxyError> {
     let workflow = config.resolve_workflow(workflow_path).await?;
-    
+
     match create_document_from_source(&workflow, "workflow", workflow_path)? {
         Some(document) => Ok(vec![document]),
         None => Ok(vec![]),
@@ -137,7 +148,7 @@ async fn process_agent_file(
     agent_path: &str,
 ) -> Result<Vec<Document>, OxyError> {
     let agent = config.resolve_agent(agent_path).await?;
-    
+
     match create_document_from_source(&agent, "agent", agent_path)? {
         Some(document) => Ok(vec![document]),
         None => Ok(vec![]),
@@ -207,12 +218,15 @@ async fn make_documents_from_routing_agent(
     routing_agent: &RoutingAgent,
 ) -> Result<Vec<Document>, OxyError> {
     let paths = config.resolve_glob(&routing_agent.routes).await?;
-    
+
     if paths.is_empty() {
-        println!("WARNING: No paths resolved from routing agent glob patterns: {:?}", routing_agent.routes);
+        println!(
+            "WARNING: No paths resolved from routing agent glob patterns: {:?}",
+            routing_agent.routes
+        );
         return Ok(vec![]);
     }
-    
+
     let paths_len = paths.len();
     let get_documents = async |path: String| -> Result<Vec<Document>, OxyError> {
         match &path {
@@ -224,18 +238,25 @@ async fn make_documents_from_routing_agent(
             }
             sql_path if path.ends_with(".sql") => {
                 let content = tokio::fs::read_to_string(sql_path).await?;
-                
+
                 let mut documents = vec![];
                 let parsed_document = parse_embed_document(sql_path, &content);
-                
+
                 if let Some(database_ref) = parse_sql_source_type(&parsed_document.source_type) {
                     config.resolve_database(&database_ref)?;
                     documents.push(parsed_document);
                 } else {
-                    println!("WARNING: Could not parse database reference from source_type '{}' for document in {}", parsed_document.source_type, sql_path);
+                    println!(
+                        "WARNING: Could not parse database reference from source_type '{}' for document in {}",
+                        parsed_document.source_type, sql_path
+                    );
                 }
-                
-                println!("Created {} documents from SQL file: {}", documents.len(), sql_path);
+
+                println!(
+                    "Created {} documents from SQL file: {}",
+                    documents.len(),
+                    sql_path
+                );
                 Ok(documents)
             }
             _ => Err(OxyError::ConfigurationError(format!(
@@ -257,8 +278,12 @@ async fn make_documents_from_routing_agent(
     .flatten()
     .collect::<Vec<_>>();
 
-    println!("Routing agent document creation completed: {} total documents created from {} paths", documents.len(), paths_len);
-    
+    println!(
+        "Routing agent document creation completed: {} total documents created from {} paths",
+        documents.len(),
+        paths_len
+    );
+
     if documents.is_empty() {
         println!("WARNING: No documents were created for routing agent. This may indicate:");
         println!("  - All workflow/agent files have empty descriptions");

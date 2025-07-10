@@ -7,11 +7,7 @@ mod table;
 
 use lancedb::Connection;
 
-use crate::{
-    adapters::openai::OpenAIClient, 
-    config::model::EmbeddingConfig, 
-    errors::OxyError
-};
+use crate::{adapters::openai::OpenAIClient, config::model::EmbeddingConfig, errors::OxyError};
 
 use super::{
     engine::VectorEngine,
@@ -37,7 +33,10 @@ impl LanceDB {
         connection: Connection,
         embedding_config: EmbeddingConfig,
     ) -> Self {
-        let table_manager = Arc::new(TableManager::new(connection.clone(), embedding_config.n_dims));
+        let table_manager = Arc::new(TableManager::new(
+            connection.clone(),
+            embedding_config.n_dims,
+        ));
 
         Self {
             client,
@@ -73,4 +72,4 @@ impl VectorEngine for LanceDB {
             .await
             .map_err(OxyError::LanceDBError)
     }
-} 
+}

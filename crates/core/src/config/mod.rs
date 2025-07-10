@@ -213,9 +213,7 @@ impl Config {
 pub fn load_config(project_path: Option<PathBuf>) -> Result<Config, OxyError> {
     let root = project_path.unwrap_or_else(|| {
         resolve_project_path()
-            .map_err(|e| {
-                OxyError::ConfigurationError(format!("Failed to find project path: {}", e))
-            })
+            .map_err(|e| OxyError::ConfigurationError(format!("Failed to find project path: {e}")))
             .unwrap()
     });
     let config_path: PathBuf = root.join("config.yml");

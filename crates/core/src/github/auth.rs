@@ -1,4 +1,4 @@
-use crate::{constants::OXY_ENCRYPTION_KEY_VAR, utils::get_encryption_key};
+use crate::utils::get_encryption_key;
 use std::env;
 
 /// Environment variables for GitHub integration

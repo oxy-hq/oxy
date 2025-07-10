@@ -24,8 +24,7 @@ use syntect::{
     util::{LinesWithEndings, as_24_bit_terminal_escaped},
 };
 use tokio::sync::mpsc;
-use tokio::task::{JoinHandle, spawn_blocking};
-use tokio::time;
+use tokio::task::spawn_blocking;
 use tokio_util::sync::CancellationToken;
 
 pub const MAX_DISPLAY_ROWS: usize = 100;
@@ -43,7 +42,7 @@ fn get_key_file_path() -> PathBuf {
 fn decode_key_from_string(key_str: &str) -> [u8; 32] {
     let decoded = general_purpose::STANDARD
         .decode(key_str)
-        .map_err(|e| OxyError::SecretManager(format!("Invalid encryption key format: {}", e)))
+        .map_err(|e| OxyError::SecretManager(format!("Invalid encryption key format: {e}")))
         .expect("Failed to decode encryption key");
 
     if decoded.len() != 32 {
@@ -493,7 +492,7 @@ pub fn encrypt_value(key: &[u8; 32], value: &str) -> Result<String, OxyError> {
 
     let ciphertext = cipher
         .encrypt(&nonce, value.as_bytes())
-        .map_err(|e| OxyError::SecretManager(format!("Encryption failed: {}", e)))?;
+        .map_err(|e| OxyError::SecretManager(format!("Encryption failed: {e}")))?;
 
     // Combine nonce and ciphertext, then base64 encode
     let mut combined = nonce.to_vec();
@@ -506,7 +505,7 @@ pub fn encrypt_value(key: &[u8; 32], value: &str) -> Result<String, OxyError> {
 pub fn decrypt_value(key: &[u8; 32], encrypted_value: &str) -> Result<String, OxyError> {
     let combined = general_purpose::STANDARD
         .decode(encrypted_value)
-        .map_err(|e| OxyError::SecretManager(format!("Invalid encrypted value format: {}", e)))?;
+        .map_err(|e| OxyError::SecretManager(format!("Invalid encrypted value format: {e}")))?;
 
     if combined.len() < 12 {
         return Err(OxyError::SecretManager(
@@ -520,8 +519,8 @@ pub fn decrypt_value(key: &[u8; 32], encrypted_value: &str) -> Result<String, Ox
     let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key));
     let plaintext = cipher
         .decrypt(nonce, ciphertext)
-        .map_err(|e| OxyError::SecretManager(format!("Decryption failed: {}", e)))?;
+        .map_err(|e| OxyError::SecretManager(format!("Decryption failed: {e}")))?;
 
     String::from_utf8(plaintext)
-        .map_err(|e| OxyError::SecretManager(format!("Invalid UTF-8 in decrypted value: {}", e)))
+        .map_err(|e| OxyError::SecretManager(format!("Invalid UTF-8 in decrypted value: {e}")))
 }

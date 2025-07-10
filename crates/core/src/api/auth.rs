@@ -515,7 +515,7 @@ async fn send_verification_email(email: &str, token: &str, base_url: &str) -> Re
                 .resolve_secret(&basic_auth.smtp_password_var)
                 .await
                 .map_err(|e| {
-                    OxyError::ConfigurationError(format!("Failed to resolve SMTP password: {}", e))
+                    OxyError::ConfigurationError(format!("Failed to resolve SMTP password: {e}"))
                 })? {
                 Some(result) => result.value,
                 None => {
@@ -596,7 +596,7 @@ async fn exchange_google_code_for_user_info(
         .resolve_secret(&google_config.client_secret_var)
         .await
         .map_err(|e| {
-            OxyError::ConfigurationError(format!("Failed to resolve Google client secret: {}", e))
+            OxyError::ConfigurationError(format!("Failed to resolve Google client secret: {e}"))
         })? {
         Some(result) => result.value,
         None => {

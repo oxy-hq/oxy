@@ -83,7 +83,7 @@ impl SecretManagerService {
 
         let ciphertext = cipher
             .encrypt(&nonce, value.as_bytes())
-            .map_err(|e| OxyError::SecretManager(format!("Encryption failed: {}", e)))?;
+            .map_err(|e| OxyError::SecretManager(format!("Encryption failed: {e}")))?;
 
         // Combine nonce and ciphertext, then base64 encode
         let mut combined = nonce.to_vec();
@@ -96,9 +96,7 @@ impl SecretManagerService {
     fn decrypt_value(&self, encrypted_value: &str) -> Result<String, OxyError> {
         let combined = general_purpose::STANDARD
             .decode(encrypted_value)
-            .map_err(|e| {
-                OxyError::SecretManager(format!("Invalid encrypted value format: {}", e))
-            })?;
+            .map_err(|e| OxyError::SecretManager(format!("Invalid encrypted value format: {e}")))?;
 
         if combined.len() < 12 {
             return Err(OxyError::SecretManager(
@@ -112,11 +110,10 @@ impl SecretManagerService {
         let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&self.encryption_key));
         let plaintext = cipher
             .decrypt(nonce, ciphertext)
-            .map_err(|e| OxyError::SecretManager(format!("Decryption failed: {}", e)))?;
+            .map_err(|e| OxyError::SecretManager(format!("Decryption failed: {e}")))?;
 
-        String::from_utf8(plaintext).map_err(|e| {
-            OxyError::SecretManager(format!("Invalid UTF-8 in decrypted value: {}", e))
-        })
+        String::from_utf8(plaintext)
+            .map_err(|e| OxyError::SecretManager(format!("Invalid UTF-8 in decrypted value: {e}")))
     }
 
     /// Validate secret name
@@ -271,11 +268,11 @@ impl SecretManagerService {
                     // Cache the decrypted value
                     self.cache_value(name, &value).await;
 
-                    return Some(value);
+                    Some(value)
                 }
                 Err(e) => {
                     tracing::error!("Failed to decrypt secret value: {}", e);
-                    return None;
+                    None
                 }
             }
         } else {
@@ -321,7 +318,7 @@ impl SecretManagerService {
             .map_err(|e| OxyError::Database(e.to_string()))?;
 
         let secret = secret.ok_or_else(|| {
-            OxyError::SecretManager(format!("Secret with name '{}' not found", name))
+            OxyError::SecretManager(format!("Secret with name '{name}' not found"))
         })?;
 
         let mut secret_model: SecretActiveModel = secret.into();
@@ -367,7 +364,7 @@ impl SecretManagerService {
             .map_err(|e| OxyError::Database(e.to_string()))?;
 
         let secret = secret.ok_or_else(|| {
-            OxyError::SecretManager(format!("Secret with name '{}' not found", name))
+            OxyError::SecretManager(format!("Secret with name '{name}' not found"))
         })?;
 
         let mut secret_model: SecretActiveModel = secret.into();

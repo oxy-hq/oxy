@@ -1246,14 +1246,14 @@ pub async fn start_server_and_web_app(
             println!(
                 "{} {} {}",
                 "Web app running at".text(),
-                format!("http://{}:{}", display_host, web_port).secondary(),
+                format!("http://{display_host}:{web_port}").secondary(),
                 "(readonly mode)".tertiary()
             );
         } else {
             println!(
                 "{} {}",
                 "Web app running at".text(),
-                format!("http://{}:{}", display_host, web_port).secondary()
+                format!("http://{display_host}:{web_port}").secondary()
             );
         }
 

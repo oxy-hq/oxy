@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use serde::Deserialize;
 
-use super::{EvalConfig, Task, RouteRetrievalConfig};
+use super::{EvalConfig, RouteRetrievalConfig, Task};
 
 #[derive(Deserialize, Debug)]
 pub struct WorkflowWithRawVariables {

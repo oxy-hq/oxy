@@ -27,7 +27,7 @@ pub async fn start_apalis_worker() -> Result<(), OxyError> {
         .register(worker)
         .run()
         .await
-        .map_err(|e| OxyError::InitializationError(format!("Worker failed: {}", e)))?;
+        .map_err(|e| OxyError::InitializationError(format!("Worker failed: {e}")))?;
 
     Ok(())
 }

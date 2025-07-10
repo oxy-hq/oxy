@@ -1,7 +1,7 @@
 use crate::{
     adapters::{
         openai::IntoOpenAIConfig,
-        vector_store::{VectorStore, parse_sql_source_type, build_content_for_llm_retrieval},
+        vector_store::{VectorStore, build_content_for_llm_retrieval, parse_sql_source_type},
     },
     errors::OxyError,
     execute::{

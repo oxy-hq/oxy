@@ -68,6 +68,12 @@ pub struct CancellationTokens {
     pub stream_token: CancellationToken,
 }
 
+impl Default for CancellationTokens {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CancellationTokens {
     pub fn new() -> Self {
         Self {
@@ -117,10 +123,7 @@ impl ChatService {
             StreamingMessagePersister::new(self.connection.clone(), thread.id, "".to_owned())
                 .await
                 .map_err(|err| {
-                    OxyError::DBError(format!(
-                        "Failed to create streaming message handler: {}",
-                        err
-                    ))
+                    OxyError::DBError(format!("Failed to create streaming message handler: {err}"))
                 })?,
         );
 
@@ -146,7 +149,7 @@ impl ChatService {
 
         let (tx, rx) = tokio::sync::mpsc::channel(100);
 
-        let _task_handle = self.spawn_execution_task(execution_context, tx, executor);
+        self.spawn_execution_task(execution_context, tx, executor);
 
         Ok(Sse::new(create_sse_stream_with_cancellation(
             rx,
@@ -353,9 +356,10 @@ impl ChatService {
             input_tokens: ActiveValue::Set(usage.input_tokens),
             output_tokens: ActiveValue::Set(usage.output_tokens),
         };
-        answer_message.update(connection).await.map_err(|err| {
-            OxyError::DBError(format!("Failed to insert agent message:\n{}", err))
-        })?;
+        answer_message
+            .update(connection)
+            .await
+            .map_err(|err| OxyError::DBError(format!("Failed to insert agent message:\n{err}")))?;
         Ok(())
     }
 
@@ -367,7 +371,7 @@ impl ChatService {
         connection: &sea_orm::DatabaseConnection,
     ) -> Result<(), OxyError> {
         tracing::error!("Error running agent: {}", error);
-        let error_message = format!("🔴 Error: {}", error);
+        let error_message = format!("🔴 Error: {error}");
         let error_message_model = entity::messages::ActiveModel {
             id: ActiveValue::Set(message_id),
             content: ActiveValue::Set(error_message.clone()),
@@ -381,7 +385,7 @@ impl ChatService {
         error_message_model
             .update(connection)
             .await
-            .map_err(|err| OxyError::DBError(format!("Failed to insert error message: {}", err)))?;
+            .map_err(|err| OxyError::DBError(format!("Failed to insert error message: {err}")))?;
 
         let error_event = AnswerStream {
             content: AnswerContent::Error {

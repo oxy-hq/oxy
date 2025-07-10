@@ -1,6 +1,6 @@
 use crate::{
     errors::OxyError,
-    execute::types::{EventKind, Source, event::ArtifactKind},
+    execute::types::{EventKind, Source},
 };
 use chrono;
 use entity::logs;
@@ -76,7 +76,7 @@ impl LogsPersister {
             };
             log.update(&self.connection)
                 .await
-                .map_err(|e| OxyError::DBError(format!("Failed to update log: {}", e)))?;
+                .map_err(|e| OxyError::DBError(format!("Failed to update log: {e}")))?;
         } else {
             let new_id = Uuid::new_v4();
             let log = logs::ActiveModel {
@@ -91,7 +91,7 @@ impl LogsPersister {
             };
             log.insert(&self.connection)
                 .await
-                .map_err(|e| OxyError::DBError(format!("Failed to save log: {}", e)))?;
+                .map_err(|e| OxyError::DBError(format!("Failed to save log: {e}")))?;
 
             *log_id_guard = Some(new_id);
         }

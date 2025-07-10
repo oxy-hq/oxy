@@ -1,63 +1,80 @@
-use std::sync::Arc;
-use arrow::{
-    array::{
-        Array, RecordBatch, StringArray, ListBuilder, StructBuilder, StringBuilder, 
-        FixedSizeListBuilder, Float32Builder, ListArray, StructArray, FixedSizeListArray, Float32Array
-    },
-};
-use crate::{
-    config::constants::{RETRIEVAL_DEFAULT_INCLUSION_RADIUS, RETRIEVAL_INCLUSION_MIDPOINT_COLUMN},
-    errors::OxyError
-};
-use super::super::types::{Document, SearchRecord, RetrievalContent};
+use super::super::types::{Document, RetrievalContent, SearchRecord};
 use super::schema::SchemaUtils;
+use crate::{config::constants::RETRIEVAL_DEFAULT_INCLUSION_RADIUS, errors::OxyError};
+use arrow::array::{
+    Array, FixedSizeListArray, FixedSizeListBuilder, Float32Array, Float32Builder, ListArray,
+    ListBuilder, RecordBatch, StringArray, StringBuilder, StructArray, StructBuilder,
+};
+use std::sync::Arc;
 
 pub(super) struct SerializationUtils;
 
 impl SerializationUtils {
-    fn get_string_array<'a>(record_batch: &'a RecordBatch, column_name: &str) -> Result<&'a StringArray, OxyError> {
+    fn get_string_array<'a>(
+        record_batch: &'a RecordBatch,
+        column_name: &str,
+    ) -> Result<&'a StringArray, OxyError> {
         record_batch
             .column_by_name(column_name)
-            .ok_or_else(|| OxyError::RuntimeError(format!("Missing {} column", column_name)))?
+            .ok_or_else(|| OxyError::RuntimeError(format!("Missing {column_name} column")))?
             .as_any()
             .downcast_ref::<StringArray>()
-            .ok_or_else(|| OxyError::RuntimeError(format!("{} column is not a StringArray", column_name)))
+            .ok_or_else(|| {
+                OxyError::RuntimeError(format!("{column_name} column is not a StringArray"))
+            })
     }
-    
-    fn get_optional_list_array<'a>(record_batch: &'a RecordBatch, column_name: &str) -> Option<&'a ListArray> {
+
+    fn get_optional_list_array<'a>(
+        record_batch: &'a RecordBatch,
+        column_name: &str,
+    ) -> Option<&'a ListArray> {
         record_batch
             .column_by_name(column_name)
             .and_then(|col| col.as_any().downcast_ref::<ListArray>())
     }
-    
-    fn get_optional_fixed_size_list_array<'a>(record_batch: &'a RecordBatch, column_name: &str) -> Option<&'a FixedSizeListArray> {
+
+    fn get_optional_fixed_size_list_array<'a>(
+        record_batch: &'a RecordBatch,
+        column_name: &str,
+    ) -> Option<&'a FixedSizeListArray> {
         record_batch
             .column_by_name(column_name)
             .and_then(|col| col.as_any().downcast_ref::<FixedSizeListArray>())
     }
-    
-    fn get_optional_float32_array<'a>(record_batch: &'a RecordBatch, column_name: &str) -> Option<&'a Float32Array> {
+
+    fn get_optional_float32_array<'a>(
+        record_batch: &'a RecordBatch,
+        column_name: &str,
+    ) -> Option<&'a Float32Array> {
         record_batch
             .column_by_name(column_name)
             .and_then(|col| col.as_any().downcast_ref::<Float32Array>())
     }
-    
-    fn get_struct_field_as_string_array<'a>(struct_array: &'a StructArray, field_name: &str) -> Result<&'a StringArray, OxyError> {
+
+    fn get_struct_field_as_string_array<'a>(
+        struct_array: &'a StructArray,
+        field_name: &str,
+    ) -> Result<&'a StringArray, OxyError> {
         struct_array
             .column_by_name(field_name)
-            .ok_or_else(|| OxyError::RuntimeError(format!("Missing {} field", field_name)))?
+            .ok_or_else(|| OxyError::RuntimeError(format!("Missing {field_name} field")))?
             .as_any()
             .downcast_ref::<StringArray>()
-            .ok_or_else(|| OxyError::RuntimeError(format!("{} is not a StringArray", field_name)))
+            .ok_or_else(|| OxyError::RuntimeError(format!("{field_name} is not a StringArray")))
     }
-    
-    fn get_struct_field_as_fixed_size_list_array<'a>(struct_array: &'a StructArray, field_name: &str) -> Result<&'a FixedSizeListArray, OxyError> {
+
+    fn get_struct_field_as_fixed_size_list_array<'a>(
+        struct_array: &'a StructArray,
+        field_name: &str,
+    ) -> Result<&'a FixedSizeListArray, OxyError> {
         struct_array
             .column_by_name(field_name)
-            .ok_or_else(|| OxyError::RuntimeError(format!("Missing {} field", field_name)))?
+            .ok_or_else(|| OxyError::RuntimeError(format!("Missing {field_name} field")))?
             .as_any()
             .downcast_ref::<FixedSizeListArray>()
-            .ok_or_else(|| OxyError::RuntimeError(format!("{} is not a FixedSizeListArray", field_name)))
+            .ok_or_else(|| {
+                OxyError::RuntimeError(format!("{field_name} is not a FixedSizeListArray"))
+            })
     }
 
     pub(super) fn create_retrieval_content_array(
@@ -66,10 +83,8 @@ impl SerializationUtils {
     ) -> anyhow::Result<Arc<dyn Array>> {
         let struct_fields = SchemaUtils::create_retrieval_content_fields(n_dims);
         let string_builder = StringBuilder::new();
-        let embeddings_builder = FixedSizeListBuilder::new(
-            Float32Builder::new(),
-            n_dims.try_into().unwrap(),
-        );
+        let embeddings_builder =
+            FixedSizeListBuilder::new(Float32Builder::new(), n_dims.try_into().unwrap());
         let struct_builder = StructBuilder::new(
             struct_fields.clone(),
             vec![
@@ -77,14 +92,14 @@ impl SerializationUtils {
                 Box::new(embeddings_builder) as Box<dyn arrow::array::ArrayBuilder>,
             ],
         );
-        
+
         let list_field = arrow::datatypes::Field::new(
             "item",
             SchemaUtils::create_retrieval_content_struct_type(n_dims),
             false,
         );
         let mut list_builder = ListBuilder::new(struct_builder).with_field(list_field);
-        
+
         for document_contents in retrieval_contents {
             for content in document_contents {
                 list_builder
@@ -92,25 +107,29 @@ impl SerializationUtils {
                     .field_builder::<StringBuilder>(0)
                     .unwrap()
                     .append_value(&content.embedding_content);
-                
+
                 let embeddings_field_builder = list_builder
                     .values()
                     .field_builder::<FixedSizeListBuilder<Float32Builder>>(1)
                     .unwrap();
-                
+
                 for &embedding_val in &content.embeddings {
-                    embeddings_field_builder.values().append_value(embedding_val);
+                    embeddings_field_builder
+                        .values()
+                        .append_value(embedding_val);
                 }
-                embeddings_field_builder.append(true);                
+                embeddings_field_builder.append(true);
                 list_builder.values().append(true);
             }
             list_builder.append(true);
         }
-        
+
         Ok(Arc::new(list_builder.finish()))
     }
 
-    pub(super) fn deserialize_search_records(record_batch: &RecordBatch) -> Result<Vec<SearchRecord>, OxyError> {
+    pub(super) fn deserialize_search_records(
+        record_batch: &RecordBatch,
+    ) -> Result<Vec<SearchRecord>, OxyError> {
         let num_rows = record_batch.num_rows();
 
         let content_array = Self::get_string_array(record_batch, "content")?;
@@ -118,7 +137,8 @@ impl SerializationUtils {
         let source_identifier_array = Self::get_string_array(record_batch, "source_identifier")?;
         let inclusions_array = Self::get_optional_list_array(record_batch, "retrieval_inclusions");
         let exclusions_array = Self::get_optional_list_array(record_batch, "retrieval_exclusions");
-        let midpoint_array = Self::get_optional_fixed_size_list_array(record_batch, "inclusion_midpoint");
+        let midpoint_array =
+            Self::get_optional_fixed_size_list_array(record_batch, "inclusion_midpoint");
         let radius_array = Self::get_optional_float32_array(record_batch, "inclusion_radius");
         let distance_array = Self::get_optional_float32_array(record_batch, "_distance");
         let score_array = Self::get_optional_float32_array(record_batch, "_score")
@@ -129,7 +149,7 @@ impl SerializationUtils {
             let content = content_array.value(i).to_string();
             let source_type = source_type_array.value(i).to_string();
             let source_identifier = source_identifier_array.value(i).to_string();
-            
+
             let inclusions = if let Some(array) = inclusions_array {
                 Self::parse_retrieval_content_list(array, i)?
             } else {
@@ -141,14 +161,16 @@ impl SerializationUtils {
             } else {
                 vec![]
             };
-            
+
             let inclusion_midpoint = if let Some(array) = midpoint_array {
                 if !array.is_null(i) {
                     let midpoint_values = array.value(i);
                     let float_array = midpoint_values
                         .as_any()
                         .downcast_ref::<Float32Array>()
-                        .ok_or_else(|| OxyError::RuntimeError("Midpoint values are not Float32Array".into()))?;
+                        .ok_or_else(|| {
+                            OxyError::RuntimeError("Midpoint values are not Float32Array".into())
+                        })?;
                     let len = float_array.len();
                     let mut midpoint = Vec::with_capacity(len);
                     for j in 0..len {
@@ -161,7 +183,7 @@ impl SerializationUtils {
             } else {
                 vec![]
             };
-                        
+
             let inclusion_radius = if let Some(array) = radius_array {
                 if !array.is_null(i) {
                     array.value(i)
@@ -171,14 +193,13 @@ impl SerializationUtils {
             } else {
                 RETRIEVAL_DEFAULT_INCLUSION_RADIUS
             };
-            
+
             let distance = if let Some(array) = distance_array {
                 if !array.is_null(i) {
                     array.value(i)
                 } else {
                     return Err(OxyError::RuntimeError(format!(
-                        "Null distance for document '{}' - this should not be possible after vector search", 
-                        source_identifier
+                        "Null distance for document '{source_identifier}' - this should not be possible after vector search"
                     )));
                 }
             } else {
@@ -186,12 +207,12 @@ impl SerializationUtils {
                     "Missing distance (_distance) column in search results - this should not be possible after vector search".to_string()
                 ));
             };
-            
+
             // Extract score if available (optional - is only applicable if doing full-text search)
             let score = score_array
                 .filter(|array| !array.is_null(i))
                 .map(|array| array.value(i));
-            
+
             let document = Document {
                 content,
                 source_type,
@@ -201,65 +222,72 @@ impl SerializationUtils {
                 inclusion_midpoint,
                 inclusion_radius,
             };
-            
+
             let search_record = SearchRecord {
                 document,
                 distance,
                 score,
                 relevance_score: None, // Will be calculated later
             };
-            
+
             results.push(search_record);
         }
-        
+
         Ok(results)
     }
-    
-    fn parse_retrieval_content_list(list_array: &ListArray, row_index: usize) -> Result<Vec<RetrievalContent>, OxyError> {
+
+    fn parse_retrieval_content_list(
+        list_array: &ListArray,
+        row_index: usize,
+    ) -> Result<Vec<RetrievalContent>, OxyError> {
         let mut result = Vec::new();
-        
+
         if list_array.is_null(row_index) {
             return Ok(result);
         }
-        
+
         let list_value = list_array.value(row_index);
         let struct_array = list_value
             .as_any()
             .downcast_ref::<StructArray>()
             .ok_or_else(|| OxyError::RuntimeError("List value is not a StructArray".into()))?;
-        
+
         if struct_array.len() == 0 {
             return Ok(result);
         }
-        
-        let embedding_content_array = Self::get_struct_field_as_string_array(struct_array, "embedding_content")?;
-        let embeddings_array = Self::get_struct_field_as_fixed_size_list_array(struct_array, "embeddings")?;
-        
+
+        let embedding_content_array =
+            Self::get_struct_field_as_string_array(struct_array, "embedding_content")?;
+        let embeddings_array =
+            Self::get_struct_field_as_fixed_size_list_array(struct_array, "embeddings")?;
+
         for i in 0..struct_array.len() {
             if embedding_content_array.is_null(i) || embeddings_array.is_null(i) {
                 continue;
             }
-            
+
             let embedding_content = embedding_content_array.value(i).to_string();
-            
+
             let embedding_values = embeddings_array.value(i);
             let float_array = embedding_values
                 .as_any()
                 .downcast_ref::<Float32Array>()
-                .ok_or_else(|| OxyError::RuntimeError("Embedding values are not Float32Array".into()))?;
-            
+                .ok_or_else(|| {
+                    OxyError::RuntimeError("Embedding values are not Float32Array".into())
+                })?;
+
             let len = float_array.len();
             let mut embeddings = Vec::with_capacity(len);
             for j in 0..len {
                 embeddings.push(float_array.value(j));
             }
-            
+
             result.push(RetrievalContent {
                 embedding_content,
                 embeddings,
             });
         }
-        
+
         Ok(result)
     }
-} 
+}

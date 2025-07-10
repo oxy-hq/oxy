@@ -57,11 +57,14 @@ impl RoutingAgentExecutable {
     ) -> Result<ToolType, OxyError> {
         match file_ref {
             workflow_path if workflow_path.ends_with(".workflow.yml") => {
-                let workflow = execution_context.config.resolve_workflow(workflow_path).await?;
+                let workflow = execution_context
+                    .config
+                    .resolve_workflow(workflow_path)
+                    .await?;
                 let tool_description = match description {
-                     Some(desc) => desc.to_string(),
-                     None => workflow.description.clone(),
-                 };
+                    Some(desc) => desc.to_string(),
+                    None => workflow.description.clone(),
+                };
                 Ok(ToolType::Workflow(WorkflowTool {
                     name: to_openai_function_name(&PathBuf::from(workflow_path))?,
                     workflow_ref: workflow_path.to_string(),
@@ -74,9 +77,9 @@ impl RoutingAgentExecutable {
             agent_path if agent_path.ends_with(".agent.yml") => {
                 let agent = execution_context.config.resolve_agent(agent_path).await?;
                 let tool_description = match description {
-                     Some(desc) => desc.to_string(),
-                     None => agent.description.clone(),
-                 };
+                    Some(desc) => desc.to_string(),
+                    None => agent.description.clone(),
+                };
                 Ok(ToolType::Agent(AgentTool {
                     name: to_openai_function_name(&PathBuf::from(agent_path))?,
                     agent_ref: agent_path.to_string(),
@@ -114,8 +117,13 @@ impl RoutingAgentExecutable {
                 }
             }
             _ => {
-                self.resolve_tool(execution_context, &document.id, Some(&document.content), true)
-                    .await
+                self.resolve_tool(
+                    execution_context,
+                    &document.id,
+                    Some(&document.content),
+                    true,
+                )
+                .await
             }
         }
     }
@@ -148,7 +156,10 @@ impl RoutingAgentExecutable {
             }
         }
 
-        tracing::info!("Resolved {} routes from vector search", resolved_routes.len());
+        tracing::info!(
+            "Resolved {} routes from vector search",
+            resolved_routes.len()
+        );
 
         Ok(resolved_routes)
     }

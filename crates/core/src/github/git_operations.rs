@@ -23,7 +23,7 @@ impl GitOperations {
         // Ensure parent directory exists
         if let Some(parent) = destination.parent() {
             tokio::fs::create_dir_all(parent).await.map_err(|e| {
-                OxyError::IOError(format!("Failed to create parent directory: {}", e))
+                OxyError::IOError(format!("Failed to create parent directory: {e}"))
             })?;
         }
 
@@ -41,14 +41,13 @@ impl GitOperations {
         let output = cmd
             .output()
             .await
-            .map_err(|e| OxyError::RuntimeError(format!("Failed to execute git clone: {}", e)))?;
+            .map_err(|e| OxyError::RuntimeError(format!("Failed to execute git clone: {e}")))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             error!("Git clone failed: {}", stderr);
             return Err(OxyError::RuntimeError(format!(
-                "Git clone failed: {}",
-                stderr
+                "Git clone failed: {stderr}"
             )));
         }
 
@@ -78,15 +77,12 @@ impl GitOperations {
             .args(["pull", "origin"])
             .output()
             .await
-            .map_err(|e| OxyError::RuntimeError(format!("Failed to execute git pull: {}", e)))?;
+            .map_err(|e| OxyError::RuntimeError(format!("Failed to execute git pull: {e}")))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             warn!("Git pull failed: {}", stderr);
-            return Err(OxyError::RuntimeError(format!(
-                "Git pull failed: {}",
-                stderr
-            )));
+            return Err(OxyError::RuntimeError(format!("Git pull failed: {stderr}")));
         }
 
         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -108,13 +104,12 @@ impl GitOperations {
             .args(["branch", "--show-current"])
             .output()
             .await
-            .map_err(|e| OxyError::RuntimeError(format!("Failed to get current branch: {}", e)))?;
+            .map_err(|e| OxyError::RuntimeError(format!("Failed to get current branch: {e}")))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             return Err(OxyError::RuntimeError(format!(
-                "Get current branch failed: {}",
-                stderr
+                "Get current branch failed: {stderr}"
             )));
         }
 
@@ -136,13 +131,12 @@ impl GitOperations {
             .args(["status", "--porcelain"])
             .output()
             .await
-            .map_err(|e| OxyError::RuntimeError(format!("Failed to get git status: {}", e)))?;
+            .map_err(|e| OxyError::RuntimeError(format!("Failed to get git status: {e}")))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             return Err(OxyError::RuntimeError(format!(
-                "Git status failed: {}",
-                stderr
+                "Git status failed: {stderr}"
             )));
         }
 
@@ -170,13 +164,12 @@ impl GitOperations {
             .args(["remote", "get-url", "origin"])
             .output()
             .await
-            .map_err(|e| OxyError::RuntimeError(format!("Failed to get remote URL: {}", e)))?;
+            .map_err(|e| OxyError::RuntimeError(format!("Failed to get remote URL: {e}")))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             return Err(OxyError::RuntimeError(format!(
-                "Get remote URL failed: {}",
-                stderr
+                "Get remote URL failed: {stderr}"
             )));
         }
 
@@ -219,8 +212,7 @@ impl GitOperations {
             .await
             .map_err(|e| {
                 OxyError::ConfigurationError(format!(
-                    "Git is not available on this system. Please install Git: {}",
-                    e
+                    "Git is not available on this system. Please install Git: {e}"
                 ))
             })?;
 
@@ -242,7 +234,7 @@ impl GitOperations {
             .args(["config", "user.name"])
             .output()
             .await
-            .map_err(|e| OxyError::RuntimeError(format!("Failed to check git config: {}", e)))?;
+            .map_err(|e| OxyError::RuntimeError(format!("Failed to check git config: {e}")))?;
 
         if !name_output.status.success() {
             warn!("Git user.name is not configured. Setting default value.");
@@ -257,7 +249,7 @@ impl GitOperations {
             .args(["config", "user.email"])
             .output()
             .await
-            .map_err(|e| OxyError::RuntimeError(format!("Failed to check git config: {}", e)))?;
+            .map_err(|e| OxyError::RuntimeError(format!("Failed to check git config: {e}")))?;
 
         if !email_output.status.success() {
             warn!("Git user.email is not configured. Setting default value.");
@@ -300,10 +292,7 @@ impl GitOperations {
         // Get status after pull to see what changed
         let current_branch = Self::get_current_branch(repo_path).await?;
 
-        let message = format!(
-            "Successfully pulled latest changes from {} branch",
-            current_branch
-        );
+        let message = format!("Successfully pulled latest changes from {current_branch} branch");
 
         info!("{}", message);
         Ok(message)
@@ -317,7 +306,7 @@ impl GitOperations {
         match tokio::fs::metadata(&fetch_head_path).await {
             Ok(metadata) => {
                 let modified = metadata.modified().map_err(|e| {
-                    OxyError::RuntimeError(format!("Failed to get file modification time: {}", e))
+                    OxyError::RuntimeError(format!("Failed to get file modification time: {e}"))
                 })?;
 
                 let datetime: chrono::DateTime<chrono::Utc> = modified.into();
@@ -333,7 +322,7 @@ impl GitOperations {
                     .output()
                     .await
                     .map_err(|e| {
-                        OxyError::RuntimeError(format!("Failed to execute git log: {}", e))
+                        OxyError::RuntimeError(format!("Failed to execute git log: {e}"))
                     })?;
 
                 if output.status.success() {
@@ -356,9 +345,7 @@ impl GitOperations {
             .current_dir(repo_path)
             .output()
             .await
-            .map_err(|e| {
-                OxyError::RuntimeError(format!("Failed to execute git rev-parse: {}", e))
-            })?;
+            .map_err(|e| OxyError::RuntimeError(format!("Failed to execute git rev-parse: {e}")))?;
 
         if output.status.success() {
             let commit_hash = String::from_utf8_lossy(&output.stdout);
@@ -366,8 +353,7 @@ impl GitOperations {
         } else {
             let stderr = String::from_utf8_lossy(&output.stderr);
             Err(OxyError::RuntimeError(format!(
-                "Failed to get current commit hash: {}",
-                stderr
+                "Failed to get current commit hash: {stderr}"
             )))
         }
     }
@@ -380,13 +366,11 @@ impl GitOperations {
         let output = tokio::process::Command::new("git")
             .arg("ls-remote")
             .arg("origin")
-            .arg(format!("refs/heads/{}", branch))
+            .arg(format!("refs/heads/{branch}"))
             .current_dir(repo_path)
             .output()
             .await
-            .map_err(|e| {
-                OxyError::RuntimeError(format!("Failed to execute git ls-remote: {}", e))
-            })?;
+            .map_err(|e| OxyError::RuntimeError(format!("Failed to execute git ls-remote: {e}")))?;
 
         if output.status.success() {
             let output_str = String::from_utf8_lossy(&output.stdout);
@@ -407,8 +391,7 @@ impl GitOperations {
         } else {
             let stderr = String::from_utf8_lossy(&output.stderr);
             Err(OxyError::RuntimeError(format!(
-                "Failed to get remote commit hash: {}",
-                stderr
+                "Failed to get remote commit hash: {stderr}"
             )))
         }
     }
