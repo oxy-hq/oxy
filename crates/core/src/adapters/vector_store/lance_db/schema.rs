@@ -1,6 +1,6 @@
-use std::sync::Arc;
-use arrow::datatypes::{DataType, Field, Fields};
 use crate::config::constants::RETRIEVAL_INCLUSION_MIDPOINT_COLUMN;
+use arrow::datatypes::{DataType, Field, Fields};
+use std::sync::Arc;
 
 pub(super) struct SchemaUtils;
 
@@ -20,7 +20,8 @@ impl SchemaUtils {
                 ),
                 false,
             ),
-        ].into()
+        ]
+        .into()
     }
 
     pub(super) fn create_expected_schema(n_dims: usize) -> Arc<arrow::datatypes::Schema> {
@@ -58,10 +59,18 @@ impl SchemaUtils {
         ]))
     }
 
-    pub(super) fn schemas_match(expected: &arrow::datatypes::Schema, existing: &arrow::datatypes::Schema) -> bool {
-        expected.fields().len() == existing.fields().len() &&
-            expected.fields().iter().zip(existing.fields().iter()).all(|(expected, existing)| {
-                expected.name() == existing.name() && expected.data_type() == existing.data_type()
-            })
+    pub(super) fn schemas_match(
+        expected: &arrow::datatypes::Schema,
+        existing: &arrow::datatypes::Schema,
+    ) -> bool {
+        expected.fields().len() == existing.fields().len()
+            && expected
+                .fields()
+                .iter()
+                .zip(existing.fields().iter())
+                .all(|(expected, existing)| {
+                    expected.name() == existing.name()
+                        && expected.data_type() == existing.data_type()
+                })
     }
-} 
+}

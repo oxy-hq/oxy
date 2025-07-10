@@ -161,13 +161,13 @@ impl ChatHandler for TaskExecutor {
         let thread = context.thread.clone();
         let config = ConfigBuilder::new()
             .with_project_path(&context.project_path)
-            .map_err(|e| OxyError::RuntimeError(format!("Failed to create config: {}", e)))?
+            .map_err(|e| OxyError::RuntimeError(format!("Failed to create config: {e}")))?
             .build()
             .await
-            .map_err(|e| OxyError::RuntimeError(format!("Failed to build config: {}", e)))?;
+            .map_err(|e| OxyError::RuntimeError(format!("Failed to build config: {e}")))?;
 
         let agent_ref = config.get_builder_agent_path().await.map_err(|e| {
-            OxyError::RuntimeError(format!("Failed to get builder agent path: {}", e))
+            OxyError::RuntimeError(format!("Failed to get builder agent path: {e}"))
         })?;
 
         let task_stream = TaskStream::new(tx.clone(), context.streaming_persister.clone());
@@ -206,7 +206,7 @@ impl ChatHandler for TaskExecutor {
                 thread_model
                     .update(connection)
                     .await
-                    .map_err(|err| OxyError::DBError(format!("Update thread:\n{}", err)))?;
+                    .map_err(|err| OxyError::DBError(format!("Update thread:\n{err}")))?;
 
                 let usage = usage_arc.lock().await.clone();
                 Ok((output_string, usage))

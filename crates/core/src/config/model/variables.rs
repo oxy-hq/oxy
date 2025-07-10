@@ -129,7 +129,7 @@ impl Variables {
                 trimmed
                     .parse::<f64>()
                     .ok()
-                    .and_then(|f| serde_json::Number::from_f64(f))
+                    .and_then(serde_json::Number::from_f64)
                     .map(Value::Number)
                     .ok_or_else(|| {
                         OxyError::ArgumentError(format!("Cannot convert '{s}' to number"))

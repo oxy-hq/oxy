@@ -1,17 +1,15 @@
+use super::schema::SchemaUtils;
+use crate::config::constants::{
+    FTS_INDEX_MIN_ROWS, RETRIEVAL_INCLUSION_MIDPOINT_COLUMN, VECTOR_INDEX_MIN_ROWS,
+};
+use crate::errors::OxyError;
 use arrow::array::RecordBatchReader;
 use lancedb::{
     Connection, Table,
     database::CreateTableMode,
-    index::{
-        Index,
-        scalar::{FtsIndexBuilder},
-        vector::{IvfHnswPqIndexBuilder},
-    },
+    index::{Index, scalar::FtsIndexBuilder, vector::IvfHnswPqIndexBuilder},
     table::OptimizeAction,
 };
-use crate::errors::OxyError;
-use crate::config::constants::{VECTOR_INDEX_MIN_ROWS, FTS_INDEX_MIN_ROWS, RETRIEVAL_INCLUSION_MIDPOINT_COLUMN};
-use super::schema::SchemaUtils;
 
 pub(super) struct TableManager {
     connection: Connection,
@@ -20,25 +18,22 @@ pub(super) struct TableManager {
 
 impl TableManager {
     pub(super) fn new(connection: Connection, n_dims: usize) -> Self {
-        Self {
-            connection,
-            n_dims,
-        }
+        Self { connection, n_dims }
     }
 
     pub(super) async fn get_or_create_table(&self, table_name: &str) -> Result<Table, OxyError> {
         let table_result = self.connection.open_table(table_name).execute().await;
 
         let expected_schema = SchemaUtils::create_expected_schema(self.n_dims);
-        
+
         let table = match table_result {
             Ok(table) => {
                 let existing_schema = table.schema().await?;
-                
+
                 if !SchemaUtils::schemas_match(&expected_schema, &existing_schema) {
                     drop(table);
                     self.connection.drop_table(table_name).await?;
-                    
+
                     self.connection
                         .create_empty_table(table_name, expected_schema)
                         .mode(CreateTableMode::exist_ok(|builder| builder))
@@ -47,7 +42,7 @@ impl TableManager {
                 } else {
                     table
                 }
-            },
+            }
             Err(err) => match err {
                 lancedb::Error::TableNotFound { name } => {
                     self.connection
@@ -58,7 +53,7 @@ impl TableManager {
                 }
                 _ => {
                     return Err(err.into());
-                },
+                }
             },
         };
         Ok(table)
@@ -74,10 +69,10 @@ impl TableManager {
             .when_matched_update_all(None)
             .when_not_matched_insert_all();
         merge_insert_op.execute(Box::new(batches)).await?;
-        
+
         let indices = table.list_indices().await?;
         let num_rows = table.count_rows(None).await?;
-        
+
         let fts_index = indices
             .iter()
             .find(|index| index.columns == vec!["content"]);
@@ -85,17 +80,16 @@ impl TableManager {
         // TODO: this index is currently not used, but we may want to do hybrid FTS + vector search
         if fts_index.is_none() && num_rows >= FTS_INDEX_MIN_ROWS {
             table
-                .create_index(
-                    &["content"],
-                    Index::FTS(FtsIndexBuilder::default()),
-                )
+                .create_index(&["content"], Index::FTS(FtsIndexBuilder::default()))
                 .execute()
                 .await?;
         }
 
-        let vector_index = indices
-            .iter()
-            .find(|index| index.columns.contains(&RETRIEVAL_INCLUSION_MIDPOINT_COLUMN.to_string()));
+        let vector_index = indices.iter().find(|index| {
+            index
+                .columns
+                .contains(&RETRIEVAL_INCLUSION_MIDPOINT_COLUMN.to_string())
+        });
 
         if vector_index.is_none() && num_rows >= VECTOR_INDEX_MIN_ROWS {
             table
@@ -115,4 +109,4 @@ impl TableManager {
         );
         Ok(())
     }
-} 
+}

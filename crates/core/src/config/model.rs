@@ -278,6 +278,7 @@ pub struct ReasoningConfig {
 
 #[derive(Serialize, Deserialize, Debug, Clone, JsonSchema, Validate)]
 #[garde(context(ValidationContext))]
+#[derive(Default)]
 pub struct RouteRetrievalConfig {
     /// List of prompts that include this document / route for retrieval
     #[garde(skip)]
@@ -287,15 +288,6 @@ pub struct RouteRetrievalConfig {
     #[garde(skip)]
     #[serde(default)]
     pub exclude: Vec<String>,
-}
-
-impl Default for RouteRetrievalConfig {
-    fn default() -> Self {
-        Self {
-            include: vec![],
-            exclude: vec![],
-        }
-    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, JsonSchema, Validate)]

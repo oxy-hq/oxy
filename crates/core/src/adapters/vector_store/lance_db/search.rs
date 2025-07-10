@@ -1,27 +1,21 @@
+use arrow::array::RecordBatch;
 use futures::TryStreamExt;
 use lancedb::{
+    DistanceType,
     query::{ExecutableQuery, QueryBase},
-    DistanceType
 };
-use arrow::array::RecordBatch;
 
 use crate::{
     adapters::openai::OpenAIClient,
-    config::{
-        model::EmbeddingConfig, 
-        constants::RETRIEVAL_INCLUSION_MIDPOINT_COLUMN
-    },
-    errors::OxyError
+    config::{constants::RETRIEVAL_INCLUSION_MIDPOINT_COLUMN, model::EmbeddingConfig},
+    errors::OxyError,
 };
 
 use super::super::types::SearchRecord;
-use std::sync::Arc;
 use async_openai::types::{CreateEmbeddingRequestArgs, EmbeddingInput};
+use std::sync::Arc;
 
-use super::{
-    serialization::SerializationUtils,
-    table::TableManager,
-};
+use super::{serialization::SerializationUtils, table::TableManager};
 
 pub(super) struct SearchManager {
     client: OpenAIClient,
@@ -65,14 +59,14 @@ impl SearchManager {
 
         let mut candidates = vec![];
         let mut schema_validated = false;
-        
+
         while let Some(record_batch) = stream.try_next().await? {
             // Validate schema once before processing any batches
             if !schema_validated {
                 self.validate_search_result_schema(&record_batch)?;
                 schema_validated = true;
             }
-            
+
             let docs = SerializationUtils::deserialize_search_records(&record_batch)?;
             candidates.extend(docs);
         }
@@ -81,7 +75,7 @@ impl SearchManager {
         let final_results = self.finalize_search_results(filtered_candidates);
 
         tracing::info!("Search completed with {} results", final_results.len());
-        
+
         Ok(final_results)
     }
 
@@ -99,22 +93,23 @@ impl SearchManager {
     /// added by vector search (table schema is already validated by get_or_create_table)
     fn validate_search_result_schema(&self, record_batch: &RecordBatch) -> Result<(), OxyError> {
         let schema = record_batch.schema();
-        
+
         // Only need to validate _distance since table schema is already validated
         // _distance is the only column added by the vector search operation
         if schema.column_with_name("_distance").is_none() {
             return Err(OxyError::RuntimeError(
-                "Missing '_distance' column in search results - vector search may have failed".to_string()
+                "Missing '_distance' column in search results - vector search may have failed"
+                    .to_string(),
             ));
         }
-        
+
         // Log optional score columns for debugging
         if schema.column_with_name("_score").is_some() {
             tracing::debug!("Optional '_score' column found in search results");
         } else if schema.column_with_name("score").is_some() {
             tracing::debug!("Optional 'score' column found in search results");
         }
-        
+
         tracing::debug!("Search result schema validation passed - _distance column present");
         Ok(())
     }
@@ -122,7 +117,10 @@ impl SearchManager {
     /// Filters search candidates using epsilon ball constraint
     /// Returns candidates with their relevance scores that passed the filter
     fn filter_by_epsilon_ball(&self, candidates: Vec<SearchRecord>) -> Vec<(SearchRecord, f32)> {
-        tracing::info!("Found {} candidates, applying epsilon ball filtering", candidates.len());
+        tracing::info!(
+            "Found {} candidates, applying epsilon ball filtering",
+            candidates.len()
+        );
 
         if candidates.is_empty() {
             return vec![];
@@ -133,28 +131,42 @@ impl SearchManager {
             let distance = candidate.distance;
 
             if distance <= candidate.document.inclusion_radius {
-                tracing::info!("Document '{}' is within epsilon ball (distance: {:.3}, radius: {:.3})", 
-                    candidate.document.source_identifier, distance, candidate.document.inclusion_radius);
-                
+                tracing::info!(
+                    "Document '{}' is within epsilon ball (distance: {:.3}, radius: {:.3})",
+                    candidate.document.source_identifier,
+                    distance,
+                    candidate.document.inclusion_radius
+                );
+
                 let relevance_score = if candidate.document.inclusion_radius > 0.0 {
                     1.0 - (distance / candidate.document.inclusion_radius)
                 } else {
                     1.0
                 };
-                
+
                 filtered_candidates.push((candidate, relevance_score));
             } else {
-                tracing::info!("Document '{}' is outside epsilon ball (distance: {:.3}, radius: {:.3})", 
-                    candidate.document.source_identifier, distance, candidate.document.inclusion_radius);
+                tracing::info!(
+                    "Document '{}' is outside epsilon ball (distance: {:.3}, radius: {:.3})",
+                    candidate.document.source_identifier,
+                    distance,
+                    candidate.document.inclusion_radius
+                );
             }
         }
 
-        tracing::info!("Epsilon ball filtering completed: {} candidates passed", filtered_candidates.len());
+        tracing::info!(
+            "Epsilon ball filtering completed: {} candidates passed",
+            filtered_candidates.len()
+        );
         filtered_candidates
     }
 
     /// Convert filtered candidates to SearchRecord objects, sort by relevance, and truncate to top_k
-    fn finalize_search_results(&self, filtered_candidates: Vec<(SearchRecord, f32)>) -> Vec<SearchRecord> {
+    fn finalize_search_results(
+        &self,
+        filtered_candidates: Vec<(SearchRecord, f32)>,
+    ) -> Vec<SearchRecord> {
         let mut search_records: Vec<SearchRecord> = filtered_candidates
             .into_iter()
             .map(|(candidate, relevance_score)| SearchRecord {
@@ -174,4 +186,4 @@ impl SearchManager {
         search_records.truncate(self.embedding_config.top_k);
         search_records
     }
-} 
+}

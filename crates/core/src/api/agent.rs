@@ -311,10 +311,7 @@ impl ChatHandler for AgentExecutor {
 
         match result {
             Ok(_output_container) => {
-                let (answer_message, artifacts) = block_handler_reader
-                    .into_active_models()
-                    .await
-                    .map_err(OxyError::from)?;
+                let (answer_message, artifacts) = block_handler_reader.into_active_models().await?;
 
                 let content = answer_message.content.clone().unwrap();
                 let input_tokens = answer_message.input_tokens.unwrap();

@@ -45,7 +45,7 @@ impl GitHubService {
         let settings = Settings::find()
             .one(&db)
             .await
-            .map_err(|e| OxyError::DBError(format!("Failed to query settings: {}", e)))?
+            .map_err(|e| OxyError::DBError(format!("Failed to query settings: {e}")))?
             .ok_or_else(|| OxyError::ConfigurationError(NO_SETTINGS_ERROR.to_string()))?;
         Ok((db, settings))
     }
@@ -64,7 +64,7 @@ impl GitHubService {
         active_model
             .update(&db)
             .await
-            .map_err(|e| OxyError::DBError(format!("Failed to update settings: {}", e)))?;
+            .map_err(|e| OxyError::DBError(format!("Failed to update settings: {e}")))?;
 
         Ok(())
     }
@@ -101,7 +101,7 @@ impl GitHubService {
         let existing_settings = Settings::find()
             .one(&db)
             .await
-            .map_err(|e| OxyError::DBError(format!("Failed to query settings: {}", e)))?;
+            .map_err(|e| OxyError::DBError(format!("Failed to query settings: {e}")))?;
 
         if let Some(_existing) = existing_settings {
             // Update existing record
@@ -124,7 +124,7 @@ impl GitHubService {
             new_settings
                 .insert(&db)
                 .await
-                .map_err(|e| OxyError::DBError(format!("Failed to store GitHub token: {}", e)))?;
+                .map_err(|e| OxyError::DBError(format!("Failed to store GitHub token: {e}")))?;
         }
 
         Ok(())
@@ -155,7 +155,7 @@ impl GitHubService {
         let settings = Settings::find()
             .one(&db)
             .await
-            .map_err(|e| OxyError::DBError(format!("Failed to query settings: {}", e)))?;
+            .map_err(|e| OxyError::DBError(format!("Failed to query settings: {e}")))?;
 
         if let Some(settings) = settings {
             let decrypted_token = TokenEncryption::decrypt_token(&settings.github_token)?;
@@ -180,7 +180,7 @@ impl GitHubService {
         let settings = Settings::find()
             .one(&db)
             .await
-            .map_err(|e| OxyError::DBError(format!("Failed to query settings: {}", e)))?;
+            .map_err(|e| OxyError::DBError(format!("Failed to query settings: {e}")))?;
 
         // If we have a token from secret manager but no settings record, create a minimal one
         if let Some(settings) = settings {
@@ -474,7 +474,7 @@ impl GitHubService {
                     Some(latest_commit),
                 )
                 .await?;
-                Ok(format!("Repository synced successfully: {}", message))
+                Ok(format!("Repository synced successfully: {message}"))
             }
             Err(e) => {
                 // Update sync status to error
@@ -529,7 +529,7 @@ impl GitHubService {
                     .update_secret(&db, secret_name, update_params)
                     .await
                     .map_err(|e| {
-                        OxyError::SecretManager(format!("Failed to update GitHub token: {}", e))
+                        OxyError::SecretManager(format!("Failed to update GitHub token: {e}"))
                     })?;
 
                 tracing::info!(

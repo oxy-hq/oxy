@@ -194,16 +194,14 @@ impl IntoOpenAIConfig for RetrievalConfig {
             .await
             .map_err(|e| {
                 OxyError::ConfigurationError(format!(
-                    "Retrieval API key not found in environment variable {}:\n{}",
-                    key_var, e
+                    "Retrieval API key not found in environment variable {key_var}:\n{e}"
                 ))
             })?;
         let api_key = match api_key {
             Some(secret) => secret.value,
             None => {
                 return Err(OxyError::ConfigurationError(format!(
-                    "Retrieval API key not found in environment variable {}",
-                    key_var
+                    "Retrieval API key not found in environment variable {key_var}"
                 )));
             }
         };

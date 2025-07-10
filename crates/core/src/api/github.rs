@@ -315,7 +315,7 @@ pub async fn sync_github_repository() -> Result<ResponseJson<SettingsUpdateRespo
             error!("Failed to sync repository: {}", e);
             Ok(ResponseJson(SettingsUpdateResponse {
                 success: false,
-                message: format!("Failed to sync repository: {}", e),
+                message: format!("Failed to sync repository: {e}"),
             }))
         }
     }

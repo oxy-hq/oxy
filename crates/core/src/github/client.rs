@@ -18,8 +18,8 @@ impl GitHubClient {
         let mut headers = HeaderMap::new();
         headers.insert(
             AUTHORIZATION,
-            HeaderValue::from_str(&format!("Bearer {}", token))
-                .map_err(|e| OxyError::RuntimeError(format!("Invalid token format: {}", e)))?,
+            HeaderValue::from_str(&format!("Bearer {token}"))
+                .map_err(|e| OxyError::RuntimeError(format!("Invalid token format: {e}")))?,
         );
         headers.insert(
             USER_AGENT,
@@ -33,7 +33,7 @@ impl GitHubClient {
         let client = Client::builder()
             .default_headers(headers)
             .build()
-            .map_err(|e| OxyError::RuntimeError(format!("Failed to create HTTP client: {}", e)))?;
+            .map_err(|e| OxyError::RuntimeError(format!("Failed to create HTTP client: {e}")))?;
 
         Ok(Self {
             client,
@@ -50,7 +50,7 @@ impl GitHubClient {
             .get(&url)
             .send()
             .await
-            .map_err(|e| OxyError::RuntimeError(format!("Failed to validate token: {}", e)))?;
+            .map_err(|e| OxyError::RuntimeError(format!("Failed to validate token: {e}")))?;
 
         if !response.status().is_success() {
             return Err(OxyError::RuntimeError(format!(
@@ -98,7 +98,7 @@ impl GitHubClient {
 
         let response =
             self.client.get(&url).send().await.map_err(|e| {
-                OxyError::RuntimeError(format!("Failed to fetch repositories: {}", e))
+                OxyError::RuntimeError(format!("Failed to fetch repositories: {e}"))
             })?;
 
         if !response.status().is_success() {
@@ -110,7 +110,7 @@ impl GitHubClient {
         }
 
         let repos: Vec<GitHubRepository> = response.json().await.map_err(|e| {
-            OxyError::RuntimeError(format!("Failed to parse repositories response: {}", e))
+            OxyError::RuntimeError(format!("Failed to parse repositories response: {e}"))
         })?;
 
         Ok(repos)
@@ -121,10 +121,12 @@ impl GitHubClient {
         // Directly get the repository by ID from the GitHub API
         let url = format!("{}/repositories/{}", self.base_url, repo_id);
 
-        let response =
-            self.client.get(&url).send().await.map_err(|e| {
-                OxyError::RuntimeError(format!("Failed to fetch repository: {}", e))
-            })?;
+        let response = self
+            .client
+            .get(&url)
+            .send()
+            .await
+            .map_err(|e| OxyError::RuntimeError(format!("Failed to fetch repository: {e}")))?;
 
         if !response.status().is_success() {
             return Err(OxyError::RuntimeError(format!(
@@ -135,7 +137,7 @@ impl GitHubClient {
         }
 
         let repo: GitHubRepository = response.json().await.map_err(|e| {
-            OxyError::RuntimeError(format!("Failed to parse repository response: {}", e))
+            OxyError::RuntimeError(format!("Failed to parse repository response: {e}"))
         })?;
 
         Ok(repo)
@@ -164,11 +166,11 @@ impl GitHubClient {
             .get(&url)
             .send()
             .await
-            .map_err(|e| OxyError::RuntimeError(format!("Failed to fetch branch: {}", e)))?;
+            .map_err(|e| OxyError::RuntimeError(format!("Failed to fetch branch: {e}")))?;
 
         if response.status().is_success() {
             let branch_data: Value = response.json().await.map_err(|e| {
-                OxyError::RuntimeError(format!("Failed to parse branch response: {}", e))
+                OxyError::RuntimeError(format!("Failed to parse branch response: {e}"))
             })?;
 
             // Extract commit SHA from the response
@@ -189,8 +191,7 @@ impl GitHubClient {
                 .unwrap_or_else(|_| "Unknown error".to_string());
 
             Err(OxyError::RuntimeError(format!(
-                "Failed to fetch branch commit: HTTP {} - {}",
-                status, error_text
+                "Failed to fetch branch commit: HTTP {status} - {error_text}"
             )))
         }
     }
@@ -206,13 +207,14 @@ impl GitHubClient {
             self.base_url, repo_id, commit_sha
         );
 
-        let response = self.client.get(&url).send().await.map_err(|e| {
-            OxyError::RuntimeError(format!("Failed to fetch commit details: {}", e))
-        })?;
+        let response =
+            self.client.get(&url).send().await.map_err(|e| {
+                OxyError::RuntimeError(format!("Failed to fetch commit details: {e}"))
+            })?;
 
         if response.status().is_success() {
             let commit_data: Value = response.json().await.map_err(|e| {
-                OxyError::RuntimeError(format!("Failed to parse commit response: {}", e))
+                OxyError::RuntimeError(format!("Failed to parse commit response: {e}"))
             })?;
 
             // Extract commit information from the response
@@ -268,8 +270,7 @@ impl GitHubClient {
                 .unwrap_or_else(|_| "Unknown error".to_string());
 
             Err(OxyError::RuntimeError(format!(
-                "Failed to fetch commit details: HTTP {} - {}",
-                status, error_text
+                "Failed to fetch commit details: HTTP {status} - {error_text}"
             )))
         }
     }

@@ -33,7 +33,7 @@ pub(super) struct OxyHeaderData {
 }
 
 // example formats:
-// 
+//
 // New format:
 // /*
 // oxy:
@@ -89,11 +89,12 @@ pub(super) fn parse_embed_document(id: &str, content: &str) -> Document {
     match header_data {
         Ok(header_data) => {
             let (inclusions, exclusions) = extract_retrieval_data(&header_data.oxy);
-            
-            let (retrieval_inclusions, retrieval_exclusions) = create_retrieval_objects(&inclusions, &exclusions, &context_content);
+
+            let (retrieval_inclusions, retrieval_exclusions) =
+                create_retrieval_objects(&inclusions, &exclusions, &context_content);
             let content = create_document_content(&inclusions, &exclusions, &context_content);
             let source_type = generate_sql_source_type(&header_data.oxy.database);
-            
+
             Document {
                 content,
                 source_type,
@@ -134,13 +135,11 @@ pub fn parse_sql_source_type(source_type: &str) -> Option<String> {
     }
 }
 
-
-
 fn extract_retrieval_data(oxy_data: &OxyHeaderData) -> (Vec<String>, Vec<String>) {
     if let Some(retrieval) = &oxy_data.retrieval {
         return (retrieval.include.clone(), retrieval.exclude.clone());
     }
-    
+
     if let Some(embed) = &oxy_data.embed {
         let inclusions = match embed {
             Embed::String(embed_str) => vec![embed_str.clone()],
@@ -148,7 +147,7 @@ fn extract_retrieval_data(oxy_data: &OxyHeaderData) -> (Vec<String>, Vec<String>
         };
         return (inclusions, vec![]);
     }
-    
+
     (vec![], vec![])
 }
 
@@ -163,17 +162,23 @@ fn create_retrieval_objects(
             embeddings: vec![],
         }]
     } else {
-        inclusions.iter().map(|inclusion| RetrievalContent {
-            embedding_content: inclusion.clone(),
-            embeddings: vec![],
-        }).collect()
+        inclusions
+            .iter()
+            .map(|inclusion| RetrievalContent {
+                embedding_content: inclusion.clone(),
+                embeddings: vec![],
+            })
+            .collect()
     };
-    
-    let retrieval_exclusions = exclusions.iter().map(|exclusion| RetrievalContent {
-        embedding_content: exclusion.clone(),
-        embeddings: vec![],
-    }).collect();
-    
+
+    let retrieval_exclusions = exclusions
+        .iter()
+        .map(|exclusion| RetrievalContent {
+            embedding_content: exclusion.clone(),
+            embeddings: vec![],
+        })
+        .collect();
+
     (retrieval_inclusions, retrieval_exclusions)
 }
 
@@ -183,9 +188,9 @@ fn create_document_content(
     context_content: &str,
 ) -> String {
     let summary = build_inclusion_exclusion_summary(inclusions, exclusions);
-    
+
     if !summary.is_empty() {
-        format!("{}\n\n{}", summary, context_content)
+        format!("{summary}\n\n{context_content}")
     } else {
         context_content.to_string()
     }
