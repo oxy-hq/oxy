@@ -1,3 +1,10 @@
+/*
+ oxy:
+    database: local
+    embed: |
+        property grouping for fruit and vegetable responses
+*/
+
 WITH responses AS (
     SELECT 'Fruit' AS property_grouping
     UNION ALL
