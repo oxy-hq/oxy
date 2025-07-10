@@ -6,6 +6,8 @@ use axum::{
     extract::{self, Path, Query},
     http::StatusCode,
 };
+use entity::logs;
+use entity::prelude::Logs;
 use entity::prelude::Threads;
 use entity::threads;
 use sea_orm::{
@@ -334,4 +336,71 @@ pub async fn bulk_delete_threads(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     Ok(StatusCode::OK)
+}
+
+#[derive(Serialize)]
+pub struct LogItem {
+    pub id: String,
+    pub user_id: String,
+    pub prompts: String,
+    pub thread_id: String,
+    pub log: serde_json::Value,
+    pub created_at: DateTimeWithTimeZone,
+    pub updated_at: DateTimeWithTimeZone,
+    pub thread: Option<ThreadInfo>,
+}
+
+#[derive(Serialize)]
+pub struct ThreadInfo {
+    pub title: String,
+    pub input: String,
+    pub output: String,
+    pub source: String,
+    pub source_type: String,
+    pub is_processing: bool,
+}
+
+#[derive(Serialize)]
+pub struct LogsResponse {
+    pub logs: Vec<LogItem>,
+}
+
+pub async fn get_logs(
+    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
+) -> Result<extract::Json<LogsResponse>, StatusCode> {
+    let connection = establish_connection().await.map_err(|e| {
+        tracing::error!("Failed to establish database connection: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    let logs_with_threads = Logs::find()
+        .filter(logs::Column::UserId.eq(user.id))
+        .find_also_related(Threads)
+        .order_by_desc(logs::Column::CreatedAt)
+        .all(&connection)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let log_items = logs_with_threads
+        .into_iter()
+        .map(|(log, thread)| LogItem {
+            id: log.id.to_string(),
+            user_id: log.user_id.to_string(),
+            prompts: log.prompts,
+            thread_id: log.thread_id.to_string(),
+            log: log.log,
+            created_at: log.created_at,
+            updated_at: log.updated_at,
+            thread: thread.map(|t| ThreadInfo {
+                title: t.title,
+                input: t.input,
+                output: t.output,
+                source: t.source,
+                source_type: t.source_type,
+                is_processing: t.is_processing,
+            }),
+        })
+        .collect();
+
+    Ok(extract::Json(LogsResponse { logs: log_items }))
 }

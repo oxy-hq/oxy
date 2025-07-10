@@ -40,15 +40,16 @@ const Header = ({
 
   return (
     <div className="w-fill flex px-4 py-2 align-center">
-      <Breadcrumb className="flex-1 flex align-center">
+      <Breadcrumb className="flex-1 flex align-center items-center">
         <BreadcrumbList>
           {selectedArtifactIds.map((artifact_id, index) => {
             const artifact = artifactData[artifact_id];
             return (
               artifact && (
-                <div key={artifact.id}>
+                <div className="flex items-center gap-2" key={artifact.id}>
                   <BreadcrumbItem key={artifact.id}>
                     <BreadcrumbLink
+                      className="cursor-pointer"
                       onClick={() => {
                         setSelectedArtifactIds(
                           selectedArtifactIds.slice(0, index + 1),

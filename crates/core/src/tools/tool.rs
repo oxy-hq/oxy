@@ -50,14 +50,15 @@ impl Executable<(String, Option<ToolType>, ToolRawInput)> for ToolExecutable {
             ARTIFACT_SOURCE.to_string(),
         );
         if let Some(tool_type) = &tool_type {
+            let is_verified = match tool_type {
+                ToolType::Workflow(workflow_tool) => workflow_tool.is_verified,
+                ToolType::Agent(_) => false, // Agent's answer are not verified
+                ToolType::ExecuteSQL(sql_config) => sql_config.sql.is_some(),
+                _ => false,
+            };
+
             let artifact = tool_type.artifact();
             if let Some((title, kind)) = &artifact {
-                let is_verified = match tool_type {
-                    ToolType::Workflow(workflow_tool) => workflow_tool.is_verified,
-                    ToolType::Agent(_) => false, // Agent's answer are not verified
-                    ToolType::ExecuteSQL(sql_config) => sql_config.sql.is_some(),
-                    _ => false,
-                };
                 artifact_context
                     .write_kind(EventKind::ArtifactStarted {
                         kind: kind.clone(),
@@ -69,10 +70,25 @@ impl Executable<(String, Option<ToolType>, ToolRawInput)> for ToolExecutable {
 
             let tool_ret: Result<OutputContainer, OxyError> = match tool_type {
                 ToolType::ExecuteSQL(sql_config) => {
-                    let param = match sql_config.sql {
-                        Some(ref sql) => serde_json::to_string(&SQLParams { sql: sql.clone() }),
-                        None => Ok(input.param.clone()),
-                    }?;
+                    let (param, sql_query) = match sql_config.sql {
+                        Some(ref sql) => (
+                            serde_json::to_string(&SQLParams { sql: sql.clone() })?,
+                            sql.clone(),
+                        ),
+                        None => {
+                            let SQLParams { sql } =
+                                serde_json::from_str::<SQLParams>(&input.param)?;
+                            (input.param.clone(), sql)
+                        }
+                    };
+                    artifact_context
+                        .write_kind(EventKind::SQLQueryGenerated {
+                            is_verified,
+                            query: sql_query,
+                            database: sql_config.database.clone(),
+                            source: agent_name,
+                        })
+                        .await?;
                     build_sql_executable(SQLExecutable::new())
                         .execute(
                             execution_context,

@@ -1,6 +1,7 @@
 pub mod apalis_jobs;
 pub mod api_keys;
 pub mod artifacts;
+pub mod logs;
 pub mod messages;
 pub mod prelude;
 pub mod secrets;

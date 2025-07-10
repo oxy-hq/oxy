@@ -10,6 +10,7 @@ use crate::errors::OxyError;
 use crate::execute::formatters::{FormatterResult, SourceHandler};
 use crate::execute::types::event::ArtifactKind;
 use crate::execute::types::{EventKind, Output, Source, Usage};
+use crate::service::formatters::logs_persister::LogsPersister;
 use crate::service::formatters::streaming_message_persister::StreamingMessagePersister;
 use crate::service::types::{AnswerStream, ArtifactValue, ContainerKind, ExecuteSQL};
 use crate::workflow::loggers::types::LogItem;
@@ -27,6 +28,7 @@ pub struct BlockHandler {
     artifact_tracker: ArtifactTracker,
     pub usage: Arc<Mutex<Usage>>,
     streaming_message_persister: Option<Arc<StreamingMessagePersister>>,
+    logs_persister: Option<Arc<LogsPersister>>,
 }
 
 impl BlockHandler {
@@ -38,11 +40,17 @@ impl BlockHandler {
             artifact_tracker: ArtifactTracker::new(),
             usage: Arc::new(Mutex::new(Usage::new(0, 0))),
             streaming_message_persister: None,
+            logs_persister: None,
         }
     }
 
     pub fn with_streaming_persister(mut self, handler: Arc<StreamingMessagePersister>) -> Self {
         self.streaming_message_persister = Some(handler);
+        self
+    }
+
+    pub fn with_logs_persister(mut self, handler: Arc<LogsPersister>) -> Self {
+        self.logs_persister = Some(handler);
         self
     }
 
@@ -309,6 +317,10 @@ impl SourceHandler for BlockHandler {
     }
 
     async fn handle_event(&mut self, source: &Source, event_kind: &EventKind) -> FormatterResult {
+        if let Some(logs_persister) = &self.logs_persister {
+            logs_persister.save_log(source, event_kind).await?;
+        }
+
         match event_kind {
             EventKind::ArtifactStarted {
                 kind,

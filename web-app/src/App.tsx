@@ -20,6 +20,7 @@ import IdePage from "./pages/ide";
 import EditorPage from "./pages/ide/Editor";
 import AppPage from "./pages/app";
 import ApiKeyManagement from "./pages/api-keys";
+import LogsManagement from "./pages/activity-logs";
 import DatabaseManagement from "./pages/databases";
 import SecretsPage from "./pages/secrets";
 import RequiredSecretsSetup from "./pages/secrets/RequiredSecretsSetup";
@@ -99,6 +100,14 @@ const MainLayout = React.memo(function MainLayout() {
           element={
             <PageWrapper>
               <ApiKeyManagement />
+            </PageWrapper>
+          }
+        />
+        <Route
+          path="/logs"
+          element={
+            <PageWrapper>
+              <LogsManagement />
             </PageWrapper>
           }
         />

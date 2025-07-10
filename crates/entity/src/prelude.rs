@@ -3,6 +3,7 @@
 pub use super::apalis_jobs::Entity as ApalisJobs;
 pub use super::api_keys::Entity as ApiKeys;
 pub use super::artifacts::Entity as Artifacts;
+pub use super::logs::Entity as Logs;
 pub use super::messages::Entity as Messages;
 pub use super::secrets::Entity as Secrets;
 pub use super::settings::Entity as Settings;
