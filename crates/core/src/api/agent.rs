@@ -296,7 +296,8 @@ impl ChatHandler for AgentExecutor {
         let connection = context.streaming_persister.get_connection();
 
         let block_handler = BlockHandler::new(tx.clone())
-            .with_streaming_persister(context.streaming_persister.clone());
+            .with_streaming_persister(context.streaming_persister.clone())
+            .with_logs_persister(context.logs_persister.clone());
         let block_handler_reader = block_handler.get_reader();
 
         let result = run_agent(

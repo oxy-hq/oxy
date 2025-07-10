@@ -162,12 +162,7 @@ where
                 EventKind::Error { message } => {
                     self.logger.log_error(&message);
                 }
-                EventKind::DataAppCreated { .. } => {}
-                EventKind::Finished { .. } => {}
-                EventKind::Progress { .. } => {}
-                EventKind::ArtifactStarted { .. } => {}
-                EventKind::ArtifactFinished => {}
-                EventKind::Usage { .. } => {}
+                _ => {}
             },
         }
         Ok(())

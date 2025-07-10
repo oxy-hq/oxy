@@ -3,6 +3,7 @@
 pub mod prelude;
 
 pub mod artifacts;
+pub mod logs;
 pub mod messages;
 pub mod secrets;
 pub mod tasks;

@@ -56,6 +56,13 @@ pub enum EventKind {
         title: String,
         is_verified: bool,
     },
+
+    SQLQueryGenerated {
+        query: String,
+        database: String,
+        source: String,
+        is_verified: bool,
+    },
     ArtifactFinished,
     // UI events
     Progress {

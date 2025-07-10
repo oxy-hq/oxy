@@ -98,6 +98,7 @@ pub async fn api_router(auth_mode: AuthMode, readonly_mode: bool) -> Result<Rout
         .route("/threads/{id}/task", post(task::ask_task))
         .route("/threads", get(thread::get_threads))
         .route("/threads/{id}", get(thread::get_thread))
+        .route("/logs", get(thread::get_logs))
         .route(
             "/threads/{id}/messages",
             get(message::get_messages_by_thread),

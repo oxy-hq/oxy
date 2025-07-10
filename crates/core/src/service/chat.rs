@@ -16,7 +16,9 @@ use crate::{
     project::resolve_project_path,
     service::{
         agent::Message,
-        formatters::streaming_message_persister::StreamingMessagePersister,
+        formatters::{
+            logs_persister::LogsPersister, streaming_message_persister::StreamingMessagePersister,
+        },
         task_manager::TASK_MANAGER,
         types::{AnswerContent, AnswerStream},
     },
@@ -34,6 +36,7 @@ pub struct ChatExecutionContext {
     pub memory: Vec<Message>,
     pub project_path: PathBuf,
     pub streaming_persister: Arc<StreamingMessagePersister>,
+    pub logs_persister: Arc<LogsPersister>,
     pub cancellation_tokens: CancellationTokens,
 }
 
@@ -44,6 +47,7 @@ impl ChatExecutionContext {
         memory: Vec<Message>,
         project_path: PathBuf,
         streaming_persister: Arc<StreamingMessagePersister>,
+        logs_persister: Arc<LogsPersister>,
         cancellation_tokens: CancellationTokens,
     ) -> Self {
         Self {
@@ -52,6 +56,7 @@ impl ChatExecutionContext {
             memory,
             project_path,
             streaming_persister,
+            logs_persister,
             cancellation_tokens,
         }
     }
@@ -119,6 +124,13 @@ impl ChatService {
                 })?,
         );
 
+        let logs_persister = Arc::new(LogsPersister::new(
+            self.connection.clone(),
+            user_question.clone(),
+            thread.id,
+            user_id,
+        ));
+
         let cancellation_tokens = CancellationTokens::new();
         let stream_token = cancellation_tokens.stream_token.clone();
 
@@ -128,6 +140,7 @@ impl ChatService {
             memory,
             project_path,
             streaming_persister,
+            logs_persister,
             cancellation_tokens,
         );
 
@@ -366,7 +379,7 @@ impl ChatService {
         };
 
         error_message_model
-            .insert(connection)
+            .update(connection)
             .await
             .map_err(|err| OxyError::DBError(format!("Failed to insert error message: {}", err)))?;
 

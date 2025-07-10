@@ -6,6 +6,7 @@ import {
   Database,
   Shield,
   Users,
+  FileText,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { SidebarMenu, SidebarMenuItem } from "@/components/ui/shadcn/sidebar";
@@ -127,6 +128,13 @@ export function Footer() {
                 >
                   <Key className="w-4 h-4 mr-2" />
                   <span>API Keys</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="cursor-pointer"
+                  onClick={() => navigate("/logs")}
+                >
+                  <FileText className="w-4 h-4 mr-2" />
+                  <span>Activity Logs</span>
                 </DropdownMenuItem>
                 {user && (
                   <>
