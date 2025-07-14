@@ -107,7 +107,7 @@
     "zustand": "^5.0.6"
   },
   "devDependencies": {
-    "@playwright/test": "^1.53.2",
+    "@playwright/test": "^1.54.1",
     "@types/invariant": "^2.2.37",
     "@types/js-cookie": "^3.0.6",
     "@types/lodash": "^4.17.20",
