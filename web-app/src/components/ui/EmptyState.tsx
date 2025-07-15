@@ -12,14 +12,14 @@ const EmptyState = ({ title, description, className }: EmptyStateProps) => {
   return (
     <div
       className={cn(
-        "flex items-center justify-center flex-col gap-4",
+        "flex items-center justify-center flex-col gap-1",
         className,
       )}
     >
       <img
         src={theme === "dark" ? "/oxy-light.svg" : "/oxy-dark.svg"}
         alt="No file"
-        className="w-1/5 opacity-20"
+        className="w-full max-w-1/5 max-h-1/2 opacity-20"
       />
       <div className="text-center text-muted-foreground gap-1">
         <p className="text-lg">{title}</p>

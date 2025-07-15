@@ -158,6 +158,11 @@ impl StreamingMessagePersister {
         self.message_id
     }
 
+    pub async fn get_message(&self) -> messages::ActiveModel {
+        let message_guard = self.message.lock().await;
+        message_guard.clone()
+    }
+
     pub fn get_connection(&self) -> &DatabaseConnection {
         &self.connection
     }
