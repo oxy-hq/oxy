@@ -70,12 +70,20 @@ impl Executable<DefaultAgentInput> for DefaultAgentExecutable {
             memory,
             reasoning_config,
         } = input;
-        println!("Default agent input: {:?}", &memory);
-        let model_config = execution_context.config.resolve_model(&model)?;
+        tracing::debug!("Default agent input: {:?}", &memory);
+        let model_config = execution_context
+            .config
+            .resolve_model(&model)
+            .map_err(|e| {
+                OxyError::ConfigurationError(format!("Failed to resolve model config: {}", e))
+            })?;
         let system_instructions = execution_context
             .renderer
             .render_async(&system_instructions)
-            .await?;
+            .await
+            .map_err(|e| {
+                OxyError::RuntimeError(format!("Failed to render system instructions: {}", e))
+            })?;
         tracing::info!(
             "Executing default agent: {} with model: {}",
             agent_name,
@@ -83,32 +91,52 @@ impl Executable<DefaultAgentInput> for DefaultAgentExecutable {
         );
         tracing::info!("System instructions: {}", system_instructions);
         let client = OpenAIClient::with_config(model_config.into_openai_config().await?);
-        let mut messages = memory
+        let messages: Result<Vec<ChatCompletionRequestMessage>, OxyError> = memory
             .into_iter()
-            .map(|message| {
-                if message.is_human {
-                    ChatCompletionRequestUserMessageArgs::default()
-                        .content(message.content)
-                        .build()
-                        .unwrap()
-                        .into()
-                } else {
-                    ChatCompletionRequestAssistantMessageArgs::default()
-                        .content(message.content)
-                        .build()
-                        .unwrap()
-                        .into()
-                }
-            })
-            .collect::<Vec<ChatCompletionRequestMessage>>();
+            .map(
+                |message| -> Result<ChatCompletionRequestMessage, OxyError> {
+                    let result = if message.is_human {
+                        ChatCompletionRequestUserMessageArgs::default()
+                            .content(message.content)
+                            .build()
+                            .map_err(|e| {
+                                OxyError::RuntimeError(format!(
+                                    "Failed to build user message from memory: {}",
+                                    e
+                                ))
+                            })?
+                            .into()
+                    } else {
+                        ChatCompletionRequestAssistantMessageArgs::default()
+                            .content(message.content)
+                            .build()
+                            .map_err(|e| {
+                                OxyError::RuntimeError(format!(
+                                    "Failed to build assistant message from memory: {}",
+                                    e
+                                ))
+                            })?
+                            .into()
+                    };
+                    Ok(result)
+                },
+            )
+            .collect();
+        let mut messages = messages?;
         messages.extend(vec![
             ChatCompletionRequestSystemMessageArgs::default()
                 .content(system_instructions)
-                .build()?
+                .build()
+                .map_err(|e| {
+                    OxyError::RuntimeError(format!("Failed to build system message: {}", e))
+                })?
                 .into(),
             ChatCompletionRequestUserMessageArgs::default()
                 .content(prompt.clone())
-                .build()?
+                .build()
+                .map_err(|e| {
+                    OxyError::RuntimeError(format!("Failed to build user message: {}", e))
+                })?
                 .into(),
         ]);
         execution_context
@@ -130,7 +158,8 @@ impl Executable<DefaultAgentInput> for DefaultAgentExecutable {
         .await;
         let outputs = react_executable
             .execute(execution_context, messages)
-            .await?;
+            .await
+            .map_err(|e| OxyError::RuntimeError(format!("Failed to execute react loop: {}", e)))?;
         let output = outputs
             .into_iter()
             .fold(Output::default(), |m, o| m.merge(&o.content));
@@ -190,7 +219,10 @@ impl ParamMapper<DefaultAgentInput, DefaultAgentInput> for DefaultAgentMapper {
         let renderer = Renderer::from_template(
             global_context,
             &input.default_agent.system_instructions.as_str(),
-        )?;
+        )
+        .map_err(|e| {
+            OxyError::RuntimeError(format!("Failed to create renderer from template: {}", e))
+        })?;
         let execution_context = execution_context.wrap_renderer(renderer);
         Ok((input, Some(execution_context)))
     }

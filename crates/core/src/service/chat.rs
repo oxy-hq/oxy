@@ -98,7 +98,10 @@ pub struct ChatService {
 
 impl ChatService {
     pub async fn new() -> Result<Self, StatusCode> {
-        let connection = establish_connection().await?;
+        let connection = establish_connection().await.map_err(|e| {
+            tracing::error!("Failed to establish database connection: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
         Ok(Self { connection })
     }
 
@@ -109,21 +112,87 @@ impl ChatService {
         executor: E,
         user_id: Uuid,
     ) -> Result<impl IntoResponse, StatusCode> {
-        let thread_id = self.parse_thread_id(&id)?;
-        let thread = self.validate_and_lock_thread(thread_id, user_id).await?;
+        // Validate input parameters first
+        self.validate_request_parameters(&id, &payload, &user_id)?;
 
-        let user_question = self.handle_user_question(&payload, &thread).await?;
-        let memory = self.build_conversation_memory(thread.id).await?;
+        // Parse and validate thread ID
+        let thread_id = self.parse_thread_id(&id)?;
+
+        // Validate thread ownership and lock it
+        let thread = self
+            .validate_and_lock_thread(thread_id, user_id)
+            .await
+            .map_err(|e| {
+                tracing::warn!("Thread validation failed for user {}: {}", user_id, e);
+                e
+            })?;
+
+        // Handle user question and validate input
+        let user_question = self
+            .handle_user_question(&payload, &thread)
+            .await
+            .map_err(|e| {
+                // Ensure thread is unlocked on error
+                let connection = self.connection.clone();
+                let thread_clone = thread.clone();
+                tokio::spawn(async move {
+                    Self::ensure_thread_unlocked(&thread_clone, &connection).await;
+                });
+                e
+            })?;
+
+        // Build conversation memory
+        let memory = self
+            .build_conversation_memory(thread.id)
+            .await
+            .map_err(|e| {
+                tracing::error!(
+                    "Failed to build conversation memory for thread {}: {}",
+                    thread.id,
+                    e
+                );
+                // Ensure thread is unlocked on error
+                let connection = self.connection.clone();
+                let thread_clone = thread.clone();
+                tokio::spawn(async move {
+                    Self::ensure_thread_unlocked(&thread_clone, &connection).await;
+                });
+                e
+            })?;
+
+        // Resolve project path
         let project_path = resolve_project_path().map_err(|e| {
-            tracing::error!("Failed to find project path: {}", e);
+            tracing::error!(
+                "Failed to find project path for thread {}: {}",
+                thread.id,
+                e
+            );
+            // Ensure thread is unlocked on error
+            let connection = self.connection.clone();
+            let thread_clone = thread.clone();
+            tokio::spawn(async move {
+                Self::ensure_thread_unlocked(&thread_clone, &connection).await;
+            });
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
+        // Create streaming persister with better error handling
         let streaming_persister = Arc::new(
             StreamingMessagePersister::new(self.connection.clone(), thread.id, "".to_owned())
                 .await
                 .map_err(|err| {
-                    OxyError::DBError(format!("Failed to create streaming message handler: {err}"))
+                    tracing::error!(
+                        "Failed to create streaming message handler for thread {}: {}",
+                        thread.id,
+                        err
+                    );
+                    // Ensure thread is unlocked on error
+                    let connection = self.connection.clone();
+                    let thread_clone = thread.clone();
+                    tokio::spawn(async move {
+                        Self::ensure_thread_unlocked(&thread_clone, &connection).await;
+                    });
+                    StatusCode::INTERNAL_SERVER_ERROR
                 })?,
         );
 
@@ -159,7 +228,7 @@ impl ChatService {
 
     fn parse_thread_id(&self, id: &str) -> Result<Uuid, StatusCode> {
         Uuid::parse_str(id).map_err(|e| {
-            tracing::warn!("Invalid thread ID format: {}", e);
+            tracing::warn!("Invalid thread ID format '{}': {}", id, e);
             StatusCode::BAD_REQUEST
         })
     }
@@ -176,24 +245,47 @@ impl ChatService {
             .one(&self.connection)
             .await
             .map_err(|e| {
-                tracing::error!("Database error finding thread: {}", e);
+                tracing::error!(
+                    "Database error finding thread {} for user {}: {}",
+                    thread_id,
+                    user_id,
+                    e
+                );
                 StatusCode::INTERNAL_SERVER_ERROR
             })?
-            .ok_or(StatusCode::NOT_FOUND)?;
+            .ok_or_else(|| {
+                tracing::warn!(
+                    "Thread {} not found or doesn't belong to user {}",
+                    thread_id,
+                    user_id
+                );
+                StatusCode::NOT_FOUND
+            })?;
 
         if thread.is_processing {
+            tracing::warn!("Thread {} is already being processed", thread_id);
             return Err(StatusCode::CONFLICT);
         }
 
+        // Lock the thread with proper error handling
         let mut thread_model: entity::threads::ActiveModel = thread.clone().into();
         thread_model.is_processing = ActiveValue::Set(true);
 
-        // Fix: Ensure we're returning the original thread, not the update result
         thread_model.update(&self.connection).await.map_err(|e| {
-            tracing::error!("Failed to lock thread: {}", e);
+            tracing::error!(
+                "Failed to lock thread {} for user {}: {}",
+                thread_id,
+                user_id,
+                e
+            );
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
+        tracing::info!(
+            "Successfully locked thread {} for user {}",
+            thread_id,
+            user_id
+        );
         Ok(thread)
     }
 
@@ -204,6 +296,22 @@ impl ChatService {
     ) -> Result<String, StatusCode> {
         let user_question = match payload.get_question() {
             Some(question) => {
+                // Validate question content
+                if question.trim().is_empty() {
+                    tracing::warn!("Empty question provided for thread {}", thread.id);
+                    return Err(StatusCode::BAD_REQUEST);
+                }
+
+                if question.len() > 10000 {
+                    // Reasonable limit
+                    tracing::warn!(
+                        "Question too long ({} chars) for thread {}",
+                        question.len(),
+                        thread.id
+                    );
+                    return Err(StatusCode::BAD_REQUEST);
+                }
+
                 let new_message = entity::messages::ActiveModel {
                     id: ActiveValue::Set(Uuid::new_v4()),
                     content: ActiveValue::Set(question.clone()),
@@ -212,21 +320,48 @@ impl ChatService {
                     created_at: ActiveValue::default(),
                     ..Default::default()
                 };
+
                 new_message.insert(&self.connection).await.map_err(|e| {
-                    tracing::error!("Failed to insert user message: {}", e);
+                    tracing::error!(
+                        "Failed to insert user message for thread {}: {}",
+                        thread.id,
+                        e
+                    );
                     StatusCode::INTERNAL_SERVER_ERROR
                 })?;
+
+                tracing::debug!(
+                    "Successfully inserted user message for thread {}",
+                    thread.id
+                );
                 question
             }
             None => {
+                // When no question is provided, use the thread's input
                 let messages = Messages::find()
                     .filter(entity::messages::Column::ThreadId.eq(thread.id))
                     .limit(1)
                     .all(&self.connection)
                     .await
-                    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+                    .map_err(|e| {
+                        tracing::error!("Failed to fetch messages for thread {}: {}", thread.id, e);
+                        StatusCode::INTERNAL_SERVER_ERROR
+                    })?;
 
                 if messages.len() > 1 {
+                    tracing::warn!(
+                        "Multiple messages found when expecting none for thread {}",
+                        thread.id
+                    );
+                    return Err(StatusCode::BAD_REQUEST);
+                }
+
+                // Validate thread input
+                if thread.input.trim().is_empty() {
+                    tracing::warn!(
+                        "No question provided and thread {} has empty input",
+                        thread.id
+                    );
                     return Err(StatusCode::BAD_REQUEST);
                 }
 
@@ -245,13 +380,18 @@ impl ChatService {
             .all(&self.connection)
             .await
             .map_err(|e| {
-                tracing::error!("Failed to fetch conversation history: {}", e);
+                tracing::error!(
+                    "Failed to fetch conversation history for thread {}: {}",
+                    thread_id,
+                    e
+                );
                 StatusCode::INTERNAL_SERVER_ERROR
             })?;
 
+        // Sort messages chronologically
         messages.sort_by(|a, b| a.created_at.cmp(&b.created_at));
 
-        let memory = messages
+        let memory: Vec<Message> = messages
             .into_iter()
             .map(|message| Message {
                 content: message.content,
@@ -260,6 +400,11 @@ impl ChatService {
             })
             .collect();
 
+        tracing::debug!(
+            "Built conversation memory with {} messages for thread {}",
+            memory.len(),
+            thread_id
+        );
         Ok(memory)
     }
 
@@ -292,10 +437,14 @@ impl ChatService {
                         step: "system".to_string(),
                     };
 
-                    let _ = tx.send(cancellation_message).await;
+                    if let Err(e) = tx.send(cancellation_message).await {
+                        tracing::error!("Failed to send cancellation message for thread {}: {}", context.thread.id, e);
+                    }
                     stream_token.cancel();
-                    let _ = streaming_persister.cancel("🔴 Operation cancelled").await;
-                     return;
+                    if let Err(e) = streaming_persister.cancel("🔴 Operation cancelled").await {
+                        tracing::error!("Failed to cancel streaming persister for thread {}: {}", context.thread.id, e);
+                    }
+                    return;
                 }
             };
 
@@ -311,7 +460,21 @@ impl ChatService {
                     )
                     .await
                     {
-                        tracing::error!("Error handling success: {}", e);
+                        tracing::error!(
+                            "Error handling success for thread {}: {}",
+                            context.thread.id,
+                            e
+                        );
+                        // Try to send error message to client
+                        let error_event = AnswerStream {
+                            content: AnswerContent::Error {
+                                message: "🔴 Error saving response".to_string(),
+                            },
+                            references: vec![],
+                            is_error: true,
+                            step: "system".to_string(),
+                        };
+                        let _ = tx.send(error_event).await;
                     }
                 }
                 Err(err) => {
@@ -324,11 +487,26 @@ impl ChatService {
                     )
                     .await
                     {
-                        tracing::error!("Error handling error: {}", e);
+                        tracing::error!(
+                            "Error handling error for thread {}: {}",
+                            context.thread.id,
+                            e
+                        );
+                        // Last resort - try to send a generic error
+                        let fallback_error = AnswerStream {
+                            content: AnswerContent::Error {
+                                message: "🔴 An unexpected error occurred".to_string(),
+                            },
+                            references: vec![],
+                            is_error: true,
+                            step: "system".to_string(),
+                        };
+                        let _ = tx.send(fallback_error).await;
                     }
                 }
             }
 
+            // Cleanup tasks
             TASK_MANAGER.remove_task(thread_id).await;
             Self::unlock_thread(&context.thread, &connection).await;
         });
@@ -347,6 +525,11 @@ impl ChatService {
         message_id: Uuid,
         connection: &sea_orm::DatabaseConnection,
     ) -> Result<(), OxyError> {
+        // Validate output before saving
+        if output.trim().is_empty() {
+            tracing::warn!("Empty output generated for thread {}", thread.id);
+        }
+
         let answer_message = entity::messages::ActiveModel {
             id: ActiveValue::Set(message_id),
             content: ActiveValue::Set(output),
@@ -356,10 +539,25 @@ impl ChatService {
             input_tokens: ActiveValue::Set(usage.input_tokens),
             output_tokens: ActiveValue::Set(usage.output_tokens),
         };
-        answer_message
-            .update(connection)
-            .await
-            .map_err(|err| OxyError::DBError(format!("Failed to insert agent message:\n{err}")))?;
+
+        answer_message.update(connection).await.map_err(|err| {
+            tracing::error!(
+                "Failed to insert agent message for thread {}: {}",
+                thread.id,
+                err
+            );
+            OxyError::DBError(format!(
+                "Failed to insert agent message for thread {}: {}",
+                thread.id, err
+            ))
+        })?;
+
+        tracing::info!(
+            "Successfully saved response for thread {} (input_tokens: {}, output_tokens: {})",
+            thread.id,
+            usage.input_tokens,
+            usage.output_tokens
+        );
         Ok(())
     }
 
@@ -370,11 +568,26 @@ impl ChatService {
         tx: tokio::sync::mpsc::Sender<AnswerStream>,
         connection: &sea_orm::DatabaseConnection,
     ) -> Result<(), OxyError> {
-        tracing::error!("Error running agent: {}", error);
-        let error_message = format!("🔴 Error: {error}");
+        tracing::error!("Error running agent for thread {}: {}", thread.id, error);
+
+        // Create user-friendly error message based on error type
+        let user_error_message = match &error {
+            OxyError::ValidationError(msg) => format!("🔴 Validation Error: {}", msg),
+            OxyError::AuthenticationError(msg) => format!("🔴 Authentication Error: {}", msg),
+            OxyError::AuthorizationError(msg) => format!("🔴 Authorization Error: {}", msg),
+            OxyError::LLMError(msg) => format!("🔴 LLM Error: {}", msg),
+            OxyError::ConfigurationError(msg) => format!("🔴 Configuration Error: {}", msg),
+            OxyError::DBError(_) => "🔴 A database error occurred. Please try again.".to_string(),
+            OxyError::RuntimeError(_) => {
+                "🔴 An unexpected error occurred. Please try again.".to_string()
+            }
+            _ => format!("🔴 Error: {}", error),
+        };
+
+        // Save error message to database
         let error_message_model = entity::messages::ActiveModel {
             id: ActiveValue::Set(message_id),
-            content: ActiveValue::Set(error_message.clone()),
+            content: ActiveValue::Set(user_error_message.clone()),
             is_human: ActiveValue::Set(false),
             thread_id: ActiveValue::Set(thread.id),
             created_at: ActiveValue::default(),
@@ -385,20 +598,39 @@ impl ChatService {
         error_message_model
             .update(connection)
             .await
-            .map_err(|err| OxyError::DBError(format!("Failed to insert error message: {err}")))?;
+            .map_err(|err| {
+                tracing::error!(
+                    "Failed to insert error message for thread {}: {}",
+                    thread.id,
+                    err
+                );
+                OxyError::DBError(format!(
+                    "Failed to insert error message for thread {}: {}",
+                    thread.id, err
+                ))
+            })?;
 
+        // Send error event to client
         let error_event = AnswerStream {
             content: AnswerContent::Error {
-                message: error_message,
+                message: user_error_message,
             },
             references: vec![],
             is_error: true,
-            step: "".to_string(),
+            step: "error".to_string(),
         };
 
-        tx.send(error_event)
-            .await
-            .map_err(|_| OxyError::RuntimeError("Failed to send error message".to_string()))?;
+        tx.send(error_event).await.map_err(|e| {
+            tracing::error!(
+                "Failed to send error message to client for thread {}: {}",
+                thread.id,
+                e
+            );
+            OxyError::RuntimeError(format!(
+                "Failed to send error message to client for thread {}: {}",
+                thread.id, e
+            ))
+        })?;
 
         Ok(())
     }
@@ -410,8 +642,60 @@ impl ChatService {
         let mut thread_model: entity::threads::ActiveModel = thread.clone().into();
         thread_model.is_processing = ActiveValue::Set(false);
 
-        if let Err(e) = thread_model.update(connection).await {
-            tracing::error!("Failed to unlock thread {}: {}", thread.id, e);
+        match thread_model.update(connection).await {
+            Ok(_) => {
+                tracing::info!("Successfully unlocked thread {}", thread.id);
+            }
+            Err(e) => {
+                tracing::error!(
+                    "Failed to unlock thread {}: {}. This may cause the thread to remain locked.",
+                    thread.id,
+                    e
+                );
+                // TODO: we might want to implement a background task
+                // to periodically clean up stuck threads.
+            }
         }
+    }
+
+    /// Helper method to ensure thread is unlocked when operations fail
+    async fn ensure_thread_unlocked(
+        thread: &entity::threads::Model,
+        connection: &sea_orm::DatabaseConnection,
+    ) {
+        // Only unlock if the thread is currently marked as processing
+        if thread.is_processing {
+            Self::unlock_thread(thread, connection).await;
+        }
+    }
+
+    /// Validate input parameters before processing
+    fn validate_request_parameters<T: ChatExecutionRequest>(
+        &self,
+        id: &str,
+        payload: &T,
+        user_id: &Uuid,
+    ) -> Result<(), StatusCode> {
+        // Validate thread ID format
+        if id.trim().is_empty() {
+            tracing::warn!("Empty thread ID provided");
+            return Err(StatusCode::BAD_REQUEST);
+        }
+
+        // Validate user ID is not nil
+        if user_id.is_nil() {
+            tracing::warn!("Nil user ID provided");
+            return Err(StatusCode::BAD_REQUEST);
+        }
+
+        // If question is provided, validate it's not empty
+        if let Some(question) = payload.get_question() {
+            if question.trim().is_empty() {
+                tracing::warn!("Empty question provided");
+                return Err(StatusCode::BAD_REQUEST);
+            }
+        }
+
+        Ok(())
     }
 }

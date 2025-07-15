@@ -26,7 +26,10 @@ const fetchSSE = async <T>(
       Authorization: token ?? "",
     },
     body: body ? JSON.stringify(body) : undefined,
-    async onopen() {
+    async onopen(res) {
+      if (res.status !== 200) {
+        throw new Error(`SSE connection failed with status: ${res.status}`);
+      }
       onOpen?.();
     },
     onmessage(ev) {

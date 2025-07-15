@@ -313,9 +313,17 @@ impl ChatHandler for AgentExecutor {
             Ok(_output_container) => {
                 let (answer_message, artifacts) = block_handler_reader.into_active_models().await?;
 
-                let content = answer_message.content.clone().unwrap();
-                let input_tokens = answer_message.input_tokens.unwrap();
-                let output_tokens = answer_message.output_tokens.unwrap();
+                let content = answer_message.content.clone().take().unwrap_or_default();
+                let input_tokens = answer_message
+                    .input_tokens
+                    .clone()
+                    .take()
+                    .unwrap_or_default();
+                let output_tokens = answer_message
+                    .output_tokens
+                    .clone()
+                    .take()
+                    .unwrap_or_default();
 
                 for mut artifact in artifacts {
                     artifact.thread_id = ActiveValue::Set(thread.id);

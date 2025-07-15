@@ -273,21 +273,58 @@ pub async fn delete_thread(
         tracing::error!("Failed to establish database connection: {}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
-    let thread_id = Uuid::parse_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    let thread_id = Uuid::parse_str(&id).map_err(|e| {
+        tracing::warn!("Invalid thread ID format '{}': {}", id, e);
+        StatusCode::BAD_REQUEST
+    })?;
 
     let thread = Threads::find_by_id(thread_id)
         .filter(threads::Column::UserId.eq(Some(user.id)))
         .one(&connection)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(|e| {
+            tracing::error!(
+                "Database error finding thread {} for deletion by user {}: {}",
+                thread_id,
+                user.id,
+                e
+            );
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
 
     if let Some(thread) = thread {
+        // Check if thread is being processed
+        if thread.is_processing {
+            tracing::warn!(
+                "Attempted to delete thread {} that is currently being processed",
+                thread_id
+            );
+            return Err(StatusCode::CONFLICT);
+        }
+
         let active_thread: entity::threads::ActiveModel = thread.into();
-        active_thread
-            .delete(&connection)
-            .await
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        active_thread.delete(&connection).await.map_err(|e| {
+            tracing::error!(
+                "Failed to delete thread {} for user {}: {}",
+                thread_id,
+                user.id,
+                e
+            );
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+        tracing::info!(
+            "Successfully deleted thread {} for user {}",
+            thread_id,
+            user.id
+        );
     } else {
+        tracing::warn!(
+            "Thread {} not found or doesn't belong to user {}",
+            thread_id,
+            user.id
+        );
         return Err(StatusCode::NOT_FOUND);
     }
     Ok(StatusCode::OK)
@@ -363,7 +400,10 @@ pub async fn stop_thread(
     let thread_id = Uuid::parse_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
 
     // Verify the user owns this thread
-    let connection = establish_connection().await?;
+    let connection = establish_connection().await.map_err(|e| {
+        tracing::error!("Failed to establish database connection: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
     let thread = Threads::find_by_id(thread_id)
         .filter(threads::Column::UserId.eq(Some(user.id)))
         .one(&connection)
@@ -374,18 +414,33 @@ pub async fn stop_thread(
         return Err(StatusCode::NOT_FOUND);
     }
 
-    let mut thread_model: entity::threads::ActiveModel = thread.unwrap().into();
+    let thread = thread.unwrap();
+    let mut thread_model: entity::threads::ActiveModel = thread.clone().into();
     thread_model.is_processing = ActiveValue::Set(false);
-    let _ = thread_model.update(&connection).await;
+
+    if let Err(e) = thread_model.update(&connection).await {
+        tracing::error!(
+            "Failed to unlock thread {} during stop operation: {}",
+            thread.id,
+            e
+        );
+        // Continue with cancellation even if update fails
+    }
 
     match TASK_MANAGER.cancel_task(thread_id).await {
         Ok(true) => {
             TASK_MANAGER.remove_task(thread_id).await;
-
+            tracing::info!("Successfully stopped and unlocked thread {}", thread_id);
             Ok(StatusCode::OK)
         }
-        Ok(false) => Err(StatusCode::NOT_FOUND),
-        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+        Ok(false) => {
+            tracing::warn!("Task not found for thread {}", thread_id);
+            Err(StatusCode::NOT_FOUND)
+        }
+        Err(e) => {
+            tracing::error!("Error cancelling task for thread {}: {}", thread_id, e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
     }
 }
 

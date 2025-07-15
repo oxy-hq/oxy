@@ -68,25 +68,38 @@ impl Executable<OpenAIExecutableResponse> for OpenAITool {
             }
         }
 
-        let tool_rets = input
+        let tool_rets: Result<Vec<_>, OxyError> = input
             .tool_calls
             .iter()
             .zip(response)
-            .map(|(c, r)| match r {
-                Ok(o) => ChatCompletionRequestToolMessageArgs::default()
-                    .tool_call_id(c.id.clone())
-                    .content(o.to_string())
-                    .build()
-                    .unwrap()
-                    .into(),
-                Err(e) => ChatCompletionRequestToolMessageArgs::default()
-                    .tool_call_id(c.id.clone())
-                    .content(e.to_string())
-                    .build()
-                    .unwrap()
-                    .into(),
+            .map(|(c, r)| -> Result<ChatCompletionRequestMessage, OxyError> {
+                match r {
+                    Ok(o) => Ok(ChatCompletionRequestToolMessageArgs::default()
+                        .tool_call_id(c.id.clone())
+                        .content(o.to_string())
+                        .build()
+                        .map_err(|e| {
+                            OxyError::RuntimeError(format!(
+                                "Failed to build tool message for success: {}",
+                                e
+                            ))
+                        })?
+                        .into()),
+                    Err(e) => Ok(ChatCompletionRequestToolMessageArgs::default()
+                        .tool_call_id(c.id.clone())
+                        .content(e.to_string())
+                        .build()
+                        .map_err(|e| {
+                            OxyError::RuntimeError(format!(
+                                "Failed to build tool message for error: {}",
+                                e
+                            ))
+                        })?
+                        .into()),
+                }
             })
-            .collect::<Vec<_>>();
+            .collect();
+        let tool_rets = tool_rets?;
         let agent_message = ChatCompletionRequestAssistantMessageArgs::default()
             .tool_calls(input.tool_calls)
             .build()?;
