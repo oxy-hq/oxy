@@ -1,5 +1,4 @@
 import {
-  User2,
   LogOut,
   Key,
   Settings,
@@ -7,6 +6,7 @@ import {
   Shield,
   Users,
   FileText,
+  ChevronsUpDown,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { SidebarMenu, SidebarMenuItem } from "@/components/ui/shadcn/sidebar";
@@ -20,6 +20,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "../ui/shadcn/dropdown-menu";
+import { Avatar, AvatarFallback, AvatarImage } from "../ui/shadcn/avatar";
 
 interface IAPUserInfo {
   email: string;
@@ -66,32 +67,22 @@ export function Footer() {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <div
-                  className="flex items-center gap-3 w-full px-2 py-3 text-sm border-t pt-4 cursor-pointer hover:bg-sidebar-accent hover:text-sidebar-accent-foreground rounded-md transition-colors"
+                  className="flex items-center gap-3 w-full px-2 py-3 text-sm pt-4 cursor-pointer hover:bg-sidebar-accent hover:text-sidebar-accent-foreground rounded-md transition-colors"
                   title={user?.email || "User Options"}
                 >
-                  {user?.picture ? (
-                    <img
-                      src={user.picture}
-                      alt={user.email}
-                      className="w-4 h-4 rounded-full object-cover"
-                      onError={(e) => {
-                        // Fallback to icon if image fails to load
-                        e.currentTarget.style.display = "none";
-                        e.currentTarget.nextElementSibling?.classList.remove(
-                          "hidden",
-                        );
-                      }}
-                    />
-                  ) : null}
-                  <User2
-                    className={`w-4 h-4 text-muted-foreground ${user?.picture ? "hidden" : ""}`}
-                  />
-                  <span className="truncate text-muted-foreground">
+                  <Avatar className="h-8 w-8 rounded-lg">
+                    <AvatarImage src={user.picture} alt={user.email} />
+                    <AvatarFallback className="rounded-lg">
+                      {user.email.charAt(0)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <span className="truncate">
                     {user?.email || "Unknown user"}
                   </span>
+                  <ChevronsUpDown className="ml-auto size-4" />
                 </div>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuContent align="end" side="right" className="w-56">
                 {isReadonly && (
                   <DropdownMenuItem
                     className="cursor-pointer"
