@@ -19,7 +19,7 @@ const AgentMessage = ({
   onArtifactClick,
 }: AgentMessageProps) => {
   const { content, references, steps, isStreaming } = message;
-  const showAnswer = content || steps?.length > 0;
+  const showAnswer = content || steps?.length > 0 || !isStreaming;
   const showAgentThinking = isStreaming && !showAnswer;
   const { theme } = useTheme();
 
@@ -55,7 +55,7 @@ const AgentMessage = ({
             <div className="p-4 w-full rounded-xl bg-base-card border border-base-border shadow-sm flex flex-col gap-2 overflow-x-auto">
               <ThreadSteps steps={steps} isLoading={isStreaming} />
               <AnswerContent
-                content={content || ""}
+                content={content || "No response"}
                 onArtifactClick={onArtifactClick}
               />
             </div>

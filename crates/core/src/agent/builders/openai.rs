@@ -354,21 +354,40 @@ impl ParamMapper<OneShotInput, Vec<ChatCompletionRequestMessage>> for SimpleMapp
                 .build()?
                 .into(),
         ];
-        messages.extend(input.memory.into_iter().map(|message| {
-            if message.is_human {
-                ChatCompletionRequestUserMessageArgs::default()
-                    .content(message.content)
-                    .build()
-                    .unwrap()
-                    .into()
-            } else {
-                ChatCompletionRequestAssistantMessageArgs::default()
-                    .content(message.content)
-                    .build()
-                    .unwrap()
-                    .into()
-            }
-        }));
+        messages.extend(
+            input
+                .memory
+                .into_iter()
+                .map(
+                    |message| -> Result<ChatCompletionRequestMessage, OxyError> {
+                        let result = if message.is_human {
+                            ChatCompletionRequestUserMessageArgs::default()
+                                .content(message.content)
+                                .build()
+                                .map_err(|e| {
+                                    OxyError::RuntimeError(format!(
+                                        "Failed to build user message from memory: {}",
+                                        e
+                                    ))
+                                })?
+                                .into()
+                        } else {
+                            ChatCompletionRequestAssistantMessageArgs::default()
+                                .content(message.content)
+                                .build()
+                                .map_err(|e| {
+                                    OxyError::RuntimeError(format!(
+                                        "Failed to build assistant message from memory: {}",
+                                        e
+                                    ))
+                                })?
+                                .into()
+                        };
+                        Ok(result)
+                    },
+                )
+                .collect::<Result<Vec<_>, _>>()?,
+        );
         if let Some(user_input) = input.user_input {
             messages.push(
                 ChatCompletionRequestUserMessageArgs::default()

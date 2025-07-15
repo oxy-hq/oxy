@@ -167,6 +167,36 @@ pub async fn run_workflow(Path(pathb64): Path<String>) -> Result<impl IntoRespon
     Ok(Sse::new(stream))
 }
 
+async fn unlock_workflow_thread(
+    thread: &entity::threads::Model,
+    connection: &sea_orm::DatabaseConnection,
+) {
+    let mut thread_model: entity::threads::ActiveModel = thread.clone().into();
+    thread_model.is_processing = ActiveValue::Set(false);
+
+    match thread_model.update(connection).await {
+        Ok(_) => {
+            tracing::info!("Successfully unlocked workflow thread {}", thread.id);
+        }
+        Err(e) => {
+            tracing::error!(
+                "Failed to unlock workflow thread {}: {}. This may cause the thread to remain locked.",
+                thread.id,
+                e
+            );
+        }
+    }
+}
+
+async fn ensure_workflow_thread_unlocked(
+    thread: &entity::threads::Model,
+    connection: &sea_orm::DatabaseConnection,
+) {
+    if thread.is_processing {
+        unlock_workflow_thread(thread, connection).await;
+    }
+}
+
 #[utoipa::path(
     method(post),
     path = "/workflows/{pathb64}/run-thread",
@@ -179,40 +209,70 @@ pub async fn run_workflow_thread(Path(id): Path<String>) -> Result<impl IntoResp
         tracing::error!("Failed to establish database connection: {}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
+
     let thread_id = Uuid::parse_str(&id).map_err(|e| {
-        tracing::info!("{:?}", e);
+        tracing::warn!("Invalid thread ID format '{}': {}", id, e);
         StatusCode::BAD_REQUEST
     })?;
+
     let thread = Threads::find_by_id(thread_id)
         .one(&connection)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let thread = thread.ok_or(StatusCode::NOT_FOUND)?;
+        .map_err(|e| {
+            tracing::error!("Database error finding thread {}: {}", thread_id, e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?
+        .ok_or_else(|| {
+            tracing::warn!("Thread {} not found", thread_id);
+            StatusCode::NOT_FOUND
+        })?;
 
     if thread.is_processing {
-        return Err(StatusCode::BAD_REQUEST);
+        tracing::warn!("Thread {} is already being processed", thread_id);
+        return Err(StatusCode::CONFLICT);
     }
 
+    // Lock the thread with proper error handling
     let mut thread_model: entity::threads::ActiveModel = thread.clone().into();
     thread_model.is_processing = ActiveValue::Set(true);
-    thread_model
-        .update(&connection)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    thread_model.update(&connection).await.map_err(|e| {
+        tracing::error!("Failed to lock workflow thread {}: {}", thread_id, e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     let project_path = resolve_project_path().map_err(|e| {
-        tracing::info!("Failed to find project path: {}", e);
+        tracing::error!(
+            "Failed to find project path for thread {}: {}",
+            thread_id,
+            e
+        );
+        // Ensure thread is unlocked on error
+        let connection = connection.clone();
+        let thread_clone = thread.clone();
+        tokio::spawn(async move {
+            ensure_workflow_thread_unlocked(&thread_clone, &connection).await;
+        });
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
     let workflow_ref = PathBuf::from(thread.source.to_string());
-
     let full_workflow_path = project_path.join(&workflow_ref);
+
     let streaming_workflow_persister = Arc::new(
         StreamingWorkflowPersister::new(connection.clone(), thread.clone())
             .await
             .map_err(|err| {
-                tracing::info!("Failed to create streaming workflow handler: {}", err);
+                tracing::error!(
+                    "Failed to create streaming workflow handler for thread {}: {}",
+                    thread_id,
+                    err
+                );
+                // Ensure thread is unlocked on error
+                let connection = connection.clone();
+                let thread_clone = thread.clone();
+                tokio::spawn(async move {
+                    ensure_workflow_thread_unlocked(&thread_clone, &connection).await;
+                });
                 StatusCode::INTERNAL_SERVER_ERROR
             })?,
     );
@@ -220,21 +280,49 @@ pub async fn run_workflow_thread(Path(id): Path<String>) -> Result<impl IntoResp
     let (logger, receiver) =
         build_workflow_api_logger(&full_workflow_path, Some(streaming_workflow_persister)).await;
 
+    let connection_clone = connection.clone();
+    let thread_clone = thread.clone();
     let _ = tokio::spawn(async move {
-        let _ = service::run_workflow(&workflow_ref, logger, false, None).await;
+        let result = service::run_workflow(&workflow_ref, logger, false, None).await;
 
-        if let Ok(logs) = service::get_workflow_logs(&workflow_ref).await {
-            let mut thread_model: entity::threads::ActiveModel = thread.into();
-            let logs_json = serde_json::to_string(&logs).unwrap_or_default();
-            thread_model.output = ActiveValue::Set(logs_json);
-            thread_model.is_processing = ActiveValue::Set(false);
-            let _ = thread_model.update(&connection).await;
-            tracing::info!("Thread updated with logs");
+        // Handle workflow completion or error
+        match result {
+            Ok(_) => {
+                if let Ok(logs) = service::get_workflow_logs(&workflow_ref).await {
+                    let mut thread_model: entity::threads::ActiveModel =
+                        thread_clone.clone().into();
+                    let logs_json = serde_json::to_string(&logs).unwrap_or_default();
+                    thread_model.output = ActiveValue::Set(logs_json);
+                    thread_model.is_processing = ActiveValue::Set(false);
+
+                    if let Err(e) = thread_model.update(&connection_clone).await {
+                        tracing::error!(
+                            "Failed to update thread {} with workflow results: {}",
+                            thread_clone.id,
+                            e
+                        );
+                        // Still try to unlock the thread
+                        unlock_workflow_thread(&thread_clone, &connection_clone).await;
+                    } else {
+                        tracing::info!("Thread {} updated with workflow logs", thread_clone.id);
+                    }
+                } else {
+                    tracing::error!("Failed to get workflow logs for thread {}", thread_clone.id);
+                    unlock_workflow_thread(&thread_clone, &connection_clone).await;
+                }
+            }
+            Err(e) => {
+                tracing::error!(
+                    "Workflow execution failed for thread {}: {}",
+                    thread_clone.id,
+                    e
+                );
+                unlock_workflow_thread(&thread_clone, &connection_clone).await;
+            }
         }
     });
 
     let stream = create_sse_stream(receiver);
-
     Ok(Sse::new(stream))
 }
 

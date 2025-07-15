@@ -36,7 +36,13 @@ impl Executable<AgentInput> for AgentExecutable {
             prompt,
             memory,
         } = input;
-        let agent_config = execution_context.config.resolve_agent(&agent_ref).await?;
+        let agent_config = execution_context
+            .config
+            .resolve_agent(&agent_ref)
+            .await
+            .map_err(|e| {
+                OxyError::ConfigurationError(format!("Failed to resolve agent config: {}", e))
+            })?;
         let source_id = short_uuid::short!();
         let handler = AgentReferencesHandler::new(
             execution_context.writer.clone(),

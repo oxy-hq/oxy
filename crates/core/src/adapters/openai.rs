@@ -97,7 +97,7 @@ impl IntoOpenAIConfig for Model {
                     Some(secret) => secret.value,
                     None => {
                         return Err(OxyError::ConfigurationError(
-                            "OpenAI key not found in environment variable".to_string(),
+                            "OpenAI key not found".to_string(),
                         ));
                     }
                 };
@@ -139,15 +139,13 @@ impl IntoOpenAIConfig for Model {
                 key_var,
             } => {
                 let api_key = secret_resolver.resolve_secret(key_var).await.map_err(|e| {
-                    OxyError::ConfigurationError(format!(
-                        "Gemini API key not found in environment variable {key_var}:\n{e}"
-                    ))
+                    OxyError::ConfigurationError(format!("Gemini API key not found"))
                 })?;
                 let api_key = match api_key {
                     Some(secret) => secret.value,
                     None => {
                         return Err(OxyError::ConfigurationError(
-                            "Gemini API key not found in environment variable".to_string(),
+                            "Gemini API key not found".to_string(),
                         ));
                     }
                 };
@@ -163,15 +161,13 @@ impl IntoOpenAIConfig for Model {
                 api_url,
             } => {
                 let api_key = secret_resolver.resolve_secret(key_var).await.map_err(|e| {
-                    OxyError::ConfigurationError(format!(
-                        "Anthropic API key not found in environment variable {key_var}:\n{e}"
-                    ))
+                    OxyError::ConfigurationError(format!("Anthropic API key not found"))
                 })?;
                 let api_key = match api_key {
                     Some(secret) => secret.value,
                     None => {
                         return Err(OxyError::ConfigurationError(
-                            "Gemini API key not found in environment variable".to_string(),
+                            "Gemini API key not found".to_string(),
                         ));
                     }
                 };
@@ -193,15 +189,13 @@ impl IntoOpenAIConfig for RetrievalConfig {
             .resolve_secret(&key_var)
             .await
             .map_err(|e| {
-                OxyError::ConfigurationError(format!(
-                    "Retrieval API key not found in environment variable {key_var}:\n{e}"
-                ))
+                OxyError::ConfigurationError(format!("Retrieval API key not found: {}", e))
             })?;
         let api_key = match api_key {
             Some(secret) => secret.value,
             None => {
                 return Err(OxyError::ConfigurationError(format!(
-                    "Retrieval API key not found in environment variable {key_var}"
+                    "Retrieval API key not found",
                 )));
             }
         };
@@ -360,7 +354,7 @@ impl From<ReasoningConfig> for OpenAIReasoningConfig {
 }
 
 async fn generate_workflow_run_schema(workflow_path: &str) -> Result<serde_json::Value, OxyError> {
-    let project_path = resolve_project_path().unwrap();
+    let project_path = resolve_project_path()?;
     let workflow_config =
         get_workflow(PathBuf::from(workflow_path), Some(project_path.clone())).await?;
     let schema = Into::<RootSchema>::into(&workflow_config.variables.unwrap_or_default());
