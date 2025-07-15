@@ -12,7 +12,7 @@ const CodeBlock: React.FC<CodeBlockProps> = ({ children, className }) => {
   const match = /language-(\w+)/.exec(className || "");
   return match ? (
     <SyntaxHighlighter
-      className={cx("border border-gray-200 !p-4 !rounded-lg", className)}
+      className={cx("border border-gray-200 p-4 !rounded-lg", className)}
       language={match[1]}
       style={oneDark}
       PreTag="div"
