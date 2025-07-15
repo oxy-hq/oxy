@@ -1,6 +1,5 @@
 import { LogItem } from "@/types/logs";
 import { useState } from "react";
-import { Button } from "@/components/ui/shadcn/button";
 import {
   Dialog,
   DialogContent,
@@ -8,6 +7,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/shadcn/dialog";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/shadcn/tooltip";
 import { formatLogContent } from "./utils";
 import QueryRow from "./QueryRow";
 
@@ -22,26 +27,33 @@ const QueryContent = ({ log }: { log: LogItem }) => {
       const firstQuery = queries[0];
       const hasMultipleQueries = queries.length > 1;
 
+      const queryContent = (
+        <div className="space-y-1">
+          <QueryRow queryItem={firstQuery} />
+        </div>
+      );
+
       return (
         <>
-          <div className="space-y-1">
-            <QueryRow queryItem={firstQuery} />
-
-            {hasMultipleQueries && (
-              <div className="flex items-center justify-between">
-                <p className="text-sm text-muted-foreground">
-                  Total {queries.length} queries
-                </p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowAllQueries(true)}
-                >
-                  Show all
-                </Button>
-              </div>
-            )}
-          </div>
+          {hasMultipleQueries ? (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div
+                    className="cursor-pointer"
+                    onClick={() => setShowAllQueries(true)}
+                  >
+                    {queryContent}
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Click to show all {queries.length} queries</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          ) : (
+            queryContent
+          )}
 
           <Dialog open={showAllQueries} onOpenChange={setShowAllQueries}>
             <DialogContent className="max-w-4xl! max-h-[80vh] overflow-hidden flex flex-col p-0 gap-0">
