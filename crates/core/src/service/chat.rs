@@ -1,6 +1,9 @@
 use async_trait::async_trait;
 use axum::{http::StatusCode, response::IntoResponse, response::sse::Sse};
-use entity::prelude::{Messages, Threads};
+use entity::{
+    messages,
+    prelude::{Messages, Threads},
+};
 use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, EntityTrait, Order, QueryFilter, QueryOrder,
     QuerySelect,
@@ -480,7 +483,7 @@ impl ChatService {
                 Err(err) => {
                     if let Err(e) = Self::handle_error(
                         err,
-                        streaming_persister.get_message_id(),
+                        streaming_persister.get_message().await,
                         &context.thread,
                         tx.clone(),
                         &connection,
@@ -563,7 +566,7 @@ impl ChatService {
 
     async fn handle_error(
         error: OxyError,
-        message_id: Uuid,
+        mut message: messages::ActiveModel,
         thread: &entity::threads::Model,
         tx: tokio::sync::mpsc::Sender<AnswerStream>,
         connection: &sea_orm::DatabaseConnection,
@@ -584,36 +587,37 @@ impl ChatService {
             _ => format!("🔴 Error: {}", error),
         };
 
-        // Save error message to database
-        let error_message_model = entity::messages::ActiveModel {
-            id: ActiveValue::Set(message_id),
-            content: ActiveValue::Set(user_error_message.clone()),
-            is_human: ActiveValue::Set(false),
-            thread_id: ActiveValue::Set(thread.id),
-            created_at: ActiveValue::default(),
-            input_tokens: ActiveValue::Set(0),
-            output_tokens: ActiveValue::Set(0),
+        let current_content = match message.content.clone().into_value() {
+            Some(val) => val,
+            None => String::new().into(),
         };
 
-        error_message_model
-            .update(connection)
-            .await
-            .map_err(|err| {
-                tracing::error!(
-                    "Failed to insert error message for thread {}: {}",
-                    thread.id,
-                    err
-                );
-                OxyError::DBError(format!(
-                    "Failed to insert error message for thread {}: {}",
-                    thread.id, err
-                ))
-            })?;
+        let current_content_str = match &current_content {
+            sea_orm::Value::String(Some(s)) => s.as_str(),
+            sea_orm::Value::String(None) => "",
+            _ => "",
+        };
+
+        let updated_content = format!("{}\n{}", current_content_str, user_error_message);
+
+        message.content = ActiveValue::Set(updated_content.clone());
+
+        message.update(connection).await.map_err(|err| {
+            tracing::error!(
+                "Failed to insert error message for thread {}: {}",
+                thread.id,
+                err
+            );
+            OxyError::DBError(format!(
+                "Failed to insert error message for thread {}: {}",
+                thread.id, err
+            ))
+        })?;
 
         // Send error event to client
         let error_event = AnswerStream {
             content: AnswerContent::Error {
-                message: user_error_message,
+                message: updated_content.to_string(),
             },
             references: vec![],
             is_error: true,

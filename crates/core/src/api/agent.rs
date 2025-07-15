@@ -240,9 +240,11 @@ pub async fn ask_agent_preview(
     })?;
 
     let (tx, rx) = tokio::sync::mpsc::channel(100);
+
     let _ = tokio::spawn(async move {
         let tx_clone = tx.clone();
         let block_handler = BlockHandler::new(tx);
+        let block_handler_reader = block_handler.get_reader();
         let result = run_agent(
             &project_path,
             &PathBuf::from(path),
@@ -254,15 +256,31 @@ pub async fn ask_agent_preview(
 
         if let Err(err) = result {
             tracing::error!("Error running agent: {}", err);
-            let message = AnswerStream {
+
+            let error_message = match block_handler_reader.into_active_models().await {
+                Ok((answer_message, _artifacts)) => {
+                    let existing_content = match &answer_message.content {
+                        ActiveValue::Set(val) => val.clone(),
+                        _ => String::new(),
+                    };
+                    format!("{}\n 🔴 Error: {}", existing_content, err)
+                }
+                Err(e) => {
+                    tracing::error!("Error reading block handler models: {}", e);
+                    format!("🔴 Error: {}", err)
+                }
+            };
+
+            let error_stream = AnswerStream {
                 content: AnswerContent::Error {
-                    message: format!("🔴 Error: {err}"),
+                    message: error_message,
                 },
                 references: vec![],
                 is_error: true,
-                step: "".to_string(),
+                step: String::new(),
             };
-            let _ = tx_clone.send(message).await;
+
+            let _ = tx_clone.send(error_stream).await;
         }
     });
 
