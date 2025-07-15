@@ -257,6 +257,15 @@ pub async fn openapi_router(_readonly_mode: bool) -> OpenApiRouter {
         .routes(routes!(api_keys::delete_api_key))
         // App routes
         .routes(routes!(app::list_apps))
+        // Thread routes
+        .routes(routes!(thread::get_threads))
+        .routes(routes!(thread::get_thread))
+        .routes(routes!(thread::create_thread))
+        .routes(routes!(thread::delete_thread))
+        .routes(routes!(thread::delete_all_threads))
+        .routes(routes!(thread::stop_thread))
+        .routes(routes!(thread::bulk_delete_threads))
+        .routes(routes!(thread::get_logs))
         // Workflow routes
         .routes(routes!(workflow::list))
         .routes(routes!(workflow::get_logs))
