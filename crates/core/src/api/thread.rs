@@ -15,9 +15,10 @@ use sea_orm::{
     QueryOrder, QuerySelect, prelude::DateTimeWithTimeZone,
 };
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 use uuid::Uuid;
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct ThreadItem {
     pub id: String,
     pub title: String,
@@ -30,13 +31,13 @@ pub struct ThreadItem {
     pub is_processing: bool,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct ThreadsResponse {
     pub threads: Vec<ThreadItem>,
     pub pagination: PaginationInfo,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct PaginationInfo {
     pub page: u64,
     pub limit: u64,
@@ -46,13 +47,13 @@ pub struct PaginationInfo {
     pub has_previous: bool,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct PaginationQuery {
     pub page: Option<u64>,
     pub limit: Option<u64>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct CreateThreadRequest {
     pub title: String,
     pub input: String,
@@ -60,6 +61,21 @@ pub struct CreateThreadRequest {
     pub source_type: String,
 }
 
+/// Get paginated list of threads for the authenticated user
+#[utoipa::path(
+    get,
+    path = "/threads",
+    params(
+        ("page" = Option<u64>, Query, description = "Page number (default: 1)"),
+        ("limit" = Option<u64>, Query, description = "Items per page (default: 100, max: 100)")
+    ),
+    responses(
+        (status = 200, description = "List of threads with pagination", body = ThreadsResponse),
+        (status = 401, description = "Unauthorized"),
+        (status = 500, description = "Internal server error")
+    ),
+    tag = "Threads"
+)]
 pub async fn get_threads(
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     Query(pagination): Query<PaginationQuery>,
@@ -134,6 +150,22 @@ pub async fn get_threads(
     }))
 }
 
+/// Get a specific thread by ID
+#[utoipa::path(
+    get,
+    path = "/threads/{id}",
+    params(
+        ("id" = String, Path, description = "Thread ID (UUID)")
+    ),
+    responses(
+        (status = 200, description = "Thread details", body = ThreadItem),
+        (status = 400, description = "Invalid thread ID format"),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "Thread not found"),
+        (status = 500, description = "Internal server error")
+    ),
+    tag = "Threads"
+)]
 pub async fn get_thread(
     Path(id): Path<String>,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
@@ -165,6 +197,19 @@ pub async fn get_thread(
     Ok(extract::Json(thread_item))
 }
 
+/// Create a new thread
+#[utoipa::path(
+    post,
+    path = "/threads",
+    request_body = CreateThreadRequest,
+    responses(
+        (status = 200, description = "Thread created successfully", body = ThreadItem),
+        (status = 400, description = "Invalid request data"),
+        (status = 401, description = "Unauthorized"),
+        (status = 500, description = "Internal server error")
+    ),
+    tag = "Threads"
+)]
 pub async fn create_thread(
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     extract::Json(thread_request): extract::Json<CreateThreadRequest>,
@@ -204,6 +249,22 @@ pub async fn create_thread(
     Ok(extract::Json(thread_item))
 }
 
+/// Delete a specific thread
+#[utoipa::path(
+    delete,
+    path = "/threads/{id}",
+    params(
+        ("id" = String, Path, description = "Thread ID (UUID)")
+    ),
+    responses(
+        (status = 200, description = "Thread deleted successfully"),
+        (status = 400, description = "Invalid thread ID format"),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "Thread not found"),
+        (status = 500, description = "Internal server error")
+    ),
+    tag = "Threads"
+)]
 pub async fn delete_thread(
     Path(id): Path<String>,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
@@ -245,6 +306,17 @@ fn remove_all_files_in_dir<P: AsRef<std::path::Path>>(dir: P) {
     }
 }
 
+/// Delete all threads for the authenticated user
+#[utoipa::path(
+    delete,
+    path = "/threads",
+    responses(
+        (status = 200, description = "All threads deleted successfully"),
+        (status = 401, description = "Unauthorized"),
+        (status = 500, description = "Internal server error")
+    ),
+    tag = "Threads"
+)]
 pub async fn delete_all_threads(
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
 ) -> Result<StatusCode, StatusCode> {
@@ -268,6 +340,22 @@ pub async fn delete_all_threads(
     Ok(StatusCode::OK)
 }
 
+/// Stop a running thread
+#[utoipa::path(
+    post,
+    path = "/threads/{id}/stop",
+    params(
+        ("id" = String, Path, description = "Thread ID (UUID)")
+    ),
+    responses(
+        (status = 200, description = "Thread stopped successfully"),
+        (status = 400, description = "Invalid thread ID format"),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "Thread not found"),
+        (status = 500, description = "Internal server error")
+    ),
+    tag = "Threads"
+)]
 pub async fn stop_thread(
     Path(id): Path<String>,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
@@ -301,11 +389,24 @@ pub async fn stop_thread(
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct BulkDeleteThreadsRequest {
     pub thread_ids: Vec<String>,
 }
 
+/// Bulk delete multiple threads
+#[utoipa::path(
+    post,
+    path = "/threads/bulk-delete",
+    request_body = BulkDeleteThreadsRequest,
+    responses(
+        (status = 200, description = "Threads deleted successfully"),
+        (status = 400, description = "Invalid request data or thread IDs"),
+        (status = 401, description = "Unauthorized"),
+        (status = 500, description = "Internal server error")
+    ),
+    tag = "Threads"
+)]
 pub async fn bulk_delete_threads(
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     extract::Json(request): extract::Json<BulkDeleteThreadsRequest>,
@@ -338,7 +439,7 @@ pub async fn bulk_delete_threads(
     Ok(StatusCode::OK)
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct LogItem {
     pub id: String,
     pub user_id: String,
@@ -350,7 +451,7 @@ pub struct LogItem {
     pub thread: Option<ThreadInfo>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct ThreadInfo {
     pub title: String,
     pub input: String,
@@ -360,11 +461,22 @@ pub struct ThreadInfo {
     pub is_processing: bool,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct LogsResponse {
     pub logs: Vec<LogItem>,
 }
 
+/// Get logs for the authenticated user
+#[utoipa::path(
+    get,
+    path = "/logs",
+    responses(
+        (status = 200, description = "List of logs with thread information", body = LogsResponse),
+        (status = 401, description = "Unauthorized"),
+        (status = 500, description = "Internal server error")
+    ),
+    tag = "Threads"
+)]
 pub async fn get_logs(
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
 ) -> Result<extract::Json<LogsResponse>, StatusCode> {
