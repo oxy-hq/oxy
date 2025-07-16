@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.2.18](https://github.com/oxy-hq/oxy-internal/compare/0.2.17...0.2.18) (2025-07-16)
+
+
+### <!-- 0 -->🚀 Features
+
+* closes [#951](https://github.com/oxy-hq/oxy-internal/issues/951) observability panel ([#952](https://github.com/oxy-hq/oxy-internal/issues/952)) ([09c272c](https://github.com/oxy-hq/oxy-internal/commit/09c272cf9e26168a14c3af101718536744ff5bde))
+* closes [#955](https://github.com/oxy-hq/oxy-internal/issues/955) show artifact panel in agent preview ([#956](https://github.com/oxy-hq/oxy-internal/issues/956)) ([9752f22](https://github.com/oxy-hq/oxy-internal/commit/9752f221ac302b0422741eabb40d029fe17cc702))
+* improve error handling ([#959](https://github.com/oxy-hq/oxy-internal/issues/959)) ([ae93f31](https://github.com/oxy-hq/oxy-internal/commit/ae93f31f8255787de796d8b4323d594706d89d4e))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* enhance logging configuration for better control over HTTP and database logging levels ([91b31f5](https://github.com/oxy-hq/oxy-internal/commit/91b31f5d926365f64d8c87a80fb44bb200e3b959))
+* improve error handling and logging in app data processing ([f9d00e5](https://github.com/oxy-hq/oxy-internal/commit/f9d00e562c52180da2f0bc1cee3600b22241abc4))
+* remove redundant logging of web app URL during shutdown ([4feb0c3](https://github.com/oxy-hq/oxy-internal/commit/4feb0c32efd5431e41ee96f74e6f4f60fe0d2960))
+
 ## [0.2.17](https://github.com/oxy-hq/oxy-internal/compare/0.2.16...0.2.17) (2025-07-09)
 
 

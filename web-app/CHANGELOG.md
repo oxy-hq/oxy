@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.2.18](https://github.com/oxy-hq/oxy-internal/compare/0.2.17...0.2.18) (2025-07-16)
+
+
+### <!-- 0 -->🚀 Features
+
+* closes [#951](https://github.com/oxy-hq/oxy-internal/issues/951) observability panel ([#952](https://github.com/oxy-hq/oxy-internal/issues/952)) ([09c272c](https://github.com/oxy-hq/oxy-internal/commit/09c272cf9e26168a14c3af101718536744ff5bde))
+* closes [#955](https://github.com/oxy-hq/oxy-internal/issues/955) show artifact panel in agent preview ([#956](https://github.com/oxy-hq/oxy-internal/issues/956)) ([9752f22](https://github.com/oxy-hq/oxy-internal/commit/9752f221ac302b0422741eabb40d029fe17cc702))
+* improve error handling ([#959](https://github.com/oxy-hq/oxy-internal/issues/959)) ([ae93f31](https://github.com/oxy-hq/oxy-internal/commit/ae93f31f8255787de796d8b4323d594706d89d4e))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* sidebar footer ([#962](https://github.com/oxy-hq/oxy-internal/issues/962)) ([5e6b8f4](https://github.com/oxy-hq/oxy-internal/commit/5e6b8f4a56fbbc77f66589b3e5d18e837ba2649c))
+
 ## [0.2.17](https://github.com/oxy-hq/oxy-internal/compare/0.2.16...0.2.17) (2025-07-09)
 
 

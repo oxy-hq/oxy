@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.18](https://github.com/oxy-hq/oxy-internal/compare/0.2.17...0.2.18) (2025-07-16)
+
+
+### <!-- 0 -->🚀 Features
+
+* closes [#951](https://github.com/oxy-hq/oxy-internal/issues/951) observability panel ([#952](https://github.com/oxy-hq/oxy-internal/issues/952)) ([09c272c](https://github.com/oxy-hq/oxy-internal/commit/09c272cf9e26168a14c3af101718536744ff5bde))
+
 ## [0.2.17](https://github.com/oxy-hq/oxy-internal/compare/0.2.16...0.2.17) (2025-07-09)
 
 
