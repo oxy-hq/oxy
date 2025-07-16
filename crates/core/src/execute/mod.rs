@@ -20,7 +20,7 @@ pub async fn execute_with_handler<I, R>(
     let mut executable = executable;
     let writer = buf_writer
         .create_writer(None)
-        .map_err(|e| OxyError::RuntimeError(format!("Failed to create writer: {}", e)))?;
+        .map_err(|e| OxyError::RuntimeError(format!("Failed to create writer: {e}")))?;
     let event_handle = tokio::spawn(async move { buf_writer.write_to_handler(handler).await });
     let output = {
         let execution_context: ExecutionContext = execution_context.wrap_writer(writer);

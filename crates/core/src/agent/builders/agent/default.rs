@@ -75,14 +75,14 @@ impl Executable<DefaultAgentInput> for DefaultAgentExecutable {
             .config
             .resolve_model(&model)
             .map_err(|e| {
-                OxyError::ConfigurationError(format!("Failed to resolve model config: {}", e))
+                OxyError::ConfigurationError(format!("Failed to resolve model config: {e}"))
             })?;
         let system_instructions = execution_context
             .renderer
             .render_async(&system_instructions)
             .await
             .map_err(|e| {
-                OxyError::RuntimeError(format!("Failed to render system instructions: {}", e))
+                OxyError::RuntimeError(format!("Failed to render system instructions: {e}"))
             })?;
         tracing::info!(
             "Executing default agent: {} with model: {}",
@@ -101,8 +101,7 @@ impl Executable<DefaultAgentInput> for DefaultAgentExecutable {
                             .build()
                             .map_err(|e| {
                                 OxyError::RuntimeError(format!(
-                                    "Failed to build user message from memory: {}",
-                                    e
+                                    "Failed to build user message from memory: {e}"
                                 ))
                             })?
                             .into()
@@ -112,8 +111,7 @@ impl Executable<DefaultAgentInput> for DefaultAgentExecutable {
                             .build()
                             .map_err(|e| {
                                 OxyError::RuntimeError(format!(
-                                    "Failed to build assistant message from memory: {}",
-                                    e
+                                    "Failed to build assistant message from memory: {e}"
                                 ))
                             })?
                             .into()
@@ -128,15 +126,13 @@ impl Executable<DefaultAgentInput> for DefaultAgentExecutable {
                 .content(system_instructions)
                 .build()
                 .map_err(|e| {
-                    OxyError::RuntimeError(format!("Failed to build system message: {}", e))
+                    OxyError::RuntimeError(format!("Failed to build system message: {e}"))
                 })?
                 .into(),
             ChatCompletionRequestUserMessageArgs::default()
                 .content(prompt.clone())
                 .build()
-                .map_err(|e| {
-                    OxyError::RuntimeError(format!("Failed to build user message: {}", e))
-                })?
+                .map_err(|e| OxyError::RuntimeError(format!("Failed to build user message: {e}")))?
                 .into(),
         ]);
         execution_context
@@ -159,7 +155,7 @@ impl Executable<DefaultAgentInput> for DefaultAgentExecutable {
         let outputs = react_executable
             .execute(execution_context, messages)
             .await
-            .map_err(|e| OxyError::RuntimeError(format!("Failed to execute react loop: {}", e)))?;
+            .map_err(|e| OxyError::RuntimeError(format!("Failed to execute react loop: {e}")))?;
         let output = outputs
             .into_iter()
             .fold(Output::default(), |m, o| m.merge(&o.content));
@@ -221,7 +217,7 @@ impl ParamMapper<DefaultAgentInput, DefaultAgentInput> for DefaultAgentMapper {
             &input.default_agent.system_instructions.as_str(),
         )
         .map_err(|e| {
-            OxyError::RuntimeError(format!("Failed to create renderer from template: {}", e))
+            OxyError::RuntimeError(format!("Failed to create renderer from template: {e}"))
         })?;
         let execution_context = execution_context.wrap_renderer(renderer);
         Ok((input, Some(execution_context)))

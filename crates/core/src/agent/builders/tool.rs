@@ -80,8 +80,7 @@ impl Executable<OpenAIExecutableResponse> for OpenAITool {
                         .build()
                         .map_err(|e| {
                             OxyError::RuntimeError(format!(
-                                "Failed to build tool message for success: {}",
-                                e
+                                "Failed to build tool message for success: {e}"
                             ))
                         })?
                         .into()),
@@ -91,8 +90,7 @@ impl Executable<OpenAIExecutableResponse> for OpenAITool {
                         .build()
                         .map_err(|e| {
                             OxyError::RuntimeError(format!(
-                                "Failed to build tool message for error: {}",
-                                e
+                                "Failed to build tool message for error: {e}"
                             ))
                         })?
                         .into()),

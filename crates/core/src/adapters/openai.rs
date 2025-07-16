@@ -139,7 +139,7 @@ impl IntoOpenAIConfig for Model {
                 key_var,
             } => {
                 let api_key = secret_resolver.resolve_secret(key_var).await.map_err(|e| {
-                    OxyError::ConfigurationError(format!("Gemini API key not found"))
+                    OxyError::ConfigurationError("Gemini API key not found".to_string())
                 })?;
                 let api_key = match api_key {
                     Some(secret) => secret.value,
@@ -161,7 +161,7 @@ impl IntoOpenAIConfig for Model {
                 api_url,
             } => {
                 let api_key = secret_resolver.resolve_secret(key_var).await.map_err(|e| {
-                    OxyError::ConfigurationError(format!("Anthropic API key not found"))
+                    OxyError::ConfigurationError("Anthropic API key not found".to_string())
                 })?;
                 let api_key = match api_key {
                     Some(secret) => secret.value,
@@ -189,14 +189,14 @@ impl IntoOpenAIConfig for RetrievalConfig {
             .resolve_secret(&key_var)
             .await
             .map_err(|e| {
-                OxyError::ConfigurationError(format!("Retrieval API key not found: {}", e))
+                OxyError::ConfigurationError(format!("Retrieval API key not found: {e}"))
             })?;
         let api_key = match api_key {
             Some(secret) => secret.value,
             None => {
-                return Err(OxyError::ConfigurationError(format!(
-                    "Retrieval API key not found",
-                )));
+                return Err(OxyError::ConfigurationError(
+                    "Retrieval API key not found".to_string(),
+                ));
             }
         };
         Ok(ConfigType::Default(

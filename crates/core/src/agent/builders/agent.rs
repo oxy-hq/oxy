@@ -41,7 +41,7 @@ impl Executable<AgentInput> for AgentExecutable {
             .resolve_agent(&agent_ref)
             .await
             .map_err(|e| {
-                OxyError::ConfigurationError(format!("Failed to resolve agent config: {}", e))
+                OxyError::ConfigurationError(format!("Failed to resolve agent config: {e}"))
             })?;
         let source_id = short_uuid::short!();
         let handler = AgentReferencesHandler::new(
