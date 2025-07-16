@@ -125,30 +125,28 @@ impl ChatService {
         let thread = self
             .validate_and_lock_thread(thread_id, user_id)
             .await
-            .map_err(|e| {
+            .inspect_err(|&e| {
                 tracing::warn!("Thread validation failed for user {}: {}", user_id, e);
-                e
             })?;
 
         // Handle user question and validate input
         let user_question = self
             .handle_user_question(&payload, &thread)
             .await
-            .map_err(|e| {
+            .inspect_err(|e| {
                 // Ensure thread is unlocked on error
                 let connection = self.connection.clone();
                 let thread_clone = thread.clone();
                 tokio::spawn(async move {
                     Self::ensure_thread_unlocked(&thread_clone, &connection).await;
                 });
-                e
             })?;
 
         // Build conversation memory
         let memory = self
             .build_conversation_memory(thread.id)
             .await
-            .map_err(|e| {
+            .inspect_err(|&e| {
                 tracing::error!(
                     "Failed to build conversation memory for thread {}: {}",
                     thread.id,
@@ -160,7 +158,6 @@ impl ChatService {
                 tokio::spawn(async move {
                     Self::ensure_thread_unlocked(&thread_clone, &connection).await;
                 });
-                e
             })?;
 
         // Resolve project path
@@ -575,16 +572,16 @@ impl ChatService {
 
         // Create user-friendly error message based on error type
         let user_error_message = match &error {
-            OxyError::ValidationError(msg) => format!("🔴 Validation Error: {}", msg),
-            OxyError::AuthenticationError(msg) => format!("🔴 Authentication Error: {}", msg),
-            OxyError::AuthorizationError(msg) => format!("🔴 Authorization Error: {}", msg),
-            OxyError::LLMError(msg) => format!("🔴 LLM Error: {}", msg),
-            OxyError::ConfigurationError(msg) => format!("🔴 Configuration Error: {}", msg),
+            OxyError::ValidationError(msg) => format!("🔴 Validation Error: {msg}"),
+            OxyError::AuthenticationError(msg) => format!("🔴 Authentication Error: {msg}"),
+            OxyError::AuthorizationError(msg) => format!("🔴 Authorization Error: {msg}"),
+            OxyError::LLMError(msg) => format!("🔴 LLM Error: {msg}"),
+            OxyError::ConfigurationError(msg) => format!("🔴 Configuration Error: {msg}"),
             OxyError::DBError(_) => "🔴 A database error occurred. Please try again.".to_string(),
             OxyError::RuntimeError(_) => {
                 "🔴 An unexpected error occurred. Please try again.".to_string()
             }
-            _ => format!("🔴 Error: {}", error),
+            _ => format!("🔴 Error: {error}"),
         };
 
         let current_content = match message.content.clone().into_value() {
@@ -598,7 +595,7 @@ impl ChatService {
             _ => "",
         };
 
-        let updated_content = format!("{}\n{}", current_content_str, user_error_message);
+        let updated_content = format!("{current_content_str}\n{user_error_message}");
 
         message.content = ActiveValue::Set(updated_content.clone());
 

@@ -263,11 +263,11 @@ pub async fn ask_agent_preview(
                         ActiveValue::Set(val) => val.clone(),
                         _ => String::new(),
                     };
-                    format!("{}\n 🔴 Error: {}", existing_content, err)
+                    format!("{existing_content}\n 🔴 Error: {err}")
                 }
                 Err(e) => {
                     tracing::error!("Error reading block handler models: {}", e);
-                    format!("🔴 Error: {}", err)
+                    format!("🔴 Error: {err}")
                 }
             };
 

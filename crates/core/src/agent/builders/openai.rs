@@ -366,8 +366,7 @@ impl ParamMapper<OneShotInput, Vec<ChatCompletionRequestMessage>> for SimpleMapp
                                 .build()
                                 .map_err(|e| {
                                     OxyError::RuntimeError(format!(
-                                        "Failed to build user message from memory: {}",
-                                        e
+                                        "Failed to build user message from memory: {e}"
                                     ))
                                 })?
                                 .into()
@@ -377,8 +376,7 @@ impl ParamMapper<OneShotInput, Vec<ChatCompletionRequestMessage>> for SimpleMapp
                                 .build()
                                 .map_err(|e| {
                                     OxyError::RuntimeError(format!(
-                                        "Failed to build assistant message from memory: {}",
-                                        e
+                                        "Failed to build assistant message from memory: {e}"
                                     ))
                                 })?
                                 .into()
