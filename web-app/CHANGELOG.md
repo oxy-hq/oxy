@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.19](https://github.com/oxy-hq/oxy-internal/compare/0.2.18...0.2.19) (2025-07-17)
+
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+* release 0.2.19 ([19aacec](https://github.com/oxy-hq/oxy-internal/commit/19aacecb342f1f1998f305d3cd67c804081235cf))
+
 ## [0.2.18](https://github.com/oxy-hq/oxy-internal/compare/0.2.17...0.2.18) (2025-07-16)
 
 
