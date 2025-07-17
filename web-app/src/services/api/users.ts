@@ -8,7 +8,7 @@ export class UserService {
   }
 
   static async getCurrentUser(): Promise<UserInfo> {
-    const response = await apiClient.get("/me");
+    const response = await apiClient.get("/user");
     return response.data;
   }
 

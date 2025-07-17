@@ -1,18 +1,7 @@
-import {
-  LogOut,
-  Key,
-  Settings,
-  Database,
-  Shield,
-  Users,
-  FileText,
-  ChevronsUpDown,
-} from "lucide-react";
+import { LogOut, Settings, ChevronsUpDown } from "lucide-react";
 import { useEffect, useState } from "react";
 import { SidebarMenu, SidebarMenuItem } from "@/components/ui/shadcn/sidebar";
-import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
-import { useReadonly } from "@/hooks/useReadonly";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -21,6 +10,7 @@ import {
   DropdownMenuTrigger,
 } from "../ui/shadcn/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "../ui/shadcn/avatar";
+import useSettingsPage from "@/stores/useSettingsPage";
 
 interface IAPUserInfo {
   email: string;
@@ -29,9 +19,8 @@ interface IAPUserInfo {
 
 export function Footer() {
   const [userIAPInfo, setUserIAPInfo] = useState<IAPUserInfo | null>(null);
-  const navigate = useNavigate();
   const { logout, getUser, authConfig } = useAuth();
-  const { isReadonly } = useReadonly();
+  const { setIsOpen: setIsSettingsOpen } = useSettingsPage();
 
   useEffect(() => {
     (async () => {
@@ -82,50 +71,13 @@ export function Footer() {
                   <ChevronsUpDown className="ml-auto size-4" />
                 </div>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" side="right" className="w-56">
-                {isReadonly && (
-                  <DropdownMenuItem
-                    className="cursor-pointer"
-                    onClick={() => navigate("/github-settings")}
-                  >
-                    <Settings className="w-4 h-4 mr-2" />
-                    <span>Github Settings</span>
-                  </DropdownMenuItem>
-                )}
+              <DropdownMenuContent align="end" className="w-56">
                 <DropdownMenuItem
                   className="cursor-pointer"
-                  onClick={() => navigate("/secrets")}
+                  onClick={() => setIsSettingsOpen(true)}
                 >
-                  <Shield className="w-4 h-4 mr-2" />
-                  <span>Secret Management</span>
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  className="cursor-pointer"
-                  onClick={() => navigate("/databases")}
-                >
-                  <Database className="w-4 h-4 mr-2" />
-                  <span>Databases</span>
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  className="cursor-pointer"
-                  onClick={() => navigate("/users")}
-                >
-                  <Users className="w-4 h-4 mr-2" />
-                  <span>Users</span>
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  className="cursor-pointer"
-                  onClick={() => navigate("/api-keys")}
-                >
-                  <Key className="w-4 h-4 mr-2" />
-                  <span>API Keys</span>
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  className="cursor-pointer"
-                  onClick={() => navigate("/logs")}
-                >
-                  <FileText className="w-4 h-4 mr-2" />
-                  <span>Activity Logs</span>
+                  <Settings className="w-4 h-4 mr-2" />
+                  <span>Settings</span>
                 </DropdownMenuItem>
                 {user && (
                   <>

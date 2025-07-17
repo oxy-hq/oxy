@@ -10,7 +10,9 @@ const useSecrets = (
 ) =>
   useQuery<SecretListResponse, Error>({
     queryKey: queryKeys.secret.list(),
-    queryFn: () => SecretService.listSecrets(),
+    queryFn: () => {
+      return SecretService.listSecrets();
+    },
     enabled,
     refetchOnWindowFocus,
     refetchOnMount,
