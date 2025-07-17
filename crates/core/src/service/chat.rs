@@ -577,9 +577,9 @@ impl ChatService {
             OxyError::AuthorizationError(msg) => format!("🔴 Authorization Error: {msg}"),
             OxyError::LLMError(msg) => format!("🔴 LLM Error: {msg}"),
             OxyError::ConfigurationError(msg) => format!("🔴 Configuration Error: {msg}"),
-            OxyError::DBError(_) => "🔴 A database error occurred. Please try again.".to_string(),
-            OxyError::RuntimeError(_) => {
-                "🔴 An unexpected error occurred. Please try again.".to_string()
+            OxyError::DBError(msg) => format!("🔴 A database error occurred: {msg}"),
+            OxyError::RuntimeError(msg) => {
+                format!("🔴 An error occurred: {msg}")
             }
             _ => format!("🔴 Error: {error}"),
         };
