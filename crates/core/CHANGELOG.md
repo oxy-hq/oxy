@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.19](https://github.com/oxy-hq/oxy-internal/compare/0.2.18...0.2.19) (2025-07-17)
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* runtime error message not returned ([#971](https://github.com/oxy-hq/oxy-internal/issues/971)) ([0614d2d](https://github.com/oxy-hq/oxy-internal/commit/0614d2ddaf12f3b7098b649660909ea389c1cbe2))
+
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+* release 0.2.19 ([19aacec](https://github.com/oxy-hq/oxy-internal/commit/19aacecb342f1f1998f305d3cd67c804081235cf))
+
 ## [0.2.18](https://github.com/oxy-hq/oxy-internal/compare/0.2.17...0.2.18) (2025-07-16)
 
 
