@@ -9,7 +9,7 @@ export default function useDatabases(
   refetchOnWindowFocus = true,
   refetchOnMount: boolean | "always" = false,
 ) {
-  return useQuery<DatabaseInfo[], unknown>({
+  return useQuery<DatabaseInfo[], Error>({
     queryKey: queryKeys.database.list(),
     queryFn: DatabaseService.listDatabases,
     enabled,

@@ -19,12 +19,7 @@ import React from "react";
 import IdePage from "./pages/ide";
 import EditorPage from "./pages/ide/Editor";
 import AppPage from "./pages/app";
-import ApiKeyManagement from "./pages/api-keys";
-import LogsManagement from "./pages/activity-logs";
-import DatabaseManagement from "./pages/databases";
-import SecretsPage from "./pages/secrets";
-import RequiredSecretsSetup from "./pages/secrets/RequiredSecretsSetup";
-import UserManagement from "./pages/users";
+import RequiredSecretsSetup from "./components/settings/secrets/RequiredSecretsSetup";
 import { HotkeysProvider } from "react-hotkeys-hook";
 import LoginPage from "./pages/login";
 import RegisterPage from "./pages/register";
@@ -38,7 +33,7 @@ import { AuthProvider } from "./contexts/AuthContext";
 import { ReadonlyProvider } from "./contexts/ReadonlyContext";
 import { AuthConfigResponse } from "./types/auth";
 import { WelcomeScreen, SetupPage, SetupComplete } from "./pages/onboarding";
-import GithubSettingsPage from "./pages/github-settings";
+import { SettingsModal } from "./components/settings/SettingsModal";
 
 const PageWrapper = ({ children }: { children: React.ReactNode }) => {
   return (
@@ -49,6 +44,7 @@ const PageWrapper = ({ children }: { children: React.ReactNode }) => {
 const MainLayout = React.memo(function MainLayout() {
   return (
     <HotkeysProvider>
+      <SettingsModal />
       <AppSidebar />
 
       <Routes>
@@ -95,54 +91,6 @@ const MainLayout = React.memo(function MainLayout() {
         <Route path="/ide" element={<IdePage />}>
           <Route path=":pathb64" element={<EditorPage />} />
         </Route>
-        <Route
-          path="/api-keys"
-          element={
-            <PageWrapper>
-              <ApiKeyManagement />
-            </PageWrapper>
-          }
-        />
-        <Route
-          path="/logs"
-          element={
-            <PageWrapper>
-              <LogsManagement />
-            </PageWrapper>
-          }
-        />
-        <Route
-          path="/github-settings"
-          element={
-            <PageWrapper>
-              <GithubSettingsPage />
-            </PageWrapper>
-          }
-        />
-        <Route
-          path="/databases"
-          element={
-            <PageWrapper>
-              <DatabaseManagement />
-            </PageWrapper>
-          }
-        />
-        <Route
-          path="/secrets"
-          element={
-            <PageWrapper>
-              <SecretsPage />
-            </PageWrapper>
-          }
-        />
-        <Route
-          path="/users"
-          element={
-            <PageWrapper>
-              <UserManagement />
-            </PageWrapper>
-          }
-        />
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>
     </HotkeysProvider>
