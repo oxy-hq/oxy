@@ -7,45 +7,45 @@ use tokio::{sync::mpsc::error::SendError, task::JoinError};
 
 #[derive(Error, Debug)]
 pub enum OxyError {
-    #[error("Invalid configuration:\n{0}")]
+    #[error("{0}")]
     ConfigurationError(String),
-    #[error("Invalid argument:\n{0}")]
+    #[error("{0}")]
     ArgumentError(String),
-    #[error("Runtime error:\n{0}")]
+    #[error("{0}")]
     RuntimeError(String),
-    #[error("LLM error:\n{0}")]
+    #[error("{0}")]
     LLMError(String),
-    #[error("Agent error:\n{0}")]
+    #[error("{0}")]
     AgentError(String),
-    #[error("Anonymizer error:\n{0}")]
+    #[error("{0}")]
     AnonymizerError(String),
-    #[error("Serializer error:\n{0}")]
+    #[error("{0}")]
     SerializerError(String),
-    #[error("IO error:\n{0}")]
+    #[error("{0}")]
     IOError(String),
-    #[error("DB error:\n{0}")]
+    #[error("{0}")]
     DBError(String),
-    #[error("Database error:\n{0}")]
+    #[error("{0}")]
     Database(String),
-    #[error("Secret manager error:\n{0}")]
+    #[error("{0}")]
     SecretManager(String),
-    #[error("Secret not found: {0:?}")]
+    #[error("{0:?}")]
     SecretNotFound(Option<String>),
-    #[error("Authentication error:\n{0}")]
+    #[error("{0}")]
     AuthenticationError(String),
-    #[error("Authorization error:\n{0}")]
+    #[error("{0}")]
     AuthorizationError(String),
-    #[error("Validation error:\n{0}")]
+    #[error("{0}")]
     ValidationError(String),
-    #[error("Cryptography error:\n{0}")]
+    #[error("{0}")]
     CryptographyError(String),
-    #[error("Initialization error:\n{0}")]
+    #[error("{0}")]
     InitializationError(String),
-    #[error("Job error:\n{0}")]
+    #[error("{0}")]
     JobError(String),
-    #[error("LanceDB error:\n{0}")]
+    #[error("{0}")]
     LanceDBError(#[from] lancedb::Error),
-    #[error("SerdeArrow error:\n{0}")]
+    #[error("{0}")]
     SerdeArrowError(#[from] serde_arrow::Error),
     #[error("Error when calling {handle}:\n{msg}")]
     ToolCallError {
