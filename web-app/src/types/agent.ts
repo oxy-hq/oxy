@@ -96,10 +96,11 @@ interface ConsistencyEval {
   concurrency: number;
 }
 
+// Note: all steps in the agent workflow has to be in CONTINUOUS form of the verb
 export const STEP_MAP = {
-  execute_sql: "Execute SQL",
-  visualize: "Generate visualization",
-  retrieve: "Retrieve data",
-  agent: "Generate answer",
+  execute_sql: "Executing SQL",
+  visualize: "Generating visualization",
+  retrieve: "Retrieving data",
+  agent: "Generating answer",
   workflow: "Running workflow",
 };
