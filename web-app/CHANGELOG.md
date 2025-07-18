@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.20](https://github.com/oxy-hq/oxy-internal/compare/0.2.19...0.2.20) (2025-07-18)
+
+
+### <!-- 0 -->🚀 Features
+
+* create new settings page ([#963](https://github.com/oxy-hq/oxy-internal/issues/963)) ([5c65beb](https://github.com/oxy-hq/oxy-internal/commit/5c65bebe936fd0d0d09b3a8bc56eb55c3ff00939))
+
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+* release 0.2.20 ([80717fb](https://github.com/oxy-hq/oxy-internal/commit/80717fbd854f10e2288e94bcc5b9fd308a05cb84))
+
 ## [0.2.19](https://github.com/oxy-hq/oxy-internal/compare/0.2.18...0.2.19) (2025-07-17)
 
 
