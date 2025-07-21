@@ -59,12 +59,14 @@ export function Footer() {
                   className="flex items-center gap-3 w-full px-2 py-3 text-sm pt-4 cursor-pointer hover:bg-sidebar-accent hover:text-sidebar-accent-foreground rounded-md transition-colors"
                   title={user?.email || "User Options"}
                 >
-                  <Avatar className="h-8 w-8 rounded-lg">
-                    <AvatarImage src={user.picture} alt={user.email} />
-                    <AvatarFallback className="rounded-lg">
-                      {user.email.charAt(0)}
-                    </AvatarFallback>
-                  </Avatar>
+                  {user?.picture && user?.email && (
+                    <Avatar className="h-8 w-8 rounded-lg">
+                      <AvatarImage src={user.picture} alt={user.email} />
+                      <AvatarFallback className="rounded-lg">
+                        {user.email.charAt(0)}
+                      </AvatarFallback>
+                    </Avatar>
+                  )}
                   <span className="truncate">
                     {user?.email || "Unknown user"}
                   </span>
