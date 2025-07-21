@@ -1,6 +1,9 @@
 use crate::{
-    auth::extractor::AuthenticatedUserExtractor, config::ConfigBuilder,
-    project::resolve_project_path, service::sync::sync_databases,
+    auth::extractor::AuthenticatedUserExtractor,
+    cli::clean::{clean_all, clean_cache, clean_database_folder, clean_vectors},
+    config::ConfigBuilder,
+    project::resolve_project_path,
+    service::sync::sync_databases,
 };
 use axum::{
     extract::{Json, Query},
@@ -167,4 +170,86 @@ pub async fn list_databases(
         .collect::<Vec<DatabaseInfo>>();
 
     Ok(Json(databases))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CleanRequest {
+    target: Option<CleanTarget>, // "all", "DatabasesFolder", "Vectors", "Cache"
+                                 // DatabasesFolder: semantic models and build artifacts
+                                 // Vectors: LanceDB embeddings and search indexes
+                                 // Cache: temporary files, logs, and chart cache
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CleanTarget {
+    All,
+    DatabasesFolder,
+    Vectors,
+    Cache,
+}
+#[derive(Debug, Serialize)]
+pub struct CleanResponse {
+    success: bool,
+    message: String,
+    cleaned_items: Vec<String>,
+}
+
+pub async fn clean_data(
+    _user: AuthenticatedUserExtractor,
+    Query(params): Query<CleanRequest>,
+) -> Result<Json<CleanResponse>, StatusCode> {
+    let target = params.target.unwrap_or(CleanTarget::All);
+
+    let mut cleaned_items = Vec::new();
+    let mut success = true;
+    let mut error_message = String::new();
+
+    match target {
+        CleanTarget::All => match clean_all(false).await {
+            Ok(_) => {
+                cleaned_items.extend(vec![
+                    "Databases folder".to_string(),
+                    "Vector store".to_string(),
+                    "Cache".to_string(),
+                ]);
+            }
+            Err(e) => {
+                success = false;
+                error_message = format!("Failed to clean all: {}", e);
+            }
+        },
+        CleanTarget::DatabasesFolder => match clean_database_folder(false).await {
+            Ok(_) => cleaned_items.push("Databases folder".to_string()),
+            Err(e) => {
+                success = false;
+                error_message = format!("Failed to clean databases folder: {}", e);
+            }
+        },
+        CleanTarget::Vectors => match clean_vectors(false).await {
+            Ok(_) => cleaned_items.push("Vector store".to_string()),
+            Err(e) => {
+                success = false;
+                error_message = format!("Failed to clean vectors: {}", e);
+            }
+        },
+        CleanTarget::Cache => match clean_cache(false).await {
+            Ok(_) => cleaned_items.push("Cache".to_string()),
+            Err(e) => {
+                success = false;
+                error_message = format!("Failed to clean cache: {}", e);
+            }
+        },
+    }
+
+    if success {
+        Ok(Json(CleanResponse {
+            success: true,
+            message: format!("Successfully cleaned: {}", cleaned_items.join(", ")),
+            cleaned_items,
+        }))
+    } else {
+        tracing::error!("{}", error_message);
+        Err(StatusCode::INTERNAL_SERVER_ERROR)
+    }
 }

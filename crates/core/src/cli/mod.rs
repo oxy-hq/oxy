@@ -1,3 +1,4 @@
+pub mod clean;
 mod init;
 mod make;
 mod seed;
@@ -268,6 +269,11 @@ enum SubCommand {
     /// Database seeding commands for development and testing
     #[clap(hide = true)]
     Seed(SeedArgs),
+    /// Clean ephemeral data and reset project state
+    ///
+    /// Remove cached data, vector embeddings, and temporary files to reset
+    /// the project to a clean state. Useful for troubleshooting data corruption.
+    Clean(CleanArgs),
 }
 
 #[derive(Parser, Debug)]
@@ -511,6 +517,39 @@ pub enum SeedAction {
     /// Complete seeding process that creates test users
     /// and generates sample threads for comprehensive testing.
     Full,
+}
+
+#[derive(Parser, Debug)]
+pub struct CleanArgs {
+    /// What to clean
+    #[clap(subcommand)]
+    pub target: CleanTarget,
+}
+
+#[derive(Parser, Debug)]
+pub enum CleanTarget {
+    /// Clear all ephemeral data (database artifacts, vector embeddings, and cache)
+    ///
+    /// Performs a complete cleanup of all ephemeral data including
+    /// the .databases folder (semantic models and build artifacts),
+    /// vector embeddings, and cached files.
+    All,
+    /// Clear only the .databases folder
+    ///
+    /// Removes the .databases folder which contains semantic models,
+    /// dataset schemas, and other build artifacts created during
+    /// sync and build operations. User data remains preserved.
+    DatabaseFolder,
+    /// Clear only vector embeddings and search indexes
+    ///
+    /// Removes all LanceDB vector databases and search indexes
+    /// while preserving the .databases folder and cache files.
+    Vectors,
+    /// Clear cached files and temporary data
+    ///
+    /// Removes cached chart files, logs, and other temporary data
+    /// while preserving .databases folder and vector embeddings.
+    Cache,
 }
 
 async fn handle_workflow_file(workflow_name: &PathBuf, retry: bool) -> Result<(), OxyError> {
@@ -757,6 +796,10 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
 
         Some(SubCommand::Seed(seed_args)) => {
             handle_seed_command(seed_args).await?;
+        }
+
+        Some(SubCommand::Clean(clean_args)) => {
+            handle_clean_command(clean_args).await?;
         }
 
         None => {
@@ -1345,6 +1388,26 @@ async fn handle_seed_command(seed_args: SeedArgs) -> Result<(), OxyError> {
             seed_test_users().await?;
             create_sample_threads_for_users().await?;
             println!("✨ Full seed completed successfully!");
+        }
+    }
+    Ok(())
+}
+
+async fn handle_clean_command(clean_args: CleanArgs) -> Result<(), OxyError> {
+    use clean::*;
+
+    match clean_args.target {
+        CleanTarget::All => {
+            clean_all(true).await?;
+        }
+        CleanTarget::DatabaseFolder => {
+            clean_database_folder(true).await?;
+        }
+        CleanTarget::Vectors => {
+            clean_vectors(true).await?;
+        }
+        CleanTarget::Cache => {
+            clean_cache(true).await?;
         }
     }
     Ok(())

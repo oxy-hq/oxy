@@ -134,6 +134,7 @@ pub async fn api_router(auth_mode: AuthMode, readonly_mode: bool) -> Result<Rout
         // Database and SQL operations - writing
         .route("/databases/sync", post(database::sync_database))
         .route("/databases/build", post(data::build_embeddings))
+        .route("/databases/clean", post(database::clean_data))
         .route("/sql/{pathb64}", post(data::execute_sql))
         // Secret management routes - writing
         .route("/secrets", post(secrets::create_secret))
