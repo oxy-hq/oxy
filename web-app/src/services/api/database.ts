@@ -44,4 +44,18 @@ export class DatabaseService {
     const response = await apiClient.post("/databases/build");
     return response.data;
   }
+
+  static async cleanData(target?: string): Promise<{
+    success: boolean;
+    message: string;
+    cleaned_items: string[];
+  }> {
+    const params = new URLSearchParams();
+    if (target) params.append("target", target);
+
+    const response = await apiClient.post(
+      `/databases/clean?${params.toString()}`,
+    );
+    return response.data;
+  }
 }
