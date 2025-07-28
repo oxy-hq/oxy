@@ -2,8 +2,6 @@ import { useMemo } from "react";
 import { RefreshCcw } from "lucide-react";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
-
-import { ThreadItem } from "@/types/chat";
 import { cn } from "@/libs/shadcn/utils";
 import { Button } from "@/components/ui/shadcn/button";
 import {
@@ -11,25 +9,28 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/shadcn/tooltip";
+import useThread from "@/hooks/api/threads/useThread";
 
 dayjs.extend(relativeTime);
 
 interface Props {
-  thread: ThreadItem;
+  threadId: string;
   isLoading: boolean;
   className?: string;
   onRefresh: () => void;
 }
 
 const ProcessingWarning = ({
-  thread,
+  threadId,
   isLoading,
   className,
   onRefresh,
 }: Props) => {
+  const { data: thread, isFetching } = useThread(threadId ?? "");
+
   const shouldShowProcessingWarning = useMemo(
-    () => thread.is_processing && !isLoading,
-    [isLoading, thread.is_processing],
+    () => !isFetching && thread && thread.is_processing && !isLoading,
+    [isLoading, thread, isFetching],
   );
 
   if (!shouldShowProcessingWarning) return null;

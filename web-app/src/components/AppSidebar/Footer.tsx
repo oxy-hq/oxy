@@ -43,60 +43,59 @@ export function Footer() {
 
   const parsedUser = JSON.parse(getUser() || "null");
 
-  const user = authConfig.is_built_in_mode ? parsedUser : userIAPInfo;
+  let user = authConfig.is_built_in_mode ? parsedUser : userIAPInfo;
 
-  // Show footer options if user exists OR if auth is not enabled
-  const shouldShowFooter = user || !authConfig.auth_enabled;
+  if (!user) {
+    user = {
+      email: "guest@oxy.local",
+      picture: undefined,
+      isGuest: true,
+    };
+  }
 
   return (
     <div className="mt-auto px-2 pb-4">
       <SidebarMenu>
-        {shouldShowFooter && (
-          <SidebarMenuItem>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <div
-                  className="flex items-center gap-3 w-full px-2 py-3 text-sm pt-4 cursor-pointer hover:bg-sidebar-accent hover:text-sidebar-accent-foreground rounded-md transition-colors"
-                  title={user?.email || "User Options"}
-                >
-                  {user?.picture && user?.email && (
-                    <Avatar className="h-8 w-8 rounded-lg">
-                      <AvatarImage src={user.picture} alt={user.email} />
-                      <AvatarFallback className="rounded-lg">
-                        {user.email.charAt(0)}
-                      </AvatarFallback>
-                    </Avatar>
-                  )}
-                  <span className="truncate">
-                    {user?.email || "Unknown user"}
-                  </span>
-                  <ChevronsUpDown className="ml-auto size-4" />
-                </div>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
-                <DropdownMenuItem
-                  className="cursor-pointer"
-                  onClick={() => setIsSettingsOpen(true)}
-                >
-                  <Settings className="w-4 h-4 mr-2" />
-                  <span>Settings</span>
-                </DropdownMenuItem>
-                {user && (
-                  <>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      className="cursor-pointer text-red-600 focus:text-red-600"
-                      onClick={logout}
-                    >
-                      <LogOut className="w-4 h-4 mr-2" />
-                      <span>Logout</span>
-                    </DropdownMenuItem>
-                  </>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </SidebarMenuItem>
-        )}
+        <SidebarMenuItem>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <div
+                className="flex items-center gap-3 w-full px-2 py-3 text-sm pt-4 cursor-pointer hover:bg-sidebar-accent hover:text-sidebar-accent-foreground rounded-md transition-colors"
+                title={user.email || "User Options"}
+              >
+                <Avatar className="h-8 w-8 rounded-lg">
+                  <AvatarImage src={user.picture} alt={user.email} />
+                  <AvatarFallback className="rounded-lg">
+                    {user.email.charAt(0)}
+                  </AvatarFallback>
+                </Avatar>
+                <span className="truncate">{user.email}</span>
+                <ChevronsUpDown className="ml-auto size-4" />
+              </div>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuItem
+                className="cursor-pointer"
+                onClick={() => setIsSettingsOpen(true)}
+              >
+                <Settings className="w-4 h-4 mr-2" />
+                <span>Settings</span>
+              </DropdownMenuItem>
+              {!user.isGuest && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    className="cursor-pointer text-red-600 focus:text-red-600"
+                    onClick={logout}
+                  >
+                    <LogOut className="w-4 h-4 mr-2" />
+                    <span>Logout</span>
+                  </DropdownMenuItem>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </SidebarMenuItem>
       </SidebarMenu>
     </div>
   );

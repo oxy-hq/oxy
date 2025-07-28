@@ -22,6 +22,7 @@ const TaskThread = ({
   const isInitialLoad = useRef(false);
   const { getTaskThread, setMessages, setFilePath } = useTaskThreadStore();
   const taskThread = getTaskThread(thread.id);
+  const bottomRef = useRef<HTMLDivElement>(null);
   const { messages, isLoading, filePath } = taskThread;
 
   const { sendMessage } = useAskTask();
@@ -31,7 +32,7 @@ const TaskThread = ({
   const shouldShowWarning = messages.length > 10;
 
   useEffect(() => {
-    if (thread.source && !filePath) {
+    if (thread.source && filePath !== thread.source) {
       setFilePath(thread.id, thread.source);
     }
   }, [filePath, setFilePath, thread]);
@@ -45,6 +46,13 @@ const TaskThread = ({
       console.error("Failed to fetch message history:", error);
     }
   }, [setFilePath, setMessages, thread.id, thread.source]);
+
+  const streamingMessage = messages.find((message) => message.isStreaming);
+
+  useEffect(() => {
+    const behavior = streamingMessage?.content ? "instant" : "smooth";
+    bottomRef.current?.scrollIntoView({ behavior });
+  }, [messages, streamingMessage?.content]);
 
   useEffect(() => {
     if (messages.length > 0 || isLoading) return;
@@ -94,11 +102,12 @@ const TaskThread = ({
               className="flex flex-col flex-1 [scrollbar-gutter:stable_both-edges] overflow-y-auto customScrollbar w-full"
             >
               <Messages messages={messages} />
+              <div ref={bottomRef} />
             </div>
 
             <div className="p-6 pt-0 max-w-page-content mx-auto w-full">
               <ProcessingWarning
-                thread={thread}
+                threadId={thread.id}
                 isLoading={isLoading}
                 onRefresh={() => {
                   fetchMessages();
