@@ -35,7 +35,7 @@ const FileEditor = forwardRef<FileEditorRef, Props>(
     ref,
   ) => {
     const fileName = atob(pathb64);
-    const { data: fileContent } = useFile(pathb64);
+    const { data: fileContent, isPending } = useFile(pathb64);
 
     useEffect(() => {
       onValueChange?.(fileContent || "");
@@ -58,6 +58,14 @@ const FileEditor = forwardRef<FileEditorRef, Props>(
     const handleSaveAndNavigate = () => {
       handleSaveFile(() => blocker.proceed?.());
     };
+
+    if (isPending) {
+      return (
+        <div className="flex items-center justify-center h-full">
+          <Loader2 className="animate-spin h-4 w-4" />
+        </div>
+      );
+    }
 
     if (!fileContent && fileContent != "") {
       return null;
@@ -90,6 +98,7 @@ const FileEditor = forwardRef<FileEditorRef, Props>(
           }}
           onMount={handleEditorMount}
         />
+
         <UnsavedChangesDialog
           open={unsavedChangesDialogOpen}
           onOpenChange={setUnsavedChangesDialogOpen}
