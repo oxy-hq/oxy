@@ -18,13 +18,13 @@ const fetchSSE = async <T>(
     eventTypes = ["message"],
   } = options;
   const token = localStorage.getItem("auth_token");
-
   await fetchEventSource(url, {
     method,
     headers: {
       "Content-Type": "application/json",
       Authorization: token ?? "",
     },
+    openWhenHidden: true,
     body: body ? JSON.stringify(body) : undefined,
     async onopen(res) {
       if (res.status !== 200) {
