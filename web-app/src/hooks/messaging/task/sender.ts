@@ -20,6 +20,12 @@ export class TaskMessageSender implements MessageSender {
 
     let streamingMessage = MessageFactory.createStreamingMessage(threadId);
 
+    if (content && onUserMessage) {
+      const userMessage = MessageFactory.createUserMessage(content, threadId);
+      onUserMessage(userMessage);
+      onMessageUpdate(streamingMessage);
+    }
+
     await ThreadService.askTask(
       threadId,
       content,
@@ -34,16 +40,7 @@ export class TaskMessageSender implements MessageSender {
           onFilePathUpdate(streamingMessage.file_path);
         }
       },
-      () => {
-        if (content && onUserMessage) {
-          const userMessage = MessageFactory.createUserMessage(
-            content,
-            threadId,
-          );
-          onUserMessage(userMessage);
-          onMessageUpdate(streamingMessage);
-        }
-      },
+      () => {},
     );
   }
 }
