@@ -1,3 +1,5 @@
+use crate::config::model::AppConfig;
+
 use super::model::{AgentConfig, Config, ExportFormat, TaskExport, TaskType};
 use std::{env, fmt::Display, path::PathBuf};
 
@@ -50,8 +52,17 @@ pub fn validate_env_var(env_var: &str, _: &ValidationContext) -> garde::Result {
     }
 }
 
+pub struct DataAppValidationContext {
+    pub app_config: AppConfig,
+}
+
+pub enum ValidationContextMetadata {
+    DataApp(DataAppValidationContext),
+}
+
 pub struct ValidationContext {
     pub config: Config,
+    pub metadata: Option<ValidationContextMetadata>,
 }
 
 pub struct AgentValidationContext {
@@ -140,5 +151,24 @@ pub fn validate_model(
             validation_text.agent_config.model
         ))
     })?;
+    Ok(())
+}
+
+pub fn validate_task_data_reference(data_ref: &String, ctx: &ValidationContext) -> garde::Result {
+    if let Some(ValidationContextMetadata::DataApp(data_app_ctx)) = &ctx.metadata {
+        let task_names: std::collections::HashSet<String> = data_app_ctx
+            .app_config
+            .tasks
+            .iter()
+            .map(|t| t.name.clone())
+            .collect();
+
+        if !task_names.contains(data_ref) {
+            return Err(garde::Error::new(format!(
+                "Display block references task '{}' which does not exist in the app config",
+                data_ref
+            )));
+        }
+    }
     Ok(())
 }

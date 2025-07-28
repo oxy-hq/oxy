@@ -46,6 +46,7 @@ impl Config {
     pub fn validate_workflow(&self, workflow: &Workflow) -> anyhow::Result<()> {
         let context = ValidationContext {
             config: self.clone(),
+            metadata: None,
         };
         match workflow.validate_with(&context) {
             Ok(_) => Ok(()),
@@ -232,6 +233,7 @@ pub fn parse_config(config_path: &PathBuf, project_path: PathBuf) -> Result<Conf
             config.project_path = project_path;
             let context = ValidationContext {
                 config: config.clone(),
+                metadata: None,
             };
             let validation_result = config
                 .validate_with(&context)
