@@ -103,7 +103,7 @@ apalis = "0.7.2"
 apalis-core = "0.7.2"
 apalis-sql = { version = "0.7.2", features = ["sqlite", "tokio"] }
 sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "sqlite"] }
-rustls = { version = "0.23.29", features = ["aws_lc_rs"] }
+rustls = { version = "0.23.30", features = ["aws_lc_rs"] }
 parquet = "53.4"
 short-uuid = "0.2.0"
 rapidfuzz = "0.5.0"
