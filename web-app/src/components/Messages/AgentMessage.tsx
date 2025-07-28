@@ -55,7 +55,7 @@ const AgentMessage = ({
             <div className="p-4 w-full rounded-xl bg-base-card border border-base-border shadow-sm flex flex-col gap-2 overflow-x-auto">
               <ThreadSteps steps={steps} isLoading={isStreaming} />
               <AnswerContent
-                content={content || "No response"}
+                content={content}
                 onArtifactClick={onArtifactClick}
               />
             </div>
