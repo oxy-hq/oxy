@@ -3,6 +3,7 @@ pub mod types;
 use std::{fs::File, path::PathBuf};
 
 use crate::{
+    config::validate::{DataAppValidationContext, ValidationContext, ValidationContextMetadata},
     constants::UNPUBLISH_APP_DIR,
     errors::OxyError,
     execute::{
@@ -13,6 +14,7 @@ use crate::{
     service,
     tools::types::CreateDataAppInput,
 };
+use garde::Validate;
 use short_uuid::ShortUuid;
 use tokio::fs;
 
@@ -30,6 +32,22 @@ impl Executable<CreateDataAppInput> for CreateDataAppExecutable {
     ) -> Result<Self::Response, OxyError> {
         tracing::debug!("Creating data app with input: {:?}", &input);
         let CreateDataAppInput { param } = input;
+
+        // Validate the app config
+        let validation_context = ValidationContext {
+            config: execution_context.config.get_config().clone(),
+            metadata: Some(ValidationContextMetadata::DataApp(
+                DataAppValidationContext {
+                    app_config: param.app_config.clone(),
+                },
+            )),
+        };
+
+        param
+            .app_config
+            .validate_with(&validation_context)
+            .map_err(|e| OxyError::AgentError(format!("Invalid app config: {}", e)))?;
+
         let project_path = resolve_project_path()?;
         let mut full_file_name = format!("{}.app.yml", param.file_name);
         let file_dir = project_path.join(UNPUBLISH_APP_DIR);

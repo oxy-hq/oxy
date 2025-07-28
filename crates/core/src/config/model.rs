@@ -18,6 +18,7 @@ use super::validate::{AgentValidationContext, validate_model, validate_task};
 use crate::config::validate::validate_file_path;
 use crate::config::validate::{
     ValidationContext, validate_agent_exists, validate_database_exists, validate_env_var,
+    validate_task_data_reference,
 };
 use crate::errors::OxyError;
 use crate::utils::list_by_sub_extension;
@@ -1847,61 +1848,93 @@ pub struct MarkdownDisplay {
     pub content: String,
 }
 
-#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone, Validate)]
+#[garde(context(ValidationContext))]
 pub struct LineChartDisplay {
+    #[garde(length(min = 1))]
     pub x: String,
+    #[garde(length(min = 1))]
     pub y: String,
+    #[garde(skip)]
     pub x_axis_label: Option<String>,
+    #[garde(skip)]
     pub y_axis_label: Option<String>,
     #[schemars(description = "reference data output from a task using task name")]
+    #[garde(length(min = 1))]
+    #[garde(custom(validate_task_data_reference))]
     pub data: String,
+    #[garde(skip)]
     pub series: Option<String>,
+    #[garde(skip)]
     pub title: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone, Validate)]
+#[garde(context(ValidationContext))]
 pub struct BarChartDisplay {
+    #[garde(length(min = 1))]
     pub x: String,
+    #[garde(length(min = 1))]
     pub y: String,
+    #[garde(skip)]
     pub title: Option<String>,
+    #[garde(length(min = 1))]
+    #[garde(custom(validate_task_data_reference))]
     pub data: String,
+    #[garde(skip)]
     pub series: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone, Validate)]
+#[garde(context(ValidationContext))]
 pub struct PieChartDisplay {
+    #[garde(length(min = 1))]
     pub name: String,
+    #[garde(length(min = 1))]
     pub value: String,
+    #[garde(skip)]
     pub title: Option<String>,
+    #[garde(length(min = 1))]
+    #[garde(custom(validate_task_data_reference))]
     pub data: String,
 }
 
-#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone, Validate)]
+#[garde(context(ValidationContext))]
 pub struct TableDisplay {
+    #[garde(length(min = 1))]
+    #[garde(custom(validate_task_data_reference))]
     pub data: String,
+    #[garde(skip)]
     pub title: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone, Validate)]
 #[serde(tag = "type")]
+#[garde(context(ValidationContext))]
 pub enum Display {
     #[serde(rename = "markdown")]
-    Markdown(MarkdownDisplay),
+    Markdown(#[garde(skip)] MarkdownDisplay),
     #[serde(rename = "line_chart")]
-    LineChart(LineChartDisplay),
+    LineChart(#[garde(dive)] LineChartDisplay),
     #[serde(rename = "pie_chart")]
-    PieChart(PieChartDisplay),
+    PieChart(#[garde(dive)] PieChartDisplay),
     #[serde(rename = "bar_chart")]
-    BarChart(BarChartDisplay),
+    BarChart(#[garde(dive)] BarChartDisplay),
     #[serde(rename = "table")]
-    Table(TableDisplay),
+    Table(#[garde(dive)] TableDisplay),
 }
 
-#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone, Validate)]
+#[garde(context(ValidationContext))]
 pub struct AppConfig {
     #[schemars(description = "tasks to prepare the data for the app")]
+    #[garde(dive)]
+    #[garde(length(min = 1))]
     pub tasks: Vec<Task>,
     #[schemars(description = "display blocks to render the app")]
+    #[garde(length(min = 1))]
+    #[garde(dive)]
     pub display: Vec<Display>,
 }
 
