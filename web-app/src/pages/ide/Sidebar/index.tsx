@@ -13,6 +13,7 @@ import {
   ChevronsRight,
   FilePlus,
   FolderPlus,
+  Loader2,
   RotateCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/shadcn/button";
@@ -29,7 +30,7 @@ const Sidebar = ({
   sidebarOpen: boolean;
   setSidebarOpen: (open: boolean) => void;
 }) => {
-  const { data, refetch } = useFileTree();
+  const { data, refetch, isPending } = useFileTree();
   const { isReadonly } = useReadonly();
   const fileTree = data
     ?.filter((f) => !ignoreFilesRegex.some((r) => f.name.match(r)))
@@ -104,6 +105,11 @@ const Sidebar = ({
           <SidebarContent className="customScrollbar h-full flex-1 overflow-y-auto">
             <SidebarGroup>
               <SidebarMenu>
+                {isPending && (
+                  <div className="flex items-center justify-center p-2">
+                    <Loader2 className="animate-spin h-4 w-4" />
+                  </div>
+                )}
                 {isCreating && !isReadonly && (
                   <NewNode
                     creationType={creationType}
