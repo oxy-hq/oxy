@@ -26,6 +26,7 @@ const AgentThread = ({ thread, refetchThread }: AgentThreadProps) => {
   const isInitialLoad = useRef(false);
   const { getAgentThread, setMessages } = useAgentThreadStore();
   const { sendMessage } = useAskAgent();
+  const bottomRef = useRef<HTMLDivElement>(null);
 
   const agentThread = getAgentThread(thread.id);
   const { messages, isLoading } = agentThread;
@@ -43,6 +44,13 @@ const AgentThread = ({ thread, refetchThread }: AgentThreadProps) => {
     sendMessage(followUpQuestion, thread.id);
     setFollowUpQuestion("");
   }, [followUpQuestion, isLoading, sendMessage, thread.id]);
+
+  const streamingMessage = messages.find((message) => message.isStreaming);
+
+  useEffect(() => {
+    const behavior = streamingMessage?.content ? "instant" : "smooth";
+    bottomRef.current?.scrollIntoView({ behavior });
+  }, [messages, streamingMessage?.content]);
 
   const fetchMessages = useCallback(async () => {
     try {
@@ -86,12 +94,13 @@ const AgentThread = ({ thread, refetchThread }: AgentThreadProps) => {
                 messages={messages}
                 onArtifactClick={handleArtifactClick}
               />
+              <div ref={bottomRef} />
             </div>
           </div>
 
           <div className="flex flex-col p-4 gap-1 pt-0 max-w-[742px] mx-auto w-full">
             <ProcessingWarning
-              thread={thread}
+              threadId={thread.id}
               isLoading={isLoading}
               onRefresh={() => {
                 fetchMessages();

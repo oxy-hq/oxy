@@ -45,7 +45,7 @@ const WorkflowThread = ({
       <div className="flex-1 w-full">
         <ProcessingWarning
           className="max-w-page-content mx-auto w-full mt-2"
-          thread={thread}
+          threadId={thread.id}
           isLoading={isLoading}
           onRefresh={refetchThread}
         />

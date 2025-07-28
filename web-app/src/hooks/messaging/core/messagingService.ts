@@ -1,6 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import queryKeys from "../../api/queryKey";
-import { Message, ThreadItem, ThreadsResponse } from "@/types/chat";
+import { Message, ThreadsResponse } from "@/types/chat";
 import {
   ThreadStore,
   SendMessageOptions,
@@ -121,19 +121,10 @@ export class MessagingService {
       onMessageUpdate(completedMessage);
     }
 
-    this.queryClient.setQueryData(
-      queryKeys.thread.item(threadId),
-      (old: ThreadItem | undefined) => {
-        if (old) {
-          return { ...old, is_processing: false };
-        }
-        return old;
-      },
-    );
-
-    this.threadStore.setIsLoading(threadId, false);
     this.queryClient.invalidateQueries({
       queryKey: queryKeys.thread.all,
     });
+
+    this.threadStore.setIsLoading(threadId, false);
   }
 }

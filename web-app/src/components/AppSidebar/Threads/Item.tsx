@@ -1,4 +1,4 @@
-import { Loader2, MoreHorizontal, Trash2 } from "lucide-react";
+import { MoreHorizontal, Trash2 } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { ThreadItem } from "@/types/chat";
 import {
@@ -43,7 +43,6 @@ const Item = ({ thread }: ItemProps) => {
       <SidebarMenuSubButton asChild isActive={isActive}>
         <Link to={`/threads/${thread.id}`}>
           <span className="truncate">{thread.title}</span>
-          {thread.is_processing && <Loader2 className="animate-spin" />}
         </Link>
       </SidebarMenuSubButton>
       <DropdownMenu>
