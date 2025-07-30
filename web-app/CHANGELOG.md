@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.2.22](https://github.com/oxy-hq/oxy-internal/compare/0.2.21...0.2.22) (2025-07-28)
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* add ide loading state ([#991](https://github.com/oxy-hq/oxy-internal/issues/991)) ([73adfdd](https://github.com/oxy-hq/oxy-internal/commit/73adfdd59b8c0ccc4c2df2325ef13b2810e5e8eb))
+* auto reconnect/stream request when document hidden ([#990](https://github.com/oxy-hq/oxy-internal/issues/990)) ([8bd89f2](https://github.com/oxy-hq/oxy-internal/commit/8bd89f21bb1bcf3eb14d1107cbf2081570f0b0d5))
+* follow-up question immediately show in chat ([#985](https://github.com/oxy-hq/oxy-internal/issues/985)) ([6ad0c7c](https://github.com/oxy-hq/oxy-internal/commit/6ad0c7cdb0ab8932f2dbb71170058b63659dec8a))
+* multiple usability errors ([#988](https://github.com/oxy-hq/oxy-internal/issues/988)) ([6fd4e04](https://github.com/oxy-hq/oxy-internal/commit/6fd4e04adb641c69b2b7c121e11414f7e431c657))
+
 ## [0.2.21](https://github.com/oxy-hq/oxy-internal/compare/0.2.20...0.2.21) (2025-07-21)
 
 

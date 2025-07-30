@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.22](https://github.com/oxy-hq/oxy-internal/compare/0.2.21...0.2.22) (2025-07-28)
+
+
+### <!-- 0 -->🚀 Features
+
+* validate vibe coded app config ([#989](https://github.com/oxy-hq/oxy-internal/issues/989)) ([372e8f9](https://github.com/oxy-hq/oxy-internal/commit/372e8f927c4ce5e6d5720e37802a7301cd965c45))
+
 ## [0.2.21](https://github.com/oxy-hq/oxy-internal/compare/0.2.20...0.2.21) (2025-07-21)
 
 
