@@ -1,21 +1,23 @@
 import { DataContainer, Display } from "@/types/app";
 
-// Import refactored display blocks
 import { MarkdownDisplayBlock } from "./MarkdownDisplayBlock";
 import { LineChart } from "./LineChart";
 import { BarChart } from "./BarChart";
 import { PieChart } from "./PieChart";
 import { DataTableBlock } from "./DataTableBlock";
+import { ErrorBoundary } from "react-error-boundary";
+import ErrorDisplayBlock from "./ErrorDisplayBlock";
 
-// Display block switch
 const DisplayBlock = ({
   display,
   data,
 }: {
   display: Display;
-  data: DataContainer;
+  data?: DataContainer;
 }) => {
   switch (display.type) {
+    case "error":
+      return <ErrorDisplayBlock display={display} />;
     case "markdown":
       return <MarkdownDisplayBlock display={display} data={data} />;
     case "line_chart":
@@ -31,17 +33,30 @@ const DisplayBlock = ({
   }
 };
 
-// Displays list
 export const Displays = ({
   displays,
   data,
 }: {
   displays: Display[];
-  data: DataContainer;
+  data?: DataContainer;
 }) => (
   <div className="flex flex-col gap-4">
     {displays.map((display, idx) => (
-      <DisplayBlock key={idx} display={display} data={data} />
+      <ErrorBoundary
+        key={idx}
+        resetKeys={[display, data]}
+        fallback={
+          <ErrorDisplayBlock
+            display={{
+              type: "error",
+              title: "Display Error",
+              error: `Failed to render display of type ${display.type}`,
+            }}
+          />
+        }
+      >
+        <DisplayBlock display={display} data={data} />
+      </ErrorBoundary>
     ))}
   </div>
 );

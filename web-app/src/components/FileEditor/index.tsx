@@ -74,6 +74,7 @@ const FileEditor = forwardRef<FileEditorRef, Props>(
     return (
       <>
         <Editor
+          path={"file://" + fileName}
           theme="github-dark"
           height="100%"
           width="100%"

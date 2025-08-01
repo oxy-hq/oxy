@@ -45,8 +45,11 @@ const databaseKeys = {
 const appKeys = {
   all: ["app"] as const,
   list: () => [...appKeys.all, "list"] as const,
-  get: (appPath: string) => [...appKeys.all, "get", appPath] as const,
+  getAppData: (appPath: string) =>
+    [...appKeys.all, "getAppData", appPath] as const,
   getData: (appPath: string) => [...appKeys.all, "getData", appPath] as const,
+  getDisplays: (appPath: string) =>
+    [...appKeys.all, "getDisplays", appPath] as const,
 };
 
 const apiKeyKeys = {

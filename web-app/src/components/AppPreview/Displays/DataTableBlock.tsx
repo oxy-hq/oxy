@@ -24,21 +24,28 @@ export const DataTableBlock = ({
   data,
 }: {
   display: TableDisplay;
-  data: DataContainer;
+  data?: DataContainer;
 }) => {
-  const value = getData(data, display.data) as TableData;
   const [isLoading, setIsLoading] = useState(true);
   const [table, setTable] = useState<Awaited<
     ReturnType<typeof load_table>
   > | null>(null);
 
+  const dataAvailable = data && display.data;
+
   useEffect(() => {
     (async () => {
+      if (!dataAvailable) {
+        setTable(null);
+        setIsLoading(false);
+        return;
+      }
+      const value = getData(data, display.data) as TableData;
       const table = await load_table(value.file_path);
       setTable(table);
       setIsLoading(false);
     })();
-  }, [value.file_path]);
+  }, [data, dataAvailable, display.data]);
 
   if (isLoading)
     return (
@@ -46,32 +53,37 @@ export const DataTableBlock = ({
         Loading...
       </div>
     );
-  if (!table) return <div>No data</div>;
 
   return (
     <div className="flex flex-col gap-4 items-left">
       <h2>{display.title}</h2>
       <DataTable className="border">
-        <TableHeader>
-          <TableRow>
-            {table.schema.fields.map((field) => (
-              <TableHead className="text-gray-500 border" key={field.name}>
-                {field.name}
-              </TableHead>
-            ))}
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {table.toArray().map((row, idx) => (
-            <TableRow key={idx} className="border">
-              {table.schema.fields.map((field) => (
-                <TableCell className="border" key={field.name}>
-                  {row[field.name]}
-                </TableCell>
+        {!table ? (
+          <div className="text-center text-gray-500 p-2">No data found</div>
+        ) : (
+          <>
+            <TableHeader>
+              <TableRow>
+                {table.schema.fields.map((field) => (
+                  <TableHead className="text-gray-500 border" key={field.name}>
+                    {field.name}
+                  </TableHead>
+                ))}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {table.toArray().map((row, idx) => (
+                <TableRow key={idx} className="border">
+                  {table.schema.fields.map((field) => (
+                    <TableCell className="border" key={field.name}>
+                      {row[field.name]}
+                    </TableCell>
+                  ))}
+                </TableRow>
               ))}
-            </TableRow>
-          ))}
-        </TableBody>
+            </TableBody>
+          </>
+        )}
       </DataTable>
     </div>
   );

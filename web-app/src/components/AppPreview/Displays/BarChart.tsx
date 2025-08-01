@@ -1,99 +1,92 @@
-import { useEffect, useState } from "react";
+import { useCallback } from "react";
 import type { BarSeriesOption } from "echarts";
-import type { EChartsOption } from "echarts";
-import { BarChartDisplay, DataContainer, TableData } from "@/types/app";
-import { getArrowValue, getData, registerAuthenticatedFile } from "./utils";
+import { BarChartDisplay, DataContainer } from "@/types/app";
 import { Echarts } from "@/components/Echarts";
-import { getDuckDB } from "@/libs/duckdb";
-import useTheme from "@/stores/useTheme";
+import {
+  useChartBase,
+  getXAxisData,
+  getSeriesData,
+  getSeriesValues,
+  getSimpleAggregatedData,
+  createBaseChartOptions,
+  createXYAxisOptions,
+  type ChartBuilderParams,
+} from "./hooks";
 
 export const BarChart = ({
   display,
   data,
 }: {
   display: BarChartDisplay;
-  data: DataContainer;
+  data?: DataContainer;
 }) => {
-  const value = getData(data, display.data) as TableData;
-  const [isLoading, setIsLoading] = useState(true);
-  const { theme } = useTheme();
-  const isDarkMode = theme === "dark";
-  const [chartOptions, setChartOptions] = useState<EChartsOption>({});
+  const buildChartOptions = useCallback(
+    async ({
+      display,
+      connection,
+      fileName,
+      isDarkMode,
+    }: ChartBuilderParams<BarChartDisplay>) => {
+      const baseOptions = createBaseChartOptions(display.title, isDarkMode);
+      const xData = await getXAxisData(connection, fileName, display.x);
+      const xyAxisOptions = createXYAxisOptions(xData, isDarkMode);
 
-  useEffect(() => {
-    (async (): Promise<void> => {
-      const db = await getDuckDB();
-      const file_name = await registerAuthenticatedFile(value.file_path);
-      const conn = await db.connect();
-
-      const options: EChartsOption = {
-        darkMode: isDarkMode,
-        title: { text: display.title },
-        tooltip: {},
-        xAxis: { type: "category" },
-        yAxis: { type: "value" },
-        series: [],
-        grid: { containLabel: true },
-      };
-
-      const xData = await conn.query(
-        `select distinct ${display.x} as x from "${file_name}"`,
-      );
-      options.xAxis = {
-        ...options.xAxis,
-        data: xData.toArray().map((row) => getArrowValue(row.x)) as (
-          | string
-          | number
-        )[],
-      };
+      let series: BarSeriesOption[];
 
       if (display.series) {
-        const seriesStmt = await conn.prepare(
-          `SELECT DISTINCT ${display.series} as series from "${file_name}";`,
+        const seriesNames = await getSeriesData(
+          connection,
+          fileName,
+          display.series,
         );
-        const series = await seriesStmt.query();
-        const seriesDataStatement = await conn.prepare(
-          `SELECT ${display.x} as x, SUM(${display.y}) as y from "${file_name}" where ${display.series} = ? group by ${display.x}, ${display.series};`,
+        series = await Promise.all(
+          seriesNames.map(async (seriesName): Promise<BarSeriesOption> => {
+            const values = await getSeriesValues(
+              connection,
+              fileName,
+              display.x,
+              display.y,
+              display.series!,
+              seriesName,
+            );
+            return {
+              name: String(seriesName),
+              type: "bar",
+              stack: "total",
+              data: values,
+            };
+          }),
         );
-        const seriesData: BarSeriesOption[] = [];
-        for (const seriesItem of series.toArray().map((row) => row.series)) {
-          const yData = await seriesDataStatement.query(seriesItem);
-          seriesData.push({
-            name: seriesItem,
-            type: "bar",
-            stack: "total",
-            data: yData.toArray().map((row) => getArrowValue(row.y)) as (
-              | number
-              | string
-            )[],
-          });
-        }
-        options.series = seriesData;
       } else {
-        const yData = await conn.query(
-          `SELECT ${display.x} as x, SUM(${display.y}) as y from "${file_name}" group by ${display.x};`,
+        const values = await getSimpleAggregatedData(
+          connection,
+          fileName,
+          display.x,
+          display.y,
         );
-        options.series = [
+        series = [
           {
             name: display.y,
             type: "bar",
-            data: yData.toArray().map((row) => getArrowValue(row.y)) as (
-              | string
-              | number
-            )[],
+            data: values,
           },
         ];
       }
-      setChartOptions(options);
-      setIsLoading(false);
-    })();
-  }, [display, value.file_path, data, isDarkMode]);
 
-  if (!chartOptions)
-    return (
-      <div className="w-full h-full flex items-center justify-center">
-        Loading...
-      </div>
-    );
+      return {
+        ...baseOptions,
+        ...xyAxisOptions,
+        series,
+      };
+    },
+    [],
+  );
+
+  const { isLoading, chartOptions } = useChartBase({
+    display,
+    data,
+    buildChartOptions,
+  });
+
   return <Echarts isLoading={isLoading} options={chartOptions} />;
 };

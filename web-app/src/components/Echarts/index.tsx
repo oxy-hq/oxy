@@ -37,17 +37,20 @@ export const Echarts = ({
     if (chartRef.current) {
       const chart = getInstanceByDom(chartRef.current);
 
-      chart?.setOption({
-        ...options,
-        toolbox: options.toolbox || {
-          feature: {
-            dataZoom: {
-              yAxisIndex: "none",
+      chart?.setOption(
+        {
+          ...options,
+          toolbox: options.toolbox || {
+            feature: {
+              dataZoom: {
+                yAxisIndex: "none",
+              },
+              saveAsImage: {},
             },
-            saveAsImage: {},
           },
         },
-      });
+        true,
+      );
       chart?.resize();
     }
   }, [options]);

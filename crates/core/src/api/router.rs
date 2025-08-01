@@ -110,7 +110,8 @@ pub async fn api_router(auth_mode: AuthMode, readonly_mode: bool) -> Result<Rout
         .route("/api-keys", post(api_keys::create_api_key))
         .route("/api-keys/{id}", get(api_keys::get_api_key))
         .route("/api-keys/{id}", delete(api_keys::delete_api_key))
-        .route("/app/{pathb64}", get(app::get_app))
+        .route("/app/{pathb64}/displays", get(app::get_displays))
+        .route("/app/{pathb64}", get(app::get_app_data))
         .route("/app/file/{pathb64}", get(app::get_data))
         .route("/apps", get(app::list_apps))
         .route(

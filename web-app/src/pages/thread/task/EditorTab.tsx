@@ -19,10 +19,10 @@ const EditorTab = ({ pathb64 }: { pathb64?: string }) => {
     if (!pathb64) return;
     setPreviewKey(randomKey());
     await queryClient.invalidateQueries({
-      queryKey: queryKeys.app.get(pathb64),
+      queryKey: queryKeys.app.getAppData(pathb64),
     });
     await queryClient.refetchQueries({
-      queryKey: queryKeys.app.get(pathb64),
+      queryKey: queryKeys.app.getAppData(pathb64),
     });
   };
 
