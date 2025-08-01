@@ -11,7 +11,12 @@ const AppEditor = ({ pathb64 }: { pathb64: string }) => {
 
   const onSaved = () => {
     setPreviewKey(randomKey());
-    queryClient.invalidateQueries({ queryKey: queryKeys.app.get(pathb64) });
+    queryClient.invalidateQueries({
+      queryKey: queryKeys.app.getAppData(pathb64),
+    });
+    queryClient.invalidateQueries({
+      queryKey: queryKeys.app.getDisplays(pathb64),
+    });
   };
 
   return (

@@ -120,6 +120,7 @@ hmac = "0.12.1"
 sha2 = "0.10.9"
 hex = "0.4.3"
 serde_yaml = "0.9.34"
+xxhash-rust = { version = "0.8", features = ["xxh3"] }
 
 [lib]
 name = "oxy"

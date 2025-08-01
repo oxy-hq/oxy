@@ -22,7 +22,14 @@ const CodeBlock: React.FC<CodeBlockProps> = ({ children, className }) => {
       {String(children)}
     </SyntaxHighlighter>
   ) : (
-    <code className={className}>{children}</code>
+    <code
+      className={cx(
+        "bg-muted px-1.5 py-0.5 rounded text-sm font-mono",
+        className,
+      )}
+    >
+      {children}
+    </code>
   );
 };
 

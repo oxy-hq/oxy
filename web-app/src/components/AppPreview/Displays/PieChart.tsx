@@ -1,57 +1,40 @@
-import { useEffect, useState } from "react";
+import { useCallback } from "react";
 import type { PieSeriesOption } from "echarts";
-import type { EChartsOption } from "echarts";
-import { DataContainer, PieChartDisplay, TableData } from "@/types/app";
-import { getArrowValue, getData, registerAuthenticatedFile } from "./utils";
+import { DataContainer, PieChartDisplay } from "@/types/app";
 import { Echarts } from "@/components/Echarts";
-import { getDuckDB } from "@/libs/duckdb";
-import useTheme from "@/stores/useTheme";
+import {
+  useChartBase,
+  getPieChartData,
+  createPieChartOptions,
+  type ChartBuilderParams,
+} from "./hooks";
 
 export const PieChart = ({
   display,
   data,
 }: {
   display: PieChartDisplay;
-  data: DataContainer;
+  data?: DataContainer;
 }) => {
-  const value = getData(data, display.data) as TableData;
-  const [isLoading, setIsLoading] = useState(true);
-  const [chartOptions, setChartOptions] = useState<EChartsOption>({});
-  const { theme } = useTheme();
-  const isDarkMode = theme === "dark";
+  const buildChartOptions = useCallback(
+    async ({
+      display,
+      connection,
+      fileName,
+      isDarkMode,
+    }: ChartBuilderParams<PieChartDisplay>) => {
+      const baseOptions = createPieChartOptions(display.title, isDarkMode);
 
-  useEffect(() => {
-    (async (): Promise<void> => {
-      const db = await getDuckDB();
-      const file_name = await registerAuthenticatedFile(value.file_path);
-      const conn = await db.connect();
-
-      const options: EChartsOption = {
-        darkMode: isDarkMode,
-        title: { text: display.title },
-        tooltip: {
-          trigger: "item",
-          formatter: "{b}: {c} ({d}%)",
-        },
-        series: [],
-        grid: { containLabel: true },
-      };
-
-      const pieData = await conn.query(
-        `select ${display.name} as name,sum(${display.value}) as value from "${file_name}" group by ${display.name};`,
+      const pieData = await getPieChartData(
+        connection,
+        fileName,
+        display.name,
+        display.value,
       );
+
       const pieSeries: PieSeriesOption = {
         type: "pie",
-        data: pieData
-          .toArray()
-          .map((row) => ({
-            name: getArrowValue(row.name),
-            value: getArrowValue(row.value),
-          }))
-          .filter((row) => row.name && row.value) as {
-          name: string;
-          value: number;
-        }[],
+        data: pieData,
         emphasis: {
           itemStyle: {
             shadowBlur: 10,
@@ -60,11 +43,20 @@ export const PieChart = ({
           },
         },
       };
-      options.series = [pieSeries];
-      setChartOptions(options);
-      setIsLoading(false);
-    })();
-  }, [display, value.file_path, data, isDarkMode]);
+
+      return {
+        ...baseOptions,
+        series: [pieSeries],
+      };
+    },
+    [],
+  );
+
+  const { isLoading, chartOptions } = useChartBase({
+    display,
+    data,
+    buildChartOptions,
+  });
 
   return <Echarts isLoading={isLoading} options={chartOptions} />;
 };

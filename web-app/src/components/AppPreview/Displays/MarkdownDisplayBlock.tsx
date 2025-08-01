@@ -7,11 +7,12 @@ export const MarkdownDisplayBlock = ({
   data,
 }: {
   display: MarkdownDisplay;
-  data: DataContainer;
+  data?: DataContainer;
 }) => {
+  const dataContainer = data || {};
   const rendered_content = nunjucks.renderString(
     display.content,
-    data as object,
+    dataContainer as object,
   );
   return (
     <div className="markdown-display">

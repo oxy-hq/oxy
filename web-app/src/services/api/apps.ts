@@ -1,5 +1,5 @@
 import { apiClient } from "./axios";
-import { App, AppItem } from "@/types/app";
+import { AppData, AppDisplay, AppItem } from "@/types/app";
 
 export class AppService {
   static async listApps(): Promise<AppItem[]> {
@@ -7,13 +7,18 @@ export class AppService {
     return response.data;
   }
 
-  static async getApp(appPath64: string): Promise<App> {
+  static async getAppData(appPath64: string): Promise<AppData> {
     const response = await apiClient.get("/app/" + appPath64);
     return response.data;
   }
 
-  static async runApp(pathb64: string): Promise<App> {
+  static async runApp(pathb64: string): Promise<AppData> {
     const response = await apiClient.post(`/app/${pathb64}/run`);
+    return response.data;
+  }
+
+  static async getDisplays(pathb64: string): Promise<AppDisplay> {
+    const response = await apiClient.get(`/app/${pathb64}/displays`);
     return response.data;
   }
 

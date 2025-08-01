@@ -3,6 +3,26 @@ import { useCallback, useEffect, useRef } from "react";
 import { monacoGitHubDarkDefaultTheme } from "@/components/FileEditor/hooks/github-dark-theme";
 import { FileState } from "@/components/FileEditor";
 import useSaveFile from "@/hooks/api/files/useSaveFile";
+import { configureMonacoYaml } from "monaco-yaml";
+import YamlWorker from "./yaml.worker.js?worker";
+
+window.MonacoEnvironment = {
+  getWorker: function (_workerId, label) {
+    switch (label) {
+      case "yaml":
+        return new YamlWorker();
+      case "editorWorkerService":
+      default:
+        return new Worker(
+          new URL(
+            "monaco-editor/esm/vs/editor/editor.worker.js",
+            import.meta.url,
+          ),
+          { type: "module" },
+        );
+    }
+  },
+};
 
 interface UseMonacoEditorProps {
   fileState: FileState;
@@ -21,6 +41,7 @@ const useMonacoEditor = ({
 
   const monaco = useMonaco();
   const lastSavedVersionId = useRef<number | null>(null);
+  const isConfigured = useRef<boolean>(false);
 
   const handleSaveFile = useCallback(
     (afterSave?: () => void) => {
@@ -50,9 +71,38 @@ const useMonacoEditor = ({
   );
 
   useEffect(() => {
-    if (monaco) {
+    if (monaco && !isConfigured.current) {
+      isConfigured.current = true;
+
       monaco.editor.defineTheme("github-dark", monacoGitHubDarkDefaultTheme);
       monaco.editor.setTheme("github-dark");
+
+      configureMonacoYaml(monaco, {
+        enableSchemaRequest: true,
+        hover: true,
+        completion: true,
+        validate: true,
+        format: true,
+        schemas: [
+          {
+            fileMatch: ["**/*.app.yml", "**/*.app.yaml"],
+            uri: "https://raw.githubusercontent.com/oxy-hq/oxy/refs/heads/main/json-schemas/app.json",
+          },
+          {
+            fileMatch: ["**/*.agent.yml", "**/*.agent.yaml"],
+            uri: "https://raw.githubusercontent.com/oxy-hq/oxy/refs/heads/main/json-schemas/agent.json",
+          },
+          {
+            fileMatch: ["**/*.workflow.yml", "**/*.workflow.yaml"],
+            uri: "https://raw.githubusercontent.com/oxy-hq/oxy/refs/heads/main/json-schemas/workflow.json",
+          },
+          {
+            fileMatch: ["**/config.yml", "**/config.yaml"],
+            uri: "https://raw.githubusercontent.com/oxy-hq/oxy/refs/heads/main/json-schemas/config.json",
+          },
+        ],
+      });
+
       monaco.editor.addEditorAction({
         id: "save-file",
         label: "Save File",
@@ -60,7 +110,7 @@ const useMonacoEditor = ({
         run: () => handleSaveFile(),
       });
     }
-  }, [handleSaveFile, monaco]);
+  }, [monaco, handleSaveFile]);
 
   const handleEditorMount: OnMount = (editor) => {
     const model = editor.getModel();

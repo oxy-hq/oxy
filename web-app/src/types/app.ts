@@ -37,7 +37,14 @@ export type MarkdownDisplay = {
   content: string;
 };
 
+export type ErrorDisplay = {
+  type: "error";
+  title: string;
+  error: string;
+};
+
 export type Display =
+  | ErrorDisplay
   | BarChartDisplay
   | LineChartDisplay
   | TableDisplay
@@ -57,8 +64,12 @@ export interface DataList extends Array<DataContainer> {}
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface DataMap extends Record<string, DataContainer> {}
 
-export type App = {
+export type AppData = {
   data: DataContainer;
+  error: string;
+};
+
+export type AppDisplay = {
   displays: Display[];
 };
 
