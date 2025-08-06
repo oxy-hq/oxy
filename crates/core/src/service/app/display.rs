@@ -47,7 +47,7 @@ fn process_sequence_with_error_handling<T, F>(
     F: Fn(&serde_yaml::Value, usize) -> Result<Option<T>, String>,
     T: Into<DisplayWithError>,
 {
-    if let Some(serde_yaml::Value::Sequence(seq)) = root_map.get(&yaml_string_value(key)) {
+    if let Some(serde_yaml::Value::Sequence(seq)) = root_map.get(yaml_string_value(key)) {
         for (index, item_value) in seq.iter().enumerate() {
             match processor(item_value, index) {
                 Ok(Some(item)) => {
@@ -58,7 +58,7 @@ fn process_sequence_with_error_handling<T, F>(
                 }
                 Err(error) => {
                     displays.push(create_error_display(
-                        &format!("{} at index {}", item_name, index),
+                        &format!("{item_name} at index {index}"),
                         &error,
                     ));
                 }
@@ -94,7 +94,7 @@ fn process_displays_section(root_map: &serde_yaml::Mapping, displays: &mut Vec<D
         "Display",
         |display_value, _index| match serde_yaml::from_value::<Display>(display_value.clone()) {
             Ok(display) => Ok(Some(DisplayWithError::Display(display))),
-            Err(e) => Err(format!("{:?}", e)),
+            Err(e) => Err(format!("{e:?}")),
         },
     );
 }

@@ -44,8 +44,7 @@ pub fn get_app_data_path(
 
     if !file_name.ends_with(APP_FILE_EXTENSION) {
         return Err(crate::errors::OxyError::ConfigurationError(format!(
-            "File must have {} extension",
-            APP_FILE_EXTENSION
+            "File must have {APP_FILE_EXTENSION} extension"
         )));
     }
 

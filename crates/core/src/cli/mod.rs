@@ -577,8 +577,7 @@ async fn handle_workflow_file(
                 (
                     parts[0].to_string().parse::<u32>().map_err(|err| {
                         OxyError::ArgumentError(format!(
-                            "Invalid replay_id format: {}. Expected a number.",
-                            err
+                            "Invalid replay_id format: {err}. Expected a number."
                         ))
                     })?,
                     parts[1].to_string(),

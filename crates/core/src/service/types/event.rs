@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use utoipa::ToSchema;
 
 use crate::{
     adapters::runs::Mergeable,
@@ -76,7 +75,7 @@ impl Mergeable for EventKind {
                     } = other_item
                     {
                         *item = ContentType::Text {
-                            content: format!("{}{}", content, other_content),
+                            content: format!("{content}{other_content}"),
                         };
                         true
                     } else {
@@ -153,16 +152,14 @@ impl TryFrom<Event> for EventKind {
                         let metadata: serde_json::Value = serde_json::from_str(task_metadata)
                             .map_err(|e| {
                                 OxyError::RuntimeError(format!(
-                                    "Failed to parse task metadata: {}",
-                                    e
+                                    "Failed to parse task metadata: {e}"
                                 ))
                             })?;
                         return Ok(EventKind::TaskMetadata {
                             task_id: event.source.id.to_string(),
                             metadata: serde_json::from_value(metadata).map_err(|e| {
                                 OxyError::RuntimeError(format!(
-                                    "Failed to deserialize task metadata: {}",
-                                    e
+                                    "Failed to deserialize task metadata: {e}"
                                 ))
                             })?,
                         });

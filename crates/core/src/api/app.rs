@@ -129,8 +129,7 @@ pub async fn get_app_data(
         Err(e) => {
             tracing::debug!("Failed to get app tasks from path: {:?} {}", path, e);
             return Ok(extract::Json(create_error_response(format!(
-                "Failed to get app tasks: {}",
-                e
+                "Failed to get app tasks: {e}"
             ))));
         }
     };
@@ -147,8 +146,7 @@ pub async fn get_app_data(
         Err(e) => {
             tracing::debug!("Failed to run app: {:?}", e);
             return Ok(extract::Json(create_error_response(format!(
-                "Failed to run app: {}",
-                e
+                "Failed to run app: {e}"
             ))));
         }
     };
@@ -192,8 +190,7 @@ pub async fn run_app(
         Err(e) => {
             tracing::debug!("Failed to run app: {:?}", e);
             return Ok(extract::Json(create_error_response(format!(
-                "Failed to run app: {}",
-                e
+                "Failed to run app: {e}"
             ))));
         }
     };

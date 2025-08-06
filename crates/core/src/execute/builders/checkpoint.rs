@@ -70,7 +70,7 @@ where
         input: I,
     ) -> Result<Self::Response, OxyError> {
         let manager = CheckpointBuilder::from_config(&execution_context.config).await?;
-        let run_info = (&input).run_info();
+        let run_info = input.run_info();
         tracing::info!("Running with run info: {:?}", run_info);
         // Build new execution context with the new receiver and checkpoint manager
         let response = {
@@ -136,11 +136,11 @@ where
         if execution_context.checkpoint.is_none() {
             return self.inner.execute(execution_context, input).await;
         }
-        let replay_id = (&input).replay_id();
+        let replay_id = input.replay_id();
         let execution_context = execution_context.with_checkpoint_ref(&replay_id);
-        let checkpoint_hash = (&input).checkpoint_hash();
-        let child_run_info = (&input).child_run_info();
-        let loop_values = (&input).loop_values();
+        let checkpoint_hash = input.checkpoint_hash();
+        let child_run_info = input.child_run_info();
+        let loop_values = input.loop_values();
         match execution_context.read_checkpoint::<R, I>(&input).await {
             Ok(data) => match data.output {
                 Some(output) => {
@@ -178,7 +178,7 @@ where
         let handle = tokio::spawn(async move { buf_writer.write_and_copy(tx).await });
         let response = {
             let new_context = &execution_context.wrap_writer(writer);
-            self.inner.execute(&new_context, input).await
+            self.inner.execute(new_context, input).await
         };
         let events = handle.await??;
         let checkpoint_data: Option<CheckpointData<R>> = match &response {
@@ -190,11 +190,11 @@ where
                 );
                 Some(CheckpointData {
                     replay_id,
-                    checkpoint_hash: checkpoint_hash,
+                    checkpoint_hash,
                     output: Some(response.clone()),
-                    events: events,
+                    events,
                     run_info: child_run_info,
-                    loop_values: loop_values,
+                    loop_values,
                 })
             }
             Err(e) => {
@@ -207,11 +207,11 @@ where
                 match child_run_info {
                     Some(run_info) => Some(CheckpointData {
                         replay_id,
-                        checkpoint_hash: checkpoint_hash,
+                        checkpoint_hash,
                         output: None,
                         events: vec![],
                         run_info: Some(run_info),
-                        loop_values: loop_values,
+                        loop_values,
                     }),
                     None => None,
                 }
