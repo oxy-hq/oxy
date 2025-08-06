@@ -106,7 +106,7 @@ impl EventHandler for AgentCLIHandler {
                 EventKind::Started { name, .. } => {
                     println!("\n⏳Running workflow: {name}");
                 }
-                EventKind::Finished { message } => {
+                EventKind::Finished { message, .. } => {
                     println!("{message}");
                 }
                 _ => {}

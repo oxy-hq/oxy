@@ -4,7 +4,7 @@ use crate::{
         Executable, ExecutionContext,
         types::{Chunk, Output, OutputContainer, Prompt},
     },
-    workflow::{WorkflowInput, WorkflowLauncherExecutable},
+    workflow::{RetryStrategy, WorkflowInput, WorkflowLauncherExecutable},
 };
 
 use super::types::WorkflowInput as WorkflowToolInput;
@@ -38,7 +38,7 @@ impl Executable<WorkflowToolInput> for WorkflowExecutable {
             .execute(
                 execution_context,
                 WorkflowInput {
-                    restore_from_checkpoint: false,
+                    retry: RetryStrategy::NoRetry,
                     workflow_ref: input.workflow_config.workflow_ref.clone(),
                     variables: input.variables,
                 },

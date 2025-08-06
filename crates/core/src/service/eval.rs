@@ -73,7 +73,7 @@ impl EventHandler for EvalEventsHandler {
                 EventKind::Started { name, .. } => {
                     println!("⏳Starting {name}");
                 }
-                EventKind::Finished { message } => {
+                EventKind::Finished { message, .. } => {
                     if !self.quiet {
                         println!("{message}");
                     }

@@ -13,7 +13,12 @@ export const StepContainer = ({ children, selected, width, height }: Props) => {
       className={`flex flex-col gap-2 rounded-[10px] border border-border ${
         selected ? "bg-accent" : "bg-card"
       }`}
-      style={{ padding: `${nodePadding}px`, width: width, height: height }}
+      style={{
+        padding: `${nodePadding}px`,
+        width: width,
+        height: height,
+        zIndex: 1,
+      }}
     >
       {children}
     </div>

@@ -1,8 +1,6 @@
 use concurrency::DefaultControl;
 use wrap::Wrap;
 
-use crate::adapters::checkpoint::CheckpointManager;
-
 pub mod cache;
 pub mod chain;
 pub mod checkpoint;
@@ -57,15 +55,10 @@ impl<W> ExecutableBuilder<W> {
         self.wrap(state::StateWrapper::new(state))
     }
 
-    pub fn checkpoint_root<S>(
+    pub fn checkpoint_root(
         self,
-        checkpoint_manager: CheckpointManager,
-        should_restore: S,
-    ) -> ExecutableBuilder<stack::Stack<checkpoint::CheckpointRootWrapper<S>, W>> {
-        self.wrap(checkpoint::CheckpointRootWrapper::new(
-            checkpoint_manager,
-            should_restore,
-        ))
+    ) -> ExecutableBuilder<stack::Stack<checkpoint::CheckpointRootWrapper, W>> {
+        self.wrap(checkpoint::CheckpointRootWrapper)
     }
 
     pub fn checkpoint(self) -> ExecutableBuilder<stack::Stack<checkpoint::CheckpointWrapper, W>> {
@@ -117,16 +110,16 @@ impl<W> ExecutableBuilder<W> {
         ))
     }
 
-    pub fn chain(
+    pub fn chain<I, V, T>(
         self,
-    ) -> ExecutableBuilder<stack::Stack<chain::ChainWrapper<chain::NoopMapper>, W>> {
+    ) -> ExecutableBuilder<stack::Stack<chain::ChainWrapper<chain::NoopMapper, I, V, T>, W>> {
         self.wrap(chain::ChainWrapper::new(chain::NoopMapper))
     }
 
-    pub fn chain_map<M>(
+    pub fn chain_map<M, I, V, T>(
         self,
         mapper: M,
-    ) -> ExecutableBuilder<stack::Stack<chain::ChainWrapper<M>, W>> {
+    ) -> ExecutableBuilder<stack::Stack<chain::ChainWrapper<M, I, V, T>, W>> {
         self.wrap(chain::ChainWrapper::new(mapper))
     }
 

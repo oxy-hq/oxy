@@ -45,10 +45,9 @@ impl Executable<(String, Option<ToolType>, ToolRawInput)> for ToolExecutable {
     ) -> Result<Self::Response, OxyError> {
         let (agent_name, tool_type, input) = input;
         tracing::info!("Executing tool: {:?}", input);
-        let artifact_context = execution_context.with_child_source(
-            uuid::Uuid::new_v4().to_string(),
-            ARTIFACT_SOURCE.to_string(),
-        );
+        let artifact_id = uuid::Uuid::new_v4().to_string();
+        let artifact_context =
+            execution_context.with_child_source(artifact_id, ARTIFACT_SOURCE.to_string());
         if let Some(tool_type) = &tool_type {
             let is_verified = match tool_type {
                 ToolType::Workflow(workflow_tool) => workflow_tool.is_verified,

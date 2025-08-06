@@ -23,7 +23,7 @@ const OutputLogs: React.FC<OutputLogsProps> = ({
 
   const estimateSize = (index: number) => {
     const log = logs[index];
-    const lineNumbers = log.content
+    const lineNumbers = (log.content || "")
       .split("\n\n")
       .map((line) => line.split("\n").length)
       .reduce((a, b) => a + b, 0);

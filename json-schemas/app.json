@@ -225,9 +225,7 @@
         },
         {
           "type": "array",
-          "items": {
-            "type": "string"
-          }
+          "items": true
         }
       ]
     },

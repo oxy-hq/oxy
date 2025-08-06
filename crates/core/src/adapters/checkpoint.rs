@@ -1,187 +1,309 @@
-use std::{
-    hash::Hash,
-    path::{Path, PathBuf},
-};
-
-use fxhash::hash;
+use database::DatabaseStorage;
+use file::FileStorage;
+use itertools::Itertools;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
-use tokio::{
-    fs::{OpenOptions, create_dir_all},
-    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
-    sync::mpsc::{Receiver, Sender},
-};
 
 use crate::{
-    config::{
-        ConfigManager,
-        constants::{
-            CHECKPOINT_DATA_PATH, CHECKPOINT_EVENTS_FILE, CHECKPOINT_ROOT_PATH,
-            CHECKPOINT_SUCCESS_MARKER,
-        },
-    },
+    adapters::runs::RunsManager,
+    config::ConfigManager,
     errors::OxyError,
-    execute::{types::Event, writer::Writer},
+    execute::{builders::checkpoint::CheckpointId, types::Event},
+    service::types::run::{RootReference, RunInfo as PublicRunInfo},
 };
+
+mod database;
+mod file;
 
 pub struct CheckpointBuilder {
     storage: Option<CheckpointStorageImpl>,
+    run_storage: Option<RunsManager>,
 }
 
 impl CheckpointBuilder {
-    pub fn new() -> Self {
-        CheckpointBuilder { storage: None }
-    }
-
-    pub async fn from_config(config: &ConfigManager) -> Result<CheckpointManager, OxyError> {
-        let storage_path = config.resolve_file(CHECKPOINT_ROOT_PATH).await?;
-        let storage = CheckpointStorageImpl::FileStorage(FileStorage {
-            dir: PathBuf::from(storage_path),
-            data_path: CHECKPOINT_DATA_PATH.to_string(),
-        });
+    pub async fn from_config(_config: &ConfigManager) -> Result<CheckpointManager, OxyError> {
+        let storage = CheckpointStorageImpl::DatabaseStorage(DatabaseStorage::default().await?);
         CheckpointBuilder {
             storage: Some(storage),
+            run_storage: Some(RunsManager::default().await?),
         }
         .build()
     }
 
-    pub fn with_local_path<P: AsRef<Path>>(mut self, path: P) -> Self {
-        self.storage = Some(CheckpointStorageImpl::FileStorage(FileStorage {
-            dir: path.as_ref().to_path_buf(),
-            data_path: CHECKPOINT_DATA_PATH.to_string(),
-        }));
-        self
-    }
-
-    pub fn build(self) -> Result<CheckpointManager, OxyError> {
+    fn build(self) -> Result<CheckpointManager, OxyError> {
         let storage = self.storage.ok_or(OxyError::RuntimeError(
             "Storage source is required".to_string(),
         ))?;
+        let run_storage = self.run_storage.ok_or(OxyError::RuntimeError(
+            "Run storage is required".to_string(),
+        ))?;
 
-        Ok(CheckpointManager { storage })
+        Ok(CheckpointManager {
+            storage,
+            run_storage,
+        })
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct CheckpointManager {
     storage: CheckpointStorageImpl,
+    run_storage: RunsManager,
 }
 
 impl CheckpointManager {
-    pub fn checkpoint_id<I: Hash>(&self, input: &I) -> String {
-        self.storage.checkpoint_id(input)
-    }
-
-    pub async fn last_run(&self, root_id: &str) -> Result<RunInfo, OxyError> {
-        self.storage.last_run(root_id).await
-    }
-
-    pub async fn create_run(&self, root_id: &str) -> Result<RunInfo, OxyError> {
-        self.storage.create_run(root_id).await
-    }
-
-    pub async fn read_events<W: Writer>(
-        &self,
-        run_info: &RunInfo,
-        writer: W,
-    ) -> Result<(), OxyError> {
-        for event in self.storage.read_events(run_info).await? {
-            writer.write(event).await?;
-        }
-        Ok(())
-    }
-
-    pub async fn write_events(
-        &self,
-        run_info: &RunInfo,
-        receiver: Receiver<Vec<Event>>,
-    ) -> Result<(), OxyError> {
-        self.storage.write_events(run_info, receiver).await
-    }
-
     pub async fn write_success_marker(&self, run_info: &RunInfo) -> Result<(), OxyError> {
         self.storage.write_success_marker(run_info).await
     }
 
-    pub fn new_context(&self, run_info: RunInfo, tx: Sender<Vec<Event>>) -> CheckpointContext {
-        CheckpointContext::new(run_info, tx, self.storage.clone())
+    pub fn new_context(&self, run_info: RunInfo) -> CheckpointContext {
+        CheckpointContext::new(run_info, self.storage.clone(), self.run_storage.clone())
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct CheckpointContext {
+    root_ref: Option<RootReference>,
     run_info: RunInfo,
-    tx: Sender<Vec<Event>>,
+    current_ref: Vec<String>,
     storage: CheckpointStorageImpl,
+    run_storage: RunsManager,
 }
 
 impl CheckpointContext {
-    fn new(run_info: RunInfo, tx: Sender<Vec<Event>>, storage: CheckpointStorageImpl) -> Self {
+    fn new(run_info: RunInfo, storage: CheckpointStorageImpl, run_storage: RunsManager) -> Self {
         CheckpointContext {
+            root_ref: None,
             run_info,
-            tx,
             storage,
+            current_ref: vec![],
+            run_storage,
         }
     }
 
-    pub fn checkpoint_id<I: Hash>(&self, input: &I) -> String {
-        self.storage.checkpoint_id(input)
+    pub fn nested(&self, run_info: RunInfo) -> Self {
+        let root_ref = self.get_root_ref();
+        CheckpointContext {
+            root_ref: Some(root_ref),
+            run_info,
+            storage: self.storage.clone(),
+            current_ref: vec![],
+            run_storage: self.run_storage.clone(),
+        }
+    }
+
+    pub fn with_current_ref(&self, child_ref: &str) -> Self {
+        let mut current_ref = self.current_ref.clone();
+        current_ref.push(child_ref.to_string());
+
+        CheckpointContext {
+            root_ref: self.root_ref.clone(),
+            run_info: self.run_info.clone(),
+            current_ref,
+            storage: self.storage.clone(),
+            run_storage: self.run_storage.clone(),
+        }
+    }
+
+    pub fn get_root_ref(&self) -> RootReference {
+        match self.root_ref {
+            Some(ref root) => RootReference {
+                source_id: root.source_id.clone(),
+                run_index: root.run_index.clone(),
+                replay_ref: self.current_ref_str(),
+            },
+            None => RootReference {
+                source_id: self.run_info.source_id.clone(),
+                run_index: Some(self.run_info.run_index),
+                replay_ref: self.current_ref_str(),
+            },
+        }
+    }
+
+    pub fn current_ref_str(&self) -> String {
+        self.current_ref.join(".")
+    }
+
+    pub fn get_full_ref(&self, replay_id: &str) -> String {
+        self.current_ref
+            .iter()
+            .chain(std::iter::once(&replay_id.to_string()))
+            .into_iter()
+            .join(".")
+    }
+
+    pub fn get_replay_id(&self, target_replay_id: &str) -> Option<String> {
+        if let Some(replay_id) = &self.run_info.replay_id {
+            return replay_id
+                .strip_prefix(&self.get_full_ref(target_replay_id))
+                .map(|s| s.trim_start_matches(".").to_string());
+        }
+        None
+    }
+
+    pub async fn get_child_run_info(
+        &self,
+        replay_id: &str,
+        source_id: &str,
+    ) -> Result<RunInfo, OxyError> {
+        let checkpoint_data = self
+            .storage
+            .read_checkpoint::<serde_json::Value>(&self.run_info, &self.get_full_ref(replay_id))
+            .await
+            .ok();
+        let mut root_ref = self.get_root_ref();
+        root_ref.replay_ref = self.get_full_ref(replay_id);
+        let mut run_info: RunInfo = match checkpoint_data {
+            Some(checkpoint_data) => match checkpoint_data.run_info {
+                Some(run_info) => run_info,
+                None => self
+                    .run_storage
+                    .nested_run(source_id, root_ref)
+                    .await?
+                    .try_into()?,
+            },
+            None => self
+                .run_storage
+                .nested_run(source_id, root_ref)
+                .await?
+                .try_into()?,
+        };
+        run_info.set_replay_id(self.get_replay_id(replay_id));
+        tracing::info!(
+            "Getting child run info: {:?}\n{:?}.{replay_id}",
+            run_info,
+            self.current_ref
+        );
+        Ok(run_info)
     }
 
     pub async fn create_checkpoint<T: Serialize + Send>(
         &self,
         checkpoint: CheckpointData<T>,
     ) -> Result<(), OxyError> {
+        let mut checkpoint = checkpoint;
+        checkpoint.replay_id = self.current_ref_str();
         self.storage
             .create_checkpoint(&self.run_info, checkpoint)
             .await
     }
 
-    pub async fn read_checkpoint<T: DeserializeOwned>(
+    pub async fn read_checkpoint<T: DeserializeOwned, C: CheckpointId>(
         &self,
-        checkpoint_id: &str,
+        input: &C,
     ) -> Result<CheckpointData<T>, OxyError> {
-        self.storage
-            .read_checkpoint(&self.run_info, checkpoint_id)
-            .await
+        if self.is_replay() {
+            tracing::info!("Skip read from a replay run {}", self.current_ref.join("."));
+            return Err(OxyError::ArgumentError(format!(
+                "Skip read from a replay run {}",
+                self.run_info.run_index
+            )));
+        }
+        let replay_id = self.current_ref_str();
+        let checkpoint_data = self
+            .storage
+            .read_checkpoint::<T>(&self.run_info, &replay_id)
+            .await?;
+        let checkpoint_hash = input.checkpoint_hash();
+        if &checkpoint_data.checkpoint_hash != &checkpoint_hash {
+            return Err(OxyError::ArgumentError(format!(
+                "Checkpoint hash mismatch: expected {}, got {}",
+                checkpoint_hash, &checkpoint_data.checkpoint_hash
+            )));
+        }
+        Ok(checkpoint_data)
     }
 
-    pub async fn write_events(&self, events: Vec<Event>) -> Result<(), OxyError> {
-        self.tx.send(events).await.map_err(|err| {
-            OxyError::IOError(format!(
-                "Failed to send events to checkpoint writer:\n{err}"
-            ))
-        })?;
-        Ok(())
+    fn is_replay(&self) -> bool {
+        if let Some(replay_id) = &self.run_info.replay_id {
+            if replay_id.is_empty() {
+                return true;
+            }
+
+            let current_ref = self.current_ref.join(".");
+            return replay_id.starts_with(&current_ref);
+        }
+        false
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct RunInfo {
-    pub root_id: String,
-    pub run_id: String,
-    pub success: bool,
+    source_id: String,
+    run_index: u32,
+    // Nested replay ID for checkpoints
+    // This is used to identify the specific run in a replay context
+    // It can be empty if this is a replay all
+    replay_id: Option<String>,
+    success: bool,
+}
+
+impl RunInfo {
+    pub fn new(
+        source_id: String,
+        run_index: u32,
+        replay_id: Option<String>,
+        success: bool,
+    ) -> Self {
+        RunInfo {
+            source_id,
+            run_index,
+            replay_id,
+            success,
+        }
+    }
+
+    pub fn is_success(&self) -> bool {
+        self.success
+    }
+
+    pub fn set_replay_id(&mut self, replay_id: Option<String>) {
+        self.replay_id = replay_id;
+    }
+
+    pub fn get_source_id(&self) -> String {
+        self.source_id.to_string()
+    }
+
+    pub fn get_replay_id(&self) -> Option<String> {
+        self.replay_id.clone()
+    }
+
+    pub fn get_run_index(&self) -> u32 {
+        self.run_index
+    }
+}
+
+impl TryFrom<PublicRunInfo> for RunInfo {
+    type Error = OxyError;
+
+    fn try_from(value: PublicRunInfo) -> Result<Self, Self::Error> {
+        let is_completed = value.is_completed();
+        Ok(RunInfo::new(
+            value.source_id,
+            value
+                .run_index
+                .ok_or(OxyError::RuntimeError("Run index is required".to_string()))?,
+            None,
+            is_completed,
+        ))
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CheckpointData<T> {
-    pub checkpoint_id: String,
-    pub output: T,
+    pub replay_id: String,
+    pub checkpoint_hash: String,
+    pub output: Option<T>,
+    pub events: Vec<Event>,
+
+    // Nested replay ID for checkpoints
+    pub run_info: Option<RunInfo>,
+    // Loop values for the current run
+    pub loop_values: Option<Vec<serde_json::Value>>,
 }
 
 #[enum_dispatch::enum_dispatch]
 pub trait CheckpointStorage {
-    fn checkpoint_id<I: Hash>(&self, input: &I) -> String {
-        let output = hash(input);
-        format!("{output:x}")
-    }
-    async fn last_run(&self, root_id: &str) -> Result<RunInfo, OxyError>;
-    async fn create_run(&self, root_id: &str) -> Result<RunInfo, OxyError>;
-    async fn read_events(&self, run_info: &RunInfo) -> Result<Vec<Event>, OxyError>;
-    async fn write_events(
-        &self,
-        run_info: &RunInfo,
-        receiver: Receiver<Vec<Event>>,
-    ) -> Result<(), OxyError>;
     async fn write_success_marker(&self, run_info: &RunInfo) -> Result<(), OxyError>;
     async fn create_checkpoint<T: Serialize + Send>(
         &self,
@@ -191,7 +313,7 @@ pub trait CheckpointStorage {
     async fn read_checkpoint<T: DeserializeOwned>(
         &self,
         run_info: &RunInfo,
-        checkpoint_id: &str,
+        replay_id: &str,
     ) -> Result<CheckpointData<T>, OxyError>;
 }
 
@@ -199,191 +321,5 @@ pub trait CheckpointStorage {
 #[derive(Debug, Clone)]
 enum CheckpointStorageImpl {
     FileStorage(FileStorage),
-}
-
-#[derive(Debug, Clone)]
-struct FileStorage {
-    dir: PathBuf,
-    data_path: String,
-}
-
-impl FileStorage {
-    async fn get_root_path(&self, root_id: &str) -> Result<PathBuf, OxyError> {
-        let root_path = self.dir.join(root_id);
-        create_dir_all(&root_path).await.map_err(|err| {
-            OxyError::IOError(format!("Failed to create checkpoint directory:\n{err}"))
-        })?;
-        Ok(root_path)
-    }
-
-    async fn get_base_path(&self, run_info: &RunInfo) -> Result<PathBuf, OxyError> {
-        let base_path = self.dir.join(&run_info.root_id).join(&run_info.run_id);
-        create_dir_all(&base_path).await.map_err(|err| {
-            OxyError::IOError(format!("Failed to create checkpoint directory:\n{err}"))
-        })?;
-        Ok(base_path)
-    }
-
-    async fn get_data_path(&self, run_info: &RunInfo) -> Result<PathBuf, OxyError> {
-        let data_path = self.get_base_path(run_info).await?.join(&self.data_path);
-        create_dir_all(&data_path).await.map_err(|err| {
-            OxyError::IOError(format!("Failed to create checkpoint directory:\n{err}"))
-        })?;
-        Ok(data_path)
-    }
-}
-
-impl CheckpointStorage for FileStorage {
-    async fn create_checkpoint<T: Serialize + Send>(
-        &self,
-        run_info: &RunInfo,
-        checkpoint: CheckpointData<T>,
-    ) -> Result<(), OxyError> {
-        let data_path = self
-            .get_data_path(run_info)
-            .await?
-            .join(&checkpoint.checkpoint_id);
-        let file = tokio::fs::File::create(data_path)
-            .await
-            .map_err(|err| OxyError::IOError(format!("Failed to create checkpoint:\n{err}")))?;
-        let mut writer = tokio::io::BufWriter::new(file);
-        let mut bytes: Vec<u8> = Vec::new();
-        serde_json::to_writer(&mut bytes, &checkpoint)?;
-        writer
-            .write_all(&bytes)
-            .await
-            .map_err(|err| OxyError::IOError(format!("Failed to write checkpoint:\n{err}")))?;
-        writer
-            .flush()
-            .await
-            .map_err(|err| OxyError::IOError(format!("Failed to flush checkpoint:\n{err}")))?;
-        Ok(())
-    }
-
-    async fn read_checkpoint<T: DeserializeOwned>(
-        &self,
-        run_info: &RunInfo,
-        checkpoint_id: &str,
-    ) -> Result<CheckpointData<T>, OxyError> {
-        let path = self.get_data_path(run_info).await?.join(checkpoint_id);
-        let bytes = tokio::fs::read(path)
-            .await
-            .map_err(|err| OxyError::IOError(format!("Failed to read checkpoint:\n{err}")))?;
-        let checkpoint: CheckpointData<T> = serde_json::from_slice(&bytes)?;
-        Ok(checkpoint)
-    }
-
-    async fn last_run(&self, root_id: &str) -> Result<RunInfo, OxyError> {
-        let root_dir = self.get_root_path(root_id).await?;
-        let mut read_dir = tokio::fs::read_dir(&root_dir)
-            .await
-            .map_err(|err| OxyError::IOError(format!("Failed to read root directory:\n{err}")))?;
-        let mut run_ids = vec![];
-        while let Some(entry) = read_dir.next_entry().await.map_err(|err| {
-            OxyError::IOError(format!("Failed to traverse {root_dir:?} dir:\n{err}"))
-        })? {
-            let entry_path = entry.path();
-            if let (true, Some(run_id)) = (
-                entry_path.is_dir(),
-                entry_path.components().next_back().and_then(|c| {
-                    c.as_os_str()
-                        .to_string_lossy()
-                        .to_string()
-                        .parse::<u64>()
-                        .ok()
-                }),
-            ) {
-                run_ids.push((run_id, entry_path));
-            }
-        }
-        run_ids.sort_by_key(|id| id.0);
-        let (run_id, run_path) = run_ids
-            .pop()
-            .ok_or_else(|| OxyError::IOError("No runs found in root directory".to_string()))?;
-        let success = tokio::fs::metadata(run_path.join(CHECKPOINT_SUCCESS_MARKER))
-            .await
-            .is_ok();
-
-        Ok(RunInfo {
-            root_id: root_id.to_string(),
-            run_id: run_id.to_string(),
-            success,
-        })
-    }
-
-    async fn create_run(&self, root_id: &str) -> Result<RunInfo, OxyError> {
-        let run_id = self.last_run(root_id).await.ok().map_or(0, |run_info| {
-            // Safe to unwrap because last_run always returns a u64 run_id
-            run_info.run_id.parse::<u64>().map(|i| i + 1).unwrap()
-        });
-        Ok(RunInfo {
-            root_id: root_id.to_string(),
-            run_id: run_id.to_string(),
-            success: false,
-        })
-    }
-
-    async fn read_events(&self, run_info: &RunInfo) -> Result<Vec<Event>, OxyError> {
-        let events_file = self
-            .get_base_path(run_info)
-            .await?
-            .join(CHECKPOINT_EVENTS_FILE);
-        let file = OpenOptions::new()
-            .read(true)
-            .open(&events_file)
-            .await
-            .map_err(|err| OxyError::IOError(format!("Failed to open events file:\n{err:?}")))?;
-        let buf_reader = BufReader::new(file);
-        let mut lines = buf_reader.lines();
-        let mut events = vec![];
-        while let Some(line) = lines
-            .next_line()
-            .await
-            .map_err(|err| OxyError::IOError(format!("Failed to read events file:\n{err:?}")))?
-        {
-            let event: Event = serde_json::from_str(&line)?;
-            events.push(event);
-        }
-        Ok(events)
-    }
-
-    async fn write_events(
-        &self,
-        run_info: &RunInfo,
-        receiver: Receiver<Vec<Event>>,
-    ) -> Result<(), OxyError> {
-        let events_file = self
-            .get_base_path(run_info)
-            .await?
-            .join(CHECKPOINT_EVENTS_FILE);
-        let mut receiver = receiver;
-        let mut file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&events_file)
-            .await
-            .map_err(|err| OxyError::IOError(format!("Failed to open events file:\n{err}")))?;
-        while let Some(events) = receiver.recv().await {
-            let mut buffer = vec![];
-            for event in events {
-                serde_json::to_writer(&mut buffer, &event)?;
-                buffer.extend_from_slice(b"\r\n");
-            }
-            file.write_all(&buffer)
-                .await
-                .map_err(|err| OxyError::IOError(format!("Failed to write events file:\n{err}")))?;
-        }
-        Ok(())
-    }
-
-    async fn write_success_marker(&self, run_info: &RunInfo) -> Result<(), OxyError> {
-        let success_marker_file = self
-            .get_base_path(run_info)
-            .await?
-            .join(CHECKPOINT_SUCCESS_MARKER);
-        tokio::fs::File::create(success_marker_file)
-            .await
-            .map_err(|err| OxyError::IOError(format!("Failed to create success marker:\n{err}")))?;
-        Ok(())
-    }
+    DatabaseStorage(DatabaseStorage),
 }

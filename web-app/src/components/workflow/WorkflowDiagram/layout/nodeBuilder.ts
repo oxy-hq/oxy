@@ -49,7 +49,7 @@ const createNode = ({
 };
 
 const createConditionalIfNode = (
-  task: ConditionalTaskConfigWithId & { id: string },
+  task: ConditionalTaskConfigWithId & { id: string; workflowId: string },
   condition: { if: string },
   index: number,
   conditionIndex: number,
@@ -69,7 +69,7 @@ const createConditionalIfNode = (
 };
 
 const createConditionalElseNode = (
-  task: ConditionalTaskConfigWithId & { id: string },
+  task: ConditionalTaskConfigWithId & { id: string; workflowId: string },
   index: number,
 ): Node => {
   const nodeId = `${task.id}-else`;
@@ -84,7 +84,7 @@ const createConditionalElseNode = (
 };
 
 const buildConditionalNodes = (
-  task: ConditionalTaskConfigWithId & { id: string },
+  task: ConditionalTaskConfigWithId & { id: string; workflowId: string },
   index: number,
   level: number,
 ): { nodes: Node[]; edges: Edge[] } => {
@@ -158,6 +158,14 @@ export const buildWorkflowNodes = (
     if (task.type === TaskType.LOOP_SEQUENTIAL) {
       const { nodes, edges } = buildWorkflowNodes(
         task.tasks,
+        node.id,
+        level + 1,
+      );
+      result.nodes.push(...nodes);
+      result.edges.push(...edges);
+    } else if (task.type === TaskType.WORKFLOW) {
+      const { nodes, edges } = buildWorkflowNodes(
+        task.tasks ?? [],
         node.id,
         level + 1,
       );

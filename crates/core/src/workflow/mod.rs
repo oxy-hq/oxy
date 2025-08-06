@@ -1,4 +1,4 @@
 mod builders;
 pub mod loggers;
 
-pub use builders::{WorkflowInput, WorkflowLauncher, WorkflowLauncherExecutable};
+pub use builders::{RetryStrategy, WorkflowInput, WorkflowLauncher, WorkflowLauncherExecutable};

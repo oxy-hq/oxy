@@ -41,7 +41,7 @@ impl Display for ArrowTable {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, Default)]
 pub struct TableReference {
     pub sql: String,
     pub database_ref: String,

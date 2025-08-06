@@ -7,6 +7,7 @@ use crate::api::database;
 use crate::api::file;
 use crate::api::github;
 use crate::api::project;
+use crate::api::run;
 use crate::api::secrets;
 use crate::api::thread;
 use crate::api::user;
@@ -81,6 +82,14 @@ pub async fn api_router(auth_mode: AuthMode, readonly_mode: bool) -> Result<Rout
         )
         .route("/git/pull", post(github::pull_repository))
         .route("/workflows/{pathb64}/run", post(workflow::run_workflow))
+        .route("/workflows/{pathb64}/runs", get(run::get_workflow_runs))
+        .route("/workflows/{pathb64}/runs", post(run::create_workflow_run))
+        .route(
+            "/runs/{source_id}/{run_index}",
+            delete(run::cancel_workflow_run),
+        )
+        .route("/events", get(run::workflow_events))
+        .route("/blocks", get(run::get_blocks))
         // App operations - writing
         .route("/app/{pathb64}/run", post(app::run_app))
         // Thread operations - writing

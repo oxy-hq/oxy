@@ -137,10 +137,7 @@ impl Renderer {
         Ok(value)
     }
 
-    pub fn eval_enumerate<V>(&self, template: &str) -> Result<Vec<V>, OxyError>
-    where
-        V: From<Value>,
-    {
+    pub fn eval_enumerate(&self, template: &str) -> Result<Vec<Value>, OxyError> {
         let rendered = self.eval_expression(template)?;
         let rendered_value = match rendered.as_object() {
             Some(obj) => obj,
@@ -158,7 +155,7 @@ impl Renderer {
                     let value = rendered_value
                         .get_value(&Value::from(idx))
                         .unwrap_or_default();
-                    values.push(value.into());
+                    values.push(value);
                 }
                 Ok(values)
             }

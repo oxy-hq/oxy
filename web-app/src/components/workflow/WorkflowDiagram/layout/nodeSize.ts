@@ -33,6 +33,7 @@ const isSpecialNode = (type: NodeType): boolean => {
     NoneTaskNodeType.CONDITIONAL_IF,
     TaskType.LOOP_SEQUENTIAL,
     TaskType.CONDITIONAL,
+    TaskType.WORKFLOW,
   ].includes(type);
 };
 
@@ -45,7 +46,8 @@ const computeSpecialNodeSize = (node: Node, allNodes: Node[]): void => {
   switch (node.type) {
     case NoneTaskNodeType.CONDITIONAL_ELSE:
     case NoneTaskNodeType.CONDITIONAL_IF:
-    case TaskType.LOOP_SEQUENTIAL: {
+    case TaskType.LOOP_SEQUENTIAL:
+    case TaskType.WORKFLOW: {
       const verticalLayout = computeVerticalContainerSize(node, allNodes);
       node.width = verticalLayout.width;
       node.height = verticalLayout.height;

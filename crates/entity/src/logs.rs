@@ -8,6 +8,7 @@ pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
     pub user_id: Uuid,
+    #[sea_orm(column_type = "Text")]
     pub prompts: String,
     pub thread_id: Uuid,
     pub log: Json,

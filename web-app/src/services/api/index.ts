@@ -8,3 +8,4 @@ export { WorkflowService } from "./workflows";
 export { AuthService } from "./auth";
 export { UserService } from "./users";
 export { ChartService, ArtifactService, BuilderService } from "./misc";
+export { RunService } from "./run";

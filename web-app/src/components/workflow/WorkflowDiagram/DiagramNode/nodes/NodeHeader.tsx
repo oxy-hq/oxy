@@ -22,6 +22,8 @@ import {
   Split,
 } from "lucide-react";
 import { ReactElement } from "react";
+import { TaskRun } from "@/services/types";
+import { randomKey } from "@/libs/utils/string";
 
 const nodeNameMap: Record<NodeType, string> = {
   execute_sql: "SQL",
@@ -49,6 +51,7 @@ type Props = {
   name: string;
   type: NodeType;
   task?: TaskConfigWithId;
+  taskRun?: TaskRun;
   expandable?: boolean;
   expanded?: boolean;
   onExpandClick?: () => void;
@@ -58,6 +61,7 @@ export const NodeHeader = ({
   type,
   name,
   task,
+  taskRun,
   expandable,
   expanded,
   onExpandClick,
@@ -96,7 +100,10 @@ export const NodeHeader = ({
             </Button>
           )}
           {type === TaskType.WORKFLOW && (
-            <SubWorkflowNavigateButton task={task as WorkflowTaskConfig} />
+            <SubWorkflowNavigateButton
+              task={task as WorkflowTaskConfig}
+              taskRun={taskRun}
+            />
           )}
         </div>
       </div>
@@ -106,15 +113,20 @@ export const NodeHeader = ({
 
 type SubWorkflowNavigateButtonProps = {
   task: WorkflowTaskConfig;
+  taskRun?: TaskRun;
 };
 
 const SubWorkflowNavigateButton = ({
   task,
+  taskRun,
 }: SubWorkflowNavigateButtonProps) => {
   const navigate = useNavigate();
   const handleClick = () => {
     const pathb64 = btoa(task.src);
-    navigate("/workflows/" + pathb64);
+    const runPath = taskRun?.subWorkflowRunId
+      ? `/runs/${taskRun.subWorkflowRunId}`
+      : "";
+    navigate("/workflows/" + pathb64 + runPath + `#${randomKey()}`);
   };
 
   return (

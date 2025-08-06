@@ -1,13 +1,14 @@
 use std::{fmt::Debug, path::Path};
 
 use minijinja::Value;
+use serde::{Serialize, de::DeserializeOwned};
 use tokio::sync::mpsc::Sender;
 
 use crate::{
-    adapters::checkpoint::CheckpointContext,
+    adapters::checkpoint::{CheckpointContext, CheckpointData},
     config::{ConfigBuilder, ConfigManager},
     errors::OxyError,
-    execute::{renderer::Renderer, types::Usage},
+    execute::{builders::checkpoint::CheckpointId, renderer::Renderer, types::Usage},
 };
 
 use super::{
@@ -77,6 +78,26 @@ impl ExecutionContext {
         }
     }
 
+    pub fn with_checkpoint_ref(&self, child_ref: &str) -> Self {
+        if let Some(checkpoint_context) = &self.checkpoint {
+            ExecutionContext {
+                source: self.source.clone(),
+                writer: self.writer.clone(),
+                renderer: self.renderer.clone(),
+                config: self.config.clone(),
+                checkpoint: Some(checkpoint_context.with_current_ref(child_ref)),
+            }
+        } else {
+            ExecutionContext {
+                source: self.source.clone(),
+                writer: self.writer.clone(),
+                renderer: self.renderer.clone(),
+                config: self.config.clone(),
+                checkpoint: None,
+            }
+        }
+    }
+
     pub fn wrap_writer(&self, writer: Sender<Event>) -> ExecutionContext {
         ExecutionContext {
             source: self.source.clone(),
@@ -92,6 +113,18 @@ impl ExecutionContext {
             source: self.source.clone(),
             writer: self.writer.clone(),
             renderer,
+            config: self.config.clone(),
+            checkpoint: self.checkpoint.clone(),
+        }
+    }
+
+    pub fn wrap_global_context(&self, global_context: Value) -> Self {
+        ExecutionContext {
+            source: self.source.clone(),
+            writer: self.writer.clone(),
+            renderer: self
+                .renderer
+                .switch_context(global_context, Value::UNDEFINED),
             config: self.config.clone(),
             checkpoint: self.checkpoint.clone(),
         }
@@ -133,6 +166,42 @@ impl ExecutionContext {
 
     pub async fn write_progress(&self, progress: ProgressType) -> Result<(), OxyError> {
         self.write_kind(EventKind::Progress { progress }).await
+    }
+
+    pub fn full_checkpoint_ref(&self) -> Result<String, OxyError> {
+        if let Some(checkpoint_context) = &self.checkpoint {
+            Ok(checkpoint_context.current_ref_str())
+        } else {
+            Err(OxyError::RuntimeError(
+                "Checkpoint context is not set".to_string(),
+            ))
+        }
+    }
+
+    pub async fn read_checkpoint<T: DeserializeOwned, C: CheckpointId>(
+        &self,
+        input: &C,
+    ) -> Result<CheckpointData<T>, OxyError> {
+        if let Some(checkpoint_context) = &self.checkpoint {
+            checkpoint_context.read_checkpoint::<T, C>(input).await
+        } else {
+            Err(OxyError::RuntimeError(
+                "Checkpoint context is not set".to_string(),
+            ))
+        }
+    }
+
+    pub async fn create_checkpoint<T: Serialize + Send>(
+        &self,
+        checkpoint: CheckpointData<T>,
+    ) -> Result<(), OxyError> {
+        if let Some(checkpoint_context) = &self.checkpoint {
+            checkpoint_context.create_checkpoint(checkpoint).await
+        } else {
+            Err(OxyError::RuntimeError(
+                "Checkpoint context is not set".to_string(),
+            ))
+        }
     }
 }
 

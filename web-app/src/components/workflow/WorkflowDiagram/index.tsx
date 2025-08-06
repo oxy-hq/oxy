@@ -15,22 +15,44 @@ import { useWorkflowLayout } from "./layout/useWorkflowLayout";
 import { DiagramNode } from "./DiagramNode";
 import useTheme from "@/stores/useTheme";
 import React, { useEffect } from "react";
-import { v4 as uuidv4 } from "uuid";
 import { Skeleton } from "@/components/ui/shadcn/skeleton";
 import { WorkflowConfig } from "@/stores/useWorkflow";
 
-const getTaskId = (task_name: string) => {
-  return task_name + "__" + uuidv4();
-};
-
-const addTaskId = (tasks: TaskConfig[]): TaskConfigWithId[] => {
+const addTaskId = (
+  workflowId: string,
+  tasks: TaskConfig[],
+  runId?: string,
+  parentId?: string,
+  subWorkflowTaskId?: string,
+): TaskConfigWithId[] => {
   return tasks.map((task) => {
+    const taskId = parentId ? `${parentId}.${task.name}` : task.name;
     if (task.type === TaskType.LOOP_SEQUENTIAL) {
       return {
         ...task,
         type: TaskType.LOOP_SEQUENTIAL,
-        tasks: addTaskId(task.tasks),
-        id: getTaskId(task.name),
+        tasks: addTaskId(
+          workflowId,
+          task.tasks,
+          runId,
+          taskId,
+          subWorkflowTaskId,
+        ),
+        id: taskId,
+        workflowId,
+        subWorkflowTaskId,
+        runId,
+      };
+    }
+    if (task.type === TaskType.WORKFLOW) {
+      return {
+        ...task,
+        type: TaskType.WORKFLOW,
+        tasks: addTaskId(task.src, task.tasks ?? [], runId, taskId, taskId),
+        id: taskId,
+        workflowId,
+        runId,
+        subWorkflowTaskId,
       };
     }
     if (task.type === TaskType.CONDITIONAL) {
@@ -38,14 +60,31 @@ const addTaskId = (tasks: TaskConfig[]): TaskConfigWithId[] => {
         ...task,
         conditions: task.conditions.map((c) => ({
           ...c,
-          tasks: addTaskId(c.tasks),
+          tasks: addTaskId(
+            workflowId,
+            c.tasks,
+            runId,
+            taskId,
+            subWorkflowTaskId,
+          ),
         })),
         type: TaskType.CONDITIONAL,
-        else: task.else ? addTaskId(task.else) : undefined,
-        id: getTaskId(task.name),
+        else: task.else
+          ? addTaskId(workflowId, task.else, runId, taskId)
+          : undefined,
+        id: taskId,
+        workflowId,
+        runId,
+        subWorkflowTaskId,
       };
     }
-    return { ...task, id: getTaskId(task.name) } as TaskConfigWithId;
+    return {
+      ...task,
+      id: taskId,
+      workflowId,
+      runId,
+      subWorkflowTaskId,
+    } as TaskConfigWithId;
   });
 };
 
@@ -61,29 +100,31 @@ const nodeTypes: Record<NodeType, typeof DiagramNode> = {
 } as const;
 
 interface WorkflowDiagramProps {
+  workflowId?: string;
+  runId?: string;
   workflowConfig: WorkflowConfig;
 }
 
 const WorkflowDiagram: React.FC<WorkflowDiagramProps> = ({
+  workflowId,
+  runId,
   workflowConfig,
 }) => {
   const workflow = useWorkflow((state) => state.workflow);
   const setWorkflow = useWorkflow((state) => state.setWorkflow);
 
-  const setSelectedNodeId = useWorkflow((state) => state.setSelectedNodeId);
-
   useEffect(() => {
-    if (workflowConfig) {
-      const tasks = addTaskId(workflowConfig.tasks);
+    if (workflowId && workflowConfig) {
+      const tasks = addTaskId(workflowId, workflowConfig.tasks, runId);
       const workflow = {
         ...workflowConfig,
         tasks,
+        id: workflowId,
         path: workflowConfig.path ?? "",
       };
       setWorkflow(workflow);
-      setSelectedNodeId(null);
     }
-  }, [workflowConfig, setWorkflow, setSelectedNodeId]);
+  }, [workflowId, workflowConfig, setWorkflow, runId]);
 
   const {
     reactFlowNodes,

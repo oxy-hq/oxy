@@ -1,5 +1,4 @@
-import useWorkflow, { TaskConfigWithId } from "@/stores/useWorkflow";
-import { StepContainer } from "./StepContainer";
+import { TaskConfigWithId } from "@/stores/useWorkflow";
 import { NodeHeader } from "./NodeHeader";
 
 type Props = {
@@ -7,11 +6,5 @@ type Props = {
 };
 
 export function ExecuteSqlNode({ task }: Props) {
-  const selectedNodeId = useWorkflow((state) => state.selectedNodeId);
-  const selected = selectedNodeId === task.id;
-  return (
-    <StepContainer selected={selected}>
-      <NodeHeader name={task.name} type={task.type} />
-    </StepContainer>
-  );
+  return <NodeHeader name={task.name} type={task.type} />;
 }

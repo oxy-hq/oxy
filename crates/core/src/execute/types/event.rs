@@ -42,6 +42,9 @@ pub enum EventKind {
         name: String,
         attributes: HashMap<String, String>,
     },
+    SetMetadata {
+        attributes: HashMap<String, String>,
+    },
     Updated {
         chunk: Chunk,
     },
@@ -49,7 +52,9 @@ pub enum EventKind {
         data_app: DataApp,
     },
     Finished {
+        attributes: HashMap<String, String>,
         message: String,
+        error: Option<String>,
     },
     ArtifactStarted {
         kind: ArtifactKind,

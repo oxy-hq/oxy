@@ -13,18 +13,38 @@ import { WorkflowTaskNode } from "./nodes/WorkflowTaskNode";
 import ConditionalNode from "./nodes/ConditionalNode";
 import { ConditionalIfNode } from "./nodes/ConditionalIfNode";
 import { ConditionalElseNode } from "./nodes/ConditionalElseNode";
+import { TaskRun } from "@/services/types";
 
 type Props = {
+  id: string;
   task: TaskConfigWithId;
   type: NodeType;
   data: NodeData;
+  parentId?: string;
+  taskRun?: TaskRun;
+  loopRuns?: TaskRun[];
   width?: number;
   height?: number;
 };
 
-export function NodeContent({ task, type, data, ...props }: Props) {
+export function NodeContent({
+  parentId,
+  task,
+  type,
+  data,
+  taskRun,
+  loopRuns,
+  ...props
+}: Props) {
   if (task.type === "loop_sequential") {
-    return <LoopSequentialNode task={task} />;
+    return (
+      <LoopSequentialNode
+        parentId={parentId}
+        task={task}
+        taskRun={taskRun}
+        loopRuns={loopRuns}
+      />
+    );
   }
   if (task.type === "execute_sql") {
     return <ExecuteSqlNode task={task} />;
@@ -37,7 +57,7 @@ export function NodeContent({ task, type, data, ...props }: Props) {
   }
 
   if (task.type === "workflow") {
-    return <WorkflowTaskNode task={task} />;
+    return <WorkflowTaskNode task={task} taskRun={taskRun} />;
   }
 
   if (type === TaskType.CONDITIONAL) {

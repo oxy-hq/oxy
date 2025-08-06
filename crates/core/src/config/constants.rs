@@ -20,7 +20,6 @@ pub const CHECKPOINT_DATA_PATH: &str = "checkpoint_data";
 pub const DATABASE_SEMANTIC_PATH: &str = ".databases";
 pub const SEMANTIC_MODEL_PATH: &str = "models";
 pub const GLOBAL_SEMANTIC_PATH: &str = "semantics.yml";
-pub const CHECKPOINT_EVENTS_FILE: &str = "events.jsonl";
 pub const CHECKPOINT_SUCCESS_MARKER: &str = "SUCCESS";
 pub const GEMINI_API_URL: &str = "https://generativelanguage.googleapis.com/v1beta/openai";
 pub const ANTHROPIC_API_URL: &str = "https://api.anthropic.com/v1";

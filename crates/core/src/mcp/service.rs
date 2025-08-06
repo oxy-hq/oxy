@@ -19,7 +19,7 @@ use crate::{
         agent::{ask_adhoc, get_agent_config, list_agents},
         workflow::{get_workflow, list_workflows, run_workflow},
     },
-    workflow::loggers::NoopLogger,
+    workflow::{RetryStrategy, loggers::NoopLogger},
 };
 
 #[derive(Debug, Clone)]
@@ -175,7 +175,7 @@ impl OxyMcpServer {
         let output = run_workflow(
             &PathBuf::from(workflow_info.path.clone()),
             NoopLogger {},
-            false,
+            RetryStrategy::NoRetry,
             variables,
         )
         .await

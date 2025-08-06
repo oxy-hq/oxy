@@ -8,7 +8,20 @@ const fetchWorkflow = async (relative_path: string) => {
   const { data } = await apiClient.get(
     `/workflows/${encodeURIComponent(pathb64)}`,
   );
-  return data.data as WorkflowConfig;
+  const workflowConfig = data.data as WorkflowConfig;
+
+  await Promise.all(
+    workflowConfig.tasks
+      .filter((task) => task.type === "workflow")
+      .map((task) =>
+        fetchWorkflow(task.src).then((subWorkflow) => {
+          task.tasks = subWorkflow.tasks;
+          return task;
+        }),
+      ),
+  );
+
+  return workflowConfig;
 };
 
 const useWorkflowConfig = (relative_path: string) => {

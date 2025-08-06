@@ -95,6 +95,7 @@
     "rehype-sanitize": "^6.0.0",
     "remark-directive": "^4.0.0",
     "remark-gfm": "^4.0.1",
+    "reselect": "^5.1.1",
     "sonner": "^2.0.6",
     "sort-by": "^1.2.0",
     "tailwind-merge": "^3.3.1",

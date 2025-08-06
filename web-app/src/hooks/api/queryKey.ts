@@ -1,3 +1,5 @@
+import { PaginationState } from "@tanstack/react-table";
+
 const conversationKeys = {
   all: ["conversation"] as const,
   list: () => [...conversationKeys.all, "list"] as const,
@@ -25,6 +27,10 @@ const workflowKeys = {
     [...workflowKeys.all, "get", relative_path] as const,
   getLogs: (relative_path: string) =>
     [...workflowKeys.all, "getLogs", relative_path] as const,
+  getRuns: (relative_path: string, pagination: PaginationState) =>
+    [...workflowKeys.all, "getRuns", relative_path, pagination] as const,
+  getBlocks: (sourceId: string, runIndex?: number) =>
+    [...workflowKeys.all, "getBlocks", sourceId, runIndex] as const,
 };
 
 const chartKeys = {

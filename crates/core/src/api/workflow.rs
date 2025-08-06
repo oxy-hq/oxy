@@ -17,7 +17,9 @@ use crate::service::thread::streaming_workflow_persister::StreamingWorkflowPersi
 use crate::service::workflow as service;
 use crate::service::workflow::WorkflowInfo;
 use crate::service::workflow::get_workflow;
+use crate::service::workflow::run_workflow as run_workflow_service;
 use crate::utils::create_sse_stream;
+use crate::workflow::RetryStrategy;
 use crate::workflow::loggers::api::WorkflowAPILogger;
 use crate::workflow::loggers::types::LogItem;
 use crate::workflow::loggers::types::WorkflowLogger;
@@ -129,6 +131,19 @@ pub async fn build_workflow_api_logger(
     (api_logger, receiver)
 }
 
+#[derive(Deserialize, ToSchema)]
+pub struct WorkflowRetryParam {
+    run_id: String,
+    // None if not replaying, Some if replaying
+    replay_id: Option<String>,
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct RunWorkflowRequest {
+    // variables: Option<HashMap<String, serde_json::Value>>,
+    retry_param: Option<WorkflowRetryParam>,
+}
+
 #[utoipa::path(
     method(post),
     path = "/workflows/{pathb64}/run",
@@ -152,7 +167,7 @@ pub async fn run_workflow(Path(pathb64): Path<String>) -> Result<impl IntoRespon
 
     let _ = tokio::spawn(async move {
         tracing::info!("Workflow run started");
-        let rs = service::run_workflow(&path, logger.clone(), false, None).await;
+        let rs = run_workflow_service(path, logger.clone(), RetryStrategy::NoRetry, None).await;
         match rs {
             Ok(_) => tracing::info!("Workflow run completed successfully"),
             Err(e) => {
@@ -283,7 +298,8 @@ pub async fn run_workflow_thread(Path(id): Path<String>) -> Result<impl IntoResp
     let connection_clone = connection.clone();
     let thread_clone = thread.clone();
     let _ = tokio::spawn(async move {
-        let result = service::run_workflow(&workflow_ref, logger, false, None).await;
+        let result =
+            service::run_workflow(&workflow_ref, logger, RetryStrategy::NoRetry, None).await;
 
         // Handle workflow completion or error
         match result {

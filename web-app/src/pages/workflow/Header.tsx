@@ -6,9 +6,13 @@ import { useNavigate } from "react-router-dom";
 
 type WorkflowPageHeaderProps = {
   path: string;
+  runId?: string;
 };
 
-const WorkflowPageHeader: React.FC<WorkflowPageHeaderProps> = ({ path }) => {
+const WorkflowPageHeader: React.FC<WorkflowPageHeaderProps> = ({
+  path,
+  runId,
+}) => {
   const relativePath = path;
   const pathb64 = btoa(path);
   const navigate = useNavigate();
@@ -18,7 +22,10 @@ const WorkflowPageHeader: React.FC<WorkflowPageHeaderProps> = ({ path }) => {
         <div></div>
         <div className="flex items-center justify-center gap-0.5">
           <Workflow className="h-4 w-4" />
-          <span className="text-sm truncate">{relativePath}</span>
+          <span className="text-sm truncate">
+            {relativePath}
+            {runId ? `/runs/${runId}` : ""}
+          </span>
         </div>
         <div className="flex items-center gap-2">
           <Button

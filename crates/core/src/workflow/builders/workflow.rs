@@ -1,22 +1,69 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, path::PathBuf};
 
 use itertools::Itertools;
 use schemars::schema::SchemaObject;
 use serde_json::Value;
 
 use crate::{
-    adapters::checkpoint::CheckpointManager,
+    adapters::checkpoint::RunInfo,
     config::model::{Task, Variable, Variables, Workflow},
     errors::OxyError,
     execute::{
         Executable, ExecutionContext,
-        builders::{ExecutableBuilder, checkpoint::ShouldRestore, map::ParamMapper},
+        builders::{
+            ExecutableBuilder, chain::IntoChain, checkpoint::CheckpointRootId, map::ParamMapper,
+        },
         renderer::Renderer,
         types::OutputContainer,
     },
 };
 
-use super::task::{TaskChainMapper, TaskInput, build_task_executable};
+use super::task::{TaskChainMapper, build_task_executable};
+
+#[derive(Debug, Clone, Hash)]
+pub(super) struct TasksGroupInput {
+    pub group_ref: String,
+    pub tasks: Vec<Task>,
+    pub value: OutputContainer,
+    pub loop_idx: Option<usize>,
+}
+
+impl IntoChain<(Option<usize>, Task), OutputContainer> for TasksGroupInput {
+    fn into_chain(self) -> (Vec<(Option<usize>, Task)>, OutputContainer) {
+        let tasks = self
+            .tasks
+            .into_iter()
+            .map(|task| (self.loop_idx, task))
+            .collect();
+        let value = self.value;
+        (tasks, value)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct WorkflowRunInput {
+    pub run_info: RunInfo,
+    pub tasks_group: TasksGroupInput,
+}
+
+impl IntoChain<(Option<usize>, Task), OutputContainer> for WorkflowRunInput {
+    fn into_chain(self) -> (Vec<(Option<usize>, Task)>, OutputContainer) {
+        let tasks = self
+            .tasks_group
+            .tasks
+            .into_iter()
+            .map(|task| (self.tasks_group.loop_idx, task))
+            .collect();
+        let value = self.tasks_group.value;
+        (tasks, value)
+    }
+}
+
+impl CheckpointRootId for WorkflowRunInput {
+    fn run_info(&self) -> RunInfo {
+        self.run_info.clone()
+    }
+}
 
 #[derive(Clone)]
 pub(super) struct WorkflowMapper;
@@ -70,16 +117,16 @@ impl WorkflowMapper {
 }
 
 #[async_trait::async_trait]
-impl ParamMapper<(String, Option<HashMap<String, Value>>), (Vec<TaskInput>, OutputContainer)>
+impl ParamMapper<(String, Option<HashMap<String, Value>>, RunInfo), WorkflowRunInput>
     for WorkflowMapper
 {
     async fn map(
         &self,
         execution_context: &ExecutionContext,
-        input: (String, Option<HashMap<String, Value>>),
-    ) -> Result<((Vec<TaskInput>, OutputContainer), Option<ExecutionContext>), OxyError> {
+        input: (String, Option<HashMap<String, Value>>, RunInfo),
+    ) -> Result<(WorkflowRunInput, Option<ExecutionContext>), OxyError> {
         // Extract the workflow reference and variables from the input
-        let (workflow_ref, variables) = input;
+        let (workflow_ref, variables, run_info) = input;
         let workflow = self
             .resolve_workflow_variables_schema(execution_context, workflow_ref.clone())
             .await?;
@@ -111,70 +158,61 @@ impl ParamMapper<(String, Option<HashMap<String, Value>>), (Vec<TaskInput>, Outp
         let renderer = Renderer::from_template((&value).into(), &workflow)?;
         let execution_context: ExecutionContext = execution_context.wrap_renderer(renderer);
         Ok((
-            (
-                workflow
-                    .tasks
-                    .into_iter()
-                    .map(|task| TaskInput { task, value: None })
-                    .collect(),
-                value,
-            ),
+            WorkflowRunInput {
+                run_info,
+                tasks_group: TasksGroupInput {
+                    group_ref: PathBuf::from(workflow_ref)
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .to_string(),
+                    tasks: workflow.tasks,
+                    value,
+                    loop_idx: None,
+                },
+            },
             Some(execution_context),
         ))
     }
 }
 
-pub(super) fn build_workflow_executable<S>(
-    checkpoint_manager: CheckpointManager,
-    should_restore: S,
-) -> impl Executable<(String, Option<HashMap<String, Value>>), Response = OutputContainer>
-where
-    S: ShouldRestore + Clone + Send + Sync,
-{
+pub(super) fn build_workflow_executable()
+-> impl Executable<(String, Option<HashMap<String, Value>>, RunInfo), Response = OutputContainer> {
     ExecutableBuilder::new()
         .map(WorkflowMapper)
-        .checkpoint_root(checkpoint_manager.clone(), should_restore)
+        .checkpoint_root()
         .chain_map(TaskChainMapper)
         .checkpoint()
-        .executable(build_task_executable(checkpoint_manager))
+        .executable(build_task_executable())
 }
 
-pub(super) fn build_tasks_executable<S>(
-    checkpoint_manager: CheckpointManager,
-    should_restore: S,
-) -> impl Executable<Vec<Task>, Response = OutputContainer>
-where
-    S: ShouldRestore + Clone + Send + Sync,
-{
+pub(super) fn build_tasks_executable() -> impl Executable<Vec<Task>, Response = OutputContainer> {
     ExecutableBuilder::new()
         .map(TasksMapper)
-        .checkpoint_root(checkpoint_manager.clone(), should_restore)
         .chain_map(TaskChainMapper)
-        .checkpoint()
-        .executable(build_task_executable(checkpoint_manager))
+        .executable(build_task_executable())
 }
 
 #[derive(Clone)]
 pub(super) struct TasksMapper;
 
 #[async_trait::async_trait]
-impl ParamMapper<Vec<Task>, (Vec<TaskInput>, OutputContainer)> for TasksMapper {
+impl ParamMapper<Vec<Task>, TasksGroupInput> for TasksMapper {
     async fn map(
         &self,
         execution_context: &ExecutionContext,
         input: Vec<Task>,
-    ) -> Result<((Vec<TaskInput>, OutputContainer), Option<ExecutionContext>), OxyError> {
+    ) -> Result<(TasksGroupInput, Option<ExecutionContext>), OxyError> {
         let value: OutputContainer = OutputContainer::default();
         let renderer = Renderer::from_template((&value).into(), &input)?;
         let execution_context: ExecutionContext = execution_context.wrap_renderer(renderer);
         Ok((
-            (
-                input
-                    .into_iter()
-                    .map(|task| TaskInput { task, value: None })
-                    .collect(),
+            TasksGroupInput {
+                group_ref: "tasks_group".to_string(),
+                tasks: input,
                 value,
-            ),
+                loop_idx: None,
+            },
             Some(execution_context),
         ))
     }

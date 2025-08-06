@@ -294,3 +294,26 @@ body {
 .max-w-page-content {
   max-width: 742px;
 }
+
+/* Toolbar Node */
+.react-flow__node-toolbar {
+  background-color: var(--sidebar-background);
+  box-shadow: var(--xy-node-boxshadow-default);
+  border-radius: var(--radius);
+  overflow: hidden;
+  padding: 0.25rem 0.5rem;
+}
+
+.react-flow__node-toolbar button {
+  cursor: pointer;
+  background: inherit;
+  border: none;
+  padding: 5px 7px;
+  margin: 3px;
+  border-radius: var(--radius);
+  box-shadow: var(--xy-node-boxshadow-default);
+}
+
+.react-flow__node-toolbar button:hover {
+  background: var(--sidebar-accent);
+}

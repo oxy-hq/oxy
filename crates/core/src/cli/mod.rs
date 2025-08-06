@@ -1,10 +1,12 @@
 pub mod clean;
 mod init;
 mod make;
+mod migrate;
 mod seed;
 
 use crate::adapters::connector::Connector;
 use crate::auth::types::AuthMode;
+use crate::cli::migrate::migrate;
 use crate::config::model::AppConfig;
 use crate::config::*;
 use crate::db::client::establish_connection;
@@ -24,6 +26,7 @@ use crate::theme::StyledText;
 use crate::theme::detect_true_color_support;
 use crate::theme::get_current_theme_mode;
 use crate::utils::print_colored_sql;
+use crate::workflow::RetryStrategy;
 use crate::workflow::loggers::cli::WorkflowCLILogger;
 use axum::handler::Handler;
 use axum::http::HeaderValue;
@@ -236,6 +239,8 @@ enum SubCommand {
     /// Launch an MCP server using standard input/output for direct
     /// integration with local AI tools and development environments.
     McpStdio(McpArgs),
+    /// Migrate the database schema to the latest version
+    Migrate,
     /// Start the web application server with API endpoints
     ///
     /// Launch the full Oxy web interface with authentication,
@@ -311,8 +316,12 @@ pub struct RunArgs {
     ///
     /// Enable automatic retry logic for transient failures
     /// during workflow or query execution.
-    #[clap(long, default_value_t = false)]
+    #[clap(long, default_value_t = false, group = "named")]
     retry: bool,
+
+    /// Retry from a specific step in the workflow
+    #[clap(long, group = "unnamed", conflicts_with = "named")]
+    retry_from: Option<String>,
 
     /// Preview SQL without executing against the database
     ///
@@ -396,6 +405,7 @@ impl RunArgs {
                 question: options.question,
                 retry: options.retry,
                 dry_run: options.dry_run,
+                retry_from: None,
             },
             None => Self {
                 file,
@@ -404,6 +414,7 @@ impl RunArgs {
                 question: None,
                 retry: false,
                 dry_run: false,
+                retry_from: None,
             },
         }
     }
@@ -552,8 +563,65 @@ pub enum CleanTarget {
     Cache,
 }
 
-async fn handle_workflow_file(workflow_name: &PathBuf, retry: bool) -> Result<(), OxyError> {
-    run_workflow(workflow_name, WorkflowCLILogger, retry, None).await?;
+async fn handle_workflow_file(
+    workflow_name: &PathBuf,
+    retry: bool,
+    retry_from: Option<String>,
+) -> Result<(), OxyError> {
+    if let Some(retry_from) = retry_from {
+        tracing::debug!(retry_from = %retry_from, "Running workflow from last run with retry from step");
+        // Extract the run_id and replay_id from the retry_from string
+        let (run_id, replay_id) = if retry_from.contains("::") {
+            let parts: Vec<&str> = retry_from.split("::").collect();
+            if parts.len() == 2 {
+                (
+                    parts[0].to_string().parse::<u32>().map_err(|err| {
+                        OxyError::ArgumentError(format!(
+                            "Invalid replay_id format: {}. Expected a number.",
+                            err
+                        ))
+                    })?,
+                    parts[1].to_string(),
+                )
+            } else {
+                return Err(OxyError::ArgumentError(
+                    "Invalid retry_from format. Expected 'run_id::replay_id'".to_string(),
+                ));
+            }
+        } else {
+            return Err(OxyError::ArgumentError(
+                "Invalid retry_from format. Expected 'run_id::replay_id'".to_string(),
+            ));
+        };
+        run_workflow(
+            workflow_name,
+            WorkflowCLILogger,
+            RetryStrategy::Retry {
+                replay_id: Some(replay_id),
+                run_index: run_id,
+            },
+            None,
+        )
+        .await?;
+    } else if retry {
+        tracing::debug!("Running workflow from last failed run");
+        run_workflow(
+            workflow_name,
+            WorkflowCLILogger,
+            RetryStrategy::LastFailure,
+            None,
+        )
+        .await?;
+    } else {
+        tracing::debug!("Running workflow without retry");
+        run_workflow(
+            workflow_name,
+            WorkflowCLILogger,
+            RetryStrategy::NoRetry,
+            None,
+        )
+        .await?;
+    }
     Ok(())
 }
 
@@ -729,6 +797,14 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                     println!("{}", e.to_string().error());
                     exit(1)
                 }
+            }
+        }
+        Some(SubCommand::Migrate) => {
+            if let Err(e) = migrate().await {
+                eprintln!("{}", format!("Migration failed: {e}").error());
+                exit(1);
+            } else {
+                println!("{}", "Migration completed successfully".success());
             }
         }
         Some(SubCommand::Serve(serve_args)) => {
@@ -914,7 +990,7 @@ pub async fn handle_run_command(run_args: RunArgs) -> Result<RunResult, OxyError
     match extension {
         Some("yml") => {
             if file.ends_with(".workflow.yml") {
-                handle_workflow_file(&file_path, run_args.retry).await?;
+                handle_workflow_file(&file_path, run_args.retry, run_args.retry_from).await?;
                 Ok(RunResult::Workflow)
             } else if file.ends_with(".agent.yml") {
                 handle_agent_file(&file_path, run_args.question).await?;
