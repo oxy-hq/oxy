@@ -182,7 +182,7 @@ pub async fn create_workflow_run(
         tracing::error!("Failed to create topic for task ID {task_id}: {err}");
         StatusCode::BAD_REQUEST
     })?;
-    let run_index = run_info.run_index.clone().ok_or(StatusCode::BAD_REQUEST)?;
+    let run_index = run_info.run_index.ok_or(StatusCode::BAD_REQUEST)?;
     let topic_id = task_id.clone();
     let callback_fn = async move || -> Result<(), OxyError> {
         // Handle the completion of the run and broadcast events
@@ -291,11 +291,11 @@ pub struct WorkflowEventsRequest {
     pub run_index: u32,
 }
 
-impl Into<RunInfo> for WorkflowEventsRequest {
-    fn into(self) -> RunInfo {
+impl From<WorkflowEventsRequest> for RunInfo {
+    fn from(val: WorkflowEventsRequest) -> Self {
         RunInfo {
-            source_id: self.source_id,
-            run_index: Some(self.run_index),
+            source_id: val.source_id,
+            run_index: Some(val.run_index),
             ..Default::default()
         }
     }

@@ -16,6 +16,12 @@ pub struct BlockHandler {
     root: Vec<String>,
 }
 
+impl Default for BlockHandler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl BlockHandler {
     pub fn new() -> Self {
         BlockHandler {
@@ -57,26 +63,21 @@ impl BlockHandler {
         let parent_id = self.block_stack.last().cloned();
 
         match self.blocks.get_mut(&block_id) {
-            Some(block) => match (&mut block.block_kind, block_kind) {
-                (
+            Some(block) => {
+                if let (
                     BlockKind::Text { content },
                     BlockKind::Text {
                         content: update_content,
                     },
-                ) => {
+                ) = (&mut block.block_kind, block_kind)
+                {
                     content.push_str(update_content.as_str());
                 }
-                _ => {}
-            }, // Block already exists with the same kind
+            } // Block already exists with the same kind
             None => {
                 let block = Block::new(block_id.clone(), block_kind);
                 self.blocks.insert(block_id.clone(), block);
-                if self
-                    .block_stack
-                    .iter()
-                    .find(|id| *id == &block_id)
-                    .is_none()
-                {
+                if !self.block_stack.iter().any(|id| id == &block_id) {
                     tracing::debug!("Adding block {} to stack", block_id);
                     self.block_stack.push(block_id.clone());
                 }
@@ -175,7 +176,7 @@ impl Handler for BlockHandler {
                             result,
                             is_result_truncated,
                         } => BlockKind::SQL {
-                            sql_query: sql_query,
+                            sql_query,
                             database,
                             result,
                             is_result_truncated,
@@ -194,7 +195,7 @@ impl Handler for BlockHandler {
                             result,
                             is_result_truncated,
                         } => BlockKind::SQL {
-                            sql_query: sql_query,
+                            sql_query,
                             database,
                             result,
                             is_result_truncated,
@@ -213,6 +214,12 @@ pub struct GroupBlockHandler {
     group_stack: Vec<String>,
     group_blocks: HashMap<String, BlockHandler>,
     groups: HashMap<String, Group>,
+}
+
+impl Default for GroupBlockHandler {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl GroupBlockHandler {

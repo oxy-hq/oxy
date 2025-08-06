@@ -27,7 +27,7 @@ pub async fn get_app_tasks(path: &PathBuf) -> AppResult<Vec<Task>> {
     let yaml_content = read_yaml_file(path).await?;
     let root_map = parse_yaml_to_mapping(&yaml_content)?;
 
-    let tasks_value = root_map.get(&yaml_string_value(TASKS_KEY)).ok_or_else(|| {
+    let tasks_value = root_map.get(yaml_string_value(TASKS_KEY)).ok_or_else(|| {
         crate::errors::OxyError::ConfigurationError("No tasks found in app config".to_string())
     })?;
 

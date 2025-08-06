@@ -46,7 +46,7 @@ impl Executable<CreateDataAppInput> for CreateDataAppExecutable {
         param
             .app_config
             .validate_with(&validation_context)
-            .map_err(|e| OxyError::AgentError(format!("Invalid app config: {}", e)))?;
+            .map_err(|e| OxyError::AgentError(format!("Invalid app config: {e}")))?;
 
         let project_path = resolve_project_path()?;
         let mut full_file_name = format!("{}.app.yml", param.file_name);

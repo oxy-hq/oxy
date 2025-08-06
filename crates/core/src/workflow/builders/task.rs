@@ -212,7 +212,7 @@ impl Executable<TaskInput> for TaskExecutable {
                         results
                             .into_iter()
                             .try_collect::<OutputContainer, Vec<_>, OxyError>()
-                            .map(|results| OutputContainer::List(results))
+                            .map(OutputContainer::List)
                     })?
             }
             TaskType::Formatter(formatter_task) => {
@@ -271,8 +271,7 @@ impl Executable<TaskInput> for TaskExecutable {
                         )
                         .map_err(|e| {
                             OxyError::RuntimeError(format!(
-                                "Failed to serialize sub workflow metadata: {}",
-                                e
+                                "Failed to serialize sub workflow metadata: {e}"
                             ))
                         })?;
                         task_execution_context
@@ -376,7 +375,7 @@ impl ParamMapper<(Option<usize>, Task), TaskInput> for TaskChainMapper {
                     }
                     LoopValues::Array(ref values) => values
                         .iter()
-                        .map(|v| minijinja::Value::from_serialize(v))
+                        .map(minijinja::Value::from_serialize)
                         .collect(),
                 };
                 Some(RuntimeTaskInput::Loop { values })
@@ -385,7 +384,7 @@ impl ParamMapper<(Option<usize>, Task), TaskInput> for TaskChainMapper {
                 let variables = workflow_task
                     .variables.as_ref()
                     .map(|vars| {
-                        vars.into_iter()
+                        vars.iter()
                             .map(|(k, v)| {
                                 if let Some(template) = v.as_str() {
                                     let rendered_value = execution_context

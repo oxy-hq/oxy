@@ -35,7 +35,7 @@ impl WorkflowEventHandler {
 impl EventHandler for WorkflowEventHandler {
     async fn handle_event(&mut self, event: Event) -> Result<(), OxyError> {
         tracing::debug!(?event, "Received event");
-        if let Some(event_kind) = TryInto::<EventKind>::try_into(event).ok() {
+        if let Ok(event_kind) = TryInto::<EventKind>::try_into(event) {
             self.topic.publish(event_kind.clone()).await;
             self.group_block_handler.handle_event(event_kind).await?;
         }

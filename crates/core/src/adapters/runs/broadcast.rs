@@ -170,7 +170,7 @@ where
 #[async_trait::async_trait]
 impl EventHandler for TopicPublisher<EventKind> {
     async fn handle_event(&mut self, event: Event) -> Result<(), OxyError> {
-        if let Some(event_kind) = TryInto::<EventKind>::try_into(event).ok() {
+        if let Ok(event_kind) = TryInto::<EventKind>::try_into(event) {
             let _ = self.publish(event_kind.clone()).await;
         }
         Ok(())

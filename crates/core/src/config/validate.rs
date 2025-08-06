@@ -165,8 +165,7 @@ pub fn validate_task_data_reference(data_ref: &String, ctx: &ValidationContext) 
 
         if !task_names.contains(data_ref) {
             return Err(garde::Error::new(format!(
-                "Display block references task '{}' which does not exist in the app config",
-                data_ref
+                "Display block references task '{data_ref}' which does not exist in the app config"
             )));
         }
     }

@@ -14,17 +14,14 @@ fn confirm_deletion(item_description: &str, require_confirmation: bool) -> Resul
     if !require_confirmation {
         return Ok(true);
     }
-    print!(
-        "⚠️  Are you sure you want to delete {}? (y/N): ",
-        item_description
-    );
+    print!("⚠️  Are you sure you want to delete {item_description}? (y/N): ");
     io::stdout()
         .flush()
-        .map_err(|e| OxyError::IOError(format!("Failed to flush stdout: {}", e)))?;
+        .map_err(|e| OxyError::IOError(format!("Failed to flush stdout: {e}")))?;
     let mut input = String::new();
     io::stdin()
         .read_line(&mut input)
-        .map_err(|e| OxyError::IOError(format!("Failed to read input: {}", e)))?;
+        .map_err(|e| OxyError::IOError(format!("Failed to read input: {e}")))?;
     let input = input.trim().to_lowercase();
     Ok(input == "y" || input == "yes")
 }

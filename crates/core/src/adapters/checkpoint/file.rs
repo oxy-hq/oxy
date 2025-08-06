@@ -38,7 +38,7 @@ impl FileStorage {
         let base_path = self
             .dir
             .join(slugify::slugify(&run_info.source_id, "", "_", None))
-            .join(&run_info.get_run_index().to_string());
+            .join(run_info.get_run_index().to_string());
         create_dir_all(&base_path).await.map_err(|err| {
             OxyError::IOError(format!(
                 "Failed to create base checkpoint directory({base_path:?}) :\n{err}"

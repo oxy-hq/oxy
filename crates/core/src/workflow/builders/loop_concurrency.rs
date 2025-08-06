@@ -32,7 +32,7 @@ impl ParamMapper<Vec<minijinja::Value>, Vec<(usize, minijinja::Value)>> for Loop
             ("type".to_string(), serde_json::to_value("loop").unwrap()),
             ("values".to_string(), serde_json::to_value(&values).unwrap()),
         ]))
-        .map_err(|e| OxyError::RuntimeError(format!("Failed to serialize loop values: {}", e)))?;
+        .map_err(|e| OxyError::RuntimeError(format!("Failed to serialize loop values: {e}")))?;
         execution_context
             .write_kind(EventKind::SetMetadata {
                 attributes: HashMap::from_iter([("metadata".to_string(), metadata)]),

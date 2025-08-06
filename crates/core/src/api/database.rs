@@ -216,28 +216,28 @@ pub async fn clean_data(
             }
             Err(e) => {
                 success = false;
-                error_message = format!("Failed to clean all: {}", e);
+                error_message = format!("Failed to clean all: {e}");
             }
         },
         CleanTarget::DatabasesFolder => match clean_database_folder(false).await {
             Ok(_) => cleaned_items.push("Databases folder".to_string()),
             Err(e) => {
                 success = false;
-                error_message = format!("Failed to clean databases folder: {}", e);
+                error_message = format!("Failed to clean databases folder: {e}");
             }
         },
         CleanTarget::Vectors => match clean_vectors(false).await {
             Ok(_) => cleaned_items.push("Vector store".to_string()),
             Err(e) => {
                 success = false;
-                error_message = format!("Failed to clean vectors: {}", e);
+                error_message = format!("Failed to clean vectors: {e}");
             }
         },
         CleanTarget::Cache => match clean_cache(false).await {
             Ok(_) => cleaned_items.push("Cache".to_string()),
             Err(e) => {
                 success = false;
-                error_message = format!("Failed to clean cache: {}", e);
+                error_message = format!("Failed to clean cache: {e}");
             }
         },
     }

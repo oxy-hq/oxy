@@ -17,7 +17,6 @@ use std::{
     collections::HashMap,
     path::{Path, PathBuf},
 };
-use tokio_util::sync::CancellationToken;
 use workflow::{build_tasks_executable, build_workflow_executable};
 
 mod cache;

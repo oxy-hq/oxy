@@ -108,7 +108,7 @@ impl CheckpointContext {
         match self.root_ref {
             Some(ref root) => RootReference {
                 source_id: root.source_id.clone(),
-                run_index: root.run_index.clone(),
+                run_index: root.run_index,
                 replay_ref: self.current_ref_str(),
             },
             None => RootReference {
@@ -127,7 +127,6 @@ impl CheckpointContext {
         self.current_ref
             .iter()
             .chain(std::iter::once(&replay_id.to_string()))
-            .into_iter()
             .join(".")
     }
 
@@ -204,7 +203,7 @@ impl CheckpointContext {
             .read_checkpoint::<T>(&self.run_info, &replay_id)
             .await?;
         let checkpoint_hash = input.checkpoint_hash();
-        if &checkpoint_data.checkpoint_hash != &checkpoint_hash {
+        if checkpoint_data.checkpoint_hash != checkpoint_hash {
             return Err(OxyError::ArgumentError(format!(
                 "Checkpoint hash mismatch: expected {}, got {}",
                 checkpoint_hash, &checkpoint_data.checkpoint_hash

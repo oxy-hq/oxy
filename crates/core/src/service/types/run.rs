@@ -8,18 +8,14 @@ use utoipa::ToSchema;
 
 #[derive(Serialize, Deserialize, Debug, Clone, ToSchema)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum RunStatus {
+    #[default]
     Pending,
     Running,
     Canceled,
     Completed,
     Failed,
-}
-
-impl Default for RunStatus {
-    fn default() -> Self {
-        RunStatus::Pending
-    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, ToSchema, Default)]

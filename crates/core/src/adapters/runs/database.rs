@@ -43,7 +43,7 @@ impl RunsStorage for RunsDatabaseStorage {
         };
         let root_ref = run.root_source_id.as_ref().map(|source_id| RootReference {
             source_id: source_id.clone(),
-            run_index: run.root_run_index.clone(),
+            run_index: run.root_run_index,
             replay_ref: run.root_replay_ref.unwrap_or_default(),
         });
         Ok(Some(RunInfo {
@@ -96,7 +96,7 @@ impl RunsStorage for RunsDatabaseStorage {
         match root_ref {
             Some(ref root) => {
                 run.root_source_id = ActiveValue::Set(Some(root.source_id.clone()));
-                run.root_run_index = ActiveValue::Set(root.run_index.clone());
+                run.root_run_index = ActiveValue::Set(root.run_index);
                 run.root_replay_ref = ActiveValue::Set(Some(root.replay_ref.clone()));
             }
             None => {
@@ -214,7 +214,7 @@ impl RunsStorage for RunsDatabaseStorage {
                 metadata: None,
                 root_ref: run.root_source_id.as_ref().map(|source_id| RootReference {
                     source_id: source_id.clone(),
-                    run_index: run.root_run_index.clone(),
+                    run_index: run.root_run_index,
                     replay_ref: run.root_replay_ref.unwrap_or_default(),
                 }),
                 source_id: run.source_id,
@@ -282,7 +282,7 @@ impl RunsStorage for RunsDatabaseStorage {
                     .and_then(|json| serde_json::from_value::<GroupKind>(json.clone()).ok()),
                 root_ref: run.root_source_id.as_ref().map(|source_id| RootReference {
                     source_id: source_id.clone(),
-                    run_index: run.root_run_index.clone(),
+                    run_index: run.root_run_index,
                     replay_ref: run.root_replay_ref.unwrap_or_default(),
                 }),
                 source_id: run.source_id,
@@ -331,7 +331,7 @@ impl RunsStorage for RunsDatabaseStorage {
                 metadata: None,
                 root_ref: run.root_source_id.as_ref().map(|source_id| RootReference {
                     source_id: source_id.clone(),
-                    run_index: run.root_run_index.clone(),
+                    run_index: run.root_run_index,
                     replay_ref: run.root_replay_ref.unwrap_or_default(),
                 }),
                 source_id: run.source_id,
