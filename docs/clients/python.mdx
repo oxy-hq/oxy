@@ -4,24 +4,21 @@ description: "Python client for Oxy"
 ---
 
 <Steps>
-<Step title="Installation">
+  <Step title="Installation">
+    Install from git source:
 
-Install from git:
-
-```bash
-pip install git+ssh://git@github.com/oxy-hq/oxyit#subdirectory=crates/core
-```
-
-</Step>
-<Step title="Usage">
-```py
-from oxypy import ask, run, execute
-
-print(ask("this month's revenue?"))
-print(run("example_anonymize.sql"))
-print(execute("survey_responses"))
-
-```
-</Step>
+    ```bash
+    pip install git+ssh://git@github.com/oxy-hq/oxyit#subdirectory=crates/core
+    ```
+  </Step>
+  <Step title="Usage">
+    ```py
+    from oxypy import ask, run, execute
+    
+    print(ask("this month's revenue?"))
+    print(run("example_anonymize.sql"))
+    print(execute("survey_responses"))
+    
+    ```
+  </Step>
 </Steps>
-```
