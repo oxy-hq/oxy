@@ -12,6 +12,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::hash::Hash;
 use std::path::PathBuf;
+use utoipa::ToSchema;
 pub use variables::Variables;
 
 use super::validate::{AgentValidationContext, validate_model, validate_task};
@@ -880,7 +881,7 @@ impl Hash for WorkflowTask {
 #[serde(untagged)]
 pub enum LoopValues {
     Template(String),
-    Array(Vec<String>),
+    Array(Vec<serde_json::Value>),
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]

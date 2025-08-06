@@ -7,7 +7,10 @@ const fetchSSE = async <T>(
     body?: unknown;
     onMessage: (data: T) => void;
     onOpen?: () => void;
+    onClose?: () => void;
+    onError?: (error: Error) => void;
     eventTypes?: string[];
+    signal?: AbortSignal | null;
   },
 ) => {
   const {
@@ -15,6 +18,9 @@ const fetchSSE = async <T>(
     body,
     onMessage,
     onOpen,
+    onClose,
+    onError,
+    signal,
     eventTypes = ["message"],
   } = options;
   const token = localStorage.getItem("auth_token");
@@ -26,6 +32,7 @@ const fetchSSE = async <T>(
     },
     openWhenHidden: true,
     body: body ? JSON.stringify(body) : undefined,
+    signal,
     async onopen(res) {
       if (res.status !== 200) {
         throw new Error(`SSE connection failed with status: ${res.status}`);
@@ -44,7 +51,11 @@ const fetchSSE = async <T>(
     },
     onerror(err) {
       console.error("SSE error:", err);
+      onError?.(err);
       throw err;
+    },
+    onclose() {
+      onClose?.();
     },
   });
 };

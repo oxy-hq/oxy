@@ -9,7 +9,9 @@ pub struct Model {
     pub id: Uuid,
     #[sea_orm(unique)]
     pub name: String,
+    #[sea_orm(column_type = "Text")]
     pub encrypted_value: String,
+    #[sea_orm(column_type = "Text", nullable)]
     pub description: Option<String>,
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
@@ -22,7 +24,9 @@ pub enum Relation {
     #[sea_orm(
         belongs_to = "super::users::Entity",
         from = "Column::CreatedBy",
-        to = "super::users::Column::Id"
+        to = "super::users::Column::Id",
+        on_update = "Cascade",
+        on_delete = "Restrict"
     )]
     Users,
 }

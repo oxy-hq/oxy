@@ -1,6 +1,7 @@
 pub mod agent;
 pub mod api_key;
 pub mod app;
+pub mod block;
 pub mod chat;
 pub mod eval;
 pub mod formatters;
@@ -8,6 +9,7 @@ pub mod message;
 pub mod retrieval;
 pub mod secret_manager;
 pub mod secret_resolver;
+pub mod statics;
 pub mod sync;
 pub mod task_manager;
 pub mod test;

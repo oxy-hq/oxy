@@ -13,9 +13,14 @@ export type TaskConfigWithId = (
   | FormatterTaskConfig
   | AgentTaskConfig
   | LoopSequentialTaskConfigWithId
-  | WorkflowTaskConfig
+  | WorkflowTaskConfigWithId
   | ConditionalTaskConfigWithId
-) & { id: string };
+) & {
+  id: string;
+  workflowId: string;
+  runId?: string;
+  subWorkflowTaskId?: string;
+};
 
 export type WorkflowConfigWithPath = Omit<WorkflowConfig, "tasks"> & {
   path: string;
@@ -66,13 +71,11 @@ export type WorkflowConfig = {
 interface WorkflowState {
   nodes: Node[];
   edges: Edge[];
-  selectedNodeId: string | null;
   layoutedNodes: LayoutedNode[];
   setNodes: (nodes: Node[]) => void;
   setEdges: (edges: Edge[]) => void;
   setLayoutedNodes: (layoutedNodes: LayoutedNode[]) => void;
   setNodeVisibility: (id: string[], visible: boolean) => void;
-  setSelectedNodeId(nodeId: string | null): void;
   workflow: WorkflowConfigWithPath | null;
   setWorkflow: (workflow: WorkflowConfigWithPath) => void;
   logs: LogItem[];
@@ -81,7 +84,7 @@ interface WorkflowState {
   appendLogs: (logs: LogItem[]) => void;
 }
 
-const useWorkflow = create<WorkflowState>((set, get) => ({
+const useWorkflow = create<WorkflowState>((set) => ({
   setLogs: (logs) => set({ logs }),
   appendLog: (log) => set((state) => ({ logs: [...state.logs, log] })),
   logs: [],
@@ -89,7 +92,6 @@ const useWorkflow = create<WorkflowState>((set, get) => ({
   workflow: null,
   setWorkflow: (workflow) => set({ workflow }),
   edges: [],
-  selectedNodeId: null,
   layoutedNodes: [],
   setNodes: (nodes: Node[]) => set({ nodes }),
   setEdges: (edges: Edge[]) => set({ edges }),
@@ -115,12 +117,6 @@ const useWorkflow = create<WorkflowState>((set, get) => ({
       // Return the updated state with the new nodes
       return { ...state, nodes: newNodes };
     });
-  },
-  setSelectedNodeId(nodeId: string | null) {
-    set({ selectedNodeId: nodeId });
-  },
-  getSelectedNode() {
-    return get().nodes.find((node) => node.id === get().selectedNodeId) || null;
   },
   appendLogs: (logs) => {
     set((state) => ({ logs: [...state.logs, ...logs] }));
@@ -171,6 +167,7 @@ export type AgentTaskConfig = BaseTaskConfig & {
 export type WorkflowTaskConfig = BaseTaskConfig & {
   type: TaskType.WORKFLOW;
   src: string;
+  tasks?: TaskConfig[];
 };
 
 export type LoopSequentialTaskConfig = BaseTaskConfig & {
@@ -205,6 +202,12 @@ export type LoopSequentialTaskConfigWithId = BaseTaskConfig & {
   type: TaskType.LOOP_SEQUENTIAL;
   tasks: TaskConfigWithId[];
   values: string | string[];
+};
+
+export type WorkflowTaskConfigWithId = BaseTaskConfig & {
+  type: TaskType.WORKFLOW;
+  src: string;
+  tasks?: TaskConfigWithId[];
 };
 
 export type ExecuteSqlTaskConfig = BaseTaskConfig & {

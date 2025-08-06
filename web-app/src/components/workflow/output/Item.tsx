@@ -25,7 +25,7 @@ type OutputItemProps = {
 };
 
 const OutputItem = ({
-  content,
+  content = "",
   timestamp,
   logType,
   onArtifactClick,

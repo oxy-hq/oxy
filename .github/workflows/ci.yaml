@@ -190,6 +190,7 @@ jobs:
           elif [[ "${{ matrix.task }}" == "test" ]]; then
             touch examples/bigquery-sample.key
             echo $BIGQUERY_SAMPLE_KEY > examples/bigquery-sample.key
+            cargo run --profile ci -- migrate
             cargo test --profile ci --verbose --no-fail-fast -- --nocapture
             cargo run --profile ci -- gen-config-schema --check
           fi

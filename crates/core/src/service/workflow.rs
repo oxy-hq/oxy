@@ -22,10 +22,12 @@ use crate::{
     },
     project::resolve_project_path,
     workflow::{
-        WorkflowInput, WorkflowLauncher,
+        RetryStrategy, WorkflowInput, WorkflowLauncher,
         loggers::types::{LogItem, WorkflowLogger},
     },
 };
+
+pub mod handler;
 
 #[derive(Serialize, ToSchema)]
 pub struct WorkflowInfo {
@@ -172,7 +174,7 @@ where
 pub async fn run_workflow<P: AsRef<Path>, L: WorkflowLogger + 'static>(
     path: P,
     logger: L,
-    restore_from_checkpoint: bool,
+    retry_strategy: RetryStrategy,
     variables: Option<HashMap<String, serde_json::Value>>,
 ) -> Result<OutputContainer, OxyError> {
     let project_path = resolve_project_path()?.to_string_lossy().to_string();
@@ -183,9 +185,30 @@ pub async fn run_workflow<P: AsRef<Path>, L: WorkflowLogger + 'static>(
             WorkflowInput {
                 workflow_ref: path.as_ref().to_string_lossy().to_string(),
                 variables,
-                restore_from_checkpoint,
+                retry: retry_strategy,
             },
             WorkflowEventHandler::new(logger),
+        )
+        .await
+}
+
+pub async fn run_workflow_v2<P: AsRef<Path>, H: EventHandler + Send + Sync + 'static>(
+    path: P,
+    handler: H,
+    retry_strategy: RetryStrategy,
+    variables: Option<HashMap<String, serde_json::Value>>,
+) -> Result<OutputContainer, OxyError> {
+    let project_path = resolve_project_path()?.to_string_lossy().to_string();
+    WorkflowLauncher::new()
+        .with_local_context(&project_path)
+        .await?
+        .launch(
+            WorkflowInput {
+                workflow_ref: path.as_ref().to_string_lossy().to_string(),
+                variables,
+                retry: retry_strategy,
+            },
+            handler,
         )
         .await
 }

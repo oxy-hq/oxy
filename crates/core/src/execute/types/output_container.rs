@@ -277,10 +277,12 @@ impl Hash for OutputContainer {
                 list.hash(state);
             }
             OutputContainer::Map(map) => {
-                map.iter().for_each(|(key, value)| {
-                    key.hash(state);
-                    value.hash(state);
-                });
+                map.iter()
+                    .sorted_by_key(|item| item.0)
+                    .for_each(|(key, value)| {
+                        key.hash(state);
+                        value.hash(state);
+                    });
             }
             OutputContainer::Single(output) => {
                 output.hash(state);

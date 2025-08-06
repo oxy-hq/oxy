@@ -5,7 +5,6 @@ use futures::StreamExt;
 use tokio::task::JoinHandle;
 
 use crate::{
-    config::constants::{CONCURRENCY_ITEM_ID_PREFIX, CONCURRENCY_SOURCE},
     errors::OxyError,
     execute::{Executable, ExecutionContext, types::ProgressType, writer::OrderedWriter},
 };
@@ -127,18 +126,12 @@ where
         let mut ordered_writer = OrderedWriter::new();
         let pairs = params
             .into_iter()
-            .enumerate()
-            .map(|(idx, param)| {
+            .map(|param| {
                 (
                     param,
                     self.inner.clone(),
                     execution_context.clone(),
-                    execution_context
-                        .wrap_writer(ordered_writer.create_writer(None))
-                        .with_child_source(
-                            format!("{CONCURRENCY_ITEM_ID_PREFIX}{idx}"),
-                            CONCURRENCY_SOURCE.to_string(),
-                        ),
+                    execution_context.wrap_writer(ordered_writer.create_writer(None)),
                 )
             })
             .collect::<Vec<_>>();

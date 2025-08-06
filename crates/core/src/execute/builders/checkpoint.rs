@@ -1,123 +1,65 @@
-use std::{fmt::Debug, hash::Hash};
+use std::fmt::Debug;
 
 use serde::{Serialize, de::DeserializeOwned};
-use tokio::sync::mpsc::channel;
 
 use crate::{
-    adapters::checkpoint::{CheckpointData, CheckpointManager, RunInfo},
+    adapters::checkpoint::{CheckpointBuilder, CheckpointData, RunInfo},
     errors::OxyError,
-    execute::{Executable, ExecutionContext, types::Event, writer::BufWriter},
+    execute::{
+        Executable, ExecutionContext,
+        writer::{BufWriter, Writer},
+    },
 };
 
 use super::wrap::Wrap;
 
-pub struct CheckpointRootWrapper<S> {
-    should_restore: S,
-    manager: CheckpointManager,
-}
+pub struct CheckpointRootWrapper;
 
-impl<S> CheckpointRootWrapper<S> {
-    pub fn new(manager: CheckpointManager, should_restore: S) -> Self {
-        CheckpointRootWrapper {
-            manager,
-            should_restore,
-        }
-    }
-}
-
-impl<E, S> Wrap<E> for CheckpointRootWrapper<S>
-where
-    S: Clone,
-{
-    type Wrapper = CheckpointRoot<E, S>;
+impl<E> Wrap<E> for CheckpointRootWrapper {
+    type Wrapper = CheckpointRoot<E>;
 
     fn wrap(&self, inner: E) -> Self::Wrapper {
-        CheckpointRoot::new(inner, self.manager.clone(), self.should_restore.clone())
+        CheckpointRoot::new(inner)
     }
 }
 
-pub struct CheckpointRoot<E, S> {
+pub struct CheckpointRoot<E> {
     inner: E,
-    manager: CheckpointManager,
-    should_restore: S,
 }
 
-impl<E, S> CheckpointRoot<E, S> {
-    pub fn new(inner: E, manager: CheckpointManager, should_restore: S) -> Self {
-        CheckpointRoot {
-            inner,
-            manager,
-            should_restore,
-        }
+impl<E> CheckpointRoot<E> {
+    pub fn new(inner: E) -> Self {
+        CheckpointRoot { inner }
     }
 }
 
-impl<E, S> Clone for CheckpointRoot<E, S>
+impl<E> Clone for CheckpointRoot<E>
 where
     E: Clone,
-    S: Clone,
 {
     fn clone(&self) -> Self {
         CheckpointRoot {
             inner: self.inner.clone(),
-            manager: self.manager.clone(),
-            should_restore: self.should_restore.clone(),
         }
     }
 }
 
-#[async_trait::async_trait]
-pub trait ShouldRestore {
-    async fn check<I: Debug + Hash + Sync>(
-        &self,
-        input: &I,
-        execution_context: &ExecutionContext,
-        manager: &CheckpointManager,
-    ) -> Option<RunInfo>;
+pub trait CheckpointRootId {
+    fn run_info(&self) -> RunInfo;
 }
 
-#[derive(Clone)]
-pub struct NoRestore;
-
-#[async_trait::async_trait]
-impl ShouldRestore for NoRestore {
-    async fn check<I: Debug + Hash + Sync>(
-        &self,
-        _input: &I,
-        _execution_context: &ExecutionContext,
-        _manager: &CheckpointManager,
-    ) -> Option<RunInfo> {
-        None
-    }
-}
-
-#[derive(Clone)]
-pub struct LastRunFailed;
-
-#[async_trait::async_trait]
-impl ShouldRestore for LastRunFailed {
-    async fn check<I: Debug + Hash + Sync>(
-        &self,
-        input: &I,
-        _execution_context: &ExecutionContext,
-        manager: &CheckpointManager,
-    ) -> Option<RunInfo> {
-        tracing::info!("Checking last run failed {:?}", input);
-        let checkpoint_id = manager.checkpoint_id(input);
-        let run_info = manager.last_run(&checkpoint_id).await.ok()?;
-        if run_info.success {
-            return None;
-        }
-        Some(run_info)
-    }
+pub trait CheckpointId {
+    fn checkpoint_hash(&self) -> String;
+    fn replay_id(&self) -> String;
+    fn child_run_info(&self) -> Option<RunInfo>;
+    fn loop_values(&self) -> Option<Vec<serde_json::Value>>;
 }
 
 #[async_trait::async_trait]
-impl<I, E, S, R> Executable<I> for CheckpointRoot<E, S>
+impl<I, E, R> Executable<I> for CheckpointRoot<E>
 where
     E: Executable<I, Response = R> + Send + Sync,
-    S: ShouldRestore + Send + Sync,
-    I: Debug + Hash + Send + Sync + 'static,
+    I: Debug + CheckpointRootId + Send + Sync + 'static,
     R: Serialize + Send + Clone,
 {
     type Response = E::Response;
@@ -127,47 +69,21 @@ where
         execution_context: &ExecutionContext,
         input: I,
     ) -> Result<Self::Response, OxyError> {
-        // Check & Restore events
-        let run_info = match self
-            .should_restore
-            .check(&input, execution_context, &self.manager)
-            .await
-        {
-            Some(run) => {
-                tracing::info!("Restoring run: {:?}", run);
-                self.manager.read_events(&run, execution_context).await?;
-                run
-            }
-            None => {
-                let checkpoint_id = self.manager.checkpoint_id(&input);
-                tracing::info!(
-                    "Creating new run for input: {:?}\ncheckpoint_id: {}",
-                    input,
-                    checkpoint_id
-                );
-                self.manager.create_run(&checkpoint_id).await?
-            }
-        };
-        tracing::info!("Running with checkpoint: {:?}", run_info);
-
-        // Spawn event receiver task
-        let (tx, rx) = channel::<Vec<Event>>(100);
-        let manager = self.manager.clone();
-        let run_info_clone = run_info.clone();
-        let handle = tokio::spawn(async move {
-            manager.write_events(&run_info_clone, rx).await?;
-            Ok::<(), OxyError>(())
-        });
+        let manager = CheckpointBuilder::from_config(&execution_context.config).await?;
+        let run_info = (&input).run_info();
+        tracing::info!("Running with run info: {:?}", run_info);
         // Build new execution context with the new receiver and checkpoint manager
         let response = {
-            let checkpoint_context = self.manager.new_context(run_info.clone(), tx);
+            let checkpoint_context = match &execution_context.checkpoint {
+                Some(checkpoint) => checkpoint.nested(run_info.clone()),
+                None => manager.new_context(run_info.clone()),
+            };
             let new_context = execution_context.with_checkpoint(checkpoint_context);
 
             self.inner.execute(&new_context, input).await
         }?;
         // Commit checkpoint with a success marker
-        handle.await??;
-        self.manager.write_success_marker(&run_info).await?;
+        manager.write_success_marker(&run_info).await?;
         Ok(response)
     }
 }
@@ -207,7 +123,7 @@ where
 impl<E, I, R> Executable<I> for Checkpoint<E>
 where
     E: Executable<I, Response = R> + Send + Sync,
-    I: Hash + Send + Sync + 'static,
+    I: CheckpointId + Debug + Send + Sync + 'static,
     R: Serialize + DeserializeOwned + Send + Clone,
 {
     type Response = E::Response;
@@ -220,27 +136,90 @@ where
         if execution_context.checkpoint.is_none() {
             return self.inner.execute(execution_context, input).await;
         }
-        let checkpoint = execution_context.checkpoint.as_ref().unwrap();
-        let checkpoint_id = checkpoint.checkpoint_id(&input);
-        if let Ok(data) = checkpoint.read_checkpoint::<R>(&checkpoint_id).await {
-            return Ok(data.output);
+        let replay_id = (&input).replay_id();
+        let execution_context = execution_context.with_checkpoint_ref(&replay_id);
+        let checkpoint_hash = (&input).checkpoint_hash();
+        let child_run_info = (&input).child_run_info();
+        let loop_values = (&input).loop_values();
+        match execution_context.read_checkpoint::<R, I>(&input).await {
+            Ok(data) => match data.output {
+                Some(output) => {
+                    tracing::info!(
+                        "Checkpoint found for replay_id: {}, hash: {}",
+                        replay_id,
+                        checkpoint_hash
+                    );
+                    for event in data.events {
+                        execution_context.write(event).await?;
+                    }
+                    return Ok(output);
+                }
+                None => {
+                    tracing::warn!(
+                        "Checkpoint found but no output for replay_id: {}, hash: {}",
+                        replay_id,
+                        checkpoint_hash
+                    );
+                }
+            },
+            Err(e) => {
+                tracing::warn!(
+                    "Checkpoint not found for input: {:?} replay_id: {}, hash: {}\nError: {}",
+                    input,
+                    replay_id,
+                    checkpoint_hash,
+                    e
+                );
+            }
         }
         let mut buf_writer = BufWriter::new();
         let writer = buf_writer.create_writer(None)?;
         let tx = execution_context.writer.clone();
         let handle = tokio::spawn(async move { buf_writer.write_and_copy(tx).await });
         let response = {
-            let new_context = execution_context.wrap_writer(writer);
+            let new_context = &execution_context.wrap_writer(writer);
             self.inner.execute(&new_context, input).await
-        }?;
+        };
         let events = handle.await??;
-        checkpoint
-            .create_checkpoint(CheckpointData {
-                checkpoint_id,
-                output: response.clone(),
-            })
-            .await?;
-        checkpoint.write_events(events).await?;
-        Ok(response)
+        let checkpoint_data: Option<CheckpointData<R>> = match &response {
+            Ok(response) => {
+                tracing::info!(
+                    "Checkpoint created for replay_id: {}, hash: {}",
+                    replay_id,
+                    checkpoint_hash
+                );
+                Some(CheckpointData {
+                    replay_id,
+                    checkpoint_hash: checkpoint_hash,
+                    output: Some(response.clone()),
+                    events: events,
+                    run_info: child_run_info,
+                    loop_values: loop_values,
+                })
+            }
+            Err(e) => {
+                tracing::error!(
+                    "Failed to execute task for replay_id: {}, hash: {}\nError: {}",
+                    replay_id,
+                    checkpoint_hash,
+                    e
+                );
+                match child_run_info {
+                    Some(run_info) => Some(CheckpointData {
+                        replay_id,
+                        checkpoint_hash: checkpoint_hash,
+                        output: None,
+                        events: vec![],
+                        run_info: Some(run_info),
+                        loop_values: loop_values,
+                    }),
+                    None => None,
+                }
+            }
+        };
+        if let Some(checkpoint_data) = checkpoint_data {
+            execution_context.create_checkpoint(checkpoint_data).await?;
+        }
+        response
     }
 }

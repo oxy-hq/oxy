@@ -1,13 +1,16 @@
 use crate::{
     errors::OxyError,
-    execute::context::{Executable, ExecutionContext},
+    execute::{
+        builders::map::ParamMapper,
+        context::{Executable, ExecutionContext},
+    },
 };
 
 use super::wrap::Wrap;
 
 #[async_trait::async_trait]
 pub trait ContextMapper<I, V> {
-    async fn map(
+    async fn map_reduce(
         &self,
         execution_context: &ExecutionContext,
         memo: V,
@@ -25,7 +28,7 @@ where
     I: Send + 'static,
     V: Send + 'static,
 {
-    async fn map(
+    async fn map_reduce(
         &self,
         _execution_context: &ExecutionContext,
         _memo: V,
@@ -36,39 +39,64 @@ where
     }
 }
 
-pub struct ChainWrapper<M> {
-    mapper: M,
+pub trait IntoChain<I, V> {
+    fn into_chain(self) -> (Vec<I>, V);
 }
 
-impl<M> ChainWrapper<M> {
+pub trait UpdateInput<V> {
+    fn update_input(self, input: &V) -> Self;
+}
+
+pub struct ChainWrapper<M, I, V, T> {
+    mapper: M,
+    _initial_input: std::marker::PhantomData<T>,
+    _input: std::marker::PhantomData<I>,
+    _memo: std::marker::PhantomData<V>,
+}
+
+impl<M, I, V, T> ChainWrapper<M, I, V, T> {
     pub fn new(mapper: M) -> Self {
-        Self { mapper }
+        Self {
+            mapper,
+            _initial_input: std::marker::PhantomData,
+            _input: std::marker::PhantomData,
+            _memo: std::marker::PhantomData,
+        }
     }
 }
 
-impl<E, M> Wrap<E> for ChainWrapper<M>
+impl<E, M, I, V, T> Wrap<E> for ChainWrapper<M, I, V, T>
 where
     M: Clone,
 {
-    type Wrapper = Chain<E, M>;
+    type Wrapper = Chain<E, M, I, V, T>;
 
-    fn wrap(&self, inner: E) -> Chain<E, M> {
+    fn wrap(&self, inner: E) -> Chain<E, M, I, V, T> {
         Chain::new(inner, self.mapper.clone())
     }
 }
 
-pub struct Chain<E, M> {
+pub struct Chain<E, M, I, V, T> {
     inner: E,
     mapper: M,
+    _initial_input: std::marker::PhantomData<T>,
+    _input: std::marker::PhantomData<I>,
+    _memo: std::marker::PhantomData<V>,
 }
 
-impl<E, M> Chain<E, M> {
+impl<E, M, I, V, T> Chain<E, M, I, V, T> {
     pub fn new(inner: E, mapper: M) -> Self {
-        Self { inner, mapper }
+        Self {
+            inner,
+            mapper,
+            _initial_input: std::marker::PhantomData,
+            _input: std::marker::PhantomData,
+            _memo: std::marker::PhantomData,
+        }
     }
 }
 
-impl<E, M> Clone for Chain<E, M>
+impl<E, M, I, V, T> Clone for Chain<E, M, I, V, T>
 where
     E: Clone,
     M: Clone,
@@ -77,17 +105,21 @@ where
         Self {
             inner: self.inner.clone(),
             mapper: self.mapper.clone(),
+            _initial_input: std::marker::PhantomData,
+            _input: std::marker::PhantomData,
+            _memo: std::marker::PhantomData,
         }
     }
 }
 
 #[async_trait::async_trait]
-impl<IT, I, E, M, V> Executable<(IT, V)> for Chain<E, M>
+impl<IT, E, M, I, V, T> Executable<IT> for Chain<E, M, I, V, T>
 where
-    IT: IntoIterator<Item = I> + Send + 'static,
-    I: Clone + Send + 'static,
+    IT: IntoChain<T, V> + Send + 'static,
+    T: Clone + Send + 'static,
+    I: UpdateInput<V> + Clone + Send + 'static,
     E: Executable<I, Response = V> + Send,
-    M: ContextMapper<I, V> + Send,
+    M: ContextMapper<I, V> + ParamMapper<T, I> + Send,
     V: Clone + Send + 'static,
 {
     type Response = E::Response;
@@ -95,16 +127,23 @@ where
     async fn execute(
         &mut self,
         execution_context: &ExecutionContext,
-        input: (IT, V),
+        input: IT,
     ) -> Result<Self::Response, OxyError> {
-        let (items, mut memo) = input;
+        let (items, mut memo) = input.into_chain();
         let mut execution_context = execution_context.clone();
         for item in items.into_iter().collect::<Vec<_>>() {
-            let input = item.clone();
-            let output = self.inner.execute(&execution_context, item).await?;
+            let (mapped_input, mapped_context) = self.mapper.map(&execution_context, item).await?;
+            if let Some(new_context) = mapped_context {
+                execution_context = new_context;
+            }
+
+            let output = self
+                .inner
+                .execute(&execution_context, mapped_input.clone().update_input(&memo))
+                .await?;
             let (new_output, new_context) = self
                 .mapper
-                .map(&execution_context, memo, input, output)
+                .map_reduce(&execution_context, memo, mapped_input, output)
                 .await?;
             if let Some(new_context) = new_context {
                 execution_context = new_context;

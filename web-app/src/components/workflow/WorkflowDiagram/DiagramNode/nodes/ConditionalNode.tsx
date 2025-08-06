@@ -2,7 +2,6 @@ import useWorkflow, {
   ConditionalTaskConfigWithId,
   TaskConfigWithId,
 } from "@/stores/useWorkflow.ts";
-import { StepContainer } from "./StepContainer";
 import { NodeHeader } from "./NodeHeader";
 import {
   distanceBetweenHeaderAndContent,
@@ -18,8 +17,6 @@ type Props = {
 
 export default function ConditionalNode({ task }: Props) {
   const layoutedNodes = useWorkflow((state) => state.layoutedNodes);
-  const selectedNodeId = useWorkflow((state) => state.selectedNodeId);
-  const selected = selectedNodeId === task.id;
   const setNodeVisibility = useWorkflow((state) => state.setNodeVisibility);
   const nodes = useWorkflow((state) => state.nodes);
   const [expanded, setExpanded] = useState(true);
@@ -44,11 +41,7 @@ export default function ConditionalNode({ task }: Props) {
     nodeBorderHeight;
   const childSpace = node.size.height - usedHeight;
   return (
-    <StepContainer
-      width={node.size.width}
-      height={node.size.height}
-      selected={selected}
-    >
+    <>
       <NodeHeader
         type={task.type}
         name={task.name}
@@ -56,9 +49,7 @@ export default function ConditionalNode({ task }: Props) {
         expanded={expanded}
         onExpandClick={onExpandClick}
       />
-      <>
-        <div style={{ height: `${childSpace}px` }}></div>
-      </>
-    </StepContainer>
+      <div style={{ height: `${childSpace}px` }}></div>
+    </>
   );
 }

@@ -13,7 +13,7 @@ use crate::{
         types::EventKind,
     },
     theme::StyledText,
-    workflow::WorkflowInput,
+    workflow::{RetryStrategy, WorkflowInput},
 };
 
 use super::{
@@ -87,7 +87,7 @@ impl ParamMapper<EvalInput, Vec<(usize, EvalConfig, EvalTarget)>> for EvalMapper
                             },
                             EvalTarget::Workflow(WorkflowInput {
                                 workflow_ref: workflow_ref.to_string(),
-                                restore_from_checkpoint: false,
+                                retry: RetryStrategy::NoRetry,
                                 variables: None,
                             }),
                         )
@@ -197,6 +197,8 @@ impl Executable<(usize, EvalConfig, EvalTarget)> for EvalExecutable {
         eval_context
             .write_kind(EventKind::Finished {
                 message: format!("{result:?}"),
+                attributes: Default::default(),
+                error: None,
             })
             .await?;
         Ok(result)

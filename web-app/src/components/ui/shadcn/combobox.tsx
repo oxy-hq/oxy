@@ -32,8 +32,15 @@ const PopoverContent = React.forwardRef<
 ));
 PopoverContent.displayName = PopoverPrimitive.Content.displayName;
 
+export type ComboboxStyles = "loading" | "error" | "success";
+
 interface ComboboxProps {
-  items: Array<{ value: string; label: string; searchText?: string }>;
+  items: Array<{
+    value: string;
+    label: string;
+    searchText?: string;
+    style?: ComboboxStyles;
+  }>;
   value?: string;
   onValueChange?: (value: string) => void;
   placeholder?: string;
@@ -58,6 +65,16 @@ export function Combobox({
   className,
 }: ComboboxProps) {
   const [open, setOpen] = React.useState(false);
+  const stylesMap: Record<string, string> = {
+    loading: "text-blue-700",
+    error: "text-red-400",
+    success: "text-emerald-600",
+  };
+  const borderStylesMap: Record<string, string> = {
+    loading: "border-blue-700/40",
+    error: "border-red-400",
+    success: "border-emerald-600",
+  };
 
   const selectedItem = items.find((item) => item.value === value);
 
@@ -68,7 +85,11 @@ export function Combobox({
           variant="outline"
           role="combobox"
           aria-expanded={open}
-          className={cn("w-full justify-between", className)}
+          className={cn(
+            "w-full justify-between",
+            className,
+            borderStylesMap[selectedItem?.style || ""],
+          )}
           disabled={disabled}
         >
           {selectedItem ? selectedItem.label : placeholder}
@@ -85,6 +106,7 @@ export function Combobox({
                 <CommandItem
                   key={item.value}
                   value={item.searchText || item.label}
+                  className={cn(stylesMap[item.style || ""])}
                   onSelect={() => {
                     onValueChange?.(item.value);
                     setOpen(false);

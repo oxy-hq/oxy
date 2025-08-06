@@ -99,7 +99,9 @@ impl AgentLauncher {
                 .await;
             execution_context
                 .write_kind(EventKind::Finished {
+                    attributes: Default::default(),
                     message: Default::default(),
+                    error: response.as_ref().err().map(|e| e.to_string()),
                 })
                 .await?;
             response

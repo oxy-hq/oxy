@@ -7,6 +7,13 @@ use crate::{
     workflow::loggers::types::LogItem,
 };
 
+pub mod block;
+pub mod content;
+pub mod event;
+pub mod pagination;
+pub mod run;
+pub mod task;
+
 #[derive(Serialize, Debug, Clone, ToSchema)]
 #[serde(tag = "type")]
 pub enum ContainerKind {

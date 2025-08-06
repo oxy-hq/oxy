@@ -44,32 +44,51 @@ impl Executable<SQLInput> for SQLExecutable {
                 finished: true,
             })
             .await?;
-        let connector = Connector::from_database(
-            &input.database,
-            &execution_context.config,
-            input.dry_run_limit,
-        )
-        .await?;
-        let file_path = connector.run_query(&input.sql).await?;
-        let table = Output::table_with_reference(
-            file_path,
-            TableReference {
-                sql: input.sql.clone(),
-                database_ref: input.database.clone(),
-            },
-        );
-        execution_context
-            .write_chunk(Chunk {
-                key: None,
-                delta: table.clone(),
-                finished: true,
-            })
+        let result: Result<Output, OxyError> = {
+            let connector = Connector::from_database(
+                &input.database,
+                &execution_context.config,
+                input.dry_run_limit,
+            )
             .await?;
-        execution_context
-            .write_kind(EventKind::Finished {
-                message: "".to_string(),
-            })
-            .await?;
-        Ok(table)
+            let file_path = connector.run_query(&input.sql).await?;
+            let table = Output::table_with_reference(
+                file_path,
+                TableReference {
+                    sql: input.sql.clone(),
+                    database_ref: input.database.clone(),
+                },
+            );
+            Ok(table)
+        };
+        match result.as_ref() {
+            Ok(table) => {
+                execution_context
+                    .write_chunk(Chunk {
+                        key: None,
+                        delta: table.clone(),
+                        finished: true,
+                    })
+                    .await?;
+                execution_context
+                    .write_kind(EventKind::Finished {
+                        message: "".to_string(),
+                        attributes: Default::default(),
+                        error: None,
+                    })
+                    .await?;
+            }
+            Err(e) => {
+                execution_context
+                    .write_kind(EventKind::Finished {
+                        message: "".to_string(),
+                        attributes: Default::default(),
+                        error: Some(e.to_string()),
+                    })
+                    .await?;
+            }
+        }
+
+        result
     }
 }

@@ -213,6 +213,10 @@ pub fn list_by_sub_extension(dir: &PathBuf, sub_extension: &str) -> Vec<PathBuf>
     files
 }
 
+pub fn file_path_to_source_id<P: AsRef<Path>>(file_path: P) -> String {
+    file_path.as_ref().to_string_lossy().to_string()
+}
+
 pub async fn asyncify<F, T>(f: F) -> Result<T, OxyError>
 where
     F: FnOnce() -> Result<T, OxyError> + Send + 'static,

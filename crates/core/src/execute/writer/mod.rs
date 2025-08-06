@@ -25,6 +25,13 @@ where
 }
 
 #[async_trait::async_trait]
+pub trait Handler {
+    type Event;
+
+    async fn handle_event(&mut self, event: Self::Event) -> Result<(), OxyError>;
+}
+
+#[async_trait::async_trait]
 pub trait EventHandler {
     async fn handle_event(&mut self, event: Event) -> Result<(), OxyError>;
 }

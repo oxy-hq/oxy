@@ -7,7 +7,7 @@ use crate::{
     errors::OxyError,
     execute::types::{Output, TargetOutput},
     theme::StyledText,
-    workflow::WorkflowInput,
+    workflow::{RetryStrategy, WorkflowInput},
 };
 
 pub struct EvalInput {
@@ -55,7 +55,7 @@ impl EvalRecord {
     ) -> EvalTarget {
         match target {
             EvalTarget::Workflow(workflow_input) => EvalTarget::Workflow(WorkflowInput {
-                restore_from_checkpoint: false,
+                retry: RetryStrategy::NoRetry,
                 workflow_ref: workflow_input.workflow_ref.clone(),
                 variables: Some(HashMap::from_iter([(
                     workflow_variable_name.clone().unwrap_or_default(),

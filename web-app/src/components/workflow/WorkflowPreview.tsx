@@ -1,13 +1,8 @@
-import React, { Suspense, useEffect, useMemo } from "react";
+import React, { Suspense, useEffect, useMemo, useRef } from "react";
 import { ReactFlowProvider } from "@xyflow/react";
-import useWorkflow from "@/stores/useWorkflow";
-import { useMutation } from "@tanstack/react-query";
 import useWorkflowConfig from "@/hooks/api/workflows/useWorkflowConfig";
-import useWorkflowLogs from "@/hooks/api/workflows/useWorkflowLogs";
 import WorkflowOutput from "./output";
-import throttle from "lodash/throttle";
 import { ResizableHandle } from "@/components/ui/shadcn/resizable";
-import { WorkflowService } from "@/services/api";
 import {
   ResizablePanel,
   ResizablePanelGroup,
@@ -15,69 +10,124 @@ import {
 import { cn } from "@/libs/shadcn/utils";
 import { Button } from "@/components/ui/shadcn/button";
 import {
+  History,
   LoaderCircle,
   LoaderCircleIcon,
   LogsIcon,
   PlayIcon,
+  RotateCcw,
+  StopCircle,
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/shadcn/skeleton";
-import { LogItem } from "@/services/types";
+import {
+  useCancelWorkflowRun,
+  useGetBlocks,
+  useIsProcessing,
+  useStreamEvents,
+  useWorkflowLogs,
+  useWorkflowRun,
+} from "./useWorkflowRun";
+import { useBlockStore } from "@/stores/block";
+import { WorkflowRuns } from "./WorkflowRuns";
 
 const WorkflowDiagram = React.lazy(() => import("./WorkflowDiagram"));
 
-export interface WorkflowPreviewRef {
-  run: () => void;
-}
-
-export const WorkflowPreview = ({ pathb64 }: { pathb64: string }) => {
+export const WorkflowPreview = ({
+  pathb64,
+  runId,
+}: {
+  pathb64: string;
+  runId?: string;
+}) => {
   const path = useMemo(() => atob(pathb64), [pathb64]);
   const relativePath = path;
-  const setLogs = useWorkflow((state) => state.setLogs);
-  const [showOutput, setShowOutput] = React.useState(false);
-  const logs = useWorkflow((state) => state.logs);
+  const [showOutput, setShowOutput] = React.useState(!!runId);
+  const [showRuns, setShowRuns] = React.useState(!runId);
+  const { data: workflowConfig } = useWorkflowConfig(path);
+  const run = useWorkflowRun();
+  const cancelRun = useCancelWorkflowRun();
+  const logs = useWorkflowLogs(path, runId || "");
+  const { stream, cancel } = useStreamEvents();
+  const setGroupBlocks = useBlockStore((state) => state.setGroupBlocks);
+  const [isStreamFinished, setIsStreamFinished] = React.useState(false);
+  const isStreamingCalled = useRef(false);
+  const isProcessing = useIsProcessing(path, runId || "");
+  const groups = useGetBlocks(
+    path,
+    runId ? +runId : undefined,
+    !!runId && isStreamFinished,
+  ).data;
+  useEffect(() => {
+    const streamCall = async (runId: string) => {
+      return stream
+        .mutateAsync({
+          workflowId: relativePath,
+          runIndex: parseInt(runId, 10),
+        })
+        .catch((error) => {
+          console.error("Error streaming events:", error);
+        })
+        .finally(() => {
+          setIsStreamFinished(true);
+        });
+    };
 
-  const { data: logsData } = useWorkflowLogs(relativePath);
+    if (runId && !isStreamingCalled.current) {
+      isStreamingCalled.current = true;
+      streamCall(runId);
+    }
+  }, []);
 
   useEffect(() => {
-    setLogs(logsData || []);
-  }, [logsData, setLogs]);
+    return () => {
+      cancel();
+    };
+  }, []);
 
-  const { data: workflowConfig } = useWorkflowConfig(path);
-
-  const appendLogs = useWorkflow((state) => state.appendLogs);
-
-  const run = useMutation({
-    mutationFn: async ({ workflowPath }: { workflowPath: string }) => {
-      let buffer: LogItem[] = [];
-      const flushLogs = throttle(
-        () => {
-          const logsToAppend = [...buffer];
-          appendLogs(logsToAppend);
-          buffer = [];
-        },
-        500,
-        { leading: true, trailing: true },
-      );
-
-      const pathBase64 = btoa(workflowPath);
-      await WorkflowService.runWorkflow(pathBase64, (logItem: LogItem) => {
-        buffer.push(logItem);
-        flushLogs();
+  useEffect(() => {
+    if (groups) {
+      groups.forEach((group) => {
+        setGroupBlocks(
+          group,
+          group.blocks,
+          group.children,
+          group.error,
+          group.metadata,
+        );
       });
+    }
+  }, [groups]);
 
-      // Flush any remaining logs
-      if (buffer.length > 0) {
-        appendLogs(buffer);
-      }
-    },
-    onMutate: () => {
-      setLogs([]);
-    },
-  });
+  const runHandler = async () => {
+    await run.mutateAsync({
+      workflowId: relativePath,
+    });
+  };
 
-  const runHandler = () => {
-    setShowOutput(true);
-    run.mutate({ workflowPath: relativePath });
+  const cancelRunHandler = async () => {
+    if (runId) {
+      await cancelRun.mutateAsync({
+        sourceId: relativePath,
+        runIndex: parseInt(runId, 10),
+      });
+    }
+  };
+
+  const replayAllHandler = async () => {
+    if (runId) {
+      await run.mutateAsync({
+        workflowId: relativePath,
+        retryParam: {
+          run_id: parseInt(runId, 10),
+          replay_id: "",
+        },
+      });
+      setShowOutput(true);
+      await stream.mutateAsync({
+        workflowId: relativePath,
+        runIndex: parseInt(runId, 10),
+      });
+    }
   };
 
   const toggleOutput = () => {
@@ -107,41 +157,96 @@ export const WorkflowPreview = ({ pathb64 }: { pathb64: string }) => {
         minSize={20}
         className={cn(!showOutput && "flex-1!")}
       >
-        <div className="relative h-full w-full">
-          <ReactFlowProvider>
-            <Suspense
-              fallback={
-                <div className="flex items-center justify-center h-full w-full">
-                  <LoaderCircleIcon className="animate-spin" />
-                </div>
-              }
-            >
-              <WorkflowDiagram workflowConfig={workflowConfig} />
-            </Suspense>
-          </ReactFlowProvider>
-          {!showOutput && (
-            <Button
-              variant="outline"
-              className="absolute bottom-4 right-4"
-              onClick={toggleOutput}
-            >
-              <LogsIcon className="w-4 h-4" />
-            </Button>
-          )}
+        <ResizablePanelGroup direction="vertical">
+          <ResizablePanel defaultSize={70} minSize={20}>
+            <div className="relative h-full w-full">
+              <ReactFlowProvider>
+                <Suspense
+                  fallback={
+                    <div className="flex items-center justify-center h-full w-full">
+                      <LoaderCircleIcon className="animate-spin" />
+                    </div>
+                  }
+                >
+                  <WorkflowDiagram
+                    workflowId={path}
+                    workflowConfig={workflowConfig}
+                    runId={runId}
+                  />
+                </Suspense>
+              </ReactFlowProvider>
+              <div className="absolute bottom-4 right-4 flex items-center gap-2">
+                {!showRuns && (
+                  <Button
+                    tooltip={"Show Workflow Runs"}
+                    variant="outline"
+                    onClick={() => setShowRuns(!showRuns)}
+                  >
+                    <History className="w-4 h-4" />
+                  </Button>
+                )}
+                {!showOutput && (
+                  <Button
+                    variant="outline"
+                    onClick={toggleOutput}
+                    tooltip={"Show Logs Output"}
+                  >
+                    <LogsIcon className="w-4 h-4" />
+                  </Button>
+                )}
+              </div>
 
-          <Button
-            variant="default"
-            className="absolute top-4 right-4"
-            onClick={runHandler}
-            disabled={run.isPending}
+              <div className="absolute top-4 right-4 flex items-center gap-2">
+                {!!runId &&
+                  (isProcessing ? (
+                    <Button
+                      variant="outline"
+                      onClick={cancelRunHandler}
+                      disabled={cancelRun.isPending}
+                      tooltip={"Cancel Workflow Run"}
+                    >
+                      <StopCircle className="w-4 h-4" />
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      onClick={replayAllHandler}
+                      disabled={run.isPending}
+                      tooltip={"Replay Workflow Run"}
+                    >
+                      <RotateCcw className="w-4 h-4" />
+                    </Button>
+                  ))}
+                <Button
+                  variant="default"
+                  onClick={runHandler}
+                  disabled={run.isPending}
+                  tooltip={run.isPending ? "Running..." : "Run Workflow"}
+                >
+                  {run.isPending ? (
+                    <LoaderCircle className="animate-spin" />
+                  ) : (
+                    <PlayIcon className="w-4 h-4" />
+                  )}
+                </Button>
+              </div>
+            </div>
+          </ResizablePanel>
+          <ResizableHandle />
+
+          <ResizablePanel
+            defaultSize={30}
+            minSize={20}
+            className={cn(!showRuns && "flex-[unset]!")}
           >
-            {run.isPending ? (
-              <LoaderCircle className="animate-spin" />
-            ) : (
-              <PlayIcon className="w-4 h-4" />
+            {showRuns && (
+              <WorkflowRuns
+                workflowId={path}
+                onClose={() => setShowRuns(false)}
+              />
             )}
-          </Button>
-        </div>
+          </ResizablePanel>
+        </ResizablePanelGroup>
       </ResizablePanel>
       <ResizableHandle />
       <ResizablePanel

@@ -21,6 +21,7 @@ mod m20250625_000001_add_status_to_users;
 mod m20250625_151048_add_is_processing_to_thread;
 mod m20250626_000001_create_secrets_table;
 mod m20250708_021201_create_logs_table;
+mod m20250727_150336_add_run_model;
 
 pub struct Migrator;
 
@@ -49,6 +50,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20250625_000001_add_status_to_users::Migration),
             Box::new(m20250625_151048_add_is_processing_to_thread::Migration),
             Box::new(m20250708_021201_create_logs_table::Migration),
+            Box::new(m20250727_150336_add_run_model::Migration),
         ]
     }
 }

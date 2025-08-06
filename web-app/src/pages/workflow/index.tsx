@@ -1,22 +1,37 @@
 import React, { useMemo } from "react";
-import { useParams } from "react-router-dom";
+import { useLocation, useParams } from "react-router-dom";
 import WorkflowPageHeader from "./Header";
 import { WorkflowPreview } from "@/components/workflow/WorkflowPreview";
 
-export const Workflow: React.FC<{ pathb64: string }> = ({ pathb64 }) => {
+export const Workflow: React.FC<{ pathb64: string; runId?: string }> = ({
+  pathb64,
+  runId,
+}) => {
   const path = useMemo(() => atob(pathb64), [pathb64]);
+  const location = useLocation();
+  const hashValue = location.hash;
 
   return (
     <div className="w-full h-full flex flex-col">
-      <WorkflowPageHeader path={path} />
-      <WorkflowPreview pathb64={pathb64} />
+      <WorkflowPageHeader path={path} runId={runId} />
+      <WorkflowPreview
+        key={`${pathb64}-${runId}-${hashValue}`}
+        pathb64={pathb64}
+        runId={runId}
+      />
     </div>
   );
 };
 
 const WorkflowPage = () => {
-  const { pathb64 } = useParams();
-  return <Workflow key={pathb64 ?? ""} pathb64={pathb64 ?? ""} />;
+  const { pathb64, runId } = useParams();
+  return (
+    <Workflow
+      key={`${pathb64}-${runId}`}
+      pathb64={pathb64 ?? ""}
+      runId={runId}
+    />
+  );
 };
 
 export default WorkflowPage;

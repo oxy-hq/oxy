@@ -29,7 +29,10 @@ const WorkflowArtifactPanel = ({ artifact, onArtifactClick }: Props) => {
     <div className="flex flex-col h-full">
       <div className="flex-1">
         <ReactFlowProvider>
-          <WorkflowDiagram workflowConfig={workflowConfig} />
+          <WorkflowDiagram
+            workflowId={artifact.content.value.ref}
+            workflowConfig={workflowConfig}
+          />
         </ReactFlowProvider>
       </div>
 
