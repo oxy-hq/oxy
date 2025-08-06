@@ -7,31 +7,10 @@ import DownloadButton from "/snippets/download.mdx";
 
 ### Overview
 
-In this quickstart guide, we will install oxy and bootstrap a simple setup
-that uses DuckDB as warehouse and OpenAI as LLM provider. For this walkthrough,
-you'll need an OpenAI API key and access to a terminal.
-
-### Install and configure oxy
-
-Oxy supports both Mac and Windows. To get started with oxy, you will need to
-work within the terminal. For Mac users, we recommend using
-[iTerm2](https://iterm2.com/) as it offers better features, customization
-options, and more frequent updates as compared to the stock Mac terminal. Other
-great terminal options include the GPU-accelerated
-[Alacritty](https://github.com/alacritty/alacritty) or AI-native
-[Warp](https://warp.dev/). For windows, we recommend installing WSL 2 (search
-for`Ubuntu` in the Microsoft store).
-
-Once you have your terminal set up, follow the steps below:
+In thi
 
 <Steps>
   <Step title="Install oxy">
-    Install oxy by running the following within your Mac/Linux/WSL terminal:
-
-    ```bash
-    bash <(curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/oxy-hq/oxy/refs/heads/main/install_oxy.sh)
-    ```
-
     Upon successful installation, you should see the message "Oxy has been installed successfully."
 
     You may need to restart your terminal for the command to be recognized.
@@ -39,17 +18,14 @@ Once you have your terminal set up, follow the steps below:
     <Info>
       For transparency, you can review the [installation script's source code](https://github.com/oxy-hq/oxy/blob/main/install_oxy.sh).
     </Info>
-
     <Accordion title="Verify Your Installation (Optional)">
       After the installation is complete, you may verify that it was successful by running:
 
       ```sh
       oxy --version
       ```
-
     </Accordion>
   </Step>
-
   <Step title="Create a sample repository">
     In order to get started with a base agent set up, run the following command in an empty directory where you want to store your project:
 
@@ -60,7 +36,6 @@ Once you have your terminal set up, follow the steps below:
     This command will generate the main oxy configuration file (`config.yml`), a sample agent file, a sample workflow file, some data, and a sample semantic layer file.
     If you use all the configuration defaults, you should be able to run the agent and workflow against the sample data out-of-the-box.
   </Step>
-
   <Step title="Connect oxy to OpenAI">
     For the model, we recommend using OpenAI's gpt-4.1. For alternative models, please refer to our integration documentation, [here](/integrations/overview).
 
@@ -70,7 +45,7 @@ Once you have your terminal set up, follow the steps below:
 
 ### All Done
 
-Congrats! You're ready to start using Oxy now. If you haven't changed the configuration defaults, you should be able to run the following commands to test out oxy against some sample sleep data:
+Congrats\! You're ready to start using Oxy now. If you haven't changed the configuration defaults, you should be able to run the following commands to test out oxy against some sample sleep data:
 
 ```bash
 oxy run sql-generator.agent.yml "On how many nights did I get good sleep in the last year?"  # ask a question to the sample agent
@@ -81,4 +56,3 @@ oxy test report-generator.workflow.yml  # run all defined tests against the work
 
 oxy serve  # stands up a GUI against your agents and workflows
 ```
-
