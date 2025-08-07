@@ -25,7 +25,7 @@ axum-streams = { version = "0.21.0", features = ["json", "csv", "protobuf", "tex
 base64 = "0.22"
 bcrypt = "0.16"
 chrono = "*"
-clap = { version = "4.5.42", features = ["derive"] }
+clap = { version = "4.5.43", features = ["derive"] }
 clickhouse = { version = "0.13.3", features = ["rustls-tls"] }
 colored = "3.0.0"
 connectorx = { version = "0.4.3", features = ["dst_arrow", "src_bigquery", "src_postgres", "src_mysql"] }
@@ -61,7 +61,7 @@ rand = "0.8"
 schemars = { version = "0.8.22", features = ["derive", "impl_json_schema"] }
 sea-orm = { workspace = true }
 serde = { version = "1.0", features = ["derive"] }
-serde_arrow = { version = "0.13.4", features = ["arrow-53"] }
+serde_arrow = { version = "0.13.5", features = ["arrow-53"] }
 serde_json = "1.0"
 self_update = "0.42.0"
 slugify = "0.1.0"
@@ -73,7 +73,7 @@ terminal_size = "0.4.2"
 thiserror = "2.0.12"
 tokio = { workspace = true }
 tokio-stream = "0.1.17"
-tokio-util = "0.7.15"
+tokio-util = "0.7.16"
 tower = "0.5.2"
 tower-http = { version = "0.6.6", features = ["fs", "cors", "trace"] }
 tower-serve-static = "0.1.1"

@@ -13,7 +13,7 @@
     "@commitlint/config-conventional": "^19.8.1",
     "@eslint/eslintrc": "^3.3.1",
     "@eslint/js": "^9.32.0",
-    "@ianvs/prettier-plugin-sort-imports": "^4.5.1",
+    "@ianvs/prettier-plugin-sort-imports": "^4.6.0",
     "eslint": "^9.32.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-jsx-a11y": "^6.10.2",
@@ -26,12 +26,12 @@
     "eslint-plugin-unicorn": "^59.0.1",
     "globals": "^16.3.0",
     "husky": "^9.1.7",
-    "lint-staged": "^16.1.2",
+    "lint-staged": "^16.1.4",
     "prettier": "^3.6.2",
     "prettier-plugin-tailwindcss": "^0.6.14",
     "turbo": "^2.5.5",
     "typescript": "^5.9.2",
-    "typescript-eslint": "^8.38.0"
+    "typescript-eslint": "^8.39.0"
   },
   "pnpm": {
     "overrides": {
