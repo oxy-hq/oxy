@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.23](https://github.com/oxy-hq/oxy-internal/compare/0.2.22...0.2.23) (2025-08-07)
+
+
+### <!-- 0 -->🚀 Features
+
+* workflow replay ([#984](https://github.com/oxy-hq/oxy-internal/issues/984)) ([7eff206](https://github.com/oxy-hq/oxy-internal/commit/7eff20625dddbf5d1cf84b1533b962ac73676d72))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* app preview validation ([#993](https://github.com/oxy-hq/oxy-internal/issues/993)) ([d9fba0f](https://github.com/oxy-hq/oxy-internal/commit/d9fba0fe6c89c4be4238849912b96ea43ca11353))
+
 ## [0.2.22](https://github.com/oxy-hq/oxy-internal/compare/0.2.21...0.2.22) (2025-07-28)
 
 
