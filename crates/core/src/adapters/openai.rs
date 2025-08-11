@@ -167,7 +167,7 @@ impl IntoOpenAIConfig for Model {
                     Some(secret) => secret.value,
                     None => {
                         return Err(OxyError::ConfigurationError(
-                            "Gemini API key not found".to_string(),
+                            "Anthropic API key not found".to_string(),
                         ));
                     }
                 };
