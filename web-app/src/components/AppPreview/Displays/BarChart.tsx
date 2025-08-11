@@ -27,7 +27,7 @@ export const BarChart = ({
       fileName,
       isDarkMode,
     }: ChartBuilderParams<BarChartDisplay>) => {
-      const baseOptions = createBaseChartOptions(display.title, isDarkMode);
+      const baseOptions = createBaseChartOptions(isDarkMode);
       const xData = await getXAxisData(connection, fileName, display.x);
       const xyAxisOptions = createXYAxisOptions(xData, isDarkMode);
 
@@ -88,5 +88,11 @@ export const BarChart = ({
     buildChartOptions,
   });
 
-  return <Echarts isLoading={isLoading} options={chartOptions} />;
+  return (
+    <Echarts
+      isLoading={isLoading}
+      options={chartOptions}
+      title={display.title}
+    />
+  );
 };

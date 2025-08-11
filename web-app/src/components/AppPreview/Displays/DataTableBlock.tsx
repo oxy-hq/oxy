@@ -56,7 +56,7 @@ export const DataTableBlock = ({
 
   return (
     <div className="flex flex-col gap-4 items-left">
-      <h2>{display.title}</h2>
+      <h2 className="text-xl font-bold text-foreground">{display.title}</h2>
       <DataTable className="border">
         {!table ? (
           <div className="text-center text-gray-500 p-2">No data found</div>

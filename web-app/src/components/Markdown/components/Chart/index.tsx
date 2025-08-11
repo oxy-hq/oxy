@@ -50,7 +50,6 @@ const Chart = (props: Props) => {
 
   const options: EChartsOption = {
     darkMode: isDarkMode,
-    title: { text: config.title },
     tooltip: {},
     xAxis: config.xAxis
       ? {
@@ -94,7 +93,9 @@ const Chart = (props: Props) => {
     })),
   };
 
-  return <Echarts options={options} isLoading={isPending} />;
+  return (
+    <Echarts options={options} isLoading={isPending} title={config.title} />
+  );
 };
 
 const ChartContainer = (props: Props) => {

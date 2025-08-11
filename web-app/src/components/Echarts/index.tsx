@@ -7,9 +7,11 @@ import { useResizeDetector } from "react-resize-detector";
 export const Echarts = ({
   options,
   isLoading,
+  title,
 }: {
   options: EChartsOption;
   isLoading: boolean;
+  title?: string;
 }) => {
   const chartRef = useRef<HTMLDivElement>(null);
   const onResize = useCallback(() => {
@@ -66,5 +68,10 @@ export const Echarts = ({
     }
   }, [isLoading]);
 
-  return <div ref={chartRef} style={{ width: "100%", height: "400px" }} />;
+  return (
+    <div>
+      {title && <h2 className="text-xl font-bold text-foreground">{title}</h2>}
+      <div ref={chartRef} style={{ width: "100%", height: "400px" }} />
+    </div>
+  );
 };

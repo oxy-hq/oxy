@@ -1,16 +1,7 @@
 import type { EChartsOption } from "echarts";
 
-export const createBaseChartOptions = (
-  title?: string,
-  isDarkMode = false,
-): EChartsOption => ({
+export const createBaseChartOptions = (isDarkMode = false): EChartsOption => ({
   darkMode: isDarkMode,
-  title: {
-    text: title,
-    textStyle: {
-      color: isDarkMode ? "#ffffff" : "#333333",
-    },
-  },
   tooltip: {},
   grid: { containLabel: true },
 });
@@ -34,11 +25,8 @@ export const createXYAxisOptions = (
   },
 });
 
-export const createPieChartOptions = (
-  title?: string,
-  isDarkMode = false,
-): EChartsOption => ({
-  ...createBaseChartOptions(title, isDarkMode),
+export const createPieChartOptions = (isDarkMode = false): EChartsOption => ({
+  ...createBaseChartOptions(isDarkMode),
   tooltip: {
     trigger: "item",
     formatter: "{b}: {c} ({d}%)",
