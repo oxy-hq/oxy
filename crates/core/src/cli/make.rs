@@ -106,6 +106,7 @@ fn determine_model() -> (String, Model) {
                 key_var: OPENAI_API_KEY_VAR.to_string(),
                 api_url: None,
                 azure: None,
+                headers: None,
             },
         )
     } else {
@@ -118,6 +119,7 @@ fn determine_model() -> (String, Model) {
                 key_var: OPENAI_API_KEY_VAR.to_string(),
                 api_url: None,
                 azure: None,
+                headers: None,
             },
         )
     }
