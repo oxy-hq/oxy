@@ -8,10 +8,10 @@ use async_openai::{
         responses::ReasoningConfig as OpenAIReasoningConfig,
     },
 };
-use axum::http::HeaderMap;
+use axum::http::{HeaderMap, HeaderName, HeaderValue};
 use schemars::schema::RootSchema;
 use secrecy::SecretString;
-use std::path::PathBuf;
+use std::{collections::HashMap, path::PathBuf, str::FromStr};
 
 use crate::{
     adapters::{create_app_schema, viz_schema},
@@ -30,9 +30,66 @@ use crate::{
 };
 
 #[derive(Debug, Clone)]
+pub struct CustomOpenAIConfig {
+    base_config: OpenAIConfig,
+    custom_headers: HeaderMap,
+}
+
+impl CustomOpenAIConfig {
+    pub fn new(base_config: OpenAIConfig, custom_headers: HashMap<String, String>) -> Self {
+        let mut header_map = HeaderMap::new();
+
+        for (key, value) in custom_headers {
+            if let (Ok(header_name), Ok(header_value)) =
+                (HeaderName::from_str(&key), HeaderValue::from_str(&value))
+            {
+                header_map.insert(header_name, header_value);
+            } else {
+                tracing::warn!("Invalid header: {} = {}", key, value);
+            }
+        }
+
+        Self {
+            base_config,
+            custom_headers: header_map,
+        }
+    }
+}
+
+impl Config for CustomOpenAIConfig {
+    fn headers(&self) -> HeaderMap {
+        let mut headers = self.base_config.headers();
+
+        // Add custom headers
+        for (key, value) in &self.custom_headers {
+            headers.insert(key.clone(), value.clone());
+        }
+
+        headers
+    }
+
+    fn url(&self, path: &str) -> String {
+        self.base_config.url(path)
+    }
+
+    fn query(&self) -> Vec<(&str, &str)> {
+        self.base_config.query()
+    }
+
+    fn api_base(&self) -> &str {
+        self.base_config.api_base()
+    }
+
+    fn api_key(&self) -> &SecretString {
+        self.base_config.api_key()
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum ConfigType {
     Default(OpenAIConfig),
     Azure(AzureConfig),
+    WithHeaders(CustomOpenAIConfig),
 }
 
 /// This is a wrapper around OpenAIConfig and AzureConfig
@@ -43,18 +100,21 @@ impl Config for ConfigType {
         match &self {
             ConfigType::Default(config) => config.headers(),
             ConfigType::Azure(config) => config.headers(),
+            ConfigType::WithHeaders(config) => config.headers(),
         }
     }
     fn url(&self, path: &str) -> String {
         match &self {
             ConfigType::Default(config) => config.url(path),
             ConfigType::Azure(config) => config.url(path),
+            ConfigType::WithHeaders(config) => config.url(path),
         }
     }
     fn query(&self) -> Vec<(&str, &str)> {
         match &self {
             ConfigType::Default(config) => config.query(),
             ConfigType::Azure(config) => config.query(),
+            ConfigType::WithHeaders(config) => config.query(),
         }
     }
 
@@ -62,6 +122,7 @@ impl Config for ConfigType {
         match &self {
             ConfigType::Default(config) => config.api_base(),
             ConfigType::Azure(config) => config.api_base(),
+            ConfigType::WithHeaders(config) => config.api_base(),
         }
     }
 
@@ -69,6 +130,7 @@ impl Config for ConfigType {
         match &self {
             ConfigType::Default(config) => config.api_key(),
             ConfigType::Azure(config) => config.api_key(),
+            ConfigType::WithHeaders(config) => config.api_key(),
         }
     }
 }
@@ -89,6 +151,7 @@ impl IntoOpenAIConfig for Model {
                 api_url,
                 azure,
                 key_var,
+                headers: custom_headers,
             } => {
                 let api_key = secret_resolver.resolve_secret(key_var).await.map_err(|_| {
                     OxyError::ConfigurationError("OpenAI key not found".to_string())
@@ -116,8 +179,20 @@ impl IntoOpenAIConfig for Model {
                     None => {
                         let mut config = OpenAIConfig::new().with_api_key(api_key);
                         if let Some(api_url) = api_url {
+                            tracing::debug!("Setting API URL: {}", api_url);
                             config = config.with_api_base(api_url);
                         }
+
+                        if let Some(custom_headers) = custom_headers {
+                            if !custom_headers.is_empty() {
+                                let resolved_headers = self.resolve_headers().await?;
+                                let config_with_headers =
+                                    CustomOpenAIConfig::new(config, resolved_headers);
+                                return Ok(ConfigType::WithHeaders(config_with_headers));
+                            }
+                        }
+
+                        tracing::debug!("Creating default OpenAI config without custom headers");
                         Ok(ConfigType::Default(config))
                     }
                 }

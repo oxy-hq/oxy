@@ -630,6 +630,36 @@ pub struct AzureModel {
     pub azure_api_version: String,
 }
 
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
+#[serde(untagged)]
+pub enum HeaderValue {
+    /// Direct header value
+    Direct(String),
+    /// Header value from environment variable
+    EnvVar {
+        /// Environment variable name containing the header value
+        #[serde(rename = "env_var")]
+        env_var: String,
+    },
+}
+
+impl HeaderValue {
+    /// Resolve the header value, either directly or from environment variable
+    pub async fn resolve(&self) -> Result<String, OxyError> {
+        match self {
+            HeaderValue::Direct(value) => Ok(value.clone()),
+            HeaderValue::EnvVar { env_var } => {
+                let secret_resolver = SecretResolverService::new();
+                let result = secret_resolver.resolve_secret(env_var).await?;
+                match result {
+                    Some(res) => Ok(res.value),
+                    None => Err(OxyError::SecretNotFound(Some(env_var.clone()))),
+                }
+            }
+        }
+    }
+}
+
 #[skip_serializing_none]
 #[derive(Deserialize, Debug, Clone, Validate, Serialize, JsonSchema)]
 #[garde(context(ValidationContext))]
@@ -649,6 +679,9 @@ pub enum Model {
         #[serde(flatten)]
         #[garde(skip)]
         azure: Option<AzureModel>,
+        #[serde(default)]
+        #[garde(skip)]
+        headers: Option<HashMap<String, HeaderValue>>,
     },
     #[serde(rename = "google")]
     Google {
@@ -691,6 +724,23 @@ impl Model {
             Model::Ollama { model_ref, .. } => model_ref,
             Model::Google { model_ref, .. } => model_ref,
             Model::Anthropic { model_ref, .. } => model_ref,
+        }
+    }
+
+    /// Resolve headers for OpenAI models, returning a HashMap with resolved values
+    pub async fn resolve_headers(&self) -> Result<HashMap<String, String>, OxyError> {
+        match self {
+            Model::OpenAI { headers, .. } => {
+                let mut resolved_headers = HashMap::new();
+                if let Some(headers_map) = headers {
+                    for (key, header_value) in headers_map {
+                        let resolved_value = header_value.resolve().await?;
+                        resolved_headers.insert(key.clone(), resolved_value);
+                    }
+                }
+                Ok(resolved_headers)
+            }
+            _ => Ok(HashMap::new()), // Other models don't support custom headers yet
         }
     }
 }

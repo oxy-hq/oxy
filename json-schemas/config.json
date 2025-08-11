@@ -467,6 +467,27 @@
         }
       }
     },
+    "HeaderValue": {
+      "anyOf": [
+        {
+          "description": "Direct header value",
+          "type": "string"
+        },
+        {
+          "description": "Header value from environment variable",
+          "type": "object",
+          "required": [
+            "env_var"
+          ],
+          "properties": {
+            "env_var": {
+              "description": "Environment variable name containing the header value",
+              "type": "string"
+            }
+          }
+        }
+      ]
+    },
     "Model": {
       "oneOf": [
         {
@@ -490,6 +511,15 @@
             },
             "azure_deployment_id": {
               "type": "string"
+            },
+            "headers": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "additionalProperties": {
+                "$ref": "#/definitions/HeaderValue"
+              }
             },
             "key_var": {
               "type": "string"

@@ -78,6 +78,19 @@ models:
     vendor: openai
     model_ref: gpt-4.1
     key_var: OPENAI_API_KEY
+  - name: openai-4o-with-headers
+    vendor: openai
+    model_ref: gpt-4o
+    key_var: OPENAI_API_KEY
+    headers:
+      # Direct header value
+      X-Custom-Client: "oxy-internal-client"
+      # Header value from environment variable (for sensitive data like API keys)
+      X-API-Secret:
+        env_var: OPENAI_CUSTOM_SECRET
+      # Another direct header
+      User-Agent: "OxyApp/1.0"
+
   # - name: openai-4o-mini-azure
   #   vendor: openai
   #   model_ref: openai-4o-mini-azure

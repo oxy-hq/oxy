@@ -250,6 +250,7 @@ fn collect_models() -> Result<Vec<Model>, InitError> {
                     key_var: prompt_with_default("Key variable", "OPENAI_API_KEY", None)?,
                     api_url: Some(api_url),
                     azure,
+                    headers: None,
                 }
             }
             "2" => Model::Ollama {
@@ -270,6 +271,7 @@ fn collect_models() -> Result<Vec<Model>, InitError> {
                         None,
                     )?),
                     azure: None,
+                    headers: None,
                 }
             }
         };
