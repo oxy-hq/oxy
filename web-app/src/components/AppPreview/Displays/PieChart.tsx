@@ -23,7 +23,7 @@ export const PieChart = ({
       fileName,
       isDarkMode,
     }: ChartBuilderParams<PieChartDisplay>) => {
-      const baseOptions = createPieChartOptions(display.title, isDarkMode);
+      const baseOptions = createPieChartOptions(isDarkMode);
 
       const pieData = await getPieChartData(
         connection,
@@ -58,5 +58,11 @@ export const PieChart = ({
     buildChartOptions,
   });
 
-  return <Echarts isLoading={isLoading} options={chartOptions} />;
+  return (
+    <Echarts
+      isLoading={isLoading}
+      options={chartOptions}
+      title={display.title}
+    />
+  );
 };
