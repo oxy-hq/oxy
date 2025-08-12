@@ -49,7 +49,7 @@ jobs:
             target: aarch64-unknown-linux-gnu
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
           ref: ${{ inputs.tag || github.ref_name }}
@@ -217,7 +217,7 @@ jobs:
             os: ubuntu-24.04-arm
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
           ref: ${{ inputs.tag || github.ref_name }}
