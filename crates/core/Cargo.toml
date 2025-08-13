@@ -12,7 +12,7 @@ exclude.workspace = true
 
 [dependencies]
 aes-gcm = "0.10.3"
-anyhow = "1.0.98"
+anyhow = "1.0.99"
 argon2 = "0.5"
 arrow = { version = "53.4", default-features = false, features = ["json"] } # arrow version has to comply with duckdb version
 assert_cmd = "2.0.17"
@@ -25,7 +25,7 @@ axum-streams = { version = "0.21.0", features = ["json", "csv", "protobuf", "tex
 base64 = "0.22"
 bcrypt = "0.16"
 chrono = "*"
-clap = { version = "4.5.43", features = ["derive"] }
+clap = { version = "4.5.45", features = ["derive"] }
 clickhouse = { version = "0.13.3", features = ["rustls-tls"] }
 colored = "3.0.0"
 connectorx = { version = "0.4.3", features = ["dst_arrow", "src_bigquery", "src_postgres", "src_mysql"] }
@@ -38,7 +38,7 @@ entity = { path = "../entity" }
 enum_dispatch = "0.3.13"
 futures = "0.3.31"
 garde = { version = "0.22.0", features = ["full"] }
-glob = "0.3.2"
+glob = "0.3.3"
 home = "0.5"
 human-panic = "2.0.3"
 humantime = "2.2.0"
@@ -69,8 +69,8 @@ sqlformat = { git = "https://github.com/shssoichiro/sqlformat-rs.git", rev = "80
 syntect = "5.2"
 tabled = "0.18.0"
 terminal-light = "1.8.0"
-terminal_size = "0.4.2"
-thiserror = "2.0.12"
+terminal_size = "0.4.3"
+thiserror = "2.0.14"
 tokio = { workspace = true }
 tokio-stream = "0.1.17"
 tokio-util = "0.7.16"
@@ -78,8 +78,8 @@ tower = "0.5.2"
 tower-http = { version = "0.6.6", features = ["fs", "cors", "trace"] }
 tower-serve-static = "0.1.1"
 tqdm = "0.7.0"
-uuid = { version = "1.17.0", features = ["v4", "serde"] }
-reqwest = { version = "0.12.22" }
+uuid = { version = "1.18.0", features = ["v4", "serde"] }
+reqwest = { version = "0.12.23" }
 secrecy = "0.10.3"
 fxhash = "0.2.1"
 deser-incomplete = "0.1.2"
