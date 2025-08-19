@@ -1,7 +1,7 @@
 use crate::{
     adapters::{
         openai::IntoOpenAIConfig,
-        vector_store::{VectorStore, build_content_for_llm_retrieval, parse_sql_source_type},
+        vector_store::{VectorStore, parse_sql_source_type},
     },
     errors::OxyError,
     execute::{
@@ -59,20 +59,18 @@ where
         let output = Output::Documents(
             results
                 .iter()
-                .map(
-                    |record| match parse_sql_source_type(&record.document.source_type) {
-                        Some(_) => Document {
-                            content: build_content_for_llm_retrieval(&record.document),
-                            id: record.document.source_identifier.clone(),
-                            kind: record.document.source_type.clone(),
-                        },
-                        None => Document {
-                            content: record.document.content.clone(),
-                            id: record.document.source_identifier.clone(),
-                            kind: record.document.source_type.clone(),
-                        },
+                .map(|record| match parse_sql_source_type(&record.retrieval_item.source_type) {
+                    Some(_) => Document {
+                        content: record.retrieval_item.content.clone(),
+                        id: record.retrieval_item.source_identifier.clone(),
+                        kind: record.retrieval_item.source_type.clone(),
                     },
-                )
+                    None => Document {
+                        content: record.retrieval_item.content.clone(),
+                        id: record.retrieval_item.source_identifier.clone(),
+                        kind: record.retrieval_item.source_type.clone(),
+                    },
+                })
                 .collect(),
         );
         if !results.is_empty() {

@@ -1,9 +1,6 @@
 use serde::Deserialize;
 
-use crate::adapters::vector_store::{
-    types::{Document, RetrievalContent},
-    utils::build_inclusion_exclusion_summary,
-};
+use crate::adapters::vector_store::types::RetrievalObject;
 
 #[derive(Debug, Clone, Deserialize)]
 pub(super) struct ContextHeader {
@@ -61,23 +58,18 @@ pub(super) struct OxyHeaderData {
 // select 'kiwi' as name, 120 as sales
 // union all
 // select 'orange' as name, 1500 as sales
-pub(super) fn parse_embed_document(id: &str, content: &str) -> Document {
+pub(super) fn parse_retrieval_object(id: &str, content: &str) -> RetrievalObject {
     let context_regex = regex::Regex::new(r"(?m)^\/\*((?:.|\n)+)\*\/((.|\n)+)$").unwrap();
     let context_match = match context_regex.captures(content) {
         Some(m) => m,
         None => {
             tracing::warn!("No context found in the file: {:?}", id);
-            return Document {
-                content: content.to_string(),
-                source_type: "file".to_string(),
+            return RetrievalObject {
                 source_identifier: id.to_string(),
-                retrieval_inclusions: vec![RetrievalContent {
-                    embedding_content: content.to_string(),
-                    embeddings: vec![],
-                }],
-                retrieval_exclusions: vec![],
-                inclusion_midpoint: vec![],
-                inclusion_radius: 0.0,
+                source_type: "file".to_string(),
+                context_content: content.to_string(),
+                inclusions: vec![content.to_string()],
+                exclusions: vec![],
             };
         }
     };
@@ -89,20 +81,14 @@ pub(super) fn parse_embed_document(id: &str, content: &str) -> Document {
     match header_data {
         Ok(header_data) => {
             let (inclusions, exclusions) = extract_retrieval_data(&header_data.oxy);
-
-            let (retrieval_inclusions, retrieval_exclusions) =
-                create_retrieval_objects(&inclusions, &exclusions, &context_content);
-            let content = create_document_content(&inclusions, &exclusions, &context_content);
             let source_type = generate_sql_source_type(&header_data.oxy.database);
 
-            Document {
-                content,
-                source_type,
+            RetrievalObject {
                 source_identifier: id.to_string(),
-                retrieval_inclusions,
-                retrieval_exclusions,
-                inclusion_midpoint: vec![],
-                inclusion_radius: 0.0,
+                source_type,
+                context_content: context_content.to_string(),
+                inclusions,
+                exclusions,
             }
         }
         Err(e) => {
@@ -111,17 +97,12 @@ pub(super) fn parse_embed_document(id: &str, content: &str) -> Document {
                 comment_content,
                 e
             );
-            Document {
-                content: content.to_string(),
-                source_type: "file".to_string(),
+            RetrievalObject {
                 source_identifier: id.to_string(),
-                retrieval_inclusions: vec![RetrievalContent {
-                    embedding_content: content.to_string(),
-                    embeddings: vec![],
-                }],
-                retrieval_exclusions: vec![],
-                inclusion_midpoint: vec![],
-                inclusion_radius: 0.0,
+                source_type: "file".to_string(),
+                context_content: content.to_string(),
+                inclusions: vec![content.to_string()],
+                exclusions: vec![],
             }
         }
     }
@@ -149,51 +130,6 @@ fn extract_retrieval_data(oxy_data: &OxyHeaderData) -> (Vec<String>, Vec<String>
     }
 
     (vec![], vec![])
-}
-
-fn create_retrieval_objects(
-    inclusions: &[String],
-    exclusions: &[String],
-    context_content: &str,
-) -> (Vec<RetrievalContent>, Vec<RetrievalContent>) {
-    let retrieval_inclusions = if inclusions.is_empty() {
-        vec![RetrievalContent {
-            embedding_content: context_content.to_string(),
-            embeddings: vec![],
-        }]
-    } else {
-        inclusions
-            .iter()
-            .map(|inclusion| RetrievalContent {
-                embedding_content: inclusion.clone(),
-                embeddings: vec![],
-            })
-            .collect()
-    };
-
-    let retrieval_exclusions = exclusions
-        .iter()
-        .map(|exclusion| RetrievalContent {
-            embedding_content: exclusion.clone(),
-            embeddings: vec![],
-        })
-        .collect();
-
-    (retrieval_inclusions, retrieval_exclusions)
-}
-
-fn create_document_content(
-    inclusions: &[String],
-    exclusions: &[String],
-    context_content: &str,
-) -> String {
-    let summary = build_inclusion_exclusion_summary(inclusions, exclusions);
-
-    if !summary.is_empty() {
-        format!("{summary}\n\n{context_content}")
-    } else {
-        context_content.to_string()
-    }
 }
 
 fn generate_sql_source_type(database: &Option<String>) -> String {

@@ -4,10 +4,9 @@ mod reindex;
 mod search;
 mod store;
 mod types;
-mod utils;
 
 pub use reindex::{parse_sql_source_type, reindex_all};
 pub use search::search_agent;
 pub use store::VectorStore;
-pub use types::{Document, RetrievalContent, SearchRecord};
-pub use utils::build_content_for_llm_retrieval;
+pub use types::SearchRecord;
+

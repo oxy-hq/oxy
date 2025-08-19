@@ -1,3 +1,4 @@
+mod ingestion;
 mod embedding;
 mod math;
 mod schema;
@@ -9,14 +10,11 @@ use lancedb::Connection;
 
 use crate::{adapters::openai::OpenAIClient, config::model::EmbeddingConfig, errors::OxyError};
 
-use super::{
-    engine::VectorEngine,
-    types::{Document, SearchRecord},
-};
+use super::{engine::VectorEngine, types::RetrievalObject};
 
 use std::sync::Arc;
 
-use embedding::EmbeddingManager;
+use ingestion::IngestionManager;
 use search::SearchManager;
 use table::TableManager;
 
@@ -35,6 +33,7 @@ impl LanceDB {
     ) -> Self {
         let table_manager = Arc::new(TableManager::new(
             connection.clone(),
+            embedding_config.table.clone(),
             embedding_config.n_dims,
         ));
 
@@ -48,16 +47,16 @@ impl LanceDB {
 }
 
 impl VectorEngine for LanceDB {
-    async fn embed(&self, documents: &Vec<Document>) -> Result<(), OxyError> {
-        let embedding_manager = EmbeddingManager::new(
+    async fn ingest(&self, retrieval_objects: &Vec<RetrievalObject>) -> Result<(), OxyError> {
+        let ingestion_manager = IngestionManager::new(
             self.client.clone(),
             self.embedding_config.clone(),
             self.table_manager.clone(),
         );
-        embedding_manager.embed(documents).await
+        ingestion_manager.ingest(retrieval_objects).await
     }
 
-    async fn search(&self, query: &str) -> Result<Vec<SearchRecord>, OxyError> {
+    async fn search(&self, query: &str) -> Result<Vec<super::types::SearchRecord>, OxyError> {
         let search_manager = SearchManager::new(
             self.embedding_config.clone(),
             self.client.clone(),
@@ -67,9 +66,6 @@ impl VectorEngine for LanceDB {
     }
 
     async fn cleanup(&self) -> Result<(), OxyError> {
-        self.connection
-            .drop_all_tables()
-            .await
-            .map_err(OxyError::LanceDBError)
+        self.connection.drop_all_tables().await.map_err(OxyError::LanceDBError)
     }
 }

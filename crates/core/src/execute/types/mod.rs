@@ -14,7 +14,7 @@ pub mod utils;
 
 pub use data_app::DataApp;
 pub use display::ProgressType;
-pub use document::{Document, RetrievalContent};
+pub use document::Document;
 pub use eval::{OutputGetter, RelevantContextGetter, TargetOutput};
 pub use event::{Event, EventKind, Source};
 pub use output::{Chunk, Output};

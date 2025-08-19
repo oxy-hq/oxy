@@ -1,22 +1,14 @@
 use ndarray::{Array1, Array2, Axis};
+use crate::adapters::vector_store::types::Embedding;
 
 pub(super) struct MathUtils;
 
 impl MathUtils {
-    pub(super) fn calculate_centroid(points: &[Vec<f32>], n_dims: usize) -> Vec<f32> {
-        if points.is_empty() {
-            return vec![0.0; n_dims];
-        }
 
-        let flat: Vec<f32> = points.iter().flatten().cloned().collect();
-        let matrix = Array2::from_shape_vec((points.len(), n_dims), flat).unwrap();
-        let centroid = Self::calculate_centroid_from_matrix(&matrix);
-        centroid.to_vec()
-    }
 
     pub(super) fn find_min_distance(
-        point: &[f32],
-        points: &[Vec<f32>],
+        point: &Embedding,
+        points: &[Embedding],
     ) -> Result<Option<f32>, String> {
         if points.is_empty() {
             return Ok(None);
@@ -47,19 +39,7 @@ impl MathUtils {
         Self::find_min_distance_from_matrix(&point_array, &points_matrix)
     }
 
-    fn calculate_centroid_from_matrix(points_matrix: &Array2<f32>) -> Array1<f32> {
-        if points_matrix.is_empty() {
-            return Array1::zeros(points_matrix.ncols());
-        }
 
-        let mut centroid = points_matrix.mean_axis(Axis(0)).unwrap();
-        let norm = Self::l2_norm(&centroid);
-        if norm > 0.0 {
-            centroid /= norm;
-        }
-
-        centroid
-    }
 
     fn find_min_distance_from_matrix(
         point: &Array1<f32>,
