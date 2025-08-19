@@ -1,7 +1,7 @@
-use super::Document;
 use crate::{
     adapters::vector_store::{
-        VectorStore, types::RetrievalContent, utils::build_content_for_llm_retrieval,
+        VectorStore,
+        types::RetrievalObject,
     },
     config::{
         ConfigManager,
@@ -10,10 +10,10 @@ use crate::{
     errors::OxyError,
 };
 use futures::StreamExt;
-use itertools::Itertools;
-use parse::parse_embed_document;
-pub use parse::parse_sql_source_type;
 use std::path::PathBuf;
+
+pub use parse::parse_sql_source_type;
+use parse::parse_retrieval_object;
 
 mod parse;
 
@@ -42,11 +42,11 @@ impl DocumentSource for AgentConfig {
     }
 }
 
-fn create_document_from_source<T: DocumentSource>(
+fn create_retrieval_object_from_source<T: DocumentSource>(
     source: &T,
     source_type: &str,
     file_path: &str,
-) -> Result<Option<Document>, OxyError> {
+    ) -> Result<RetrievalObject, OxyError> {
     let nothing_to_embed = source.description().is_empty()
         && source
             .retrieval()
@@ -57,35 +57,24 @@ fn create_document_from_source<T: DocumentSource>(
         println!(
             "WARNING: {source_type} {file_path} has empty description and no retrieval include patterns, skipping"
         );
-        return Ok(None);
+        return Ok(RetrievalObject {
+            source_identifier: file_path.to_string(),
+            source_type: source_type.to_string(),
+            context_content: String::new(),
+            inclusions: vec![],
+            exclusions: vec![],
+        });
     }
 
-    let (retrieval_inclusions, retrieval_exclusions) = if let Some(retrieval) = source.retrieval() {
-        let mut inclusions = vec![];
+    let mut inclusions: Vec<String> = vec![];
+    let mut exclusions: Vec<String> = vec![];
 
+    if let Some(retrieval) = source.retrieval() {
+        exclusions.extend(retrieval.exclude.clone());
         if !source.description().is_empty() {
-            inclusions.push(RetrievalContent {
-                embedding_content: source.description().to_string(),
-                embeddings: vec![],
-            });
+            inclusions.push(source.description().to_string());
         }
-
-        for pattern in &retrieval.include {
-            inclusions.push(RetrievalContent {
-                embedding_content: pattern.clone(),
-                embeddings: vec![],
-            });
-        }
-
-        let exclusions = retrieval
-            .exclude
-            .iter()
-            .map(|pattern| RetrievalContent {
-                embedding_content: pattern.clone(),
-                embeddings: vec![],
-            })
-            .collect();
-        (inclusions, exclusions)
+        inclusions.extend(retrieval.include.clone());
     } else {
         println!(
             "{source_type} {file_path} has no retrieval config, using description as inclusion and empty exclusions"
@@ -95,64 +84,45 @@ fn create_document_from_source<T: DocumentSource>(
                 "Unexpected state: {source_type} {file_path} has empty description and no retrieval config"
             )));
         }
-        (
-            vec![RetrievalContent {
-                embedding_content: source.description().to_string(),
-                embeddings: vec![],
-            }],
-            vec![],
-        )
-    };
+        inclusions.push(source.description().to_string());
+    }
 
-    if retrieval_inclusions.is_empty() {
+    if inclusions.is_empty() {
         return Err(OxyError::ConfigurationError(format!(
             "No embeddable content found for {source_type} {file_path}"
         )));
     }
 
-    let mut document = Document {
-        content: String::new(),
-        source_type: source_type.to_string(),
-        source_identifier: file_path.to_string(),
-        retrieval_inclusions,
-        retrieval_exclusions,
-        inclusion_midpoint: vec![],
-        inclusion_radius: 0.0,
-    };
-
-    document.content = build_content_for_llm_retrieval(&document);
-
     println!(
-        "Created document for {}: {} with {} exclusions",
+        "Created {} inclusions and {} exclusions for {}: {}",
+        inclusions.len(),
+        exclusions.len(),
         source_type,
-        file_path,
-        document.retrieval_exclusions.len()
+        file_path
     );
-    Ok(Some(document))
+    Ok(RetrievalObject {
+        source_identifier: file_path.to_string(),
+        source_type: source_type.to_string(),
+        context_content: source.description().to_string(),
+        inclusions,
+        exclusions,
+    })
 }
 
 async fn process_workflow_file(
     config: &ConfigManager,
     workflow_path: &str,
-) -> Result<Vec<Document>, OxyError> {
+) -> Result<RetrievalObject, OxyError> {
     let workflow = config.resolve_workflow(workflow_path).await?;
-
-    match create_document_from_source(&workflow, "workflow", workflow_path)? {
-        Some(document) => Ok(vec![document]),
-        None => Ok(vec![]),
-    }
+    create_retrieval_object_from_source(&workflow, "workflow", workflow_path)
 }
 
 async fn process_agent_file(
     config: &ConfigManager,
     agent_path: &str,
-) -> Result<Vec<Document>, OxyError> {
+) -> Result<RetrievalObject, OxyError> {
     let agent = config.resolve_agent(agent_path).await?;
-
-    match create_document_from_source(&agent, "agent", agent_path)? {
-        Some(document) => Ok(vec![document]),
-        None => Ok(vec![]),
-    }
+    create_retrieval_object_from_source(&agent, "agent", agent_path)
 }
 
 pub async fn reindex_all(config: &ConfigManager, drop_all_tables: bool) -> Result<(), OxyError> {
@@ -172,18 +142,18 @@ pub async fn reindex_all(config: &ConfigManager, drop_all_tables: bool) -> Resul
                         if drop_all_tables {
                             db.cleanup().await?;
                         }
-                        let documents = make_documents_from_files(&retrieval.src, config).await?;
-                        if documents.is_empty() {
+                        let objects = make_retrieval_objects_from_files(&retrieval.src, config).await?;
+                        if !objects.iter().any(|o| !o.inclusions.is_empty()) {
                             println!(
                                 "{}",
                                 format!(
-                                    "No documents found for agent: {:?} tool: {}",
+                                    "No inclusion records found for agent: {:?} tool: {}",
                                     &agent.name, retrieval.name
                                 )
                             );
                             continue;
                         }
-                        db.embed(&documents).await?;
+                        db.ingest(&objects).await?;
                     }
                 }
             }
@@ -198,25 +168,25 @@ pub async fn reindex_all(config: &ConfigManager, drop_all_tables: bool) -> Resul
                 if drop_all_tables {
                     db.cleanup().await?;
                 }
-                let documents = make_documents_from_routing_agent(config, routing_agent).await?;
-                if documents.is_empty() {
+                let objects = make_retrieval_objects_from_routing_agent(config, routing_agent).await?;
+                if !objects.iter().any(|o| !o.inclusions.is_empty()) {
                     println!(
                         "{}",
-                        format!("No documents found for routing agent: {:?}", &agent.name)
+                        format!("No inclusion records found for routing agent: {:?}", &agent.name)
                     );
                     continue;
                 }
-                db.embed(&documents).await?;
+                db.ingest(&objects).await?;
             }
         }
     }
     Ok(())
 }
 
-async fn make_documents_from_routing_agent(
+async fn make_retrieval_objects_from_routing_agent(
     config: &ConfigManager,
     routing_agent: &RoutingAgent,
-) -> Result<Vec<Document>, OxyError> {
+) -> Result<Vec<RetrievalObject>, OxyError> {
     let paths = config.resolve_glob(&routing_agent.routes).await?;
 
     if paths.is_empty() {
@@ -228,7 +198,7 @@ async fn make_documents_from_routing_agent(
     }
 
     let paths_len = paths.len();
-    let get_documents = async |path: String| -> Result<Vec<Document>, OxyError> {
+    let get_retrieval_object = async |path: String| -> Result<RetrievalObject, OxyError> {
         match &path {
             workflow_path if workflow_path.ends_with(".workflow.yml") => {
                 process_workflow_file(config, workflow_path).await
@@ -238,84 +208,99 @@ async fn make_documents_from_routing_agent(
             }
             sql_path if path.ends_with(".sql") => {
                 let content = tokio::fs::read_to_string(sql_path).await?;
+                let mut obj = parse_retrieval_object(sql_path, &content);
 
-                let mut documents = vec![];
-                let parsed_document = parse_embed_document(sql_path, &content);
-
-                if let Some(database_ref) = parse_sql_source_type(&parsed_document.source_type) {
-                    config.resolve_database(&database_ref)?;
-                    documents.push(parsed_document);
+                // Filter inclusions by valid database references; keep exclusions as-is
+                if let Some(database_ref) = parse_sql_source_type(&obj.source_type) {
+                    if let Err(e) = config.resolve_database(&database_ref) {
+                        println!(
+                            "WARNING: Invalid database reference '{}' in {}: {:?}. Dropping inclusions for this file",
+                            database_ref, sql_path, e
+                        );
+                        obj.inclusions.clear();
+                    }
                 } else {
-                    println!(
-                        "WARNING: Could not parse database reference from source_type '{}' for document in {}",
-                        parsed_document.source_type, sql_path
-                    );
+                    if !obj.inclusions.is_empty() {
+                        println!(
+                            "WARNING: Could not parse database reference from source_type '{}' for inclusion(s) in {}. Dropping inclusions.",
+                            obj.source_type, sql_path
+                        );
+                        obj.inclusions.clear();
+                    }
                 }
 
                 println!(
-                    "Created {} documents from SQL file: {}",
-                    documents.len(),
+                    "Created {} inclusions and {} exclusions from SQL file: {}",
+                    obj.inclusions.len(),
+                    obj.exclusions.len(),
                     sql_path
                 );
-                Ok(documents)
+                Ok(obj)
             }
             _ => Err(OxyError::ConfigurationError(format!(
                 "Unsupported file format for path: {path}"
             ))),
         }
     };
-    let documents = async_stream::stream! {
+    let objects_list = async_stream::stream! {
         for path in paths {
-            yield get_documents(path.to_string());
+            yield get_retrieval_object(path.to_string());
         }
     }
     .buffered(10)
     .collect::<Vec<_>>()
     .await
     .into_iter()
-    .try_collect::<Vec<Document>, Vec<_>, OxyError>()?
-    .into_iter()
-    .flatten()
-    .collect::<Vec<_>>();
+    .collect::<Result<Vec<_>, _>>()?;
+
+    let all_objects: Vec<RetrievalObject> = objects_list;
 
     println!(
-        "Routing agent document creation completed: {} total documents created from {} paths",
-        documents.len(),
+        "Routing agent object creation completed: {} objects created from {} paths",
+        all_objects.len(),
         paths_len
     );
 
-    if documents.is_empty() {
-        println!("WARNING: No documents were created for routing agent. This may indicate:");
+    if !all_objects.iter().any(|o| !o.inclusions.is_empty()) {
+        println!("WARNING: No inclusion records were created for routing agent. This may indicate:");
         println!("  - All workflow/agent files have empty descriptions");
         println!("  - SQL files contain no valid embeddable content");
         println!("  - Database references in SQL files are invalid");
         println!("  - File parsing failed for all files");
     }
 
-    Ok(documents)
+    Ok(all_objects)
 }
 
-async fn make_documents_from_files(
+async fn make_retrieval_objects_from_files(
     src: &Vec<String>,
     config: &ConfigManager,
-) -> anyhow::Result<Vec<Document>> {
+) -> anyhow::Result<Vec<RetrievalObject>> {
     let files = config.resolve_glob(src).await?;
     println!("{}", format!("Found: {:?}", files));
-    let documents = files
-        .iter()
-        .map(|file| (file, std::fs::read_to_string(file)))
-        .filter(|(_file, content)| !content.as_ref().unwrap().is_empty())
-        .map(|(file, content)| {
-            let content = content.unwrap_or("".to_owned());
-            let document = parse_embed_document(file, content.as_str());
-            let file_name = PathBuf::from(file)
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_string();
-            tracing::info!("Found embeddable content for file: {:?}", file_name);
-            document
-        })
-        .collect::<Vec<_>>();
-    Ok(documents)
+    
+    let mut all_objects: Vec<RetrievalObject> = vec![];
+    
+    for file in files.iter() {
+        if let Ok(content) = std::fs::read_to_string(file) {
+            if !content.is_empty() {
+                let obj = parse_retrieval_object(file, content.as_str());
+                let file_name = PathBuf::from(file)
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string();
+                tracing::info!(
+                    "Found {} inclusions and {} exclusions for file: {:?}", 
+                    obj.inclusions.len(),
+                    obj.exclusions.len(),
+                    file_name
+                );
+                all_objects.push(obj);
+            }
+        }
+    }
+
+    Ok(all_objects)
 }
+

@@ -3,8 +3,9 @@ use std::path::PathBuf;
 use super::{
     engine::VectorEngine,
     lance_db::LanceDB,
-    types::{Document, SearchRecord},
+    types::{RetrievalObject, SearchRecord},
 };
+use enum_dispatch::enum_dispatch;
 use crate::{
     adapters::openai::{IntoOpenAIConfig, OpenAIClient},
     config::{
@@ -15,7 +16,7 @@ use crate::{
 };
 use lancedb::{Connection, connect};
 
-#[enum_dispatch::enum_dispatch(VectorEngine)]
+#[enum_dispatch(VectorEngine)]
 enum VectorStoreImpl {
     LanceDB,
 }
@@ -90,8 +91,8 @@ impl VectorStore {
         )
         .await
     }
-    pub async fn embed(&self, documents: &Vec<Document>) -> Result<(), OxyError> {
-        self.inner.embed(documents).await
+    pub async fn ingest(&self, retrieval_objects: &Vec<RetrievalObject>) -> Result<(), OxyError> {
+        self.inner.ingest(retrieval_objects).await
     }
     pub async fn search(&self, query: &str) -> Result<Vec<SearchRecord>, OxyError> {
         self.inner.search(query).await

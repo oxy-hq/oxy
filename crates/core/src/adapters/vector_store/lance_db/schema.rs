@@ -1,61 +1,27 @@
-use crate::config::constants::RETRIEVAL_INCLUSION_MIDPOINT_COLUMN;
-use arrow::datatypes::{DataType, Field, Fields};
+use crate::config::constants::RETRIEVAL_EMBEDDINGS_COLUMN;
+use arrow::datatypes::{DataType, Field};
 use std::sync::Arc;
 
 pub(super) struct SchemaUtils;
 
 impl SchemaUtils {
-    pub(super) fn create_retrieval_content_struct_type(n_dims: usize) -> DataType {
-        DataType::Struct(Self::create_retrieval_content_fields(n_dims))
-    }
 
-    pub(super) fn create_retrieval_content_fields(n_dims: usize) -> Fields {
-        vec![
-            Field::new("embedding_content", DataType::Utf8, false),
-            Field::new(
-                "embeddings",
-                DataType::FixedSizeList(
-                    Arc::new(Field::new("item", DataType::Float32, true)),
-                    n_dims.try_into().unwrap(),
-                ),
-                false,
-            ),
-        ]
-        .into()
-    }
 
-    pub(super) fn create_expected_schema(n_dims: usize) -> Arc<arrow::datatypes::Schema> {
+    pub(super) fn create_retrieval_schema(n_dims: usize) -> Arc<arrow::datatypes::Schema> {
         Arc::new(arrow::datatypes::Schema::new(vec![
             Field::new("content", DataType::Utf8, false),
             Field::new("source_type", DataType::Utf8, false),
             Field::new("source_identifier", DataType::Utf8, false),
+            Field::new("embedding_content", DataType::Utf8, false),
             Field::new(
-                "retrieval_inclusions",
-                DataType::List(Arc::new(Field::new(
-                    "item",
-                    Self::create_retrieval_content_struct_type(n_dims),
-                    false,
-                ))),
-                false,
-            ),
-            Field::new(
-                "retrieval_exclusions",
-                DataType::List(Arc::new(Field::new(
-                    "item",
-                    Self::create_retrieval_content_struct_type(n_dims),
-                    false,
-                ))),
-                false,
-            ),
-            Field::new(
-                RETRIEVAL_INCLUSION_MIDPOINT_COLUMN,
+                RETRIEVAL_EMBEDDINGS_COLUMN,
                 DataType::FixedSizeList(
                     Arc::new(Field::new("item", DataType::Float32, true)),
                     n_dims.try_into().unwrap(),
                 ),
                 false,
             ),
-            Field::new("inclusion_radius", DataType::Float32, false),
+            Field::new("radius", DataType::Float32, false),
         ]))
     }
 
