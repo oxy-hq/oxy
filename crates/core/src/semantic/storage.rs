@@ -100,8 +100,8 @@ impl Storage for SemanticFileStorage {
     }
 
     async fn save_global_semantics(&self, semantics: &Semantics) -> Result<(), OxyError> {
-        println!("Saving global semantics to: {}", self.global_semantic_path);
-        println!("Semantics: {semantics:?}");
+        tracing::debug!("Saving global semantics to: {}", self.global_semantic_path);
+        tracing::trace!("Semantics: {semantics:?}");
         let global_semantic_path = PathBuf::from(&self.global_semantic_path);
         create_dir_all(global_semantic_path.parent().ok_or(OxyError::IOError(
             "Failed to resolve global semantic path".to_string(),

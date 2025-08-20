@@ -277,7 +277,7 @@ impl GetSchemaQuery for Database {
                          WHERE c.TABLE_SCHEMA = '{dataset}'{tables_filter}
                          ORDER BY c.TABLE_NAME, c.ORDINAL_POSITION"
                     );
-                    tracing::info!("🔍 Snowflake schema query for dataset '{}': {}", dataset, query);
+                    tracing::debug!("Snowflake schema query for dataset '{}': {}", dataset, query);
                     Ok(query)
                 })
                 .collect::<Result<Vec<_>, OxyError>>(),
@@ -339,20 +339,20 @@ async fn fetch_schema_models<T: for<'de> Deserialize<'de>>(
     let datasets = async_stream::stream! {
         for (query_idx, query) in queries.into_iter().enumerate() {
             yield async move {
-                tracing::info!("🚀 Executing query #{}: {}", query_idx + 1, query);
+                tracing::debug!("Executing query #{}: {}", query_idx + 1, query);
                 let (record_batches, schema) = connector.run_query_with_limit(&query, None).await?;
-                tracing::info!("✅ Query #{} completed. Schema: {:?}", query_idx + 1, schema);
+                tracing::debug!("Query #{} completed. Schema: {:?}", query_idx + 1, schema);
                 
                 let mut results = vec![];
                 for (batch_idx, record_batch) in record_batches.iter().enumerate() {
-                    tracing::info!("📊 Processing batch #{}: {} rows", batch_idx + 1, record_batch.num_rows());
+                    tracing::debug!("Processing batch #{}: {} rows", batch_idx + 1, record_batch.num_rows());
                     let records: Vec<T> = from_record_batch(record_batch).map_err(|e| {
                         OxyError::RuntimeError(format!("Failed to parse schema information: {e}"))
                     })?;
-                    tracing::info!("🔄 Parsed {} records from batch #{}", records.len(), batch_idx + 1);
+                    tracing::debug!("Parsed {} records from batch #{}", records.len(), batch_idx + 1);
                     results.extend(records);
                 }
-                tracing::info!("📈 Total records from query #{}: {}", query_idx + 1, results.len());
+                tracing::debug!("Total records from query #{}: {}", query_idx + 1, results.len());
                 Ok::<_, OxyError>(results)
             };
         }
@@ -490,20 +490,17 @@ impl SchemaLoader {
                     DatabaseType::Snowflake(_) => "Snowflake",
                     _ => "Unknown"
                 };
-                tracing::info!("🏗️  Starting schema load for {} database: {}", db_type, self.database.name);
-                eprintln!("🎯 DEBUG: Starting schema load for {} database: {}", db_type, self.database.name);
+                tracing::debug!("Starting schema load for {} database: {}", db_type, self.database.name);
                 
                 let queries = self.database.get_schemas_queries()?;
-                tracing::info!("📝 Generated {} schema queries for {}", queries.len(), db_type);
-                eprintln!("🎯 DEBUG: Generated {} schema queries", queries.len());
+                tracing::debug!("Generated {} schema queries for {}", queries.len(), db_type);
                 for (i, query) in queries.iter().enumerate() {
-                    eprintln!("🎯 DEBUG: Query {}: {}", i + 1, query);
+                    tracing::trace!("Query {}: {}", i + 1, query);
                 }
                 
                 let records: Vec<SchemaRecord> =
                     fetch_schema_models(queries, &self.connector).await?;
-                tracing::info!("📋 Retrieved {} schema records from {}", records.len(), db_type);
-                eprintln!("🎯 DEBUG: Retrieved {} schema records", records.len());
+                tracing::debug!("Retrieved {} schema records from {}", records.len(), db_type);
                 let datasets = records.into_iter().fold(HashMap::new(), |mut acc, record| {
                     let model: &mut HashMap<String, SemanticModels> =
                         acc.entry(record.dataset.clone()).or_default();
@@ -549,13 +546,13 @@ impl SchemaLoader {
                     .map(|table| table.dimensions.len())
                     .sum::<usize>();
                 
-                tracing::info!("🎯 Final results for {} database '{}': {} datasets, {} tables, {} dimensions", 
+                tracing::debug!("Final results for {} database '{}': {} datasets, {} tables, {} dimensions", 
                     db_type, self.database.name, datasets.len(), total_tables, total_dimensions);
                 
                 for (dataset_name, tables) in &datasets {
-                    tracing::info!("  📁 Dataset '{}': {} tables", dataset_name, tables.len());
+                    tracing::debug!("  Dataset '{}': {} tables", dataset_name, tables.len());
                     for (table_name, table) in tables {
-                        tracing::info!("    📊 Table '{}': {} dimensions", table_name, table.dimensions.len());
+                        tracing::debug!("    Table '{}': {} dimensions", table_name, table.dimensions.len());
                     }
                 }
                 

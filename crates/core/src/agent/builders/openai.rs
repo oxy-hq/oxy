@@ -134,130 +134,106 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
         execution_context: &ExecutionContext,
         input: Vec<ChatCompletionRequestMessage>,
     ) -> Result<Self::Response, OxyError> {
-        tracing::info!("🚀 Starting OpenAI agent execution");
-        tracing::info!("🔧 Model: {}", self.model);
-        tracing::info!("🛠️  Tools: {} configured", self.tool_configs.len());
-        tracing::info!("💬 Input messages: {} messages", input.len());
-        tracing::debug!("📥 Input message details: {:?}", input);
+        tracing::debug!("Starting OpenAI agent execution");
+        tracing::debug!("Model: {}", self.model);
+        tracing::debug!("Tools configured: {}", self.tool_configs.len());
+        tracing::debug!("Input messages: {}", input.len());
+        tracing::trace!("Input message details: {:?}", input);
         
         let chat = self.client.chat();
-        let mut request_builder = CreateChatCompletionRequestArgs::default();
         let schema = json!(schema_for!(AgentResponse));
-        request_builder
-            .model(self.model.clone())
-            .stream_options(ChatCompletionStreamOptions {
-                include_usage: true,
-            })
-            .response_format(ResponseFormat::JsonSchema {
-                json_schema: ResponseFormatJsonSchema {
-                    name: "AgentResponse".to_string(),
-                    description: Some("Agent response".to_string()),
-                    schema: Some(schema),
-                    strict: Some(true),
-                },
-            })
-            .stream(true)
-            .messages(input);
-
-        if let Some(ReasoningConfig {
-            effort: Some(reasoning_effort),
-            ..
-        }) = &self.reasoning_config
-        {
-            request_builder.reasoning_effort(reasoning_effort.clone());
-        }
-
-        if let Some(tool_choice) = &self.tool_choice {
-            request_builder.tool_choice(tool_choice.clone());
-        }
-
-        if !self.tool_configs.is_empty() {
-            request_builder.tools(self.tool_configs.clone());
-        }
 
         let func = || async {
-            tracing::info!("🔨 Building OpenAI completion request...");
-            let request = request_builder
-                .build()
-                .map_err(|err| {
-                    tracing::error!("❌ Failed to build completion request: {err:?}");
-                    OxyError::RuntimeError(format!("Error in building completion request: {err:?}"))
-                })
-                .map_err(backoff::Error::Permanent)?;
+            tracing::debug!("Building OpenAI completion request");
             
-            tracing::info!("✅ Request built successfully");
-            tracing::debug!("📋 OpenAI request details: {:?}", request);
-            tracing::info!("🌐 Making API call to OpenAI...");
+            // Helper function to build a request with optional structured output
+            let build_request = |use_structured: bool| -> Result<_, backoff::Error<OxyError>> {
+                let mut builder = CreateChatCompletionRequestArgs::default();
+                builder
+                    .model(self.model.clone())
+                    .stream_options(ChatCompletionStreamOptions {
+                        include_usage: true,
+                    })
+                    .stream(true)
+                    .messages(input.clone());
+
+                if use_structured {
+                    builder.response_format(ResponseFormat::JsonSchema {
+                        json_schema: ResponseFormatJsonSchema {
+                            name: "AgentResponse".to_string(),
+                            description: Some("Agent response".to_string()),
+                            schema: Some(schema.clone()),
+                            strict: Some(false),
+                        },
+                    });
+                }
+
+                if let Some(ReasoningConfig {
+                    effort: Some(reasoning_effort),
+                    ..
+                }) = &self.reasoning_config
+                {
+                    builder.reasoning_effort(reasoning_effort.clone());
+                }
+
+                if let Some(tool_choice) = &self.tool_choice {
+                    builder.tool_choice(tool_choice.clone());
+                }
+
+                if !self.tool_configs.is_empty() {
+                    builder.tools(self.tool_configs.clone());
+                }
+
+                builder
+                    .build()
+                    .map_err(|err| {
+                        tracing::error!("Failed to build completion request: {err:?}");
+                        OxyError::RuntimeError(format!("Error in building completion request: {err:?}"))
+                    })
+                    .map_err(backoff::Error::Permanent)
+            };
             
-            let mut response = chat
-                .create_stream(request)
+            // For most models, use plain text directly as structured output often produces poor results
+            // Only use structured output for known compatible models like OpenAI GPT
+            tracing::debug!("Using plain text request for better compatibility");
+            let plain_request = build_request(false)?;
+            let mut response = chat.create_stream(plain_request)
                 .await
                 .map_err(|err| {
-                    println!("🚨 OPENAI ERROR DETAILS:");
-                    println!("❌ OpenAI API call failed: {err:?}");
-                    eprintln!("🚨 OPENAI ERROR DETAILS:");
-                    eprintln!("❌ OpenAI API call failed: {err:?}");
-                    
-                    match &err {
-                        OpenAIError::ApiError(api_err) => {
-                            println!("🔴 API Error Details:");
-                            println!("   Code: {:?}", api_err.code);
-                            println!("   Message: {:?}", api_err.message);
-                            println!("   Type: {:?}", api_err.r#type);
-                            eprintln!("🔴 API Error Details:");
-                            eprintln!("   Code: {:?}", api_err.code);
-                            eprintln!("   Message: {:?}", api_err.message);
-                            eprintln!("   Type: {:?}", api_err.r#type);
-                            
-                            tracing::error!("🔴 API Error Details - Code: {:?}, Message: {:?}, Type: {:?}", 
-                                api_err.code, api_err.message, api_err.r#type);
-                        },
-                        OpenAIError::StreamError(stream_err) => {
-                            println!("📡 Stream Error: {stream_err:?}");
-                            eprintln!("📡 Stream Error: {stream_err:?}");
-                            tracing::error!("📡 Stream Error: {stream_err:?}");
-                        },
-                        _ => {
-                            println!("🔴 Other OpenAI Error: {err:?}");
-                            eprintln!("🔴 Other OpenAI Error: {err:?}");
-                            tracing::error!("🔴 Other OpenAI Error: {err:?}");
-                        }
-                    }
-                    
-                    tracing::error!("❌ OpenAI API call failed: {err:?}");
+                    tracing::error!("Plain text request failed: {err}");
                     OxyError::RuntimeError(format!("Error in completion request: {err:?}"))
                 })
                 .map_err(backoff::Error::Permanent)?;
             
-            tracing::info!("✅ API call successful, processing stream...");
+            tracing::debug!("API call successful, processing stream");
             let mut content = String::new();
             let mut tool_calls = HashMap::<(u32, u32), ChatCompletionMessageToolCall>::new();
             let mut last_parsed_content = String::new();
             let mut has_written = false;
 
-            tracing::debug!("📡 Starting to process response stream chunks...");
+            tracing::trace!("Starting to process response stream chunks");
             let mut chunk_count = 0;
             
             while let Some(response) =
                 response.next().await.transpose().map_err(|err| {
-                    tracing::error!("❌ Stream processing error: {err:?}");
+                    tracing::error!("Stream processing error: {err}");
                     match err {
                         OpenAIError::StreamError(_) => {
-                            tracing::warn!("⚠️  Transient stream error, will retry");
+                            tracing::debug!("Transient stream error, will retry");
                             backoff::Error::<OxyError>::transient(err.into())
                         }
                         _ => {
-                            tracing::error!("🔴 Permanent stream error, not retrying");
+                            tracing::error!("Permanent stream error, not retrying");
                             backoff::Error::<OxyError>::Permanent(err.into())
                         }
                     }
                 })?
             {
                 chunk_count += 1;
-                tracing::trace!("📦 Processing chunk #{}: {:?}", chunk_count, response);
+                tracing::trace!("Processing chunk #{}: {:?}", chunk_count, response);
                 
                 if let Some(usage_data) = response.usage {
-                    tracing::debug!("📊 Usage data - Prompt tokens: {}, Completion tokens: {}", 
+                    tracing::debug!("Usage data - Prompt tokens: {}, Completion tokens: {}", 
                         usage_data.prompt_tokens, usage_data.completion_tokens);
                     execution_context
                         .write_usage(Usage::new(
@@ -272,9 +248,9 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
                     }
                     if let Some(message) = &chunk.delta.content {
                         content.push_str(message);
-                        // Check if the content is a valid JSON string and parse it
-                        // then write the chunk to the execution context
+                        // Try to parse as structured JSON first, fallback to plain text
                         if let Ok(data) = from_json_str::<AgentResponse>(&content) {
+                            // Structured JSON response
                             let (parsed_content, mut output) = match data.data {
                                 AgentResponseData::Table { file_path } => {
                                     (file_path, Output::table(message.to_string()))
@@ -309,6 +285,29 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
                                     })
                                     .await?;
                             }
+                        } else if !content.is_empty() {
+                            // Handle plain text response (non-JSON)
+                            if !has_written {
+                                execution_context
+                                    .write_kind(EventKind::Message {
+                                        message: "\nOutput:".primary().to_string(),
+                                    })
+                                    .await?;
+                                has_written = true;
+                            }
+                            
+                            // Stream the content as plain text
+                            if content.len() > last_parsed_content.len() {
+                                let new_chunk = &content[last_parsed_content.len()..];
+                                execution_context
+                                    .write_chunk(Chunk {
+                                        key: Some(AGENT_SOURCE_CONTENT.to_string()),
+                                        delta: Output::Text(new_chunk.to_string()),
+                                        finished: false,
+                                    })
+                                    .await?;
+                                last_parsed_content = content.clone();
+                            }
                         }
                     }
                 }
@@ -317,11 +316,17 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
                 if content.is_empty() {
                     AgentResponse::default()
                 } else {
-                    serde_json::from_str::<AgentResponse>(&content).map_err(|err| {
-                        OxyError::SerializerError(format!(
-                            "Failed to deserialize OpenAI response: \"{content}\"\n{err}"
-                        ))
-                    })?
+                    // Try to parse as structured JSON first, fallback to plain text
+                    match serde_json::from_str::<AgentResponse>(&content) {
+                        Ok(structured_response) => structured_response,
+                        Err(_) => {
+                            // If JSON parsing fails, treat as plain text response
+                            tracing::debug!("Response is not structured JSON, treating as plain text");
+                            AgentResponse {
+                                data: AgentResponseData::Text { text: content.clone() }
+                            }
+                        }
+                    }
                 }
             };
             tracing::info!(
@@ -345,10 +350,10 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
                 })
                 .await?;
 
-            tracing::info!("✅ Stream processing completed successfully");
-            tracing::info!("📝 Total raw content length: {}", content.len());
-            tracing::info!("🔧 Tool calls generated: {}", tool_calls.len());
-            tracing::debug!("📦 Total chunks processed: {}", chunk_count);
+            tracing::debug!("Stream processing completed successfully");
+            tracing::debug!("Total raw content length: {}", content.len());
+            tracing::debug!("Tool calls generated: {}", tool_calls.len());
+            tracing::trace!("Total chunks processed: {}", chunk_count);
 
             Ok(OpenAIExecutableResponse {
                 content: parsed_content.into(),
@@ -359,34 +364,25 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
             let result = func().await;
             match result {
                 Ok(rs) => {
-                    tracing::info!("🎉 OpenAI execution completed successfully");
+                    tracing::debug!("OpenAI execution completed successfully");
                     Ok(rs)
                 },
                 Err(err) => {
-                    println!("🚨 RETRY ERROR DETAILS:");
-                    println!("💥 OpenAI execution failed: {err:?}");
-                    eprintln!("🚨 RETRY ERROR DETAILS:");
-                    eprintln!("💥 OpenAI execution failed: {err:?}");
+                    tracing::error!("OpenAI execution failed: {err}");
                     
-                    tracing::error!("💥 OpenAI execution failed: {err:?}");
-                    // Add more specific error context
-                    let error_msg = match &err {
+                    // Log specific error context
+                    match &err {
                         backoff::Error::Permanent(perm_err) => {
-                            println!("🔴 Permanent error (will not retry): {perm_err}");
-                            eprintln!("🔴 Permanent error (will not retry): {perm_err}");
-                            format!("🔴 Permanent error (will not retry): {perm_err}")
+                            tracing::error!("Permanent error (will not retry): {perm_err}");
                         },
                         backoff::Error::Transient { err: trans_err, retry_after: _ } => {
-                            println!("⚠️  Transient error (retrying): {trans_err}");
-                            eprintln!("⚠️  Transient error (retrying): {trans_err}");
-                            format!("⚠️  Transient error (retrying): {trans_err}")
+                            tracing::debug!("Transient error (retrying): {trans_err}");
                         }
                     };
-                    tracing::error!("{}", error_msg);
                     
                     execution_context
                         .write_kind(EventKind::Error {
-                            message: "🔴 Error while calling LLM model. Retrying..."
+                            message: "Error while calling LLM model. Retrying..."
                                 .primary()
                                 .to_string(),
                         })
@@ -404,23 +400,13 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
             func_with_log,
             |err, backoff_duration| {
                 attempt += 1;
-                println!("🔄 RETRY #{} - Error occurred after {:?} elapsed", attempt, backoff_duration);
-                println!("🔍 Error details: {:?}", err);
-                println!("⏳ Waiting {:?} before retry #{}", backoff_duration, attempt);
-                
-                eprintln!("🔄 RETRY #{} - Error occurred after {:?} elapsed", attempt, backoff_duration);
-                eprintln!("🔍 Error details: {:?}", err);
-                eprintln!("⏳ Waiting {:?} before retry #{}", backoff_duration, attempt);
-                
-                tracing::error!("🔄 Retry #{} - Error occurred after {:?} elapsed", attempt, backoff_duration);
-                tracing::error!("🔍 Error details: {:?}", err);
-                tracing::warn!("⏳ Waiting {:?} before retry #{}", backoff_duration, attempt);
+                tracing::debug!("Retry #{} - Error occurred after {:?} elapsed", attempt, backoff_duration);
+                tracing::debug!("Error details: {:?}", err);
+                tracing::debug!("Waiting {:?} before retry #{}", backoff_duration, attempt);
                 
                 // Log specific error types for better debugging
                 if let OxyError::RuntimeError(runtime_msg) = &err {
-                    println!("🔧 Runtime error context: {}", runtime_msg);
-                    eprintln!("🔧 Runtime error context: {}", runtime_msg);
-                    tracing::error!("🔧 Runtime error context: {}", runtime_msg);
+                    tracing::debug!("Runtime error context: {}", runtime_msg);
                 }
             },
         )
@@ -433,10 +419,10 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
 
         match &response {
             Ok(_) => {
-                tracing::info!("🏁 OpenAI agent execution completed successfully after {} attempts", attempt.max(1));
+                tracing::debug!("OpenAI agent execution completed successfully after {} attempts", attempt.max(1));
             },
             Err(err) => {
-                tracing::error!("❌ OpenAI agent execution failed permanently after {} attempts: {:?}", attempt, err);
+                tracing::error!("OpenAI agent execution failed permanently after {} attempts: {:?}", attempt, err);
             }
         }
 
