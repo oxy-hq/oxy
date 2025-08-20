@@ -248,8 +248,9 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
                     }
                     if let Some(message) = &chunk.delta.content {
                         content.push_str(message);
-                        // Try to parse as structured JSON first, fallback to plain text
-                        if let Ok(data) = from_json_str::<AgentResponse>(&content) {
+                        // Only try to parse as structured JSON if we don't have tool calls
+                        // When tools are present, content is usually plain text
+                        if tool_calls.is_empty() && let Ok(data) = from_json_str::<AgentResponse>(&content) {
                             // Structured JSON response
                             let (parsed_content, mut output) = match data.data {
                                 AgentResponseData::Table { file_path } => {
@@ -382,7 +383,7 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
                     
                     execution_context
                         .write_kind(EventKind::Error {
-                            message: "Error while calling LLM model. Retrying..."
+                            message: "🔴 Error while calling LLM model. Retrying..."
                                 .primary()
                                 .to_string(),
                         })
