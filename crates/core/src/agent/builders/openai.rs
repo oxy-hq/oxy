@@ -267,15 +267,21 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
             tracing::debug!("Building OpenAI completion request");
             
             // Helper function to build a request with optional structured output
-            let build_request = |use_structured: bool| -> Result<_, backoff::Error<OxyError>> {
+            let build_request = |use_structured: bool, use_streaming: bool| -> Result<_, backoff::Error<OxyError>> {
                 let mut builder = CreateChatCompletionRequestArgs::default();
                 builder
                     .model(self.model.clone())
-                    .stream_options(ChatCompletionStreamOptions {
-                        include_usage: true,
-                    })
-                    .stream(true)
                     .messages(input.clone());
+                
+                if use_streaming {
+                    builder
+                        .stream_options(ChatCompletionStreamOptions {
+                            include_usage: true,
+                        })
+                        .stream(true);
+                } else {
+                    builder.stream(false);
+                }
 
                 if use_structured {
                     builder.response_format(ResponseFormat::JsonSchema {
@@ -313,17 +319,32 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
                     .map_err(backoff::Error::Permanent)
             };
             
+            // Detect if we should use streaming - Ollama has issues with streaming + tools due to non-standard "reasoning" field
+            let has_tools = !self.tool_configs.is_empty();
+            let is_ollama = self.model.contains("gpt-oss") || self.model.contains("llama") || 
+                           self.model.contains("ollama") || 
+                           (!self.model.starts_with("gpt-") && !self.model.starts_with("claude") && !self.model.starts_with("gemini"));
+            let use_streaming = !(has_tools && is_ollama);
+            
+            if has_tools && is_ollama {
+                tracing::debug!("Detected Ollama with tools - using non-streaming mode to avoid JSON parsing issues");
+            } else {
+                tracing::debug!("Using streaming mode for better performance");
+            }
+            
             // For most models, use plain text directly as structured output often produces poor results
             // Only use structured output for known compatible models like OpenAI GPT
-            tracing::debug!("Using plain text request for better compatibility");
-            let plain_request = build_request(false)?;
-            let mut response = chat.create_stream(plain_request)
-                .await
-                .map_err(|err| {
-                    tracing::error!("Plain text request failed: {err}");
-                    OxyError::RuntimeError(format!("Error in completion request: {err:?}"))
-                })
-                .map_err(backoff::Error::Permanent)?;
+            let request = build_request(false, use_streaming)?;
+            
+            if use_streaming {
+                // Streaming path - works for OpenAI, Claude, Gemini
+                let mut response = chat.create_stream(request)
+                    .await
+                    .map_err(|err| {
+                        tracing::error!("Streaming request failed: {err}");
+                        OxyError::RuntimeError(format!("Error in completion request: {err:?}"))
+                    })
+                    .map_err(backoff::Error::Permanent)?;
             
             tracing::debug!("API call successful, processing stream");
             let mut content = String::new();
@@ -375,37 +396,94 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
                     }
                 }
             }
-            let parsed_content = self.finalize_response(&content);
-            tracing::info!(
-                "Agent response: {:?},\nTool Calls: {:?}",
-                content,
-                tool_calls
-            );
+                let parsed_content = self.finalize_response(&content);
+                tracing::info!(
+                    "Agent response: {:?},\nTool Calls: {:?}",
+                    content,
+                    tool_calls
+                );
 
-            let delta: Output = if has_written {
-                let mut output = Into::<Output>::into(parsed_content.data.clone());
-                output.replace("".to_string());
-                output
-            } else {
-                parsed_content.data.clone().into()
-            };
-            execution_context
-                .write_chunk(Chunk {
-                    key: Some(AGENT_SOURCE_CONTENT.to_string()),
-                    delta,
-                    finished: true,
+                let delta: Output = if has_written {
+                    let mut output = Into::<Output>::into(parsed_content.data.clone());
+                    output.replace("".to_string());
+                    output
+                } else {
+                    parsed_content.data.clone().into()
+                };
+                execution_context
+                    .write_chunk(Chunk {
+                        key: Some(AGENT_SOURCE_CONTENT.to_string()),
+                        delta,
+                        finished: true,
+                    })
+                    .await?;
+
+                tracing::debug!("Stream processing completed successfully");
+                tracing::debug!("Total raw content length: {}", content.len());
+                tracing::debug!("Tool calls generated: {}", tool_calls.len());
+                tracing::trace!("Total chunks processed: {}", chunk_count);
+
+                Ok(OpenAIExecutableResponse {
+                    content: parsed_content.into(),
+                    tool_calls: tool_calls.into_values().collect(),
                 })
-                .await?;
+            } else {
+                // Non-streaming path - works for Ollama with tools
+                tracing::debug!("Using non-streaming request for Ollama + tools compatibility");
+                let response = chat.create(request)
+                    .await
+                    .map_err(|err| {
+                        tracing::error!("Non-streaming request failed: {err}");
+                        OxyError::RuntimeError(format!("Error in completion request: {err:?}"))
+                    })
+                    .map_err(backoff::Error::Permanent)?;
 
-            tracing::debug!("Stream processing completed successfully");
-            tracing::debug!("Total raw content length: {}", content.len());
-            tracing::debug!("Tool calls generated: {}", tool_calls.len());
-            tracing::trace!("Total chunks processed: {}", chunk_count);
+                tracing::debug!("API call successful, processing non-streaming response");
+                
+                if let Some(usage_data) = response.usage {
+                    tracing::debug!("Usage data - Prompt tokens: {}, Completion tokens: {}", 
+                        usage_data.prompt_tokens, usage_data.completion_tokens);
+                    execution_context
+                        .write_usage(Usage::new(
+                            usage_data.prompt_tokens,
+                            usage_data.completion_tokens,
+                        ))
+                        .await?;
+                }
 
-            Ok(OpenAIExecutableResponse {
-                content: parsed_content.into(),
-                tool_calls: tool_calls.into_values().collect(),
-            })
+                let choice = response.choices.first().ok_or_else(|| {
+                    OxyError::RuntimeError("No choices returned from API".to_string())
+                })?;
+
+                let content = choice.message.content.as_deref().unwrap_or("");
+                let tool_calls = choice.message.tool_calls.clone().unwrap_or_default();
+                
+                // Display the response
+                execution_context
+                    .write_kind(EventKind::Message {
+                        message: "\nOutput:".primary().to_string(),
+                    })
+                    .await?;
+
+                let parsed_content = self.finalize_response(content);
+                let delta: Output = parsed_content.data.clone().into();
+                execution_context
+                    .write_chunk(Chunk {
+                        key: Some(AGENT_SOURCE_CONTENT.to_string()),
+                        delta,
+                        finished: true,
+                    })
+                    .await?;
+
+                tracing::debug!("Non-streaming processing completed successfully");
+                tracing::debug!("Content length: {}", content.len());
+                tracing::debug!("Tool calls generated: {}", tool_calls.len());
+
+                Ok(OpenAIExecutableResponse {
+                    content: parsed_content.into(),
+                    tool_calls,
+                })
+            }
         };
         let func_with_log = async || {
             let result = func().await;
