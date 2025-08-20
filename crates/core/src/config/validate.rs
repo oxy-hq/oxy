@@ -35,6 +35,14 @@ pub fn validate_file_path(path: &PathBuf, context: &ValidationContext) -> garde:
     Ok(())
 }
 
+pub fn validate_optional_file_path(path: &Option<PathBuf>, context: &ValidationContext) -> garde::Result {
+    if let Some(path) = path {
+        validate_file_path(path, context)
+    } else {
+        Ok(())
+    }
+}
+
 pub fn validation_directory_path(path: &PathBuf, _: &ValidationContext) -> garde::Result {
     if !path.is_dir() {
         return Err(format_error_message(

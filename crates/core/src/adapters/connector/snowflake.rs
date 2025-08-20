@@ -31,16 +31,34 @@ impl Engine for Snowflake {
         _dry_run_limit: Option<u64>,
     ) -> Result<(Vec<RecordBatch>, SchemaRef), OxyError> {
         let config = self.config.clone();
-        let api = SnowflakeApi::with_password_auth(
-            config.account.as_str(),
-            Some(config.warehouse.as_str()),
-            Some(config.database.as_str()),
-            None,
-            &config.username,
-            config.role.as_deref(),
-            &config.get_password().await?,
-        )
-        .map_err(|err| connector_internal_error(CREATE_CONN, &err))?;
+        let api = if let Some(private_key_path) = &config.private_key_path {
+            // Use private key authentication
+            let private_key_content = std::fs::read_to_string(private_key_path)
+                .map_err(|err| OxyError::ConfigurationError(format!("Failed to read private key file: {}", err)))?;
+            
+            SnowflakeApi::with_certificate_auth(
+                config.account.as_str(),
+                Some(config.warehouse.as_str()),
+                Some(config.database.as_str()),
+                None,
+                &config.username,
+                config.role.as_deref(),
+                &private_key_content,
+            )
+            .map_err(|err| connector_internal_error(CREATE_CONN, &err))?
+        } else {
+            // Use password authentication
+            SnowflakeApi::with_password_auth(
+                config.account.as_str(),
+                Some(config.warehouse.as_str()),
+                Some(config.database.as_str()),
+                None,
+                &config.username,
+                config.role.as_deref(),
+                &config.get_password().await?,
+            )
+            .map_err(|err| connector_internal_error(CREATE_CONN, &err))?
+        };
         let res = api
             .exec(query)
             .await

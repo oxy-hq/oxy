@@ -16,7 +16,7 @@ use utoipa::ToSchema;
 pub use variables::Variables;
 
 use super::validate::{AgentValidationContext, validate_model, validate_task};
-use crate::config::validate::validate_file_path;
+use crate::config::validate::{validate_file_path, validate_optional_file_path};
 use crate::config::validate::{
     ValidationContext, validate_agent_exists, validate_database_exists, validate_env_var,
     validate_task_data_reference,
@@ -489,6 +489,9 @@ pub struct Snowflake {
     pub database: String,
     #[garde(skip)]
     pub role: Option<String>,
+    #[garde(custom(validate_optional_file_path))]
+    #[serde(default)]
+    pub private_key_path: Option<PathBuf>,
 }
 
 impl Snowflake {
