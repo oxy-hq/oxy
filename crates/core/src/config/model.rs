@@ -609,7 +609,7 @@ impl Database {
                 }
             },
             DatabaseType::ClickHouse(ch) => if ch.schemas.is_empty() {
-                HashMap::from_iter([(String::new(), vec!["*".to_string()])])
+                HashMap::from_iter([(String::default(), vec!["*".to_string()])])
             } else {
                 ch.schemas.clone()
             },

@@ -108,6 +108,126 @@ impl OpenAIExecutable {
             }
         }
     }
+
+    async fn process_content_chunk(
+        &self,
+        execution_context: &ExecutionContext,
+        content: &mut String,
+        tool_calls: &HashMap<(u32, u32), ChatCompletionMessageToolCall>,
+        last_parsed_length: &mut usize,
+        has_written: &mut bool,
+        message: &str,
+    ) -> Result<(), OxyError> {
+        content.push_str(message);
+        // Only try to parse as structured JSON if we don't have tool calls
+        // When tools are present, content is usually plain text
+        if tool_calls.is_empty() && let Ok(data) = from_json_str::<AgentResponse>(&content) {
+            self.handle_structured_response(execution_context, &data, content, last_parsed_length, has_written, message).await
+        } else if !content.is_empty() {
+            self.handle_plain_text_response(execution_context, content, last_parsed_length, has_written).await
+        } else {
+            Ok(())
+        }
+    }
+
+    async fn handle_structured_response(
+        &self,
+        execution_context: &ExecutionContext,
+        data: &AgentResponse,
+        _content: &str,
+        last_parsed_length: &mut usize,
+        has_written: &mut bool,
+        message: &str,
+    ) -> Result<(), OxyError> {
+        let (parsed_content, mut output) = match &data.data {
+            AgentResponseData::Table { file_path } => {
+                (file_path.clone(), Output::table(message.to_string()))
+            }
+            AgentResponseData::Text { text } => {
+                (text.clone(), Output::Text(message.to_string()))
+            }
+            AgentResponseData::SQL { sql } => {
+                (sql.clone(), Output::sql(message.to_string()))
+            }
+        };
+        if *last_parsed_length != parsed_content.len()
+            && variant_eq(&Output::Text("".to_string()), &output)
+        {
+            if !*has_written {
+                execution_context
+                    .write_kind(EventKind::Message {
+                        message: "\nOutput:".primary().to_string(),
+                    })
+                    .await?;
+            }
+
+            *has_written = true;
+            let chunk = if parsed_content.len() > *last_parsed_length {
+                &parsed_content[*last_parsed_length..]
+            } else {
+                ""
+            };
+            output.replace(chunk.to_string());
+            *last_parsed_length = parsed_content.len();
+            execution_context
+                .write_chunk(Chunk {
+                    key: Some(AGENT_SOURCE_CONTENT.to_string()),
+                    delta: output,
+                    finished: false,
+                })
+                .await?;
+        }
+        Ok(())
+    }
+
+    async fn handle_plain_text_response(
+        &self,
+        execution_context: &ExecutionContext,
+        content: &str,
+        last_parsed_length: &mut usize,
+        has_written: &mut bool,
+    ) -> Result<(), OxyError> {
+        if !*has_written {
+            execution_context
+                .write_kind(EventKind::Message {
+                    message: "\nOutput:".primary().to_string(),
+                })
+                .await?;
+            *has_written = true;
+        }
+        
+        // Stream the content as plain text
+        if content.len() > *last_parsed_length {
+            let new_chunk = &content[*last_parsed_length..];
+            execution_context
+                .write_chunk(Chunk {
+                    key: Some(AGENT_SOURCE_CONTENT.to_string()),
+                    delta: Output::Text(new_chunk.to_string()),
+                    finished: false,
+                })
+                .await?;
+            *last_parsed_length = content.len();
+        }
+        Ok(())
+    }
+
+    fn finalize_response(&self, content: &str) -> AgentResponse {
+        if content.is_empty() {
+            AgentResponse::default()
+        } else {
+            // Try to parse as structured JSON first, fallback to plain text
+            match serde_json::from_str::<AgentResponse>(&content) {
+                Ok(structured_response) => structured_response,
+                Err(_) => {
+                    // If JSON parsing fails, treat as plain text response
+                    tracing::debug!("Response is not structured JSON, treating as plain text");
+                    AgentResponse {
+                        data: AgentResponseData::Text { text: content.to_string() }
+                    }
+                }
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -217,7 +337,7 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
             while let Some(response) =
                 response.next().await.transpose().map_err(|err| {
                     tracing::error!("Stream processing error: {err}");
-                    if let OpenAIError::StreamError(_) = err {
+                    if matches!(err, OpenAIError::StreamError(_)) {
                         tracing::debug!("Transient stream error, will retry");
                         backoff::Error::<OxyError>::transient(err.into())
                     } else {
@@ -244,93 +364,18 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
                         self.parse_tool_call_chunks(&mut tool_calls, chunk.index, tool_call_chunks);
                     }
                     if let Some(message) = &chunk.delta.content {
-                        content.push_str(message);
-                        // Only try to parse as structured JSON if we don't have tool calls
-                        // When tools are present, content is usually plain text
-                        if tool_calls.is_empty() && let Ok(data) = from_json_str::<AgentResponse>(&content) {
-                            // Structured JSON response
-                            let (parsed_content, mut output) = match data.data {
-                                AgentResponseData::Table { file_path } => {
-                                    (file_path, Output::table(message.to_string()))
-                                }
-                                AgentResponseData::Text { text } => {
-                                    (text, Output::Text(message.to_string()))
-                                }
-                                AgentResponseData::SQL { sql } => {
-                                    (sql, Output::sql(message.to_string()))
-                                }
-                            };
-                            if last_parsed_length != parsed_content.len()
-                                && variant_eq(&Output::Text("".to_string()), &output)
-                            {
-                                if !has_written {
-                                    execution_context
-                                        .write_kind(EventKind::Message {
-                                            message: "\nOutput:".primary().to_string(),
-                                        })
-                                        .await?;
-                                }
-
-                                has_written = true;
-                                let chunk = if parsed_content.len() > last_parsed_length {
-                                    &parsed_content[last_parsed_length..]
-                                } else {
-                                    ""
-                                };
-                                output.replace(chunk.to_string());
-                                last_parsed_length = parsed_content.len();
-                                execution_context
-                                    .write_chunk(Chunk {
-                                        key: Some(AGENT_SOURCE_CONTENT.to_string()),
-                                        delta: output,
-                                        finished: false,
-                                    })
-                                    .await?;
-                            }
-                        } else if !content.is_empty() {
-                            // Handle plain text response (non-JSON)
-                            if !has_written {
-                                execution_context
-                                    .write_kind(EventKind::Message {
-                                        message: "\nOutput:".primary().to_string(),
-                                    })
-                                    .await?;
-                                has_written = true;
-                            }
-                            
-                            // Stream the content as plain text
-                            if content.len() > last_parsed_length {
-                                let new_chunk = &content[last_parsed_length..];
-                                execution_context
-                                    .write_chunk(Chunk {
-                                        key: Some(AGENT_SOURCE_CONTENT.to_string()),
-                                        delta: Output::Text(new_chunk.to_string()),
-                                        finished: false,
-                                    })
-                                    .await?;
-                                last_parsed_length = content.len();
-                            }
-                        }
+                        self.process_content_chunk(
+                            execution_context,
+                            &mut content,
+                            &tool_calls,
+                            &mut last_parsed_length,
+                            &mut has_written,
+                            message,
+                        ).await?;
                     }
                 }
             }
-            let parsed_content = {
-                if content.is_empty() {
-                    AgentResponse::default()
-                } else {
-                    // Try to parse as structured JSON first, fallback to plain text
-                    match serde_json::from_str::<AgentResponse>(&content) {
-                        Ok(structured_response) => structured_response,
-                        Err(_) => {
-                            // If JSON parsing fails, treat as plain text response
-                            tracing::debug!("Response is not structured JSON, treating as plain text");
-                            AgentResponse {
-                                data: AgentResponseData::Text { text: content.clone() }
-                            }
-                        }
-                    }
-                }
-            };
+            let parsed_content = self.finalize_response(&content);
             tracing::info!(
                 "Agent response: {:?},\nTool Calls: {:?}",
                 content,
