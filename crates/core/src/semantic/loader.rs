@@ -319,8 +319,9 @@ impl GetSchemaQuery for Database {
                 })
                 .collect::<Result<Vec<_>, OxyError>>(),
             DatabaseType::Snowflake(_) => {
-                // Snowflake doesn't support DDL queries via INFORMATION_SCHEMA.TABLES
-                // Return empty result instead of generating unsupported queries
+                // Snowflake's GET_DDL function requires constant arguments and cannot be used
+                // in bulk queries with dynamic table names. DDL information is not critical
+                // for semantic model generation, so we skip it for Snowflake.
                 Ok(vec![])
             },
 

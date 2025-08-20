@@ -134,7 +134,12 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
         execution_context: &ExecutionContext,
         input: Vec<ChatCompletionRequestMessage>,
     ) -> Result<Self::Response, OxyError> {
-        tracing::debug!("Executing OpenAI executable with input: {:?}", input);
+        tracing::info!("🚀 Starting OpenAI agent execution");
+        tracing::info!("🔧 Model: {}", self.model);
+        tracing::info!("🛠️  Tools: {} configured", self.tool_configs.len());
+        tracing::info!("💬 Input messages: {} messages", input.len());
+        tracing::debug!("📥 Input message details: {:?}", input);
+        
         let chat = self.client.chat();
         let mut request_builder = CreateChatCompletionRequestArgs::default();
         let schema = json!(schema_for!(AgentResponse));
@@ -171,34 +176,89 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
         }
 
         let func = || async {
+            tracing::info!("🔨 Building OpenAI completion request...");
             let request = request_builder
                 .build()
                 .map_err(|err| {
+                    tracing::error!("❌ Failed to build completion request: {err:?}");
                     OxyError::RuntimeError(format!("Error in building completion request: {err:?}"))
                 })
                 .map_err(backoff::Error::Permanent)?;
-            tracing::debug!("OpenAI request: {:?}", request);
+            
+            tracing::info!("✅ Request built successfully");
+            tracing::debug!("📋 OpenAI request details: {:?}", request);
+            tracing::info!("🌐 Making API call to OpenAI...");
+            
             let mut response = chat
                 .create_stream(request)
                 .await
                 .map_err(|err| {
+                    println!("🚨 OPENAI ERROR DETAILS:");
+                    println!("❌ OpenAI API call failed: {err:?}");
+                    eprintln!("🚨 OPENAI ERROR DETAILS:");
+                    eprintln!("❌ OpenAI API call failed: {err:?}");
+                    
+                    match &err {
+                        OpenAIError::ApiError(api_err) => {
+                            println!("🔴 API Error Details:");
+                            println!("   Code: {:?}", api_err.code);
+                            println!("   Message: {:?}", api_err.message);
+                            println!("   Type: {:?}", api_err.r#type);
+                            eprintln!("🔴 API Error Details:");
+                            eprintln!("   Code: {:?}", api_err.code);
+                            eprintln!("   Message: {:?}", api_err.message);
+                            eprintln!("   Type: {:?}", api_err.r#type);
+                            
+                            tracing::error!("🔴 API Error Details - Code: {:?}, Message: {:?}, Type: {:?}", 
+                                api_err.code, api_err.message, api_err.r#type);
+                        },
+                        OpenAIError::StreamError(stream_err) => {
+                            println!("📡 Stream Error: {stream_err:?}");
+                            eprintln!("📡 Stream Error: {stream_err:?}");
+                            tracing::error!("📡 Stream Error: {stream_err:?}");
+                        },
+                        _ => {
+                            println!("🔴 Other OpenAI Error: {err:?}");
+                            eprintln!("🔴 Other OpenAI Error: {err:?}");
+                            tracing::error!("🔴 Other OpenAI Error: {err:?}");
+                        }
+                    }
+                    
+                    tracing::error!("❌ OpenAI API call failed: {err:?}");
                     OxyError::RuntimeError(format!("Error in completion request: {err:?}"))
                 })
                 .map_err(backoff::Error::Permanent)?;
+            
+            tracing::info!("✅ API call successful, processing stream...");
             let mut content = String::new();
             let mut tool_calls = HashMap::<(u32, u32), ChatCompletionMessageToolCall>::new();
             let mut last_parsed_content = String::new();
             let mut has_written = false;
 
+            tracing::debug!("📡 Starting to process response stream chunks...");
+            let mut chunk_count = 0;
+            
             while let Some(response) =
-                response.next().await.transpose().map_err(|err| match err {
-                    OpenAIError::StreamError(_) => {
-                        backoff::Error::<OxyError>::transient(err.into())
+                response.next().await.transpose().map_err(|err| {
+                    tracing::error!("❌ Stream processing error: {err:?}");
+                    match err {
+                        OpenAIError::StreamError(_) => {
+                            tracing::warn!("⚠️  Transient stream error, will retry");
+                            backoff::Error::<OxyError>::transient(err.into())
+                        }
+                        _ => {
+                            tracing::error!("🔴 Permanent stream error, not retrying");
+                            backoff::Error::<OxyError>::Permanent(err.into())
+                        }
                     }
-                    _ => backoff::Error::<OxyError>::Permanent(err.into()),
                 })?
             {
+                chunk_count += 1;
+                tracing::trace!("📦 Processing chunk #{}: {:?}", chunk_count, response);
+                
                 if let Some(usage_data) = response.usage {
+                    tracing::debug!("📊 Usage data - Prompt tokens: {}, Completion tokens: {}", 
+                        usage_data.prompt_tokens, usage_data.completion_tokens);
                     execution_context
                         .write_usage(Usage::new(
                             usage_data.prompt_tokens,
@@ -253,7 +313,7 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
                     }
                 }
             }
-            let content = {
+            let parsed_content = {
                 if content.is_empty() {
                     AgentResponse::default()
                 } else {
@@ -271,11 +331,11 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
             );
 
             let delta: Output = if has_written {
-                let mut output = Into::<Output>::into(content.data.clone());
+                let mut output = Into::<Output>::into(parsed_content.data.clone());
                 output.replace("".to_string());
                 output
             } else {
-                content.data.clone().into()
+                parsed_content.data.clone().into()
             };
             execution_context
                 .write_chunk(Chunk {
@@ -285,16 +345,45 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
                 })
                 .await?;
 
+            tracing::info!("✅ Stream processing completed successfully");
+            tracing::info!("📝 Total raw content length: {}", content.len());
+            tracing::info!("🔧 Tool calls generated: {}", tool_calls.len());
+            tracing::debug!("📦 Total chunks processed: {}", chunk_count);
+
             Ok(OpenAIExecutableResponse {
-                content: content.into(),
+                content: parsed_content.into(),
                 tool_calls: tool_calls.into_values().collect(),
             })
         };
         let func_with_log = async || {
             let result = func().await;
             match result {
-                Ok(rs) => Ok(rs),
+                Ok(rs) => {
+                    tracing::info!("🎉 OpenAI execution completed successfully");
+                    Ok(rs)
+                },
                 Err(err) => {
+                    println!("🚨 RETRY ERROR DETAILS:");
+                    println!("💥 OpenAI execution failed: {err:?}");
+                    eprintln!("🚨 RETRY ERROR DETAILS:");
+                    eprintln!("💥 OpenAI execution failed: {err:?}");
+                    
+                    tracing::error!("💥 OpenAI execution failed: {err:?}");
+                    // Add more specific error context
+                    let error_msg = match &err {
+                        backoff::Error::Permanent(perm_err) => {
+                            println!("🔴 Permanent error (will not retry): {perm_err}");
+                            eprintln!("🔴 Permanent error (will not retry): {perm_err}");
+                            format!("🔴 Permanent error (will not retry): {perm_err}")
+                        },
+                        backoff::Error::Transient { err: trans_err, retry_after: _ } => {
+                            println!("⚠️  Transient error (retrying): {trans_err}");
+                            eprintln!("⚠️  Transient error (retrying): {trans_err}");
+                            format!("⚠️  Transient error (retrying): {trans_err}")
+                        }
+                    };
+                    tracing::error!("{}", error_msg);
+                    
                     execution_context
                         .write_kind(EventKind::Error {
                             message: "🔴 Error while calling LLM model. Retrying..."
@@ -313,10 +402,26 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
                 .with_max_elapsed_time(Some(AGENT_RETRY_MAX_ELAPSED_TIME))
                 .build(),
             func_with_log,
-            |err, b| {
+            |err, backoff_duration| {
                 attempt += 1;
-                tracing::error!("Error happened at {:?} in OpenAI executable: {:?}", b, err);
-                tracing::warn!("Retrying({})...", attempt);
+                println!("🔄 RETRY #{} - Error occurred after {:?} elapsed", attempt, backoff_duration);
+                println!("🔍 Error details: {:?}", err);
+                println!("⏳ Waiting {:?} before retry #{}", backoff_duration, attempt);
+                
+                eprintln!("🔄 RETRY #{} - Error occurred after {:?} elapsed", attempt, backoff_duration);
+                eprintln!("🔍 Error details: {:?}", err);
+                eprintln!("⏳ Waiting {:?} before retry #{}", backoff_duration, attempt);
+                
+                tracing::error!("🔄 Retry #{} - Error occurred after {:?} elapsed", attempt, backoff_duration);
+                tracing::error!("🔍 Error details: {:?}", err);
+                tracing::warn!("⏳ Waiting {:?} before retry #{}", backoff_duration, attempt);
+                
+                // Log specific error types for better debugging
+                if let OxyError::RuntimeError(runtime_msg) = &err {
+                    println!("🔧 Runtime error context: {}", runtime_msg);
+                    eprintln!("🔧 Runtime error context: {}", runtime_msg);
+                    tracing::error!("🔧 Runtime error context: {}", runtime_msg);
+                }
             },
         )
         .await;
@@ -324,6 +429,15 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
         // Clear tools if we are in synthesize mode
         if self.synthesize_mode {
             self.clear_tools();
+        }
+
+        match &response {
+            Ok(_) => {
+                tracing::info!("🏁 OpenAI agent execution completed successfully after {} attempts", attempt.max(1));
+            },
+            Err(err) => {
+                tracing::error!("❌ OpenAI agent execution failed permanently after {} attempts: {:?}", attempt, err);
+            }
         }
 
         response
