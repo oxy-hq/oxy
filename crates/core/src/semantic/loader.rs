@@ -246,6 +246,41 @@ impl GetSchemaQuery for Database {
                     Ok(query)
                 })
                 .collect::<Result<Vec<_>, OxyError>>(),
+            DatabaseType::Snowflake(_) => self
+                .datasets()
+                .iter()
+                .map(|(dataset, tables)| {
+                    let tables_filter = if tables.is_empty() {
+                        String::new()
+                    } else {
+                        let table_conditions = tables
+                            .iter()
+                            .map(|v| {
+                                if v.contains("*") {
+                                    format!("c.table_name LIKE '{}'", v.replace("*", "%"))
+                                } else {
+                                    format!("c.table_name = '{v}'")
+                                }
+                            })
+                            .join(" OR ");
+                        format!(" AND ({table_conditions})")
+                    };
+
+                    let query = format!(
+                        "SELECT c.TABLE_SCHEMA as table_schema, 
+                                c.TABLE_NAME as table_name, 
+                                c.COLUMN_NAME as column_name, 
+                                c.DATA_TYPE as data_type,
+                                CASE WHEN c.IS_IDENTITY = 'YES' THEN TRUE ELSE FALSE END as is_partitioning_column,
+                                c.COMMENT as description
+                         FROM INFORMATION_SCHEMA.COLUMNS c
+                         WHERE c.TABLE_SCHEMA = '{dataset}'{tables_filter}
+                         ORDER BY c.TABLE_NAME, c.ORDINAL_POSITION"
+                    );
+                    tracing::info!("🔍 Snowflake schema query for dataset '{}': {}", dataset, query);
+                    Ok(query)
+                })
+                .collect::<Result<Vec<_>, OxyError>>(),
 
             _ => Err(OxyError::ConfigurationError(
                 "Unsupported database type".to_string(),
@@ -283,6 +318,11 @@ impl GetSchemaQuery for Database {
                     Ok(query)
                 })
                 .collect::<Result<Vec<_>, OxyError>>(),
+            DatabaseType::Snowflake(_) => {
+                // Snowflake doesn't support DDL queries via INFORMATION_SCHEMA.TABLES
+                // Return empty result instead of generating unsupported queries
+                Ok(vec![])
+            },
 
             _ => Err(OxyError::ConfigurationError(
                 "Unsupported database type".to_string(),
@@ -296,16 +336,22 @@ async fn fetch_schema_models<T: for<'de> Deserialize<'de>>(
     connector: &Arc<Connector>,
 ) -> Result<Vec<T>, OxyError> {
     let datasets = async_stream::stream! {
-        for query in queries {
+        for (query_idx, query) in queries.into_iter().enumerate() {
             yield async move {
-                let (record_batches, _) = connector.run_query_with_limit(&query, None).await?;
+                tracing::info!("🚀 Executing query #{}: {}", query_idx + 1, query);
+                let (record_batches, schema) = connector.run_query_with_limit(&query, None).await?;
+                tracing::info!("✅ Query #{} completed. Schema: {:?}", query_idx + 1, schema);
+                
                 let mut results = vec![];
-                for record_batch in record_batches {
-                    let records: Vec<T> = from_record_batch(&record_batch).map_err(|e| {
+                for (batch_idx, record_batch) in record_batches.iter().enumerate() {
+                    tracing::info!("📊 Processing batch #{}: {} rows", batch_idx + 1, record_batch.num_rows());
+                    let records: Vec<T> = from_record_batch(record_batch).map_err(|e| {
                         OxyError::RuntimeError(format!("Failed to parse schema information: {e}"))
                     })?;
+                    tracing::info!("🔄 Parsed {} records from batch #{}", records.len(), batch_idx + 1);
                     results.extend(records);
                 }
+                tracing::info!("📈 Total records from query #{}: {}", query_idx + 1, results.len());
                 Ok::<_, OxyError>(results)
             };
         }
@@ -328,23 +374,24 @@ pub struct SchemaLoader {
 
 #[derive(Debug, Deserialize)]
 pub(super) struct SchemaRecord {
-    #[serde(alias = "table_schema", alias = "database")]
+    #[serde(alias = "table_schema", alias = "database", alias = "TABLE_SCHEMA")]
     dataset: String,
-    #[serde(alias = "table")]
+    #[serde(alias = "table", alias = "TABLE_NAME")]
     table_name: String,
-    #[serde(alias = "name")]
+    #[serde(alias = "name", alias = "COLUMN_NAME")]
     column_name: String,
-    #[serde(alias = "type")]
+    #[serde(alias = "type", alias = "DATA_TYPE")]
     data_type: String,
-    #[serde(alias = "is_in_partition_key", deserialize_with = "deserialize_bool")]
+    #[serde(alias = "is_in_partition_key", alias = "IS_PARTITIONING_COLUMN", deserialize_with = "deserialize_bool")]
     is_partitioning_column: bool,
-    #[serde(alias = "column_comment", alias = "comment")]
+    #[serde(alias = "column_comment", alias = "comment", alias = "DESCRIPTION")]
     description: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 enum IsPartitionTypes {
+    Bool(bool),
     U8(u8),
     Utf8(String),
 }
@@ -355,6 +402,7 @@ where
 {
     let value = IsPartitionTypes::deserialize(deserializer)?;
     match value {
+        IsPartitionTypes::Bool(value) => Ok(value),
         IsPartitionTypes::U8(value) => Ok(value > 0),
         IsPartitionTypes::Utf8(value) => match value.to_lowercase().as_str() {
             "yes" => Ok(true),
@@ -368,7 +416,7 @@ where
 
 #[derive(Debug, Deserialize)]
 pub(super) struct DDLRecord {
-    #[serde(alias = "table_schema", alias = "database")]
+    #[serde(alias = "table_schema", alias = "database", alias = "TABLE_SCHEMA")]
     dataset: String,
     #[serde(alias = "create_table_query")]
     ddl: String,
@@ -434,18 +482,46 @@ impl SchemaLoader {
                 }
                 Ok(result)
             }
-            DatabaseType::ClickHouse(_) | DatabaseType::Bigquery(_) => {
+            DatabaseType::ClickHouse(_) | DatabaseType::Bigquery(_) | DatabaseType::Snowflake(_) => {
+                let db_type = match &self.database.database_type {
+                    DatabaseType::ClickHouse(_) => "ClickHouse",
+                    DatabaseType::Bigquery(_) => "BigQuery", 
+                    DatabaseType::Snowflake(_) => "Snowflake",
+                    _ => "Unknown"
+                };
+                tracing::info!("🏗️  Starting schema load for {} database: {}", db_type, self.database.name);
+                eprintln!("🎯 DEBUG: Starting schema load for {} database: {}", db_type, self.database.name);
+                
                 let queries = self.database.get_schemas_queries()?;
+                tracing::info!("📝 Generated {} schema queries for {}", queries.len(), db_type);
+                eprintln!("🎯 DEBUG: Generated {} schema queries", queries.len());
+                for (i, query) in queries.iter().enumerate() {
+                    eprintln!("🎯 DEBUG: Query {}: {}", i + 1, query);
+                }
+                
                 let records: Vec<SchemaRecord> =
                     fetch_schema_models(queries, &self.connector).await?;
+                tracing::info!("📋 Retrieved {} schema records from {}", records.len(), db_type);
+                eprintln!("🎯 DEBUG: Retrieved {} schema records", records.len());
                 let datasets = records.into_iter().fold(HashMap::new(), |mut acc, record| {
                     let model: &mut HashMap<String, SemanticModels> =
                         acc.entry(record.dataset.clone()).or_default();
+                    let table_name = match &self.database.database_type {
+                        DatabaseType::Snowflake(sf) => {
+                            // For Snowflake, use database.schema.table format
+                            format!("{}.{}.{}", sf.database, record.dataset, record.table_name)
+                        },
+                        _ => {
+                            // For other databases, use schema.table format
+                            format!("{}.{}", record.dataset, record.table_name)
+                        }
+                    };
+                    
                     let entry: &mut SemanticModels = model
                         .entry(record.table_name.clone())
                         .or_insert(SemanticModels {
                             database: self.database.name.to_string(),
-                            table: format!("{}.{}", record.dataset, record.table_name),
+                            table: table_name,
                             description: Default::default(),
                             dimensions: vec![],
                             entities: vec![],
@@ -465,6 +541,23 @@ impl SchemaLoader {
                     });
                     acc
                 });
+                
+                let total_tables = datasets.values().map(|tables| tables.len()).sum::<usize>();
+                let total_dimensions = datasets.values()
+                    .flat_map(|tables| tables.values())
+                    .map(|table| table.dimensions.len())
+                    .sum::<usize>();
+                
+                tracing::info!("🎯 Final results for {} database '{}': {} datasets, {} tables, {} dimensions", 
+                    db_type, self.database.name, datasets.len(), total_tables, total_dimensions);
+                
+                for (dataset_name, tables) in &datasets {
+                    tracing::info!("  📁 Dataset '{}': {} tables", dataset_name, tables.len());
+                    for (table_name, table) in tables {
+                        tracing::info!("    📊 Table '{}': {} dimensions", table_name, table.dimensions.len());
+                    }
+                }
+                
                 Ok(datasets)
             }
             _ => Err(OxyError::ConfigurationError(
@@ -556,7 +649,7 @@ impl SchemaLoader {
                 }
                 Ok(ddls)
             }
-            DatabaseType::ClickHouse(_) | DatabaseType::Bigquery(_) => {
+            DatabaseType::ClickHouse(_) | DatabaseType::Bigquery(_) | DatabaseType::Snowflake(_) => {
                 let queries = self.database.get_ddl_queries()?;
                 let records: Vec<DDLRecord> = fetch_schema_models(queries, &self.connector).await?;
                 let datasets = records.into_iter().fold(HashMap::new(), |mut acc, record| {

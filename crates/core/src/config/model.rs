@@ -16,7 +16,7 @@ use utoipa::ToSchema;
 pub use variables::Variables;
 
 use super::validate::{AgentValidationContext, validate_model, validate_task};
-use crate::config::validate::{validate_file_path, validate_optional_file_path};
+use crate::config::validate::{validate_file_path, validate_optional_private_key_path};
 use crate::config::validate::{
     ValidationContext, validate_agent_exists, validate_database_exists, validate_env_var,
     validate_task_data_reference,
@@ -482,30 +482,58 @@ pub struct Snowflake {
     #[garde(skip)]
     pub password: Option<String>,
     #[garde(skip)]
-    pub password_var: String,
+    pub password_var: Option<String>,
     #[garde(skip)]
     pub warehouse: String,
     #[garde(skip)]
     pub database: String,
     #[garde(skip)]
     pub role: Option<String>,
-    #[garde(custom(validate_optional_file_path))]
+    #[garde(custom(validate_optional_private_key_path))]
     #[serde(default)]
     pub private_key_path: Option<PathBuf>,
+    #[garde(skip)]
+    #[serde(default)]
+    pub datasets: HashMap<String, Vec<String>>,
 }
 
 impl Snowflake {
+    /// Validates that the Snowflake configuration has proper authentication configured
+    pub fn validate_auth(&self) -> Result<(), OxyError> {
+        let has_private_key = self.private_key_path.is_some();
+        let has_password_var = self.password_var.is_some();
+        let has_password = self.password.as_ref().map_or(false, |p| !p.is_empty());
+        
+        if !has_private_key && !has_password_var && !has_password {
+            return Err(OxyError::ConfigurationError(
+                "Snowflake configuration must have either 'private_key_path' or 'password_var' (or 'password') configured".to_string()
+            ));
+        }
+        
+        Ok(())
+    }
+    
     pub async fn get_password(&self) -> Result<String, OxyError> {
+        // First validate that we have proper auth configuration
+        self.validate_auth()?;
+        
         if let Some(password) = &self.password {
             if !password.is_empty() {
                 return Ok(password.clone());
             }
         }
-        let secret_resolver = SecretResolverService::new();
-        let value = secret_resolver.resolve_secret(&self.password_var).await?;
-        match value {
-            Some(res) => Ok(res.value),
-            None => Err(OxyError::SecretNotFound(Some(self.password_var.clone()))),
+        
+        if let Some(password_var) = &self.password_var {
+            let secret_resolver = SecretResolverService::new();
+            let value = secret_resolver.resolve_secret(password_var).await?;
+            match value {
+                Some(res) => Ok(res.value),
+                None => Err(OxyError::SecretNotFound(Some(password_var.clone()))),
+            }
+        } else {
+            Err(OxyError::ConfigurationError(
+                "No password or password_var configured for Snowflake".to_string()
+            ))
         }
     }
 }
@@ -583,6 +611,10 @@ impl Database {
             DatabaseType::ClickHouse(ch) => match ch.schemas.is_empty() {
                 true => HashMap::from_iter([(String::new(), vec!["*".to_string()])]),
                 false => ch.schemas.clone(),
+            },
+            DatabaseType::Snowflake(sf) => match sf.datasets.is_empty() {
+                true => HashMap::from_iter([("CORE".to_string(), vec!["*".to_string()])]),  // Default to CORE schema
+                false => sf.datasets.clone(),
             },
             _ => Default::default(),
         }

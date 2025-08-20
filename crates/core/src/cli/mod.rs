@@ -765,8 +765,10 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                 .clone()
                 .map(|db| (db, sync_args.datasets.clone()));
             debug!(sync_args = ?sync_args, "Syncing");
+            tracing::info!("🎯 CLI: Starting sync with filter: {:?}", filter);
             println!("🔄Syncing databases");
             let sync_metrics = sync_databases(config.clone(), filter, sync_args.overwrite).await?;
+            tracing::info!("🎯 CLI: Sync completed with {} results", sync_metrics.len());
             println!(
                 "✅Sync finished:\n\n{}",
                 sync_metrics
