@@ -608,13 +608,15 @@ impl Database {
                     HashMap::from_iter([("`region-us`".to_string(), vec!["*".to_string()])])
                 }
             },
-            DatabaseType::ClickHouse(ch) => match ch.schemas.is_empty() {
-                true => HashMap::from_iter([(String::new(), vec!["*".to_string()])]),
-                false => ch.schemas.clone(),
+            DatabaseType::ClickHouse(ch) => if ch.schemas.is_empty() {
+                HashMap::from_iter([(String::new(), vec!["*".to_string()])])
+            } else {
+                ch.schemas.clone()
             },
-            DatabaseType::Snowflake(sf) => match sf.datasets.is_empty() {
-                true => HashMap::from_iter([("CORE".to_string(), vec!["*".to_string()])]),  // Default to CORE schema
-                false => sf.datasets.clone(),
+            DatabaseType::Snowflake(sf) => if sf.datasets.is_empty() {
+                HashMap::from_iter([("CORE".to_string(), vec!["*".to_string()])])  // Default to CORE schema
+            } else {
+                sf.datasets.clone()
             },
             _ => Default::default(),
         }

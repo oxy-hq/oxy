@@ -183,7 +183,7 @@ impl GetSchemaQueryBuilder {
             (Some(dataset), Some(table)) => format!(" WHERE {dataset} AND {table}"),
             (Some(dataset), None) => format!(" WHERE {dataset}"),
             (None, Some(table)) => format!(" WHERE {table}"),
-            (None, None) => String::new(),
+            (None, None) => String::default(),
         }
     }
 }
@@ -201,7 +201,7 @@ impl GetSchemaQuery for Database {
                 .iter()
                 .map(|(dataset, tables)| {
                     let tables_filter = if tables.is_empty() {
-                        String::new()
+                        String::default()
                     } else {
                         let table_conditions = tables
                             .iter()
@@ -251,7 +251,7 @@ impl GetSchemaQuery for Database {
                 .iter()
                 .map(|(dataset, tables)| {
                     let tables_filter = if tables.is_empty() {
-                        String::new()
+                        String::default()
                     } else {
                         let table_conditions = tables
                             .iter()

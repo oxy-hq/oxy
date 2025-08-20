@@ -208,7 +208,7 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
             tracing::debug!("API call successful, processing stream");
             let mut content = String::new();
             let mut tool_calls = HashMap::<(u32, u32), ChatCompletionMessageToolCall>::new();
-            let mut last_parsed_content = String::new();
+            let mut last_parsed_length = 0;
             let mut has_written = false;
 
             tracing::trace!("Starting to process response stream chunks");
@@ -217,15 +217,12 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
             while let Some(response) =
                 response.next().await.transpose().map_err(|err| {
                     tracing::error!("Stream processing error: {err}");
-                    match err {
-                        OpenAIError::StreamError(_) => {
-                            tracing::debug!("Transient stream error, will retry");
-                            backoff::Error::<OxyError>::transient(err.into())
-                        }
-                        _ => {
-                            tracing::error!("Permanent stream error, not retrying");
-                            backoff::Error::<OxyError>::Permanent(err.into())
-                        }
+                    if let OpenAIError::StreamError(_) = err {
+                        tracing::debug!("Transient stream error, will retry");
+                        backoff::Error::<OxyError>::transient(err.into())
+                    } else {
+                        tracing::error!("Permanent stream error, not retrying");
+                        backoff::Error::<OxyError>::Permanent(err.into())
                     }
                 })?
             {
@@ -263,7 +260,7 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
                                     (sql, Output::sql(message.to_string()))
                                 }
                             };
-                            if last_parsed_content != parsed_content
+                            if last_parsed_length != parsed_content.len()
                                 && variant_eq(&Output::Text("".to_string()), &output)
                             {
                                 if !has_written {
@@ -275,9 +272,13 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
                                 }
 
                                 has_written = true;
-                                let chunk = parsed_content.replace(&last_parsed_content, "");
-                                output.replace(chunk);
-                                last_parsed_content = parsed_content;
+                                let chunk = if parsed_content.len() > last_parsed_length {
+                                    &parsed_content[last_parsed_length..]
+                                } else {
+                                    ""
+                                };
+                                output.replace(chunk.to_string());
+                                last_parsed_length = parsed_content.len();
                                 execution_context
                                     .write_chunk(Chunk {
                                         key: Some(AGENT_SOURCE_CONTENT.to_string()),
@@ -298,8 +299,8 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
                             }
                             
                             // Stream the content as plain text
-                            if content.len() > last_parsed_content.len() {
-                                let new_chunk = &content[last_parsed_content.len()..];
+                            if content.len() > last_parsed_length {
+                                let new_chunk = &content[last_parsed_length..];
                                 execution_context
                                     .write_chunk(Chunk {
                                         key: Some(AGENT_SOURCE_CONTENT.to_string()),
@@ -307,7 +308,7 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
                                         finished: false,
                                     })
                                     .await?;
-                                last_parsed_content = content.clone();
+                                last_parsed_length = content.len();
                             }
                         }
                     }
@@ -376,7 +377,7 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
                         backoff::Error::Permanent(perm_err) => {
                             tracing::error!("Permanent error (will not retry): {perm_err}");
                         },
-                        backoff::Error::Transient { err: trans_err, retry_after: _ } => {
+                        backoff::Error::Transient { err: trans_err, .. } => {
                             tracing::debug!("Transient error (retrying): {trans_err}");
                         }
                     };
