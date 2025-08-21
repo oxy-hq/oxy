@@ -1,15 +1,9 @@
 use async_openai::types::{CreateEmbeddingRequestArgs, EmbeddingInput};
 
 use crate::{
-    adapters::{
-        openai::OpenAIClient,
-        vector_store::types::Embedding,
-    },
+    adapters::{openai::OpenAIClient, vector_store::types::Embedding},
+    config::{constants::RETRIEVAL_EMBEDDINGS_BATCH_SIZE, model::EmbeddingConfig},
     errors::OxyError,
-    config::{
-        model::EmbeddingConfig,
-        constants::RETRIEVAL_EMBEDDINGS_BATCH_SIZE,
-    },
 };
 
 /// Create embeddings for the provided contents in fixed-size batches.
@@ -31,17 +25,15 @@ pub(super) async fn create_embeddings_batched(
             .input(EmbeddingInput::StringArray(chunk.to_vec()))
             .dimensions(embedding_config.n_dims as u32)
             .build()
-            .map_err(|e| OxyError::RuntimeError(format!(
-                "Failed to build embedding request: {e}"
-            )))?;
+            .map_err(|e| {
+                OxyError::RuntimeError(format!("Failed to build embedding request: {e}"))
+            })?;
 
         let embeddings_response = client
             .embeddings()
             .create(embeddings_request)
             .await
-            .map_err(|e| OxyError::RuntimeError(format!(
-                "Failed to create embeddings: {e}"
-            )))?;
+            .map_err(|e| OxyError::RuntimeError(format!("Failed to create embeddings: {e}")))?;
 
         let mut batch_embeddings: Vec<Embedding> = embeddings_response
             .data
@@ -54,5 +46,3 @@ pub(super) async fn create_embeddings_batched(
 
     Ok(all_embeddings)
 }
-
-

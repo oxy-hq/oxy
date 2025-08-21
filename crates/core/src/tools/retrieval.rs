@@ -59,18 +59,20 @@ where
         let output = Output::Documents(
             results
                 .iter()
-                .map(|record| match parse_sql_source_type(&record.retrieval_item.source_type) {
-                    Some(_) => Document {
-                        content: record.retrieval_item.content.clone(),
-                        id: record.retrieval_item.source_identifier.clone(),
-                        kind: record.retrieval_item.source_type.clone(),
+                .map(
+                    |record| match parse_sql_source_type(&record.retrieval_item.source_type) {
+                        Some(_) => Document {
+                            content: record.retrieval_item.content.clone(),
+                            id: record.retrieval_item.source_identifier.clone(),
+                            kind: record.retrieval_item.source_type.clone(),
+                        },
+                        None => Document {
+                            content: record.retrieval_item.content.clone(),
+                            id: record.retrieval_item.source_identifier.clone(),
+                            kind: record.retrieval_item.source_type.clone(),
+                        },
                     },
-                    None => Document {
-                        content: record.retrieval_item.content.clone(),
-                        id: record.retrieval_item.source_identifier.clone(),
-                        kind: record.retrieval_item.source_type.clone(),
-                    },
-                })
+                )
                 .collect(),
         );
         if !results.is_empty() {

@@ -1,19 +1,15 @@
 use arrow::array::RecordBatch;
-use std::{
-    sync::Arc,
-    collections::HashSet,
-};
+use std::{collections::HashSet, sync::Arc};
 
 use crate::{
     adapters::{
         openai::OpenAIClient,
-        vector_store::{types::{RetrievalItem, RetrievalObject, Embedding}},
+        vector_store::types::{Embedding, RetrievalItem, RetrievalObject},
     },
     config::{
         constants::{
-            RETRIEVAL_DEFAULT_INCLUSION_RADIUS,
+            RETRIEVAL_DEFAULT_INCLUSION_RADIUS, RETRIEVAL_EMBEDDINGS_COLUMN,
             RETRIEVAL_EXCLUSION_BUFFER_MULTIPLIER,
-            RETRIEVAL_EMBEDDINGS_COLUMN,
         },
         model::EmbeddingConfig,
     },
@@ -21,10 +17,8 @@ use crate::{
 };
 
 use super::{
-    math::MathUtils,
-    serialization::SerializationUtils,
+    embedding::create_embeddings_batched, math::MathUtils, serialization::SerializationUtils,
     table::TableManager,
-    embedding::create_embeddings_batched,
 };
 
 pub(super) struct IngestionManager {
@@ -46,7 +40,10 @@ impl IngestionManager {
         }
     }
 
-    pub(super) async fn ingest(&self, retrieval_objects: &Vec<RetrievalObject>) -> Result<(), OxyError> {
+    pub(super) async fn ingest(
+        &self,
+        retrieval_objects: &Vec<RetrievalObject>,
+    ) -> Result<(), OxyError> {
         let retrieval_items = self.build_retrieval_items(retrieval_objects).await?;
 
         tracing::info!("Total retrieval items to ingest: {}", retrieval_items.len());
@@ -61,10 +58,7 @@ impl IngestionManager {
         };
 
         self.table_manager
-            .replace_with_batch(
-                batch,
-                RETRIEVAL_EMBEDDINGS_COLUMN,
-            )
+            .replace_with_batch(batch, RETRIEVAL_EMBEDDINGS_COLUMN)
             .await?;
 
         tracing::info!("{} retrieval items ingested.", retrieval_items.len());
@@ -76,9 +70,13 @@ impl IngestionManager {
         retrieval_objects: &Vec<RetrievalObject>,
     ) -> Result<Vec<RetrievalItem>, OxyError> {
         let all_texts_to_embed = self.collect_unique_retrieval_strings(retrieval_objects);
-        let all_embeddings = create_embeddings_batched(&self.client, &self.embedding_config, &all_texts_to_embed).await?;
-        let text_to_embedding: std::collections::HashMap<String, Embedding> =
-            all_texts_to_embed.into_iter().zip(all_embeddings.into_iter()).collect();
+        let all_embeddings =
+            create_embeddings_batched(&self.client, &self.embedding_config, &all_texts_to_embed)
+                .await?;
+        let text_to_embedding: std::collections::HashMap<String, Embedding> = all_texts_to_embed
+            .into_iter()
+            .zip(all_embeddings.into_iter())
+            .collect();
 
         let mut retrieval_items: Vec<RetrievalItem> = Vec::new();
         for obj in retrieval_objects.iter() {
@@ -94,7 +92,10 @@ impl IngestionManager {
             }
 
             for inclusion_text in obj.inclusions.iter() {
-                let embedding = text_to_embedding.get(inclusion_text).cloned().unwrap_or_default();
+                let embedding = text_to_embedding
+                    .get(inclusion_text)
+                    .cloned()
+                    .unwrap_or_default();
                 let radius = if exclusion_embeddings.is_empty() {
                     RETRIEVAL_DEFAULT_INCLUSION_RADIUS
                 } else {
@@ -123,7 +124,10 @@ impl IngestionManager {
         Ok(retrieval_items)
     }
 
-    fn collect_unique_retrieval_strings(&self, retrieval_objects: &Vec<RetrievalObject>) -> Vec<String> {
+    fn collect_unique_retrieval_strings(
+        &self,
+        retrieval_objects: &Vec<RetrievalObject>,
+    ) -> Vec<String> {
         let mut seen: HashSet<&str> = HashSet::new();
         let mut unique_texts: Vec<String> = Vec::new();
 
@@ -138,5 +142,3 @@ impl IngestionManager {
         unique_texts
     }
 }
-
-

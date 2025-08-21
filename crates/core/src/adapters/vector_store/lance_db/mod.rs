@@ -1,5 +1,5 @@
-mod ingestion;
 mod embedding;
+mod ingestion;
 mod math;
 mod schema;
 mod search;
@@ -66,6 +66,9 @@ impl VectorEngine for LanceDB {
     }
 
     async fn cleanup(&self) -> Result<(), OxyError> {
-        self.connection.drop_all_tables().await.map_err(OxyError::LanceDBError)
+        self.connection
+            .drop_all_tables()
+            .await
+            .map_err(OxyError::LanceDBError)
     }
 }

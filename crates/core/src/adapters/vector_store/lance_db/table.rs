@@ -17,11 +17,19 @@ pub(super) struct TableManager {
 
 impl TableManager {
     pub(super) fn new(connection: Connection, table_name: String, n_dims: usize) -> Self {
-        Self { connection, table_name, n_dims }
+        Self {
+            connection,
+            table_name,
+            n_dims,
+        }
     }
 
     pub(super) async fn get_or_create_retrieval_table(&self) -> Result<Table, OxyError> {
-        let table_result = self.connection.open_table(self.table_name.clone()).execute().await;
+        let table_result = self
+            .connection
+            .open_table(self.table_name.clone())
+            .execute()
+            .await;
         let expected_schema = SchemaUtils::create_retrieval_schema(self.n_dims);
 
         let table = match table_result {
@@ -68,13 +76,11 @@ impl TableManager {
 
         if let Some(batch) = batch {
             let schema = batch.schema();
-            let reader = RecordBatchIterator::new(
-                std::iter::once(Ok(batch)),
-                schema,
-            );
+            let reader = RecordBatchIterator::new(std::iter::once(Ok(batch)), schema);
             retrieval_table.add(Box::new(reader)).execute().await?;
 
-            self.ensure_vector_index_and_optimize(&retrieval_table, vector_column).await?;
+            self.ensure_vector_index_and_optimize(&retrieval_table, vector_column)
+                .await?;
         }
 
         Ok(())

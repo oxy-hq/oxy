@@ -56,7 +56,7 @@ impl<T> TopicRef<T> {
 #[async_trait::async_trait]
 impl EventHandler for TopicRef<EventKind> {
     async fn handle_event(&mut self, event: Event) -> Result<(), OxyError> {
-        tracing::info!(?event, "Received event for topic");
+        tracing::debug!(?event, "Received event for topic");
         if let Ok(event_kind) = TryInto::<EventKind>::try_into(event) {
             return self.send_event(event_kind.clone()).await;
         }
