@@ -21,22 +21,26 @@ const OutputLogs: React.FC<OutputLogsProps> = ({
 }) => {
   const parentRef = React.useRef<HTMLDivElement | null>(null);
 
-  const estimateSize = (index: number) => {
-    const log = logs[index];
-    const lineNumbers = (log.content || "")
-      .split("\n\n")
-      .map((line) => line.split("\n").length)
-      .reduce((a, b) => a + b, 0);
-    if (lineNumbers > 1) {
-      return 20 * lineNumbers + 20;
-    }
-    return 33;
-  };
+  const estimateSize = useCallback(
+    (index: number) => {
+      const log = logs[index];
+      const lineNumbers = (log.content || "")
+        .split("\n\n")
+        .map((line) => line.split("\n").length)
+        .reduce((a, b) => a + b, 0);
+      if (lineNumbers > 1) {
+        return 20 * lineNumbers + 20;
+      }
+      return 33;
+    },
+    [logs],
+  );
+  const getScrollElement = useCallback(() => parentRef.current, [parentRef]);
 
   const logsVirtualizer = useVirtualizer({
     count: logs.length,
-    getScrollElement: () => parentRef.current,
-    estimateSize: estimateSize,
+    getScrollElement,
+    estimateSize,
     enabled: true,
   });
 

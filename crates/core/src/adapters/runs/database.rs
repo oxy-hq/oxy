@@ -1,9 +1,12 @@
 use std::collections::HashMap;
 
-use sea_orm::{ActiveValue, QueryOrder, QuerySelect, TransactionTrait, prelude::*};
+use sea_orm::{
+    ActiveValue, QueryOrder, QuerySelect, TransactionError, TransactionTrait, prelude::*,
+};
 
 use crate::{
     adapters::runs::storage::RunsStorage,
+    config::constants::AGENT_RETRY_MAX_ELAPSED_TIME,
     errors::OxyError,
     service::types::{
         block::{Block, Group, GroupId, GroupKind},
@@ -62,65 +65,114 @@ impl RunsStorage for RunsDatabaseStorage {
         source_id: &str,
         root_ref: Option<RootReference>,
     ) -> Result<RunInfo, OxyError> {
-        let source_id = source_id.to_string();
-        self.connection
-            .transaction::<_, RunInfo, DbErr>(|txn| {
-                Box::pin(async move {
-                    // Find run index based on last run for the new run
-                    let max_run_id = entity::runs::Entity::find()
-                        .filter(
-                            entity::runs::Column::SourceId
-                                .eq(&source_id)
-                                .and(entity::runs::Column::RunIndex.is_not_null()),
-                        )
-                        .order_by_desc(entity::runs::Column::RunIndex)
-                        .lock_exclusive()
-                        .one(txn)
-                        .await
-                        .map(|opt| opt.map(|run| run.run_index))?;
-                    let run_index = match max_run_id {
-                        None => Some(1),
-                        Some(index) => index.map(|id| id + 1),
-                    };
-                    // Create a new run with the initial state
-                    let mut run = entity::runs::ActiveModel {
-                        id: ActiveValue::Set(uuid::Uuid::new_v4()),
-                        source_id: ActiveValue::Set(source_id.to_string()),
-                        run_index: ActiveValue::Set(run_index),
-                        metadata: ActiveValue::Set(None), // Start with no metadata
-                        blocks: ActiveValue::Set(None),   // Start with no blocks
-                        error: ActiveValue::Set(None),
-                        created_at: ActiveValue::Set(chrono::Utc::now().into()),
-                        updated_at: ActiveValue::Set(chrono::Utc::now().into()),
-                        ..Default::default()
-                    };
-                    match root_ref {
-                        Some(ref root) => {
-                            run.root_source_id = ActiveValue::Set(Some(root.source_id.clone()));
-                            run.root_run_index = ActiveValue::Set(root.run_index);
-                            run.root_replay_ref = ActiveValue::Set(Some(root.replay_ref.clone()));
+        let new_run_func = async || {
+            let source_id = source_id.to_string();
+            let root_ref = root_ref.clone();
+            self.connection
+                .transaction::<_, RunInfo, DbErr>(|txn| {
+                    Box::pin(async move {
+                        // Find run index based on last run for the new run
+                        let max_run_id = entity::runs::Entity::find()
+                            .filter(
+                                entity::runs::Column::SourceId
+                                    .eq(&source_id)
+                                    .and(entity::runs::Column::RunIndex.is_not_null()),
+                            )
+                            .order_by_desc(entity::runs::Column::RunIndex)
+                            .lock_exclusive()
+                            .one(txn)
+                            .await
+                            .map(|opt| opt.map(|run| run.run_index))?;
+                        let run_index = match max_run_id {
+                            None => Some(1),
+                            Some(index) => index.map(|id| id + 1),
+                        };
+                        // Create a new run with the initial state
+                        let mut run = entity::runs::ActiveModel {
+                            id: ActiveValue::Set(uuid::Uuid::new_v4()),
+                            source_id: ActiveValue::Set(source_id.to_string()),
+                            run_index: ActiveValue::Set(run_index),
+                            metadata: ActiveValue::Set(None), // Start with no metadata
+                            blocks: ActiveValue::Set(None),   // Start with no blocks
+                            error: ActiveValue::Set(None),
+                            created_at: ActiveValue::Set(chrono::Utc::now().into()),
+                            updated_at: ActiveValue::Set(chrono::Utc::now().into()),
+                            ..Default::default()
+                        };
+                        match root_ref {
+                            Some(ref root) => {
+                                run.root_source_id = ActiveValue::Set(Some(root.source_id.clone()));
+                                run.root_run_index = ActiveValue::Set(root.run_index);
+                                run.root_replay_ref =
+                                    ActiveValue::Set(Some(root.replay_ref.clone()));
+                            }
+                            None => {
+                                run.root_source_id = ActiveValue::Set(None);
+                                run.root_run_index = ActiveValue::Set(None);
+                                run.root_replay_ref = ActiveValue::Set(None);
+                            }
                         }
-                        None => {
-                            run.root_source_id = ActiveValue::Set(None);
-                            run.root_run_index = ActiveValue::Set(None);
-                            run.root_replay_ref = ActiveValue::Set(None);
-                        }
-                    }
-                    run.insert(txn).await?;
-                    tracing::info!("New run created successfully for source_id: {}", source_id);
-                    Ok(RunInfo {
-                        metadata: None,
-                        root_ref,
-                        source_id: source_id.to_string(),
-                        run_index,
-                        status: RunStatus::Pending,
-                        created_at: chrono::Utc::now(),
-                        updated_at: chrono::Utc::now(),
+                        run.insert(txn).await?;
+                        tracing::info!("New run created successfully for source_id: {}", source_id);
+                        Ok(RunInfo {
+                            metadata: None,
+                            root_ref,
+                            source_id: source_id.to_string(),
+                            run_index,
+                            status: RunStatus::Pending,
+                            created_at: chrono::Utc::now(),
+                            updated_at: chrono::Utc::now(),
+                        })
                     })
                 })
-            })
-            .await
-            .map_err(|err| OxyError::DBError(format!("Failed to create new run: {err}")))
+                .await
+                .map_err(|err| match err {
+                    TransactionError::Transaction(DbErr::Exec(RuntimeErr::SqlxError(e))) => match e
+                    {
+                        sqlx::Error::Database(db_err) => {
+                            match db_err.code().map(|c| c.to_string()).as_deref() {
+                                Some("517") | Some("5") => {
+                                    backoff::Error::<OxyError>::transient(OxyError::DBError(
+                                        "Database is locked, retrying...".to_string(),
+                                    ))
+                                }
+                                _ => backoff::Error::<OxyError>::permanent(OxyError::DBError(
+                                    format!(
+                                        "Database error({:?}): {}",
+                                        db_err.code(),
+                                        db_err.message()
+                                    ),
+                                )),
+                            }
+                        }
+                        _ => backoff::Error::<OxyError>::permanent(OxyError::DBError(format!(
+                            "SQLx error: {}",
+                            e
+                        ))),
+                    },
+                    _ => backoff::Error::<OxyError>::permanent(OxyError::DBError(format!(
+                        "Failed to create new run: {err}"
+                    ))),
+                })
+        };
+        let mut attempt = 0;
+        let response = backoff::future::retry_notify(
+            backoff::ExponentialBackoffBuilder::default()
+                .with_max_elapsed_time(Some(AGENT_RETRY_MAX_ELAPSED_TIME))
+                .build(),
+            new_run_func,
+            |err, b| {
+                attempt += 1;
+                tracing::error!(
+                    "Error happened at {:?} in RunsManager new run: {:?}",
+                    b,
+                    err
+                );
+                tracing::warn!("Retrying({})...", attempt);
+            },
+        )
+        .await;
+        response
     }
 
     async fn upsert_run(&self, group: Group) -> Result<(), OxyError> {

@@ -27,8 +27,6 @@ use crate::{
     },
 };
 
-pub mod handler;
-
 #[derive(Serialize, ToSchema)]
 pub struct WorkflowInfo {
     pub name: String,

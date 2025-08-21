@@ -3,5 +3,5 @@ mod database;
 mod manager;
 mod storage;
 
-pub use broadcast::{Broadcaster, Mergeable, TopicChannel};
+pub use broadcast::{Broadcaster, Mergeable};
 pub use manager::RunsManager;

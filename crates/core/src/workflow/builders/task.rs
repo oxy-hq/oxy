@@ -136,7 +136,6 @@ impl Executable<TaskInput> for TaskExecutable {
                 attributes: Default::default(),
             })
             .await?;
-        tracing::warn!("Executing task: {}", task.name);
         let execution_context = task_execution_context.with_child_source(
             format!("{}-{}", &task.name, fxhash::hash(&value)),
             (&task.kind()).to_string(),

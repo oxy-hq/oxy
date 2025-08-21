@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 
 import useWorkflow, {
   LoopSequentialTaskConfig,
@@ -22,6 +22,7 @@ type Props = {
   task: TaskConfigWithId;
   taskRun?: TaskRun;
   loopRuns?: TaskRun[];
+  expanded?: boolean;
 };
 
 export function LoopSequentialNode({
@@ -29,36 +30,31 @@ export function LoopSequentialNode({
   task,
   taskRun,
   loopRuns,
+  expanded,
 }: Props) {
-  const layoutedNodes = useWorkflow((state) => state.layoutedNodes);
-  const setNodeVisibility = useWorkflow((state) => state.setNodeVisibility);
   const nodes = useWorkflow((state) => state.nodes);
+  const setNodeExpanded = useWorkflow((state) => state.setNodeExpanded);
   const tasks = (task as LoopSequentialTaskConfig).tasks;
-  const [expanded, setExpanded] = useState(true);
   const expandable = useMemo(() => tasks.length > 0, [tasks]);
   const setSelectedLoopIndex = useBlockStore(
     (state) => state.setSelectedLoopIndex,
   );
   const selectedLoopIndex = useSelectedLoopIndex(task);
-  const parentNode = layoutedNodes.find((n) => n.id === parentId);
+  const parentNode = nodes.find((n) => n.id === parentId);
   const appendixPosition =
     parentNode?.data.task.type === "loop_sequential" ? "left" : "right";
 
-  const node = layoutedNodes.find((n) => n.id === task.id);
+  const node = nodes.find((n) => n.id === task.id);
   const onExpandClick = () => {
-    const children = nodes
-      .filter((n) => n.parentId === task.id)
-      .map((n) => n.id);
-    setNodeVisibility(children, !expanded);
-    setExpanded(!expanded);
+    setNodeExpanded(task.id, !expanded);
   };
-  if (!node) return null;
+  if (!node || !node.height) return null;
   const usedHeight =
     headerHeight +
     distanceBetweenHeaderAndContent +
     paddingHeight +
     nodeBorderHeight;
-  const childSpace = node.size.height - usedHeight;
+  const childSpace = node.height - usedHeight;
   return (
     <>
       {!!taskRun?.loopValue?.length && expanded ? (

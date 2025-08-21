@@ -7,7 +7,7 @@ import { GroupSlice } from "@/stores/slices/group";
 import useWorkflow, { TaskConfigWithId } from "@/stores/useWorkflow";
 import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
 import { PaginationState } from "@tanstack/react-table";
-import { useRef } from "react";
+import { useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 
 const taskRunSelector = (
@@ -206,10 +206,12 @@ export const useWorkflowLogs = (workflowId: string, runId: string) => {
   const groupId = getGroupId(workflowId, runId);
   const groupBlocks = useBlockStore((state) => state.groupBlocks);
   const groups = useBlockStore((state) => state.groups);
-  return logsSelector(groupId)({
-    groupBlocks,
-    groups,
-  });
+  return useMemo(() => {
+    return logsSelector(groupId)({
+      groupBlocks,
+      groups,
+    });
+  }, [groupId, groupBlocks, groups]);
 };
 
 export const useIsProcessing = (workflowId: string, runId: string) => {
@@ -271,7 +273,7 @@ const taskRunIdSelector =
 
 export const useTaskRun = (task: TaskConfigWithId) => {
   const selectedIndexes = useBlockStore((state) => state.selectedIndexes);
-  const layoutedNodes = useWorkflow((state) => state.layoutedNodes);
+  const nodes = useWorkflow((state) => state.nodes);
   const groupBlocks = useBlockStore((state) => state.groupBlocks);
   const groups = useBlockStore((state) => state.groups);
 
@@ -286,9 +288,7 @@ export const useTaskRun = (task: TaskConfigWithId) => {
   // Find the correct runId for nested sub-workflows
   const subWorkflowNodes = [task];
   while (currentLookup.subWorkflowTaskId) {
-    const subWorkflowNode = layoutedNodes.find(
-      (n) => n.id === task.subWorkflowTaskId,
-    );
+    const subWorkflowNode = nodes.find((n) => n.id === task.subWorkflowTaskId);
     if (!subWorkflowNode) {
       break;
     }
@@ -297,7 +297,7 @@ export const useTaskRun = (task: TaskConfigWithId) => {
   }
   const lastNode = subWorkflowNodes.reverse().reduce(
     (acc, task) => {
-      const groupId = getGroupId(task.workflowId, acc.runId || task.runId);
+      const groupId = getGroupId(task.workflowId, acc.scopeRunId || task.runId);
       const taskRunId = taskRunIdSelectorFn(task, groupId);
       const taskRuns = taskRunsSelectorFn(groupId);
       const taskRun = taskRuns.find((run) => run.id === taskRunId);
@@ -314,7 +314,8 @@ export const useTaskRun = (task: TaskConfigWithId) => {
       return {
         taskRun,
         groupId,
-        runId: taskRun?.subWorkflowRunId?.toString() || acc.runId,
+        scopeRunId: taskRun?.subWorkflowRunId?.toString() || acc.scopeRunId,
+        runId: acc.scopeRunId || task.runId,
         taskRunId,
         loopRuns,
       };
@@ -323,12 +324,14 @@ export const useTaskRun = (task: TaskConfigWithId) => {
       taskRun: undefined,
       groupId: "",
       runId: undefined,
+      scopeRunId: undefined,
       taskRunId: "",
       loopRuns: [],
     } as {
       taskRun?: TaskRun;
       groupId: string;
       runId?: string;
+      scopeRunId?: string;
       taskRunId: string;
       loopRuns: TaskRun[];
     },
@@ -336,7 +339,7 @@ export const useTaskRun = (task: TaskConfigWithId) => {
   return {
     taskRun: lastNode.taskRun,
     taskRunId: lastNode.taskRunId,
-    runId: lastNode.runId || task.runId,
+    runId: lastNode.runId,
     loopRuns: lastNode.loopRuns,
   };
 };

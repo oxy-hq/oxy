@@ -9,17 +9,16 @@ import {
   nodeBorderHeight,
   paddingHeight,
 } from "../../layout/constants";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 
 type Props = {
   task: TaskConfigWithId;
+  expanded?: boolean;
 };
 
-export default function ConditionalNode({ task }: Props) {
-  const layoutedNodes = useWorkflow((state) => state.layoutedNodes);
-  const setNodeVisibility = useWorkflow((state) => state.setNodeVisibility);
-  const nodes = useWorkflow((state) => state.nodes);
-  const [expanded, setExpanded] = useState(true);
+export default function ConditionalNode({ task, expanded }: Props) {
+  const layoutedNodes = useWorkflow((state) => state.nodes);
+  const setNodeExpanded = useWorkflow((state) => state.setNodeExpanded);
   const expandable = useMemo(() => {
     const t = task as ConditionalTaskConfigWithId;
     return t.conditions.length > 0 || t.else !== undefined;
@@ -27,19 +26,15 @@ export default function ConditionalNode({ task }: Props) {
 
   const node = layoutedNodes.find((n) => n.id === task.id);
   const onExpandClick = () => {
-    const children = nodes
-      .filter((n) => n.parentId === task.id)
-      .map((n) => n.id);
-    setNodeVisibility(children, !expanded);
-    setExpanded(!expanded);
+    setNodeExpanded(task.id, !expanded);
   };
-  if (!node) return null;
+  if (!node || !node.height) return null;
   const usedHeight =
     headerHeight +
     distanceBetweenHeaderAndContent +
     paddingHeight +
     nodeBorderHeight;
-  const childSpace = node.size.height - usedHeight;
+  const childSpace = node.height - usedHeight;
   return (
     <>
       <NodeHeader

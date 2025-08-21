@@ -43,6 +43,7 @@ export function NodeContent({
         task={task}
         taskRun={taskRun}
         loopRuns={loopRuns}
+        expanded={data.expanded}
       />
     );
   }
@@ -57,11 +58,17 @@ export function NodeContent({
   }
 
   if (task.type === "workflow") {
-    return <WorkflowTaskNode task={task} taskRun={taskRun} />;
+    return (
+      <WorkflowTaskNode
+        task={task}
+        taskRun={taskRun}
+        expanded={data.expanded}
+      />
+    );
   }
 
   if (type === TaskType.CONDITIONAL) {
-    return <ConditionalNode task={task} />;
+    return <ConditionalNode task={task} expanded={data.expanded} />;
   }
   if (type === NoneTaskNodeType.CONDITIONAL_ELSE) {
     return <ConditionalElseNode {...props} />;
