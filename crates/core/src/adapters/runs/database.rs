@@ -146,8 +146,7 @@ impl RunsStorage for RunsDatabaseStorage {
                             }
                         }
                         _ => backoff::Error::<OxyError>::permanent(OxyError::DBError(format!(
-                            "SQLx error: {}",
-                            e
+                            "SQLx error: {e}"
                         ))),
                     },
                     _ => backoff::Error::<OxyError>::permanent(OxyError::DBError(format!(
@@ -156,7 +155,8 @@ impl RunsStorage for RunsDatabaseStorage {
                 })
         };
         let mut attempt = 0;
-        let response = backoff::future::retry_notify(
+
+        backoff::future::retry_notify(
             backoff::ExponentialBackoffBuilder::default()
                 .with_max_elapsed_time(Some(AGENT_RETRY_MAX_ELAPSED_TIME))
                 .build(),
@@ -171,8 +171,7 @@ impl RunsStorage for RunsDatabaseStorage {
                 tracing::warn!("Retrying({})...", attempt);
             },
         )
-        .await;
-        response
+        .await
     }
 
     async fn upsert_run(&self, group: Group) -> Result<(), OxyError> {

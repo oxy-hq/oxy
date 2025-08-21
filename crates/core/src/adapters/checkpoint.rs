@@ -287,7 +287,7 @@ impl TryFrom<PublicRunInfo> for RunInfo {
                 .ok_or(OxyError::RuntimeError("Run index is required".to_string()))?
                 .try_into()
                 .map_err(|e| {
-                    OxyError::RuntimeError(format!("Failed to convert run_index to u32: {}", e))
+                    OxyError::RuntimeError(format!("Failed to convert run_index to u32: {e}"))
                 })?,
             None,
             is_completed,
