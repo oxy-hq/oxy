@@ -1,127 +1,21 @@
-import { LogItem } from "@/services/types";
 import { create } from "zustand";
+import {
+  type Edge,
+  type Node,
+  type OnNodesChange,
+  type OnEdgesChange,
+  applyNodeChanges,
+  applyEdgeChanges,
+} from "@xyflow/react";
+import { buildWorkflowNodes } from "@/components/workflow/WorkflowDiagram/layout/nodeBuilder";
 
 export type NodeData = {
   task: TaskConfigWithId;
   id: string;
   index: number;
   metadata?: Record<string, unknown>;
+  expanded?: boolean;
 };
-
-export type TaskConfigWithId = (
-  | ExecuteSqlTaskConfig
-  | FormatterTaskConfig
-  | AgentTaskConfig
-  | LoopSequentialTaskConfigWithId
-  | WorkflowTaskConfigWithId
-  | ConditionalTaskConfigWithId
-) & {
-  id: string;
-  workflowId: string;
-  runId?: string;
-  subWorkflowTaskId?: string;
-};
-
-export type WorkflowConfigWithPath = Omit<WorkflowConfig, "tasks"> & {
-  path: string;
-  tasks: TaskConfigWithId[];
-};
-
-export type LayoutedNode = {
-  id: string;
-  size: {
-    width: number;
-    height: number;
-  };
-  position: {
-    x: number;
-    y: number;
-  };
-  data: NodeData;
-  parentId?: string;
-  hidden?: boolean;
-};
-
-export type Node = {
-  id: string;
-  parentId?: string;
-  name: string;
-  type: NodeType;
-  hidden: boolean;
-  data: NodeData;
-  width: number;
-  height: number;
-  children: Node[];
-};
-
-export type Edge = {
-  id: string;
-  source: string;
-  target: string;
-  hidden?: boolean;
-};
-
-export type WorkflowConfig = {
-  id: string;
-  name: string;
-  tasks: TaskConfig[];
-  path?: string;
-};
-
-interface WorkflowState {
-  nodes: Node[];
-  edges: Edge[];
-  layoutedNodes: LayoutedNode[];
-  setNodes: (nodes: Node[]) => void;
-  setEdges: (edges: Edge[]) => void;
-  setLayoutedNodes: (layoutedNodes: LayoutedNode[]) => void;
-  setNodeVisibility: (id: string[], visible: boolean) => void;
-  workflow: WorkflowConfigWithPath | null;
-  setWorkflow: (workflow: WorkflowConfigWithPath) => void;
-  logs: LogItem[];
-  setLogs: (logs: LogItem[]) => void;
-  appendLog: (log: LogItem) => void;
-  appendLogs: (logs: LogItem[]) => void;
-}
-
-const useWorkflow = create<WorkflowState>((set) => ({
-  setLogs: (logs) => set({ logs }),
-  appendLog: (log) => set((state) => ({ logs: [...state.logs, log] })),
-  logs: [],
-  nodes: [],
-  workflow: null,
-  setWorkflow: (workflow) => set({ workflow }),
-  edges: [],
-  layoutedNodes: [],
-  setNodes: (nodes: Node[]) => set({ nodes }),
-  setEdges: (edges: Edge[]) => set({ edges }),
-  setLayoutedNodes(layoutedNodes) {
-    set({ layoutedNodes });
-  },
-  setNodeVisibility: (ids: string[], visible: boolean) => {
-    set((state) => {
-      // Create a Set for faster lookup of node IDs
-      const nodeIds = new Set(ids);
-      const newNodes = state.nodes.map((node) => {
-        // Check if the node or its parent is in the Set
-        if (nodeIds.has(node.id) || nodeIds.has(node.parentId!)) {
-          // Add the node's ID to the Set to handle its children
-          nodeIds.add(node.id);
-          // Return a new node object with updated hidden property
-          return { ...node, hidden: !visible };
-        }
-        // Return the node unchanged if it doesn't match the criteria
-        return node;
-      });
-
-      // Return the updated state with the new nodes
-      return { ...state, nodes: newNodes };
-    });
-  },
-  appendLogs: (logs) => {
-    set((state) => ({ logs: [...state.logs, ...logs] }));
-  },
-}));
 
 export enum TaskType {
   EXECUTE_SQL = "execute_sql",
@@ -225,5 +119,82 @@ export type TaskConfig =
   | LoopSequentialTaskConfig
   | ConditionalTaskConfig
   | WorkflowTaskConfig;
+
+export type TaskConfigWithId = (
+  | ExecuteSqlTaskConfig
+  | FormatterTaskConfig
+  | AgentTaskConfig
+  | LoopSequentialTaskConfigWithId
+  | WorkflowTaskConfigWithId
+  | ConditionalTaskConfigWithId
+) & {
+  id: string;
+  workflowId: string;
+  runId?: string;
+  subWorkflowTaskId?: string;
+};
+
+export type WorkflowConfig = {
+  id: string;
+  name: string;
+  tasks: TaskConfig[];
+  path?: string;
+};
+
+export type TaskNode = Node<NodeData, NodeType>;
+
+export type WorkflowState = {
+  baseNodes: TaskNode[];
+  nodes: TaskNode[];
+  edges: Edge[];
+
+  setNodes: (nodes: TaskNode[]) => void;
+  onNodesChange: OnNodesChange<TaskNode>;
+  onEdgesChange: OnEdgesChange;
+
+  initFromTasks: (tasks: TaskConfigWithId[]) => void;
+  setNodeExpanded: (nodeId: string, expanded: boolean) => void;
+};
+
+const useWorkflow = create<WorkflowState>((set, get) => ({
+  baseNodes: [],
+  nodes: [],
+  edges: [],
+
+  setNodes: (nodes: TaskNode[]) => set({ nodes }),
+  onNodesChange: (changes) => {
+    set({
+      nodes: applyNodeChanges(changes, get().nodes),
+    });
+  },
+  onEdgesChange: (changes) => {
+    set({
+      edges: applyEdgeChanges(changes, get().edges),
+    });
+  },
+  initFromTasks: async (tasks: TaskConfigWithId[]) => {
+    const { nodes, edges } = buildWorkflowNodes(tasks);
+    set({
+      baseNodes: nodes,
+      edges,
+    });
+  },
+  setNodeExpanded: async (nodeId: string, expanded: boolean) => {
+    const nodes = get().baseNodes.map((node) => {
+      if (node.id === nodeId) {
+        return {
+          ...node,
+          data: { ...node.data, expanded },
+        };
+      }
+
+      return node;
+    });
+
+    set({
+      baseNodes: nodes,
+    });
+  },
+}));
 
 export default useWorkflow;

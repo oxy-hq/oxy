@@ -5,88 +5,13 @@ import {
   Controls,
   ReactFlow,
 } from "@xyflow/react";
-import useWorkflow, {
-  NodeType,
-  TaskConfig,
-  TaskConfigWithId,
-  TaskType,
-} from "@/stores/useWorkflow";
-import { useWorkflowLayout } from "./layout/useWorkflowLayout";
+import useWorkflow, { NodeType } from "@/stores/useWorkflow";
 import { DiagramNode } from "./DiagramNode";
 import useTheme from "@/stores/useTheme";
-import React, { useEffect } from "react";
+import React from "react";
 import { Skeleton } from "@/components/ui/shadcn/skeleton";
 import { WorkflowConfig } from "@/stores/useWorkflow";
-
-const addTaskId = (
-  workflowId: string,
-  tasks: TaskConfig[],
-  runId?: string,
-  parentId?: string,
-  subWorkflowTaskId?: string,
-): TaskConfigWithId[] => {
-  return tasks.map((task) => {
-    const taskId = parentId ? `${parentId}.${task.name}` : task.name;
-    if (task.type === TaskType.LOOP_SEQUENTIAL) {
-      return {
-        ...task,
-        type: TaskType.LOOP_SEQUENTIAL,
-        tasks: addTaskId(
-          workflowId,
-          task.tasks,
-          runId,
-          taskId,
-          subWorkflowTaskId,
-        ),
-        id: taskId,
-        workflowId,
-        subWorkflowTaskId,
-        runId,
-      };
-    }
-    if (task.type === TaskType.WORKFLOW) {
-      return {
-        ...task,
-        type: TaskType.WORKFLOW,
-        tasks: addTaskId(task.src, task.tasks ?? [], runId, taskId, taskId),
-        id: taskId,
-        workflowId,
-        runId,
-        subWorkflowTaskId,
-      };
-    }
-    if (task.type === TaskType.CONDITIONAL) {
-      return {
-        ...task,
-        conditions: task.conditions.map((c) => ({
-          ...c,
-          tasks: addTaskId(
-            workflowId,
-            c.tasks,
-            runId,
-            taskId,
-            subWorkflowTaskId,
-          ),
-        })),
-        type: TaskType.CONDITIONAL,
-        else: task.else
-          ? addTaskId(workflowId, task.else, runId, taskId)
-          : undefined,
-        id: taskId,
-        workflowId,
-        runId,
-        subWorkflowTaskId,
-      };
-    }
-    return {
-      ...task,
-      id: taskId,
-      workflowId,
-      runId,
-      subWorkflowTaskId,
-    } as TaskConfigWithId;
-  });
-};
+import { useWorkflowLayout } from "./layout/useWorkflowLayout";
 
 const nodeTypes: Record<NodeType, typeof DiagramNode> = {
   execute_sql: DiagramNode,
@@ -100,7 +25,7 @@ const nodeTypes: Record<NodeType, typeof DiagramNode> = {
 } as const;
 
 interface WorkflowDiagramProps {
-  workflowId?: string;
+  workflowId: string;
   runId?: string;
   workflowConfig: WorkflowConfig;
 }
@@ -110,33 +35,17 @@ const WorkflowDiagram: React.FC<WorkflowDiagramProps> = ({
   runId,
   workflowConfig,
 }) => {
-  const workflow = useWorkflow((state) => state.workflow);
-  const setWorkflow = useWorkflow((state) => state.setWorkflow);
-
-  useEffect(() => {
-    if (workflowId && workflowConfig) {
-      const tasks = addTaskId(workflowId, workflowConfig.tasks, runId);
-      const workflow = {
-        ...workflowConfig,
-        tasks,
-        id: workflowId,
-        path: workflowConfig.path ?? "",
-      };
-      setWorkflow(workflow);
-    }
-  }, [workflowId, workflowConfig, setWorkflow, runId]);
-
-  const {
-    reactFlowNodes,
-    reactFlowEdges,
-    fitViewOptions,
-    onNodesChange,
-    onEdgesChange,
-  } = useWorkflowLayout(workflow?.tasks ?? []);
+  const onNodesChange = useWorkflow((state) => state.onNodesChange);
+  const onEdgesChange = useWorkflow((state) => state.onEdgesChange);
+  const { nodes, edges, fitViewOptions } = useWorkflowLayout(
+    workflowId,
+    workflowConfig.tasks,
+    runId,
+  );
 
   const { theme } = useTheme();
 
-  if (workflow === null) {
+  if (nodes.length === 0) {
     return (
       <div className="w-full">
         <div className="flex flex-col gap-10 max-w-[742px] mx-auto py-10">
@@ -160,8 +69,8 @@ const WorkflowDiagram: React.FC<WorkflowDiagramProps> = ({
         proOptions={{ hideAttribution: true }}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
-        nodes={reactFlowNodes}
-        edges={reactFlowEdges}
+        nodes={nodes}
+        edges={edges}
         fitView
         draggable={false}
         nodesDraggable={false}

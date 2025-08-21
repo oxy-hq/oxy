@@ -1,5 +1,5 @@
-import ELK, { ElkNode } from "elkjs";
-import { Node, Edge, LayoutedNode } from "@/stores/useWorkflow";
+import ELK, { ElkExtendedEdge, ElkNode } from "elkjs";
+import { TaskNode as Node } from "@/stores/useWorkflow";
 import {
   contentPadding,
   distanceBetweenHeaderAndContent,
@@ -8,76 +8,72 @@ import {
   nodeBorder,
   nodePadding,
 } from "./constants";
+import { Edge } from "@xyflow/react";
 
 const elk = new ELK();
 
 export const createElkLayout = async (
   nodes: Node[],
   edges: Edge[],
-): Promise<LayoutedNode[]> => {
-  const flatNodes: Node[] = [];
-  const elkGraph = createElkGraph(nodes, edges, flatNodes);
+): Promise<Node[]> => {
+  const elkGraph = createElkGraph(nodes, edges);
   const layout = await elk.layout(elkGraph);
-  return extractLayoutedNodes(layout, flatNodes);
+  return extractLayoutedNodes(layout, nodes);
 };
 
-const createElkGraph = (nodes: Node[], edges: Edge[], flatNodes: Node[]) => {
-  const children = buildElkNodes(
-    nodes.filter((n) => !n.parentId && !n.hidden),
-    nodes,
-    flatNodes,
-  );
-
-  const visibleEdges = edges.filter((edge) => {
-    const source = nodes.find((n) => n.id === edge.source);
-    const target = nodes.find((n) => n.id === edge.target);
-    return source && target && !source.hidden && !target.hidden;
-  });
-
+const createElkGraph = (nodes: Node[], edges: Edge[]) => {
   return {
     id: "root",
     layoutOptions: {
       "elk.algorithm": "layered",
       "elk.direction": "DOWN",
     },
-    children,
-    edges: visibleEdges.map((edge) => ({
-      id: edge.id,
-      sources: [edge.source],
-      targets: [edge.target],
-    })),
+    ...buildElkNodes(
+      nodes.filter((node) => !node.parentId),
+      nodes,
+      edges,
+    ),
   };
 };
 
 const buildElkNodes = (
   nodes: Node[],
   allNodes: Node[],
-  flatNodes: Node[],
-): ElkNode[] => {
-  return nodes.map((node) => {
-    flatNodes.push(node);
-    const childNodes = allNodes.filter(
-      (n) => n.parentId === node.id && !n.hidden,
-    );
-
-    const padding = calculateNodePadding(childNodes.length);
-
-    return {
-      id: node.id,
-      width: node.width,
-      height: node.height,
-      layoutOptions: createLayoutOptions(node, padding),
-      children: buildElkNodes(childNodes, allNodes, flatNodes),
-      parentId: node.parentId,
-    };
-  });
+  allEdges: Edge[],
+): {
+  children: ElkNode[];
+  edges: ElkExtendedEdge[];
+} => {
+  return {
+    children: nodes.map((node) => {
+      const childNodes = node.data.expanded
+        ? allNodes.filter((n) => n.parentId === node.id)
+        : [];
+      const padding = calculateNodePadding(childNodes.length);
+      return {
+        id: node.id,
+        width: node.width,
+        height: node.height,
+        layoutOptions: createLayoutOptions(node, padding),
+        ...buildElkNodes(childNodes, allNodes, allEdges),
+      };
+    }),
+    edges: allEdges
+      .filter((edge) => {
+        const source = nodes.find((n) => n.id === edge.source);
+        const target = nodes.find((n) => n.id === edge.target);
+        return !!source && !!target;
+      })
+      .map((edge) => ({
+        id: edge.id,
+        sources: [edge.source],
+        targets: [edge.target],
+      })),
+  };
 };
 
-const extractLayoutedNodes = (
-  layout: ElkNode,
-  flatNodes: Node[],
-): LayoutedNode[] => {
-  let layoutedNodes: LayoutedNode[] = [];
+const extractLayoutedNodes = (layout: ElkNode, flatNodes: Node[]): Node[] => {
+  let layoutedNodes: Node[] = [];
 
   if (!layout.children) return layoutedNodes;
 
@@ -85,8 +81,12 @@ const extractLayoutedNodes = (
     const originalNode = flatNodes.find((n) => n.id === node.id)!;
     layoutedNodes.push({
       ...originalNode,
-      position: { x: node.x || 0, y: node.y || 0 },
-      size: { width: node.width || 0, height: node.height || 0 },
+      position: {
+        x: node.x || 0,
+        y: node.y || 0,
+      },
+      width: node.width || 0,
+      height: node.height || 0,
     });
     layoutedNodes = layoutedNodes.concat(extractLayoutedNodes(node, flatNodes));
   });

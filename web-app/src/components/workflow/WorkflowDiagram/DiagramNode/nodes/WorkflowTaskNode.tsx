@@ -4,7 +4,7 @@ import useWorkflow, {
 } from "@/stores/useWorkflow";
 import { NodeHeader } from "./NodeHeader";
 import { TaskRun } from "@/services/types";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import {
   distanceBetweenHeaderAndContent,
   headerHeight,
@@ -15,31 +15,26 @@ import {
 type Props = {
   task: TaskConfigWithId;
   taskRun?: TaskRun;
+  expanded?: boolean;
 };
 
-export function WorkflowTaskNode({ task, taskRun }: Props) {
-  const layoutedNodes = useWorkflow((state) => state.layoutedNodes);
-  const setNodeVisibility = useWorkflow((state) => state.setNodeVisibility);
+export function WorkflowTaskNode({ task, taskRun, expanded }: Props) {
   const nodes = useWorkflow((state) => state.nodes);
+  const setNodeExpanded = useWorkflow((state) => state.setNodeExpanded);
   const tasks = (task as WorkflowTaskConfigWithId).tasks;
-  const [expanded, setExpanded] = useState(true);
   const expandable = useMemo(() => !!tasks && tasks.length > 0, [tasks]);
 
-  const node = layoutedNodes.find((n) => n.id === task.id);
+  const node = nodes.find((n) => n.id === task.id);
   const onExpandClick = () => {
-    const children = nodes
-      .filter((n) => n.parentId === task.id)
-      .map((n) => n.id);
-    setNodeVisibility(children, !expanded);
-    setExpanded(!expanded);
+    setNodeExpanded(task.id, !expanded);
   };
-  if (!node) return null;
+  if (!node || !node.height) return null;
   const usedHeight =
     headerHeight +
     distanceBetweenHeaderAndContent +
     paddingHeight +
     nodeBorderHeight;
-  const childSpace = node.size.height - usedHeight;
+  const childSpace = node.height - usedHeight;
 
   return (
     <>

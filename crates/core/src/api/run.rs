@@ -18,7 +18,7 @@ use crate::service::task_manager::TASK_MANAGER;
 use crate::service::types::pagination::{Paginated, Pagination};
 use crate::service::types::run::{RunDetails, RunInfo, RunStatus};
 use crate::service::workflow::run_workflow_v2;
-use crate::utils::{create_sse_stream, file_path_to_source_id};
+use crate::utils::{create_sse_broadcast, file_path_to_source_id};
 use crate::workflow::RetryStrategy;
 
 #[derive(serde::Deserialize, ToSchema)]
@@ -188,7 +188,7 @@ pub async fn create_workflow_run(
     tracing::info!("Creating new run {:?} with {:?}", run_info, replay_id);
 
     let task_id = run_info.task_id()?;
-    let topic_publisher = BROADCASTER.create_topic(&task_id).await.map_err(|err| {
+    let topic_ref = BROADCASTER.create_topic(&task_id).await.map_err(|err| {
         tracing::error!("Failed to create topic for task ID {task_id}: {err}");
         StatusCode::BAD_REQUEST
     })?;
@@ -196,10 +196,9 @@ pub async fn create_workflow_run(
     let topic_id = task_id.clone();
     let callback_fn = async move || -> Result<(), OxyError> {
         // Handle the completion of the run and broadcast events
-        if let Some(topic) = BROADCASTER.remove_topic(&topic_id).await {
-            let (events, _) = topic.finalize();
+        if let Some(closed) = BROADCASTER.remove_topic(&topic_id).await {
             let mut group_handler = GroupBlockHandler::new();
-            for event in events {
+            for event in closed.items {
                 group_handler.handle_event(event).await?;
             }
             let groups = group_handler.collect();
@@ -208,6 +207,7 @@ pub async fn create_workflow_run(
                 tracing::info!("Saving group: {:?}", group.id());
                 runs_manager.upsert_run(group).await?;
             }
+            drop(closed.sender); // Drop the sender to close the channel
         }
         Ok(())
     };
@@ -223,7 +223,7 @@ pub async fn create_workflow_run(
 
                 run_workflow_v2(
                     source_id,
-                    topic_publisher,
+                    topic_ref,
                     RetryStrategy::Retry {
                         replay_id,
                         run_index: converted_run_index,
@@ -356,12 +356,14 @@ pub async fn workflow_events(
     };
     let run_id = run_info.task_id().map_err(|_| StatusCode::BAD_REQUEST)?;
     tracing::info!("Subscribing to events for run ID: {}", run_id);
-    let topic_receiver = BROADCASTER.subscribe(&run_id).await.map_err(|err| {
+    let subscribed = BROADCASTER.subscribe(&run_id).await.map_err(|err| {
         tracing::error!("Failed to subscribe to topic {run_id}: {err}");
         Into::<StatusCode>::into(err)
     })?;
-    Ok(axum::response::sse::Sse::new(create_sse_stream(
-        topic_receiver,
+    tracing::info!("Subscribed to events for run ID: {}", run_id);
+    Ok(axum::response::sse::Sse::new(create_sse_broadcast(
+        subscribed.items,
+        subscribed.receiver,
     )))
 }
 

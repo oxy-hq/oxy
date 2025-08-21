@@ -1,5 +1,5 @@
 import {
-  Node,
+  TaskNode as Node,
   NodeType,
   NoneTaskNodeType,
   TaskType,
@@ -73,8 +73,8 @@ const computeVerticalContainerSize = (
 
   children.forEach((child, index) => {
     if (child.width === 0) computeNodeDimensions(child, allNodes);
-    maxWidth = Math.max(maxWidth, child.width);
-    totalHeight += child.height + (index > 0 ? distanceBetweenNodes : 0);
+    maxWidth = Math.max(maxWidth, child.width || 0);
+    totalHeight += child.height || 0 + (index > 0 ? distanceBetweenNodes : 0);
   });
 
   children.forEach((child) => {
@@ -95,17 +95,17 @@ const computeHorizontalContainerSize = (
 
   children.forEach((child, index) => {
     if (child.width === 0) computeNodeDimensions(child, allNodes);
-    maxHeight = Math.max(maxHeight, child.height);
-    totalWidth += child.width + (index > 0 ? distanceBetweenNodes : 0);
+    maxHeight = Math.max(maxHeight, child.height || 0);
+    totalWidth += child.width || 0 + (index > 0 ? distanceBetweenNodes : 0);
   });
 
   return calculateContainerDimensions(totalWidth, maxHeight, children.length);
 };
 
 const getVisibleChildren = (node: Node, allNodes: Node[]): Node[] => {
-  return allNodes
-    .filter((n) => n.parentId === node.id)
-    .filter((n) => !n.hidden);
+  return node.data.expanded
+    ? allNodes.filter((n) => n.parentId === node.id)
+    : [];
 };
 
 const calculateContainerDimensions = (

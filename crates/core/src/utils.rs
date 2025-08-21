@@ -381,6 +381,70 @@ fn remove_file_extension(path: &Path) -> PathBuf {
     result
 }
 
+pub fn create_sse_broadcast<T: std::fmt::Debug + Serialize + Clone>(
+    items: Vec<T>,
+    mut receiver: tokio::sync::broadcast::Receiver<T>,
+) -> impl futures::Stream<Item = Result<Event, axum::Error>> {
+    stream! {
+        tracing::info!("SSE broadcast started with {} items", items.len());
+        for item in items {
+            match serde_json::to_string(&item) {
+                Ok(json_data) => {
+                    yield Ok::<_, axum::Error>(
+                        Event::default()
+                            .event("message")
+                            .data(json_data)
+                    );
+                }
+                Err(e) => {
+                    tracing::error!("Failed to serialize data: {}", e);
+                    let error_event = serde_json::json!({
+                        "message": "Error serializing data"
+                    });
+                    yield Ok::<_, axum::Error>(
+                        Event::default()
+                            .event("error")
+                            .data(error_event.to_string())
+                    );
+                }
+            }
+        }
+        tracing::info!("SSE broadcast waiting for new items...");
+        loop {
+            let item = receiver.recv().await;
+            if let Err(e) = item {
+                tracing::error!("Error receiving item from broadcast channel: {:?}", e);
+                break;
+            }
+            let item = item.unwrap();
+
+            tracing::debug!("Received new item for SSE broadcast: {:?}", item);
+            match serde_json::to_string(&item) {
+                Ok(json_data) => {
+                    yield Ok::<_, axum::Error>(
+                        Event::default()
+                            .event("message")
+                            .data(json_data)
+                    );
+                }
+                Err(e) => {
+                    tracing::error!("Failed to serialize data: {}", e);
+                    let error_event = serde_json::json!({
+                        "message": "Error serializing data"
+                    });
+                    yield Ok::<_, axum::Error>(
+                        Event::default()
+                            .event("error")
+                            .data(error_event.to_string())
+                    );
+                }
+            }
+        }
+
+        tracing::info!("SSE broadcast ended, no more items to process.");
+    }
+}
+
 pub fn create_sse_stream<T: Serialize>(
     mut receiver: mpsc::Receiver<T>,
 ) -> impl futures::Stream<Item = Result<Event, axum::Error>> {
