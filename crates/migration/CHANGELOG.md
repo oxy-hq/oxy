@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.24](https://github.com/oxy-hq/oxy-internal/compare/0.2.23...0.2.24) (2025-08-21)
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* support type conversion so postgres can work ([#1024](https://github.com/oxy-hq/oxy-internal/issues/1024)) ([5df5086](https://github.com/oxy-hq/oxy-internal/commit/5df50864acb733a3722e7a0bc66a45ef98bdcca1))
+
 ## [0.2.23](https://github.com/oxy-hq/oxy-internal/compare/0.2.22...0.2.23) (2025-08-07)
 
 

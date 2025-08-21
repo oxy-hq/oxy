@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.2.24](https://github.com/oxy-hq/oxy-internal/compare/0.2.23...0.2.24) (2025-08-21)
+
+
+### <!-- 0 -->🚀 Features
+
+* improve topic replay/subscribe ([#1026](https://github.com/oxy-hq/oxy-internal/issues/1026)) ([9976a41](https://github.com/oxy-hq/oxy-internal/commit/9976a41aa920892bb55b854d04bfd07fdbaec128))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* remove redundant state tracking and add stream close handling ([#1029](https://github.com/oxy-hq/oxy-internal/issues/1029)) ([31f940c](https://github.com/oxy-hq/oxy-internal/commit/31f940c0839cc3cb368da8dfd2376329b5cec117))
+* titles of chart and data table are inconsistent ([#1005](https://github.com/oxy-hq/oxy-internal/issues/1005)) ([d06cca5](https://github.com/oxy-hq/oxy-internal/commit/d06cca5df7f459b67b1b57ed0086c40773e193bb))
+
 ## [0.2.23](https://github.com/oxy-hq/oxy-internal/compare/0.2.22...0.2.23) (2025-08-07)
 
 
