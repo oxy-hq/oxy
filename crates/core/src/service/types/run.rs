@@ -23,7 +23,7 @@ pub struct RunInfo {
     pub root_ref: Option<RootReference>,
     pub metadata: Option<GroupKind>,
     pub source_id: String,
-    pub run_index: Option<u32>,
+    pub run_index: Option<i32>,
     pub status: RunStatus,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
@@ -54,7 +54,7 @@ impl RunInfo {
 #[derive(Serialize, Deserialize, Debug, Clone, ToSchema, Default)]
 pub struct RootReference {
     pub source_id: String,
-    pub run_index: Option<u32>,
+    pub run_index: Option<i32>,
     pub replay_ref: String,
 }
 

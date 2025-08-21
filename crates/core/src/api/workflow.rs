@@ -133,9 +133,9 @@ pub async fn build_workflow_api_logger(
 
 #[derive(Deserialize, ToSchema)]
 pub struct WorkflowRetryParam {
-    run_id: String,
+    pub run_id: String,
     // None if not replaying, Some if replaying
-    replay_id: Option<String>,
+    pub replay_id: Option<String>,
 }
 
 #[derive(Deserialize, ToSchema)]

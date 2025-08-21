@@ -20,12 +20,12 @@ pub trait RunsStorage {
     async fn find_run(
         &self,
         source_id: &str,
-        run_index: Option<u32>,
+        run_index: Option<i32>,
     ) -> Result<Option<RunInfo>, OxyError>;
     async fn find_run_details(
         &self,
         source_id: &str,
-        run_index: Option<u32>,
+        run_index: Option<i32>,
     ) -> Result<Option<RunDetails>, OxyError>;
     async fn list_runs(
         &self,

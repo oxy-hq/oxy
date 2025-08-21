@@ -142,11 +142,11 @@ jobs:
 
   cargo-check-and-test:
     concurrency:
-      group: cargo-check-and-test-${{ matrix.task }}-${{ github.event.pull_request.number || github.ref }}
+      group: cargo-check-and-test-${{ matrix.task }}-${{ matrix.db }}-${{ github.event.pull_request.number || github.ref }}
       cancel-in-progress: true
     needs: [changesets, typos]
     if: needs.changesets.outputs.oxy == 'true'
-    name: Format cargo, check & test
+    name: Format cargo, check & test (${{ matrix.task }}, ${{ matrix.db }})
     runs-on: ${{ github.repository == 'oxy-hq/oxy-internal' && 'warp-ubuntu-latest-arm64-2x' || 'ubuntu-latest' }}
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -157,6 +157,25 @@ jobs:
       fail-fast: true
       matrix:
         task: [check, test]
+        db: [sqlite, postgres]
+        exclude:
+          # Only run check once (with sqlite)
+          - task: check
+            db: postgres
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: admin
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: default
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U admin -d default"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v5
       - name: Collect Workflow Telemetry
@@ -183,6 +202,21 @@ jobs:
         uses: arduino/setup-protoc@v3
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install PostgreSQL client
+        if: matrix.db == 'postgres'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+      - name: Wait for Postgres
+        if: matrix.db == 'postgres'
+        run: |
+          until pg_isready -h localhost -p 5432 -U admin; do
+            echo "Waiting for Postgres..."
+            sleep 2
+          done
+          echo "Postgres is ready!"
+        env:
+          PGPASSWORD: password
       - name: Run task
         run: |
           if [[ "${{ matrix.task }}" == "check" ]]; then
@@ -190,7 +224,21 @@ jobs:
           elif [[ "${{ matrix.task }}" == "test" ]]; then
             touch examples/bigquery-sample.key
             echo $BIGQUERY_SAMPLE_KEY > examples/bigquery-sample.key
-            cargo run --profile ci -- migrate
+
+            # Set database URL based on matrix
+            if [[ "${{ matrix.db }}" == "postgres" ]]; then
+              export OXY_DATABASE_URL="postgresql://admin:password@localhost:5432/default"
+              echo "Using Postgres database: $OXY_DATABASE_URL"
+              # Run migrations using the migration crate
+              cargo run --profile ci -- migrate
+            else
+              # Default to SQLite (no URL needed or use file-based SQLite)
+              unset OXY_DATABASE_URL
+              echo "Using SQLite database (default)"
+              # Run migrations for SQLite
+              cargo run --profile ci -- migrate
+            fi
+
             cargo test --profile ci --verbose --no-fail-fast -- --nocapture
             cargo run --profile ci -- gen-config-schema --check
           fi

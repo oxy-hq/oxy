@@ -201,8 +201,8 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
                 if let Some(usage_data) = response.usage {
                     execution_context
                         .write_usage(Usage::new(
-                            usage_data.prompt_tokens,
-                            usage_data.completion_tokens,
+                            usage_data.prompt_tokens as i32,
+                            usage_data.completion_tokens as i32,
                         ))
                         .await?;
                 }

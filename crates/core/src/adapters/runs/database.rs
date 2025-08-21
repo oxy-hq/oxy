@@ -141,7 +141,7 @@ impl RunsStorage for RunsDatabaseStorage {
                     run_id,
                 } => (
                     workflow_id,
-                    Some(run_id.parse::<u32>().map_err(|_| {
+                    Some(run_id.parse::<i32>().map_err(|_| {
                         OxyError::RuntimeError("Invalid run index format".to_string())
                     })?),
                 ),
@@ -199,7 +199,7 @@ impl RunsStorage for RunsDatabaseStorage {
     async fn find_run(
         &self,
         source_id: &str,
-        run_index: Option<u32>,
+        run_index: Option<i32>,
     ) -> Result<Option<RunInfo>, OxyError> {
         let run_index_operator = run_index
             .map(|index| entity::runs::Column::RunIndex.eq(Some(index)))
@@ -236,7 +236,7 @@ impl RunsStorage for RunsDatabaseStorage {
     async fn find_run_details(
         &self,
         source_id: &str,
-        run_index: Option<u32>,
+        run_index: Option<i32>,
     ) -> Result<Option<RunDetails>, OxyError> {
         let run_index_operator = run_index
             .map(|index| entity::runs::Column::RunIndex.eq(Some(index)))

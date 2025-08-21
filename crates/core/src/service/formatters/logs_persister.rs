@@ -36,7 +36,7 @@ impl LogsPersister {
         }
     }
 
-    pub async fn save_log(&self, source: &Source, event_kind: &EventKind) -> Result<(), OxyError> {
+    pub async fn save_log(&self, _source: &Source, event_kind: &EventKind) -> Result<(), OxyError> {
         if let EventKind::SQLQueryGenerated {
             query,
             is_verified,

@@ -8,9 +8,9 @@ pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
     pub source_id: String,
-    pub run_index: Option<u32>,
+    pub run_index: Option<i32>,
     pub root_source_id: Option<String>,
-    pub root_run_index: Option<u32>,
+    pub root_run_index: Option<i32>,
     pub root_replay_ref: Option<String>,
     pub metadata: Option<Json>,
     pub children: Option<Json>,

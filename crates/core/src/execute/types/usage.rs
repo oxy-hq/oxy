@@ -6,14 +6,14 @@ use utoipa::ToSchema;
 pub struct Usage {
     /// Number of tokens in the prompt.
     #[serde(rename = "inputTokens")]
-    pub input_tokens: u32,
+    pub input_tokens: i32,
     /// Number of tokens in the generated completion.
     #[serde(rename = "outputTokens")]
-    pub output_tokens: u32,
+    pub output_tokens: i32,
 }
 
 impl Usage {
-    pub fn new(input_tokens: u32, output_tokens: u32) -> Self {
+    pub fn new(input_tokens: i32, output_tokens: i32) -> Self {
         Usage {
             input_tokens,
             output_tokens,
