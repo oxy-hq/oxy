@@ -125,13 +125,14 @@ where
         sys_inbound: tokio::sync::mpsc::Receiver<TopicActorMessage<T>>,
         inbound: tokio::sync::mpsc::Receiver<T>,
         close_signal: tokio::sync::oneshot::Sender<Closed<T>>,
+        broadcast_buffer: usize,
     ) -> Self {
         Self {
             mailbox: Vec::new(),
             inbound,
             sys_inbound,
             close_signal,
-            outbound: tokio::sync::broadcast::channel(1024).0,
+            outbound: tokio::sync::broadcast::channel(broadcast_buffer).0,
         }
     }
 
@@ -143,7 +144,7 @@ where
         let (sys_tx, sys_rx) = tokio::sync::mpsc::channel(sys_buffer);
         let (tx, rx) = tokio::sync::mpsc::channel(broadcast_buffer);
         (
-            Self::new(sys_rx, rx, close_tx),
+            Self::new(sys_rx, rx, close_tx, broadcast_buffer),
             TopicActorRef::new(sys_tx, close_rx),
             TopicRef::new(tx),
         )

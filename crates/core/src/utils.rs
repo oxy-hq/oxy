@@ -413,7 +413,7 @@ pub fn create_sse_broadcast<T: std::fmt::Debug + Serialize + Clone>(
         loop {
             let item = receiver.recv().await;
             if let Err(e) = item {
-                tracing::error!("Error receiving item from broadcast channel: {:?}", e);
+                tracing::warn!("Error receiving item from broadcast channel: {:?}", e);
                 break;
             }
             let item = item.unwrap();
