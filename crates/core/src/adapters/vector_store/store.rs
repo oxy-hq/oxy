@@ -5,7 +5,6 @@ use super::{
     lance_db::LanceDB,
     types::{RetrievalObject, SearchRecord},
 };
-use enum_dispatch::enum_dispatch;
 use crate::{
     adapters::openai::{IntoOpenAIConfig, OpenAIClient},
     config::{
@@ -14,6 +13,7 @@ use crate::{
     },
     errors::OxyError,
 };
+use enum_dispatch::enum_dispatch;
 use lancedb::{Connection, connect};
 
 #[enum_dispatch(VectorEngine)]

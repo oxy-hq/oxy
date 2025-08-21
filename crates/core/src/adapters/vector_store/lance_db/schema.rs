@@ -5,8 +5,6 @@ use std::sync::Arc;
 pub(super) struct SchemaUtils;
 
 impl SchemaUtils {
-
-
     pub(super) fn create_retrieval_schema(n_dims: usize) -> Arc<arrow::datatypes::Schema> {
         Arc::new(arrow::datatypes::Schema::new(vec![
             Field::new("content", DataType::Utf8, false),

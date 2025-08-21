@@ -1,8 +1,5 @@
 use crate::{
-    adapters::vector_store::{
-        VectorStore,
-        types::RetrievalObject,
-    },
+    adapters::vector_store::{VectorStore, types::RetrievalObject},
     config::{
         ConfigManager,
         model::{AgentConfig, AgentType, RouteRetrievalConfig, RoutingAgent, ToolType, Workflow},
@@ -12,8 +9,8 @@ use crate::{
 use futures::StreamExt;
 use std::path::PathBuf;
 
-pub use parse::parse_sql_source_type;
 use parse::parse_retrieval_object;
+pub use parse::parse_sql_source_type;
 
 mod parse;
 
@@ -46,7 +43,7 @@ fn create_retrieval_object_from_source<T: DocumentSource>(
     source: &T,
     source_type: &str,
     file_path: &str,
-    ) -> Result<RetrievalObject, OxyError> {
+) -> Result<RetrievalObject, OxyError> {
     let nothing_to_embed = source.description().is_empty()
         && source
             .retrieval()
@@ -142,7 +139,8 @@ pub async fn reindex_all(config: &ConfigManager, drop_all_tables: bool) -> Resul
                         if drop_all_tables {
                             db.cleanup().await?;
                         }
-                        let objects = make_retrieval_objects_from_files(&retrieval.src, config).await?;
+                        let objects =
+                            make_retrieval_objects_from_files(&retrieval.src, config).await?;
                         if !objects.iter().any(|o| !o.inclusions.is_empty()) {
                             println!(
                                 "{}",
@@ -168,11 +166,15 @@ pub async fn reindex_all(config: &ConfigManager, drop_all_tables: bool) -> Resul
                 if drop_all_tables {
                     db.cleanup().await?;
                 }
-                let objects = make_retrieval_objects_from_routing_agent(config, routing_agent).await?;
+                let objects =
+                    make_retrieval_objects_from_routing_agent(config, routing_agent).await?;
                 if !objects.iter().any(|o| !o.inclusions.is_empty()) {
                     println!(
                         "{}",
-                        format!("No inclusion records found for routing agent: {:?}", &agent.name)
+                        format!(
+                            "No inclusion records found for routing agent: {:?}",
+                            &agent.name
+                        )
                     );
                     continue;
                 }
@@ -262,7 +264,9 @@ async fn make_retrieval_objects_from_routing_agent(
     );
 
     if !all_objects.iter().any(|o| !o.inclusions.is_empty()) {
-        println!("WARNING: No inclusion records were created for routing agent. This may indicate:");
+        println!(
+            "WARNING: No inclusion records were created for routing agent. This may indicate:"
+        );
         println!("  - All workflow/agent files have empty descriptions");
         println!("  - SQL files contain no valid embeddable content");
         println!("  - Database references in SQL files are invalid");
@@ -278,9 +282,9 @@ async fn make_retrieval_objects_from_files(
 ) -> anyhow::Result<Vec<RetrievalObject>> {
     let files = config.resolve_glob(src).await?;
     println!("{}", format!("Found: {:?}", files));
-    
+
     let mut all_objects: Vec<RetrievalObject> = vec![];
-    
+
     for file in files.iter() {
         if let Ok(content) = std::fs::read_to_string(file) {
             if !content.is_empty() {
@@ -291,7 +295,7 @@ async fn make_retrieval_objects_from_files(
                     .to_string_lossy()
                     .to_string();
                 tracing::info!(
-                    "Found {} inclusions and {} exclusions for file: {:?}", 
+                    "Found {} inclusions and {} exclusions for file: {:?}",
                     obj.inclusions.len(),
                     obj.exclusions.len(),
                     file_name
@@ -303,4 +307,3 @@ async fn make_retrieval_objects_from_files(
 
     Ok(all_objects)
 }
-

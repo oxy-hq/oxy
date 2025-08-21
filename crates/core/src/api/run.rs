@@ -5,11 +5,10 @@ use axum::extract::{self, Path, Query};
 use axum::http::StatusCode;
 use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use utoipa::ToSchema;
 
 use crate::adapters::runs::RunsManager;
-use crate::api::workflow::WorkflowRetryParam;
 use crate::errors::OxyError;
 use crate::execute::writer::Handler;
 use crate::service::block::GroupBlockHandler;
@@ -88,15 +87,17 @@ pub async fn get_workflow_runs(
     Ok(extract::Json(result))
 }
 
-#[derive(Serialize, Deserialize, ToSchema)]
+#[derive(Deserialize, ToSchema)]
 pub struct RetryParam {
-    pub run_index: i32,
+    pub run_id: i32, // Run ID to retry
+    // None if not replaying, Some if replaying
+    pub replay_id: Option<String>,
 }
 
 #[derive(serde::Deserialize, ToSchema)]
 pub struct CreateRunRequest {
     // variables: Option<HashMap<String, serde_json::Value>>,
-    retry_param: Option<WorkflowRetryParam>,
+    retry_param: Option<RetryParam>,
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, ToSchema)]
@@ -141,10 +142,7 @@ pub async fn create_workflow_run(
                 StatusCode::INTERNAL_SERVER_ERROR
             }),
         Some(retry_param) => {
-            let run_id = retry_param.run_id.parse::<i32>().map_err(|_| {
-                tracing::error!("Invalid run_id format: {}", retry_param.run_id);
-                StatusCode::BAD_REQUEST
-            })?;
+            let run_id = retry_param.run_id;
             runs_manager
                 .find_run(&file_path_to_source_id(&path), Some(run_id))
                 .await

@@ -1,11 +1,9 @@
-use ndarray::{Array1, Array2, Axis};
 use crate::adapters::vector_store::types::Embedding;
+use ndarray::{Array1, Array2, Axis};
 
 pub(super) struct MathUtils;
 
 impl MathUtils {
-
-
     pub(super) fn find_min_distance(
         point: &Embedding,
         points: &[Embedding],
@@ -38,8 +36,6 @@ impl MathUtils {
         let point_array = Array1::from_vec(point.to_vec());
         Self::find_min_distance_from_matrix(&point_array, &points_matrix)
     }
-
-
 
     fn find_min_distance_from_matrix(
         point: &Array1<f32>,
