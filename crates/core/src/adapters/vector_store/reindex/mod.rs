@@ -216,19 +216,16 @@ async fn make_retrieval_objects_from_routing_agent(
                 if let Some(database_ref) = parse_sql_source_type(&obj.source_type) {
                     if let Err(e) = config.resolve_database(&database_ref) {
                         println!(
-                            "WARNING: Invalid database reference '{}' in {}: {:?}. Dropping inclusions for this file",
-                            database_ref, sql_path, e
+                            "WARNING: Invalid database reference '{database_ref}' in {sql_path}: {e:?}. Dropping inclusions for this file"
                         );
                         obj.inclusions.clear();
                     }
-                } else {
-                    if !obj.inclusions.is_empty() {
-                        println!(
-                            "WARNING: Could not parse database reference from source_type '{}' for inclusion(s) in {}. Dropping inclusions.",
-                            obj.source_type, sql_path
-                        );
-                        obj.inclusions.clear();
-                    }
+                } else if !obj.inclusions.is_empty() {
+                    println!(
+                        "WARNING: Could not parse database reference from source_type '{}' for inclusion(s) in {}. Dropping inclusions.",
+                        obj.source_type, sql_path
+                    );
+                    obj.inclusions.clear();
                 }
 
                 println!(
