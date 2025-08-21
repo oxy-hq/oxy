@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.2.24](https://github.com/oxy-hq/oxy-internal/compare/0.2.23...0.2.24) (2025-08-21)
+
+
+### <!-- 0 -->🚀 Features
+
+* add support for headers - useful for platforms like Helicone ([#996](https://github.com/oxy-hq/oxy-internal/issues/996)) ([f71a95f](https://github.com/oxy-hq/oxy-internal/commit/f71a95feca95abfb9f503717523476b8847feb74))
+* improve topic replay/subscribe ([#1026](https://github.com/oxy-hq/oxy-internal/issues/1026)) ([9976a41](https://github.com/oxy-hq/oxy-internal/commit/9976a41aa920892bb55b854d04bfd07fdbaec128))
+* refactor retrieval-related storage + adjust epsilon filtering ([#1000](https://github.com/oxy-hq/oxy-internal/issues/1000)) ([5102c01](https://github.com/oxy-hq/oxy-internal/commit/5102c01fc6441850a55f89a2b83cc360058e168a))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* add atomic transaction for new run ([4c43594](https://github.com/oxy-hq/oxy-internal/commit/4c435942b3017459ea18f8c2e5308b24922c33db))
+* remove redundant state tracking and add stream close handling ([#1029](https://github.com/oxy-hq/oxy-internal/issues/1029)) ([31f940c](https://github.com/oxy-hq/oxy-internal/commit/31f940c0839cc3cb368da8dfd2376329b5cec117))
+* support type conversion so postgres can work ([#1024](https://github.com/oxy-hq/oxy-internal/issues/1024)) ([5df5086](https://github.com/oxy-hq/oxy-internal/commit/5df50864acb733a3722e7a0bc66a45ef98bdcca1))
+* typo in missing anthropic api key message ([#998](https://github.com/oxy-hq/oxy-internal/issues/998)) ([45ce7f0](https://github.com/oxy-hq/oxy-internal/commit/45ce7f0424b6a2bf77b499bc36fd50ce33b534e0))
+
 ## [0.2.23](https://github.com/oxy-hq/oxy-internal/compare/0.2.22...0.2.23) (2025-08-07)
 
 
