@@ -1,4 +1,4 @@
-import React, { Suspense, useEffect, useMemo, useRef } from "react";
+import React, { Suspense, useEffect, useMemo } from "react";
 import { ReactFlowProvider } from "@xyflow/react";
 import useWorkflowConfig from "@/hooks/api/workflows/useWorkflowConfig";
 import WorkflowOutput from "./output";
@@ -49,16 +49,14 @@ export const WorkflowPreview = ({
   const logs = useWorkflowLogs(path, runId || "");
   const { stream, cancel } = useStreamEvents();
   const setGroupBlocks = useBlockStore((state) => state.setGroupBlocks);
-  const [isStreamFinished, setIsStreamFinished] = React.useState(false);
-  const isStreamingCalled = useRef(false);
   const isProcessing = useIsProcessing(path, runId || "");
   const groups = useGetBlocks(
     path,
     runId ? +runId : undefined,
-    !!runId && isStreamFinished,
+    !!runId && !isProcessing,
   ).data;
   useEffect(() => {
-    const streamCall = async (runId: string) => {
+    const streamCall = async (relativePath: string, runId: string) => {
       return stream
         .mutateAsync({
           workflowId: relativePath,
@@ -66,23 +64,16 @@ export const WorkflowPreview = ({
         })
         .catch((error) => {
           console.error("Error streaming events:", error);
-        })
-        .finally(() => {
-          setIsStreamFinished(true);
         });
     };
 
-    if (runId && !isStreamingCalled.current) {
-      isStreamingCalled.current = true;
-      streamCall(runId);
+    if (relativePath && runId) {
+      streamCall(relativePath, runId);
+      return () => {
+        cancel();
+      };
     }
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      cancel();
-    };
-  }, []);
+  }, [runId, relativePath]);
 
   useEffect(() => {
     if (groups) {

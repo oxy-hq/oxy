@@ -7,7 +7,7 @@ import { GroupSlice } from "@/stores/slices/group";
 import useWorkflow, { TaskConfigWithId } from "@/stores/useWorkflow";
 import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
 import { PaginationState } from "@tanstack/react-table";
-import { useMemo, useRef } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 
 const taskRunSelector = (
@@ -390,6 +390,7 @@ export const useCancelWorkflowRun = () => {
 export const useStreamEvents = () => {
   const abortControllerRef = useRef<AbortController | null>(null);
   const handleEvent = useBlockStore((state) => state.handleEvent);
+  const cleanupGroupStacks = useBlockStore((state) => state.cleanupGroupStacks);
   const mutation = useMutation({
     mutationFn: async ({
       workflowId,
@@ -410,6 +411,7 @@ export const useStreamEvents = () => {
         },
         handleEvent,
         () => {
+          cleanupGroupStacks("Cancelled");
           abortControllerRef.current = null;
         },
         (error) => {
@@ -420,13 +422,13 @@ export const useStreamEvents = () => {
       );
     },
   });
-  const cancel = () => {
+  const cancel = useCallback(() => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
       mutation.reset();
     }
-  };
+  }, [mutation, abortControllerRef]);
 
   return {
     cancel,

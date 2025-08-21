@@ -23,7 +23,7 @@ export interface GroupSlice {
   removeGroup: (groupId: string, error?: string) => void;
   upsertBlockToStack: (blockId: string, blockData: BlockContent) => void;
   removeBlockStack: (blockId: string, error?: string) => void;
-  reset: () => void;
+  cleanupGroupStacks: (error: string) => void;
 }
 
 const wrapChildrenSet =
@@ -144,13 +144,6 @@ export const createGroupSlice: StateCreator<
         },
       };
     }),
-  reset: () =>
-    set((state) => ({
-      ...state,
-      groupBlocks: {},
-      groupStack: [],
-      groups: {},
-    })),
   upsertBlockToStack: (blockId: string, blockData: BlockContent) => {
     const groupStack = get().groupStack;
     const groupBlocks = get().groupBlocks;
@@ -171,6 +164,17 @@ export const createGroupSlice: StateCreator<
       : undefined;
     if (currentGroupBlocks) {
       currentGroupBlocks.removeBlockStack(blockId, error);
+    }
+  },
+  cleanupGroupStacks: (error: string) => {
+    const groupStack = get().groupStack;
+    const groupBlocks = get().groupBlocks;
+    for (const groupId of groupStack) {
+      const groupBlock = groupBlocks[groupId];
+      if (groupBlock) {
+        groupBlock.cleanupBlockStacks(error);
+        get().removeGroup(groupId, error);
+      }
     }
   },
 });

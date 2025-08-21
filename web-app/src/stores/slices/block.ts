@@ -9,7 +9,7 @@ export interface BlockSlice {
   upsertBlockToStack: (blockId: string, blockData: BlockContent) => void;
   addGroupBlock: (groupId: string) => void;
   handleError: (error: string) => void;
-  reset: () => void;
+  cleanupBlockStacks: (error: string) => void;
 }
 
 export type BlockSliceSetter = (
@@ -94,14 +94,25 @@ export const createBlockSlice = (
         error,
       };
     }),
-  reset: () =>
-    set((state) => ({
-      ...state,
-      error: undefined,
-      blocks: {},
-      blockStack: [],
-      root: [],
-    })),
+  cleanupBlockStacks: (error: string) =>
+    set((state) => {
+      const blockStack = state.blockStack;
+      const blocks = { ...state.blocks };
+      for (const blockId of blockStack) {
+        if (blocks[blockId]) {
+          blocks[blockId] = {
+            ...blocks[blockId],
+            is_streaming: false,
+            error,
+          };
+        }
+      }
+      return {
+        ...state,
+        blockStack: [],
+        blocks,
+      };
+    }),
   addGroupBlock: (groupId: string) =>
     set((state) => {
       const currentBlockId = state.blockStack[state.blockStack.length - 1];
