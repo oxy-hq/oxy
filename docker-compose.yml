@@ -13,7 +13,7 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - RUST_LOG=info
+      - RUST_LOG=debug
       - OXY_DATABASE_URL=postgresql://admin:password@postgres:5432/default
     depends_on:
       clickhouse:

@@ -138,7 +138,14 @@ impl WorkflowLauncher {
                 replay_id,
                 run_index,
             } => {
-                let run_info = runs_manager.find_run(&source_id, Some(*run_index)).await?;
+                let run_info = runs_manager
+                    .find_run(
+                        &source_id,
+                        Some((*run_index).try_into().map_err(|_| {
+                            OxyError::RuntimeError("Run index conversion failed".to_string())
+                        })?),
+                    )
+                    .await?;
                 match run_info {
                     Some(run_info) => {
                         let mut run_info: RunInfo = run_info.try_into()?;
@@ -232,7 +239,7 @@ impl WorkflowLauncher {
             let WorkflowInput {
                 workflow_ref,
                 variables,
-                retry,
+                retry: _,
             } = workflow_input;
             let response = {
                 let mut executable = build_workflow_executable();

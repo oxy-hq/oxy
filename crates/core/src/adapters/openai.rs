@@ -213,9 +213,12 @@ impl IntoOpenAIConfig for Model {
                 model_ref: _,
                 key_var,
             } => {
-                let api_key = secret_resolver.resolve_secret(key_var).await.map_err(|e| {
-                    OxyError::ConfigurationError("Gemini API key not found".to_string())
-                })?;
+                let api_key = secret_resolver
+                    .resolve_secret(key_var)
+                    .await
+                    .map_err(|_e| {
+                        OxyError::ConfigurationError("Gemini API key not found".to_string())
+                    })?;
                 let api_key = match api_key {
                     Some(secret) => secret.value,
                     None => {
@@ -235,9 +238,12 @@ impl IntoOpenAIConfig for Model {
                 key_var,
                 api_url,
             } => {
-                let api_key = secret_resolver.resolve_secret(key_var).await.map_err(|e| {
-                    OxyError::ConfigurationError("Anthropic API key not found".to_string())
-                })?;
+                let api_key = secret_resolver
+                    .resolve_secret(key_var)
+                    .await
+                    .map_err(|_e| {
+                        OxyError::ConfigurationError("Anthropic API key not found".to_string())
+                    })?;
                 let api_key = match api_key {
                     Some(secret) => secret.value,
                     None => {

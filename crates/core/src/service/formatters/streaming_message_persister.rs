@@ -126,8 +126,8 @@ impl StreamingMessagePersister {
 
     pub async fn update_usage(
         &self,
-        input_tokens: u32,
-        output_tokens: u32,
+        input_tokens: i32,
+        output_tokens: i32,
     ) -> Result<(), OxyError> {
         {
             let cancelled = self.cancelled.lock().await;

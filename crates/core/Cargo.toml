@@ -101,8 +101,8 @@ backoff = { version = "0.4.0", features = ["tokio"] }
 rustc_version_runtime = "0.3.0"
 apalis = "0.7.2"
 apalis-core = "0.7.2"
-apalis-sql = { version = "0.7.2", features = ["sqlite", "tokio"] }
-sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "sqlite"] }
+apalis-sql = { version = "0.7.2", features = ["sqlite", "postgres", "tokio"] }
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "sqlite", "postgres"] }
 rustls = { version = "0.23.31", features = ["aws_lc_rs"] }
 parquet = "53.4"
 short-uuid = "0.2.0"

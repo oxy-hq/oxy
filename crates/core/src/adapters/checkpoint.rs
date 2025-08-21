@@ -113,7 +113,10 @@ impl CheckpointContext {
             },
             None => RootReference {
                 source_id: self.run_info.source_id.clone(),
-                run_index: Some(self.run_info.run_index),
+                run_index: Some(self.run_info.run_index.try_into().unwrap_or_else(|e| {
+                    tracing::error!("Failed to convert run_index: {}", e);
+                    0
+                })),
                 replay_ref: self.current_ref_str(),
             },
         }
@@ -281,7 +284,11 @@ impl TryFrom<PublicRunInfo> for RunInfo {
             value.source_id,
             value
                 .run_index
-                .ok_or(OxyError::RuntimeError("Run index is required".to_string()))?,
+                .ok_or(OxyError::RuntimeError("Run index is required".to_string()))?
+                .try_into()
+                .map_err(|e| {
+                    OxyError::RuntimeError(format!("Failed to convert run_index to u32: {}", e))
+                })?,
             None,
             is_completed,
         ))

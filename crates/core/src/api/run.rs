@@ -5,9 +5,11 @@ use axum::extract::{self, Path, Query};
 use axum::http::StatusCode;
 use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
+use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::adapters::runs::RunsManager;
+use crate::api::workflow::WorkflowRetryParam;
 use crate::errors::OxyError;
 use crate::execute::writer::Handler;
 use crate::service::block::GroupBlockHandler;
@@ -86,10 +88,9 @@ pub async fn get_workflow_runs(
     Ok(extract::Json(result))
 }
 
-#[derive(serde::Deserialize, ToSchema)]
-pub struct WorkflowRetryParam {
-    run_id: u32,
-    replay_id: String,
+#[derive(Serialize, Deserialize, ToSchema)]
+pub struct RetryParam {
+    pub run_index: i32,
 }
 
 #[derive(serde::Deserialize, ToSchema)]
@@ -139,19 +140,28 @@ pub async fn create_workflow_run(
                 tracing::error!("Failed to create run: {:?}", e);
                 StatusCode::INTERNAL_SERVER_ERROR
             }),
-        Some(retry_param) => runs_manager
-            .find_run(&file_path_to_source_id(&path), Some(retry_param.run_id))
-            .await
-            .map_err(|e| {
-                tracing::error!("Failed to retry run: {:?}", e);
-                StatusCode::INTERNAL_SERVER_ERROR
-            })?
-            .ok_or_else(|| {
-                tracing::error!("Run with ID {} not found", retry_param.run_id);
-                StatusCode::NOT_FOUND
-            }),
+        Some(retry_param) => {
+            let run_id = retry_param.run_id.parse::<i32>().map_err(|_| {
+                tracing::error!("Invalid run_id format: {}", retry_param.run_id);
+                StatusCode::BAD_REQUEST
+            })?;
+            runs_manager
+                .find_run(&file_path_to_source_id(&path), Some(run_id))
+                .await
+                .map_err(|e| {
+                    tracing::error!("Failed to retry run: {:?}", e);
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?
+                .ok_or_else(|| {
+                    tracing::error!("Run with ID {} not found", retry_param.run_id);
+                    StatusCode::NOT_FOUND
+                })
+        }
     }?;
-    let replay_id = payload.retry_param.as_ref().map(|p| p.replay_id.clone());
+    let replay_id = payload
+        .retry_param
+        .as_ref()
+        .and_then(|p| p.replay_id.clone());
     let (run_info, replay_id) = match run_info.root_ref {
         Some(root_ref) => runs_manager
             .find_run(&root_ref.source_id, root_ref.run_index)
@@ -206,12 +216,17 @@ pub async fn create_workflow_run(
     TASK_MANAGER
         .spawn(task_id.clone(), async move |cancellation_token| {
             let run_fut = {
+                let converted_run_index = run_index
+                    .try_into()
+                    .map_err(|e| tracing::error!("Failed to convert run_index to u32: {}", e))
+                    .unwrap_or(0); // Default to 0 if conversion fails
+
                 run_workflow_v2(
                     source_id,
                     topic_publisher,
                     RetryStrategy::Retry {
                         replay_id,
-                        run_index,
+                        run_index: converted_run_index,
                     },
                     None,
                 )
@@ -252,7 +267,7 @@ pub struct CancelRunRequest {
     path = "/runs/{source_id}/{run_index}",
     params(
         ("source_id" = String, Path, description = "SourceID for workflow is the path to the workflow file"),
-        ("run_index" = u32, Path, description = "Run index")
+        ("run_index" = i32, Path, description = "Run index")
     ),
     responses(
         (status = 200, description = "Successfully cancel the workflow run"),
@@ -288,7 +303,7 @@ pub async fn cancel_workflow_run(
 #[derive(serde::Deserialize, ToSchema, Debug)]
 pub struct WorkflowEventsRequest {
     pub source_id: String,
-    pub run_index: u32,
+    pub run_index: i32,
 }
 
 impl From<WorkflowEventsRequest> for RunInfo {
@@ -306,7 +321,7 @@ impl From<WorkflowEventsRequest> for RunInfo {
     path = "/events",
     params(
         ("source_id" = String, Query, description = "SourceID for workflow is the path to the workflow file"),
-        ("run_index" = u32, Query, description = "Run index")
+        ("run_index" = i32, Query, description = "Run index")
     ),
     responses(
         (status = OK, description = "Success", content_type = "text/event-stream")
@@ -353,7 +368,7 @@ pub async fn workflow_events(
 #[derive(serde::Deserialize, ToSchema, Debug)]
 pub struct BlocksRequest {
     pub source_id: String,
-    pub run_index: Option<u32>,
+    pub run_index: Option<i32>,
 }
 
 #[utoipa::path(

@@ -57,8 +57,12 @@ impl BlockHandlerReader {
             id: Set(Uuid::new_v4()),
             content: Set(content),
             is_human: Set(false),
-            input_tokens: Set(usage.input_tokens),
-            output_tokens: Set(usage.output_tokens),
+            input_tokens: Set(usage.input_tokens.try_into().map_err(|_| {
+                OxyError::RuntimeError("Token count conversion failed".to_string())
+            })?),
+            output_tokens: Set(usage.output_tokens.try_into().map_err(|_| {
+                OxyError::RuntimeError("Token count conversion failed".to_string())
+            })?),
             ..Default::default()
         };
         let artifacts = try_unwrap_arc_tokio_mutex(self.artifacts).await?;

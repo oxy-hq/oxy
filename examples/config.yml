@@ -131,7 +131,7 @@ authentication:
     smtp_server: smtp.gmail.com
     smtp_port: 587
   google:
-    client_id: 557675988752-l0se3h3j85q1k51iritp9aqnlpkimepr.apps.googleusercontent.com
+    client_id: "4786469222-dlvn0v70lh8e5fffielgncmjnfq73uk3.apps.googleusercontent.com"
     client_secret_var: GOOGLE_CLIENT_SECRET
   api_key:
     header: X-API-KEY

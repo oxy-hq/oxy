@@ -22,6 +22,7 @@ mod m20250625_151048_add_is_processing_to_thread;
 mod m20250626_000001_create_secrets_table;
 mod m20250708_021201_create_logs_table;
 mod m20250727_150336_add_run_model;
+mod m20250819_084109_fix_root_replay_ref_type;
 
 pub struct Migrator;
 
@@ -45,12 +46,13 @@ impl MigratorTrait for Migrator {
             Box::new(m20250611_015638_add_tokens_to_messages::Migration),
             Box::new(m20250613_090405_add_auth_fields_to_users::Migration),
             Box::new(m20250618_102934_create_github_config_table::Migration),
-            Box::new(m20250626_000001_create_secrets_table::Migration),
             Box::new(m20250624_100000_add_role_to_users::Migration),
             Box::new(m20250625_000001_add_status_to_users::Migration),
             Box::new(m20250625_151048_add_is_processing_to_thread::Migration),
+            Box::new(m20250626_000001_create_secrets_table::Migration),
             Box::new(m20250708_021201_create_logs_table::Migration),
             Box::new(m20250727_150336_add_run_model::Migration),
+            Box::new(m20250819_084109_fix_root_replay_ref_type::Migration),
         ]
     }
 }

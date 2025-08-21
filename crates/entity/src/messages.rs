@@ -12,8 +12,8 @@ pub struct Model {
     pub is_human: bool,
     pub thread_id: Uuid,
     pub created_at: DateTimeWithTimeZone,
-    pub input_tokens: u32,
-    pub output_tokens: u32,
+    pub input_tokens: i32,
+    pub output_tokens: i32,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -49,8 +49,14 @@ pub async fn get_messages_by_thread(
             thread_id: m.thread_id.to_string(),
             created_at: m.created_at,
             usage: Usage {
-                input_tokens: m.input_tokens,
-                output_tokens: m.output_tokens,
+                input_tokens: m.input_tokens.try_into().unwrap_or_else(|e| {
+                    tracing::error!("Failed to convert input_tokens: {}", e);
+                    0
+                }),
+                output_tokens: m.output_tokens.try_into().unwrap_or_else(|e| {
+                    tracing::error!("Failed to convert output_tokens: {}", e);
+                    0
+                }),
             },
         })
         .collect();

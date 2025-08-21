@@ -133,7 +133,7 @@ impl ChatService {
         let user_question = self
             .handle_user_question(&payload, &thread)
             .await
-            .inspect_err(|e| {
+            .inspect_err(|_e| {
                 // Ensure thread is unlocked on error
                 let connection = self.connection.clone();
                 let thread_clone = thread.clone();
@@ -536,8 +536,12 @@ impl ChatService {
             is_human: ActiveValue::Set(false),
             thread_id: ActiveValue::Set(thread.id),
             created_at: ActiveValue::default(),
-            input_tokens: ActiveValue::Set(usage.input_tokens),
-            output_tokens: ActiveValue::Set(usage.output_tokens),
+            input_tokens: ActiveValue::Set(usage.input_tokens.try_into().map_err(|_| {
+                OxyError::RuntimeError("Token count conversion failed".to_string())
+            })?),
+            output_tokens: ActiveValue::Set(usage.output_tokens.try_into().map_err(|_| {
+                OxyError::RuntimeError("Token count conversion failed".to_string())
+            })?),
         };
 
         answer_message.update(connection).await.map_err(|err| {
