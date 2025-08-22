@@ -108,6 +108,126 @@ impl OpenAIExecutable {
             }
         }
     }
+
+    async fn process_content_chunk(
+        &self,
+        execution_context: &ExecutionContext,
+        content: &mut String,
+        tool_calls: &HashMap<(u32, u32), ChatCompletionMessageToolCall>,
+        last_parsed_length: &mut usize,
+        has_written: &mut bool,
+        message: &str,
+    ) -> Result<(), OxyError> {
+        content.push_str(message);
+        // Only try to parse as structured JSON if we don't have tool calls
+        // When tools are present, content is usually plain text
+        if tool_calls.is_empty() && let Ok(data) = from_json_str::<AgentResponse>(&content) {
+            self.handle_structured_response(execution_context, &data, content, last_parsed_length, has_written, message).await
+        } else if !content.is_empty() {
+            self.handle_plain_text_response(execution_context, content, last_parsed_length, has_written).await
+        } else {
+            Ok(())
+        }
+    }
+
+    async fn handle_structured_response(
+        &self,
+        execution_context: &ExecutionContext,
+        data: &AgentResponse,
+        _content: &str,
+        last_parsed_length: &mut usize,
+        has_written: &mut bool,
+        message: &str,
+    ) -> Result<(), OxyError> {
+        let (parsed_content, mut output) = match &data.data {
+            AgentResponseData::Table { file_path } => {
+                (file_path.clone(), Output::table(message.to_string()))
+            }
+            AgentResponseData::Text { text } => {
+                (text.clone(), Output::Text(message.to_string()))
+            }
+            AgentResponseData::SQL { sql } => {
+                (sql.clone(), Output::sql(message.to_string()))
+            }
+        };
+        if *last_parsed_length != parsed_content.len()
+            && variant_eq(&Output::Text("".to_string()), &output)
+        {
+            if !*has_written {
+                execution_context
+                    .write_kind(EventKind::Message {
+                        message: "\nOutput:".primary().to_string(),
+                    })
+                    .await?;
+            }
+
+            *has_written = true;
+            let chunk = if parsed_content.len() > *last_parsed_length {
+                &parsed_content[*last_parsed_length..]
+            } else {
+                ""
+            };
+            output.replace(chunk.to_string());
+            *last_parsed_length = parsed_content.len();
+            execution_context
+                .write_chunk(Chunk {
+                    key: Some(AGENT_SOURCE_CONTENT.to_string()),
+                    delta: output,
+                    finished: false,
+                })
+                .await?;
+        }
+        Ok(())
+    }
+
+    async fn handle_plain_text_response(
+        &self,
+        execution_context: &ExecutionContext,
+        content: &str,
+        last_parsed_length: &mut usize,
+        has_written: &mut bool,
+    ) -> Result<(), OxyError> {
+        if !*has_written {
+            execution_context
+                .write_kind(EventKind::Message {
+                    message: "\nOutput:".primary().to_string(),
+                })
+                .await?;
+            *has_written = true;
+        }
+        
+        // Stream the content as plain text
+        if content.len() > *last_parsed_length {
+            let new_chunk = &content[*last_parsed_length..];
+            execution_context
+                .write_chunk(Chunk {
+                    key: Some(AGENT_SOURCE_CONTENT.to_string()),
+                    delta: Output::Text(new_chunk.to_string()),
+                    finished: false,
+                })
+                .await?;
+            *last_parsed_length = content.len();
+        }
+        Ok(())
+    }
+
+    fn finalize_response(&self, content: &str) -> AgentResponse {
+        if content.is_empty() {
+            AgentResponse::default()
+        } else {
+            // Try to parse as structured JSON first, fallback to plain text
+            match serde_json::from_str::<AgentResponse>(&content) {
+                Ok(structured_response) => structured_response,
+                Err(_) => {
+                    // If JSON parsing fails, treat as plain text response
+                    tracing::debug!("Response is not structured JSON, treating as plain text");
+                    AgentResponse {
+                        data: AgentResponseData::Text { text: content.to_string() }
+                    }
+                }
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -134,71 +254,125 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
         execution_context: &ExecutionContext,
         input: Vec<ChatCompletionRequestMessage>,
     ) -> Result<Self::Response, OxyError> {
-        tracing::debug!("Executing OpenAI executable with input: {:?}", input);
+        tracing::debug!("Starting OpenAI agent execution");
+        tracing::debug!("Model: {}", self.model);
+        tracing::debug!("Tools configured: {}", self.tool_configs.len());
+        tracing::debug!("Input messages: {}", input.len());
+        tracing::trace!("Input message details: {:?}", input);
+        
         let chat = self.client.chat();
-        let mut request_builder = CreateChatCompletionRequestArgs::default();
         let schema = json!(schema_for!(AgentResponse));
-        request_builder
-            .model(self.model.clone())
-            .stream_options(ChatCompletionStreamOptions {
-                include_usage: true,
-            })
-            .response_format(ResponseFormat::JsonSchema {
-                json_schema: ResponseFormatJsonSchema {
-                    name: "AgentResponse".to_string(),
-                    description: Some("Agent response".to_string()),
-                    schema: Some(schema),
-                    strict: Some(true),
-                },
-            })
-            .stream(true)
-            .messages(input);
-
-        if let Some(ReasoningConfig {
-            effort: Some(reasoning_effort),
-            ..
-        }) = &self.reasoning_config
-        {
-            request_builder.reasoning_effort(reasoning_effort.clone());
-        }
-
-        if let Some(tool_choice) = &self.tool_choice {
-            request_builder.tool_choice(tool_choice.clone());
-        }
-
-        if !self.tool_configs.is_empty() {
-            request_builder.tools(self.tool_configs.clone());
-        }
 
         let func = || async {
-            let request = request_builder
-                .build()
-                .map_err(|err| {
-                    OxyError::RuntimeError(format!("Error in building completion request: {err:?}"))
-                })
-                .map_err(backoff::Error::Permanent)?;
-            tracing::debug!("OpenAI request: {:?}", request);
-            let mut response = chat
-                .create_stream(request)
-                .await
-                .map_err(|err| {
-                    OxyError::RuntimeError(format!("Error in completion request: {err:?}"))
-                })
-                .map_err(backoff::Error::Permanent)?;
+            tracing::debug!("Building OpenAI completion request");
+            
+            // Helper function to build a request with optional structured output
+            let build_request = |use_structured: bool, use_streaming: bool| -> Result<_, backoff::Error<OxyError>> {
+                let mut builder = CreateChatCompletionRequestArgs::default();
+                builder
+                    .model(self.model.clone())
+                    .messages(input.clone());
+                
+                if use_streaming {
+                    builder
+                        .stream_options(ChatCompletionStreamOptions {
+                            include_usage: true,
+                        })
+                        .stream(true);
+                } else {
+                    builder.stream(false);
+                }
+
+                if use_structured {
+                    builder.response_format(ResponseFormat::JsonSchema {
+                        json_schema: ResponseFormatJsonSchema {
+                            name: "AgentResponse".to_string(),
+                            description: Some("Agent response".to_string()),
+                            schema: Some(schema.clone()),
+                            strict: Some(false),
+                        },
+                    });
+                }
+
+                if let Some(ReasoningConfig {
+                    effort: Some(reasoning_effort),
+                    ..
+                }) = &self.reasoning_config
+                {
+                    builder.reasoning_effort(reasoning_effort.clone());
+                }
+
+                if let Some(tool_choice) = &self.tool_choice {
+                    builder.tool_choice(tool_choice.clone());
+                }
+
+                if !self.tool_configs.is_empty() {
+                    builder.tools(self.tool_configs.clone());
+                }
+
+                builder
+                    .build()
+                    .map_err(|err| {
+                        tracing::error!("Failed to build completion request: {err:?}");
+                        OxyError::RuntimeError(format!("Error in building completion request: {err:?}"))
+                    })
+                    .map_err(backoff::Error::Permanent)
+            };
+            
+            // Detect if we should use streaming - Ollama has issues with streaming + tools due to non-standard "reasoning" field
+            let has_tools = !self.tool_configs.is_empty();
+            let is_ollama = self.model.contains("gpt-oss") || self.model.contains("llama") || 
+                           self.model.contains("ollama") || 
+                           (!self.model.starts_with("gpt-") && !self.model.starts_with("claude") && !self.model.starts_with("gemini"));
+            let use_streaming = !(has_tools && is_ollama);
+            
+            if has_tools && is_ollama {
+                tracing::debug!("Detected Ollama with tools - using non-streaming mode to avoid JSON parsing issues");
+            } else {
+                tracing::debug!("Using streaming mode for better performance");
+            }
+            
+            // For most models, use plain text directly as structured output often produces poor results
+            // Only use structured output for known compatible models like OpenAI GPT
+            let request = build_request(false, use_streaming)?;
+            
+            if use_streaming {
+                // Streaming path - works for OpenAI, Claude, Gemini
+                let mut response = chat.create_stream(request)
+                    .await
+                    .map_err(|err| {
+                        tracing::error!("Streaming request failed: {err}");
+                        OxyError::RuntimeError(format!("Error in completion request: {err:?}"))
+                    })
+                    .map_err(backoff::Error::Permanent)?;
+            
+            tracing::debug!("API call successful, processing stream");
             let mut content = String::new();
             let mut tool_calls = HashMap::<(u32, u32), ChatCompletionMessageToolCall>::new();
-            let mut last_parsed_content = String::new();
+            let mut last_parsed_length = 0;
             let mut has_written = false;
 
+            tracing::trace!("Starting to process response stream chunks");
+            let mut chunk_count = 0;
+            
             while let Some(response) =
-                response.next().await.transpose().map_err(|err| match err {
-                    OpenAIError::StreamError(_) => {
+                response.next().await.transpose().map_err(|err| {
+                    tracing::error!("Stream processing error: {err}");
+                    if matches!(err, OpenAIError::StreamError(_)) {
+                        tracing::debug!("Transient stream error, will retry");
                         backoff::Error::<OxyError>::transient(err.into())
+                    } else {
+                        tracing::error!("Permanent stream error, not retrying");
+                        backoff::Error::<OxyError>::Permanent(err.into())
                     }
-                    _ => backoff::Error::<OxyError>::Permanent(err.into()),
                 })?
             {
+                chunk_count += 1;
+                tracing::trace!("Processing chunk #{}: {:?}", chunk_count, response);
+                
                 if let Some(usage_data) = response.usage {
+                    tracing::debug!("Usage data - Prompt tokens: {}, Completion tokens: {}", 
+                        usage_data.prompt_tokens, usage_data.completion_tokens);
                     execution_context
                         .write_usage(Usage::new(
                             usage_data.prompt_tokens as i32,
@@ -211,90 +385,126 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
                         self.parse_tool_call_chunks(&mut tool_calls, chunk.index, tool_call_chunks);
                     }
                     if let Some(message) = &chunk.delta.content {
-                        content.push_str(message);
-                        // Check if the content is a valid JSON string and parse it
-                        // then write the chunk to the execution context
-                        if let Ok(data) = from_json_str::<AgentResponse>(&content) {
-                            let (parsed_content, mut output) = match data.data {
-                                AgentResponseData::Table { file_path } => {
-                                    (file_path, Output::table(message.to_string()))
-                                }
-                                AgentResponseData::Text { text } => {
-                                    (text, Output::Text(message.to_string()))
-                                }
-                                AgentResponseData::SQL { sql } => {
-                                    (sql, Output::sql(message.to_string()))
-                                }
-                            };
-                            if last_parsed_content != parsed_content
-                                && variant_eq(&Output::Text("".to_string()), &output)
-                            {
-                                if !has_written {
-                                    execution_context
-                                        .write_kind(EventKind::Message {
-                                            message: "\nOutput:".primary().to_string(),
-                                        })
-                                        .await?;
-                                }
-
-                                has_written = true;
-                                let chunk = parsed_content.replace(&last_parsed_content, "");
-                                output.replace(chunk);
-                                last_parsed_content = parsed_content;
-                                execution_context
-                                    .write_chunk(Chunk {
-                                        key: Some(AGENT_SOURCE_CONTENT.to_string()),
-                                        delta: output,
-                                        finished: false,
-                                    })
-                                    .await?;
-                            }
-                        }
+                        self.process_content_chunk(
+                            execution_context,
+                            &mut content,
+                            &tool_calls,
+                            &mut last_parsed_length,
+                            &mut has_written,
+                            message,
+                        ).await?;
                     }
                 }
             }
-            let content = {
-                if content.is_empty() {
-                    AgentResponse::default()
+                let parsed_content = self.finalize_response(&content);
+                tracing::info!(
+                    "Agent response: {:?},\nTool Calls: {:?}",
+                    content,
+                    tool_calls
+                );
+
+                let delta: Output = if has_written {
+                    let mut output = Into::<Output>::into(parsed_content.data.clone());
+                    output.replace("".to_string());
+                    output
                 } else {
-                    serde_json::from_str::<AgentResponse>(&content).map_err(|err| {
-                        OxyError::SerializerError(format!(
-                            "Failed to deserialize OpenAI response: \"{content}\"\n{err}"
-                        ))
-                    })?
-                }
-            };
-            tracing::info!(
-                "Agent response: {:?},\nTool Calls: {:?}",
-                content,
-                tool_calls
-            );
+                    parsed_content.data.clone().into()
+                };
+                execution_context
+                    .write_chunk(Chunk {
+                        key: Some(AGENT_SOURCE_CONTENT.to_string()),
+                        delta,
+                        finished: true,
+                    })
+                    .await?;
 
-            let delta: Output = if has_written {
-                let mut output = Into::<Output>::into(content.data.clone());
-                output.replace("".to_string());
-                output
-            } else {
-                content.data.clone().into()
-            };
-            execution_context
-                .write_chunk(Chunk {
-                    key: Some(AGENT_SOURCE_CONTENT.to_string()),
-                    delta,
-                    finished: true,
+                tracing::debug!("Stream processing completed successfully");
+                tracing::debug!("Total raw content length: {}", content.len());
+                tracing::debug!("Tool calls generated: {}", tool_calls.len());
+                tracing::trace!("Total chunks processed: {}", chunk_count);
+
+                Ok(OpenAIExecutableResponse {
+                    content: parsed_content.into(),
+                    tool_calls: tool_calls.into_values().collect(),
                 })
-                .await?;
+            } else {
+                // Non-streaming path - works for Ollama with tools
+                tracing::debug!("Using non-streaming request for Ollama + tools compatibility");
+                let response = chat.create(request)
+                    .await
+                    .map_err(|err| {
+                        tracing::error!("Non-streaming request failed: {err}");
+                        OxyError::RuntimeError(format!("Error in completion request: {err:?}"))
+                    })
+                    .map_err(backoff::Error::Permanent)?;
 
-            Ok(OpenAIExecutableResponse {
-                content: content.into(),
-                tool_calls: tool_calls.into_values().collect(),
-            })
+                tracing::debug!("API call successful, processing non-streaming response");
+                
+                if let Some(usage_data) = response.usage {
+                    tracing::debug!("Usage data - Prompt tokens: {}, Completion tokens: {}", 
+                        usage_data.prompt_tokens, usage_data.completion_tokens);
+                    execution_context
+                        .write_usage(Usage::new(
+                            usage_data.prompt_tokens,
+                            usage_data.completion_tokens,
+                        ))
+                        .await?;
+                }
+
+                let choice = response.choices.first().ok_or_else(|| {
+                    OxyError::RuntimeError("No choices returned from API".to_string())
+                })?;
+
+                let content = choice.message.content.as_deref().unwrap_or("");
+                let tool_calls = choice.message.tool_calls.clone().unwrap_or_default();
+                
+                // Display the response
+                execution_context
+                    .write_kind(EventKind::Message {
+                        message: "\nOutput:".primary().to_string(),
+                    })
+                    .await?;
+
+                let parsed_content = self.finalize_response(content);
+                let delta: Output = parsed_content.data.clone().into();
+                execution_context
+                    .write_chunk(Chunk {
+                        key: Some(AGENT_SOURCE_CONTENT.to_string()),
+                        delta,
+                        finished: true,
+                    })
+                    .await?;
+
+                tracing::debug!("Non-streaming processing completed successfully");
+                tracing::debug!("Content length: {}", content.len());
+                tracing::debug!("Tool calls generated: {}", tool_calls.len());
+
+                Ok(OpenAIExecutableResponse {
+                    content: parsed_content.into(),
+                    tool_calls,
+                })
+            }
         };
         let func_with_log = async || {
             let result = func().await;
             match result {
-                Ok(rs) => Ok(rs),
+                Ok(rs) => {
+                    tracing::debug!("OpenAI execution completed successfully");
+                    Ok(rs)
+                },
                 Err(err) => {
+                    tracing::error!("OpenAI execution failed: {err}");
+                    
+                    // Log specific error context
+                    match &err {
+                        backoff::Error::Permanent(perm_err) => {
+                            tracing::error!("Permanent error (will not retry): {perm_err}");
+                        },
+                        backoff::Error::Transient { err: trans_err, .. } => {
+                            tracing::debug!("Transient error (retrying): {trans_err}");
+                        }
+                    };
+                    
                     execution_context
                         .write_kind(EventKind::Error {
                             message: "🔴 Error while calling LLM model. Retrying..."
@@ -313,10 +523,16 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
                 .with_max_elapsed_time(Some(AGENT_RETRY_MAX_ELAPSED_TIME))
                 .build(),
             func_with_log,
-            |err, b| {
+            |err, backoff_duration| {
                 attempt += 1;
-                tracing::error!("Error happened at {:?} in OpenAI executable: {:?}", b, err);
-                tracing::warn!("Retrying({})...", attempt);
+                tracing::debug!("Retry #{} - Error occurred after {:?} elapsed", attempt, backoff_duration);
+                tracing::debug!("Error details: {:?}", err);
+                tracing::debug!("Waiting {:?} before retry #{}", backoff_duration, attempt);
+                
+                // Log specific error types for better debugging
+                if let OxyError::RuntimeError(runtime_msg) = &err {
+                    tracing::debug!("Runtime error context: {}", runtime_msg);
+                }
             },
         )
         .await;
@@ -324,6 +540,15 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
         // Clear tools if we are in synthesize mode
         if self.synthesize_mode {
             self.clear_tools();
+        }
+
+        match &response {
+            Ok(_) => {
+                tracing::debug!("OpenAI agent execution completed successfully after {} attempts", attempt.max(1));
+            },
+            Err(err) => {
+                tracing::error!("OpenAI agent execution failed permanently after {} attempts: {:?}", attempt, err);
+            }
         }
 
         response

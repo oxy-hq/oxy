@@ -30,32 +30,82 @@ impl Engine for Snowflake {
         query: &str,
         _dry_run_limit: Option<u64>,
     ) -> Result<(Vec<RecordBatch>, SchemaRef), OxyError> {
+        tracing::debug!("🔍 Snowflake query: {}", query);
+        
         let config = self.config.clone();
-        let api = SnowflakeApi::with_password_auth(
-            config.account.as_str(),
-            Some(config.warehouse.as_str()),
-            Some(config.database.as_str()),
-            None,
-            &config.username,
-            config.role.as_deref(),
-            &config.get_password().await?,
-        )
-        .map_err(|err| connector_internal_error(CREATE_CONN, &err))?;
+        let api = if let Some(private_key_path) = &config.private_key_path {
+            tracing::debug!("🔐 Snowflake: Using private key authentication from: {}", private_key_path.display());
+            // Use private key authentication
+            let private_key_content = std::fs::read_to_string(private_key_path)
+                .map_err(|err| OxyError::ConfigurationError(format!("Failed to read private key file: {}", err)))?;
+            
+            SnowflakeApi::with_certificate_auth(
+                config.account.as_str(),
+                Some(config.warehouse.as_str()),
+                Some(config.database.as_str()),
+                None,
+                &config.username,
+                config.role.as_deref(),
+                &private_key_content,
+            )
+            .map_err(|err| {
+                tracing::error!("❌ Snowflake: Failed to create connection with private key: {}", err);
+                connector_internal_error(CREATE_CONN, &err)
+            })?
+        } else {
+            tracing::debug!("🔑 Snowflake: Using password authentication");
+            // Use password authentication
+            SnowflakeApi::with_password_auth(
+                config.account.as_str(),
+                Some(config.warehouse.as_str()),
+                Some(config.database.as_str()),
+                None,
+                &config.username,
+                config.role.as_deref(),
+                &config.get_password().await?,
+            )
+            .map_err(|err| {
+                tracing::error!("❌ Snowflake: Failed to create connection with password: {}", err);
+                connector_internal_error(CREATE_CONN, &err)
+            })?
+        };
+        
+        tracing::debug!("✅ Snowflake: Connection established successfully");
+        tracing::debug!("⚡ Snowflake: Executing query...");
+        
         let res = api
             .exec(query)
             .await
-            .map_err(|err| connector_internal_error(EXECUTE_QUERY, &err))?;
+            .map_err(|err| {
+                tracing::error!("❌ Snowflake: Query execution failed: {}", err);
+                connector_internal_error(EXECUTE_QUERY, &err)
+            })?;
         let record_batches: Vec<RecordBatch>;
         match res {
             QueryResult::Arrow(batches) => {
+                tracing::debug!("📊 Snowflake: Received Arrow result with {} batches", batches.len());
                 record_batches = batches;
             }
             QueryResult::Json(json) => {
+                tracing::debug!("📄 Snowflake: Received JSON result, converting to Arrow...");
                 let batches = convert_json_result_to_arrow(&json)?;
+                tracing::debug!("✅ Snowflake: Converted JSON to {} Arrow batches", batches.len());
                 record_batches = batches;
             }
-            QueryResult::Empty => return Err(OxyError::DBError("Empty result".to_string())),
+            QueryResult::Empty => {
+                tracing::warn!("⚠️ Snowflake: Query returned empty result");
+                return Err(OxyError::DBError("Empty result".to_string()));
+            }
         }
+        
+        if record_batches.is_empty() {
+            tracing::warn!("⚠️ Snowflake: No record batches returned");
+            return Err(OxyError::DBError("No record batches returned".to_string()));
+        }
+        
+        let total_rows: usize = record_batches.iter().map(|batch| batch.num_rows()).sum();
+        tracing::debug!("🎯 Snowflake: Query completed successfully - {} batches, {} total rows", record_batches.len(), total_rows);
+        
         let schema = record_batches[0].schema();
         Ok((record_batches, schema))
     }

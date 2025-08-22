@@ -250,7 +250,7 @@ impl ConfigManager {
             crate::config::model::DatabaseType::Postgres(postgres) => postgres.password_var.clone(),
             crate::config::model::DatabaseType::Mysql(mysql) => mysql.password_var.clone(),
             crate::config::model::DatabaseType::Snowflake(snowflake) => {
-                Some(snowflake.password_var.clone())
+                snowflake.password_var.clone()
             }
             crate::config::model::DatabaseType::ClickHouse(clickhouse) => {
                 clickhouse.password_var.clone()

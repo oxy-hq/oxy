@@ -67,6 +67,9 @@ docs/_build/
 # VSCode
 .vscode/launch.json
 
+# Cursor
+.history/
+
 # Pyenv
 .python-version
 
