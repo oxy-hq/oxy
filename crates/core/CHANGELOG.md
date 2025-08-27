@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.26](https://github.com/oxy-hq/oxy-internal/compare/0.2.25...0.2.26) (2025-08-27)
+
+
+### <!-- 0 -->🚀 Features
+
+* support global semantics within agent context ([#1040](https://github.com/oxy-hq/oxy-internal/issues/1040)) ([f14e20b](https://github.com/oxy-hq/oxy-internal/commit/f14e20bd8e5f35d70aaf2863935fa41535c3676d))
+
 ## [0.2.25](https://github.com/oxy-hq/oxy-internal/compare/0.2.24...0.2.25) (2025-08-21)
 
 
