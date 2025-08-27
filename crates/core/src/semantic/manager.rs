@@ -1,6 +1,6 @@
 use itertools::Itertools;
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     str::FromStr,
     sync::{Arc, Mutex},
     time::Instant,
@@ -19,7 +19,7 @@ use crate::{
 };
 
 use super::{
-    SemanticContexts, SemanticVariablesContexts,
+    SemanticVariablesContexts,
     contexts::SemanticDimensionsContexts,
     storage::SemanticStorage,
     types::{DatabaseInfo, SemanticTableRef, SyncDimension, SyncMetrics},
@@ -62,10 +62,17 @@ impl SemanticManager {
 
     async fn load_global_semantics(
         &self,
-    ) -> Result<Vec<Result<(String, SemanticModels), OxyError>>, OxyError> {
+    ) -> Result<
+        (
+            Vec<Result<(String, SemanticModels), OxyError>>,
+            HashMap<String, SemanticDimension>,
+        ),
+        OxyError,
+    > {
         let semantics = self.storage.load_global_semantics().await?;
+        let targets = semantics.list_targets();
         let models = async_stream::stream! {
-            for target in semantics.list_targets() {
+            for target in targets {
                 yield async move {
                     let semantic_table_ref = SemanticTableRef::from_str(&target)
                         .map_err(|err| {
@@ -88,36 +95,27 @@ impl SemanticManager {
         .buffered(10)
         .collect::<Vec<_>>()
         .await;
-        Ok(models)
-    }
-
-    pub async fn get_semantic_contexts(&self) -> Result<SemanticContexts, OxyError> {
-        let models = self.load_global_semantics().await?;
-        Ok(SemanticContexts::new(
-            models.into_iter().filter_map(Result::ok).collect(),
-        ))
+        let gsm = semantics
+            .dimensions
+            .into_iter()
+            .map(|dim| (dim.name.clone(), dim))
+            .collect::<HashMap<String, SemanticDimension>>();
+        Ok((models, gsm))
     }
 
     pub async fn get_semantic_variables_contexts(
         &self,
     ) -> Result<SemanticVariablesContexts, OxyError> {
-        let models = self.load_global_semantics().await?;
-        SemanticVariablesContexts::new(models.into_iter().filter_map(Result::ok).collect())
+        let (models, gsm) = self.load_global_semantics().await?;
+        SemanticVariablesContexts::new(models.into_iter().filter_map(Result::ok).collect(), gsm)
     }
 
     pub async fn get_semantic_dimensions_contexts(
         &self,
         variables_contexts: &SemanticVariablesContexts,
     ) -> Result<SemanticDimensionsContexts, OxyError> {
-        let semantics = self.storage.load_global_semantics().await?;
-        Ok(SemanticDimensionsContexts::new(
-            semantics
-                .dimensions
-                .into_iter()
-                .map(|dim| (dim.name.clone(), dim))
-                .collect(),
-            variables_contexts,
-        ))
+        let (_, gsm) = self.load_global_semantics().await?;
+        Ok(SemanticDimensionsContexts::new(gsm, variables_contexts))
     }
 
     async fn sync(

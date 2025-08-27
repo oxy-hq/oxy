@@ -12,51 +12,6 @@ use crate::{
 
 use super::types::SemanticTableRef;
 
-#[derive(Debug, Clone, Serialize)]
-pub struct SemanticContexts {
-    models: HashMap<String, SemanticModels>,
-}
-
-impl SemanticContexts {
-    pub fn new(models: HashMap<String, SemanticModels>) -> Self {
-        SemanticContexts { models }
-    }
-}
-
-impl Object for SemanticModels {
-    fn get_value(
-        self: &Arc<Self>,
-        key: &minijinja::value::Value,
-    ) -> Option<minijinja::value::Value> {
-        let key = key.as_str()?;
-        self.dimensions
-            .iter()
-            .find(|dim| dim.name == key)
-            .map(minijinja::value::Value::from_serialize)
-    }
-
-    fn render(self: &Arc<Self>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result
-    where
-        Self: Sized + 'static,
-    {
-        writeln!(f, "{self:?}")
-    }
-}
-
-impl Object for SemanticContexts {
-    fn get_value(
-        self: &Arc<Self>,
-        key: &minijinja::value::Value,
-    ) -> Option<minijinja::value::Value> {
-        let key = key.as_str()?;
-        tracing::info!("Fetching semantic model for key: {}", key);
-        tracing::info!("Available models: {:?}", self.models.keys());
-        self.models
-            .get(key)
-            .map(|entity| minijinja::value::Value::from_object(entity.clone()))
-    }
-}
-
 impl TryInto<SchemaObject> for Dimension {
     type Error = OxyError;
 
@@ -111,22 +66,41 @@ pub struct SemanticVariablesContexts {
 }
 
 impl SemanticVariablesContexts {
-    pub fn new(models: HashMap<String, SemanticModels>) -> Result<Self, OxyError> {
+    pub fn new(
+        models: HashMap<String, SemanticModels>,
+        gsm: HashMap<String, SemanticDimension>,
+    ) -> Result<Self, OxyError> {
         Ok(SemanticVariablesContexts {
             variables: models
                 .into_iter()
-                .map(|(name, model)| {
+                .map(|(table_name, model)| {
                     model
                         .dimensions
                         .into_iter()
                         .map(|dim| {
-                            let name = dim.name.clone();
-                            dim.try_into().map(|s| (name, s))
+                            let dim_name = dim.name.clone();
+                            dim.try_into().map(|mut s| {
+                                match gsm.get(&dim_name) {
+                                    Some(dim) => {
+                                        let is_applied = dim
+                                            .targets
+                                            .iter()
+                                            .filter_map(|target| target.split('.').next_back())
+                                            .find(|t| *t == table_name.as_str())
+                                            .is_some();
+                                        if is_applied {
+                                            override_schema(&mut s, &dim.schema);
+                                        }
+                                    }
+                                    None => {}
+                                }
+                                (dim_name, s)
+                            })
                         })
                         .try_collect::<(String, SchemaObject), Vec<_>, OxyError>()
                         .map(|variables| {
                             (
-                                name,
+                                table_name,
                                 Variables {
                                     variables: variables.into_iter().collect(),
                                 },
@@ -176,42 +150,7 @@ impl SemanticDimensionsContexts {
                 if let Some(target) = dim.targets.first() {
                     // If the dimension has targets, merge the schema with the target variable
                     if let Some(variable) = model_contexts.get_base_schema(target) {
-                        let mut override_schema = variable.clone();
-                        if let Some(instance_type) = schema.instance_type {
-                            override_schema.instance_type = Some(instance_type);
-                        }
-                        if let Some(metadata) = schema.metadata {
-                            override_schema.metadata = Some(metadata);
-                        }
-                        if let Some(format) = schema.format {
-                            override_schema.format = Some(format);
-                        }
-                        if let Some(enum_values) = schema.enum_values {
-                            override_schema.enum_values = Some(enum_values);
-                        }
-                        if let Some(const_value) = schema.const_value {
-                            override_schema.const_value = Some(const_value);
-                        }
-                        if let Some(subschemas) = schema.subschemas {
-                            override_schema.subschemas = Some(subschemas);
-                        }
-                        if let Some(number) = schema.number {
-                            override_schema.number = Some(number);
-                        }
-                        if let Some(string) = schema.string {
-                            override_schema.string = Some(string);
-                        }
-                        if let Some(array) = schema.array {
-                            override_schema.array = Some(array);
-                        }
-                        if let Some(object) = schema.object {
-                            override_schema.object = Some(object);
-                        }
-                        if let Some(reference) = schema.reference {
-                            override_schema.reference = Some(reference);
-                        }
-                        override_schema.extensions = schema.extensions;
-                        schema = override_schema;
+                        schema = variable.clone();
                     }
                 }
                 (name, schema)
@@ -335,4 +274,43 @@ fn map_instance_type(
     };
 
     SingleOrVec::Single(Box::new(instance_type))
+}
+
+fn override_schema(base: &mut SchemaObject, override_with: &SchemaObject) {
+    if let Some(instance_type) = &override_with.instance_type {
+        base.instance_type = Some(instance_type.clone());
+    }
+    if let Some(metadata) = &override_with.metadata {
+        base.metadata = Some(metadata.clone());
+    }
+    if let Some(format) = &override_with.format {
+        base.format = Some(format.clone());
+    }
+    if let Some(enum_values) = &override_with.enum_values {
+        base.enum_values = Some(enum_values.clone());
+    }
+    if let Some(const_value) = &override_with.const_value {
+        base.const_value = Some(const_value.clone());
+    }
+    if let Some(subschemas) = &override_with.subschemas {
+        base.subschemas = Some(subschemas.clone());
+    }
+    if let Some(number) = &override_with.number {
+        base.number = Some(number.clone());
+    }
+    if let Some(string) = &override_with.string {
+        base.string = Some(string.clone());
+    }
+    if let Some(array) = &override_with.array {
+        base.array = Some(array.clone());
+    }
+    if let Some(object) = &override_with.object {
+        base.object = Some(object.clone());
+    }
+    if let Some(reference) = &override_with.reference {
+        base.reference = Some(reference.clone());
+    }
+    for (key, value) in &override_with.extensions {
+        base.extensions.insert(key.clone(), value.clone());
+    }
 }
