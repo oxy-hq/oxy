@@ -241,11 +241,15 @@ async fn build_global_context(
     );
     let semantic_manager =
         SemanticManager::from_config(execution_context.config.clone(), false).await?;
-    let semantic_contexts = semantic_manager.get_semantic_contexts().await?;
+    let semantic_contexts = semantic_manager.get_semantic_variables_contexts().await?;
+    let semantic_dimensions_contexts = semantic_manager
+        .get_semantic_dimensions_contexts(&semantic_contexts)
+        .await?;
     Ok(context! {
         context => Value::from_object(contexts),
         databases => Value::from_object(databases),
-        entities => Value::from_object(semantic_contexts),
+        models => Value::from_object(semantic_contexts),
+        dimensions => Value::from_object(semantic_dimensions_contexts),
         tools => Value::from_object(tools)
     })
 }

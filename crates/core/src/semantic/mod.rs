@@ -4,5 +4,5 @@ mod manager;
 mod storage;
 pub mod types;
 
-pub use contexts::{SemanticContexts, SemanticVariablesContexts};
+pub use contexts::SemanticVariablesContexts;
 pub use manager::SemanticManager;
