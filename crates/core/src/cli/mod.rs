@@ -30,6 +30,7 @@ use crate::workflow::RetryStrategy;
 use crate::workflow::loggers::cli::WorkflowCLILogger;
 use axum::handler::Handler;
 use axum::http::HeaderValue;
+use axum::http::Request;
 use clap::CommandFactory;
 use clap::Parser;
 use clap::builder::ValueParser;
@@ -69,12 +70,7 @@ use crate::api::router;
 use tower_http::trace::{self, TraceLayer};
 use tower_serve_static::ServeDir;
 
-use axum::{
-    Router,
-    body::Body,
-    http::{Request, StatusCode},
-    routing::get_service,
-};
+use axum::{Router, body::Body, http::StatusCode, routing::get_service};
 
 use dotenv;
 use include_dir::{Dir, include_dir};
@@ -487,6 +483,18 @@ struct ServeArgs {
     /// directory and provides git-based onboarding functionality.
     #[clap(long, default_value_t = false)]
     readonly: bool,
+    /// Force HTTP/2 only mode (disable HTTP/1.1)
+    ///
+    /// When enabled, the server will only accept HTTP/2 connections (h2c).
+    /// HTTP/1.1 requests will be rejected. Default supports both protocols.
+    #[clap(long, default_value_t = false)]
+    http2_only: bool,
+    /// TLS certificate file for HTTPS (local development)
+    #[clap(long, default_value = "localhost+2.pem")]
+    tls_cert: String,
+    /// TLS private key file for HTTPS (local development)
+    #[clap(long, default_value = "localhost+2-key.pem")]
+    tls_key: String,
 }
 
 #[derive(Parser, Debug)]
@@ -809,9 +817,12 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
         Some(SubCommand::Serve(serve_args)) => {
             start_server_and_web_app(
                 serve_args.port,
-                serve_args.host,
+                serve_args.host.clone(),
                 serve_args.auth_mode,
                 serve_args.readonly,
+                serve_args.http2_only,
+                serve_args.tls_cert.clone(),
+                serve_args.tls_key.clone(),
             )
             .await;
         }
@@ -1133,10 +1144,13 @@ pub async fn handle_test_command(test_args: TestArgs) -> Result<(), OxyError> {
 struct ApiDoc;
 
 pub async fn start_server_and_web_app(
-    mut web_port: u16,
+    web_port: u16,
     web_host: String,
     auth_mode: AuthMode,
     readonly_mode: bool,
+    http2_only: bool,
+    tls_cert: String,
+    tls_key: String,
 ) {
     // Set global readonly mode
     crate::readonly::set_readonly_mode(readonly_mode);
@@ -1234,39 +1248,6 @@ pub async fn start_server_and_web_app(
     }
 
     let web_server_task = tokio::spawn(async move {
-        let original_port = web_port;
-        let mut port_increment_count = 0;
-        const MAX_PORT_INCREMENTS: u16 = 10;
-
-        loop {
-            match tokio::net::TcpListener::bind((web_host.as_str(), web_port)).await {
-                Ok(_) => break,
-                Err(e) => {
-                    // For privileged ports (1024 and below), don't auto-increment if it's a permission error
-                    if web_port <= 1024 && e.kind() == std::io::ErrorKind::PermissionDenied {
-                        eprintln!(
-                            "Permission denied binding to port {web_port}. Try running with sudo or use a port above 1024."
-                        );
-                        std::process::exit(1);
-                    }
-
-                    // If we've tried too many increments, give up
-                    if port_increment_count >= MAX_PORT_INCREMENTS {
-                        eprintln!(
-                            "Failed to bind to any port after trying {} ports starting from {}. Error: {}",
-                            port_increment_count + 1,
-                            original_port,
-                            e
-                        );
-                        std::process::exit(1);
-                    }
-
-                    println!("Port {web_port} for web app is occupied. Trying next port...");
-                    web_port += 1;
-                    port_increment_count += 1;
-                }
-            }
-        }
         let serve_with_fallback = service_fn(move |req: Request<Body>| {
             async move {
                 let uri = req.uri().clone();
@@ -1353,25 +1334,40 @@ pub async fn start_server_and_web_app(
         let web_addr = format!("{web_host}:{web_port}")
             .parse::<SocketAddr>()
             .unwrap_or_else(|_| SocketAddr::from(([0, 0, 0, 0], web_port)));
-        let listener = tokio::net::TcpListener::bind(web_addr).await.unwrap();
         let display_host = if web_host == "0.0.0.0" {
             "localhost"
         } else {
             &web_host
         };
 
+        // Determine protocol for display message
+        let is_https = http2_only;
+        let protocol = if is_https { "https" } else { "http" };
+        let protocol_info = if http2_only {
+            if readonly_mode {
+                "(readonly mode, HTTP/2 ONLY)"
+            } else {
+                " (HTTP/2 ONLY)"
+            }
+        } else {
+            if readonly_mode {
+                "(readonly mode, HTTP/1.1+HTTP/2)"
+            } else {
+                " (HTTP/1.1+HTTP/2)"
+            }
+        };
         if readonly_mode {
             println!(
                 "{} {} {}",
                 "Web app running at".text(),
-                format!("http://{display_host}:{web_port}").secondary(),
-                "(readonly mode)".tertiary()
+                format!("{protocol}://{display_host}:{web_port}").secondary(),
+                protocol_info.tertiary()
             );
         } else {
             println!(
                 "{} {}",
                 "Web app running at".text(),
-                format!("http://{display_host}:{web_port}").secondary()
+                format!("{protocol}://{display_host}:{web_port}{protocol_info}").secondary()
             );
         }
 
@@ -1381,10 +1377,66 @@ pub async fn start_server_and_web_app(
             tracing::info!("Admin roles synced successfully");
         }
 
-        axum::serve(listener, web_app)
-            .with_graceful_shutdown(shutdown_signal())
-            .await
-            .unwrap();
+        if http2_only {
+            // If TLS cert/key files exist, use HTTPS+HTTP/2 for local development
+            let cert_exists = std::path::Path::new(&tls_cert).exists();
+            let key_exists = std::path::Path::new(&tls_key).exists();
+            let config = if cert_exists && key_exists {
+                tracing::info!("Using provided TLS cert/key files for HTTPS (TLS) and HTTP/2");
+                match axum_server::tls_rustls::RustlsConfig::from_pem_file(&tls_cert, &tls_key)
+                    .await
+                {
+                    Ok(cfg) => cfg,
+                    Err(e) => {
+                        eprintln!("Failed to load TLS cert/key: {e}");
+                        std::process::exit(1);
+                    }
+                }
+            } else {
+                tracing::warn!("No TLS cert/key files found, using bundled default cert/key.");
+                // Bundle default cert/key into binary
+                let default_cert: &[u8] = include_bytes!("../../../../localhost+2.pem");
+                let default_key: &[u8] = include_bytes!("../../../../localhost+2-key.pem");
+                match axum_server::tls_rustls::RustlsConfig::from_pem(
+                    default_cert.to_vec(),
+                    default_key.to_vec(),
+                )
+                .await
+                {
+                    Ok(cfg) => cfg,
+                    Err(e) => {
+                        eprintln!("Failed to load bundled TLS cert/key: {e}");
+                        std::process::exit(1);
+                    }
+                }
+            };
+            let result = axum_server::bind_rustls(web_addr, config)
+                .serve(web_app.into_make_service())
+                .await;
+            match result {
+                Ok(_) => {}
+                Err(e) => {
+                    if let Some(os_err) = e.raw_os_error() {
+                        if os_err == 48 {
+                            eprintln!(
+                                "Address already in use. Please stop any other server running on this port and try again."
+                            );
+                            std::process::exit(1);
+                        }
+                    }
+                    eprintln!("Server error: {e}");
+                    std::process::exit(1);
+                }
+            }
+        } else {
+            // Start server with both HTTP/1.1 and HTTP/2 support
+            tracing::info!("Starting server with HTTP/1.1 and HTTP/2 support");
+            let listener = tokio::net::TcpListener::bind(web_addr).await.unwrap();
+            axum::serve(listener, web_app)
+                .with_graceful_shutdown(shutdown_signal())
+                .await
+                .unwrap();
+        }
     });
 
     // Start Apalis worker in readonly mode for background tasks
