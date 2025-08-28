@@ -19,8 +19,9 @@ assert_cmd = "2.0.17"
 async-openai = {version = "0.28.3", features = ["byot"]}
 async-stream = "0.3.6"
 async-trait = "0.1.89"
-axum = { version = "0.8.4", features = ["macros"] }
+axum = { version = "0.8.4", features = ["macros", "http2"] }
 axum-extra = { version = "0.10", features = ["typed-header"] }
+axum-server = { version = "0.7.1", features = ["tls-rustls"] }
 axum-streams = { version = "0.21.0", features = ["json", "csv", "protobuf", "text"] }
 base64 = "0.22"
 bcrypt = "0.16"

@@ -29,6 +29,36 @@ cargo build
 pnpm install
 ```
 
+## Local HTTPS Development: TLS Certificates
+
+### Why HTTPS Is Critical for Development
+
+Oxy uses HTTP/2 for its backend and frontend communication during development. Modern browsers and many HTTP clients only enable HTTP/2 when using HTTPS (TLS). This means that for local development, HTTPS is required to fully test and utilize HTTP/2 features, such as multiplexing and improved performance. Without HTTPS, your development environment will fall back to HTTP/1.1, which does not support these advanced features.
+
+To ensure you are developing and testing with HTTP/2, follow the instructions below to set up local TLS certificates using mkcert.
+
+To enable HTTPS for local development (backend and frontend), you need TLS certificates. We recommend using [mkcert](https://github.com/FiloSottile/mkcert):
+
+### Install mkcert
+
+**macOS:**
+
+```sh
+brew install mkcert
+brew install nss # if you use Firefox
+```
+
+**Linux:**
+Please check for instruction on [mkcert installation](https://github.com/FiloSottile/mkcert#linux).
+
+Trust certificates from mkcert:
+
+```sh
+mkcert -install
+```
+
+We dont need to generate a self-signed cert for oxy, as we already bundle a cert into the project
+
 ## Environment Variables
 
 Set the following environment variables for full functionality:
@@ -89,14 +119,16 @@ Start the development server:
 cargo run serve
 ```
 
-Start the frontend development server:
+This will only start the api server (or in some cases, with a frontend that is resulted from `pnpm build`)
+If you need to start the frontend, you can do so with the following commands:
 
 ```bash
+cargo run serve -- --http2-only  ## frontend only talks to backend via https
 pnpm run dev
 ```
 
-The API server will be available at `http://localhost:3000`.
-The frontend will be available at `http://localhost:5173`.
+The API server will be available at `https://localhost:3000`.
+The frontend will be available at `https://localhost:5173`.
 
 ## Building for Production
 

@@ -9,7 +9,7 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: oxy-app
-    command: ["oxy", "serve", "--port", "3000"]
+    command: ["oxy", "serve", "--port", "3000", "--http2-only"]
     ports:
       - "3000:3000"
     environment:
@@ -29,21 +29,21 @@ services:
     volumes:
       - ./examples:/app
 
-  clickhouse:
-    image: clickhouse/clickhouse-server
-    user: "101:101"
-    container_name: clickhouse
-    hostname: clickhouse
-    environment:
-      CLICKHOUSE_USER: default
-      CLICKHOUSE_PASSWORD: password
-      CLICKHOUSE_DB: default
-    volumes:
-      - clickhouse-data:/var/lib/clickhouse
-    ports:
-      - "8123:8123"
-      - "9000:9000"
-    restart: unless-stopped
+  # clickhouse:
+  #   image: clickhouse/clickhouse-server
+  #   user: "101:101"
+  #   container_name: clickhouse
+  #   hostname: clickhouse
+  #   environment:
+  #     CLICKHOUSE_USER: default
+  #     CLICKHOUSE_PASSWORD: password
+  #     CLICKHOUSE_DB: default
+  #   volumes:
+  #     - clickhouse-data:/var/lib/clickhouse
+  #   ports:
+  #     - "8123:8123"
+  #     - "9000:9000"
+  #   restart: unless-stopped
 
   postgres:
     image: postgres
