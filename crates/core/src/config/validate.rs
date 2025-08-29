@@ -35,6 +35,34 @@ pub fn validate_file_path(path: &PathBuf, context: &ValidationContext) -> garde:
     Ok(())
 }
 
+pub fn validate_optional_file_path(
+    path: &Option<PathBuf>,
+    context: &ValidationContext,
+) -> garde::Result {
+    if let Some(path) = path {
+        validate_file_path(path, context)
+    } else {
+        Ok(())
+    }
+}
+
+pub fn validate_optional_private_key_path(
+    path: &Option<PathBuf>,
+    _context: &ValidationContext,
+) -> garde::Result {
+    if let Some(path) = path {
+        // For private keys, allow absolute paths since they're often stored in secure locations
+        // Just check that the file exists
+        if !path.exists() {
+            return Err(format_error_message(
+                FILE_NOT_FOUND_ERROR,
+                path.to_string_lossy(),
+            ));
+        }
+    }
+    Ok(())
+}
+
 pub fn validation_directory_path(path: &PathBuf, _: &ValidationContext) -> garde::Result {
     if !path.is_dir() {
         return Err(format_error_message(
