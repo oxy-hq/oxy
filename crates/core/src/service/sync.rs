@@ -9,10 +9,20 @@ pub async fn sync_databases(
     filter: Option<(String, Vec<String>)>,
     overwrite: bool,
 ) -> Result<Vec<Result<SyncMetrics, OxyError>>, OxyError> {
-    let results = SemanticManager::from_config(config, overwrite)
-        .await?
-        .sync_all(filter)
-        .await?;
+    tracing::debug!(
+        "sync_databases: Called with filter: {:?}, overwrite: {}",
+        filter,
+        overwrite
+    );
+
+    let semantic_manager = SemanticManager::from_config(config, overwrite).await?;
+    tracing::debug!("sync_databases: SemanticManager created successfully");
+
+    let results = semantic_manager.sync_all(filter).await?;
+    tracing::debug!(
+        "sync_databases: sync_all completed with {} results",
+        results.len()
+    );
 
     let would_overwrite_count: usize = results
         .iter()

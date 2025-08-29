@@ -124,8 +124,48 @@ impl SemanticManager {
         pbar: Option<Arc<Mutex<Pbar>>>,
     ) -> Result<SyncMetrics, OxyError> {
         let start_time = Instant::now();
+
+        tracing::debug!(
+            "Starting sync for database: {} (type: {:?})",
+            database.name,
+            database.database_type
+        );
+
         let loader = SchemaLoader::from_database(database, &self.config).await?;
-        let semantics = loader.load_schema().await?;
+        tracing::debug!(
+            "SchemaLoader created successfully for database: {}",
+            database.name
+        );
+
+        tracing::debug!("Loading schema for database: {}", database.name);
+        let semantics = match loader.load_schema().await {
+            Ok(semantics) => {
+                tracing::debug!(
+                    "Schema loaded for database: {} - found {} datasets",
+                    database.name,
+                    semantics.len()
+                );
+                for (dataset, models) in &semantics {
+                    tracing::trace!("Dataset '{}' has {} models", dataset, models.len());
+                    for (table_name, model) in models {
+                        tracing::trace!(
+                            "Table '{}' has {} dimensions",
+                            table_name,
+                            model.dimensions.len()
+                        );
+                    }
+                }
+                semantics
+            }
+            Err(e) => {
+                tracing::error!(
+                    "Failed to load schema for database {}: {}",
+                    database.name,
+                    e
+                );
+                return Err(e);
+            }
+        };
         let mut output_files = vec![];
         let mut would_overwrite_files: Vec<String> = vec![];
         let mut overwritten_files = vec![];
@@ -212,21 +252,51 @@ impl SemanticManager {
     ) -> Result<Vec<Result<SyncMetrics, OxyError>>, OxyError> {
         let mut global_semantics = self.storage.load_global_semantics().await?;
         let databases = match filter {
-            Some((db, datasets)) => vec![
-                self.config
-                    .resolve_database(&db)?
-                    .clone()
-                    .with_datasets(datasets),
-            ],
-            None => self.config.list_databases()?.to_vec(),
+            Some((db, datasets)) => {
+                tracing::debug!(
+                    "Filtering to database: {} with datasets: {:?}",
+                    db,
+                    datasets
+                );
+                let resolved_db = self.config.resolve_database(&db)?;
+                tracing::debug!(
+                    "Resolved database: {} (type: {:?})",
+                    resolved_db.name,
+                    resolved_db.database_type
+                );
+                vec![resolved_db.clone().with_datasets(datasets)]
+            }
+            None => {
+                let all_dbs = self.config.list_databases()?.to_vec();
+                tracing::debug!(
+                    "No filter provided, syncing all {} databases",
+                    all_dbs.len()
+                );
+                for db in &all_dbs {
+                    tracing::trace!("  - Database: {} (type: {:?})", db.name, db.database_type);
+                }
+                all_dbs
+            }
         };
+
+        tracing::debug!("About to sync {} database(s)", databases.len());
+        for db in &databases {
+            tracing::trace!(
+                "Database to sync: {} (type: {:?})",
+                db.name,
+                db.database_type
+            );
+        }
         let pbar = Arc::new(Mutex::new(pbar(Some(databases.len()))));
         let metrics = async_stream::stream! {
           for database in databases {
             let db = database.clone();
+            tracing::trace!("Starting sync for database: {}", db.name);
             let pbar = pbar.clone();
             yield async move {
-              self.sync(&db, Some(pbar)).await
+              let result = self.sync(&db, Some(pbar)).await;
+              tracing::trace!("Sync completed for database: {} - result: {:?}", db.name, result.is_ok());
+              result
             };
           }
         }

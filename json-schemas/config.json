@@ -200,7 +200,6 @@
           "required": [
             "account",
             "database",
-            "password_var",
             "type",
             "username",
             "warehouse"
@@ -212,6 +211,16 @@
             "database": {
               "type": "string"
             },
+            "datasets": {
+              "default": {},
+              "type": "object",
+              "additionalProperties": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
             "password": {
               "type": [
                 "string",
@@ -219,7 +228,17 @@
               ]
             },
             "password_var": {
-              "type": "string"
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "private_key_path": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
             },
             "role": {
               "type": [
