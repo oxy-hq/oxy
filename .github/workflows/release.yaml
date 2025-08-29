@@ -105,6 +105,8 @@ jobs:
       - name: Install dependencies & Build web-app
         env:
           NODE_OPTIONS: "--max_old_space_size=4096"
+          SENTRY_AUTH_TOKEN: ${{ vars.SENTRY_AUTH_TOKEN }}
+          VITE_SENTRY_DSN: ${{ vars.VITE_SENTRY_DSN }}
         run: |
           pnpm install --prefer-frozen-lockfile
           pnpm -C web-app build
@@ -112,6 +114,8 @@ jobs:
       #-- Build oxy cli binary
       - name: Build oxy cli
         shell: bash
+        env:
+          SENTRY_DSN: ${{ vars.SENTRY_DSN }}
         run: |
           cargo build --release --target ${{ matrix.job.target }}
           mv target/${{ matrix.job.target }}/release/oxy artifacts/oxy-${{ matrix.job.target }}

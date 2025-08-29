@@ -15,6 +15,7 @@ use crate::execute::types::utils::record_batches_to_table;
 use crate::mcp::service::OxyMcpServer;
 use crate::project::initialize_project_manager;
 use crate::project::resolve_project_path;
+use crate::sentry_config;
 use crate::service::agent::AgentCLIHandler;
 use crate::service::agent::run_agent;
 use crate::service::eval::EvalEventsHandler;
@@ -576,8 +577,17 @@ async fn handle_workflow_file(
     retry: bool,
     retry_from: Option<String>,
 ) -> Result<(), OxyError> {
+    // Add Sentry context for workflow execution
+    let workflow_name_str = workflow_name
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("unknown");
+    sentry_config::add_workflow_context(workflow_name_str, None);
+
     if let Some(retry_from) = retry_from {
         tracing::debug!(retry_from = %retry_from, "Running workflow from last run with retry from step");
+        sentry_config::add_workflow_context(workflow_name_str, Some("retry_from"));
+
         // Extract the run_id and replay_id from the retry_from string
         let (run_id, replay_id) = if retry_from.contains("::") {
             let parts: Vec<&str> = retry_from.split("::").collect();
@@ -612,6 +622,7 @@ async fn handle_workflow_file(
         .await?;
     } else if retry {
         tracing::debug!("Running workflow from last failed run");
+        sentry_config::add_workflow_context(workflow_name_str, Some("retry"));
         run_workflow(
             workflow_name,
             WorkflowCLILogger,
@@ -621,6 +632,7 @@ async fn handle_workflow_file(
         .await?;
     } else {
         tracing::debug!("Running workflow without retry");
+        sentry_config::add_workflow_context(workflow_name_str, Some("normal"));
         run_workflow(
             workflow_name,
             WorkflowCLILogger,
@@ -641,6 +653,12 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             error = %panic_info,
             trace = %backtrace::Backtrace::force_capture(),
             "panic occurred"
+        );
+
+        // Capture panic in Sentry
+        sentry::capture_message(
+            &format!("Panic occurred: {}", panic_info),
+            sentry::Level::Fatal,
         );
     }));
 
@@ -671,6 +689,37 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                 }
             }
         }
+    }
+
+    // Add breadcrumb for CLI command
+    if let Some(ref command) = args.command {
+        let command_name = match command {
+            SubCommand::Init => "init",
+            SubCommand::Run(_) => "run",
+            SubCommand::Test(_) => "test",
+            SubCommand::Build(_) => "build",
+            SubCommand::VecSearch(_) => "vec-search",
+            SubCommand::Sync(_) => "sync",
+            SubCommand::Validate => "validate",
+            SubCommand::Migrate => "migrate",
+            SubCommand::Serve(_) => "serve",
+            SubCommand::McpSse(_) => "mcp-sse",
+            SubCommand::McpStdio(_) => "mcp-stdio",
+            SubCommand::SelfUpdate => "self-update",
+            SubCommand::TestTheme => "test-theme",
+            SubCommand::GenConfigSchema(_) => "gen-config-schema",
+            SubCommand::Make(_) => "make",
+            SubCommand::Ask(_) => "ask",
+            SubCommand::Seed(_) => "seed",
+            SubCommand::Clean(_) => "clean",
+        };
+
+        sentry_config::add_breadcrumb(
+            &format!("Executing CLI command: {}", command_name),
+            "cli",
+            sentry::Level::Info,
+        );
+        sentry_config::add_operation_context(command_name, None);
     }
 
     match args.command {
@@ -742,12 +791,15 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             Err(e) => eprintln!("{}", format!("Initialization failed: {e}").error()),
         },
         Some(SubCommand::Run(run_args)) => {
+            sentry_config::add_operation_context("run", Some(&run_args.file));
             handle_run_command(run_args).await?;
         }
         Some(SubCommand::Test(test_args)) => {
+            sentry_config::add_operation_context("test", Some(&test_args.file));
             handle_test_command(test_args).await?;
         }
         Some(SubCommand::Build(build_args)) => {
+            sentry_config::add_operation_context("build", None);
             reindex(ReindexInput {
                 project_path: resolve_project_path()?.to_string_lossy().to_string(),
                 drop_all_tables: build_args.drop_all_tables,
@@ -755,6 +807,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             .await?;
         }
         Some(SubCommand::VecSearch(search_args)) => {
+            sentry_config::add_agent_context(&search_args.agent, Some(&search_args.question));
             let project_path = resolve_project_path()?.to_string_lossy().to_string();
             search(SearchInput {
                 project_path,
@@ -764,6 +817,10 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             .await?;
         }
         Some(SubCommand::Sync(sync_args)) => {
+            sentry_config::add_operation_context("sync", None);
+            if let Some(ref db) = sync_args.database {
+                sentry_config::add_database_context(db, None);
+            }
             let config = ConfigBuilder::new()
                 .with_project_path(&resolve_project_path()?)?
                 .build()
@@ -897,6 +954,12 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
 }
 
 async fn handle_agent_file(file_path: &PathBuf, question: Option<String>) -> Result<(), OxyError> {
+    let agent_name = file_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("unknown");
+    sentry_config::add_agent_context(agent_name, question.as_deref());
+
     let question = question.ok_or_else(|| {
         OxyError::ArgumentError("Question is required for agent files".to_string())
     })?;
@@ -924,6 +987,11 @@ async fn handle_sql_file(
             "Database is required for running SQL file. Please provide the database using --database or set a default database in config.yml".to_string(),
         )
     })?;
+
+    // Add Sentry context for SQL execution
+    sentry_config::add_database_context(&database, Some("sql_file"));
+    sentry_config::add_operation_context("sql", Some(&file_path.to_string_lossy()));
+
     let content = std::fs::read_to_string(file_path)
         .map_err(|e| OxyError::RuntimeError(format!("Failed to read SQL file: {e}")))?;
     let mut env = Environment::new();
@@ -1286,8 +1354,14 @@ pub async fn start_server_and_web_app(
                     .latency_unit(tower_http::LatencyUnit::Millis),
             )
             .on_failure(trace::DefaultOnFailure::new().level(tracing::Level::ERROR));
+
+        // Add Sentry tower layer for HTTP request tracking
+        let sentry_layer = sentry::integrations::tower::NewSentryLayer::new_from_top();
+
         let api_router = match router::api_router(auth_mode, readonly_mode).await {
-            Ok(router) => router.layer(trace_layer.clone()),
+            Ok(router) => router
+                .layer(sentry_layer.clone())
+                .layer(trace_layer.clone()),
             Err(e) => {
                 eprintln!("Failed to create API router: {e}");
                 std::process::exit(1);
@@ -1295,6 +1369,7 @@ pub async fn start_server_and_web_app(
         };
         let openapi_router = router::openapi_router(readonly_mode)
             .await
+            .layer(sentry_layer.clone())
             .layer(trace_layer.clone());
         let mut openapi_router = OpenApiRouter::with_openapi(ApiDoc::openapi())
             .nest("/api", openapi_router)
@@ -1329,6 +1404,7 @@ pub async fn start_server_and_web_app(
             ))
             .nest("/api", api_router)
             .fallback_service(serve_with_fallback)
+            .layer(sentry_layer)
             .layer(trace_layer);
 
         let web_addr = format!("{web_host}:{web_port}")

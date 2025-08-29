@@ -56,6 +56,88 @@ pub enum OxyError {
     },
 }
 
+impl OxyError {
+    /// Get the error category for Sentry tagging
+    pub fn category(&self) -> &'static str {
+        match self {
+            OxyError::ConfigurationError(_) => "configuration",
+            OxyError::ArgumentError(_) => "argument",
+            OxyError::RuntimeError(_) => "runtime",
+            OxyError::LLMError(_) => "llm",
+            OxyError::AgentError(_) => "agent",
+            OxyError::AnonymizerError(_) => "anonymizer",
+            OxyError::SerializerError(_) => "serializer",
+            OxyError::IOError(_) => "io",
+            OxyError::DBError(_) => "database",
+            OxyError::Database(_) => "database",
+            OxyError::SecretManager(_) => "secret_manager",
+            OxyError::SecretNotFound(_) => "secret_not_found",
+            OxyError::AuthenticationError(_) => "authentication",
+            OxyError::AuthorizationError(_) => "authorization",
+            OxyError::ValidationError(_) => "validation",
+            OxyError::CryptographyError(_) => "cryptography",
+            OxyError::InitializationError(_) => "initialization",
+            OxyError::JobError(_) => "job",
+            OxyError::LanceDBError(_) => "lancedb",
+            OxyError::SerdeArrowError(_) => "serde_arrow",
+            OxyError::ToolCallError { .. } => "tool_call",
+        }
+    }
+
+    /// Get the Sentry level for this error
+    pub fn sentry_level(&self) -> sentry::Level {
+        match self {
+            OxyError::ConfigurationError(_) => sentry::Level::Warning,
+            OxyError::ArgumentError(_) => sentry::Level::Warning,
+            OxyError::RuntimeError(_) => sentry::Level::Error,
+            OxyError::LLMError(_) => sentry::Level::Error,
+            OxyError::AgentError(_) => sentry::Level::Error,
+            OxyError::AnonymizerError(_) => sentry::Level::Error,
+            OxyError::SerializerError(_) => sentry::Level::Error,
+            OxyError::IOError(_) => sentry::Level::Error,
+            OxyError::DBError(_) => sentry::Level::Error,
+            OxyError::Database(_) => sentry::Level::Error,
+            OxyError::SecretManager(_) => sentry::Level::Error,
+            OxyError::SecretNotFound(_) => sentry::Level::Warning,
+            OxyError::AuthenticationError(_) => sentry::Level::Warning,
+            OxyError::AuthorizationError(_) => sentry::Level::Warning,
+            OxyError::ValidationError(_) => sentry::Level::Warning,
+            OxyError::CryptographyError(_) => sentry::Level::Error,
+            OxyError::InitializationError(_) => sentry::Level::Error,
+            OxyError::JobError(_) => sentry::Level::Error,
+            OxyError::LanceDBError(_) => sentry::Level::Error,
+            OxyError::SerdeArrowError(_) => sentry::Level::Error,
+            OxyError::ToolCallError { .. } => sentry::Level::Error,
+        }
+    }
+
+    /// Capture this error in Sentry with appropriate context
+    pub fn capture_to_sentry(&self) {
+        sentry::configure_scope(|scope| {
+            scope.set_tag("error_category", self.category());
+            scope.set_level(Some(self.sentry_level()));
+        });
+
+        match self {
+            OxyError::ToolCallError {
+                call_id,
+                handle,
+                param,
+                ..
+            } => {
+                sentry::configure_scope(|scope| {
+                    scope.set_extra("call_id", call_id.clone().into());
+                    scope.set_extra("handle", handle.clone().into());
+                    scope.set_extra("param", param.clone().into());
+                });
+            }
+            _ => {}
+        }
+
+        sentry::capture_error(self);
+    }
+}
+
 impl From<Box<dyn std::error::Error>> for OxyError {
     fn from(error: Box<dyn std::error::Error>) -> Self {
         OxyError::RuntimeError(error.to_string())
@@ -113,6 +195,9 @@ impl From<std::io::Error> for OxyError {
 impl From<OxyError> for StatusCode {
     fn from(error: OxyError) -> Self {
         tracing::error!("Error occurred: {}", error);
+        // Capture error in Sentry
+        error.capture_to_sentry();
+
         match error {
             OxyError::ConfigurationError(_) => StatusCode::BAD_REQUEST,
             OxyError::ArgumentError(_) => StatusCode::BAD_REQUEST,

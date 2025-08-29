@@ -18,10 +18,13 @@ use crate::config::ConfigBuilder;
 use crate::errors::OxyError;
 use crate::project::resolve_project_path;
 use axum::Router;
+use axum::body::Body;
+use axum::http::Request;
 use axum::middleware;
 use axum::routing::delete;
 use axum::routing::put;
 use axum::routing::{get, post};
+use sentry::integrations::tower::NewSentryLayer;
 use tower::ServiceBuilder;
 use tower_http::cors::{Any, CorsLayer};
 use utoipa_axum::router::OpenApiRouter;
@@ -248,7 +251,10 @@ pub async fn api_router(auth_mode: AuthMode, readonly_mode: bool) -> Result<Rout
 
     let app_routes = public_routes.merge(protected_routes);
 
-    Ok(app_routes.with_state(auth_mode).layer(cors))
+    Ok(app_routes
+        .with_state(auth_mode)
+        .layer(cors)
+        .layer(ServiceBuilder::new().layer(NewSentryLayer::<Request<Body>>::new_from_top())))
 }
 
 pub async fn openapi_router(_readonly_mode: bool) -> OpenApiRouter {
@@ -283,4 +289,5 @@ pub async fn openapi_router(_readonly_mode: bool) -> OpenApiRouter {
         .routes(routes!(workflow::run_workflow))
         .routes(routes!(workflow::run_workflow_thread))
         .layer(cors)
+        .layer(ServiceBuilder::new().layer(NewSentryLayer::<Request<Body>>::new_from_top()))
 }

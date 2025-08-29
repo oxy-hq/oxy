@@ -34,6 +34,7 @@ import { ReadonlyProvider } from "./contexts/ReadonlyContext";
 import { AuthConfigResponse } from "./types/auth";
 import { WelcomeScreen, SetupPage, SetupComplete } from "./pages/onboarding";
 import { SettingsModal } from "./components/settings/SettingsModal";
+import * as Sentry from "@sentry/react";
 
 const PageWrapper = ({ children }: { children: React.ReactNode }) => {
   return (
@@ -175,12 +176,17 @@ function App() {
   }
 
   return (
-    <AuthProvider authConfig={authConfig}>
-      <ReadonlyProvider>
-        <RouterProvider router={getRouter(authConfig)} />
-        <ShadcnToaster />
-      </ReadonlyProvider>
-    </AuthProvider>
+    <Sentry.ErrorBoundary
+      fallback={<div>Something went wrong. Please refresh.</div>}
+      showDialog
+    >
+      <AuthProvider authConfig={authConfig}>
+        <ReadonlyProvider>
+          <RouterProvider router={getRouter(authConfig)} />
+          <ShadcnToaster />
+        </ReadonlyProvider>
+      </AuthProvider>
+    </Sentry.ErrorBoundary>
   );
 }
 
