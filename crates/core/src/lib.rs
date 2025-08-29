@@ -14,6 +14,7 @@ pub mod mcp;
 pub mod project;
 pub mod readonly;
 pub mod semantic;
+pub mod sentry_config;
 pub mod service;
 pub mod theme;
 mod tools;

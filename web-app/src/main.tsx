@@ -5,6 +5,9 @@ import { createRoot } from "react-dom/client";
 import useTheme from "./stores/useTheme.ts";
 import App from "./App.tsx";
 
+import { initSentry } from "./sentry";
+initSentry();
+
 const queryClient = new QueryClient();
 
 export const AppWrapper = () => {

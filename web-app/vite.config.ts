@@ -1,3 +1,4 @@
+import { sentryVitePlugin } from "@sentry/vite-plugin";
 import { resolve } from "path";
 
 import tailwindcss from "@tailwindcss/vite"
@@ -186,7 +187,11 @@ export default defineConfig({
     filename: 'bundle-report.html',
     gzipSize: true,
     brotliSize: true,
-  }),],
+  }), sentryVitePlugin({
+    org: process.env.SENTRY_ORG || "oxy-z9",
+    project: process.env.VITE_SENTRY_PROJECT || "oxy-frontend",
+    authToken: process.env.SENTRY_AUTH_TOKEN,
+  })],
   publicDir: "public",
   clearScreen: false,
   server: {

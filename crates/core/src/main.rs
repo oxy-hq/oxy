@@ -7,6 +7,7 @@ use human_panic::Metadata;
 use human_panic::setup_panic;
 use once_cell::sync::OnceCell;
 use oxy::db::client;
+use oxy::sentry_config;
 use oxy::theme::StyledText;
 use std::env;
 use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
@@ -90,6 +91,7 @@ fn init_tracing_logging(log_to_stdout: bool) {
         LogFormat::Pretty => {
             tracing_subscriber::registry()
                 .with(env_filter)
+                .with(sentry::integrations::tracing::layer())
                 .with(
                     fmt::layer()
                         .with_target(true)
@@ -102,6 +104,7 @@ fn init_tracing_logging(log_to_stdout: bool) {
         LogFormat::Json => {
             tracing_subscriber::registry()
                 .with(env_filter)
+                .with(sentry::integrations::tracing::layer())
                 .with(
                     fmt::layer()
                         .with_target(true)
@@ -115,6 +118,7 @@ fn init_tracing_logging(log_to_stdout: bool) {
             // the cloud run web ui log browser is optimized for compact logs
             tracing_subscriber::registry()
                 .with(env_filter)
+                .with(sentry::integrations::tracing::layer())
                 .with(
                     fmt::layer()
                         .with_target(true)
@@ -129,6 +133,7 @@ fn init_tracing_logging(log_to_stdout: bool) {
         LogFormat::Compact => {
             tracing_subscriber::registry()
                 .with(env_filter)
+                .with(sentry::integrations::tracing::layer())
                 .with(
                     fmt::layer()
                         .with_target(false)
@@ -141,32 +146,41 @@ fn init_tracing_logging(log_to_stdout: bool) {
     }
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // at some version, rustls changed default to aws_lc, which some libs are not aware of
-    // so we need to set it to default provider to avoid collision of crypto provider
-    rustls::crypto::aws_lc_rs::default_provider()
-        .install_default()
-        .expect("Failed to install rustls crypto provider");
-    setup_panic!(Metadata::new(env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"))
-        .authors("Robert Yi <robert@oxy.tech>") // temporarily using Robert email here, TODO: replace by support email
-        .homepage("github.com/oxy-hq/oxy")
-        .support("- For support, please email robert@oxy.tech or contact us directly via Discord or Github.")
-    );
+fn main() {
     dotenv().ok();
+    let _sentry_guard = sentry_config::init_sentry();
+    if _sentry_guard.is_none() {
+        setup_panic!(Metadata::new(env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"))
+            .authors("Robert Yi <robert@oxy.tech>") // temporarily using Robert email here, TODO: replace by support email
+            .homepage("github.com/oxy-hq/oxy")
+            .support("- For support, please email robert@oxy.tech or contact us directly via Discord or Github.")
+        );
+    }
 
     // Log to stdout if `oxy serve`
     let args: Vec<String> = env::args().collect();
     let log_to_stdout = args.iter().any(|a| a == "serve");
     init_tracing_logging(log_to_stdout);
 
-    match cli().await {
-        Ok(_) => {}
-        Err(e) => {
-            tracing::error!(error = %e, "Application error");
-            eprintln!("{}", format!("{e}").error());
-            exit(1)
-        }
-    };
-    Ok(())
+    rustls::crypto::aws_lc_rs::default_provider()
+        .install_default()
+        .expect("Failed to install rustls crypto provider");
+
+    // DO NOT USE #[tokio::main]
+    // https://docs.sentry.io/platforms/rust/
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async {
+            match cli().await {
+                Ok(_) => {}
+                Err(e) => {
+                    tracing::error!(error = %e, "Application error");
+                    sentry_config::capture_error_with_context(e.as_ref(), "CLI execution failed");
+                    eprintln!("{}", format!("{e}").error());
+                    exit(1)
+                }
+            };
+        });
 }
