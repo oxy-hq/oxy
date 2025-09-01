@@ -7,14 +7,15 @@ resolver = "2"
 
 [workspace.dependencies]
 tokio = { version = "1.47", features = ["full"] }
-sea-orm = { version = "1.1.14", features = [
+chrono = "*"
+sea-orm = { version = "1.1.15", features = [
   "sqlx-sqlite",
   "sqlx-postgres",
   "runtime-tokio-rustls",
   "macros",
   "with-chrono",
 ] }
-sea-orm-migration = { version = "1.1.14", features = [
+sea-orm-migration = { version = "1.1.15", features = [
   "sqlx-sqlite",
   "sqlx-postgres",
   "runtime-tokio-rustls",

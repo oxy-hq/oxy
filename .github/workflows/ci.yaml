@@ -29,6 +29,10 @@ env:
   RUST_BACKTRACE: 1
   RUST_LOG: debug
 
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 defaults:
   run:
     shell: bash
