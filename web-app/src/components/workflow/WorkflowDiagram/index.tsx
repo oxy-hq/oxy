@@ -8,7 +8,10 @@ import {
 import useWorkflow, { NodeType } from "@/stores/useWorkflow";
 import { DiagramNode } from "./DiagramNode";
 import useTheme from "@/stores/useTheme";
-import React from "react";
+import React, { useRef } from "react";
+import type { ReactFlowInstance } from "@xyflow/react";
+import { restoreOrFit } from "./utils/viewport";
+import { usePersistedViewport } from "./hooks/usePersistedViewport";
 import { Skeleton } from "@/components/ui/shadcn/skeleton";
 import { WorkflowConfig } from "@/stores/useWorkflow";
 import { useWorkflowLayout } from "./layout/useWorkflowLayout";
@@ -43,6 +46,11 @@ const WorkflowDiagram: React.FC<WorkflowDiagramProps> = ({
     runId,
   );
 
+  const reactFlowRef = useRef<ReactFlowInstance | null>(null);
+  const { load: loadSavedViewport, save: saveViewport } = usePersistedViewport(
+    `oxy.workflow.viewport.${workflowId}`,
+  );
+
   const { theme } = useTheme();
 
   if (nodes.length === 0) {
@@ -64,6 +72,22 @@ const WorkflowDiagram: React.FC<WorkflowDiagramProps> = ({
   return (
     <div className="w-full h-full">
       <ReactFlow
+        key={workflowId}
+        onInit={(instance) => {
+          reactFlowRef.current = instance as unknown as ReactFlowInstance;
+          const saved = loadSavedViewport();
+          restoreOrFit(
+            instance as unknown as ReactFlowInstance,
+            saved,
+            fitViewOptions,
+          );
+        }}
+        onMoveEnd={(..._args: unknown[]) => {
+          const viewport = _args[1] as
+            | { x: number; y: number; zoom: number }
+            | undefined;
+          saveViewport(viewport);
+        }}
         colorMode={theme as ColorMode}
         nodeTypes={nodeTypes}
         proOptions={{ hideAttribution: true }}
@@ -71,11 +95,10 @@ const WorkflowDiagram: React.FC<WorkflowDiagramProps> = ({
         onEdgesChange={onEdgesChange}
         nodes={nodes}
         edges={edges}
-        fitView
         draggable={false}
         nodesDraggable={false}
       >
-        <Controls showInteractive={false} fitViewOptions={fitViewOptions} />
+        <Controls showInteractive={false} />
         <Background color="#ccc" variant={BackgroundVariant.Dots} />
       </ReactFlow>
     </div>
