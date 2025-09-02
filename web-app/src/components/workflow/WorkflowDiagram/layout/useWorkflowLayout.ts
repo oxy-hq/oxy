@@ -4,6 +4,7 @@ import useWorkflow, {
   TaskType,
 } from "@/stores/useWorkflow";
 import { useEffect, useMemo } from "react";
+import type { FitViewOptions } from "@xyflow/react";
 import { calculateNodesSize, getLayoutedElements } from ".";
 
 const addTaskId = (
@@ -89,7 +90,7 @@ export const useWorkflowLayout = (
   const tasksWithId = useMemo(() => {
     return addTaskId(workflowId, tasks, runId);
   }, [workflowId, tasks, runId]);
-  const fitViewOptions = useMemo(() => {
+  const fitViewOptions: FitViewOptions = useMemo(() => {
     return {
       maxZoom: 1,
       minZoom: 0.1,
