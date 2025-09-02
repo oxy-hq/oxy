@@ -21,6 +21,12 @@ import React from "react";
 import NewNode, { CreationType } from "./NewNode";
 import { useReadonly } from "@/hooks/useReadonly";
 
+// Reuse a single collator for faster, locale-aware, case-insensitive comparisons
+const NAME_COLLATOR = new Intl.Collator(undefined, {
+  sensitivity: "base",
+  numeric: true,
+});
+
 const ignoreFilesRegex = [/^docker-entrypoints/, /^output/, /^\./];
 
 const Sidebar = ({
@@ -34,7 +40,13 @@ const Sidebar = ({
   const { isReadonly } = useReadonly();
   const fileTree = data
     ?.filter((f) => !ignoreFilesRegex.some((r) => f.name.match(r)))
-    .sort((a) => (a.is_dir ? -1 : 1));
+    .sort((a, b) => {
+      // Directories first
+      if (a.is_dir && !b.is_dir) return -1;
+      if (!a.is_dir && b.is_dir) return 1;
+      // Locale-aware, case-insensitive, numeric-aware compare using a shared collator
+      return NAME_COLLATOR.compare(a.name, b.name);
+    });
 
   const { open } = useSidebar();
   const [isCreating, setIsCreating] = React.useState(false);
