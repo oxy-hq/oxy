@@ -98,7 +98,7 @@ export const WorkflowRuns = ({
         <div className="flex items-center space-x-2">
           <Button
             variant="outline"
-            tooltip={"Refresh Runs"}
+            tooltip={"Refresh List"}
             onClick={() => refetch()}
           >
             <RotateCcw className="w-4 h-4" />
