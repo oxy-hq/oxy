@@ -28,7 +28,8 @@ const HeaderActions = ({ onExecuteSql, sql, loading }: HeaderActionsProps) => {
   };
 
   return (
-    <div className="flex gap-2 md:flex-row flex-col items-start">
+    // actions should stay in one row; when constrained they scroll horizontally
+    <div className="flex items-center gap-2 whitespace-nowrap overflow-x-auto">
       <Tooltip>
         <TooltipTrigger asChild>
           <Button
@@ -48,7 +49,7 @@ const HeaderActions = ({ onExecuteSql, sql, loading }: HeaderActionsProps) => {
         database={database}
       />
       <Button
-        className="hover:text-muted-foreground"
+        className="hover:text-muted-foreground flex-shrink-0"
         variant="ghost"
         disabled={loading || !database}
         onClick={handleExecuteSql}

@@ -31,7 +31,8 @@ const EditorHeader = ({
   return (
     <div
       className={cn(
-        "flex md:flex-row flex-col justify-between md:items-center item-start bg-editor-background p-2 min-h-[64px]",
+        // keep header visually above Monaco editor and add spacing so buttons don't get overlapped
+        "flex md:flex-row flex-col justify-between md:items-center items-start bg-editor-background p-3 min-h-[64px] relative z-10",
       )}
     >
       <div className="flex gap-1.5 items-center">

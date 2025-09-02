@@ -39,7 +39,7 @@ const DatabasesDropdown = ({ onSelect, database }: DatabaseDropdownProps) => {
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button size="sm" disabled={isLoading} variant="outline">
-          <span>{database}</span>
+          <span className="truncate max-w-[120px] block">{database}</span>
           {isLoading ? <Loader2 className="animate-spin" /> : <ChevronDown />}
         </Button>
       </DropdownMenuTrigger>

@@ -45,7 +45,7 @@ const AgentEditor = ({ pathb64 }: { pathb64: string }) => {
       editorClassName="md:w-1/2 w-full h-1/2 md:h-full"
       preview={
         <div className="flex-1 overflow-hidden flex flex-col">
-          <div className="flex justify-between p-4">
+          <div className="flex justify-between p-4 flex-shrink-0 relative z-10 bg-background">
             <ToggleGroup
               size="sm"
               value={selected}
@@ -87,7 +87,7 @@ const AgentEditor = ({ pathb64 }: { pathb64: string }) => {
             )}
           </div>
 
-          <div className="flex-1 overflow-hidden">
+          <div className="flex-1 overflow-auto">
             {selected === "preview" ? (
               <AgentPreview key={previewKey} agentPathb64={pathb64 ?? ""} />
             ) : (
