@@ -22,7 +22,7 @@ import {
 import { RunInfo } from "@/services/types";
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui/shadcn/button";
-import { RotateCcw, XIcon } from "lucide-react";
+import { RefreshCcw, XIcon } from "lucide-react";
 
 export const WorkflowRuns = ({
   workflowId,
@@ -101,7 +101,7 @@ export const WorkflowRuns = ({
             tooltip={"Refresh List"}
             onClick={() => refetch()}
           >
-            <RotateCcw className="w-4 h-4" />
+            <RefreshCcw className="w-4 h-4" />
           </Button>
           <Button
             variant="outline"
