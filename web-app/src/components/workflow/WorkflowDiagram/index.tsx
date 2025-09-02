@@ -8,8 +8,7 @@ import {
 import useWorkflow, { NodeType } from "@/stores/useWorkflow";
 import { DiagramNode } from "./DiagramNode";
 import useTheme from "@/stores/useTheme";
-import React, { useEffect, useRef } from "react";
-import { usePersistedViewport } from "./hooks/usePersistedViewport";
+import React from "react";
 import { Skeleton } from "@/components/ui/shadcn/skeleton";
 import { WorkflowConfig } from "@/stores/useWorkflow";
 import { useWorkflowLayout } from "./layout/useWorkflowLayout";
@@ -44,21 +43,6 @@ const WorkflowDiagram: React.FC<WorkflowDiagramProps> = ({
     runId,
   );
 
-  const reactFlowRef = useRef<unknown | null>(null);
-  const { load: loadSavedViewport, save: saveViewport } = usePersistedViewport(
-    `oxy.workflow.viewport.${workflowId}`,
-  );
-
-  useEffect(() => {
-    // Fit only when there's no saved viewport for this workflow.
-    const saved = loadSavedViewport();
-    if (saved) return;
-
-    type FitViewHolder = { fitView?: (opts?: unknown) => void } | null;
-    const inst = reactFlowRef.current as FitViewHolder;
-    inst?.fitView?.(fitViewOptions);
-  }, [workflowId, nodes, fitViewOptions, loadSavedViewport]);
-
   const { theme } = useTheme();
 
   if (nodes.length === 0) {
@@ -80,48 +64,6 @@ const WorkflowDiagram: React.FC<WorkflowDiagramProps> = ({
   return (
     <div className="w-full h-full">
       <ReactFlow
-        key={workflowId}
-        onInit={(instance) => {
-          reactFlowRef.current = instance;
-          const saved = loadSavedViewport();
-          const instRec = instance as Record<string, unknown>;
-          if (saved) {
-            const sv = instRec["setViewport"];
-            if (typeof sv === "function") {
-              (sv as (v: { x: number; y: number; zoom: number }) => void)(
-                saved,
-              );
-              return;
-            }
-            const st = instRec["setTransform"];
-            if (typeof st === "function") {
-              (st as (t: { x: number; y: number; zoom: number }) => void)({
-                x: saved.x,
-                y: saved.y,
-                zoom: saved.zoom,
-              });
-              return;
-            }
-            const fv = instRec["fitView"];
-            if (typeof fv === "function") {
-              (fv as (opts?: unknown) => void)(fitViewOptions);
-              return;
-            }
-          } else {
-            const fv = instRec["fitView"];
-            if (typeof fv === "function") {
-              (fv as (opts?: unknown) => void)(fitViewOptions);
-            }
-          }
-        }}
-        onMoveEnd={(
-          _event: unknown,
-          viewport?: { x: number; y: number; zoom: number },
-        ) => {
-          saveViewport(
-            viewport as { x: number; y: number; zoom: number } | undefined,
-          );
-        }}
         colorMode={theme as ColorMode}
         nodeTypes={nodeTypes}
         proOptions={{ hideAttribution: true }}
