@@ -16,15 +16,15 @@ anyhow = "1.0.99"
 argon2 = "0.5"
 arrow = { version = "=54.2.1", default-features = false, features = ["json"] } # arrow version has to comply with duckdb version
 assert_cmd = "2.0.17"
-async-openai = {version = "0.28.3", features = ["byot"]}
+async-openai = {version = "0.29.2", features = ["byot"]}
 async-stream = "0.3.6"
 async-trait = "0.1.89"
 axum = { version = "0.8.4", features = ["macros", "http2"] }
 axum-extra = { version = "0.10", features = ["typed-header"] }
 axum-server = { version = "0.7.2", features = ["tls-rustls"] }
-axum-streams = { version = "0.21.0", features = ["json", "csv", "protobuf", "text"] }
+axum-streams = { version = "0.23.1", features = ["json", "csv", "protobuf", "text"] }
 base64 = "0.22"
-bcrypt = "0.16"
+bcrypt = "0.17.1"
 chrono = { workspace = true }
 clap = { version = "4.5.46", features = ["derive"] }
 clickhouse = { version = "0.13.3", features = ["rustls-tls"] }
@@ -62,12 +62,12 @@ schemars = { version = "0.8.22", features = ["derive", "impl_json_schema"] }
 sea-orm = { workspace = true }
 serde = { version = "1.0", features = ["derive"] }
 serde_arrow = { version = "0.13.5", features = ["arrow-54"] }
-serde_json = "1.0"
+serde_json = "1.0.143"
 self_update = "0.42.0"
 slugify = "0.1.0"
 sqlformat = { git = "https://github.com/shssoichiro/sqlformat-rs.git", rev = "80255c7" }
 syntect = "5.2"
-tabled = "0.18.0"
+tabled = "0.20.0"
 terminal-light = "1.8.0"
 terminal_size = "0.4.3"
 thiserror = "2.0.16"
@@ -112,7 +112,7 @@ tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.20", features = ["env-filter", "fmt", "json"] }
 tracing-appender = "0.2.3"
 tracing-log = "0.2.0"
-jsonschema = "0.30.0"
+jsonschema = "0.33.0"
 sanitize-filename="0.6.0"
 google-oauth = "1.11.3"
 ndarray = { version = "0.16.1" }
