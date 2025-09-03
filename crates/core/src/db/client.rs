@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use crate::errors::OxyError;
 
-fn resolve_state_dir() -> PathBuf {
+pub fn resolve_state_dir() -> PathBuf {
     if let Ok(env_dir) = std::env::var("OXY_STATE_DIR") {
         let path = PathBuf::from(env_dir);
         ensure_dir_exists(&path);
