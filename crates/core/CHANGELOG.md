@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.2.27](https://github.com/oxy-hq/oxy-internal/compare/0.2.26...0.2.27) (2025-09-03)
+
+
+### <!-- 0 -->🚀 Features
+
+* add sentry to our product ([#1042](https://github.com/oxy-hq/oxy-internal/issues/1042)) ([875c640](https://github.com/oxy-hq/oxy-internal/commit/875c6403cdcd13c39f6fb6885fe1483c32a76d6e))
+* enable HTTPS and HTTP/2 support for local development ([#1033](https://github.com/oxy-hq/oxy-internal/issues/1033)) ([85d8120](https://github.com/oxy-hq/oxy-internal/commit/85d812071fe3f6f7e433b3fbc2a328ba80c8d05c))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* support Snowflake key, fix ollama (gpt-oss), and add additional debug logging ([#1046](https://github.com/oxy-hq/oxy-internal/issues/1046)) ([f81611c](https://github.com/oxy-hq/oxy-internal/commit/f81611cdc1f1b36d5b5fc8e49cd3218b6d25d90b))
+
 ## [0.2.26](https://github.com/oxy-hq/oxy-internal/compare/0.2.25...0.2.26) (2025-08-27)
 
 
