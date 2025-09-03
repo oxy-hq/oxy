@@ -31,12 +31,7 @@ pub const MAX_DISPLAY_ROWS: usize = 100;
 pub const MAX_OUTPUT_LENGTH: usize = 1000;
 
 fn get_key_file_path() -> PathBuf {
-    let home_dir = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-    PathBuf::from(home_dir)
-        .join(".local")
-        .join("share")
-        .join("oxy")
-        .join("encryption_key.txt")
+    crate::db::client::resolve_state_dir().join("encryption_key.txt")
 }
 
 fn decode_key_from_string(key_str: &str) -> [u8; 32] {
