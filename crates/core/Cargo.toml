@@ -49,7 +49,7 @@ itertools = "0.14.0"
 jsonwebtoken = "9.3"
 lancedb = "0.19.1"
 lazy_static = "1.5.0"
-lettre = "0.11"
+lettre = "0.11.8"
 libduckdb-sys = "=1.2.2" # lock version to avoid breaking changes, such as https://github.com/duckdb/duckdb-rs/issues number 436
 log = { workspace = true }
 migration = { path = "../migration" }
@@ -78,7 +78,7 @@ tower = "0.5.2"
 tower-http = { version = "0.6.6", features = ["fs", "cors", "trace"] }
 tower-serve-static = "0.1.1"
 tqdm = "0.7.0"
-uuid = { version = "1.18.0", features = ["v4", "serde"] }
+uuid = { version = "1.18.1", features = ["v4", "serde"] }
 reqwest = { version = "0.12.23" }
 secrecy = "0.10.3"
 fxhash = "0.2.1"
