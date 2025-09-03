@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.27](https://github.com/oxy-hq/oxy-internal/compare/0.2.26...0.2.27) (2025-09-03)
+
+
+### <!-- 0 -->🚀 Features
+
+* enable HTTPS and HTTP/2 support for local development ([#1033](https://github.com/oxy-hq/oxy-internal/issues/1033)) ([85d8120](https://github.com/oxy-hq/oxy-internal/commit/85d812071fe3f6f7e433b3fbc2a328ba80c8d05c))
+
 ## [0.2.26](https://github.com/oxy-hq/oxy-internal/compare/0.2.25...0.2.26) (2025-08-27)
 
 ## [0.2.25](https://github.com/oxy-hq/oxy-internal/compare/0.2.24...0.2.25) (2025-08-21)
