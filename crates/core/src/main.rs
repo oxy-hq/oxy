@@ -75,14 +75,14 @@ fn init_tracing_logging(log_to_stdout: bool) {
         })
         .unwrap_or_else(LogFormat::detect);
 
-    let log_file_path = std::path::Path::new(&client::get_state_dir()).join("oxy.log");
-    let file_appender = tracing_appender::rolling::never(
-        log_file_path.parent().unwrap(),
-        log_file_path.file_name().unwrap(),
-    );
     let (non_blocking, guard) = if log_to_stdout {
         tracing_appender::non_blocking(std::io::stdout())
     } else {
+        let log_file_path = std::path::Path::new(&client::get_state_dir()).join("oxy.log");
+        let file_appender = tracing_appender::rolling::never(
+            log_file_path.parent().unwrap(),
+            log_file_path.file_name().unwrap(),
+        );
         tracing_appender::non_blocking(file_appender)
     };
     LOG_GUARD.set(guard).ok();
