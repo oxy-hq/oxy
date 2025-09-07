@@ -4,8 +4,7 @@ import { Button } from "@/components/ui/shadcn/button";
 import { Eye, EyeOff, Copy, Check } from "lucide-react";
 import { cn } from "@/libs/shadcn/utils";
 
-interface SecretInputProps
-  extends React.InputHTMLAttributes<HTMLInputElement> {
+interface SecretInputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   showCopyButton?: boolean;
   onCopy?: () => void;
 }
@@ -74,7 +73,7 @@ const SecretInput = forwardRef<HTMLInputElement, SecretInputProps>(
         </div>
       </div>
     );
-  }
+  },
 );
 
 SecretInput.displayName = "SecretInput";
