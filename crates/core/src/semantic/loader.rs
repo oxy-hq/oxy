@@ -180,7 +180,7 @@ impl GetSchemaQueryBuilder {
         let dataset_filter = self.get_dataset_filter();
         let table_filter = self.get_table_filter();
         match (dataset_filter, table_filter) {
-            (Some(dataset), Some(table)) => format!(" WHERE {dataset} AND {table}"),
+            (Some(dataset), Some(table)) => format!(" WHERE {dataset} AND ({table})"),
             (Some(dataset), None) => format!(" WHERE {dataset}"),
             (None, Some(table)) => format!(" WHERE {table}"),
             (None, None) => String::default(),
