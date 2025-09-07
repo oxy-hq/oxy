@@ -34,7 +34,7 @@ import { ReadonlyProvider } from "./contexts/ReadonlyContext";
 import { AuthConfigResponse } from "./types/auth";
 import { WelcomeScreen, SetupPage, SetupComplete } from "./pages/onboarding";
 import { SettingsModal } from "./components/settings/SettingsModal";
-import * as Sentry from "@sentry/react";
+import { ErrorBoundary } from "@/sentry";
 
 const PageWrapper = ({ children }: { children: React.ReactNode }) => {
   return (
@@ -176,7 +176,7 @@ function App() {
   }
 
   return (
-    <Sentry.ErrorBoundary
+    <ErrorBoundary
       fallback={<div>Something went wrong. Please refresh.</div>}
       showDialog
     >
@@ -186,7 +186,7 @@ function App() {
           <ShadcnToaster />
         </ReadonlyProvider>
       </AuthProvider>
-    </Sentry.ErrorBoundary>
+    </ErrorBoundary>
   );
 }
 
