@@ -1407,9 +1407,53 @@ pub async fn start_server_and_web_app(
             .layer(sentry_layer)
             .layer(trace_layer);
 
-        let web_addr = format!("{web_host}:{web_port}")
+        let original_web_port = web_port;
+        let mut chosen_port = web_port;
+        let mut port_attempts = 0u16;
+        const MAX_PORT_ATTEMPTS: u16 = 100;
+
+        loop {
+            let trial = format!("{host}:{port}", host = web_host, port = chosen_port);
+            match trial.parse::<SocketAddr>() {
+                Ok(addr) => {
+                    match tokio::net::TcpListener::bind(addr).await {
+                        Ok(listener) => {
+                            // Successfully bound to the port: close listener and use this port
+                            drop(listener);
+                            break;
+                        }
+                        Err(e) => {
+                            if chosen_port <= 1024
+                                && e.kind() == std::io::ErrorKind::PermissionDenied
+                            {
+                                eprintln!(
+                                    "Permission denied binding to port {chosen_port}. Try running with sudo or use a port above 1024."
+                                );
+                                std::process::exit(1);
+                            }
+                            port_attempts += 1;
+                            if port_attempts > MAX_PORT_ATTEMPTS {
+                                eprintln!(
+                                    "Failed to bind to any port after trying {} ports starting from {}. Error: {}",
+                                    port_attempts, original_web_port, e
+                                );
+                                std::process::exit(1);
+                            }
+                            println!("Port {chosen_port} is occupied. Trying next port...");
+                            chosen_port += 1;
+                        }
+                    }
+                }
+                Err(_) => {
+                    // If parse fails, fall back to binding to unspecified address
+                    break;
+                }
+            }
+        }
+
+        let web_addr = format!("{web_host}:{chosen_port}")
             .parse::<SocketAddr>()
-            .unwrap_or_else(|_| SocketAddr::from(([0, 0, 0, 0], web_port)));
+            .unwrap_or_else(|_| SocketAddr::from(([0, 0, 0, 0], chosen_port)));
         let display_host = if web_host == "0.0.0.0" {
             "localhost"
         } else {
@@ -1436,14 +1480,14 @@ pub async fn start_server_and_web_app(
             println!(
                 "{} {} {}",
                 "Web app running at".text(),
-                format!("{protocol}://{display_host}:{web_port}").secondary(),
+                format!("{protocol}://{display_host}:{chosen_port}").secondary(),
                 protocol_info.tertiary()
             );
         } else {
             println!(
                 "{} {}",
                 "Web app running at".text(),
-                format!("{protocol}://{display_host}:{web_port}{protocol_info}").secondary()
+                format!("{protocol}://{display_host}:{chosen_port}{protocol_info}").secondary()
             );
         }
 
