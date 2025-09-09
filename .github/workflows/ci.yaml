@@ -70,21 +70,6 @@ jobs:
         id: setup-node
         with:
           node-version: lts/*
-      - uses: pnpm/action-setup@v4
-        with:
-          run_install: false
-      - name: Get pnpm store directory
-        shell: bash
-        run: |
-          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
-      - uses: actions/cache@v4
-        name: Setup pnpm cache
-        with:
-          path: ${{ env.STORE_PATH }}
-          key: pnpm-store-ubuntu-22.04-x86_64-unknown-linux-gnu-${{ hashFiles('**/pnpm-lock.yaml') }}
-          # cache key from build job
-          restore-keys: |
-            pnpm-store-ubuntu-22.04-x86_64-unknown-linux-gnu
       - name: Run pnpm install
         run: pnpm install --prefer-frozen-lockfile
       - name: Run lint-staged
@@ -110,20 +95,6 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: lts/*
-      - uses: pnpm/action-setup@v4
-        with:
-          run_install: false
-      - name: Get pnpm store directory
-        shell: bash
-        run: |
-          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
-      - uses: actions/cache@v4
-        name: Setup pnpm cache
-        with:
-          path: ${{ env.STORE_PATH }}
-          key: pnpm-store-ubuntu-22.04-x86_64-unknown-linux-gnu-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: |
-            pnpm-store-ubuntu-22.04-x86_64-unknown-linux-gnu
       - name: Restore Vite pre-bundle cache
         uses: actions/cache@v4
         with:
