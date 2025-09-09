@@ -17,7 +17,7 @@ FROM node:lts AS web-builder
 WORKDIR /app
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY web-app/package.json web-app/pnpm-lock.yaml ./web-app/
+COPY web-app/package.json ./web-app/
 RUN corepack enable && corepack prepare --activate && pnpm install
 
 COPY web-app/ ./web-app/
