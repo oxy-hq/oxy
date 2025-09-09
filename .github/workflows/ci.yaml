@@ -128,7 +128,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: web-app/node_modules/.vite
-          key: vite-prebundle-${{ hashFiles('web-app/pnpm-lock.yaml') }}-${{ hashFiles('web-app/vite.config.*', 'web-app/src/**') }}
+          key: vite-prebundle-${{ hashFiles('**/pnpm-lock.yaml') }}-${{ hashFiles('web-app/vite.config.*', 'web-app/src/**') }}
           restore-keys: |
             vite-prebundle-
       - name: Install dependencies & Build web-app
@@ -142,7 +142,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: web-app/node_modules/.vite
-          key: vite-prebundle-${{ hashFiles('web-app/pnpm-lock.yaml') }}-${{ hashFiles('web-app/vite.config.*', 'web-app/src/**') }}
+          key: vite-prebundle-${{ hashFiles('**/pnpm-lock.yaml') }}-${{ hashFiles('web-app/vite.config.*', 'web-app/src/**') }}
 
   cargo-check-and-test:
     concurrency:
