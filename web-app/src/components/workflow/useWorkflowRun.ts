@@ -231,7 +231,7 @@ export const useSelectedLoopIndex = (task?: TaskConfigWithId) => {
     ? `${task.workflowId}::${task.runId}`
     : task.workflowId;
   const selectedId = `${groupId}.${task.id}`;
-  return selectedIndexes[selectedId];
+  return selectedIndexes[selectedId] || 0;
 };
 
 const taskRunIdSelector =
@@ -253,7 +253,7 @@ const taskRunIdSelector =
           ? `${acc.taskRunId}.${currentRunId}`
           : currentRunId;
         return {
-          prevLoopIndex: selectedIndexes[`${groupId}.${currentTaskId}`],
+          prevLoopIndex: selectedIndexes[`${groupId}.${currentTaskId}`] || 0,
           taskId: currentTaskId,
           taskRunId: accTaskRunId,
         };
