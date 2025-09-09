@@ -76,7 +76,12 @@ export const WorkflowPreview = ({
   }, [runId, relativePath]);
 
   useEffect(() => {
-    if (groups) {
+    const firstGroup = groups && groups[0];
+    if (
+      firstGroup &&
+      firstGroup.source_id == relativePath &&
+      firstGroup.run_index.toString() === runId
+    ) {
       groups.forEach((group) => {
         setGroupBlocks(
           group,
@@ -87,7 +92,7 @@ export const WorkflowPreview = ({
         );
       });
     }
-  }, [groups]);
+  }, [groups, relativePath, runId, setGroupBlocks]);
 
   const runHandler = async () => {
     await run.mutateAsync({
