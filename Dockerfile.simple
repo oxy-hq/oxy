@@ -6,7 +6,7 @@ ARG VERSION
 ARG UPSTREAM=get.oxy.tech
 
 RUN apt-get update && \
-    apt-get install -y ca-certificates curl tini && \
+    apt-get install -y ca-certificates curl tini git && \
     rm -rf /var/lib/apt/lists/*
 
 RUN if [ -n "$VERSION" ]; then \

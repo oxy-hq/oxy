@@ -44,7 +44,7 @@ FROM debian:bookworm-slim AS runtime
 WORKDIR /app
 
 RUN apt-get update && \
-    apt-get install -y ca-certificates tini && \
+    apt-get install -y ca-certificates tini git && \
     rm -rf /var/lib/apt/lists/*
 
 COPY --from=rust-builder /app/target/release/oxy /usr/local/bin
