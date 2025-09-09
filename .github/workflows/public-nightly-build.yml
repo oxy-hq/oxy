@@ -93,22 +93,6 @@ jobs:
         id: setup-node
         with:
           node-version: lts/*
-
-      - uses: pnpm/action-setup@v4
-        with:
-          run_install: false
-
-      - name: Get pnpm store directory
-        shell: bash
-        run: |
-          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
-      - uses: actions/cache@v4
-        name: Setup pnpm cache
-        with:
-          path: ${{ env.STORE_PATH }}
-          key: pnpm-store-${{ matrix.job.os }}-${{ matrix.job.target }}-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: |
-            pnpm-store-${{ matrix.job.os }}-${{ matrix.job.target }}
       - name: Install dependencies & Build web-app
         env:
           NODE_OPTIONS: "--max_old_space_size=4096"
