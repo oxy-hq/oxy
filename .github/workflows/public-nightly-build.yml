@@ -89,7 +89,7 @@ jobs:
 
       #-- Prep node
       - name: Prep Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         id: setup-node
         with:
           node-version: lts/*
