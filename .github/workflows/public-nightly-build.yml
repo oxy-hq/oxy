@@ -88,11 +88,15 @@ jobs:
         uses: jlumbroso/free-disk-space@main
 
       #-- Prep node
-      - name: Prep Node
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+      - name: Install Node.js
         uses: actions/setup-node@v5
         id: setup-node
         with:
           node-version: lts/*
+          cache: 'pnpm'
       - name: Install dependencies & Build web-app
         env:
           NODE_OPTIONS: "--max_old_space_size=4096"
