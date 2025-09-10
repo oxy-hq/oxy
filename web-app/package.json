@@ -125,7 +125,7 @@
     "i": "^0.3.7",
     "rollup-plugin-visualizer": "^6.0.3",
     "typescript": "^5.9.2",
-    "vite": "^6.3.5",
+    "vite": "^6.3.6",
     "vite-plugin-node-polyfills": "^0.24.0"
   },
   "version": "0.2.26"
