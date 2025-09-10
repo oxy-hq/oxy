@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.28](https://github.com/oxy-hq/oxy-internal/compare/0.2.27...0.2.28) (2025-09-10)
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* oxy sync for clickhouse not working as expected ([#1072](https://github.com/oxy-hq/oxy-internal/issues/1072)) ([54b5608](https://github.com/oxy-hq/oxy-internal/commit/54b560808334f082801ce2e63f1f01a8f6f50825))
+* reintroduce port finding logic with attempts ([#1086](https://github.com/oxy-hq/oxy-internal/issues/1086)) ([9c8c175](https://github.com/oxy-hq/oxy-internal/commit/9c8c175171aa324cff84641ed979703b1304f1d9))
+
 ## [0.2.27](https://github.com/oxy-hq/oxy-internal/compare/0.2.26...0.2.27) (2025-09-03)
 
 

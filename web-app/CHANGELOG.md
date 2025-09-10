@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.2.27](https://github.com/oxy-hq/oxy-internal/compare/0.2.26...0.2.27) (2025-09-10)
+
+
+### <!-- 0 -->🚀 Features
+
+* add auto reveal feature for ide sidebar ([#1075](https://github.com/oxy-hq/oxy-internal/issues/1075)) ([14cd2a1](https://github.com/oxy-hq/oxy-internal/commit/14cd2a122fecdce558396e9b96868156f4f321fc))
+* add sentry to our product ([#1042](https://github.com/oxy-hq/oxy-internal/issues/1042)) ([875c640](https://github.com/oxy-hq/oxy-internal/commit/875c6403cdcd13c39f6fb6885fe1483c32a76d6e))
+* enable HTTPS and HTTP/2 support for local development ([#1033](https://github.com/oxy-hq/oxy-internal/issues/1033)) ([85d8120](https://github.com/oxy-hq/oxy-internal/commit/85d812071fe3f6f7e433b3fbc2a328ba80c8d05c))
+* implement responsive split pane for editor and preview, enhance layout adaptability ([#1054](https://github.com/oxy-hq/oxy-internal/issues/1054)) ([905116d](https://github.com/oxy-hq/oxy-internal/commit/905116d6c00db38e57b3d87f19459e4f7cc6d921))
+* implement usePersistedViewport hook for saving and loading ([337a357](https://github.com/oxy-hq/oxy-internal/commit/337a357ccf6db7391706ca5ec7a9c4b550b6b981))
+* implement usePersistedViewport hook for saving and loading workflow view state ([#1058](https://github.com/oxy-hq/oxy-internal/issues/1058)) ([b7019b1](https://github.com/oxy-hq/oxy-internal/commit/b7019b1790dccb3432bce3d79be5c36a3013add7))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* default loop select & discard groups changes ([#1071](https://github.com/oxy-hq/oxy-internal/issues/1071)) ([e09f2dc](https://github.com/oxy-hq/oxy-internal/commit/e09f2dc2c540f93dc100e917bd84aab2a0cfd36e))
+* ordering of items in ide sidebar ([#1053](https://github.com/oxy-hq/oxy-internal/issues/1053)) ([11bdef7](https://github.com/oxy-hq/oxy-internal/commit/11bdef76242ea6d88edb6cbb658ee9c070b1d34a))
+
 ## [0.2.26](https://github.com/oxy-hq/oxy-internal/compare/0.2.25...0.2.26) (2025-09-03)
 
 
