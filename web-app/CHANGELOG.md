@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.28](https://github.com/oxy-hq/oxy-internal/compare/0.2.27...0.2.28) (2025-09-10)
+
+
+### <!-- 0 -->🚀 Features
+
+* add auto reveal feature for ide sidebar ([#1075](https://github.com/oxy-hq/oxy-internal/issues/1075)) ([14cd2a1](https://github.com/oxy-hq/oxy-internal/commit/14cd2a122fecdce558396e9b96868156f4f321fc))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* default loop select & discard groups changes ([#1071](https://github.com/oxy-hq/oxy-internal/issues/1071)) ([e09f2dc](https://github.com/oxy-hq/oxy-internal/commit/e09f2dc2c540f93dc100e917bd84aab2a0cfd36e))
+
 ## [0.2.27](https://github.com/oxy-hq/oxy-internal/compare/0.2.26...0.2.27) (2025-09-10)
 
 
