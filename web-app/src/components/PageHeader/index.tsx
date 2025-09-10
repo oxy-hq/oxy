@@ -1,5 +1,6 @@
 import { cn } from "@/libs/shadcn/utils";
-import { SidebarTrigger, useSidebar } from "@/components/ui/shadcn/sidebar";
+import { SidebarTrigger } from "@/components/ui/shadcn/sidebar";
+import useSidebar from "@/components/ui/shadcn/sidebar-context";
 import { useMediaQuery } from "usehooks-ts";
 const PageHeader = ({
   className,

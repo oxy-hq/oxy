@@ -7,7 +7,7 @@ import {
 import Sidebar from "./Sidebar";
 import { useEffect, useRef, useState } from "react";
 import { cn } from "@/libs/shadcn/utils";
-import { useSidebar } from "@/components/ui/shadcn/sidebar";
+import useSidebar from "@/components/ui/shadcn/sidebar-context";
 import EmptyState from "@/components/ui/EmptyState";
 
 const Ide = () => {

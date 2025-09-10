@@ -16,23 +16,39 @@ import {
 } from "@/components/ui/shadcn/context-menu";
 import { Pencil, Trash2 } from "lucide-react";
 import React from "react";
+import { SIDEBAR_REVEAL_FILE } from "../events";
 import NewNode, { CreationType } from "../NewNode";
 import AlertDeleteDialog from "../AlertDeleteDialog";
 import RenameNode from "../RenameNode";
 import { cn } from "@/libs/shadcn/utils";
 import { useReadonly } from "@/hooks/useReadonly";
 
-const FileTreeNode = ({ fileTree }: { fileTree: FileTreeModel }) => {
+const isDescendant = (p: string, base: string) =>
+  p === base || p.startsWith(base + "/");
+
+const FileTreeNode = ({
+  fileTree,
+  activePath,
+}: {
+  fileTree: FileTreeModel;
+  activePath?: string;
+}) => {
   if (fileTree.is_dir) {
-    return <DirNode fileTree={fileTree} />;
+    return <DirNode fileTree={fileTree} activePath={activePath} />;
   }
 
-  return <FileNode fileTree={fileTree} />;
+  return <FileNode fileTree={fileTree} activePath={activePath} />;
 };
 
 export default FileTreeNode;
 
-const DirNode = ({ fileTree }: { fileTree: FileTreeModel }) => {
+const DirNode = ({
+  fileTree,
+  activePath,
+}: {
+  fileTree: FileTreeModel;
+  activePath?: string;
+}) => {
   const { isReadonly } = useReadonly();
   const [isContextMenuOpen, setIsContextMenuOpen] = React.useState(false);
   const [isEditing, setIsEditing] = React.useState(false);
@@ -42,7 +58,32 @@ const DirNode = ({ fileTree }: { fileTree: FileTreeModel }) => {
   const [pendingDelete, setPendingDelete] = React.useState(false);
   const renameInputRef = React.useRef<HTMLInputElement>(null);
   const newItemInputRef = React.useRef<HTMLInputElement>(null);
+  // Start closed by default. We'll open on explicit reveal events or user interaction.
   const [isOpen, setIsOpen] = React.useState(false);
+
+  // Listen for explicit reveal events (breadcrumb click or initial mount)
+  React.useEffect(() => {
+    const handler = (e: Event) => {
+      const anyE = e as CustomEvent<{ path: string }>;
+      const p = anyE?.detail?.path;
+      if (p && isDescendant(p, fileTree.path) && !isOpen) {
+        setIsOpen(true);
+      }
+    };
+
+    window.addEventListener(SIDEBAR_REVEAL_FILE, handler as EventListener);
+    return () =>
+      window.removeEventListener(SIDEBAR_REVEAL_FILE, handler as EventListener);
+  }, [fileTree.path, isOpen]);
+
+  // On initial mount, if activePath indicates a descendant, open this directory.
+  React.useEffect(() => {
+    if (activePath && isDescendant(activePath, fileTree.path)) {
+      setIsOpen(true);
+    }
+    // run only on initial mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleRename = () => {
     if (isReadonly) return;
@@ -132,7 +173,7 @@ const DirNode = ({ fileTree }: { fileTree: FileTreeModel }) => {
                 {fileTree.children?.map((f) => (
                   <SidebarMenuSubItem key={f.path}>
                     <SidebarMenuSubButton asChild className="translate-none">
-                      <FileTreeNode fileTree={f} />
+                      <FileTreeNode fileTree={f} activePath={activePath} />
                     </SidebarMenuSubButton>
                   </SidebarMenuSubItem>
                 ))}

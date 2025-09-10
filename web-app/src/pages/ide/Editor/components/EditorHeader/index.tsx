@@ -12,6 +12,7 @@ import { cn } from "@/libs/shadcn/utils";
 import { Fragment } from "react/jsx-runtime";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/shadcn/button";
+import { SIDEBAR_REVEAL_FILE } from "@/pages/ide/Sidebar/events";
 
 interface HeaderProps {
   filePath: string;
@@ -46,7 +47,22 @@ const EditorHeader = ({
                       {part}
                     </BreadcrumbPage>
                   ) : (
-                    <BreadcrumbLink className="text-muted-foreground hover:text-foreground truncate">
+                    <BreadcrumbLink
+                      className="text-muted-foreground hover:text-foreground truncate"
+                      onClick={() => {
+                        // reveal this path in the sidebar when breadcrumb clicked
+                        const revealPath = array.slice(0, index + 1).join("/");
+                        try {
+                          window.dispatchEvent(
+                            new CustomEvent(SIDEBAR_REVEAL_FILE, {
+                              detail: { path: revealPath },
+                            }),
+                          );
+                        } catch {
+                          // ignore
+                        }
+                      }}
+                    >
                       {part}
                     </BreadcrumbLink>
                   )}

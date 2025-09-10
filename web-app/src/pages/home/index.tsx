@@ -1,6 +1,6 @@
 import ChatPanel from "@/components/Chat/ChatPanel";
 import PageHeader from "@/components/PageHeader";
-import { useSidebar } from "@/components/ui/shadcn/sidebar";
+import useSidebar from "@/components/ui/shadcn/sidebar-context";
 
 const Home = () => {
   const { open } = useSidebar();

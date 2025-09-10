@@ -5,8 +5,8 @@ import {
   SidebarGroupLabel,
   SidebarMenu,
   SidebarTrigger,
-  useSidebar,
 } from "@/components/ui/shadcn/sidebar";
+import useSidebar from "@/components/ui/shadcn/sidebar-context";
 import FileTreeNode from "./FileTreeNode";
 import {
   ChevronsLeft,
@@ -18,7 +18,9 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/shadcn/button";
 import React from "react";
+import { useLocation } from "react-router-dom";
 import NewNode, { CreationType } from "./NewNode";
+import { SIDEBAR_REVEAL_FILE } from "./events";
 import { useReadonly } from "@/hooks/useReadonly";
 
 // Reuse a single collator for faster, locale-aware, case-insensitive comparisons
@@ -62,6 +64,34 @@ const Sidebar = ({
     setCreationType("folder");
     setIsCreating(true);
   };
+
+  const { pathname } = useLocation();
+  const activePath = React.useMemo(() => {
+    try {
+      const match = pathname.match(/^\/ide\/(.+)/);
+      if (match?.[1]) return atob(match[1]);
+    } catch {
+      // ignore
+    }
+    return undefined;
+  }, [pathname]);
+
+  // On initial mount, if there's an activePath, dispatch an event to reveal it
+  React.useEffect(() => {
+    if (activePath) {
+      try {
+        window.dispatchEvent(
+          new CustomEvent(SIDEBAR_REVEAL_FILE, {
+            detail: { path: activePath },
+          }),
+        );
+      } catch {
+        // ignore
+      }
+    }
+    // only on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="h-full w-full border-r border-l bg-sidebar-background">
@@ -133,7 +163,11 @@ const Sidebar = ({
                   />
                 )}
                 {fileTree?.map((item) => (
-                  <FileTreeNode key={item.path} fileTree={item} />
+                  <FileTreeNode
+                    key={item.path}
+                    fileTree={item}
+                    activePath={activePath}
+                  />
                 ))}
               </SidebarMenu>
             </SidebarGroup>

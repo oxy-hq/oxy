@@ -11,20 +11,31 @@ import {
 import { FileTreeModel } from "@/types/file";
 import { Pencil, Trash2, File } from "lucide-react";
 import React from "react";
+import { SIDEBAR_REVEAL_FILE } from "../events";
 import { useLocation, Link } from "react-router-dom";
 import AlertDeleteDialog from "../AlertDeleteDialog";
 import RenameNode from "../RenameNode";
 import { cn } from "@/libs/shadcn/utils";
 import { useReadonly } from "@/hooks/useReadonly";
-const FileNode = ({ fileTree }: { fileTree: FileTreeModel }) => {
+const FileNode = ({
+  fileTree,
+  activePath,
+}: {
+  fileTree: FileTreeModel;
+  activePath?: string;
+}) => {
   const { pathname } = useLocation();
   const { isReadonly } = useReadonly();
-  const isActive = pathname === `/ide/${btoa(fileTree.path)}`;
+  // activePath (decoded) may be provided by parent; fall back to pathname check
+  const isActive = activePath
+    ? activePath === fileTree.path
+    : pathname === `/ide/${btoa(fileTree.path)}`;
   const [isContextMenuOpen, setIsContextMenuOpen] = React.useState(false);
   const [isEditing, setIsEditing] = React.useState(false);
   const inputRef = React.useRef<HTMLInputElement>(null);
   const [showDeleteDialog, setShowDeleteDialog] = React.useState(false);
   const [pendingDelete, setPendingDelete] = React.useState(false);
+  const itemRef = React.useRef<HTMLLIElement | null>(null);
   const handleRename = () => {
     if (isReadonly) return;
     setIsEditing(true);
@@ -35,6 +46,42 @@ const FileNode = ({ fileTree }: { fileTree: FileTreeModel }) => {
     setPendingDelete(true);
     setIsContextMenuOpen(false);
   };
+
+  // Scroll into view when this file becomes active
+  React.useEffect(() => {
+    if (isActive && itemRef.current) {
+      try {
+        itemRef.current.scrollIntoView({
+          block: "nearest",
+          behavior: "smooth",
+        });
+      } catch {
+        itemRef.current.scrollIntoView({ block: "nearest" });
+      }
+    }
+  }, [isActive]);
+
+  // Listen for explicit reveal event to scroll this file into view
+  React.useEffect(() => {
+    const handler = (e: Event) => {
+      const anyE = e as CustomEvent<{ path: string }>;
+      const p = anyE?.detail?.path;
+      if (p && p === fileTree.path && itemRef.current) {
+        try {
+          itemRef.current.scrollIntoView({
+            block: "nearest",
+            behavior: "smooth",
+          });
+        } catch {
+          itemRef.current.scrollIntoView({ block: "nearest" });
+        }
+      }
+    };
+
+    window.addEventListener(SIDEBAR_REVEAL_FILE, handler as EventListener);
+    return () =>
+      window.removeEventListener(SIDEBAR_REVEAL_FILE, handler as EventListener);
+  }, [fileTree.path]);
 
   return (
     <>
@@ -54,7 +101,7 @@ const FileNode = ({ fileTree }: { fileTree: FileTreeModel }) => {
         }}
       >
         <ContextMenuTrigger asChild>
-          <SidebarMenuItem key={fileTree.name}>
+          <SidebarMenuItem ref={itemRef} key={fileTree.name}>
             <SidebarMenuButton
               asChild
               isActive={isActive}
@@ -116,5 +163,4 @@ const FileNode = ({ fileTree }: { fileTree: FileTreeModel }) => {
     </>
   );
 };
-
 export default FileNode;
