@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/shadcn/button";
-import { SidebarTrigger, useSidebar } from "@/components/ui/shadcn/sidebar";
+import { SidebarTrigger } from "@/components/ui/shadcn/sidebar";
+import useSidebar from "@/components/ui/shadcn/sidebar-context";
 import { ListTodo, MessagesSquare } from "lucide-react";
 import { useMediaQuery } from "usehooks-ts";
 

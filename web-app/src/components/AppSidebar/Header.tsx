@@ -6,8 +6,8 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  useSidebar,
 } from "@/components/ui/shadcn/sidebar";
+import useSidebar from "@/components/ui/shadcn/sidebar-context";
 import useTheme from "@/stores/useTheme";
 import { Button } from "@/components/ui/shadcn/button";
 
