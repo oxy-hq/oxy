@@ -1,0 +1,537 @@
+---
+title: "Deploy Oxy on Kubernetes with Helm"
+description: "Deploy Oxy on Kubernetes using the official Helm chart"
+sidebarTitle: "Kubernetes (Helm)"
+---
+
+This guide covers deploying Oxy on Kubernetes using our official Helm chart. The Helm approach provides a production-ready deployment with sensible defaults and extensive customization options.
+
+<Note>
+  **Prerequisites**: You'll need a Kubernetes cluster (>= 1.19), Helm 3.x installed, and kubectl configured to access your cluster.
+</Note>
+
+<Tip>
+  For the most up-to-date chart documentation and configuration options, visit the official chart README at [github.com/oxy-hq/charts](https://github.com/oxy-hq/charts/blob/main/charts/oxy-app/README.md).
+</Tip>
+
+## Oxy Architecture Overview
+
+Before diving into the deployment, let's understand how Oxy's architecture translates to Kubernetes components:
+
+### Core Architecture Principles
+
+Oxy is a **Rust-based framework for agentic analytics** that follows these design principles:
+- **Stateful by design**: Requires persistent storage for agent state, databases, and git repositories
+- **Single-tenant**: Each deployment serves one workspace/organization
+- **Database-backed**: Uses either SQLite (default) or external PostgreSQL for persistence
+- **Git-integrated**: Can sync with git repositories for configuration and workflows
+
+### Kubernetes Component Mapping
+
+| Oxy Component | Kubernetes Resource | Purpose |
+|---------------|-------------------|---------|
+| **Oxy Server** | StatefulSet | Main application server with persistent identity |
+| **State Storage** | PersistentVolumeClaim | Stores SQLite databases, agent state, git repos |
+| **External Database** | External Service/Secret | *Optional* PostgreSQL for production |
+| **Configuration** | ConfigMap + Secret | *Optional* environment variables and sensitive data |
+| **Git Sync** | Init Container | *Optional* synchronizes git repositories on startup |
+| **Web Interface** | Service + Ingress | Exposes the web UI and API endpoints |
+
+```mermaid
+graph TB
+    subgraph "Kubernetes Cluster"
+        subgraph "Oxy Namespace"
+            ing[Ingress<br/>Optional] --> svc[Service]
+            svc --> ss[StatefulSet]
+            ss --> pod[Oxy Pod]
+            pod --> pvc[PersistentVolumeClaim]
+            pod -.-> cm[ConfigMap<br/>Optional]
+            pod -.-> secret[Secrets<br/>Optional]
+
+            subgraph "Init Containers (Optional)"
+                init1[Git Sync<br/>Only when gitSync.enabled=true]
+            end
+
+            pod -.-> init1
+        end
+
+        subgraph "External Resources (Optional)"
+            db[(External PostgreSQL<br/>Optional)]
+            git[Git Repository<br/>Optional]
+        end
+
+        pod -.-> db
+        init1 -.-> git
+    end
+
+    users[Users] --> ing
+```
+
+### Why StatefulSet?
+
+The Helm chart uses a **StatefulSet** instead of a Deployment because:
+
+1. **Persistent Identity**: Oxy maintains state across restarts
+2. **Stable Storage**: Requires consistent volume attachment for databases and workspace data
+3. **Ordered Deployment**: Git sync (when enabled) needs to complete before the main app starts
+4. **Single Replica**: Oxy is designed as a single-tenant application
+
+## Installation Methods
+
+### Option 1: OCI Registry (Recommended)
+
+Install directly from GitHub Container Registry:
+
+```bash
+# Add the OCI Helm repository
+helm repo add oxy-oci oci://ghcr.io/oxy-hq/helm-charts
+
+# Update repository
+helm repo update
+
+# Install Oxy
+helm install oxy-app oxy-oci/oxy-app \
+  --namespace oxy \
+  --create-namespace \
+  --set app.imageTag="latest"
+```
+
+### Option 2: GitHub Pages Repository
+
+```bash
+# Add the GitHub Pages Helm repository
+helm repo add oxy https://oxy-hq.github.io/charts/
+
+# Update repository
+helm repo update
+
+# Install Oxy
+helm install oxy-app oxy/oxy-app \
+  --namespace oxy \
+  --create-namespace \
+  --set app.imageTag="latest"
+```
+
+## Configuration
+
+### Basic Configuration
+
+Create a `values.yaml` file for customization:
+
+```yaml
+# values.yaml
+app:
+  image: "ghcr.io/oxy-hq/oxy"
+  imageTag: "latest"
+  replicaCount: 1
+
+# Persistent storage configuration (required)
+persistence:
+  enabled: true
+  size: "20Gi"
+  storageClassName: "gp3"  # Adjust for your cluster
+  accessMode: "ReadWriteOnce"
+
+# Resource limits
+resources:
+  requests:
+    cpu: "250m"
+    memory: "512Mi"
+  limits:
+    cpu: "1000m"
+    memory: "2Gi"
+
+# Environment variables (optional - can use env, configMap, or secrets)
+env:
+  OXY_STATE_DIR: "/workspace/oxy_data"
+  # Add other environment variables as needed
+
+# Service configuration
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 3000
+
+# Ingress configuration (optional)
+ingress:
+  enabled: false
+  # Uncomment and configure for external access
+  # className: "nginx"
+  # hosts:
+  #   - host: oxy.your-domain.com
+  #     paths:
+  #       - path: "/"
+  #         pathType: Prefix
+
+# Git sync (optional - disabled by default)
+gitSync:
+  enabled: false
+  # repository: "git@github.com:your-org/your-oxy-workspace.git"
+  # branch: "main"
+  # sshSecretName: "oxy-git-ssh"
+```
+
+Then install with your custom values:
+
+```bash
+helm install oxy-app oxy/oxy-app \
+  --namespace oxy \
+  --create-namespace \
+  --values values.yaml
+```
+
+### Database Configuration
+
+#### Option 1: SQLite (Default)
+
+No additional configuration needed. Oxy will create SQLite databases in the persistent volume.
+
+```yaml
+# SQLite is used by default - no database config needed
+persistence:
+  enabled: true
+  size: "20Gi"
+```
+
+#### Option 2: External PostgreSQL
+
+For production deployments with external PostgreSQL, refer to the [PostgreSQL official documentation](https://www.postgresql.org/docs/) for setup and configuration details.
+
+```yaml
+database:
+  external:
+    enabled: true
+    host: "postgres.example.com"
+    port: 5432
+    database: "oxy"
+    user: "oxy_user"
+    password: "your-secure-password"
+    # Or use connection string
+    # connectionString: "postgresql://oxy_user:password@postgres.example.com:5432/oxy"
+
+env:
+  OXY_DATABASE_URL: "postgresql://oxy_user:password@postgres.example.com:5432/oxy"
+```
+
+#### Option 3: Bundled PostgreSQL
+
+```yaml
+database:
+  postgres:
+    enabled: true
+    postgresqlDatabase: "oxydb"
+    postgresqlUsername: "oxy"
+    postgresqlPassword: "postgres"
+```
+
+<Warning>
+  The bundled PostgreSQL is not recommended for production use. Use an external managed database service instead.
+</Warning>
+
+### Git Integration
+
+Enable git synchronization to automatically sync your Oxy configuration from a repository:
+
+<Note>
+  Git sync is **disabled by default**. When disabled, Oxy starts in `--readonly` mode and git setup is handled by the app UI.
+</Note>
+
+```yaml
+gitSync:
+  enabled: true  # Default is false
+  repository: "git@github.com:your-org/your-oxy-workspace.git"
+  branch: "main"
+  sshSecretName: "oxy-git-ssh"  # Secret containing SSH keys
+  userName: "Oxy Deploy"
+  userEmail: "deploy@your-org.com"
+  period: "15s"  # Sync interval
+```
+
+Create the SSH secret:
+
+```bash
+# Generate SSH key if you don't have one
+ssh-keygen -t ed25519 -C "oxy-k8s@your-org.com" -f oxy-deploy-key
+
+# Create Kubernetes secret
+kubectl create secret generic oxy-git-ssh \
+  --namespace oxy \
+  --from-file=ssh-privatekey=oxy-deploy-key \
+  --from-file=ssh-publickey=oxy-deploy-key.pub
+```
+
+Add the public key to your Git repository's deploy keys.
+
+### External Secrets Integration
+
+For production deployments with external secret management, refer to the [External Secrets Operator documentation](https://external-secrets.io/) for setup and configuration details.
+
+```yaml
+externalSecrets:
+  create: true
+  storeRef:
+    name: "vault-secret-store"
+    kind: "SecretStore"
+
+  # Environment variables from external secrets
+  envSecretNames:
+    - "oxy-api-keys"
+    - "oxy-database-credentials"
+
+  # Files from external secrets
+  fileSecrets:
+    - secretName: "oxy-config-files"
+      mountPath: "/workspace/secrets"
+```
+
+### Advanced Configuration Options
+
+#### Extra Containers
+
+The chart supports custom init containers and sidecars:
+
+```yaml
+# Add custom init containers
+extraInitContainers:
+  - name: custom-init
+    image: busybox:1.35
+    command: ['sh', '-c']
+    args:
+      - |
+        echo "Custom initialization"
+        # Your custom init logic here
+    volumeMounts:
+      - name: workspace
+        mountPath: /workspace
+
+# Add custom sidecar containers
+extraSidecars:
+  - name: log-shipper
+    image: fluent/fluent-bit:2.1.9
+    command: ['/fluent-bit/bin/fluent-bit']
+    args: ['--config=/etc/fluent-bit/fluent-bit.conf']
+    volumeMounts:
+      - name: workspace
+        mountPath: /workspace
+        readOnly: true
+```
+
+<Note>
+  Each container entry should be a valid Kubernetes container spec. If your containers need additional volumes, add them using the chart's supported volume fields and reference them in your container's volumeMounts.
+</Note>
+
+### Ingress Configuration
+
+Expose Oxy externally using an Ingress:
+
+```yaml
+ingress:
+  enabled: true
+  className: "nginx"  # or your ingress controller
+  hosts:
+    - host: oxy.your-domain.com
+      paths:
+        - path: "/"
+          pathType: "Prefix"
+  tls:
+    - secretName: oxy-tls
+      hosts:
+        - oxy.your-domain.com
+
+# If using cert-manager
+# annotations:
+#   cert-manager.io/cluster-issuer: "letsencrypt-prod"
+```
+
+## Deployment Example
+
+Here's a complete configuration based on real-world AWS EKS deployment:
+
+```yaml
+# production-values.yaml
+app:
+  image: "ghcr.io/oxy-hq/oxy"
+  imageTag: "0.2.28"  # Use specific version in production
+  imagePullPolicy: "IfNotPresent"
+  replicaCount: 1
+
+# Service account with IRSA (for AWS)
+serviceAccount:
+  create: true
+  name: "oxy-app-sa"
+  annotations:
+    "prometheus.io/scrape": "true"
+    "prometheus.io/port": "8080"
+    "prometheus.io/path": "/metrics"
+    # Add your IRSA role ARN here
+    # "eks.amazonaws.com/role-arn": "arn:aws:iam::123456789012:role/oxy-app-irsa"
+
+# Service configuration
+service:
+  port: 80
+  targetPort: 3000
+
+# Environment variables
+env:
+  OXY_STATE_DIR: "/workspace/oxy_data"
+  # Database connection - use external secrets for sensitive values
+  OXY_DATABASE_URL: "postgresql://oxy:password@postgres.svc.cluster.local:5432/oxydb"
+
+# Resource configuration
+resources:
+  requests:
+    cpu: "250m"
+    memory: "512Mi"
+  limits:
+    cpu: "1000m"
+    memory: "2Gi"
+
+# Persistent storage (required)
+persistence:
+  enabled: true
+  storageClass: "gp3"  # AWS EKS GP3 storage class
+  accessMode: "ReadWriteOnce"
+  size: "5Gi"
+  mountPath: "/workspace"
+
+# Node scheduling (optional)
+nodeSelector:
+  "workload-type": "oxy-app"
+  "app": "oxy-app"
+
+tolerations:
+  - key: "oxy-app"
+    operator: "Equal"
+    value: "true"
+    effect: "NoSchedule"
+
+# Git synchronization (optional)
+gitSync:
+  enabled: true
+  repository: "git@github.com:your-org/oxy-workspace.git"
+  branch: "main"
+  period: "24h"  # Sync once per day
+  sshSecretName: "oxy-git-ssh"
+
+# External secrets integration (optional)
+externalSecrets:
+  envSecretNames:
+    - "oxy-env-secret"
+  fileSecrets:
+    - name: "oxy-service-account-secret"
+
+# AWS Load Balancer Controller ingress
+ingress:
+  enabled: true
+  ingressClassName: "alb"
+  annotations:
+    "kubernetes.io/ingress.class": "alb"
+    "alb.ingress.kubernetes.io/scheme": "internet-facing"
+    "alb.ingress.kubernetes.io/target-type": "ip"
+    "alb.ingress.kubernetes.io/group.name": "oxy-shared"
+    # Certificate ARN for HTTPS
+    # "alb.ingress.kubernetes.io/certificate-arn": "arn:aws:acm:region:account:certificate/cert-id"
+    "external-dns.alpha.kubernetes.io/hostname": "oxy.your-domain.com"
+    # Health check configuration
+    "alb.ingress.kubernetes.io/healthcheck-path": "/"
+    "alb.ingress.kubernetes.io/healthcheck-port": "traffic-port"
+    "alb.ingress.kubernetes.io/healthcheck-protocol": "HTTP"
+    "alb.ingress.kubernetes.io/healthcheck-interval-seconds": "30"
+    "alb.ingress.kubernetes.io/healthcheck-timeout-seconds": "10"
+    "alb.ingress.kubernetes.io/healthy-threshold-count": "2"
+    "alb.ingress.kubernetes.io/unhealthy-threshold-count": "3"
+    "alb.ingress.kubernetes.io/healthcheck-grace-period-seconds": "300"
+    # Target group attributes for session stickiness
+    "alb.ingress.kubernetes.io/target-group-attributes": |
+      stickiness.enabled=true,
+      stickiness.lb_cookie.duration_seconds=86400,
+      stickiness.type=lb_cookie,
+      deregistration_delay.timeout_seconds=30,
+      load_balancing.algorithm.type=round_robin
+    # SSL redirect and load balancer attributes
+    "alb.ingress.kubernetes.io/ssl-redirect": "443"
+    "alb.ingress.kubernetes.io/load-balancer-attributes": |
+      idle_timeout.timeout_seconds=60,
+      routing.http2.enabled=true,
+      access_logs.s3.enabled=false,
+      deletion_protection.enabled=false
+  hosts:
+    - host: "oxy.your-domain.com"
+      paths: []
+  tls: []  # TLS handled by ALB annotations
+```
+
+## Upgrade and Maintenance
+
+### Upgrading Oxy
+
+```bash
+# Update Helm repository
+helm repo update
+
+# Check current version
+helm list -n oxy
+
+# Upgrade to latest version
+helm upgrade oxy-app oxy/oxy-app \
+  --namespace oxy \
+  --values production-values.yaml \
+  --atomic
+
+# Rollback if needed
+helm rollback oxy-app 1 --namespace oxy
+```
+
+### Backup and Restore
+
+For comprehensive backup and restore capabilities, we recommend using [Velero](https://velero.io/), which provides backup and disaster recovery for Kubernetes clusters.
+
+To set up Velero for backing up your Oxy deployment:
+
+1. Install Velero following the [official installation guide](https://velero.io/docs/main/basic-install/)
+2. Create a backup of your Oxy namespace:
+
+```bash
+# Create a backup of the oxy namespace
+velero backup create oxy-backup --include-namespaces oxy
+
+# Schedule regular backups
+velero schedule create oxy-daily --schedule="0 2 * * *" --include-namespaces oxy
+```
+
+3. Restore from backup when needed:
+
+```bash
+# List available backups
+velero backup get
+
+# Restore from backup
+velero restore create --from-backup oxy-backup
+```
+
+### Monitoring
+
+Monitor your Oxy deployment:
+
+```bash
+# Check pod status
+kubectl get pods -n oxy
+
+# View logs (all pods in StatefulSet)
+kubectl logs -f statefulset/oxy-app -n oxy
+# Or view logs for a specific pod (e.g., the first replica)
+kubectl logs -f oxy-app-0 -n oxy
+
+# Check persistent volume
+kubectl get pvc -n oxy
+
+# Port forward for local access
+kubectl port-forward svc/oxy-app 3000:80 -n oxy
+```
+
+## Troubleshooting
+
+**App starts in readonly mode:**
+This is the default behavior when `gitSync.enabled=false`. Git setup will be handled by the app UI.
+
+For other issues, please view the logs or check pods status. File an issue at [GitHub Issues](https://github.com/oxy-hq/oxy/issues) if you need further assistance.

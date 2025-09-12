@@ -22,7 +22,10 @@ There are several approaches to deploying Oxy:
 
 1. **Traditional Linux Setup** - Follow the step-by-step guide below to provision a machine, install dependencies, and configure each component manually.
 2. **Docker Deployment** - Use our [Docker image](https://github.com/oxy-hq/oxy/pkgs/container/oxy) for a containerized deployment that simplifies setup and maintenance. See the [Docker deployment guide](/deployment/docker) for details.
-3. **Hands-on Guides** - For practical, ready-to-use deployment recipes, check our [hands-on guides](/deployment/hands-on) section which includes:
+3. **Kubernetes Deployment** - Deploy Oxy on Kubernetes clusters using our official Helm chart or raw YAML manifests. Choose from:
+   - **[Helm Chart](/deployment/kubernetes-helm)** - Recommended for most Kubernetes deployments with sensible defaults and easy configuration
+   - **[Raw YAML](/deployment/kubernetes-raw)** - For advanced users who need full control over Kubernetes resources
+4. **Hands-on Guides** - For practical, ready-to-use deployment recipes, check our [hands-on guides](/deployment/hands-on) section which includes:
    - **Google Cloud Platform (GCP)** - Deploy Oxy on Google Cloud using our dedicated [GCP deployment guide](/deployment/gcp).
 
 ## Deployment Overview
@@ -33,7 +36,11 @@ flowchart TD
   Choice{Deployment Type?}
   Traditional[Traditional: Create Machine\nEC2/Google Compute]
   Docker[Docker: Deploy Docker Container]
+  Kubernetes[Kubernetes: Deploy on K8s Cluster]
   HandsOn[Hands-on: Follow Practical\nGuided Walkthroughs]
+  K8sChoice{Kubernetes Option?}
+  Helm[Helm Chart: Recommended]
+  RawYAML[Raw YAML: Advanced Control]
   HandsOnOptions{Hands-on Option?}
   GCP[GCP: Deploy on Google Cloud Platform]
   Install[Install Oxy CLI]
@@ -48,7 +55,11 @@ flowchart TD
   Start --> Choice
   Choice -->|Traditional| Traditional
   Choice -->|Docker| Docker
+  Choice -->|Kubernetes| Kubernetes
   Choice -->|Hands-on| HandsOn
+  Kubernetes --> K8sChoice
+  K8sChoice -->|Helm| Helm --> Done
+  K8sChoice -->|Raw YAML| RawYAML --> Done
   HandsOn --> HandsOnOptions
   HandsOnOptions -->|GCP| GCP --> Done
   Traditional --> Install --> Workspace --> GitChoice
@@ -132,6 +143,20 @@ Follow these steps to deploy Oxy on your cloud environment:
     href="/deployment/docker"
   >
     Deploy Oxy using Docker containers for simplified setup and management
+  </Card>
+  <Card
+    title="Kubernetes (Helm)"
+    icon="dharmachakra"
+    href="/deployment/kubernetes-helm"
+  >
+    Deploy Oxy on Kubernetes using our official Helm chart
+  </Card>
+  <Card
+    title="Kubernetes (Raw YAML)"
+    icon="file-code"
+    href="/deployment/kubernetes-raw"
+  >
+    Deploy Oxy on Kubernetes using raw YAML manifests for full control
   </Card>
   <Card
     title="GCP Deployment"
