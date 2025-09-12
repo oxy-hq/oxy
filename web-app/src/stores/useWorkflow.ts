@@ -19,6 +19,7 @@ export type NodeData = {
 
 export enum TaskType {
   EXECUTE_SQL = "execute_sql",
+  SEMANTIC_QUERY = "semantic_query",
   FORMATTER = "formatter",
   AGENT = "agent",
   LOOP_SEQUENTIAL = "loop_sequential",
@@ -111,9 +112,29 @@ export type ExecuteSqlTaskConfig = BaseTaskConfig & {
   database: string;
 };
 
+export type SemanticQueryTaskConfig = BaseTaskConfig & {
+  type: TaskType.SEMANTIC_QUERY;
+  database: string;
+  topic: string;
+  dimensions?: string[];
+  measures?: string[];
+  filters?: Array<{
+    field: string;
+    op: string;
+    value: string | number | boolean | string[];
+  }>;
+  orders?: Array<{
+    field: string;
+    direction: string;
+  }>;
+  limit?: number;
+  offset?: number;
+};
+
 // Unified TaskConfig type with discriminated union
 export type TaskConfig =
   | ExecuteSqlTaskConfig
+  | SemanticQueryTaskConfig
   | FormatterTaskConfig
   | AgentTaskConfig
   | LoopSequentialTaskConfig
@@ -122,6 +143,7 @@ export type TaskConfig =
 
 export type TaskConfigWithId = (
   | ExecuteSqlTaskConfig
+  | SemanticQueryTaskConfig
   | FormatterTaskConfig
   | AgentTaskConfig
   | LoopSequentialTaskConfigWithId
@@ -147,6 +169,7 @@ export type WorkflowState = {
   baseNodes: TaskNode[];
   nodes: TaskNode[];
   edges: Edge[];
+  selectedNodeId?: string;
 
   setNodes: (nodes: TaskNode[]) => void;
   onNodesChange: OnNodesChange<TaskNode>;

@@ -1,0 +1,10 @@
+name: ecommerce_analytics
+description: Complete e-commerce analytics with multi-hop relationships across customers, orders, products, and suppliers
+views:
+- customers
+- orders
+- order_items
+- fruits
+- shipping_addresses
+- fruit_suppliers
+- fruit_supplier_relationships

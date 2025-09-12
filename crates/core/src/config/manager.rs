@@ -259,4 +259,9 @@ impl ConfigManager {
             _ => None, // Other database types might not have password_var
         }
     }
+
+    /// Gets the project path from the configuration
+    pub fn project_path(&self) -> &std::path::Path {
+        &self.config.project_path
+    }
 }

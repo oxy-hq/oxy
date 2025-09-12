@@ -1,6 +1,7 @@
 import { AgentNode } from "./nodes/AgentNode";
 import { FormatterNode } from "./nodes/FormatterNode";
 import { ExecuteSqlNode } from "./nodes/ExecuteSqlNode";
+import { SemanticQueryNode } from "./nodes/SemanticQueryNode";
 import { LoopSequentialNode } from "./nodes/LoopSequentialNode";
 import {
   NodeData,
@@ -49,6 +50,9 @@ export function NodeContent({
   }
   if (task.type === "execute_sql") {
     return <ExecuteSqlNode task={task} />;
+  }
+  if (task.type === TaskType.SEMANTIC_QUERY) {
+    return <SemanticQueryNode task={task} />;
   }
   if (task.type === "formatter") {
     return <FormatterNode task={task} />;

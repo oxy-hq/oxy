@@ -18,11 +18,17 @@ pub async fn sync_databases(
     let semantic_manager = SemanticManager::from_config(config, overwrite).await?;
     tracing::debug!("sync_databases: SemanticManager created successfully");
 
-    let results = semantic_manager.sync_all(filter).await?;
+    let semantic_results = semantic_manager.sync_all(filter).await?;
     tracing::debug!(
         "sync_databases: sync_all completed with {} results",
-        results.len()
+        semantic_results.len()
     );
+
+    // Convert semantic crate errors to core crate errors
+    let results: Vec<Result<SyncMetrics, OxyError>> = semantic_results
+        .into_iter()
+        .map(|result| result.map_err(|e| e.into()))
+        .collect();
 
     let would_overwrite_count: usize = results
         .iter()

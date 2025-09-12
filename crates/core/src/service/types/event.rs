@@ -96,7 +96,10 @@ impl TryFrom<Event> for EventKind {
     fn try_from(event: Event) -> Result<Self, OxyError> {
         match event.source.kind.as_str() {
             WORKFLOW_SOURCE => match event.kind {
-                ExecuteEventKind::Started { name, attributes } => Ok(EventKind::WorkflowStarted {
+                ExecuteEventKind::Started {
+                    name: _,
+                    attributes,
+                } => Ok(EventKind::WorkflowStarted {
                     workflow_id: event.source.id.to_string(),
                     run_id: attributes.get("run_id").cloned().unwrap_or_default(),
                     workflow_config: attributes
@@ -107,7 +110,7 @@ impl TryFrom<Event> for EventKind {
                         ))?,
                 }),
                 ExecuteEventKind::Finished {
-                    message,
+                    message: _,
                     attributes,
                     error,
                 } => Ok(EventKind::WorkflowFinished {
@@ -169,7 +172,7 @@ impl TryFrom<Event> for EventKind {
                     ))
                 }
                 ExecuteEventKind::Finished {
-                    message,
+                    message: _,
                     error,
                     attributes: _,
                 } => Ok(EventKind::TaskFinished {

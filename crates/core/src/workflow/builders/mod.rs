@@ -23,6 +23,8 @@ mod cache;
 mod consistency;
 mod export;
 mod loop_concurrency;
+pub mod semantic;
+pub mod semantic_validator;
 mod sql;
 mod task;
 mod template;

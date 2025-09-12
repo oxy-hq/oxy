@@ -2,6 +2,7 @@ use std::sync::{PoisonError, TryLockError};
 
 use async_openai::error::OpenAIError;
 use axum::http::StatusCode;
+use oxy_semantic::SemanticLayerError;
 use thiserror::Error;
 use tokio::{sync::mpsc::error::SendError, task::JoinError};
 
@@ -47,6 +48,8 @@ pub enum OxyError {
     LanceDBError(#[from] lancedb::Error),
     #[error("{0}")]
     SerdeArrowError(#[from] serde_arrow::Error),
+    #[error("{0}")]
+    SemanticLayerError(#[from] SemanticLayerError),
     #[error("Error when calling {handle}:\n{msg}")]
     ToolCallError {
         call_id: String,
@@ -81,6 +84,7 @@ impl OxyError {
             OxyError::LanceDBError(_) => "lancedb",
             OxyError::SerdeArrowError(_) => "serde_arrow",
             OxyError::ToolCallError { .. } => "tool_call",
+            OxyError::SemanticLayerError(_semantic_layer_error) => "configuration",
         }
     }
 
@@ -108,6 +112,7 @@ impl OxyError {
             OxyError::LanceDBError(_) => sentry::Level::Error,
             OxyError::SerdeArrowError(_) => sentry::Level::Error,
             OxyError::ToolCallError { .. } => sentry::Level::Error,
+            OxyError::SemanticLayerError(_semantic_layer_error) => sentry::Level::Warning,
         }
     }
 
@@ -220,6 +225,9 @@ impl From<OxyError> for StatusCode {
             OxyError::LanceDBError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             OxyError::SerdeArrowError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             OxyError::ToolCallError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            OxyError::SemanticLayerError(_semantic_layer_error) => {
+                StatusCode::INTERNAL_SERVER_ERROR
+            }
         }
     }
 }

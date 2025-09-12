@@ -28,6 +28,7 @@ export const createEventSlice: StateCreator<
       case "workflow_finished": {
         const blockId = `${event.workflow_id}::${event.run_id}`;
         get().removeGroup(blockId, event.error);
+        get().setGroupProcessing(blockId, false);
         break;
       }
       case "artifact_started": {
@@ -46,6 +47,7 @@ export const createEventSlice: StateCreator<
       case "artifact_finished": {
         const { artifact_id } = event;
         get().removeGroup(artifact_id, event.error);
+        get().setGroupProcessing(artifact_id, false);
         break;
       }
       case "task_started": {

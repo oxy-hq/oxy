@@ -148,6 +148,11 @@ pub fn validate_task(task_type: &TaskType, _context: &ValidationContext) -> gard
             &[ExportFormat::TXT, ExportFormat::DOCX],
             "Formatter",
         ),
+        TaskType::SemanticQuery(task) => validate_export(
+            task.export.as_ref(),
+            &[ExportFormat::JSON, ExportFormat::CSV, ExportFormat::SQL],
+            "SemanticQuery",
+        ),
         TaskType::Workflow(_) | TaskType::LoopSequential(_) | TaskType::Unknown => Ok(()),
         TaskType::Conditional(_) => Ok(()),
     }

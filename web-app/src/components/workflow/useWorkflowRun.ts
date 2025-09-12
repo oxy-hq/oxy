@@ -218,7 +218,11 @@ export const useIsProcessing = (workflowId: string, runId: string) => {
   return useBlockStore((state) => {
     const groupId = getGroupId(workflowId, runId);
     const groupBlocks = state.groupBlocks[groupId];
-    return groupBlocks ? groupBlocks.blockStack.length > 0 : false;
+    const isStreamProcessing = state.processingGroups[groupId] || false;
+    const hasBlocksInStack = groupBlocks
+      ? groupBlocks.blockStack.length > 0
+      : false;
+    return isStreamProcessing || hasBlocksInStack;
   });
 };
 
@@ -391,6 +395,7 @@ export const useStreamEvents = () => {
   const abortControllerRef = useRef<AbortController | null>(null);
   const handleEvent = useBlockStore((state) => state.handleEvent);
   const cleanupGroupStacks = useBlockStore((state) => state.cleanupGroupStacks);
+  const setGroupProcessing = useBlockStore((state) => state.setGroupProcessing);
   const mutation = useMutation({
     mutationFn: async ({
       workflowId,
@@ -412,14 +417,30 @@ export const useStreamEvents = () => {
         handleEvent,
         () => {
           cleanupGroupStacks("Cancelled");
+          const groupId = getGroupId(workflowId, runIndex.toString());
+          setGroupProcessing(groupId, false);
           abortControllerRef.current = null;
         },
         (error) => {
           console.error("Stream error:", error);
+          const groupId = getGroupId(workflowId, runIndex.toString());
+          setGroupProcessing(groupId, false);
           abortControllerRef.current = null;
         },
         abortControllerRef.current?.signal,
       );
+    },
+    onMutate: ({ workflowId, runIndex }) => {
+      const groupId = getGroupId(workflowId, runIndex.toString());
+      setGroupProcessing(groupId, true);
+    },
+    onError: (_error, { workflowId, runIndex }) => {
+      const groupId = getGroupId(workflowId, runIndex.toString());
+      setGroupProcessing(groupId, false);
+    },
+    onSuccess: (_data, { workflowId, runIndex }) => {
+      const groupId = getGroupId(workflowId, runIndex.toString());
+      setGroupProcessing(groupId, false);
     },
   });
   const cancel = useCallback(() => {

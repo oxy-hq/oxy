@@ -64,6 +64,11 @@ pub mod run {
 
     #[test]
     fn run_example_workflow_ok() {
+        // First run migration to ensure database tables exist
+        let mut migrate_cmd = Command::cargo_bin("oxy").unwrap();
+        migrate_cmd.current_dir("examples").arg("migrate");
+        migrate_cmd.assert().success();
+
         let mut cmd = setup_command();
         let result = cmd
             .arg("workflows/table_values.workflow.yml")
@@ -76,6 +81,12 @@ pub mod run {
 
     #[test]
     fn run_workflow_with_anonymization_ok() {
+        // Skip test if OPENAI_API_KEY is not set
+        if std::env::var("OPENAI_API_KEY").is_err() {
+            println!("Skipping test: OPENAI_API_KEY not set");
+            return;
+        }
+
         let mut cmd = setup_command();
         let result = cmd
             .arg("workflows/anonymize.workflow.yml")
@@ -87,6 +98,12 @@ pub mod run {
 
     #[test]
     fn run_workflow_with_loop_ok() {
+        // Skip test if OPENAI_API_KEY is not set
+        if std::env::var("OPENAI_API_KEY").is_err() {
+            println!("Skipping test: OPENAI_API_KEY not set");
+            return;
+        }
+
         let mut cmd = setup_command();
         let result = cmd
             .arg("workflows/survey_responses.workflow.yml")
@@ -98,6 +115,12 @@ pub mod run {
 
     #[test]
     fn run_agent_ok() {
+        // Skip test if OPENAI_API_KEY is not set
+        if std::env::var("OPENAI_API_KEY").is_err() {
+            println!("Skipping test: OPENAI_API_KEY not set");
+            return;
+        }
+
         let mut cmd = setup_command();
         let result = cmd
             .arg("agents/default.agent.yml")

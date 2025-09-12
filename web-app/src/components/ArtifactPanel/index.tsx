@@ -1,4 +1,5 @@
 import SqlArtifactPanel from "./ArtifactsContent/sql";
+import SemanticQueryArtifactPanel from "./ArtifactsContent/semantic-query";
 import AgentArtifactPanel from "./ArtifactsContent/agent";
 import WorkflowArtifactPanel from "./ArtifactsContent/workflow";
 import { useQueries } from "@tanstack/react-query";
@@ -64,7 +65,7 @@ const ArtifactPanel = ({
   if (isCurrentArtifactLoading) {
     return (
       <div className="h-full flex flex-col">
-        <div className="w-fill flex px-4 py-2 flex justify-end">
+        <div className="w-full flex px-4 py-2 justify-end">
           <Button variant="outline" size="icon" onClick={onClose}>
             <X />
           </Button>
@@ -81,7 +82,7 @@ const ArtifactPanel = ({
   if (hasError && !currentArtifact) {
     return (
       <div className="flex h-full w-full flex-col">
-        <div className="w-fill flex px-4 py-2 flex justify-end">
+        <div className="w-full flex px-4 py-2 justify-end">
           <Button variant="outline" size="icon" onClick={onClose}>
             <X />
           </Button>
@@ -113,6 +114,10 @@ const ArtifactPanel = ({
   const renderContent = () => {
     if (currentArtifact.kind === "execute_sql") {
       return <SqlArtifactPanel artifact={currentArtifact} />;
+    }
+
+    if (currentArtifact.kind === "semantic_query") {
+      return <SemanticQueryArtifactPanel artifact={currentArtifact} />;
     }
 
     if (currentArtifact.kind === "agent") {

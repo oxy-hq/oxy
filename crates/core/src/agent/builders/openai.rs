@@ -7,15 +7,14 @@ use async_openai::{
         ChatCompletionRequestAssistantMessageArgs, ChatCompletionRequestMessage,
         ChatCompletionRequestSystemMessageArgs, ChatCompletionRequestUserMessageArgs,
         ChatCompletionStreamOptions, ChatCompletionTool, ChatCompletionToolChoiceOption,
-        ChatCompletionToolType, CreateChatCompletionRequestArgs, FunctionCall, ResponseFormat,
-        ResponseFormatJsonSchema, responses::ReasoningConfig,
+        ChatCompletionToolType, CreateChatCompletionRequestArgs, FunctionCall,
+        responses::ReasoningConfig,
     },
 };
 use deser_incomplete::from_json_str;
 use futures::StreamExt;
-use schemars::{JsonSchema, schema_for};
+use schemars::JsonSchema;
 use serde::Deserialize;
-use serde_json::json;
 
 use crate::{
     adapters::openai::{IntoOpenAIConfig, OpenAIClient},

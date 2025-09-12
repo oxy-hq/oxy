@@ -6323,6 +6323,7 @@ dependencies = [
  "minijinja",
  "ndarray",
  "once_cell",
+ "oxy-semantic",
  "parquet",
  "predicates",
  "pyo3",
@@ -6354,6 +6355,7 @@ dependencies = [
  "strip-ansi-escapes",
  "syntect",
  "tabled",
+ "tempfile",
  "terminal-light",
  "terminal_size",
  "thiserror 2.0.16",
@@ -6369,11 +6371,43 @@ dependencies = [
  "tracing-log",
  "tracing-subscriber",
  "url",
+ "urlencoding",
  "utoipa",
  "utoipa-axum",
  "utoipa-swagger-ui",
  "uuid",
  "xxhash-rust",
+]
+
+[[package]]
+name = "oxy-semantic"
+version = "0.2.26"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "dirs 6.0.0",
+ "futures",
+ "garde",
+ "glob",
+ "indexmap 2.11.0",
+ "itertools 0.14.0",
+ "log",
+ "minijinja",
+ "once_cell",
+ "regex",
+ "schemars 0.8.22",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "slugify",
+ "sqlformat",
+ "sqlparser 0.37.0",
+ "tempfile",
+ "thiserror 2.0.16",
+ "tokio",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]

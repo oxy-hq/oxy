@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use async_openai::types::ChatCompletionTool;
 use fallback::FallbackAgent;
+use oxy_semantic::Topic;
 
 use crate::{
     adapters::{
@@ -18,7 +19,8 @@ use crate::{
     config::{
         constants::ARTIFACT_SOURCE,
         model::{
-            AgentTool, ExecuteSQLTool, Model, ReasoningConfig, RoutingAgent, ToolType, WorkflowTool,
+            AgentTool, ExecuteSQLTool, Model, ReasoningConfig, RoutingAgent, SemanticQueryTool,
+            ToolType, WorkflowTool,
         },
     },
     errors::OxyError,
@@ -87,6 +89,44 @@ impl RoutingAgentExecutable {
                     is_verified,
                 }))
             }
+            topic_path if topic_path.ends_with(".topic.yml") => {
+                // Parse topic file to extract metadata
+                let topic_file_path = std::path::Path::new(topic_path);
+                if !topic_file_path.exists() {
+                    return Err(OxyError::AgentError(format!(
+                        "Topic file does not exist: {topic_path}"
+                    )));
+                }
+
+                // Read and parse the topic file directly
+                let content = tokio::fs::read_to_string(topic_file_path)
+                    .await
+                    .map_err(|e| {
+                        OxyError::AgentError(format!(
+                            "Failed to read topic file {}: {}",
+                            topic_path, e
+                        ))
+                    })?;
+
+                let topic: Topic = serde_yaml::from_str(&content).map_err(|e| {
+                    OxyError::AgentError(format!(
+                        "Failed to parse topic file {}: {}",
+                        topic_path, e
+                    ))
+                })?;
+
+                let tool_description = match description {
+                    Some(desc) => desc.to_string(),
+                    None => topic.description.clone(),
+                };
+
+                Ok(ToolType::SemanticQuery(SemanticQueryTool {
+                    name: to_openai_function_name(&PathBuf::from(topic_path))?,
+                    topic: Some(topic.name.clone()),
+                    description: tool_description,
+                    dry_run_limit: None,
+                }))
+            }
             _ => Err(OxyError::AgentError(format!(
                 "Unsupported tool type for path: {file_ref}"
             ))),
@@ -115,6 +155,16 @@ impl RoutingAgentExecutable {
                         &document.id
                     )))
                 }
+            }
+            topic_path if topic_path.ends_with(".topic.yml") => {
+                // Handle topic files specifically
+                self.resolve_tool(
+                    execution_context,
+                    &document.id,
+                    Some(&document.content),
+                    true,
+                )
+                .await
             }
             _ => {
                 self.resolve_tool(

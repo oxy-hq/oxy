@@ -583,6 +583,38 @@
       },
       "additionalProperties": true
     },
+    "SemanticQueryFilter": {
+      "type": "object",
+      "required": [
+        "field",
+        "op",
+        "value"
+      ],
+      "properties": {
+        "field": {
+          "type": "string"
+        },
+        "op": {
+          "type": "string"
+        },
+        "value": true
+      }
+    },
+    "SemanticQueryOrder": {
+      "type": "object",
+      "required": [
+        "direction",
+        "field"
+      ],
+      "properties": {
+        "direction": {
+          "type": "string"
+        },
+        "field": {
+          "type": "string"
+        }
+      }
+    },
     "SingleOrVec_for_InstanceType": {
       "description": "A type which can be serialized as a single item, or multiple items.\n\nIn some contexts, a `Single` may be semantically distinct from a `Vec` containing only item.",
       "anyOf": [
@@ -793,6 +825,77 @@
               "additionalProperties": {
                 "type": "string"
               }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "dimensions",
+            "topic",
+            "type"
+          ],
+          "properties": {
+            "dimensions": {
+              "description": "List of dimensions to include in the query. Format: <view_name>.<dimension_name>",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "export": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/TaskExport"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "filters": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/SemanticQueryFilter"
+              }
+            },
+            "limit": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "measures": {
+              "description": "List of measures to include in the query. Format: <view_name>.<measure_name>",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "offset": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "orders": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/SemanticQueryOrder"
+              }
+            },
+            "topic": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "semantic_query"
+              ]
             }
           }
         },

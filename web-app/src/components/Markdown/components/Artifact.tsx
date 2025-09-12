@@ -57,6 +57,7 @@ const ArtifactContainer = React.memo(
     switch (kind) {
       case "agent":
       case "execute_sql":
+      case "semantic_query":
         children = children ? (
           <details>
             <summary>{title}</summary>

@@ -14,15 +14,22 @@ use secrecy::SecretString;
 use std::{collections::HashMap, path::PathBuf, str::FromStr};
 
 use crate::{
-    adapters::{create_app_schema, viz_schema},
+    adapters::{
+        create_app_schema, semantic_tool_description::get_semantic_query_description, viz_schema,
+    },
     config::{
         constants::{ANTHROPIC_API_URL, GEMINI_API_URL},
-        model::{Model, ReasoningConfig, ReasoningEffort, RetrievalConfig, ToolType},
+        model::{
+            Model, ReasoningConfig, ReasoningEffort, RetrievalConfig, ToolType,
+            omni::OmniSemanticModel,
+        },
     },
     errors::OxyError,
     execute::types::event::ArtifactKind,
     project::resolve_project_path,
-    service::{secret_resolver::SecretResolverService, workflow::get_workflow},
+    service::{
+        secret_resolver::SecretResolverService, types::SemanticQueryParams, workflow::get_workflow,
+    },
     tools::types::{
         AgentParams, EmptySQLParams, ExecuteOmniParams, OmniTopicInfoParams, RetrievalParams,
         SQLParams,
@@ -304,8 +311,25 @@ impl OpenAIToolConfig for &ToolType {
             ToolType::ExecuteSQL(e) => e.description.clone(),
             ToolType::ValidateSQL(v) => v.description.clone(),
             ToolType::Retrieval(r) => r.description.clone(),
+            ToolType::Workflow(w) => w.description.clone(),
+            ToolType::Agent(agent_tool) => agent_tool.description.clone(),
+            ToolType::Visualize(v) => v.description.clone(),
+            ToolType::CreateDataApp(v) => v.description.clone(),
+            ToolType::SemanticQuery(s) => {
+                // Try to get enhanced description with semantic layer metadata
+                match get_semantic_query_description(s) {
+                    Ok(desc) => desc,
+                    Err(_) => {
+                        format!(
+                            "{}\n\nNo semantic layer metadata found. Please ensure you have semantic layer definitions in the 'semantics' directory.",
+                            s.description
+                        )
+                    }
+                }
+            }
+            ToolType::OmniTopicInfo(v) => v.get_description(),
             ToolType::ExecuteOmni(execute_omni_tool) => {
-                let model: Result<crate::config::model::OmniSemanticModel, OxyError> =
+                let model: Result<OmniSemanticModel, OxyError> =
                     execute_omni_tool.load_semantic_model();
                 match model {
                     Ok(model) => model.get_description(),
@@ -314,11 +338,6 @@ impl OpenAIToolConfig for &ToolType {
                     }
                 }
             }
-            ToolType::Workflow(w) => w.description.clone(),
-            ToolType::Agent(agent_tool) => agent_tool.description.clone(),
-            ToolType::Visualize(v) => v.description.clone(),
-            ToolType::OmniTopicInfo(v) => v.get_description(),
-            ToolType::CreateDataApp(v) => v.description.clone(),
         }
     }
 
@@ -327,12 +346,13 @@ impl OpenAIToolConfig for &ToolType {
             ToolType::ExecuteSQL(e) => e.name.clone(),
             ToolType::ValidateSQL(v) => v.name.clone(),
             ToolType::Retrieval(r) => r.name.clone(),
-            ToolType::ExecuteOmni(e) => e.name.clone(),
             ToolType::Workflow(w) => w.name.clone(),
             ToolType::Agent(agent_tool) => agent_tool.name.clone(),
             ToolType::Visualize(v) => v.name.clone(),
-            ToolType::OmniTopicInfo(omni_topic_info_tool) => omni_topic_info_tool.name.clone(),
             ToolType::CreateDataApp(create_data_app_tool) => create_data_app_tool.name.clone(),
+            ToolType::SemanticQuery(s) => s.name.clone(),
+            ToolType::ExecuteOmni(e) => e.name.clone(),
+            ToolType::OmniTopicInfo(omni_topic_info_tool) => omni_topic_info_tool.name.clone(),
         }
     }
 
@@ -357,6 +377,7 @@ impl OpenAIToolConfig for &ToolType {
                     r#ref: ag.agent_ref.clone(),
                 },
             )),
+            ToolType::SemanticQuery(_sm) => Some((self.handle(), ArtifactKind::SemanticQuery {})),
             _ => None,
         }
     }
@@ -369,9 +390,10 @@ impl OpenAIToolConfig for &ToolType {
             ToolType::Workflow(_) => "workflow".to_string(),
             ToolType::Agent(_) => "agent".to_string(),
             ToolType::Visualize(_) => "visualize".to_string(),
+            ToolType::CreateDataApp(_) => "create_data_app".to_string(),
+            ToolType::SemanticQuery(_) => "semantic_query".to_string(),
             ToolType::ExecuteOmni(_) => "execute_omni".to_string(),
             ToolType::OmniTopicInfo(_) => "omni_topic_info".to_string(),
-            ToolType::CreateDataApp(_) => "create_data_app".to_string(),
         }
     }
 
@@ -400,6 +422,9 @@ impl OpenAIToolConfig for &ToolType {
                 // schemars does not generate a compatiible schema with OpenAI.
                 Ok(serde_json::from_str(create_app_schema::CREATE_APP_SCHEMA).unwrap())
             }
+            ToolType::SemanticQuery(_) => Ok(serde_json::json!(&schemars::schema_for!(
+                SemanticQueryParams
+            ))),
         }
     }
 }

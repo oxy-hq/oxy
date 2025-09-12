@@ -2,13 +2,11 @@ use std::collections::HashMap;
 
 use super::{
     create_data_app::CreateDataAppExecutable,
-    omni::{OmniExecutable, OmniTopicInfoExecutable},
     retrieval::RetrievalExecutable,
     sql::{SQLExecutable, ValidateSQLExecutable},
     types::{
-        AgentParams, CreateDataAppInput, ExecuteOmniParams, OmniInput, OmniTopicInfoInput,
-        OmniTopicInfoParams, RetrievalInput, RetrievalParams, SQLInput, SQLParams, ToolRawInput,
-        VisualizeInput, WorkflowInput,
+        AgentParams, CreateDataAppInput, RetrievalInput, RetrievalParams, SQLInput, SQLParams,
+        ToolRawInput, VisualizeInput, WorkflowInput,
     },
     visualize::{types::VisualizeParams, visualize::VisualizeExecutable},
     workflow::WorkflowExecutable,
@@ -18,7 +16,10 @@ use crate::{
     agent::{AgentLauncherExecutable, types::AgentInput},
     config::{
         constants::ARTIFACT_SOURCE,
-        model::{AgentTool, OmniSemanticModel, RetrievalConfig, ToolType, WorkflowTool},
+        model::{
+            AgentTool, RetrievalConfig, SemanticQueryTask, ToolType, WorkflowTool,
+            omni::OmniSemanticModel,
+        },
     },
     errors::OxyError,
     execute::{
@@ -26,13 +27,94 @@ use crate::{
         builders::{ExecutableBuilder, map::ParamMapper},
         types::{EventKind, Output, OutputContainer},
     },
-    tools::create_data_app::types::CreateDataAppParams,
+    service::types::SemanticQueryParams,
+    tools::{
+        create_data_app::types::CreateDataAppParams,
+        omni::{OmniExecutable, OmniTopicInfoExecutable},
+        types::{ExecuteOmniParams, OmniInput, OmniTopicInfoInput, OmniTopicInfoParams},
+    },
+    workflow::{SemanticQueryExecutable, ValidatedSemanticQuery, validate_semantic_query_task},
 };
 
 const TOOL_NOT_FOUND_ERR: &str = "Tool not found";
 
 #[derive(Clone)]
 pub struct ToolExecutable;
+
+#[derive(Clone)]
+struct OmniToolInput {
+    database: String,
+    semantic_model: OmniSemanticModel,
+    param: String,
+}
+
+#[derive(Clone)]
+struct OmniTopicInfoToolInput {
+    param: String,
+    semantic_model: OmniSemanticModel,
+}
+
+#[async_trait::async_trait]
+impl ParamMapper<OmniTopicInfoToolInput, OmniTopicInfoInput> for OmniTopicInfoMapper {
+    async fn map(
+        &self,
+        _execution_context: &ExecutionContext,
+        input: OmniTopicInfoToolInput,
+    ) -> Result<(OmniTopicInfoInput, Option<ExecutionContext>), OxyError> {
+        let OmniTopicInfoToolInput {
+            param,
+            semantic_model,
+        } = input;
+        let omni_params = serde_json::from_str::<OmniTopicInfoParams>(&param)?;
+        Ok((
+            OmniTopicInfoInput {
+                semantic_model,
+                topic: omni_params.topic,
+            },
+            None,
+        ))
+    }
+}
+
+#[async_trait::async_trait]
+impl ParamMapper<OmniToolInput, OmniInput> for OmniMapper {
+    async fn map(
+        &self,
+        _execution_context: &ExecutionContext,
+        input: OmniToolInput,
+    ) -> Result<(OmniInput, Option<ExecutionContext>), OxyError> {
+        let OmniToolInput {
+            param,
+            database,
+            semantic_model,
+        } = input;
+        let omni_params = serde_json::from_str::<ExecuteOmniParams>(&param)?;
+        Ok((
+            OmniInput {
+                database,
+                params: omni_params,
+                semantic_model,
+            },
+            None,
+        ))
+    }
+}
+
+fn build_omni_executable<E>(executable: E) -> impl Executable<OmniToolInput, Response = Output>
+where
+    E: Executable<OmniInput, Response = Output> + Send,
+{
+    ExecutableBuilder::new()
+        .map(OmniMapper)
+        .executable(executable)
+}
+
+fn build_omni_topic_info_executable() -> impl Executable<OmniTopicInfoToolInput, Response = Output>
+{
+    ExecutableBuilder::new()
+        .map(OmniTopicInfoMapper)
+        .executable(OmniTopicInfoExecutable {})
+}
 
 #[async_trait::async_trait]
 impl Executable<(String, Option<ToolType>, ToolRawInput)> for ToolExecutable {
@@ -53,6 +135,7 @@ impl Executable<(String, Option<ToolType>, ToolRawInput)> for ToolExecutable {
                 ToolType::Workflow(workflow_tool) => workflow_tool.is_verified,
                 ToolType::Agent(_) => false, // Agent's answer are not verified
                 ToolType::ExecuteSQL(sql_config) => sql_config.sql.is_some(),
+                ToolType::SemanticQuery(_semantic_query_tool) => true,
                 _ => false,
             };
 
@@ -124,20 +207,6 @@ impl Executable<(String, Option<ToolType>, ToolRawInput)> for ToolExecutable {
                     )
                     .await
                     .map(|output| output.into()),
-                ToolType::ExecuteOmni(execute_omni_tool) => {
-                    let semantic_model = execute_omni_tool.load_semantic_model()?;
-                    build_omni_executable(OmniExecutable::new())
-                        .execute(
-                            execution_context,
-                            OmniToolInput {
-                                database: execute_omni_tool.database.clone(),
-                                param: input.param.clone(),
-                                semantic_model,
-                            },
-                        )
-                        .await
-                        .map(|output| output.into())
-                }
                 ToolType::Workflow(workflow_config) => {
                     build_workflow_executable()
                         .execute(
@@ -169,6 +238,45 @@ impl Executable<(String, Option<ToolType>, ToolRawInput)> for ToolExecutable {
                     )
                     .await
                     .map(|output| output.into()),
+                ToolType::CreateDataApp(_create_data_app_tool) => {
+                    build_create_data_app_executable()
+                        .execute(
+                            execution_context,
+                            CreateDataAppToolInput {
+                                param: input.param.clone(),
+                            },
+                        )
+                        .await
+                        .map(|output| output.into())
+                }
+                ToolType::SemanticQuery(semantic_query_tool) => {
+                    let semantic_params =
+                        serde_json::from_str::<SemanticQueryParams>(&input.param)?;
+                    build_semantic_query_executable()
+                        .execute(
+                            execution_context,
+                            SemanticQueryToolInput {
+                                param: semantic_params,
+                                topic: semantic_query_tool.topic.clone(),
+                            },
+                        )
+                        .await
+                        .map(|output| output.into())
+                }
+                ToolType::ExecuteOmni(execute_omni_tool) => {
+                    let semantic_model = execute_omni_tool.load_semantic_model()?;
+                    build_omni_executable(OmniExecutable::new())
+                        .execute(
+                            execution_context,
+                            OmniToolInput {
+                                database: execute_omni_tool.database.clone(),
+                                param: input.param.clone(),
+                                semantic_model,
+                            },
+                        )
+                        .await
+                        .map(|output| output.into())
+                }
                 ToolType::OmniTopicInfo(omni_topic_info_tool) => {
                     let semantic_model = omni_topic_info_tool.load_semantic_model()?;
                     build_omni_topic_info_executable()
@@ -177,17 +285,6 @@ impl Executable<(String, Option<ToolType>, ToolRawInput)> for ToolExecutable {
                             OmniTopicInfoToolInput {
                                 param: input.param.clone(),
                                 semantic_model,
-                            },
-                        )
-                        .await
-                        .map(|output| output.into())
-                }
-                ToolType::CreateDataApp(_create_data_app_tool) => {
-                    build_create_data_app_executable()
-                        .execute(
-                            execution_context,
-                            CreateDataAppToolInput {
-                                param: input.param.clone(),
                             },
                         )
                         .await
@@ -239,19 +336,6 @@ struct SQLToolInput {
 }
 
 #[derive(Clone)]
-struct OmniToolInput {
-    database: String,
-    semantic_model: OmniSemanticModel,
-    param: String,
-}
-
-#[derive(Clone)]
-struct OmniTopicInfoToolInput {
-    param: String,
-    semantic_model: OmniSemanticModel,
-}
-
-#[derive(Clone)]
 struct SQLMapper;
 
 #[derive(Clone)]
@@ -259,6 +343,15 @@ struct OmniMapper;
 
 #[derive(Clone)]
 struct OmniTopicInfoMapper;
+
+#[derive(Clone)]
+struct CreateDataAppMapper;
+
+#[derive(Clone)]
+struct SemanticQueryMapper;
+
+#[derive(Clone)]
+struct OmniQueryMapper;
 
 #[async_trait::async_trait]
 impl ParamMapper<SQLToolInput, SQLInput> for SQLMapper {
@@ -283,92 +376,6 @@ impl ParamMapper<SQLToolInput, SQLInput> for SQLMapper {
         ))
     }
 }
-
-#[async_trait::async_trait]
-impl ParamMapper<OmniTopicInfoToolInput, OmniTopicInfoInput> for OmniTopicInfoMapper {
-    async fn map(
-        &self,
-        _execution_context: &ExecutionContext,
-        input: OmniTopicInfoToolInput,
-    ) -> Result<(OmniTopicInfoInput, Option<ExecutionContext>), OxyError> {
-        let OmniTopicInfoToolInput {
-            param,
-            semantic_model,
-        } = input;
-        let omni_params = serde_json::from_str::<OmniTopicInfoParams>(&param)?;
-        Ok((
-            OmniTopicInfoInput {
-                semantic_model,
-                topic: omni_params.topic,
-            },
-            None,
-        ))
-    }
-}
-
-#[async_trait::async_trait]
-impl ParamMapper<OmniToolInput, OmniInput> for OmniMapper {
-    async fn map(
-        &self,
-        _execution_context: &ExecutionContext,
-        input: OmniToolInput,
-    ) -> Result<(OmniInput, Option<ExecutionContext>), OxyError> {
-        let OmniToolInput {
-            param,
-            database,
-            semantic_model,
-        } = input;
-        let omni_params = serde_json::from_str::<ExecuteOmniParams>(&param)?;
-        Ok((
-            OmniInput {
-                database,
-                params: omni_params,
-                semantic_model,
-            },
-            None,
-        ))
-    }
-}
-
-fn build_sql_executable<E>(executable: E) -> impl Executable<SQLToolInput, Response = Output>
-where
-    E: Executable<SQLInput, Response = Output> + Send,
-{
-    ExecutableBuilder::new()
-        .map(SQLMapper)
-        .executable(executable)
-}
-
-fn build_omni_executable<E>(executable: E) -> impl Executable<OmniToolInput, Response = Output>
-where
-    E: Executable<OmniInput, Response = Output> + Send,
-{
-    ExecutableBuilder::new()
-        .map(OmniMapper)
-        .executable(executable)
-}
-
-fn build_omni_topic_info_executable() -> impl Executable<OmniTopicInfoToolInput, Response = Output>
-{
-    ExecutableBuilder::new()
-        .map(OmniTopicInfoMapper)
-        .executable(OmniTopicInfoExecutable {})
-}
-
-#[derive(Clone)]
-struct VisualizeToolInput {
-    param: String,
-}
-
-struct CreateDataAppToolInput {
-    param: String,
-}
-
-#[derive(Clone)]
-struct VisualizeMapper;
-
-#[derive(Clone)]
-struct CreateDataAppMapper;
 
 #[async_trait::async_trait]
 impl ParamMapper<CreateDataAppToolInput, CreateDataAppInput> for CreateDataAppMapper {
@@ -401,6 +408,82 @@ impl ParamMapper<VisualizeToolInput, VisualizeInput> for VisualizeMapper {
         ))
     }
 }
+
+fn build_sql_executable<E>(executable: E) -> impl Executable<SQLToolInput, Response = Output>
+where
+    E: Executable<SQLInput, Response = Output> + Send,
+{
+    ExecutableBuilder::new()
+        .map(SQLMapper)
+        .executable(executable)
+}
+
+#[async_trait::async_trait]
+impl ParamMapper<SemanticQueryToolInput, ValidatedSemanticQuery> for SemanticQueryMapper {
+    async fn map(
+        &self,
+        execution_context: &ExecutionContext,
+        input: SemanticQueryToolInput,
+    ) -> Result<(ValidatedSemanticQuery, Option<ExecutionContext>), OxyError> {
+        let SemanticQueryToolInput {
+            param: semantic_params,
+            topic,
+        } = input;
+
+        if let Some(ref topic) = topic {
+            if topic.to_string() != semantic_params.topic {
+                return Err(OxyError::ArgumentError(format!(
+                    "Topic mismatch: expected '{}', got '{}'",
+                    topic, semantic_params.topic
+                )));
+            }
+        } else {
+            tracing::debug!("SemanticQueryToolInput topic: None");
+        }
+
+        // Use the structured parameters directly (no JSON parsing needed)
+        // SemanticQueryParams already contains the correct types, no conversion needed
+
+        // For now, semantic query tools don't support export directly
+        // Export functionality is handled at the task level
+        let export = None;
+
+        // Create a SemanticQueryTask from the parameters
+        let task = SemanticQueryTask {
+            query: semantic_params,
+            export,
+        };
+
+        // Validate the semantic query task
+        let validated = validate_semantic_query_task(&execution_context.config, &task).await?;
+
+        Ok((validated, None))
+    }
+}
+
+fn build_semantic_query_executable() -> impl Executable<SemanticQueryToolInput, Response = Output> {
+    ExecutableBuilder::new()
+        .map(SemanticQueryMapper)
+        .executable(SemanticQueryExecutable::new())
+}
+
+#[derive(Clone)]
+struct VisualizeToolInput {
+    param: String,
+}
+
+struct CreateDataAppToolInput {
+    param: String,
+}
+
+#[derive(Clone)]
+struct SemanticQueryToolInput {
+    param: SemanticQueryParams,
+    topic: Option<String>,
+}
+
+#[derive(Clone)]
+struct VisualizeMapper;
 
 fn build_visualize_executable() -> impl Executable<VisualizeToolInput, Response = Output> {
     ExecutableBuilder::new()

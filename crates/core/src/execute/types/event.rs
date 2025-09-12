@@ -3,7 +3,7 @@ use std::{collections::HashMap, path::PathBuf};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use crate::execute::types::Usage;
+use crate::{execute::types::Usage, service::types::SemanticQueryParams};
 
 use super::{Chunk, ProgressType, ReferenceKind};
 
@@ -21,15 +21,23 @@ pub enum ArtifactKind {
     Agent { r#ref: String },
     #[serde(rename = "execute_sql")]
     ExecuteSQL { sql: String, database: String },
+    #[serde(rename = "semantic_query")]
+    SemanticQuery {},
 }
 
 impl std::fmt::Display for ArtifactKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ArtifactKind::Workflow { r#ref } => write!(f, "workflow"),
-            ArtifactKind::Agent { r#ref } => write!(f, "agent"),
-            ArtifactKind::ExecuteSQL { sql, database } => {
+            ArtifactKind::Workflow { r#ref: _ } => write!(f, "workflow"),
+            ArtifactKind::Agent { r#ref: _ } => write!(f, "agent"),
+            ArtifactKind::ExecuteSQL {
+                sql: _,
+                database: _,
+            } => {
                 write!(f, "execute_sql")
+            }
+            ArtifactKind::SemanticQuery {} => {
+                write!(f, "semantic_query")
             }
         }
     }
@@ -66,6 +74,10 @@ pub enum EventKind {
         query: String,
         database: String,
         source: String,
+        is_verified: bool,
+    },
+    SemanticQueryGenerated {
+        query: SemanticQueryParams,
         is_verified: bool,
     },
     ArtifactFinished,

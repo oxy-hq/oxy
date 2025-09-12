@@ -7,7 +7,7 @@ use async_openai::types::{
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::config::model::OmniSemanticModel;
+use crate::config::model::omni::OmniSemanticModel;
 use crate::config::model::{EmbeddingConfig, VectorDBConfig, WorkflowTool};
 
 use super::create_data_app::types::CreateDataAppParams;
@@ -18,6 +18,12 @@ pub struct ToolRawInput {
     pub call_id: String,
     pub handle: String,
     pub param: String,
+}
+
+#[derive(Debug)]
+pub struct OmniTopicInfoInput {
+    pub topic: String,
+    pub semantic_model: OmniSemanticModel,
 }
 
 impl From<&ChatCompletionMessageToolCall> for ToolRawInput {
@@ -49,14 +55,21 @@ pub struct RetrievalParams {
     pub query: String,
 }
 
-#[derive(Debug, Deserialize, JsonSchema)]
+#[derive(Debug, Deserialize, JsonSchema, Clone)]
 pub enum OrderType {
     #[serde(rename = "asc")]
     Ascending,
     #[serde(rename = "desc")]
     Descending,
 }
-#[derive(Debug, Deserialize, JsonSchema)]
+#[derive(Debug)]
+pub struct OmniInput {
+    pub database: String,
+    pub params: ExecuteOmniParams,
+    pub semantic_model: OmniSemanticModel,
+}
+
+#[derive(Debug, Deserialize, JsonSchema, Clone)]
 pub enum FilterOperator {
     #[serde(rename = "eq")]
     Equal,
@@ -76,7 +89,7 @@ pub enum FilterOperator {
     NotIn,
 }
 
-#[derive(Debug, Deserialize, JsonSchema)]
+#[derive(Debug, Deserialize, JsonSchema, Clone)]
 pub struct Filter {
     #[schemars(
         description = "Field name must be full name format {view}.{field_name}. No aggregation or any other syntax."
@@ -110,24 +123,29 @@ pub struct OmniTopicInfoParams {
     pub topic: String,
 }
 
+#[derive(Debug, Deserialize, JsonSchema, Clone)]
+pub struct OmniQueryParams {
+    #[schemars(
+        description = "The topic to query from. If not specified, uses the tool's configured topic."
+    )]
+    pub topic: Option<String>,
+    #[schemars(
+        description = "Fields to select. Field name must be full name format {view}.{field_name}. No aggregation or any other syntax."
+    )]
+    pub fields: Vec<String>,
+    #[schemars(description = "List of filters to apply to the query.")]
+    pub filters: Option<Vec<Filter>>,
+    #[schemars(description = "Maximum number of rows to return.")]
+    pub limit: Option<u64>,
+    #[schemars(description = "Fields to sort by with direction (asc/desc).")]
+    pub sorts: Option<HashMap<String, OrderType>>,
+}
+
 #[derive(Debug)]
 pub struct SQLInput {
     pub database: String,
     pub sql: String,
     pub dry_run_limit: Option<u64>,
-}
-
-#[derive(Debug)]
-pub struct OmniInput {
-    pub database: String,
-    pub params: ExecuteOmniParams,
-    pub semantic_model: OmniSemanticModel,
-}
-
-#[derive(Debug)]
-pub struct OmniTopicInfoInput {
-    pub topic: String,
-    pub semantic_model: OmniSemanticModel,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]

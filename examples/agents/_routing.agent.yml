@@ -12,4 +12,6 @@ routes:
   - "agents/duckdb.agent.yml"
   - "workflows/*.workflow.yml"
   - "data_fruit/*.sql"
+  - "semantics/topics/users.topic.yml"
+  - "semantics/topics/*.topic.yml"
 route_fallback: agents/default.agent.yml

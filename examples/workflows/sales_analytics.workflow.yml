@@ -1,0 +1,33 @@
+# yaml-language-server: $schema=../../json-schemas/workflow.json
+
+name: simple_sales_report
+description: A simple workflow that queries sales data and generates a basic report
+
+tasks:
+  # Get basic sales metrics
+  - name: sales_data
+    type: semantic_query
+    topic: ecommerce_analytics
+    dimensions:
+      - fruits.fruit_id
+      - fruits.fruit_name
+    measures:
+      - orders.total_order_value
+      - orders.total_order_item_quantity
+    orders:
+      - field: orders.total_order_value
+        direction: desc
+    limit: 5
+
+  # Generate a simple report
+  - name: create_report
+    type: agent
+    agent_ref: agents/local.agent.yml
+    prompt: |
+      Create a simple sales report based on this data:
+      {{ sales_data }}
+      
+      Include:
+      - Top selling fruits by revenue
+      - Total quantities sold
+      - Brief summary

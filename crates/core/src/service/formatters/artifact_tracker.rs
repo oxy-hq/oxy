@@ -8,19 +8,23 @@ use crate::{
     config::constants::MARKDOWN_MAX_FENCES,
     errors::OxyError,
     execute::types::event::ArtifactKind,
-    service::types::{ArtifactContent, Block, BlockValue, ContainerKind, Content},
+    service::types::{
+        ArtifactContent, Block, BlockValue, ContainerKind, Content, SemanticQueryParams,
+    },
 };
 
 pub struct ArtifactTracker {
     artifacts: Arc<Mutex<Vec<entity::artifacts::ActiveModel>>>,
     artifact_queue: Vec<(String, ArtifactKind)>,
+    current_semantic_query: Option<SemanticQueryParams>,
 }
 
 impl ArtifactTracker {
     pub fn new() -> Self {
         Self {
-            artifacts: Arc::new(Mutex::new(vec![])),
-            artifact_queue: vec![],
+            artifacts: Arc::new(Mutex::new(Vec::new())),
+            artifact_queue: Vec::new(),
+            current_semantic_query: None,
         }
     }
 
@@ -44,6 +48,10 @@ impl ArtifactTracker {
         self.artifact_queue.last()
     }
 
+    pub fn set_semantic_query(&mut self, query: SemanticQueryParams) {
+        self.current_semantic_query = Some(query);
+    }
+
     pub async fn store_artifact(&mut self, block: &Block) -> Result<(), OxyError> {
         if let BlockValue::Children {
             kind: ContainerKind::Artifact {
@@ -60,6 +68,10 @@ impl ArtifactTracker {
                 "workflow" => Self::create_workflow_artifact(children)?,
                 "agent" => Self::create_agent_artifact(children)?,
                 "execute_sql" => Self::create_sql_artifact(children)?,
+                "semantic_query" => Self::create_semantic_query_artifact_with_params(
+                    children,
+                    self.current_semantic_query.clone(),
+                )?,
                 _ => None,
             };
 
@@ -132,6 +144,68 @@ impl ArtifactTracker {
                     is_result_truncated: false,
                     sql_query: sql.to_string(),
                     result: vec![],
+                })),
+                _ => Ok(None),
+            };
+        }
+        Ok(None)
+    }
+
+    fn create_semantic_query_artifact(
+        children: &[Block],
+    ) -> Result<Option<ArtifactContent>, OxyError> {
+        Self::create_semantic_query_artifact_with_params(children, None)
+    }
+
+    fn create_semantic_query_artifact_with_params(
+        children: &[Block],
+        query_params: Option<SemanticQueryParams>,
+    ) -> Result<Option<ArtifactContent>, OxyError> {
+        let default_params = SemanticQueryParams {
+            topic: "".to_string(),
+            dimensions: vec![],
+            measures: vec![],
+            filters: vec![],
+            orders: vec![],
+            limit: None,
+            offset: None,
+        };
+        let query = query_params.unwrap_or(default_params);
+
+        if let Some(Block { id: _, value }) = children.last() {
+            return match &**value {
+                BlockValue::Content {
+                    content: Content::Table(table),
+                } => {
+                    let (table_2d_array, is_truncated) = table.to_2d_array()?;
+                    Ok(Some(ArtifactContent::SemanticQuery {
+                        database: table.get_database_ref().unwrap_or_default(),
+                        sql_query: table.get_sql_query().unwrap_or_default(),
+                        result: table_2d_array,
+                        is_result_truncated: is_truncated,
+                        topic: query.topic,
+                        dimensions: query.dimensions,
+                        measures: query.measures,
+                        filters: query.filters,
+                        orders: query.orders,
+                        limit: query.limit,
+                        offset: query.offset,
+                    }))
+                }
+                BlockValue::Content {
+                    content: Content::SQL(sql),
+                } => Ok(Some(ArtifactContent::SemanticQuery {
+                    database: "".to_string(),
+                    sql_query: sql.to_string(),
+                    result: vec![],
+                    is_result_truncated: false,
+                    topic: query.topic,
+                    dimensions: query.dimensions,
+                    measures: query.measures,
+                    filters: query.filters,
+                    orders: query.orders,
+                    limit: query.limit,
+                    offset: query.offset,
                 })),
                 _ => Ok(None),
             };

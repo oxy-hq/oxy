@@ -18,6 +18,7 @@ import { useWorkflowLayout } from "./layout/useWorkflowLayout";
 
 const nodeTypes: Record<NodeType, typeof DiagramNode> = {
   execute_sql: DiagramNode,
+  semantic_query: DiagramNode,
   loop_sequential: DiagramNode,
   formatter: DiagramNode,
   agent: DiagramNode,
