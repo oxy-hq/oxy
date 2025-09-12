@@ -78,7 +78,7 @@ The Helm chart uses a **StatefulSet** instead of a Deployment because:
 
 ## Installation Methods
 
-### Option 1: OCI Registry (Recommended)
+### Option 1: OCI-Compatible Registry (Recommended)
 
 Install directly from GitHub Container Registry:
 
@@ -96,7 +96,7 @@ helm install oxy-app oxy-oci/oxy-app \
   --set app.imageTag="latest"
 ```
 
-### Option 2: GitHub Pages Repository
+### Option 2: Classic Helm Repository
 
 ```bash
 # Add the GitHub Pages Helm repository
