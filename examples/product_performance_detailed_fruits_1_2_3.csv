@@ -1,0 +1,6 @@
+fruit_sales__sale_id,fruit_sales__fruit_id,fruit_sales__customer_id,fruit_sales__sale_date,fruit_sales__quantity,fruit_sales__amount,fruit_sales__unit_price,fruit_sales__sale_year,fruit_sales__sale_month,fruit_sales__sale_day,fruit_sales__total_sales
+50,10,6,2024-03-05T00:00:00,1,50,50.0,2024,3,5,1
+49,9,11,2024-03-04T00:00:00,7,70,10.0,2024,3,4,1
+48,8,2,2024-03-03T00:00:00,2,80,40.0,2024,3,3,1
+47,7,18,2024-03-02T00:00:00,1,35,35.0,2024,3,2,1
+46,6,14,2024-03-01T00:00:00,2,120,60.0,2024,3,1,1

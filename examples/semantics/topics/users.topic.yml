@@ -1,0 +1,4 @@
+name: users
+description: Users
+views:
+- users

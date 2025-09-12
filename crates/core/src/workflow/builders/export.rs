@@ -1,7 +1,10 @@
 use std::{fs::File, io::Write, path::Path, sync::Arc};
 
 use crate::{
-    config::model::{AgentTask, ExecuteSQLTask, ExportFormat, FormatterTask, TaskExport, TaskType},
+    config::model::{
+        AgentTask, ExecuteSQLTask, ExportFormat, FormatterTask, SemanticQueryTask, TaskExport,
+        TaskType,
+    },
     errors::OxyError,
     execute::{
         ExecutionContext,
@@ -70,6 +73,7 @@ impl Exporter<TaskInput, OutputContainer> for TaskExporter {
         let export_info = match &input.task.task_type {
             TaskType::Agent(AgentTask { export, .. }) => export,
             TaskType::ExecuteSQL(ExecuteSQLTask { export, .. }) => export,
+            TaskType::SemanticQuery(SemanticQueryTask { export, .. }) => export,
             TaskType::Formatter(FormatterTask { export, .. }) => export,
             _ => &None,
         };
@@ -85,6 +89,7 @@ impl Exporter<TaskInput, OutputContainer> for TaskExporter {
         let (export_info, prompt) = match input.task.task_type {
             TaskType::Agent(AgentTask { prompt, export, .. }) => (export, prompt),
             TaskType::ExecuteSQL(ExecuteSQLTask { export, .. }) => (export, String::new()),
+            TaskType::SemanticQuery(SemanticQueryTask { export, .. }) => (export, String::new()),
             TaskType::Formatter(FormatterTask { export, .. }) => (export, String::new()),
             _ => (None, String::new()),
         };

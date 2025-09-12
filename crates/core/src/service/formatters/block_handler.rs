@@ -12,7 +12,9 @@ use crate::execute::types::event::ArtifactKind;
 use crate::execute::types::{EventKind, Output, Source, Usage};
 use crate::service::formatters::logs_persister::LogsPersister;
 use crate::service::formatters::streaming_message_persister::StreamingMessagePersister;
-use crate::service::types::{AnswerStream, ArtifactValue, ContainerKind, ExecuteSQL};
+use crate::service::types::{
+    AnswerStream, ArtifactValue, ContainerKind, ExecuteSQL, SemanticQuery, SemanticQueryParams,
+};
 use crate::workflow::loggers::types::LogItem;
 
 use super::artifact_tracker::ArtifactTracker;
@@ -29,6 +31,7 @@ pub struct BlockHandler {
     pub usage: Arc<Mutex<Usage>>,
     streaming_message_persister: Option<Arc<StreamingMessagePersister>>,
     logs_persister: Option<Arc<LogsPersister>>,
+    current_semantic_query: Option<SemanticQueryParams>,
 }
 
 impl BlockHandler {
@@ -41,6 +44,7 @@ impl BlockHandler {
             usage: Arc::new(Mutex::new(Usage::new(0, 0))),
             streaming_message_persister: None,
             logs_persister: None,
+            current_semantic_query: None,
         }
     }
 
@@ -299,6 +303,80 @@ impl BlockHandler {
                         }
                         _ => {}
                     },
+                    ArtifactKind::SemanticQuery {} => match &chunk.delta {
+                        Output::SQL(sql) => {
+                            let query_params =
+                                self.current_semantic_query.clone().unwrap_or_else(|| {
+                                    crate::service::types::SemanticQueryParams {
+                                        topic: "".to_string(),
+                                        dimensions: vec![],
+                                        measures: vec![],
+                                        filters: vec![],
+                                        orders: vec![],
+                                        limit: None,
+                                        offset: None,
+                                    }
+                                });
+
+                            self.stream_dispatcher
+                                .send_artifact_value(
+                                    artifact_id,
+                                    ArtifactValue::SemanticQuery(SemanticQuery {
+                                        database: "".to_string(),
+                                        sql_query: sql.to_string(),
+                                        result: vec![],
+                                        is_result_truncated: false,
+                                        topic: query_params.topic,
+                                        dimensions: query_params.dimensions,
+                                        measures: query_params.measures,
+                                        filters: query_params.filters,
+                                        orders: query_params.orders,
+                                        limit: query_params.limit,
+                                        offset: query_params.offset,
+                                    }),
+                                    &source.kind,
+                                )
+                                .await?;
+                        }
+                        Output::Table(table) => {
+                            if let Some(reference) = &table.reference {
+                                let (table_2d_array, is_truncated) = table.to_2d_array()?;
+                                let query_params =
+                                    self.current_semantic_query.clone().unwrap_or_else(|| {
+                                        crate::service::types::SemanticQueryParams {
+                                            topic: "".to_string(),
+                                            dimensions: vec![],
+                                            measures: vec![],
+                                            filters: vec![],
+                                            orders: vec![],
+                                            limit: None,
+                                            offset: None,
+                                        }
+                                    });
+
+                                self.stream_dispatcher
+                                    .send_artifact_value(
+                                        artifact_id,
+                                        ArtifactValue::SemanticQuery(SemanticQuery {
+                                            database: reference.database_ref.to_string(),
+                                            sql_query: reference.sql.to_string(),
+                                            result: table_2d_array,
+                                            is_result_truncated: is_truncated,
+                                            topic: query_params.topic,
+                                            dimensions: query_params.dimensions,
+                                            measures: query_params.measures,
+                                            filters: query_params.filters,
+                                            orders: query_params.orders,
+                                            limit: query_params.limit,
+                                            offset: query_params.offset,
+                                        }),
+                                        &source.kind,
+                                    )
+                                    .await?;
+                            }
+                        }
+                        _ => {}
+                    },
                 }
             }
         }
@@ -396,6 +474,12 @@ impl SourceHandler for BlockHandler {
                         .update_usage(current_usage.input_tokens, current_usage.output_tokens)
                         .await?;
                 }
+            }
+
+            EventKind::SemanticQueryGenerated { query, .. } => {
+                // Store the semantic query parameters for later use in artifact creation
+                self.current_semantic_query = Some(query.clone());
+                self.artifact_tracker.set_semantic_query(query.clone());
             }
 
             _ => {}

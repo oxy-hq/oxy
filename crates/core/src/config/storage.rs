@@ -112,7 +112,10 @@ impl ConfigStorage for LocalSource {
             OxyError::ConfigurationError(format!("Failed to read agent config from file: {e}"))
         })?;
         let mut agent_config: AgentConfig = serde_yaml::from_str(&agent_yml).map_err(|e| {
-            OxyError::ConfigurationError(format!("Failed to deserialize agent config: {e}"))
+            OxyError::ConfigurationError(format!(
+                "Failed to deserialize agent {} config: {e}",
+                resolved_path.display()
+            ))
         })?;
         if agent_config.name.is_empty() {
             agent_config.name = self.get_stem_by_extension(&resolved_path, AGENT_EXTENSION);

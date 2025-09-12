@@ -15,6 +15,7 @@ import {
   Code,
   FileText,
   GitBranch,
+  Globe,
   LocateFixed,
   Maximize,
   Minimize,
@@ -27,6 +28,7 @@ import { randomKey } from "@/libs/utils/string";
 
 const nodeNameMap: Record<NodeType, string> = {
   execute_sql: "SQL",
+  semantic_query: "Semantic Query",
   loop_sequential: "Loop sequential",
   formatter: "Formatter",
   agent: "Agent",
@@ -45,6 +47,7 @@ const nodeIconMap: Record<NodeType, ReactElement> = {
   conditional: <Split size={14} />,
   "conditional-else": <CircleAlert size={14} />,
   "conditional-if": <CircleHelp size={14} />,
+  semantic_query: <Globe size={14} />,
 };
 
 type Props = {

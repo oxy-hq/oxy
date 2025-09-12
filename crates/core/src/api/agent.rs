@@ -80,19 +80,28 @@ impl AgentConfigResponse {
     )
 )]
 pub async fn get_agents() -> Result<extract::Json<Vec<AgentConfigResponse>>, StatusCode> {
-    let project_path = resolve_project_path().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let project_path = resolve_project_path().map_err(|e| {
+        tracing::error!("Failed to resolve project path: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     let config = ConfigBuilder::new()
         .with_project_path(&project_path)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .map_err(|e| {
+            tracing::error!("Failed to create config builder: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?
         .build()
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(|e| {
+            tracing::error!("Failed to build config: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
 
-    let agent_paths = config
-        .list_agents()
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let agent_paths = config.list_agents().await.map_err(|e| {
+        tracing::error!("Failed to list agents: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     let agent_relative_paths: Vec<String> = agent_paths
         .iter()
@@ -120,7 +129,10 @@ pub async fn get_agents() -> Result<extract::Json<Vec<AgentConfigResponse>>, Sta
 
     let agents: Vec<AgentConfigResponse> = futures::future::try_join_all(agent_futures)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(|e| {
+            tracing::error!("Failed to resolve agent configs: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
 
     Ok(extract::Json(agents))
 }

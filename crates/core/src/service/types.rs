@@ -1,3 +1,4 @@
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -6,6 +7,7 @@ use crate::{
     utils::get_file_stem,
     workflow::loggers::types::LogItem,
 };
+use serde_json::Value as JsonValue;
 
 pub mod block;
 pub mod content;
@@ -66,6 +68,94 @@ pub struct ExecuteSQL {
     pub is_result_truncated: bool,
 }
 
+// SemanticQuery result mirrors ExecuteSQL but carries semantic layer context
+// (topic, measures, dimensions) alongside the generated SQL and tabular data.
+// This enables downstream consumers to understand both the logical and
+// physical lineage of the result.
+#[derive(Serialize, Deserialize, ToSchema, JsonSchema, Clone, Debug)]
+pub struct SemanticQueryFilter {
+    pub field: String,
+    pub op: String,
+    pub value: JsonValue,
+}
+
+impl std::hash::Hash for SemanticQueryFilter {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.field.hash(state);
+        self.op.hash(state);
+        // Hash the JSON value as a string for consistency
+        if let Ok(s) = serde_json::to_string(&self.value) {
+            s.hash(state);
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, ToSchema, JsonSchema, Clone, Debug, Hash)]
+pub struct SemanticQueryOrder {
+    pub field: String,
+    pub direction: String,
+}
+
+#[derive(Serialize, Deserialize, ToSchema, JsonSchema, Clone, Debug)]
+pub struct SemanticQueryExport {
+    pub path: String,
+    pub format: String,
+}
+
+// Reusable set of semantic query parameters (mirrors task definition inputs)
+#[derive(Serialize, Deserialize, ToSchema, JsonSchema, Clone, Debug)]
+pub struct SemanticQueryParams {
+    pub topic: String,
+    #[schemars(
+        description = "List of measures to include in the query. Format: <view_name>.<measure_name>"
+    )]
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub measures: Vec<String>,
+    #[schemars(
+        description = "List of dimensions to include in the query. Format: <view_name>.<dimension_name>"
+    )]
+    pub dimensions: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub filters: Vec<SemanticQueryFilter>,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub orders: Vec<SemanticQueryOrder>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub offset: Option<u64>,
+}
+
+impl std::hash::Hash for SemanticQueryParams {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.topic.hash(state);
+        self.measures.hash(state);
+        self.dimensions.hash(state);
+        for filter in &self.filters {
+            filter.hash(state);
+        }
+        for order in &self.orders {
+            order.hash(state);
+        }
+        self.limit.hash(state);
+        self.offset.hash(state);
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, ToSchema, Debug)]
+pub struct SemanticQuery {
+    pub database: String,
+    pub sql_query: String,
+    pub result: Vec<Vec<String>>,
+    pub is_result_truncated: bool,
+    pub topic: String,
+    pub dimensions: Vec<String>,
+    pub measures: Vec<String>,
+    pub filters: Vec<SemanticQueryFilter>,
+    pub orders: Vec<SemanticQueryOrder>,
+    pub limit: Option<u64>,
+    pub offset: Option<u64>,
+}
+
 #[derive(Serialize, ToSchema)]
 #[serde(tag = "type", content = "value")]
 pub enum ArtifactValue {
@@ -75,6 +165,8 @@ pub enum ArtifactValue {
     Content(String),
     #[serde(rename = "execute_sql")]
     ExecuteSQL(ExecuteSQL),
+    #[serde(rename = "semantic_query")]
+    SemanticQuery(SemanticQuery),
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]
@@ -90,6 +182,20 @@ pub enum ArtifactContent {
         sql_query: String,
         result: Vec<Vec<String>>,
         is_result_truncated: bool,
+    },
+    #[serde(rename = "semantic_query")]
+    SemanticQuery {
+        database: String,
+        sql_query: String,
+        result: Vec<Vec<String>>,
+        is_result_truncated: bool,
+        topic: String,
+        dimensions: Vec<String>,
+        measures: Vec<String>,
+        filters: Vec<SemanticQueryFilter>,
+        orders: Vec<SemanticQueryOrder>,
+        limit: Option<u64>,
+        offset: Option<u64>,
     },
 }
 

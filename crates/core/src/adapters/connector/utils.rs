@@ -27,7 +27,7 @@ pub fn load_result(file_path: &str) -> anyhow::Result<(Vec<RecordBatch>, SchemaR
     Ok((batches, schema))
 }
 
-pub(super) fn write_to_ipc<P: AsRef<Path>>(
+pub fn write_to_ipc<P: AsRef<Path>>(
     batches: &Vec<RecordBatch>,
     file_path: P,
     schema: &SchemaRef,

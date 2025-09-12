@@ -20,7 +20,9 @@ use crate::service::agent::AgentCLIHandler;
 use crate::service::agent::run_agent;
 use crate::service::eval::EvalEventsHandler;
 use crate::service::eval::run_eval;
-use crate::service::retrieval::{ReindexInput, SearchInput, reindex, search};
+use crate::service::retrieval::SearchInput;
+use crate::service::retrieval::search;
+use crate::service::retrieval::{ReindexInput, reindex};
 use crate::service::sync::sync_databases;
 use crate::service::workflow::run_workflow;
 use crate::theme::StyledText;
@@ -41,6 +43,7 @@ use migration::MigratorTrait;
 use minijinja::{Environment, Value};
 use model::AgentConfig;
 use model::{Config, Semantics, Workflow};
+use oxy_semantic::cube::translator::process_semantic_layer_to_cube;
 use pyo3::Bound;
 use pyo3::FromPyObject;
 use pyo3::IntoPyObject;
@@ -86,6 +89,16 @@ use tracing::{debug, error};
 static DIST: Dir = include_dir!("D:\\a\\oxy\\oxy\\crates\\core\\dist");
 #[cfg(not(target_os = "windows"))]
 static DIST: Dir = include_dir!("$CARGO_MANIFEST_DIR/dist");
+
+// Constants
+const CUBE_CONFIG_DIR_PATH: &str = ".local/share/oxy/cube";
+
+/// Get the cube configuration directory path
+fn get_cube_config_dir() -> Result<PathBuf, OxyError> {
+    let home = std::env::var("HOME")
+        .map_err(|_| OxyError::RuntimeError("Could not find HOME directory".to_string()))?;
+    Ok(PathBuf::from(home).join(CUBE_CONFIG_DIR_PATH))
+}
 
 type Variable = (String, String);
 fn parse_variable(env: &str) -> Result<Variable, OxyError> {
@@ -276,6 +289,11 @@ enum SubCommand {
     /// Remove cached data, vector embeddings, and temporary files to reset
     /// the project to a clean state. Useful for troubleshooting data corruption.
     Clean(CleanArgs),
+    /// Start the semantic engine (Cube.js) server for semantic layer queries
+    ///
+    /// Launch a Cube.js server that provides access to your semantic layer
+    /// with pre-configured data sources and schema definitions.
+    SemanticEngine(SemanticEngineArgs),
 }
 
 #[derive(Parser, Debug)]
@@ -572,6 +590,34 @@ pub enum CleanTarget {
     Cache,
 }
 
+#[derive(Parser, Debug)]
+pub struct SemanticEngineArgs {
+    /// Port number for the Cube.js server
+    ///
+    /// Specify which port to bind the Cube.js semantic engine.
+    /// Default is 4000 if not specified.
+    #[clap(long, default_value_t = 4000)]
+    port: u16,
+    /// Host address to bind the Cube.js server
+    ///
+    /// Specify which host address to bind the Cube.js server.
+    /// Default is 0.0.0.0 to listen on all interfaces.
+    #[clap(long, default_value = "0.0.0.0")]
+    host: String,
+    /// Enable development mode with hot reloading
+    ///
+    /// When enabled, Cube.js will run in development mode with
+    /// automatic schema reloading and enhanced debugging.
+    #[clap(long, default_value_t = true)]
+    dev_mode: bool,
+    /// Set log level for Cube.js server
+    ///
+    /// Control the verbosity of Cube.js logging output.
+    /// Options: error, warn, info, debug, trace
+    #[clap(long, default_value = "info")]
+    log_level: String,
+}
+
 async fn handle_workflow_file(
     workflow_name: &PathBuf,
     retry: bool,
@@ -712,6 +758,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             SubCommand::Ask(_) => "ask",
             SubCommand::Seed(_) => "seed",
             SubCommand::Clean(_) => "clean",
+            SubCommand::SemanticEngine(_) => "semantic-engine",
         };
 
         sentry_config::add_breadcrumb(
@@ -800,11 +847,29 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
         }
         Some(SubCommand::Build(build_args)) => {
             sentry_config::add_operation_context("build", None);
+
+            // Build vector embeddings for routing agents
             reindex(ReindexInput {
                 project_path: resolve_project_path()?.to_string_lossy().to_string(),
                 drop_all_tables: build_args.drop_all_tables,
             })
             .await?;
+
+            // Process semantic layer to generate CubeJS schema
+            let semantic_dir = resolve_project_path()?.join("semantics");
+            if semantic_dir.exists() {
+                // target_dir: ~/.local/share/oxy/cube
+                let target_dir = get_cube_config_dir()?;
+
+                // Ensure the target directory exists
+                std::fs::create_dir_all(&target_dir).map_err(|e| {
+                    OxyError::RuntimeError(format!("Failed to create cube directory: {}", e))
+                })?;
+
+                process_semantic_layer_to_cube(semantic_dir, target_dir).await?;
+            } else {
+                println!("No semantic directory found at {}", semantic_dir.display());
+            }
         }
         Some(SubCommand::VecSearch(search_args)) => {
             sentry_config::add_agent_context(&search_args.agent, Some(&search_args.question));
@@ -844,9 +909,15 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
         Some(SubCommand::Validate) => {
             let result = load_config(None);
             match result {
-                Ok(config) => match config.validate_workflows() {
-                    Ok(_) => match config.validate_agents() {
-                        Ok(_) => println!("{}", "Config file is valid".success()),
+                Ok(config) => match config.validate_config() {
+                    Ok(_) => match config.validate_workflows() {
+                        Ok(_) => match config.validate_agents() {
+                            Ok(_) => println!("{}", "Config file is valid".success()),
+                            Err(e) => {
+                                println!("{}", e.to_string().error());
+                                exit(1)
+                            }
+                        },
                         Err(e) => {
                             println!("{}", e.to_string().error());
                             exit(1)
@@ -943,6 +1014,10 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
 
         Some(SubCommand::Clean(clean_args)) => {
             handle_clean_command(clean_args).await?;
+        }
+
+        Some(SubCommand::SemanticEngine(semantic_args)) => {
+            handle_semantic_engine_command(semantic_args).await?;
         }
 
         None => {
@@ -1657,5 +1732,138 @@ async fn handle_clean_command(clean_args: CleanArgs) -> Result<(), OxyError> {
             clean_cache(true).await?;
         }
     }
+    Ok(())
+}
+
+async fn handle_semantic_engine_command(semantic_args: SemanticEngineArgs) -> Result<(), OxyError> {
+    sentry_config::add_operation_context("semantic-engine", None);
+
+    // Ensure we're in a valid project
+    let project_path = resolve_project_path()?;
+
+    // Check if semantic layer exists
+    let semantic_dir = project_path.join("semantics");
+    if !semantic_dir.exists() {
+        return Err(OxyError::ConfigurationError(
+            "No semantic layer found. Please create a 'semantics' directory with your semantic definitions.".to_string()
+        ));
+    }
+
+    // Ensure cube configuration directory exists
+    let cube_config_dir = get_cube_config_dir()?;
+
+    if !cube_config_dir.exists() {
+        println!("🔄 Generating Cube.js configuration from semantic layer...");
+        // Process semantic layer to generate CubeJS schema
+        process_semantic_layer_to_cube(semantic_dir.clone(), cube_config_dir.clone()).await?;
+        println!("✅ Cube.js configuration generated successfully");
+    }
+
+    // Check if Docker is available
+    let docker_check = Command::new("docker").args(["--version"]).output();
+
+    match docker_check {
+        Ok(output) if output.status.success() => {
+            println!("🐳 Docker detected, starting Cube.js container...");
+        }
+        _ => {
+            return Err(OxyError::RuntimeError(
+                "Docker is required to run the semantic engine. Please install Docker and try again.".to_string()
+            ));
+        }
+    }
+
+    // Prepare environment variables for Cube.js
+    let mut env_vars = vec![
+        format!("CUBEJS_DEV_MODE={}", semantic_args.dev_mode),
+        format!("CUBEJS_LOG_LEVEL={}", semantic_args.log_level),
+    ];
+
+    // Add database connection if available
+    let config = ConfigBuilder::new()
+        .with_project_path(&project_path)?
+        .build()
+        .await?;
+
+    if let Some(default_db) = config.default_database_ref() {
+        if let Ok(db_config) = config.resolve_database(default_db) {
+            // Add database URL to environment
+            let db_url = match &db_config.database_type {
+                crate::config::model::DatabaseType::Postgres(pg_config) => {
+                    format!(
+                        "postgresql://{}:{}@{}:{}/{}",
+                        pg_config.user.as_deref().unwrap_or("postgres"),
+                        pg_config.password.as_deref().unwrap_or(""),
+                        pg_config.host.as_deref().unwrap_or("localhost"),
+                        pg_config.port.as_deref().unwrap_or("5432"),
+                        pg_config.database.as_deref().unwrap_or("postgres")
+                    )
+                }
+                crate::config::model::DatabaseType::Mysql(mysql_config) => {
+                    format!(
+                        "mysql://{}:{}@{}:{}/{}",
+                        mysql_config.user.as_deref().unwrap_or("root"),
+                        mysql_config.password.as_deref().unwrap_or(""),
+                        mysql_config.host.as_deref().unwrap_or("localhost"),
+                        mysql_config.port.as_deref().unwrap_or("3306"),
+                        mysql_config.database.as_deref().unwrap_or("mysql")
+                    )
+                }
+                _ => {
+                    tracing::warn!("Database type not supported for Cube.js connection");
+                    String::new()
+                }
+            };
+
+            if !db_url.is_empty() {
+                env_vars.push(format!("CUBEJS_DB_URL={}", db_url));
+            }
+        }
+    }
+
+    // Build Docker command
+    let mut docker_cmd = Command::new("docker");
+    docker_cmd
+        .args(["run", "--rm", "-it"])
+        .args(["-p", &format!("{}:4000", semantic_args.port)])
+        .args(["-v", &format!("{}:/cube/conf", cube_config_dir.display())])
+        .args(["-v", &format!("{}/.db:/cube/.db", project_path.display())]);
+
+    // Add environment variables
+    for env_var in env_vars {
+        docker_cmd.args(["-e", &env_var]);
+    }
+
+    docker_cmd.args(["cubejs/cube:latest"]);
+
+    let display_host = if semantic_args.host == "0.0.0.0" {
+        "localhost"
+    } else {
+        &semantic_args.host
+    };
+
+    println!(
+        "{} {}",
+        "🚀 Starting Cube.js semantic engine at".text(),
+        format!("http://{}:{}", display_host, semantic_args.port).secondary()
+    );
+
+    println!(
+        "{}",
+        "📊 Cube.js Developer Playground will be available for testing queries".info()
+    );
+    println!("{}", "Press Ctrl+C to stop the semantic engine".tertiary());
+
+    // Execute the Docker command
+    let status = docker_cmd
+        .status()
+        .map_err(|e| OxyError::RuntimeError(format!("Failed to start Cube.js container: {}", e)))?;
+
+    if !status.success() {
+        return Err(OxyError::RuntimeError(
+            "Cube.js container exited with non-zero status".to_string(),
+        ));
+    }
+
     Ok(())
 }

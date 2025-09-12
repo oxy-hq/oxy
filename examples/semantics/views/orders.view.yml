@@ -1,0 +1,86 @@
+name: orders
+description: Customer orders with shipping and payment information
+datasource: local
+table: orders.csv
+entities:
+- name: order
+  type: primary
+  description: Primary order entity
+  key: order_id
+- name: customer
+  type: foreign
+  description: Customer who placed the order
+  key: customer_id
+- name: shipping_address
+  type: foreign
+  description: Shipping address for the order
+  key: shipping_address_id
+dimensions:
+- name: order_id
+  type: number
+  description: Unique order identifier
+  expr: id
+- name: customer_id
+  type: number
+  description: Customer identifier
+  expr: customer_id
+- name: shipping_address_id
+  type: number
+  description: Shipping address identifier
+  expr: shipping_address_id
+- name: order_date
+  type: date
+  description: Date when order was placed
+  expr: order_date
+- name: order_status
+  type: string
+  description: Current status of the order
+  expr: status
+- name: total_amount
+  type: number
+  description: Total order amount
+  expr: total_amount
+- name: shipping_cost
+  type: number
+  description: Cost of shipping
+  expr: shipping_cost
+- name: tax_amount
+  type: number
+  description: Tax amount for the order
+  expr: tax_amount
+measures:
+- name: total_orders
+  type: count
+  description: Total number of orders
+- name: total_order_value
+  type: sum
+  description: Total value of all orders
+  expr: total_amount
+- name: avg_order_value
+  type: average
+  description: Average order value
+  expr: total_amount
+- name: total_shipping_costs
+  type: sum
+  description: Total shipping costs
+  expr: shipping_cost
+- name: total_tax_collected
+  type: sum
+  description: Total tax collected
+  expr: tax_amount
+- name: distinct_customers_with_orders
+  type: count_distinct
+  description: Number of distinct customers with orders
+  expr: customer_id
+- name: total_order_item_quantity
+  type: sum
+  description: Total quantity from all order items
+  expr: "{{order_item.quantity}}"
+- name: items_count
+  description: Total number of items in the order
+  type: count
+  expr: "{{order_item.order_item_id}}"
+- name: quantity_per_item
+  type: average
+  description: Average quantity of each item in the order
+  expr: "{{order_item.quantity}}"

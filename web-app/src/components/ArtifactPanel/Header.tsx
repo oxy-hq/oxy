@@ -26,7 +26,9 @@ const Header = ({
   setSelectedArtifactIds,
   onClose,
 }: Props) => {
-  const isSqlArtifact = currentArtifact.kind === "execute_sql";
+  const isSqlArtifact =
+    currentArtifact.kind === "execute_sql" ||
+    currentArtifact.kind === "semantic_query";
 
   const handleDownloadSql = () => {
     if (!isSqlArtifact) {
@@ -39,7 +41,7 @@ const Header = ({
   };
 
   return (
-    <div className="w-fill flex px-4 py-2 align-center">
+    <div className="w-full flex px-4 py-2 align-center">
       <Breadcrumb className="flex-1 flex align-center items-center">
         <BreadcrumbList>
           {selectedArtifactIds.map((artifact_id, index) => {

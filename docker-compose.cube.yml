@@ -1,0 +1,13 @@
+services:
+  # cube core
+  cube:
+    image: cubejs/cube:latest
+    container_name: cube
+    environment:
+      - CUBEJS_DEV_MODE=true
+      - CUBEJS_LOG_LEVEL=debug
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./examples/.db:/cube/.db
+      - ~/.local/share/oxy/cube:/cube/conf

@@ -43,6 +43,21 @@ impl Defaults {
 }
 
 impl Config {
+    pub fn validate_config(&self) -> anyhow::Result<()> {
+        let _context = ValidationContext {
+            config: self.clone(),
+            metadata: Default::default(), // TODO: Implement proper metadata
+        };
+        // TODO: Implement validation logic
+        // match self.validate_with(&context) {
+        //     Ok(_) => Ok(()),
+        //     Err(e) => anyhow::bail!(OxyError::ConfigurationError(format!(
+        //         "Invalid configuration: {e}"
+        //     ))),
+        // }
+        Ok(())
+    }
+
     pub fn validate_workflow(&self, workflow: &Workflow) -> anyhow::Result<()> {
         let context = ValidationContext {
             config: self.clone(),

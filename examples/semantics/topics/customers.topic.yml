@@ -1,0 +1,4 @@
+name: customers
+description: Customer analytics and demographics
+views:
+- customers

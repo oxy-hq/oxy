@@ -7,6 +7,7 @@ use crate::{
     errors::OxyError,
 };
 use futures::StreamExt;
+use oxy_semantic::Topic;
 use std::path::PathBuf;
 
 use parse::parse_retrieval_object;
@@ -122,6 +123,38 @@ async fn process_agent_file(
     create_retrieval_object_from_source(&agent, "agent", agent_path)
 }
 
+async fn process_topic_file(
+    _config: &ConfigManager,
+    topic_path: &str,
+) -> Result<RetrievalObject, OxyError> {
+    tracing::info!("Processing topic file: {}", topic_path);
+
+    // Read and parse the topic file
+    let content = tokio::fs::read_to_string(topic_path).await.map_err(|e| {
+        OxyError::ConfigurationError(format!("Failed to read topic file {}: {}", topic_path, e))
+    })?;
+
+    let topic: Topic = serde_yaml::from_str(&content).map_err(|e| {
+        OxyError::ConfigurationError(format!("Failed to parse topic file {}: {}", topic_path, e))
+    })?;
+
+    // Create a document from the topic description
+    let document = RetrievalObject {
+        context_content: topic.description.clone(),
+        source_type: "topic".to_string(),
+        source_identifier: topic_path.to_string(),
+        inclusions: topic.inclusions,
+        exclusions: topic.exclusions,
+    };
+
+    println!(
+        "Created document for topic: {} from file: {}",
+        topic.name, topic_path
+    );
+
+    Ok(document)
+}
+
 pub async fn reindex_all(config: &ConfigManager, drop_all_tables: bool) -> Result<(), OxyError> {
     for agent_dir in config.list_agents().await? {
         println!(
@@ -208,6 +241,9 @@ async fn make_retrieval_objects_from_routing_agent(
             agent_path if agent_path.ends_with(".agent.yml") => {
                 process_agent_file(config, agent_path).await
             }
+            topic_path if topic_path.ends_with(".topic.yml") => {
+                process_topic_file(config, topic_path).await
+            }
             sql_path if path.ends_with(".sql") => {
                 let content = tokio::fs::read_to_string(sql_path).await?;
                 let mut obj = parse_retrieval_object(sql_path, &content);
@@ -265,6 +301,7 @@ async fn make_retrieval_objects_from_routing_agent(
             "WARNING: No inclusion records were created for routing agent. This may indicate:"
         );
         println!("  - All workflow/agent files have empty descriptions");
+        println!("  - Topic files have empty descriptions");
         println!("  - SQL files contain no valid embeddable content");
         println!("  - Database references in SQL files are invalid");
         println!("  - File parsing failed for all files");

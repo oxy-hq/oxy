@@ -1,11 +1,11 @@
-use crate::config::model::{OmniMeasure, OmniSemanticModel, OmniTopic};
+use crate::config::model::omni::{OmniMeasure, OmniSemanticModel, OmniTopic};
 use std::collections::{HashMap, HashSet};
 
 use anyhow::Ok;
 use minijinja::Value;
 
 use crate::{
-    config::model::{AggregateType, OmniField, OmniFilter, OmniFilterValue},
+    config::model::omni::{AggregateType, OmniField, OmniFilter, OmniFilterValue},
     tools::types::{ExecuteOmniParams, FilterOperator},
 };
 
@@ -239,8 +239,8 @@ impl BigquerySqlGenerationEngine {
         &self,
         view_name: &str,
         compiled_sql: &str,
-        measure: &crate::config::model::OmniMeasure,
-        view: &crate::config::model::OmniView,
+        measure: &crate::config::model::omni::OmniMeasure,
+        view: &crate::config::model::omni::OmniView,
         field_name: &str,
     ) -> anyhow::Result<CompiledField> {
         let compiled_primary_k = self.compile_value(
@@ -267,8 +267,8 @@ impl BigquerySqlGenerationEngine {
         &self,
         view_name: &str,
         sql: &str,
-        measure: &crate::config::model::OmniMeasure,
-        view: &crate::config::model::OmniView,
+        measure: &crate::config::model::omni::OmniMeasure,
+        view: &crate::config::model::omni::OmniView,
         field_name: &str,
     ) -> anyhow::Result<CompiledField> {
         if measure.sql.is_none() {
@@ -302,8 +302,8 @@ impl BigquerySqlGenerationEngine {
         &self,
         view_name: &str,
         sql: &str,
-        measure: &crate::config::model::OmniMeasure,
-        view: &crate::config::model::OmniView,
+        measure: &crate::config::model::omni::OmniMeasure,
+        view: &crate::config::model::omni::OmniView,
         field_name: &str,
     ) -> anyhow::Result<CompiledField> {
         if measure.sql.is_none() {
@@ -599,7 +599,7 @@ impl BigquerySqlGenerationEngine {
 
             if relationship.is_none() {
                 relationship = self.semantic_model.relationships.iter().find(
-                    |r: &&crate::config::model::OmniRelationShip| {
+                    |r: &&crate::config::model::omni::OmniRelationShip| {
                         r.join_from_view == topic.base_view && r.join_to_view == view_name
                     },
                 );

@@ -908,36 +908,6 @@
         {
           "type": "object",
           "required": [
-            "database",
-            "model_path",
-            "name",
-            "type"
-          ],
-          "properties": {
-            "database": {
-              "type": "string"
-            },
-            "description": {
-              "default": "Execute query on the database. Construct from Omni semantic model.",
-              "type": "string"
-            },
-            "model_path": {
-              "type": "string"
-            },
-            "name": {
-              "type": "string"
-            },
-            "type": {
-              "type": "string",
-              "enum": [
-                "execute_omni"
-              ]
-            }
-          }
-        },
-        {
-          "type": "object",
-          "required": [
             "name",
             "type"
           ],
@@ -1028,6 +998,58 @@
         {
           "type": "object",
           "required": [
+            "name",
+            "type"
+          ],
+          "properties": {
+            "description": {
+              "default": "Create a data app/dashboard to visualize metrics.",
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "create_data_app"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "database",
+            "model_path",
+            "name",
+            "type"
+          ],
+          "properties": {
+            "database": {
+              "type": "string"
+            },
+            "description": {
+              "default": "Execute query on the database. Construct from Omni semantic model.",
+              "type": "string"
+            },
+            "model_path": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "execute_omni"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
             "model_path",
             "name",
             "type"
@@ -1059,16 +1081,30 @@
           ],
           "properties": {
             "description": {
-              "default": "Create a data app/dashboard to visualize metrics.",
+              "default": "Query the semantic layer using natural language. This tool generates SQL from semantic models via CubeJS and executes it.",
               "type": "string"
+            },
+            "dry_run_limit": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0.0
             },
             "name": {
               "type": "string"
             },
+            "topic": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
             "type": {
               "type": "string",
               "enum": [
-                "create_data_app"
+                "semantic_query"
               ]
             }
           }

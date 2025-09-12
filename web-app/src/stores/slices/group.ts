@@ -12,6 +12,7 @@ export interface GroupSlice {
   groupBlocks: Record<string, BlockSlice>;
   groupStack: string[];
   groups: Record<string, Group>;
+  processingGroups: Record<string, boolean>;
   setGroupBlocks: (
     runInfo: RunInfo,
     blocks?: Record<string, Block>,
@@ -24,6 +25,7 @@ export interface GroupSlice {
   upsertBlockToStack: (blockId: string, blockData: BlockContent) => void;
   removeBlockStack: (blockId: string, error?: string) => void;
   cleanupGroupStacks: (error: string) => void;
+  setGroupProcessing: (groupId: string, isProcessing: boolean) => void;
 }
 
 const wrapChildrenSet =
@@ -67,6 +69,7 @@ export const createGroupSlice: StateCreator<
   groupBlocks: {},
   groupStack: [],
   groups: {},
+  processingGroups: {},
   setGroupBlocks: (
     runInfo: RunInfo,
     blocks?: Record<string, Block>,
@@ -177,4 +180,11 @@ export const createGroupSlice: StateCreator<
       }
     }
   },
+  setGroupProcessing: (groupId: string, isProcessing: boolean) =>
+    set((state) => ({
+      processingGroups: {
+        ...state.processingGroups,
+        [groupId]: isProcessing,
+      },
+    })),
 });

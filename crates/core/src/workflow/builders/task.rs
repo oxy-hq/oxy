@@ -30,7 +30,8 @@ use crate::{
 
 use super::{
     WorkflowInput, WorkflowLauncherExecutable, cache::TaskCacheStorage, consistency::AgentPicker,
-    export::TaskExporter, loop_concurrency::build_loop_executable, sql::build_sql_task_executable,
+    export::TaskExporter, loop_concurrency::build_loop_executable,
+    semantic::build_semantic_query_executable, sql::build_sql_task_executable,
 };
 
 #[derive(Clone)]
@@ -185,6 +186,12 @@ impl Executable<TaskInput> for TaskExecutable {
                             .await
                     }
                 }
+            }
+            TaskType::SemanticQuery(semantic_task) => {
+                let output = build_semantic_query_executable()
+                    .execute(&execution_context, semantic_task)
+                    .await?;
+                Ok(output.into())
             }
             TaskType::ExecuteSQL(execute_sqltask) => build_sql_task_executable()
                 .execute(&execution_context, execute_sqltask)

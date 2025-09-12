@@ -36,6 +36,10 @@ export const extractUpdatedValue = (
       updatedValue = artifact_value.value.value;
       break;
     }
+    case "semantic_query": {
+      updatedValue = artifact_value.value.value;
+      break;
+    }
     default: {
       break;
     }

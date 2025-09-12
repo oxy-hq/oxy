@@ -1,0 +1,11 @@
+id,name,contact_email,contact_phone,country,rating
+1,Fresh Farms Co,contact@freshfarms.com,555-0101,USA,4.5
+2,Tropical Delights,info@tropicaldelights.com,555-0102,Costa Rica,4.8
+3,Orchard Masters,sales@orchardmasters.com,555-0103,USA,4.2
+4,Global Fruit Supply,orders@globalfruit.com,555-0104,Mexico,4.6
+5,Premium Produce,premium@produce.com,555-0105,Chile,4.9
+6,Valley Growers,valley@growers.com,555-0106,USA,4.1
+7,Exotic Imports,exotic@imports.com,555-0107,Thailand,4.7
+8,Seasonal Harvest,harvest@seasonal.com,555-0108,USA,4.3
+9,Mountain Fresh,mountain@fresh.com,555-0109,Peru,4.4
+10,Citrus Central,citrus@central.com,555-0110,Brazil,4.6

@@ -1,428 +1,500 @@
 dimensions:
-  - name: executions_non_creator
-    targets:
-      - primary_database.dbt_prod_core.dim_user_document_stats.executions_non_creator
-      - primary_database.dbt_prod_core.dim_document_stats.executions_non_creator
-  - name: readers
-    targets:
-      - primary_database.dbt_prod_core.dim_user_document_stats.readers
-      - primary_database.dbt_prod_core.dim_document_stats.readers
-  - name: id_user
-    targets:
-      - primary_database.dbt_prod_core.dim_user_document_stats.id_user
-      - primary_database.dbt_prod_core.dim_recent_user_activity.id_user
-      - primary_database.dbt_prod_core.fct_user_events.id_user
-      - primary_database.dbt_prod_core.dim_users_for_reverse_etl.id_user
-      - primary_database.dbt_prod_core.dim_searchers.id_user
-      - primary_database.dbt_prod_core.dim_users.id_user
-      - primary_database.dbt_prod_core.fct_table_searches.id_user
-      - primary_database.dbt_prod_core.fct_user_events_active.id_user
-  - name: reads_non_creator
-    targets:
-      - primary_database.dbt_prod_core.dim_user_document_stats.reads_non_creator
-      - primary_database.dbt_prod_core.dim_document_stats.reads_non_creator
-  - name: readers_non_creator
-    targets:
-      - primary_database.dbt_prod_core.dim_user_document_stats.readers_non_creator
-      - primary_database.dbt_prod_core.dim_document_stats.readers_non_creator
-  - name: reads
-    targets:
-      - primary_database.dbt_prod_core.dim_user_document_stats.reads
-      - primary_database.dbt_prod_core.dim_document_stats.reads
-  - name: executions
-    targets:
-      - primary_database.dbt_prod_core.dim_user_document_stats.executions
-      - primary_database.dbt_prod_core.dim_document_stats.executions
-  - name: email
-    targets:
-      - primary_database.dbt_prod_core.dim_recent_user_activity.email
-      - primary_database.dbt_prod_core.fct_typeform_leads.email
-      - primary_database.dbt_prod_core.dim_typeform_private_beta_invites.email
-      - primary_database.dbt_prod_core.dim_users_for_reverse_etl.email
-      - primary_database.dbt_prod_core.fct_typeform_private_beta_requests.email
-      - primary_database.dbt_prod_core.fct_typeform_responses.email
-      - primary_database.dbt_prod_core.dim_users.email
-      - primary_database.dbt_prod_core.dim_typeform_prequel_beta_signup_2.email
-      - primary_database.dbt_prod_core.fct_typeform_answers.email
-      - primary_database.dbt_prod_core.dim_typeform_leads.email
-  - name: name
-    targets:
-      - primary_database.dbt_prod_core.dim_recent_user_activity.name
-      - primary_database.dbt_prod_core.dim_users_for_reverse_etl.name
-      - primary_database.dbt_prod_core.dim_users.name
-  - name: organization_subdomain
-    targets:
-      - primary_database.dbt_prod_core.dim_recent_user_activity.organization_subdomain
-      - primary_database.dbt_prod_core.dim_organizations_with_warehouse.organization_subdomain
-      - primary_database.dbt_prod_core.fct_user_events.organization_subdomain
-      - primary_database.dbt_prod_core.dim_users_for_reverse_etl.organization_subdomain
-      - primary_database.dbt_prod_core.dim_searchers.organization_subdomain
-      - primary_database.dbt_prod_core.dim_users.organization_subdomain
-      - primary_database.dbt_prod_core.dim_organizations.organization_subdomain
-      - primary_database.dbt_prod_core.fct_user_events_active.organization_subdomain
-  - name: ds_latest_visit
-    targets:
-      - primary_database.dbt_prod_core.dim_recent_user_activity.ds_latest_visit
-  - name: ts_earliest_warehouse_added
-    targets:
-      - primary_database.dbt_prod_core.dim_organizations_with_warehouse.ts_earliest_warehouse_added
-  - name: ds
-    targets:
-      - primary_database.dbt_prod_core.fct_user_events.ds
-      - primary_database.dbt_prod_core.dim_searchers.ds
-      - primary_database.dbt_prod_core.dim_typeform_prequel_beta_signup_2.ds
-      - primary_database.dbt_prod_core.fct_table_searches.ds
-      - primary_database.dbt_prod_core.fct_user_events_active.ds
-      - primary_database.dbt_prod_metrics.monthly_active_users_with_warehouse.ds
-      - primary_database.dbt_prod_metrics.monthly_active_organizations_with_warehouse.ds
-      - primary_database.dbt_prod_metrics.monthly_active_organizations.ds
-      - primary_database.dbt_prod_metrics.monthly_active_users.ds
-  - name: event_type
-    targets:
-      - primary_database.dbt_prod_core.fct_user_events.event_type
-      - primary_database.dbt_prod_core.fct_user_events_active.event_type
-  - name: ts
-    targets:
-      - primary_database.dbt_prod_core.fct_user_events.ts
-      - primary_database.dbt_prod_core.dim_typeform_prequel_beta_signup_2.ts
-      - primary_database.dbt_prod_core.fct_table_searches.ts
-      - primary_database.dbt_prod_core.fct_user_events_active.ts
-  - name: id_event
-    targets:
-      - primary_database.dbt_prod_core.fct_user_events.id_event
-      - primary_database.dbt_prod_core.fct_user_events_active.id_event
-  - name: ts_submitted_at
-    targets:
-      - primary_database.dbt_prod_core.fct_typeform_leads.ts_submitted_at
-      - primary_database.dbt_prod_core.fct_typeform_private_beta_requests.ts_submitted_at
-      - primary_database.dbt_prod_core.fct_typeform_responses.ts_submitted_at
-      - primary_database.dbt_prod_core.fct_typeform_answers.ts_submitted_at
-  - name: id_form
-    targets:
-      - primary_database.dbt_prod_core.fct_typeform_leads.id_form
-      - primary_database.dbt_prod_core.fct_typeform_private_beta_requests.id_form
-      - primary_database.dbt_prod_core.fct_typeform_responses.id_form
-      - primary_database.dbt_prod_core.fct_typeform_answers.id_form
-  - name: company_name
-    targets:
-      - primary_database.dbt_prod_core.fct_typeform_leads.company_name
-      - primary_database.dbt_prod_core.fct_typeform_private_beta_requests.company_name
-      - primary_database.dbt_prod_core.fct_typeform_responses.company_name
-      - primary_database.dbt_prod_core.dim_typeform_prequel_beta_signup_2.company_name
-      - primary_database.dbt_prod_core.fct_typeform_answers.company_name
-      - primary_database.dbt_prod_core.dim_typeform_leads.company_name
-  - name: is_lifetime_purchase
-    targets:
-      - primary_database.dbt_prod_core.fct_typeform_leads.is_lifetime_purchase
-      - primary_database.dbt_prod_core.fct_typeform_private_beta_requests.is_lifetime_purchase
-  - name: id_response
-    targets:
-      - primary_database.dbt_prod_core.fct_typeform_leads.id_response
-      - primary_database.dbt_prod_core.fct_typeform_private_beta_requests.id_response
-      - primary_database.dbt_prod_core.fct_typeform_responses.id_response
-      - primary_database.dbt_prod_core.dim_typeform_prequel_beta_signup_2.id_response
-      - primary_database.dbt_prod_core.fct_typeform_answers.id_response
-  - name: is_demo_request
-    targets:
-      - primary_database.dbt_prod_core.fct_typeform_leads.is_demo_request
-  - name: full_name
-    targets:
-      - primary_database.dbt_prod_core.fct_typeform_leads.full_name
-      - primary_database.dbt_prod_core.fct_typeform_private_beta_requests.full_name
-      - primary_database.dbt_prod_core.fct_typeform_responses.full_name
-      - primary_database.dbt_prod_core.dim_typeform_prequel_beta_signup_2.full_name
-      - primary_database.dbt_prod_core.fct_typeform_answers.full_name
-      - primary_database.dbt_prod_core.dim_typeform_leads.full_name
-  - name: company_size
-    targets:
-      - primary_database.dbt_prod_core.fct_typeform_leads.company_size
-      - primary_database.dbt_prod_core.fct_typeform_private_beta_requests.company_size
-      - primary_database.dbt_prod_core.fct_typeform_responses.company_size
-      - primary_database.dbt_prod_core.dim_typeform_prequel_beta_signup_2.company_size
-      - primary_database.dbt_prod_core.fct_typeform_answers.company_size
-      - primary_database.dbt_prod_core.dim_typeform_leads.company_size
-  - name: answers
-    targets:
-      - primary_database.dbt_prod_core.fct_typeform_leads.answers
-      - primary_database.dbt_prod_core.fct_typeform_private_beta_requests.answers
-      - primary_database.dbt_prod_core.fct_typeform_responses.answers
-  - name: primary_role
-    targets:
-      - primary_database.dbt_prod_core.fct_typeform_leads.primary_role
-      - primary_database.dbt_prod_core.fct_typeform_private_beta_requests.primary_role
-      - primary_database.dbt_prod_core.fct_typeform_responses.primary_role
-      - primary_database.dbt_prod_core.dim_typeform_prequel_beta_signup_2.primary_role
-      - primary_database.dbt_prod_core.fct_typeform_answers.primary_role
-      - primary_database.dbt_prod_core.dim_typeform_leads.primary_role
-  - name: sql_or_python
-    targets:
-      - primary_database.dbt_prod_core.fct_typeform_leads.sql_or_python
-      - primary_database.dbt_prod_core.fct_typeform_private_beta_requests.sql_or_python
-      - primary_database.dbt_prod_core.fct_typeform_responses.sql_or_python
-      - primary_database.dbt_prod_core.fct_typeform_answers.sql_or_python
-      - primary_database.dbt_prod_core.dim_typeform_leads.sql_or_python
-  - name: ts_first_signup
-    targets:
-      - primary_database.dbt_prod_core.dim_typeform_private_beta_invites.ts_first_signup
-      - primary_database.dbt_prod_core.dim_typeform_leads.ts_first_signup
-  - name: n_invites_sent
-    targets:
-      - primary_database.dbt_prod_core.dim_typeform_private_beta_invites.n_invites_sent
-  - name: ts_latest_invite_sent
-    targets:
-      - primary_database.dbt_prod_core.dim_typeform_private_beta_invites.ts_latest_invite_sent
-  - name: ts_latest_signup
-    targets:
-      - primary_database.dbt_prod_core.dim_typeform_private_beta_invites.ts_latest_signup
-      - primary_database.dbt_prod_core.dim_typeform_leads.ts_latest_signup
-  - name: id_forms_completed
-    targets:
-      - primary_database.dbt_prod_core.dim_typeform_private_beta_invites.id_forms_completed
-      - primary_database.dbt_prod_core.dim_typeform_leads.id_forms_completed
-  - name: all_answers
-    targets:
-      - primary_database.dbt_prod_core.dim_typeform_private_beta_invites.all_answers
-      - primary_database.dbt_prod_core.dim_typeform_leads.all_answers
-  - name: has_lifetime_purchase
-    targets:
-      - primary_database.dbt_prod_core.dim_typeform_private_beta_invites.has_lifetime_purchase
-      - primary_database.dbt_prod_core.dim_typeform_leads.has_lifetime_purchase
-  - name: id_organization
-    targets:
-      - primary_database.dbt_prod_core.dim_users_for_reverse_etl.id_organization
-      - primary_database.dbt_prod_core.dim_users.id_organization
-  - name: ts_first_active
-    targets:
-      - primary_database.dbt_prod_core.dim_users_for_reverse_etl.ts_first_active
-  - name: first_name
-    targets:
-      - primary_database.dbt_prod_core.dim_users_for_reverse_etl.first_name
-  - name: ts_last_active
-    targets:
-      - primary_database.dbt_prod_core.dim_users_for_reverse_etl.ts_last_active
-  - name: id_creator
-    targets:
-      - primary_database.dbt_prod_core.dim_document_stats.id_creator
-  - name: id_document
-    targets:
-      - primary_database.dbt_prod_core.dim_document_stats.id_document
-  - name: term
-    targets:
-      - primary_database.dbt_prod_core.dim_searchers.term
-      - primary_database.dbt_prod_core.fct_table_searches.term
-  - name: ts_first_event
-    targets:
-      - primary_database.dbt_prod_core.dim_users.ts_first_event
-  - name: invite_sent
-    targets:
-      - primary_database.dbt_prod_core.dim_typeform_prequel_beta_signup_2.invite_sent
-  - name: favorite_features
-    targets:
-      - primary_database.dbt_prod_core.dim_typeform_prequel_beta_signup_2.favorite_features
-  - name: warehouses
-    targets:
-      - primary_database.dbt_prod_core.dim_typeform_prequel_beta_signup_2.warehouses
-  - name: ts_earliest_action
-    targets:
-      - primary_database.dbt_prod_core.dim_organizations.ts_earliest_action
-  - name: pagination_size
-    targets:
-      - primary_database.dbt_prod_core.fct_table_searches.pagination_size
-  - name: filters_score
-    targets:
-      - primary_database.dbt_prod_core.fct_table_searches.filters_score
-  - name: id_search
-    targets:
-      - primary_database.dbt_prod_core.fct_table_searches.id_search
-  - name: pagination_from
-    targets:
-      - primary_database.dbt_prod_core.fct_table_searches.pagination_from
-  - name: table_admin_quality_score
-    targets:
-      - primary_database.dbt_prod_core.fct_table_searches.table_admin_quality_score
-  - name: filters_tag
-    targets:
-      - primary_database.dbt_prod_core.fct_table_searches.filters_tag
-  - name: answer
-    targets:
-      - primary_database.dbt_prod_core.fct_typeform_answers.answer
-  - name: field_type
-    targets:
-      - primary_database.dbt_prod_core.fct_typeform_answers.field_type
-  - name: id_field
-    targets:
-      - primary_database.dbt_prod_core.fct_typeform_answers.id_field
-  - name: challenges_to_solve
-    targets:
-      - primary_database.dbt_prod_core.fct_typeform_answers.challenges_to_solve
-  - name: field_text
-    targets:
-      - primary_database.dbt_prod_core.fct_typeform_answers.field_text
-  - name: _airbyte_emitted_at
-    targets:
-      - primary_database.airbyte.typeform_forms__links._airbyte_emitted_at
-  - name: _airbyte_emitted_at_description
-    targets:
-      - primary_database.airbyte.typeform_forms__links._airbyte_emitted_at_description
-  - name: _airbyte_typeform_forms_hashid_description
-    targets:
-      - primary_database.airbyte.typeform_forms__links._airbyte_typeform_forms_hashid_description
-  - name: _airbyte__links_hashid
-    targets:
-      - primary_database.airbyte.typeform_forms__links._airbyte__links_hashid
-  - name: _airbyte_typeform_forms_hashid
-    targets:
-      - primary_database.airbyte.typeform_forms__links._airbyte_typeform_forms_hashid
-  - name: display
-    targets:
-      - primary_database.airbyte.typeform_forms__links.display
-  - name: _airbyte__links_hashid_description
-    targets:
-      - primary_database.airbyte.typeform_forms__links._airbyte__links_hashid_description
-  - name: display_description
-    targets:
-      - primary_database.airbyte.typeform_forms__links.display_description
-  - name: context_library_name
-    targets:
-      - primary_database.python_prod.v1_tables_popular_tables.context_library_name
-      - primary_database.python_prod.v1_search_table.context_library_name
-      - primary_database.python_prod.v1_users.context_library_name
-      - primary_database.python_prod.v1_organizations.context_library_name
-  - name: context_library_version
-    targets:
-      - primary_database.python_prod.v1_tables_popular_tables.context_library_version
-      - primary_database.python_prod.v1_search_table.context_library_version
-      - primary_database.python_prod.v1_users.context_library_version
-      - primary_database.python_prod.v1_organizations.context_library_version
-  - name: event_text
-    targets:
-      - primary_database.python_prod.v1_tables_popular_tables.event_text
-      - primary_database.python_prod.v1_search_table.event_text
-      - primary_database.python_prod.v1_users.event_text
-      - primary_database.python_prod.v1_organizations.event_text
-  - name: loaded_at
-    targets:
-      - primary_database.python_prod.v1_tables_popular_tables.loaded_at
-      - primary_database.python_prod.v1_search_table.loaded_at
-      - primary_database.python_prod.v1_users.loaded_at
-      - primary_database.python_prod.v1_organizations.loaded_at
-  - name: id
-    targets:
-      - primary_database.python_prod.v1_tables_popular_tables.id
-      - primary_database.python_prod.v1_search_table.id
-      - primary_database.python_prod.v1_users.id
-      - primary_database.python_prod.v1_organizations.id
-  - name: sent_at
-    targets:
-      - primary_database.python_prod.v1_tables_popular_tables.sent_at
-      - primary_database.python_prod.v1_search_table.sent_at
-      - primary_database.python_prod.v1_users.sent_at
-      - primary_database.python_prod.v1_organizations.sent_at
-  - name: received_at
-    targets:
-      - primary_database.python_prod.v1_tables_popular_tables.received_at
-      - primary_database.python_prod.v1_search_table.received_at
-      - primary_database.python_prod.v1_users.received_at
-      - primary_database.python_prod.v1_organizations.received_at
-  - name: timestamp
-    targets:
-      - primary_database.python_prod.v1_tables_popular_tables.timestamp
-      - primary_database.python_prod.v1_search_table.timestamp
-      - primary_database.python_prod.v1_users.timestamp
-      - primary_database.python_prod.v1_organizations.timestamp
-  - name: original_timestamp
-    targets:
-      - primary_database.python_prod.v1_tables_popular_tables.original_timestamp
-      - primary_database.python_prod.v1_search_table.original_timestamp
-      - primary_database.python_prod.v1_users.original_timestamp
-      - primary_database.python_prod.v1_organizations.original_timestamp
-  - name: event
-    targets:
-      - primary_database.python_prod.v1_tables_popular_tables.event
-      - primary_database.python_prod.v1_search_table.event
-      - primary_database.python_prod.v1_users.event
-      - primary_database.python_prod.v1_organizations.event
-  - name: user_id
-    targets:
-      - primary_database.python_prod.v1_tables_popular_tables.user_id
-      - primary_database.python_prod.v1_search_table.user_id
-      - primary_database.python_prod.v1_users.user_id
-      - primary_database.python_prod.v1_organizations.user_id
-  - name: uuid_ts
-    targets:
-      - primary_database.python_prod.v1_tables_popular_tables.uuid_ts
-      - primary_database.python_prod.v1_search_table.uuid_ts
-      - primary_database.python_prod.v1_users.uuid_ts
-      - primary_database.python_prod.v1_organizations.uuid_ts
-  - name: _PARTITIONTIME
-    targets:
-      - primary_database.python_prod.v1_tables_popular_tables._PARTITIONTIME
-      - primary_database.python_prod.v1_search_table._PARTITIONTIME
-      - primary_database.python_prod.v1_users._PARTITIONTIME
-      - primary_database.python_prod.v1_organizations._PARTITIONTIME
-  - name: monthly_active_users_with_warehouse
-    targets:
-      - primary_database.dbt_prod_metrics.monthly_active_users_with_warehouse.monthly_active_users_with_warehouse
-  - name: monthly_active_organizations_with_warehouse
-    targets:
-      - primary_database.dbt_prod_metrics.monthly_active_organizations_with_warehouse.monthly_active_organizations_with_warehouse
-  - name: monthly_active_organizations
-    targets:
-      - primary_database.dbt_prod_metrics.monthly_active_organizations.monthly_active_organizations
-  - name: monthly_active_users
-    targets:
-      - primary_database.dbt_prod_metrics.monthly_active_users.monthly_active_users
-  - name: views
-    targets:
-      - local.duckdb.content_level_monthly_stats_fruits_veggies.views
-  - name: minutes
-    targets:
-      - local.duckdb.content_level_monthly_stats_fruits_veggies.minutes
-  - name: property_grouping
-    targets:
-      - local.duckdb.content_level_monthly_stats_fruits_veggies.property_grouping
-  - name: month
-    targets:
-      - local.duckdb.content_level_monthly_stats_fruits_veggies.month
-      - local.duckdb.monthly_active_user_by_platform.month
-      - local.duckdb.monthly_revenue_by_region.month
-    enum:
-      - Jan
-      - Feb
-      - Mar
-      - Apr
-      - May
-      - Jun
-      - Jul
-      - Aug
-      - Sep
-      - Oct
-      - Nov
-      - Dec
-  - name: property
-    targets:
-      - local.duckdb.content_level_monthly_stats_fruits_veggies.property
-  - name: content_type
-    targets:
-      - local.duckdb.content_level_monthly_stats_fruits_veggies.content_type
-  - name: content_id
-    targets:
-      - local.duckdb.content_level_monthly_stats_fruits_veggies.content_id
-  - name: platform
-    targets:
-      - local.duckdb.monthly_active_user_by_platform.platform
-    enum:
-      - iOS
-      - Android
-      - Web
-    description: |
-      The platform on which the user is active. This can be iOS, Android, or Web. Value is case-sensitive.
-  - name: users
-    targets:
-      - local.duckdb.monthly_active_user_by_platform.users
-  - name: region
-    targets:
-      - local.duckdb.monthly_revenue_by_region.region
-  - name: revenue
-    targets:
-      - local.duckdb.monthly_revenue_by_region.revenue
+- name: executions_non_creator
+  targets:
+  - primary_database.dbt_prod_core.dim_user_document_stats.executions_non_creator
+  - primary_database.dbt_prod_core.dim_document_stats.executions_non_creator
+- name: readers
+  targets:
+  - primary_database.dbt_prod_core.dim_user_document_stats.readers
+  - primary_database.dbt_prod_core.dim_document_stats.readers
+- name: id_user
+  targets:
+  - primary_database.dbt_prod_core.dim_user_document_stats.id_user
+  - primary_database.dbt_prod_core.dim_recent_user_activity.id_user
+  - primary_database.dbt_prod_core.fct_user_events.id_user
+  - primary_database.dbt_prod_core.dim_users_for_reverse_etl.id_user
+  - primary_database.dbt_prod_core.dim_searchers.id_user
+  - primary_database.dbt_prod_core.dim_users.id_user
+  - primary_database.dbt_prod_core.fct_table_searches.id_user
+  - primary_database.dbt_prod_core.fct_user_events_active.id_user
+- name: reads_non_creator
+  targets:
+  - primary_database.dbt_prod_core.dim_user_document_stats.reads_non_creator
+  - primary_database.dbt_prod_core.dim_document_stats.reads_non_creator
+- name: readers_non_creator
+  targets:
+  - primary_database.dbt_prod_core.dim_user_document_stats.readers_non_creator
+  - primary_database.dbt_prod_core.dim_document_stats.readers_non_creator
+- name: reads
+  targets:
+  - primary_database.dbt_prod_core.dim_user_document_stats.reads
+  - primary_database.dbt_prod_core.dim_document_stats.reads
+- name: executions
+  targets:
+  - primary_database.dbt_prod_core.dim_user_document_stats.executions
+  - primary_database.dbt_prod_core.dim_document_stats.executions
+- name: email
+  targets:
+  - primary_database.dbt_prod_core.dim_recent_user_activity.email
+  - primary_database.dbt_prod_core.fct_typeform_leads.email
+  - primary_database.dbt_prod_core.dim_typeform_private_beta_invites.email
+  - primary_database.dbt_prod_core.dim_users_for_reverse_etl.email
+  - primary_database.dbt_prod_core.fct_typeform_private_beta_requests.email
+  - primary_database.dbt_prod_core.fct_typeform_responses.email
+  - primary_database.dbt_prod_core.dim_users.email
+  - primary_database.dbt_prod_core.dim_typeform_prequel_beta_signup_2.email
+  - primary_database.dbt_prod_core.fct_typeform_answers.email
+  - primary_database.dbt_prod_core.dim_typeform_leads.email
+- name: name
+  targets:
+  - primary_database.dbt_prod_core.dim_recent_user_activity.name
+  - primary_database.dbt_prod_core.dim_users_for_reverse_etl.name
+  - primary_database.dbt_prod_core.dim_users.name
+- name: organization_subdomain
+  targets:
+  - primary_database.dbt_prod_core.dim_recent_user_activity.organization_subdomain
+  - primary_database.dbt_prod_core.dim_organizations_with_warehouse.organization_subdomain
+  - primary_database.dbt_prod_core.fct_user_events.organization_subdomain
+  - primary_database.dbt_prod_core.dim_users_for_reverse_etl.organization_subdomain
+  - primary_database.dbt_prod_core.dim_searchers.organization_subdomain
+  - primary_database.dbt_prod_core.dim_users.organization_subdomain
+  - primary_database.dbt_prod_core.dim_organizations.organization_subdomain
+  - primary_database.dbt_prod_core.fct_user_events_active.organization_subdomain
+- name: ds_latest_visit
+  targets:
+  - primary_database.dbt_prod_core.dim_recent_user_activity.ds_latest_visit
+- name: ts_earliest_warehouse_added
+  targets:
+  - primary_database.dbt_prod_core.dim_organizations_with_warehouse.ts_earliest_warehouse_added
+- name: ds
+  targets:
+  - primary_database.dbt_prod_core.fct_user_events.ds
+  - primary_database.dbt_prod_core.dim_searchers.ds
+  - primary_database.dbt_prod_core.dim_typeform_prequel_beta_signup_2.ds
+  - primary_database.dbt_prod_core.fct_table_searches.ds
+  - primary_database.dbt_prod_core.fct_user_events_active.ds
+  - primary_database.dbt_prod_metrics.monthly_active_users_with_warehouse.ds
+  - primary_database.dbt_prod_metrics.monthly_active_organizations_with_warehouse.ds
+  - primary_database.dbt_prod_metrics.monthly_active_organizations.ds
+  - primary_database.dbt_prod_metrics.monthly_active_users.ds
+  - primary_database.dbt_prod_metrics.monthly_active_organizations_with_warehouse.ds
+  - primary_database.dbt_prod_metrics.monthly_active_users_with_warehouse.ds
+  - primary_database.dbt_prod_metrics.monthly_active_users.ds
+  - primary_database.dbt_prod_metrics.monthly_active_organizations.ds
+  - primary_database.dbt_prod_metrics.monthly_active_organizations_with_warehouse.ds
+  - primary_database.dbt_prod_metrics.monthly_active_users.ds
+  - primary_database.dbt_prod_metrics.monthly_active_organizations.ds
+  - primary_database.dbt_prod_metrics.monthly_active_users_with_warehouse.ds
+  - primary_database.dbt_prod_metrics.monthly_active_users.ds
+  - primary_database.dbt_prod_metrics.monthly_active_users_with_warehouse.ds
+  - primary_database.dbt_prod_metrics.monthly_active_organizations.ds
+  - primary_database.dbt_prod_metrics.monthly_active_organizations_with_warehouse.ds
+  - primary_database.dbt_prod_metrics.monthly_active_users.ds
+  - primary_database.dbt_prod_metrics.monthly_active_organizations.ds
+  - primary_database.dbt_prod_metrics.monthly_active_users_with_warehouse.ds
+  - primary_database.dbt_prod_metrics.monthly_active_organizations_with_warehouse.ds
+  - primary_database.dbt_prod_metrics.monthly_active_users.ds
+  - primary_database.dbt_prod_metrics.monthly_active_organizations_with_warehouse.ds
+  - primary_database.dbt_prod_metrics.monthly_active_organizations.ds
+  - primary_database.dbt_prod_metrics.monthly_active_users_with_warehouse.ds
+  - primary_database.dbt_prod_metrics.monthly_active_organizations.ds
+  - primary_database.dbt_prod_metrics.monthly_active_organizations_with_warehouse.ds
+  - primary_database.dbt_prod_metrics.monthly_active_users.ds
+  - primary_database.dbt_prod_metrics.monthly_active_users_with_warehouse.ds
+  - primary_database.dbt_prod_metrics.monthly_active_organizations.ds
+  - primary_database.dbt_prod_metrics.monthly_active_organizations_with_warehouse.ds
+  - primary_database.dbt_prod_metrics.monthly_active_users_with_warehouse.ds
+  - primary_database.dbt_prod_metrics.monthly_active_users.ds
+  - primary_database.dbt_prod_metrics.monthly_active_users.ds
+  - primary_database.dbt_prod_metrics.monthly_active_organizations.ds
+  - primary_database.dbt_prod_metrics.monthly_active_users_with_warehouse.ds
+  - primary_database.dbt_prod_metrics.monthly_active_organizations_with_warehouse.ds
+  - primary_database.dbt_prod_metrics.monthly_active_users.ds
+  - primary_database.dbt_prod_metrics.monthly_active_users_with_warehouse.ds
+  - primary_database.dbt_prod_metrics.monthly_active_organizations_with_warehouse.ds
+  - primary_database.dbt_prod_metrics.monthly_active_organizations.ds
+- name: event_type
+  targets:
+  - primary_database.dbt_prod_core.fct_user_events.event_type
+  - primary_database.dbt_prod_core.fct_user_events_active.event_type
+- name: ts
+  targets:
+  - primary_database.dbt_prod_core.fct_user_events.ts
+  - primary_database.dbt_prod_core.dim_typeform_prequel_beta_signup_2.ts
+  - primary_database.dbt_prod_core.fct_table_searches.ts
+  - primary_database.dbt_prod_core.fct_user_events_active.ts
+- name: id_event
+  targets:
+  - primary_database.dbt_prod_core.fct_user_events.id_event
+  - primary_database.dbt_prod_core.fct_user_events_active.id_event
+- name: ts_submitted_at
+  targets:
+  - primary_database.dbt_prod_core.fct_typeform_leads.ts_submitted_at
+  - primary_database.dbt_prod_core.fct_typeform_private_beta_requests.ts_submitted_at
+  - primary_database.dbt_prod_core.fct_typeform_responses.ts_submitted_at
+  - primary_database.dbt_prod_core.fct_typeform_answers.ts_submitted_at
+- name: id_form
+  targets:
+  - primary_database.dbt_prod_core.fct_typeform_leads.id_form
+  - primary_database.dbt_prod_core.fct_typeform_private_beta_requests.id_form
+  - primary_database.dbt_prod_core.fct_typeform_responses.id_form
+  - primary_database.dbt_prod_core.fct_typeform_answers.id_form
+- name: company_name
+  targets:
+  - primary_database.dbt_prod_core.fct_typeform_leads.company_name
+  - primary_database.dbt_prod_core.fct_typeform_private_beta_requests.company_name
+  - primary_database.dbt_prod_core.fct_typeform_responses.company_name
+  - primary_database.dbt_prod_core.dim_typeform_prequel_beta_signup_2.company_name
+  - primary_database.dbt_prod_core.fct_typeform_answers.company_name
+  - primary_database.dbt_prod_core.dim_typeform_leads.company_name
+- name: is_lifetime_purchase
+  targets:
+  - primary_database.dbt_prod_core.fct_typeform_leads.is_lifetime_purchase
+  - primary_database.dbt_prod_core.fct_typeform_private_beta_requests.is_lifetime_purchase
+- name: id_response
+  targets:
+  - primary_database.dbt_prod_core.fct_typeform_leads.id_response
+  - primary_database.dbt_prod_core.fct_typeform_private_beta_requests.id_response
+  - primary_database.dbt_prod_core.fct_typeform_responses.id_response
+  - primary_database.dbt_prod_core.dim_typeform_prequel_beta_signup_2.id_response
+  - primary_database.dbt_prod_core.fct_typeform_answers.id_response
+- name: is_demo_request
+  targets:
+  - primary_database.dbt_prod_core.fct_typeform_leads.is_demo_request
+- name: full_name
+  targets:
+  - primary_database.dbt_prod_core.fct_typeform_leads.full_name
+  - primary_database.dbt_prod_core.fct_typeform_private_beta_requests.full_name
+  - primary_database.dbt_prod_core.fct_typeform_responses.full_name
+  - primary_database.dbt_prod_core.dim_typeform_prequel_beta_signup_2.full_name
+  - primary_database.dbt_prod_core.fct_typeform_answers.full_name
+  - primary_database.dbt_prod_core.dim_typeform_leads.full_name
+- name: company_size
+  targets:
+  - primary_database.dbt_prod_core.fct_typeform_leads.company_size
+  - primary_database.dbt_prod_core.fct_typeform_private_beta_requests.company_size
+  - primary_database.dbt_prod_core.fct_typeform_responses.company_size
+  - primary_database.dbt_prod_core.dim_typeform_prequel_beta_signup_2.company_size
+  - primary_database.dbt_prod_core.fct_typeform_answers.company_size
+  - primary_database.dbt_prod_core.dim_typeform_leads.company_size
+- name: answers
+  targets:
+  - primary_database.dbt_prod_core.fct_typeform_leads.answers
+  - primary_database.dbt_prod_core.fct_typeform_private_beta_requests.answers
+  - primary_database.dbt_prod_core.fct_typeform_responses.answers
+- name: primary_role
+  targets:
+  - primary_database.dbt_prod_core.fct_typeform_leads.primary_role
+  - primary_database.dbt_prod_core.fct_typeform_private_beta_requests.primary_role
+  - primary_database.dbt_prod_core.fct_typeform_responses.primary_role
+  - primary_database.dbt_prod_core.dim_typeform_prequel_beta_signup_2.primary_role
+  - primary_database.dbt_prod_core.fct_typeform_answers.primary_role
+  - primary_database.dbt_prod_core.dim_typeform_leads.primary_role
+- name: sql_or_python
+  targets:
+  - primary_database.dbt_prod_core.fct_typeform_leads.sql_or_python
+  - primary_database.dbt_prod_core.fct_typeform_private_beta_requests.sql_or_python
+  - primary_database.dbt_prod_core.fct_typeform_responses.sql_or_python
+  - primary_database.dbt_prod_core.fct_typeform_answers.sql_or_python
+  - primary_database.dbt_prod_core.dim_typeform_leads.sql_or_python
+- name: ts_first_signup
+  targets:
+  - primary_database.dbt_prod_core.dim_typeform_private_beta_invites.ts_first_signup
+  - primary_database.dbt_prod_core.dim_typeform_leads.ts_first_signup
+- name: n_invites_sent
+  targets:
+  - primary_database.dbt_prod_core.dim_typeform_private_beta_invites.n_invites_sent
+- name: ts_latest_invite_sent
+  targets:
+  - primary_database.dbt_prod_core.dim_typeform_private_beta_invites.ts_latest_invite_sent
+- name: ts_latest_signup
+  targets:
+  - primary_database.dbt_prod_core.dim_typeform_private_beta_invites.ts_latest_signup
+  - primary_database.dbt_prod_core.dim_typeform_leads.ts_latest_signup
+- name: id_forms_completed
+  targets:
+  - primary_database.dbt_prod_core.dim_typeform_private_beta_invites.id_forms_completed
+  - primary_database.dbt_prod_core.dim_typeform_leads.id_forms_completed
+- name: all_answers
+  targets:
+  - primary_database.dbt_prod_core.dim_typeform_private_beta_invites.all_answers
+  - primary_database.dbt_prod_core.dim_typeform_leads.all_answers
+- name: has_lifetime_purchase
+  targets:
+  - primary_database.dbt_prod_core.dim_typeform_private_beta_invites.has_lifetime_purchase
+  - primary_database.dbt_prod_core.dim_typeform_leads.has_lifetime_purchase
+- name: id_organization
+  targets:
+  - primary_database.dbt_prod_core.dim_users_for_reverse_etl.id_organization
+  - primary_database.dbt_prod_core.dim_users.id_organization
+- name: ts_first_active
+  targets:
+  - primary_database.dbt_prod_core.dim_users_for_reverse_etl.ts_first_active
+- name: first_name
+  targets:
+  - primary_database.dbt_prod_core.dim_users_for_reverse_etl.first_name
+- name: ts_last_active
+  targets:
+  - primary_database.dbt_prod_core.dim_users_for_reverse_etl.ts_last_active
+- name: id_creator
+  targets:
+  - primary_database.dbt_prod_core.dim_document_stats.id_creator
+- name: id_document
+  targets:
+  - primary_database.dbt_prod_core.dim_document_stats.id_document
+- name: term
+  targets:
+  - primary_database.dbt_prod_core.dim_searchers.term
+  - primary_database.dbt_prod_core.fct_table_searches.term
+- name: ts_first_event
+  targets:
+  - primary_database.dbt_prod_core.dim_users.ts_first_event
+- name: invite_sent
+  targets:
+  - primary_database.dbt_prod_core.dim_typeform_prequel_beta_signup_2.invite_sent
+- name: favorite_features
+  targets:
+  - primary_database.dbt_prod_core.dim_typeform_prequel_beta_signup_2.favorite_features
+- name: warehouses
+  targets:
+  - primary_database.dbt_prod_core.dim_typeform_prequel_beta_signup_2.warehouses
+- name: ts_earliest_action
+  targets:
+  - primary_database.dbt_prod_core.dim_organizations.ts_earliest_action
+- name: pagination_size
+  targets:
+  - primary_database.dbt_prod_core.fct_table_searches.pagination_size
+- name: filters_score
+  targets:
+  - primary_database.dbt_prod_core.fct_table_searches.filters_score
+- name: id_search
+  targets:
+  - primary_database.dbt_prod_core.fct_table_searches.id_search
+- name: pagination_from
+  targets:
+  - primary_database.dbt_prod_core.fct_table_searches.pagination_from
+- name: table_admin_quality_score
+  targets:
+  - primary_database.dbt_prod_core.fct_table_searches.table_admin_quality_score
+- name: filters_tag
+  targets:
+  - primary_database.dbt_prod_core.fct_table_searches.filters_tag
+- name: answer
+  targets:
+  - primary_database.dbt_prod_core.fct_typeform_answers.answer
+- name: field_type
+  targets:
+  - primary_database.dbt_prod_core.fct_typeform_answers.field_type
+- name: id_field
+  targets:
+  - primary_database.dbt_prod_core.fct_typeform_answers.id_field
+- name: challenges_to_solve
+  targets:
+  - primary_database.dbt_prod_core.fct_typeform_answers.challenges_to_solve
+- name: field_text
+  targets:
+  - primary_database.dbt_prod_core.fct_typeform_answers.field_text
+- name: _airbyte_emitted_at
+  targets:
+  - primary_database.airbyte.typeform_forms__links._airbyte_emitted_at
+- name: _airbyte_emitted_at_description
+  targets:
+  - primary_database.airbyte.typeform_forms__links._airbyte_emitted_at_description
+- name: _airbyte_typeform_forms_hashid_description
+  targets:
+  - primary_database.airbyte.typeform_forms__links._airbyte_typeform_forms_hashid_description
+- name: _airbyte__links_hashid
+  targets:
+  - primary_database.airbyte.typeform_forms__links._airbyte__links_hashid
+- name: _airbyte_typeform_forms_hashid
+  targets:
+  - primary_database.airbyte.typeform_forms__links._airbyte_typeform_forms_hashid
+- name: display
+  targets:
+  - primary_database.airbyte.typeform_forms__links.display
+- name: _airbyte__links_hashid_description
+  targets:
+  - primary_database.airbyte.typeform_forms__links._airbyte__links_hashid_description
+- name: display_description
+  targets:
+  - primary_database.airbyte.typeform_forms__links.display_description
+- name: context_library_name
+  targets:
+  - primary_database.python_prod.v1_tables_popular_tables.context_library_name
+  - primary_database.python_prod.v1_search_table.context_library_name
+  - primary_database.python_prod.v1_users.context_library_name
+  - primary_database.python_prod.v1_organizations.context_library_name
+- name: context_library_version
+  targets:
+  - primary_database.python_prod.v1_tables_popular_tables.context_library_version
+  - primary_database.python_prod.v1_search_table.context_library_version
+  - primary_database.python_prod.v1_users.context_library_version
+  - primary_database.python_prod.v1_organizations.context_library_version
+- name: event_text
+  targets:
+  - primary_database.python_prod.v1_tables_popular_tables.event_text
+  - primary_database.python_prod.v1_search_table.event_text
+  - primary_database.python_prod.v1_users.event_text
+  - primary_database.python_prod.v1_organizations.event_text
+- name: loaded_at
+  targets:
+  - primary_database.python_prod.v1_tables_popular_tables.loaded_at
+  - primary_database.python_prod.v1_search_table.loaded_at
+  - primary_database.python_prod.v1_users.loaded_at
+  - primary_database.python_prod.v1_organizations.loaded_at
+- name: id
+  targets:
+  - primary_database.python_prod.v1_tables_popular_tables.id
+  - primary_database.python_prod.v1_search_table.id
+  - primary_database.python_prod.v1_users.id
+  - primary_database.python_prod.v1_organizations.id
+- name: sent_at
+  targets:
+  - primary_database.python_prod.v1_tables_popular_tables.sent_at
+  - primary_database.python_prod.v1_search_table.sent_at
+  - primary_database.python_prod.v1_users.sent_at
+  - primary_database.python_prod.v1_organizations.sent_at
+- name: received_at
+  targets:
+  - primary_database.python_prod.v1_tables_popular_tables.received_at
+  - primary_database.python_prod.v1_search_table.received_at
+  - primary_database.python_prod.v1_users.received_at
+  - primary_database.python_prod.v1_organizations.received_at
+- name: timestamp
+  targets:
+  - primary_database.python_prod.v1_tables_popular_tables.timestamp
+  - primary_database.python_prod.v1_search_table.timestamp
+  - primary_database.python_prod.v1_users.timestamp
+  - primary_database.python_prod.v1_organizations.timestamp
+- name: original_timestamp
+  targets:
+  - primary_database.python_prod.v1_tables_popular_tables.original_timestamp
+  - primary_database.python_prod.v1_search_table.original_timestamp
+  - primary_database.python_prod.v1_users.original_timestamp
+  - primary_database.python_prod.v1_organizations.original_timestamp
+- name: event
+  targets:
+  - primary_database.python_prod.v1_tables_popular_tables.event
+  - primary_database.python_prod.v1_search_table.event
+  - primary_database.python_prod.v1_users.event
+  - primary_database.python_prod.v1_organizations.event
+- name: user_id
+  targets:
+  - primary_database.python_prod.v1_tables_popular_tables.user_id
+  - primary_database.python_prod.v1_search_table.user_id
+  - primary_database.python_prod.v1_users.user_id
+  - primary_database.python_prod.v1_organizations.user_id
+- name: uuid_ts
+  targets:
+  - primary_database.python_prod.v1_tables_popular_tables.uuid_ts
+  - primary_database.python_prod.v1_search_table.uuid_ts
+  - primary_database.python_prod.v1_users.uuid_ts
+  - primary_database.python_prod.v1_organizations.uuid_ts
+- name: _PARTITIONTIME
+  targets:
+  - primary_database.python_prod.v1_tables_popular_tables._PARTITIONTIME
+  - primary_database.python_prod.v1_search_table._PARTITIONTIME
+  - primary_database.python_prod.v1_users._PARTITIONTIME
+  - primary_database.python_prod.v1_organizations._PARTITIONTIME
+- name: monthly_active_users_with_warehouse
+  targets:
+  - primary_database.dbt_prod_metrics.monthly_active_users_with_warehouse.monthly_active_users_with_warehouse
+  - primary_database.dbt_prod_metrics.monthly_active_users_with_warehouse.monthly_active_users_with_warehouse
+  - primary_database.dbt_prod_metrics.monthly_active_users_with_warehouse.monthly_active_users_with_warehouse
+  - primary_database.dbt_prod_metrics.monthly_active_users_with_warehouse.monthly_active_users_with_warehouse
+  - primary_database.dbt_prod_metrics.monthly_active_users_with_warehouse.monthly_active_users_with_warehouse
+  - primary_database.dbt_prod_metrics.monthly_active_users_with_warehouse.monthly_active_users_with_warehouse
+  - primary_database.dbt_prod_metrics.monthly_active_users_with_warehouse.monthly_active_users_with_warehouse
+  - primary_database.dbt_prod_metrics.monthly_active_users_with_warehouse.monthly_active_users_with_warehouse
+  - primary_database.dbt_prod_metrics.monthly_active_users_with_warehouse.monthly_active_users_with_warehouse
+  - primary_database.dbt_prod_metrics.monthly_active_users_with_warehouse.monthly_active_users_with_warehouse
+- name: monthly_active_organizations_with_warehouse
+  targets:
+  - primary_database.dbt_prod_metrics.monthly_active_organizations_with_warehouse.monthly_active_organizations_with_warehouse
+  - primary_database.dbt_prod_metrics.monthly_active_organizations_with_warehouse.monthly_active_organizations_with_warehouse
+  - primary_database.dbt_prod_metrics.monthly_active_organizations_with_warehouse.monthly_active_organizations_with_warehouse
+  - primary_database.dbt_prod_metrics.monthly_active_organizations_with_warehouse.monthly_active_organizations_with_warehouse
+  - primary_database.dbt_prod_metrics.monthly_active_organizations_with_warehouse.monthly_active_organizations_with_warehouse
+  - primary_database.dbt_prod_metrics.monthly_active_organizations_with_warehouse.monthly_active_organizations_with_warehouse
+  - primary_database.dbt_prod_metrics.monthly_active_organizations_with_warehouse.monthly_active_organizations_with_warehouse
+  - primary_database.dbt_prod_metrics.monthly_active_organizations_with_warehouse.monthly_active_organizations_with_warehouse
+  - primary_database.dbt_prod_metrics.monthly_active_organizations_with_warehouse.monthly_active_organizations_with_warehouse
+  - primary_database.dbt_prod_metrics.monthly_active_organizations_with_warehouse.monthly_active_organizations_with_warehouse
+- name: monthly_active_organizations
+  targets:
+  - primary_database.dbt_prod_metrics.monthly_active_organizations.monthly_active_organizations
+  - primary_database.dbt_prod_metrics.monthly_active_organizations.monthly_active_organizations
+  - primary_database.dbt_prod_metrics.monthly_active_organizations.monthly_active_organizations
+  - primary_database.dbt_prod_metrics.monthly_active_organizations.monthly_active_organizations
+  - primary_database.dbt_prod_metrics.monthly_active_organizations.monthly_active_organizations
+  - primary_database.dbt_prod_metrics.monthly_active_organizations.monthly_active_organizations
+  - primary_database.dbt_prod_metrics.monthly_active_organizations.monthly_active_organizations
+  - primary_database.dbt_prod_metrics.monthly_active_organizations.monthly_active_organizations
+  - primary_database.dbt_prod_metrics.monthly_active_organizations.monthly_active_organizations
+  - primary_database.dbt_prod_metrics.monthly_active_organizations.monthly_active_organizations
+- name: monthly_active_users
+  targets:
+  - primary_database.dbt_prod_metrics.monthly_active_users.monthly_active_users
+  - primary_database.dbt_prod_metrics.monthly_active_users.monthly_active_users
+  - primary_database.dbt_prod_metrics.monthly_active_users.monthly_active_users
+  - primary_database.dbt_prod_metrics.monthly_active_users.monthly_active_users
+  - primary_database.dbt_prod_metrics.monthly_active_users.monthly_active_users
+  - primary_database.dbt_prod_metrics.monthly_active_users.monthly_active_users
+  - primary_database.dbt_prod_metrics.monthly_active_users.monthly_active_users
+  - primary_database.dbt_prod_metrics.monthly_active_users.monthly_active_users
+  - primary_database.dbt_prod_metrics.monthly_active_users.monthly_active_users
+  - primary_database.dbt_prod_metrics.monthly_active_users.monthly_active_users
+- name: views
+  targets:
+  - local.duckdb.content_level_monthly_stats_fruits_veggies.views
+- name: minutes
+  targets:
+  - local.duckdb.content_level_monthly_stats_fruits_veggies.minutes
+- name: property_grouping
+  targets:
+  - local.duckdb.content_level_monthly_stats_fruits_veggies.property_grouping
+- name: month
+  targets:
+  - local.duckdb.content_level_monthly_stats_fruits_veggies.month
+  - local.duckdb.monthly_active_user_by_platform.month
+  - local.duckdb.monthly_revenue_by_region.month
+  enum:
+  - Jan
+  - Feb
+  - Mar
+  - Apr
+  - May
+  - Jun
+  - Jul
+  - Aug
+  - Sep
+  - Oct
+  - Nov
+  - Dec
+- name: property
+  targets:
+  - local.duckdb.content_level_monthly_stats_fruits_veggies.property
+- name: content_type
+  targets:
+  - local.duckdb.content_level_monthly_stats_fruits_veggies.content_type
+- name: content_id
+  targets:
+  - local.duckdb.content_level_monthly_stats_fruits_veggies.content_id
+- name: platform
+  targets:
+  - local.duckdb.monthly_active_user_by_platform.platform
+  description: |
+    The platform on which the user is active. This can be iOS, Android, or Web. Value is case-sensitive.
+  enum:
+  - iOS
+  - Android
+  - Web
+- name: users
+  targets:
+  - local.duckdb.monthly_active_user_by_platform.users
+- name: region
+  targets:
+  - local.duckdb.monthly_revenue_by_region.region
+- name: revenue
+  targets:
+  - local.duckdb.monthly_revenue_by_region.revenue

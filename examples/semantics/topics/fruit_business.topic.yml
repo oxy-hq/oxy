@@ -1,0 +1,6 @@
+name: fruit_business
+description: Complete fruit business analytics including customers, products, and sales
+views:
+- customers
+- fruits
+- fruit_sales

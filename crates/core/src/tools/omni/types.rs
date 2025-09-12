@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use crate::config::model::OmniFilter;
+use crate::config::model::omni::OmniFilter;
 
 #[derive(Debug, Clone)]
 pub struct OmniExecutable;

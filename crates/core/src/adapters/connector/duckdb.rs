@@ -34,6 +34,11 @@ impl Engine for DuckDB {
         let dir_set_stmt = format!("SET file_search_path = '{}'", &self.file_search_path);
         conn.execute(&dir_set_stmt, [])
             .map_err(|err| connector_internal_error(SET_FILE_SEARCH_PATH, &err))?;
+        // install and load icu extension
+        conn.execute("install icu", [])
+            .map_err(|err| connector_internal_error(SET_FILE_SEARCH_PATH, &err))?;
+        conn.execute("load icu", [])
+            .map_err(|err| connector_internal_error(SET_FILE_SEARCH_PATH, &err))?;
         let mut stmt = conn
             .prepare(&query)
             .map_err(|err| connector_internal_error(PREPARE_DUCKDB_STMT, &err))?;

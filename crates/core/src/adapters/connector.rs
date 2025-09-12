@@ -18,7 +18,7 @@ mod engine;
 mod snowflake;
 mod utils;
 
-pub use utils::load_result;
+pub use utils::{load_result, write_to_ipc};
 
 #[enum_dispatch::enum_dispatch(Engine)]
 #[derive(Debug)]

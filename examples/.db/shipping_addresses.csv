@@ -1,0 +1,11 @@
+id,customer_id,address_line_1,address_line_2,city,state,postal_code,country,is_default
+1,1,123 Main St,Apt 4B,New York,NY,10001,USA,true
+2,2,456 Oak Ave,,Los Angeles,CA,90210,USA,true
+3,3,789 Pine Rd,Suite 200,Chicago,IL,60601,USA,true
+4,2,321 Elm St,,San Francisco,CA,94102,USA,false
+5,4,654 Maple Dr,,Miami,FL,33101,USA,true
+6,5,987 Cedar Ln,Unit 15,Seattle,WA,98101,USA,true
+7,1,555 Broadway,Floor 3,New York,NY,10002,USA,false
+8,6,111 Park Ave,,Boston,MA,02101,USA,true
+9,3,222 Lake St,,Chicago,IL,60602,USA,false
+10,4,333 Beach Blvd,,Miami,FL,33102,USA,false

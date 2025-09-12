@@ -1,7 +1,7 @@
 mod context;
 pub mod create_data_app;
 mod launcher;
-mod omni;
+pub mod omni;
 mod retrieval;
 mod sql;
 mod tool;

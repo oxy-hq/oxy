@@ -29,6 +29,32 @@ impl TemplateRegister for &Task {
                     )?;
                 }
             }
+            TaskType::SemanticQuery(semantic) => {
+                // Register topic and any string fields that may contain templates.
+                // Database is determined from topic metadata during execution, so no need to register it here.
+                register.entry(&semantic.query.topic.as_str())?;
+                // Dimensions & measures are plain strings (may be templated later)
+                for dim in &semantic.query.dimensions {
+                    register.entry(&dim.as_str())?;
+                }
+                for meas in &semantic.query.measures {
+                    register.entry(&meas.as_str())?;
+                }
+                // Filters: field and value (string values only)
+                for filter in &semantic.query.filters {
+                    register.entry(&filter.field.as_str())?;
+                    if let Some(s) = filter.value.as_str() {
+                        register.entry(&s)?;
+                    }
+                }
+                // Orders: field names
+                for order in &semantic.query.orders {
+                    register.entry(&order.field.as_str())?;
+                }
+                if let Some(export) = &semantic.export {
+                    register.entry(&export.path.as_str())?;
+                }
+            }
             TaskType::Agent(agent) => {
                 register.entry(&agent.prompt.as_str())?;
                 if let Some(export) = &agent.export {

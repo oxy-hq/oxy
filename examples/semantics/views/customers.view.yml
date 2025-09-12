@@ -1,0 +1,26 @@
+name: customers
+description: Customer data for fruit sales analysis
+datasource: local
+table: customer.csv
+entities:
+- name: customer
+  type: primary
+  description: Primary customer entity
+  key: customer_id
+dimensions:
+- name: customer_id
+  type: number
+  description: Unique customer identifier
+  expr: id
+- name: customer_name
+  type: string
+  description: Customer name
+  expr: name
+measures:
+- name: total_customers
+  type: count
+  description: Total count of customers
+- name: distinct_customers
+  type: count_distinct
+  description: Count of distinct customers
+  expr: id

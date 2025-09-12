@@ -16,6 +16,36 @@ export type SqlArtifact = {
   };
 };
 
+export type SemanticQueryArtifact = {
+  id: string;
+  name: string;
+  kind: "semantic_query";
+  is_streaming?: boolean;
+  content: {
+    type: "semantic_query";
+    value: {
+      database: string;
+      sql_query: string;
+      result: string[][];
+      is_result_truncated: boolean;
+      topic: string;
+      dimensions: string[];
+      measures: string[];
+      filters: Array<{
+        field: string;
+        op: string;
+        value: string | number | boolean | string[] | number[];
+      }>;
+      orders: Array<{
+        field: string;
+        direction: string;
+      }>;
+      limit?: number;
+      offset?: number;
+    };
+  };
+};
+
 export type AgentArtifact = {
   id: string;
   kind: "agent";
@@ -44,4 +74,8 @@ export type WorkflowArtifact = {
   };
 };
 
-export type Artifact = SqlArtifact | AgentArtifact | WorkflowArtifact;
+export type Artifact =
+  | SqlArtifact
+  | SemanticQueryArtifact
+  | AgentArtifact
+  | WorkflowArtifact;

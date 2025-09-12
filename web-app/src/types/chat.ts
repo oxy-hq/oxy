@@ -32,10 +32,18 @@ export interface ExecuteSQLArtifactKind {
   };
 }
 
+export interface SemanticQueryArtifactKind {
+  type: "semantic_query";
+  value: {
+    database: string;
+  };
+}
+
 export type ArtifactKind =
   | WorkflowArtifactKind
   | AgentArtifactKind
-  | ExecuteSQLArtifactKind;
+  | ExecuteSQLArtifactKind
+  | SemanticQueryArtifactKind;
 
 export interface ArtifactStartedContent {
   type: "artifact_started";
@@ -64,10 +72,35 @@ export interface ExecuteSQLArtifactValue {
   };
 }
 
+export interface SemanticQueryArtifactValue {
+  type: "semantic_query";
+  value: {
+    database: string;
+    sql_query: string;
+    result: string[][];
+    is_result_truncated: boolean;
+    topic: string;
+    dimensions: string[];
+    measures: string[];
+    filters: Array<{
+      field: string;
+      op: string;
+      value: string | number | boolean | string[] | number[];
+    }>;
+    orders: Array<{
+      field: string;
+      direction: string;
+    }>;
+    limit?: number;
+    offset?: number;
+  };
+}
+
 export type ArtifactValue =
   | WorkflowArtifactValue
   | AgentArtifactValue
-  | ExecuteSQLArtifactValue;
+  | ExecuteSQLArtifactValue
+  | SemanticQueryArtifactValue;
 
 export interface ArtifactValueContent {
   type: "artifact_value";

@@ -1,5 +1,5 @@
 use crate::{
-    config::model::OmniField,
+    config::model::omni::OmniField,
     errors::OxyError,
     execute::{Executable, ExecutionContext, types::Output},
     tools::types::OmniTopicInfoInput,
