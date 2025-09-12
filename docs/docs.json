@@ -69,7 +69,14 @@
               "deployment/install-oxy",
               "deployment/workspace-setup",
               "deployment/environment",
-              "deployment/docker"
+              "deployment/docker",
+              {
+                "group": "Kubernetes",
+                "pages": [
+                  "deployment/kubernetes-helm",
+                  "deployment/kubernetes-raw"
+                ]
+              }
             ]
           },
           {
