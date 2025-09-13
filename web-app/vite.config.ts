@@ -203,6 +203,7 @@ export default defineConfig({
     },
   },
   build: {
+    target: "baseline-widely-available",
     sourcemap: true,
     rollupOptions: {
       output: {

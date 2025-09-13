@@ -20,7 +20,7 @@
     "@codemirror/lang-python": "^6.2.1",
     "@codemirror/lang-sql": "^6.9.1",
     "@codemirror/language": "^6.11.3",
-    "@duckdb/duckdb-wasm": "1.29.1-dev132.0",
+    "@duckdb/duckdb-wasm": "1.30.0",
     "@formkit/auto-animate": "^0.8.4",
     "@lezer/highlight": "^1.2.1",
     "@lottiefiles/react-lottie-player": "^3.6.0",
@@ -121,12 +121,15 @@
     "@types/react-dom": "^19.1.9",
     "@types/react-syntax-highlighter": "^15.5.13",
     "@types/react-window": "^1.8.8",
-    "@vitejs/plugin-react-swc": "^3.11.0",
+    "@vitejs/plugin-react-swc": "^4.0.0",
     "i": "^0.3.7",
     "rollup-plugin-visualizer": "^6.0.3",
     "typescript": "^5.9.2",
-    "vite": "^6.3.6",
+    "vite": "^7.1.5",
     "vite-plugin-node-polyfills": "^0.24.0"
+  },
+  "engines": {
+    "node": ">=22.19.0"
   },
   "version": "0.2.28"
 }
