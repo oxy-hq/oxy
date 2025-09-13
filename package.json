@@ -36,8 +36,16 @@
   "pnpm": {
     "overrides": {
       "rollup": "4.44.2"
-    }
+    },
+    "onlyBuiltDependencies": [
+      "@swc/core",
+      "esbuild"
+    ],
+    "ignoredBuiltDependencies": [
+      "@sentry/cli",
+      "@tailwindcss/oxide"
+    ]
   },
   "name": "oxy",
-  "packageManager": "pnpm@10.15.1+sha256.8c53af02ae3ec1fb0ae75377f8d4d6217c2d7cbe6f03c16350cabf7493de6eff"
+  "packageManager": "pnpm@10.16.0+sha256.dd62d38df1a6702c930fba14b92bc3ca3d5c24a6c7005b2e5355a98b898fa5d4"
 }
