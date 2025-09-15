@@ -31,7 +31,7 @@ tokio = { workspace = true }
 tracing = "0.1"
 uuid = { version = "1.18.1", features = ["v4", "serde"] }
 regex = "1.11.2"
-sqlparser = "0.37.0"
+sqlparser = "0.54.0"
 indexmap = "2.11.1"
 serde_yaml = "0.9.34"
 tempfile = "3.22"
