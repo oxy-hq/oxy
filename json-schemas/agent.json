@@ -887,10 +887,6 @@
                 "type": "string"
               }
             },
-            "table": {
-              "default": "documents",
-              "type": "string"
-            },
             "top_k": {
               "default": 4,
               "type": "integer",
@@ -1176,10 +1172,6 @@
         },
         "system_instructions": {
           "default": "You are a routing agent. Your job is to route the task to the correct tool. Follow the steps below:\n1. Reasoning the task to find the most relevant tools.\n2. If tools were found that match the query (even partially), USE THEM immediately. Do not ask for clarification.\n3. Only if NO relevant tools are found, explain why.\n4. Synthesize the results from the tool and return it to the user. DO NOT return the raw results from the tool.\nYour task:",
-          "type": "string"
-        },
-        "table": {
-          "default": "documents",
           "type": "string"
         },
         "top_k": {

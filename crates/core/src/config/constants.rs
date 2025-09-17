@@ -31,13 +31,14 @@ pub const CONSISTENCY_THRESHOLD: f32 = 0.25;
 pub const MARKDOWN_MAX_FENCES: usize = 10;
 pub const AGENT_RETRY_MAX_ELAPSED_TIME: Duration = Duration::from_secs(60 * 2);
 
-pub const RETRIEVAL_INCLUSION_MIDPOINT_COLUMN: &str = "inclusion_midpoint";
+pub const ENUM_ROUTING_PATH: &str = "enum_routing";
 pub const RETRIEVAL_EXCLUSION_BUFFER_MULTIPLIER: f32 = 0.9;
 pub const RETRIEVAL_DEFAULT_INCLUSION_RADIUS: f32 = 0.2;
-pub const RETRIEVAL_INCLUSIONS_TABLE_SUFFIX: &str = "_inclusions";
-pub const RETRIEVAL_EXCLUSIONS_TABLE_SUFFIX: &str = "_exclusions";
+pub const RETRIEVAL_CHILD_INCLUSION_RADIUS: f32 = 0.1;
+pub const RETRIEVAL_INCLUSIONS_TABLE: &str = "retrieval_items";
 pub const RETRIEVAL_EMBEDDINGS_COLUMN: &str = "embedding";
 pub const RETRIEVAL_EMBEDDINGS_BATCH_SIZE: usize = 128;
+pub const RETRIEVAL_CACHE_PATH: &str = ".cache";
 pub const VECTOR_INDEX_MIN_ROWS: usize = 1000;
 
 pub const DEFAULT_API_KEY_HEADER: &str = "X-API-KEY";

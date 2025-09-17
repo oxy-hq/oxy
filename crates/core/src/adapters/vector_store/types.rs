@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct RetrievalObject {
     /// Identifier of the source (e.g. file path)
     pub source_identifier: String,
@@ -12,6 +13,12 @@ pub struct RetrievalObject {
     pub inclusions: Vec<String>,
     /// Exclusion contents tied to this source that will be embedded for retrieval
     pub exclusions: Vec<String>,
+    /// Indicates whether it's a derived object (e.g. built from parameterized templates with enum variables)
+    #[serde(default)]
+    pub is_child: bool,
+    /// Optional enum variables from workflow (for enum index building)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enum_variables: Option<HashMap<String, Vec<serde_json::Value>>>,
 }
 
 impl RetrievalObject {
@@ -23,7 +30,7 @@ impl RetrievalObject {
         }
 
         // NOTE: exclusions should already be excluded via epsilon ball filtering.
-        //       This is a final guard rail to prevent LLM from choosingexcluded prompts.
+        //       This is a final guard rail to prevent LLM from choosing excluded prompts.
         for exclusion in &self.exclusions {
             content_parts.push(format!("DO NOT USE FOR PROMPT: '{exclusion}'"));
         }

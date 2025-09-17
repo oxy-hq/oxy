@@ -1,8 +1,11 @@
 use crate::{
-    adapters::vector_store::{SearchRecord, reindex_all, search_agent},
+    adapters::vector_store::{SearchRecord, build_all_retrieval_objects, ingest_retrieval_objects, search_agent},
     config::ConfigBuilder,
     errors::OxyError,
 };
+
+pub mod enum_index;
+pub use enum_index::{EnumIndexConfig, EnumIndexManager};
 
 pub struct ReindexInput {
     pub project_path: String,
@@ -14,7 +17,17 @@ pub async fn reindex(input: ReindexInput) -> Result<(), OxyError> {
         .with_project_path(input.project_path)?
         .build()
         .await?;
-    reindex_all(&config, input.drop_all_tables).await
+
+    // Build all retrieval objects once
+    let retrieval_objects = build_all_retrieval_objects(&config).await?;
+
+    // Build enum index with the retrieval objects
+    if let Err(build_err) = EnumIndexManager::build_from_config(&config, &retrieval_objects).await {
+        tracing::warn!("Failed to build and persist enum index: {}", build_err);
+    }
+
+    // Ingest the retrieval objects
+    ingest_retrieval_objects(&config, &retrieval_objects, input.drop_all_tables).await
 }
 
 pub struct SearchInput {

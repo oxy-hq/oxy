@@ -1,4 +1,3 @@
-mod embedding;
 mod ingestion;
 mod math;
 mod schema;
@@ -8,7 +7,12 @@ mod table;
 
 use lancedb::Connection;
 
-use crate::{adapters::openai::OpenAIClient, config::model::EmbeddingConfig, errors::OxyError};
+use crate::{
+    adapters::openai::OpenAIClient,
+    config::model::EmbeddingConfig,
+    errors::OxyError,
+    service::retrieval::EnumIndexManager,
+};
 
 use super::{engine::VectorEngine, types::RetrievalObject};
 
@@ -23,6 +27,7 @@ pub(super) struct LanceDB {
     connection: Connection,
     embedding_config: EmbeddingConfig,
     table_manager: Arc<TableManager>,
+    enum_index_manager: Arc<EnumIndexManager>,
 }
 
 impl LanceDB {
@@ -30,10 +35,10 @@ impl LanceDB {
         client: OpenAIClient,
         connection: Connection,
         embedding_config: EmbeddingConfig,
+        enum_index_manager: Arc<EnumIndexManager>,
     ) -> Self {
         let table_manager = Arc::new(TableManager::new(
             connection.clone(),
-            embedding_config.table.clone(),
             embedding_config.n_dims,
         ));
 
@@ -42,6 +47,7 @@ impl LanceDB {
             connection,
             embedding_config,
             table_manager,
+            enum_index_manager,
         }
     }
 }
@@ -53,7 +59,9 @@ impl VectorEngine for LanceDB {
             self.embedding_config.clone(),
             self.table_manager.clone(),
         );
-        ingestion_manager.ingest(retrieval_objects).await
+        // Build-time ingestion: reindex after upsert
+        let reindex = true;
+        ingestion_manager.ingest(retrieval_objects, reindex).await
     }
 
     async fn search(&self, query: &str) -> Result<Vec<super::types::SearchRecord>, OxyError> {
@@ -61,14 +69,12 @@ impl VectorEngine for LanceDB {
             self.embedding_config.clone(),
             self.client.clone(),
             self.table_manager.clone(),
+            self.enum_index_manager.clone(),
         );
         search_manager.search(query).await
     }
 
     async fn cleanup(&self) -> Result<(), OxyError> {
-        self.connection
-            .drop_all_tables()
-            .await
-            .map_err(OxyError::LanceDBError)
+        self.connection.drop_all_tables().await.map_err(OxyError::LanceDBError)
     }
 }
