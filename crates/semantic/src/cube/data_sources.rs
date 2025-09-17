@@ -5,13 +5,14 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::{SemanticLayer, errors::SemanticLayerError};
+use crate::{cube::models::DatabaseDetails, errors::SemanticLayerError, SemanticLayer};
 
 use super::models::{CubeDataSource, CubeDataSourceConfig};
 
 /// Generate CubeJS data sources from a semantic layer
 pub async fn generate_data_sources(
     semantic_layer: &SemanticLayer,
+    databases: HashMap<String, DatabaseDetails>,
 ) -> Result<Vec<CubeDataSource>, SemanticLayerError> {
     let mut data_sources = Vec::new();
 
@@ -27,18 +28,26 @@ pub async fn generate_data_sources(
 
     // Generate data sources for each unique datasource
     for datasource_name in unique_datasources {
-        let data_source = create_default_data_source(datasource_name);
-        data_sources.push(data_source);
+        if let Some(database) = databases.get(datasource_name) {
+            let data_source = create_data_source(datasource_name, &database.db_type);
+            data_sources.push(data_source);
+        }
+        else {
+            return Err(SemanticLayerError::ConfigurationError(format!(
+                "Datasource '{}' referenced in views but not found in database configurations",
+                datasource_name
+            )));
+        }
     }
 
     Ok(data_sources)
 }
 
 /// Create a default data source when configuration is not available
-fn create_default_data_source(name: &str) -> CubeDataSource {
+fn create_data_source(name: &str, db_type: &str) -> CubeDataSource {
     CubeDataSource {
         name: name.to_string(),
-        data_source_type: "duckdb".to_string(), // Default to duckdb
+        data_source_type: db_type.to_string(), // Default to duckdb
         config: CubeDataSourceConfig {
             host: None,
             port: None,

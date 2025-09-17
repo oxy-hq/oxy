@@ -126,3 +126,12 @@ pub struct CubeSemanticLayerWithDataSources {
     pub views: Vec<CubeView>,
     pub data_sources: Vec<CubeDataSource>,
 }
+
+pub struct DatabaseConfig {
+    pub databases: HashMap<String, DatabaseDetails>,
+}
+
+pub struct DatabaseDetails {
+    pub name: String,
+    pub db_type: String,
+}
