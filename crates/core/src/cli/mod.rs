@@ -42,6 +42,7 @@ use minijinja::{Environment, Value};
 use model::AgentConfig;
 use model::{Config, Semantics, Workflow};
 use oxy_semantic::cube::translator::process_semantic_layer_to_cube;
+use oxy_semantic::cube::models::DatabaseDetails;
 use pyo3::Bound;
 use pyo3::FromPyObject;
 use pyo3::IntoPyObject;
@@ -53,6 +54,7 @@ use rmcp::transport::SseServer;
 use rmcp::{ServiceExt, transport::stdio};
 use std::backtrace;
 use std::collections::BTreeMap;
+use std::collections::HashMap;
 use std::error::Error;
 use std::path::PathBuf;
 use std::process::Command;
@@ -864,7 +866,27 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                     OxyError::RuntimeError(format!("Failed to create cube directory: {}", e))
                 })?;
 
-                process_semantic_layer_to_cube(semantic_dir, target_dir).await?;
+                // Get database details from config
+                let config = ConfigBuilder::new()
+                    .with_project_path(&resolve_project_path()?)?
+                    .build()
+                    .await?;
+                
+                let databases: HashMap<String, DatabaseDetails> = config
+                    .list_databases()?
+                    .iter()
+                    .map(|db| {
+                        (
+                            db.name.clone(),
+                            DatabaseDetails {
+                                name: db.name.clone(),
+                                db_type: db.dialect(),
+                            },
+                        )
+                    })
+                    .collect();
+
+                process_semantic_layer_to_cube(semantic_dir, target_dir, databases).await?;
             } else {
                 println!("No semantic directory found at {}", semantic_dir.display());
             }
@@ -1752,13 +1774,35 @@ async fn handle_semantic_engine_command(semantic_args: SemanticEngineArgs) -> Re
         ));
     }
 
+    // Get config first to get database details
+    let config = ConfigBuilder::new()
+        .with_project_path(&project_path)?
+        .build()
+        .await?;
+
     // Ensure cube configuration directory exists
     let cube_config_dir = get_cube_config_dir()?;
 
     if !cube_config_dir.exists() {
         println!("🔄 Generating Cube.js configuration from semantic layer...");
+        
+        // Get database details from config
+        let databases: HashMap<String, DatabaseDetails> = config
+            .list_databases()?
+            .iter()
+            .map(|db| {
+                (
+                    db.name.clone(),
+                    DatabaseDetails {
+                        name: db.name.clone(),
+                        db_type: db.dialect(),
+                    },
+                )
+            })
+            .collect();
+        
         // Process semantic layer to generate CubeJS schema
-        process_semantic_layer_to_cube(semantic_dir.clone(), cube_config_dir.clone()).await?;
+        process_semantic_layer_to_cube(semantic_dir.clone(), cube_config_dir.clone(), databases).await?;
         println!("✅ Cube.js configuration generated successfully");
     }
 
@@ -1781,12 +1825,6 @@ async fn handle_semantic_engine_command(semantic_args: SemanticEngineArgs) -> Re
         format!("CUBEJS_DEV_MODE={}", semantic_args.dev_mode),
         format!("CUBEJS_LOG_LEVEL={}", semantic_args.log_level),
     ];
-
-    // Add database connection if available
-    let config = ConfigBuilder::new()
-        .with_project_path(&project_path)?
-        .build()
-        .await?;
 
     if let Some(default_db) = config.default_database_ref() {
         if let Ok(db_config) = config.resolve_database(default_db) {

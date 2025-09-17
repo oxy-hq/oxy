@@ -1,5 +1,5 @@
 use regex::Regex;
-use std::path::PathBuf;
+use std::{collections::HashMap, path::PathBuf};
 
 use crate::{
     DimensionType, EntityType, MeasureType, SemanticLayer, SemanticLayerError, View,
@@ -9,6 +9,7 @@ use crate::{
         file_writer::save_cube_semantics,
         models::{
             CubeCube, CubeDimension, CubeMeasure, CubeSemanticLayerWithDataSources, CubeView,
+            DatabaseDetails,
         },
     },
     parse_semantic_layer_from_dir,
@@ -29,8 +30,9 @@ impl CubeJSTranslator {
     pub async fn translate(
         &self,
         oxy_semantic_layer: &SemanticLayer,
+        databases: HashMap<String, DatabaseDetails>,
     ) -> Result<CubeSemanticLayerWithDataSources, SemanticLayerError> {
-        translate_oxy_to_cube(oxy_semantic_layer.clone()).await
+        translate_oxy_to_cube(oxy_semantic_layer.clone(), databases).await
     }
 
     /// Save CubeJS data to files
@@ -45,8 +47,9 @@ impl CubeJSTranslator {
     pub async fn translate_and_save(
         &self,
         oxy_semantic_layer: &SemanticLayer,
+        databases: HashMap<String, DatabaseDetails>,
     ) -> Result<(), SemanticLayerError> {
-        let cube_data = self.translate(oxy_semantic_layer).await?;
+        let cube_data = self.translate(oxy_semantic_layer, databases).await?;
         self.save_to_files(&cube_data).await
     }
 }
@@ -54,6 +57,7 @@ impl CubeJSTranslator {
 /// Core translation function from Oxy to Cube format with data sources
 async fn translate_oxy_to_cube(
     oxy: SemanticLayer,
+    databases: HashMap<String, DatabaseDetails>,
 ) -> Result<CubeSemanticLayerWithDataSources, SemanticLayerError> {
     let mut cubes = Vec::new();
     let mut cube_views = Vec::new();
@@ -72,7 +76,7 @@ async fn translate_oxy_to_cube(
     );
 
     // Generate data sources
-    let data_sources = generate_data_sources(&oxy).await?;
+    let data_sources = generate_data_sources(&oxy, databases).await?;
 
     // Convert Oxy views to Cube cubes or views
     for view in oxy.views {
@@ -238,6 +242,7 @@ fn convert_measures(
 pub async fn process_semantic_layer_to_cube(
     semantic_dir: PathBuf,
     target_dir: PathBuf,
+    databases: HashMap<String, DatabaseDetails>,
 ) -> Result<(), SemanticLayerError> {
     println!("🔄 Processing semantic layer...");
 
@@ -278,7 +283,7 @@ pub async fn process_semantic_layer_to_cube(
     println!("🔄 Converting to Cube.js format...");
 
     let translator = CubeJSTranslator::new(target_dir)?;
-    let cube_semantic_layer = translator.translate(&semantic_layer).await?;
+    let cube_semantic_layer = translator.translate(&semantic_layer, databases).await?;
 
     println!(
         "✅ Converted to Cube.js format: {} cubes, {} views, {} data sources",
