@@ -50,10 +50,11 @@
 
 ## Key Files & Directories
 
-- `crates/core/src/`: Core Rust logic
-- `crates/entity/src/`: ORM models
+- `crates/core/`: Core Rust logic
+- `crates/entity/`: ORM models
 - `crates/migration/`: Migration CLI
-- `web-app/src/`: Frontend code
+- `crates/semantic/`: Semantic system implementation
+- `web-app/`: Frontend code
 - `examples/`, `sample_project/`: Example agents, workflows, and configs
 - `docs/`: Documentation
 

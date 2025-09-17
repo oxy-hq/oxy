@@ -12,6 +12,10 @@
       "release-type": "rust",
       "component": "migration"
     },
+    "crates/semantic": {
+      "release-type": "rust",
+      "component": "migration"
+    },
     "crates/entity": {
       "release-type": "rust",
       "component": "entity"
