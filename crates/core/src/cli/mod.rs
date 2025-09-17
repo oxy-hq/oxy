@@ -20,9 +20,7 @@ use crate::service::agent::AgentCLIHandler;
 use crate::service::agent::run_agent;
 use crate::service::eval::EvalEventsHandler;
 use crate::service::eval::run_eval;
-use crate::service::retrieval::SearchInput;
-use crate::service::retrieval::search;
-use crate::service::retrieval::{ReindexInput, reindex};
+use crate::service::retrieval::{ReindexInput, SearchInput, reindex, search, EnumIndexManager};
 use crate::service::sync::sync_databases;
 use crate::service::workflow::run_workflow;
 use crate::theme::StyledText;
@@ -1354,14 +1352,19 @@ pub async fn start_server_and_web_app(
 
     // Only build config if we have a valid project path
     let config = if let Some(ref path) = project_path {
-        Some(
-            ConfigBuilder::new()
-                .with_project_path(path)
-                .expect("Failed to find project path")
-                .build()
-                .await
-                .expect("Failed to load configuration"),
-        )
+        let config = ConfigBuilder::new()
+            .with_project_path(path)
+            .expect("Failed to find project path")
+            .build()
+            .await
+            .expect("Failed to load configuration");
+
+        // Eagerly initialize enum index at startup (includes automatic rebuild and retry logic)
+        if let Err(e) = EnumIndexManager::init_from_config(config.clone()).await {
+            tracing::warn!("Failed to initialize enum index at startup: {}", e);
+        }
+        
+        Some(config)
     } else {
         None
     };

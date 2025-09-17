@@ -10,6 +10,7 @@ impl SchemaUtils {
             Field::new("content", DataType::Utf8, false),
             Field::new("source_type", DataType::Utf8, false),
             Field::new("source_identifier", DataType::Utf8, false),
+            Field::new("upsert_key", DataType::Utf8, false),
             Field::new("embedding_content", DataType::Utf8, false),
             Field::new(
                 RETRIEVAL_EMBEDDINGS_COLUMN,

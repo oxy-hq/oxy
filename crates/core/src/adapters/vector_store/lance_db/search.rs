@@ -6,23 +6,23 @@ use lancedb::{
 };
 
 use crate::{
-    adapters::{
-        openai::OpenAIClient,
-        vector_store::types::{Embedding, RetrievalItem, SearchRecord},
-    },
-    config::{constants::RETRIEVAL_EMBEDDINGS_COLUMN, model::EmbeddingConfig},
+    adapters::{ openai::OpenAIClient, vector_store::types::{SearchRecord, RetrievalItem, Embedding} },
+    config::{constants::{RETRIEVAL_EMBEDDINGS_COLUMN, RETRIEVAL_INCLUSIONS_TABLE}, model::EmbeddingConfig},
     errors::OxyError,
+    service::retrieval::EnumIndexManager,
 };
 
 use async_openai::types::{CreateEmbeddingRequestArgs, EmbeddingInput};
-use std::{collections::HashMap, sync::Arc};
+use std::{sync::Arc, collections::HashMap};
 
 use super::{serialization::SerializationUtils, table::TableManager};
+use super::ingestion::IngestionManager;
 
 pub(super) struct SearchManager {
     client: OpenAIClient,
     embedding_config: EmbeddingConfig,
     table_manager: Arc<TableManager>,
+    enum_index_manager: Arc<EnumIndexManager>,
 }
 
 impl SearchManager {
@@ -30,18 +30,30 @@ impl SearchManager {
         embedding_config: EmbeddingConfig,
         client: OpenAIClient,
         table_manager: Arc<TableManager>,
+        enum_index_manager: Arc<EnumIndexManager>,
     ) -> Self {
         Self {
             client,
             embedding_config,
             table_manager,
+            enum_index_manager,
         }
     }
 
     pub(super) async fn search(&self, query: &str) -> Result<Vec<SearchRecord>, OxyError> {
+        let manager = IngestionManager::new(
+            self.client.clone(),
+            self.embedding_config.clone(),
+            self.table_manager.clone(),
+        );
+        manager.ingest_parameterized_retrieval_objects_for_query(&self.enum_index_manager, query).await?;
+        
         tracing::info!("Embedding search query: {}", query);
         let query_vector = self.embed_query(query).await?;
-        let retrieval_table = self.table_manager.get_or_create_retrieval_table().await?;
+        let retrieval_table = self
+            .table_manager
+            .get_or_create_table(RETRIEVAL_INCLUSIONS_TABLE)
+            .await?;
         let row_count = retrieval_table.count_rows(None).await?;
         if row_count == 0 {
             tracing::info!("No inclusions found in table, returning empty results");
@@ -66,19 +78,19 @@ impl SearchManager {
                 schema_validated = true;
             }
 
-            let retrieval_items_batch =
-                SerializationUtils::deserialize_search_records(&record_batch)?;
+            let retrieval_items_batch = SerializationUtils::deserialize_search_records(&record_batch)?;
             retrieval_items.extend(retrieval_items_batch);
+        }
+
+        for (item, distance) in retrieval_items.iter() {
+            tracing::info!("Candidate: {} text: {} radius: {} distance: {}", item.source_identifier, item.embedding_content, item.radius, distance);
         }
 
         let filtered = self.filter_by_inclusion_radius(retrieval_items);
         let deduplicated = self.deduplicate_by_source_identifier(filtered);
         let final_results = self.finalize_search_results(deduplicated);
 
-        tracing::info!(
-            "Search completed with {} unique results",
-            final_results.len()
-        );
+        tracing::info!("Search completed with {} unique results", final_results.len());
 
         Ok(final_results)
     }
@@ -93,10 +105,7 @@ impl SearchManager {
         Ok(embeddings_response.data[0].embedding.clone())
     }
 
-    fn validate_inclusion_search_result_schema(
-        &self,
-        record_batch: &RecordBatch,
-    ) -> Result<(), OxyError> {
+    fn validate_inclusion_search_result_schema(&self, record_batch: &RecordBatch) -> Result<(), OxyError> {
         let schema = record_batch.schema();
 
         // Only need to validate _distance since table schema is already validated
@@ -108,17 +117,12 @@ impl SearchManager {
             ));
         }
 
-        tracing::debug!(
-            "Inclusion search result schema validation passed - _distance column present"
-        );
+        tracing::debug!("Inclusion search result schema validation passed - _distance column present");
         Ok(())
     }
 
     /// Filter candidates by inclusion radius (epsilon ball filtering)
-    fn filter_by_inclusion_radius(
-        &self,
-        retrieval_items: Vec<(RetrievalItem, f32)>,
-    ) -> Vec<(RetrievalItem, f32)> {
+    fn filter_by_inclusion_radius(&self, retrieval_items: Vec<(RetrievalItem, f32)>) -> Vec<(RetrievalItem, f32)> {
         tracing::info!(
             "Found {} candidates, applying epsilon ball filtering",
             retrieval_items.len()
@@ -149,10 +153,7 @@ impl SearchManager {
     }
 
     /// Deduplicate by source identifier, keeping the best match per source
-    fn deduplicate_by_source_identifier(
-        &self,
-        retrieval_items: Vec<(RetrievalItem, f32)>,
-    ) -> Vec<(RetrievalItem, f32)> {
+    fn deduplicate_by_source_identifier(&self, retrieval_items: Vec<(RetrievalItem, f32)>) -> Vec<(RetrievalItem, f32)> {
         tracing::info!(
             "Deduplicating {} inclusions by source_identifier",
             retrieval_items.len()
@@ -191,10 +192,7 @@ impl SearchManager {
     }
 
     /// Convert filtered retrieval items to SearchRecord objects, sort by relevance, and truncate to top_k
-    fn finalize_search_results(
-        &self,
-        retrieval_items: Vec<(RetrievalItem, f32)>,
-    ) -> Vec<SearchRecord> {
+    fn finalize_search_results(&self, retrieval_items: Vec<(RetrievalItem, f32)>) -> Vec<SearchRecord> {
         let mut search_records: Vec<SearchRecord> = retrieval_items
             .into_iter()
             .map(|(item, distance)| {

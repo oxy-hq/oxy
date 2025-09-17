@@ -8,7 +8,7 @@ use crate::{
 
 /// Create embeddings for the provided contents in fixed-size batches.
 /// Batches are processed sequentially rather than in parallel to avoid Send/lifetime issues in async closures.
-pub(super) async fn create_embeddings_batched(
+pub async fn create_embeddings_batched(
     client: &OpenAIClient,
     embedding_config: &EmbeddingConfig,
     contents: &Vec<String>,

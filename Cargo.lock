@@ -6265,6 +6265,7 @@ name = "oxy"
 version = "0.2.28"
 dependencies = [
  "aes-gcm",
+ "aho-corasick",
  "anyhow",
  "apalis",
  "apalis-core",
@@ -6330,6 +6331,7 @@ dependencies = [
  "rapidfuzz",
  "regex",
  "reqwest",
+ "rkyv",
  "rmcp",
  "rustc_version_runtime",
  "rustls 0.23.31",

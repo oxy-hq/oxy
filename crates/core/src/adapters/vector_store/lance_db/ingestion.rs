@@ -1,23 +1,34 @@
-use arrow::array::RecordBatch;
-use std::{collections::HashSet, sync::Arc};
+use std::{
+    sync::Arc,
+    collections::HashSet,
+};
 
 use crate::{
     adapters::{
         openai::OpenAIClient,
-        vector_store::types::{Embedding, RetrievalItem, RetrievalObject},
+        vector_store::{
+            types::{RetrievalItem, RetrievalObject, Embedding},
+            builders::parameterized::build_parameterized_retrieval_objects,
+            embedding::create_embeddings_batched,
+        },
     },
     config::{
         constants::{
-            RETRIEVAL_DEFAULT_INCLUSION_RADIUS, RETRIEVAL_EMBEDDINGS_COLUMN,
+            RETRIEVAL_DEFAULT_INCLUSION_RADIUS,
+            RETRIEVAL_CHILD_INCLUSION_RADIUS,
             RETRIEVAL_EXCLUSION_BUFFER_MULTIPLIER,
+            RETRIEVAL_INCLUSIONS_TABLE,
+            RETRIEVAL_EMBEDDINGS_COLUMN,
         },
         model::EmbeddingConfig,
     },
     errors::OxyError,
+    service::retrieval::EnumIndexManager,
 };
 
 use super::{
-    embedding::create_embeddings_batched, math::MathUtils, serialization::SerializationUtils,
+    math::MathUtils,
+    serialization::SerializationUtils,
     table::TableManager,
 };
 
@@ -40,43 +51,55 @@ impl IngestionManager {
         }
     }
 
-    pub(super) async fn ingest(
-        &self,
-        retrieval_objects: &Vec<RetrievalObject>,
-    ) -> Result<(), OxyError> {
-        let retrieval_items = self.build_retrieval_items(retrieval_objects).await?;
-
-        tracing::info!("Total retrieval items to ingest: {}", retrieval_items.len());
-
-        let batch: Option<RecordBatch> = if retrieval_items.is_empty() {
-            None
+    pub(super) async fn ingest(&self, retrieval_objects: &Vec<RetrievalObject>, reindex: bool) -> Result<(), OxyError> {
+        let retrieval_items = self.build_retrieval_items_to_ingest(retrieval_objects).await?;
+        let retrieval_batch = if retrieval_items.is_empty() {
+            return Ok(());
         } else {
-            Some(SerializationUtils::create_retrieval_record_batch(
+            SerializationUtils::create_retrieval_record_batch(
                 &retrieval_items,
                 self.embedding_config.n_dims,
-            )?)
+            )?
         };
+        let retrieval_rows = retrieval_batch.num_rows();
 
-        self.table_manager
-            .replace_with_batch(batch, RETRIEVAL_EMBEDDINGS_COLUMN)
-            .await?;
+        tracing::info!("Total retrieval items to ingest: {}", retrieval_rows);
 
-        tracing::info!("{} retrieval items ingested.", retrieval_items.len());
+        let retrieval_table = self.table_manager.get_or_create_table(RETRIEVAL_INCLUSIONS_TABLE).await?;
+        self.table_manager.upsert_batch(&retrieval_table, retrieval_batch).await?;
+        
+        if reindex {
+            self.table_manager.reindex_and_optimize(
+                &retrieval_table,
+                &[RETRIEVAL_EMBEDDINGS_COLUMN]
+            ).await?;
+        }
+
         Ok(())
     }
 
-    async fn build_retrieval_items(
+    pub(super) async fn ingest_parameterized_retrieval_objects_for_query(
+        &self,
+        enum_index_manager: &EnumIndexManager,
+        query: &str,
+    ) -> Result<(), OxyError> {
+        let param_objects = build_parameterized_retrieval_objects(enum_index_manager, query).await?;
+        if param_objects.is_empty() { return Ok(()); }
+
+        // Since this function only runs at query time, we don't reindex to avoid
+        // latency - may want to schedule reindexing thru background job eventually
+        let reindex = false;
+        self.ingest(&param_objects, reindex).await
+    }
+
+    async fn build_retrieval_items_to_ingest(
         &self,
         retrieval_objects: &Vec<RetrievalObject>,
     ) -> Result<Vec<RetrievalItem>, OxyError> {
         let all_texts_to_embed = self.collect_unique_retrieval_strings(retrieval_objects);
-        let all_embeddings =
-            create_embeddings_batched(&self.client, &self.embedding_config, &all_texts_to_embed)
-                .await?;
-        let text_to_embedding: std::collections::HashMap<String, Embedding> = all_texts_to_embed
-            .into_iter()
-            .zip(all_embeddings.into_iter())
-            .collect();
+        let all_embeddings = create_embeddings_batched(&self.client, &self.embedding_config, &all_texts_to_embed).await?;
+        let text_to_embedding: std::collections::HashMap<String, Embedding> =
+            all_texts_to_embed.into_iter().zip(all_embeddings.into_iter()).collect();
 
         let mut retrieval_items: Vec<RetrievalItem> = Vec::new();
         for obj in retrieval_objects.iter() {
@@ -87,7 +110,7 @@ impl IngestionManager {
                 let embedding = text_to_embedding
                     .get(exclusion_text)
                     .cloned()
-                    .unwrap_or_default();
+                    .ok_or_else(|| OxyError::RuntimeError(format!("Embedding not found for exclusion: {exclusion_text}")))?;
                 exclusion_embeddings.push(embedding.clone());
             }
 
@@ -95,13 +118,20 @@ impl IngestionManager {
                 let embedding = text_to_embedding
                     .get(inclusion_text)
                     .cloned()
-                    .unwrap_or_default();
-                let radius = if exclusion_embeddings.is_empty() {
+                    .ok_or_else(|| OxyError::RuntimeError(format!("Embedding not found for inclusion: {inclusion_text}")))?;
+                let max_radius = if obj.is_child {
+                    RETRIEVAL_CHILD_INCLUSION_RADIUS
+                } else {
                     RETRIEVAL_DEFAULT_INCLUSION_RADIUS
+                };
+                
+                let radius = if exclusion_embeddings.is_empty() {
+                    max_radius
                 } else {
                     match MathUtils::find_min_distance(&embedding, &exclusion_embeddings) {
-                        Ok(Some(d)) => d * RETRIEVAL_EXCLUSION_BUFFER_MULTIPLIER,
-                        Ok(None) => RETRIEVAL_DEFAULT_INCLUSION_RADIUS,
+                        Ok(Some(d)) => (d * RETRIEVAL_EXCLUSION_BUFFER_MULTIPLIER)
+                            .min(max_radius),
+                        Ok(None) => max_radius,
                         Err(e) => {
                             return Err(OxyError::RuntimeError(format!(
                                 "Vector dimension error: {e}"
@@ -124,10 +154,7 @@ impl IngestionManager {
         Ok(retrieval_items)
     }
 
-    fn collect_unique_retrieval_strings(
-        &self,
-        retrieval_objects: &Vec<RetrievalObject>,
-    ) -> Vec<String> {
+    fn collect_unique_retrieval_strings(&self, retrieval_objects: &Vec<RetrievalObject>) -> Vec<String> {
         let mut seen: HashSet<&str> = HashSet::new();
         let mut unique_texts: Vec<String> = Vec::new();
 

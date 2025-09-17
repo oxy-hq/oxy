@@ -36,18 +36,18 @@ pub(super) struct OxyHeaderData {
 // oxy:
 //   retrieval:
 //     include:
-//       - this returns fruit with sales
+//       - get fruit sales data
 //     exclude:
-//       - "sensitive data"
-//       - confidential information
+//       - get apple computer sales data
+//       - get fruit revenue data
 // */
 //
 // Legacy format (backwards compatibility):
 // /*
 // oxy:
 //     embed: |
-//         this returns fruit with sales
-//         fruit including apple, banana, kiwi, cherry and orange
+//         get fruit sales data
+//         fruit includes apple, banana, kiwi, cherry and orange
 // */
 // select 'apple' as name, 325 as sales
 // union all
@@ -69,7 +69,7 @@ pub(super) fn parse_retrieval_object(id: &str, content: &str) -> RetrievalObject
                 source_type: "file".to_string(),
                 context_content: content.to_string(),
                 inclusions: vec![content.to_string()],
-                exclusions: vec![],
+                ..Default::default()
             };
         }
     };
@@ -89,6 +89,7 @@ pub(super) fn parse_retrieval_object(id: &str, content: &str) -> RetrievalObject
                 context_content: context_content.to_string(),
                 inclusions,
                 exclusions,
+                ..Default::default()
             }
         }
         Err(e) => {
@@ -102,7 +103,7 @@ pub(super) fn parse_retrieval_object(id: &str, content: &str) -> RetrievalObject
                 source_type: "file".to_string(),
                 context_content: content.to_string(),
                 inclusions: vec![content.to_string()],
-                exclusions: vec![],
+                ..Default::default()
             }
         }
     }

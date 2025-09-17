@@ -1,11 +1,14 @@
 mod engine;
-mod lance_db;
-mod reindex;
+pub mod lance_db;
+pub mod builders;
+pub mod embedding;
 mod search;
 mod store;
-mod types;
+pub mod types;
+pub mod utils;
 
-pub use reindex::{parse_sql_source_type, reindex_all};
+pub use builders::{parse_sql_source_type, ingest_retrieval_objects, build_all_retrieval_objects};
 pub use search::search_agent;
 pub use store::VectorStore;
-pub use types::SearchRecord;
+pub use types::{SearchRecord, RetrievalObject};
+pub use utils::build_index_key;

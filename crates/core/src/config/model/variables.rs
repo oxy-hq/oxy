@@ -19,6 +19,29 @@ pub struct Variables {
 }
 
 impl Variables {
+    pub fn extract_enum_variables(&self) -> (Vec<(String, Vec<serde_json::Value>)>, HashMap<String, serde_json::Value>) {
+        let mut enum_vars = Vec::new();
+        let mut non_enum_vars = HashMap::new();
+        
+        for (name, schema) in &self.variables {
+            if let Some(enum_values) = &schema.enum_values {
+                let values: Vec<serde_json::Value> = enum_values.iter().cloned().collect();
+                if !values.is_empty() {
+                    enum_vars.push((name.clone(), values));
+                    continue;
+                }
+            }
+            
+            let default_value = schema.metadata
+                .as_ref()
+                .and_then(|m| m.default.clone())
+                .unwrap_or(serde_json::Value::Null);
+            non_enum_vars.insert(name.clone(), default_value);
+        }
+        
+        (enum_vars, non_enum_vars)
+    }
+
     pub fn resolve_params(
         &self,
         params: Option<HashMap<String, Value>>,

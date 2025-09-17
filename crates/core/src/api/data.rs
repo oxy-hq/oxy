@@ -47,6 +47,11 @@ pub async fn execute_sql(
     Ok(extract::Json(data))
 }
 
+// TODO: may want to rename this and the `reindex()` function below as we're doing more
+//       only conditionally reindexing and doing more than just building embeddings:
+//         - constructing retrieval items to store in lancedb
+//         - calculating inclusion radius for each retrieval item
+//         - caching enum values for each variable so they can be detected at query time
 pub async fn build_embeddings(
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
 ) -> Result<extract::Json<EmbeddingsBuildResponse>, StatusCode> {
@@ -55,7 +60,7 @@ pub async fn build_embeddings(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    let drop_all_tables = true; // Always drop all tables
+    let drop_all_tables = false;
 
     match reindex(ReindexInput {
         project_path: project_path.to_string_lossy().to_string(),

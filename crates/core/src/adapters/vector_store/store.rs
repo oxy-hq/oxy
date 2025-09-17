@@ -1,4 +1,7 @@
-use std::path::PathBuf;
+use std::{
+    path::PathBuf,
+    sync::Arc,
+};
 
 use super::{
     engine::VectorEngine,
@@ -12,6 +15,7 @@ use crate::{
         model::{EmbeddingConfig, RetrievalConfig, RoutingAgent, VectorDBConfig},
     },
     errors::OxyError,
+    service::retrieval::EnumIndexManager,
 };
 use enum_dispatch::enum_dispatch;
 use lancedb::{Connection, connect};
@@ -26,8 +30,9 @@ impl VectorStoreImpl {
         client: OpenAIClient,
         connection: Connection,
         embedding_config: EmbeddingConfig,
+        enum_index_manager: Arc<EnumIndexManager>,
     ) -> Self {
-        VectorStoreImpl::LanceDB(LanceDB::new(client, connection, embedding_config))
+        VectorStoreImpl::LanceDB(LanceDB::new(client, connection, embedding_config, enum_index_manager))
     }
 }
 
@@ -44,21 +49,24 @@ impl VectorStore {
         embedding_config: EmbeddingConfig,
     ) -> Result<Self, OxyError> {
         let client = OpenAIClient::with_config(openai_config.into_openai_config().await?);
+        // Create minimal enum index config for VectorStore (main enum index is managed at higher level)
+        let enum_index_manager = Arc::new(EnumIndexManager::from_config(&config_manager).await?);
         let connection = match &db_config {
             VectorDBConfig::LanceDB { db_path } => {
-                let path = config_manager.resolve_file(db_path).await?;
-                let db_path = PathBuf::from(&path)
+                let resolved_root = config_manager.resolve_file(db_path).await?;
+                let db_path = PathBuf::from(&resolved_root)
                     .join(name)
                     .to_string_lossy()
                     .to_string();
-                connect(&db_path)
+                let conn = connect(&db_path)
                     .execute()
                     .await
-                    .map_err(OxyError::LanceDBError)
+                    .map_err(OxyError::LanceDBError)?;
+                conn
             }
-        }?;
+        };
         Ok(Self {
-            inner: VectorStoreImpl::lance_db(client, connection, embedding_config),
+            inner: VectorStoreImpl::lance_db(client, connection, embedding_config, enum_index_manager),
         })
     }
     pub async fn from_retrieval(

@@ -1348,8 +1348,6 @@ pub struct AgentTool {
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
 pub struct EmbeddingConfig {
-    #[serde(default = "default_embed_table")]
-    pub table: String,
     #[serde(default = "default_embed_model")]
     pub embed_model: String,
     #[serde(default = "default_retrieval_n_dims")]
@@ -1630,10 +1628,6 @@ fn default_visualize_tool_description() -> String {
 
 fn default_lance_db_path() -> String {
     ".lancedb".to_string()
-}
-
-fn default_embed_table() -> String {
-    "documents".to_string()
 }
 
 fn default_embed_model() -> String {
