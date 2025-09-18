@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.29](https://github.com/oxy-hq/oxy-internal/compare/0.2.28...0.2.29) (2025-09-18)
+
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+* release 0.2.29 ([a708c66](https://github.com/oxy-hq/oxy-internal/commit/a708c660950837dcb30a2049e279d5be416b0034))
+
 ## [0.2.28](https://github.com/oxy-hq/oxy-internal/compare/0.2.27...0.2.28) (2025-09-10)
 
 ## [0.2.27](https://github.com/oxy-hq/oxy-internal/compare/0.2.26...0.2.27) (2025-09-03)
