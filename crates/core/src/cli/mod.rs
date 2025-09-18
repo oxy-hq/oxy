@@ -20,7 +20,7 @@ use crate::service::agent::AgentCLIHandler;
 use crate::service::agent::run_agent;
 use crate::service::eval::EvalEventsHandler;
 use crate::service::eval::run_eval;
-use crate::service::retrieval::{ReindexInput, SearchInput, reindex, search, EnumIndexManager};
+use crate::service::retrieval::{EnumIndexManager, ReindexInput, SearchInput, reindex, search};
 use crate::service::sync::sync_databases;
 use crate::service::workflow::run_workflow;
 use crate::theme::StyledText;
@@ -41,8 +41,8 @@ use migration::MigratorTrait;
 use minijinja::{Environment, Value};
 use model::AgentConfig;
 use model::{Config, Semantics, Workflow};
-use oxy_semantic::cube::translator::process_semantic_layer_to_cube;
 use oxy_semantic::cube::models::DatabaseDetails;
+use oxy_semantic::cube::translator::process_semantic_layer_to_cube;
 use pyo3::Bound;
 use pyo3::FromPyObject;
 use pyo3::IntoPyObject;
@@ -871,7 +871,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                     .with_project_path(&resolve_project_path()?)?
                     .build()
                     .await?;
-                
+
                 let databases: HashMap<String, DatabaseDetails> = config
                     .list_databases()?
                     .iter()
@@ -1385,7 +1385,7 @@ pub async fn start_server_and_web_app(
         if let Err(e) = EnumIndexManager::init_from_config(config.clone()).await {
             tracing::warn!("Failed to initialize enum index at startup: {}", e);
         }
-        
+
         Some(config)
     } else {
         None
@@ -1785,7 +1785,7 @@ async fn handle_semantic_engine_command(semantic_args: SemanticEngineArgs) -> Re
 
     if !cube_config_dir.exists() {
         println!("🔄 Generating Cube.js configuration from semantic layer...");
-        
+
         // Get database details from config
         let databases: HashMap<String, DatabaseDetails> = config
             .list_databases()?
@@ -1800,9 +1800,10 @@ async fn handle_semantic_engine_command(semantic_args: SemanticEngineArgs) -> Re
                 )
             })
             .collect();
-        
+
         // Process semantic layer to generate CubeJS schema
-        process_semantic_layer_to_cube(semantic_dir.clone(), cube_config_dir.clone(), databases).await?;
+        process_semantic_layer_to_cube(semantic_dir.clone(), cube_config_dir.clone(), databases)
+            .await?;
         println!("✅ Cube.js configuration generated successfully");
     }
 

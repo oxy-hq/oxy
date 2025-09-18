@@ -8,9 +8,7 @@ mod table;
 use lancedb::Connection;
 
 use crate::{
-    adapters::openai::OpenAIClient,
-    config::model::EmbeddingConfig,
-    errors::OxyError,
+    adapters::openai::OpenAIClient, config::model::EmbeddingConfig, errors::OxyError,
     service::retrieval::EnumIndexManager,
 };
 
@@ -75,6 +73,9 @@ impl VectorEngine for LanceDB {
     }
 
     async fn cleanup(&self) -> Result<(), OxyError> {
-        self.connection.drop_all_tables().await.map_err(OxyError::LanceDBError)
+        self.connection
+            .drop_all_tables()
+            .await
+            .map_err(OxyError::LanceDBError)
     }
 }

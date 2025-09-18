@@ -16,5 +16,3 @@ where
     let digest = hasher.finalize();
     hex::encode(digest)
 }
-
-

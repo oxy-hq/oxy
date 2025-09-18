@@ -3,29 +3,35 @@ use std::collections::{HashMap, HashSet};
 use aho_corasick::AhoCorasick;
 use minijinja::{Value, context};
 
-use crate::{
-    errors::OxyError,
-    execute::renderer::Renderer,
-};
-use super::{
-    types::{Match, EnumRoutingBlob, TemplateSpec},
-};
+use super::types::{EnumRoutingBlob, Match, TemplateSpec};
+use crate::{errors::OxyError, execute::renderer::Renderer};
 
 pub(crate) fn find_enum_matches(ac: &AhoCorasick, query: &str) -> Vec<Match> {
     ac.find_iter(query)
-        .map(|m| Match { pattern_id: m.pattern().as_u32(), start: m.start(), end: m.end() })
+        .map(|m| Match {
+            pattern_id: m.pattern().as_u32(),
+            start: m.start(),
+            end: m.end(),
+        })
         .collect()
 }
 
-pub(crate) fn get_templates_to_render<'a>(routing: &'a EnumRoutingBlob, matches: &[Match]) -> Vec<&'a TemplateSpec> {
+pub(crate) fn get_templates_to_render<'a>(
+    routing: &'a EnumRoutingBlob,
+    matches: &[Match],
+) -> Vec<&'a TemplateSpec> {
     // Build a bitmask of enum variables that were matched in the query
     let mut matched_mask: u64 = 0;
     for m in matches {
         let pid = m.pattern_id as usize;
-        if pid >= routing.pattern_to_lex.len() { continue; }
+        if pid >= routing.pattern_to_lex.len() {
+            continue;
+        }
         for entry in &routing.pattern_to_lex[pid] {
             let var_id = entry.var_id as usize;
-            if var_id < 64 { matched_mask |= 1u64 << var_id as u64; }
+            if var_id < 64 {
+                matched_mask |= 1u64 << var_id as u64;
+            }
         }
     }
 
@@ -33,11 +39,15 @@ pub(crate) fn get_templates_to_render<'a>(routing: &'a EnumRoutingBlob, matches:
     let mut template_ids: HashSet<u32> = HashSet::new();
     for m in matches {
         let pid = m.pattern_id as usize;
-        if pid >= routing.pattern_to_lex.len() { continue; }
+        if pid >= routing.pattern_to_lex.len() {
+            continue;
+        }
         for entry in &routing.pattern_to_lex[pid] {
             let var_id = entry.var_id as usize;
             if let Some(list) = routing.var_to_templates.get(var_id) {
-                for &tid in list.iter() { template_ids.insert(tid); }
+                for &tid in list.iter() {
+                    template_ids.insert(tid);
+                }
             }
         }
     }
@@ -51,7 +61,11 @@ pub(crate) fn get_templates_to_render<'a>(routing: &'a EnumRoutingBlob, matches:
         .collect()
 }
 
-pub(crate) fn render_enum_template(template: &TemplateSpec, matches: &[Match], routing: &EnumRoutingBlob) -> Result<String, OxyError> {
+pub(crate) fn render_enum_template(
+    template: &TemplateSpec,
+    matches: &[Match],
+    routing: &EnumRoutingBlob,
+) -> Result<String, OxyError> {
     let var_to_value = build_var_to_value_map(matches, routing);
 
     // Build a masked version of the template using precomputed non-enum spans
@@ -75,12 +89,13 @@ pub(crate) fn render_enum_template(template: &TemplateSpec, matches: &[Match], r
     Ok(rendered)
 }
 
-
 fn build_var_to_value_map(matches: &[Match], routing: &EnumRoutingBlob) -> HashMap<String, String> {
     let mut var_to_value: HashMap<String, String> = HashMap::new();
     for m in matches {
         let pid = m.pattern_id as usize;
-        if pid >= routing.patterns.len() || pid >= routing.pattern_to_lex.len() { continue; }
+        if pid >= routing.patterns.len() || pid >= routing.pattern_to_lex.len() {
+            continue;
+        }
         let enum_value = routing.patterns[pid].clone();
         for entry in &routing.pattern_to_lex[pid] {
             let idx = entry.var_id as usize;
@@ -89,7 +104,9 @@ fn build_var_to_value_map(matches: &[Match], routing: &EnumRoutingBlob) -> HashM
                 var_to_value
                     .entry(var_name)
                     .and_modify(|existing| {
-                        if enum_value.len() > existing.len() { *existing = enum_value.clone(); }
+                        if enum_value.len() > existing.len() {
+                            *existing = enum_value.clone();
+                        }
                     })
                     .or_insert(enum_value.clone());
             }
@@ -99,7 +116,9 @@ fn build_var_to_value_map(matches: &[Match], routing: &EnumRoutingBlob) -> HashM
 }
 
 fn mask_non_enum_spans(template: &TemplateSpec) -> (String, Vec<(String, String)>) {
-    let spans_iter = template.vars.iter()
+    let spans_iter = template
+        .vars
+        .iter()
         .filter(|var| !var.is_enum)
         .map(|var| (var.span.start as usize, var.span.end as usize));
     let mut masked_template = String::with_capacity(template.template.len());
@@ -133,7 +152,11 @@ fn restore_masked_spans(mut rendered: String, restorations: Vec<(String, String)
 /// Set a dotted value in a JSON map
 ///
 /// This is a helper function to set a value in a nested JSON map using a dotted path.
-fn set_nested(map: &mut serde_json::Map<String, serde_json::Value>, dotted: &str, value: serde_json::Value) {
+fn set_nested(
+    map: &mut serde_json::Map<String, serde_json::Value>,
+    dotted: &str,
+    value: serde_json::Value,
+) {
     let mut cursor = map;
     let mut parts = dotted.split('.').peekable();
     while let Some(part) = parts.next() {

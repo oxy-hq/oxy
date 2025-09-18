@@ -1,10 +1,7 @@
 use std::iter::once;
 
 use super::schema::SchemaUtils;
-use crate::config::constants::{
-    VECTOR_INDEX_MIN_ROWS,
-    RETRIEVAL_INCLUSIONS_TABLE,
-};
+use crate::config::constants::{RETRIEVAL_INCLUSIONS_TABLE, VECTOR_INDEX_MIN_ROWS};
 use crate::errors::OxyError;
 use arrow::array::{RecordBatch, RecordBatchIterator};
 use lancedb::{
@@ -25,12 +22,18 @@ impl TableManager {
     }
 
     pub(super) async fn get_or_create_table(&self, table_name: &str) -> Result<Table, OxyError> {
-        let table_result = self.connection.open_table(table_name.to_string()).execute().await;
+        let table_result = self
+            .connection
+            .open_table(table_name.to_string())
+            .execute()
+            .await;
         let expected_schema = match table_name {
             RETRIEVAL_INCLUSIONS_TABLE => SchemaUtils::create_retrieval_schema(self.n_dims),
-            _ => return Err(OxyError::RuntimeError(format!(
-                "Unknown table name for get_or_create_table: {table_name}"
-            ))),
+            _ => {
+                return Err(OxyError::RuntimeError(format!(
+                    "Unknown table name for get_or_create_table: {table_name}"
+                )));
+            }
         };
 
         let table = match table_result {
@@ -94,10 +97,13 @@ impl TableManager {
                 .iter()
                 .any(|index| index.columns.contains(&column.to_string()));
             if !has_index && num_rows >= VECTOR_INDEX_MIN_ROWS {
-                table.create_index(
-                    &[column.to_string()],
-                    Index::IvfHnswPq(IvfHnswPqIndexBuilder::default())
-                ).execute().await?;
+                table
+                    .create_index(
+                        &[column.to_string()],
+                        Index::IvfHnswPq(IvfHnswPqIndexBuilder::default()),
+                    )
+                    .execute()
+                    .await?;
             }
         }
 

@@ -1,8 +1,5 @@
 use crate::{
-    adapters::{
-        openai::IntoOpenAIConfig,
-        vector_store::VectorStore,
-    },
+    adapters::{openai::IntoOpenAIConfig, vector_store::VectorStore},
     errors::OxyError,
     execute::{
         Executable, ExecutionContext,
