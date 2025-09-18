@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use crate::{
     adapters::vector_store::{VectorStore, types::RetrievalObject},
     config::{
@@ -5,10 +6,12 @@ use crate::{
         model::{AgentConfig, AgentType, RouteRetrievalConfig, RoutingAgent, ToolType, Workflow},
     },
     errors::OxyError,
+    theme::StyledText,
 };
-use futures::StreamExt;
 use oxy_semantic::Topic;
-use std::{collections::HashSet, fs::read_to_string, path::PathBuf};
+use futures::StreamExt;
+use serde::{Deserialize, Serialize};
+use indoc::formatdoc;
 
 use parse::parse_retrieval_object;
 pub use parse::parse_sql_source_type;
@@ -16,28 +19,57 @@ pub use parse::parse_sql_source_type;
 pub mod parameterized;
 mod parse;
 
-trait DocumentSource {
-    fn description(&self) -> &str;
-    fn retrieval(&self) -> &Option<RouteRetrievalConfig>;
+// Minimal metadata used to build retrieval objects from various sources
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+struct RetrievalMetadata {
+    #[serde(default)]
+    description: Option<String>,
+    #[serde(default)]
+    retrieval: Option<RouteRetrievalConfig>,
+    #[serde(default)]
+    source_type: String,
 }
 
-impl DocumentSource for Workflow {
-    fn description(&self) -> &str {
-        &self.description
-    }
-
-    fn retrieval(&self) -> &Option<RouteRetrievalConfig> {
-        &self.retrieval
+impl From<&Workflow> for RetrievalMetadata {
+    fn from(w: &Workflow) -> Self {
+        RetrievalMetadata {
+            description: Some(w.description.clone()),
+            retrieval: w.retrieval.clone(),
+            source_type: "workflow".to_string(),
+        }
     }
 }
 
-impl DocumentSource for AgentConfig {
-    fn description(&self) -> &str {
-        &self.description
+impl From<&AgentConfig> for RetrievalMetadata {
+    fn from(a: &AgentConfig) -> Self {
+        RetrievalMetadata {
+            description: Some(a.description.clone()),
+            retrieval: a.retrieval.clone(),
+            source_type: "agent".to_string(),
+        }
     }
+}
 
-    fn retrieval(&self) -> &Option<RouteRetrievalConfig> {
-        &self.retrieval
+impl From<&Topic> for RetrievalMetadata {
+    fn from(t: &Topic) -> Self {
+        RetrievalMetadata {
+            description: Some(t.description.clone()),
+            retrieval: t.retrieval.as_ref().map(|r| RouteRetrievalConfig {
+                include: r.include.clone(),
+                exclude: r.exclude.clone(),
+            }),
+            source_type: "topic".to_string(),
+        }
+    }
+}
+
+impl RetrievalMetadata {
+    fn from_yaml_str(content: &str) -> Result<Self, OxyError> {
+        let mut r: RetrievalMetadata = serde_yaml::from_str(content).map_err(|e| {
+            OxyError::ConfigurationError(format!("Failed to parse YAML: {}", e))
+        })?;
+        r.source_type = "yaml".to_string();
+        Ok(r)
     }
 }
 
@@ -91,12 +123,18 @@ pub async fn build_all_retrieval_objects(
         }
     }
 
+    // Filter out empty retrieval objects (those with no inclusions)
+    let non_empty_objects: Vec<RetrievalObject> = all_objects
+        .into_iter()
+        .filter(|o| !o.inclusions.is_empty())
+        .collect();
+
     // Deduplicate by source_identifier, keeping first encountered
-    let initial_count = all_objects.len();
+    let initial_count = non_empty_objects.len();
     let mut seen_source_identifiers = HashSet::new();
     let mut deduplicated_objects = Vec::new();
 
-    for object in all_objects {
+    for object in non_empty_objects {
         if seen_source_identifiers.insert(object.source_identifier.clone()) {
             deduplicated_objects.push(object);
         }
@@ -113,6 +151,7 @@ pub async fn build_all_retrieval_objects(
     Ok(deduplicated_objects)
 }
 
+// TODO: This function probably doesn't belong in builders:: and should be moved
 pub async fn ingest_retrieval_objects(
     config: &ConfigManager,
     retrieval_objects: &[RetrievalObject],
@@ -180,66 +219,50 @@ pub async fn ingest_retrieval_objects(
     Ok(())
 }
 
-fn build_retrieval_object_from_source<T: DocumentSource>(
-    source: &T,
-    source_type: &str,
+fn build_retrieval_object(
+    metadata: RetrievalMetadata,
     file_path: &str,
 ) -> Result<RetrievalObject, OxyError> {
-    let nothing_to_embed = source.description().is_empty()
-        && source
-            .retrieval()
-            .as_ref()
-            .is_none_or(|retrieval| retrieval.include.is_empty());
-
-    if nothing_to_embed {
-        println!(
-            "WARNING: {source_type} {file_path} has empty description and no retrieval include patterns, skipping"
-        );
-        return Ok(RetrievalObject {
-            source_identifier: file_path.to_string(),
-            source_type: source_type.to_string(),
-            ..Default::default()
-        });
-    }
-
     let mut inclusions: Vec<String> = vec![];
     let mut exclusions: Vec<String> = vec![];
 
-    if let Some(retrieval) = source.retrieval() {
-        exclusions.extend(retrieval.exclude.clone());
-        if !source.description().is_empty() {
-            inclusions.push(source.description().to_string());
+    if let Some(retrieval) = metadata.retrieval {
+        exclusions.extend(retrieval.exclude);
+        if let Some(description) = metadata.description {
+            inclusions.push(description);
         }
-        inclusions.extend(retrieval.include.clone());
+        inclusions.extend(retrieval.include);
     } else {
-        println!(
-            "{source_type} {file_path} has no retrieval config, using description as inclusion and empty exclusions"
-        );
-        if source.description().is_empty() {
-            return Err(OxyError::ConfigurationError(format!(
-                "Unexpected state: {source_type} {file_path} has empty description and no retrieval config"
-            )));
+        // No retrieval block; use description only (already validated non-empty)
+        if let Some(description) = metadata.description {
+            inclusions.push(description);
         }
-        inclusions.push(source.description().to_string());
     }
 
+    // If nothing to include, return an empty retrieval object to be filtered out upstream
     if inclusions.is_empty() {
-        return Err(OxyError::ConfigurationError(format!(
-            "No embeddable content found for {source_type} {file_path}"
-        )));
+        println!(
+            "{}",
+            formatdoc!(
+                "⚠️  WARNING: No description or retrieval.include entries for {} source: {}",
+                metadata.source_type,
+                file_path
+            ).warning()
+        );
+        return Ok(RetrievalObject { ..Default::default() });
     }
 
     println!(
         "Created {} inclusions and {} exclusions for {}: {}",
         inclusions.len(),
         exclusions.len(),
-        source_type,
+        metadata.source_type,
         file_path
     );
 
     Ok(RetrievalObject {
         source_identifier: file_path.to_string(),
-        source_type: source_type.to_string(),
+        source_type: metadata.source_type,
         inclusions,
         exclusions,
         ..Default::default()
@@ -264,44 +287,14 @@ async fn build_retrieval_objects_from_routing_agent(
     let get_retrieval_object = async |path: String| -> Result<RetrievalObject, OxyError> {
         match &path {
             workflow_path if workflow_path.ends_with(".workflow.yml") => {
-                process_workflow_file(config, workflow_path).await
+                workflow_to_retrieval_object(config, workflow_path).await
             }
             agent_path if agent_path.ends_with(".agent.yml") => {
-                process_agent_file(config, agent_path).await
+                agent_to_retrieval_object(config, agent_path).await
             }
+            sql_path if path.ends_with(".sql") => sql_to_retrieval_object(config, sql_path).await,
             topic_path if topic_path.ends_with(".topic.yml") => {
-                process_topic_file(config, topic_path).await
-            }
-            sql_path if path.ends_with(".sql") => {
-                let content = tokio::fs::read_to_string(sql_path).await?;
-                let mut obj = parse_retrieval_object(sql_path, &content);
-
-                // Filter inclusions by valid database references; keep exclusions as-is
-                if let Some(database_ref) = parse_sql_source_type(&obj.source_type) {
-                    if let Err(e) = config.resolve_database(&database_ref) {
-                        println!(
-                            "WARNING: Invalid database reference '{}' in {}: {:?}. Dropping inclusions for this file",
-                            database_ref, sql_path, e
-                        );
-                        obj.inclusions.clear();
-                    }
-                } else {
-                    if !obj.inclusions.is_empty() {
-                        println!(
-                            "WARNING: Could not parse database reference from source_type '{}' for inclusion(s) in {}. Dropping inclusions.",
-                            obj.source_type, sql_path
-                        );
-                        obj.inclusions.clear();
-                    }
-                }
-
-                println!(
-                    "Created {} inclusions and {} exclusions from SQL file: {}",
-                    obj.inclusions.len(),
-                    obj.exclusions.len(),
-                    sql_path
-                );
-                Ok(obj)
+                topic_to_retrieval_object(topic_path).await
             }
             _ => Err(OxyError::ConfigurationError(format!(
                 "Unsupported file format for path: {path}"
@@ -341,13 +334,50 @@ async fn build_retrieval_objects_from_routing_agent(
     Ok(all_objects)
 }
 
-async fn process_workflow_file(
+async fn build_retrieval_objects_from_files(
+    src: &Vec<String>,
+    config: &ConfigManager,
+) -> Result<Vec<RetrievalObject>, OxyError> {
+    let files = config.resolve_glob(src).await?;
+    if files.is_empty() {
+        println!("WARNING: No files found from glob patterns: {:?}", src);
+        return Ok(vec![]);
+    }
+
+    let get_retrieval_object = async |path: String| -> Result<RetrievalObject, OxyError> {
+        match &path {
+            sql_path if sql_path.ends_with(".sql") => sql_to_retrieval_object(config, sql_path).await,
+            yaml_path if yaml_path.ends_with(".yml") || yaml_path.ends_with(".yaml") => {
+                yaml_to_retrieval_object(yaml_path).await
+            }
+            _ => Err(OxyError::ConfigurationError(format!(
+                "Unsupported file format for path: {path}"
+            ))),
+        }
+    };
+
+    let objects_list = async_stream::stream! {
+        for path in files {
+            yield get_retrieval_object(path.to_string());
+        }
+    }
+    .buffered(10)
+    .collect::<Vec<_>>()
+    .await
+    .into_iter()
+    .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(objects_list)
+}
+
+async fn workflow_to_retrieval_object(
     config: &ConfigManager,
     workflow_path: &str,
 ) -> Result<RetrievalObject, OxyError> {
     let workflow = config.resolve_workflow(workflow_path).await?;
-    let mut obj = build_retrieval_object_from_source(&workflow, "workflow", workflow_path)?;
-
+    let metadata = RetrievalMetadata::from(&workflow);
+    let mut obj = build_retrieval_object(metadata, workflow_path)?;
+    
     // Add enum variable information for workflows
     if let Some(variables) = &workflow.variables {
         let (enum_vars, _) = variables.extract_enum_variables();
@@ -363,21 +393,55 @@ async fn process_workflow_file(
     Ok(obj)
 }
 
-async fn process_agent_file(
+async fn agent_to_retrieval_object(
     config: &ConfigManager,
     agent_path: &str,
 ) -> Result<RetrievalObject, OxyError> {
     let agent = config.resolve_agent(agent_path).await?;
-    build_retrieval_object_from_source(&agent, "agent", agent_path)
+    let metadata = RetrievalMetadata::from(&agent);
+
+    build_retrieval_object(metadata, agent_path)
 }
 
-async fn process_topic_file(
-    _config: &ConfigManager,
+async fn sql_to_retrieval_object(
+    config: &ConfigManager,
+    sql_path: &str,
+) -> Result<RetrievalObject, OxyError> {
+    let content = tokio::fs::read_to_string(sql_path).await?;
+    let mut obj = parse_retrieval_object(sql_path, &content);
+
+    // Filter inclusions by valid database references; keep exclusions as-is
+    if let Some(database_ref) = parse_sql_source_type(&obj.source_type) {
+        if let Err(e) = config.resolve_database(&database_ref) {
+            println!(
+                "WARNING: Invalid database reference '{}' in {}: {:?}. Dropping inclusions for this file",
+                database_ref, sql_path, e
+            );
+            obj.inclusions.clear();
+        }
+    } else if !obj.inclusions.is_empty() {
+        println!(
+            "WARNING: Could not parse database reference from source_type '{}' for inclusion(s) in {}. Dropping inclusions.",
+            obj.source_type, sql_path
+        );
+        obj.inclusions.clear();
+    }
+
+    println!(
+        "Created {} inclusions and {} exclusions from SQL file: {}",
+        obj.inclusions.len(),
+        obj.exclusions.len(),
+        sql_path
+    );
+
+    Ok(obj)
+}
+
+async fn topic_to_retrieval_object(
     topic_path: &str,
 ) -> Result<RetrievalObject, OxyError> {
     tracing::info!("Processing topic file: {}", topic_path);
 
-    // Read and parse the topic file
     let content = tokio::fs::read_to_string(topic_path).await.map_err(|e| {
         OxyError::ConfigurationError(format!("Failed to read topic file {}: {}", topic_path, e))
     })?;
@@ -385,52 +449,31 @@ async fn process_topic_file(
     let topic: Topic = serde_yaml::from_str(&content).map_err(|e| {
         OxyError::ConfigurationError(format!("Failed to parse topic file {}: {}", topic_path, e))
     })?;
-
-    let retrieval_object = RetrievalObject {
-        context_content: topic.description.clone(),
-        source_type: "topic".to_string(),
-        source_identifier: topic_path.to_string(),
-        inclusions: topic.inclusions,
-        exclusions: topic.exclusions,
-        ..Default::default()
-    };
+    
+    let metadata = RetrievalMetadata::from(&topic);
+    let obj = build_retrieval_object(metadata, topic_path)?;
 
     println!(
         "Created retrieval object for topic: {} from file: {}",
         topic.name, topic_path
     );
 
-    Ok(retrieval_object)
+    Ok(obj)
 }
 
-async fn build_retrieval_objects_from_files(
-    src: &Vec<String>,
-    config: &ConfigManager,
-) -> anyhow::Result<Vec<RetrievalObject>> {
-    let files = config.resolve_glob(src).await?;
-    println!("{}", format!("Found: {:?}", files));
+async fn yaml_to_retrieval_object(
+    yaml_path: &str,
+) -> Result<RetrievalObject, OxyError> {
+    let raw_content = tokio::fs::read_to_string(yaml_path).await?;
+    let metadata = RetrievalMetadata::from_yaml_str(&raw_content)?;
+    let mut obj = build_retrieval_object(metadata, yaml_path)?;
+    obj.context_content = raw_content;
+    println!(
+        "Created {} inclusions and {} exclusions from YAML file: {}",
+        obj.inclusions.len(),
+        obj.exclusions.len(),
+        yaml_path
+    );
 
-    let mut all_objects: Vec<RetrievalObject> = vec![];
-
-    for file in files.iter() {
-        if let Ok(content) = read_to_string(file) {
-            if !content.is_empty() {
-                let obj = parse_retrieval_object(file, content.as_str());
-                let file_name = PathBuf::from(file)
-                    .file_name()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-                    .to_string();
-                tracing::info!(
-                    "Found {} inclusions and {} exclusions for file: {:?}",
-                    obj.inclusions.len(),
-                    obj.exclusions.len(),
-                    file_name
-                );
-                all_objects.push(obj);
-            }
-        }
-    }
-
-    Ok(all_objects)
+    Ok(obj)
 }

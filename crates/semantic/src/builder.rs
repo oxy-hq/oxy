@@ -1,5 +1,4 @@
-use crate::models::*;
-use crate::validation::SemanticValidator;
+use crate::{models::*, validation::SemanticValidator};
 use std::collections::HashMap;
 
 /// Builder for creating Entity instances
@@ -533,8 +532,7 @@ pub struct TopicBuilder {
     name: Option<String>,
     description: Option<String>,
     views: Vec<String>,
-    inclusions: Vec<String>,
-    exclusions: Vec<String>,
+    retrieval: Option<TopicRetrievalConfig>,
 }
 
 impl TopicBuilder {
@@ -543,8 +541,7 @@ impl TopicBuilder {
             name: None,
             description: None,
             views: Vec::new(),
-            inclusions: Vec::new(),
-            exclusions: Vec::new(),
+            retrieval: None,
         }
     }
 
@@ -577,8 +574,7 @@ impl TopicBuilder {
             name: self.name.ok_or("Topic name is required")?,
             description: self.description.ok_or("Topic description is required")?,
             views: self.views,
-            inclusions: self.inclusions,
-            exclusions: self.exclusions,
+            retrieval: self.retrieval,
         };
 
         let validation = topic.validate();

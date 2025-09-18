@@ -174,6 +174,18 @@ pub enum AccessLevel {
     Restricted,
 }
 
+/// Configuration for topic's retrieval by agents
+/// This mirrors RouteRetrievalConfig in oxy::core
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default)]
+pub struct TopicRetrievalConfig {
+    /// List of prompts that include this topic for retrieval
+    #[serde(default)]
+    pub include: Vec<String>,
+    /// List of prompts that exclude this topic from retrieval
+    #[serde(default)]
+    pub exclude: Vec<String>,
+}
+
 /// Represents a topic in the semantic layer
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Topic {
@@ -183,12 +195,10 @@ pub struct Topic {
     pub description: String,
     /// List of view names included in this topic
     pub views: Vec<String>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    /// Optional retrieval configuration for this topic
+    #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
-    pub inclusions: Vec<String>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    #[serde(default)]
-    pub exclusions: Vec<String>,
+    pub retrieval: Option<TopicRetrievalConfig>,
 }
 
 /// Represents the complete semantic layer configuration
