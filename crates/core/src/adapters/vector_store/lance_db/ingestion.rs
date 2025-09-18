@@ -111,7 +111,7 @@ impl IngestionManager {
 
         let mut retrieval_items: Vec<RetrievalItem> = Vec::new();
         for obj in retrieval_objects.iter() {
-            let content = obj.build_content(); // a retrieval object's inclusions all have the same content
+            let content = obj.determine_content(); // a retrieval object's inclusions all have the same content
             let mut exclusion_embeddings: Vec<Embedding> = Vec::with_capacity(obj.exclusions.len());
 
             for exclusion_text in obj.exclusions.iter() {

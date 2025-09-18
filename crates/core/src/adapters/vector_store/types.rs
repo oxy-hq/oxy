@@ -22,7 +22,16 @@ pub struct RetrievalObject {
 }
 
 impl RetrievalObject {
-    pub fn build_content(&self) -> String {
+    pub fn determine_content(&self) -> String {
+        // If this is a sql or general yaml source, return full context_content.
+        // This is so that when using retrieval tool, the full sql or yaml file contents
+        // can be injected into system instructions.
+        // TODO: we may want to truncate the context_content to a certain
+        //       number of lines/chars/tokens
+        if self.source_type.starts_with("sql::") || self.source_type == "yaml" {
+            return self.context_content.clone();
+        }
+
         let mut content_parts: Vec<String> = Vec::new();
 
         for inclusion in &self.inclusions {
@@ -35,23 +44,7 @@ impl RetrievalObject {
             content_parts.push(format!("DO NOT USE FOR PROMPT: '{exclusion}'"));
         }
 
-        let summary = content_parts.join("\n");
-
-        // If this is a SQL source, append the SQL query to the summary.
-        // This ensures that an LLM will still be able to choose this query
-        // if there are no inclusions. If there are inclusions, the LLM will
-        // see both the inclusion (summary) and the query (context_content)
-        // TODO: we may want to truncate the context_content to a certain
-        //       number of lines/chars/tokens
-        if self.source_type.starts_with("sql::") {
-            if !summary.is_empty() {
-                format!("{}\n\n{}", summary, self.context_content)
-            } else {
-                self.context_content.clone()
-            }
-        } else {
-            summary
-        }
+        return content_parts.join("\n");
     }
 }
 

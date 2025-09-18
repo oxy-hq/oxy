@@ -74,7 +74,6 @@ pub(super) fn parse_retrieval_object(id: &str, content: &str) -> RetrievalObject
         }
     };
     let comment_content = context_match[1].replace("\n*", "\n");
-    let context_content = context_match[2].to_string();
     let header_data: Result<ContextHeader, serde_yaml::Error> =
         serde_yaml::from_str(comment_content.as_str());
 
@@ -86,7 +85,7 @@ pub(super) fn parse_retrieval_object(id: &str, content: &str) -> RetrievalObject
             RetrievalObject {
                 source_identifier: id.to_string(),
                 source_type,
-                context_content: context_content.to_string(),
+                context_content: content.to_string(),
                 inclusions,
                 exclusions,
                 ..Default::default()
