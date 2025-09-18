@@ -1,7 +1,4 @@
-use std::{
-    path::PathBuf,
-    sync::Arc,
-};
+use std::{path::PathBuf, sync::Arc};
 
 use super::{
     engine::VectorEngine,
@@ -32,7 +29,12 @@ impl VectorStoreImpl {
         embedding_config: EmbeddingConfig,
         enum_index_manager: Arc<EnumIndexManager>,
     ) -> Self {
-        VectorStoreImpl::LanceDB(LanceDB::new(client, connection, embedding_config, enum_index_manager))
+        VectorStoreImpl::LanceDB(LanceDB::new(
+            client,
+            connection,
+            embedding_config,
+            enum_index_manager,
+        ))
     }
 }
 
@@ -66,7 +68,12 @@ impl VectorStore {
             }
         };
         Ok(Self {
-            inner: VectorStoreImpl::lance_db(client, connection, embedding_config, enum_index_manager),
+            inner: VectorStoreImpl::lance_db(
+                client,
+                connection,
+                embedding_config,
+                enum_index_manager,
+            ),
         })
     }
     pub async fn from_retrieval(

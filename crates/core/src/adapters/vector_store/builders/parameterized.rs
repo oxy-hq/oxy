@@ -1,8 +1,7 @@
 use std::collections::HashMap;
 
 use crate::{
-    adapters::vector_store::types::RetrievalObject,
-    errors::OxyError,
+    adapters::vector_store::types::RetrievalObject, errors::OxyError,
     service::retrieval::EnumIndexManager,
 };
 
@@ -25,7 +24,8 @@ pub async fn build_parameterized_retrieval_objects(
         return Ok(Vec::new());
     }
 
-    let mut retrieval_content_by_source: HashMap<String, (String, Vec<String>, Vec<String>)> = HashMap::new();
+    let mut retrieval_content_by_source: HashMap<String, (String, Vec<String>, Vec<String>)> =
+        HashMap::new();
     for item in rendered_templates.into_iter() {
         let source_identifier = item.source_identifier.clone();
         let (_source_type, inclusions, exclusions) = retrieval_content_by_source
@@ -39,7 +39,9 @@ pub async fn build_parameterized_retrieval_objects(
     }
 
     let mut results: Vec<RetrievalObject> = Vec::with_capacity(retrieval_content_by_source.len());
-    for (source_identifier, (source_type, inclusions, exclusions)) in retrieval_content_by_source.into_iter() {
+    for (source_identifier, (source_type, inclusions, exclusions)) in
+        retrieval_content_by_source.into_iter()
+    {
         results.push(RetrievalObject {
             source_identifier,
             source_type,

@@ -5,7 +5,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::{cube::models::DatabaseDetails, errors::SemanticLayerError, SemanticLayer};
+use crate::{SemanticLayer, cube::models::DatabaseDetails, errors::SemanticLayerError};
 
 use super::models::{CubeDataSource, CubeDataSourceConfig};
 
@@ -31,8 +31,7 @@ pub async fn generate_data_sources(
         if let Some(database) = databases.get(datasource_name) {
             let data_source = create_data_source(datasource_name, &database.db_type);
             data_sources.push(data_source);
-        }
-        else {
+        } else {
             return Err(SemanticLayerError::ConfigurationError(format!(
                 "Datasource '{}' referenced in views but not found in database configurations",
                 datasource_name

@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
+use serde::{Deserialize, Serialize};
 
 pub type SemanticEnum = (String, Vec<String>);
 

@@ -1,24 +1,19 @@
-use std::{
-    sync::Arc,
-    collections::HashSet,
-};
+use std::{collections::HashSet, sync::Arc};
 
 use crate::{
     adapters::{
         openai::OpenAIClient,
         vector_store::{
-            types::{RetrievalItem, RetrievalObject, Embedding},
             builders::parameterized::build_parameterized_retrieval_objects,
             embedding::create_embeddings_batched,
+            types::{Embedding, RetrievalItem, RetrievalObject},
         },
     },
     config::{
         constants::{
-            RETRIEVAL_DEFAULT_INCLUSION_RADIUS,
-            RETRIEVAL_CHILD_INCLUSION_RADIUS,
-            RETRIEVAL_EXCLUSION_BUFFER_MULTIPLIER,
+            RETRIEVAL_CHILD_INCLUSION_RADIUS, RETRIEVAL_DEFAULT_INCLUSION_RADIUS,
+            RETRIEVAL_EMBEDDINGS_COLUMN, RETRIEVAL_EXCLUSION_BUFFER_MULTIPLIER,
             RETRIEVAL_INCLUSIONS_TABLE,
-            RETRIEVAL_EMBEDDINGS_COLUMN,
         },
         model::EmbeddingConfig,
     },
@@ -26,11 +21,7 @@ use crate::{
     service::retrieval::EnumIndexManager,
 };
 
-use super::{
-    math::MathUtils,
-    serialization::SerializationUtils,
-    table::TableManager,
-};
+use super::{math::MathUtils, serialization::SerializationUtils, table::TableManager};
 
 pub(super) struct IngestionManager {
     client: OpenAIClient,
@@ -51,8 +42,14 @@ impl IngestionManager {
         }
     }
 
-    pub(super) async fn ingest(&self, retrieval_objects: &Vec<RetrievalObject>, reindex: bool) -> Result<(), OxyError> {
-        let retrieval_items = self.build_retrieval_items_to_ingest(retrieval_objects).await?;
+    pub(super) async fn ingest(
+        &self,
+        retrieval_objects: &Vec<RetrievalObject>,
+        reindex: bool,
+    ) -> Result<(), OxyError> {
+        let retrieval_items = self
+            .build_retrieval_items_to_ingest(retrieval_objects)
+            .await?;
         let retrieval_batch = if retrieval_items.is_empty() {
             return Ok(());
         } else {
@@ -65,14 +62,18 @@ impl IngestionManager {
 
         tracing::info!("Total retrieval items to ingest: {}", retrieval_rows);
 
-        let retrieval_table = self.table_manager.get_or_create_table(RETRIEVAL_INCLUSIONS_TABLE).await?;
-        self.table_manager.upsert_batch(&retrieval_table, retrieval_batch).await?;
-        
+        let retrieval_table = self
+            .table_manager
+            .get_or_create_table(RETRIEVAL_INCLUSIONS_TABLE)
+            .await?;
+        self.table_manager
+            .upsert_batch(&retrieval_table, retrieval_batch)
+            .await?;
+
         if reindex {
-            self.table_manager.reindex_and_optimize(
-                &retrieval_table,
-                &[RETRIEVAL_EMBEDDINGS_COLUMN]
-            ).await?;
+            self.table_manager
+                .reindex_and_optimize(&retrieval_table, &[RETRIEVAL_EMBEDDINGS_COLUMN])
+                .await?;
         }
 
         Ok(())
@@ -83,8 +84,11 @@ impl IngestionManager {
         enum_index_manager: &EnumIndexManager,
         query: &str,
     ) -> Result<(), OxyError> {
-        let param_objects = build_parameterized_retrieval_objects(enum_index_manager, query).await?;
-        if param_objects.is_empty() { return Ok(()); }
+        let param_objects =
+            build_parameterized_retrieval_objects(enum_index_manager, query).await?;
+        if param_objects.is_empty() {
+            return Ok(());
+        }
 
         // Since this function only runs at query time, we don't reindex to avoid
         // latency - may want to schedule reindexing thru background job eventually
@@ -97,9 +101,13 @@ impl IngestionManager {
         retrieval_objects: &Vec<RetrievalObject>,
     ) -> Result<Vec<RetrievalItem>, OxyError> {
         let all_texts_to_embed = self.collect_unique_retrieval_strings(retrieval_objects);
-        let all_embeddings = create_embeddings_batched(&self.client, &self.embedding_config, &all_texts_to_embed).await?;
-        let text_to_embedding: std::collections::HashMap<String, Embedding> =
-            all_texts_to_embed.into_iter().zip(all_embeddings.into_iter()).collect();
+        let all_embeddings =
+            create_embeddings_batched(&self.client, &self.embedding_config, &all_texts_to_embed)
+                .await?;
+        let text_to_embedding: std::collections::HashMap<String, Embedding> = all_texts_to_embed
+            .into_iter()
+            .zip(all_embeddings.into_iter())
+            .collect();
 
         let mut retrieval_items: Vec<RetrievalItem> = Vec::new();
         for obj in retrieval_objects.iter() {
@@ -107,30 +115,39 @@ impl IngestionManager {
             let mut exclusion_embeddings: Vec<Embedding> = Vec::with_capacity(obj.exclusions.len());
 
             for exclusion_text in obj.exclusions.iter() {
-                let embedding = text_to_embedding
-                    .get(exclusion_text)
-                    .cloned()
-                    .ok_or_else(|| OxyError::RuntimeError(format!("Embedding not found for exclusion: {exclusion_text}")))?;
+                let embedding =
+                    text_to_embedding
+                        .get(exclusion_text)
+                        .cloned()
+                        .ok_or_else(|| {
+                            OxyError::RuntimeError(format!(
+                                "Embedding not found for exclusion: {exclusion_text}"
+                            ))
+                        })?;
                 exclusion_embeddings.push(embedding.clone());
             }
 
             for inclusion_text in obj.inclusions.iter() {
-                let embedding = text_to_embedding
-                    .get(inclusion_text)
-                    .cloned()
-                    .ok_or_else(|| OxyError::RuntimeError(format!("Embedding not found for inclusion: {inclusion_text}")))?;
+                let embedding =
+                    text_to_embedding
+                        .get(inclusion_text)
+                        .cloned()
+                        .ok_or_else(|| {
+                            OxyError::RuntimeError(format!(
+                                "Embedding not found for inclusion: {inclusion_text}"
+                            ))
+                        })?;
                 let max_radius = if obj.is_child {
                     RETRIEVAL_CHILD_INCLUSION_RADIUS
                 } else {
                     RETRIEVAL_DEFAULT_INCLUSION_RADIUS
                 };
-                
+
                 let radius = if exclusion_embeddings.is_empty() {
                     max_radius
                 } else {
                     match MathUtils::find_min_distance(&embedding, &exclusion_embeddings) {
-                        Ok(Some(d)) => (d * RETRIEVAL_EXCLUSION_BUFFER_MULTIPLIER)
-                            .min(max_radius),
+                        Ok(Some(d)) => (d * RETRIEVAL_EXCLUSION_BUFFER_MULTIPLIER).min(max_radius),
                         Ok(None) => max_radius,
                         Err(e) => {
                             return Err(OxyError::RuntimeError(format!(
@@ -154,7 +171,10 @@ impl IngestionManager {
         Ok(retrieval_items)
     }
 
-    fn collect_unique_retrieval_strings(&self, retrieval_objects: &Vec<RetrievalObject>) -> Vec<String> {
+    fn collect_unique_retrieval_strings(
+        &self,
+        retrieval_objects: &Vec<RetrievalObject>,
+    ) -> Vec<String> {
         let mut seen: HashSet<&str> = HashSet::new();
         let mut unique_texts: Vec<String> = Vec::new();
 

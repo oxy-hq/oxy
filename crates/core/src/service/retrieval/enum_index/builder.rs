@@ -1,14 +1,10 @@
-use std::collections::{HashMap, HashSet};
 use indoc::formatdoc;
+use std::collections::{HashMap, HashSet};
 
-use crate::{
-    adapters::vector_store::RetrievalObject,
-    errors::OxyError,
-    theme::StyledText,
-};
+use crate::{adapters::vector_store::RetrievalObject, errors::OxyError, theme::StyledText};
 
-use super::{
-    types::{LexEntry, PlaceholderSpan, EnumRoutingBlob, TemplateSpec, TemplateVar, SemanticEnum},
+use super::types::{
+    EnumRoutingBlob, LexEntry, PlaceholderSpan, SemanticEnum, TemplateSpec, TemplateVar,
 };
 
 /// Private builder that encapsulates state and invariants
@@ -66,7 +62,10 @@ impl IndexBuilder {
                     pid
                 };
                 if let Some(entries) = self.pid_to_lex_entries.get_mut(pid) {
-                    entries.push(LexEntry { var_id, value_id: value_id_u16 });
+                    entries.push(LexEntry {
+                        var_id,
+                        value_id: value_id_u16,
+                    });
                 }
             }
         }
@@ -75,12 +74,12 @@ impl IndexBuilder {
     fn build_template_specs(&mut self, retrieval_obj: &RetrievalObject) {
         // Build one flat list of (text, is_exclusion)
         let mut entries: Vec<(String, bool)> = Vec::new();
-        
+
         // Add inclusions (non-exclusion entries)
         for inclusion in &retrieval_obj.inclusions {
             entries.push((inclusion.clone(), false));
         }
-        
+
         // Add exclusions
         for exclusion in &retrieval_obj.exclusions {
             entries.push((exclusion.clone(), true));
@@ -112,18 +111,18 @@ impl IndexBuilder {
             let mut enum_vars_mask: u64 = 0;
             let mut vars: Vec<TemplateVar> = Vec::new();
             let mut seen_var_names: HashSet<String> = HashSet::new();
-            
+
             for (start, end, var_name) in spans {
                 if var_name.is_empty() {
                     continue;
                 }
-                
+
                 // Skip duplicates
                 if seen_var_names.contains(&var_name) {
                     continue;
                 }
                 seen_var_names.insert(var_name.clone());
-                
+
                 let is_enum = if let Some(&id) = self.var_name_to_id.get(var_name.as_str()) {
                     if (id as usize) < 64 {
                         enum_vars_mask |= 1u64 << id as u64;
@@ -132,26 +131,36 @@ impl IndexBuilder {
                 } else {
                     false
                 };
-                
+
                 vars.push(TemplateVar {
                     name: var_name,
-                    span: PlaceholderSpan { start: start as u32, end: end as u32 },
+                    span: PlaceholderSpan {
+                        start: start as u32,
+                        end: end as u32,
+                    },
                     is_enum,
                 });
             }
 
             // Skip templates with no enum variables
-            if enum_vars_mask == 0 { continue; }
+            if enum_vars_mask == 0 {
+                continue;
+            }
 
             // Collect non-enum variables for warning
-            let non_enum_var_names: Vec<String> = vars.iter()
+            let non_enum_var_names: Vec<String> = vars
+                .iter()
                 .filter(|var| !var.is_enum)
                 .map(|var| var.name.clone())
                 .collect();
 
-            let formatted_non_enum_var_names = non_enum_var_names.iter().map(|var| format!("  • {}", var)).collect::<String>();
+            let formatted_non_enum_var_names = non_enum_var_names
+                .iter()
+                .map(|var| format!("  • {}", var))
+                .collect::<String>();
             if !non_enum_var_names.is_empty() {
-                println!("{}",
+                println!(
+                    "{}",
                     formatdoc!(
                         "⚠️  WARNING: Non-enum variables were detected in the retrieval config for
                         {}:
@@ -168,7 +177,8 @@ impl IndexBuilder {
                         values, which are often not sufficient for high recall.",
                         retrieval_obj.source_identifier,
                         formatted_non_enum_var_names,
-                    ).warning()
+                    )
+                    .warning()
                 );
             }
 
@@ -216,7 +226,10 @@ impl IndexBuilder {
 }
 
 /// Build routing blob entirely in-memory from configuration
-pub(crate) fn build_routing_blob(retrieval_objects: &[RetrievalObject], semantic_enums: &[SemanticEnum]) -> Result<EnumRoutingBlob, OxyError> {
+pub(crate) fn build_routing_blob(
+    retrieval_objects: &[RetrievalObject],
+    semantic_enums: &[SemanticEnum],
+) -> Result<EnumRoutingBlob, OxyError> {
     let mut builder = IndexBuilder::new();
 
     // 1) Seed with semantic dimensions enums (e.g., dimensions.month)

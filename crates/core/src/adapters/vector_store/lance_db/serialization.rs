@@ -1,11 +1,9 @@
 use crate::{
-    adapters::vector_store::{types::RetrievalItem, build_index_key},
+    adapters::vector_store::{build_index_key, types::RetrievalItem},
     config::constants::RETRIEVAL_EMBEDDINGS_COLUMN,
     errors::OxyError,
 };
-use arrow::{
-    array::{Array, FixedSizeListArray, Float32Array, RecordBatch, StringArray},
-};
+use arrow::array::{Array, FixedSizeListArray, Float32Array, RecordBatch, StringArray};
 use std::sync::Arc;
 
 pub(super) struct SerializationUtils;
@@ -17,8 +15,12 @@ impl SerializationUtils {
     ) -> Result<arrow::array::RecordBatch, OxyError> {
         let schema = super::schema::SchemaUtils::create_retrieval_schema(n_dims);
 
-        let contents = Arc::new(StringArray::from_iter_values(items.iter().map(|it| it.content.clone())));
-        let source_types = Arc::new(StringArray::from_iter_values(items.iter().map(|it| it.source_type.clone())));
+        let contents = Arc::new(StringArray::from_iter_values(
+            items.iter().map(|it| it.content.clone()),
+        ));
+        let source_types = Arc::new(StringArray::from_iter_values(
+            items.iter().map(|it| it.source_type.clone()),
+        ));
         let source_identifiers = Arc::new(StringArray::from_iter_values(
             items.iter().map(|it| it.source_identifier.clone()),
         ));
@@ -29,21 +31,35 @@ impl SerializationUtils {
         let embedding_contents = Arc::new(StringArray::from_iter_values(
             items.iter().map(|it| it.embedding_content.clone()),
         ));
-        let embeddings_array = Arc::new(
-            FixedSizeListArray::from_iter_primitive::<arrow::datatypes::Float32Type, _, _>(
-                items.iter().map(|it| {
-                    Some(it.embedding.iter().map(|&v| Some(v)).collect::<Vec<_>>())
-                }),
-                n_dims.try_into().unwrap(),
-            ),
-        );
-        let radius_array = Arc::new(Float32Array::from_iter_values(items.iter().map(|it| it.radius)));
+        let embeddings_array = Arc::new(FixedSizeListArray::from_iter_primitive::<
+            arrow::datatypes::Float32Type,
+            _,
+            _,
+        >(
+            items
+                .iter()
+                .map(|it| Some(it.embedding.iter().map(|&v| Some(v)).collect::<Vec<_>>())),
+            n_dims.try_into().unwrap(),
+        ));
+        let radius_array = Arc::new(Float32Array::from_iter_values(
+            items.iter().map(|it| it.radius),
+        ));
 
         let record_batch = arrow::array::RecordBatch::try_new(
             schema.clone(),
-            vec![contents, source_types, source_identifiers, upsert_keys, embedding_contents, embeddings_array, radius_array],
+            vec![
+                contents,
+                source_types,
+                source_identifiers,
+                upsert_keys,
+                embedding_contents,
+                embeddings_array,
+                radius_array,
+            ],
         )
-        .map_err(|e| OxyError::RuntimeError(format!("Failed to create retrieval RecordBatch: {e:?}")))?;
+        .map_err(|e| {
+            OxyError::RuntimeError(format!("Failed to create retrieval RecordBatch: {e:?}"))
+        })?;
 
         Ok(record_batch)
     }
@@ -90,7 +106,11 @@ impl SerializationUtils {
                 vec![]
             };
 
-            let radius = if !radius_array.is_null(i) { radius_array.value(i) } else { return Err(OxyError::RuntimeError("Null radius encountered".into())); };
+            let radius = if !radius_array.is_null(i) {
+                radius_array.value(i)
+            } else {
+                return Err(OxyError::RuntimeError("Null radius encountered".into()));
+            };
 
             let distance = if !distance_array.is_null(i) {
                 distance_array.value(i)

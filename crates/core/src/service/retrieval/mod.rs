@@ -1,5 +1,7 @@
 use crate::{
-    adapters::vector_store::{SearchRecord, build_all_retrieval_objects, ingest_retrieval_objects, search_agent},
+    adapters::vector_store::{
+        SearchRecord, build_all_retrieval_objects, ingest_retrieval_objects, search_agent,
+    },
     config::ConfigBuilder,
     errors::OxyError,
 };

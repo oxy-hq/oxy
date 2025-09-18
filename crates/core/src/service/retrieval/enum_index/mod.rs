@@ -1,5 +1,5 @@
-pub mod manager;
 pub mod builder;
+pub mod manager;
 pub mod renderer;
 pub mod types;
 

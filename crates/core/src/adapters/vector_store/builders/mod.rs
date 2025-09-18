@@ -1,9 +1,5 @@
-use std::{collections::HashSet, path::PathBuf, fs::read_to_string};
 use crate::{
-    adapters::vector_store::{
-        types::RetrievalObject,
-        VectorStore,
-    },
+    adapters::vector_store::{VectorStore, types::RetrievalObject},
     config::{
         ConfigManager,
         model::{AgentConfig, AgentType, RouteRetrievalConfig, RoutingAgent, ToolType, Workflow},
@@ -12,12 +8,13 @@ use crate::{
 };
 use futures::StreamExt;
 use oxy_semantic::Topic;
+use std::{collections::HashSet, fs::read_to_string, path::PathBuf};
 
 use parse::parse_retrieval_object;
 pub use parse::parse_sql_source_type;
 
-mod parse;
 pub mod parameterized;
+mod parse;
 
 trait DocumentSource {
     fn description(&self) -> &str;
@@ -44,7 +41,9 @@ impl DocumentSource for AgentConfig {
     }
 }
 
-pub async fn build_all_retrieval_objects(config: &ConfigManager) -> Result<Vec<RetrievalObject>, OxyError> {
+pub async fn build_all_retrieval_objects(
+    config: &ConfigManager,
+) -> Result<Vec<RetrievalObject>, OxyError> {
     let mut all_objects = Vec::new();
 
     for agent_dir in config.list_agents().await? {
@@ -58,7 +57,8 @@ pub async fn build_all_retrieval_objects(config: &ConfigManager) -> Result<Vec<R
                 println!("Processing DEFAULT agent: {}", agent.name);
                 for tool in &default_agent.tools_config.tools {
                     if let ToolType::Retrieval(retrieval) = tool {
-                        let objects = build_retrieval_objects_from_files(&retrieval.src, config).await?;
+                        let objects =
+                            build_retrieval_objects_from_files(&retrieval.src, config).await?;
                         if !objects.iter().any(|o| !o.inclusions.is_empty()) {
                             println!(
                                 "{}",
@@ -74,11 +74,15 @@ pub async fn build_all_retrieval_objects(config: &ConfigManager) -> Result<Vec<R
                 }
             }
             AgentType::Routing(routing_agent) => {
-                let objects = build_retrieval_objects_from_routing_agent(config, routing_agent).await?;
+                let objects =
+                    build_retrieval_objects_from_routing_agent(config, routing_agent).await?;
                 if !objects.iter().any(|o| !o.inclusions.is_empty()) {
                     println!(
                         "{}",
-                        format!("No inclusion records found for routing agent: {:?}", &agent.name)
+                        format!(
+                            "No inclusion records found for routing agent: {:?}",
+                            &agent.name
+                        )
                     );
                     continue;
                 }
@@ -91,13 +95,13 @@ pub async fn build_all_retrieval_objects(config: &ConfigManager) -> Result<Vec<R
     let initial_count = all_objects.len();
     let mut seen_source_identifiers = HashSet::new();
     let mut deduplicated_objects = Vec::new();
-    
+
     for object in all_objects {
         if seen_source_identifiers.insert(object.source_identifier.clone()) {
             deduplicated_objects.push(object);
         }
     }
-    
+
     let deduplicated_count = initial_count - deduplicated_objects.len();
     if deduplicated_count > 0 {
         println!(
@@ -105,7 +109,7 @@ pub async fn build_all_retrieval_objects(config: &ConfigManager) -> Result<Vec<R
             deduplicated_count, initial_count
         );
     }
-    
+
     Ok(deduplicated_objects)
 }
 
@@ -127,11 +131,11 @@ pub async fn ingest_retrieval_objects(
                     if let ToolType::Retrieval(retrieval) = tool {
                         let db =
                             VectorStore::from_retrieval(config, &agent.name, retrieval).await?;
-                        
+
                         if drop_all_tables {
                             db.cleanup().await?;
                         }
-                        
+
                         if !retrieval_objects.iter().any(|o| !o.inclusions.is_empty()) {
                             println!(
                                 "{}",
@@ -152,16 +156,20 @@ pub async fn ingest_retrieval_objects(
                     &agent.name,
                     &agent.model,
                     routing_agent,
-                ).await?;
-                
+                )
+                .await?;
+
                 if drop_all_tables {
                     db.cleanup().await?;
                 }
-                    
+
                 if !retrieval_objects.iter().any(|o| !o.inclusions.is_empty()) {
                     println!(
                         "{}",
-                        format!("No inclusion records found for routing agent: {:?}", &agent.name)
+                        format!(
+                            "No inclusion records found for routing agent: {:?}",
+                            &agent.name
+                        )
                     );
                     continue;
                 }
@@ -228,7 +236,7 @@ fn build_retrieval_object_from_source<T: DocumentSource>(
         source_type,
         file_path
     );
-    
+
     Ok(RetrievalObject {
         source_identifier: file_path.to_string(),
         source_type: source_type.to_string(),
@@ -320,7 +328,9 @@ async fn build_retrieval_objects_from_routing_agent(
     );
 
     if !all_objects.iter().any(|o| !o.inclusions.is_empty()) {
-        println!("WARNING: No inclusion records were created for routing agent. This may indicate:");
+        println!(
+            "WARNING: No inclusion records were created for routing agent. This may indicate:"
+        );
         println!("  - All workflow/agent files have empty descriptions");
         println!("  - Topic files have empty descriptions");
         println!("  - SQL files contain no valid embeddable content");
@@ -337,7 +347,7 @@ async fn process_workflow_file(
 ) -> Result<RetrievalObject, OxyError> {
     let workflow = config.resolve_workflow(workflow_path).await?;
     let mut obj = build_retrieval_object_from_source(&workflow, "workflow", workflow_path)?;
-    
+
     // Add enum variable information for workflows
     if let Some(variables) = &workflow.variables {
         let (enum_vars, _) = variables.extract_enum_variables();
@@ -349,7 +359,7 @@ async fn process_workflow_file(
             obj.enum_variables = Some(enum_variables);
         }
     }
-    
+
     Ok(obj)
 }
 
@@ -412,7 +422,7 @@ async fn build_retrieval_objects_from_files(
                     .to_string_lossy()
                     .to_string();
                 tracing::info!(
-                    "Found {} inclusions and {} exclusions for file: {:?}", 
+                    "Found {} inclusions and {} exclusions for file: {:?}",
                     obj.inclusions.len(),
                     obj.exclusions.len(),
                     file_name
