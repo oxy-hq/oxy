@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use crate::{
     adapters::vector_store::{VectorStore, types::RetrievalObject},
     config::{
@@ -8,10 +7,11 @@ use crate::{
     errors::OxyError,
     theme::StyledText,
 };
-use oxy_semantic::Topic;
 use futures::StreamExt;
-use serde::{Deserialize, Serialize};
 use indoc::formatdoc;
+use oxy_semantic::Topic;
+use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 
 use parse::parse_retrieval_object;
 pub use parse::parse_sql_source_type;
@@ -65,11 +65,21 @@ impl From<&Topic> for RetrievalMetadata {
 
 impl RetrievalMetadata {
     fn from_yaml_str(content: &str) -> Result<Self, OxyError> {
-        let mut r: RetrievalMetadata = serde_yaml::from_str(content).map_err(|e| {
-            OxyError::ConfigurationError(format!("Failed to parse YAML: {}", e))
-        })?;
+        let mut r: RetrievalMetadata = serde_yaml::from_str(content)
+            .map_err(|e| OxyError::ConfigurationError(format!("Failed to parse YAML: {}", e)))?;
         r.source_type = "yaml".to_string();
         Ok(r)
+    }
+
+    fn normalized_description(&self) -> Option<String> {
+        self.description.as_ref().and_then(|s| {
+            let t = s.trim();
+            if t.is_empty() {
+                None
+            } else {
+                Some(t.to_string())
+            }
+        })
     }
 }
 
@@ -226,17 +236,13 @@ fn build_retrieval_object(
     let mut inclusions: Vec<String> = vec![];
     let mut exclusions: Vec<String> = vec![];
 
+    if let Some(description) = metadata.normalized_description() {
+        inclusions.push(description);
+    }
+
     if let Some(retrieval) = metadata.retrieval {
         exclusions.extend(retrieval.exclude);
-        if let Some(description) = metadata.description {
-            inclusions.push(description);
-        }
         inclusions.extend(retrieval.include);
-    } else {
-        // No retrieval block; use description only (already validated non-empty)
-        if let Some(description) = metadata.description {
-            inclusions.push(description);
-        }
     }
 
     // If nothing to include, return an empty retrieval object to be filtered out upstream
@@ -247,9 +253,12 @@ fn build_retrieval_object(
                 "⚠️  WARNING: No description or retrieval.include entries for {} source: {}",
                 metadata.source_type,
                 file_path
-            ).warning()
+            )
+            .warning()
         );
-        return Ok(RetrievalObject { ..Default::default() });
+        return Ok(RetrievalObject {
+            ..Default::default()
+        });
     }
 
     println!(
@@ -346,7 +355,9 @@ async fn build_retrieval_objects_from_files(
 
     let get_retrieval_object = async |path: String| -> Result<RetrievalObject, OxyError> {
         match &path {
-            sql_path if sql_path.ends_with(".sql") => sql_to_retrieval_object(config, sql_path).await,
+            sql_path if sql_path.ends_with(".sql") => {
+                sql_to_retrieval_object(config, sql_path).await
+            }
             yaml_path if yaml_path.ends_with(".yml") || yaml_path.ends_with(".yaml") => {
                 yaml_to_retrieval_object(yaml_path).await
             }
@@ -377,7 +388,7 @@ async fn workflow_to_retrieval_object(
     let workflow = config.resolve_workflow(workflow_path).await?;
     let metadata = RetrievalMetadata::from(&workflow);
     let mut obj = build_retrieval_object(metadata, workflow_path)?;
-    
+
     // Add enum variable information for workflows
     if let Some(variables) = &workflow.variables {
         let (enum_vars, _) = variables.extract_enum_variables();
@@ -437,9 +448,7 @@ async fn sql_to_retrieval_object(
     Ok(obj)
 }
 
-async fn topic_to_retrieval_object(
-    topic_path: &str,
-) -> Result<RetrievalObject, OxyError> {
+async fn topic_to_retrieval_object(topic_path: &str) -> Result<RetrievalObject, OxyError> {
     tracing::info!("Processing topic file: {}", topic_path);
 
     let content = tokio::fs::read_to_string(topic_path).await.map_err(|e| {
@@ -449,7 +458,7 @@ async fn topic_to_retrieval_object(
     let topic: Topic = serde_yaml::from_str(&content).map_err(|e| {
         OxyError::ConfigurationError(format!("Failed to parse topic file {}: {}", topic_path, e))
     })?;
-    
+
     let metadata = RetrievalMetadata::from(&topic);
     let obj = build_retrieval_object(metadata, topic_path)?;
 
@@ -461,9 +470,7 @@ async fn topic_to_retrieval_object(
     Ok(obj)
 }
 
-async fn yaml_to_retrieval_object(
-    yaml_path: &str,
-) -> Result<RetrievalObject, OxyError> {
+async fn yaml_to_retrieval_object(yaml_path: &str) -> Result<RetrievalObject, OxyError> {
     let raw_content = tokio::fs::read_to_string(yaml_path).await?;
     let metadata = RetrievalMetadata::from_yaml_str(&raw_content)?;
     let mut obj = build_retrieval_object(metadata, yaml_path)?;
