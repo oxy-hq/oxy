@@ -30,7 +30,7 @@ impl Variables {
 
         for (name, schema) in &self.variables {
             if let Some(enum_values) = &schema.enum_values {
-                let values: Vec<serde_json::Value> = enum_values.iter().cloned().collect();
+                let values: Vec<serde_json::Value> = enum_values.to_vec();
                 if !values.is_empty() {
                     enum_vars.push((name.clone(), values));
                     continue;
@@ -120,10 +120,12 @@ impl Variables {
                 }
 
                 // Try parsing as float and converting to int
-                if let Ok(f) = trimmed.parse::<f64>() {
-                    if f.fract() == 0.0 && f >= i64::MIN as f64 && f <= i64::MAX as f64 {
-                        return Ok(Value::Number(serde_json::Number::from(f as i64)));
-                    }
+                if let Ok(f) = trimmed.parse::<f64>()
+                    && f.fract() == 0.0
+                    && f >= i64::MIN as f64
+                    && f <= i64::MAX as f64
+                {
+                    return Ok(Value::Number(serde_json::Number::from(f as i64)));
                 }
 
                 Err(OxyError::ArgumentError(format!(

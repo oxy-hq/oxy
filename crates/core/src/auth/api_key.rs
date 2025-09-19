@@ -26,10 +26,10 @@ impl ApiKeyAuthenticator {
     /// Extract API key from X-API-Key header only
     fn extract_api_key_from_headers(&self, headers: &HeaderMap) -> Option<String> {
         // Extract only from X-API-Key header
-        if let Some(api_key_header) = headers.get(self.api_key_header.as_str()) {
-            if let Ok(key_str) = api_key_header.to_str() {
-                return Some(key_str.trim().to_string());
-            }
+        if let Some(api_key_header) = headers.get(self.api_key_header.as_str())
+            && let Ok(key_str) = api_key_header.to_str()
+        {
+            return Some(key_str.trim().to_string());
         }
 
         None

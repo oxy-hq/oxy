@@ -8,7 +8,7 @@ where
     let mut first = true;
     for part in parts {
         if !first {
-            hasher.update(&[0x1f]);
+            hasher.update([0x1f]);
         }
         hasher.update(part.as_bytes());
         first = false;

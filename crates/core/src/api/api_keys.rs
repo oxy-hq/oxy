@@ -167,7 +167,7 @@ pub async fn create_api_key(
         user_id: user.id,
         name: request.name,
         expires_at: request.expires_at,
-        project_id: project_id,
+        project_id,
     };
 
     match ApiKeyService::create_api_key(&db, create_request, &config).await {

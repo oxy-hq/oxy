@@ -64,7 +64,7 @@ fn process_sequence_with_error_handling<T, F>(
     F: Fn(&serde_yaml::Value, usize) -> Result<Option<T>, String>,
     T: Into<DisplayWithError>,
 {
-    if let Some(serde_yaml::Value::Sequence(seq)) = root_map.get(&yaml_string_value(key)) {
+    if let Some(serde_yaml::Value::Sequence(seq)) = root_map.get(yaml_string_value(key)) {
         for (index, item_value) in seq.iter().enumerate() {
             match processor(item_value, index) {
                 Ok(Some(item)) => {

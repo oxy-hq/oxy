@@ -55,7 +55,7 @@ pub async fn list_agents(config_manager: ConfigManager) -> Result<Vec<String>, O
         .iter()
         .map(|absolute_path| {
             absolute_path
-                .strip_prefix(&project_path)
+                .strip_prefix(project_path)
                 .unwrap()
                 .to_string_lossy()
                 .to_string()

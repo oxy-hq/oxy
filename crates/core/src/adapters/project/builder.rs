@@ -70,8 +70,7 @@ impl ProjectBuilder {
 
         let secret_manager = self
             .secrets_manager
-            .or(Some(SecretsManager::from_environment().unwrap()))
-            .unwrap();
+            .unwrap_or(SecretsManager::from_environment().unwrap());
         Ok(ProjectManager::new(
             config_manager,
             secret_manager,

@@ -674,11 +674,11 @@ impl ChatService {
         }
 
         // If question is provided, validate it's not empty
-        if let Some(question) = payload.get_question() {
-            if question.trim().is_empty() {
-                tracing::warn!("Empty question provided");
-                return Err(StatusCode::BAD_REQUEST);
-            }
+        if let Some(question) = payload.get_question()
+            && question.trim().is_empty()
+        {
+            tracing::warn!("Empty question provided");
+            return Err(StatusCode::BAD_REQUEST);
         }
 
         Ok(())

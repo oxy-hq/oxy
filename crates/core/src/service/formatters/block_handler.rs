@@ -99,11 +99,11 @@ impl BlockHandler {
 
     async fn handle_artifact_finished(&mut self, source: &Source) -> Result<(), OxyError> {
         // Get the last block before it's closed (for artifact storage)
-        if let Some(active_block) = self.block_manager.last_block() {
-            if active_block.is_artifact() {
-                // Store artifact
-                self.artifact_tracker.store_artifact(active_block).await?;
-            }
+        if let Some(active_block) = self.block_manager.last_block()
+            && active_block.is_artifact()
+        {
+            // Store artifact
+            self.artifact_tracker.store_artifact(active_block).await?;
         }
 
         // Finish the artifact
@@ -216,14 +216,13 @@ impl BlockHandler {
     ) -> Result<(), OxyError> {
         if chunk.finished {
             // Process the final chunk
-            if let Some(content) = self.block_manager.finalize_content(&chunk.delta) {
-                if let Some(processed_content) = self.content_processor.output_to_content(&content)
-                {
-                    // Add the content to our blocks
-                    self.block_manager
-                        .add_content(source, processed_content)
-                        .await?;
-                }
+            if let Some(content) = self.block_manager.finalize_content(&chunk.delta)
+                && let Some(processed_content) = self.content_processor.output_to_content(&content)
+            {
+                // Add the content to our blocks
+                self.block_manager
+                    .add_content(source, processed_content)
+                    .await?;
             }
         } else {
             // Update the active content with this chunk
@@ -441,15 +440,15 @@ impl SourceHandler for BlockHandler {
                     _ => None,
                 };
 
-                if let Some(kind) = container_kind {
-                    if self.artifact_tracker.has_active_artifact() {
-                        tracing::info!(
-                            "Handling container started for active artifact: source_id={}, kind={}",
-                            source.id,
-                            kind
-                        );
-                        self.handle_container_started(source, &kind).await?;
-                    }
+                if let Some(kind) = container_kind
+                    && self.artifact_tracker.has_active_artifact()
+                {
+                    tracing::info!(
+                        "Handling container started for active artifact: source_id={}, kind={}",
+                        source.id,
+                        kind
+                    );
+                    self.handle_container_started(source, &kind).await?;
                 }
             }
 

@@ -57,7 +57,7 @@ impl VectorStore {
         let client =
             OpenAIClient::with_config(openai_config.into_openai_config(secrets_manager).await?);
         // Create minimal enum index config for VectorStore (main enum index is managed at higher level)
-        let enum_index_manager = Arc::new(EnumIndexManager::from_config(&config_manager).await?);
+        let enum_index_manager = Arc::new(EnumIndexManager::from_config(config_manager).await?);
         let connection = match &db_config {
             VectorDBConfig::LanceDB { db_path } => {
                 let resolved_root = config_manager.resolve_file(db_path).await?;
@@ -65,11 +65,11 @@ impl VectorStore {
                     .join(name)
                     .to_string_lossy()
                     .to_string();
-                let conn = connect(&db_path)
+
+                connect(&db_path)
                     .execute()
                     .await
-                    .map_err(OxyError::LanceDBError)?;
-                conn
+                    .map_err(OxyError::LanceDBError)?
             }
         };
         Ok(Self {

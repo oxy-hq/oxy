@@ -74,10 +74,10 @@ pub fn get_encryption_key() -> [u8; 32] {
     let key = Aes256Gcm::generate_key(&mut OsRng);
 
     // Ensure directory exists
-    if let Some(parent) = key_file_path.parent() {
-        if let Err(e) = fs::create_dir_all(parent) {
-            tracing::error!("Failed to create directory for encryption key: {}", e);
-        }
+    if let Some(parent) = key_file_path.parent()
+        && let Err(e) = fs::create_dir_all(parent)
+    {
+        tracing::error!("Failed to create directory for encryption key: {}", e);
     }
     // Encode key as base64 string
     let key_string = BASE64.encode(key);

@@ -91,7 +91,7 @@ pub async fn get_agents(
         .iter()
         .filter_map(|agent| {
             agent
-                .strip_prefix(&project_path)
+                .strip_prefix(project_path)
                 .ok()
                 .map(|path| path.to_string_lossy().to_string())
         })

@@ -8,18 +8,10 @@ use crate::errors::OxyError;
 
 static OXY_CONFIG: OnceLock<Result<OxyConfig, OxyError>> = OnceLock::new();
 
-#[derive(Serialize, Deserialize, Validate, Debug, Clone, JsonSchema)]
+#[derive(Serialize, Deserialize, Validate, Debug, Clone, JsonSchema, Default)]
 pub struct OxyConfig {
     #[garde(dive)]
     pub authentication: Option<Authentication>,
-}
-
-impl Default for OxyConfig {
-    fn default() -> Self {
-        Self {
-            authentication: None,
-        }
-    }
 }
 
 fn load_oxy_config() -> Result<OxyConfig, OxyError> {

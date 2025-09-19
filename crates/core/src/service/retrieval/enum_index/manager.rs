@@ -122,7 +122,7 @@ impl EnumIndexManager {
         let has_retrieval_enums = retrieval_objects.iter().any(|obj| {
             obj.enum_variables
                 .as_ref()
-                .map_or(false, |vars| !vars.is_empty())
+                .is_some_and(|vars| !vars.is_empty())
         });
 
         if has_semantic_enums || has_retrieval_enums {
@@ -170,7 +170,7 @@ impl EnumIndexManager {
 
             rendered.push(RenderedRetrievalTemplate {
                 rendered_text,
-                is_exclusion: template.is_exclusion.clone(),
+                is_exclusion: template.is_exclusion,
                 source_identifier: template.source_identifier.clone(),
                 source_type: template.source_type.clone(),
                 original_template: template.template.clone(),
@@ -218,13 +218,13 @@ impl EnumIndexManager {
         let json_bytes = serde_json::to_vec_pretty(&routing_blob).map_err(|e| {
             OxyError::RuntimeError(format!("Failed to serialize routing JSON: {e}"))
         })?;
-        fs::write(&self.config.routing_json_path(), json_bytes)
+        fs::write(self.config.routing_json_path(), json_bytes)
             .map_err(|e| OxyError::RuntimeError(format!("Failed to write routing JSON: {e}")))?;
 
         // Write rkyv
         let rkyv_bytes = rkyv::to_bytes::<_, 256>(&routing_blob)
             .map_err(|e| OxyError::RuntimeError(format!("Failed to archive routing blob: {e}")))?;
-        fs::write(&self.config.routing_rkyv_path(), rkyv_bytes)
+        fs::write(self.config.routing_rkyv_path(), rkyv_bytes)
             .map_err(|e| OxyError::RuntimeError(format!("Failed to write routing rkyv: {e}")))?;
 
         Ok(())
@@ -258,7 +258,7 @@ impl EnumIndexManager {
     }
 
     fn try_load_rkyv(&self) -> Result<EnumRoutingBlob, OxyError> {
-        let bytes = fs::read(&self.config.routing_rkyv_path())
+        let bytes = fs::read(self.config.routing_rkyv_path())
             .map_err(|e| OxyError::RuntimeError(format!("Failed to read rkyv file: {e}")))?;
         let archived: &Archived<EnumRoutingBlob> =
             rkyv::check_archived_root::<EnumRoutingBlob>(&bytes).map_err(|e| {
@@ -272,7 +272,7 @@ impl EnumIndexManager {
     }
 
     fn try_load_json(&self) -> Result<EnumRoutingBlob, OxyError> {
-        let bytes = fs::read(&self.config.routing_json_path())
+        let bytes = fs::read(self.config.routing_json_path())
             .map_err(|e| OxyError::RuntimeError(format!("Failed to read routing JSON: {e}")))?;
         let blob: EnumRoutingBlob = serde_json::from_slice(&bytes)
             .map_err(|e| OxyError::RuntimeError(format!("Failed to parse routing JSON: {e}")))?;

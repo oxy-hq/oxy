@@ -44,17 +44,16 @@ impl EventHandler for ExporterEventHandler {
                     finished: _,
                 },
         } = &event.kind
+            && let Some((sql, schema, batches)) = table.to_export()
         {
-            if let Some((sql, schema, batches)) = table.to_export() {
-                export_execute_sql(
-                    &self.export_info,
-                    &self.prompt,
-                    &sql,
-                    schema,
-                    batches,
-                    &self.export_info.path,
-                );
-            }
+            export_execute_sql(
+                &self.export_info,
+                &self.prompt,
+                &sql,
+                schema,
+                batches,
+                &self.export_info.path,
+            );
         }
         self.tx.send(event).await.map_err(|_| {
             OxyError::RuntimeError("Failed to send event from exporter".to_string())

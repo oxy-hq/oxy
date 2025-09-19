@@ -94,11 +94,11 @@ impl LocalSource {
     }
 
     fn ensure_dir_exists(&self, path: &Path) {
-        if !path.exists() {
-            if let Err(e) = std::fs::create_dir_all(path) {
-                eprintln!("Error: Could not create directory: {e}");
-                std::process::exit(1);
-            }
+        if !path.exists()
+            && let Err(e) = std::fs::create_dir_all(path)
+        {
+            eprintln!("Error: Could not create directory: {e}");
+            std::process::exit(1);
         }
     }
 

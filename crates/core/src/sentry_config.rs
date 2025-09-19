@@ -38,15 +38,15 @@ pub fn init_sentry() -> Option<sentry::ClientInitGuard> {
         max_breadcrumbs: 100,
         before_send: Some(std::sync::Arc::new(|mut event| {
             // Filter out sensitive information
-            if let Some(exception) = event.exception.iter_mut().next() {
-                if let Some(stacktrace) = &mut exception.stacktrace {
-                    for frame in &mut stacktrace.frames {
-                        // Remove absolute paths to avoid leaking system information
-                        if let Some(filename) = &mut frame.filename {
-                            let project_root = env!("CARGO_MANIFEST_DIR");
-                            if let Some(stripped) = filename.strip_prefix(project_root) {
-                                *filename = stripped.trim_start_matches('/').to_string();
-                            }
+            if let Some(exception) = event.exception.iter_mut().next()
+                && let Some(stacktrace) = &mut exception.stacktrace
+            {
+                for frame in &mut stacktrace.frames {
+                    // Remove absolute paths to avoid leaking system information
+                    if let Some(filename) = &mut frame.filename {
+                        let project_root = env!("CARGO_MANIFEST_DIR");
+                        if let Some(stripped) = filename.strip_prefix(project_root) {
+                            *filename = stripped.trim_start_matches('/').to_string();
                         }
                     }
                 }

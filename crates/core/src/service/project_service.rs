@@ -90,7 +90,7 @@ impl ProjectService {
                 .one(db)
                 .await
                 .map_err(|e| Self::wrap_db_err("Database error when fetching branch", e))?
-                .ok_or_else(|| OxyError::RuntimeError(format!("Branch not found"))),
+                .ok_or_else(|| OxyError::RuntimeError("Branch not found".to_string())),
             None => Branches::find_by_id(project.active_branch_id)
                 .one(db)
                 .await
@@ -367,10 +367,9 @@ impl ProjectService {
             .one(&db)
             .await
             .map_err(|e| Self::wrap_db_err("Failed to find branch", e))?
+            && active.name == branch_name
         {
-            if active.name == branch_name {
-                return Ok(active);
-            }
+            return Ok(active);
         }
 
         let branch = Self::switch_project_branch(project_id, branch_name).await?;

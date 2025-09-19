@@ -215,7 +215,7 @@ impl OpenAIExecutable {
 
         // Try structured parsing first, fallback to plain text
         if tool_calls.is_empty()
-            && let Ok(data) = from_json_str::<AgentResponse>(&content)
+            && let Ok(data) = from_json_str::<AgentResponse>(content)
         {
             self.handle_structured_response(
                 execution_context,

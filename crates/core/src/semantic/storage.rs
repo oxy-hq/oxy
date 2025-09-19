@@ -289,11 +289,10 @@ impl Storage for SemanticFileStorage {
         if semantic_path.exists() {
             if let Ok(mut read_dir) = read_dir(&semantic_path).await {
                 while let Ok(Some(entry)) = read_dir.next_entry().await {
-                    if let Ok(file_type) = entry.file_type().await {
-                        if file_type.is_file() {
-                            potential_deleted_files
-                                .push(entry.path().to_string_lossy().to_string());
-                        }
+                    if let Ok(file_type) = entry.file_type().await
+                        && file_type.is_file()
+                    {
+                        potential_deleted_files.push(entry.path().to_string_lossy().to_string());
                     }
                 }
             }

@@ -59,7 +59,7 @@ impl SecretManagerService {
         Self {
             encryption_key,
             cache: Arc::new(RwLock::new(HashMap::new())),
-            project_id: project_id,
+            project_id,
         }
     }
 

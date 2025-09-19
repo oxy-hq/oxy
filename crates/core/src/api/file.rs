@@ -264,7 +264,7 @@ pub async fn get_diff_summary(
 ) -> Result<Json<Vec<FileStatus>>, StatusCode> {
     let repo_path = project_manager.config_manager.project_path();
 
-    match GitOperations::diff_numstat_summary(&repo_path).await {
+    match GitOperations::diff_numstat_summary(repo_path).await {
         Ok(file_statuses) => Ok(Json(file_statuses)),
         Err(e) => {
             tracing::error!("{:?}", e);
@@ -323,14 +323,14 @@ pub async fn get_file_from_git(
         })
         .await?;
     let relative_file_path = PathBuf::from(&file_path)
-        .strip_prefix(&repo_path)
+        .strip_prefix(repo_path)
         .map_err(|e| {
             tracing::info!("{:?}", e);
             StatusCode::BAD_REQUEST
         })?
         .to_string_lossy()
         .to_string();
-    let file_content = ProjectService::get_file_from_git(&repo_path, &relative_file_path).await?;
+    let file_content = ProjectService::get_file_from_git(repo_path, &relative_file_path).await?;
     Ok(extract::Json(file_content))
 }
 

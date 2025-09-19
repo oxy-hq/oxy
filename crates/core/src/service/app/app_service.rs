@@ -34,7 +34,7 @@ impl AppService {
         let root_map = self.parse_yaml_to_mapping(&yaml_content)?;
 
         let tasks_value = root_map
-            .get(&serde_yaml::Value::String(TASKS_KEY.to_string()))
+            .get(serde_yaml::Value::String(TASKS_KEY.to_string()))
             .ok_or_else(|| {
                 OxyError::ConfigurationError("No tasks found in app config".to_string())
             })?;

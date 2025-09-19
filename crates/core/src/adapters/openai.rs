@@ -192,14 +192,13 @@ impl IntoOpenAIConfig for Model {
                             config = config.with_api_base(api_url);
                         }
 
-                        if let Some(custom_headers) = custom_headers {
-                            if !custom_headers.is_empty() {
-                                let resolved_headers =
-                                    self.resolve_headers(secrets_manager).await?;
-                                let config_with_headers =
-                                    CustomOpenAIConfig::new(config, resolved_headers);
-                                return Ok(ConfigType::WithHeaders(config_with_headers));
-                            }
+                        if let Some(custom_headers) = custom_headers
+                            && !custom_headers.is_empty()
+                        {
+                            let resolved_headers = self.resolve_headers(secrets_manager).await?;
+                            let config_with_headers =
+                                CustomOpenAIConfig::new(config, resolved_headers);
+                            return Ok(ConfigType::WithHeaders(config_with_headers));
                         }
 
                         tracing::debug!("Creating default OpenAI config without custom headers");
@@ -322,7 +321,7 @@ impl OpenAIToolConfig for &ToolType {
             ToolType::CreateDataApp(v) => v.description.clone(),
             ToolType::SemanticQuery(s) => {
                 // Try to get enhanced description with semantic layer metadata
-                match get_semantic_query_description(s, &config) {
+                match get_semantic_query_description(s, config) {
                     Ok(desc) => desc,
                     Err(_) => {
                         format!(

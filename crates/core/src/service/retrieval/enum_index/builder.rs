@@ -207,10 +207,10 @@ impl IndexBuilder {
         let mut var_to_templates: Vec<Vec<u32>> = vec![Vec::new(); var_names.len()];
         for (tid, t) in self.templates.iter().enumerate() {
             for var in t.vars.iter() {
-                if var.is_enum {
-                    if let Some(var_id) = self.var_name_to_id.get(&var.name) {
-                        var_to_templates[*var_id as usize].push(tid as u32);
-                    }
+                if var.is_enum
+                    && let Some(var_id) = self.var_name_to_id.get(&var.name)
+                {
+                    var_to_templates[*var_id as usize].push(tid as u32);
                 }
             }
         }

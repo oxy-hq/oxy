@@ -131,10 +131,10 @@ pub struct Postgres {
 
 impl Postgres {
     pub async fn get_password(&self, secret_manager: &SecretsManager) -> Result<String, OxyError> {
-        if let Some(password) = &self.password {
-            if !password.is_empty() {
-                return Ok(password.clone());
-            }
+        if let Some(password) = &self.password
+            && !password.is_empty()
+        {
+            return Ok(password.clone());
         }
         let value = secret_manager
             .resolve_secret(self.password_var.as_deref().unwrap_or(""))
@@ -172,10 +172,10 @@ pub struct Redshift {
 
 impl Redshift {
     pub async fn get_password(&self, secret_manager: &SecretsManager) -> Result<String, OxyError> {
-        if let Some(password) = &self.password {
-            if !password.is_empty() {
-                return Ok(password.clone());
-            }
+        if let Some(password) = &self.password
+            && !password.is_empty()
+        {
+            return Ok(password.clone());
         }
         let value = secret_manager
             .resolve_secret(self.password_var.as_deref().unwrap_or(""))
@@ -213,10 +213,10 @@ pub struct Mysql {
 
 impl Mysql {
     pub async fn get_password(&self, secret_manager: &SecretsManager) -> Result<String, OxyError> {
-        if let Some(password) = &self.password {
-            if !password.is_empty() {
-                return Ok(password.clone());
-            }
+        if let Some(password) = &self.password
+            && !password.is_empty()
+        {
+            return Ok(password.clone());
         }
         let value = secret_manager
             .resolve_secret(self.password_var.as_deref().unwrap_or(""))
@@ -254,10 +254,10 @@ pub struct ClickHouse {
 
 impl ClickHouse {
     pub async fn get_password(&self, secret_manager: &SecretsManager) -> Result<String, OxyError> {
-        if let Some(password) = &self.password {
-            if !password.is_empty() {
-                return Ok(password.clone());
-            }
+        if let Some(password) = &self.password
+            && !password.is_empty()
+        {
+            return Ok(password.clone());
         }
         let value = secret_manager
             .resolve_secret(self.password_var.as_deref().unwrap_or(""))
@@ -509,7 +509,7 @@ impl Snowflake {
     pub fn validate_auth(&self) -> Result<(), OxyError> {
         let has_private_key = self.private_key_path.is_some();
         let has_password_var = self.password_var.is_some();
-        let has_password = self.password.as_ref().map_or(false, |p| !p.is_empty());
+        let has_password = self.password.as_ref().is_some_and(|p| !p.is_empty());
 
         if !has_private_key && !has_password_var && !has_password {
             return Err(OxyError::ConfigurationError(
@@ -524,10 +524,10 @@ impl Snowflake {
         // First validate that we have proper auth configuration
         self.validate_auth()?;
 
-        if let Some(password) = &self.password {
-            if !password.is_empty() {
-                return Ok(password.clone());
-            }
+        if let Some(password) = &self.password
+            && !password.is_empty()
+        {
+            return Ok(password.clone());
         }
 
         if let Some(password_var) = &self.password_var {

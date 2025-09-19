@@ -198,7 +198,7 @@ impl RunsStorage for RunsDatabaseStorage {
             backoff::ExponentialBackoffBuilder::default()
                 .with_max_elapsed_time(Some(AGENT_RETRY_MAX_ELAPSED_TIME))
                 .build(),
-            || new_run_func(),
+            new_run_func,
             |err, b| {
                 attempt += 1;
                 tracing::error!(

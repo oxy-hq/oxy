@@ -140,15 +140,15 @@ pub async fn update_user(
                     StatusCode::INTERNAL_SERVER_ERROR
                 })?;
 
-            if let Some(target_user) = target_user {
-                if target_user.role == UserRole::Admin {
-                    tracing::warn!(
-                        "User {} attempted to deactivate admin {}",
-                        current_user.email,
-                        target_user.email
-                    );
-                    return Err(StatusCode::FORBIDDEN);
-                }
+            if let Some(target_user) = target_user
+                && target_user.role == UserRole::Admin
+            {
+                tracing::warn!(
+                    "User {} attempted to deactivate admin {}",
+                    current_user.email,
+                    target_user.email
+                );
+                return Err(StatusCode::FORBIDDEN);
             }
         }
 

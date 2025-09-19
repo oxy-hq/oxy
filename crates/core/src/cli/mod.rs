@@ -813,7 +813,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             let secrets_manager = SecretsManager::from_environment()?;
             reindex(ReindexInput {
                 config: config_manager.clone(),
-                secrets_manager: secrets_manager,
+                secrets_manager,
                 drop_all_tables: build_args.drop_all_tables,
             })
             .await?;
@@ -1145,11 +1145,11 @@ pub async fn handle_run_command(run_args: RunArgs) -> Result<RunResult, OxyError
                 Ok(RunResult::Workflow)
             } else if file.ends_with(".agent.yml") {
                 handle_agent_file(&file_path, run_args.question).await?;
-                return Ok(RunResult::Agent);
+                Ok(RunResult::Agent)
             } else {
-                return Err(OxyError::ArgumentError(
+                Err(OxyError::ArgumentError(
                     "Invalid YAML file. Must be either *.workflow.yml or *.agent.yml".into(),
-                ));
+                ))
             }
         }
         Some("sql") => {
@@ -1442,39 +1442,39 @@ async fn handle_semantic_engine_command(semantic_args: SemanticEngineArgs) -> Re
         format!("CUBEJS_LOG_LEVEL={}", semantic_args.log_level),
     ];
 
-    if let Some(default_db) = config.default_database_ref() {
-        if let Ok(db_config) = config.resolve_database(default_db) {
-            // Add database URL to environment
-            let db_url = match &db_config.database_type {
-                crate::config::model::DatabaseType::Postgres(pg_config) => {
-                    format!(
-                        "postgresql://{}:{}@{}:{}/{}",
-                        pg_config.user.as_deref().unwrap_or("postgres"),
-                        pg_config.password.as_deref().unwrap_or(""),
-                        pg_config.host.as_deref().unwrap_or("localhost"),
-                        pg_config.port.as_deref().unwrap_or("5432"),
-                        pg_config.database.as_deref().unwrap_or("postgres")
-                    )
-                }
-                crate::config::model::DatabaseType::Mysql(mysql_config) => {
-                    format!(
-                        "mysql://{}:{}@{}:{}/{}",
-                        mysql_config.user.as_deref().unwrap_or("root"),
-                        mysql_config.password.as_deref().unwrap_or(""),
-                        mysql_config.host.as_deref().unwrap_or("localhost"),
-                        mysql_config.port.as_deref().unwrap_or("3306"),
-                        mysql_config.database.as_deref().unwrap_or("mysql")
-                    )
-                }
-                _ => {
-                    tracing::warn!("Database type not supported for Cube.js connection");
-                    String::new()
-                }
-            };
-
-            if !db_url.is_empty() {
-                env_vars.push(format!("CUBEJS_DB_URL={}", db_url));
+    if let Some(default_db) = config.default_database_ref()
+        && let Ok(db_config) = config.resolve_database(default_db)
+    {
+        // Add database URL to environment
+        let db_url = match &db_config.database_type {
+            crate::config::model::DatabaseType::Postgres(pg_config) => {
+                format!(
+                    "postgresql://{}:{}@{}:{}/{}",
+                    pg_config.user.as_deref().unwrap_or("postgres"),
+                    pg_config.password.as_deref().unwrap_or(""),
+                    pg_config.host.as_deref().unwrap_or("localhost"),
+                    pg_config.port.as_deref().unwrap_or("5432"),
+                    pg_config.database.as_deref().unwrap_or("postgres")
+                )
             }
+            crate::config::model::DatabaseType::Mysql(mysql_config) => {
+                format!(
+                    "mysql://{}:{}@{}:{}/{}",
+                    mysql_config.user.as_deref().unwrap_or("root"),
+                    mysql_config.password.as_deref().unwrap_or(""),
+                    mysql_config.host.as_deref().unwrap_or("localhost"),
+                    mysql_config.port.as_deref().unwrap_or("3306"),
+                    mysql_config.database.as_deref().unwrap_or("mysql")
+                )
+            }
+            _ => {
+                tracing::warn!("Database type not supported for Cube.js connection");
+                String::new()
+            }
+        };
+
+        if !db_url.is_empty() {
+            env_vars.push(format!("CUBEJS_DB_URL={}", db_url));
         }
     }
 

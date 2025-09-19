@@ -195,6 +195,12 @@ impl ParamMapper<SemanticQueryTask, ValidatedSemanticQuery> for SemanticQueryTas
 #[derive(Clone)]
 pub struct SemanticQueryExecutable;
 
+impl Default for SemanticQueryExecutable {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SemanticQueryExecutable {
     pub fn new() -> Self {
         Self
@@ -503,20 +509,20 @@ impl SemanticQueryExecutable {
         })?;
 
         // Check status
-        if let Some(status) = sql_obj.get("status").and_then(|s| s.as_str()) {
-            if status != "ok" {
-                let error_msg = sql_obj
-                    .get("error")
-                    .and_then(|e| e.as_str())
-                    .unwrap_or("Unknown error");
-                return Err(super::semantic_validator::SemanticQueryError::CubeJSError {
-                    details: format!(
-                        "CubeJS SQL generation failed with status '{}': {}",
-                        status, error_msg
-                    ),
-                }
-                .into());
+        if let Some(status) = sql_obj.get("status").and_then(|s| s.as_str())
+            && status != "ok"
+        {
+            let error_msg = sql_obj
+                .get("error")
+                .and_then(|e| e.as_str())
+                .unwrap_or("Unknown error");
+            return Err(super::semantic_validator::SemanticQueryError::CubeJSError {
+                details: format!(
+                    "CubeJS SQL generation failed with status '{}': {}",
+                    status, error_msg
+                ),
             }
+            .into());
         }
 
         let sql_array = sql_obj
@@ -529,7 +535,7 @@ impl SemanticQueryExecutable {
             )?;
 
         // Extract SQL query (first element)
-        let sql_template = sql_array.get(0).and_then(|s| s.as_str()).ok_or_else(|| {
+        let sql_template = sql_array.first().and_then(|s| s.as_str()).ok_or_else(|| {
             super::semantic_validator::SemanticQueryError::CubeJSError {
                 details: format!(
                     "CubeJS SQL response missing SQL query string in sql[0]. Got: {:?}",
@@ -630,7 +636,7 @@ impl SemanticQueryExecutable {
 
         // Create database connector
         let connector =
-            Connector::from_database(database_ref, &config_manager, &secret_manager, None).await?;
+            Connector::from_database(database_ref, config_manager, secret_manager, None).await?;
 
         // Execute SQL query
         tracing::info!("Executing SQL query: {}", sql);

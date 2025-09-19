@@ -80,19 +80,15 @@ impl SemanticVariablesContexts {
                         .map(|dim| {
                             let dim_name = dim.name.clone();
                             dim.try_into().map(|mut s| {
-                                match gsm.get(&dim_name) {
-                                    Some(dim) => {
-                                        let is_applied = dim
-                                            .targets
-                                            .iter()
-                                            .filter_map(|target| target.split('.').next_back())
-                                            .find(|t| *t == table_name.as_str())
-                                            .is_some();
-                                        if is_applied {
-                                            override_schema(&mut s, &dim.schema);
-                                        }
+                                if let Some(dim) = gsm.get(&dim_name) {
+                                    let is_applied = dim
+                                        .targets
+                                        .iter()
+                                        .filter_map(|target| target.split('.').next_back())
+                                        .any(|t| t == table_name.as_str());
+                                    if is_applied {
+                                        override_schema(&mut s, &dim.schema);
                                     }
-                                    None => {}
                                 }
                                 (dim_name, s)
                             })

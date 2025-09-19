@@ -184,7 +184,7 @@ async fn build_react_loop(
     let tools: Vec<ChatCompletionTool> = futures::future::join_all(
         tool_configs
             .iter()
-            .map(|tool| ChatCompletionTool::from_tool_async(tool, &config)),
+            .map(|tool| ChatCompletionTool::from_tool_async(tool, config)),
     )
     .await
     .into_iter()

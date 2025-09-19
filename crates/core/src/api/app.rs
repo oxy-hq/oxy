@@ -76,7 +76,7 @@ pub async fn list_apps(
         .iter()
         .filter_map(|app_path| {
             app_path
-                .strip_prefix(&project_path)
+                .strip_prefix(project_path)
                 .ok()
                 .map(|relative_path| {
                     let name = relative_path
