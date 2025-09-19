@@ -65,10 +65,8 @@ impl ParamMapper<EvalInput, Vec<(usize, EvalConfig, EvalTarget)>> for EvalMapper
         let EvalInput { target_ref, index } = input;
         let mapped_input = match &target_ref {
             workflow_ref if workflow_ref.ends_with("workflow.yml") => {
-                let workflow = execution_context
-                    .config
-                    .resolve_workflow(&target_ref)
-                    .await?;
+                let config_manager = &execution_context.project.config_manager;
+                let workflow = config_manager.resolve_workflow(&target_ref).await?;
                 Ok(workflow
                     .tests
                     .iter()
@@ -95,7 +93,8 @@ impl ParamMapper<EvalInput, Vec<(usize, EvalConfig, EvalTarget)>> for EvalMapper
                     .collect())
             }
             agent_ref if agent_ref.ends_with("agent.yml") => {
-                let agent = execution_context.config.resolve_agent(&target_ref).await?;
+                let config_manager = &execution_context.project.config_manager;
+                let agent = config_manager.resolve_agent(&target_ref).await?;
                 agent
                     .tests
                     .iter()

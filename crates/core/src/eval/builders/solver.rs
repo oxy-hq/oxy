@@ -88,11 +88,14 @@ impl Executable<(SolverKind, Vec<(TargetOutput, TargetOutput)>)> for SolverExecu
             EVAL_SOURCE.to_string(),
         );
 
+        let config_manager = &execution_context.project.config_manager;
+        let secret_manager = &execution_context.project.secrets_manager;
+
         match solver_kind {
             SolverKind::Similarity(llm_solver) => {
                 let model_ref = match &llm_solver.model_ref {
                     Some(model_ref) => model_ref,
-                    None => match execution_context.config.default_model() {
+                    None => match config_manager.default_model() {
                         Some(model_ref) => model_ref,
                         None => {
                             return Err(OxyError::ConfigurationError(
@@ -101,8 +104,8 @@ impl Executable<(SolverKind, Vec<(TargetOutput, TargetOutput)>)> for SolverExecu
                         }
                     },
                 };
-                let model = execution_context.config.resolve_model(model_ref)?;
-                let agent = build_openai_executable(model).await?;
+                let model = config_manager.resolve_model(model_ref)?;
+                let agent = build_openai_executable(model, secret_manager).await?;
                 let mut eval_executable = ExecutableBuilder::new()
                     .concurrency(self.concurrency)
                     .map(LLMSolverMapper {

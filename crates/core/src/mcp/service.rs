@@ -14,6 +14,12 @@ use rmcp::{
 use serde_json::{Map, Value, json};
 
 use crate::{
+    adapters::{
+        project::{builder::ProjectBuilder, manager::ProjectManager},
+        runs::RunsManager,
+        secrets::SecretsManager,
+    },
+    config::ConfigManager,
     errors::OxyError,
     service::{
         agent::{ask_adhoc, get_agent_config, list_agents},
@@ -37,7 +43,7 @@ pub struct OxyTool {
 
 #[derive(Debug, Clone)]
 pub struct OxyMcpServer {
-    pub project_path: PathBuf,
+    pub project_manager: ProjectManager,
     pub tools: HashMap<String, OxyTool>,
 }
 
@@ -106,10 +112,31 @@ impl ServerHandler for OxyMcpServer {
 
 impl OxyMcpServer {
     pub async fn new(project_path: PathBuf) -> Result<Self, OxyError> {
-        let tools = get_oxy_tools(project_path.clone()).await?;
+        let project_manager = ProjectBuilder::new()
+            .with_project_path(&project_path)
+            .await
+            .map_err(|e| OxyError::from(anyhow::anyhow!("Failed to create config manager: {e}")))?
+            .with_secrets_manager(SecretsManager::from_environment().map_err(|e| {
+                OxyError::from(anyhow::anyhow!("Failed to create secrets manager: {e}"))
+            })?)
+            .with_runs_manager(
+                RunsManager::default(uuid::Uuid::nil(), uuid::Uuid::nil())
+                    .await
+                    .map_err(|e| {
+                        OxyError::from(anyhow::anyhow!("Failed to create runs manager: {e}"))
+                    })?,
+            )
+            .build()
+            .await
+            .map_err(|e| OxyError::from(anyhow::anyhow!("Failed to create config manager: {e}")))?;
+
+        let config_manager = project_manager.config_manager.clone();
+
+        let tools = get_oxy_tools(config_manager).await?;
+
         Ok(Self {
-            project_path,
             tools,
+            project_manager,
         })
     }
 
@@ -118,7 +145,9 @@ impl OxyMcpServer {
         agent_name: String,
         arguments: Option<Map<String, Value>>,
     ) -> Result<CallToolResult, rmcp::Error> {
-        std::env::set_current_dir(&self.project_path).map_err(|e| {
+        let config_manager = self.project_manager.config_manager.clone();
+        let config = config_manager.get_config();
+        std::env::set_current_dir(&config.project_path).map_err(|e| {
             rmcp::Error::internal_error(format!("Failed to set current directory: {e}"), None)
         })?;
 
@@ -132,11 +161,15 @@ impl OxyMcpServer {
                     rmcp::Error::invalid_request("Missing 'question' parameter".to_string(), None),
                 )?;
 
-                let output = ask_adhoc(question.to_string(), self.project_path.clone(), agent_name)
-                    .await
-                    .map_err(|e| {
-                        rmcp::Error::internal_error(format!("Failed to ask agent: {e}"), None)
-                    })?;
+                let output = ask_adhoc(
+                    question.to_string(),
+                    self.project_manager.clone(),
+                    agent_name,
+                )
+                .await
+                .map_err(|e| {
+                    rmcp::Error::internal_error(format!("Failed to ask agent: {e}"), None)
+                })?;
                 Ok(CallToolResult {
                     content: vec![Content::text(output)],
                     is_error: Some(false),
@@ -150,7 +183,9 @@ impl OxyMcpServer {
         workflow_name: String,
         arguments: Option<Map<String, Value>>,
     ) -> Result<CallToolResult, rmcp::Error> {
-        std::env::set_current_dir(&self.project_path).map_err(|e| {
+        let config_manager = self.project_manager.config_manager.clone();
+        let config = config_manager.get_config();
+        std::env::set_current_dir(&config.project_path).map_err(|e| {
             rmcp::Error::internal_error(format!("Failed to set current directory: {e}"), None)
         })?;
 
@@ -162,7 +197,7 @@ impl OxyMcpServer {
                 .map(|v| json_to_hashmap(v.to_owned())),
         };
 
-        let workflows = list_workflows(Some(self.project_path.clone()))
+        let workflows = list_workflows(self.project_manager.config_manager.clone())
             .await
             .map_err(|e| {
                 rmcp::Error::internal_error(format!("Failed to list workflows: {e}"), None)
@@ -177,6 +212,7 @@ impl OxyMcpServer {
             NoopLogger {},
             RetryStrategy::NoRetry,
             variables,
+            self.project_manager.clone(),
         )
         .await
         .map_err(|e| rmcp::Error::internal_error(format!("Failed to run workflow: {e}"), None))?;
@@ -205,16 +241,20 @@ fn json_to_hashmap(
     map
 }
 
-async fn get_oxy_tools(project_path: PathBuf) -> Result<HashMap<String, OxyTool>, OxyError> {
-    let mut tools_map = get_agent_tools(project_path.clone()).await?;
-    tools_map.extend(get_workflow_tools(project_path.clone()).await?);
+async fn get_oxy_tools(
+    config_manager: ConfigManager,
+) -> Result<HashMap<String, OxyTool>, OxyError> {
+    let mut tools_map = get_agent_tools(config_manager.clone()).await?;
+    tools_map.extend(get_workflow_tools(config_manager.clone()).await?);
     Ok(tools_map)
 }
 
-async fn get_agent_tools(project_path: PathBuf) -> Result<HashMap<String, OxyTool>, OxyError> {
+async fn get_agent_tools(
+    config_manager: ConfigManager,
+) -> Result<HashMap<String, OxyTool>, OxyError> {
     let mut tools_map = HashMap::new();
-    for agent in list_agents(project_path.clone()).await? {
-        let agent_config = get_agent_config(project_path.clone(), agent.clone()).await?;
+    for agent in list_agents(config_manager.clone()).await? {
+        let agent_config = get_agent_config(config_manager.clone(), agent.clone()).await?;
         let schema = serde_json::from_value(json!({
             "type": "object",
             "properties": {
@@ -240,16 +280,15 @@ async fn get_agent_tools(project_path: PathBuf) -> Result<HashMap<String, OxyToo
     Ok(tools_map)
 }
 
-async fn get_workflow_tools(project_path: PathBuf) -> Result<HashMap<String, OxyTool>, OxyError> {
+async fn get_workflow_tools(
+    config_manager: ConfigManager,
+) -> Result<HashMap<String, OxyTool>, OxyError> {
     let mut tools_map = HashMap::new();
-    let workflows = list_workflows(Some(project_path.clone())).await?;
+    let workflows = list_workflows(config_manager.clone()).await?;
 
     for workflow in workflows {
-        let workflow_config = get_workflow(
-            PathBuf::from(workflow.path.clone()),
-            Some(project_path.clone()),
-        )
-        .await?;
+        let workflow_config =
+            get_workflow(PathBuf::from(workflow.path.clone()), config_manager.clone()).await?;
 
         let tool_name = get_workflow_tool_name(workflow.name.as_str());
         let tool = Tool::new(

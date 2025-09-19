@@ -1,4 +1,3 @@
-import { apiBaseURL } from "@/services/env";
 import { DataContainer } from "@/types/app";
 import { apiClient } from "@/services/api/axios";
 import { getDuckDB } from "@/libs/duckdb";
@@ -122,20 +121,18 @@ export const getData = (data: DataContainer, key: string) => {
   return currentData;
 };
 
-export const getDataFileUrl = (file_path: string) => {
-  const pathb64 = btoa(file_path);
-  return `${apiBaseURL}/app/file/${pathb64}`;
-};
-
 export const registerAuthenticatedFile = async (
   filePath: string,
+  projectId: string,
+  branchName: string,
 ): Promise<string> => {
   const db = await getDuckDB();
   const file_name = `${btoa(filePath)}.parquet`;
 
   const pathb64 = btoa(filePath);
-  const response = await apiClient.get(`/app/file/${pathb64}`, {
+  const response = await apiClient.get(`/${projectId}/app/file/${pathb64}`, {
     responseType: "arraybuffer",
+    params: { branch: branchName },
   });
   const fileData = new Uint8Array(response.data);
 

@@ -1,6 +1,7 @@
-import Editor from "@monaco-editor/react";
+import Editor, { DiffEditor } from "@monaco-editor/react";
 import useFile from "@/hooks/api/files/useFile";
-import { forwardRef, memo, useEffect, useImperativeHandle } from "react";
+import useFileGit from "@/hooks/api/files/useFileGit";
+import { forwardRef, useEffect, useImperativeHandle, useState } from "react";
 import { Loader2 } from "lucide-react";
 import UnsavedChangesDialog from "./UnsavedChangesDialog";
 import { useNavigationBlock } from "./hooks/useNavigationBlock";
@@ -11,6 +12,7 @@ export type FileState = "saved" | "modified" | "saving";
 
 export interface FileEditorRef {
   save: () => void;
+  toggleDiffView: () => void;
 }
 
 interface Props {
@@ -19,7 +21,7 @@ interface Props {
   onFileStateChange: (state: FileState) => void;
   onValueChange?: (value: string) => void;
   onSaved?: () => void;
-  isReadonly?: boolean;
+  readOnly?: boolean;
 }
 
 const FileEditor = forwardRef<FileEditorRef, Props>(
@@ -30,16 +32,24 @@ const FileEditor = forwardRef<FileEditorRef, Props>(
       onFileStateChange,
       onValueChange,
       onSaved,
-      isReadonly = false,
+      readOnly = false,
     },
     ref,
   ) => {
     const fileName = atob(pathb64);
     const { data: fileContent, isPending } = useFile(pathb64);
+    const { data: originalContent } = useFileGit(pathb64);
+    const [showDiff, setShowDiff] = useState(false);
+
+    const [currentFileContent, setCurrentFileContent] = useState(fileContent);
 
     useEffect(() => {
       onValueChange?.(fileContent || "");
     }, [fileContent, onValueChange]);
+
+    useEffect(() => {
+      setCurrentFileContent(fileContent);
+    }, [fileContent]);
 
     const { handleEditorMount, handleSaveFile } = useMonacoEditor({
       onFileStateChange,
@@ -53,6 +63,7 @@ const FileEditor = forwardRef<FileEditorRef, Props>(
 
     useImperativeHandle(ref, () => ({
       save: () => handleSaveFile(),
+      toggleDiffView: () => setShowDiff(!showDiff),
     }));
 
     const handleSaveAndNavigate = () => {
@@ -80,32 +91,56 @@ const FileEditor = forwardRef<FileEditorRef, Props>(
         */}
         <div className="relative h-full w-full overflow-hidden">
           <div className="absolute inset-0">
-            <Editor
-              path={"file://" + fileName}
-              theme="github-dark"
-              height="100%"
-              width="100%"
-              defaultValue={fileContent ?? ""}
-              language={getLanguageFromFileName(fileName)}
-              value={fileContent}
-              loading={
-                <Loader2 className="w-4 h-4 animate-[spin_0.2s_linear_infinite] text-[white]" />
-              }
-              options={{
-                minimap: { enabled: true },
-                scrollBeyondLastLine: true,
-                formatOnPaste: true,
-                formatOnType: true,
-                automaticLayout: true,
-                readOnly: isReadonly,
-              }}
-              onChange={(value) => {
-                if (isReadonly) return;
-                onValueChange?.(value || "");
-                onFileStateChange("modified");
-              }}
-              onMount={handleEditorMount}
-            />
+            {showDiff && originalContent ? (
+              <DiffEditor
+                theme="github-dark"
+                height={originalContent ? "calc(100% - 50px)" : "100%"}
+                width="100%"
+                original={originalContent}
+                modified={currentFileContent ?? ""}
+                language={getLanguageFromFileName(fileName)}
+                loading={
+                  <Loader2 className="w-4 h-4 animate-[spin_0.2s_linear_infinite] text-[white]" />
+                }
+                options={{
+                  minimap: { enabled: true },
+                  scrollBeyondLastLine: true,
+                  formatOnPaste: true,
+                  formatOnType: true,
+                  automaticLayout: true,
+                  readOnly: true,
+                  renderSideBySide: true,
+                }}
+              />
+            ) : (
+              <Editor
+                path={"file://" + fileName}
+                theme="github-dark"
+                height={originalContent ? "calc(100% - 50px)" : "100%"}
+                width="100%"
+                defaultValue={fileContent ?? ""}
+                language={getLanguageFromFileName(fileName)}
+                value={currentFileContent}
+                loading={
+                  <Loader2 className="w-4 h-4 animate-[spin_0.2s_linear_infinite] text-[white]" />
+                }
+                options={{
+                  minimap: { enabled: true },
+                  scrollBeyondLastLine: true,
+                  formatOnPaste: true,
+                  formatOnType: true,
+                  automaticLayout: true,
+                  readOnly: readOnly,
+                }}
+                onChange={(value) => {
+                  if (readOnly) return;
+                  onValueChange?.(value || "");
+                  onFileStateChange("modified");
+                  setCurrentFileContent(value);
+                }}
+                onMount={handleEditorMount}
+              />
+            )}
           </div>
         </div>
 
@@ -123,9 +158,4 @@ const FileEditor = forwardRef<FileEditorRef, Props>(
   },
 );
 
-export default memo(FileEditor, (prevProps, nextProps) => {
-  return (
-    prevProps.fileState === nextProps.fileState &&
-    prevProps.pathb64 === nextProps.pathb64
-  );
-});
+export default FileEditor;

@@ -15,7 +15,7 @@ use parquet::{arrow::ArrowWriter, basic::Compression, file::properties::WriterPr
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    adapters::connector::load_result, db::client::get_state_dir, errors::OxyError,
+    adapters::connector::load_result, errors::OxyError,
     execute::types::utils::record_batches_to_json, utils::truncate_datasets,
 };
 
@@ -149,12 +149,16 @@ impl Table {
     // need to convert the file from arrow to parquet
     // because duckdb wasm in the browser have better support for parquet
     // than arrow.
-    pub fn to_data(&self, data_path: &PathBuf) -> Result<TableData, OxyError> {
+    pub fn to_data(
+        &self,
+        relative_data_path: &PathBuf,
+        base_path: &PathBuf,
+    ) -> Result<TableData, OxyError> {
         let table = self.get_inner()?;
-        let state_dir = get_state_dir();
         let batches = &table.batches;
         let file_name = format!("{}.parquet", uuid::Uuid::new_v4());
-        let full_file_path: PathBuf = data_path.join(file_name);
+        let data_path = base_path.join(relative_data_path);
+        let full_file_path: PathBuf = data_path.join(&file_name);
         let file = std::fs::File::create(&full_file_path).map_err(|e| {
             OxyError::RuntimeError(format!(
                 "Failed to create file {}: {}",
@@ -178,12 +182,9 @@ impl Table {
             .map_err(|e| OxyError::RuntimeError(format!("Failed to close writer: {e}")))?;
 
         tracing::debug!("Exported table to: {}", full_file_path.display());
-        let relative_file_path = full_file_path.strip_prefix(state_dir).map_err(|e| {
-            OxyError::RuntimeError(format!("Failed to strip prefix from file path: {e}"))
-        })?;
 
         Ok(TableData {
-            file_path: relative_file_path.to_path_buf(),
+            file_path: relative_data_path.join(file_name).to_path_buf(),
         })
     }
 

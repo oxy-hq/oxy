@@ -1,21 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
 import queryKeys from "../queryKey";
-import { apiClient } from "@/services/api/axios";
-
-type WorkflowItem = {
-  name: string;
-  path: string;
-};
-
-const fetchWorkflows = async () => {
-  const { data } = await apiClient.get("/workflows");
-  return data as WorkflowItem[];
-};
+import { WorkflowService } from "@/services/api";
+import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 
 const useWorkflows = () => {
+  const { project, branchName } = useCurrentProjectBranch();
+
   return useQuery({
-    queryKey: queryKeys.workflow.list(),
-    queryFn: fetchWorkflows,
+    queryKey: queryKeys.workflow.list(project.id, branchName),
+    queryFn: () => WorkflowService.listWorkflows(project.id, branchName),
   });
 };
 

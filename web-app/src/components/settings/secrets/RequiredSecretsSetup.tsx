@@ -4,14 +4,16 @@ import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
 import { AlertTriangle, CheckCircle, Loader2 } from "lucide-react";
 import { useProjectStatus } from "@/hooks/useProjectStatus";
-import { useBulkCreateSecrets } from "@/hooks/api/useSecretMutations";
+import { useBulkCreateSecrets } from "@/hooks/api/secrets/useSecretMutations";
 import { toast } from "sonner";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
+import ROUTES from "@/libs/utils/routes";
 
 const RequiredSecretsSetup: React.FC = () => {
+  const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
-  const { data: configStatus, refetch } = useProjectStatus();
-  const bulkCreateSecretsMutation = useBulkCreateSecrets();
+  const { data: configStatus, refetch } = useProjectStatus(projectId!);
+  const bulkCreateSecretsMutation = useBulkCreateSecrets(projectId!);
 
   const [secretValues, setSecretValues] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -79,7 +81,7 @@ const RequiredSecretsSetup: React.FC = () => {
       await refetch();
 
       // Navigate back to home
-      navigate("/", { replace: true });
+      navigate(ROUTES.PROJECT(projectId!).ROOT, { replace: true });
     } catch (error) {
       console.error("Error creating secrets:", error);
       toast.error("Failed to create some secrets. Please try again.");
@@ -87,16 +89,6 @@ const RequiredSecretsSetup: React.FC = () => {
       setIsSubmitting(false);
     }
   };
-
-  if (
-    !configStatus ||
-    (configStatus.is_config_valid &&
-      (!requiredSecrets || requiredSecrets.length === 0))
-  ) {
-    // If config is valid and no secrets needed, redirect to home
-    navigate("/", { replace: true });
-    return null;
-  }
 
   return (
     <div className="min-h-screen w-full overflow-y-auto bg-neutral-950 flex flex-col items-center">
@@ -151,6 +143,16 @@ const RequiredSecretsSetup: React.FC = () => {
                 Configure Secrets
               </>
             )}
+          </Button>
+
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() =>
+              navigate(ROUTES.PROJECT(projectId!).ROOT, { replace: true })
+            }
+          >
+            Skip for now
           </Button>
         </form>
       </div>

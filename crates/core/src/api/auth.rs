@@ -16,10 +16,8 @@ use url::Url;
 use uuid::Uuid;
 
 use crate::auth::types::AuthMode;
-use crate::auth::user::UserService;
-use crate::project::resolve_project_path;
 use crate::{
-    config::{ConfigBuilder, constants::AUTHENTICATION_SECRET_KEY},
+    config::constants::AUTHENTICATION_SECRET_KEY,
     db::{client::establish_connection, filters::UserQueryFilterExt},
     errors::OxyError,
 };
@@ -99,22 +97,9 @@ pub async fn get_config(
         }));
     }
 
-    let auth_config = match resolve_project_path() {
-        Ok(project_path) => {
-            let config = ConfigBuilder::new()
-                .with_project_path(&project_path)
-                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-                .build()
-                .await
-                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-            config.get_authentication()
-        }
-        Err(_) => {
-            // No project path found, default to no auth config
-            None
-        }
-    };
+    let auth_config = crate::config::oxy::get_oxy_config()
+        .ok()
+        .and_then(|config| config.authentication);
     if auth_config.is_none() {
         return Ok(Json(AuthConfigResponse {
             is_built_in_mode: true,
@@ -262,8 +247,6 @@ pub async fn register(
     let password_hash = hash_password(&register_request.password);
     let verification_token = Uuid::new_v4().to_string();
 
-    let role = UserService::determine_user_role(&register_request.email).await;
-
     let new_user = users::ActiveModel {
         id: Set(Uuid::new_v4()),
         email: Set(register_request.email.clone()),
@@ -272,7 +255,7 @@ pub async fn register(
         password_hash: Set(Some(password_hash)),
         email_verified: Set(false),
         email_verification_token: Set(Some(verification_token.clone())),
-        role: Set(role),
+        role: Set(users::UserRole::Member),
         status: Set(UserStatus::Active),
         created_at: sea_orm::ActiveValue::NotSet,
         last_login_at: sea_orm::ActiveValue::NotSet,
@@ -364,8 +347,6 @@ pub async fn google_auth(
             })?
         }
         None => {
-            let role = UserService::determine_user_role(&user_info.email).await;
-
             let new_user = users::ActiveModel {
                 id: Set(Uuid::new_v4()),
                 email: Set(user_info.email.clone()),
@@ -374,7 +355,7 @@ pub async fn google_auth(
                 password_hash: Set(None),
                 email_verified: Set(true),
                 email_verification_token: Set(None),
-                role: Set(role),
+                role: Set(users::UserRole::Member),
                 status: Set(UserStatus::Active),
                 created_at: sea_orm::ActiveValue::NotSet,
                 last_login_at: sea_orm::ActiveValue::NotSet,
@@ -478,17 +459,9 @@ fn extract_base_url_from_headers(headers: &HeaderMap) -> String {
 }
 
 async fn send_verification_email(email: &str, token: &str, base_url: &str) -> Result<(), OxyError> {
-    let project_path = resolve_project_path()
-        .map_err(|_| OxyError::ConfigurationError("Failed to find project path".to_owned()))?;
-
-    let config = ConfigBuilder::new()
-        .with_project_path(&project_path)
-        .map_err(|_| OxyError::ConfigurationError("Failed to build config".to_owned()))?
-        .build()
-        .await
-        .map_err(|_| OxyError::ConfigurationError("Failed to build config".to_owned()))?;
-
-    let auth_config = config.get_authentication();
+    let auth_config = crate::config::oxy::get_oxy_config()
+        .ok()
+        .and_then(|config| config.authentication);
 
     if let Some(auth) = auth_config {
         if let Some(basic_auth) = &auth.basic {
@@ -510,23 +483,10 @@ async fn send_verification_email(email: &str, token: &str, base_url: &str) -> Re
                 .map_err(|e| OxyError::ConfigurationError(format!("Failed to build email: {e}")))?;
 
             // Try to resolve SMTP password using secret manager with fallback to environment variable
-            let secret_resolver = crate::service::secret_resolver::SecretResolverService::new();
-            let smtp_password = match secret_resolver
-                .resolve_secret(&basic_auth.smtp_password_var)
-                .await
-                .map_err(|e| {
-                    OxyError::ConfigurationError(format!("Failed to resolve SMTP password: {e}"))
-                })? {
-                Some(result) => result.value,
-                None => {
-                    return Err(OxyError::ConfigurationError(format!(
-                        "SMTP password not found in secret manager or environment variable: {}",
-                        basic_auth.smtp_password_var
-                    )));
-                }
-            };
 
-            let creds = Credentials::new(basic_auth.smtp_user.clone(), smtp_password.clone());
+            let smtp_password = &basic_auth.smtp_password;
+
+            let credentials = Credentials::new(basic_auth.smtp_user.clone(), smtp_password.clone());
 
             let smtp_server = basic_auth
                 .smtp_server
@@ -538,7 +498,7 @@ async fn send_verification_email(email: &str, token: &str, base_url: &str) -> Re
                 .map_err(|e| {
                     OxyError::ConfigurationError(format!("Failed to connect to SMTP server: {e}"))
                 })?
-                .credentials(creds)
+                .credentials(credentials)
                 .port(smtp_port)
                 .build();
 
@@ -568,17 +528,9 @@ async fn exchange_google_code_for_user_info(
     code: &str,
     base_url: &str,
 ) -> Result<GoogleUserInfo, OxyError> {
-    let project_path = resolve_project_path()
-        .map_err(|_| OxyError::ConfigurationError("Failed to find project path".to_owned()))?;
-
-    let config = ConfigBuilder::new()
-        .with_project_path(&project_path)
-        .map_err(|_| OxyError::ConfigurationError("Failed to build config".to_owned()))?
-        .build()
-        .await
-        .map_err(|_| OxyError::ConfigurationError("Failed to build config".to_owned()))?;
-
-    let auth_config = config.get_authentication();
+    let auth_config = crate::config::oxy::get_oxy_config()
+        .ok()
+        .and_then(|config| config.authentication);
 
     let google_config = auth_config.and_then(|auth| auth.google).ok_or_else(|| {
         OxyError::ConfigurationError("Google OAuth configuration not found".to_string())
@@ -590,27 +542,7 @@ async fn exchange_google_code_for_user_info(
 
     println!("Redirect URI: {redirect_uri}");
 
-    // Try to resolve Google client secret using secret manager with fallback to environment variable
-    let secret_resolver = crate::service::secret_resolver::SecretResolverService::new();
-    let client_secret = match secret_resolver
-        .resolve_secret(&google_config.client_secret_var)
-        .await
-        .map_err(|e| {
-            OxyError::ConfigurationError(format!("Failed to resolve Google client secret: {e}"))
-        })? {
-        Some(result) => result.value,
-        None => {
-            return Err(OxyError::ConfigurationError(format!(
-                "Google client secret not found in secret manager or environment variable: {}",
-                google_config.client_secret_var
-            )));
-        }
-    };
-    tracing::info!(
-        "Using Google client secret from secret manager: {} {}",
-        google_config.client_secret_var,
-        &client_secret
-    );
+    let client_secret = google_config.client_secret;
 
     let token_request = serde_json::json!({
         "client_id": google_config.client_id,

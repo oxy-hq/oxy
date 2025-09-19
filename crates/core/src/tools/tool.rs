@@ -455,7 +455,8 @@ impl ParamMapper<SemanticQueryToolInput, ValidatedSemanticQuery> for SemanticQue
         };
 
         // Validate the semantic query task
-        let validated = validate_semantic_query_task(&execution_context.config, &task).await?;
+        let validated =
+            validate_semantic_query_task(&execution_context.project.config_manager, &task).await?;
 
         Ok((validated, None))
     }

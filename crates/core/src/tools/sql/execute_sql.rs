@@ -44,10 +44,14 @@ impl Executable<SQLInput> for SQLExecutable {
                 finished: true,
             })
             .await?;
+
+        let config_manager = &execution_context.project.config_manager;
+        let secrets_manager = &execution_context.project.secrets_manager;
         let result: Result<Output, OxyError> = {
             let connector = Connector::from_database(
                 &input.database,
-                &execution_context.config,
+                config_manager,
+                secrets_manager,
                 input.dry_run_limit,
             )
             .await?;

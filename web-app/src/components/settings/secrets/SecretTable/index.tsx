@@ -10,7 +10,7 @@ import { useMediaQuery } from "usehooks-ts";
 import { SecretRow } from "./Row";
 import TableContentWrapper from "../../components/TableContentWrapper";
 import TableWrapper from "../../components/TableWrapper";
-import useSecrets from "@/hooks/api/useSecrets";
+import useSecrets from "@/hooks/api/secrets/useSecrets";
 
 export const SecretTable: React.FC = () => {
   const {

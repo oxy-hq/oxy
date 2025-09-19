@@ -85,6 +85,32 @@ impl GitHubClient {
         Ok(all_repos)
     }
 
+    pub async fn list_branches(
+        &self,
+        full_repo_name: String,
+    ) -> Result<Vec<GithubBranch>, OxyError> {
+        let mut all_branches = Vec::new();
+        let mut page = 1;
+        let per_page = 100;
+
+        loop {
+            let branches = self
+                .list_branches_paginated(full_repo_name.clone(), page, per_page)
+                .await?;
+            let is_last_page = branches.len() < per_page as usize;
+
+            all_branches.extend(branches);
+
+            if is_last_page {
+                break;
+            }
+
+            page += 1;
+        }
+
+        Ok(all_branches)
+    }
+
     /// Get authenticated user's repositories with pagination
     pub async fn list_repositories_paginated(
         &self,
@@ -114,6 +140,40 @@ impl GitHubClient {
         })?;
 
         Ok(repos)
+    }
+
+    /// Get branches of a repository with pagination
+    pub async fn list_branches_paginated(
+        &self,
+        full_repo_name: String,
+        page: u32,
+        per_page: u32,
+    ) -> Result<Vec<GithubBranch>, OxyError> {
+        let url = format!(
+            "{}/repos/{}/branches?page={}&per_page={}",
+            self.base_url, full_repo_name, page, per_page
+        );
+
+        let response = self
+            .client
+            .get(&url)
+            .send()
+            .await
+            .map_err(|e| OxyError::RuntimeError(format!("Failed to fetch branches: {e}")))?;
+
+        if !response.status().is_success() {
+            return Err(OxyError::RuntimeError(format!(
+                "GitHub API error: {} - {}",
+                response.status(),
+                response.text().await.unwrap_or_default()
+            )));
+        }
+
+        let branches: Vec<GithubBranch> = response.json().await.map_err(|e| {
+            OxyError::RuntimeError(format!("Failed to parse branches response: {e}"))
+        })?;
+
+        Ok(branches)
     }
 
     /// Get repository details by ID

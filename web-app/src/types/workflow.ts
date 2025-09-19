@@ -4,4 +4,5 @@ export interface Workflow {
   tests?: unknown[];
   variables?: Record<string, unknown>;
   description?: string;
+  path: string;
 }

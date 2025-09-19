@@ -15,7 +15,7 @@ export class TaskMessageSender implements MessageSender {
     options: SendMessageOptions,
     handlers: MessageHandlers,
   ): Promise<void> {
-    const { content, threadId } = options;
+    const { content, threadId, projectId } = options;
     const { onMessageUpdate, onUserMessage, onFilePathUpdate } = handlers;
 
     let streamingMessage = MessageFactory.createStreamingMessage(threadId);
@@ -27,6 +27,7 @@ export class TaskMessageSender implements MessageSender {
     }
 
     await ThreadService.askTask(
+      projectId,
       threadId,
       content,
       (answer: Answer) => {

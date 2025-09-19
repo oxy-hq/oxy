@@ -16,11 +16,20 @@ pub struct Model {
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
     pub created_by: Uuid,
+    pub project_id: Uuid,
     pub is_active: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
+    #[sea_orm(
+        belongs_to = "super::projects::Entity",
+        from = "Column::ProjectId",
+        to = "super::projects::Column::Id",
+        on_update = "NoAction",
+        on_delete = "Cascade"
+    )]
+    Projects,
     #[sea_orm(
         belongs_to = "super::users::Entity",
         from = "Column::CreatedBy",
@@ -29,6 +38,12 @@ pub enum Relation {
         on_delete = "Restrict"
     )]
     Users,
+}
+
+impl Related<super::projects::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Projects.def()
+    }
 }
 
 impl Related<super::users::Entity> for Entity {

@@ -10,7 +10,6 @@ use crate::{
         Executable, ExecutionContext,
         types::{Output, event::DataApp},
     },
-    project::resolve_project_path,
     service,
     tools::types::CreateDataAppInput,
 };
@@ -33,9 +32,11 @@ impl Executable<CreateDataAppInput> for CreateDataAppExecutable {
         tracing::debug!("Creating data app with input: {:?}", &input);
         let CreateDataAppInput { param } = input;
 
+        let config_manager = &execution_context.project.config_manager;
+
         // Validate the app config
         let validation_context = ValidationContext {
-            config: execution_context.config.get_config().clone(),
+            config: config_manager.get_config().clone(),
             metadata: Some(ValidationContextMetadata::DataApp(
                 DataAppValidationContext {
                     app_config: param.app_config.clone(),
@@ -48,9 +49,9 @@ impl Executable<CreateDataAppInput> for CreateDataAppExecutable {
             .validate_with(&validation_context)
             .map_err(|e| OxyError::AgentError(format!("Invalid app config: {e}")))?;
 
-        let project_path = resolve_project_path()?;
-        let mut full_file_name = format!("{}.app.yml", param.file_name);
-        let file_dir = project_path.join(UNPUBLISH_APP_DIR);
+        let mut full_file_name: String = format!("{}.app.yml", param.file_name);
+        let file_dir = config_manager.resolve_file(UNPUBLISH_APP_DIR).await?;
+        let file_dir = PathBuf::from(&file_dir);
         if !file_dir.exists() {
             fs::create_dir_all(&file_dir).await?;
         }
@@ -67,7 +68,10 @@ impl Executable<CreateDataAppInput> for CreateDataAppExecutable {
         serde_yaml::to_writer(&mut file, &config).map_err(|e| anyhow::anyhow!(e))?;
         println!("Data app created at: {}", file_path.display());
         let file_relative_path = PathBuf::from(UNPUBLISH_APP_DIR).join(&full_file_name);
-        service::app::clean_up_app_data(&file_relative_path, &config.tasks).await?;
+        let cache = service::app::AppCache::new(execution_context.project.config_manager.clone());
+        cache
+            .clean_up_data(&file_relative_path, &config.tasks)
+            .await?;
         println!("Data app cleaned up at: {}", file_path.display());
         execution_context
             .write_data_app(DataApp {

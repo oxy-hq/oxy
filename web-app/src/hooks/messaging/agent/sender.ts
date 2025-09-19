@@ -15,18 +15,28 @@ export class AgentMessageSender implements MessageSender {
     options: SendMessageOptions,
     handlers: MessageHandlers,
   ): Promise<void> {
-    const { content, threadId, isPreview } = options;
+    const { content, threadId, projectId, branchName, metadata } = options;
 
-    if (isPreview) {
-      await this.sendPreviewMessage(content, threadId, handlers);
+    if (metadata?.isPreview) {
+      await this.sendPreviewMessage(
+        content,
+        threadId,
+        metadata?.agentPathb64,
+        projectId,
+        branchName,
+        handlers,
+      );
     } else {
-      await this.sendRegularMessage(content, threadId, handlers);
+      await this.sendRegularMessage(content, threadId, projectId, handlers);
     }
   }
 
   private async sendPreviewMessage(
     content: string | null,
     threadId: string,
+    agentPathb64: string | undefined,
+    projectId: string,
+    branchName: string,
     handlers: MessageHandlers,
   ): Promise<void> {
     const { onMessageUpdate, onUserMessage } = handlers;
@@ -41,7 +51,9 @@ export class AgentMessageSender implements MessageSender {
     onMessageUpdate(streamingMessage);
 
     await AgentService.askAgentPreview(
-      threadId,
+      projectId,
+      branchName,
+      agentPathb64 ?? "",
       content ?? "",
       (answer: Answer) => {
         streamingMessage = this.processor.processContent(
@@ -56,6 +68,7 @@ export class AgentMessageSender implements MessageSender {
   private async sendRegularMessage(
     content: string | null,
     threadId: string,
+    projectId: string,
     handlers: MessageHandlers,
   ): Promise<void> {
     const { onMessageUpdate, onUserMessage } = handlers;
@@ -69,6 +82,7 @@ export class AgentMessageSender implements MessageSender {
     }
 
     await ThreadService.askAgent(
+      projectId,
       threadId,
       content,
       (answer: Answer) => {

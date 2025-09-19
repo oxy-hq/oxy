@@ -1,8 +1,8 @@
 use minijinja::Value;
 
 use crate::{
-    adapters::openai::OpenAIToolConfig,
-    config::{ConfigManager, constants::TOOL_SOURCE, model::ToolType},
+    adapters::{openai::OpenAIToolConfig, project::manager::ProjectManager},
+    config::{constants::TOOL_SOURCE, model::ToolType},
     errors::OxyError,
     execute::{
         Executable, ExecutionContext, ExecutionContextBuilder,
@@ -33,9 +33,9 @@ impl ToolLauncher {
         }
     }
 
-    pub fn with_config(
+    pub fn with_project(
         mut self,
-        config: ConfigManager,
+        project_manager: ProjectManager,
         source: Option<Source>,
     ) -> Result<Self, OxyError> {
         let source = source.unwrap_or(Source {
@@ -45,7 +45,7 @@ impl ToolLauncher {
         });
         self.execution_context = Some(
             ExecutionContextBuilder::new()
-                .with_config_manager(config)
+                .with_project_manager(project_manager)
                 .with_source(source)
                 .with_writer(self.buf_writer.create_writer(None)?)
                 .with_global_context(Value::UNDEFINED)

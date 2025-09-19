@@ -5,6 +5,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { ThreadItem } from "@/types/chat";
 import { cn } from "@/libs/shadcn/utils";
 import { timeAgo } from "@/libs/utils/date";
+import ROUTES from "@/libs/utils/routes";
+import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 
 interface ThreadListProps {
   threads: ThreadItem[];
@@ -29,6 +31,7 @@ const ThreadListItem = ({
   isSelectionMode = false,
 }: ThreadListItemProps) => {
   const navigate = useNavigate();
+  const { project } = useCurrentProjectBranch();
   const handleCheckboxChange = (checked: boolean) => {
     onSelect(thread.id, checked);
   };
@@ -39,7 +42,8 @@ const ThreadListItem = ({
       handleCheckboxChange(!isSelected);
       return;
     }
-    navigate(`/threads/${thread.id}`);
+    const threadUri = ROUTES.PROJECT(project.id).THREAD(thread.id);
+    navigate(threadUri);
   };
 
   return (

@@ -7,7 +7,7 @@ import { Secret } from "@/types/secret";
 import { formatDistanceToNow } from "date-fns";
 import { EditSecretDialog } from "./EditSecretDialog";
 import { DeleteSecretDialog } from "./DeleteSecretDialog";
-import { useDeleteSecret } from "@/hooks/api/useSecretMutations";
+import { useDeleteSecret } from "@/hooks/api/secrets/useSecretMutations";
 import { useMediaQuery } from "usehooks-ts";
 import { toast } from "sonner";
 

@@ -18,7 +18,7 @@ import {
   CreateSecretRequest,
   CreateSecretResponse,
 } from "@/types/secret";
-import { useCreateSecret } from "@/hooks/api/useSecretMutations";
+import { useCreateSecret } from "@/hooks/api/secrets/useSecretMutations";
 
 interface CreateSecretDialogProps {
   open: boolean;

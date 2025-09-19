@@ -1,14 +1,20 @@
 import { useQuery } from "@tanstack/react-query";
 import queryKeys from "../queryKey";
-import { apiClient } from "@/services/api/axios";
-import { TaskConfig, WorkflowConfig } from "@/stores/useWorkflow.ts";
+import { WorkflowService } from "@/services/api";
+import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import { TaskConfig } from "@/stores/useWorkflow.ts";
 
-const fetchWorkflow = async (relative_path: string) => {
+const fetchWorkflow = async (
+  projectId: string,
+  branchName: string,
+  relative_path: string,
+) => {
   const pathb64 = btoa(relative_path);
-  const { data } = await apiClient.get(
-    `/workflows/${encodeURIComponent(pathb64)}`,
+  const workflowConfig = await WorkflowService.getWorkflow(
+    projectId,
+    branchName,
+    pathb64,
   );
-  const workflowConfig = data.data as WorkflowConfig;
 
   const deepFlatten = (task: TaskConfig): TaskConfig[] => {
     if (task.type === "loop_sequential") {
@@ -22,7 +28,7 @@ const fetchWorkflow = async (relative_path: string) => {
       .flatMap(deepFlatten)
       .filter((task) => task.type === "workflow")
       .map((task) =>
-        fetchWorkflow(task.src).then((subWorkflow) => {
+        fetchWorkflow(projectId, branchName, task.src).then((subWorkflow) => {
           task.tasks = subWorkflow.tasks;
           return task;
         }),
@@ -33,9 +39,10 @@ const fetchWorkflow = async (relative_path: string) => {
 };
 
 const useWorkflowConfig = (relative_path: string) => {
+  const { project, branchName } = useCurrentProjectBranch();
   return useQuery({
-    queryKey: queryKeys.workflow.get(relative_path),
-    queryFn: () => fetchWorkflow(relative_path),
+    queryKey: queryKeys.workflow.get(project.id, branchName, relative_path),
+    queryFn: () => fetchWorkflow(project.id, branchName, relative_path),
     enabled: true,
   });
 };

@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use crate::{
     auth::{cognito::CognitoAuthenticator, iap::IAPAuthenticator, user::UserService},
-    config::{auth::Authentication, constants::GCP_IAP_AUD_ENV_VAR},
+    config::constants::GCP_IAP_AUD_ENV_VAR,
     errors::OxyError,
 };
 
@@ -59,7 +59,10 @@ impl AuthState<CognitoAuthenticator> {
 }
 
 impl AuthState<BuiltInAuthenticator> {
-    pub fn built_in(authentication: Option<Authentication>) -> Self {
+    pub fn built_in() -> Self {
+        let authentication = crate::config::oxy::get_oxy_config()
+            .ok()
+            .and_then(|config| config.authentication);
         Self {
             authenticator: Arc::new(BuiltInAuthenticator::new(authentication)),
         }

@@ -27,7 +27,7 @@ const WorkflowsDropdown = ({ onSelect, workflow, disabled = false }: Props) => {
     () =>
       workflows
         ?.map((workflow) => ({
-          id: workflow.path,
+          id: workflow.path ?? "",
           name: workflow.name,
         }))
         .sort((a, b) => a.name.localeCompare(b.name)) ?? [],

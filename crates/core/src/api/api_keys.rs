@@ -144,6 +144,7 @@ impl From<ApiKeyModel> for ApiKeyResponse {
 )]
 pub async fn create_api_key(
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
+    Path(project_id): Path<Uuid>,
     extract::Json(request): extract::Json<CreateApiKeyRequest>,
 ) -> Result<impl IntoResponse, StatusCode> {
     // Validate the request using garde
@@ -164,8 +165,9 @@ pub async fn create_api_key(
 
     let create_request = CreateApiKeyParams {
         user_id: user.id,
-        name: request.name, // Already trimmed by deserializer
+        name: request.name,
         expires_at: request.expires_at,
+        project_id: project_id,
     };
 
     match ApiKeyService::create_api_key(&db, create_request, &config).await {

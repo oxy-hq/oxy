@@ -9,34 +9,54 @@ import {
   TableRow,
 } from "@/components/ui/shadcn/table";
 import TableContentWrapper from "../components/TableContentWrapper";
-import { useAuth } from "@/contexts/AuthContext";
 import useCurrentUser from "@/hooks/api/users/useCurrentUser";
 import UserRow from "./UserRow";
 import TableWrapper from "../components/TableWrapper";
+import useCurrentProject from "@/stores/useCurrentProject";
+import AddMemberForm from "./AddMemberForm";
 
 const UserManagement: React.FC = () => {
-  const { getUser } = useAuth();
-  const { data: usersData, isLoading: loading, error } = useUsers();
+  const { project } = useCurrentProject();
+
+  if (!project) {
+    throw new Error("No project selected");
+  }
+
+  const { organization_id } = project;
+  const {
+    data: usersData,
+    isLoading: loading,
+    error,
+  } = useUsers(organization_id);
   const users = usersData?.users || [];
 
   const { data: currentUser } = useCurrentUser();
 
   const isAdmin = useCallback((): boolean => {
-    if (currentUser?.role) {
-      return currentUser.role === "admin";
+    if (!currentUser) {
+      return false;
     }
-    const userStr = getUser();
-    if (userStr) {
-      const parsed = JSON.parse(userStr);
-      return parsed?.role === "admin";
+    if (!usersData) {
+      return false;
+    }
+    for (const user of usersData.users) {
+      if (
+        user.id === currentUser?.id &&
+        (user.role === "admin" || user.role === "owner")
+      ) {
+        return true;
+      }
     }
     return false;
-  }, [currentUser, getUser]);
+  }, [currentUser, usersData]);
 
   const adminUser = isAdmin();
 
   return (
-    <PageWrapper title="Users">
+    <PageWrapper
+      title="Users"
+      actions={<AddMemberForm organizationId={organization_id} />}
+    >
       <TableWrapper>
         <Table>
           <TableHeader>
@@ -44,7 +64,6 @@ const UserManagement: React.FC = () => {
               <TableHead>User</TableHead>
               <TableHead>Email</TableHead>
               <TableHead>Role</TableHead>
-              <TableHead>Status</TableHead>
               {adminUser && <TableHead className="w-24">Actions</TableHead>}
             </TableRow>
           </TableHeader>
@@ -58,7 +77,12 @@ const UserManagement: React.FC = () => {
               noFoundDescription="There are currently no users in the system."
             >
               {users.map((user) => (
-                <UserRow key={user.id} user={user} isAdmin={adminUser} />
+                <UserRow
+                  key={user.id}
+                  user={user}
+                  organizationId={organization_id}
+                  isAdmin={adminUser}
+                />
               ))}
             </TableContentWrapper>
           </TableBody>

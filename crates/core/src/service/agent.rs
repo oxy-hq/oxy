@@ -1,6 +1,7 @@
+use crate::adapters::project::manager::ProjectManager;
 use crate::agent::AgentLauncher;
 use crate::agent::types::AgentInput;
-use crate::config::ConfigBuilder;
+use crate::config::ConfigManager;
 use crate::config::constants::{CONCURRENCY_SOURCE, CONSISTENCY_SOURCE, WORKFLOW_SOURCE};
 use crate::config::model::AgentConfig;
 use crate::errors::OxyError;
@@ -34,22 +35,22 @@ pub struct AskRequest {
 
 pub async fn ask_adhoc(
     question: String,
-    project_path: PathBuf,
+    project: ProjectManager,
     agent: String,
 ) -> Result<String, OxyError> {
-    let agent_path = get_path_by_name(project_path.clone(), agent).await?;
-    let result = match run_agent(&project_path, &agent_path, question, NoopHandler, vec![]).await {
+    let config_manager = project.config_manager.clone();
+
+    let agent_path = get_path_by_name(config_manager, agent).await?;
+    let result = match run_agent(project, &agent_path, question, NoopHandler, vec![]).await {
         Ok(output) => output.to_string(),
         Err(e) => format!("Error running agent: {e}"),
     };
     Ok(result)
 }
 
-pub async fn list_agents(project_path: PathBuf) -> Result<Vec<String>, OxyError> {
-    let config_builder = ConfigBuilder::new().with_project_path(&project_path)?;
-    let config = config_builder.build().await?;
-
-    let agents = config.list_agents().await?;
+pub async fn list_agents(config_manager: ConfigManager) -> Result<Vec<String>, OxyError> {
+    let project_path = config_manager.project_path();
+    let agents = config_manager.list_agents().await?;
     Ok(agents
         .iter()
         .map(|absolute_path| {
@@ -63,29 +64,23 @@ pub async fn list_agents(project_path: PathBuf) -> Result<Vec<String>, OxyError>
 }
 
 pub async fn get_agent_config(
-    project_path: PathBuf,
+    config_manager: ConfigManager,
     relative_path: String,
 ) -> Result<AgentConfig, OxyError> {
-    let config_builder = ConfigBuilder::new().with_project_path(&project_path)?;
-    let config = config_builder.build().await?;
-
-    let agent = config.resolve_agent(relative_path).await?;
+    let agent = config_manager.resolve_agent(relative_path).await?;
     Ok(agent)
 }
 
 pub async fn get_path_by_name(
-    project_path: PathBuf,
+    config_manager: ConfigManager,
     agent_name: String,
 ) -> Result<PathBuf, OxyError> {
-    let config_builder = ConfigBuilder::new().with_project_path(&project_path)?;
-    let config = config_builder.build().await?;
-
-    let agents = config.list_agents().await?;
+    let agents = config_manager.list_agents().await?;
     for agent in agents {
-        let agent_config = config.resolve_agent(agent.clone()).await?;
+        let agent_config = config_manager.resolve_agent(agent.clone()).await?;
         if agent_config.name == agent_name {
-            let path = project_path.join(agent);
-            return Ok(path);
+            let path = config_manager.resolve_file(agent).await?;
+            return Ok(PathBuf::from(path));
         }
     }
     Err(OxyError::ArgumentError(format!(
@@ -172,14 +167,14 @@ impl EventHandler for AgentCLIHandler {
 }
 
 pub async fn run_agent<P: AsRef<Path>, H: EventHandler + Send + 'static>(
-    project_path: P,
+    project: ProjectManager,
     agent_ref: P,
     prompt: String,
     event_handler: H,
     memory: Vec<Message>,
 ) -> Result<OutputContainer, OxyError> {
     AgentLauncher::new()
-        .with_local_context(project_path)
+        .with_project(project)
         .await?
         .launch(
             AgentInput {

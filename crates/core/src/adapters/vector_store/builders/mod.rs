@@ -1,5 +1,8 @@
 use crate::{
-    adapters::vector_store::{VectorStore, types::RetrievalObject},
+    adapters::{
+        secrets::SecretsManager,
+        vector_store::{VectorStore, types::RetrievalObject},
+    },
     config::{
         ConfigManager,
         model::{AgentConfig, AgentType, RouteRetrievalConfig, RoutingAgent, ToolType, Workflow},
@@ -164,6 +167,7 @@ pub async fn build_all_retrieval_objects(
 // TODO: This function probably doesn't belong in builders:: and should be moved
 pub async fn ingest_retrieval_objects(
     config: &ConfigManager,
+    secrets_manager: &SecretsManager,
     retrieval_objects: &[RetrievalObject],
     drop_all_tables: bool,
 ) -> Result<(), OxyError> {
@@ -178,8 +182,13 @@ pub async fn ingest_retrieval_objects(
                 println!("Processing DEFAULT agent: {}", agent.name);
                 for tool in &default_agent.tools_config.tools {
                     if let ToolType::Retrieval(retrieval) = tool {
-                        let db =
-                            VectorStore::from_retrieval(config, &agent.name, retrieval).await?;
+                        let db = VectorStore::from_retrieval(
+                            config,
+                            secrets_manager,
+                            &agent.name,
+                            retrieval,
+                        )
+                        .await?;
 
                         if drop_all_tables {
                             db.cleanup().await?;
@@ -202,6 +211,7 @@ pub async fn ingest_retrieval_objects(
             AgentType::Routing(routing_agent) => {
                 let db = VectorStore::from_routing_agent(
                     config,
+                    secrets_manager,
                     &agent.name,
                     &agent.model,
                     routing_agent,

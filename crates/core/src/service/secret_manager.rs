@@ -7,7 +7,6 @@ use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Set,
 };
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use uuid::Uuid;
@@ -15,9 +14,11 @@ use uuid::Uuid;
 use crate::{db::client::establish_connection, errors::OxyError, utils::get_encryption_key};
 use entity::secrets::{self, ActiveModel as SecretActiveModel, Entity as Secret};
 
+#[derive(Debug, Clone)]
 pub struct SecretManagerService {
     encryption_key: [u8; 32],
     cache: Arc<RwLock<HashMap<String, CachedSecret>>>,
+    project_id: Uuid,
 }
 
 #[derive(Debug, Clone)]
@@ -52,28 +53,14 @@ pub struct SecretInfo {
     pub is_active: bool,
 }
 
-impl Default for SecretManagerService {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl SecretManagerService {
-    pub fn new() -> Self {
+    pub fn new(project_id: Uuid) -> Self {
         let encryption_key = get_encryption_key();
         Self {
             encryption_key,
             cache: Arc::new(RwLock::new(HashMap::new())),
+            project_id: project_id,
         }
-    }
-
-    fn get_key_file_path() -> PathBuf {
-        let home_dir = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-        PathBuf::from(home_dir)
-            .join(".local")
-            .join("share")
-            .join("oxy")
-            .join("encryption_key.txt")
     }
 
     /// Encrypt a secret value
@@ -174,6 +161,7 @@ impl SecretManagerService {
         // Check if secret with this name already exists
         let existing = Secret::find()
             .filter(secrets::Column::Name.eq(&params.name))
+            .filter(secrets::Column::ProjectId.eq(self.project_id))
             .filter(secrets::Column::IsActive.eq(true))
             .one(db)
             .await
@@ -207,6 +195,7 @@ impl SecretManagerService {
             updated_at: Set(now.into()),
             created_by: Set(params.created_by),
             is_active: Set(true),
+            project_id: Set(self.project_id),
         };
 
         tracing::info!("Inserting new secret: {:?}", secret_model);
@@ -245,6 +234,7 @@ impl SecretManagerService {
                 let rs = Secret::find()
                     .filter(secrets::Column::Name.eq(name))
                     .filter(secrets::Column::IsActive.eq(true))
+                    .filter(secrets::Column::ProjectId.eq(self.project_id))
                     .one(&conn)
                     .await;
                 match rs {
@@ -284,6 +274,7 @@ impl SecretManagerService {
     pub async fn list_secrets(&self, db: &DatabaseConnection) -> Result<Vec<SecretInfo>, OxyError> {
         let secrets = Secret::find()
             .filter(secrets::Column::IsActive.eq(true))
+            .filter(secrets::Column::ProjectId.eq(self.project_id))
             .order_by_asc(secrets::Column::Name)
             .all(db)
             .await

@@ -112,20 +112,9 @@ const useMonacoEditor = ({
     }
   }, [monaco, handleSaveFile]);
 
-  const handleEditorMount: OnMount = (editor) => {
-    const model = editor.getModel();
-    if (model) {
-      lastSavedVersionId.current = model.getAlternativeVersionId();
-
-      model.onDidChangeContent(() => {
-        const currentVersionId = model.getAlternativeVersionId();
-        onFileStateChange(
-          lastSavedVersionId.current !== currentVersionId
-            ? "modified"
-            : "saved",
-        );
-      });
-    }
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const handleEditorMount: OnMount = (_editor) => {
+    // Reset the last saved version on mount
   };
 
   return {

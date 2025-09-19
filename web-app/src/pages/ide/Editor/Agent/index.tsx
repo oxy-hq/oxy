@@ -13,24 +13,24 @@ import useAgent from "@/hooks/api/agents/useAgent";
 import useTests from "@/stores/useTests";
 import { useQueryClient } from "@tanstack/react-query";
 import queryKeys from "@/hooks/api/queryKey";
-import { useReadonly } from "@/hooks/useReadonly";
 import useAgentThreadStore from "@/stores/useAgentThread";
+import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 
 const AgentEditor = ({ pathb64 }: { pathb64: string }) => {
   const [previewKey, setPreviewKey] = useState<string>(randomKey());
   const [selected, setSelected] = useState<string>("preview");
-  const { isReadonly } = useReadonly();
   const queryClient = useQueryClient();
   const { setMessages } = useAgentThreadStore();
+  const { project, branchName, isReadOnly } = useCurrentProjectBranch();
 
   const { data: agent, isLoading } = useAgent(pathb64);
   const { runTest } = useTests();
 
   const handleRunAllTests = () => {
-    if (isLoading || isReadonly) return;
+    if (isLoading) return;
     const tests = agent?.tests || [];
     for (const [index] of tests.entries()) {
-      runTest(pathb64, index);
+      runTest(project.id, branchName, pathb64, index);
     }
   };
 
@@ -39,8 +39,11 @@ const AgentEditor = ({ pathb64 }: { pathb64: string }) => {
       pathb64={pathb64}
       onSaved={() => {
         setPreviewKey(randomKey());
-        queryClient.invalidateQueries({ queryKey: queryKeys.agent.list() });
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.agent.list(project.id, branchName),
+        });
       }}
+      readOnly={isReadOnly}
       pageContentClassName="md:flex-row flex-col"
       editorClassName="md:w-1/2 w-full h-1/2 md:h-full"
       preview={
@@ -55,19 +58,16 @@ const AgentEditor = ({ pathb64 }: { pathb64: string }) => {
               <ToggleGroupItem value="preview" aria-label="Preview">
                 Preview
               </ToggleGroupItem>
-              {!isReadonly && (
-                <ToggleGroupItem value="test" aria-label="Test">
-                  Test
-                </ToggleGroupItem>
-              )}
+              <ToggleGroupItem value="test" aria-label="Test">
+                Test
+              </ToggleGroupItem>
             </ToggleGroup>
             {selected === "test" && (
               <Button
                 size="sm"
                 variant="ghost"
                 onClick={handleRunAllTests}
-                disabled={isReadonly}
-                title={isReadonly ? "Read-only mode" : "Run all tests"}
+                title={"Run all tests"}
               >
                 <Play className="w-4 h-4" />
                 Run all tests

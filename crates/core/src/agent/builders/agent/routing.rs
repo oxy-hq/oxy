@@ -7,6 +7,7 @@ use oxy_semantic::Topic;
 use crate::{
     adapters::{
         openai::{AsyncFunctionObject, IntoOpenAIConfig, OpenAIClient},
+        secrets::SecretsManager,
         vector_store::parse_sql_source_type,
     },
     agent::{
@@ -17,6 +18,7 @@ use crate::{
         },
     },
     config::{
+        ConfigManager,
         constants::ARTIFACT_SOURCE,
         model::{
             AgentTool, ExecuteSQLTool, Model, ReasoningConfig, RoutingAgent, SemanticQueryTool,
@@ -57,18 +59,20 @@ impl RoutingAgentExecutable {
         description: Option<&str>,
         is_verified: bool,
     ) -> Result<ToolType, OxyError> {
+        let config_manager = &execution_context.project.config_manager;
+        let project_path = config_manager.project_path();
         match file_ref {
             workflow_path if workflow_path.ends_with(".workflow.yml") => {
-                let workflow = execution_context
-                    .config
-                    .resolve_workflow(workflow_path)
-                    .await?;
+                let workflow = config_manager.resolve_workflow(workflow_path).await?;
                 let tool_description = match description {
                     Some(desc) => desc.to_string(),
                     None => workflow.description.clone(),
                 };
                 Ok(ToolType::Workflow(WorkflowTool {
-                    name: to_openai_function_name(&PathBuf::from(workflow_path))?,
+                    name: to_openai_function_name(
+                        &PathBuf::from(workflow_path),
+                        &PathBuf::from(project_path),
+                    )?,
                     workflow_ref: workflow_path.to_string(),
                     variables: workflow.variables,
                     description: tool_description,
@@ -77,13 +81,16 @@ impl RoutingAgentExecutable {
                 }))
             }
             agent_path if agent_path.ends_with(".agent.yml") => {
-                let agent = execution_context.config.resolve_agent(agent_path).await?;
+                let agent = config_manager.resolve_agent(agent_path).await?;
                 let tool_description = match description {
                     Some(desc) => desc.to_string(),
                     None => agent.description.clone(),
                 };
                 Ok(ToolType::Agent(AgentTool {
-                    name: to_openai_function_name(&PathBuf::from(agent_path))?,
+                    name: to_openai_function_name(
+                        &PathBuf::from(agent_path),
+                        &PathBuf::from(project_path),
+                    )?,
                     agent_ref: agent_path.to_string(),
                     description: tool_description,
                     is_verified,
@@ -121,7 +128,10 @@ impl RoutingAgentExecutable {
                 };
 
                 Ok(ToolType::SemanticQuery(SemanticQueryTool {
-                    name: to_openai_function_name(&PathBuf::from(topic_path))?,
+                    name: to_openai_function_name(
+                        &PathBuf::from(topic_path),
+                        &PathBuf::from(project_path),
+                    )?,
                     topic: Some(topic.name.clone()),
                     description: tool_description,
                     dry_run_limit: None,
@@ -138,15 +148,20 @@ impl RoutingAgentExecutable {
         execution_context: &ExecutionContext,
         document: &Document,
     ) -> Result<ToolType, OxyError> {
+        let config_manager = &execution_context.project.config_manager;
+        let project_path = config_manager.project_path();
         match document.id.as_str() {
             sql_path if sql_path.ends_with(".sql") => {
                 if let Some(database_ref) = parse_sql_source_type(document.kind.as_str()) {
-                    execution_context.config.resolve_database(&database_ref)?;
+                    config_manager.resolve_database(&database_ref)?;
                     Ok(ToolType::ExecuteSQL(ExecuteSQLTool {
                         database: database_ref.to_string(),
                         description: document.content.to_string(),
                         dry_run_limit: None,
-                        name: to_openai_function_name(&PathBuf::from(sql_path))?,
+                        name: to_openai_function_name(
+                            &PathBuf::from(sql_path),
+                            &PathBuf::from(project_path),
+                        )?,
                         sql: Some(tokio::fs::read_to_string(sql_path).await?),
                     }))
                 } else {
@@ -232,7 +247,9 @@ impl Executable<RoutingAgentInput> for RoutingAgentExecutable {
             memory,
             reasoning_config,
         } = input;
-        let model = execution_context.config.resolve_model(&model)?;
+        let config_manager = &execution_context.project.config_manager;
+        let secrets_manager = &execution_context.project.secrets_manager;
+        let model = config_manager.resolve_model(&model)?;
         let tool_configs = self
             .resolve_routes(
                 execution_context,
@@ -247,6 +264,8 @@ impl Executable<RoutingAgentInput> for RoutingAgentExecutable {
             model,
             tool_configs,
             routing_agent.synthesize_results,
+            config_manager,
+            secrets_manager,
             reasoning_config.clone(),
         )
         .await?;
@@ -260,8 +279,18 @@ impl Executable<RoutingAgentInput> for RoutingAgentExecutable {
                 let fallback_tool = self
                     .resolve_tool(execution_context, &fallback, None, false)
                     .await?;
-                let fallback_route =
-                    FallbackAgent::new(&agent_name, model, fallback_tool, reasoning_config).await?;
+
+                let config_manager = &execution_context.project.config_manager;
+                let secrets_manager = &execution_context.project.secrets_manager;
+                let fallback_route = FallbackAgent::new(
+                    &agent_name,
+                    model,
+                    fallback_tool,
+                    config_manager,
+                    secrets_manager,
+                    reasoning_config,
+                )
+                .await?;
                 let mut fallback_executable = build_fallback(react_loop_executable, fallback_route);
                 fallback_executable
                     .execute(execution_context, one_shot_input)
@@ -285,14 +314,19 @@ async fn build_react_loop(
     model: &Model,
     tool_configs: Vec<ToolType>,
     synthesize_results: bool,
+    config: &ConfigManager,
+    secrets_manager: &SecretsManager,
     reasoning_config: Option<ReasoningConfig>,
 ) -> Result<impl Executable<OneShotInput, Response = Vec<OpenAIExecutableResponse>> + Clone, OxyError>
 {
-    let tools: Vec<ChatCompletionTool> =
-        futures::future::join_all(tool_configs.iter().map(ChatCompletionTool::from_tool_async))
-            .await
-            .into_iter()
-            .collect();
+    let tools: Vec<ChatCompletionTool> = futures::future::join_all(
+        tool_configs
+            .iter()
+            .map(|tool| ChatCompletionTool::from_tool_async(tool, config)),
+    )
+    .await
+    .into_iter()
+    .collect();
     let builder = match synthesize_results {
         true => ExecutableBuilder::new()
             .map(SimpleMapper)
@@ -301,7 +335,8 @@ async fn build_react_loop(
             .map(SimpleMapper)
             .react_once(OpenAITool::new(agent_name, tool_configs, 1)),
     };
-    let client = OpenAIClient::with_config(model.into_openai_config().await?);
+
+    let client = OpenAIClient::with_config(model.into_openai_config(secrets_manager).await?);
     let deduplicated_tools = deduplicate_tools(tools)?;
     Ok(builder.memo(vec![]).executable(OpenAIExecutable::new(
         client,

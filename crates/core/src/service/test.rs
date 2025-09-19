@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 
+use crate::adapters::project::manager::ProjectManager;
 use crate::config::constants::EVAL_SOURCE;
 use crate::errors::OxyError;
 use crate::eval::EvalResult;
@@ -93,7 +94,7 @@ impl EventHandler for EvalEventsHandler {
 }
 
 pub async fn run_test<P: AsRef<Path> + Send + 'static>(
-    project_path: P,
+    project_manager: ProjectManager,
     target_ref: P,
     index: usize,
 ) -> Result<impl Stream<Item = TestStreamMessage>, OxyError> {
@@ -105,7 +106,7 @@ pub async fn run_test<P: AsRef<Path> + Send + 'static>(
         total: HashMap::new(),
     };
     let _: JoinHandle<Result<Vec<EvalResult>, OxyError>> = tokio::spawn(async move {
-        let response = run_eval(project_path, target_ref, Some(index), event_handler).await?;
+        let response = run_eval(project_manager, target_ref, Some(index), event_handler).await?;
         for metric in response.iter() {
             response_tx
                 .send(TestStreamMessage {

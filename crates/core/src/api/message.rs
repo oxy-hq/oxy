@@ -20,7 +20,7 @@ pub struct MessageItem {
 }
 
 pub async fn get_messages_by_thread(
-    Path(thread_id): Path<String>,
+    Path((_project_id, thread_id)): Path<(Uuid, String)>,
 ) -> Result<extract::Json<Vec<MessageItem>>, StatusCode> {
     let connection = establish_connection()
         .await

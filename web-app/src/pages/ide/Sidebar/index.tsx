@@ -4,9 +4,7 @@ import {
   SidebarGroup,
   SidebarGroupLabel,
   SidebarMenu,
-  SidebarTrigger,
 } from "@/components/ui/shadcn/sidebar";
-import useSidebar from "@/components/ui/shadcn/sidebar-context";
 import FileTreeNode from "./FileTreeNode";
 import {
   ChevronsLeft,
@@ -20,8 +18,8 @@ import { Button } from "@/components/ui/shadcn/button";
 import React from "react";
 import { useLocation } from "react-router-dom";
 import NewNode, { CreationType } from "./NewNode";
+import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { SIDEBAR_REVEAL_FILE } from "./events";
-import { useReadonly } from "@/hooks/useReadonly";
 
 // Reuse a single collator for faster, locale-aware, case-insensitive comparisons
 const NAME_COLLATOR = new Intl.Collator(undefined, {
@@ -38,8 +36,10 @@ const Sidebar = ({
   sidebarOpen: boolean;
   setSidebarOpen: (open: boolean) => void;
 }) => {
+  const { isReadOnly } = useCurrentProjectBranch();
+
   const { data, refetch, isPending } = useFileTree();
-  const { isReadonly } = useReadonly();
+
   const fileTree = data
     ?.filter((f) => !ignoreFilesRegex.some((r) => f.name.match(r)))
     .sort((a, b) => {
@@ -50,17 +50,14 @@ const Sidebar = ({
       return NAME_COLLATOR.compare(a.name, b.name);
     });
 
-  const { open } = useSidebar();
   const [isCreating, setIsCreating] = React.useState(false);
   const [creationType, setCreationType] = React.useState<CreationType>("file");
   const handleCreateFile = () => {
-    if (isReadonly) return;
     setCreationType("file");
     setIsCreating(true);
   };
 
   const handleCreateFolder = () => {
-    if (isReadonly) return;
     setCreationType("folder");
     setIsCreating(true);
   };
@@ -98,18 +95,15 @@ const Sidebar = ({
       {sidebarOpen && (
         <div className="flex h-full flex-col overflow-hidden">
           <SidebarGroupLabel className="h-auto flex items-center justify-between p-2 border-b border-sidebar-border">
-            <div className="flex items-center gap-2">
-              {!open && <SidebarTrigger />}
-              Files
-            </div>
+            <div className="flex items-center gap-2">Files</div>
 
             <div className="flex items-center">
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={handleCreateFile}
-                disabled={isReadonly}
-                tooltip={isReadonly ? "Read-only mode" : "New File"}
+                disabled={isReadOnly}
+                tooltip={isReadOnly ? "Read-only mode" : "New File"}
               >
                 <FilePlus />
               </Button>
@@ -118,8 +112,8 @@ const Sidebar = ({
                 variant="ghost"
                 size="sm"
                 onClick={handleCreateFolder}
-                disabled={isReadonly}
-                tooltip={isReadonly ? "Read-only mode" : "New Folder"}
+                disabled={isReadOnly}
+                tooltip={isReadOnly ? "Read-only mode" : "New Folder"}
               >
                 <FolderPlus />
               </Button>
@@ -152,7 +146,7 @@ const Sidebar = ({
                     <Loader2 className="animate-spin h-4 w-4" />
                   </div>
                 )}
-                {isCreating && !isReadonly && (
+                {isCreating && !isReadOnly && (
                   <NewNode
                     creationType={creationType}
                     onCreated={() => {

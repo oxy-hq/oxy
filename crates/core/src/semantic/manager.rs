@@ -10,6 +10,7 @@ use futures::StreamExt;
 use tqdm::{Pbar, pbar};
 
 use crate::{
+    adapters::secrets::SecretsManager,
     config::{
         ConfigManager,
         model::{Database, SemanticDimension, SemanticModels},
@@ -27,13 +28,22 @@ use super::{
 
 pub struct SemanticManager {
     config: ConfigManager,
+    secrets_manager: SecretsManager,
     storage: SemanticStorage,
 }
 
 impl SemanticManager {
-    pub async fn from_config(config: ConfigManager, override_mode: bool) -> Result<Self, OxyError> {
+    pub async fn from_config(
+        config: ConfigManager,
+        secrets_manager: SecretsManager,
+        override_mode: bool,
+    ) -> Result<Self, OxyError> {
         let storage = SemanticStorage::from_config(&config, override_mode).await?;
-        Ok(SemanticManager { config, storage })
+        Ok(SemanticManager {
+            config,
+            secrets_manager,
+            storage,
+        })
     }
 
     pub async fn load_database_info(&self, database_ref: &str) -> Result<DatabaseInfo, OxyError> {
@@ -131,14 +141,15 @@ impl SemanticManager {
             database.database_type
         );
 
-        let loader = SchemaLoader::from_database(database, &self.config).await?;
+        let loader =
+            SchemaLoader::from_database(database, &self.config, &self.secrets_manager).await?;
         tracing::debug!(
             "SchemaLoader created successfully for database: {}",
             database.name
         );
 
         tracing::debug!("Loading schema for database: {}", database.name);
-        let semantics = match loader.load_schema().await {
+        let semantics = match loader.load_schema(&self.config).await {
             Ok(semantics) => {
                 tracing::debug!(
                     "Schema loaded for database: {} - found {} datasets",
@@ -185,7 +196,7 @@ impl SemanticManager {
             dimensions.extend_from_slice(result.dimensions.as_slice());
         }
 
-        let ddls = loader.load_ddl().await?;
+        let ddls = loader.load_ddl(&self.config).await?;
         for (dataset, ddl) in ddls {
             let key = SemanticKey::new(database.name.to_string(), dataset);
             let result = self.storage.save_ddl(&key, ddl).await?;

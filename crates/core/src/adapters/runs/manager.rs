@@ -1,3 +1,5 @@
+use uuid::Uuid;
+
 use crate::{
     adapters::runs::{
         database::RunsDatabaseStorage,
@@ -18,11 +20,13 @@ pub struct RunsManager {
 }
 
 impl RunsManager {
-    pub async fn default() -> Result<Self, OxyError> {
+    pub async fn default(project_id: Uuid, branch_id: Uuid) -> Result<Self, OxyError> {
         let storage = RunsStorageImpl::DatabaseStorage(RunsDatabaseStorage::new(
             establish_connection().await.map_err(|e| {
                 OxyError::DBError(format!("Failed to establish database connection: {e}"))
             })?,
+            project_id,
+            branch_id,
         ));
         Ok(RunsManager { storage })
     }

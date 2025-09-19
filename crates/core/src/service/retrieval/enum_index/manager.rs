@@ -5,7 +5,7 @@ use once_cell::sync::OnceCell;
 use rkyv::{self, Archived, Deserialize as RkyvDeserialize};
 
 use crate::{
-    adapters::vector_store::RetrievalObject,
+    adapters::{secrets::SecretsManager, vector_store::RetrievalObject},
     config::{
         ConfigManager,
         constants::{ENUM_ROUTING_PATH, RETRIEVAL_CACHE_PATH},
@@ -76,6 +76,7 @@ impl EnumIndexManager {
     /// One-shot build and persist: create manager from config and build cache
     pub async fn build_from_config(
         config: &ConfigManager,
+        secrets_manager: &SecretsManager,
         retrieval_objects: &Vec<RetrievalObject>,
     ) -> Result<(), OxyError> {
         // Exit early if no retrieval objects with inclusions
@@ -91,7 +92,8 @@ impl EnumIndexManager {
 
         // Collect enum semantic dimension enums. Semantic variables that cannot be enums (i.e. models.<model>.<dimension>)
         // and non-enum variables more generally are not supported for retrieval.
-        let semantic_manager = SemanticManager::from_config(config.clone(), false).await?;
+        let semantic_manager =
+            SemanticManager::from_config(config.clone(), secrets_manager.clone(), false).await?;
         let semantic_variables_ctx =
             SemanticVariablesContexts::new(HashMap::new(), HashMap::new())?;
         let semantic_dimensions_ctx = semantic_manager

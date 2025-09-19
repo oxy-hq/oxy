@@ -31,7 +31,17 @@ impl ConfigBuilder {
         let storage = self.storage.ok_or(OxyError::RuntimeError(
             "Config source is required".to_string(),
         ))?;
+
         let config = storage.load_config().await?;
+        Ok(ConfigManager::new(storage, config))
+    }
+
+    pub async fn build_with_fallback_config(self) -> Result<ConfigManager, OxyError> {
+        let storage = self.storage.ok_or(OxyError::RuntimeError(
+            "Config source is required".to_string(),
+        ))?;
+
+        let config = storage.load_config_with_fallback().await;
         Ok(ConfigManager::new(storage, config))
     }
 }

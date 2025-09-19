@@ -1,4 +1,5 @@
 use crate::{
+    adapters::secrets::SecretsManager,
     config::{
         ConfigManager,
         model::{AgentType, ToolType},
@@ -10,6 +11,7 @@ use super::{VectorStore, types::SearchRecord};
 
 pub async fn search_agent(
     config: &ConfigManager,
+    secrets_manager: &SecretsManager,
     agent_ref: &str,
     query: &str,
 ) -> Result<Vec<SearchRecord>, OxyError> {
@@ -26,8 +28,13 @@ pub async fn search_agent(
                             &agent.name, retrieval.name
                         )
                     );
-                    let vector_store =
-                        VectorStore::from_retrieval(config, &agent.name, retrieval).await?;
+                    let vector_store = VectorStore::from_retrieval(
+                        config,
+                        secrets_manager,
+                        &agent.name,
+                        retrieval,
+                    )
+                    .await?;
                     let documents = vector_store.search(query).await?;
                     for document in documents.iter() {
                         println!("\n{}\n", format!("{:?}", document));
@@ -43,9 +50,14 @@ pub async fn search_agent(
                 "{}",
                 format!("Searching using routing agent {} ...", &agent.name)
             );
-            let vector_store =
-                VectorStore::from_routing_agent(config, &agent.name, &agent.model, routing_agent)
-                    .await?;
+            let vector_store = VectorStore::from_routing_agent(
+                config,
+                secrets_manager,
+                &agent.name,
+                &agent.model,
+                routing_agent,
+            )
+            .await?;
             let documents = vector_store.search(query).await?;
             for document in documents.iter() {
                 println!("\n{}\n", format!("{:?}", document));

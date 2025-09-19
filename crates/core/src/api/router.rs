@@ -1,196 +1,258 @@
 use crate::api::agent;
 use crate::api::api_keys;
+use crate::api::artifacts;
 use crate::api::auth;
 use crate::api::chart;
 use crate::api::data;
 use crate::api::database;
 use crate::api::file;
-use crate::api::github;
+use crate::api::middlewares::project::project_middleware;
+use crate::api::organization;
 use crate::api::project;
 use crate::api::run;
 use crate::api::secrets;
 use crate::api::thread;
 use crate::api::user;
 use crate::api::workflow;
-use crate::auth::middleware::{AuthState, admin_middleware, auth_middleware};
+use crate::auth::middleware::{AuthState, auth_middleware};
 use crate::auth::types::AuthMode;
-use crate::config::ConfigBuilder;
 use crate::errors::OxyError;
-use crate::project::resolve_project_path;
 use axum::Router;
 use axum::body::Body;
+use axum::extract::FromRequestParts;
 use axum::http::Request;
+use axum::http::StatusCode;
+use axum::http::request::Parts;
 use axum::middleware;
 use axum::routing::delete;
 use axum::routing::put;
 use axum::routing::{get, post};
+use entity::projects;
 use sentry::integrations::tower::NewSentryLayer;
+use std::future::Future;
 use tower::ServiceBuilder;
 use tower_http::cors::{Any, CorsLayer};
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 
 use super::app;
-use super::artifacts;
 use super::message;
 use super::task;
 
-pub async fn api_router(auth_mode: AuthMode, readonly_mode: bool) -> Result<Router, OxyError> {
-    let cors = CorsLayer::new()
+fn build_cors_layer() -> CorsLayer {
+    CorsLayer::new()
         .allow_origin(Any)
         .allow_methods(tower_http::cors::Any)
-        .allow_headers(tower_http::cors::Any);
+        .allow_headers(tower_http::cors::Any)
+}
 
-    // Check if we're in onboarding mode (no config.yml found)
-    let project_path_result: Result<std::path::PathBuf, OxyError> = resolve_project_path();
-
-    // Only try to build config if we have a valid project path
-    let config = if let Ok(project_path) = project_path_result {
-        Some(
-            ConfigBuilder::new()
-                .with_project_path(&project_path)
-                .map_err(|_| OxyError::ConfigurationError("Failed to build config".to_owned()))?
-                .build()
-                .await
-                .map_err(|_| OxyError::ConfigurationError("Failed to build config".to_owned()))?,
-        )
-    } else {
-        None
-    };
-
-    let auth = config.as_ref().and_then(|c| c.get_authentication());
-    let mut public_routes = Router::new()
+fn build_public_routes() -> Router<AuthMode> {
+    Router::new()
         .route("/auth/config", get(auth::get_config))
-        // GitHub project status - needed for onboarding decisions
-        .route("/project/status", get(project::get_project_status));
-
-    // authentication
-    public_routes = public_routes
         .route("/auth/login", post(auth::login))
         .route("/auth/register", post(auth::register))
         .route("/auth/google", post(auth::google_auth))
-        .route("/auth/validate_email", post(auth::validate_email));
+        .route("/auth/validate_email", post(auth::validate_email))
+}
 
-    let mut protected_routes = Router::new()
+fn build_global_routes() -> Router<AuthMode> {
+    Router::new()
         .route("/user", get(user::get_current_user))
         .route("/logout", get(user::logout))
-        // GitHub integration routes - read-only operations
-        .route("/github/repositories", get(github::list_repositories))
-        .route("/projects/current", get(github::get_current_project))
-        // GitHub integration routes - writing operations
-        .route("/github/token", post(github::store_token))
+        .route("/github/repositories", get(project::list_repositories))
+        .route("/github/branches", get(project::list_branches))
+}
+
+fn build_organization_routes() -> Router<AuthMode> {
+    Router::new()
+        .route("/", get(organization::list_organizations))
+        .route("/", post(organization::create_organization))
+        .route("/{organization_id}/users", get(organization::list_users))
         .route(
-            "/github/repositories/select",
-            post(github::select_repository),
+            "/{organization_id}/users",
+            post(organization::add_user_to_organization),
         )
-        .route("/git/pull", post(github::pull_repository))
-        .route("/workflows/{pathb64}/run", post(workflow::run_workflow))
-        .route("/workflows/{pathb64}/runs", get(run::get_workflow_runs))
-        .route("/workflows/{pathb64}/runs", post(run::create_workflow_run))
+        .route(
+            "/{organization_id}/users",
+            put(organization::update_user_role_in_organization),
+        )
+        .route(
+            "/{organization_id}/users/{user_id}",
+            delete(organization::remove_user_from_organization),
+        )
+        .nest(
+            "/{organization_id}/projects",
+            build_organization_project_routes(),
+        )
+}
+
+fn build_organization_project_routes() -> Router<AuthMode> {
+    Router::new()
+        .route("/", post(project::create_project))
+        .route("/", get(project::list_projects))
+        .route("/{project_id}", delete(project::delete_project))
+}
+
+fn build_project_routes() -> Router<AuthMode> {
+    Router::new()
+        .route("/details", get(project::get_project))
+        .route("/status", get(project::get_project_status))
+        .route("/revision-info", get(project::get_revision_info))
+        .route("/branches", get(project::get_project_branches))
+        .route("/switch-branch", post(project::switch_project_branch))
+        .route(
+            "/switch-active-branch",
+            post(project::switch_project_active_branch),
+        )
+        .route("/pull-changes", post(project::pull_changes))
+        .route("/push-changes", post(project::push_changes))
+        .route("/git-token", post(project::change_git_token))
+        .nest("/workflows", build_workflow_routes())
+        .nest("/threads", build_thread_routes())
+        .nest("/agents", build_agent_routes())
+        .nest("/api-keys", build_api_key_routes())
+        .nest("/files", build_file_routes())
+        .nest("/databases", build_database_routes())
+        .nest("/secrets", build_secret_routes())
+        .nest("/app", build_app_routes())
+        .route("/artifacts/{id}", get(artifacts::get_artifact))
+        .route("/charts/{file_path}", get(chart::get_chart))
+        .route("/logs", get(thread::get_logs))
+        .route("/events", get(run::workflow_events))
+        .route("/blocks", get(run::get_blocks))
         .route(
             "/runs/{source_id}/{run_index}",
             delete(run::cancel_workflow_run),
         )
-        .route("/events", get(run::workflow_events))
-        .route("/blocks", get(run::get_blocks))
-        // App operations - writing
-        .route("/app/{pathb64}/run", post(app::run_app))
-        // Thread operations - writing
-        // Regular protected routes (only auth_middleware)
-        .route("/users", get(user::list_users))
-        .route("/artifacts/{id}", get(artifacts::get_artifact))
-        .route("/threads", post(thread::create_thread))
-        .route("/threads/{id}", delete(thread::delete_thread))
-        .route("/threads", delete(thread::delete_all_threads))
-        .route("/threads/bulk-delete", post(thread::bulk_delete_threads))
-        .route(
-            "/threads/{id}/workflow",
-            post(workflow::run_workflow_thread),
-        )
-        .route("/threads/{id}/task", post(task::ask_task))
-        .route("/threads", get(thread::get_threads))
-        .route("/threads/{id}", get(thread::get_thread))
-        .route("/logs", get(thread::get_logs))
-        .route(
-            "/threads/{id}/messages",
-            get(message::get_messages_by_thread),
-        )
-        .route("/agents", get(agent::get_agents))
-        .route("/agents/{pathb64}", get(agent::get_agent))
-        .route("/agents/{pathb64}/ask", post(agent::ask_agent_preview))
-        .route("/api-keys", get(api_keys::list_api_keys))
-        .route("/api-keys", post(api_keys::create_api_key))
-        .route("/api-keys/{id}", get(api_keys::get_api_key))
-        .route("/api-keys/{id}", delete(api_keys::delete_api_key))
-        .route("/app/{pathb64}/displays", get(app::get_displays))
-        .route("/app/{pathb64}", get(app::get_app_data))
-        .route("/app/file/{pathb64}", get(app::get_data))
-        .route("/apps", get(app::list_apps))
         .route(
             "/builder-availability",
             get(agent::check_builder_availability),
         )
-        .route("/workflows", get(workflow::list))
-        .route("/workflows/{pathb64}", get(workflow::get))
-        .route("/workflows/{pathb64}/logs", get(workflow::get_logs))
-        .route("/files", get(file::get_file_tree))
-        .route("/files/{pathb64}", get(file::get_file))
-        .route("/charts/{file_path}", get(chart::get_chart))
-        .route("/databases", get(database::list_databases))
-        .route("/threads/{id}/agent", post(agent::ask_agent))
-        // Secret management routes - read-only
-        .route("/secrets", get(secrets::list_secrets))
-        .route("/secrets/{id}", get(secrets::get_secret))
-        // GitHub settings routes - read-only
-        .route("/github/settings", get(github::get_github_settings))
-        .route("/github/revision", get(github::get_revision_info))
-        // Database and SQL operations - writing
-        .route("/databases/sync", post(database::sync_database))
-        .route("/databases/build", post(data::build_embeddings))
-        .route("/databases/clean", post(database::clean_data))
         .route("/sql/{pathb64}", post(data::execute_sql))
-        // Secret management routes - writing
-        .route("/secrets", post(secrets::create_secret))
-        .route("/secrets/bulk", post(secrets::bulk_create_secrets))
-        .route("/secrets/{id}", put(secrets::update_secret))
-        .route("/secrets/{id}", delete(secrets::delete_secret))
-        // GitHub settings routes - writing
-        .route("/github/settings", put(github::update_github_settings))
-        .route("/github/onboarded", put(github::set_onboarded))
-        .route("/github/sync", post(github::sync_github_repository))
-        .route("/threads/{id}/stop", post(thread::stop_thread));
+}
 
-    // Add writing operations if not in readonly mode
-    if !readonly_mode {
-        protected_routes = protected_routes
-            // Workflow operations - writing
-            .route("/workflows/from-query", post(workflow::create_from_query))
-            // File operations - writing
-            .route("/files/{pathb64}", post(file::save_file))
-            .route("/files/{pathb64}/delete-file", delete(file::delete_file))
-            .route(
-                "/files/{pathb64}/delete-folder",
-                delete(file::delete_folder),
-            )
-            .route("/files/{pathb64}/rename-file", put(file::rename_file))
-            .route("/files/{pathb64}/rename-folder", put(file::rename_folder))
-            .route("/files/{pathb64}/new-file", post(file::create_file))
-            .route("/files/{pathb64}/new-folder", post(file::create_folder))
-            // Agent operations - writing
-            .route(
-                "/agents/{pathb64}/tests/{test_index}",
-                post(agent::run_test),
-            );
+#[derive(Clone)]
+pub struct ProjectExtractor(pub projects::Model);
+
+impl<S> FromRequestParts<S> for ProjectExtractor
+where
+    S: Send + Sync,
+{
+    type Rejection = StatusCode;
+
+    fn from_request_parts(
+        parts: &mut Parts,
+        _state: &S,
+    ) -> impl Future<Output = Result<Self, Self::Rejection>> + Send {
+        let result = parts
+            .extensions
+            .get::<projects::Model>()
+            .cloned()
+            .map(ProjectExtractor)
+            .ok_or(StatusCode::UNAUTHORIZED);
+
+        async move { result }
     }
+}
 
-    // GitHub API endpoints are public, not requiring authentication
+fn build_workflow_routes() -> Router<AuthMode> {
+    Router::new()
+        .route("/", get(workflow::list))
+        .route("/from-query", post(workflow::create_from_query))
+        .route("/{pathb64}", get(workflow::get))
+        .route("/{pathb64}/run", post(workflow::run_workflow))
+        .route("/{pathb64}/logs", get(workflow::get_logs))
+        .route("/{pathb64}/runs", get(run::get_workflow_runs))
+        .route("/{pathb64}/runs", post(run::create_workflow_run))
+}
 
-    // Admin-only routes with explicit middleware ordering: auth_middleware -> admin_middleware
-    let admin_routes = Router::new()
-        .route("/users/{id}", delete(user::delete_user))
-        .route("/users/{id}", put(user::update_user));
+fn build_thread_routes() -> Router<AuthMode> {
+    Router::new()
+        .route("/", get(thread::get_threads))
+        .route("/", post(thread::create_thread))
+        .route("/", delete(thread::delete_all_threads))
+        .route("/bulk-delete", post(thread::bulk_delete_threads))
+        .route("/{id}", get(thread::get_thread))
+        .route("/{id}", delete(thread::delete_thread))
+        .route("/{id}/task", post(task::ask_task))
+        .route("/{id}/workflow", post(workflow::run_workflow_thread))
+        .route("/{id}/messages", get(message::get_messages_by_thread))
+        .route("/{id}/agent", post(agent::ask_agent))
+        .route("/{id}/stop", post(thread::stop_thread))
+}
 
-    // Apply middleware to regular routes (only auth)
+fn build_agent_routes() -> Router<AuthMode> {
+    Router::new()
+        .route("/", get(agent::get_agents))
+        .route("/{pathb64}", get(agent::get_agent))
+        .route("/{pathb64}/ask", post(agent::ask_agent_preview))
+        .route("/{pathb64}/tests/{test_index}", post(agent::run_test))
+}
+
+fn build_api_key_routes() -> Router<AuthMode> {
+    Router::new()
+        .route("/", get(api_keys::list_api_keys))
+        .route("/", post(api_keys::create_api_key))
+        .route("/{id}", get(api_keys::get_api_key))
+        .route("/{id}", delete(api_keys::delete_api_key))
+}
+
+fn build_file_routes() -> Router<AuthMode> {
+    Router::new()
+        .route("/", get(file::get_file_tree))
+        .route("/diff-summary", get(file::get_diff_summary))
+        .route("/{pathb64}", get(file::get_file))
+        .route("/{pathb64}/from-git", get(file::get_file_from_git))
+        .route("/{pathb64}", post(file::save_file))
+        .route("/{pathb64}/delete-file", delete(file::delete_file))
+        .route("/{pathb64}/delete-folder", delete(file::delete_folder))
+        .route("/{pathb64}/rename-file", put(file::rename_file))
+        .route("/{pathb64}/rename-folder", put(file::rename_folder))
+        .route("/{pathb64}/new-file", post(file::create_file))
+        .route("/{pathb64}/new-folder", post(file::create_folder))
+}
+
+fn build_database_routes() -> Router<AuthMode> {
+    Router::new()
+        .route("/", get(database::list_databases))
+        .route("/sync", post(database::sync_database))
+        .route("/build", post(data::build_embeddings))
+        .route("/clean", post(database::clean_data))
+}
+
+fn build_secret_routes() -> Router<AuthMode> {
+    Router::new()
+        .route("/", get(secrets::list_secrets))
+        .route("/", post(secrets::create_secret))
+        .route("/bulk", post(secrets::bulk_create_secrets))
+        .route("/{id}", get(secrets::get_secret))
+        .route("/{id}", put(secrets::update_secret))
+        .route("/{id}", delete(secrets::delete_secret))
+}
+
+fn build_app_routes() -> Router<AuthMode> {
+    Router::new()
+        .route("/", get(app::list_apps))
+        .route("/{pathb64}", get(app::get_app_data))
+        .route("/{pathb64}/run", post(app::run_app))
+        .route("/{pathb64}/displays", get(app::get_displays))
+        .route("/file/{pathb64}", get(app::get_data))
+}
+
+fn build_protected_routes() -> Router<AuthMode> {
+    Router::new()
+        .merge(build_global_routes())
+        .nest("/organizations", build_organization_routes())
+        .nest(
+            "/{project_id}",
+            build_project_routes().layer(middleware::from_fn(project_middleware)),
+        )
+}
+
+fn apply_middleware(
+    protected_routes: Router<AuthMode>,
+    auth_mode: AuthMode,
+) -> Result<Router<AuthMode>, OxyError> {
     let protected_regular_routes = match auth_mode {
         AuthMode::IAP => protected_routes.layer(middleware::from_fn_with_state(
             AuthState::iap()?,
@@ -205,50 +267,19 @@ pub async fn api_router(auth_mode: AuthMode, readonly_mode: bool) -> Result<Rout
             auth_middleware,
         )),
         AuthMode::BuiltIn => protected_routes.layer(middleware::from_fn_with_state(
-            AuthState::built_in(auth.clone()),
+            AuthState::built_in(),
             auth_middleware,
         )),
     };
 
-    // Apply middleware to admin routes (auth + admin) with explicit ordering
-    let protected_admin_routes = match auth_mode {
-        AuthMode::IAP => {
-            let auth_state = AuthState::iap()?;
-            admin_routes.layer(
-                ServiceBuilder::new()
-                    .layer(middleware::from_fn_with_state(auth_state, auth_middleware))
-                    .layer(middleware::from_fn(admin_middleware)),
-            )
-        }
-        AuthMode::IAPCloudRun => {
-            let auth_state = AuthState::iap_cloud_run();
-            admin_routes.layer(
-                ServiceBuilder::new()
-                    .layer(middleware::from_fn_with_state(auth_state, auth_middleware))
-                    .layer(middleware::from_fn(admin_middleware)),
-            )
-        }
-        AuthMode::Cognito => {
-            let auth_state = AuthState::cognito();
-            admin_routes.layer(
-                ServiceBuilder::new()
-                    .layer(middleware::from_fn_with_state(auth_state, auth_middleware))
-                    .layer(middleware::from_fn(admin_middleware)),
-            )
-        }
-        AuthMode::BuiltIn => {
-            let auth_state = AuthState::built_in(auth);
-            admin_routes.layer(
-                ServiceBuilder::new()
-                    .layer(middleware::from_fn_with_state(auth_state, auth_middleware))
-                    .layer(middleware::from_fn(admin_middleware)),
-            )
-        }
-    };
+    Ok(protected_regular_routes)
+}
 
-    // Merge all protected routes
-    let protected_routes = protected_regular_routes.merge(protected_admin_routes);
-
+pub async fn api_router(auth_mode: AuthMode) -> Result<Router, OxyError> {
+    let cors = build_cors_layer();
+    let public_routes = build_public_routes();
+    let protected_routes = build_protected_routes();
+    let protected_routes = apply_middleware(protected_routes, auth_mode)?;
     let app_routes = public_routes.merge(protected_routes);
 
     Ok(app_routes
@@ -257,11 +288,8 @@ pub async fn api_router(auth_mode: AuthMode, readonly_mode: bool) -> Result<Rout
         .layer(ServiceBuilder::new().layer(NewSentryLayer::<Request<Body>>::new_from_top())))
 }
 
-pub async fn openapi_router(_readonly_mode: bool) -> OpenApiRouter {
-    let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods(tower_http::cors::Any)
-        .allow_headers(tower_http::cors::Any);
+pub async fn openapi_router() -> OpenApiRouter {
+    let cors = build_cors_layer();
 
     OpenApiRouter::new()
         // Agent routes
@@ -274,6 +302,14 @@ pub async fn openapi_router(_readonly_mode: bool) -> OpenApiRouter {
         .routes(routes!(api_keys::delete_api_key))
         // App routes
         .routes(routes!(app::list_apps))
+        // Organization routes
+        .routes(routes!(organization::list_organizations))
+        .routes(routes!(organization::create_organization))
+        // Project routes
+        .routes(routes!(project::create_project))
+        .routes(routes!(project::get_project))
+        .routes(routes!(project::delete_project))
+        .routes(routes!(project::get_project_branches))
         // Thread routes
         .routes(routes!(thread::get_threads))
         .routes(routes!(thread::get_thread))

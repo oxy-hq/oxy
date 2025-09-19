@@ -157,14 +157,12 @@ impl ConsistencyPicker<OutputContainer> for AgentPicker {
                 ((idx_left, idx_right), (output_left, output_right))
             })
             .unzip();
-        let agent_config = execution_context
-            .config
-            .resolve_agent(self.agent_ref.clone())
-            .await?;
-        let model = execution_context
-            .config
-            .resolve_model(&agent_config.model)?;
-        let agent = build_openai_executable(model).await?;
+
+        let config_manager = execution_context.project.config_manager.clone();
+        let agent_config = config_manager.resolve_agent(self.agent_ref.clone()).await?;
+        let model = config_manager.resolve_model(&agent_config.model)?;
+        let agent =
+            build_openai_executable(model, &execution_context.project.secrets_manager).await?;
         let mut consistency_evaluator = ExecutableBuilder::new()
             .concurrency_control(
                 10,

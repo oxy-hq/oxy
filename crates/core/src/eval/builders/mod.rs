@@ -1,8 +1,7 @@
-use std::path::Path;
-
 use minijinja::Value;
 
 use crate::{
+    adapters::project::manager::ProjectManager,
     config::constants::EVAL_SOURCE_ROOT,
     errors::OxyError,
     execute::{
@@ -33,14 +32,10 @@ impl EvalLauncher {
         }
     }
 
-    pub async fn with_project_path<P: AsRef<Path>>(
-        mut self,
-        project_path: P,
-    ) -> Result<Self, OxyError> {
+    pub async fn with_project(mut self, project: ProjectManager) -> Result<Self, OxyError> {
         self.execution_context = Some(
             ExecutionContextBuilder::new()
-                .with_project_path(project_path)
-                .await?
+                .with_project_manager(project)
                 .with_writer(self.buf_writer.create_writer(None)?)
                 .with_global_context(Value::UNDEFINED)
                 .with_source(Source {

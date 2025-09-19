@@ -247,7 +247,6 @@ pub async fn handle_make_command(make_args: &MakeArgs) -> anyhow::Result<()> {
         models: vec![model.clone()],
         project_path: PathBuf::from("."),
         builder_agent: None,
-        authentication: None,
     };
     serde_yaml::to_writer(
         std::fs::File::create(setup.output_dir.join("config.yml"))?,

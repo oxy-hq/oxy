@@ -1,18 +1,18 @@
+use crate::api::middlewares::project::{ProjectManagerExtractor, ProjectPath};
 use crate::{
     auth::extractor::AuthenticatedUserExtractor,
     cli::clean::{clean_all, clean_cache, clean_database_folder, clean_vectors},
-    config::ConfigBuilder,
-    project::resolve_project_path,
     service::sync::sync_databases,
 };
 use axum::{
-    extract::{Json, Query},
+    extract::{Json, Path, Query},
     http::StatusCode,
 };
 use serde::de::{self, Deserializer};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use utoipa::ToSchema;
+use uuid::Uuid;
 #[derive(Serialize, ToSchema)]
 pub struct DatabaseInfo {
     pub name: String,
@@ -58,27 +58,13 @@ pub struct SyncDatabaseQuery {
 }
 
 pub async fn sync_database(
+    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    Path(ProjectPath {
+        project_id: _project_id,
+    }): Path<ProjectPath>,
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
     Query(params): Query<SyncDatabaseQuery>,
 ) -> Result<Json<DatabaseSyncResponse>, StatusCode> {
-    let project_path = resolve_project_path().map_err(|e| {
-        tracing::error!("Failed to find project path: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-
-    let config = ConfigBuilder::new()
-        .with_project_path(&project_path)
-        .map_err(|e| {
-            tracing::error!("Failed to create config builder: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?
-        .build()
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to build config: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-
     let filter = params.database.map(|db| {
         let datasets = params.datasets.unwrap_or_default();
         (db, datasets)
@@ -86,7 +72,10 @@ pub async fn sync_database(
 
     let overwrite = true; // Always overwrite
 
-    match sync_databases(config, filter, overwrite).await {
+    let config = project_manager.config_manager;
+    let secrets_manager = project_manager.secrets_manager;
+
+    match sync_databases(config.clone(), secrets_manager.clone(), filter, overwrite).await {
         Ok(results) => {
             let success_count = results.iter().filter(|r| r.is_ok()).count();
             let error_count = results.iter().filter(|r| r.is_err()).count();
@@ -136,26 +125,12 @@ pub async fn sync_database(
 }
 
 pub async fn list_databases(
+    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    Path(_project_id): Path<Uuid>,
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
 ) -> Result<Json<Vec<DatabaseInfo>>, StatusCode> {
-    let project_path = resolve_project_path().map_err(|e| {
-        tracing::error!("Failed to find project path: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-
-    let config_builder = ConfigBuilder::new()
-        .with_project_path(&project_path)
-        .map_err(|e| {
-            tracing::error!("Failed to create config builder: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-
-    let config = config_builder.build().await.map_err(|e| {
-        tracing::error!("Failed to build config: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-
-    let databases = config
+    let databases = project_manager
+        .config_manager
         .list_databases()
         .map_err(|e| {
             tracing::error!("Failed to list databases: {}", e);
@@ -196,7 +171,7 @@ pub struct CleanResponse {
 }
 
 pub async fn clean_data(
-    _user: AuthenticatedUserExtractor,
+    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
     Query(params): Query<CleanRequest>,
 ) -> Result<Json<CleanResponse>, StatusCode> {
     let target = params.target.unwrap_or(CleanTarget::All);
@@ -206,7 +181,7 @@ pub async fn clean_data(
     let mut error_message = String::new();
 
     match target {
-        CleanTarget::All => match clean_all(false).await {
+        CleanTarget::All => match clean_all(false, &project_manager.config_manager).await {
             Ok(_) => {
                 cleaned_items.extend(vec![
                     "Databases folder".to_string(),
@@ -219,21 +194,23 @@ pub async fn clean_data(
                 error_message = format!("Failed to clean all: {e}");
             }
         },
-        CleanTarget::DatabasesFolder => match clean_database_folder(false).await {
-            Ok(_) => cleaned_items.push("Databases folder".to_string()),
-            Err(e) => {
-                success = false;
-                error_message = format!("Failed to clean databases folder: {e}");
+        CleanTarget::DatabasesFolder => {
+            match clean_database_folder(false, &project_manager.config_manager).await {
+                Ok(_) => cleaned_items.push("Databases folder".to_string()),
+                Err(e) => {
+                    success = false;
+                    error_message = format!("Failed to clean databases folder: {e}");
+                }
             }
-        },
-        CleanTarget::Vectors => match clean_vectors(false).await {
+        }
+        CleanTarget::Vectors => match clean_vectors(false, &project_manager.config_manager).await {
             Ok(_) => cleaned_items.push("Vector store".to_string()),
             Err(e) => {
                 success = false;
                 error_message = format!("Failed to clean vectors: {e}");
             }
         },
-        CleanTarget::Cache => match clean_cache(false).await {
+        CleanTarget::Cache => match clean_cache(false, &project_manager.config_manager).await {
             Ok(_) => cleaned_items.push("Cache".to_string()),
             Err(e) => {
                 success = false;

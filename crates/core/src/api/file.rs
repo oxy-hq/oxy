@@ -1,20 +1,28 @@
-use crate::project::resolve_project_path;
+use crate::api::middlewares::project::ProjectManagerExtractor;
+use crate::github::{FileStatus, GitOperations};
+use crate::service::project_service::ProjectService;
+use axum::Json;
 use axum::extract::{self, Path};
 use axum::http::StatusCode;
 use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
+use futures::TryFutureExt;
 use serde::{Deserialize, Serialize};
 use std::fmt::{self, Display, Formatter};
 use std::fs;
 use std::path::PathBuf;
 use utoipa::ToSchema;
+use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Clone, ToSchema)]
 pub struct SaveFileRequest {
     pub data: String,
 }
 
-pub async fn create_file(Path(pathb64): Path<String>) -> Result<extract::Json<String>, StatusCode> {
+pub async fn create_file(
+    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    Path((_project_id, pathb64)): Path<(Uuid, String)>,
+) -> Result<extract::Json<String>, StatusCode> {
     let decoded_path: Vec<u8> = BASE64_STANDARD.decode(pathb64).map_err(|e| {
         tracing::info!("{:?}", e);
         StatusCode::BAD_REQUEST
@@ -23,8 +31,16 @@ pub async fn create_file(Path(pathb64): Path<String>) -> Result<extract::Json<St
         tracing::info!("{:?}", e);
         StatusCode::BAD_REQUEST
     })?;
-    let project_path = resolve_project_path().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let file_path = project_path.join(path);
+    let file_path = project_manager
+        .config_manager
+        .resolve_file(path)
+        .map_err(|e| {
+            tracing::info!("{:?}", e);
+            StatusCode::BAD_REQUEST
+        })
+        .await?;
+
+    let file_path = PathBuf::from(&file_path);
 
     if let Some(parent) = file_path.parent() {
         fs::create_dir_all(parent).map_err(|e| {
@@ -41,7 +57,8 @@ pub async fn create_file(Path(pathb64): Path<String>) -> Result<extract::Json<St
 }
 
 pub async fn create_folder(
-    Path(pathb64): Path<String>,
+    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    Path((_project_id, pathb64)): Path<(Uuid, String)>,
 ) -> Result<extract::Json<String>, StatusCode> {
     let decoded_path: Vec<u8> = BASE64_STANDARD.decode(pathb64).map_err(|e| {
         tracing::info!("{:?}", e);
@@ -51,8 +68,16 @@ pub async fn create_folder(
         tracing::info!("{:?}", e);
         StatusCode::BAD_REQUEST
     })?;
-    let project_path = resolve_project_path().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let file_path = project_path.join(path);
+    let file_path = project_manager
+        .config_manager
+        .resolve_file(path)
+        .map_err(|e| {
+            tracing::info!("{:?}", e);
+            StatusCode::BAD_REQUEST
+        })
+        .await?;
+
+    let file_path = PathBuf::from(&file_path);
     fs::create_dir_all(file_path).map_err(|e| {
         tracing::info!("{:?}", e);
         StatusCode::INTERNAL_SERVER_ERROR
@@ -60,7 +85,10 @@ pub async fn create_folder(
     Ok(extract::Json("success".to_string()))
 }
 
-pub async fn delete_file(Path(pathb64): Path<String>) -> Result<extract::Json<String>, StatusCode> {
+pub async fn delete_file(
+    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    Path((_project_id, pathb64)): Path<(Uuid, String)>,
+) -> Result<extract::Json<String>, StatusCode> {
     let decoded_path: Vec<u8> = BASE64_STANDARD.decode(pathb64).map_err(|e| {
         tracing::info!("{:?}", e);
         StatusCode::BAD_REQUEST
@@ -69,8 +97,16 @@ pub async fn delete_file(Path(pathb64): Path<String>) -> Result<extract::Json<St
         tracing::info!("{:?}", e);
         StatusCode::BAD_REQUEST
     })?;
-    let project_path = resolve_project_path().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let file_path = project_path.join(path);
+    let file_path = project_manager
+        .config_manager
+        .resolve_file(path)
+        .map_err(|e| {
+            tracing::info!("{:?}", e);
+            StatusCode::BAD_REQUEST
+        })
+        .await?;
+
+    let file_path = PathBuf::from(&file_path);
     fs::remove_file(file_path).map_err(|e| {
         tracing::info!("{:?}", e);
         StatusCode::INTERNAL_SERVER_ERROR
@@ -79,7 +115,8 @@ pub async fn delete_file(Path(pathb64): Path<String>) -> Result<extract::Json<St
 }
 
 pub async fn delete_folder(
-    Path(pathb64): Path<String>,
+    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    Path((_project_id, pathb64)): Path<(Uuid, String)>,
 ) -> Result<extract::Json<String>, StatusCode> {
     let decoded_path: Vec<u8> = BASE64_STANDARD.decode(pathb64).map_err(|e| {
         tracing::info!("{:?}", e);
@@ -89,8 +126,16 @@ pub async fn delete_folder(
         tracing::info!("{:?}", e);
         StatusCode::BAD_REQUEST
     })?;
-    let project_path = resolve_project_path().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let file_path = project_path.join(path);
+    let file_path = project_manager
+        .config_manager
+        .resolve_file(path)
+        .map_err(|e| {
+            tracing::info!("{:?}", e);
+            StatusCode::BAD_REQUEST
+        })
+        .await?;
+
+    let file_path = PathBuf::from(&file_path);
     fs::remove_dir_all(file_path).map_err(|e| {
         tracing::info!("{:?}", e);
         StatusCode::INTERNAL_SERVER_ERROR
@@ -104,7 +149,8 @@ pub struct RenameFileRequest {
 }
 
 pub async fn rename_file(
-    Path(pathb64): Path<String>,
+    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    Path((_project_id, pathb64)): Path<(Uuid, String)>,
     extract::Json(payload): extract::Json<RenameFileRequest>,
 ) -> Result<extract::Json<String>, StatusCode> {
     let decoded_path: Vec<u8> = BASE64_STANDARD.decode(pathb64).map_err(|e| {
@@ -115,9 +161,27 @@ pub async fn rename_file(
         tracing::info!("{:?}", e);
         StatusCode::BAD_REQUEST
     })?;
-    let project_path = resolve_project_path().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let file_path = project_path.join(path);
-    fs::rename(file_path, project_path.join(payload.new_name)).map_err(|e| {
+    let file_path = project_manager
+        .config_manager
+        .resolve_file(path)
+        .map_err(|e| {
+            tracing::info!("{:?}", e);
+            StatusCode::BAD_REQUEST
+        })
+        .await?;
+
+    let file_path = PathBuf::from(&file_path);
+
+    let new_file_path = project_manager
+        .config_manager
+        .resolve_file(payload.new_name)
+        .map_err(|e| {
+            tracing::info!("{:?}", e);
+            StatusCode::BAD_REQUEST
+        })
+        .await?;
+
+    fs::rename(file_path, PathBuf::from(&new_file_path)).map_err(|e| {
         tracing::info!("{:?}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
@@ -125,7 +189,8 @@ pub async fn rename_file(
 }
 
 pub async fn rename_folder(
-    Path(pathb64): Path<String>,
+    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    Path((_project_id, pathb64)): Path<(Uuid, String)>,
     extract::Json(payload): extract::Json<RenameFileRequest>,
 ) -> Result<extract::Json<String>, StatusCode> {
     let decoded_path: Vec<u8> = BASE64_STANDARD.decode(pathb64).map_err(|e| {
@@ -136,9 +201,27 @@ pub async fn rename_folder(
         tracing::info!("{:?}", e);
         StatusCode::BAD_REQUEST
     })?;
-    let project_path = resolve_project_path().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let file_path = project_path.join(path);
-    fs::rename(file_path, project_path.join(payload.new_name)).map_err(|e| {
+    let file_path = project_manager
+        .config_manager
+        .resolve_file(path)
+        .map_err(|e| {
+            tracing::info!("{:?}", e);
+            StatusCode::BAD_REQUEST
+        })
+        .await?;
+
+    let file_path = PathBuf::from(&file_path);
+
+    let new_file_path = project_manager
+        .config_manager
+        .resolve_file(payload.new_name)
+        .map_err(|e| {
+            tracing::info!("{:?}", e);
+            StatusCode::BAD_REQUEST
+        })
+        .await?;
+
+    fs::rename(file_path, PathBuf::from(&new_file_path)).map_err(|e| {
         tracing::info!("{:?}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
@@ -147,7 +230,8 @@ pub async fn rename_folder(
 
 #[axum::debug_handler]
 pub async fn save_file(
-    Path(pathb64): Path<String>,
+    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    Path((_project_id, pathb64)): Path<(Uuid, String)>,
     extract::Json(payload): extract::Json<SaveFileRequest>,
 ) -> Result<extract::Json<String>, StatusCode> {
     let decoded_path: Vec<u8> = BASE64_STANDARD.decode(pathb64).map_err(|e| {
@@ -158,8 +242,16 @@ pub async fn save_file(
         tracing::info!("{:?}", e);
         StatusCode::BAD_REQUEST
     })?;
-    let project_path = resolve_project_path().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let file_path = project_path.join(path);
+    let file_path = project_manager
+        .config_manager
+        .resolve_file(path)
+        .map_err(|e| {
+            tracing::info!("{:?}", e);
+            StatusCode::BAD_REQUEST
+        })
+        .await?;
+
+    let file_path = PathBuf::from(&file_path);
     fs::write(file_path, payload.data).map_err(|e| {
         tracing::info!("{:?}", e);
         StatusCode::INTERNAL_SERVER_ERROR
@@ -167,7 +259,23 @@ pub async fn save_file(
     Ok(extract::Json("success".to_string()))
 }
 
-pub async fn get_file(Path(pathb64): Path<String>) -> Result<extract::Json<String>, StatusCode> {
+pub async fn get_diff_summary(
+    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+) -> Result<Json<Vec<FileStatus>>, StatusCode> {
+    let repo_path = project_manager.config_manager.project_path();
+
+    match GitOperations::diff_numstat_summary(&repo_path).await {
+        Ok(file_statuses) => Ok(Json(file_statuses)),
+        Err(e) => {
+            tracing::error!("{:?}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+pub async fn get_file(
+    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    Path((_project_id, pathb64)): Path<(Uuid, String)>,
+) -> Result<extract::Json<String>, StatusCode> {
     let decoded_path: Vec<u8> = BASE64_STANDARD.decode(pathb64).map_err(|e| {
         tracing::info!("{:?}", e);
         StatusCode::BAD_REQUEST
@@ -176,12 +284,53 @@ pub async fn get_file(Path(pathb64): Path<String>) -> Result<extract::Json<Strin
         tracing::info!("{:?}", e);
         StatusCode::BAD_REQUEST
     })?;
-    let project_path = resolve_project_path().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let file_path = project_path.join(path);
+    let file_path = project_manager
+        .config_manager
+        .resolve_file(path)
+        .map_err(|e| {
+            tracing::info!("{:?}", e);
+            StatusCode::BAD_REQUEST
+        })
+        .await?;
+
+    let file_path = PathBuf::from(&file_path);
     let file_content = fs::read_to_string(file_path).map_err(|e| {
         tracing::info!("{:?}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
+    Ok(extract::Json(file_content))
+}
+
+pub async fn get_file_from_git(
+    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    Path((_project_id, pathb64)): Path<(Uuid, String)>,
+) -> Result<extract::Json<String>, StatusCode> {
+    let decoded_path: Vec<u8> = BASE64_STANDARD.decode(pathb64).map_err(|e| {
+        tracing::info!("{:?}", e);
+        StatusCode::BAD_REQUEST
+    })?;
+    let path = String::from_utf8(decoded_path).map_err(|e| {
+        tracing::info!("{:?}", e);
+        StatusCode::BAD_REQUEST
+    })?;
+    let repo_path = project_manager.config_manager.project_path();
+    let file_path = project_manager
+        .config_manager
+        .resolve_file(path)
+        .map_err(|e| {
+            tracing::info!("{:?}", e);
+            StatusCode::BAD_REQUEST
+        })
+        .await?;
+    let relative_file_path = PathBuf::from(&file_path)
+        .strip_prefix(&repo_path)
+        .map_err(|e| {
+            tracing::info!("{:?}", e);
+            StatusCode::BAD_REQUEST
+        })?
+        .to_string_lossy()
+        .to_string();
+    let file_content = ProjectService::get_file_from_git(&repo_path, &relative_file_path).await?;
     Ok(extract::Json(file_content))
 }
 
@@ -199,8 +348,12 @@ impl Display for FileTree {
     }
 }
 
-pub async fn get_file_tree() -> Result<extract::Json<Vec<FileTree>>, StatusCode> {
-    let project_path = resolve_project_path().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+pub async fn get_file_tree(
+    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    Path(_project_id): Path<Uuid>,
+) -> Result<extract::Json<Vec<FileTree>>, StatusCode> {
+    let project_path = project_manager.config_manager.project_path();
+    let project_path = PathBuf::from(project_path);
     let file_tree = get_file_tree_recursive(&project_path, &project_path);
     Ok(extract::Json(file_tree.children))
 }

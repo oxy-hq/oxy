@@ -10,6 +10,7 @@ import useAskAgent from "@/hooks/messaging/agent";
 import useAgentThreadStore from "@/stores/useAgentThread";
 import { useState } from "react";
 import ArtifactPanelContainer from "./ArtifactPanelContainer";
+import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 
 const getAgentNameFromPath = (path: string) => {
   const parts = path.split("/");
@@ -18,6 +19,8 @@ const getAgentNameFromPath = (path: string) => {
 
 const AgentPreview = ({ agentPathb64 }: { agentPathb64: string }) => {
   const path = atob(agentPathb64);
+  const { project, branchName } = useCurrentProjectBranch();
+  const threadId = `${project.id}_${branchName}_${agentPathb64}`;
   const { data: agent } = useAgent(agentPathb64);
   const [question, setQuestion] = useState("");
   const { formRef, onKeyDown } = useEnterSubmit();
@@ -27,13 +30,13 @@ const AgentPreview = ({ agentPathb64 }: { agentPathb64: string }) => {
   const [selectedArtifactIds, setSelectedArtifactIds] = useState<string[]>([]);
   const handleArtifactClick = (id: string) => setSelectedArtifactIds([id]);
 
-  const agentThread = getAgentThread(agentPathb64);
+  const agentThread = getAgentThread(threadId);
   const { messages, isLoading } = agentThread;
 
   const handleFormSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!question.trim() || isLoading) return;
-    sendMessage(question, agentPathb64, true);
+    sendMessage(question, threadId, { isPreview: true, agentPathb64 });
     setQuestion("");
   };
 

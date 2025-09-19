@@ -5,6 +5,7 @@ import { getData, registerAuthenticatedFile } from "../utils";
 import { getDuckDB } from "@/libs/duckdb";
 import useTheme from "@/stores/useTheme";
 import type { BaseChartDisplay, ChartOptionsBuilder } from "./types";
+import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 
 interface UseChartBaseOptions<T extends BaseChartDisplay> {
   display: T;
@@ -18,6 +19,7 @@ export const useChartBase = <T extends BaseChartDisplay>({
   buildChartOptions,
 }: UseChartBaseOptions<T>) => {
   const [isLoading, setIsLoading] = useState(true);
+  const { project, branchName } = useCurrentProjectBranch();
   const [chartOptions, setChartOptions] = useState<EChartsOption>({});
   const { theme } = useTheme();
   const isDarkMode = theme === "dark";
@@ -37,7 +39,11 @@ export const useChartBase = <T extends BaseChartDisplay>({
       try {
         const tableData = getData(data, display.data) as TableData;
         const db = await getDuckDB();
-        const fileName = await registerAuthenticatedFile(tableData.file_path);
+        const fileName = await registerAuthenticatedFile(
+          tableData.file_path,
+          project.id,
+          branchName,
+        );
         const connection = await db.connect();
 
         const options = await buildChartOptions({

@@ -1,9 +1,19 @@
 import { DatabaseService } from "@/services/api";
 import { useMutation } from "@tanstack/react-query";
+import useCurrentProjectBranch from "../useCurrentProjectBranch";
 
 export default function useExecuteSql() {
+  const { project, branchName } = useCurrentProjectBranch();
+  const projectId = project.id;
+
   return useMutation({
     mutationFn: (data: { pathb64: string; sql: string; database: string }) =>
-      DatabaseService.executeSql(data.pathb64, data.sql, data.database),
+      DatabaseService.executeSql(
+        projectId,
+        branchName,
+        data.pathb64,
+        data.sql,
+        data.database,
+      ),
   });
 }

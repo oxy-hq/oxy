@@ -5,56 +5,42 @@ import {
   CreateApiKeyRequest,
   CreateApiKeyResponse,
 } from "@/types/apiKey";
-const BASE_PATH = "/api-keys";
 
 export class ApiKeyService {
-  /**
-   * Create a new API key
-   */
   static async createApiKey(
+    projectId: string,
     request: CreateApiKeyRequest,
   ): Promise<CreateApiKeyResponse> {
     const response = await apiClient.post<CreateApiKeyResponse>(
-      BASE_PATH,
+      `/${projectId}/api-keys`,
       request,
     );
     return response.data;
   }
 
-  /**
-   * List all API keys for the current user
-   */
-  static async listApiKeys(): Promise<ApiKeyListResponse> {
-    const response = await apiClient.get<ApiKeyListResponse>(BASE_PATH);
+  static async listApiKeys(projectId: string): Promise<ApiKeyListResponse> {
+    const response = await apiClient.get<ApiKeyListResponse>(
+      `/${projectId}/api-keys`,
+    );
     return response.data;
   }
 
-  /**
-   * Get details of a specific API key
-   */
-  static async getApiKey(id: string): Promise<ApiKey> {
-    const response = await apiClient.get<ApiKey>(`${BASE_PATH}/${id}`);
+  static async getApiKey(projectId: string, id: string): Promise<ApiKey> {
+    const response = await apiClient.get<ApiKey>(
+      `/${projectId}/api-keys/${id}`,
+    );
     return response.data;
   }
 
-  /**
-   * Revoke (delete) an API key
-   */
-  static async revokeApiKey(id: string): Promise<void> {
-    await apiClient.delete(`${BASE_PATH}/${id}`);
+  static async revokeApiKey(projectId: string, id: string): Promise<void> {
+    await apiClient.delete(`/${projectId}/api-keys/${id}`);
   }
 
-  /**
-   * Mask an API key for safe display
-   */
   static maskApiKey(key: string): string {
     if (key.length <= 8) return key;
     return `${key.slice(0, 8)}${"*".repeat(Math.max(0, key.length - 12))}${key.slice(-4)}`;
   }
 
-  /**
-   * Format date for display
-   */
   static formatDate(dateString: string): string {
     return new Date(dateString).toLocaleDateString("en-US", {
       year: "numeric",
@@ -65,17 +51,11 @@ export class ApiKeyService {
     });
   }
 
-  /**
-   * Check if an API key is expired
-   */
   static isExpired(expiresAt?: string): boolean {
     if (!expiresAt) return false;
     return new Date(expiresAt) < new Date();
   }
 
-  /**
-   * Get time until expiration
-   */
   static getTimeUntilExpiration(expiresAt?: string): string | null {
     if (!expiresAt) return null;
 

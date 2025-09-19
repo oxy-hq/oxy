@@ -1,5 +1,8 @@
 use crate::{
-    adapters::{checkpoint::RunInfo, runs::RunsManager},
+    adapters::{
+        checkpoint::RunInfo, project::manager::ProjectManager, runs::RunsManager,
+        secrets::SecretsManager,
+    },
     config::{ConfigManager, constants::WORKFLOW_SOURCE, model::Task},
     errors::OxyError,
     execute::{
@@ -13,10 +16,7 @@ use crate::{
 };
 use minijinja::context;
 use serde_json::Value as JsonValue;
-use std::{
-    collections::HashMap,
-    path::{Path, PathBuf},
-};
+use std::{collections::HashMap, path::PathBuf};
 use workflow::{build_tasks_executable, build_workflow_executable};
 
 mod cache;
@@ -49,7 +49,6 @@ pub struct WorkflowInput {
 }
 
 pub struct WorkflowLauncher {
-    runs_manager: Option<RunsManager>,
     execution_context: Option<ExecutionContext>,
     buf_writer: BufWriter,
 }
@@ -63,7 +62,6 @@ impl Default for WorkflowLauncher {
 impl WorkflowLauncher {
     pub fn new() -> Self {
         Self {
-            runs_manager: None,
             execution_context: None,
             buf_writer: BufWriter::new(),
         }
@@ -72,8 +70,9 @@ impl WorkflowLauncher {
     async fn get_global_context(
         &self,
         config: ConfigManager,
+        secrets_manager: SecretsManager,
     ) -> Result<minijinja::Value, OxyError> {
-        let semantic_manager = SemanticManager::from_config(config, false).await?;
+        let semantic_manager = SemanticManager::from_config(config, secrets_manager, false).await?;
         let semantic_variables_contexts =
             semantic_manager.get_semantic_variables_contexts().await?;
         let semantic_dimensions_contexts = semantic_manager
@@ -90,27 +89,24 @@ impl WorkflowLauncher {
         mut self,
         execution_context: &ExecutionContext,
     ) -> Result<Self, OxyError> {
+        let config_manager = execution_context.project.config_manager.clone();
+        let secrets_manager = execution_context.project.secrets_manager.clone();
         let tx = self.buf_writer.create_writer(None)?;
         let global_context = self
-            .get_global_context(execution_context.config.clone())
+            .get_global_context(config_manager, secrets_manager)
             .await?;
         self.execution_context = Some(
             execution_context
                 .wrap_writer(tx)
                 .wrap_global_context(global_context),
         );
-        self.runs_manager = Some(RunsManager::default().await?);
         Ok(self)
     }
 
-    pub async fn with_local_context<P: AsRef<Path>>(
-        mut self,
-        project_path: P,
-    ) -> Result<Self, OxyError> {
+    pub async fn with_project(mut self, project_manager: ProjectManager) -> Result<Self, OxyError> {
         let tx = self.buf_writer.create_writer(None)?;
         let mut execution_context = ExecutionContextBuilder::new()
-            .with_project_path(project_path)
-            .await?
+            .with_project_manager(project_manager)
             .with_global_context(minijinja::Value::UNDEFINED)
             .with_writer(tx)
             .with_source(Source {
@@ -119,10 +115,12 @@ impl WorkflowLauncher {
                 kind: WORKFLOW_SOURCE.to_string(),
             })
             .build()?;
-        self.runs_manager = Some(RunsManager::default().await?);
+
+        let config_manager = execution_context.project.config_manager.clone();
+        let secrets_manager = execution_context.project.secrets_manager.clone();
 
         let global_context = self
-            .get_global_context(execution_context.config.clone())
+            .get_global_context(config_manager, secrets_manager)
             .await?;
         execution_context = execution_context.wrap_global_context(global_context);
         self.execution_context = Some(execution_context);
@@ -196,9 +194,15 @@ impl WorkflowLauncher {
                 workflow_input.workflow_ref.to_string(),
                 WORKFLOW_SOURCE.to_string(),
             );
-        let runs_manager = self.runs_manager.ok_or(OxyError::RuntimeError(
-            "RunsManager is required".to_string(),
-        ))?;
+
+        let runs_manager =
+            execution_context
+                .project
+                .runs_manager
+                .clone()
+                .ok_or(OxyError::RuntimeError(
+                    "RunsManager is required".to_string(),
+                ))?;
         let workflow_name = PathBuf::from(&workflow_input.workflow_ref)
             .file_stem()
             .and_then(|fname| {
@@ -218,7 +222,8 @@ impl WorkflowLauncher {
         )
         .await?;
         let workflow_config = execution_context
-            .config
+            .project
+            .config_manager
             .resolve_workflow(&workflow_input.workflow_ref)
             .await?;
         let attributes = HashMap::from([

@@ -11,13 +11,15 @@ use async_openai::{
 use axum::http::{HeaderMap, HeaderName, HeaderValue};
 use schemars::schema::RootSchema;
 use secrecy::SecretString;
-use std::{collections::HashMap, path::PathBuf, str::FromStr};
+use std::{collections::HashMap, str::FromStr};
 
 use crate::{
     adapters::{
-        create_app_schema, semantic_tool_description::get_semantic_query_description, viz_schema,
+        create_app_schema, secrets::SecretsManager,
+        semantic_tool_description::get_semantic_query_description, viz_schema,
     },
     config::{
+        ConfigManager,
         constants::{ANTHROPIC_API_URL, GEMINI_API_URL},
         model::{
             Model, ReasoningConfig, ReasoningEffort, RetrievalConfig, ToolType,
@@ -26,10 +28,7 @@ use crate::{
     },
     errors::OxyError,
     execute::types::event::ArtifactKind,
-    project::resolve_project_path,
-    service::{
-        secret_resolver::SecretResolverService, types::SemanticQueryParams, workflow::get_workflow,
-    },
+    service::types::SemanticQueryParams,
     tools::types::{
         AgentParams, EmptySQLParams, ExecuteOmniParams, OmniTopicInfoParams, RetrievalParams,
         SQLParams,
@@ -145,12 +144,15 @@ impl Config for ConfigType {
 pub trait IntoOpenAIConfig {
     fn into_openai_config(
         &self,
+        secrets_manager: &SecretsManager,
     ) -> impl std::future::Future<Output = Result<ConfigType, OxyError>> + std::marker::Send;
 }
 
 impl IntoOpenAIConfig for Model {
-    async fn into_openai_config(&self) -> Result<ConfigType, OxyError> {
-        let secret_resolver = SecretResolverService::new();
+    async fn into_openai_config(
+        &self,
+        secrets_manager: &SecretsManager,
+    ) -> Result<ConfigType, OxyError> {
         match self {
             Model::OpenAI {
                 name: _,
@@ -160,11 +162,11 @@ impl IntoOpenAIConfig for Model {
                 key_var,
                 headers: custom_headers,
             } => {
-                let api_key = secret_resolver.resolve_secret(key_var).await.map_err(|_| {
+                let api_key = secrets_manager.resolve_secret(key_var).await.map_err(|_| {
                     OxyError::ConfigurationError("OpenAI key not found".to_string())
                 })?;
                 let api_key = match api_key {
-                    Some(secret) => secret.value,
+                    Some(secret) => secret,
                     None => {
                         return Err(OxyError::ConfigurationError(
                             "OpenAI key not found".to_string(),
@@ -192,7 +194,8 @@ impl IntoOpenAIConfig for Model {
 
                         if let Some(custom_headers) = custom_headers {
                             if !custom_headers.is_empty() {
-                                let resolved_headers = self.resolve_headers().await?;
+                                let resolved_headers =
+                                    self.resolve_headers(secrets_manager).await?;
                                 let config_with_headers =
                                     CustomOpenAIConfig::new(config, resolved_headers);
                                 return Ok(ConfigType::WithHeaders(config_with_headers));
@@ -220,14 +223,14 @@ impl IntoOpenAIConfig for Model {
                 model_ref: _,
                 key_var,
             } => {
-                let api_key = secret_resolver
+                let api_key = secrets_manager
                     .resolve_secret(key_var)
                     .await
                     .map_err(|_e| {
                         OxyError::ConfigurationError("Gemini API key not found".to_string())
                     })?;
                 let api_key = match api_key {
-                    Some(secret) => secret.value,
+                    Some(secret) => secret,
                     None => {
                         return Err(OxyError::ConfigurationError(
                             "Gemini API key not found".to_string(),
@@ -245,14 +248,14 @@ impl IntoOpenAIConfig for Model {
                 key_var,
                 api_url,
             } => {
-                let api_key = secret_resolver
+                let api_key = secrets_manager
                     .resolve_secret(key_var)
                     .await
                     .map_err(|_e| {
                         OxyError::ConfigurationError("Anthropic API key not found".to_string())
                     })?;
                 let api_key = match api_key {
-                    Some(secret) => secret.value,
+                    Some(secret) => secret,
                     None => {
                         return Err(OxyError::ConfigurationError(
                             "Anthropic API key not found".to_string(),
@@ -269,18 +272,20 @@ impl IntoOpenAIConfig for Model {
 }
 
 impl IntoOpenAIConfig for RetrievalConfig {
-    async fn into_openai_config(&self) -> Result<ConfigType, OxyError> {
-        let secret_resolver = SecretResolverService::new();
+    async fn into_openai_config(
+        &self,
+        secrets_manager: &SecretsManager,
+    ) -> Result<ConfigType, OxyError> {
         let key_var = self.key_var.clone();
         let api_url = self.api_url.clone();
-        let api_key = secret_resolver
+        let api_key = secrets_manager
             .resolve_secret(&key_var)
             .await
             .map_err(|e| {
                 OxyError::ConfigurationError(format!("Retrieval API key not found: {e}"))
             })?;
         let api_key = match api_key {
-            Some(secret) => secret.value,
+            Some(secret) => secret,
             None => {
                 return Err(OxyError::ConfigurationError(
                     "Retrieval API key not found".to_string(),
@@ -298,15 +303,15 @@ impl IntoOpenAIConfig for RetrievalConfig {
 pub type OpenAIClient = Client<ConfigType>;
 
 pub trait OpenAIToolConfig {
-    fn description(&self) -> String;
+    fn description(&self, config: &ConfigManager) -> String;
     fn tool_kind(&self) -> String;
     fn handle(&self) -> String;
     fn artifact(&self) -> Option<(String, ArtifactKind)>;
-    async fn params_schema(&self) -> Result<serde_json::Value, OxyError>;
+    async fn params_schema(&self, config: &ConfigManager) -> Result<serde_json::Value, OxyError>;
 }
 
 impl OpenAIToolConfig for &ToolType {
-    fn description(&self) -> String {
+    fn description(&self, config: &ConfigManager) -> String {
         match self {
             ToolType::ExecuteSQL(e) => e.description.clone(),
             ToolType::ValidateSQL(v) => v.description.clone(),
@@ -317,7 +322,7 @@ impl OpenAIToolConfig for &ToolType {
             ToolType::CreateDataApp(v) => v.description.clone(),
             ToolType::SemanticQuery(s) => {
                 // Try to get enhanced description with semantic layer metadata
-                match get_semantic_query_description(s) {
+                match get_semantic_query_description(s, &config) {
                     Ok(desc) => desc,
                     Err(_) => {
                         format!(
@@ -397,7 +402,7 @@ impl OpenAIToolConfig for &ToolType {
         }
     }
 
-    async fn params_schema(&self) -> Result<serde_json::Value, OxyError> {
+    async fn params_schema(&self, config: &ConfigManager) -> Result<serde_json::Value, OxyError> {
         match self {
             ToolType::ExecuteSQL(sql_tool) => match sql_tool.sql {
                 None => Ok(serde_json::json!(&schemars::schema_for!(SQLParams))),
@@ -407,7 +412,9 @@ impl OpenAIToolConfig for &ToolType {
             ToolType::Retrieval(_) => {
                 Ok(serde_json::json!(&schemars::schema_for!(RetrievalParams)))
             }
-            ToolType::Workflow(w) => generate_workflow_run_schema(&w.workflow_ref.clone()).await,
+            ToolType::Workflow(w) => {
+                generate_workflow_run_schema(&w.workflow_ref.clone(), config).await
+            }
             ToolType::Agent(_) => Ok(serde_json::json!(&schemars::schema_for!(AgentParams))),
             ToolType::Visualize(_) => Ok(serde_json::from_str(viz_schema::VIZ_SCHEMA).unwrap()),
             ToolType::ExecuteOmni(_) => {
@@ -459,24 +466,27 @@ impl From<ReasoningConfig> for OpenAIReasoningConfig {
     }
 }
 
-async fn generate_workflow_run_schema(workflow_path: &str) -> Result<serde_json::Value, OxyError> {
-    let project_path = resolve_project_path()?;
-    let workflow_config =
-        get_workflow(PathBuf::from(workflow_path), Some(project_path.clone())).await?;
+async fn generate_workflow_run_schema(
+    workflow_path: &str,
+    config: &ConfigManager,
+) -> Result<serde_json::Value, OxyError> {
+    let workflow_config = config.resolve_workflow(workflow_path).await?;
     let schema = Into::<RootSchema>::into(&workflow_config.variables.unwrap_or_default());
     let json_schema = serde_json::json!(schema);
     Ok(json_schema)
 }
 
 pub trait AsyncFunctionObject {
-    async fn from_tool_async(tool: &ToolType) -> Self;
+    async fn from_tool_async(tool: &ToolType, config: &ConfigManager) -> Self;
 }
 
 impl AsyncFunctionObject for FunctionObject {
-    async fn from_tool_async(tool: &ToolType) -> Self {
+    async fn from_tool_async(tool: &ToolType, config: &ConfigManager) -> Self {
         let mut binding = FunctionObjectArgs::default();
-        let mut function_args = binding.name(tool.handle()).description(tool.description());
-        let params_schema = tool.params_schema().await.unwrap();
+        let mut function_args = binding
+            .name(tool.handle())
+            .description(tool.description(config));
+        let params_schema = tool.params_schema(config).await.unwrap();
         if !params_schema.is_null()
             && params_schema.is_object()
             && params_schema
@@ -493,9 +503,9 @@ impl AsyncFunctionObject for FunctionObject {
 }
 
 impl AsyncFunctionObject for ChatCompletionTool {
-    async fn from_tool_async(tool: &ToolType) -> Self {
+    async fn from_tool_async(tool: &ToolType, config: &ConfigManager) -> Self {
         ChatCompletionToolArgs::default()
-            .function::<FunctionObject>(FunctionObject::from_tool_async(tool).await)
+            .function::<FunctionObject>(FunctionObject::from_tool_async(tool, config).await)
             .build()
             .unwrap()
     }

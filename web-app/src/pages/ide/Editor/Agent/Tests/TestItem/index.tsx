@@ -8,6 +8,7 @@ import { EvalEventState } from "@/types/eval";
 import useTests from "@/stores/useTests";
 import Result from "./Result";
 import State from "./State";
+import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 
 const TestItem = ({
   test,
@@ -19,13 +20,14 @@ const TestItem = ({
   index: number;
 }) => {
   const { getTest, runTest } = useTests();
-  const testState = getTest(agentPathb64, index);
+  const { project, branchName } = useCurrentProjectBranch();
+  const testState = getTest(project.id, branchName, agentPathb64, index);
   const { state, result } = testState;
 
   const isRunning = state && state !== EvalEventState.Finished;
 
   const handleRunTest = () => {
-    runTest(agentPathb64, index);
+    runTest(project.id, branchName, agentPathb64, index);
   };
 
   return (

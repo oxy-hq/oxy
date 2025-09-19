@@ -4,6 +4,7 @@ use crate::agent::builders::openai::OpenAIExecutable;
 use crate::agent::builders::tool::OpenAITool;
 use crate::agent::contexts::Contexts;
 use crate::agent::databases::DatabasesContext;
+use crate::config::ConfigManager;
 use crate::config::constants::AGENT_SOURCE_PROMPT;
 use crate::config::model::{AgentContext, AgentToolsConfig, DefaultAgent, ReasoningConfig};
 use crate::execute::builders::map::ParamMapper;
@@ -72,7 +73,8 @@ impl Executable<DefaultAgentInput> for DefaultAgentExecutable {
         } = input;
         tracing::debug!("Default agent input: {:?}", &memory);
         let model_config = execution_context
-            .config
+            .project
+            .config_manager
             .resolve_model(&model)
             .map_err(|e| {
                 OxyError::ConfigurationError(format!("Failed to resolve model config: {e}"))
@@ -90,7 +92,11 @@ impl Executable<DefaultAgentInput> for DefaultAgentExecutable {
             model_config.model_name()
         );
         tracing::info!("System instructions: {}", system_instructions);
-        let client = OpenAIClient::with_config(model_config.into_openai_config().await?);
+        let client = OpenAIClient::with_config(
+            model_config
+                .into_openai_config(&execution_context.project.secrets_manager)
+                .await?,
+        );
         let messages: Result<Vec<ChatCompletionRequestMessage>, OxyError> = memory
             .into_iter()
             .map(
@@ -142,6 +148,7 @@ impl Executable<DefaultAgentInput> for DefaultAgentExecutable {
                 finished: true,
             })
             .await?;
+        let config = execution_context.project.config_manager.clone();
         let mut react_executable = build_react_loop(
             agent_name,
             tools,
@@ -149,6 +156,7 @@ impl Executable<DefaultAgentInput> for DefaultAgentExecutable {
             client,
             model_config.model_name().to_string(),
             max_tool_calls,
+            &config,
             reasoning_config,
         )
         .await;
@@ -170,13 +178,17 @@ async fn build_react_loop(
     client: OpenAIClient,
     model: String,
     max_iterations: usize,
+    config: &ConfigManager,
     reasoning_config: Option<ReasoningConfig>,
 ) -> impl Executable<Vec<ChatCompletionRequestMessage>, Response = Vec<OpenAIExecutableResponse>> {
-    let tools: Vec<ChatCompletionTool> =
-        futures::future::join_all(tool_configs.iter().map(ChatCompletionTool::from_tool_async))
-            .await
-            .into_iter()
-            .collect();
+    let tools: Vec<ChatCompletionTool> = futures::future::join_all(
+        tool_configs
+            .iter()
+            .map(|tool| ChatCompletionTool::from_tool_async(tool, &config)),
+    )
+    .await
+    .into_iter()
+    .collect();
     ExecutableBuilder::new()
         .react(
             OpenAITool::new(agent_name, tool_configs, max_concurrency),
@@ -231,16 +243,17 @@ async fn build_global_context(
     contexts: Vec<AgentContext>,
     prompt: &str,
 ) -> Result<Value, OxyError> {
-    let contexts = Contexts::new(contexts, execution_context.config.clone());
-    let databases = DatabasesContext::new(execution_context.config.clone());
+    let config = execution_context.project.config_manager.clone();
+    let secrets_manager = execution_context.project.secrets_manager.clone();
+    let contexts = Contexts::new(contexts, config.clone());
+    let databases = DatabasesContext::new(config.clone(), secrets_manager.clone());
     let tools = ToolsContext::from_execution_context(
         execution_context,
         agent_name.to_string(),
         default_agent.tools_config.tools.clone(),
         prompt.to_string(),
     );
-    let semantic_manager =
-        SemanticManager::from_config(execution_context.config.clone(), false).await?;
+    let semantic_manager = SemanticManager::from_config(config, secrets_manager, false).await?;
     let semantic_contexts = semantic_manager.get_semantic_variables_contexts().await?;
     let semantic_dimensions_contexts = semantic_manager
         .get_semantic_dimensions_contexts(&semantic_contexts)

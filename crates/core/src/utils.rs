@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::config::model::Dimension;
-use crate::project::resolve_project_path;
+use crate::state_dir::get_state_dir;
 use crate::{constants::OXY_ENCRYPTION_KEY_VAR, errors::OxyError, theme::*};
 use aes_gcm::aead::Aead;
 use aes_gcm::{AeadCore, Aes256Gcm, Key, KeyInit, Nonce};
@@ -31,7 +31,7 @@ pub const MAX_DISPLAY_ROWS: usize = 100;
 pub const MAX_OUTPUT_LENGTH: usize = 1000;
 
 fn get_key_file_path() -> PathBuf {
-    crate::db::client::resolve_state_dir().join("encryption_key.txt")
+    get_state_dir().join("encryption_key.txt")
 }
 
 fn decode_key_from_string(key_str: &str) -> [u8; 32] {
@@ -337,11 +337,12 @@ pub async fn try_unwrap_arc_tokio_mutex<T>(
 /// * `Err(OxyError)` - If the project path cannot be found or other processing errors occur
 ///
 /// ```
-pub fn to_openai_function_name(file_path: &PathBuf) -> Result<String, OxyError> {
+pub fn to_openai_function_name(
+    file_path: &PathBuf,
+    project_path: &PathBuf,
+) -> Result<String, OxyError> {
     // Get the relative path from project root, falling back to the original path
-    let relative_path = file_path
-        .strip_prefix(resolve_project_path()?)
-        .unwrap_or(file_path);
+    let relative_path = file_path.strip_prefix(project_path).unwrap_or(file_path);
 
     // Remove the file extension to get a clean path
     let path_without_extension = remove_file_extension(relative_path);

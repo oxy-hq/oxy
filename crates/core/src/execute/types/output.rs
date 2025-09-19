@@ -60,11 +60,11 @@ impl Output {
         }
     }
 
-    pub fn to_data(&self, file_path: &PathBuf) -> Result<Data, OxyError> {
+    pub fn to_data(&self, relative_path: &PathBuf, base_path: &PathBuf) -> Result<Data, OxyError> {
         match self {
             Output::Text(text) => Ok(Data::Text(text.to_owned())),
             Output::SQL(sql) => Ok(Data::Text(sql.to_string())),
-            Output::Table(table) => Ok(Data::Table(table.to_data(file_path)?)),
+            Output::Table(table) => Ok(Data::Table(table.to_data(relative_path, base_path)?)),
             Output::Bool(b) => Ok(Data::Bool(*b)),
             Output::Prompt(prompt) => Ok(Data::Text(prompt.to_string())),
             Output::Documents(_) => Ok(Data::None),

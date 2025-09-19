@@ -229,46 +229,33 @@ fn map_instance_type(
         "JSON" | "STRUCT" => InstanceType::Object,
         "ARRAY" => InstanceType::Array,
         // map postgres types to schemars instance types
-        "bigint" | "integer" | "smallint" => InstanceType::Integer,
+        "bigint" | "smallint" => InstanceType::Integer,
         "numeric" | "real" | "double precision" => InstanceType::Number,
-        "text" | "varchar" | "char" | "date" | "timestamp" | "timestamptz" | "uuid" => {
-            InstanceType::String
-        }
-        "boolean" => InstanceType::Boolean,
-        "json" | "jsonb" | "xml" => InstanceType::Object,
-        "array" => InstanceType::Array,
+        "varchar" | "char" | "timestamptz" => InstanceType::String,
+        "jsonb" | "xml" => InstanceType::Object,
         // map mysql types to schemars instance types
-        "int" | "bigint" | "smallint" | "tinyint" => InstanceType::Integer,
-        "float" | "double" | "decimal" => InstanceType::Number,
-        "char" | "varchar" | "text" | "date" | "datetime" | "timestamp" | "uuid" => {
-            InstanceType::String
-        }
+        "int" | "tinyint" => InstanceType::Integer,
+        "double" | "decimal" => InstanceType::Number,
+        "datetime" => InstanceType::String,
         "tinyint(1)" => InstanceType::Boolean, // MySQL boolean type
-        "json" | "set" | "enum" => InstanceType::Object,
-        "array" => InstanceType::Array,
+        "set" | "enum" => InstanceType::Object,
         // map clickhouse types to schemars instance types
         "Int8" | "Int16" | "Int32" | "Int64" => InstanceType::Integer,
         "Float32" | "Float64" => InstanceType::Number,
-        "String" | "Date" | "DateTime" | "UUID" => InstanceType::String,
+        "String" | "Date" | "DateTime" => InstanceType::String,
         "Boolean" => InstanceType::Boolean,
-        "JSON" | "Map" | "Object" => InstanceType::Object,
+        "Map" | "Object" => InstanceType::Object,
         "Array" => InstanceType::Array,
         // map snowflake types to schemars instance types
         "NUMBER" | "INT" | "BIGINT" | "SMALLINT" => InstanceType::Integer,
         "FLOAT" | "DOUBLE" | "DECIMAL" => InstanceType::Number,
-        "STRING" | "VARCHAR" | "TEXT" | "DATE" | "TIMESTAMP_LTZ" | "TIMESTAMP_NTZ" | "UUID" => {
-            InstanceType::String
-        }
-        "BOOLEAN" => InstanceType::Boolean,
+        "VARCHAR" | "TEXT" | "TIMESTAMP_LTZ" | "TIMESTAMP_NTZ" => InstanceType::String,
         "OBJECT" | "VARIANT" => InstanceType::Object,
-        "ARRAY" => InstanceType::Array,
         // map redshift types to schemars instance types
-        "SMALLINT" | "INTEGER" | "BIGINT" => InstanceType::Integer,
-        "REAL" | "DOUBLE PRECISION" | "DECIMAL" => InstanceType::Number,
-        "CHAR" | "VARCHAR" | "DATE" | "TIMESTAMP" | "TIMESTAMPTZ" | "UUID" => InstanceType::String,
-        "BOOLEAN" => InstanceType::Boolean,
-        "JSON" | "SUPER" => InstanceType::Object,
-        "ARRAY" => InstanceType::Array,
+        "INTEGER" => InstanceType::Integer,
+        "REAL" | "DOUBLE PRECISION" => InstanceType::Number,
+        "CHAR" | "TIMESTAMPTZ" => InstanceType::String,
+        "SUPER" => InstanceType::Object,
 
         _ => InstanceType::String, // Default case for unknown types
     };

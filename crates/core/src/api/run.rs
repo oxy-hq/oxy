@@ -7,8 +7,9 @@ use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
 use serde::Deserialize;
 use utoipa::ToSchema;
+use uuid::Uuid;
 
-use crate::adapters::runs::RunsManager;
+use crate::api::middlewares::project::ProjectManagerExtractor;
 use crate::errors::OxyError;
 use crate::execute::writer::Handler;
 use crate::service::block::GroupBlockHandler;
@@ -41,7 +42,8 @@ pub struct PaginationQuery {
     tag = "Runs"
 )]
 pub async fn get_workflow_runs(
-    Path(pathb64): Path<String>,
+    Path((_project_id, pathb64)): Path<(Uuid, String)>,
+    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
     Query(pagination): Query<PaginationQuery>,
 ) -> Result<extract::Json<Paginated<RunInfo>>, StatusCode> {
     let decoded_path = BASE64_STANDARD.decode(pathb64).map_err(|e| {
@@ -53,8 +55,12 @@ pub async fn get_workflow_runs(
         StatusCode::BAD_REQUEST
     })?);
 
-    let mut result = RunsManager::default()
-        .await?
+    let mut result = project_manager
+        .runs_manager
+        .ok_or_else(|| {
+            tracing::error!("Failed to initialize RunsManager");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?
         .list_runs(
             &file_path_to_source_id(&path),
             &Pagination {
@@ -118,7 +124,8 @@ pub struct CreateRunResponse {
     tag = "Runs"
 )]
 pub async fn create_workflow_run(
-    Path(pathb64): Path<String>,
+    Path((_project_id, pathb64)): Path<(Uuid, String)>,
+    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
     extract::Json(payload): extract::Json<CreateRunRequest>,
 ) -> Result<extract::Json<CreateRunResponse>, StatusCode> {
     let decoded_path = BASE64_STANDARD.decode(pathb64).map_err(|e| {
@@ -129,10 +136,12 @@ pub async fn create_workflow_run(
         tracing::info!("{:?}", e);
         StatusCode::BAD_REQUEST
     })?);
-    let runs_manager = RunsManager::default().await.map_err(|e| {
-        tracing::error!("Failed to initialize RunsManager: {:?}", e);
+
+    let runs_manager = project_manager.runs_manager.clone().ok_or_else(|| {
+        tracing::error!("Failed to initialize RunsManager");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
+
     let run_info = match &payload.retry_param {
         None => runs_manager
             .new_run(&file_path_to_source_id(&path))
@@ -200,7 +209,6 @@ pub async fn create_workflow_run(
                 group_handler.handle_event(event).await?;
             }
             let groups = group_handler.collect();
-            let runs_manager = RunsManager::default().await?;
             for group in groups {
                 tracing::info!("Saving group: {:?}", group.id());
                 runs_manager.upsert_run(group).await?;
@@ -220,6 +228,7 @@ pub async fn create_workflow_run(
                     .unwrap_or(0); // Default to 0 if conversion fails
 
                 run_workflow_v2(
+                    project_manager.clone(),
                     source_id,
                     topic_ref,
                     RetryStrategy::Retry {
@@ -276,7 +285,7 @@ pub struct CancelRunRequest {
     tag = "Runs"
 )]
 pub async fn cancel_workflow_run(
-    Path(payload): Path<CancelRunRequest>,
+    payload: Path<CancelRunRequest>,
 ) -> Result<impl axum::response::IntoResponse, StatusCode> {
     let decoded_path = BASE64_STANDARD.decode(&payload.source_id).map_err(|e| {
         tracing::info!("{:?}", e);
@@ -326,11 +335,13 @@ impl From<WorkflowEventsRequest> for RunInfo {
     )
 )]
 pub async fn workflow_events(
+    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    Path(_project_id): Path<Uuid>,
     Query(request): Query<WorkflowEventsRequest>,
 ) -> Result<impl axum::response::IntoResponse, StatusCode> {
     let run_info: RunInfo = request.into();
-    let runs_manager = RunsManager::default().await.map_err(|e| {
-        tracing::error!("Failed to initialize RunsManager: {:?}", e);
+    let runs_manager = project_manager.runs_manager.clone().ok_or_else(|| {
+        tracing::error!("Failed to initialize RunsManager");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
     let run_info = runs_manager
@@ -383,6 +394,7 @@ pub struct BlocksRequest {
     )
 )]
 pub async fn get_blocks(
+    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
     Query(block_request): Query<BlocksRequest>,
 ) -> Result<extract::Json<RunDetails>, StatusCode> {
     let topic = match block_request.run_index {
@@ -402,8 +414,11 @@ pub async fn get_blocks(
             error: None,
         }));
     }
-    let run_details = RunsManager::default()
-        .await?
+    let runs_manager = project_manager.runs_manager.clone().ok_or_else(|| {
+        tracing::error!("Failed to initialize RunsManager");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+    let run_details = runs_manager
         .find_run_details(&block_request.source_id, block_request.run_index)
         .await
         .map_err(|e| {

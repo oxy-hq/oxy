@@ -23,7 +23,18 @@ mod m20250625_151048_add_is_processing_to_thread;
 mod m20250626_000001_create_secrets_table;
 mod m20250708_021201_create_logs_table;
 mod m20250727_150336_add_run_model;
+mod m20250811_084647_add_organizations_table;
+mod m20250811_084822_add_organization_users_table;
+mod m20250811_085101_projects_table;
+mod m20250811_090444_branches_table;
+mod m20250813_071440_add_project_id_to_threads_table;
+mod m20250813_071500_add_project_id_to_secrets_table;
+mod m20250813_071600_add_project_id_to_runs_table;
+mod m20250819_020551_add_project_id_to_api_keys_table;
 mod m20250819_084109_fix_root_replay_ref_type;
+mod m20250902_073902_add_active_branch_id_to_projects_table;
+mod m20250902_080016_add_branch_id_to_runs_table;
+mod m20250902_080217_add_project_branch_id_to_run_index_runs_table;
 
 pub struct Migrator;
 
@@ -53,7 +64,18 @@ impl MigratorTrait for Migrator {
             Box::new(m20250626_000001_create_secrets_table::Migration),
             Box::new(m20250708_021201_create_logs_table::Migration),
             Box::new(m20250727_150336_add_run_model::Migration),
+            Box::new(m20250811_084647_add_organizations_table::Migration),
+            Box::new(m20250811_084822_add_organization_users_table::Migration),
+            Box::new(m20250811_085101_projects_table::Migration),
+            Box::new(m20250811_090444_branches_table::Migration),
+            Box::new(m20250813_071440_add_project_id_to_threads_table::Migration),
+            Box::new(m20250813_071500_add_project_id_to_secrets_table::Migration),
+            Box::new(m20250813_071600_add_project_id_to_runs_table::Migration),
+            Box::new(m20250819_020551_add_project_id_to_api_keys_table::Migration),
             Box::new(m20250819_084109_fix_root_replay_ref_type::Migration),
+            Box::new(m20250902_073902_add_active_branch_id_to_projects_table::Migration),
+            Box::new(m20250902_080016_add_branch_id_to_runs_table::Migration),
+            Box::new(m20250902_080217_add_project_branch_id_to_run_index_runs_table::Migration),
         ]
     }
 }

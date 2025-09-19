@@ -226,25 +226,25 @@ measures:
   - name: total_revenue
     type: sum
     description: "Total revenue from orders"
-    expr: {{ order_amount }}
+    expr: { { order_amount } }
     format: "$#,##0.00"
 
   - name: total_net_revenue
     type: sum
     description: "Total net revenue after discounts"
-    expr: {{ net_amount }}
+    expr: { { net_amount } }
     format: "$#,##0.00"
 
   - name: average_order_value
     type: average
     description: "Average order value"
-    expr: {{ order_amount }}
+    expr: { { order_amount } }
     format: "$#,##0.00"
 
   - name: unique_customers
     type: count_distinct
     description: "Number of unique customers"
-    expr: {{ customer_id }}
+    expr: { { customer_id } }
 
   - name: large_orders
     type: count
@@ -257,8 +257,8 @@ measures:
   - name: cancellation_rate
     type: ratio
     description: "Percentage of orders that were cancelled"
-    numerator: {{ cancelled_orders }}
-    denominator: {{ count }}
+    numerator: { { cancelled_orders } }
+    denominator: { { count } }
     format: "#0.0%"
 
   - name: cancelled_orders
@@ -429,20 +429,20 @@ measures:
   - name: transaction_volume
     type: sum
     description: "Total transaction volume"
-    expr: {{ amount }}
+    expr: { { amount } }
     format: "$#,##0.00"
 
   - name: average_transaction_size
     type: average
     description: "Average transaction amount"
-    expr: {{ amount }}
+    expr: { { amount } }
     format: "$#,##0.00"
 
   - name: fraud_rate
     type: ratio
     description: "Percentage of transactions flagged as fraud"
-    numerator: {{ fraudulent_transactions }}
-    denominator: {{ transaction_count }}
+    numerator: { { fraudulent_transactions } }
+    denominator: { { transaction_count } }
     format: "#0.00%"
 
   - name: fraudulent_transactions
@@ -474,6 +474,7 @@ dimensions:
 Reference dimensions and measures from the same view or other views using template syntax:
 
 #### Same-View References
+
 Reference dimensions from the same view using `{{dimension_name}}`:
 
 ```yaml
@@ -493,6 +494,7 @@ dimensions:
 ```
 
 #### Cross-Entity References
+
 Reference dimensions and measures from other entities using `{{entity_name.field_name}}`:
 
 ```yaml

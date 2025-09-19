@@ -1,6 +1,6 @@
 use crate::cli::model::{BigQuery, Config, DatabaseType, DuckDB};
 use crate::config::model::{AzureModel, ClickHouse, Mysql, Postgres, Redshift};
-use crate::project::resolve_project_path;
+use crate::config::resolve_local_project_path;
 use include_dir::{Dir, include_dir};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -313,7 +313,7 @@ fn create_project_structure() -> Result<(), InitError> {
 }
 
 pub fn init() -> Result<(), InitError> {
-    let project_path = resolve_project_path().unwrap_or_else(|_| {
+    let project_path = resolve_local_project_path().unwrap_or_else(|_| {
         println!(
             "{}",
             "Initializing current directory as oxy project.".info()
@@ -370,7 +370,6 @@ fn create_config_file(config_path: &Path) -> Result<(), InitError> {
         }),
         project_path: PathBuf::new(),
         builder_agent: None,
-        authentication: None,
     };
 
     let yaml =

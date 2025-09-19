@@ -96,7 +96,8 @@ impl Exporter<TaskInput, OutputContainer> for TaskExporter {
         let mut export_info = export_info.unwrap();
         let path_resolver: Result<String, OxyError> = {
             let rendered_path = execution_context.renderer.render(&export_info.path)?;
-            let final_path = execution_context.config.resolve_file(rendered_path).await?;
+            let config_manager = execution_context.project.config_manager.clone();
+            let final_path = config_manager.resolve_file(rendered_path).await?;
             Ok(final_path)
         };
         export_info.path = match path_resolver {

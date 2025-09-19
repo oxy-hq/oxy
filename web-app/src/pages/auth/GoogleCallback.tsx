@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useGoogleAuth } from "@/hooks/auth/useGoogleAuth";
 import { LoaderCircle } from "lucide-react";
+import ROUTES from "@/libs/utils/routes";
 
 const GoogleCallback = () => {
   const [searchParams] = useSearchParams();
@@ -18,14 +19,14 @@ const GoogleCallback = () => {
 
     if (error) {
       console.error("Google OAuth error:", error);
-      navigate("/login?error=oauth_failed");
+      navigate(`${ROUTES.AUTH.LOGIN}?error=oauth_failed`);
       return;
     }
 
     if (code) {
       googleAuthMutation.mutate({ code });
     } else {
-      navigate("/login?error=no_code");
+      navigate(`${ROUTES.AUTH.LOGIN}?error=no_code`);
     }
   }, []);
 

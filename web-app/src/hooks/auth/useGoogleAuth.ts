@@ -3,6 +3,7 @@ import { AuthService } from "@/services/api";
 import { GoogleAuthRequest, AuthResponse } from "@/types/auth";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
+import ROUTES from "@/libs/utils/routes";
 
 const GOOGLE_REDIRECT_URI = `${window.location.origin}/auth/google/callback`;
 
@@ -14,11 +15,11 @@ export const useGoogleAuth = () => {
     mutationFn: AuthService.googleAuth,
     onSuccess: (data) => {
       login(data.token, data.user);
-      navigate("/");
+      navigate(ROUTES.ROOT);
     },
     onError: (error) => {
       console.error("Google auth failed:", error);
-      navigate("/login");
+      navigate(ROUTES.AUTH.LOGIN);
     },
   });
 };

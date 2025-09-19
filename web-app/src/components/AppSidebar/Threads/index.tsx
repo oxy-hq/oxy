@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { MessagesSquare, MoreHorizontal, Trash2 } from "lucide-react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useParams } from "react-router-dom";
 import {
   SidebarMenuAction,
   SidebarMenuButton,
@@ -18,18 +18,26 @@ import ThreadItem from "./Item";
 import ClearAllThreadsDialog from "./ClearAllThreadsDialog";
 import { Button } from "@/components/ui/shadcn/button";
 import ItemsSkeleton from "../ItemsSkeleton";
+import ROUTES from "@/libs/utils/routes";
 
 const SIDEBAR_THREADS_LIMIT = 50;
 
 const Threads = () => {
   const location = useLocation();
+  const { projectId } = useParams();
   const { data: threadsResponse, isLoading } = useThreads(
     1,
     SIDEBAR_THREADS_LIMIT,
   );
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [showAll, setShowAll] = useState(false);
-  const isThreadsPage = location.pathname === "/threads";
+
+  if (!projectId) {
+    return null;
+  }
+
+  const threadsUri = ROUTES.PROJECT(projectId).THREADS;
+  const isThreadsPage = location.pathname === threadsUri;
 
   const threads = threadsResponse?.threads ?? [];
   const sortedThreads = threads?.sort((a, b) => {
@@ -48,7 +56,7 @@ const Threads = () => {
       <ClearAllThreadsDialog open={confirmOpen} onOpenChange={setConfirmOpen} />
       <SidebarMenuItem>
         <SidebarMenuButton asChild isActive={isThreadsPage}>
-          <Link to="/threads">
+          <Link to={threadsUri}>
             <MessagesSquare />
             <span>Threads</span>
           </Link>

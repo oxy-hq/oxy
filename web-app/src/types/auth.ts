@@ -28,7 +28,6 @@ export interface UserInfo {
   name: string;
   picture?: string;
   role: string;
-  status: string;
 }
 
 export interface MessageResponse {

@@ -16,6 +16,7 @@ pub struct Model {
     pub references: String,
     pub source_type: String,
     pub user_id: Option<Uuid>,
+    pub project_id: Uuid,
     pub is_processing: bool,
 }
 
@@ -27,6 +28,14 @@ pub enum Relation {
     Logs,
     #[sea_orm(has_many = "super::messages::Entity")]
     Messages,
+    #[sea_orm(
+        belongs_to = "super::projects::Entity",
+        from = "Column::ProjectId",
+        to = "super::projects::Column::Id",
+        on_update = "NoAction",
+        on_delete = "Cascade"
+    )]
+    Projects,
     #[sea_orm(
         belongs_to = "super::users::Entity",
         from = "Column::UserId",
@@ -52,6 +61,12 @@ impl Related<super::logs::Entity> for Entity {
 impl Related<super::messages::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Messages.def()
+    }
+}
+
+impl Related<super::projects::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Projects.def()
     }
 }
 

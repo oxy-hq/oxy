@@ -6,19 +6,24 @@ use std::{
 use minijinja::value::{Object, ObjectRepr, Value};
 use tokio::runtime::Handle;
 
-use crate::{config::ConfigManager, semantic::SemanticManager, theme::StyledText};
+use crate::{
+    adapters::secrets::SecretsManager, config::ConfigManager, semantic::SemanticManager,
+    theme::StyledText,
+};
 
 #[derive(Debug, Clone)]
 pub struct DatabasesContext {
     cache: Arc<Mutex<HashMap<String, Value>>>,
     config: ConfigManager,
+    secrets_manager: SecretsManager,
 }
 
 impl DatabasesContext {
-    pub fn new(config: ConfigManager) -> Self {
+    pub fn new(config: ConfigManager, secrets_manager: SecretsManager) -> Self {
         DatabasesContext {
             cache: Arc::new(Mutex::new(HashMap::new())),
             config,
+            secrets_manager,
         }
     }
 }
@@ -39,7 +44,11 @@ impl Object for DatabasesContext {
                 match Handle::try_current() {
                     Ok(rt) => {
                         let semantic_manager = rt
-                            .block_on(SemanticManager::from_config(self.config.clone(), false))
+                            .block_on(SemanticManager::from_config(
+                                self.config.clone(),
+                                self.secrets_manager.clone(),
+                                false,
+                            ))
                             .ok()?;
                         let database_info =
                             match rt.block_on(semantic_manager.load_database_info(database_key)) {

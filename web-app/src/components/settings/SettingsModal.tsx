@@ -8,7 +8,6 @@ import {
   Github,
 } from "lucide-react";
 import { useState } from "react";
-import { useReadonly } from "@/hooks/useReadonly";
 import { Dialog, DialogContent } from "../ui/shadcn/dialog";
 import GithubSettings from "./github";
 import SecretManagement from "./secrets";
@@ -30,10 +29,7 @@ interface SettingsSection {
 
 export function SettingsModal() {
   const { isOpen, setIsOpen } = useSettingsPage();
-  const { isReadonly } = useReadonly();
-  const [activeSection, setActiveSection] = useState<string>(
-    isReadonly ? "github-settings" : "secrets",
-  );
+  const [activeSection, setActiveSection] = useState<string>("github-settings");
 
   const settingsSections: SettingsSection[] = [
     {
@@ -41,7 +37,7 @@ export function SettingsModal() {
       title: "Github Settings",
       description: "Configure GitHub integration",
       icon: <Github className="w-4 h-4" />,
-      show: isReadonly,
+      show: true,
       page: <GithubSettings />,
     },
     {

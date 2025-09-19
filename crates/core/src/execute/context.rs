@@ -1,12 +1,14 @@
-use std::{fmt::Debug, path::Path};
+use std::fmt::Debug;
 
 use minijinja::Value;
 use serde::{Serialize, de::DeserializeOwned};
 use tokio::sync::mpsc::Sender;
 
 use crate::{
-    adapters::checkpoint::{CheckpointContext, CheckpointData},
-    config::{ConfigBuilder, ConfigManager},
+    adapters::{
+        checkpoint::{CheckpointContext, CheckpointData},
+        project::manager::ProjectManager,
+    },
     errors::OxyError,
     execute::{builders::checkpoint::CheckpointId, renderer::Renderer, types::Usage},
 };
@@ -33,7 +35,7 @@ pub struct ExecutionContext {
     pub source: Source,
     pub writer: Sender<Event>,
     pub renderer: Renderer,
-    pub config: ConfigManager,
+    pub project: ProjectManager,
     pub checkpoint: Option<CheckpointContext>,
 }
 
@@ -41,7 +43,7 @@ impl ExecutionContext {
     pub fn new(
         source: Source,
         renderer: Renderer,
-        config: ConfigManager,
+        project: ProjectManager,
         writer: Sender<Event>,
         checkpoint: Option<CheckpointContext>,
     ) -> Self {
@@ -49,7 +51,7 @@ impl ExecutionContext {
             source,
             writer,
             renderer,
-            config,
+            project,
             checkpoint,
         }
     }
@@ -63,7 +65,7 @@ impl ExecutionContext {
             },
             writer: self.writer.clone(),
             renderer: self.renderer.clone(),
-            config: self.config.clone(),
+            project: self.project.clone(),
             checkpoint: self.checkpoint.clone(),
         }
     }
@@ -73,7 +75,7 @@ impl ExecutionContext {
             source: self.source.clone(),
             writer: self.writer.clone(),
             renderer: self.renderer.clone(),
-            config: self.config.clone(),
+            project: self.project.clone(),
             checkpoint: Some(checkpoint),
         }
     }
@@ -84,7 +86,7 @@ impl ExecutionContext {
                 source: self.source.clone(),
                 writer: self.writer.clone(),
                 renderer: self.renderer.clone(),
-                config: self.config.clone(),
+                project: self.project.clone(),
                 checkpoint: Some(checkpoint_context.with_current_ref(child_ref)),
             }
         } else {
@@ -92,7 +94,7 @@ impl ExecutionContext {
                 source: self.source.clone(),
                 writer: self.writer.clone(),
                 renderer: self.renderer.clone(),
-                config: self.config.clone(),
+                project: self.project.clone(),
                 checkpoint: None,
             }
         }
@@ -103,7 +105,7 @@ impl ExecutionContext {
             source: self.source.clone(),
             writer,
             renderer: self.renderer.clone(),
-            config: self.config.clone(),
+            project: self.project.clone(),
             checkpoint: self.checkpoint.clone(),
         }
     }
@@ -113,7 +115,7 @@ impl ExecutionContext {
             source: self.source.clone(),
             writer: self.writer.clone(),
             renderer,
-            config: self.config.clone(),
+            project: self.project.clone(),
             checkpoint: self.checkpoint.clone(),
         }
     }
@@ -125,7 +127,7 @@ impl ExecutionContext {
             renderer: self
                 .renderer
                 .switch_context(global_context, Value::UNDEFINED),
-            config: self.config.clone(),
+            project: self.project.clone(),
             checkpoint: self.checkpoint.clone(),
         }
     }
@@ -135,7 +137,7 @@ impl ExecutionContext {
             source: self.source.clone(),
             writer: self.writer.clone(),
             renderer: self.renderer.wrap(context),
-            config: self.config.clone(),
+            project: self.project.clone(),
             checkpoint: self.checkpoint.clone(),
         }
     }
@@ -218,7 +220,7 @@ impl Writer for ExecutionContext {
 pub struct ExecutionContextBuilder {
     source: Option<Source>,
     renderer: Option<Renderer>,
-    config: Option<ConfigManager>,
+    project: Option<ProjectManager>,
     writer: Option<Sender<Event>>,
     checkpoint: Option<CheckpointContext>,
 }
@@ -234,7 +236,7 @@ impl ExecutionContextBuilder {
         ExecutionContextBuilder {
             source: None,
             renderer: None,
-            config: None,
+            project: None,
             writer: None,
             checkpoint: None,
         }
@@ -254,22 +256,9 @@ impl ExecutionContextBuilder {
         self
     }
 
-    pub fn with_config_manager(mut self, config: ConfigManager) -> Self {
-        self.config = Some(config);
+    pub fn with_project_manager(mut self, project: ProjectManager) -> Self {
+        self.project = Some(project);
         self
-    }
-
-    pub async fn with_project_path<P: AsRef<Path>>(
-        mut self,
-        project_path: P,
-    ) -> Result<Self, OxyError> {
-        self.config = Some(
-            ConfigBuilder::new()
-                .with_project_path(project_path)?
-                .build()
-                .await?,
-        );
-        Ok(self)
     }
 
     pub fn with_source(mut self, source: Source) -> Self {
@@ -297,15 +286,15 @@ impl ExecutionContextBuilder {
         let renderer = self
             .renderer
             .ok_or(OxyError::RuntimeError("Renderer is required".to_string()))?;
-        let config = self.config.ok_or(OxyError::RuntimeError(
-            "ConfigManager is required".to_string(),
+        let project: ProjectManager = self.project.ok_or(OxyError::RuntimeError(
+            "ProjectManager is required".to_string(),
         ))?;
 
         Ok(ExecutionContext {
             source,
             writer,
             renderer,
-            config,
+            project,
             checkpoint: self.checkpoint,
         })
     }

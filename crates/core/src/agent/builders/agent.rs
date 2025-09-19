@@ -36,8 +36,8 @@ impl Executable<AgentInput> for AgentExecutable {
             prompt,
             memory,
         } = input;
-        let agent_config = execution_context
-            .config
+        let config_manager = &execution_context.project.config_manager;
+        let agent_config = config_manager
             .resolve_agent(&agent_ref)
             .await
             .map_err(|e| {

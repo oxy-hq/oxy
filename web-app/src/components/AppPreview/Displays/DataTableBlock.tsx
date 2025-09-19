@@ -10,11 +10,20 @@ import {
 import { getDuckDB } from "@/libs/duckdb";
 import { DataContainer, TableData, TableDisplay } from "@/types/app";
 import { getData, registerAuthenticatedFile } from "./utils";
+import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 
-const load_table = async (filePath: string) => {
+const load_table = async (
+  filePath: string,
+  projectId: string,
+  branchName: string,
+) => {
   const db = await getDuckDB();
   const conn = await db.connect();
-  const file_name = await registerAuthenticatedFile(filePath);
+  const file_name = await registerAuthenticatedFile(
+    filePath,
+    projectId,
+    branchName,
+  );
   const rs = await conn.query(`select * from "${file_name}"`);
   return rs;
 };
@@ -27,6 +36,7 @@ export const DataTableBlock = ({
   data?: DataContainer;
 }) => {
   const [isLoading, setIsLoading] = useState(true);
+  const { project, branchName } = useCurrentProjectBranch();
   const [table, setTable] = useState<Awaited<
     ReturnType<typeof load_table>
   > | null>(null);
@@ -41,11 +51,11 @@ export const DataTableBlock = ({
         return;
       }
       const value = getData(data, display.data) as TableData;
-      const table = await load_table(value.file_path);
+      const table = await load_table(value.file_path, project.id, branchName);
       setTable(table);
       setIsLoading(false);
     })();
-  }, [data, dataAvailable, display.data]);
+  }, [branchName, data, dataAvailable, display.data, project.id]);
 
   if (isLoading)
     return (

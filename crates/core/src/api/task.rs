@@ -1,10 +1,12 @@
+use crate::api::middlewares::project::ProjectManagerExtractor;
 use async_trait::async_trait;
 use std::sync::{Arc, Mutex};
 use tokio::sync::Mutex as TokioMutex;
+use uuid::Uuid;
 
 use crate::{
+    adapters::project::manager::ProjectManager,
     auth::extractor::AuthenticatedUserExtractor,
-    config::ConfigBuilder,
     errors::OxyError,
     execute::{
         types::{DataAppReference, Event, EventKind, Output, ReferenceKind, Usage},
@@ -148,7 +150,9 @@ impl EventHandler for TaskStream {
     }
 }
 
-struct TaskExecutor;
+struct TaskExecutor {
+    project_manager: ProjectManager,
+}
 
 #[async_trait]
 impl ChatHandler for TaskExecutor {
@@ -159,14 +163,12 @@ impl ChatHandler for TaskExecutor {
     ) -> Result<(String, Usage), OxyError> {
         let connection = context.streaming_persister.get_connection();
         let thread = context.thread.clone();
-        let config = ConfigBuilder::new()
-            .with_project_path(&context.project_path)
-            .map_err(|e| OxyError::RuntimeError(format!("Failed to create config: {e}")))?
-            .build()
-            .await
-            .map_err(|e| OxyError::RuntimeError(format!("Failed to build config: {e}")))?;
 
-        let agent_ref = config.get_builder_agent_path().await.map_err(|e| {
+        let project_manager = self.project_manager.clone();
+
+        let config_manager = project_manager.config_manager.clone();
+
+        let agent_ref = config_manager.get_builder_agent_path().await.map_err(|e| {
             OxyError::RuntimeError(format!("Failed to get builder agent path: {e}"))
         })?;
 
@@ -175,7 +177,7 @@ impl ChatHandler for TaskExecutor {
         let usage_arc = task_stream.usage.clone();
 
         let result = run_agent(
-            &context.project_path,
+            project_manager,
             &agent_ref,
             context.user_question.clone(),
             task_stream,
@@ -217,14 +219,15 @@ impl ChatHandler for TaskExecutor {
 }
 
 pub async fn ask_task(
-    Path(id): Path<String>,
+    Path((project_id, id)): Path<(Uuid, String)>,
+    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     extract::Json(payload): extract::Json<AskTaskRequest>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let execution_manager = ChatService::new().await?;
-    let executor = TaskExecutor;
+    let executor = TaskExecutor { project_manager };
 
     execution_manager
-        .execute_request(id, payload, executor, user.id)
+        .execute_request(id, payload, executor, user.id, project_id)
         .await
 }

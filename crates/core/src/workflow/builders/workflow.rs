@@ -74,8 +74,8 @@ impl WorkflowMapper {
         execution_context: &ExecutionContext,
         workflow_ref: String,
     ) -> Result<Workflow, OxyError> {
-        let temp_workflow = execution_context
-            .config
+        let config_manager = &execution_context.project.config_manager;
+        let temp_workflow = config_manager
             .resolve_workflow_with_raw_variables(workflow_ref)
             .await?;
         let variables = temp_workflow

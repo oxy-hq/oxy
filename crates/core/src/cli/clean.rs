@@ -1,13 +1,15 @@
 use crate::{
-    config::constants::{CACHE_SOURCE, DATABASE_SEMANTIC_PATH},
-    db::client::get_state_dir,
+    config::{
+        ConfigManager,
+        constants::{CACHE_SOURCE, DATABASE_SEMANTIC_PATH},
+    },
     errors::OxyError,
-    project::resolve_project_path,
     theme::StyledText,
 };
 use std::{
     fs,
     io::{self, Write},
+    path::PathBuf,
 };
 
 fn confirm_deletion(item_description: &str, require_confirmation: bool) -> Result<bool, OxyError> {
@@ -26,94 +28,92 @@ fn confirm_deletion(item_description: &str, require_confirmation: bool) -> Resul
     Ok(input == "y" || input == "yes")
 }
 
-pub async fn clean_all(require_confirmation: bool) -> Result<(), OxyError> {
+pub async fn clean_all(
+    require_confirmation: bool,
+    config_manager: &ConfigManager,
+) -> Result<(), OxyError> {
     println!("🧹 {} ephemeral data...", "Cleaning".text());
-    clean_vectors(require_confirmation).await?;
-    clean_database_folder(require_confirmation).await?;
-    clean_cache(require_confirmation).await?;
+    clean_vectors(require_confirmation, config_manager).await?;
+    clean_database_folder(require_confirmation, config_manager).await?;
+    clean_cache(require_confirmation, config_manager).await?;
     println!("✨ {}", "Ephemeral data cleaned successfully!".success());
     Ok(())
 }
 
-pub async fn clean_database_folder(require_confirmation: bool) -> Result<(), OxyError> {
+pub async fn clean_database_folder(
+    require_confirmation: bool,
+    config_manager: &ConfigManager,
+) -> Result<(), OxyError> {
     println!("🗂️  {} .database folder...", "Clearing".text());
-    match resolve_project_path() {
-        Ok(project_path) => {
-            let database_dir = project_path.join(DATABASE_SEMANTIC_PATH);
-            if database_dir.exists() {
-                if !confirm_deletion(
-                    "the .databases folder (semantic models and build artifacts)",
-                    require_confirmation,
-                )? {
-                    println!("  {} Operation cancelled", "ℹ️".text());
-                    return Ok(());
-                }
-                match fs::remove_dir_all(&database_dir) {
-                    Ok(()) => {
-                        println!("  {} Removed .databases folder", "🗂️".warning());
-                        println!("✅ {} cleared", ".databases folder".success());
-                    }
-                    Err(e) => {
-                        return Err(OxyError::IOError(format!(
-                            "Failed to remove .databases folder: {e}"
-                        )));
-                    }
-                }
-            } else {
-                println!("  {} .databases folder not found", "ℹ️".text());
+    let database_dir = config_manager.resolve_file(DATABASE_SEMANTIC_PATH).await?;
+    let database_dir = PathBuf::from(database_dir);
+
+    if database_dir.exists() {
+        if !confirm_deletion(
+            "the .databases folder (semantic models and build artifacts)",
+            require_confirmation,
+        )? {
+            println!("  {} Operation cancelled", "ℹ️".text());
+            return Ok(());
+        }
+        match fs::remove_dir_all(&database_dir) {
+            Ok(()) => {
+                println!("  {} Removed .databases folder", "🗂️".warning());
+                println!("✅ {} cleared", ".databases folder".success());
+            }
+            Err(e) => {
+                return Err(OxyError::IOError(format!(
+                    "Failed to remove .databases folder: {e}"
+                )));
             }
         }
-        Err(_) => {
-            println!(
-                "  {} Not in an Oxy project, skipping .databases folder cleanup",
-                "ℹ️".text()
-            );
-        }
+    } else {
+        println!("  {} .databases folder not found", "ℹ️".text());
     }
+
     Ok(())
 }
 
-pub async fn clean_vectors(require_confirmation: bool) -> Result<(), OxyError> {
+pub async fn clean_vectors(
+    require_confirmation: bool,
+    config_manager: &ConfigManager,
+) -> Result<(), OxyError> {
     println!("🔍 {} vector embeddings...", "Clearing".text());
-    match resolve_project_path() {
-        Ok(project_path) => {
-            let lancedb_path = project_path.join(".lancedb");
-            if lancedb_path.exists() {
-                if !confirm_deletion(
-                    "all vector embeddings (.lancedb folder)",
-                    require_confirmation,
-                )? {
-                    println!("  {} Operation cancelled", "ℹ️".text());
-                    return Ok(());
-                }
-                match fs::remove_dir_all(&lancedb_path) {
-                    Ok(()) => {
-                        println!("  {} Removed .lancedb folder", "🔍".warning());
-                    }
-                    Err(e) => {
-                        return Err(OxyError::IOError(format!(
-                            "Failed to remove .lancedb folder: {e}"
-                        )));
-                    }
-                }
-            } else {
-                println!("  {} .lancedb folder not found", "ℹ️".text());
+
+    let lancedb_path = config_manager.resolve_file(".lancedb").await?;
+    let lancedb_path = PathBuf::from(lancedb_path);
+    if lancedb_path.exists() {
+        if !confirm_deletion(
+            "all vector embeddings (.lancedb folder)",
+            require_confirmation,
+        )? {
+            println!("  {} Operation cancelled", "ℹ️".text());
+            return Ok(());
+        }
+        match fs::remove_dir_all(&lancedb_path) {
+            Ok(()) => {
+                println!("  {} Removed .lancedb folder", "🔍".warning());
+            }
+            Err(e) => {
+                return Err(OxyError::IOError(format!(
+                    "Failed to remove .lancedb folder: {e}"
+                )));
             }
         }
-        Err(_) => {
-            println!(
-                "  {} Not in an Oxy project, skipping .lancedb cleanup",
-                "ℹ️".text()
-            );
-        }
+    } else {
+        println!("  {} .lancedb folder not found", "ℹ️".text());
     }
+
     println!("✅ {} cleared", "Vector embeddings".success());
     Ok(())
 }
 
-pub async fn clean_cache(require_confirmation: bool) -> Result<(), OxyError> {
+pub async fn clean_cache(
+    require_confirmation: bool,
+    config_manager: &ConfigManager,
+) -> Result<(), OxyError> {
     println!("🗂️  {} cache folder...", "Clearing".text());
-    let state_dir = get_state_dir();
+    let state_dir = config_manager.resolve_state_dir().await?;
     let cache_dir = state_dir.join(CACHE_SOURCE);
 
     if cache_dir.exists() {

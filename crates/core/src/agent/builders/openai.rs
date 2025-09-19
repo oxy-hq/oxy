@@ -17,7 +17,10 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::{
-    adapters::openai::{IntoOpenAIConfig, OpenAIClient},
+    adapters::{
+        openai::{IntoOpenAIConfig, OpenAIClient},
+        secrets::SecretsManager,
+    },
     config::{
         constants::{AGENT_RETRY_MAX_ELAPSED_TIME, AGENT_SOURCE_CONTENT},
         model::Model,
@@ -673,6 +676,7 @@ impl ParamMapper<OneShotInput, Vec<ChatCompletionRequestMessage>> for SimpleMapp
 
 pub async fn build_openai_executable(
     model: &Model,
+    secrets_manager: &SecretsManager,
 ) -> Result<
     MapInput<OpenAIOrOSSExecutable, SimpleMapper, Vec<ChatCompletionRequestMessage>>,
     OxyError,
@@ -680,7 +684,7 @@ pub async fn build_openai_executable(
     let model_name = model.model_name();
     let exec = if is_oss_model(model_name) {
         OpenAIOrOSSExecutable::OSS(OSSExecutable::new(
-            OpenAIClient::with_config(model.into_openai_config().await?),
+            OpenAIClient::with_config(model.into_openai_config(secrets_manager).await?),
             model_name.to_string(),
             vec![],
             None,
@@ -688,7 +692,7 @@ pub async fn build_openai_executable(
         ))
     } else {
         OpenAIOrOSSExecutable::OpenAI(OpenAIExecutable::new(
-            OpenAIClient::with_config(model.into_openai_config().await?),
+            OpenAIClient::with_config(model.into_openai_config(secrets_manager).await?),
             model_name.to_string(),
             vec![],
             None,
@@ -702,9 +706,10 @@ pub async fn build_openai_executable(
 pub async fn build_openai_executable_with_tools(
     model: &Model,
     tools: Vec<ChatCompletionTool>,
+    secrets_manager: &SecretsManager,
 ) -> Result<OpenAIOrOSSExecutable, OxyError> {
     let model_name = model.model_name();
-    let client = OpenAIClient::with_config(model.into_openai_config().await?);
+    let client = OpenAIClient::with_config(model.into_openai_config(secrets_manager).await?);
 
     if is_oss_model(model_name) {
         Ok(OpenAIOrOSSExecutable::OSS(OSSExecutable::new(

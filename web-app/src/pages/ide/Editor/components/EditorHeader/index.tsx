@@ -10,8 +10,13 @@ import { FileState } from "@/components/FileEditor";
 import FileStatus from "./FileStatus";
 import { cn } from "@/libs/shadcn/utils";
 import { Fragment } from "react/jsx-runtime";
-import { Loader2 } from "lucide-react";
+import { FileDiff, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/shadcn/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/shadcn/tooltip";
 import { SIDEBAR_REVEAL_FILE } from "@/pages/ide/Sidebar/events";
 
 interface HeaderProps {
@@ -20,6 +25,7 @@ interface HeaderProps {
   actions?: React.ReactNode;
   onSave: () => void;
   isReadonly?: boolean;
+  onShowDiff?: () => void;
 }
 
 const EditorHeader = ({
@@ -27,6 +33,7 @@ const EditorHeader = ({
   fileState,
   actions,
   onSave,
+  onShowDiff,
   isReadonly = false,
 }: HeaderProps) => {
   return (
@@ -94,6 +101,17 @@ const EditorHeader = ({
         {fileState == "saving" && (
           <Loader2 className="w-4 h-4 text-yellow-500 animate-[spin_0.2s_linear_infinite]" />
         )}
+        {onShowDiff && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="outline" size="sm" onClick={onShowDiff}>
+                <FileDiff className="w-4 h-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Show file diff</TooltipContent>
+          </Tooltip>
+        )}
+
         {actions}
       </div>
     </div>

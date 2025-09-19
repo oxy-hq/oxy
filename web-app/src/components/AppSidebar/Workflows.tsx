@@ -1,5 +1,5 @@
 import { Workflow } from "lucide-react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useParams } from "react-router-dom";
 import {
   SidebarMenuButton,
   SidebarMenuItem,
@@ -11,11 +11,16 @@ import useWorkflows from "@/hooks/api/workflows/useWorkflows";
 import { useState } from "react";
 import { Button } from "@/components/ui/shadcn/button";
 import ItemsSkeleton from "./ItemsSkeleton";
+import ROUTES from "@/libs/utils/routes";
 
 export function Workflows() {
   const [showAll, setShowAll] = useState(false);
   const location = useLocation();
   const { data: workflows, isPending } = useWorkflows();
+  const { projectId } = useParams();
+  if (!projectId) {
+    throw new Error("Project ID is required");
+  }
 
   const visibleWorkflows = showAll ? workflows : workflows?.slice(0, 5);
 
@@ -32,8 +37,9 @@ export function Workflows() {
 
         {!isPending &&
           visibleWorkflows?.map((workflow) => {
-            const pathb64 = btoa(workflow.path);
-            const workflowUri = `/workflows/${pathb64}`;
+            const pathb64 = btoa(workflow.path || "");
+            const workflowUri =
+              ROUTES.PROJECT(projectId).WORKFLOW(pathb64).ROOT;
             return (
               <SidebarMenuSubItem key={pathb64}>
                 <SidebarMenuSubButton

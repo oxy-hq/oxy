@@ -1,10 +1,8 @@
 use std::path::PathBuf;
 
-use crate::config::ConfigBuilder;
-use crate::db::client::get_state_dir;
+use crate::api::middlewares::project::ProjectManagerExtractor;
 use crate::execute::types::DataContainer;
-use crate::project::resolve_project_path;
-use crate::service::{self, app::DisplayWithError};
+use crate::service::app::{AppService, DisplayWithError, get_app_displays};
 use axum::body::Body;
 use axum::extract::{self, Path};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
@@ -15,6 +13,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use tokio_util::io::ReaderStream;
 use utoipa::ToSchema;
+use uuid::Uuid;
 
 #[derive(Deserialize, Serialize, JsonSchema, ToSchema)]
 pub struct AppItem {
@@ -61,19 +60,14 @@ fn create_error_response(error_msg: String) -> GetAppDataResponse {
         (status = OK, description = "Success", body = Vec<AppItem>, content_type = "application/json")
     )
 )]
-pub async fn list_apps() -> Result<extract::Json<Vec<AppItem>>, StatusCode> {
-    let project_path = resolve_project_path().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+pub async fn list_apps(
+    Path(_project_id): Path<Uuid>,
+    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+) -> Result<extract::Json<Vec<AppItem>>, StatusCode> {
+    let config_manager = &project_manager.config_manager;
+    let project_path = config_manager.project_path();
 
-    let config_builder = ConfigBuilder::new()
-        .with_project_path(&project_path)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    let config = config_builder
-        .build()
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    let apps = config
+    let apps = config_manager
         .list_apps()
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -104,11 +98,12 @@ pub async fn list_apps() -> Result<extract::Json<Vec<AppItem>>, StatusCode> {
 }
 
 pub async fn get_displays(
-    Path(pathb64): Path<String>,
+    Path((_project_id, pathb64)): Path<(Uuid, String)>,
+    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
 ) -> Result<extract::Json<GetDisplaysResponse>, StatusCode> {
     let path = decode_path(&pathb64)?;
 
-    let displays = match service::app::get_app_displays(&path).await {
+    let displays = match get_app_displays(project_manager.clone(), &path).await {
         Ok(displays) => displays,
         Err(e) => {
             tracing::debug!("Failed to get app displays: {:?}", e);
@@ -120,11 +115,14 @@ pub async fn get_displays(
 }
 
 pub async fn get_app_data(
-    Path(pathb64): Path<String>,
+    Path((_project_id, pathb64)): Path<(Uuid, String)>,
+    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
 ) -> Result<extract::Json<GetAppDataResponse>, StatusCode> {
     let path = decode_path(&pathb64)?;
 
-    let app_tasks = match service::app::get_app_tasks(&path).await {
+    let mut app_service = AppService::new(project_manager.clone());
+
+    let app_tasks = match app_service.get_tasks(&path).await {
         Ok(tasks) => tasks,
         Err(e) => {
             tracing::debug!("Failed to get app tasks from path: {:?} {}", path, e);
@@ -134,14 +132,14 @@ pub async fn get_app_data(
         }
     };
 
-    if let Some(cached_data) = service::app::try_load_cached_data(&path, &app_tasks) {
+    if let Some(cached_data) = app_service.try_load_cached_data(&path, &app_tasks).await {
         return Ok(extract::Json(GetAppDataResponse {
             data: cached_data,
             error: None,
         }));
     }
 
-    let data = match service::app::run_app(&path).await {
+    let data = match app_service.run(&path).await {
         Ok(data) => data,
         Err(e) => {
             tracing::debug!("Failed to run app: {:?}", e);
@@ -154,14 +152,28 @@ pub async fn get_app_data(
     Ok(extract::Json(GetAppDataResponse { data, error: None }))
 }
 
-pub async fn get_data(Path(pathb64): Path<String>) -> impl IntoResponse {
+pub async fn get_data(
+    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    Path((_project_id, pathb64)): Path<(Uuid, String)>,
+) -> impl IntoResponse {
     let path_string = match decode_path(&pathb64) {
         Ok(path) => path.to_string_lossy().to_string(),
         Err(status) => return Err((status, "Invalid path".to_string())),
     };
 
-    let state_path = get_state_dir();
+    let state_path = project_manager
+        .config_manager
+        .resolve_state_dir()
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to resolve state dir: {e}"),
+            )
+        })?;
     let full_file_path = state_path.join(path_string);
+
+    print!("Full file path: {:?}", full_file_path);
 
     let file = match tokio::fs::File::open(full_file_path).await {
         Ok(file) => file,
@@ -181,11 +193,13 @@ pub async fn get_data(Path(pathb64): Path<String>) -> impl IntoResponse {
 }
 
 pub async fn run_app(
-    Path(pathb64): Path<String>,
+    Path((_project_id, pathb64)): Path<(Uuid, String)>,
+    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
 ) -> Result<extract::Json<GetAppDataResponse>, StatusCode> {
     let path = decode_path(&pathb64)?;
 
-    let data = match service::app::run_app(&path).await {
+    let mut app_service = AppService::new(project_manager.clone());
+    let data = match app_service.run(&path).await {
         Ok(data) => data,
         Err(e) => {
             tracing::debug!("Failed to run app: {:?}", e);

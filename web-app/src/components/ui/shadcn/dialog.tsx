@@ -61,7 +61,10 @@ function DialogContent({
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & DialogContentProps) {
   return (
-    <DialogPortal data-slot="dialog-portal">
+    <DialogPortal
+      data-slot="dialog-portal"
+      container={document.body.querySelector("#app-root") || document.body}
+    >
       <DialogOverlay showOverlay={showOverlay} />
       <DialogPrimitive.Content
         data-slot="dialog-content"

@@ -1,7 +1,6 @@
 use std::{fs::File, io::Write};
 
 use crate::{
-    db::client::get_charts_dir,
     errors::OxyError,
     execute::{
         Executable, ExecutionContext,
@@ -46,8 +45,13 @@ impl Executable<VisualizeInput> for VisualizeExecutable {
             "title": param.title,
         });
 
-        let tmp_chart_dir = get_charts_dir();
-        let file_path = tmp_chart_dir.join(format!("{}.json", Uuid::new_v4()));
+        let tmp_chart_dir = execution_context
+            .project
+            .config_manager
+            .get_charts_dir()
+            .await?;
+        let file_name = format!("{}.json", Uuid::new_v4());
+        let file_path = tmp_chart_dir.join(&file_name);
 
         let mut file = File::create(&file_path).map_err(|e| anyhow::anyhow!(e))?;
         file.write_all(chart_config.to_string().as_bytes())
@@ -55,7 +59,7 @@ impl Executable<VisualizeInput> for VisualizeExecutable {
 
         Ok(Output::Text(format!(
             "Use this markdown directive to render the chart \":chart{{chart_src={}}}\" directly in the final answer.",
-            file_path.display()
+            file_name
         )))
     }
 }

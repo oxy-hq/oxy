@@ -44,10 +44,8 @@ impl ParamMapper<ExecuteSQLTask, SQLInput> for SQLTaskMapper {
             }
             SQL::File { sql_file } => {
                 let rendered_sql_file = execution_context.renderer.render(sql_file)?;
-                let query_file = execution_context
-                    .config
-                    .resolve_file(&rendered_sql_file)
-                    .await?;
+                let config_manager = &execution_context.project.config_manager;
+                let query_file = config_manager.resolve_file(&rendered_sql_file).await?;
                 match fs::read_to_string(&query_file) {
                     Ok(query) => {
                         let context = if variables.is_empty() {

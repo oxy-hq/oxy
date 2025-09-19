@@ -1,5 +1,5 @@
 import { LayoutDashboard } from "lucide-react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useParams } from "react-router-dom";
 import {
   SidebarMenuButton,
   SidebarMenuItem,
@@ -9,10 +9,15 @@ import {
 } from "@/components/ui/shadcn/sidebar";
 import useApps from "@/hooks/api/apps/useApps";
 import ItemsSkeleton from "./ItemsSkeleton";
+import ROUTES from "@/libs/utils/routes";
 
 export function Apps() {
   const location = useLocation();
   const { data: apps, isPending } = useApps();
+  const { projectId } = useParams();
+  if (!projectId) {
+    return null;
+  }
 
   return (
     <SidebarMenuItem>
@@ -28,7 +33,7 @@ export function Apps() {
         {!isPending &&
           apps?.map((app) => {
             const pathb64 = btoa(app.path);
-            const appUri = `/apps/${pathb64}`;
+            const appUri = ROUTES.PROJECT(projectId).APP(pathb64);
             return (
               <SidebarMenuSubItem key={pathb64}>
                 <SidebarMenuSubButton

@@ -4,7 +4,8 @@ use minijinja::value::{Object, Value};
 use tokio::{runtime::Handle, sync::mpsc::Sender};
 
 use crate::{
-    config::{ConfigManager, model::ToolType},
+    adapters::project::manager::ProjectManager,
+    config::model::ToolType,
     execute::{
         ExecutionContext,
         types::{Event, Source},
@@ -16,7 +17,7 @@ use super::{ToolInput, ToolLauncher, types::ToolRawInput};
 
 #[derive(Debug, Clone)]
 pub struct ToolsContext {
-    config: ConfigManager,
+    project_manager: ProjectManager,
     agent_name: String,
     tools_config: Vec<ToolType>,
     prompt: String,
@@ -26,7 +27,7 @@ pub struct ToolsContext {
 
 impl ToolsContext {
     pub fn new(
-        config: ConfigManager,
+        project_manager: ProjectManager,
         agent_name: String,
         tools: impl IntoIterator<Item = ToolType>,
         prompt: String,
@@ -34,7 +35,7 @@ impl ToolsContext {
         source: Source,
     ) -> Self {
         ToolsContext {
-            config,
+            project_manager,
             agent_name,
             tools_config: tools.into_iter().collect(),
             prompt,
@@ -49,10 +50,10 @@ impl ToolsContext {
         tools: impl IntoIterator<Item = ToolType>,
         prompt: String,
     ) -> Self {
-        let config = execution_context.config.clone();
+        let project_manager = execution_context.project.clone();
         let sender = execution_context.writer.clone();
         ToolsContext::new(
-            config,
+            project_manager,
             agent_name,
             tools,
             prompt,
@@ -69,7 +70,7 @@ impl Object for ToolsContext {
             Some(tool_key) => match Handle::try_current() {
                 Ok(rt) => {
                     let launcher = ToolLauncher::new()
-                        .with_config(self.config.clone(), Some(self.source.clone()))
+                        .with_project(self.project_manager.clone(), Some(self.source.clone()))
                         .ok()?;
                     let output = rt
                         .block_on(launcher.launch(

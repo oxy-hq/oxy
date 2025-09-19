@@ -1,11 +1,12 @@
-use crate::{errors::OxyError, project::resolve_project_path};
+use crate::{config, errors::OxyError};
 use oxy_semantic::{self, SemanticLayer, Topic, View, parse_semantic_layer_from_dir};
 
 /// Get enhanced description for semantic query tool with semantic layer metadata
 pub fn get_semantic_query_description(
     semantic_tool: &crate::config::model::SemanticQueryTool,
+    config_manager: &config::ConfigManager,
 ) -> Result<String, OxyError> {
-    let semantic_layer = load_semantic_layer()?;
+    let semantic_layer = load_semantic_layer(config_manager)?;
 
     let mut description = String::new();
     description.push_str(&semantic_tool.description);
@@ -21,8 +22,8 @@ pub fn get_semantic_query_description(
     Ok(description)
 }
 
-fn load_semantic_layer() -> Result<SemanticLayer, OxyError> {
-    let project_path = resolve_project_path()?;
+fn load_semantic_layer(config_manager: &config::ConfigManager) -> Result<SemanticLayer, OxyError> {
+    let project_path = config_manager.project_path();
     let semantic_dir = project_path.join("semantics");
 
     if !semantic_dir.exists() {

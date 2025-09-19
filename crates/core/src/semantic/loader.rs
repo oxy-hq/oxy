@@ -1,6 +1,7 @@
 use std::path::Path;
 use std::{collections::HashMap, fs, sync::Arc};
 
+use crate::adapters::secrets::SecretsManager;
 use crate::{
     adapters::connector::Connector,
     config::{
@@ -431,8 +432,11 @@ impl SchemaLoader {
     pub async fn from_database(
         database: &Database,
         config: &ConfigManager,
+        secrets_manager: &SecretsManager,
     ) -> Result<Self, OxyError> {
-        let connector = Arc::new(Connector::from_database(&database.name, config, None).await?);
+        let connector = Arc::new(
+            Connector::from_database(&database.name, config, secrets_manager, None).await?,
+        );
         Ok(SchemaLoader {
             database: database.clone(),
             connector,
@@ -441,10 +445,12 @@ impl SchemaLoader {
 
     pub async fn load_schema(
         &self,
+        config: &ConfigManager,
     ) -> Result<HashMap<String, HashMap<String, SemanticModels>>, OxyError> {
         match &self.database.database_type {
             DatabaseType::DuckDB(duckdb) => {
-                let path = Path::new(&duckdb.file_search_path);
+                let file = config.resolve_file(&duckdb.file_search_path).await?;
+                let path = Path::new(&file);
                 let mut result = HashMap::new();
                 let mut tables = HashMap::new();
 
@@ -589,10 +595,14 @@ impl SchemaLoader {
         }
     }
 
-    pub async fn load_ddl(&self) -> Result<HashMap<String, String>, OxyError> {
+    pub async fn load_ddl(
+        &self,
+        config: &ConfigManager,
+    ) -> Result<HashMap<String, String>, OxyError> {
         match &self.database.database_type {
             DatabaseType::DuckDB(duckdb) => {
-                let path = Path::new(&duckdb.file_search_path);
+                let file = config.resolve_file(&duckdb.file_search_path).await?;
+                let path = Path::new(&file);
                 let mut ddls = HashMap::new();
                 let mut ddl_lines = Vec::new();
 

@@ -14,16 +14,13 @@ import useCurrentUser from "@/hooks/api/users/useCurrentUser";
 interface Props {
   user: UserInfo;
   isAdmin: boolean;
+  organizationId: string;
 }
 
-const UserRow: React.FC<Props> = ({ user, isAdmin }) => {
+const UserRow: React.FC<Props> = ({ user, isAdmin, organizationId }) => {
   const { data: currentUser } = useCurrentUser();
   const getRoleBadgeVariant = (role: string) => {
     return role === "admin" ? "destructive" : "secondary";
-  };
-
-  const getStatusBadgeVariant = (status: string) => {
-    return status === "active" ? "default" : "outline";
   };
 
   return (
@@ -41,14 +38,9 @@ const UserRow: React.FC<Props> = ({ user, isAdmin }) => {
           {capitalize(user.role)}
         </Badge>
       </TableCell>
-      <TableCell>
-        <Badge variant={getStatusBadgeVariant(user.status)}>
-          {capitalize(user.status)}
-        </Badge>
-      </TableCell>
       {isAdmin && user.id !== currentUser?.id && (
         <TableCell>
-          <Actions user={user} />
+          <Actions user={user} organizationId={organizationId} />
         </TableCell>
       )}
     </TableRow>

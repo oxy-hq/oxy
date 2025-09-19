@@ -12,6 +12,8 @@ import {
 import useDeleteFolder from "@/hooks/api/files/useDeleteFolder";
 import { useLocation, useNavigate } from "react-router-dom";
 import useDeleteFile from "@/hooks/api/files/useDeleteFile";
+import ROUTES from "@/libs/utils/routes";
+import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 
 interface AlertDeleteDialogProps {
   fileTree: FileTreeModel;
@@ -28,6 +30,8 @@ const AlertDeleteDialog = ({
   const deleteFolder = useDeleteFolder();
   const deleteFile = useDeleteFile();
   const navigate = useNavigate();
+  const { project } = useCurrentProjectBranch();
+  const projectId = project.id;
 
   const isDir = fileTree.is_dir;
 
@@ -40,7 +44,8 @@ const AlertDeleteDialog = ({
       }
       const currentPath = atob(pathname.split("/").pop() ?? "");
       if (currentPath.startsWith(fileTree.path)) {
-        navigate(`/ide`);
+        const ideUri = ROUTES.PROJECT(projectId).IDE.ROOT;
+        navigate(ideUri);
       }
     } catch (error) {
       console.error("Failed to delete folder:", error);

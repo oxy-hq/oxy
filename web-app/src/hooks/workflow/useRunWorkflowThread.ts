@@ -7,9 +7,12 @@ import { useCallback } from "react";
 import throttle from "lodash/throttle";
 import { WorkflowService } from "@/services/api";
 import { toast } from "sonner";
+import useCurrentProjectBranch from "../useCurrentProjectBranch";
 
 const useRunWorkflowThread = () => {
   const queryClient = useQueryClient();
+  const { project, branchName } = useCurrentProjectBranch();
+  const projectId = project.id;
   const { setLogs, setIsLoading, getWorkflowThread } = useWorkflowThreadStore();
 
   const appendLogs = useCallback(
@@ -46,7 +49,7 @@ const useRunWorkflowThread = () => {
     if (isLoading) return;
 
     queryClient.setQueryData(
-      queryKeys.thread.list(1, 50),
+      queryKeys.thread.list(projectId, 1, 50),
       (old: ThreadsResponse | undefined) => {
         if (old) {
           return {
@@ -63,10 +66,15 @@ const useRunWorkflowThread = () => {
     setIsLoading(threadId, true);
     setLogs(threadId, () => []);
 
-    WorkflowService.runWorkflowThread(threadId, processLogs(threadId))
+    WorkflowService.runWorkflowThread(
+      projectId,
+      branchName,
+      threadId,
+      processLogs(threadId),
+    )
       .finally(() => {
         queryClient.setQueryData(
-          queryKeys.thread.item(threadId),
+          queryKeys.thread.item(projectId, threadId),
           (old: ThreadItem | undefined) => {
             if (old) {
               return { ...old, is_processing: false };

@@ -69,7 +69,15 @@ where
         execution_context: &ExecutionContext,
         input: I,
     ) -> Result<Self::Response, OxyError> {
-        let manager = CheckpointBuilder::from_config(&execution_context.config).await?;
+        let runs_manager =
+            &execution_context
+                .project
+                .runs_manager
+                .clone()
+                .ok_or(OxyError::ConfigurationError(
+                    "Runs manager is not configured for the project".to_string(),
+                ))?;
+        let manager = CheckpointBuilder::from_runs_manager(runs_manager).await?;
         let run_info = input.run_info();
         tracing::info!("Running with run info: {:?}", run_info);
         // Build new execution context with the new receiver and checkpoint manager

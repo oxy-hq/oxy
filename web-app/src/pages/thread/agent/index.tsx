@@ -12,6 +12,7 @@ import ProcessingWarning from "../ProcessingWarning";
 import ArtifactPanelContainer from "./components/ArtifactPanelContainer";
 import { ThreadService } from "@/services/api";
 import { toast } from "sonner";
+import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 
 dayjs.extend(relativeTime);
 
@@ -23,6 +24,8 @@ interface AgentThreadProps {
 const MESSAGES_WARNING_THRESHOLD = 10;
 
 const AgentThread = ({ thread, refetchThread }: AgentThreadProps) => {
+  const { project } = useCurrentProjectBranch();
+  const projectId = project.id;
   const isInitialLoad = useRef(false);
   const { getAgentThread, setMessages } = useAgentThreadStore();
   const { sendMessage } = useAskAgent();
@@ -54,12 +57,15 @@ const AgentThread = ({ thread, refetchThread }: AgentThreadProps) => {
 
   const fetchMessages = useCallback(async () => {
     try {
-      const history = await ThreadService.getThreadMessages(thread.id);
+      const history = await ThreadService.getThreadMessages(
+        projectId,
+        thread.id,
+      );
       setMessages(thread.id, history as unknown as Message[]);
     } catch (error) {
       console.error("Failed to fetch message history:", error);
     }
-  }, [setMessages, thread.id]);
+  }, [setMessages, thread.id, projectId]);
 
   useEffect(() => {
     if ((messages && messages.length > 0) || isLoading) return;
@@ -70,7 +76,7 @@ const AgentThread = ({ thread, refetchThread }: AgentThreadProps) => {
   }, [fetchMessages, isLoading, messages]);
 
   const onStop = useCallback(() => {
-    ThreadService.stopThread(thread.id)
+    ThreadService.stopThread(projectId, thread.id)
       // eslint-disable-next-line promise/always-return
       .then(() => {
         refetchThread();
@@ -80,7 +86,7 @@ const AgentThread = ({ thread, refetchThread }: AgentThreadProps) => {
         toast.error(`Failed to stop thread: ${error.message}`);
         console.error("Failed to stop thread:", error);
       });
-  }, [fetchMessages, refetchThread, thread.id]);
+  }, [fetchMessages, refetchThread, thread.id, projectId]);
 
   return (
     <div className="flex flex-col h-full overflow-hidden">

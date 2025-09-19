@@ -214,6 +214,11 @@ pub async fn create_sample_threads_for_users() -> Result<(), OxyError> {
                 references: ActiveValue::Set("[]".to_string()),
                 created_at: ActiveValue::not_set(),
                 is_processing: ActiveValue::Set(false),
+                project_id: ActiveValue::Set(
+                    "00000000-0000-0000-0000-000000000000"
+                        .parse::<Uuid>()
+                        .unwrap(),
+                ),
             };
 
             let _thread = new_thread

@@ -25,11 +25,9 @@ impl Cacheable<Task> for TaskCacheable {
         let cache_config = task.cache.clone()?;
         if cache_config.enabled {
             let rendered_path = execution_context.renderer.render(&cache_config.path).ok()?;
-            let cache_key = execution_context
-                .config
-                .resolve_file(&rendered_path)
-                .await
-                .ok()?;
+
+            let config_manager = &execution_context.project.config_manager;
+            let cache_key = config_manager.resolve_file(&rendered_path).await.ok()?;
             Some(cache_key)
         } else {
             None

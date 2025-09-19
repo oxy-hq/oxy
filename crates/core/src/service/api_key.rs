@@ -35,6 +35,7 @@ pub struct CreateApiKeyParams {
     pub user_id: Uuid,
     pub name: String,
     pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub project_id: Uuid,
 }
 
 #[derive(Debug, Clone)]
@@ -144,6 +145,7 @@ impl ApiKeyService {
             created_at: Set(now.into()),
             updated_at: Set(now.into()),
             is_active: Set(true),
+            project_id: Set(request.project_id),
         };
 
         // Save to database

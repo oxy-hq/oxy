@@ -1,8 +1,6 @@
 use crate::{
-    config::ConfigBuilder,
     db::{client::establish_connection, filters::UserQueryFilterExt},
     errors::OxyError,
-    project::resolve_project_path,
 };
 use entity::prelude::Users;
 use entity::users;
@@ -15,24 +13,6 @@ use entity::users::{UserRole, UserStatus};
 pub struct UserService;
 
 impl UserService {
-    pub async fn determine_user_role(email: &str) -> UserRole {
-        if let Ok(project_path) = resolve_project_path() {
-            if let Ok(config_builder) = ConfigBuilder::new().with_project_path(&project_path) {
-                if let Ok(config) = config_builder.build().await {
-                    if let Some(auth_config) = config.get_authentication() {
-                        if let Some(admins) = auth_config.admins {
-                            if admins.contains(&email.to_string()) {
-                                return UserRole::Admin;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        UserRole::Member
-    }
-
     pub async fn get_or_create_user(identity: &Identity) -> Result<AuthenticatedUser, OxyError> {
         let connection = establish_connection().await?;
 
@@ -44,9 +24,6 @@ impl UserService {
         {
             Some(existing_user) => Ok(existing_user.into()),
             None => {
-                // Determine role for new user
-                let role = Self::determine_user_role(&identity.email).await;
-
                 let new_user = users::ActiveModel {
                     id: Set(Uuid::new_v4()),
                     email: Set(identity.email.clone()),
@@ -58,7 +35,7 @@ impl UserService {
                     password_hash: ActiveValue::not_set(),
                     email_verified: Set(true),
                     email_verification_token: ActiveValue::not_set(),
-                    role: Set(role),
+                    role: Set(users::UserRole::Member),
                     status: Set(UserStatus::Active),
                     created_at: ActiveValue::not_set(), // Will use database default
                     last_login_at: ActiveValue::not_set(), // Will use database default
@@ -179,79 +156,6 @@ impl UserService {
             .await
             .map_err(|e| OxyError::DBError(format!("Failed to update user role: {e}")))?;
 
-        Ok(())
-    }
-
-    /// Sync admin roles based on current configuration
-    /// This function ensures that users listed in config.authentication.admins are given admin role
-    /// and users not in the list are demoted to regular user role
-    pub async fn sync_admin_roles_from_config() -> Result<(), OxyError> {
-        let connection = establish_connection().await?;
-
-        // Get current admin emails from config
-        let admin_emails = if let Ok(project_path) = resolve_project_path() {
-            if let Ok(config_builder) = ConfigBuilder::new().with_project_path(&project_path) {
-                if let Ok(config) = config_builder.build().await {
-                    if let Some(auth_config) = config.get_authentication() {
-                        auth_config.admins.unwrap_or_default()
-                    } else {
-                        Vec::new()
-                    }
-                } else {
-                    Vec::new()
-                }
-            } else {
-                Vec::new()
-            }
-        } else {
-            Vec::new()
-        };
-
-        tracing::info!(
-            "Syncing admin roles. Admin emails from config: {:?}",
-            admin_emails
-        );
-
-        let users = Users::find()
-            .filter_active()
-            .all(&connection)
-            .await
-            .map_err(|e| OxyError::DBError(format!("Failed to query users: {e}")))?;
-
-        let mut updates_count = 0;
-
-        for user in users {
-            let should_be_admin = admin_emails.contains(&user.email);
-            let is_currently_admin = user.role == UserRole::Admin;
-            let user_email = user.email.clone();
-
-            if should_be_admin && !is_currently_admin {
-                let mut user_model: users::ActiveModel = user.into();
-                user_model.role = Set(UserRole::Admin);
-
-                user_model.update(&connection).await.map_err(|e| {
-                    OxyError::DBError(format!("Failed to promote user to admin: {e}"))
-                })?;
-
-                tracing::info!("Promoted user {} to admin role", user_email);
-                updates_count += 1;
-            } else if !should_be_admin && is_currently_admin {
-                let mut user_model: users::ActiveModel = user.into();
-                user_model.role = Set(UserRole::Member);
-
-                user_model.update(&connection).await.map_err(|e| {
-                    OxyError::DBError(format!("Failed to demote user from admin: {e}"))
-                })?;
-
-                tracing::info!("Demoted user {} from admin role", user_email);
-                updates_count += 1;
-            }
-        }
-
-        tracing::info!(
-            "Admin role sync completed. {} users updated.",
-            updates_count
-        );
         Ok(())
     }
 }

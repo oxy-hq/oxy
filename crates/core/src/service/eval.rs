@@ -4,6 +4,7 @@ use itertools::Itertools;
 use tqdm::{Pbar, pbar};
 
 use crate::{
+    adapters::project::manager::ProjectManager,
     config::constants::EVAL_SOURCE,
     errors::OxyError,
     eval::{EvalLauncher, EvalResult},
@@ -102,13 +103,13 @@ impl EventHandler for EvalEventsHandler {
 }
 
 pub async fn run_eval<P: AsRef<Path>, H: EventHandler + Send + 'static>(
-    project_path: P,
+    project_manager: ProjectManager,
     path: P,
     index: Option<usize>,
     event_handler: H,
 ) -> Result<Vec<EvalResult>, OxyError> {
     let result = EvalLauncher::new()
-        .with_project_path(project_path)
+        .with_project(project_manager)
         .await?
         .launch(
             EvalInput {

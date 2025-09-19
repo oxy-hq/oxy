@@ -9,17 +9,16 @@ import {
 } from "@/types/secret";
 import { apiClient } from "./api/axios";
 
-const BASE_PATH = "/secrets";
-
 export class SecretService {
   /**
    * Create a new secret
    */
   static async createSecret(
+    projectId: string,
     request: CreateSecretRequest,
   ): Promise<CreateSecretResponse> {
     const response = await apiClient.post<CreateSecretResponse>(
-      BASE_PATH,
+      `/${projectId}/secrets`,
       request,
     );
     return response.data;
@@ -29,10 +28,11 @@ export class SecretService {
    * Create multiple secrets in bulk
    */
   static async bulkCreateSecrets(
+    projectId: string,
     request: BulkCreateSecretsRequest,
   ): Promise<BulkCreateSecretsResponse> {
     const response = await apiClient.post<BulkCreateSecretsResponse>(
-      `${BASE_PATH}/bulk`,
+      `/${projectId}/secrets/bulk`,
       request,
     );
     return response.data;
@@ -41,16 +41,16 @@ export class SecretService {
   /**
    * List all secrets for the current user
    */
-  static async listSecrets(): Promise<SecretListResponse> {
-    const response = await apiClient.get<SecretListResponse>(BASE_PATH);
+  static async listSecrets(projectId: string): Promise<SecretListResponse> {
+    const response = await apiClient.get<SecretListResponse>(`/${projectId}/secrets`);
     return response.data;
   }
 
   /**
    * Get details of a specific secret (metadata only, no value)
    */
-  static async getSecret(id: string): Promise<Secret> {
-    const response = await apiClient.get<Secret>(`${BASE_PATH}/${id}`);
+  static async getSecret(projectId: string, id: string): Promise<Secret> {
+    const response = await apiClient.get<Secret>(`/${projectId}/secrets/${id}`);
     return response.data;
   }
 
@@ -58,18 +58,19 @@ export class SecretService {
    * Update an existing secret
    */
   static async updateSecret(
+    projectId: string,
     id: string,
     request: UpdateSecretRequest,
   ): Promise<Secret> {
-    const response = await apiClient.put<Secret>(`${BASE_PATH}/${id}`, request);
+    const response = await apiClient.put<Secret>(`/${projectId}/secrets/${id}`, request);
     return response.data;
   }
 
   /**
    * Delete a secret
    */
-  static async deleteSecret(id: string): Promise<void> {
-    await apiClient.delete(`${BASE_PATH}/${id}`);
+  static async deleteSecret(projectId: string, id: string): Promise<void> {
+    await apiClient.delete(`/${projectId}/secrets/${id}`);
   }
 
   /**

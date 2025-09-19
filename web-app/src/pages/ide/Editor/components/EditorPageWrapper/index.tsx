@@ -2,7 +2,6 @@ import { JSX, useRef, useState, useEffect } from "react";
 import FileEditor, { FileEditorRef, FileState } from "@/components/FileEditor";
 import EditorHeader from "../EditorHeader";
 import { cn } from "@/libs/shadcn/utils";
-import { useReadonly } from "@/hooks/useReadonly";
 import {
   ResizablePanelGroup,
   ResizablePanel,
@@ -19,6 +18,7 @@ export interface EditorPageWrapperProps {
   className?: string;
   pageContentClassName?: string;
   editorClassName?: string;
+  readOnly?: boolean;
   onFileValueChange?: (value: string) => void;
 }
 
@@ -29,18 +29,23 @@ const EditorPageWrapper = ({
   editorClassName,
   pageContentClassName,
   className,
+  readOnly,
   onSaved,
   onFileValueChange,
 }: EditorPageWrapperProps) => {
   const filePath = atob(pathb64 ?? "");
-  const { isReadonly } = useReadonly();
   const [fileState, setFileState] = useState<FileState>("saved");
   const fileEditorRef = useRef<FileEditorRef>(null);
 
   const onSave = () => {
-    if (isReadonly) return;
     if (fileEditorRef.current) {
       fileEditorRef.current.save();
+    }
+  };
+
+  const onShowDiff = () => {
+    if (fileEditorRef.current) {
+      fileEditorRef.current.toggleDiffView();
     }
   };
 
@@ -121,7 +126,8 @@ const EditorPageWrapper = ({
           fileState={fileState}
           actions={headerActions}
           onSave={onSave}
-          isReadonly={isReadonly}
+          isReadonly={readOnly}
+          onShowDiff={onShowDiff}
         />
         <FileEditor
           ref={fileEditorRef}
@@ -130,7 +136,7 @@ const EditorPageWrapper = ({
           onFileStateChange={setFileState}
           onSaved={onSaved}
           onValueChange={onFileValueChange}
-          isReadonly={isReadonly}
+          readOnly={readOnly}
         />
       </div>
     );
@@ -188,7 +194,8 @@ const EditorPageWrapper = ({
                 fileState={fileState}
                 actions={headerActions}
                 onSave={onSave}
-                isReadonly={isReadonly}
+                isReadonly={readOnly}
+                onShowDiff={onShowDiff}
               />
               <FileEditor
                 ref={fileEditorRef}
@@ -197,7 +204,7 @@ const EditorPageWrapper = ({
                 onFileStateChange={setFileState}
                 onSaved={onSaved}
                 onValueChange={onFileValueChange}
-                isReadonly={isReadonly}
+                readOnly={readOnly}
               />
             </div>
             {preview}

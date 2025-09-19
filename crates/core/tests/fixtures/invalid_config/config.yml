@@ -8,7 +8,6 @@ databases:
 models:
   - name: llama3.2
     vendor: ollama
-    model_ref: llama3.2:latest
     api_url: http://localhost:11434/v1
     api_key: secret
 

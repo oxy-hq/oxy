@@ -1,11 +1,13 @@
 import { useMutation } from "@tanstack/react-query";
 import { DatabaseService } from "@/services/api";
 import useDatabaseOperation from "@/stores/useDatabaseOperation";
+import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 
 export function useDatabaseSync() {
+  const { project, branchName } = useCurrentProjectBranch();
+  const projectId = project.id;
   const { setSyncState, handleSyncSuccess, handleSyncError } =
     useDatabaseOperation();
-
   return useMutation({
     mutationFn: ({
       database,
@@ -13,7 +15,8 @@ export function useDatabaseSync() {
     }: {
       database?: string;
       options?: { datasets?: string[] };
-    }) => DatabaseService.syncDatabase(database, options),
+    }) =>
+      DatabaseService.syncDatabase(projectId, branchName, database, options),
     onMutate: ({ database, options }) => {
       setSyncState({
         operation: "sync",

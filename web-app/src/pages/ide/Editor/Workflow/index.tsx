@@ -2,14 +2,17 @@ import { useState } from "react";
 import EditorPageWrapper from "../components/EditorPageWrapper";
 import { randomKey } from "@/libs/utils/string";
 import { WorkflowPreview } from "@/components/workflow/WorkflowPreview";
+import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 
 const WorkflowEditor = ({ pathb64 }: { pathb64: string }) => {
   const [previewKey, setPreviewKey] = useState<string>(randomKey());
+  const { isReadOnly } = useCurrentProjectBranch();
   return (
     <EditorPageWrapper
       pathb64={pathb64}
       pageContentClassName="md:flex-row flex-col"
       editorClassName="md:w-1/2 w-full h-1/2 md:h-full"
+      readOnly={isReadOnly}
       onSaved={() => {
         setPreviewKey(randomKey());
       }}

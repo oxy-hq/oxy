@@ -9,8 +9,9 @@ use utoipa::ToSchema;
 
 use super::eval::PBarsHandler;
 use crate::{
+    adapters::project::manager::ProjectManager,
     config::{
-        ConfigBuilder,
+        ConfigManager,
         constants::{CONCURRENCY_SOURCE, CONSISTENCY_SOURCE, TASK_SOURCE, WORKFLOW_SOURCE},
         model::{ExecuteSQLTask, SQL, Task, TaskType, Workflow},
     },
@@ -20,7 +21,6 @@ use crate::{
         types::{Event, EventKind, Output, OutputContainer, ProgressType},
         writer::EventHandler,
     },
-    project::resolve_project_path,
     workflow::{
         RetryStrategy, WorkflowInput, WorkflowLauncher,
         loggers::types::{LogItem, WorkflowLogger},
@@ -33,17 +33,10 @@ pub struct WorkflowInfo {
     pub path: String,
 }
 
-pub async fn list_workflows(project_path: Option<PathBuf>) -> Result<Vec<WorkflowInfo>, OxyError> {
-    let project_path = match project_path {
-        Some(path) => path,
-        None => resolve_project_path()?,
-    };
-    let config = ConfigBuilder::new()
-        .with_project_path(project_path.clone())?
-        .build()
-        .await?;
+pub async fn list_workflows(config_manager: ConfigManager) -> Result<Vec<WorkflowInfo>, OxyError> {
+    let project_path = config_manager.project_path();
 
-    let workflow_paths = config.list_workflows().await?;
+    let workflow_paths = config_manager.list_workflows().await?;
     let mut workflows = Vec::new();
 
     for path in workflow_paths {
@@ -55,7 +48,7 @@ pub async fn list_workflows(project_path: Option<PathBuf>) -> Result<Vec<Workflo
             workflows.push(WorkflowInfo {
                 name: name.to_string(),
                 path: path
-                    .strip_prefix(project_path.clone())
+                    .strip_prefix(project_path)
                     .unwrap_or(&path)
                     .to_string_lossy()
                     .to_string(),
@@ -68,20 +61,9 @@ pub async fn list_workflows(project_path: Option<PathBuf>) -> Result<Vec<Workflo
 
 pub async fn get_workflow(
     relative_path: PathBuf,
-    project_path: Option<PathBuf>,
+    config_manager: ConfigManager,
 ) -> Result<Workflow, OxyError> {
-    let project_path = match project_path {
-        Some(path) => path,
-        None => resolve_project_path()?,
-    };
-
-    let config = ConfigBuilder::new()
-        .with_project_path(project_path.clone())?
-        .build()
-        .await?;
-
-    let full_workflow_path = project_path.join(&relative_path);
-    let workflow = config.resolve_workflow(&full_workflow_path).await?;
+    let workflow = config_manager.resolve_workflow(&relative_path).await?;
 
     Ok(workflow)
 }
@@ -174,10 +156,10 @@ pub async fn run_workflow<P: AsRef<Path>, L: WorkflowLogger + 'static>(
     logger: L,
     retry_strategy: RetryStrategy,
     variables: Option<HashMap<String, serde_json::Value>>,
+    project_manager: ProjectManager,
 ) -> Result<OutputContainer, OxyError> {
-    let project_path = resolve_project_path()?.to_string_lossy().to_string();
     WorkflowLauncher::new()
-        .with_local_context(&project_path)
+        .with_project(project_manager)
         .await?
         .launch(
             WorkflowInput {
@@ -191,14 +173,14 @@ pub async fn run_workflow<P: AsRef<Path>, L: WorkflowLogger + 'static>(
 }
 
 pub async fn run_workflow_v2<P: AsRef<Path>, H: EventHandler + Send + Sync + 'static>(
+    project_manager: ProjectManager,
     path: P,
     handler: H,
     retry_strategy: RetryStrategy,
     variables: Option<HashMap<String, serde_json::Value>>,
 ) -> Result<OutputContainer, OxyError> {
-    let project_path = resolve_project_path()?.to_string_lossy().to_string();
     WorkflowLauncher::new()
-        .with_local_context(&project_path)
+        .with_project(project_manager)
         .await?
         .launch(
             WorkflowInput {
@@ -211,11 +193,12 @@ pub async fn run_workflow_v2<P: AsRef<Path>, H: EventHandler + Send + Sync + 'st
         .await
 }
 
-pub async fn get_workflow_logs(path: &PathBuf) -> Result<Vec<LogItem>, OxyError> {
-    let project_path = resolve_project_path()?;
-    let full_workflow_path = project_path.join(path);
-    let full_workflow_path_b64: String =
-        BASE64_STANDARD.encode(full_workflow_path.to_str().unwrap());
+pub async fn get_workflow_logs(
+    path: &PathBuf,
+    config_manager: ConfigManager,
+) -> Result<Vec<LogItem>, OxyError> {
+    let full_workflow_path = config_manager.resolve_file(path).await?;
+    let full_workflow_path_b64: String = BASE64_STANDARD.encode(full_workflow_path);
     let log_file_path = format!("/var/tmp/oxy-{full_workflow_path_b64}.log.json");
     let content = std::fs::read_to_string(log_file_path);
     match content {
@@ -236,9 +219,8 @@ pub async fn create_workflow_from_query(
     query: &str,
     prompt: &str,
     database: &str,
+    config_manager: &ConfigManager,
 ) -> Result<Workflow, OxyError> {
-    let project_path = resolve_project_path()?;
-
     let task = Task {
         task_type: TaskType::ExecuteSQL(ExecuteSQLTask {
             sql: SQL::Query {
@@ -262,7 +244,10 @@ pub async fn create_workflow_from_query(
         retrieval: Default::default(),
     };
     // write workflow to file
-    let workflow_dir = project_path.join(WORKFLOW_SAVED_FROM_QUERY_DIR);
+    let workflow_dir = config_manager
+        .resolve_file(WORKFLOW_SAVED_FROM_QUERY_DIR)
+        .await?;
+    let workflow_dir = PathBuf::from(workflow_dir);
     if !workflow_dir.exists() {
         std::fs::create_dir_all(&workflow_dir)?;
     }

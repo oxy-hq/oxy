@@ -29,54 +29,104 @@ const defaultTestState: TestState = {
 
 interface TestsState {
   testMap: Map<string, Map<number, TestState>>;
-  setTest: (agentPathb64: string, index: number, test: TestState) => void;
-  getTest: (agentPathb64: string, index: number) => TestState;
-  runTest: (agentPathb64: string, index: number) => void;
+  setTest: (
+    projectId: string,
+    branchName: string,
+    agentPathb64: string,
+    index: number,
+    test: TestState,
+  ) => void;
+  getTest: (
+    projectId: string,
+    branchName: string,
+    agentPathb64: string,
+    index: number,
+  ) => TestState;
+  runTest: (
+    projectId: string,
+    branchName: string,
+    agentPathb64: string,
+    index: number,
+  ) => void;
 }
+
+const createTestKey = (
+  projectId: string,
+  branchName: string,
+  agentPathb64: string,
+): string => {
+  return `${projectId}:${branchName}:${agentPathb64}`;
+};
 
 const useTests = create<TestsState>()((set, get) => ({
   testMap: new Map(),
-  setTest: (agentPathb64: string, index: number, test: TestState) => {
+  setTest: (
+    projectId: string,
+    branchName: string,
+    agentPathb64: string,
+    index: number,
+    test: TestState,
+  ) => {
     const testMap = get().testMap;
-    const agentTestMap = testMap.get(agentPathb64) ?? new Map();
+    const testKey = createTestKey(projectId, branchName, agentPathb64);
+    const agentTestMap = testMap.get(testKey) ?? new Map();
     agentTestMap.set(index, test);
     set({
-      testMap: testMap.set(agentPathb64, agentTestMap),
+      testMap: testMap.set(testKey, agentTestMap),
     });
   },
-  getTest: (agentPathb64: string, index: number) => {
+  getTest: (
+    projectId: string,
+    branchName: string,
+    agentPathb64: string,
+    index: number,
+  ) => {
     const testMap = get().testMap;
-    const agentTestMap = testMap.get(agentPathb64) ?? new Map();
+    const testKey = createTestKey(projectId, branchName, agentPathb64);
+    const agentTestMap = testMap.get(testKey) ?? new Map();
     return agentTestMap.get(index) ?? { ...defaultTestState };
   },
-  runTest: (agentPathb64: string, index: number) => {
-    get().setTest(agentPathb64, index, { ...defaultTestState });
-    AgentService.runTestAgent(agentPathb64, index, (message) => {
-      const test = get().getTest(agentPathb64, index);
-
-      if (message.error) {
-        test.error = message.error;
-        test.state = null;
-      } else if (message.event) {
-        test.state = message.event.type;
-        switch (message.event.type) {
-          case EvalEventState.Progress:
-            test.progress = {
-              id: message.event.id,
-              progress: message.event.progress,
-              total: message.event.total,
-            };
-            break;
-          case EvalEventState.Finished:
-            test.result = {
-              errors: message.event.metric.errors,
-              metrics: message.event.metric.metrics,
-            };
-            break;
-        }
-      }
-      get().setTest(agentPathb64, index, test);
+  runTest: (
+    projectId: string,
+    branchName: string,
+    agentPathb64: string,
+    index: number,
+  ) => {
+    get().setTest(projectId, branchName, agentPathb64, index, {
+      ...defaultTestState,
     });
+    AgentService.runTestAgent(
+      projectId,
+      branchName,
+      agentPathb64,
+      index,
+      (message) => {
+        const test = get().getTest(projectId, branchName, agentPathb64, index);
+
+        if (message.error) {
+          test.error = message.error;
+          test.state = null;
+        } else if (message.event) {
+          test.state = message.event.type;
+          switch (message.event.type) {
+            case EvalEventState.Progress:
+              test.progress = {
+                id: message.event.id,
+                progress: message.event.progress,
+                total: message.event.total,
+              };
+              break;
+            case EvalEventState.Finished:
+              test.result = {
+                errors: message.event.metric.errors,
+                metrics: message.event.metric.metrics,
+              };
+              break;
+          }
+        }
+        get().setTest(projectId, branchName, agentPathb64, index, test);
+      },
+    );
   },
 }));
 

@@ -10,6 +10,7 @@ import { Button } from "../ui/shadcn/button";
 import { Alert, AlertDescription, AlertTitle } from "../ui/shadcn/alert";
 import { Loader2, X, XCircle } from "lucide-react";
 import { Artifact } from "@/types/artifact";
+import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 
 type Props = {
   selectedArtifactIds: string[];
@@ -30,10 +31,11 @@ const ArtifactPanel = ({
     },
     [setSelectedArtifactIds],
   );
+  const { project, branchName } = useCurrentProjectBranch();
   const artifactQueries = useQueries({
     queries: selectedArtifactIds.map((id) => ({
-      queryKey: ["artifact", id],
-      queryFn: () => ArtifactService.getArtifact(id),
+      queryKey: ["artifact", project.id, branchName, id],
+      queryFn: () => ArtifactService.getArtifact(project.id, branchName, id),
     })),
   });
 

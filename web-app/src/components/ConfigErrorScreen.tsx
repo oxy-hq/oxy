@@ -2,6 +2,7 @@ import React from "react";
 import { AlertTriangle, RefreshCw, Settings } from "lucide-react";
 import { Button } from "@/components/ui/shadcn/button";
 import { useNavigate } from "react-router-dom";
+import ROUTES from "@/libs/utils/routes";
 
 interface ConfigErrorScreenProps {
   onRetry?: () => void;
@@ -13,7 +14,7 @@ export const ConfigErrorScreen: React.FC<ConfigErrorScreenProps> = ({
   const navigate = useNavigate();
 
   const handleGoToGitHubSettings = () => {
-    navigate("/github-settings");
+    navigate(ROUTES.SETTINGS.GITHUB);
   };
 
   return (

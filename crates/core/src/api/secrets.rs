@@ -86,6 +86,7 @@ pub struct UpdateSecretRequest {
 /// Create a new secret
 pub async fn create_secret(
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
+    Path(project_id): Path<Uuid>,
     extract::Json(request): extract::Json<CreateSecretRequest>,
 ) -> Result<impl IntoResponse, StatusCode> {
     // Validate the request using garde
@@ -106,7 +107,7 @@ pub async fn create_secret(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    let secret_manager = SecretManagerService::new();
+    let secret_manager = SecretManagerService::new(project_id);
 
     let create_params = CreateSecretParams {
         name: request.name,
@@ -140,6 +141,7 @@ pub async fn create_secret(
 /// Create multiple secrets in bulk
 pub async fn bulk_create_secrets(
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
+    Path(project_id): Path<Uuid>,
     extract::Json(request): extract::Json<BulkCreateSecretsRequest>,
 ) -> Result<impl IntoResponse, StatusCode> {
     // Validate the request using garde
@@ -178,7 +180,7 @@ pub async fn bulk_create_secrets(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    let secret_manager = SecretManagerService::new();
+    let secret_manager = SecretManagerService::new(project_id);
     let mut created_secrets = Vec::new();
     let mut failed_secrets = Vec::new();
 
@@ -229,13 +231,14 @@ pub async fn bulk_create_secrets(
 /// List all secrets (without values)
 pub async fn list_secrets(
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
+    Path(project_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let db = establish_connection().await.map_err(|e| {
         tracing::error!("Failed to establish database connection: {}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    let secret_manager = SecretManagerService::new();
+    let secret_manager = SecretManagerService::new(project_id);
     match secret_manager.list_secrets(&db).await {
         Ok(secrets) => {
             let secret_responses: Vec<SecretResponse> =
@@ -262,7 +265,7 @@ pub async fn list_secrets(
 /// Get secret metadata by ID (without value)
 pub async fn get_secret(
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
-    Path(id): Path<String>,
+    Path((project_id, id)): Path<(Uuid, String)>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let secret_id = match Uuid::parse_str(&id) {
         Ok(uuid) => uuid,
@@ -280,7 +283,7 @@ pub async fn get_secret(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    let secret_manager = SecretManagerService::new();
+    let secret_manager = SecretManagerService::new(project_id);
 
     // Find secret by ID from the list of secrets
     match secret_manager.list_secrets(&db).await {
@@ -310,7 +313,7 @@ pub async fn get_secret(
 /// Update a secret by ID
 pub async fn update_secret(
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
-    Path(id): Path<String>,
+    Path((project_id, id)): Path<(Uuid, String)>,
     extract::Json(request): extract::Json<UpdateSecretRequest>,
 ) -> Result<impl IntoResponse, StatusCode> {
     // Validate the request using garde
@@ -342,7 +345,7 @@ pub async fn update_secret(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    let secret_manager = SecretManagerService::new();
+    let secret_manager = SecretManagerService::new(project_id);
 
     // Find secret by ID to get the name
     match secret_manager.list_secrets(&db).await {
@@ -397,7 +400,7 @@ pub async fn update_secret(
 /// Delete a secret by ID
 pub async fn delete_secret(
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
-    Path(id): Path<String>,
+    Path((project_id, id)): Path<(Uuid, String)>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let secret_id = match Uuid::parse_str(&id) {
         Ok(uuid) => uuid,
@@ -415,7 +418,7 @@ pub async fn delete_secret(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    let secret_manager = SecretManagerService::new();
+    let secret_manager = SecretManagerService::new(project_id);
 
     // Find secret by ID to get the name
     match secret_manager.list_secrets(&db).await {

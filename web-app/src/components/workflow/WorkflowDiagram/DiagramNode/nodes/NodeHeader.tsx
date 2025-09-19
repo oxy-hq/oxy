@@ -6,7 +6,7 @@ import {
 } from "@/stores/useWorkflow";
 import { Button } from "@/components/ui/shadcn/button";
 import TruncatedText from "@/components/TruncatedText";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { headerHeight } from "../../layout/constants";
 import {
   Bot,
@@ -25,6 +25,7 @@ import {
 import { ReactElement } from "react";
 import { TaskRun } from "@/services/types";
 import { randomKey } from "@/libs/utils/string";
+import ROUTES from "@/libs/utils/routes";
 
 const nodeNameMap: Record<NodeType, string> = {
   execute_sql: "SQL",
@@ -124,12 +125,18 @@ const SubWorkflowNavigateButton = ({
   taskRun,
 }: SubWorkflowNavigateButtonProps) => {
   const navigate = useNavigate();
+  const { projectId } = useParams();
+
   const handleClick = () => {
+    if (!projectId) return;
+
     const pathb64 = btoa(task.src);
     const runPath = taskRun?.subWorkflowRunId
       ? `/runs/${taskRun.subWorkflowRunId}`
       : "";
-    navigate("/workflows/" + pathb64 + runPath + `#${randomKey()}`);
+
+    const workflowRoute = ROUTES.PROJECT(projectId).WORKFLOW(pathb64);
+    navigate(workflowRoute.ROOT + runPath + `#${randomKey()}`);
   };
 
   return (

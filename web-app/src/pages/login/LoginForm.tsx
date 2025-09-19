@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { AxiosError } from "axios";
 import LoginWithGoogleButton from "./LoginWithGoogleButton";
 import { useAuth } from "@/contexts/AuthContext";
+import ROUTES from "@/libs/utils/routes";
 
 type LoginFormData = {
   email: string;
@@ -30,7 +31,7 @@ const LoginForm = () => {
   const onSubmit = async (data: LoginFormData) => {
     try {
       await login(data);
-      navigate("/");
+      navigate(ROUTES.ROOT);
     } catch (error: unknown) {
       console.error("Login failed:", error);
       if (error instanceof AxiosError && error.response) {
@@ -135,7 +136,7 @@ const LoginForm = () => {
       {authConfig.basic && (
         <div className="text-center text-sm">
           Don&apos;t have an account?{" "}
-          <Link to="/register" className="underline underline-offset-4">
+          <Link to={ROUTES.AUTH.REGISTER} className="underline underline-offset-4">
             Sign up
           </Link>
         </div>

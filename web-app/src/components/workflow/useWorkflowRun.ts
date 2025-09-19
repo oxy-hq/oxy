@@ -1,4 +1,6 @@
 import queryKeys from "@/hooks/api/queryKey";
+import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import ROUTES from "@/libs/utils/routes";
 import { randomKey } from "@/libs/utils/string";
 import { RunService } from "@/services/api";
 import { Block, LogItem, TaskRun, WorkflowRetryParam } from "@/services/types";
@@ -349,6 +351,7 @@ export const useTaskRun = (task: TaskConfigWithId) => {
 };
 
 export const useWorkflowRun = () => {
+  const { project, branchName } = useCurrentProjectBranch();
   const navigate = useNavigate();
   const setGroupBlocks = useBlockStore((state) => state.setGroupBlocks);
 
@@ -360,7 +363,7 @@ export const useWorkflowRun = () => {
       workflowId: string;
       retryParam?: WorkflowRetryParam;
     }) => {
-      return await RunService.createRun({
+      return await RunService.createRun(project.id, branchName, {
         type: "workflow",
         workflowId,
         retry_param: retryParam,
@@ -370,14 +373,16 @@ export const useWorkflowRun = () => {
       const workflowId = data.run.source_id;
       const runIndex = data.run.run_index;
       setGroupBlocks(data.run, {}, []);
-      navigate(
-        `/workflows/${btoa(workflowId)}/runs/${runIndex}#${randomKey()}`,
-      );
+      const runUri = ROUTES.PROJECT(project.id)
+        .WORKFLOW(btoa(workflowId))
+        .RUN(runIndex.toString());
+      navigate(runUri + `#${randomKey()}`);
     },
   });
 };
 
 export const useCancelWorkflowRun = () => {
+  const { project, branchName } = useCurrentProjectBranch();
   return useMutation({
     mutationFn: async ({
       sourceId,
@@ -386,12 +391,19 @@ export const useCancelWorkflowRun = () => {
       sourceId: string;
       runIndex: number;
     }) => {
-      return await RunService.cancelRun(sourceId, runIndex);
+      return await RunService.cancelRun(
+        project.id,
+        branchName,
+        sourceId,
+        runIndex,
+      );
     },
   });
 };
 
 export const useStreamEvents = () => {
+  const { project, branchName } = useCurrentProjectBranch();
+
   const abortControllerRef = useRef<AbortController | null>(null);
   const handleEvent = useBlockStore((state) => state.handleEvent);
   const cleanupGroupStacks = useBlockStore((state) => state.cleanupGroupStacks);
@@ -410,6 +422,8 @@ export const useStreamEvents = () => {
       }
       abortControllerRef.current = new AbortController();
       return await RunService.streamEvents(
+        project.id,
+        branchName,
         {
           sourceId: workflowId,
           runIndex,
@@ -462,10 +476,17 @@ export const useGetBlocks = (
   runIndex?: number,
   enabled?: boolean,
 ) => {
+  const { project, branchName } = useCurrentProjectBranch();
+
   return useQuery({
-    queryKey: queryKeys.workflow.getBlocks(sourceId, runIndex),
+    queryKey: queryKeys.workflow.getBlocks(
+      project.id,
+      sourceId,
+      branchName,
+      runIndex,
+    ),
     queryFn: async () => {
-      return await RunService.getBlocks({
+      return await RunService.getBlocks(project.id, branchName, {
         source_id: sourceId,
         run_index: runIndex,
       });
@@ -478,10 +499,21 @@ export const useListWorkflowRuns = (
   workflowId: string,
   pagination: PaginationState,
 ) => {
+  const { project, branchName } = useCurrentProjectBranch();
   return useQuery({
-    queryKey: queryKeys.workflow.getRuns(workflowId, pagination),
+    queryKey: queryKeys.workflow.getRuns(
+      project.id,
+      branchName,
+      workflowId,
+      pagination,
+    ),
     queryFn: async () => {
-      const response = await RunService.listRuns(workflowId, pagination);
+      const response = await RunService.listRuns(
+        project.id,
+        branchName,
+        workflowId,
+        pagination,
+      );
       return response;
     },
     enabled: !!workflowId,

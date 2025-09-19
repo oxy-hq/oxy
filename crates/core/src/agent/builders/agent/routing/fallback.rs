@@ -3,12 +3,18 @@ use async_openai::types::{
 };
 
 use crate::{
-    adapters::openai::{AsyncFunctionObject, IntoOpenAIConfig, OpenAIClient},
+    adapters::{
+        openai::{AsyncFunctionObject, IntoOpenAIConfig, OpenAIClient},
+        secrets::SecretsManager,
+    },
     agent::{
         OpenAIExecutableResponse,
         builders::{openai::OpenAIExecutable, tool::OpenAITool},
     },
-    config::model::{Model, ReasoningConfig, ToolType},
+    config::{
+        ConfigManager,
+        model::{Model, ReasoningConfig, ToolType},
+    },
     errors::OxyError,
     execute::{Executable, ExecutionContext},
 };
@@ -24,14 +30,16 @@ impl FallbackAgent {
         agent_name: &str,
         model: &Model,
         tool_config: ToolType,
+        config: &ConfigManager,
+        secrets_manager: &SecretsManager,
         reasoning_config: Option<ReasoningConfig>,
     ) -> Result<Self, OxyError> {
         let model_name = model.model_name();
         Ok(Self {
             agent: OpenAIExecutable::new(
-                OpenAIClient::with_config(model.into_openai_config().await?),
+                OpenAIClient::with_config(model.into_openai_config(secrets_manager).await?),
                 model_name.to_string(),
-                vec![ChatCompletionTool::from_tool_async(&tool_config).await],
+                vec![ChatCompletionTool::from_tool_async(&tool_config, config).await],
                 Some(ChatCompletionToolChoiceOption::Named(
                     tool_config.clone().into(),
                 )),

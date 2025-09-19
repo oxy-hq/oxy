@@ -1,20 +1,17 @@
 import { useQuery } from "@tanstack/react-query";
 import queryKeys from "../queryKey";
-import { apiClient } from "@/services/api/axios";
-import { LogItem } from "@/services/types";
-
-const fetchWorkflowLogs = async (relativePath: string) => {
-  const pathb64 = btoa(relativePath);
-  const { data } = await apiClient.get(
-    `/workflows/${encodeURIComponent(pathb64)}/logs`,
-  );
-  return data.logs as LogItem[];
-};
+import { WorkflowService } from "@/services/api";
+import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 
 const useWorkflowLogs = (relativePath: string) => {
+  const { project, branchName } = useCurrentProjectBranch();
+
+  const pathb64 = btoa(relativePath);
+
   return useQuery({
-    queryKey: queryKeys.workflow.getLogs(relativePath),
-    queryFn: () => fetchWorkflowLogs(relativePath),
+    queryKey: queryKeys.workflow.getLogs(project.id, branchName, relativePath),
+    queryFn: () =>
+      WorkflowService.getWorkflowLogs(project.id, branchName, pathb64),
   });
 };
 

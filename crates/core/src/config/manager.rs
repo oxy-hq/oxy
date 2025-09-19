@@ -1,10 +1,9 @@
 use std::{
-    collections::HashSet,
     path::{Path, PathBuf},
     sync::Arc,
 };
 
-use crate::{config::auth::Authentication, errors::OxyError};
+use crate::errors::OxyError;
 
 use super::{
     model::{AgentConfig, AppConfig, Config, Database, Model, Workflow, WorkflowWithRawVariables},
@@ -108,10 +107,6 @@ impl ConfigManager {
         Ok(self.config.databases.as_slice())
     }
 
-    pub fn get_authentication(&self) -> Option<Authentication> {
-        self.config.authentication.clone()
-    }
-
     pub async fn list_agents(&self) -> Result<Vec<PathBuf>, OxyError> {
         let agents = self.storage.list_agents().await?;
         tracing::debug!("Agents: {:?}", agents);
@@ -167,76 +162,7 @@ impl ConfigManager {
         &self.config
     }
 
-    pub async fn get_required_secrets(&self) -> Result<Option<Vec<String>>, OxyError> {
-        let secret_resolver = crate::service::secret_resolver::SecretResolverService::new();
-        let mut secrets_to_check: HashSet<String> = HashSet::new();
-
-        // Check model configurations for key_var requirements
-        for model in &self.config.models {
-            if let Some(key_var) = self.get_model_key_var(model) {
-                let secret = secret_resolver.resolve_secret(&key_var).await?;
-                tracing::info!(
-                    "Checking model key variable: {}, value: {:?}",
-                    key_var,
-                    secret.clone()
-                );
-                // Only add to secrets_to_check if it's not already resolvable
-                if secret.is_none() {
-                    secrets_to_check.insert(key_var);
-                }
-            }
-        }
-
-        // Check database configurations for password_var requirements
-        for database in &self.config.databases {
-            if let Some(password_var) = self.get_database_password_var(database) {
-                tracing::info!("Checking database password variable: {}", password_var);
-                // Only add to secrets_to_check if it's not already resolvable
-                if secret_resolver
-                    .resolve_secret(&password_var)
-                    .await?
-                    .is_none()
-                {
-                    secrets_to_check.insert(password_var);
-                }
-            }
-        }
-
-        // Check authentication configuration
-        if let Some(auth) = &self.config.authentication {
-            // Check basic auth SMTP password
-            if let Some(basic_auth) = &auth.basic {
-                // Only add to secrets_to_check if it's not already resolvable
-                if secret_resolver
-                    .resolve_secret(&basic_auth.smtp_password_var)
-                    .await?
-                    .is_none()
-                {
-                    secrets_to_check.insert(basic_auth.smtp_password_var.clone());
-                }
-            }
-
-            // Check Google OAuth client secret
-            if let Some(google_auth) = &auth.google {
-                // Only add to secrets_to_check if it's not already resolvable
-                if secret_resolver
-                    .resolve_secret(&google_auth.client_secret_var)
-                    .await?
-                    .is_none()
-                {
-                    secrets_to_check.insert(google_auth.client_secret_var.clone());
-                }
-            }
-        }
-
-        if secrets_to_check.is_empty() {
-            Ok(None)
-        } else {
-            Ok(Some(secrets_to_check.into_iter().collect()))
-        }
-    }
-
-    fn get_model_key_var(&self, model: &Model) -> Option<String> {
+    pub fn get_model_key_var(&self, model: &Model) -> Option<String> {
         match model {
             Model::OpenAI { key_var, .. } => Some(key_var.clone()),
             Model::Google { key_var, .. } => Some(key_var.clone()),
@@ -245,7 +171,7 @@ impl ConfigManager {
         }
     }
 
-    fn get_database_password_var(&self, database: &Database) -> Option<String> {
+    pub fn get_database_password_var(&self, database: &Database) -> Option<String> {
         match &database.database_type {
             crate::config::model::DatabaseType::Postgres(postgres) => postgres.password_var.clone(),
             crate::config::model::DatabaseType::Mysql(mysql) => mysql.password_var.clone(),
@@ -258,6 +184,14 @@ impl ConfigManager {
             crate::config::model::DatabaseType::Redshift(redshift) => redshift.password_var.clone(),
             _ => None, // Other database types might not have password_var
         }
+    }
+
+    pub async fn resolve_state_dir(&self) -> Result<PathBuf, OxyError> {
+        self.storage.resolve_state_dir().await
+    }
+
+    pub async fn get_charts_dir(&self) -> Result<PathBuf, OxyError> {
+        self.storage.get_charts_dir().await
     }
 
     /// Gets the project path from the configuration

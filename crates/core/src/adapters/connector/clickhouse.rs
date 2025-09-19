@@ -5,6 +5,7 @@ use clickhouse::Client;
 use sqlparser::{dialect::ClickHouseDialect, parser::Parser};
 use std::io::Cursor;
 
+use crate::adapters::secrets::SecretsManager;
 use crate::config::model::ClickHouse as ConfigClickHouse;
 use crate::errors::OxyError;
 
@@ -15,11 +16,15 @@ use super::utils::connector_internal_error;
 #[derive(Debug)]
 pub(super) struct ClickHouse {
     pub config: ConfigClickHouse,
+    pub secret_manager: SecretsManager,
 }
 
 impl ClickHouse {
-    pub fn new(config: ConfigClickHouse) -> Self {
-        ClickHouse { config }
+    pub fn new(config: ConfigClickHouse, secret_manager: SecretsManager) -> Self {
+        ClickHouse {
+            config,
+            secret_manager,
+        }
     }
 
     pub fn strip_comments(query: &str) -> Result<String, OxyError> {
@@ -42,7 +47,7 @@ impl Engine for ClickHouse {
         let client = Client::default()
             .with_url(self.config.host.clone())
             .with_user(self.config.user.clone())
-            .with_password(self.config.get_password().await?)
+            .with_password(self.config.get_password(&self.secret_manager).await?)
             .with_database(self.config.database.clone());
 
         let cleaned_query = ClickHouse::strip_comments(query)?;

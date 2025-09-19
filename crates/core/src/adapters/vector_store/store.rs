@@ -6,7 +6,10 @@ use super::{
     types::{RetrievalObject, SearchRecord},
 };
 use crate::{
-    adapters::openai::{IntoOpenAIConfig, OpenAIClient},
+    adapters::{
+        openai::{IntoOpenAIConfig, OpenAIClient},
+        secrets::SecretsManager,
+    },
     config::{
         ConfigManager,
         model::{EmbeddingConfig, RetrievalConfig, RoutingAgent, VectorDBConfig},
@@ -45,12 +48,14 @@ pub struct VectorStore {
 impl VectorStore {
     pub async fn new(
         config_manager: &ConfigManager,
+        secrets_manager: &SecretsManager,
         db_config: &VectorDBConfig,
         name: &str,
         openai_config: impl IntoOpenAIConfig,
         embedding_config: EmbeddingConfig,
     ) -> Result<Self, OxyError> {
-        let client = OpenAIClient::with_config(openai_config.into_openai_config().await?);
+        let client =
+            OpenAIClient::with_config(openai_config.into_openai_config(secrets_manager).await?);
         // Create minimal enum index config for VectorStore (main enum index is managed at higher level)
         let enum_index_manager = Arc::new(EnumIndexManager::from_config(&config_manager).await?);
         let connection = match &db_config {
@@ -78,11 +83,13 @@ impl VectorStore {
     }
     pub async fn from_retrieval(
         config_manager: &ConfigManager,
+        secrets_manager: &SecretsManager,
         agent_name: &str,
         retrieval: &RetrievalConfig,
     ) -> Result<Self, OxyError> {
         VectorStore::new(
             config_manager,
+            secrets_manager,
             &retrieval.db_config,
             &format!("{}-{}", agent_name, retrieval.name),
             retrieval.clone(),
@@ -92,6 +99,7 @@ impl VectorStore {
     }
     pub async fn from_routing_agent(
         config_manager: &ConfigManager,
+        secrets_manager: &SecretsManager,
         agent_name: &str,
         model: &str,
         routing_agent: &RoutingAgent,
@@ -99,6 +107,7 @@ impl VectorStore {
         let model = config_manager.resolve_model(model)?;
         VectorStore::new(
             config_manager,
+            secrets_manager,
             &routing_agent.db_config,
             &format!("{agent_name}-routing"),
             model.clone(),

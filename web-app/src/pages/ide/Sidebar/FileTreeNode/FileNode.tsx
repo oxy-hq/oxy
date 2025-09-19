@@ -16,7 +16,9 @@ import { useLocation, Link } from "react-router-dom";
 import AlertDeleteDialog from "../AlertDeleteDialog";
 import RenameNode from "../RenameNode";
 import { cn } from "@/libs/shadcn/utils";
-import { useReadonly } from "@/hooks/useReadonly";
+import ROUTES from "@/libs/utils/routes";
+import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+
 const FileNode = ({
   fileTree,
   activePath,
@@ -24,29 +26,34 @@ const FileNode = ({
   fileTree: FileTreeModel;
   activePath?: string;
 }) => {
+  const { project, isReadOnly } = useCurrentProjectBranch();
+  const projectId = project.id;
+
   const { pathname } = useLocation();
-  const { isReadonly } = useReadonly();
-  // activePath (decoded) may be provided by parent; fall back to pathname check
   const isActive = activePath
     ? activePath === fileTree.path
-    : pathname === `/ide/${btoa(fileTree.path)}`;
+    : pathname ===
+      ROUTES.PROJECT(projectId || "").IDE.FILE(btoa(fileTree.path));
+
   const [isContextMenuOpen, setIsContextMenuOpen] = React.useState(false);
   const [isEditing, setIsEditing] = React.useState(false);
   const inputRef = React.useRef<HTMLInputElement>(null);
   const [showDeleteDialog, setShowDeleteDialog] = React.useState(false);
   const [pendingDelete, setPendingDelete] = React.useState(false);
+
   const itemRef = React.useRef<HTMLLIElement | null>(null);
   const handleRename = () => {
-    if (isReadonly) return;
+    if (isReadOnly) return;
     setIsEditing(true);
   };
 
   const handleDelete = () => {
-    if (isReadonly) return;
+    if (isReadOnly) return;
     setPendingDelete(true);
     setIsContextMenuOpen(false);
   };
 
+  const fileUri = ROUTES.PROJECT(projectId).IDE.FILE(btoa(fileTree.path));
   // Scroll into view when this file becomes active
   React.useEffect(() => {
     if (isActive && itemRef.current) {
@@ -118,7 +125,7 @@ const FileNode = ({
                   onCancel={() => setIsEditing(false)}
                 />
               ) : (
-                <Link to={`/ide/${btoa(fileTree.path)}`}>
+                <Link to={fileUri}>
                   <File />
                   <span>{fileTree.name}</span>
                 </Link>
@@ -135,7 +142,7 @@ const FileNode = ({
             }
           }}
         >
-          {!isReadonly && (
+          {!isReadOnly && (
             <>
               <ContextMenuItem
                 className="cursor-pointer"
@@ -153,7 +160,7 @@ const FileNode = ({
               </ContextMenuItem>
             </>
           )}
-          {isReadonly && (
+          {isReadOnly && (
             <ContextMenuItem disabled>
               <span className="text-muted-foreground">Read-only mode</span>
             </ContextMenuItem>

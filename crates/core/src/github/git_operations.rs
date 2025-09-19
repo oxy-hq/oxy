@@ -1,8 +1,19 @@
 use crate::errors::OxyError;
-use std::env;
+use crate::state_dir::get_state_dir;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tokio::process::Command;
 use tracing::{error, info, warn};
+use uuid::Uuid;
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct FileStatus {
+    pub path: String,
+    pub status: String,
+    pub insert: u32,
+    pub delete: u32,
+}
 
 /// Git operations for repository management
 pub struct GitOperations;
@@ -13,6 +24,7 @@ impl GitOperations {
         repo_url: &str,
         destination: &Path,
         branch: Option<&str>,
+        token: Option<&str>,
     ) -> Result<(), OxyError> {
         info!(
             "Cloning repository {} to {}",
@@ -35,8 +47,26 @@ impl GitOperations {
             cmd.args(["--branch", branch]);
         }
 
+        // Prepare the repository URL with token if provided
+        let clone_url = if let Some(token) = token {
+            if repo_url.starts_with("https://github.com/") {
+                repo_url.replace(
+                    "https://github.com/",
+                    &format!("https://{}@github.com/", token),
+                )
+            } else if repo_url.starts_with("https://") {
+                // For other HTTPS URLs, insert token after https://
+                repo_url.replacen("https://", &format!("https://{}@", token), 1)
+            } else {
+                // For non-HTTPS URLs, use as-is
+                repo_url.to_string()
+            }
+        } else {
+            repo_url.to_string()
+        };
+
         // Add clone URL and destination
-        cmd.arg(repo_url).arg(destination);
+        cmd.arg(&clone_url).arg(destination);
 
         let output = cmd
             .output()
@@ -58,12 +88,15 @@ impl GitOperations {
         Ok(())
     }
 
-    /// Pull latest changes for an existing repository
-    pub async fn pull_repository(repo_path: &Path) -> Result<(), OxyError> {
+    /// Pull latest changes for an existing repository with force reset
+    pub async fn pull_repository(repo_path: &Path, token: Option<&str>) -> Result<(), OxyError> {
         info!(
-            "Pulling latest changes for repository at {}",
+            "Force resetting and pulling latest changes for repository at {}",
             repo_path.display()
         );
+
+        // Note: token parameter is for future use when additional authentication might be needed
+        let _ = token;
 
         if !repo_path.exists() {
             return Err(OxyError::RuntimeError(format!(
@@ -72,21 +105,166 @@ impl GitOperations {
             )));
         }
 
-        let output = Command::new("git")
+        // Get current branch name
+        let current_branch = Self::get_current_branch(repo_path).await?;
+
+        // Fetch latest changes from remote
+        let fetch_output = Command::new("git")
             .current_dir(repo_path)
-            .args(["pull", "origin"])
+            .args(["fetch", "origin"])
+            .output()
+            .await
+            .map_err(|e| OxyError::RuntimeError(format!("Failed to execute git fetch: {e}")))?;
+
+        if !fetch_output.status.success() {
+            let stderr = String::from_utf8_lossy(&fetch_output.stderr);
+            warn!("Git fetch failed: {}", stderr);
+            return Err(OxyError::RuntimeError(format!(
+                "Git fetch failed: {stderr}"
+            )));
+        }
+
+        // Force reset to remote branch (discards all local changes)
+        let reset_output = Command::new("git")
+            .current_dir(repo_path)
+            .args(["reset", "--hard", &format!("origin/{}", current_branch)])
+            .output()
+            .await
+            .map_err(|e| OxyError::RuntimeError(format!("Failed to execute git reset: {e}")))?;
+
+        if !reset_output.status.success() {
+            let stderr = String::from_utf8_lossy(&reset_output.stderr);
+            warn!("Git reset failed: {}", stderr);
+            return Err(OxyError::RuntimeError(format!(
+                "Git reset failed: {stderr}"
+            )));
+        }
+
+        // Clean untracked files and directories
+        let clean_output = Command::new("git")
+            .current_dir(repo_path)
+            .args(["clean", "-fd"])
+            .output()
+            .await
+            .map_err(|e| OxyError::RuntimeError(format!("Failed to execute git clean: {e}")))?;
+
+        if !clean_output.status.success() {
+            let stderr = String::from_utf8_lossy(&clean_output.stderr);
+            warn!("Git clean failed: {}", stderr);
+        }
+
+        // Pull latest changes from remote
+        let pull_output = Command::new("git")
+            .current_dir(repo_path)
+            .args(["pull", "origin", &current_branch])
             .output()
             .await
             .map_err(|e| OxyError::RuntimeError(format!("Failed to execute git pull: {e}")))?;
 
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
+        if !pull_output.status.success() {
+            let stderr = String::from_utf8_lossy(&pull_output.stderr);
             warn!("Git pull failed: {}", stderr);
             return Err(OxyError::RuntimeError(format!("Git pull failed: {stderr}")));
         }
 
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        info!("Git pull completed: {}", stdout.trim());
+        let reset_stdout = String::from_utf8_lossy(&reset_output.stdout);
+        let clean_stdout = String::from_utf8_lossy(&clean_output.stdout);
+        let pull_stdout = String::from_utf8_lossy(&pull_output.stdout);
+        info!(
+            "Force reset and pull completed: reset: {}, clean: {}, pull: {}",
+            reset_stdout.trim(),
+            clean_stdout.trim(),
+            pull_stdout.trim()
+        );
+        Ok(())
+    }
+
+    pub async fn push_repository(
+        repo_path: &Path,
+        token: Option<&str>,
+        message: &str,
+    ) -> Result<(), OxyError> {
+        info!(
+            "Auto-committing and force pushing all changes for repository at {}",
+            repo_path.display()
+        );
+
+        // Note: token parameter is for future use when additional authentication might be needed
+        let _ = token;
+
+        if !repo_path.exists() {
+            return Err(OxyError::RuntimeError(format!(
+                "Repository directory does not exist: {}",
+                repo_path.display()
+            )));
+        }
+
+        // Stage all changes (including new files and deletions)
+        let add_output = Command::new("git")
+            .current_dir(repo_path)
+            .args(["add", "-A"])
+            .output()
+            .await
+            .map_err(|e| OxyError::RuntimeError(format!("Failed to execute git add: {e}")))?;
+
+        if !add_output.status.success() {
+            let stderr = String::from_utf8_lossy(&add_output.stderr);
+            warn!("Git add failed: {}", stderr);
+            return Err(OxyError::RuntimeError(format!("Git add failed: {stderr}")));
+        }
+
+        // Check if there are any changes to commit
+        let status_output = Command::new("git")
+            .current_dir(repo_path)
+            .args(["status", "--porcelain"])
+            .output()
+            .await
+            .map_err(|e| OxyError::RuntimeError(format!("Failed to check git status: {e}")))?;
+
+        let status = String::from_utf8_lossy(&status_output.stdout);
+        if status.trim().is_empty() {
+            info!("No changes to commit");
+        } else {
+            // Commit all staged changes
+            let commit_output = Command::new("git")
+                .current_dir(repo_path)
+                .args(["commit", "-m", message])
+                .output()
+                .await
+                .map_err(|e| {
+                    OxyError::RuntimeError(format!("Failed to execute git commit: {e}"))
+                })?;
+
+            if !commit_output.status.success() {
+                let stderr = String::from_utf8_lossy(&commit_output.stderr);
+                warn!("Git commit failed: {}", stderr);
+                return Err(OxyError::RuntimeError(format!(
+                    "Git commit failed: {stderr}"
+                )));
+            }
+
+            let commit_stdout = String::from_utf8_lossy(&commit_output.stdout);
+            info!("Git commit completed: {}", commit_stdout.trim());
+        }
+
+        // Force push to origin
+        let push_output = Command::new("git")
+            .current_dir(repo_path)
+            .args(["push", "origin", "--force"])
+            .output()
+            .await
+            .map_err(|e| OxyError::RuntimeError(format!("Failed to execute git push: {e}")))?;
+
+        if !push_output.status.success() {
+            let stderr = String::from_utf8_lossy(&push_output.stderr);
+            warn!("Git force push failed: {}", stderr);
+            return Err(OxyError::RuntimeError(format!(
+                "Git force push failed: {stderr}"
+            )));
+        }
+
+        let push_stdout = String::from_utf8_lossy(&push_output.stdout);
+        info!("Git force push completed: {}", push_stdout.trim());
         Ok(())
     }
 
@@ -150,58 +328,20 @@ impl GitOperations {
         git_dir.exists()
     }
 
-    /// Get the remote URL of a repository
-    pub async fn get_remote_url(repo_path: &Path) -> Result<String, OxyError> {
-        if !repo_path.exists() {
-            return Err(OxyError::RuntimeError(format!(
-                "Repository directory does not exist: {}",
-                repo_path.display()
-            )));
-        }
-
-        let output = Command::new("git")
-            .current_dir(repo_path)
-            .args(["remote", "get-url", "origin"])
-            .output()
-            .await
-            .map_err(|e| OxyError::RuntimeError(format!("Failed to get remote URL: {e}")))?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(OxyError::RuntimeError(format!(
-                "Get remote URL failed: {stderr}"
-            )));
-        }
-
-        let url = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        Ok(url)
-    }
-
     /// Get the default repositories directory for storing cloned repositories
     pub fn get_repositories_directory() -> Result<PathBuf, OxyError> {
         // Try environment variable first
-        if let Ok(repos_dir) = env::var("OXY_REPOS_DIR") {
-            return Ok(PathBuf::from(repos_dir));
-        }
+        let state_dir = get_state_dir();
 
-        // Fall back to default location: ~/.local/share/oxy/repos
-        let home_dir = env::var("HOME")
-            .or_else(|_| env::var("USERPROFILE"))
-            .map_err(|_| {
-                OxyError::ConfigurationError("Unable to determine home directory".to_string())
-            })?;
-
-        Ok(PathBuf::from(home_dir)
-            .join(".local")
-            .join("share")
-            .join("oxy")
-            .join("repos"))
+        Ok(PathBuf::from(state_dir).join("repos"))
     }
 
     /// Get the local path for a specific repository by ID
-    pub fn get_repository_path(repo_id: i64) -> Result<PathBuf, OxyError> {
+    pub fn get_repository_path(project_id: Uuid, branch: Uuid) -> Result<PathBuf, OxyError> {
         let repos_dir = Self::get_repositories_directory()?;
-        Ok(repos_dir.join(repo_id.to_string()))
+        Ok(repos_dir
+            .join(project_id.to_string())
+            .join(branch.to_string()))
     }
 
     /// Ensure git is available on the system
@@ -263,13 +403,17 @@ impl GitOperations {
     }
 
     /// Pull repository automatically (called by webhook handler)
-    pub async fn auto_pull_repository(repo_path: &Path) -> Result<String, OxyError> {
+    pub async fn auto_pull_repository(
+        repo_path: &Path,
+        token: Option<&str>,
+    ) -> Result<String, OxyError> {
         info!(
             "Auto-pulling repository changes for {}",
             repo_path.display()
         );
 
-        // First, check if this is a git repository
+        // Note: token parameter is for future use when additional authentication might be needed
+        let _ = token;
         if !Self::is_git_repository(repo_path).await {
             return Err(OxyError::RuntimeError(format!(
                 "Directory is not a git repository: {}",
@@ -287,7 +431,7 @@ impl GitOperations {
         }
 
         // Perform the pull
-        Self::pull_repository(repo_path).await?;
+        Self::pull_repository(repo_path, token).await?;
 
         // Get status after pull to see what changed
         let current_branch = Self::get_current_branch(repo_path).await?;
@@ -394,5 +538,233 @@ impl GitOperations {
                 "Failed to get remote commit hash: {stderr}"
             )))
         }
+    }
+
+    pub async fn switch_branch(repo_path: &Path, branch: &str) -> Result<(), OxyError> {
+        info!(
+            "Switching to branch '{}' in repository at {}",
+            branch,
+            repo_path.display()
+        );
+
+        if !repo_path.exists() {
+            return Err(OxyError::RuntimeError(format!(
+                "Repository directory does not exist: {}",
+                repo_path.display()
+            )));
+        }
+
+        let fetch_output = Command::new("git")
+            .current_dir(repo_path)
+            .args(["fetch", "origin"])
+            .output()
+            .await
+            .map_err(|e| OxyError::RuntimeError(format!("Failed to execute git fetch: {e}")))?;
+
+        if !fetch_output.status.success() {
+            let stderr = String::from_utf8_lossy(&fetch_output.stderr);
+            warn!("Git fetch failed: {}", stderr);
+        }
+
+        let output = Command::new("git")
+            .current_dir(repo_path)
+            .args(["checkout", "-B", branch, &format!("origin/{branch}")])
+            .output()
+            .await
+            .map_err(|e| OxyError::RuntimeError(format!("Failed to execute git checkout: {e}")))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(OxyError::RuntimeError(format!(
+                "Failed to switch to branch '{}': {stderr}",
+                branch
+            )));
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        info!(
+            "Successfully switched to branch '{}': {}",
+            branch,
+            stdout.trim()
+        );
+        Ok(())
+    }
+
+    pub async fn status_short(repo_path: &Path) -> Result<String, OxyError> {
+        if !repo_path.exists() {
+            return Err(OxyError::RuntimeError(format!(
+                "Repository directory does not exist: {}",
+                repo_path.display()
+            )));
+        }
+
+        let output = Command::new("git")
+            .current_dir(repo_path)
+            .args(["status", "--short"])
+            .output()
+            .await
+            .map_err(|e| OxyError::RuntimeError(format!("Failed to execute git status: {e}")))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(OxyError::RuntimeError(format!(
+                "Git status failed: {stderr}"
+            )));
+        }
+
+        let status = String::from_utf8_lossy(&output.stdout).to_string();
+        Ok(status)
+    }
+
+    pub async fn diff_numstat(repo_path: &Path) -> Result<String, OxyError> {
+        if !repo_path.exists() {
+            return Err(OxyError::RuntimeError(format!(
+                "Repository directory does not exist: {}",
+                repo_path.display()
+            )));
+        }
+
+        let output = Command::new("git")
+            .current_dir(repo_path)
+            .args(["diff", "--numstat"])
+            .output()
+            .await
+            .map_err(|e| OxyError::RuntimeError(format!("Failed to execute git diff: {e}")))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(OxyError::RuntimeError(format!("Git diff failed: {stderr}")));
+        }
+
+        let diff = String::from_utf8_lossy(&output.stdout).to_string();
+        Ok(diff)
+    }
+
+    pub async fn diff_numstat_summary(repo_path: &Path) -> Result<Vec<FileStatus>, OxyError> {
+        if !repo_path.exists() {
+            return Err(OxyError::RuntimeError(format!(
+                "Repository directory does not exist: {}",
+                repo_path.display()
+            )));
+        }
+
+        let status_output = Command::new("git")
+            .current_dir(repo_path)
+            .args(["status", "--short", "--untracked-files=all"])
+            .output()
+            .await
+            .map_err(|e| OxyError::RuntimeError(format!("Failed to execute git status: {e}")))?;
+
+        if !status_output.status.success() {
+            let stderr = String::from_utf8_lossy(&status_output.stderr);
+            return Err(OxyError::RuntimeError(format!(
+                "Git status failed: {stderr}"
+            )));
+        }
+
+        let diff_output = Command::new("git")
+            .current_dir(repo_path)
+            .args(["diff", "--numstat"])
+            .output()
+            .await
+            .map_err(|e| OxyError::RuntimeError(format!("Failed to execute git diff: {e}")))?;
+
+        if !diff_output.status.success() {
+            let stderr = String::from_utf8_lossy(&diff_output.stderr);
+            return Err(OxyError::RuntimeError(format!("Git diff failed: {stderr}")));
+        }
+
+        let status_str = String::from_utf8_lossy(&status_output.stdout);
+        let diff_str = String::from_utf8_lossy(&diff_output.stdout);
+
+        let mut diff_stats: HashMap<String, (u32, u32)> = HashMap::new();
+        for line in diff_str.lines() {
+            if line.trim().is_empty() {
+                continue;
+            }
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() >= 3 {
+                let insertions = parts[0].parse::<u32>().unwrap_or(0);
+                let deletions = parts[1].parse::<u32>().unwrap_or(0);
+                let file_path = parts[2..].join(" ");
+                diff_stats.insert(file_path, (insertions, deletions));
+            }
+        }
+
+        let mut result = Vec::new();
+        for line in status_str.lines() {
+            if line.trim().is_empty() {
+                continue;
+            }
+
+            if line.len() >= 3 {
+                let status_chars = &line[0..2];
+                let file_path = line[3..].trim().to_string();
+
+                // Map git status codes to single character status
+                let status = match status_chars {
+                    "M " | " M" | "MM" => "M", // Modified
+                    "A " | " A" | "AM" => "A", // Added
+                    "D " | " D" | "AD" => "D", // Deleted
+                    "R " | " R" => "M",        // Renamed -> treat as Modified
+                    "C " | " C" => "A",        // Copied -> treat as Added
+                    "??" => "A",               // Untracked -> treat as Added
+                    _ => "M",                  // Default to Modified for other cases
+                }
+                .to_string();
+
+                let (insert, delete) = diff_stats.get(&file_path).unwrap_or(&(0, 0));
+
+                result.push(FileStatus {
+                    path: file_path,
+                    status,
+                    insert: *insert,
+                    delete: *delete,
+                });
+            }
+        }
+
+        Ok(result)
+    }
+
+    pub async fn get_file_content(
+        repo_path: &Path,
+        file_path: &str,
+        commit: Option<&str>,
+    ) -> Result<String, OxyError> {
+        if !repo_path.exists() {
+            return Err(OxyError::RuntimeError(format!(
+                "Repository directory does not exist: {}",
+                repo_path.display()
+            )));
+        }
+
+        let commit_ref = commit.unwrap_or("HEAD");
+        let show_ref = format!("{}:{}", commit_ref, file_path);
+
+        info!(
+            "Getting file content for '{}' from commit '{}' in repository at {}",
+            file_path,
+            commit_ref,
+            repo_path.display()
+        );
+
+        let output = Command::new("git")
+            .current_dir(repo_path)
+            .args(["show", &show_ref])
+            .output()
+            .await
+            .map_err(|e| OxyError::RuntimeError(format!("Failed to execute git show: {e}")))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(OxyError::RuntimeError(format!(
+                "Failed to get file content for '{}' at commit '{}': {stderr}",
+                file_path, commit_ref
+            )));
+        }
+
+        let content = String::from_utf8_lossy(&output.stdout).to_string();
+        Ok(content)
     }
 }

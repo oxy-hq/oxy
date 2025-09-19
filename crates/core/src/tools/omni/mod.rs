@@ -53,8 +53,11 @@ impl Executable<OmniInput> for OmniExecutable {
                 finished: true,
             })
             .await?;
+        let config_manager = &execution_context.project.config_manager;
+        let secrets_manager = &execution_context.project.secrets_manager;
         let connector =
-            Connector::from_database(&input.database, &execution_context.config, None).await?;
+            Connector::from_database(&input.database, config_manager, secrets_manager, None)
+                .await?;
         let file_path = connector.run_query(sql.as_str()).await?;
         let table = Output::table_with_reference(
             file_path,

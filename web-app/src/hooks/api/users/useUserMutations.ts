@@ -1,60 +1,52 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { UserService } from "@/services/api";
 import queryKeys from "../queryKey";
-import { toast } from "sonner";
 
-export const useUpdateUserRole = () => {
+export const useUpdateUserRole = (organizationId: string) => {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: ({ userId, role }: { userId: string; role: string }) =>
-      UserService.updateUserRole(userId, role),
+      UserService.updateUserRole(organizationId, userId, role),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.user.list() });
-      toast.success("User role updated successfully");
-    },
-    onError: (
-      error: Error & { response?: { status?: number }; status?: number },
-    ) => {
-      const errorCode = error?.response?.status || error?.status || "Unknown";
-      toast.error(`Operation failed (Error ${errorCode})`);
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.user.list(organizationId),
+      });
     },
   });
 };
 
-export const useDeleteUser = () => {
+export const useRemoveUser = (organizationId: string) => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (userId: string) => UserService.deleteUser(userId),
+    mutationFn: (userId: string) =>
+      UserService.removeUser(organizationId, userId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.user.list() });
-      toast.success("User deleted successfully");
-    },
-    onError: (
-      error: Error & { response?: { status?: number }; status?: number },
-    ) => {
-      const errorCode = error?.response?.status || error?.status || "Unknown";
-      toast.error(`Operation failed (Error ${errorCode})`);
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.user.list(organizationId),
+      });
     },
   });
 };
 
-export const useUpdateUser = () => {
+export const useAddUserToOrg = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ userId, status }: { userId: string; status: string }) =>
-      UserService.updateUser(userId, { status }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.user.list() });
-      toast.success("User updated successfully");
-    },
-    onError: (
-      error: Error & { response?: { status?: number }; status?: number },
-    ) => {
-      const errorCode = error?.response?.status || error?.status || "Unknown";
-      toast.error(`Operation failed (Error ${errorCode})`);
+    mutationFn: ({
+      organizationId,
+      email,
+      role,
+    }: {
+      organizationId: string;
+      email: string;
+      role: string;
+    }) => UserService.addUserToOrganization(organizationId, email, role),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.user.list(variables.organizationId),
+      });
     },
   });
 };

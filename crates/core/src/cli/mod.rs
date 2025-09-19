@@ -3,24 +3,25 @@ mod init;
 mod make;
 mod migrate;
 mod seed;
+mod serve;
 
 use crate::adapters::connector::Connector;
+use crate::adapters::project::builder::ProjectBuilder;
+use crate::adapters::runs::RunsManager;
+use crate::adapters::secrets::SecretsManager;
 use crate::auth::types::AuthMode;
 use crate::cli::migrate::migrate;
 use crate::config::model::AppConfig;
 use crate::config::*;
-use crate::db::client::establish_connection;
 use crate::errors::OxyError;
 use crate::execute::types::utils::record_batches_to_table;
 use crate::mcp::service::OxyMcpServer;
-use crate::project::initialize_project_manager;
-use crate::project::resolve_project_path;
 use crate::sentry_config;
 use crate::service::agent::AgentCLIHandler;
 use crate::service::agent::run_agent;
 use crate::service::eval::EvalEventsHandler;
 use crate::service::eval::run_eval;
-use crate::service::retrieval::{EnumIndexManager, ReindexInput, SearchInput, reindex, search};
+use crate::service::retrieval::{ReindexInput, SearchInput, reindex, search};
 use crate::service::sync::sync_databases;
 use crate::service::workflow::run_workflow;
 use crate::theme::StyledText;
@@ -29,15 +30,10 @@ use crate::theme::get_current_theme_mode;
 use crate::utils::print_colored_sql;
 use crate::workflow::RetryStrategy;
 use crate::workflow::loggers::cli::WorkflowCLILogger;
-use axum::handler::Handler;
-use axum::http::HeaderValue;
-use axum::http::Request;
 use clap::CommandFactory;
 use clap::Parser;
 use clap::builder::ValueParser;
 use make::handle_make_command;
-use migration::Migrator;
-use migration::MigratorTrait;
 use minijinja::{Environment, Value};
 use model::AgentConfig;
 use model::{Config, Semantics, Workflow};
@@ -52,6 +48,7 @@ use pyo3::Python;
 use pyo3::types::PyAnyMethods;
 use rmcp::transport::SseServer;
 use rmcp::{ServiceExt, transport::stdio};
+use serve::start_server_and_web_app;
 use std::backtrace;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
@@ -59,36 +56,14 @@ use std::error::Error;
 use std::path::PathBuf;
 use std::process::Command;
 use std::process::exit;
-use tokio::signal;
 use tokio_util::sync::CancellationToken;
-use utoipa::OpenApi;
-use utoipa::openapi::SecurityRequirement;
-use utoipa::openapi::security::ApiKeyValue;
-use utoipa::openapi::security::SecurityScheme;
-use utoipa_axum::router::OpenApiRouter;
-use utoipa_swagger_ui::SwaggerUi;
+use uuid::Uuid;
 
 use init::init;
 
-use crate::api::router;
-use tower_http::trace::{self, TraceLayer};
-use tower_serve_static::ServeDir;
-
-use axum::{Router, body::Body, http::StatusCode, routing::get_service};
-
 use dotenv;
-use include_dir::{Dir, include_dir};
 use std::net::SocketAddr;
-use tower::service_fn;
 use tracing::{debug, error};
-
-// hardcode the path for windows because of macro expansion issues
-// when using CARGO_MANIFEST_DIR with windows path separators
-// TODO: replace with a more robust solution, like using env DIST_DIR_PATH
-#[cfg(target_os = "windows")]
-static DIST: Dir = include_dir!("D:\\a\\oxy\\oxy\\crates\\core\\dist");
-#[cfg(not(target_os = "windows"))]
-static DIST: Dir = include_dir!("$CARGO_MANIFEST_DIR/dist");
 
 // Constants
 const CUBE_CONFIG_DIR_PATH: &str = ".local/share/oxy/cube";
@@ -623,6 +598,14 @@ async fn handle_workflow_file(
     retry: bool,
     retry_from: Option<String>,
 ) -> Result<(), OxyError> {
+    let project_path = resolve_local_project_path()?;
+    let project = ProjectBuilder::new()
+        .with_project_path(&project_path)
+        .await?
+        .with_runs_manager(RunsManager::default(Uuid::nil(), Uuid::nil()).await?)
+        .build()
+        .await
+        .map_err(|e| OxyError::from(anyhow::anyhow!("Failed to create project: {e}")))?;
     // Add Sentry context for workflow execution
     let workflow_name_str = workflow_name
         .file_name()
@@ -656,6 +639,7 @@ async fn handle_workflow_file(
                 "Invalid retry_from format. Expected 'run_id::replay_id'".to_string(),
             ));
         };
+
         run_workflow(
             workflow_name,
             WorkflowCLILogger,
@@ -664,6 +648,7 @@ async fn handle_workflow_file(
                 run_index: run_id,
             },
             None,
+            project,
         )
         .await?;
     } else if retry {
@@ -674,6 +659,7 @@ async fn handle_workflow_file(
             WorkflowCLILogger,
             RetryStrategy::LastFailure,
             None,
+            project,
         )
         .await?;
     } else {
@@ -684,6 +670,7 @@ async fn handle_workflow_file(
             WorkflowCLILogger,
             RetryStrategy::NoRetry,
             None,
+            project,
         )
         .await?;
     }
@@ -707,35 +694,6 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             sentry::Level::Fatal,
         );
     }));
-
-    let readonly_mode = match &args.command {
-        Some(SubCommand::Serve(serve_args)) => serve_args.readonly,
-        _ => false, // For other commands, try to auto-detect
-    };
-
-    // Initialize project manager early for most commands (except Init and GenConfigSchema)
-    let needs_project_manager = match &args.command {
-        Some(SubCommand::Init)
-        | Some(SubCommand::GenConfigSchema(_))
-        | Some(SubCommand::SelfUpdate)
-        | Some(SubCommand::TestTheme) => false,
-        _ => true,
-    };
-
-    if needs_project_manager {
-        if let Err(e) = initialize_project_manager(readonly_mode).await {
-            // For some commands, not having a project is acceptable
-            match &args.command {
-                Some(SubCommand::Serve(_)) if readonly_mode => {
-                    // In git mode, we'll handle this in the serve command
-                }
-                _ => {
-                    tracing::debug!("Failed to initialize project manager: {}", e);
-                    // For non-git commands, we may still want to proceed in some cases
-                }
-            }
-        }
-    }
 
     // Add breadcrumb for CLI command
     if let Some(ref command) = args.command {
@@ -847,16 +805,21 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
         }
         Some(SubCommand::Build(build_args)) => {
             sentry_config::add_operation_context("build", None);
-
-            // Build vector embeddings for routing agents
+            let project_path = resolve_local_project_path()?.to_string_lossy().to_string();
+            let config_manager = ConfigBuilder::new()
+                .with_project_path(project_path)?
+                .build()
+                .await?;
+            let secrets_manager = SecretsManager::from_environment()?;
             reindex(ReindexInput {
-                project_path: resolve_project_path()?.to_string_lossy().to_string(),
+                config: config_manager.clone(),
+                secrets_manager: secrets_manager,
                 drop_all_tables: build_args.drop_all_tables,
             })
             .await?;
 
             // Process semantic layer to generate CubeJS schema
-            let semantic_dir = resolve_project_path()?.join("semantics");
+            let semantic_dir = resolve_local_project_path()?.join("semantics");
             if semantic_dir.exists() {
                 // target_dir: ~/.local/share/oxy/cube
                 let target_dir = get_cube_config_dir()?;
@@ -866,13 +829,8 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                     OxyError::RuntimeError(format!("Failed to create cube directory: {}", e))
                 })?;
 
-                // Get database details from config
-                let config = ConfigBuilder::new()
-                    .with_project_path(&resolve_project_path()?)?
-                    .build()
-                    .await?;
-
-                let databases: HashMap<String, DatabaseDetails> = config
+                let config_manager_clone = config_manager.clone();
+                let databases: HashMap<String, DatabaseDetails> = config_manager_clone
                     .list_databases()?
                     .iter()
                     .map(|db| {
@@ -893,9 +851,18 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
         }
         Some(SubCommand::VecSearch(search_args)) => {
             sentry_config::add_agent_context(&search_args.agent, Some(&search_args.question));
-            let project_path = resolve_project_path()?.to_string_lossy().to_string();
+            let project_path = resolve_local_project_path()?.to_string_lossy().to_string();
+
+            let config_manager = ConfigBuilder::new()
+                .with_project_path(project_path)?
+                .build()
+                .await?;
+
+            let secrets_manager = SecretsManager::from_environment()?;
+
             search(SearchInput {
-                project_path,
+                config: config_manager,
+                secrets_manager,
                 agent_ref: search_args.agent.to_string(),
                 query: search_args.question.to_string(),
             })
@@ -907,16 +874,20 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                 sentry_config::add_database_context(db, None);
             }
             let config = ConfigBuilder::new()
-                .with_project_path(&resolve_project_path()?)?
+                .with_project_path(&resolve_local_project_path()?)?
                 .build()
                 .await?;
+
+            let secrets_manager = SecretsManager::from_environment()?;
             let filter = sync_args
                 .database
                 .clone()
                 .map(|db| (db, sync_args.datasets.clone()));
             debug!(sync_args = ?sync_args, "Syncing");
             println!("🔄Syncing databases");
-            let sync_metrics = sync_databases(config.clone(), filter, sync_args.overwrite).await?;
+            let sync_metrics =
+                sync_databases(config.clone(), secrets_manager, filter, sync_args.overwrite)
+                    .await?;
             println!(
                 "✅Sync finished:\n\n{}",
                 sync_metrics
@@ -927,22 +898,13 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             )
         }
         Some(SubCommand::Validate) => {
-            let result = load_config(None);
-            match result {
-                Ok(config) => match config.validate_config() {
-                    Ok(_) => match config.validate_workflows() {
-                        Ok(_) => match config.validate_agents() {
-                            Ok(_) => println!("{}", "Config file is valid".success()),
-                            Err(e) => {
-                                println!("{}", e.to_string().error());
-                                exit(1)
-                            }
-                        },
-                        Err(e) => {
-                            println!("{}", e.to_string().error());
-                            exit(1)
-                        }
-                    },
+            let config = ConfigBuilder::new()
+                .with_project_path(&resolve_local_project_path()?)?
+                .build()
+                .await?;
+            match config.get_config().validate_workflows() {
+                Ok(_) => match config.get_config().validate_agents() {
+                    Ok(_) => println!("{}", "Config file is valid".success()),
                     Err(e) => {
                         println!("{}", e.to_string().error());
                         exit(1)
@@ -963,16 +925,19 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             }
         }
         Some(SubCommand::Serve(serve_args)) => {
-            start_server_and_web_app(
+            if let Err(e) = start_server_and_web_app(
                 serve_args.port,
-                serve_args.host.clone(),
+                serve_args.host,
                 serve_args.auth_mode,
-                serve_args.readonly,
                 serve_args.http2_only,
-                serve_args.tls_cert.clone(),
-                serve_args.tls_key.clone(),
+                serve_args.tls_cert,
+                serve_args.tls_key,
             )
-            .await;
+            .await
+            {
+                eprintln!("{}", format!("Server failed: {e}").error());
+                exit(1);
+            }
         }
         Some(SubCommand::McpSse(mcp_sse_args)) => {
             let cancellation_token = start_mcp_sse_server(mcp_sse_args.port, mcp_sse_args.host)
@@ -1012,15 +977,18 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
         }
 
         Some(SubCommand::Ask(ask_args)) => {
-            let project_path = resolve_project_path()?;
-            let config = ConfigBuilder::new()
-                .with_project_path(&project_path)?
+            let project_path = resolve_local_project_path()?;
+            let project = ProjectBuilder::new()
+                .with_project_path(&project_path)
+                .await?
+                .with_runs_manager(RunsManager::default(Uuid::nil(), Uuid::nil()).await?)
                 .build()
-                .await?;
+                .await
+                .map_err(|e| OxyError::from(anyhow::anyhow!("Failed to create project: {e}")))?;
 
             let _ = run_agent(
-                &project_path,
-                &config.get_builder_agent_path().await?,
+                project.clone(),
+                &project.config_manager.get_builder_agent_path().await?,
                 ask_args.question,
                 AgentCLIHandler::default(),
                 vec![],
@@ -1058,9 +1026,18 @@ async fn handle_agent_file(file_path: &PathBuf, question: Option<String>) -> Res
     let question = question.ok_or_else(|| {
         OxyError::ArgumentError("Question is required for agent files".to_string())
     })?;
-    let project_path = resolve_project_path()?;
+    let project_path = resolve_local_project_path()?;
+
+    let project_manager = ProjectBuilder::new()
+        .with_project_path(&project_path)
+        .await?
+        .with_runs_manager(RunsManager::default(Uuid::nil(), Uuid::nil()).await?)
+        .build()
+        .await
+        .map_err(|e| OxyError::from(anyhow::anyhow!("Failed to create project: {e}")))?;
+
     let _ = run_agent(
-        &project_path,
+        project_manager,
         file_path,
         question,
         AgentCLIHandler::default(),
@@ -1111,7 +1088,8 @@ async fn handle_sql_file(
 
     // Print colored SQL and execute query
     print_colored_sql(&query);
-    let connector = Connector::from_database(&database, config, None).await?;
+    let secrets_manager = SecretsManager::from_environment()?;
+    let connector = Connector::from_database(&database, config, &secrets_manager, None).await?;
     let (datasets, schema) = match dry_run {
         false => connector.run_query_and_load(&query).await,
         true => connector.dry_run(&query).await,
@@ -1176,7 +1154,7 @@ pub async fn handle_run_command(run_args: RunArgs) -> Result<RunResult, OxyError
         }
         Some("sql") => {
             let config = ConfigBuilder::new()
-                .with_project_path(&resolve_project_path()?)?
+                .with_project_path(&resolve_local_project_path()?)?
                 .build()
                 .await?;
             let database = run_args
@@ -1222,7 +1200,7 @@ pub async fn start_mcp_sse_server(
     host: String,
 ) -> anyhow::Result<CancellationToken> {
     // require webserver to be started inside the project path
-    let project_path = match resolve_project_path() {
+    let project_path = match resolve_local_project_path() {
         Ok(path) => path,
         Err(e) => {
             eprintln!("Failed to find project path: {e}");
@@ -1293,392 +1271,24 @@ pub async fn handle_test_command(test_args: TestArgs) -> Result<(), OxyError> {
         )));
     }
 
+    let project_path = resolve_local_project_path()?;
+
+    let project_manager = ProjectBuilder::new()
+        .with_project_path(&project_path)
+        .await?
+        .with_runs_manager(RunsManager::default(Uuid::nil(), Uuid::nil()).await?)
+        .build()
+        .await
+        .map_err(|e| OxyError::from(anyhow::anyhow!("Failed to create project: {e}")))?;
+
     run_eval(
-        &resolve_project_path()?,
+        project_manager,
         &file_path,
         None,
         EvalEventsHandler::new(test_args.quiet),
     )
     .await?;
     Ok(())
-}
-
-#[derive(OpenApi)]
-struct ApiDoc;
-
-pub async fn start_server_and_web_app(
-    web_port: u16,
-    web_host: String,
-    auth_mode: AuthMode,
-    readonly_mode: bool,
-    http2_only: bool,
-    tls_cert: String,
-    tls_key: String,
-) {
-    // Set global readonly mode
-    crate::readonly::set_readonly_mode(readonly_mode);
-
-    // migrate database if needed
-    let db = establish_connection()
-        .await
-        .expect("Failed to connect to database");
-    Migrator::up(&db, None)
-        .await
-        .expect("Failed to run database migrations");
-
-    // Initialize background task manager singleton
-    if let Err(e) = crate::github::background_tasks::initialize_background_task_manager().await {
-        tracing::warn!("Failed to initialize background task manager: {}", e);
-    }
-
-    // Initialize project manager for the web app
-    let project_manager_initialized = match initialize_project_manager(readonly_mode).await {
-        Ok(()) => true,
-        Err(e) => {
-            tracing::warn!("Failed to initialize project manager: {}", e);
-            false
-        }
-    };
-
-    // Check if we're in a valid project
-    let project_path = if project_manager_initialized {
-        match resolve_project_path() {
-            Ok(path) => Some(path),
-            Err(e) => {
-                tracing::warn!(
-                    "Project manager initialized but failed to resolve path: {}",
-                    e
-                );
-                None
-            }
-        }
-    } else {
-        // Fallback to old behavior for backward compatibility
-        let project_path_result = resolve_project_path();
-        match project_path_result {
-            Ok(path) => Some(path),
-            Err(_) => {
-                if readonly_mode {
-                    tracing::info!("Readonly mode enabled");
-                    None
-                } else {
-                    // Old behavior - exit if not in an Oxy project
-                    eprintln!(
-                        "Error: Not in an Oxy project directory. Run 'oxy init' first or use --readonly to use git integration."
-                    );
-                    std::process::exit(1);
-                }
-            }
-        }
-    };
-
-    // Only build config if we have a valid project path
-    let config = if let Some(ref path) = project_path {
-        let config = ConfigBuilder::new()
-            .with_project_path(path)
-            .expect("Failed to find project path")
-            .build()
-            .await
-            .expect("Failed to load configuration");
-
-        // Eagerly initialize enum index at startup (includes automatic rebuild and retry logic)
-        if let Err(e) = EnumIndexManager::init_from_config(config.clone()).await {
-            tracing::warn!("Failed to initialize enum index at startup: {}", e);
-        }
-
-        Some(config)
-    } else {
-        None
-    };
-
-    async fn shutdown_signal() {
-        let ctrl_c = async {
-            signal::ctrl_c()
-                .await
-                .expect("failed to install Ctrl+C handler");
-        };
-
-        #[cfg(unix)]
-        let terminate = async {
-            signal::unix::signal(signal::unix::SignalKind::terminate())
-                .expect("failed to install signal handler")
-                .recv()
-                .await;
-        };
-
-        #[cfg(not(unix))]
-        let terminate = std::future::pending::<()>();
-
-        tokio::select! {
-            _ = ctrl_c => {},
-            _ = terminate => {},
-        }
-    }
-
-    let web_server_task = tokio::spawn(async move {
-        let serve_with_fallback = service_fn(move |req: Request<Body>| {
-            async move {
-                let uri = req.uri().clone();
-                let mut res = get_service(ServeDir::new(&DIST))
-                    .call(req, None::<()>)
-                    .await;
-                if uri.path().starts_with("/assets/") {
-                    res.headers_mut().insert(
-                        "Cache-Control",
-                        HeaderValue::from_static("public, max-age=31536000, immutable"),
-                    );
-                }
-                if res.status() == StatusCode::NOT_FOUND {
-                    // If 404, fallback to serving index.html
-                    let index_req = Request::builder()
-                        .uri("/index.html")
-                        .body(Body::empty())
-                        .unwrap();
-                    let response = get_service(ServeDir::new(&DIST))
-                        .call(index_req, None::<()>)
-                        .await;
-                    Ok(response)
-                } else {
-                    Ok(res)
-                }
-            }
-        });
-
-        // Configure HTTP request/response logging
-        let trace_layer = TraceLayer::new_for_http()
-            .make_span_with(trace::DefaultMakeSpan::new().level(tracing::Level::INFO))
-            .on_request(trace::DefaultOnRequest::new().level(tracing::Level::INFO))
-            .on_response(
-                trace::DefaultOnResponse::new()
-                    .level(tracing::Level::INFO)
-                    .latency_unit(tower_http::LatencyUnit::Millis),
-            )
-            .on_failure(trace::DefaultOnFailure::new().level(tracing::Level::ERROR));
-
-        // Add Sentry tower layer for HTTP request tracking
-        let sentry_layer = sentry::integrations::tower::NewSentryLayer::new_from_top();
-
-        let api_router = match router::api_router(auth_mode, readonly_mode).await {
-            Ok(router) => router
-                .layer(sentry_layer.clone())
-                .layer(trace_layer.clone()),
-            Err(e) => {
-                eprintln!("Failed to create API router: {e}");
-                std::process::exit(1);
-            }
-        };
-        let openapi_router = router::openapi_router(readonly_mode)
-            .await
-            .layer(sentry_layer.clone())
-            .layer(trace_layer.clone());
-        let mut openapi_router = OpenApiRouter::with_openapi(ApiDoc::openapi())
-            .nest("/api", openapi_router)
-            .fallback_service(serve_with_fallback);
-        let openapi = openapi_router.get_openapi_mut();
-        if let Some(cfg) = config {
-            if let Some(auth_config) = cfg.get_authentication() {
-                if let Some(api_key_auth) = auth_config.api_key {
-                    let security_schema_name = "ApiKey";
-
-                    // Get existing components or create new ones, then add the security scheme
-                    let mut components = openapi.components.take().unwrap_or_default();
-                    components.security_schemes.insert(
-                        security_schema_name.to_string(),
-                        SecurityScheme::ApiKey(utoipa::openapi::security::ApiKey::Header(
-                            ApiKeyValue::new(api_key_auth.header),
-                        )),
-                    );
-                    openapi.components = Some(components);
-
-                    // Apply for all endpoints
-                    let scopes: Vec<String> = vec![];
-                    openapi.security =
-                        Some(vec![SecurityRequirement::new(security_schema_name, scopes)]);
-                }
-            }
-        }
-        let web_app = Router::new()
-            .merge(SwaggerUi::new("/apidoc").url(
-                "/apidoc/openapi.json",
-                openapi_router.into_openapi().clone(),
-            ))
-            .nest("/api", api_router)
-            .fallback_service(serve_with_fallback)
-            .layer(sentry_layer)
-            .layer(trace_layer);
-
-        let original_web_port = web_port;
-        let mut chosen_port = web_port;
-        let mut port_attempts = 0u16;
-        const MAX_PORT_ATTEMPTS: u16 = 100;
-
-        loop {
-            let trial = format!("{host}:{port}", host = web_host, port = chosen_port);
-            match trial.parse::<SocketAddr>() {
-                Ok(addr) => {
-                    match tokio::net::TcpListener::bind(addr).await {
-                        Ok(listener) => {
-                            // Successfully bound to the port: close listener and use this port
-                            drop(listener);
-                            break;
-                        }
-                        Err(e) => {
-                            if chosen_port <= 1024
-                                && e.kind() == std::io::ErrorKind::PermissionDenied
-                            {
-                                eprintln!(
-                                    "Permission denied binding to port {chosen_port}. Try running with sudo or use a port above 1024."
-                                );
-                                std::process::exit(1);
-                            }
-                            port_attempts += 1;
-                            if port_attempts > MAX_PORT_ATTEMPTS {
-                                eprintln!(
-                                    "Failed to bind to any port after trying {} ports starting from {}. Error: {}",
-                                    port_attempts, original_web_port, e
-                                );
-                                std::process::exit(1);
-                            }
-                            println!("Port {chosen_port} is occupied. Trying next port...");
-                            chosen_port += 1;
-                        }
-                    }
-                }
-                Err(_) => {
-                    // If parse fails, fall back to binding to unspecified address
-                    break;
-                }
-            }
-        }
-
-        let web_addr = format!("{web_host}:{chosen_port}")
-            .parse::<SocketAddr>()
-            .unwrap_or_else(|_| SocketAddr::from(([0, 0, 0, 0], chosen_port)));
-        let display_host = if web_host == "0.0.0.0" {
-            "localhost"
-        } else {
-            &web_host
-        };
-
-        // Determine protocol for display message
-        let is_https = http2_only;
-        let protocol = if is_https { "https" } else { "http" };
-        let protocol_info = if http2_only {
-            if readonly_mode {
-                "(readonly mode, HTTP/2 ONLY)"
-            } else {
-                " (HTTP/2 ONLY)"
-            }
-        } else {
-            if readonly_mode {
-                "(readonly mode, HTTP/1.1+HTTP/2)"
-            } else {
-                " (HTTP/1.1+HTTP/2)"
-            }
-        };
-        if readonly_mode {
-            println!(
-                "{} {} {}",
-                "Web app running at".text(),
-                format!("{protocol}://{display_host}:{chosen_port}").secondary(),
-                protocol_info.tertiary()
-            );
-        } else {
-            println!(
-                "{} {}",
-                "Web app running at".text(),
-                format!("{protocol}://{display_host}:{chosen_port}{protocol_info}").secondary()
-            );
-        }
-
-        if let Err(e) = crate::auth::user::UserService::sync_admin_roles_from_config().await {
-            tracing::warn!("Failed to sync admin roles: {}", e);
-        } else {
-            tracing::info!("Admin roles synced successfully");
-        }
-
-        if http2_only {
-            // If TLS cert/key files exist, use HTTPS+HTTP/2 for local development
-            let cert_exists = std::path::Path::new(&tls_cert).exists();
-            let key_exists = std::path::Path::new(&tls_key).exists();
-            let config = if cert_exists && key_exists {
-                tracing::info!("Using provided TLS cert/key files for HTTPS (TLS) and HTTP/2");
-                match axum_server::tls_rustls::RustlsConfig::from_pem_file(&tls_cert, &tls_key)
-                    .await
-                {
-                    Ok(cfg) => cfg,
-                    Err(e) => {
-                        eprintln!("Failed to load TLS cert/key: {e}");
-                        std::process::exit(1);
-                    }
-                }
-            } else {
-                tracing::warn!("No TLS cert/key files found, using bundled default cert/key.");
-                // Bundle default cert/key into binary
-                let default_cert: &[u8] = include_bytes!("../../../../localhost+2.pem");
-                let default_key: &[u8] = include_bytes!("../../../../localhost+2-key.pem");
-                match axum_server::tls_rustls::RustlsConfig::from_pem(
-                    default_cert.to_vec(),
-                    default_key.to_vec(),
-                )
-                .await
-                {
-                    Ok(cfg) => cfg,
-                    Err(e) => {
-                        eprintln!("Failed to load bundled TLS cert/key: {e}");
-                        std::process::exit(1);
-                    }
-                }
-            };
-            let result = axum_server::bind_rustls(web_addr, config)
-                .serve(web_app.into_make_service())
-                .await;
-            match result {
-                Ok(_) => {}
-                Err(e) => {
-                    if let Some(os_err) = e.raw_os_error() {
-                        if os_err == 48 {
-                            eprintln!(
-                                "Address already in use. Please stop any other server running on this port and try again."
-                            );
-                            std::process::exit(1);
-                        }
-                    }
-                    eprintln!("Server error: {e}");
-                    std::process::exit(1);
-                }
-            }
-        } else {
-            // Start server with both HTTP/1.1 and HTTP/2 support
-            tracing::info!("Starting server with HTTP/1.1 and HTTP/2 support");
-            let listener = tokio::net::TcpListener::bind(web_addr).await.unwrap();
-            axum::serve(listener, web_app)
-                .with_graceful_shutdown(shutdown_signal())
-                .await
-                .unwrap();
-        }
-    });
-
-    // Start Apalis worker in readonly mode for background tasks
-    let worker_task = if readonly_mode {
-        Some(tokio::spawn(async move {
-            if let Err(e) = crate::github::start_apalis_worker().await {
-                tracing::error!("Failed to start Apalis worker: {}", e);
-            }
-        }))
-    } else {
-        None
-    };
-
-    // Wait for web server to complete
-    let web_result = web_server_task.await;
-
-    // If we started a worker, cancel it when web server stops
-    if let Some(worker) = worker_task {
-        worker.abort();
-    }
-
-    web_result.unwrap();
 }
 
 async fn handle_check_for_updates() -> Result<(), OxyError> {
@@ -1743,18 +1353,23 @@ async fn handle_seed_command(seed_args: SeedArgs) -> Result<(), OxyError> {
 async fn handle_clean_command(clean_args: CleanArgs) -> Result<(), OxyError> {
     use clean::*;
 
+    let config_manager = ConfigBuilder::new()
+        .with_project_path(&resolve_local_project_path()?)?
+        .build()
+        .await?;
+
     match clean_args.target {
         CleanTarget::All => {
-            clean_all(true).await?;
+            clean_all(true, &config_manager).await?;
         }
         CleanTarget::DatabaseFolder => {
-            clean_database_folder(true).await?;
+            clean_database_folder(true, &config_manager).await?;
         }
         CleanTarget::Vectors => {
-            clean_vectors(true).await?;
+            clean_vectors(true, &config_manager).await?;
         }
         CleanTarget::Cache => {
-            clean_cache(true).await?;
+            clean_cache(true, &config_manager).await?;
         }
     }
     Ok(())
@@ -1764,7 +1379,7 @@ async fn handle_semantic_engine_command(semantic_args: SemanticEngineArgs) -> Re
     sentry_config::add_operation_context("semantic-engine", None);
 
     // Ensure we're in a valid project
-    let project_path = resolve_project_path()?;
+    let project_path = resolve_local_project_path()?;
 
     // Check if semantic layer exists
     let semantic_dir = project_path.join("semantics");

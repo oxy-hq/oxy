@@ -1,3 +1,4 @@
+use crate::api::middlewares::project::ProjectManagerExtractor;
 use crate::{
     auth::extractor::AuthenticatedUserExtractor, db::client::establish_connection,
     execute::types::ReferenceKind, service::task_manager::TASK_MANAGER,
@@ -77,6 +78,7 @@ pub struct CreateThreadRequest {
     tag = "Threads"
 )]
 pub async fn get_threads(
+    Path(project_id): Path<Uuid>,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     Query(pagination): Query<PaginationQuery>,
 ) -> Result<extract::Json<ThreadsResponse>, StatusCode> {
@@ -115,6 +117,7 @@ pub async fn get_threads(
 
     let threads = Threads::find()
         .filter(threads::Column::UserId.eq(Some(user.id)))
+        .filter(threads::Column::ProjectId.eq(project_id))
         .order_by_desc(threads::Column::CreatedAt)
         .offset(offset)
         .limit(limit)
@@ -150,7 +153,6 @@ pub async fn get_threads(
     }))
 }
 
-/// Get a specific thread by ID
 #[utoipa::path(
     get,
     path = "/threads/{id}",
@@ -167,7 +169,7 @@ pub async fn get_threads(
     tag = "Threads"
 )]
 pub async fn get_thread(
-    Path(id): Path<String>,
+    Path((_project_id, id)): Path<(Uuid, String)>,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
 ) -> Result<extract::Json<ThreadItem>, StatusCode> {
     let connection = establish_connection().await.map_err(|e| {
@@ -211,6 +213,7 @@ pub async fn get_thread(
     tag = "Threads"
 )]
 pub async fn create_thread(
+    Path(project_id): Path<Uuid>,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     extract::Json(thread_request): extract::Json<CreateThreadRequest>,
 ) -> Result<extract::Json<ThreadItem>, StatusCode> {
@@ -218,6 +221,12 @@ pub async fn create_thread(
         tracing::error!("Failed to establish database connection: {}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
+    let project = entity::projects::Entity::find_by_id(project_id)
+        .one(&connection)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
     let new_thread = entity::threads::ActiveModel {
         id: ActiveValue::Set(Uuid::new_v4()),
         user_id: ActiveValue::Set(Some(user.id)),
@@ -229,6 +238,7 @@ pub async fn create_thread(
         source: ActiveValue::Set(thread_request.source),
         references: ActiveValue::Set("[]".to_string()),
         is_processing: ActiveValue::Set(false),
+        project_id: ActiveValue::Set(project.id),
     };
     let thread = new_thread
         .insert(&connection)
@@ -266,7 +276,7 @@ pub async fn create_thread(
     tag = "Threads"
 )]
 pub async fn delete_thread(
-    Path(id): Path<String>,
+    Path((_project_id, id)): Path<(Uuid, String)>,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
 ) -> Result<StatusCode, StatusCode> {
     let connection = establish_connection().await.map_err(|e| {
@@ -355,6 +365,8 @@ fn remove_all_files_in_dir<P: AsRef<std::path::Path>>(dir: P) {
     tag = "Threads"
 )]
 pub async fn delete_all_threads(
+    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    Path(project_id): Path<Uuid>,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
 ) -> Result<StatusCode, StatusCode> {
     let connection = establish_connection().await.map_err(|e| {
@@ -363,6 +375,7 @@ pub async fn delete_all_threads(
     })?;
     Threads::delete_many()
         .filter(threads::Column::UserId.eq(Some(user.id)))
+        .filter(threads::Column::ProjectId.eq(project_id))
         .exec(&connection)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -370,8 +383,8 @@ pub async fn delete_all_threads(
     // Note: Only removing charts for this user would require more complex logic
     // For now, we'll keep the current behavior but you may want to change this
     {
-        use crate::db::client::get_charts_dir;
-        remove_all_files_in_dir(get_charts_dir());
+        let charts_dir = project_manager.config_manager.get_charts_dir().await?;
+        remove_all_files_in_dir(charts_dir);
     }
 
     Ok(StatusCode::OK)
@@ -394,7 +407,7 @@ pub async fn delete_all_threads(
     tag = "Threads"
 )]
 pub async fn stop_thread(
-    Path(id): Path<String>,
+    Path((_project_id, id)): Path<(Uuid, String)>,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
 ) -> Result<StatusCode, StatusCode> {
     let thread_id = Uuid::parse_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
@@ -463,6 +476,7 @@ pub struct BulkDeleteThreadsRequest {
     tag = "Threads"
 )]
 pub async fn bulk_delete_threads(
+    Path(project_id): Path<Uuid>,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     extract::Json(request): extract::Json<BulkDeleteThreadsRequest>,
 ) -> Result<StatusCode, StatusCode> {
@@ -485,6 +499,7 @@ pub async fn bulk_delete_threads(
         .filter(
             threads::Column::UserId
                 .eq(Some(user.id))
+                .and(threads::Column::ProjectId.eq(project_id))
                 .and(threads::Column::Id.is_in(thread_uuids)),
         )
         .exec(&connection)

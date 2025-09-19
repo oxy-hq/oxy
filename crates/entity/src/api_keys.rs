@@ -15,10 +15,19 @@ pub struct Model {
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
     pub is_active: bool,
+    pub project_id: Uuid,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
+    #[sea_orm(
+        belongs_to = "super::projects::Entity",
+        from = "Column::ProjectId",
+        to = "super::projects::Column::Id",
+        on_update = "NoAction",
+        on_delete = "Cascade"
+    )]
+    Projects,
     #[sea_orm(
         belongs_to = "super::users::Entity",
         from = "Column::UserId",

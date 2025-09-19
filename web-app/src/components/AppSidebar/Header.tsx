@@ -1,5 +1,5 @@
 import { Home, DiamondPlus, ChevronsLeft } from "lucide-react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useParams } from "react-router-dom";
 import {
   SidebarGroup,
   SidebarHeader,
@@ -10,13 +10,20 @@ import {
 import useSidebar from "@/components/ui/shadcn/sidebar-context";
 import useTheme from "@/stores/useTheme";
 import { Button } from "@/components/ui/shadcn/button";
+import ROUTES from "@/libs/utils/routes";
+import Organizations from "./Organizations";
 
 export function Header() {
   const location = useLocation();
-  const isHome = location.pathname === "/";
-  const isNew = location.pathname === "/new";
+
   const { theme } = useTheme();
   const { toggleSidebar, open } = useSidebar();
+  const { projectId } = useParams();
+  if (!projectId) {
+    return null;
+  }
+  const homeUri = ROUTES.PROJECT(projectId).HOME;
+  const isHome = location.pathname === homeUri;
 
   return (
     <SidebarGroup className="gap-2">
@@ -41,8 +48,8 @@ export function Header() {
       </SidebarHeader>
       <SidebarMenu>
         <SidebarMenuItem>
-          <SidebarMenuButton asChild isActive={isNew}>
-            <Link to="/new">
+          <SidebarMenuButton asChild>
+            <Link to={homeUri}>
               <DiamondPlus />
               <span>Start new thread</span>
             </Link>
@@ -50,12 +57,13 @@ export function Header() {
         </SidebarMenuItem>
         <SidebarMenuItem>
           <SidebarMenuButton asChild isActive={isHome}>
-            <Link to="/">
+            <Link to={homeUri}>
               <Home />
               <span>Home</span>
             </Link>
           </SidebarMenuButton>
         </SidebarMenuItem>
+        <Organizations />
       </SidebarMenu>
     </SidebarGroup>
   );

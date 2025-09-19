@@ -1,6 +1,4 @@
-use crate::config::auth::Authentication;
 use crate::config::model::omni::{ExecuteOmniTool, OmniTopicInfoTool};
-use crate::service::secret_resolver::SecretResolverService;
 use crate::service::types::SemanticQueryParams;
 use garde::Validate;
 use indoc::indoc;
@@ -17,6 +15,7 @@ use std::path::PathBuf;
 pub use variables::Variables;
 
 use super::validate::{AgentValidationContext, validate_model, validate_task};
+use crate::adapters::secrets::SecretsManager;
 use crate::config::validate::{
     ValidationContext, validate_agent_exists, validate_database_exists, validate_env_var,
     validate_task_data_reference,
@@ -48,9 +47,6 @@ pub struct Config {
     #[garde(skip)]
     #[schemars(skip)]
     pub project_path: PathBuf,
-
-    #[garde(dive)]
-    pub authentication: Option<Authentication>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, JsonSchema, Validate)]
@@ -134,18 +130,17 @@ pub struct Postgres {
 }
 
 impl Postgres {
-    pub async fn get_password(&self) -> Result<String, OxyError> {
+    pub async fn get_password(&self, secret_manager: &SecretsManager) -> Result<String, OxyError> {
         if let Some(password) = &self.password {
             if !password.is_empty() {
                 return Ok(password.clone());
             }
         }
-        let secret_resolver = SecretResolverService::new();
-        let value = secret_resolver
+        let value = secret_manager
             .resolve_secret(self.password_var.as_deref().unwrap_or(""))
             .await?;
         match value {
-            Some(res) => Ok(res.value),
+            Some(res) => Ok(res),
             None => Err(OxyError::SecretNotFound(self.password_var.clone())),
         }
     }
@@ -176,18 +171,17 @@ pub struct Redshift {
 }
 
 impl Redshift {
-    pub async fn get_password(&self) -> Result<String, OxyError> {
+    pub async fn get_password(&self, secret_manager: &SecretsManager) -> Result<String, OxyError> {
         if let Some(password) = &self.password {
             if !password.is_empty() {
                 return Ok(password.clone());
             }
         }
-        let secret_resolver = SecretResolverService::new();
-        let value = secret_resolver
+        let value = secret_manager
             .resolve_secret(self.password_var.as_deref().unwrap_or(""))
             .await?;
         match value {
-            Some(res) => Ok(res.value),
+            Some(res) => Ok(res),
             None => Err(OxyError::SecretNotFound(self.password_var.clone())),
         }
     }
@@ -218,18 +212,17 @@ pub struct Mysql {
 }
 
 impl Mysql {
-    pub async fn get_password(&self) -> Result<String, OxyError> {
+    pub async fn get_password(&self, secret_manager: &SecretsManager) -> Result<String, OxyError> {
         if let Some(password) = &self.password {
             if !password.is_empty() {
                 return Ok(password.clone());
             }
         }
-        let secret_resolver = SecretResolverService::new();
-        let value = secret_resolver
+        let value = secret_manager
             .resolve_secret(self.password_var.as_deref().unwrap_or(""))
             .await?;
         match value {
-            Some(res) => Ok(res.value),
+            Some(res) => Ok(res),
             None => Err(OxyError::SecretNotFound(self.password_var.clone())),
         }
     }
@@ -260,18 +253,17 @@ pub struct ClickHouse {
 }
 
 impl ClickHouse {
-    pub async fn get_password(&self) -> Result<String, OxyError> {
+    pub async fn get_password(&self, secret_manager: &SecretsManager) -> Result<String, OxyError> {
         if let Some(password) = &self.password {
             if !password.is_empty() {
                 return Ok(password.clone());
             }
         }
-        let secret_resolver = SecretResolverService::new();
-        let value = secret_resolver
+        let value = secret_manager
             .resolve_secret(self.password_var.as_deref().unwrap_or(""))
             .await?;
         match value {
-            Some(res) => Ok(res.value),
+            Some(res) => Ok(res),
             None => Err(OxyError::SecretNotFound(self.password_var.clone())),
         }
     }
@@ -528,7 +520,7 @@ impl Snowflake {
         Ok(())
     }
 
-    pub async fn get_password(&self) -> Result<String, OxyError> {
+    pub async fn get_password(&self, secret_manager: &SecretsManager) -> Result<String, OxyError> {
         // First validate that we have proper auth configuration
         self.validate_auth()?;
 
@@ -539,11 +531,10 @@ impl Snowflake {
         }
 
         if let Some(password_var) = &self.password_var {
-            let secret_resolver = SecretResolverService::new();
-            let value = secret_resolver.resolve_secret(password_var).await?;
+            let value = secret_manager.resolve_secret(password_var).await?;
             match value {
-                Some(res) => Ok(res.value),
-                None => Err(OxyError::SecretNotFound(Some(password_var.clone()))),
+                Some(res) => Ok(res),
+                None => Err(OxyError::SecretNotFound(self.password_var.clone())),
             }
         } else {
             Err(OxyError::ConfigurationError(
@@ -701,14 +692,13 @@ pub enum HeaderValue {
 
 impl HeaderValue {
     /// Resolve the header value, either directly or from environment variable
-    pub async fn resolve(&self) -> Result<String, OxyError> {
+    pub async fn resolve(&self, secrets_manager: &SecretsManager) -> Result<String, OxyError> {
         match self {
             HeaderValue::Direct(value) => Ok(value.clone()),
             HeaderValue::EnvVar { env_var } => {
-                let secret_resolver = SecretResolverService::new();
-                let result = secret_resolver.resolve_secret(env_var).await?;
+                let result = secrets_manager.resolve_secret(env_var).await?;
                 match result {
-                    Some(res) => Ok(res.value),
+                    Some(res) => Ok(res),
                     None => Err(OxyError::SecretNotFound(Some(env_var.clone()))),
                 }
             }
@@ -784,13 +774,16 @@ impl Model {
     }
 
     /// Resolve headers for OpenAI models, returning a HashMap with resolved values
-    pub async fn resolve_headers(&self) -> Result<HashMap<String, String>, OxyError> {
+    pub async fn resolve_headers(
+        &self,
+        secrets_manager: &SecretsManager,
+    ) -> Result<HashMap<String, String>, OxyError> {
         match self {
             Model::OpenAI { headers, .. } => {
                 let mut resolved_headers = HashMap::new();
                 if let Some(headers_map) = headers {
                     for (key, header_value) in headers_map {
-                        let resolved_value = header_value.resolve().await?;
+                        let resolved_value = header_value.resolve(secrets_manager).await?;
                         resolved_headers.insert(key.clone(), resolved_value);
                     }
                 }

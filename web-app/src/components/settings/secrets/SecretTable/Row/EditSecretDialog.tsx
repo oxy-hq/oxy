@@ -17,7 +17,7 @@ import {
   SecretEditFormData,
   UpdateSecretRequest,
 } from "@/types/secret";
-import { useUpdateSecret } from "@/hooks/api/useSecretMutations";
+import { useUpdateSecret } from "@/hooks/api/secrets/useSecretMutations";
 
 interface EditSecretDialogProps {
   open: boolean;

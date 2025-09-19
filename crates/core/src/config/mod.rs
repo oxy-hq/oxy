@@ -2,45 +2,25 @@ use std::path::PathBuf;
 pub mod auth;
 pub mod model;
 mod parser;
-pub mod secret;
 pub mod validate;
 use garde::Validate;
 mod builder;
 pub mod constants;
 mod manager;
+pub mod oxy;
 mod storage;
 
 use anyhow;
 use model::{AgentConfig, Config, Database, Model, SemanticModels, Workflow};
 
-use dirs::home_dir;
 use parser::{parse_agent_config, parse_semantic_model_config, parse_workflow_config};
-use serde::Deserialize;
 use std::{fs, io};
 use validate::{AgentValidationContext, ValidationContext};
 
-use crate::{errors::OxyError, project::resolve_project_path};
+use crate::errors::OxyError;
 
 pub use builder::ConfigBuilder;
 pub use manager::ConfigManager;
-
-// These are settings stored as strings derived from the config.yml file's defaults section
-#[derive(Debug, Deserialize)]
-pub struct Defaults {
-    pub project_path: PathBuf,
-}
-
-impl Defaults {
-    pub fn expand_project_path(&mut self) {
-        if let Some(str_path) = self.project_path.to_str() {
-            if str_path.starts_with("~") {
-                if let Some(home) = home_dir() {
-                    self.project_path = home.join(str_path.trim_start_matches("~"));
-                }
-            }
-        }
-    }
-}
 
 impl Config {
     pub fn validate_config(&self) -> anyhow::Result<()> {
@@ -226,18 +206,6 @@ impl Config {
     }
 }
 
-pub fn load_config(project_path: Option<PathBuf>) -> Result<Config, OxyError> {
-    let root = project_path.unwrap_or_else(|| {
-        resolve_project_path()
-            .map_err(|e| OxyError::ConfigurationError(format!("Failed to find project path: {e}")))
-            .unwrap()
-    });
-    let config_path: PathBuf = root.join("config.yml");
-    let config = parse_config(&config_path, root)?;
-
-    Ok(config)
-}
-
 pub fn parse_config(config_path: &PathBuf, project_path: PathBuf) -> Result<Config, OxyError> {
     let config_str = fs::read_to_string(config_path)
         .map_err(|_e| OxyError::ConfigurationError("Unable to read config file".into()))?;
@@ -266,4 +234,23 @@ pub fn parse_config(config_path: &PathBuf, project_path: PathBuf) -> Result<Conf
             )))
         }
     }
+}
+
+pub fn resolve_local_project_path() -> Result<PathBuf, OxyError> {
+    let mut current_dir = std::env::current_dir().expect("Could not get current directory");
+
+    for _ in 0..10 {
+        let config_path = current_dir.join("config.yml");
+        if config_path.exists() {
+            return Ok(current_dir);
+        }
+
+        if !current_dir.pop() {
+            break;
+        }
+    }
+
+    Err(OxyError::RuntimeError(
+        "Could not find config.yml".to_string(),
+    ))
 }

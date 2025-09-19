@@ -6,7 +6,8 @@ use itertools::Itertools;
 use snowflake_api::{QueryResult, SnowflakeApi};
 use std::sync::Arc;
 
-use crate::config::model::Snowflake as SnowflakeConfig;
+use crate::adapters::secrets::SecretsManager;
+use crate::config::{ConfigManager, model::Snowflake as SnowflakeConfig};
 use crate::errors::OxyError;
 
 use super::constants::{CREATE_CONN, EXECUTE_QUERY};
@@ -16,11 +17,21 @@ use super::utils::connector_internal_error;
 #[derive(Debug)]
 pub(super) struct Snowflake {
     pub config: SnowflakeConfig,
+    pub secret_manager: SecretsManager,
+    pub config_manager: ConfigManager,
 }
 
 impl Snowflake {
-    pub fn new(config: SnowflakeConfig) -> Self {
-        Self { config }
+    pub fn new(
+        config: SnowflakeConfig,
+        secret_manager: SecretsManager,
+        config_manager: ConfigManager,
+    ) -> Self {
+        Self {
+            config,
+            secret_manager,
+            config_manager,
+        }
     }
 }
 
@@ -38,6 +49,16 @@ impl Engine for Snowflake {
                 "🔐 Snowflake: Using private key authentication from: {}",
                 private_key_path.display()
             );
+            let private_key_path = self
+                .config_manager
+                .resolve_file(private_key_path)
+                .await
+                .map_err(|err| {
+                    OxyError::ConfigurationError(format!(
+                        "Failed to resolve private key path: {}",
+                        err
+                    ))
+                })?;
             // Use private key authentication
             let private_key_content = std::fs::read_to_string(private_key_path).map_err(|err| {
                 OxyError::ConfigurationError(format!("Failed to read private key file: {}", err))
@@ -69,7 +90,7 @@ impl Engine for Snowflake {
                 None,
                 &config.username,
                 config.role.as_deref(),
-                &config.get_password().await?,
+                &config.get_password(&self.secret_manager).await?,
             )
             .map_err(|err| {
                 tracing::error!(

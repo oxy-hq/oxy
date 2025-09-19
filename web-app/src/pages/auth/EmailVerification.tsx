@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/shadcn/card";
 import { CheckCircle, XCircle, Loader2 } from "lucide-react";
 import useEmailVerification from "@/hooks/api/users/useEmailVerification";
+import ROUTES from "@/libs/utils/routes";
 
 const EmailVerificationPage: React.FC = () => {
   const [searchParams] = useSearchParams();
@@ -41,7 +42,7 @@ const EmailVerificationPage: React.FC = () => {
             login(response.token, response.user);
 
             setTimeout(() => {
-              navigate("/");
+              navigate(ROUTES.ROOT);
             }, 2000);
           },
           onError: (error) => {
@@ -56,7 +57,7 @@ const EmailVerificationPage: React.FC = () => {
   }, [searchParams, navigate, login, verifyEmail, status]);
 
   const handleBackToLogin = () => {
-    navigate("/login");
+    navigate(ROUTES.AUTH.LOGIN);
   };
 
   return (

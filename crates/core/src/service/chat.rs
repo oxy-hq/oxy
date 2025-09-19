@@ -8,7 +8,7 @@ use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, EntityTrait, Order, QueryFilter, QueryOrder,
     QuerySelect,
 };
-use std::{path::PathBuf, sync::Arc};
+use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
@@ -16,7 +16,6 @@ use crate::{
     db::client::establish_connection,
     errors::OxyError,
     execute::types::Usage,
-    project::resolve_project_path,
     service::{
         agent::Message,
         formatters::{
@@ -37,7 +36,6 @@ pub struct ChatExecutionContext {
     pub thread: entity::threads::Model,
     pub user_question: String,
     pub memory: Vec<Message>,
-    pub project_path: PathBuf,
     pub streaming_persister: Arc<StreamingMessagePersister>,
     pub logs_persister: Arc<LogsPersister>,
     pub cancellation_tokens: CancellationTokens,
@@ -48,7 +46,6 @@ impl ChatExecutionContext {
         thread: entity::threads::Model,
         user_question: String,
         memory: Vec<Message>,
-        project_path: PathBuf,
         streaming_persister: Arc<StreamingMessagePersister>,
         logs_persister: Arc<LogsPersister>,
         cancellation_tokens: CancellationTokens,
@@ -57,7 +54,6 @@ impl ChatExecutionContext {
             thread,
             user_question,
             memory,
-            project_path,
             streaming_persister,
             logs_persister,
             cancellation_tokens,
@@ -114,6 +110,7 @@ impl ChatService {
         payload: T,
         executor: E,
         user_id: Uuid,
+        _project_id: Uuid,
     ) -> Result<impl IntoResponse, StatusCode> {
         // Validate input parameters first
         self.validate_request_parameters(&id, &payload, &user_id)?;
@@ -160,22 +157,6 @@ impl ChatService {
                 });
             })?;
 
-        // Resolve project path
-        let project_path = resolve_project_path().map_err(|e| {
-            tracing::error!(
-                "Failed to find project path for thread {}: {}",
-                thread.id,
-                e
-            );
-            // Ensure thread is unlocked on error
-            let connection = self.connection.clone();
-            let thread_clone = thread.clone();
-            tokio::spawn(async move {
-                Self::ensure_thread_unlocked(&thread_clone, &connection).await;
-            });
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-
         // Create streaming persister with better error handling
         let streaming_persister = Arc::new(
             StreamingMessagePersister::new(self.connection.clone(), thread.id, "".to_owned())
@@ -210,7 +191,6 @@ impl ChatService {
             thread.clone(),
             user_question,
             memory,
-            project_path,
             streaming_persister,
             logs_persister,
             cancellation_tokens,

@@ -1,11 +1,12 @@
+use crate::api::middlewares::project::ProjectManagerExtractor;
 use std::{path::PathBuf, pin::Pin};
 
 use crate::{
+    adapters::project::manager::ProjectManager,
     auth::extractor::AuthenticatedUserExtractor,
-    config::{ConfigBuilder, model::AgentConfig},
+    config::model::AgentConfig,
     errors::OxyError,
     execute::types::Usage,
-    project::resolve_project_path,
     service::{
         agent::run_agent,
         chat::{ChatExecutionContext, ChatExecutionRequest, ChatHandler, ChatService},
@@ -30,25 +31,21 @@ use futures::Stream;
 use sea_orm::{ActiveModelTrait, ActiveValue};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
+use uuid::Uuid;
 
 #[derive(Serialize)]
 pub struct BuilderAvailabilityResponse {
     pub available: bool,
 }
 
-pub async fn check_builder_availability()
--> Result<extract::Json<BuilderAvailabilityResponse>, StatusCode> {
-    let project_path = resolve_project_path().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    let config_builder = ConfigBuilder::new()
-        .with_project_path(&project_path)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let config = config_builder
-        .build()
+pub async fn check_builder_availability(
+    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+) -> Result<extract::Json<BuilderAvailabilityResponse>, StatusCode> {
+    let is_available = project_manager
+        .config_manager
+        .get_builder_agent_path()
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    let is_available = config.get_builder_agent_path().await.is_ok();
+        .is_ok();
 
     Ok(extract::Json(BuilderAvailabilityResponse {
         available: is_available,
@@ -79,29 +76,16 @@ impl AgentConfigResponse {
         (status = OK, description = "Success", body = Vec<String>, content_type = "application/json")
     )
 )]
-pub async fn get_agents() -> Result<extract::Json<Vec<AgentConfigResponse>>, StatusCode> {
-    let project_path = resolve_project_path().map_err(|e| {
-        tracing::error!("Failed to resolve project path: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
+pub async fn get_agents(
+    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+) -> Result<extract::Json<Vec<AgentConfigResponse>>, StatusCode> {
+    let config_manager = &project_manager.config_manager;
+    let project_path = config_manager.project_path();
 
-    let config = ConfigBuilder::new()
-        .with_project_path(&project_path)
-        .map_err(|e| {
-            tracing::error!("Failed to create config builder: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?
-        .build()
+    let agent_paths = config_manager
+        .list_agents()
         .await
-        .map_err(|e| {
-            tracing::error!("Failed to build config: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-
-    let agent_paths = config.list_agents().await.map_err(|e| {
-        tracing::error!("Failed to list agents: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let agent_relative_paths: Vec<String> = agent_paths
         .iter()
@@ -116,7 +100,7 @@ pub async fn get_agents() -> Result<extract::Json<Vec<AgentConfigResponse>>, Sta
     let agent_futures = agent_relative_paths
         .into_iter()
         .map(|path| {
-            let config = &config;
+            let config = &config_manager;
             async move {
                 let agent_config = config.resolve_agent(&path).await?;
                 Ok::<AgentConfigResponse, anyhow::Error>(AgentConfigResponse::from_config(
@@ -138,7 +122,8 @@ pub async fn get_agents() -> Result<extract::Json<Vec<AgentConfigResponse>>, Sta
 }
 
 pub async fn get_agent(
-    Path(pathb64): Path<String>,
+    Path((_project_id, pathb64)): Path<(Uuid, String)>,
+    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
 ) -> Result<extract::Json<AgentConfig>, StatusCode> {
     let decoded_path: Vec<u8> = BASE64_STANDARD.decode(pathb64).map_err(|e| {
         tracing::info!("{:?}", e);
@@ -148,14 +133,9 @@ pub async fn get_agent(
         tracing::info!("{:?}", e);
         StatusCode::BAD_REQUEST
     })?;
-    let project_path = resolve_project_path().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let config = ConfigBuilder::new()
-        .with_project_path(&project_path)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-        .build()
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let agent = config
+
+    let agent = project_manager
+        .config_manager
         .resolve_agent(&path)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -187,22 +167,15 @@ fn decode_path_from_base64(pathb64: String) -> Result<String, String> {
 }
 
 pub async fn run_test(
-    Path((pathb64, test_index)): Path<(String, usize)>,
+    Path((_project_id, pathb64, test_index)): Path<(Uuid, String, usize)>,
+    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
 ) -> Result<impl IntoResponse, StatusCode> {
     let path = match decode_path_from_base64(pathb64) {
         Ok(path) => path,
         Err(error) => return Ok(Sse::new(create_error_stream(error))),
     };
 
-    let project_path = match resolve_project_path() {
-        Ok(path) => path.to_string_lossy().to_string(),
-        Err(e) => {
-            let error = format!("Failed to find project path: {e}");
-            return Ok(Sse::new(create_error_stream(error)));
-        }
-    };
-
-    let test_stream = match run_agent_test(project_path, path, test_index).await {
+    let test_stream = match run_agent_test(project_manager.clone(), path, test_index).await {
         Ok(stream) => stream,
         Err(e) => {
             let error = format!("Failed to run agent test: {e}");
@@ -232,8 +205,9 @@ pub struct AskAgentRequest {
     )
 )]
 pub async fn ask_agent_preview(
-    Path(pathb64): Path<String>,
+    Path((_project_id, pathb64)): Path<(Uuid, String)>,
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
+    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
     extract::Json(payload): extract::Json<AskAgentRequest>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let decoded_path = BASE64_STANDARD.decode(pathb64).map_err(|e| {
@@ -246,11 +220,6 @@ pub async fn ask_agent_preview(
         StatusCode::BAD_REQUEST
     })?;
 
-    let project_path = resolve_project_path().map_err(|e| {
-        tracing::error!("Failed to find project path: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-
     let (tx, rx) = tokio::sync::mpsc::channel(100);
 
     let _ = tokio::spawn(async move {
@@ -258,7 +227,7 @@ pub async fn ask_agent_preview(
         let block_handler = BlockHandler::new(tx);
         let block_handler_reader = block_handler.get_reader();
         let result = run_agent(
-            &project_path,
+            project_manager,
             &PathBuf::from(path),
             payload.question,
             block_handler,
@@ -312,7 +281,15 @@ impl ChatExecutionRequest for AskThreadRequest {
     }
 }
 
-struct AgentExecutor;
+struct AgentExecutor {
+    project_manager: ProjectManager,
+}
+
+impl AgentExecutor {
+    pub fn new(project_manager: ProjectManager) -> Self {
+        Self { project_manager }
+    }
+}
 
 #[async_trait]
 impl ChatHandler for AgentExecutor {
@@ -331,7 +308,7 @@ impl ChatHandler for AgentExecutor {
         let block_handler_reader = block_handler.get_reader();
 
         let result = run_agent(
-            &context.project_path,
+            self.project_manager.clone(),
             &agent_path,
             context.user_question.clone(),
             block_handler,
@@ -380,14 +357,15 @@ impl ChatHandler for AgentExecutor {
 }
 
 pub async fn ask_agent(
-    Path(id): Path<String>,
+    Path((project_id, id)): Path<(Uuid, String)>,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
+    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
     extract::Json(payload): extract::Json<AskThreadRequest>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let execution_manager = ChatService::new().await?;
-    let executor = AgentExecutor;
+    let executor = AgentExecutor::new(project_manager);
 
     execution_manager
-        .execute_request(id, payload, executor, user.id)
+        .execute_request(id, payload, executor, user.id, project_id)
         .await
 }

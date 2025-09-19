@@ -6,6 +6,7 @@ import { TabsContent } from "@radix-ui/react-tabs";
 import { Skeleton } from "@/components/ui/shadcn/skeleton";
 import AppPreview from "@/components/AppPreview";
 import EditorPageWrapper from "../../ide/Editor/components/EditorPageWrapper";
+import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 
 // eslint-disable-next-line sonarjs/pseudo-random
 const randomKey = () => Math.random().toString(36).substring(2, 15);
@@ -14,15 +15,17 @@ const EditorTab = ({ pathb64 }: { pathb64?: string }) => {
   const filePath = atob(pathb64 ?? "");
   const [previewKey, setPreviewKey] = useState<string>(randomKey());
   const queryClient = useQueryClient();
+  const { project, branchName } = useCurrentProjectBranch();
+  const projectId = project.id;
 
   const onSaveApp = async () => {
     if (!pathb64) return;
     setPreviewKey(randomKey());
     await queryClient.invalidateQueries({
-      queryKey: queryKeys.app.getAppData(pathb64),
+      queryKey: queryKeys.app.getAppData(projectId, branchName, pathb64),
     });
     await queryClient.refetchQueries({
-      queryKey: queryKeys.app.getAppData(pathb64),
+      queryKey: queryKeys.app.getAppData(projectId, branchName, pathb64),
     });
   };
 
@@ -65,6 +68,7 @@ const EditorTab = ({ pathb64 }: { pathb64?: string }) => {
             pathb64={pathb64 ?? ""}
             pageContentClassName="md:flex-row flex-col"
             editorClassName="w-full h-full"
+            readOnly={true}
             onSaved={() => {
               onSaveApp();
             }}

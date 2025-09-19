@@ -123,22 +123,3 @@ defaults:
   database: local
 
 builder_agent: agents/builder.agent.yml
-
-authentication:
-  basic:
-    smtp_user: huyle1995x@gmail.com
-    smtp_password_var: AUTH_SMTP_PASSWORD
-    smtp_server: smtp.gmail.com
-    smtp_port: 587
-  google:
-    client_id: "4786469222-dlvn0v70lh8e5fffielgncmjnfq73uk3.apps.googleusercontent.com"
-    client_secret_var: GOOGLE_CLIENT_SECRET
-  api_key:
-    header: X-API-KEY
-  admins:
-    - luong@hyperquery.ai
-    - tay@hyperquery.ai
-    - mars@hyperquery.ai
-    - hai@hyperquery.ai
-    - nick@oxy.tech
-    - robert@oxy.tech

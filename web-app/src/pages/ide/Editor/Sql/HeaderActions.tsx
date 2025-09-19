@@ -35,7 +35,7 @@ const HeaderActions = ({ onExecuteSql, sql, loading }: HeaderActionsProps) => {
           <Button
             title="Download SQL"
             variant="outline"
-            size="icon"
+            size="sm"
             onClick={handleDownloadSql}
           >
             <Download className="h-4 w-4" />
@@ -49,6 +49,7 @@ const HeaderActions = ({ onExecuteSql, sql, loading }: HeaderActionsProps) => {
         database={database}
       />
       <Button
+        size="sm"
         className="hover:text-muted-foreground flex-shrink-0"
         variant="ghost"
         disabled={loading || !database}

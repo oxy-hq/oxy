@@ -44,8 +44,11 @@ where
             openai_config,
             embedding_config,
         } = input;
+        let config_manager = &execution_context.project.config_manager;
+        let secrets_manager = &execution_context.project.secrets_manager;
         let store = VectorStore::new(
-            &execution_context.config,
+            config_manager,
+            secrets_manager,
             &db_config,
             &db_name,
             openai_config,

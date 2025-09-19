@@ -11,6 +11,7 @@ import useAskTask from "@/hooks/messaging/task";
 import Header from "./Header";
 import ProcessingWarning from "../ProcessingWarning";
 import { toast } from "sonner";
+import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 
 const TaskThread = ({
   thread,
@@ -19,6 +20,9 @@ const TaskThread = ({
   thread: ThreadItem;
   refetchThread: () => void;
 }) => {
+  const { project } = useCurrentProjectBranch();
+  const projectId = project.id;
+
   const isInitialLoad = useRef(false);
   const { getTaskThread, setMessages, setFilePath } = useTaskThreadStore();
   const taskThread = getTaskThread(thread.id);
@@ -39,13 +43,16 @@ const TaskThread = ({
 
   const fetchMessages = useCallback(async () => {
     try {
-      const messages = await ThreadService.getThreadMessages(thread.id);
+      const messages = await ThreadService.getThreadMessages(
+        project.id,
+        thread.id,
+      );
       setMessages(thread.id, messages);
       setFilePath(thread.id, thread.source);
     } catch (error) {
       console.error("Failed to fetch message history:", error);
     }
-  }, [setFilePath, setMessages, thread.id, thread.source]);
+  }, [setFilePath, setMessages, thread.id, thread.source, project.id]);
 
   const streamingMessage = messages.find((message) => message.isStreaming);
 
@@ -79,7 +86,7 @@ const TaskThread = ({
   const filePathB64 = filePath ? btoa(filePath) : undefined;
 
   const onStop = useCallback(() => {
-    ThreadService.stopThread(thread.id)
+    ThreadService.stopThread(projectId, thread.id)
       // eslint-disable-next-line promise/always-return
       .then(() => {
         refetchThread();
@@ -89,7 +96,7 @@ const TaskThread = ({
         toast.error(`Failed to stop thread: ${error.message}`);
         console.error("Failed to stop thread:", error);
       });
-  }, [fetchMessages, refetchThread, thread.id]);
+  }, [fetchMessages, refetchThread, thread.id, projectId]);
 
   return (
     <div className="flex flex-col h-full">

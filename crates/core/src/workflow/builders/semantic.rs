@@ -184,7 +184,8 @@ impl ParamMapper<SemanticQueryTask, ValidatedSemanticQuery> for SemanticQueryTas
 
         // Task 3.2: Metadata Validation
         let validated_query =
-            validate_semantic_query_task(&execution_context.config, &rendered_task).await?;
+            validate_semantic_query_task(&execution_context.project.config_manager, &rendered_task)
+                .await?;
 
         Ok((validated_query, None))
     }
@@ -624,9 +625,12 @@ impl SemanticQueryExecutable {
         use crate::adapters::connector::write_to_ipc;
         use uuid::Uuid;
 
+        let config_manager = &execution_context.project.config_manager;
+        let secret_manager = &execution_context.project.secrets_manager;
+
         // Create database connector
         let connector =
-            Connector::from_database(database_ref, &execution_context.config, None).await?;
+            Connector::from_database(database_ref, &config_manager, &secret_manager, None).await?;
 
         // Execute SQL query
         tracing::info!("Executing SQL query: {}", sql);

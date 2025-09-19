@@ -9,7 +9,12 @@ export interface MessageHandlers {
 export interface SendMessageOptions {
   content: string | null;
   threadId: string;
-  isPreview?: boolean;
+  projectId: string;
+  branchName: string;
+  metadata?: {
+    isPreview?: boolean;
+    agentPathb64?: string;
+  };
 }
 
 export interface MessageSender {

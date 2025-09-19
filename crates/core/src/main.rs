@@ -6,8 +6,8 @@ use dotenv::dotenv;
 use human_panic::Metadata;
 use human_panic::setup_panic;
 use once_cell::sync::OnceCell;
-use oxy::db::client;
 use oxy::sentry_config;
+use oxy::state_dir::get_state_dir;
 use oxy::theme::StyledText;
 use std::env;
 use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
@@ -78,7 +78,7 @@ fn init_tracing_logging(log_to_stdout: bool) {
     let (non_blocking, guard) = if log_to_stdout {
         tracing_appender::non_blocking(std::io::stdout())
     } else {
-        let log_file_path = std::path::Path::new(&client::get_state_dir()).join("oxy.log");
+        let log_file_path = std::path::Path::new(&get_state_dir()).join("oxy.log");
         let file_appender = tracing_appender::rolling::never(
             log_file_path.parent().unwrap(),
             log_file_path.file_name().unwrap(),

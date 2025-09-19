@@ -1,4 +1,5 @@
 use crate::{
+    adapters::project::manager::ProjectManager,
     config::{
         constants::AGENT_SOURCE,
         model::{AgentConfig, AgentType},
@@ -15,7 +16,6 @@ use builders::AgentExecutable;
 pub use builders::{OneShotInput, OpenAIExecutableResponse, build_openai_executable};
 use minijinja::Value;
 pub use references::AgentReferencesHandler;
-use std::path::Path;
 use types::AgentInput;
 
 mod builders;
@@ -55,15 +55,11 @@ impl AgentLauncher {
         Ok(self)
     }
 
-    pub async fn with_local_context<P: AsRef<Path>>(
-        mut self,
-        project_path: P,
-    ) -> Result<Self, OxyError> {
+    pub async fn with_project(mut self, project_manager: ProjectManager) -> Result<Self, OxyError> {
         let tx = self.buf_writer.create_writer(None)?;
         self.execution_context = Some(
             ExecutionContextBuilder::new()
-                .with_project_path(project_path)
-                .await?
+                .with_project_manager(project_manager)
                 .with_global_context(Value::UNDEFINED)
                 .with_writer(tx)
                 .with_source(Source {

@@ -29,13 +29,13 @@ export class MessagingService {
   }
 
   async sendMessage(options: SendMessageOptions): Promise<void> {
-    const { threadId } = options;
+    const { threadId, projectId } = options;
     const { messages, isLoading } = this.threadStore.getThread(threadId);
 
     if (isLoading) return;
 
     this.queryClient.setQueryData(
-      queryKeys.thread.list(1, 50),
+      queryKeys.thread.list(projectId, 1, 50),
       (old: ThreadsResponse | undefined) => {
         if (old) {
           return {

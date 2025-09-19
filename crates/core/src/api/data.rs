@@ -1,8 +1,6 @@
 use crate::adapters::connector::{Connector, load_result};
-use crate::auth::extractor::AuthenticatedUserExtractor;
-use crate::config::ConfigBuilder;
+use crate::api::middlewares::project::{ProjectManagerExtractor, ProjectPath};
 use crate::execute::types::utils::record_batches_to_2d_array;
-use crate::project::resolve_project_path;
 use crate::service::retrieval::{ReindexInput, reindex};
 use axum::extract::{self, Path};
 use axum::http::StatusCode;
@@ -22,21 +20,17 @@ pub struct EmbeddingsBuildResponse {
 }
 
 pub async fn execute_sql(
-    Path(_pathb64): Path<String>,
+    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    Path(ProjectPath {
+        project_id: _project_id,
+    }): Path<ProjectPath>,
     extract::Json(payload): extract::Json<SQLParams>,
 ) -> Result<extract::Json<Vec<Vec<String>>>, StatusCode> {
-    let project_path = resolve_project_path().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    let config_builder = ConfigBuilder::new()
-        .with_project_path(&project_path)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    let config = config_builder
-        .build()
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    let connector = Connector::from_database(&payload.database, &config, None).await?;
+    let config_manager = project_manager.config_manager.clone();
+    let secrets_manager = project_manager.secrets_manager.clone();
+    let connector =
+        Connector::from_database(&payload.database, &config_manager, &secrets_manager, None)
+            .await?;
     let file_path = connector.run_query(&payload.sql).await?;
 
     let (batches, schema) =
@@ -53,17 +47,18 @@ pub async fn execute_sql(
 //         - calculating inclusion radius for each retrieval item
 //         - caching enum values for each variable so they can be detected at query time
 pub async fn build_embeddings(
-    AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
+    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    Path(ProjectPath {
+        project_id: _project_id,
+    }): Path<ProjectPath>,
 ) -> Result<extract::Json<EmbeddingsBuildResponse>, StatusCode> {
-    let project_path = resolve_project_path().map_err(|e| {
-        tracing::error!("Failed to find project path: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-
+    let config_manager = project_manager.config_manager;
+    let secret_manager = project_manager.secrets_manager;
     let drop_all_tables = false;
 
     match reindex(ReindexInput {
-        project_path: project_path.to_string_lossy().to_string(),
+        config: config_manager,
+        secrets_manager: secret_manager,
         drop_all_tables,
     })
     .await

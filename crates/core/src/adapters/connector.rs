@@ -6,6 +6,7 @@ use duckdb::DuckDB;
 use engine::Engine;
 use snowflake::Snowflake;
 
+use crate::adapters::secrets::SecretsManager;
 use crate::config::ConfigManager;
 use crate::config::model::DatabaseType;
 use crate::errors::OxyError;
@@ -38,12 +39,14 @@ impl Connector {
     pub async fn from_database(
         database_ref: &str,
         config_manager: &ConfigManager,
+        secrets_manager: &SecretsManager,
         dry_run_limit: Option<u64>,
     ) -> Result<Self, OxyError> {
         let database = config_manager.resolve_database(database_ref)?;
         let engine = match &database.database_type {
             DatabaseType::Bigquery(bigquery) => {
                 let key_path = config_manager.resolve_file(&bigquery.key_path).await?;
+                println!("BigQuery key path resolved: {}", key_path);
                 EngineType::ConnectorX(ConnectorX::new(
                     database.dialect(),
                     key_path,
@@ -60,7 +63,7 @@ impl Connector {
                 let db_path = format!(
                     "{}:{}@{}:{}/{}",
                     pg.user.clone().unwrap_or_default(),
-                    pg.get_password().await?,
+                    pg.get_password(secrets_manager).await?,
                     pg.host.clone().unwrap_or_default(),
                     pg.port.clone().unwrap_or_default(),
                     db_name,
@@ -72,7 +75,7 @@ impl Connector {
                 let db_path = format!(
                     "{}:{}@{}:{}/{}?cxprotocol={}",
                     rs.user.clone().unwrap_or_default(),
-                    rs.get_password().await?,
+                    rs.get_password(secrets_manager).await?,
                     rs.host.clone().unwrap_or_default(),
                     rs.port.clone().unwrap_or_default(),
                     db_name,
@@ -87,17 +90,21 @@ impl Connector {
                 let db_path = format!(
                     "{}:{}@{}:{}/{}",
                     my.user.clone().unwrap_or_default(),
-                    my.get_password().await?,
+                    my.get_password(secrets_manager).await?,
                     my.host.clone().unwrap_or_default(),
                     my.port.clone().unwrap_or_default(),
                     db_name
                 );
                 EngineType::ConnectorX(ConnectorX::new(database.dialect(), db_path, None))
             }
-            DatabaseType::ClickHouse(ch) => EngineType::ClickHouse(ClickHouse::new(ch.clone())),
-            DatabaseType::Snowflake(snowflake) => {
-                EngineType::Snowflake(Snowflake::new(snowflake.clone()))
+            DatabaseType::ClickHouse(ch) => {
+                EngineType::ClickHouse(ClickHouse::new(ch.clone(), secrets_manager.clone()))
             }
+            DatabaseType::Snowflake(snowflake) => EngineType::Snowflake(Snowflake::new(
+                snowflake.clone(),
+                secrets_manager.clone(),
+                config_manager.clone(),
+            )),
         };
         Ok(Connector { engine })
     }

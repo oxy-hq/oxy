@@ -21,7 +21,7 @@ import NewNode, { CreationType } from "../NewNode";
 import AlertDeleteDialog from "../AlertDeleteDialog";
 import RenameNode from "../RenameNode";
 import { cn } from "@/libs/shadcn/utils";
-import { useReadonly } from "@/hooks/useReadonly";
+import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 
 const isDescendant = (p: string, base: string) =>
   p === base || p.startsWith(base + "/");
@@ -49,7 +49,7 @@ const DirNode = ({
   fileTree: FileTreeModel;
   activePath?: string;
 }) => {
-  const { isReadonly } = useReadonly();
+  const { isReadOnly } = useCurrentProjectBranch();
   const [isContextMenuOpen, setIsContextMenuOpen] = React.useState(false);
   const [isEditing, setIsEditing] = React.useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = React.useState(false);
@@ -86,25 +86,25 @@ const DirNode = ({
   }, []);
 
   const handleRename = () => {
-    if (isReadonly) return;
+    if (isReadOnly) return;
     setIsEditing(true);
   };
 
   const handleDelete = () => {
-    if (isReadonly) return;
+    if (isReadOnly) return;
     setPendingDelete(true);
     setIsContextMenuOpen(false);
   };
 
   const handleCreateFile = () => {
-    if (isReadonly) return;
+    if (isReadOnly) return;
     setCreationType("file");
     setIsCreating(true);
     setIsOpen(true);
   };
 
   const handleCreateFolder = () => {
-    if (isReadonly) return;
+    if (isReadOnly) return;
     setCreationType("folder");
     setIsCreating(true);
     setIsOpen(true);
@@ -161,7 +161,7 @@ const DirNode = ({
 
             {isOpen && (
               <SidebarMenuSub className="translate-none">
-                {isCreating && !isReadonly && (
+                {isCreating && !isReadOnly && (
                   <NewNode
                     ref={newItemInputRef}
                     creationType={creationType}
@@ -195,7 +195,7 @@ const DirNode = ({
             }
           }}
         >
-          {!isReadonly && (
+          {!isReadOnly && (
             <>
               <ContextMenuItem
                 className="cursor-pointer"
@@ -227,7 +227,7 @@ const DirNode = ({
               </ContextMenuItem>
             </>
           )}
-          {isReadonly && (
+          {isReadOnly && (
             <ContextMenuItem disabled>
               <span className="text-muted-foreground">Read-only mode</span>
             </ContextMenuItem>

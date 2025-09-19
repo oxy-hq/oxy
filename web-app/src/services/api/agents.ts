@@ -6,33 +6,54 @@ import fetchSSE from "./fetchSSE";
 import { apiBaseURL } from "../env";
 
 export class AgentService {
-  static async listAgents(): Promise<AgentConfig[]> {
-    const response = await apiClient.get("/agents");
+  static async listAgents(
+    projectId: string,
+    branchName: string,
+  ): Promise<AgentConfig[]> {
+    const response = await apiClient.get(`/${projectId}/agents`, {
+      params: { branch: branchName },
+    });
     return response.data;
   }
 
-  static async getAgent(pathb64: string): Promise<AgentConfig> {
-    const response = await apiClient.get("/agents/" + pathb64);
+  static async getAgent(
+    projectId: string,
+    branchName: string,
+    pathb64: string,
+  ): Promise<AgentConfig> {
+    const response = await apiClient.get(`/${projectId}/agents/${pathb64}`, {
+      params: { branch: branchName },
+    });
     return response.data;
   }
 
   static async runTestAgent(
+    projectId: string,
+    branchName: string,
     pathb64: string,
     testIndex: number,
     onReadStream: (event: TestStreamMessage) => void,
   ): Promise<void> {
-    const url = `${apiBaseURL}/agents/${pathb64}/tests/${testIndex}`;
+    const searchParams = new URLSearchParams({
+      branch: branchName,
+    });
+    const url = `${apiBaseURL}/${projectId}/agents/${pathb64}/tests/${testIndex}?${searchParams.toString()}`;
     await fetchSSE(url, {
       onMessage: onReadStream,
     });
   }
 
   static async askAgentPreview(
+    projectId: string,
+    branchName: string,
     agentPathb64: string,
     question: string,
     onReadStream: (answer: Answer) => void,
   ): Promise<void> {
-    const url = `${apiBaseURL}/agents/${agentPathb64}/ask`;
+    const searchParams = new URLSearchParams({
+      branch: branchName,
+    });
+    const url = `${apiBaseURL}/${projectId}/agents/${agentPathb64}/ask?${searchParams.toString()}`;
     await fetchSSE(url, {
       body: { question },
       onMessage: onReadStream,

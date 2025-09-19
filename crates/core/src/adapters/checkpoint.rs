@@ -5,7 +5,6 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 use crate::{
     adapters::runs::RunsManager,
-    config::ConfigManager,
     errors::OxyError,
     execute::{builders::checkpoint::CheckpointId, types::Event},
     service::types::run::{RootReference, RunInfo as PublicRunInfo},
@@ -20,11 +19,13 @@ pub struct CheckpointBuilder {
 }
 
 impl CheckpointBuilder {
-    pub async fn from_config(_config: &ConfigManager) -> Result<CheckpointManager, OxyError> {
+    pub async fn from_runs_manager(
+        runs_manager: &RunsManager,
+    ) -> Result<CheckpointManager, OxyError> {
         let storage = CheckpointStorageImpl::DatabaseStorage(DatabaseStorage::default().await?);
         CheckpointBuilder {
             storage: Some(storage),
-            run_storage: Some(RunsManager::default().await?),
+            run_storage: Some(runs_manager.clone()),
         }
         .build()
     }

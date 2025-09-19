@@ -12,6 +12,7 @@ const AGENT_EXTENSION: &str = ".agent";
 #[enum_dispatch::enum_dispatch]
 pub(super) trait ConfigStorage {
     async fn load_config(&self) -> Result<Config, OxyError>;
+    async fn load_config_with_fallback(&self) -> Config;
     async fn load_agent_config<P: AsRef<Path>>(
         &self,
         agent_ref: P,
@@ -25,11 +26,13 @@ pub(super) trait ConfigStorage {
         workflow_ref: P,
     ) -> Result<WorkflowWithRawVariables, OxyError>;
     async fn fs_link<P: AsRef<Path>>(&self, file_ref: P) -> Result<String, OxyError>;
+    async fn resolve_state_dir(&self) -> Result<PathBuf, OxyError>;
     async fn glob<P: AsRef<Path>>(&self, path: P) -> Result<Vec<String>, OxyError>;
     async fn list_agents(&self) -> Result<Vec<PathBuf>, OxyError>;
     async fn list_apps(&self) -> Result<Vec<PathBuf>, OxyError>;
     async fn list_workflows(&self) -> Result<Vec<PathBuf>, OxyError>;
     async fn load_app_config<P: AsRef<Path>>(&self, app_path: P) -> Result<AppConfig, OxyError>;
+    async fn get_charts_dir(&self) -> Result<PathBuf, OxyError>;
 }
 
 #[derive(Debug)]
@@ -89,25 +92,121 @@ impl LocalSource {
         }
         files
     }
+
+    fn ensure_dir_exists(&self, path: &Path) {
+        if !path.exists() {
+            if let Err(e) = std::fs::create_dir_all(path) {
+                eprintln!("Error: Could not create directory: {e}");
+                std::process::exit(1);
+            }
+        }
+    }
+
+    fn validate_path_within_project<P: AsRef<Path>>(
+        &self,
+        file_ref: P,
+    ) -> Result<PathBuf, OxyError> {
+        let resolved_path = self.project_path.join(file_ref);
+        let canonical_project = self
+            .project_path
+            .canonicalize()
+            .map_err(|e| OxyError::IOError(format!("Failed to canonicalize project path: {e}")))?;
+
+        let canonical_resolved = if resolved_path.exists() {
+            resolved_path.canonicalize().map_err(|e| {
+                OxyError::IOError(format!("Failed to canonicalize resolved path: {e}"))
+            })?
+        } else {
+            let parent = resolved_path.parent().ok_or_else(|| {
+                OxyError::IOError("Invalid path: no parent directory".to_string())
+            })?;
+            let filename = resolved_path
+                .file_name()
+                .ok_or_else(|| OxyError::IOError("Invalid path: no filename".to_string()))?;
+
+            if parent.exists() {
+                parent
+                    .canonicalize()
+                    .map_err(|e| {
+                        OxyError::IOError(format!("Failed to canonicalize parent path: {e}"))
+                    })?
+                    .join(filename)
+            } else {
+                let normalized = self.normalize_path(&resolved_path);
+                let normalized_project = self.normalize_path(&self.project_path);
+                if !normalized.starts_with(&normalized_project) {
+                    return Err(OxyError::IOError(
+                        "Path traversal detected: resolved path is outside project directory"
+                            .to_string(),
+                    ));
+                }
+                return Ok(resolved_path);
+            }
+        };
+
+        if !canonical_resolved.starts_with(&canonical_project) {
+            return Err(OxyError::IOError(
+                "Path traversal detected: resolved path is outside project directory".to_string(),
+            ));
+        }
+
+        Ok(resolved_path)
+    }
+
+    fn normalize_path(&self, path: &Path) -> PathBuf {
+        let mut components = Vec::new();
+        for component in path.components() {
+            match component {
+                std::path::Component::Normal(name) => components.push(name),
+                std::path::Component::ParentDir => {
+                    components.pop();
+                }
+                std::path::Component::CurDir => {}
+                other => components.push(other.as_os_str()),
+            }
+        }
+        components.iter().collect()
+    }
 }
 
 impl ConfigStorage for LocalSource {
     async fn load_config(&self) -> Result<Config, OxyError> {
         let resolved_path = PathBuf::from(&self.project_path).join(&self.config_path);
         let config_yml = fs::read_to_string(resolved_path).await.map_err(|e| {
-            OxyError::ConfigurationError(format!("Failed to read config from file: {e}"))
+            OxyError::ConfigurationError(format!(
+                "Failed to read config from file: {e}, project_path: {}",
+                self.project_path.display()
+            ))
         })?;
-        let config: Config = serde_yaml::from_str(&config_yml).map_err(|e| {
-            OxyError::ConfigurationError(format!("Failed to deserialize config: {e}"))
+        let mut config: Config = serde_yaml::from_str(&config_yml).map_err(|e| {
+            OxyError::ConfigurationError(format!(
+                "Failed to deserialize config: {e}, project_path: {}",
+                self.project_path.display()
+            ))
         })?;
+        config.project_path = self.project_path.clone();
         Ok(config)
+    }
+
+    async fn load_config_with_fallback(&self) -> Config {
+        let resolved_path = PathBuf::from(&self.project_path).join(&self.config_path);
+        let config_yml = std::fs::read_to_string(resolved_path).unwrap_or_default();
+        let mut config: Config = serde_yaml::from_str(&config_yml).unwrap_or_else(|_| Config {
+            defaults: None,
+            project_path: self.project_path.clone(),
+            models: [].to_vec(),
+            databases: [].to_vec(),
+            builder_agent: None,
+        });
+        config.project_path = self.project_path.clone();
+        config
     }
 
     async fn load_agent_config<P: AsRef<Path>>(
         &self,
         agent_ref: P,
     ) -> Result<AgentConfig, OxyError> {
-        let resolved_path = PathBuf::from(&self.project_path).join(agent_ref);
+        let resolved_path = self.validate_path_within_project(agent_ref)?;
         let agent_yml = fs::read_to_string(&resolved_path).await.map_err(|e| {
             OxyError::ConfigurationError(format!("Failed to read agent config from file: {e}"))
         })?;
@@ -127,7 +226,7 @@ impl ConfigStorage for LocalSource {
         &self,
         workflow_ref: P,
     ) -> Result<Workflow, OxyError> {
-        let resolved_path = PathBuf::from(&self.project_path).join(workflow_ref);
+        let resolved_path = self.validate_path_within_project(workflow_ref)?;
         let workflow_yml = fs::read_to_string(&resolved_path).await.map_err(|e| {
             OxyError::ConfigurationError(format!("Failed to read workflow config from file: {e}"))
         })?;
@@ -142,7 +241,7 @@ impl ConfigStorage for LocalSource {
         &self,
         workflow_ref: P,
     ) -> Result<WorkflowWithRawVariables, OxyError> {
-        let resolved_path = PathBuf::from(&self.project_path).join(workflow_ref);
+        let resolved_path = self.validate_path_within_project(workflow_ref)?;
         let workflow_yml = fs::read_to_string(&resolved_path).await.map_err(|e| {
             OxyError::ConfigurationError(format!("Failed to read workflow config from file: {e}"))
         })?;
@@ -155,8 +254,14 @@ impl ConfigStorage for LocalSource {
     }
 
     async fn fs_link<P: AsRef<Path>>(&self, file_ref: P) -> Result<String, OxyError> {
-        let resolved_path = PathBuf::from(&self.project_path).join(file_ref);
+        let resolved_path = self.validate_path_within_project(file_ref)?;
         Ok(resolved_path.display().to_string())
+    }
+
+    async fn resolve_state_dir(&self) -> Result<PathBuf, OxyError> {
+        let path = PathBuf::from(&self.project_path).join(".oxy_state");
+        self.ensure_dir_exists(&path);
+        Ok(path)
     }
 
     async fn glob<P: AsRef<Path>>(&self, path: P) -> Result<Vec<String>, OxyError> {
@@ -198,7 +303,7 @@ impl ConfigStorage for LocalSource {
     }
 
     async fn load_app_config<P: AsRef<Path>>(&self, app_path: P) -> Result<AppConfig, OxyError> {
-        let resolved_path = PathBuf::from(&self.project_path).join(app_path);
+        let resolved_path = self.validate_path_within_project(app_path)?;
         let agent_yml = fs::read_to_string(&resolved_path).await.map_err(|e| {
             OxyError::ConfigurationError(format!("Failed to read agent config from file: {e}"))
         })?;
@@ -207,5 +312,11 @@ impl ConfigStorage for LocalSource {
         })?;
 
         Ok(app_config)
+    }
+
+    async fn get_charts_dir(&self) -> Result<PathBuf, OxyError> {
+        let charts_dir = self.resolve_state_dir().await?.join("charts");
+        self.ensure_dir_exists(&charts_dir);
+        Ok(charts_dir)
     }
 }

@@ -2,29 +2,64 @@ import { apiClient } from "./axios";
 import { AppData, AppDisplay, AppItem } from "@/types/app";
 
 export class AppService {
-  static async listApps(): Promise<AppItem[]> {
-    const response = await apiClient.get("/apps");
+  static async listApps(
+    projectId: string,
+    branchName: string,
+  ): Promise<AppItem[]> {
+    const response = await apiClient.get(`/${projectId}/app`, {
+      params: { branch: branchName },
+    });
     return response.data;
   }
 
-  static async getAppData(appPath64: string): Promise<AppData> {
-    const response = await apiClient.get("/app/" + appPath64);
+  static async getAppData(
+    projectId: string,
+    branchName: string,
+    appPath64: string,
+  ): Promise<AppData> {
+    const response = await apiClient.get(`/${projectId}/app/${appPath64}`, {
+      params: { branch: branchName },
+    });
     return response.data;
   }
 
-  static async runApp(pathb64: string): Promise<AppData> {
-    const response = await apiClient.post(`/app/${pathb64}/run`);
+  static async runApp(
+    projectId: string,
+    branchName: string,
+    pathb64: string,
+  ): Promise<AppData> {
+    const response = await apiClient.post(
+      `/${projectId}/app/${pathb64}/run`,
+      {},
+      {
+        params: { branch: branchName },
+      },
+    );
     return response.data;
   }
 
-  static async getDisplays(pathb64: string): Promise<AppDisplay> {
-    const response = await apiClient.get(`/app/${pathb64}/displays`);
+  static async getDisplays(
+    projectId: string,
+    branchName: string,
+    pathb64: string,
+  ): Promise<AppDisplay> {
+    const response = await apiClient.get(
+      `/${projectId}/app/${pathb64}/displays`,
+      {
+        params: { branch: branchName },
+      },
+    );
     return response.data;
   }
 
-  static async getData(filePath: string): Promise<Blob> {
+  static async getData(
+    projectId: string,
+    branchName: string,
+    filePath: string,
+  ): Promise<Blob> {
     const pathb64 = btoa(filePath);
-    const response = await apiClient.get("/app/file/" + pathb64, {
+    const response = await apiClient.get(`/${projectId}/app/file/${pathb64}`, {
+      params: { branch: branchName },
       responseType: "arraybuffer",
     });
     const blob = new Blob([response.data]);

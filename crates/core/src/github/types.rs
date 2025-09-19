@@ -2,13 +2,18 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 /// GitHub repository information
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct GitHubRepository {
     pub id: i64,
     pub name: String,
     pub full_name: String,
     pub default_branch: String,
     pub clone_url: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct GithubBranch {
+    pub name: String,
 }
 
 /// Settings for the GitHub integration

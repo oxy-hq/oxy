@@ -1,4 +1,5 @@
 use crate::{
+    adapters::secrets::SecretsManager,
     config::ConfigManager,
     errors::OxyError,
     semantic::{SemanticManager, types::SyncMetrics},
@@ -6,6 +7,7 @@ use crate::{
 
 pub async fn sync_databases(
     config: ConfigManager,
+    secrets_manager: SecretsManager,
     filter: Option<(String, Vec<String>)>,
     overwrite: bool,
 ) -> Result<Vec<Result<SyncMetrics, OxyError>>, OxyError> {
@@ -15,7 +17,7 @@ pub async fn sync_databases(
         overwrite
     );
 
-    let semantic_manager = SemanticManager::from_config(config, overwrite).await?;
+    let semantic_manager = SemanticManager::from_config(config, secrets_manager, overwrite).await?;
     tracing::debug!("sync_databases: SemanticManager created successfully");
 
     let semantic_results = semantic_manager.sync_all(filter).await?;

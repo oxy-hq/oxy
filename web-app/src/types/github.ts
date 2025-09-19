@@ -8,14 +8,14 @@ export interface GitHubRepository {
   updated_at: string;
 }
 
+export interface GitHubBranch {
+  name: string;
+}
+
 export interface ProjectStatus {
-  github_connected: boolean;
-  repository?: GitHubRepository;
   required_secrets?: string[];
   is_config_valid: boolean;
-  is_readonly: boolean;
-  is_onboarded: boolean;
-  repository_sync_status: RepositorySyncStatus | null;
+  error?: string;
 }
 
 export type RepositorySyncStatus = "idle" | "syncing" | "synced" | "error";

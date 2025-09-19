@@ -1,6 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { ThreadStore, SendMessageOptions, MessageSender } from "./types";
 import { MessagingService } from "./messagingService";
+import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 
 export const useMessaging = (
   threadStore: ThreadStore,
@@ -12,16 +13,22 @@ export const useMessaging = (
     threadStore,
     queryClient,
   );
+  const { project, branchName } = useCurrentProjectBranch();
 
   const sendMessage = async (
     content: string | null,
     threadId: string,
-    isPreview?: boolean,
+    metadata?: {
+      isPreview?: boolean;
+      agentPathb64?: string;
+    },
   ) => {
     const options: SendMessageOptions = {
       content,
       threadId,
-      isPreview,
+      projectId: project.id,
+      branchName,
+      metadata,
     };
 
     await messagingService.sendMessage(options);

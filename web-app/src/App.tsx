@@ -6,8 +6,11 @@ import {
   createRoutesFromElements,
   RouterProvider,
   Routes,
+  useParams,
 } from "react-router-dom";
 import Home from "@/pages/home";
+import OrganizationsPage from "@/pages/organizations";
+import ProjectsPage from "@/pages/projects";
 import { AppSidebar } from "@/components/AppSidebar";
 import { Toaster as ShadcnToaster } from "@/components/ui/shadcn/sonner";
 import { SidebarProvider } from "@/components/ui/shadcn/sidebar";
@@ -19,30 +22,68 @@ import React from "react";
 import IdePage from "./pages/ide";
 import EditorPage from "./pages/ide/Editor";
 import AppPage from "./pages/app";
-import RequiredSecretsSetup from "./components/settings/secrets/RequiredSecretsSetup";
 import { HotkeysProvider } from "react-hotkeys-hook";
 import LoginPage from "./pages/login";
 import RegisterPage from "./pages/register";
 import EmailVerificationPage from "./pages/auth/EmailVerification";
 import GoogleCallback from "./pages/auth/GoogleCallback";
 import ProtectedRoute from "./components/ProtectedRoute";
-import ProjectStatusWrapper from "./components/ProjectStatusWrapper";
 import useAuthConfig from "./hooks/auth/useAuthConfig";
 import { Loader2 } from "lucide-react";
 import { AuthProvider } from "./contexts/AuthContext";
-import { ReadonlyProvider } from "./contexts/ReadonlyContext";
 import { AuthConfigResponse } from "./types/auth";
-import { WelcomeScreen, SetupPage, SetupComplete } from "./pages/onboarding";
 import { SettingsModal } from "./components/settings/SettingsModal";
+import ROUTES from "@/libs/utils/routes";
+import RequiredSecretsSetup from "./components/settings/secrets/RequiredSecretsSetup";
+import useCurrentProject from "./stores/useCurrentProject";
+import { useProject } from "./hooks/api/projects/useProjects";
+import ProjectStatus from "./components/ProjectStatus";
 import { ErrorBoundary } from "@/sentry";
 
-const PageWrapper = ({ children }: { children: React.ReactNode }) => {
+const MainPageWrapper = ({ children }: { children: React.ReactNode }) => {
   return (
-    <main className="bg-background w-full h-full min-w-0">{children}</main>
+    <main className="bg-background w-full h-full min-w-0 flex flex-col">
+      <ProjectStatus />
+      <div className="flex-1 w-full min-w-0 overflow-hidden">{children}</div>
+    </main>
   );
 };
 
 const MainLayout = React.memo(function MainLayout() {
+  const { projectId } = useParams();
+  const { isPending, isError, data } = useProject(projectId || "");
+  const { setProject, project } = useCurrentProject();
+
+  React.useEffect(() => {
+    if (!isPending && !isError && data) {
+      setProject(data);
+    }
+  }, [isPending, isError, projectId, setProject, data]);
+
+  if (isPending) {
+    return (
+      <div className="flex items-center justify-center h-full w-full">
+        <Loader2 className="animate-spin h-4 w-4" />
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="flex items-center justify-center h-full w-full">
+        <p className="text-red-600">Failed to load project.</p>
+      </div>
+    );
+  }
+
+  if (!project) {
+    return (
+      <div className="flex items-center justify-center h-full w-full">
+        <p className="text-red-600">Project not found.</p>
+      </div>
+    );
+  }
+
   return (
     <HotkeysProvider>
       <SettingsModal />
@@ -52,55 +93,63 @@ const MainLayout = React.memo(function MainLayout() {
         <Route
           path="/"
           element={
-            <PageWrapper>
+            <MainPageWrapper>
               <Home />
-            </PageWrapper>
+            </MainPageWrapper>
+          }
+        />
+
+        <Route
+          path="/home"
+          element={
+            <MainPageWrapper>
+              <Home />
+            </MainPageWrapper>
           }
         />
         <Route
           path="/threads"
           element={
-            <PageWrapper>
+            <MainPageWrapper>
               <Threads />
-            </PageWrapper>
+            </MainPageWrapper>
           }
         />
         <Route
           path="/threads/:threadId"
           element={
-            <PageWrapper>
+            <MainPageWrapper>
               <ThreadPage />
-            </PageWrapper>
+            </MainPageWrapper>
           }
         />
         <Route
           path="/workflows/:pathb64"
           element={
-            <PageWrapper>
+            <MainPageWrapper>
               <WorkflowPage />
-            </PageWrapper>
+            </MainPageWrapper>
           }
         />
         <Route
           path="/workflows/:pathb64/runs/:runId"
           element={
-            <PageWrapper>
+            <MainPageWrapper>
               <WorkflowPage />
-            </PageWrapper>
+            </MainPageWrapper>
           }
         />
         <Route
           path="/apps/:pathb64"
           element={
-            <PageWrapper>
+            <MainPageWrapper>
               <AppPage />
-            </PageWrapper>
+            </MainPageWrapper>
           }
         />
         <Route path="/ide" element={<IdePage />}>
           <Route path=":pathb64" element={<EditorPage />} />
         </Route>
-        <Route path="*" element={<Navigate to="/" />} />
       </Routes>
     </HotkeysProvider>
   );
@@ -112,51 +161,59 @@ const getRouter = (authConfig: AuthConfigResponse) =>
       <Route>
         {authConfig.is_built_in_mode && (
           <>
-            <Route path="/login" element={<LoginPage />} />
-            <Route path="/register" element={<RegisterPage />} />
-            <Route path="/verify-email" element={<EmailVerificationPage />} />
-            <Route path="/auth/google/callback" element={<GoogleCallback />} />
+            <Route path={ROUTES.AUTH.LOGIN} element={<LoginPage />} />
+            <Route path={ROUTES.AUTH.REGISTER} element={<RegisterPage />} />
+            <Route
+              path={ROUTES.AUTH.VERIFY_EMAIL}
+              element={<EmailVerificationPage />}
+            />
+            <Route
+              path={ROUTES.AUTH.GOOGLE_CALLBACK}
+              element={<GoogleCallback />}
+            />
           </>
         )}
 
-        {/* Onboarding routes - accessible to authenticated users */}
         <Route
-          path="/onboarding"
+          path={ROUTES.ORG.ROOT}
           element={
             <ProtectedRoute>
-              <WelcomeScreen />
+              <OrganizationsPage />
             </ProtectedRoute>
           }
         />
         <Route
-          path="/onboarding/setup"
+          path="/organizations/:organizationId/projects"
           element={
             <ProtectedRoute>
-              <SetupPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/onboarding/complete"
-          element={
-            <ProtectedRoute>
-              <SetupComplete />
+              <ProjectsPage />
             </ProtectedRoute>
           }
         />
 
-        {/* Special route for required secrets setup - bypasses normal wrappers */}
-        <Route path="/secrets/setup" element={<RequiredSecretsSetup />} />
+        <Route
+          path="/projects/:projectId/settings/secrets"
+          element={<RequiredSecretsSetup />}
+        />
 
         <Route
-          path="*"
+          path="/projects/:projectId/*"
           element={
             <ProtectedRoute>
-              <ProjectStatusWrapper>
-                <SidebarProvider>
-                  <MainLayout />
-                </SidebarProvider>
-              </ProjectStatusWrapper>
+              <SidebarProvider>
+                <MainLayout />
+              </SidebarProvider>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route path="*" element={<Navigate to={ROUTES.ORG.ROOT} />} />
+
+        <Route
+          path={ROUTES.ROOT}
+          element={
+            <ProtectedRoute>
+              <Navigate to={ROUTES.ORG.ROOT} replace />
             </ProtectedRoute>
           }
         />
@@ -181,10 +238,8 @@ function App() {
       showDialog
     >
       <AuthProvider authConfig={authConfig}>
-        <ReadonlyProvider>
-          <RouterProvider router={getRouter(authConfig)} />
-          <ShadcnToaster />
-        </ReadonlyProvider>
+        <RouterProvider router={getRouter(authConfig)} />
+        <ShadcnToaster />
       </AuthProvider>
     </ErrorBoundary>
   );

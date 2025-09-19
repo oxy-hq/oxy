@@ -1,5 +1,5 @@
 import { MoreHorizontal, Trash2 } from "lucide-react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { ThreadItem } from "@/types/chat";
 import {
   SidebarMenuAction,
@@ -15,6 +15,7 @@ import {
 import { useCallback } from "react";
 import useDeleteThread from "@/hooks/api/threads/useDeleteThread";
 import { cn } from "@/libs/shadcn/utils";
+import ROUTES from "@/libs/utils/routes";
 
 interface ItemProps {
   thread: ThreadItem;
@@ -23,25 +24,31 @@ interface ItemProps {
 const Item = ({ thread }: ItemProps) => {
   const navigate = useNavigate();
   const location = useLocation();
+  const { projectId } = useParams();
   const { mutate: deleteThread } = useDeleteThread();
 
-  const isActive = location.pathname === `/threads/${thread.id}`;
+  if (!projectId) {
+    throw new Error("Project ID is required");
+  }
+
+  const threadUri = ROUTES.PROJECT(projectId).THREAD(thread.id);
+  const isActive = location.pathname === threadUri;
 
   const handleDeleteThread = useCallback(() => {
     const threadId = thread.id;
     deleteThread(threadId, {
       onSuccess: () => {
         if (isActive) {
-          navigate("/threads");
+          navigate(ROUTES.PROJECT(projectId).THREADS);
         }
       },
     });
-  }, [deleteThread, isActive, navigate, thread.id]);
+  }, [deleteThread, isActive, navigate, thread.id, projectId]);
 
   return (
     <SidebarMenuSubItem key={thread.id}>
       <SidebarMenuSubButton asChild isActive={isActive}>
-        <Link to={`/threads/${thread.id}`}>
+        <Link to={threadUri}>
           <span className="truncate">{thread.title}</span>
         </Link>
       </SidebarMenuSubButton>

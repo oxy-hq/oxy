@@ -10,6 +10,8 @@ import { useNavigate } from "react-router-dom";
 import useFileTree from "@/hooks/api/files/useFileTree";
 import { FileTreeModel } from "@/types/file";
 import { toast } from "sonner";
+import ROUTES from "@/libs/utils/routes";
+import useCurrentProject from "@/stores/useCurrentProject";
 
 export type CreationType = "file" | "folder";
 
@@ -23,11 +25,17 @@ interface NewNodeProps {
 const NewNode = React.forwardRef<HTMLInputElement, NewNodeProps>(
   ({ creationType, onCreated, onCancel, currentPath }, ref) => {
     const { data } = useFileTree();
+    const { project } = useCurrentProject();
     const [newItemName, setNewItemName] = React.useState("");
     const createFile = useCreateFile();
     const createFolder = useCreateFolder();
     const navigate = useNavigate();
     const [error, setError] = React.useState(false);
+    if (!project) {
+      throw new Error("Project ID is required");
+    }
+
+    const projectId = project.id;
 
     const onValidateName = (newPath: string) => {
       const pathExistsInTree = (items: FileTreeModel[]): boolean => {
@@ -58,7 +66,8 @@ const NewNode = React.forwardRef<HTMLInputElement, NewNodeProps>(
 
         if (creationType === "file") {
           await createFile.mutateAsync(btoa(newPath));
-          navigate(`/ide/${btoa(newPath)}`);
+          const ideUri = ROUTES.PROJECT(projectId).IDE.FILE(btoa(newPath));
+          navigate(ideUri);
         } else {
           await createFolder.mutateAsync(btoa(newPath));
         }

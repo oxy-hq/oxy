@@ -1,5 +1,6 @@
 use base64::prelude::*;
 use entity::prelude::Threads;
+use futures::TryFutureExt;
 use sea_orm::ActiveValue;
 use sea_orm::EntityTrait;
 use serde::Deserialize;
@@ -11,8 +12,8 @@ use std::fs::File;
 use std::sync::Arc;
 use std::sync::Mutex;
 
+use crate::api::middlewares::project::ProjectManagerExtractor;
 use crate::config::model::Workflow;
-use crate::project::resolve_project_path;
 use crate::service::thread::streaming_workflow_persister::StreamingWorkflowPersister;
 use crate::service::workflow as service;
 use crate::service::workflow::WorkflowInfo;
@@ -46,18 +47,23 @@ pub struct GetWorkflowResponse {
         (status = 200, description = "Success", body = Vec<WorkflowInfo>, content_type = "application/json")
     )
 )]
-pub async fn list() -> impl IntoResponse {
-    match crate::service::workflow::list_workflows(None).await {
+pub async fn list(
+    Path(_project_id): Path<Uuid>,
+    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+) -> Result<impl IntoResponse, StatusCode> {
+    let config_manager = project_manager.config_manager;
+    match crate::service::workflow::list_workflows(config_manager.clone()).await {
         Ok(workflows) => {
             let response = serde_json::to_string(&workflows).unwrap();
-            (StatusCode::OK, response)
+            Ok((StatusCode::OK, response))
         }
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
+        Err(_e) => Err(StatusCode::INTERNAL_SERVER_ERROR),
     }
 }
 
 pub async fn get(
-    Path(pathb64): Path<String>,
+    Path((_project_id, pathb64)): Path<(Uuid, String)>,
+    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
 ) -> Result<extract::Json<GetWorkflowResponse>, StatusCode> {
     let decoded_path = BASE64_STANDARD.decode(pathb64).map_err(|e| {
         tracing::info!("{:?}", e);
@@ -67,7 +73,10 @@ pub async fn get(
         tracing::info!("{:?}", e);
         StatusCode::BAD_REQUEST
     })?;
-    match get_workflow(PathBuf::from(path), None).await {
+
+    let config_manager = project_manager.config_manager;
+
+    match get_workflow(PathBuf::from(path), config_manager.clone()).await {
         Ok(workflow) => Ok(extract::Json(GetWorkflowResponse { data: workflow })),
         Err(_) => Err(StatusCode::NOT_FOUND),
     }
@@ -86,7 +95,8 @@ pub struct GetLogsResponse {
     )
 )]
 pub async fn get_logs(
-    Path(pathb64): Path<String>,
+    Path((_project_id, pathb64)): Path<(Uuid, String)>,
+    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
 ) -> Result<extract::Json<GetLogsResponse>, StatusCode> {
     let path = PathBuf::from(
         String::from_utf8(BASE64_STANDARD.decode(pathb64).map_err(|e| {
@@ -98,7 +108,7 @@ pub async fn get_logs(
             StatusCode::BAD_REQUEST
         })?,
     );
-    let logs = service::get_workflow_logs(&path).await?;
+    let logs = service::get_workflow_logs(&path, project_manager.config_manager).await?;
     Ok(extract::Json(GetLogsResponse { logs }))
 }
 
@@ -151,7 +161,10 @@ pub struct RunWorkflowRequest {
         (status = 200, description = "Success", body = (), content_type = "text/event-stream")
     )
 )]
-pub async fn run_workflow(Path(pathb64): Path<String>) -> Result<impl IntoResponse, StatusCode> {
+pub async fn run_workflow(
+    Path((_project_id, pathb64)): Path<(Uuid, String)>,
+    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+) -> Result<impl IntoResponse, StatusCode> {
     let decoded_path = BASE64_STANDARD.decode(pathb64).map_err(|e| {
         tracing::info!("{:?}", e);
         StatusCode::BAD_REQUEST
@@ -160,14 +173,30 @@ pub async fn run_workflow(Path(pathb64): Path<String>) -> Result<impl IntoRespon
         tracing::info!("{:?}", e);
         StatusCode::BAD_REQUEST
     })?);
-    let project_path = resolve_project_path()?;
 
-    let full_workflow_path = project_path.join(&path);
+    let full_workflow_path = project_manager
+        .config_manager
+        .resolve_file(path.clone())
+        .map_err(|e| {
+            tracing::info!("{:?}", e);
+            StatusCode::BAD_REQUEST
+        })
+        .await?;
+
+    let full_workflow_path = PathBuf::from(&full_workflow_path);
+
     let (logger, receiver) = build_workflow_api_logger(&full_workflow_path, None).await;
 
     let _ = tokio::spawn(async move {
         tracing::info!("Workflow run started");
-        let rs = run_workflow_service(path, logger.clone(), RetryStrategy::NoRetry, None).await;
+        let rs = run_workflow_service(
+            path,
+            logger.clone(),
+            RetryStrategy::NoRetry,
+            None,
+            project_manager.clone(),
+        )
+        .await;
         match rs {
             Ok(_) => tracing::info!("Workflow run completed successfully"),
             Err(e) => {
@@ -219,7 +248,12 @@ async fn ensure_workflow_thread_unlocked(
         (status = 200, description = "Success", body = (), content_type = "text/event-stream")
     )
 )]
-pub async fn run_workflow_thread(Path(id): Path<String>) -> Result<impl IntoResponse, StatusCode> {
+pub async fn run_workflow_thread(
+    Path((_project_id, id)): Path<(Uuid, String)>,
+    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+) -> Result<impl IntoResponse, StatusCode> {
+    let config_manager = project_manager.config_manager.clone();
+
     let connection = establish_connection().await.map_err(|e| {
         tracing::error!("Failed to establish database connection: {}", e);
         StatusCode::INTERNAL_SERVER_ERROR
@@ -255,23 +289,16 @@ pub async fn run_workflow_thread(Path(id): Path<String>) -> Result<impl IntoResp
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    let project_path = resolve_project_path().map_err(|e| {
-        tracing::error!(
-            "Failed to find project path for thread {}: {}",
-            thread_id,
-            e
-        );
-        // Ensure thread is unlocked on error
-        let connection = connection.clone();
-        let thread_clone = thread.clone();
-        tokio::spawn(async move {
-            ensure_workflow_thread_unlocked(&thread_clone, &connection).await;
-        });
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-
     let workflow_ref = PathBuf::from(thread.source.to_string());
-    let full_workflow_path = project_path.join(&workflow_ref);
+    let full_workflow_path = config_manager
+        .resolve_file(workflow_ref.clone())
+        .map_err(|e| {
+            tracing::info!("{:?}", e);
+            StatusCode::BAD_REQUEST
+        })
+        .await?;
+
+    let full_workflow_path = PathBuf::from(&full_workflow_path);
 
     let streaming_workflow_persister = Arc::new(
         StreamingWorkflowPersister::new(connection.clone(), thread.clone())
@@ -297,14 +324,21 @@ pub async fn run_workflow_thread(Path(id): Path<String>) -> Result<impl IntoResp
 
     let connection_clone = connection.clone();
     let thread_clone = thread.clone();
+
     let _ = tokio::spawn(async move {
-        let result =
-            service::run_workflow(&workflow_ref, logger, RetryStrategy::NoRetry, None).await;
+        let result = service::run_workflow(
+            &workflow_ref,
+            logger,
+            RetryStrategy::NoRetry,
+            None,
+            project_manager.clone(),
+        )
+        .await;
 
         // Handle workflow completion or error
         match result {
             Ok(_) => {
-                if let Ok(logs) = service::get_workflow_logs(&workflow_ref).await {
+                if let Ok(logs) = service::get_workflow_logs(&workflow_ref, config_manager).await {
                     let mut thread_model: entity::threads::ActiveModel =
                         thread_clone.clone().into();
                     let logs_json = serde_json::to_string(&logs).unwrap_or_default();
@@ -355,14 +389,21 @@ pub struct CreateFromQueryResponse {
 }
 
 pub async fn create_from_query(
+    extract::Path(_project_id): Path<Uuid>,
+    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
     extract::Json(request): extract::Json<CreateFromQueryRequest>,
 ) -> Result<extract::Json<CreateFromQueryResponse>, StatusCode> {
-    let workflow =
-        service::create_workflow_from_query(&request.query, &request.prompt, &request.database)
-            .await
-            .map_err(|e| {
-                tracing::info!("{:?}", e);
-                StatusCode::BAD_REQUEST
-            })?;
+    let config_manager = project_manager.config_manager;
+    let workflow = service::create_workflow_from_query(
+        &request.query,
+        &request.prompt,
+        &request.database,
+        &config_manager,
+    )
+    .await
+    .map_err(|e| {
+        tracing::info!("{:?}", e);
+        StatusCode::BAD_REQUEST
+    })?;
     Ok(extract::Json(CreateFromQueryResponse { workflow }))
 }

@@ -126,28 +126,36 @@ impl OutputContainer {
         }
     }
 
-    pub fn to_data(self, file_path: &PathBuf) -> Result<DataContainer, OxyError> {
+    pub fn to_data(
+        self,
+        relative_path: &PathBuf,
+        base_path: &PathBuf,
+    ) -> Result<DataContainer, OxyError> {
         match self {
             OutputContainer::List(list) => {
                 let mut rs = vec![];
                 for item in list {
-                    rs.push(item.to_data(file_path)?);
+                    rs.push(item.to_data(relative_path, base_path)?);
                 }
                 Ok(DataContainer::List(rs))
             }
             OutputContainer::Map(map) => {
                 let mut rs = HashMap::new();
                 for (k, v) in map {
-                    rs.insert(k, v.to_data(file_path)?);
+                    rs.insert(k, v.to_data(relative_path, base_path)?);
                 }
 
                 Ok(DataContainer::Map(rs))
             }
-            OutputContainer::Single(output) => {
-                Ok(DataContainer::Single(output.to_data(file_path)?))
+            OutputContainer::Single(output) => Ok(DataContainer::Single(
+                output.to_data(relative_path, base_path)?,
+            )),
+            OutputContainer::Consistency { value, .. } => {
+                value.output.to_data(relative_path, base_path)
             }
-            OutputContainer::Consistency { value, .. } => value.output.to_data(file_path),
-            OutputContainer::Metadata { value, .. } => value.output.to_data(file_path),
+            OutputContainer::Metadata { value, .. } => {
+                value.output.to_data(relative_path, base_path)
+            }
             OutputContainer::Variable(output) => {
                 Ok(DataContainer::Single(Data::Text(output.to_string())))
             }

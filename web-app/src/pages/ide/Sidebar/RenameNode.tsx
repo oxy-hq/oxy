@@ -7,6 +7,8 @@ import useRenameFile from "@/hooks/api/files/useRenameFile";
 import { File } from "lucide-react";
 import useFileTree from "@/hooks/api/files/useFileTree";
 import { toast } from "sonner";
+import ROUTES from "@/libs/utils/routes";
+import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 
 interface RenameNodeProps {
   fileTree: FileTreeModel;
@@ -17,6 +19,9 @@ interface RenameNodeProps {
 const RenameNode = React.forwardRef<HTMLInputElement, RenameNodeProps>(
   ({ fileTree, onRenamed, onCancel }, ref) => {
     const { pathname } = useLocation();
+    const { project } = useCurrentProjectBranch();
+    const projectId = project.id;
+
     const { data } = useFileTree();
     const [editingName, setEditingName] = React.useState(fileTree.name);
     const renameFolder = useRenameFolder();
@@ -68,7 +73,8 @@ const RenameNode = React.forwardRef<HTMLInputElement, RenameNodeProps>(
           const currentPath = atob(pathname.split("/").pop() ?? "");
           if (currentPath.startsWith(fileTree.path)) {
             const newUrl = currentPath.replace(fileTree.path, newPath);
-            navigate(`/ide/${btoa(newUrl)}`);
+            const ideUri = ROUTES.PROJECT(projectId).IDE.FILE(btoa(newUrl));
+            navigate(ideUri);
           }
           setError(false);
           onRenamed();
