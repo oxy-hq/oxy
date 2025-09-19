@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.30](https://github.com/oxy-hq/oxy-internal/compare/0.2.29...0.2.30) (2025-09-19)
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* ensure empty descriptions are not part of retrieval inclusions ([#1117](https://github.com/oxy-hq/oxy-internal/issues/1117)) ([d3b4e62](https://github.com/oxy-hq/oxy-internal/commit/d3b4e623e47d2b6521ac4c6e34a2ddd923a22811))
+
 ## [0.2.29](https://github.com/oxy-hq/oxy-internal/compare/0.2.28...0.2.29) (2025-09-18)
 
 
