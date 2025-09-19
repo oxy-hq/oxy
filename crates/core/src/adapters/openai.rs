@@ -190,13 +190,13 @@ impl IntoOpenAIConfig for Model {
                             config = config.with_api_base(api_url);
                         }
 
-                        if let Some(custom_headers) = custom_headers {
-                            if !custom_headers.is_empty() {
-                                let resolved_headers = self.resolve_headers().await?;
-                                let config_with_headers =
-                                    CustomOpenAIConfig::new(config, resolved_headers);
-                                return Ok(ConfigType::WithHeaders(config_with_headers));
-                            }
+                        if let Some(custom_headers) = custom_headers
+                            && !custom_headers.is_empty()
+                        {
+                            let resolved_headers = self.resolve_headers().await?;
+                            let config_with_headers =
+                                CustomOpenAIConfig::new(config, resolved_headers);
+                            return Ok(ConfigType::WithHeaders(config_with_headers));
                         }
 
                         tracing::debug!("Creating default OpenAI config without custom headers");

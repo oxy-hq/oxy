@@ -722,17 +722,15 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
         _ => true,
     };
 
-    if needs_project_manager {
-        if let Err(e) = initialize_project_manager(readonly_mode).await {
-            // For some commands, not having a project is acceptable
-            match &args.command {
-                Some(SubCommand::Serve(_)) if readonly_mode => {
-                    // In git mode, we'll handle this in the serve command
-                }
-                _ => {
-                    tracing::debug!("Failed to initialize project manager: {}", e);
-                    // For non-git commands, we may still want to proceed in some cases
-                }
+    if needs_project_manager && let Err(e) = initialize_project_manager(readonly_mode).await {
+        // For some commands, not having a project is acceptable
+        match &args.command {
+            Some(SubCommand::Serve(_)) if readonly_mode => {
+                // In git mode, we'll handle this in the serve command
+            }
+            _ => {
+                tracing::debug!("Failed to initialize project manager: {}", e);
+                // For non-git commands, we may still want to proceed in some cases
             }
         }
     }
@@ -1167,11 +1165,11 @@ pub async fn handle_run_command(run_args: RunArgs) -> Result<RunResult, OxyError
                 Ok(RunResult::Workflow)
             } else if file.ends_with(".agent.yml") {
                 handle_agent_file(&file_path, run_args.question).await?;
-                return Ok(RunResult::Agent);
+                Ok(RunResult::Agent)
             } else {
-                return Err(OxyError::ArgumentError(
+                Err(OxyError::ArgumentError(
                     "Invalid YAML file. Must be either *.workflow.yml or *.agent.yml".into(),
-                ));
+                ))
             }
         }
         Some("sql") => {
@@ -1475,27 +1473,25 @@ pub async fn start_server_and_web_app(
             .nest("/api", openapi_router)
             .fallback_service(serve_with_fallback);
         let openapi = openapi_router.get_openapi_mut();
-        if let Some(cfg) = config {
-            if let Some(auth_config) = cfg.get_authentication() {
-                if let Some(api_key_auth) = auth_config.api_key {
-                    let security_schema_name = "ApiKey";
+        if let Some(cfg) = config
+            && let Some(auth_config) = cfg.get_authentication()
+            && let Some(api_key_auth) = auth_config.api_key
+        {
+            let security_schema_name = "ApiKey";
 
-                    // Get existing components or create new ones, then add the security scheme
-                    let mut components = openapi.components.take().unwrap_or_default();
-                    components.security_schemes.insert(
-                        security_schema_name.to_string(),
-                        SecurityScheme::ApiKey(utoipa::openapi::security::ApiKey::Header(
-                            ApiKeyValue::new(api_key_auth.header),
-                        )),
-                    );
-                    openapi.components = Some(components);
+            // Get existing components or create new ones, then add the security scheme
+            let mut components = openapi.components.take().unwrap_or_default();
+            components.security_schemes.insert(
+                security_schema_name.to_string(),
+                SecurityScheme::ApiKey(utoipa::openapi::security::ApiKey::Header(
+                    ApiKeyValue::new(api_key_auth.header),
+                )),
+            );
+            openapi.components = Some(components);
 
-                    // Apply for all endpoints
-                    let scopes: Vec<String> = vec![];
-                    openapi.security =
-                        Some(vec![SecurityRequirement::new(security_schema_name, scopes)]);
-                }
-            }
+            // Apply for all endpoints
+            let scopes: Vec<String> = vec![];
+            openapi.security = Some(vec![SecurityRequirement::new(security_schema_name, scopes)]);
         }
         let web_app = Router::new()
             .merge(SwaggerUi::new("/apidoc").url(
@@ -1569,12 +1565,10 @@ pub async fn start_server_and_web_app(
             } else {
                 " (HTTP/2 ONLY)"
             }
+        } else if readonly_mode {
+            "(readonly mode, HTTP/1.1+HTTP/2)"
         } else {
-            if readonly_mode {
-                "(readonly mode, HTTP/1.1+HTTP/2)"
-            } else {
-                " (HTTP/1.1+HTTP/2)"
-            }
+            " (HTTP/1.1+HTTP/2)"
         };
         if readonly_mode {
             println!(
@@ -1636,13 +1630,13 @@ pub async fn start_server_and_web_app(
             match result {
                 Ok(_) => {}
                 Err(e) => {
-                    if let Some(os_err) = e.raw_os_error() {
-                        if os_err == 48 {
-                            eprintln!(
-                                "Address already in use. Please stop any other server running on this port and try again."
-                            );
-                            std::process::exit(1);
-                        }
+                    if let Some(os_err) = e.raw_os_error()
+                        && os_err == 48
+                    {
+                        eprintln!(
+                            "Address already in use. Please stop any other server running on this port and try again."
+                        );
+                        std::process::exit(1);
                     }
                     eprintln!("Server error: {e}");
                     std::process::exit(1);
@@ -1827,39 +1821,39 @@ async fn handle_semantic_engine_command(semantic_args: SemanticEngineArgs) -> Re
         format!("CUBEJS_LOG_LEVEL={}", semantic_args.log_level),
     ];
 
-    if let Some(default_db) = config.default_database_ref() {
-        if let Ok(db_config) = config.resolve_database(default_db) {
-            // Add database URL to environment
-            let db_url = match &db_config.database_type {
-                crate::config::model::DatabaseType::Postgres(pg_config) => {
-                    format!(
-                        "postgresql://{}:{}@{}:{}/{}",
-                        pg_config.user.as_deref().unwrap_or("postgres"),
-                        pg_config.password.as_deref().unwrap_or(""),
-                        pg_config.host.as_deref().unwrap_or("localhost"),
-                        pg_config.port.as_deref().unwrap_or("5432"),
-                        pg_config.database.as_deref().unwrap_or("postgres")
-                    )
-                }
-                crate::config::model::DatabaseType::Mysql(mysql_config) => {
-                    format!(
-                        "mysql://{}:{}@{}:{}/{}",
-                        mysql_config.user.as_deref().unwrap_or("root"),
-                        mysql_config.password.as_deref().unwrap_or(""),
-                        mysql_config.host.as_deref().unwrap_or("localhost"),
-                        mysql_config.port.as_deref().unwrap_or("3306"),
-                        mysql_config.database.as_deref().unwrap_or("mysql")
-                    )
-                }
-                _ => {
-                    tracing::warn!("Database type not supported for Cube.js connection");
-                    String::new()
-                }
-            };
-
-            if !db_url.is_empty() {
-                env_vars.push(format!("CUBEJS_DB_URL={}", db_url));
+    if let Some(default_db) = config.default_database_ref()
+        && let Ok(db_config) = config.resolve_database(default_db)
+    {
+        // Add database URL to environment
+        let db_url = match &db_config.database_type {
+            crate::config::model::DatabaseType::Postgres(pg_config) => {
+                format!(
+                    "postgresql://{}:{}@{}:{}/{}",
+                    pg_config.user.as_deref().unwrap_or("postgres"),
+                    pg_config.password.as_deref().unwrap_or(""),
+                    pg_config.host.as_deref().unwrap_or("localhost"),
+                    pg_config.port.as_deref().unwrap_or("5432"),
+                    pg_config.database.as_deref().unwrap_or("postgres")
+                )
             }
+            crate::config::model::DatabaseType::Mysql(mysql_config) => {
+                format!(
+                    "mysql://{}:{}@{}:{}/{}",
+                    mysql_config.user.as_deref().unwrap_or("root"),
+                    mysql_config.password.as_deref().unwrap_or(""),
+                    mysql_config.host.as_deref().unwrap_or("localhost"),
+                    mysql_config.port.as_deref().unwrap_or("3306"),
+                    mysql_config.database.as_deref().unwrap_or("mysql")
+                )
+            }
+            _ => {
+                tracing::warn!("Database type not supported for Cube.js connection");
+                String::new()
+            }
+        };
+
+        if !db_url.is_empty() {
+            env_vars.push(format!("CUBEJS_DB_URL={}", db_url));
         }
     }
 

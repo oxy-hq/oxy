@@ -32,12 +32,11 @@ pub struct Defaults {
 
 impl Defaults {
     pub fn expand_project_path(&mut self) {
-        if let Some(str_path) = self.project_path.to_str() {
-            if str_path.starts_with("~") {
-                if let Some(home) = home_dir() {
-                    self.project_path = home.join(str_path.trim_start_matches("~"));
-                }
-            }
+        if let Some(str_path) = self.project_path.to_str()
+            && str_path.starts_with("~")
+            && let Some(home) = home_dir()
+        {
+            self.project_path = home.join(str_path.trim_start_matches("~"));
         }
     }
 }

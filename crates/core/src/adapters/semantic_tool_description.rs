@@ -139,22 +139,22 @@ fn build_measures_metadata(description: &mut String, view: &View) {
         let mut measure_line = format!("- {}: {}", measure.name, display_info);
 
         // Add sample values if available
-        if let Some(samples) = &measure.samples {
-            if !samples.is_empty() {
-                let sample_text = if samples.len() == 1 {
-                    samples[0].clone()
-                } else {
-                    samples.join(", ")
-                };
-                measure_line.push_str(&format!(" (samples: {})", sample_text));
-            }
+        if let Some(samples) = &measure.samples
+            && !samples.is_empty()
+        {
+            let sample_text = if samples.len() == 1 {
+                samples[0].clone()
+            } else {
+                samples.join(", ")
+            };
+            measure_line.push_str(&format!(" (samples: {})", sample_text));
         }
 
         // Add synonyms if available
-        if let Some(synonyms) = &measure.synonyms {
-            if !synonyms.is_empty() {
-                measure_line.push_str(&format!(" [synonyms: {}]", synonyms.join(", ")));
-            }
+        if let Some(synonyms) = &measure.synonyms
+            && !synonyms.is_empty()
+        {
+            measure_line.push_str(&format!(" [synonyms: {}]", synonyms.join(", ")));
         }
 
         measure_line.push('\n');
@@ -182,22 +182,22 @@ fn build_dimensions_metadata(description: &mut String, view: &View) {
         let mut dimension_line = format!("- {}: {}", dimension.name, display_info);
 
         // Add sample values if available
-        if let Some(samples) = &dimension.samples {
-            if !samples.is_empty() {
-                let sample_text = if samples.len() == 1 {
-                    samples[0].clone()
-                } else {
-                    samples.join(", ")
-                };
-                dimension_line.push_str(&format!(" (samples: {})", sample_text));
-            }
+        if let Some(samples) = &dimension.samples
+            && !samples.is_empty()
+        {
+            let sample_text = if samples.len() == 1 {
+                samples[0].clone()
+            } else {
+                samples.join(", ")
+            };
+            dimension_line.push_str(&format!(" (samples: {})", sample_text));
         }
 
         // Add synonyms if available
-        if let Some(synonyms) = &dimension.synonyms {
-            if !synonyms.is_empty() {
-                dimension_line.push_str(&format!(" [synonyms: {}]", synonyms.join(", ")));
-            }
+        if let Some(synonyms) = &dimension.synonyms
+            && !synonyms.is_empty()
+        {
+            dimension_line.push_str(&format!(" [synonyms: {}]", synonyms.join(", ")));
         }
 
         dimension_line.push('\n');

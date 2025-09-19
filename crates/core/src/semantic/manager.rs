@@ -318,10 +318,9 @@ impl SemanticManager {
                                 for target in dim.targets.clone().iter() {
                                     if let Some(target_dim_name) =
                                         target.strip_prefix(&src.table_ref())
+                                        && !dimension_names.contains(target_dim_name)
                                     {
-                                        if !dimension_names.contains(target_dim_name) {
-                                            dim.targets.retain(|t| t != target);
-                                        }
+                                        dim.targets.retain(|t| t != target);
                                     }
                                 }
                             });

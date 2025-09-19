@@ -123,20 +123,18 @@ impl OxyError {
             scope.set_level(Some(self.sentry_level()));
         });
 
-        match self {
-            OxyError::ToolCallError {
-                call_id,
-                handle,
-                param,
-                ..
-            } => {
-                sentry::configure_scope(|scope| {
-                    scope.set_extra("call_id", call_id.clone().into());
-                    scope.set_extra("handle", handle.clone().into());
-                    scope.set_extra("param", param.clone().into());
-                });
-            }
-            _ => {}
+        if let OxyError::ToolCallError {
+            call_id,
+            handle,
+            param,
+            ..
+        } = self
+        {
+            sentry::configure_scope(|scope| {
+                scope.set_extra("call_id", call_id.clone().into());
+                scope.set_extra("handle", handle.clone().into());
+                scope.set_extra("param", param.clone().into());
+            });
         }
 
         sentry::capture_error(self);
@@ -236,13 +234,12 @@ const CONTEXT_WINDOW_EXCEEDED_CODE: &str = "string_above_max_length";
 
 impl From<OpenAIError> for OxyError {
     fn from(value: OpenAIError) -> Self {
-        if let OpenAIError::ApiError(ref api_error) = value {
-            if api_error.code == Some(CONTEXT_WINDOW_EXCEEDED_CODE.to_string()) {
-                return OxyError::LLMError(
-                    "Context window length exceeded. Shorten the prompt being sent to the LLM."
-                        .into(),
-                );
-            }
+        if let OpenAIError::ApiError(ref api_error) = value
+            && api_error.code == Some(CONTEXT_WINDOW_EXCEEDED_CODE.to_string())
+        {
+            return OxyError::LLMError(
+                "Context window length exceeded. Shorten the prompt being sent to the LLM.".into(),
+            );
         }
         OxyError::RuntimeError(format!("Error in completion request: {value:?}"))
     }

@@ -16,18 +16,14 @@ pub struct UserService;
 
 impl UserService {
     pub async fn determine_user_role(email: &str) -> UserRole {
-        if let Ok(project_path) = resolve_project_path() {
-            if let Ok(config_builder) = ConfigBuilder::new().with_project_path(&project_path) {
-                if let Ok(config) = config_builder.build().await {
-                    if let Some(auth_config) = config.get_authentication() {
-                        if let Some(admins) = auth_config.admins {
-                            if admins.contains(&email.to_string()) {
-                                return UserRole::Admin;
-                            }
-                        }
-                    }
-                }
-            }
+        if let Ok(project_path) = resolve_project_path()
+            && let Ok(config_builder) = ConfigBuilder::new().with_project_path(&project_path)
+            && let Ok(config) = config_builder.build().await
+            && let Some(auth_config) = config.get_authentication()
+            && let Some(admins) = auth_config.admins
+            && admins.contains(&email.to_string())
+        {
+            return UserRole::Admin;
         }
 
         UserRole::Member

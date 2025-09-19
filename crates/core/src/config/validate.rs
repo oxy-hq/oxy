@@ -163,13 +163,13 @@ fn validate_export(
     allowed_formats: &[ExportFormat],
     task_name: &str,
 ) -> garde::Result {
-    if let Some(export) = export {
-        if !allowed_formats.contains(&export.format) {
-            return Err(garde::Error::new(format!(
-                "{}: {:?}, only supports {:?} for {} task",
-                INVALID_EXPORT_FORMAT_ERROR, export.format, allowed_formats, task_name
-            )));
-        }
+    if let Some(export) = export
+        && !allowed_formats.contains(&export.format)
+    {
+        return Err(garde::Error::new(format!(
+            "{}: {:?}, only supports {:?} for {} task",
+            INVALID_EXPORT_FORMAT_ERROR, export.format, allowed_formats, task_name
+        )));
     }
     Ok(())
 }

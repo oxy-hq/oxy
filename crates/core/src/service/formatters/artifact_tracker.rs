@@ -92,33 +92,31 @@ impl ArtifactTracker {
     }
 
     fn create_workflow_artifact(children: &[Block]) -> Result<Option<ArtifactContent>, OxyError> {
-        if let Some(Block { id: _, value }) = children.first() {
-            if let BlockValue::Children { kind, children } = &**value {
-                if let ContainerKind::Workflow { r#ref } = kind {
-                    return Ok(Some(ArtifactContent::Workflow {
-                        r#ref: r#ref.to_string(),
-                        output: children.iter().flat_map(|c| c.as_log_items()).collect(),
-                    }));
-                }
-            }
+        if let Some(Block { id: _, value }) = children.first()
+            && let BlockValue::Children { kind, children } = &**value
+            && let ContainerKind::Workflow { r#ref } = kind
+        {
+            return Ok(Some(ArtifactContent::Workflow {
+                r#ref: r#ref.to_string(),
+                output: children.iter().flat_map(|c| c.as_log_items()).collect(),
+            }));
         }
         Ok(None)
     }
 
     fn create_agent_artifact(children: &[Block]) -> Result<Option<ArtifactContent>, OxyError> {
-        if let Some(Block { id: _, value }) = children.first() {
-            if let BlockValue::Children { kind, children } = &**value {
-                if let ContainerKind::Agent { r#ref } = kind {
-                    return Ok(Some(ArtifactContent::Agent {
-                        r#ref: r#ref.to_string(),
-                        output: children.iter().fold(String::new(), |mut acc, c| {
-                            acc.push_str(&c.clone().to_markdown(MARKDOWN_MAX_FENCES));
-                            acc.push('\n');
-                            acc
-                        }),
-                    }));
-                }
-            }
+        if let Some(Block { id: _, value }) = children.first()
+            && let BlockValue::Children { kind, children } = &**value
+            && let ContainerKind::Agent { r#ref } = kind
+        {
+            return Ok(Some(ArtifactContent::Agent {
+                r#ref: r#ref.to_string(),
+                output: children.iter().fold(String::new(), |mut acc, c| {
+                    acc.push_str(&c.clone().to_markdown(MARKDOWN_MAX_FENCES));
+                    acc.push('\n');
+                    acc
+                }),
+            }));
         }
         Ok(None)
     }

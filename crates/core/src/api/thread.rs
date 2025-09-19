@@ -331,13 +331,13 @@ pub async fn delete_thread(
 }
 
 fn remove_all_files_in_dir<P: AsRef<std::path::Path>>(dir: P) {
-    if dir.as_ref().exists() {
-        if let Ok(entries) = std::fs::read_dir(&dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_file() {
-                    let _ = std::fs::remove_file(path);
-                }
+    if dir.as_ref().exists()
+        && let Ok(entries) = std::fs::read_dir(&dir)
+    {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_file() {
+                let _ = std::fs::remove_file(path);
             }
         }
     }

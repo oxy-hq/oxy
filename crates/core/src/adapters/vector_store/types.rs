@@ -44,7 +44,7 @@ impl RetrievalObject {
             content_parts.push(format!("DO NOT USE FOR PROMPT: '{exclusion}'"));
         }
 
-        return content_parts.join("\n");
+        content_parts.join("\n")
     }
 }
 

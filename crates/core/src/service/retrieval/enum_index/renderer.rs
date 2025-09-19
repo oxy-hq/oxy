@@ -81,7 +81,7 @@ pub(crate) fn render_enum_template(
     // Use an empty global context to avoid injecting concrete non-enum values.
     let renderer = Renderer::new(context! {});
     renderer.register_template(&masked_template)?;
-    let current_ctx = Value::from_serialize(&serde_json::Value::Object(nested));
+    let current_ctx = Value::from_serialize(serde_json::Value::Object(nested));
     let mut rendered = renderer.wrap(&current_ctx).render(&masked_template)?;
 
     // Restore masked non-enum placeholders back to their original Jinja syntax

@@ -275,10 +275,10 @@ impl GroupBlockHandler {
 
     pub fn end_group(&mut self, group_id: String, error: Option<String>) {
         self.group_stack.retain(|id| id != &group_id);
-        if let Some(group) = self.groups.get_mut(&group_id) {
-            if let Some(err) = error {
-                group.set_error(err);
-            }
+        if let Some(group) = self.groups.get_mut(&group_id)
+            && let Some(err) = error
+        {
+            group.set_error(err);
         }
     }
 

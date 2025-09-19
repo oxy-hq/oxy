@@ -217,14 +217,13 @@ where
                 if let Some(total_bytes_processed) = dry_run_rs
                     .total_bytes_processed
                     .and_then(|v| v.parse::<u64>().ok())
+                    && total_bytes_processed > dry_run_limit
                 {
-                    if total_bytes_processed > dry_run_limit {
-                        throw!(anyhow!(
-                            "Query would process {} bytes of data, which would exceed the dry run limit of {} bytes.",
-                            total_bytes_processed,
-                            dry_run_limit
-                        ));
-                    }
+                    throw!(anyhow!(
+                        "Query would process {} bytes of data, which would exceed the dry run limit of {} bytes.",
+                        total_bytes_processed,
+                        dry_run_limit
+                    ));
                 }
             }
 

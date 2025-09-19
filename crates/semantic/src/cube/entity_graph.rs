@@ -100,7 +100,7 @@ impl EntityGraph {
                     EntityType::Foreign => {
                         foreign_entities
                             .entry(entity.name.clone())
-                            .or_insert_with(Vec::new)
+                            .or_default()
                             .push(view.name.clone());
                     }
                 }
@@ -191,14 +191,8 @@ impl EntityGraph {
 
         for join in &self.joins {
             // Add bidirectional edges since joins can be traversed in both directions
-            graph
-                .entry(join.from_view.as_str())
-                .or_insert_with(Vec::new)
-                .push(join);
-            graph
-                .entry(join.to_view.as_str())
-                .or_insert_with(Vec::new)
-                .push(join);
+            graph.entry(join.from_view.as_str()).or_default().push(join);
+            graph.entry(join.to_view.as_str()).or_default().push(join);
         }
 
         // BFS to find shortest path

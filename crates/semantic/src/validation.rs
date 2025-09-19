@@ -95,10 +95,10 @@ impl SemanticValidator for Dimension {
         }
 
         // Validate description (optional)
-        if let Some(ref description) = self.description {
-            if description.is_empty() {
-                result.add_error("Dimension description cannot be empty when provided".to_string());
-            }
+        if let Some(ref description) = self.description
+            && description.is_empty()
+        {
+            result.add_error("Dimension description cannot be empty when provided".to_string());
         }
 
         // Validate expr
@@ -141,10 +141,10 @@ impl SemanticValidator for Measure {
         }
 
         // Validate description (optional)
-        if let Some(ref description) = self.description {
-            if description.is_empty() {
-                result.add_error("Measure description cannot be empty when provided".to_string());
-            }
+        if let Some(ref description) = self.description
+            && description.is_empty()
+        {
+            result.add_error("Measure description cannot be empty when provided".to_string());
         }
 
         // Validate expr based on measure type

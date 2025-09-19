@@ -132,11 +132,11 @@ pub async fn initialize_project_manager(readonly_mode: bool) -> Result<(), OxyEr
 pub async fn initialize_from_github() -> Result<(), OxyError> {
     let settings = GitHubService::get_settings().await?;
 
-    if let Some(settings) = settings {
-        if let Some(repo_id) = settings.selected_repo_id {
-            set_git_project_manager(repo_id);
-            return Ok(());
-        }
+    if let Some(settings) = settings
+        && let Some(repo_id) = settings.selected_repo_id
+    {
+        set_git_project_manager(repo_id);
+        return Ok(());
     }
 
     Err(OxyError::ConfigurationError(

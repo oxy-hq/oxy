@@ -464,15 +464,14 @@ fn extract_base_url_from_headers(headers: &HeaderMap) -> String {
         return origin.to_string();
     }
 
-    if let Some(referer) = headers.get("referer").and_then(|h| h.to_str().ok()) {
-        if let Ok(url) = Url::parse(referer) {
-            if let Some(host) = url.host_str() {
-                let port = url.port().map(|p| format!(":{p}")).unwrap_or_default();
-                let origin = format!("{}://{}{}", url.scheme(), host, port);
-                tracing::debug!("Using referer header for base URL: {}", origin);
-                return origin;
-            }
-        }
+    if let Some(referer) = headers.get("referer").and_then(|h| h.to_str().ok())
+        && let Ok(url) = Url::parse(referer)
+        && let Some(host) = url.host_str()
+    {
+        let port = url.port().map(|p| format!(":{p}")).unwrap_or_default();
+        let origin = format!("{}://{}{}", url.scheme(), host, port);
+        tracing::debug!("Using referer header for base URL: {}", origin);
+        return origin;
     }
     "http://localhost:3000".to_string()
 }
