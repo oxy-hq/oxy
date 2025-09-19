@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.3.0](https://github.com/oxy-hq/oxy-internal/compare/0.2.29...0.3.0) (2025-09-19)
+
+
+### ⚠ BREAKING CHANGES
+
+* implementation of cloudification ([#1116](https://github.com/oxy-hq/oxy-internal/issues/1116))
+
+### <!-- 0 -->🚀 Features
+
+* implementation of cloudification ([#1116](https://github.com/oxy-hq/oxy-internal/issues/1116)) ([4e3d3f1](https://github.com/oxy-hq/oxy-internal/commit/4e3d3f10cd1930c49d93539c1b6a810d031f3221))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* ensure empty descriptions are not part of retrieval inclusions ([#1117](https://github.com/oxy-hq/oxy-internal/issues/1117)) ([d3b4e62](https://github.com/oxy-hq/oxy-internal/commit/d3b4e623e47d2b6521ac4c6e34a2ddd923a22811))
+
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+* release 0.3.0 ([8083d51](https://github.com/oxy-hq/oxy-internal/commit/8083d51f29becc300f4ad82defcde821d738549e))
+
 ## [0.2.29](https://github.com/oxy-hq/oxy-internal/compare/0.2.28...0.2.29) (2025-09-18)
 
 
