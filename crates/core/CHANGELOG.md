@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.31](https://github.com/oxy-hq/oxy-internal/compare/0.2.30...0.2.31) (2025-09-22)
+
+
+### <!-- 0 -->🚀 Features
+
+* add ask without streaming api ([#1121](https://github.com/oxy-hq/oxy-internal/issues/1121)) ([d5c7801](https://github.com/oxy-hq/oxy-internal/commit/d5c78013d9a2513d5b722345d00a295bb14b565c))
+
 ## [0.2.30](https://github.com/oxy-hq/oxy-internal/compare/0.2.29...0.2.30) (2025-09-19)
 
 
