@@ -4,7 +4,7 @@ use crate::{
     auth::extractor::AuthenticatedUserExtractor,
     config::{ConfigBuilder, model::AgentConfig},
     errors::OxyError,
-    execute::types::Usage,
+    execute::types::{ReferenceKind, Usage},
     project::resolve_project_path,
     service::{
         agent::run_agent,
@@ -161,7 +161,6 @@ pub async fn get_agent(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(extract::Json(agent))
 }
-
 type EventStream = Pin<Box<dyn Stream<Item = Result<Event, axum::Error>> + Send>>;
 
 fn create_error_stream(error_message: String) -> EventStream {
@@ -218,6 +217,22 @@ pub async fn run_test(
 #[derive(Deserialize, ToSchema)]
 pub struct AskAgentRequest {
     pub question: String,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct AskAgentResponse {
+    pub content: String,
+    pub references: Vec<ReferenceKind>,
+    pub usage: Option<Usage>,
+    pub artifacts: Vec<ArtifactInfo>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct ArtifactInfo {
+    pub id: String,
+    pub title: String,
+    pub kind: crate::execute::types::event::ArtifactKind,
+    pub is_verified: bool,
 }
 
 #[utoipa::path(
@@ -301,7 +316,152 @@ pub async fn ask_agent_preview(
     Ok(Sse::new(stream))
 }
 
-#[derive(Deserialize)]
+#[utoipa::path(
+    method(post),
+    path = "/agents/{pathb64}/ask-sync",
+    params(
+        ("pathb64" = String, Path, description = "Base64 encoded path to the agent")
+    ),
+    request_body = AskAgentRequest,
+    responses(
+        (status = OK, description = "Success", body = AskAgentResponse, content_type = "application/json")
+    )
+)]
+pub async fn ask_agent_preview_sync(
+    Path(pathb64): Path<String>,
+    AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
+    extract::Json(payload): extract::Json<AskAgentRequest>,
+) -> Result<extract::Json<AskAgentResponse>, StatusCode> {
+    let decoded_path = BASE64_STANDARD.decode(pathb64).map_err(|e| {
+        tracing::info!("{:?}", e);
+        StatusCode::BAD_REQUEST
+    })?;
+
+    let path = String::from_utf8(decoded_path).map_err(|e| {
+        tracing::info!("{:?}", e);
+        StatusCode::BAD_REQUEST
+    })?;
+
+    let project_path = resolve_project_path().map_err(|e| {
+        tracing::error!("Failed to find project path: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    let (tx, mut rx) = tokio::sync::mpsc::channel(100);
+
+    let task_handle = tokio::spawn(async move {
+        let block_handler = BlockHandler::new(tx);
+        let block_handler_reader = block_handler.get_reader();
+        let result = run_agent(
+            &project_path,
+            &PathBuf::from(path),
+            payload.question,
+            block_handler,
+            vec![],
+        )
+        .await;
+
+        if let Err(err) = result {
+            tracing::error!("Error running agent: {}", err);
+
+            let error_message = match block_handler_reader.into_active_models().await {
+                Ok((answer_message, _artifacts)) => {
+                    let existing_content = match &answer_message.content {
+                        ActiveValue::Set(val) => val.clone(),
+                        _ => String::new(),
+                    };
+                    format!("{existing_content}\n 🔴 Error: {err}")
+                }
+                Err(e) => {
+                    tracing::error!("Error reading block handler models: {}", e);
+                    format!("🔴 Error: {err}")
+                }
+            };
+
+            return Err(error_message);
+        }
+
+        Ok(())
+    });
+
+    // Collect all streaming responses
+    let mut content = String::new();
+    let mut references = Vec::new();
+    let mut usage = None;
+    let mut artifacts = Vec::new();
+    let mut artifact_map = std::collections::HashMap::new();
+
+    while let Some(stream_item) = rx.recv().await {
+        match stream_item.content {
+            AnswerContent::Text {
+                content: text_content,
+            } => {
+                content.push_str(&text_content);
+            }
+            AnswerContent::Error { .. } => {
+                return Err(StatusCode::INTERNAL_SERVER_ERROR);
+            }
+            AnswerContent::Usage {
+                usage: stream_usage,
+            } => {
+                usage = Some(stream_usage);
+            }
+            AnswerContent::ArtifactStarted {
+                id,
+                title,
+                kind,
+                is_verified,
+            } => {
+                let artifact_info = ArtifactInfo {
+                    id: id.clone(),
+                    title,
+                    kind,
+                    is_verified,
+                };
+                artifact_map.insert(id, artifact_info);
+            }
+            AnswerContent::ArtifactDone { id } => {
+                if let Some(artifact) = artifact_map.remove(&id) {
+                    artifacts.push(artifact);
+                }
+            }
+            _ => {
+                // Handle other content types as needed
+            }
+        }
+
+        // Collect references from this stream item
+        references.extend(stream_item.references);
+    }
+
+    // Wait for the task to complete and handle any errors
+    match task_handle.await {
+        Ok(Ok(())) => {
+            // Task completed successfully
+        }
+        Ok(Err(error_message)) => {
+            return Ok(extract::Json(AskAgentResponse {
+                content: error_message,
+                references: vec![],
+                usage: None,
+                artifacts: vec![],
+            }));
+        }
+        Err(e) => {
+            tracing::error!("Task failed: {}", e);
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    Ok(extract::Json(AskAgentResponse {
+        content,
+        references,
+        usage,
+        artifacts,
+    }))
+}
+
+#[derive(Deserialize, ToSchema)]
 pub struct AskThreadRequest {
     pub question: Option<String>,
 }
@@ -390,4 +550,20 @@ pub async fn ask_agent(
     execution_manager
         .execute_request(id, payload, executor, user.id)
         .await
+}
+
+pub async fn ask_agent_sync(
+    Path(id): Path<String>,
+    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
+    extract::Json(payload): extract::Json<AskThreadRequest>,
+) -> Result<extract::Json<AskAgentResponse>, StatusCode> {
+    let execution_manager = ChatService::new().await?;
+    let executor = AgentExecutor;
+
+    // Execute the same logic as the streaming version but collect all responses
+    let result = execution_manager
+        .execute_request_sync(id, payload, executor, user.id)
+        .await?;
+
+    Ok(extract::Json(result))
 }

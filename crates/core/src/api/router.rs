@@ -118,6 +118,10 @@ pub async fn api_router(auth_mode: AuthMode, readonly_mode: bool) -> Result<Rout
         .route("/agents", get(agent::get_agents))
         .route("/agents/{pathb64}", get(agent::get_agent))
         .route("/agents/{pathb64}/ask", post(agent::ask_agent_preview))
+        .route(
+            "/agents/{pathb64}/ask-sync",
+            post(agent::ask_agent_preview_sync),
+        )
         .route("/api-keys", get(api_keys::list_api_keys))
         .route("/api-keys", post(api_keys::create_api_key))
         .route("/api-keys/{id}", get(api_keys::get_api_key))
@@ -138,6 +142,7 @@ pub async fn api_router(auth_mode: AuthMode, readonly_mode: bool) -> Result<Rout
         .route("/charts/{file_path}", get(chart::get_chart))
         .route("/databases", get(database::list_databases))
         .route("/threads/{id}/agent", post(agent::ask_agent))
+        .route("/threads/{id}/agent-sync", post(agent::ask_agent_sync))
         // Secret management routes - read-only
         .route("/secrets", get(secrets::list_secrets))
         .route("/secrets/{id}", get(secrets::get_secret))
@@ -267,6 +272,7 @@ pub async fn openapi_router(_readonly_mode: bool) -> OpenApiRouter {
         // Agent routes
         .routes(routes!(agent::get_agents))
         .routes(routes!(agent::ask_agent_preview))
+        .routes(routes!(agent::ask_agent_preview_sync))
         // API Keys routes
         .routes(routes!(api_keys::create_api_key))
         .routes(routes!(api_keys::list_api_keys))
