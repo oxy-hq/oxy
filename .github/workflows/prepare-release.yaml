@@ -64,7 +64,7 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
       - name: Wait for publishing oss code to succeed
-        uses: lewagon/wait-on-check-action@v1.4.0
+        uses: lewagon/wait-on-check-action@v1.4.1
         with:
           ref: ${{ github.ref }}
           check-name: "move-code"
