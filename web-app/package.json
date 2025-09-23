@@ -65,7 +65,7 @@
     "debounce": "^2.2.0",
     "dotenv": "^17.2.2",
     "echarts": "^5.6.0",
-    "elkjs": "^0.10.0",
+    "elkjs": "^0.10.2",
     "highlight.js": "^11.11.1",
     "invariant": "^2.2.4",
     "js-cookie": "^3.0.5",
