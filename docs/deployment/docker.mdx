@@ -36,7 +36,7 @@ docker run -d \
   -p 3000:3000 \
   -v /path/to/your/workspace:/app \
   -e OPENAI_API_KEY=your-api-key \
-  -e OXY_STATE_DIR=/app \
+  -e OXY_STATE_DIR=/var/lib/oxy/data \
   ghcr.io/oxy-hq/oxy:0.2.3
 ```
 
@@ -111,10 +111,10 @@ flowchart TD
         working_dir: /workspace
         volumes:
           - ./workspace:/workspace
-          - ./oxy-data:/data
+          - ./oxy-data:/var/lib/oxy/data
         environment:
           - OPENAI_API_KEY=your-openai-api-key
-          - OXY_STATE_DIR=/data
+          - OXY_STATE_DIR=/var/lib/oxy/data
         restart: unless-stopped
         command: ["oxy", "serve", "--host", "0.0.0.0", "--port", "3000"]
     ```
@@ -149,7 +149,7 @@ When running Oxy in Docker, you'll typically need to mount two types of director
 
 2. **Data Mount**: Provides persistent storage for Oxy's state
    ```
-   -v /path/to/persistent/data:/data
+  -v /path/to/persistent/data:/var/lib/oxy/data
    ```
    This ensures your data is preserved even if the container is restarted.
 
@@ -184,10 +184,10 @@ services:
     working_dir: /workspace
     volumes:
       - ./workspace:/workspace
-      - ./oxy-data:/data  # Essential for data persistence
+      - ./oxy-data:/var/lib/oxy/data  # Essential for data persistence
     environment:
       - OPENAI_API_KEY=your-openai-api-key
-      - OXY_STATE_DIR=/data  # Points to the mounted volume
+      - OXY_STATE_DIR=/var/lib/oxy/data  # Points to the mounted volume
     restart: unless-stopped
     command: ["oxy", "serve", "--host", "0.0.0.0", "--port", "3000"]
 ```
@@ -211,7 +211,7 @@ Common environment variables to configure in your Oxy container:
 | Variable | Description | Example |
 |----------|-------------|---------|
 | `OPENAI_API_KEY` | Your OpenAI API key | `sk-...` |
-| `OXY_STATE_DIR` | Directory for Oxy state persistence | `/data` |
+| `OXY_STATE_DIR` | Directory for Oxy state persistence | `/var/lib/oxy/data` |
 | `DATABASE_URL` | Connection URL if using a database | `postgres://...` |
 | `PORT` | Override the default port | `8080` |
 

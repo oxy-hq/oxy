@@ -55,9 +55,15 @@ fn create_error_response(error_msg: String) -> GetAppDataResponse {
 
 #[utoipa::path(
     method(get),
-    path = "/apps",
+    path = "/{project_id}/apps",
+    params(
+        ("project_id" = Uuid, Path, description = "Project UUID")
+    ),
     responses(
         (status = OK, description = "Success", body = Vec<AppItem>, content_type = "application/json")
+    ),
+    security(
+        ("ApiKey" = [])
     )
 )]
 pub async fn list_apps(

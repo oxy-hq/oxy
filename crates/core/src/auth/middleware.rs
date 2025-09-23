@@ -4,14 +4,9 @@ use axum::{
     middleware::Next,
     response::Response,
 };
-use std::env;
 use std::sync::Arc;
 
-use crate::{
-    auth::{cognito::CognitoAuthenticator, iap::IAPAuthenticator, user::UserService},
-    config::constants::GCP_IAP_AUD_ENV_VAR,
-    errors::OxyError,
-};
+use crate::auth::user::UserService;
 
 use super::{
     authenticator::Authenticator, built_in::BuiltInAuthenticator, types::AuthenticatedUser,
@@ -30,46 +25,14 @@ impl<T> Clone for AuthState<T> {
     }
 }
 
-impl AuthState<IAPAuthenticator> {
-    pub fn iap() -> Result<Self, OxyError> {
-        let audience = env::var(GCP_IAP_AUD_ENV_VAR).map_err(|err| {
-            OxyError::ConfigurationError(format!(
-                "Failed to read {GCP_IAP_AUD_ENV_VAR} environment variable: {err}"
-            ))
-        })?;
-
-        Ok(Self {
-            authenticator: Arc::new(IAPAuthenticator::new(audience, false)),
-        })
-    }
-
-    pub fn iap_cloud_run() -> Self {
-        Self {
-            authenticator: Arc::new(IAPAuthenticator::new("".to_string(), true)),
-        }
-    }
-}
-
-impl AuthState<CognitoAuthenticator> {
-    pub fn cognito() -> Self {
-        Self {
-            authenticator: Arc::new(CognitoAuthenticator::new()),
-        }
-    }
-}
-
 impl AuthState<BuiltInAuthenticator> {
     pub fn built_in() -> Self {
-        let authentication = crate::config::oxy::get_oxy_config()
-            .ok()
-            .and_then(|config| config.authentication);
         Self {
-            authenticator: Arc::new(BuiltInAuthenticator::new(authentication)),
+            authenticator: Arc::new(BuiltInAuthenticator::new()),
         }
     }
 }
 
-/// Authentication middleware that validates JWT tokens from Google IAP
 pub async fn auth_middleware<T: Authenticator>(
     State(auth_state): State<AuthState<T>>,
     mut request: Request<axum::body::Body>,

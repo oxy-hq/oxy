@@ -1,84 +1,68 @@
-use axum::http::HeaderMap;
-use std::sync::Arc;
-
+use crate::auth::types::Identity;
+use crate::config::constants::DEFAULT_API_KEY_HEADER;
 use crate::db::client::establish_connection;
 use crate::errors::OxyError;
-use crate::service::api_key::{ApiKeyConfig, ApiKeyService, ValidatedApiKey};
-use crate::{
-    auth::{authenticator::Authenticator, types::Identity},
-    config::auth::ApiKeyAuth,
-};
+use crate::service::api_key::{ApiKeyConfig, ApiKeyService};
+use axum::http::HeaderMap;
+use entity::prelude::Users;
+use sea_orm::{EntityTrait, ModelTrait};
 
-/// API Key Authenticator for authenticating requests using API keys
-pub struct ApiKeyAuthenticator {
-    db_connection: Option<Arc<sea_orm::DatabaseConnection>>,
-    api_key_header: String,
+fn extract_api_key_from_headers(headers: &HeaderMap) -> Option<String> {
+    tracing::debug!(
+        "Checking headers for API key header '{}'",
+        DEFAULT_API_KEY_HEADER
+    );
+    headers
+        .get(DEFAULT_API_KEY_HEADER)
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.trim().to_string())
 }
 
-impl ApiKeyAuthenticator {
-    pub fn from_config(config: ApiKeyAuth) -> Self {
-        Self {
-            db_connection: None,
-            api_key_header: config.header,
-        }
-    }
+pub async fn authenticate_header(headers: &HeaderMap) -> Result<Identity, OxyError> {
+    let key = extract_api_key_from_headers(headers)
+        .ok_or_else(|| OxyError::AuthenticationError("No API key found in headers".to_string()))?;
 
-    /// Extract API key from X-API-Key header only
-    fn extract_api_key_from_headers(&self, headers: &HeaderMap) -> Option<String> {
-        // Extract only from X-API-Key header
-        if let Some(api_key_header) = headers.get(self.api_key_header.as_str())
-            && let Ok(key_str) = api_key_header.to_str()
-        {
-            return Some(key_str.trim().to_string());
-        }
+    // Establish database connection
+    let db = establish_connection().await.map_err(|e| {
+        tracing::error!(
+            "Failed to establish database connection for API key validation: {}",
+            e
+        );
+        OxyError::AuthenticationError("Failed to validate API key".to_string())
+    })?;
 
-        None
-    }
+    // Use default API key configuration
+    let config = ApiKeyConfig::default();
 
-    /// Get or establish database connection
-    async fn get_db_connection(&self) -> Result<Arc<sea_orm::DatabaseConnection>, OxyError> {
-        match &self.db_connection {
-            Some(conn) => Ok(Arc::clone(conn)),
-            None => {
-                let conn = establish_connection().await?;
-                Ok(Arc::new(conn))
-            }
-        }
-    }
-
-    /// Validate API key and convert to Identity
-    pub async fn validate_api_key(
-        &self,
-        key: &str,
-    ) -> Result<(Identity, ValidatedApiKey), OxyError> {
-        let db = self.get_db_connection().await?;
-        let config = ApiKeyConfig::default();
-
-        let validated_key = ApiKeyService::validate_api_key(&db, key, &config)
-            .await?
-            .ok_or_else(|| OxyError::AuthenticationError("Invalid API key".to_string()))?;
-
-        // Convert validated API key to Identity
-        let identity = Identity {
-            idp_id: Some(validated_key.id.to_string()),
-            email: format!("api-key-{}", validated_key.user_id), // Placeholder email for API key users
-            name: Some(validated_key.name.clone()),
-            picture: None,
-        };
-
-        Ok((identity, validated_key))
-    }
-}
-
-impl Authenticator for ApiKeyAuthenticator {
-    type Error = OxyError;
-
-    async fn authenticate(&self, headers: &HeaderMap) -> Result<Identity, Self::Error> {
-        let key = self.extract_api_key_from_headers(headers).ok_or_else(|| {
-            OxyError::AuthenticationError("No API key found in headers".to_string())
+    // Validate the API key
+    let validated_key = ApiKeyService::validate_api_key(&db, &key, &config)
+        .await?
+        .ok_or_else(|| {
+            tracing::warn!("Invalid or expired API key provided");
+            OxyError::AuthenticationError("Invalid or expired API key".to_string())
         })?;
 
-        let (identity, _validated_key) = self.validate_api_key(&key).await?;
-        Ok(identity)
-    }
+    // Get the user associated with the API key
+    let user = Users::find_by_id(validated_key.user_id)
+        .one(&db)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to fetch user for API key: {}", e);
+            OxyError::AuthenticationError("Failed to authenticate user".to_string())
+        })?
+        .ok_or_else(|| {
+            tracing::error!(
+                "User not found for validated API key: {}",
+                validated_key.user_id
+            );
+            OxyError::AuthenticationError("User not found".to_string())
+        })?;
+
+    // Create Identity with real user information
+    Ok(Identity {
+        idp_id: Some(validated_key.id.to_string()), // Use the API key ID as the identity provider ID
+        picture: user.picture,
+        email: user.email,
+        name: Some(user.name),
+    })
 }

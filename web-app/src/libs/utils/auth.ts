@@ -26,20 +26,6 @@ export const handleLogout = async (): Promise<void> => {
     });
 
     if (response.ok) {
-      const logoutData: LogoutResponse = await response.json();
-
-      // Clear local storage and cookies regardless of auth mode
-      performLogoutCleanup();
-
-      // If there's a logout URL (e.g., for aws Cognito), redirect to it
-      if (logoutData.logout_url) {
-        window.location.href = logoutData.logout_url;
-      } else {
-        // For other auth modes (IAP, Local), redirect to home page
-        redirectToHome();
-      }
-    } else {
-      // Fallback: clear everything and redirect to home
       performLogoutCleanup();
       redirectToHome();
     }

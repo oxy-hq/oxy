@@ -13,8 +13,9 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - RUST_LOG=debug
       - OXY_DATABASE_URL=postgresql://admin:password@postgres:5432/default
+    env_file:
+      - .env
     depends_on:
       clickhouse:
         condition: service_started
@@ -27,7 +28,7 @@ services:
       retries: 3
     restart: unless-stopped
     volumes:
-      - ./examples:/app
+      - app-data:/var/lib/oxy/data
 
   # clickhouse:
   #   image: clickhouse/clickhouse-server

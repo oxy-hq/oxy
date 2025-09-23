@@ -66,11 +66,33 @@ impl EnumIndexManager {
     }
 
     /// One-shot initialization: create manager from config and initialize index
+    /// Returns Ok(()) even if cache files don't exist (graceful degradation)
     pub async fn init_from_config(config: ConfigManager) -> Result<(), OxyError> {
         let manager = Self::from_config(&config).await?;
-        manager.init_index().await?;
 
-        Ok(())
+        let cache_exists = manager.config.routing_rkyv_path().exists()
+            || manager.config.routing_json_path().exists();
+
+        if !cache_exists {
+            tracing::debug!(
+                "Enum index cache files do not exist, skipping initialization. Please create the enum index cache files (see documentation for instructions)."
+            );
+            return Ok(());
+        }
+
+        match manager.init_index().await {
+            Ok(_) => {
+                tracing::debug!("Enum index initialized successfully");
+                Ok(())
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to initialize enum index from cache: {}. Continuing without enum index.",
+                    e
+                );
+                Ok(()) // Return Ok to allow graceful degradation
+            }
+        }
     }
 
     /// One-shot build and persist: create manager from config and build cache

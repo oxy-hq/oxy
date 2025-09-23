@@ -1,4 +1,6 @@
+use crate::api::agent::{ArtifactInfo, AskAgentResponse};
 use crate::api::middlewares::project::ProjectManagerExtractor;
+use crate::execute::types::ReferenceKind;
 use std::{path::PathBuf, pin::Pin};
 
 use crate::{
@@ -30,6 +32,7 @@ use base64::{Engine, prelude::BASE64_STANDARD};
 use futures::Stream;
 use sea_orm::{ActiveModelTrait, ActiveValue};
 use serde::{Deserialize, Serialize};
+use tokio::sync::mpsc;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -71,9 +74,15 @@ impl AgentConfigResponse {
 
 #[utoipa::path(
     method(get),
-    path = "/agents",
+    path = "/{project_id}/agents",
+    params(
+        ("project_id" = Uuid, Path, description = "Project UUID")
+    ),
     responses(
         (status = OK, description = "Success", body = Vec<String>, content_type = "application/json")
+    ),
+    security(
+        ("ApiKey" = [])
     )
 )]
 pub async fn get_agents(
@@ -121,6 +130,20 @@ pub async fn get_agents(
     Ok(extract::Json(agents))
 }
 
+#[utoipa::path(
+    method(get),
+    path = "/{project_id}/agents/{pathb64}",
+    params(
+        ("project_id" = Uuid, Path, description = "Project UUID"),
+        ("pathb64" = String, Path, description = "Base64 encoded path to the agent")
+    ),
+    responses(
+        (status = OK, description = "Success", body = String, content_type = "application/json")
+    ),
+    security(
+        ("ApiKey" = [])
+    )
+)]
 pub async fn get_agent(
     Path((_project_id, pathb64)): Path<(Uuid, String)>,
     ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
@@ -195,13 +218,17 @@ pub struct AskAgentRequest {
 
 #[utoipa::path(
     method(post),
-    path = "/agents/{pathb64}/ask",
+    path = "/{project_id}/agents/{pathb64}/ask",
     params(
+        ("project_id" = Uuid, Path, description = "Project UUID"),
         ("pathb64" = String, Path, description = "Base64 encoded path to the agent")
     ),
     request_body = AskAgentRequest,
     responses(
         (status = OK, description = "Success", body = AnswerStream, content_type = "text/event-stream")
+    ),
+    security(
+        ("ApiKey" = [])
     )
 )]
 pub async fn ask_agent_preview(
@@ -268,6 +295,169 @@ pub async fn ask_agent_preview(
     let stream = create_sse_stream(rx);
 
     Ok(Sse::new(stream))
+}
+
+#[derive(Serialize, Deserialize, ToSchema, Debug, Clone)]
+pub struct ArtifactInfo {
+    pub id: String,
+    pub title: String,
+    pub kind: String,
+    pub is_verified: bool,
+}
+
+#[derive(Serialize, Deserialize, ToSchema, Debug, Clone)]
+pub struct AskAgentResponse {
+    pub content: String,
+    pub references: Vec<crate::execute::types::ReferenceKind>,
+    pub usage: Option<crate::execute::types::Usage>,
+    pub artifacts: Vec<ArtifactInfo>,
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct AskAgentNonStreamingRequest {
+    pub question: String,
+}
+
+impl ChatExecutionRequest for AskAgentNonStreamingRequest {
+    fn get_question(&self) -> Option<String> {
+        Some(self.question.clone())
+    }
+}
+
+#[utoipa::path(
+    method(post),
+    path = "/{project_id}/agents/{pathb64}/ask_sync",
+    params(
+        ("project_id" = Uuid, Path, description = "Project UUID"),
+        ("pathb64" = String, Path, description = "Base64 encoded path to the agent")
+    ),
+    request_body = AskAgentNonStreamingRequest,
+    responses(
+        (status = OK, description = "Success", body = AskAgentResponse, content_type = "application/json")
+    ),
+    security(
+        ("ApiKey" = [])
+    )
+)]
+pub async fn ask_agent_sync(
+    Path((_project_id, pathb64)): Path<(Uuid, String)>,
+    AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
+    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    extract::Json(payload): extract::Json<AskAgentNonStreamingRequest>,
+) -> Result<impl IntoResponse, StatusCode> {
+    // Mirror ask_agent_preview behavior but return a single aggregated response
+    let decoded_path = BASE64_STANDARD.decode(pathb64).map_err(|e| {
+        tracing::info!("{:?}", e);
+        StatusCode::BAD_REQUEST
+    })?;
+
+    let path = String::from_utf8(decoded_path).map_err(|e| {
+        tracing::info!("{:?}", e);
+        StatusCode::BAD_REQUEST
+    })?;
+
+    let (tx, mut rx) = mpsc::channel(100);
+
+    let project_manager_clone = project_manager.clone();
+    let question = payload.question.clone();
+
+    let _ = tokio::spawn(async move {
+        let tx_clone = tx.clone();
+        let block_handler = BlockHandler::new(tx.clone());
+        let block_handler_reader = block_handler.get_reader();
+        let result = run_agent(
+            project_manager_clone,
+            &PathBuf::from(path),
+            question,
+            block_handler,
+            vec![],
+        )
+        .await;
+
+        if let Err(err) = result {
+            tracing::error!("Error running agent: {}", err);
+
+            let error_message = match block_handler_reader.into_active_models().await {
+                Ok((answer_message, _artifacts)) => {
+                    let existing_content = match &answer_message.content {
+                        ActiveValue::Set(val) => val.clone(),
+                        _ => String::new(),
+                    };
+                    format!("{}\n 🔴 Error: {}", existing_content, err)
+                }
+                Err(e) => {
+                    tracing::error!("Error reading block handler models: {}", e);
+                    format!("🔴 Error: {}", err)
+                }
+            };
+
+            let error_stream = AnswerStream {
+                content: AnswerContent::Error {
+                    message: error_message,
+                },
+                references: vec![],
+                is_error: true,
+                step: String::new(),
+            };
+
+            let _ = tx_clone.send(error_stream).await;
+        }
+    });
+
+    // aggregate all stream items into AskAgentResponse
+    let mut content = String::new();
+    let mut references: Vec<ReferenceKind> = Vec::new();
+    let mut usage: Option<crate::execute::types::Usage> = None;
+    let mut artifacts: Vec<ArtifactInfo> = Vec::new();
+    let mut artifact_map: std::collections::HashMap<String, ArtifactInfo> =
+        std::collections::HashMap::new();
+
+    while let Some(stream_item) = rx.recv().await {
+        match stream_item.content {
+            AnswerContent::Text {
+                content: text_content,
+            } => {
+                content.push_str(&text_content);
+            }
+            AnswerContent::Error { message } => {
+                content.push_str(&message);
+            }
+            AnswerContent::Usage {
+                usage: stream_usage,
+            } => {
+                usage = Some(stream_usage);
+            }
+            AnswerContent::ArtifactStarted {
+                id,
+                title,
+                kind,
+                is_verified,
+            } => {
+                let artifact_info = ArtifactInfo {
+                    id: id.clone(),
+                    title,
+                    kind: kind.to_string(),
+                    is_verified,
+                };
+                artifact_map.insert(id, artifact_info);
+            }
+            AnswerContent::ArtifactDone { id } => {
+                if let Some(artifact) = artifact_map.remove(&id) {
+                    artifacts.push(artifact);
+                }
+            }
+            _ => {}
+        }
+
+        references.extend(stream_item.references);
+    }
+
+    Ok(extract::Json(AskAgentResponse {
+        content,
+        references,
+        usage,
+        artifacts,
+    }))
 }
 
 #[derive(Deserialize)]

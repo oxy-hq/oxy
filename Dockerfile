@@ -49,6 +49,11 @@ RUN apt-get update && \
 
 COPY --from=rust-builder /app/target/release/oxy /usr/local/bin
 
+# Directory for persistent app data inside the container
+ENV OXY_STATE_DIR=/var/lib/oxy/data
+RUN mkdir -p ${OXY_STATE_DIR} && chown -R root:root /var/lib/oxy
+VOLUME ["${OXY_STATE_DIR}"]
+
 # Set tini as the entrypoint
 ENTRYPOINT ["/usr/bin/tini", "--"]
 

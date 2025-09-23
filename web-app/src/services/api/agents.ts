@@ -21,9 +21,12 @@ export class AgentService {
     branchName: string,
     pathb64: string,
   ): Promise<AgentConfig> {
-    const response = await apiClient.get(`/${projectId}/agents/${pathb64}`, {
-      params: { branch: branchName },
-    });
+    const response = await apiClient.get(
+      `/${projectId}/agents/${encodeURIComponent(pathb64)}`,
+      {
+        params: { branch: branchName },
+      },
+    );
     return response.data;
   }
 
@@ -37,7 +40,7 @@ export class AgentService {
     const searchParams = new URLSearchParams({
       branch: branchName,
     });
-    const url = `${apiBaseURL}/${projectId}/agents/${pathb64}/tests/${testIndex}?${searchParams.toString()}`;
+    const url = `${apiBaseURL}/${projectId}/agents/${encodeURIComponent(pathb64)}/tests/${testIndex}?${searchParams.toString()}`;
     await fetchSSE(url, {
       onMessage: onReadStream,
     });
@@ -53,7 +56,7 @@ export class AgentService {
     const searchParams = new URLSearchParams({
       branch: branchName,
     });
-    const url = `${apiBaseURL}/${projectId}/agents/${agentPathb64}/ask?${searchParams.toString()}`;
+    const url = `${apiBaseURL}/${projectId}/agents/${encodeURIComponent(agentPathb64)}/ask?${searchParams.toString()}`;
     await fetchSSE(url, {
       body: { question },
       onMessage: onReadStream,

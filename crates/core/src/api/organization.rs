@@ -125,7 +125,7 @@ pub async fn list_users(
         (status = 500, description = "Internal server error")
     ),
     security(
-        ("Bearer" = [])
+        ("ApiKey" = [])
     )
 )]
 pub async fn create_organization(
@@ -184,7 +184,7 @@ pub async fn create_organization(
         (status = 500, description = "Internal server error")
     ),
     security(
-        ("Bearer" = [])
+        ("ApiKey" = [])
     )
 )]
 pub async fn list_organizations(

@@ -179,13 +179,25 @@ pub async fn project_middleware(
                 }
                 match builder.build().await {
                     Ok(project_manager) => {
-                        let _ = EnumIndexManager::init_from_config(
+                        match EnumIndexManager::init_from_config(
                             project_manager.config_manager.clone(),
                         )
                         .await
-                        .map_err(|e| {
-                            tracing::error!("Failed to initialize EnumIndexManager: {}", e);
-                        });
+                        {
+                            Ok(_) => {
+                                tracing::debug!(
+                                    "Enum index initialized successfully for project {}",
+                                    project_id
+                                );
+                            }
+                            Err(e) => {
+                                tracing::debug!(
+                                    "Enum index initialization skipped for project {}: {}",
+                                    project_id,
+                                    e
+                                );
+                            }
+                        }
                         request.extensions_mut().insert(project_manager);
                     }
                     Err(e) => {

@@ -29,7 +29,11 @@ pub struct PaginationQuery {
 
 #[utoipa::path(
     get,
-    path = "workflows/{pathb64}/runs",
+    path = "/{project_id}/workflows/{pathb64}/runs",
+    params(
+        ("project_id" = Uuid, Path, description = "Project UUID"),
+        ("pathb64" = String, Path, description = "Base64 encoded path to the workflow"),
+    ),
     params(
         ("page" = Option<usize>, Query, description = "Page number (default: 1)"),
         ("size" = Option<usize>, Query, description = "Items per page (default: 100, max: 100)")
@@ -38,6 +42,9 @@ pub struct PaginationQuery {
         (status = 200, description = "List of workflow runs with pagination", body = Paginated<RunInfo>),
         (status = 401, description = "Unauthorized"),
         (status = 500, description = "Internal server error")
+    ),
+    security(
+        ("ApiKey" = [])
     ),
     tag = "Runs"
 )]
@@ -113,13 +120,20 @@ pub struct CreateRunResponse {
 
 #[utoipa::path(
     post,
-    path = "workflows/{pathb64}/runs",
+    path = "/{project_id}/workflows/{pathb64}/runs",
+    params(
+        ("project_id" = Uuid, Path, description = "Project UUID"),
+        ("pathb64" = String, Path, description = "Base64 encoded path to the workflow"),
+    ),
     request_body = CreateRunRequest,
     responses(
         (status = 201, description = "Successfully create the workflow run", body = CreateRunResponse),
         (status = 404, description = "Workflow not found"),
         (status = 401, description = "Unauthorized"),
         (status = 500, description = "Internal server error")
+    ),
+    security(
+        ("ApiKey" = [])
     ),
     tag = "Runs"
 )]
@@ -271,7 +285,7 @@ pub struct CancelRunRequest {
 
 #[utoipa::path(
     delete,
-    path = "/runs/{source_id}/{run_index}",
+    path = "/{project_id}/runs/{source_id}/{run_index}",
     params(
         ("source_id" = String, Path, description = "SourceID for workflow is the path to the workflow file"),
         ("run_index" = i32, Path, description = "Run index")
@@ -281,6 +295,9 @@ pub struct CancelRunRequest {
         (status = 404, description = "Workflow not found"),
         (status = 401, description = "Unauthorized"),
         (status = 500, description = "Internal server error")
+    ),
+    security(
+        ("ApiKey" = [])
     ),
     tag = "Runs"
 )]
@@ -325,13 +342,17 @@ impl From<WorkflowEventsRequest> for RunInfo {
 
 #[utoipa::path(
     method(get),
-    path = "/events",
+    path = "/{project_id}/events",
     params(
+        ("project_id" = Uuid, Path, description = "Project UUID"),
         ("source_id" = String, Query, description = "SourceID for workflow is the path to the workflow file"),
         ("run_index" = i32, Query, description = "Run index")
     ),
     responses(
         (status = OK, description = "Success", content_type = "text/event-stream")
+    ),
+    security(
+        ("ApiKey" = [])
     )
 )]
 pub async fn workflow_events(
@@ -384,13 +405,21 @@ pub struct BlocksRequest {
 
 #[utoipa::path(
     method(get),
-    path = "/blocks",
+    path = "/{project_id}/blocks",
+    params(
+        ("project_id" = Uuid, Path, description = "Project UUID"),
+        ("sourceId" = Option<String>, Path, description = "Combination of SourceID and RunIndex in RunInfo"),
+        ("runIndex" = Option<String>, Query, description = "Run index to filter blocks")
+    ),
     params(
         ("sourceId" = Option<String>, Path, description = "Combination of SourceID and RunIndex in RunInfo"),
         ("runIndex" = Option<String>, Query, description = "Run index to filter blocks")
     ),
     responses(
         (status = OK, description = "Success", body = RunDetails)
+    ),
+    security(
+        ("ApiKey" = [])
     )
 )]
 pub async fn get_blocks(

@@ -27,8 +27,7 @@ pub async fn sync_databases(
     );
 
     // Convert semantic crate errors to core crate errors
-    let results: Vec<Result<SyncMetrics, OxyError>> =
-        semantic_results.into_iter().map(|result| result).collect();
+    let results: Vec<Result<SyncMetrics, OxyError>> = semantic_results.into_iter().collect();
 
     let would_overwrite_count: usize = results
         .iter()

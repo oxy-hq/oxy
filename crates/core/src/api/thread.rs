@@ -65,8 +65,9 @@ pub struct CreateThreadRequest {
 /// Get paginated list of threads for the authenticated user
 #[utoipa::path(
     get,
-    path = "/threads",
+    path = "/{project_id}/threads",
     params(
+        ("project_id" = Uuid, Path, description = "Project UUID"),
         ("page" = Option<u64>, Query, description = "Page number (default: 1)"),
         ("limit" = Option<u64>, Query, description = "Items per page (default: 100, max: 100)")
     ),
@@ -74,6 +75,9 @@ pub struct CreateThreadRequest {
         (status = 200, description = "List of threads with pagination", body = ThreadsResponse),
         (status = 401, description = "Unauthorized"),
         (status = 500, description = "Internal server error")
+    ),
+    security(
+        ("ApiKey" = [])
     ),
     tag = "Threads"
 )]
@@ -155,8 +159,9 @@ pub async fn get_threads(
 
 #[utoipa::path(
     get,
-    path = "/threads/{id}",
+    path = "/{project_id}/threads/{id}",
     params(
+        ("project_id" = Uuid, Path, description = "Project UUID"),
         ("id" = String, Path, description = "Thread ID (UUID)")
     ),
     responses(
@@ -165,6 +170,9 @@ pub async fn get_threads(
         (status = 401, description = "Unauthorized"),
         (status = 404, description = "Thread not found"),
         (status = 500, description = "Internal server error")
+    ),
+    security(
+        ("ApiKey" = [])
     ),
     tag = "Threads"
 )]
@@ -202,13 +210,19 @@ pub async fn get_thread(
 /// Create a new thread
 #[utoipa::path(
     post,
-    path = "/threads",
+    path = "/{project_id}/threads",
+    params(
+        ("project_id" = Uuid, Path, description = "Project UUID")
+    ),
     request_body = CreateThreadRequest,
     responses(
         (status = 200, description = "Thread created successfully", body = ThreadItem),
         (status = 400, description = "Invalid request data"),
         (status = 401, description = "Unauthorized"),
         (status = 500, description = "Internal server error")
+    ),
+    security(
+        ("ApiKey" = [])
     ),
     tag = "Threads"
 )]
@@ -262,8 +276,9 @@ pub async fn create_thread(
 /// Delete a specific thread
 #[utoipa::path(
     delete,
-    path = "/threads/{id}",
+    path = "/{project_id}/threads/{id}",
     params(
+        ("project_id" = Uuid, Path, description = "Project UUID"),
         ("id" = String, Path, description = "Thread ID (UUID)")
     ),
     responses(
@@ -272,6 +287,9 @@ pub async fn create_thread(
         (status = 401, description = "Unauthorized"),
         (status = 404, description = "Thread not found"),
         (status = 500, description = "Internal server error")
+    ),
+    security(
+        ("ApiKey" = [])
     ),
     tag = "Threads"
 )]
@@ -356,11 +374,17 @@ fn remove_all_files_in_dir<P: AsRef<std::path::Path>>(dir: P) {
 /// Delete all threads for the authenticated user
 #[utoipa::path(
     delete,
-    path = "/threads",
+    path = "/{project_id}/threads",
+    params(
+        ("project_id" = Uuid, Path, description = "Project UUID")
+    ),
     responses(
         (status = 200, description = "All threads deleted successfully"),
         (status = 401, description = "Unauthorized"),
         (status = 500, description = "Internal server error")
+    ),
+    security(
+        ("ApiKey" = [])
     ),
     tag = "Threads"
 )]
@@ -393,8 +417,9 @@ pub async fn delete_all_threads(
 /// Stop a running thread
 #[utoipa::path(
     post,
-    path = "/threads/{id}/stop",
+    path = "/{project_id}/threads/{id}/stop",
     params(
+        ("project_id" = Uuid, Path, description = "Project UUID"),
         ("id" = String, Path, description = "Thread ID (UUID)")
     ),
     responses(
@@ -403,6 +428,9 @@ pub async fn delete_all_threads(
         (status = 401, description = "Unauthorized"),
         (status = 404, description = "Thread not found"),
         (status = 500, description = "Internal server error")
+    ),
+    security(
+        ("ApiKey" = [])
     ),
     tag = "Threads"
 )]
@@ -465,13 +493,19 @@ pub struct BulkDeleteThreadsRequest {
 /// Bulk delete multiple threads
 #[utoipa::path(
     post,
-    path = "/threads/bulk-delete",
+    path = "/{project_id}/threads/bulk-delete",
+    params(
+        ("project_id" = Uuid, Path, description = "Project UUID")
+    ),
     request_body = BulkDeleteThreadsRequest,
     responses(
         (status = 200, description = "Threads deleted successfully"),
         (status = 400, description = "Invalid request data or thread IDs"),
         (status = 401, description = "Unauthorized"),
         (status = 500, description = "Internal server error")
+    ),
+    security(
+        ("ApiKey" = [])
     ),
     tag = "Threads"
 )]
@@ -544,6 +578,9 @@ pub struct LogsResponse {
         (status = 200, description = "List of logs with thread information", body = LogsResponse),
         (status = 401, description = "Unauthorized"),
         (status = 500, description = "Internal server error")
+    ),
+    security(
+        ("ApiKey" = [])
     ),
     tag = "Threads"
 )]

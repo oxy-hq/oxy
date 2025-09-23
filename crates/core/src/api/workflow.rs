@@ -42,9 +42,15 @@ pub struct GetWorkflowResponse {
 
 #[utoipa::path(
     method(get),
-    path = "/workflows",
+    path = "/{project_id}/workflows",
+    params(
+        ("project_id" = Uuid, Path, description = "Project UUID")
+    ),
     responses(
         (status = 200, description = "Success", body = Vec<WorkflowInfo>, content_type = "application/json")
+    ),
+    security(
+        ("ApiKey" = [])
     )
 )]
 pub async fn list(
@@ -89,9 +95,16 @@ pub struct GetLogsResponse {
 
 #[utoipa::path(
     method(get),
-    path = "/workflows/{pathb64}/logs",
+    path = "/{project_id}/workflows/{pathb64}/logs",
+    params(
+        ("project_id" = Uuid, Path, description = "Project UUID"),
+        ("pathb64" = String, Path, description = "Base64 encoded path to the workflow")
+    ),
     responses(
         (status = 200, description = "Success", body = GetLogsResponse, content_type = "application/json")
+    ),
+    security(
+        ("ApiKey" = [])
     )
 )]
 pub async fn get_logs(
@@ -156,9 +169,16 @@ pub struct RunWorkflowRequest {
 
 #[utoipa::path(
     method(post),
-    path = "/workflows/{pathb64}/run",
+    path = "/{project_id}/workflows/{pathb64}/run",
+    params(
+        ("project_id" = Uuid, Path, description = "Project UUID"),
+        ("pathb64" = String, Path, description = "Base64 encoded path to the workflow")
+    ),
     responses(
         (status = 200, description = "Success", body = (), content_type = "text/event-stream")
+    ),
+    security(
+        ("ApiKey" = [])
     )
 )]
 pub async fn run_workflow(
@@ -243,9 +263,16 @@ async fn ensure_workflow_thread_unlocked(
 
 #[utoipa::path(
     method(post),
-    path = "/workflows/{pathb64}/run-thread",
+    path = "/{project_id}/workflows/{pathb64}/run-thread",
+    params(
+        ("project_id" = Uuid, Path, description = "Project UUID"),
+        ("pathb64" = String, Path, description = "Thread ID or encoded id")
+    ),
     responses(
         (status = 200, description = "Success", body = (), content_type = "text/event-stream")
+    ),
+    security(
+        ("ApiKey" = [])
     )
 )]
 pub async fn run_workflow_thread(

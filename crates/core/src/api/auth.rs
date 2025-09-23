@@ -15,9 +15,8 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 use uuid::Uuid;
 
-use crate::auth::types::AuthMode;
+use crate::config::constants::AUTHENTICATION_SECRET_KEY;
 use crate::{
-    config::constants::AUTHENTICATION_SECRET_KEY,
     db::{client::establish_connection, filters::UserQueryFilterExt},
     errors::OxyError,
 };
@@ -85,18 +84,7 @@ pub struct GoogleConfig {
     pub client_id: String,
 }
 
-pub async fn get_config(
-    State(auth_mode): State<AuthMode>,
-) -> Result<Json<AuthConfigResponse>, StatusCode> {
-    if auth_mode != AuthMode::BuiltIn {
-        return Ok(Json(AuthConfigResponse {
-            is_built_in_mode: false,
-            auth_enabled: false,
-            google: None,
-            basic: None,
-        }));
-    }
-
+pub async fn get_config(State(_auth): State<()>) -> Result<Json<AuthConfigResponse>, StatusCode> {
     let auth_config = crate::config::oxy::get_oxy_config()
         .ok()
         .and_then(|config| config.authentication);

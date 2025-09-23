@@ -131,7 +131,7 @@ pub struct ProjectBranchesResponse {
         (status = 500, description = "Internal server error")
     ),
     security(
-        ("Bearer" = [])
+        ("ApiKey" = [])
     ),
     tag = "Projects"
 )]
@@ -189,7 +189,7 @@ pub async fn list_branches(
         (status = 500, description = "Internal server error")
     ),
     security(
-        ("Bearer" = [])
+        ("ApiKey" = [])
     ),
     tag = "Projects"
 )]
@@ -396,7 +396,7 @@ pub async fn get_revision_info(
         (status = 500, description = "Internal server error")
     ),
     security(
-        ("Bearer" = [])
+        ("ApiKey" = [])
     ),
     tag = "Projects"
 )]
@@ -463,7 +463,7 @@ pub async fn get_project(
         (status = 500, description = "Internal server error")
     ),
     security(
-        ("Bearer" = [])
+        ("ApiKey" = [])
     ),
     tag = "Projects"
 )]
@@ -561,7 +561,7 @@ pub async fn switch_project_active_branch(
         (status = 500, description = "Internal server error")
     ),
     security(
-        ("Bearer" = [])
+        ("ApiKey" = [])
     ),
     tag = "Projects"
 )]
@@ -690,7 +690,7 @@ pub async fn get_project_status(
         (status = 500, description = "Internal server error")
     ),
     security(
-        ("Bearer" = [])
+        ("ApiKey" = [])
     ),
     tag = "Projects"
 )]

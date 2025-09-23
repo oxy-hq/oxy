@@ -1,5 +1,5 @@
 use crate::auth::extractor::AuthenticatedUserExtractor;
-use crate::auth::types::{AuthMode, AuthenticatedUser};
+use crate::auth::types::AuthenticatedUser;
 use crate::auth::user::UserService;
 use axum::{
     extract::{Json as JsonExtractor, Path, State},
@@ -165,49 +165,12 @@ pub async fn update_user(
     }))
 }
 
-pub async fn logout(State(auth_mode): State<AuthMode>) -> Result<Json<LogoutResponse>, StatusCode> {
-    match auth_mode {
-        AuthMode::Cognito => {
-            // Handle Cognito logout by returning the logout URL
-            let user_pool_id =
-                env::var("AWS_COGNITO_USER_POOL_ID").map_err(|_| StatusCode::NOT_FOUND)?;
-            let region =
-                env::var("AWS_COGNITO_REGION").map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-            let client_id =
-                env::var("AWS_COGNITO_CLIENT_ID").map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-            let mut logout_url = Url::parse(&format!(
-                "https://{user_pool_id}.auth.{region}.amazoncognito.com/logout"
-            ))
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-            logout_url
-                .query_pairs_mut()
-                .append_pair("client_id", &client_id);
-
-            Ok(Json(LogoutResponse {
-                logout_url: Some(logout_url.to_string()),
-                success: true,
-                message: "Cognito logout URL generated successfully".to_string(),
-            }))
-        }
-        AuthMode::IAP | AuthMode::IAPCloudRun => {
-            // For IAP, there's no specific logout URL needed as it's handled by Google
-            Ok(Json(LogoutResponse {
-                logout_url: None,
-                success: true,
-                message: "IAP logout handled by identity provider".to_string(),
-            }))
-        }
-        AuthMode::BuiltIn => {
-            // For built-in auth, just indicate successful logout
-            Ok(Json(LogoutResponse {
-                logout_url: None,
-                success: true,
-                message: "Build-in logout successful".to_string(),
-            }))
-        }
-    }
+pub async fn logout(_state: State<()>) -> Result<Json<LogoutResponse>, StatusCode> {
+    Ok(Json(LogoutResponse {
+        logout_url: None,
+        success: true,
+        message: "Built-in logout successful".to_string(),
+    }))
 }
 
 pub async fn get_current_user(

@@ -1,12 +1,9 @@
 use crate::{
-    config::{
-        auth::{ApiKeyAuth, Authentication},
-        constants::{AUTHENTICATION_HEADER_KEY, AUTHENTICATION_SECRET_KEY},
-    },
+    config::constants::{AUTHENTICATION_HEADER_KEY, AUTHENTICATION_SECRET_KEY},
     errors::OxyError,
 };
 
-use super::{api_key::ApiKeyAuthenticator, authenticator::Authenticator, types::Identity};
+use super::{api_key::authenticate_header, authenticator::Authenticator, types::Identity};
 use jsonwebtoken::{DecodingKey, Validation, decode};
 use serde::{Deserialize, Serialize};
 
@@ -18,19 +15,17 @@ struct Claims {
     iat: usize,
 }
 
-pub struct BuiltInAuthenticator {
-    authentication: Option<Authentication>,
-}
+pub struct BuiltInAuthenticator;
 
 impl Default for BuiltInAuthenticator {
     fn default() -> Self {
-        Self::new(None)
+        Self::new()
     }
 }
 
 impl BuiltInAuthenticator {
-    pub fn new(authentication: Option<Authentication>) -> Self {
-        Self { authentication }
+    pub fn new() -> Self {
+        Self
     }
 }
 
@@ -38,36 +33,21 @@ impl Authenticator for BuiltInAuthenticator {
     type Error = OxyError;
 
     async fn authenticate(&self, header: &axum::http::HeaderMap) -> Result<Identity, Self::Error> {
-        match self.authentication {
-            None => Ok(Identity {
-                idp_id: None,
-                picture: None,
-                email: "guest@oxy.local".to_string(),
-                name: Some("Guest".to_string()),
-            }),
-            Some(ref auth) => match try_api_authentication(header, auth.api_key.clone()).await {
-                Some(identity) => {
-                    tracing::info!(
-                        "API key authentication successful for user: {}",
-                        identity.email
-                    );
-                    Ok(identity)
-                }
-                None => {
-                    let token = self.extract_token(header)?;
-                    self.validate(&token)
-                }
+        match self.extract_token(header) {
+            Ok(token) => match self.validate(&token) {
+                Ok(identity) => return Ok(identity),
+                Err(err) => tracing::debug!("JWT validation failed, will try API key: {}", err),
             },
+            Err(err) => tracing::debug!("No JWT token extracted: {}", err),
         }
+
+        // Fallback to X-API-Key header authentication.
+        authenticate_header(header).await.map_err(|e| e)
     }
 }
 
 impl BuiltInAuthenticator {
     fn extract_token(&self, header: &axum::http::HeaderMap) -> Result<String, OxyError> {
-        if self.authentication.is_none() {
-            return Ok("".to_string());
-        }
-
         tracing::info!("Extracting JWT token from header {:?}", header);
         header
             .get(AUTHENTICATION_HEADER_KEY)
@@ -95,19 +75,5 @@ impl BuiltInAuthenticator {
             name: None,
             email: token_data.claims.email,
         })
-    }
-}
-
-async fn try_api_authentication(
-    header: &axum::http::HeaderMap,
-    configuration: Option<ApiKeyAuth>,
-) -> Option<Identity> {
-    match configuration {
-        None => None,
-        Some(api_key_auth) => {
-            let authenticator = ApiKeyAuthenticator::from_config(api_key_auth);
-            let rs = authenticator.authenticate(header).await;
-            rs.ok()
-        }
     }
 }

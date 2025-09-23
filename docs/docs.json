@@ -119,8 +119,6 @@
             "pages": [
               "authentication/overview",
               "authentication/built-in",
-              "authentication/cognito",
-              "authentication/iap",
               "api-keys/API-Keys"
             ]
           }

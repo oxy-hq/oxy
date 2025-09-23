@@ -1,4 +1,4 @@
-use crate::auth::types::AuthMode;
+// Auth marker type removed; router uses unit `()` state now.
 use crate::db::client::establish_connection;
 use crate::errors::OxyError;
 use crate::theme::StyledText;
@@ -18,6 +18,7 @@ use tower::service_fn;
 use tower_http::trace::{self, TraceLayer};
 use tower_serve_static::ServeDir;
 use tracing::Level;
+use utoipa_swagger_ui::SwaggerUi;
 
 #[cfg(target_os = "windows")]
 static DIST: Dir = include_dir!("D:\\a\\oxy\\oxy\\crates\\core\\dist");
@@ -28,7 +29,6 @@ const ASSETS_CACHE_CONTROL: &str = "public, max-age=31536000, immutable";
 pub struct ServerConfig {
     pub port: u16,
     pub host: String,
-    pub auth_mode: AuthMode,
     pub http2_only: bool,
     pub tls_cert: String,
     pub tls_key: String,
@@ -37,7 +37,6 @@ pub struct ServerConfig {
 pub async fn start_server_and_web_app(
     port: u16,
     host: String,
-    auth_mode: AuthMode,
     http2_only: bool,
     tls_cert: String,
     tls_key: String,
@@ -45,7 +44,6 @@ pub async fn start_server_and_web_app(
     let config: ServerConfig = ServerConfig {
         port,
         host,
-        auth_mode,
         http2_only,
         tls_cert,
         tls_key,
@@ -54,7 +52,7 @@ pub async fn start_server_and_web_app(
     run_database_migrations().await?;
 
     let available_port = find_available_port(config.host.clone(), config.port).await?;
-    let app = create_web_application(config.auth_mode).await?;
+    let app = create_web_application().await?;
 
     serve_application(
         app,
@@ -122,15 +120,37 @@ async fn find_available_port(host: String, port: u16) -> Result<u16, OxyError> {
     Ok(chosen_port)
 }
 
-async fn create_web_application(auth_mode: AuthMode) -> Result<Router, OxyError> {
-    let api_router = crate::api::router::api_router(auth_mode)
+async fn create_web_application() -> Result<Router, OxyError> {
+    let api_router = crate::api::router::api_router()
         .await
         .map(|router| router.layer(create_trace_layer()))
         .map_err(|e| OxyError::RuntimeError(format!("Failed to create API router: {}", e)))?;
+    let openapi_router = crate::api::router::openapi_router().await;
+    let mut openapi_doc = openapi_router.into_openapi().clone();
+
+    // Always add an API key security scheme using the default header.
+    use crate::config::constants::DEFAULT_API_KEY_HEADER;
+    use utoipa::openapi::security::{
+        ApiKey as OApiKey, ApiKeyValue, SecurityRequirement, SecurityScheme,
+    };
+    use utoipa::openapi::server::Server;
+
+    let name = "ApiKey".to_string();
+    let mut components = openapi_doc.components.take().unwrap_or_default();
+    components.security_schemes.insert(
+        name.clone(),
+        SecurityScheme::ApiKey(OApiKey::Header(ApiKeyValue::new(
+            DEFAULT_API_KEY_HEADER.to_string(),
+        ))),
+    );
+    openapi_doc.components = Some(components);
+    openapi_doc.security = Some(vec![SecurityRequirement::new(name, Vec::<String>::new())]);
+    openapi_doc.servers = Some(vec![Server::new("/api")]);
     let static_service = service_fn(handle_static_files);
 
     Ok(Router::new()
         .nest("/api", api_router)
+        .merge(SwaggerUi::new("/apidoc").url("/apidoc/openapi.json", openapi_doc))
         .fallback_service(static_service)
         .layer(create_trace_layer()))
 }

@@ -9,7 +9,6 @@ use crate::adapters::connector::Connector;
 use crate::adapters::project::builder::ProjectBuilder;
 use crate::adapters::runs::RunsManager;
 use crate::adapters::secrets::SecretsManager;
-use crate::auth::types::AuthMode;
 use crate::cli::migrate::migrate;
 use crate::config::model::AppConfig;
 use crate::config::*;
@@ -467,10 +466,9 @@ struct ServeArgs {
     host: String,
     /// Authentication mode for the web application
     ///
-    /// Choose between 'local' for development or 'oauth' for
-    /// production deployments with proper user authentication.
-    #[clap(long, default_value_t = AuthMode::BuiltIn, value_enum)]
-    auth_mode: AuthMode,
+    /// Authentication mode for the web application (always built-in)
+    ///
+    /// This flag is deprecated and removed; built-in auth is the only supported mode.
     /// Enable git-based project detection and onboarding
     ///
     /// When enabled, allows starting the server outside of an Oxy project
@@ -928,7 +926,6 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             if let Err(e) = start_server_and_web_app(
                 serve_args.port,
                 serve_args.host,
-                serve_args.auth_mode,
                 serve_args.http2_only,
                 serve_args.tls_cert,
                 serve_args.tls_key,

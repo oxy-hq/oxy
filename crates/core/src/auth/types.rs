@@ -1,17 +1,6 @@
-use clap::ValueEnum;
 use entity::users::{self, UserRole, UserStatus};
 
-#[derive(Debug, Clone, ValueEnum, PartialEq, Copy)]
-pub enum AuthMode {
-    // Use Google IAP for authentication
-    IAP,
-    // Use trusted Cloud Run identity headers for authentication
-    IAPCloudRun,
-    // Use Amazon Cognito for authentication (support ALB + congito setup)
-    Cognito,
-    // Use build-in authentication (default)
-    BuiltIn,
-}
+// `Auth` marker type removed — routes use unit `()` state instead.
 
 // Simple identity structure for email-based identity linking
 #[derive(Debug, Clone)]

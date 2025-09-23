@@ -15,7 +15,6 @@ use crate::api::thread;
 use crate::api::user;
 use crate::api::workflow;
 use crate::auth::middleware::{AuthState, auth_middleware};
-use crate::auth::types::AuthMode;
 use crate::errors::OxyError;
 use axum::Router;
 use axum::body::Body;
@@ -46,7 +45,7 @@ fn build_cors_layer() -> CorsLayer {
         .allow_headers(tower_http::cors::Any)
 }
 
-fn build_public_routes() -> Router<AuthMode> {
+fn build_public_routes() -> Router<()> {
     Router::new()
         .route("/auth/config", get(auth::get_config))
         .route("/auth/login", post(auth::login))
@@ -55,7 +54,7 @@ fn build_public_routes() -> Router<AuthMode> {
         .route("/auth/validate_email", post(auth::validate_email))
 }
 
-fn build_global_routes() -> Router<AuthMode> {
+fn build_global_routes() -> Router<()> {
     Router::new()
         .route("/user", get(user::get_current_user))
         .route("/logout", get(user::logout))
@@ -63,7 +62,7 @@ fn build_global_routes() -> Router<AuthMode> {
         .route("/github/branches", get(project::list_branches))
 }
 
-fn build_organization_routes() -> Router<AuthMode> {
+fn build_organization_routes() -> Router<()> {
     Router::new()
         .route("/", get(organization::list_organizations))
         .route("/", post(organization::create_organization))
@@ -86,14 +85,14 @@ fn build_organization_routes() -> Router<AuthMode> {
         )
 }
 
-fn build_organization_project_routes() -> Router<AuthMode> {
+fn build_organization_project_routes() -> Router<()> {
     Router::new()
         .route("/", post(project::create_project))
         .route("/", get(project::list_projects))
         .route("/{project_id}", delete(project::delete_project))
 }
 
-fn build_project_routes() -> Router<AuthMode> {
+fn build_project_routes() -> Router<()> {
     Router::new()
         .route("/details", get(project::get_project))
         .route("/status", get(project::get_project_status))
@@ -155,7 +154,7 @@ where
     }
 }
 
-fn build_workflow_routes() -> Router<AuthMode> {
+fn build_workflow_routes() -> Router<()> {
     Router::new()
         .route("/", get(workflow::list))
         .route("/from-query", post(workflow::create_from_query))
@@ -166,7 +165,7 @@ fn build_workflow_routes() -> Router<AuthMode> {
         .route("/{pathb64}/runs", post(run::create_workflow_run))
 }
 
-fn build_thread_routes() -> Router<AuthMode> {
+fn build_thread_routes() -> Router<()> {
     Router::new()
         .route("/", get(thread::get_threads))
         .route("/", post(thread::create_thread))
@@ -181,15 +180,16 @@ fn build_thread_routes() -> Router<AuthMode> {
         .route("/{id}/stop", post(thread::stop_thread))
 }
 
-fn build_agent_routes() -> Router<AuthMode> {
+fn build_agent_routes() -> Router<()> {
     Router::new()
         .route("/", get(agent::get_agents))
         .route("/{pathb64}", get(agent::get_agent))
         .route("/{pathb64}/ask", post(agent::ask_agent_preview))
+        .route("/{pathb64}/ask_sync", post(agent::ask_agent_sync))
         .route("/{pathb64}/tests/{test_index}", post(agent::run_test))
 }
 
-fn build_api_key_routes() -> Router<AuthMode> {
+fn build_api_key_routes() -> Router<()> {
     Router::new()
         .route("/", get(api_keys::list_api_keys))
         .route("/", post(api_keys::create_api_key))
@@ -197,7 +197,7 @@ fn build_api_key_routes() -> Router<AuthMode> {
         .route("/{id}", delete(api_keys::delete_api_key))
 }
 
-fn build_file_routes() -> Router<AuthMode> {
+fn build_file_routes() -> Router<()> {
     Router::new()
         .route("/", get(file::get_file_tree))
         .route("/diff-summary", get(file::get_diff_summary))
@@ -212,7 +212,7 @@ fn build_file_routes() -> Router<AuthMode> {
         .route("/{pathb64}/new-folder", post(file::create_folder))
 }
 
-fn build_database_routes() -> Router<AuthMode> {
+fn build_database_routes() -> Router<()> {
     Router::new()
         .route("/", get(database::list_databases))
         .route("/sync", post(database::sync_database))
@@ -220,7 +220,7 @@ fn build_database_routes() -> Router<AuthMode> {
         .route("/clean", post(database::clean_data))
 }
 
-fn build_secret_routes() -> Router<AuthMode> {
+fn build_secret_routes() -> Router<()> {
     Router::new()
         .route("/", get(secrets::list_secrets))
         .route("/", post(secrets::create_secret))
@@ -230,7 +230,7 @@ fn build_secret_routes() -> Router<AuthMode> {
         .route("/{id}", delete(secrets::delete_secret))
 }
 
-fn build_app_routes() -> Router<AuthMode> {
+fn build_app_routes() -> Router<()> {
     Router::new()
         .route("/", get(app::list_apps))
         .route("/{pathb64}", get(app::get_app_data))
@@ -239,7 +239,7 @@ fn build_app_routes() -> Router<AuthMode> {
         .route("/file/{pathb64}", get(app::get_data))
 }
 
-fn build_protected_routes() -> Router<AuthMode> {
+fn build_protected_routes() -> Router<()> {
     Router::new()
         .merge(build_global_routes())
         .nest("/organizations", build_organization_routes())
@@ -249,41 +249,22 @@ fn build_protected_routes() -> Router<AuthMode> {
         )
 }
 
-fn apply_middleware(
-    protected_routes: Router<AuthMode>,
-    auth_mode: AuthMode,
-) -> Result<Router<AuthMode>, OxyError> {
-    let protected_regular_routes = match auth_mode {
-        AuthMode::IAP => protected_routes.layer(middleware::from_fn_with_state(
-            AuthState::iap()?,
-            auth_middleware,
-        )),
-        AuthMode::IAPCloudRun => protected_routes.layer(middleware::from_fn_with_state(
-            AuthState::iap_cloud_run(),
-            auth_middleware,
-        )),
-        AuthMode::Cognito => protected_routes.layer(middleware::from_fn_with_state(
-            AuthState::cognito(),
-            auth_middleware,
-        )),
-        AuthMode::BuiltIn => protected_routes.layer(middleware::from_fn_with_state(
-            AuthState::built_in(),
-            auth_middleware,
-        )),
-    };
+fn apply_middleware(protected_routes: Router<()>) -> Result<Router<()>, OxyError> {
+    let protected_regular_routes = protected_routes.layer(middleware::from_fn_with_state(
+        AuthState::built_in(),
+        auth_middleware,
+    ));
 
     Ok(protected_regular_routes)
 }
-
-pub async fn api_router(auth_mode: AuthMode) -> Result<Router, OxyError> {
-    let cors = build_cors_layer();
+pub async fn api_router() -> Result<Router, OxyError> {
     let public_routes = build_public_routes();
     let protected_routes = build_protected_routes();
-    let protected_routes = apply_middleware(protected_routes, auth_mode)?;
+    let protected_routes = apply_middleware(protected_routes)?;
     let app_routes = public_routes.merge(protected_routes);
-
+    let cors = build_cors_layer();
     Ok(app_routes
-        .with_state(auth_mode)
+        .with_state(())
         .layer(cors)
         .layer(ServiceBuilder::new().layer(NewSentryLayer::<Request<Body>>::new_from_top())))
 }
@@ -295,6 +276,7 @@ pub async fn openapi_router() -> OpenApiRouter {
         // Agent routes
         .routes(routes!(agent::get_agents))
         .routes(routes!(agent::ask_agent_preview))
+        .routes(routes!(agent::ask_agent_sync))
         // API Keys routes
         .routes(routes!(api_keys::create_api_key))
         .routes(routes!(api_keys::list_api_keys))

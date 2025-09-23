@@ -41,66 +41,9 @@ pub const RETRIEVAL_EMBEDDINGS_BATCH_SIZE: usize = 128;
 pub const RETRIEVAL_CACHE_PATH: &str = ".cache";
 pub const VECTOR_INDEX_MIN_ROWS: usize = 1000;
 
-pub const DEFAULT_API_KEY_HEADER: &str = "X-API-KEY";
-pub const GCP_IAP_HEADER_KEY: &str = "x-goog-iap-jwt-assertion";
-pub const GCP_IAP_SUB_HEADER_KEY: &str = "x-goog-authenticated-user-id";
-pub const GCP_IAP_EMAIL_HEADER_KEY: &str = "x-goog-authenticated-user-email";
-pub const GCP_IAP_ISS: &str = "https://cloud.google.com/iap";
-pub const GCP_IAP_AUD_ENV_VAR: &str = "GCP_IAP_AUDIENCE";
+pub const DEFAULT_API_KEY_HEADER: &str = "X-API-Key";
 pub const AUTHENTICATION_HEADER_KEY: &str = "authorization";
 pub const AUTHENTICATION_SECRET_KEY: &str = "authentication_secret";
-// The public keys used to verify Google Cloud IAP JWT tokens.
-// https://www.gstatic.com/iap/verify/public_key-jwk
-pub const GCP_IAP_PUBLIC_JWT_KEY: &str = r#"
-{
-  "keys": [
-    {
-      "alg": "ES256",
-      "crv": "P-256",
-      "kid": "LInRpg",
-      "kty": "EC",
-      "use": "sig",
-      "x": "N2bcoT65Wk5NL6TzqSMObO9zyvgSC-XXYziCO9Wv5X4",
-      "y": "Xce9Zw73BTQdCX0a36GGmCmSjALPpF8GJ9VJacJJq44"
-    },
-    {
-      "alg": "ES256",
-      "crv": "P-256",
-      "kid": "4BCyVw",
-      "kty": "EC",
-      "use": "sig",
-      "x": "OhtoYH87QMDZXjoSrOyCNAN-64exaO_G4VmZ2XbtSW8",
-      "y": "KclJc4-WIBBYZ0SAhovElMqkPDvvZzRS3IfzGHpTnaE"
-    },
-    {
-      "alg": "ES256",
-      "crv": "P-256",
-      "kid": "BD7LWA",
-      "kty": "EC",
-      "use": "sig",
-      "x": "LrTwh8X_exLYYh8HOMuBr1eW5MKkE7S3s5WsyFkmO4k",
-      "y": "uupeaTQD-c-CiSphTjohV6YoQFqYZ0wWtwrHjqvpIKs"
-    },
-    {
-      "alg": "ES256",
-      "crv": "P-256",
-      "kid": "4w_puw",
-      "kty": "EC",
-      "use": "sig",
-      "x": "kfvrQkED5kI4OYN6Pwu3v82MYx8ATlz7C5V6P4ag-q4",
-      "y": "CGvUxkfGJCnjh41sWU7Kc4kp13yNWo4W4jCvZ67yP2w"
-    },
-    {
-      "alg": "ES256",
-      "crv": "P-256",
-      "kid": "pYM-2A",
-      "kty": "EC",
-      "use": "sig",
-      "x": "wvUvUqiVAO55EXHDfVxmIg5Y1yiz3Nw5wa4VOjL1oYQ",
-      "y": "wK1eK3sQWmqmXtE95ItYZtHV2hT8Rpvqh8URDZnTNDQ"
-    }
-  ]
-}"#;
 
 pub const CONSISTENCY_PROMPT: &str = indoc::indoc! {"
     You are comparing a pair of submitted answers on a given question. Here is the data:

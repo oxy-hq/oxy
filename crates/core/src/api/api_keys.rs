@@ -131,7 +131,7 @@ impl From<ApiKeyModel> for ApiKeyResponse {
 /// Create a new API key
 #[utoipa::path(
     post,
-    path = "/api-keys",
+    path = "/{project_id}/api-keys",
     request_body = CreateApiKeyRequest,
     responses(
         (status = 201, description = "API key created successfully", body = CreateApiKeyResponseDto),
@@ -140,7 +140,13 @@ impl From<ApiKeyModel> for ApiKeyResponse {
         (status = 422, description = "Validation error"),
         (status = 500, description = "Internal server error")
     ),
-    tag = "API Keys"
+    security(
+        ("ApiKey" = [])
+    ),
+    tag = "API Keys",
+    params(
+        ("project_id" = Uuid, Path, description = "Project UUID")
+    ),
 )]
 pub async fn create_api_key(
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
@@ -201,13 +207,19 @@ pub async fn create_api_key(
 /// List user's API keys
 #[utoipa::path(
     get,
-    path = "/api-keys",
+    path = "/{project_id}/api-keys",
     responses(
         (status = 200, description = "List of API keys", body = ApiKeyListResponse),
         (status = 401, description = "Unauthorized"),
         (status = 500, description = "Internal server error")
     ),
-    tag = "API Keys"
+    security(
+        ("ApiKey" = [])
+    ),
+    tag = "API Keys",
+    params(
+        ("project_id" = Uuid, Path, description = "Project UUID")
+    ),
 )]
 pub async fn list_api_keys(
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
@@ -238,17 +250,21 @@ pub async fn list_api_keys(
 /// Get specific API key info
 #[utoipa::path(
     get,
-    path = "/api-keys/{id}",
-    params(
-        ("id" = String, Path, description = "API key ID")
-    ),
+    path = "/{project_id}/api-keys/{id}",
     responses(
         (status = 200, description = "API key details", body = ApiKeyResponse),
         (status = 401, description = "Unauthorized"),
         (status = 404, description = "API key not found"),
         (status = 500, description = "Internal server error")
     ),
-    tag = "API Keys"
+    security(
+        ("ApiKey" = [])
+    ),
+    tag = "API Keys",
+    params(
+        ("project_id" = Uuid, Path, description = "Project UUID"),
+        ("id" = String, Path, description = "API key ID")
+    ),
 )]
 pub async fn get_api_key(
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
@@ -277,17 +293,21 @@ pub async fn get_api_key(
 /// Revoke (delete) an API key
 #[utoipa::path(
     delete,
-    path = "/api-keys/{id}",
-    params(
-        ("id" = String, Path, description = "API key ID")
-    ),
+    path = "/{project_id}/api-keys/{id}",
     responses(
         (status = 204, description = "API key revoked successfully"),
         (status = 401, description = "Unauthorized"),
         (status = 404, description = "API key not found"),
         (status = 500, description = "Internal server error")
     ),
-    tag = "API Keys"
+    security(
+        ("ApiKey" = [])
+    ),
+    tag = "API Keys",
+    params(
+        ("project_id" = Uuid, Path, description = "Project UUID"),
+        ("id" = String, Path, description = "API key ID")
+    ),
 )]
 pub async fn delete_api_key(
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,

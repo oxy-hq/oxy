@@ -206,6 +206,247 @@ impl ChatService {
         )))
     }
 
+    pub async fn execute_request_sync<T: ChatExecutionRequest, E: ChatHandler + 'static>(
+        self,
+        id: String,
+        payload: T,
+        executor: E,
+        user_id: Uuid,
+    ) -> Result<crate::api::agent::AskAgentResponse, StatusCode> {
+        use crate::api::agent::AskAgentResponse;
+        use std::collections::HashMap;
+
+        // Validate input parameters first
+        self.validate_request_parameters(&id, &payload, &user_id)?;
+
+        // Parse and validate thread ID
+        let thread_id = self.parse_thread_id(&id)?;
+
+        // Validate thread ownership and lock it
+        let thread = self
+            .validate_and_lock_thread(thread_id, user_id)
+            .await
+            .inspect_err(|&e| {
+                tracing::warn!("Thread validation failed for user {}: {}", user_id, e);
+            })?;
+
+        // Handle user question and validate input
+        let user_question = self
+            .handle_user_question(&payload, &thread)
+            .await
+            .inspect_err(|_e| {
+                // Ensure thread is unlocked on error
+                let connection = self.connection.clone();
+                let thread_clone = thread.clone();
+                tokio::spawn(async move {
+                    Self::ensure_thread_unlocked(&thread_clone, &connection).await;
+                });
+            })?;
+
+        // Build conversation memory
+        let memory = self
+            .build_conversation_memory(thread.id)
+            .await
+            .inspect_err(|&e| {
+                tracing::error!(
+                    "Failed to build conversation memory for thread {}: {}",
+                    thread.id,
+                    e
+                );
+                // Ensure thread is unlocked on error
+                let connection = self.connection.clone();
+                let thread_clone = thread.clone();
+                tokio::spawn(async move {
+                    Self::ensure_thread_unlocked(&thread_clone, &connection).await;
+                });
+            })?;
+
+        // Create streaming persister with better error handling
+        let streaming_persister = Arc::new(
+            crate::service::formatters::streaming_message_persister::StreamingMessagePersister::new(
+                self.connection.clone(),
+                thread.id,
+                "".to_owned(),
+            )
+            .await
+            .map_err(|err| {
+                tracing::error!(
+                    "Failed to create streaming message handler for thread {}: {}",
+                    thread.id,
+                    err
+                );
+                // Ensure thread is unlocked on error
+                let connection = self.connection.clone();
+                let thread_clone = thread.clone();
+                tokio::spawn(async move {
+                    Self::ensure_thread_unlocked(&thread_clone, &connection).await;
+                });
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?,
+        );
+
+        let logs_persister = Arc::new(
+            crate::service::formatters::logs_persister::LogsPersister::new(
+                self.connection.clone(),
+                user_question.clone(),
+                thread.id,
+                user_id,
+            ),
+        );
+
+        let cancellation_tokens = CancellationTokens::new();
+
+        let execution_context = ChatExecutionContext::new(
+            thread.clone(),
+            user_question,
+            memory,
+            streaming_persister.clone(),
+            logs_persister,
+            cancellation_tokens,
+        );
+
+        let (tx, mut rx) = tokio::sync::mpsc::channel(100);
+        let connection = self.connection.clone();
+        let connection_for_cleanup = self.connection.clone();
+
+        // Execute the task and collect results
+        let task_handle = tokio::spawn(async move {
+            let result = executor
+                .execute(execution_context.clone(), tx.clone())
+                .await;
+            match result {
+                Ok((output, usage)) => {
+                    if let Err(e) = Self::handle_success(
+                        output.clone(),
+                        usage.clone(),
+                        &execution_context.thread,
+                        streaming_persister.get_message_id(),
+                        &connection,
+                    )
+                    .await
+                    {
+                        tracing::error!(
+                            "Error handling success for thread {}: {}",
+                            execution_context.thread.id,
+                            e
+                        );
+                    }
+                    Ok((output, usage))
+                }
+                Err(err) => {
+                    let error_msg = format!("{}", err);
+                    if let Err(e) = Self::handle_error(
+                        err,
+                        streaming_persister.get_message().await,
+                        &execution_context.thread,
+                        tx.clone(),
+                        &connection,
+                    )
+                    .await
+                    {
+                        tracing::error!(
+                            "Error handling error for thread {}: {}",
+                            execution_context.thread.id,
+                            e
+                        );
+                    }
+                    Err(OxyError::RuntimeError(error_msg))
+                }
+            }
+        });
+
+        // Collect all streaming responses
+        let mut content = String::new();
+        let mut references = Vec::new();
+        let mut usage = None;
+        let mut artifacts = Vec::new();
+        let mut artifact_map = HashMap::new();
+
+        // Collect responses while the task is running
+        while let Some(stream_item) = rx.recv().await {
+            match stream_item.content {
+                crate::service::types::AnswerContent::Text {
+                    content: text_content,
+                } => {
+                    content.push_str(&text_content);
+                }
+                crate::service::types::AnswerContent::Error { message } => {
+                    // Don't return error immediately, let task complete
+                    content.push_str(&message);
+                }
+                crate::service::types::AnswerContent::Usage {
+                    usage: stream_usage,
+                } => {
+                    usage = Some(stream_usage);
+                }
+                crate::service::types::AnswerContent::ArtifactStarted {
+                    id,
+                    title,
+                    kind,
+                    is_verified,
+                } => {
+                    let artifact_info = crate::api::agent::ArtifactInfo {
+                        id: id.clone(),
+                        title,
+                        kind: kind.to_string(),
+                        is_verified,
+                    };
+                    artifact_map.insert(id, artifact_info);
+                }
+                crate::service::types::AnswerContent::ArtifactDone { id } => {
+                    if let Some(artifact) = artifact_map.remove(&id) {
+                        artifacts.push(artifact);
+                    }
+                }
+                _ => {
+                    // Handle other content types as needed
+                }
+            }
+
+            // Collect references from this stream item
+            references.extend(stream_item.references);
+        }
+
+        // Wait for the task to complete and handle any errors
+        let final_result: Result<(), StatusCode> = match task_handle.await {
+            Ok(Ok((final_output, final_usage))) => {
+                // Task completed successfully, use final values
+                if !final_output.trim().is_empty() {
+                    content = final_output;
+                }
+                usage = Some(final_usage);
+                Ok(())
+            }
+            Ok(Err(error)) => {
+                tracing::error!("Task failed with error: {}", error);
+                if content.is_empty() {
+                    content = format!("🔴 Error: {}", error);
+                }
+                Ok(())
+            }
+            Err(e) => {
+                tracing::error!("Task panicked: {}", e);
+                if content.is_empty() {
+                    content = "🔴 An unexpected error occurred".to_string();
+                }
+                Ok(())
+            }
+        };
+
+        // Cleanup
+        Self::unlock_thread(&thread, &connection_for_cleanup).await;
+
+        // Handle any final errors
+        final_result?;
+
+        Ok(AskAgentResponse {
+            content,
+            references,
+            usage,
+            artifacts,
+        })
+    }
+
     fn parse_thread_id(&self, id: &str) -> Result<Uuid, StatusCode> {
         Uuid::parse_str(id).map_err(|e| {
             tracing::warn!("Invalid thread ID format '{}': {}", id, e);
