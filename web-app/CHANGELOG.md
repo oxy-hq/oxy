@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/oxy-hq/oxy-internal/compare/0.3.0...0.3.1) (2025-09-23)
+
+
+### <!-- 0 -->🚀 Features
+
+* support ask without streaming for v 0.3.x, fix apidoc page, fix apikey auth. drop custom auth ([#1123](https://github.com/oxy-hq/oxy-internal/issues/1123)) ([24c0a54](https://github.com/oxy-hq/oxy-internal/commit/24c0a54d308c17d8c61d632cffe13aea638b326c))
+
 ## [0.3.0](https://github.com/oxy-hq/oxy-internal/compare/0.2.29...0.3.0) (2025-09-19)
 
 
