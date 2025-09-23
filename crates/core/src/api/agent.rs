@@ -1,4 +1,3 @@
-use crate::api::agent::{ArtifactInfo, AskAgentResponse};
 use crate::api::middlewares::project::ProjectManagerExtractor;
 use crate::execute::types::ReferenceKind;
 use std::{path::PathBuf, pin::Pin};

@@ -9,8 +9,6 @@ use axum::{
 use entity::users::{UserRole, UserStatus};
 use sea_orm::EntityTrait;
 use serde::{Deserialize, Serialize};
-use std::env;
-use url::Url;
 use uuid::Uuid;
 
 #[derive(Serialize)]
