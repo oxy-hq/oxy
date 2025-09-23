@@ -2,10 +2,11 @@ use crate::errors::OxyError;
 use crate::github::GitHubService;
 use crate::github::{git_operations::GitOperations, types::*};
 use apalis::prelude::*;
-use apalis_sql::sqlite::SqliteStorage;
+use apalis_core::storage::Storage;
+use apalis_sql::{postgres::PostgresStorage, sqlite::SqliteStorage};
 use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+use sqlx::{PgPool, SqlitePool};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::{error, info, warn};
@@ -17,27 +18,70 @@ pub struct CloneRepositoryJob {
     pub task_id: String,
 }
 
+/// Storage wrapper to support both PostgreSQL and SQLite
+#[derive(Clone)]
+pub enum TaskStorage {
+    Postgres(PostgresStorage<CloneRepositoryJob>),
+    Sqlite(SqliteStorage<CloneRepositoryJob>),
+}
+
+async fn push_with_boxed_error<S>(
+    storage: &mut S,
+    job: CloneRepositoryJob,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
+where
+    S: Storage<Job = CloneRepositoryJob> + Send,
+    S::Error: std::error::Error + Send + Sync + 'static,
+{
+    storage
+        .push(job)
+        .await
+        .map(|_| ()) // Ignore the returned Parts and just return ()
+        .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
+}
+
+impl TaskStorage {
+    pub async fn push(
+        &mut self,
+        job: CloneRepositoryJob,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        match self {
+            TaskStorage::Postgres(storage) => push_with_boxed_error(storage, job).await,
+            TaskStorage::Sqlite(storage) => push_with_boxed_error(storage, job).await,
+        }
+    }
+}
+
 /// Background task manager using Apalis for handling repository operations
 pub struct BackgroundTaskManager {
-    storage: SqliteStorage<CloneRepositoryJob>,
+    storage: TaskStorage,
 }
 
 impl BackgroundTaskManager {
     /// Create a new background task manager
     pub async fn new() -> Result<Self, OxyError> {
-        // Create a SQLite connection for Apalis
         let db_url = std::env::var("OXY_DATABASE_URL").unwrap_or_else(|_| {
             let state_dir = crate::db::client::get_state_dir();
             format!("sqlite://{}/db.sqlite", state_dir.to_str().unwrap())
         });
 
-        let pool = SqlitePool::connect(&db_url).await.map_err(|e| {
-            OxyError::InitializationError(format!("Failed to connect to SQLite: {e}"))
-        })?;
+        let storage = if db_url.starts_with("postgres://") || db_url.starts_with("postgresql://") {
+            // Use PostgreSQL storage
+            let pool = PgPool::connect(&db_url).await.map_err(|e| {
+                OxyError::InitializationError(format!("Failed to connect to PostgreSQL: {e}"))
+            })?;
 
-        let _ = SqliteStorage::setup(&pool).await;
+            let _ = PostgresStorage::setup(&pool).await;
+            TaskStorage::Postgres(PostgresStorage::new(pool))
+        } else {
+            // Use SQLite storage (default)
+            let pool = SqlitePool::connect(&db_url).await.map_err(|e| {
+                OxyError::InitializationError(format!("Failed to connect to SQLite: {e}"))
+            })?;
 
-        let storage = SqliteStorage::new(pool);
+            let _ = SqliteStorage::setup(&pool).await;
+            TaskStorage::Sqlite(SqliteStorage::new(pool))
+        };
 
         Ok(Self { storage })
     }
@@ -63,7 +107,7 @@ impl BackgroundTaskManager {
     }
 
     /// Get the storage for use with Apalis worker
-    pub fn get_storage(&self) -> &SqliteStorage<CloneRepositoryJob> {
+    pub fn get_storage(&self) -> &TaskStorage {
         &self.storage
     }
 }

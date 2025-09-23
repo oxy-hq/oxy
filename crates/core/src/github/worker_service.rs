@@ -1,5 +1,5 @@
 use crate::errors::OxyError;
-use crate::github::background_tasks;
+use crate::github::background_tasks::{self, TaskStorage};
 use apalis::prelude::*;
 use tokio::time::sleep;
 use tracing::info;
@@ -15,19 +15,35 @@ pub async fn start_apalis_worker() -> Result<(), OxyError> {
     info!("Background task manager initialized for worker mode");
     let storage = _instance.lock().await.get_storage().clone();
 
-    let worker = WorkerBuilder::new("oxy-clone-worker")
-        .data(0usize)
-        .backend(storage.clone())
-        .build_fn(background_tasks::process_clone_job);
-
     // testing long clone job
     sleep(std::time::Duration::from_secs(10)).await;
 
-    Monitor::new()
-        .register(worker)
-        .run()
-        .await
-        .map_err(|e| OxyError::InitializationError(format!("Worker failed: {e}")))?;
+    match storage {
+        TaskStorage::Postgres(postgres_storage) => {
+            let worker = WorkerBuilder::new("oxy-clone-worker")
+                .data(0usize)
+                .backend(postgres_storage)
+                .build_fn(background_tasks::process_clone_job);
+
+            Monitor::new()
+                .register(worker)
+                .run()
+                .await
+                .map_err(|e| OxyError::InitializationError(format!("Worker failed: {e}")))?;
+        }
+        TaskStorage::Sqlite(sqlite_storage) => {
+            let worker = WorkerBuilder::new("oxy-clone-worker")
+                .data(0usize)
+                .backend(sqlite_storage)
+                .build_fn(background_tasks::process_clone_job);
+
+            Monitor::new()
+                .register(worker)
+                .run()
+                .await
+                .map_err(|e| OxyError::InitializationError(format!("Worker failed: {e}")))?;
+        }
+    }
 
     Ok(())
 }
