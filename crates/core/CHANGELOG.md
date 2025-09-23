@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.32](https://github.com/oxy-hq/oxy-internal/compare/0.2.31...0.2.32) (2025-09-23)
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* background worker not starting with the right db ([#1132](https://github.com/oxy-hq/oxy-internal/issues/1132)) ([b9c0059](https://github.com/oxy-hq/oxy-internal/commit/b9c0059548eff09141a9d2e0224745fe382b79de))
+
 ## [0.2.31](https://github.com/oxy-hq/oxy-internal/compare/0.2.30...0.2.31) (2025-09-22)
 
 
