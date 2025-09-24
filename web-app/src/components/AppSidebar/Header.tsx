@@ -11,7 +11,7 @@ import useSidebar from "@/components/ui/shadcn/sidebar-context";
 import useTheme from "@/stores/useTheme";
 import { Button } from "@/components/ui/shadcn/button";
 import ROUTES from "@/libs/utils/routes";
-import Organizations from "./Organizations";
+import Workspaces from "./Workspaces";
 
 export function Header() {
   const location = useLocation();
@@ -63,7 +63,7 @@ export function Header() {
             </Link>
           </SidebarMenuButton>
         </SidebarMenuItem>
-        <Organizations />
+        <Workspaces />
       </SidebarMenu>
     </SidebarGroup>
   );

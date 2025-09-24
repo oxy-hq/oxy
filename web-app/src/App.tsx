@@ -9,8 +9,7 @@ import {
   useParams,
 } from "react-router-dom";
 import Home from "@/pages/home";
-import OrganizationsPage from "@/pages/organizations";
-import ProjectsPage from "@/pages/projects";
+import WorkspacesPage from "@/pages/workspaces";
 import { AppSidebar } from "@/components/AppSidebar";
 import { Toaster as ShadcnToaster } from "@/components/ui/shadcn/sonner";
 import { SidebarProvider } from "@/components/ui/shadcn/sidebar";
@@ -178,15 +177,7 @@ const getRouter = (authConfig: AuthConfigResponse) =>
           path={ROUTES.ORG.ROOT}
           element={
             <ProtectedRoute>
-              <OrganizationsPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/organizations/:organizationId/projects"
-          element={
-            <ProtectedRoute>
-              <ProjectsPage />
+              <WorkspacesPage />
             </ProtectedRoute>
           }
         />

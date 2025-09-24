@@ -87,22 +87,22 @@ pub async fn project_middleware(
             StatusCode::NOT_FOUND
         })?;
 
-    let has_access = OrganizationUsers::find()
-        .filter(entity::organization_users::Column::OrganizationId.eq(project.organization_id))
-        .filter(entity::organization_users::Column::UserId.eq(user.id))
+    let has_access = WorkspaceUsers::find()
+        .filter(entity::workspace_users::Column::WorkspaceId.eq(project.workspace_id))
+        .filter(entity::workspace_users::Column::UserId.eq(user.id))
         .one(&db)
         .await
         .map_err(|e| {
-            tracing::error!("Database error when checking organization access: {}", e);
+            tracing::error!("Database error when checking workspace access: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
         })?
         .is_some();
 
     if !has_access {
         tracing::warn!(
-            "User {} does not have access to organization {} for project {}",
+            "User {} does not have access to workspace {} for project {}",
             user.id,
-            project.organization_id,
+            project.workspace_id,
             project_id
         );
         return Err(StatusCode::FORBIDDEN);

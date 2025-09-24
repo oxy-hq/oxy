@@ -2,22 +2,12 @@ import { ProjectStatus } from "@/types/github";
 import { apiClient } from "./axios";
 import {
   Project,
-  ProjectsResponse,
-  CreateProjectRequest,
   ProjectBranchesResponse,
   ProjectBranch,
-  CreateProjectResponse,
 } from "@/types/project";
 import { RevisionInfo } from "@/types/settings";
 
 export class ProjectService {
-  static async listProjects(organizationId: string): Promise<ProjectsResponse> {
-    const response = await apiClient.get(
-      `/organizations/${organizationId}/projects`,
-    );
-    return response.data;
-  }
-
   static async getGithubRevisionInfo(
     projectId: string,
     branchName: string,
@@ -33,24 +23,11 @@ export class ProjectService {
     return response.data;
   }
 
-  static async createProject(
-    organizationId: string,
-    request: CreateProjectRequest,
-  ): Promise<CreateProjectResponse> {
-    const response = await apiClient.post(
-      `/organizations/${organizationId}/projects`,
-      request,
-    );
-    return response.data;
-  }
-
   static async deleteProject(
-    organizationId: string,
+    workspaceId: string,
     projectId: string,
   ): Promise<void> {
-    await apiClient.delete(
-      `/organizations/${organizationId}/projects/${projectId}`,
-    );
+    await apiClient.delete(`/workspaces/${workspaceId}/projects/${projectId}`);
   }
 
   static async getProjectBranches(

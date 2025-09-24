@@ -1,7 +1,7 @@
 export interface Project {
   id: string;
   name: string;
-  organization_id: string;
+  workspace_id: string;
   repo_id: number;
   active_branch: ProjectBranch | null;
   created_at: string;

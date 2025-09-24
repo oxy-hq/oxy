@@ -4,7 +4,7 @@ use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
-#[sea_orm(table_name = "organizations")]
+#[sea_orm(table_name = "workspaces")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
@@ -15,15 +15,15 @@ pub struct Model {
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
-    #[sea_orm(has_many = "super::organization_users::Entity")]
-    OrganizationUsers,
+    #[sea_orm(has_many = "super::workspace_users::Entity")]
+    WorkspaceUsers,
     #[sea_orm(has_many = "super::projects::Entity")]
     Projects,
 }
 
-impl Related<super::organization_users::Entity> for Entity {
+impl Related<super::workspace_users::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::OrganizationUsers.def()
+        Relation::WorkspaceUsers.def()
     }
 }
 
@@ -35,14 +35,10 @@ impl Related<super::projects::Entity> for Entity {
 
 impl Related<super::users::Entity> for Entity {
     fn to() -> RelationDef {
-        super::organization_users::Relation::Users.def()
+        super::workspace_users::Relation::Users.def()
     }
     fn via() -> Option<RelationDef> {
-        Some(
-            super::organization_users::Relation::Organizations
-                .def()
-                .rev(),
-        )
+        Some(super::workspace_users::Relation::Workspaces.def().rev())
     }
 }
 

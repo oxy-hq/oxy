@@ -6,16 +6,16 @@ import {
 } from "@/components/ui/shadcn/sidebar";
 import ROUTES from "@/libs/utils/routes";
 
-export default function Organizations() {
+export default function Workspaces() {
   const location = useLocation();
-  const isOrganizationsPage = location.pathname.startsWith(ROUTES.ORG.ROOT);
+  const isWorkspacesPage = location.pathname.startsWith(ROUTES.ORG.ROOT);
 
   return (
     <SidebarMenuItem>
-      <SidebarMenuButton asChild isActive={isOrganizationsPage}>
+      <SidebarMenuButton asChild isActive={isWorkspacesPage}>
         <Link to={ROUTES.ORG.ROOT}>
           <Building2 />
-          <span>Organizations</span>
+          <span>Workspaces</span>
         </Link>
       </SidebarMenuButton>
     </SidebarMenuItem>

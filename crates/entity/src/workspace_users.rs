@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, EnumIter, DeriveActiveEnum)]
 #[sea_orm(rs_type = "String", db_type = "String(StringLen::N(20))")]
-pub enum OrganizationRole {
+pub enum WorkspaceRole {
     #[sea_orm(string_value = "owner")]
     Owner,
     #[sea_orm(string_value = "admin")]
@@ -14,31 +14,31 @@ pub enum OrganizationRole {
     Member,
 }
 
-impl OrganizationRole {
+impl WorkspaceRole {
     pub fn as_str(&self) -> &'static str {
         match self {
-            OrganizationRole::Owner => "owner",
-            OrganizationRole::Admin => "admin",
-            OrganizationRole::Member => "member",
+            WorkspaceRole::Owner => "owner",
+            WorkspaceRole::Admin => "admin",
+            WorkspaceRole::Member => "member",
         }
     }
 
     pub fn from_str(s: &str) -> Result<Self, String> {
         match s {
-            "owner" => Ok(OrganizationRole::Owner),
-            "admin" => Ok(OrganizationRole::Admin),
-            "member" => Ok(OrganizationRole::Member),
-            _ => Err(format!("Invalid organization role: {s}")),
+            "owner" => Ok(WorkspaceRole::Owner),
+            "admin" => Ok(WorkspaceRole::Admin),
+            "member" => Ok(WorkspaceRole::Member),
+            _ => Err(format!("Invalid workspace role: {s}")),
         }
     }
 }
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
-#[sea_orm(table_name = "organization_users")]
+#[sea_orm(table_name = "workspace_users")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
-    pub organization_id: Uuid,
+    pub workspace_id: Uuid,
     pub user_id: Uuid,
     pub role: String,
     pub created_at: DateTimeWithTimeZone,
@@ -48,13 +48,13 @@ pub struct Model {
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
     #[sea_orm(
-        belongs_to = "super::organizations::Entity",
-        from = "Column::OrganizationId",
-        to = "super::organizations::Column::Id",
+        belongs_to = "super::workspaces::Entity",
+        from = "Column::WorkspaceId",
+        to = "super::workspaces::Column::Id",
         on_update = "NoAction",
         on_delete = "Cascade"
     )]
-    Organizations,
+    Workspaces,
     #[sea_orm(
         belongs_to = "super::users::Entity",
         from = "Column::UserId",
@@ -65,9 +65,9 @@ pub enum Relation {
     Users,
 }
 
-impl Related<super::organizations::Entity> for Entity {
+impl Related<super::workspaces::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::Organizations.def()
+        Relation::Workspaces.def()
     }
 }
 

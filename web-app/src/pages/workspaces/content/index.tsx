@@ -1,32 +1,26 @@
+import { Workspace } from "@/types/workspace";
 import EmptyState from "./EmptyState";
 import LoadingState from "./LoadingState";
-import OrganizationCard from "./OrganizationCard";
-
-interface Organization {
-  id: string;
-  name: string;
-  role: string;
-  created_at: string;
-}
+import WorkspaceCard from "./WorkspaceCard";
 
 interface Props {
-  organizations?: Organization[];
-  filteredOrganizations: Organization[];
+  workspaces?: Workspace[];
+  filteredWorkspaces: Workspace[];
   searchQuery: string;
   isLoading: boolean;
   error: Error | null;
-  onOrganizationClick: (organizationId: string) => void;
+  onWorkspaceClick: (workspace: Workspace) => void;
   onClearSearch: () => void;
   onRetry: () => void;
 }
 
 const Content = ({
-  organizations,
-  filteredOrganizations,
+  workspaces,
+  filteredWorkspaces,
   searchQuery,
   isLoading,
   error,
-  onOrganizationClick,
+  onWorkspaceClick,
   onClearSearch,
   onRetry,
 }: Props) => {
@@ -38,11 +32,11 @@ const Content = ({
     return <LoadingState error={error} onRetry={onRetry} />;
   }
 
-  if (!organizations || organizations.length === 0) {
-    return <EmptyState type="no-organizations" />;
+  if (!workspaces || workspaces.length === 0) {
+    return <EmptyState type="no-workspaces" />;
   }
 
-  if (filteredOrganizations.length === 0 && searchQuery.trim()) {
+  if (filteredWorkspaces.length === 0 && searchQuery.trim()) {
     return (
       <EmptyState type="no-search-results" onClearSearch={onClearSearch} />
     );
@@ -50,11 +44,11 @@ const Content = ({
 
   return (
     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-      {filteredOrganizations.map((org) => (
-        <OrganizationCard
-          key={org.id}
-          organization={org}
-          onOrganizationClick={onOrganizationClick}
+      {filteredWorkspaces.map((workspace) => (
+        <WorkspaceCard
+          key={workspace.id}
+          workspace={workspace}
+          onWorkspaceClick={onWorkspaceClick}
         />
       ))}
     </div>

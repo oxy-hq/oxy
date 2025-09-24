@@ -1,22 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ProjectService } from "@/services/api";
 import queryKeys from "../queryKey";
-import {
-  Project,
-  ProjectsResponse,
-  CreateProjectRequest,
-  ProjectBranchesResponse,
-  CreateProjectResponse,
-} from "@/types/project";
-
-// Hook to fetch projects for an organization
-export const useProjects = (organizationId: string) => {
-  return useQuery<ProjectsResponse>({
-    queryKey: queryKeys.projects.list(organizationId),
-    queryFn: () => ProjectService.listProjects(organizationId),
-    enabled: !!organizationId,
-  });
-};
+import { Project, ProjectBranchesResponse } from "@/types/project";
 
 // Hook to fetch a single project
 export const useProject = (projectId: string) => {
@@ -36,33 +21,17 @@ export const useProjectBranches = (projectId: string) => {
   });
 };
 
-// Hook to create a project
-export const useCreateProject = (organizationId: string) => {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: (data: CreateProjectRequest): Promise<CreateProjectResponse> =>
-      ProjectService.createProject(organizationId, data),
-    onSuccess: () => {
-      // Invalidate projects list to refetch
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.projects.list(organizationId),
-      });
-    },
-  });
-};
-
 // Hook to delete a project
-export const useDeleteProject = (organizationId: string) => {
+export const useDeleteProject = (workspaceId: string) => {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: (projectId: string): Promise<void> =>
-      ProjectService.deleteProject(organizationId, projectId),
+      ProjectService.deleteProject(workspaceId, projectId),
     onSuccess: () => {
       // Invalidate projects list to refetch
       queryClient.invalidateQueries({
-        queryKey: queryKeys.projects.list(organizationId),
+        queryKey: queryKeys.projects.list(workspaceId),
       });
     },
   });

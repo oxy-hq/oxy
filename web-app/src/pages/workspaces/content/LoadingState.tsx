@@ -10,7 +10,7 @@ const LoadingState = ({ error, onRetry }: LoadingStateProps) => {
   if (error) {
     return (
       <div className="p-4">
-        <div className="text-red-600 mb-4">Error loading organizations</div>
+        <div className="text-red-600 mb-4">Error loading workspaces</div>
         {onRetry && <Button onClick={onRetry}>Try Again</Button>}
       </div>
     );

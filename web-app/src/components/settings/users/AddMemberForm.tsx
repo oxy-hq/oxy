@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { useAddUserToOrg } from "@/hooks/api/users/useUserMutations";
+import { useAddUserToWorkspace } from "@/hooks/api/users/useUserMutations";
 import { Input } from "@/components/ui/shadcn/input";
 import { Button } from "@/components/ui/shadcn/button";
 import { Label } from "@/components/ui/shadcn/label";
@@ -23,12 +23,12 @@ import {
 } from "@/components/ui/shadcn/select";
 
 interface AddMemberFormProps {
-  organizationId: string;
+  workspaceId: string;
 }
 
-const AddMemberForm: React.FC<AddMemberFormProps> = ({ organizationId }) => {
+const AddMemberForm: React.FC<AddMemberFormProps> = ({ workspaceId }) => {
   const [open, setOpen] = useState(false);
-  const addUserMutation = useAddUserToOrg();
+  const addUserMutation = useAddUserToWorkspace();
   const {
     register,
     handleSubmit,
@@ -42,7 +42,7 @@ const AddMemberForm: React.FC<AddMemberFormProps> = ({ organizationId }) => {
   const onSubmit = async (data: { email: string; role: string }) => {
     try {
       await addUserMutation.mutateAsync({
-        organizationId,
+        workspaceId,
         email: data.email,
         role: data.role,
       });

@@ -7,7 +7,7 @@ export { DatabaseService } from "./database";
 export { WorkflowService } from "./workflows";
 export { AuthService } from "./auth";
 export { UserService } from "./users";
-export { OrganizationService } from "./organizations";
+export { WorkspaceService } from "./workspaces";
 export { ProjectService } from "./projects";
 export { GitHubApiService } from "./github";
 export { ChartService, ArtifactService, BuilderService } from "./misc";

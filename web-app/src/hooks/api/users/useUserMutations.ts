@@ -2,50 +2,49 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { UserService } from "@/services/api";
 import queryKeys from "../queryKey";
 
-export const useUpdateUserRole = (organizationId: string) => {
+export const useUpdateUserRole = (workspaceId: string) => {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: ({ userId, role }: { userId: string; role: string }) =>
-      UserService.updateUserRole(organizationId, userId, role),
+      UserService.updateUserRole(workspaceId, userId, role),
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: queryKeys.user.list(organizationId),
+        queryKey: queryKeys.user.list(workspaceId),
       });
     },
   });
 };
 
-export const useRemoveUser = (organizationId: string) => {
+export const useRemoveUser = (workspaceId: string) => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (userId: string) =>
-      UserService.removeUser(organizationId, userId),
+    mutationFn: (userId: string) => UserService.removeUser(workspaceId, userId),
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: queryKeys.user.list(organizationId),
+        queryKey: queryKeys.user.list(workspaceId),
       });
     },
   });
 };
 
-export const useAddUserToOrg = () => {
+export const useAddUserToWorkspace = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: ({
-      organizationId,
+      workspaceId,
       email,
       role,
     }: {
-      organizationId: string;
+      workspaceId: string;
       email: string;
       role: string;
-    }) => UserService.addUserToOrganization(organizationId, email, role),
+    }) => UserService.addUserToWorkspace(workspaceId, email, role),
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({
-        queryKey: queryKeys.user.list(variables.organizationId),
+        queryKey: queryKeys.user.list(variables.workspaceId),
       });
     },
   });

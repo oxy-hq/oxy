@@ -22,12 +22,8 @@ const UserManagement: React.FC = () => {
     throw new Error("No project selected");
   }
 
-  const { organization_id } = project;
-  const {
-    data: usersData,
-    isLoading: loading,
-    error,
-  } = useUsers(organization_id);
+  const { workspace_id } = project;
+  const { data: usersData, isLoading: loading, error } = useUsers(workspace_id);
   const users = usersData?.users || [];
 
   const { data: currentUser } = useCurrentUser();
@@ -55,7 +51,7 @@ const UserManagement: React.FC = () => {
   return (
     <PageWrapper
       title="Users"
-      actions={<AddMemberForm organizationId={organization_id} />}
+      actions={<AddMemberForm workspaceId={workspace_id} />}
     >
       <TableWrapper>
         <Table>
@@ -80,7 +76,7 @@ const UserManagement: React.FC = () => {
                 <UserRow
                   key={user.id}
                   user={user}
-                  organizationId={organization_id}
+                  workspaceId={workspace_id}
                   isAdmin={adminUser}
                 />
               ))}

@@ -35,6 +35,7 @@ mod m20250819_084109_fix_root_replay_ref_type;
 mod m20250902_073902_add_active_branch_id_to_projects_table;
 mod m20250902_080016_add_branch_id_to_runs_table;
 mod m20250902_080217_add_project_branch_id_to_run_index_runs_table;
+mod m20250923_064746_change_organization_to_workspace;
 
 pub struct Migrator;
 
@@ -76,6 +77,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20250902_073902_add_active_branch_id_to_projects_table::Migration),
             Box::new(m20250902_080016_add_branch_id_to_runs_table::Migration),
             Box::new(m20250902_080217_add_project_branch_id_to_run_index_runs_table::Migration),
+            Box::new(m20250923_064746_change_organization_to_workspace::Migration),
         ]
     }
 }

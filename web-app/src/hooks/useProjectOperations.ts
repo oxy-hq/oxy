@@ -5,9 +5,9 @@ import { ProjectService } from "@/services/api";
 import { Project } from "@/types/project";
 import ROUTES from "@/libs/utils/routes";
 
-export const useProjectOperations = (organizationId: string) => {
+export const useProjectOperations = (workspaceId: string) => {
   const navigate = useNavigate();
-  const deleteProjectMutation = useDeleteProject(organizationId);
+  const deleteProjectMutation = useDeleteProject(workspaceId);
 
   const handleDeleteProject = async (
     projectId: string,

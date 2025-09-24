@@ -79,8 +79,8 @@ pub enum Relation {
     ApiKeys,
     #[sea_orm(has_many = "super::logs::Entity")]
     Logs,
-    #[sea_orm(has_many = "super::organization_users::Entity")]
-    OrganizationUsers,
+    #[sea_orm(has_many = "super::workspace_users::Entity")]
+    WorkspaceUsers,
     #[sea_orm(has_many = "super::secrets::Entity")]
     Secrets,
     #[sea_orm(has_many = "super::threads::Entity")]
@@ -99,9 +99,9 @@ impl Related<super::logs::Entity> for Entity {
     }
 }
 
-impl Related<super::organization_users::Entity> for Entity {
+impl Related<super::workspace_users::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::OrganizationUsers.def()
+        Relation::WorkspaceUsers.def()
     }
 }
 
@@ -117,12 +117,12 @@ impl Related<super::threads::Entity> for Entity {
     }
 }
 
-impl Related<super::organizations::Entity> for Entity {
+impl Related<super::workspaces::Entity> for Entity {
     fn to() -> RelationDef {
-        super::organization_users::Relation::Organizations.def()
+        super::workspace_users::Relation::Workspaces.def()
     }
     fn via() -> Option<RelationDef> {
-        Some(super::organization_users::Relation::Users.def().rev())
+        Some(super::workspace_users::Relation::Users.def().rev())
     }
 }
 

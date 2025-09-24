@@ -13,8 +13,7 @@ const ROUTES = {
   },
 
   ORG: {
-    ROOT: "/organizations",
-    PROJECTS: (orgId: string) => `/organizations/${orgId}/projects`,
+    ROOT: "/workspaces",
   },
 
   PROJECT: (projectId: string) => {

@@ -27,7 +27,7 @@ const Header = () => {
             <path d="M16 3.549L7.12 20.600" />
           </svg>
         </div>
-        <p className="text-sm">Organizations</p>
+        <p className="text-sm">Workspaces</p>
       </div>
     </div>
   );

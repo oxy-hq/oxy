@@ -7,13 +7,13 @@ use crate::api::data;
 use crate::api::database;
 use crate::api::file;
 use crate::api::middlewares::project::project_middleware;
-use crate::api::organization;
 use crate::api::project;
 use crate::api::run;
 use crate::api::secrets;
 use crate::api::thread;
 use crate::api::user;
 use crate::api::workflow;
+use crate::api::workspace;
 use crate::auth::middleware::{AuthState, auth_middleware};
 use crate::errors::OxyError;
 use axum::Router;
@@ -62,34 +62,23 @@ fn build_global_routes() -> Router<()> {
         .route("/github/branches", get(project::list_branches))
 }
 
-fn build_organization_routes() -> Router<()> {
+fn build_workspace_routes() -> Router<()> {
     Router::new()
-        .route("/", get(organization::list_organizations))
-        .route("/", post(organization::create_organization))
-        .route("/{organization_id}/users", get(organization::list_users))
+        .route("/", get(workspace::list_workspaces))
+        .route("/", post(workspace::create_workspace))
+        .route("/{workspace_id}/users", get(workspace::list_users))
         .route(
-            "/{organization_id}/users",
-            post(organization::add_user_to_organization),
-        )
-        .route(
-            "/{organization_id}/users",
-            put(organization::update_user_role_in_organization),
+            "/{workspace_id}/users",
+            post(workspace::add_user_to_workspace),
         )
         .route(
-            "/{organization_id}/users/{user_id}",
-            delete(organization::remove_user_from_organization),
+            "/{workspace_id}/users",
+            put(workspace::update_user_role_in_workspace),
         )
-        .nest(
-            "/{organization_id}/projects",
-            build_organization_project_routes(),
+        .route(
+            "/{workspace_id}/users/{user_id}",
+            delete(workspace::remove_user_from_workspace),
         )
-}
-
-fn build_organization_project_routes() -> Router<()> {
-    Router::new()
-        .route("/", post(project::create_project))
-        .route("/", get(project::list_projects))
-        .route("/{project_id}", delete(project::delete_project))
 }
 
 fn build_project_routes() -> Router<()> {
@@ -242,7 +231,7 @@ fn build_app_routes() -> Router<()> {
 fn build_protected_routes() -> Router<()> {
     Router::new()
         .merge(build_global_routes())
-        .nest("/organizations", build_organization_routes())
+        .nest("/workspaces", build_workspace_routes())
         .nest(
             "/{project_id}",
             build_project_routes().layer(middleware::from_fn(project_middleware)),
@@ -284,11 +273,10 @@ pub async fn openapi_router() -> OpenApiRouter {
         .routes(routes!(api_keys::delete_api_key))
         // App routes
         .routes(routes!(app::list_apps))
-        // Organization routes
-        .routes(routes!(organization::list_organizations))
-        .routes(routes!(organization::create_organization))
+        // Workspace routes
+        .routes(routes!(workspace::list_workspaces))
+        .routes(routes!(workspace::create_workspace))
         // Project routes
-        .routes(routes!(project::create_project))
         .routes(routes!(project::get_project))
         .routes(routes!(project::delete_project))
         .routes(routes!(project::get_project_branches))

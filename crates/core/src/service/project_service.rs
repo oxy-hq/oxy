@@ -263,12 +263,12 @@ impl ProjectService {
         .await
     }
 
-    pub async fn get_projects_by_organization(
-        organization_id: Uuid,
+    pub async fn get_projects_by_workspace(
+        workspace_id: Uuid,
     ) -> Result<Vec<projects::Model>, OxyError> {
         Self::with_db(|db| async move {
             Projects::find()
-                .filter(projects::Column::OrganizationId.eq(organization_id))
+                .filter(projects::Column::WorkspaceId.eq(workspace_id))
                 .all(&db)
                 .await
                 .map_err(|e| Self::wrap_db_err("Failed to get projects", e))
@@ -546,7 +546,7 @@ impl ProjectService {
     }
 
     pub async fn create_project_with_repo_and_pull(
-        organization_id: Uuid,
+        workspace_id: Uuid,
         github_token: String,
         repo_id: i64,
         branch_name: String,
@@ -563,7 +563,7 @@ impl ProjectService {
         let project_model = projects::ActiveModel {
             id: Set(Uuid::new_v4()),
             name: Set(repo.full_name.clone()),
-            organization_id: Set(organization_id),
+            workspace_id: Set(workspace_id),
             repo_id: Set(Some(repo_id.to_string())),
             active_branch_id: Set(active_branch_id),
             token: Set(Some(encrypted)),

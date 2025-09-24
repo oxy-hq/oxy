@@ -152,21 +152,21 @@ const configKeys = {
 
 const userKeys = {
   all: ["user"] as const,
-  list: (organizationId: string) =>
-    [...userKeys.all, "list", organizationId] as const,
+  list: (workspaceId: string) =>
+    [...userKeys.all, "list", workspaceId] as const,
   current: () => [...userKeys.all, "current"] as const,
 };
 
-const organizationKeys = {
-  all: ["organization"] as const,
-  list: () => [...organizationKeys.all, "list"] as const,
-  item: (id: string) => [...organizationKeys.all, { id }] as const,
+const workspaceKeys = {
+  all: ["workspace"] as const,
+  list: () => [...workspaceKeys.all, "list"] as const,
+  item: (id: string) => [...workspaceKeys.all, { id }] as const,
 };
 
 const projectKeys = {
   all: ["project"] as const,
-  list: (organizationId: string) =>
-    [...projectKeys.all, "list", organizationId] as const,
+  list: (workspaceId: string) =>
+    [...projectKeys.all, "list", workspaceId] as const,
   item: (projectId: string) => [...projectKeys.all, "item", projectId] as const,
   branches: (projectId: string) =>
     [...projectKeys.all, "branches", projectId] as const,
@@ -191,7 +191,7 @@ const queryKeys = {
   secret: secretKeys,
   logs: logsKeys,
   user: userKeys,
-  organizations: organizationKeys,
+  workspaces: workspaceKeys,
   projects: projectKeys,
   workflow: workflowKeys,
   chart: chartKeys,

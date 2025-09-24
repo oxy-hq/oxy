@@ -35,17 +35,17 @@ import {
 
 interface Props {
   user: UserInfo;
-  organizationId: string;
+  workspaceId: string;
 }
 
-const Actions: React.FC<Props> = ({ user, organizationId }) => {
+const Actions: React.FC<Props> = ({ user, workspaceId }) => {
   const { data: currentUser } = useCurrentUser();
 
   const [isDeleting, setIsDeleting] = useState(false);
   const [isRoleDialogOpen, setIsRoleDialogOpen] = useState(false);
   const [selectedRole, setSelectedRole] = useState(user.role);
-  const removeUserMutation = useRemoveUser(organizationId);
-  const updateUserRoleMutation = useUpdateUserRole(organizationId);
+  const removeUserMutation = useRemoveUser(workspaceId);
+  const updateUserRoleMutation = useUpdateUserRole(workspaceId);
   const [isRemoveUserAlertOpen, setIsRemoveUserAlertOpen] = useState(false);
   const roleOptions = ["owner", "admin", "member"];
 
@@ -124,7 +124,7 @@ const Actions: React.FC<Props> = ({ user, organizationId }) => {
       >
         <AlertDialogContent className="sm:max-w-md bg-neutral-900">
           <AlertDialogHeader>
-            <AlertDialogTitle>Remove User from Organization</AlertDialogTitle>
+            <AlertDialogTitle>Remove User from Workspace</AlertDialogTitle>
             <AlertDialogDescription>
               Are you sure you want to remove user{" "}
               <span className="font-semibold">{user.name}</span>? This action

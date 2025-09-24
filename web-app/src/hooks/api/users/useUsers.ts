@@ -4,14 +4,14 @@ import queryKeys from "../queryKey";
 import { UserListResponse } from "@/types/auth";
 
 const useUsers = (
-  organizationId: string,
+  workspaceId: string,
   enabled = true,
   refetchOnWindowFocus = true,
   refetchOnMount: boolean | "always" = false,
 ) =>
   useQuery<UserListResponse, Error>({
-    queryKey: queryKeys.user.list(organizationId),
-    queryFn: () => UserService.getUsers(organizationId),
+    queryKey: queryKeys.user.list(workspaceId),
+    queryFn: () => UserService.getUsers(workspaceId),
     enabled,
     refetchOnWindowFocus,
     refetchOnMount,

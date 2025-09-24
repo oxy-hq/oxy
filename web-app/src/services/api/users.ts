@@ -2,10 +2,8 @@ import { apiClient } from "./axios";
 import { UserListResponse, UserInfo } from "@/types/auth";
 
 export class UserService {
-  static async getUsers(organizationId: string): Promise<UserListResponse> {
-    const response = await apiClient.get(
-      `/organizations/${organizationId}/users`,
-    );
+  static async getUsers(workspaceId: string): Promise<UserListResponse> {
+    const response = await apiClient.get(`/workspaces/${workspaceId}/users`);
     return response.data;
   }
 
@@ -15,12 +13,12 @@ export class UserService {
   }
 
   static async updateUserRole(
-    organizationId: string,
+    workspaceId: string,
     userId: string,
     role: string,
   ): Promise<void> {
     const response = await apiClient.put(
-      `/organizations/${organizationId}/users/${userId}`,
+      `/workspaces/${workspaceId}/users/${userId}`,
       {
         role,
         user_id: userId,
@@ -29,18 +27,15 @@ export class UserService {
     return response.data;
   }
 
-  static async addUserToOrganization(
-    organizationId: string,
+  static async addUserToWorkspace(
+    workspaceId: string,
     email: string,
     role: string,
   ): Promise<void> {
-    const response = await apiClient.post(
-      `/organizations/${organizationId}/users`,
-      {
-        role,
-        email,
-      },
-    );
+    const response = await apiClient.post(`/workspaces/${workspaceId}/users`, {
+      role,
+      email,
+    });
     return response.data;
   }
 
@@ -52,12 +47,9 @@ export class UserService {
     return response.data;
   }
 
-  static async removeUser(
-    organizationId: string,
-    userId: string,
-  ): Promise<void> {
+  static async removeUser(workspaceId: string, userId: string): Promise<void> {
     const response = await apiClient.delete(
-      `/organizations/${organizationId}/users/${userId}`,
+      `/workspaces/${workspaceId}/users/${userId}`,
     );
     return response.data;
   }

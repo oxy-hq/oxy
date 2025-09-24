@@ -39,7 +39,7 @@ pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
     pub name: String,
-    pub organization_id: Uuid,
+    pub workspace_id: Uuid,
     pub repo_id: Option<String>,
     pub token: Option<String>,
     pub provider: Option<String>,
@@ -51,13 +51,13 @@ pub struct Model {
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
     #[sea_orm(
-        belongs_to = "super::organizations::Entity",
-        from = "Column::OrganizationId",
-        to = "super::organizations::Column::Id",
+        belongs_to = "super::workspaces::Entity",
+        from = "Column::WorkspaceId",
+        to = "super::workspaces::Column::Id",
         on_update = "NoAction",
         on_delete = "Cascade"
     )]
-    Organizations,
+    Workspaces,
     #[sea_orm(has_many = "super::branches::Entity")]
     Branches,
     #[sea_orm(has_many = "super::runs::Entity")]
@@ -68,9 +68,9 @@ pub enum Relation {
     Threads,
 }
 
-impl Related<super::organizations::Entity> for Entity {
+impl Related<super::workspaces::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::Organizations.def()
+        Relation::Workspaces.def()
     }
 }
 

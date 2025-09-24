@@ -13,7 +13,7 @@ use crate::service::project_service::ProjectService;
 use crate::service::secret_manager::SecretManagerService;
 use crate::{auth::extractor::AuthenticatedUserExtractor, github::GitHubClient};
 
-use entity::{organization_users, prelude::OrganizationUsers};
+use entity::{prelude::WorkspaceUsers, workspace_users};
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 
 use axum::{
@@ -56,25 +56,8 @@ pub struct ListBranchesQuery {
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
-pub struct CreateProjectRequest {
-    pub repo_id: i64,
-    pub token: String,
-    pub branch: String,
-    pub provider: String,
-}
-
-#[derive(Debug, Deserialize, ToSchema)]
 pub struct SwitchBranchRequest {
     pub branch: String,
-}
-
-#[derive(Debug, Serialize, ToSchema)]
-pub struct CreateProjectResponse {
-    pub success: bool,
-    pub message: String,
-    pub project_id: Uuid,
-    pub branch_id: Option<Uuid>,
-    pub local_path: Option<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -87,7 +70,7 @@ pub struct ProjectResponse {
 pub struct ProjectDetailsResponse {
     pub id: Uuid,
     pub name: String,
-    pub organization_id: Uuid,
+    pub workspace_id: Uuid,
     pub provider: Option<String>,
     pub active_branch: Option<ProjectBranch>,
     pub created_at: String,
@@ -171,127 +154,6 @@ pub async fn list_branches(
         Err(e) => {
             error!("Failed to fetch branches: {}", e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
-        }
-    }
-}
-
-#[utoipa::path(
-    post,
-    path = "/organizations/{organization_id}/projects",
-    params(
-        ("organization_id" = Uuid, Path, description = "Organization ID")
-    ),
-    request_body = CreateProjectRequest,
-    responses(
-        (status = 200, description = "Project created successfully", body = CreateProjectResponse),
-        (status = 400, description = "Invalid request"),
-        (status = 401, description = "Unauthorized"),
-        (status = 500, description = "Internal server error")
-    ),
-    security(
-        ("ApiKey" = [])
-    ),
-    tag = "Projects"
-)]
-pub async fn create_project(
-    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
-    Path(organization_id): Path<Uuid>,
-    Json(request): Json<CreateProjectRequest>,
-) -> Result<ResponseJson<CreateProjectResponse>, StatusCode> {
-    tracing::error!("=== CREATE PROJECT FUNCTION CALLED ===");
-    info!(
-        "Creating project with repository {} and branch {} for user {} in organization {}",
-        request.repo_id, request.branch, user.id, organization_id
-    );
-
-    // Validate request fields
-    if request.provider.is_empty() {
-        error!("Provider field is empty");
-        return Err(StatusCode::BAD_REQUEST);
-    }
-
-    if request.branch.is_empty() {
-        error!("Branch field is empty");
-        return Err(StatusCode::BAD_REQUEST);
-    }
-
-    if request.token.is_empty() {
-        error!("Token field is empty");
-        return Err(StatusCode::BAD_REQUEST);
-    }
-
-    // Check if user is a member of the organization
-    let db = establish_connection().await.map_err(|e| {
-        error!("Database connection failed: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-
-    let user_in_org = OrganizationUsers::find()
-        .filter(organization_users::Column::UserId.eq(user.id))
-        .filter(organization_users::Column::OrganizationId.eq(organization_id))
-        .one(&db)
-        .await
-        .map_err(|e| {
-            error!("Failed to check organization membership: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-
-    if user_in_org.is_none() {
-        error!(
-            "User {} is not a member of organization {}",
-            user.id, organization_id
-        );
-        return Err(StatusCode::FORBIDDEN);
-    }
-
-    info!(
-        "User {} is a member of organization {}",
-        user.id, organization_id
-    );
-
-    let provider = match entity::projects::ProjectProvider::from_str(&request.provider) {
-        Ok(provider) => {
-            info!("Valid provider: {:?}", provider);
-            provider
-        }
-        Err(e) => {
-            error!("Invalid provider '{}': {}", request.provider, e);
-            return Err(StatusCode::BAD_REQUEST);
-        }
-    };
-
-    match ProjectService::create_project_with_repo_and_pull(
-        organization_id,
-        request.token,
-        request.repo_id,
-        request.branch,
-        provider,
-    )
-    .await
-    {
-        Ok((project, branch, local_path)) => {
-            info!(
-                "Project '{}' created successfully with ID: {}",
-                project.name, project.id
-            );
-
-            Ok(ResponseJson(CreateProjectResponse {
-                success: true,
-                message: "Project created and repository cloned successfully".to_string(),
-                project_id: project.id,
-                branch_id: Some(branch.id),
-                local_path: Some(local_path),
-            }))
-        }
-        Err(e) => {
-            error!("Failed to create project: {}", e);
-            Ok(ResponseJson(CreateProjectResponse {
-                success: false,
-                message: format!("Failed to create project: {e}"),
-                project_id: Uuid::nil(),
-                branch_id: None,
-                local_path: None,
-            }))
         }
     }
 }
@@ -433,7 +295,7 @@ pub async fn get_project(
     Ok(ResponseJson(ProjectDetailsResponse {
         id: project.id,
         name: project.name,
-        organization_id: project.organization_id,
+        workspace_id: project.workspace_id,
         provider: project.provider,
         created_at: project.created_at.to_string(),
         updated_at: project.updated_at.to_string(),
@@ -567,7 +429,7 @@ pub async fn switch_project_active_branch(
 )]
 pub async fn delete_project(
     AuthenticatedUserExtractor(requester): AuthenticatedUserExtractor,
-    Path((organization_id, project_id)): Path<(Uuid, Uuid)>,
+    Path((workspace_id, project_id)): Path<(Uuid, Uuid)>,
 ) -> Result<ResponseJson<ProjectResponse>, StatusCode> {
     info!("Deleting project: {}", project_id);
 
@@ -575,9 +437,9 @@ pub async fn delete_project(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let requester_role = OrganizationUsers::find()
-        .filter(organization_users::Column::OrganizationId.eq(organization_id))
-        .filter(organization_users::Column::UserId.eq(requester.id))
+    let requester_role = WorkspaceUsers::find()
+        .filter(workspace_users::Column::WorkspaceId.eq(workspace_id))
+        .filter(workspace_users::Column::UserId.eq(requester.id))
         .one(&db)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
@@ -609,21 +471,6 @@ pub struct ProjectStatus {
     pub required_secrets: Option<Vec<String>>,
     pub is_config_valid: bool,
     pub error: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-pub struct ListProjectsResponse {
-    pub projects: Vec<ProjectSummary>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-pub struct ProjectSummary {
-    pub id: Uuid,
-    pub name: String,
-    pub organization_id: Uuid,
-    pub provider: Option<String>,
-    pub created_at: String,
-    pub updated_at: String,
 }
 
 pub async fn get_project_status(
@@ -678,60 +525,12 @@ pub async fn get_project_status(
     Ok(axum::response::Json(status))
 }
 
-#[utoipa::path(
-    get,
-    path = "/organizations/{organization_id}/projects",
-    params(
-        ("organization_id" = Uuid, Path, description = "Organization ID")
-    ),
-    responses(
-        (status = 200, description = "Projects retrieved successfully", body = ListProjectsResponse),
-        (status = 401, description = "Unauthorized"),
-        (status = 500, description = "Internal server error")
-    ),
-    security(
-        ("ApiKey" = [])
-    ),
-    tag = "Projects"
-)]
-pub async fn list_projects(
-    AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
-    axum::extract::Path(organization_id): axum::extract::Path<Uuid>,
-) -> Result<axum::response::Json<ListProjectsResponse>, StatusCode> {
-    info!("Listing projects for organization: {}", organization_id);
-
-    match ProjectService::get_projects_by_organization(organization_id).await {
-        Ok(projects) => {
-            let mut project_summaries = Vec::new();
-
-            for project in projects {
-                project_summaries.push(ProjectSummary {
-                    id: project.id,
-                    name: project.name,
-                    organization_id: project.organization_id,
-                    provider: project.provider,
-                    created_at: project.created_at.to_string(),
-                    updated_at: project.updated_at.to_string(),
-                });
-            }
-
-            Ok(axum::response::Json(ListProjectsResponse {
-                projects: project_summaries,
-            }))
-        }
-        Err(e) => {
-            error!("Failed to list projects: {}", e);
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
-        }
-    }
-}
-
 /// Simple health check endpoint to test routing
 #[utoipa::path(
     get,
-    path = "/organizations/{organization_id}/projects/health",
+    path = "/workspaces/{workspace_id}/projects/health",
     params(
-        ("organization_id" = Uuid, Path, description = "Organization ID")
+        ("workspace_id" = Uuid, Path, description = "Workspace ID")
     ),
     responses(
         (status = 200, description = "Health check successful", body = String),
@@ -739,8 +538,8 @@ pub async fn list_projects(
     tag = "Projects"
 )]
 pub async fn project_health_check(
-    Path(organization_id): Path<Uuid>,
+    Path(workspace_id): Path<Uuid>,
 ) -> Result<ResponseJson<String>, StatusCode> {
-    info!("Health check for organization: {}", organization_id);
+    info!("Health check for workspace: {}", workspace_id);
     Ok(ResponseJson("OK".to_string()))
 }
