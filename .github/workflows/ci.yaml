@@ -51,7 +51,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
       - name: Check typos
-        uses: crate-ci/typos@master
+        uses: crate-ci/typos@v1.36.2
 
   fmt-web:
     name: Format web
@@ -95,6 +95,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
       - uses: pnpm/action-setup@v4
         with:
           run_install: false
@@ -162,6 +164,8 @@ jobs:
           --health-retries 5
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
       - name: Collect Workflow Telemetry
         uses: catchpoint/workflow-telemetry-action@v2
         with:
