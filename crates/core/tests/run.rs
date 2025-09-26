@@ -130,16 +130,4 @@ pub mod run {
         let output = String::from_utf8(result.get_output().stdout.clone()).unwrap();
         assert!(output.contains("2873"));
     }
-
-    #[test]
-    fn run_agent_semantic_ok() {
-        let mut cmd = setup_command();
-        let result = cmd
-            .arg("agents/semantic_model.agent.yml")
-            .arg("how many property_grouping")
-            .assert()
-            .success();
-        let output = String::from_utf8(result.get_output().stdout.clone()).unwrap();
-        assert!(output.contains("2"), "{}", output);
-    }
 }

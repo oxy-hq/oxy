@@ -44,10 +44,14 @@ impl LogFormat {
 }
 
 fn init_tracing_logging(log_to_stdout: bool) {
+    let log_level = env::var("OXY_LOG_LEVEL")
+        .as_deref()
+        .unwrap_or("warn")
+        .to_lowercase();
     // Default all crates to WARN level to reduce noise, then selectively enable INFO for critical components
     // This approach is more maintainable and ensures we don't miss any noisy dependencies
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-        EnvFilter::new("warn")
+        EnvFilter::new(log_level)
             // Core Oxy components
             .add_directive("oxy=info".parse().unwrap())
             .add_directive("tower_http=info".parse().unwrap())
@@ -159,7 +163,11 @@ fn main() {
 
     // Log to stdout if `oxy serve`
     let args: Vec<String> = env::args().collect();
-    let log_to_stdout = args.iter().any(|a| a == "serve");
+    let log_to_stdout = args.iter().any(|a| a == "serve") ||
+        env::var("OXY_DEBUG")
+            .as_deref()
+            .unwrap_or("false")
+            .eq_ignore_ascii_case("true");
     init_tracing_logging(log_to_stdout);
 
     rustls::crypto::aws_lc_rs::default_provider()

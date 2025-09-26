@@ -73,6 +73,13 @@ pub struct CubeMeasure {
     pub description: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub format: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub filters: Option<Vec<CubeMeasureFilter>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CubeMeasureFilter {
+    pub sql: String,
 }
 
 /// CubeJS join definition

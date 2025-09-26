@@ -16,6 +16,10 @@ dimensions:
   type: string
   description: Customer name
   expr: name
+- name: gender
+  type: string
+  description: Customer gender
+  expr: gender
 measures:
 - name: total_customers
   type: count
@@ -24,3 +28,9 @@ measures:
   type: count_distinct
   description: Count of distinct customers
   expr: id
+- name: male_count
+  type: count
+  description: Count
+  expr: id
+  filters:
+    - expr: "{{gender}} = 'M'"

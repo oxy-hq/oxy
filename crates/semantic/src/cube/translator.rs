@@ -2,13 +2,13 @@ use regex::Regex;
 use std::{collections::HashMap, path::PathBuf};
 
 use crate::{
-    DimensionType, EntityType, MeasureType, SemanticLayer, SemanticLayerError, View,
+    DimensionType, EntityType, MeasureFilter, MeasureType, SemanticLayer, SemanticLayerError, View,
     cube::{
         data_sources::generate_data_sources,
         entity_graph::EntityGraph,
         file_writer::save_cube_semantics,
         models::{
-            CubeCube, CubeDimension, CubeMeasure, CubeSemanticLayerWithDataSources, CubeView,
+            CubeCube, CubeDimension, CubeMeasure, CubeMeasureFilter, CubeSemanticLayerWithDataSources, CubeView,
             DatabaseDetails,
         },
     },
@@ -224,6 +224,13 @@ fn convert_measures(
             let sql_expr = measure.expr.clone().unwrap_or_else(|| "1".to_string());
             let translated_sql = translate_cross_entity_references(&sql_expr, entity_graph)?;
 
+            // Convert measure filters from Oxy to CubeJS format
+            let cube_filters = if let Some(oxy_filters) = &measure.filters {
+                Some(convert_measure_filters(oxy_filters, entity_graph)?)
+            } else {
+                None
+            };
+
             cube_measures.push(CubeMeasure {
                 name: measure.name.clone(),
                 sql: translated_sql,
@@ -231,11 +238,30 @@ fn convert_measures(
                 title: Some(measure.name.clone()),
                 description: measure.description.clone(),
                 format: None,
+                filters: cube_filters,
             });
         }
     }
 
     Ok(cube_measures)
+}
+
+/// Convert Oxy measure filters to CubeJS measure filters
+fn convert_measure_filters(
+    oxy_filters: &[MeasureFilter],
+    entity_graph: &EntityGraph,
+) -> Result<Vec<CubeMeasureFilter>, SemanticLayerError> {
+    let mut cube_filters = Vec::new();
+
+    for oxy_filter in oxy_filters {
+        let translated_sql = translate_cross_entity_references(&oxy_filter.expr, entity_graph)?;
+        
+        cube_filters.push(CubeMeasureFilter {
+            sql: translated_sql,
+        });
+    }
+
+    Ok(cube_filters)
 }
 
 /// Public function to process semantics that can be used from other modules
@@ -368,4 +394,115 @@ fn translate_cross_entity_references(
         .to_string();
 
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Entity, EntityType, Dimension, DimensionType, SemanticLayer};
+
+    #[test]
+    fn test_convert_measure_filters() {
+        // Create a simple entity graph for testing
+        let view = View {
+            name: "test_view".to_string(),
+            description: "Test view".to_string(),
+            table: Some("test_table".to_string()),
+            sql: None,
+            datasource: Some("test_db".to_string()),
+            label: None,
+            entities: vec![Entity {
+                name: "test_entity".to_string(),
+                entity_type: EntityType::Primary,
+                key: "id".to_string(),
+                description: "Test entity".to_string(),
+            }],
+            dimensions: vec![Dimension {
+                name: "test_dimension".to_string(),
+                expr: "test_column".to_string(),
+                dimension_type: DimensionType::String,
+                description: None,
+                primary_key: Some(false),
+                synonyms: None,
+                samples: None,
+            }],
+            measures: None,
+        };
+        
+        let semantic_layer = SemanticLayer {
+            views: vec![view],
+            topics: None,
+            metadata: None,
+        };
+        
+        let entity_graph = EntityGraph::from_semantic_layer(&semantic_layer).unwrap();
+
+        // Create test measure filters
+        let oxy_filters = vec![
+            MeasureFilter {
+                expr: "status = 'active'".to_string(),
+                description: Some("Filter for active records".to_string()),
+            },
+            MeasureFilter {
+                expr: "{{test_entity.field}} > 100".to_string(),
+                description: None,
+            },
+        ];
+
+        // Convert filters
+        let result = convert_measure_filters(&oxy_filters, &entity_graph);
+        assert!(result.is_ok());
+        
+        let cube_filters = result.unwrap();
+        assert_eq!(cube_filters.len(), 2);
+        
+        // Check first filter (simple SQL)
+        assert_eq!(cube_filters[0].sql, "status = 'active'");
+        
+        // Check second filter (should translate cross-entity references)
+        assert_eq!(cube_filters[1].sql, "{test_view.field} > 100");
+    }
+
+    #[test]
+    fn test_translate_cross_entity_references_in_filters() {
+        let view = View {
+            name: "orders".to_string(),
+            description: "Orders view".to_string(),
+            table: Some("orders_table".to_string()),
+            sql: None,
+            datasource: Some("test_db".to_string()),
+            label: None,
+            entities: vec![Entity {
+                name: "order".to_string(),
+                entity_type: EntityType::Primary,
+                key: "order_id".to_string(),
+                description: "Order entity".to_string(),
+            }],
+            dimensions: vec![],
+            measures: None,
+        };
+        
+        let semantic_layer = SemanticLayer {
+            views: vec![view],
+            topics: None,
+            metadata: None,
+        };
+        
+        let entity_graph = EntityGraph::from_semantic_layer(&semantic_layer).unwrap();
+
+        // Test different patterns
+        let test_cases = vec![
+            ("status = 'active'", "status = 'active'"), // No references
+            ("{{order.amount}} > 100", "{orders.amount} > 100"), // Double brace entity reference
+            ("{order.status}", "{orders.status}"), // Single brace entity reference
+            ("{{field_name}}", "{field_name}"), // Simple field reference
+            ("{{order.total}} + {{order.tax}}", "{orders.total} + {orders.tax}"), // Multiple references
+        ];
+
+        for (input, expected) in test_cases {
+            let result = translate_cross_entity_references(input, &entity_graph);
+            assert!(result.is_ok(), "Failed to translate: {}", input);
+            assert_eq!(result.unwrap(), expected, "Translation mismatch for: {}", input);
+        }
+    }
 }
