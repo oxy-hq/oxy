@@ -9,8 +9,8 @@
     "prepare": "husky"
   },
   "devDependencies": {
-    "@commitlint/cli": "^19.8.1",
-    "@commitlint/config-conventional": "^19.8.1",
+    "@commitlint/cli": "^20.0.0",
+    "@commitlint/config-conventional": "^20.0.0",
     "@eslint/eslintrc": "^3.3.1",
     "@eslint/js": "^9.36.0",
     "@ianvs/prettier-plugin-sort-imports": "^4.7.0",
@@ -23,7 +23,7 @@
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.20",
     "eslint-plugin-sonarjs": "^3.0.5",
-    "eslint-plugin-unicorn": "^59.0.1",
+    "eslint-plugin-unicorn": "^61.0.2",
     "globals": "^16.4.0",
     "husky": "^9.1.7",
     "lint-staged": "^16.2.0",
