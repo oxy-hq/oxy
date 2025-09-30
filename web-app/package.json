@@ -72,7 +72,7 @@
     "lodash": "^4.17.21",
     "lucide-react": "^0.542.0",
     "memfs": "^4.39.0",
-    "monaco-editor": "^0.52.2",
+    "monaco-editor": "^0.53.0",
     "monaco-yaml": "^5.4.0",
     "next-themes": "^0.4.6",
     "nunjucks": "^3.2.4",
