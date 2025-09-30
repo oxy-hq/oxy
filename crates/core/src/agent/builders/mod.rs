@@ -1,4 +1,5 @@
 mod agent;
+pub mod fsm;
 mod openai;
 mod tool;
 

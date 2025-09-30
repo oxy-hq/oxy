@@ -19,6 +19,8 @@ use crate::{
     },
 };
 
+pub use default::build_global_context;
+
 #[derive(Debug, Clone)]
 pub struct AgentExecutable;
 

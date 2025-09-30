@@ -70,6 +70,7 @@ impl<I, E, C, P, F> Executable<I> for Fallback<E, C, F, P>
 where
     I: Clone + Send + 'static,
     E: Executable<I> + Send,
+    E::Response: Send + 'static,
     C: Fn(&E::Response) -> bool + Send,
     P: Fn(&Event) -> bool + Clone + Send + Sync + 'static,
     F: Executable<I, Response = E::Response> + Send,

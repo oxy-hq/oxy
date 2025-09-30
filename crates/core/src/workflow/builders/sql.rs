@@ -8,7 +8,7 @@ use crate::{
     execute::{
         Executable, ExecutionContext,
         builders::{ExecutableBuilder, map::ParamMapper},
-        types::Output,
+        types::{Output, Table},
     },
     tools::{SQLExecutable, types::SQLInput},
 };
@@ -73,13 +73,14 @@ impl ParamMapper<ExecuteSQLTask, SQLInput> for SQLTaskMapper {
                 sql,
                 database: input.database,
                 dry_run_limit: input.dry_run_limit,
+                name: None,
             },
             None,
         ))
     }
 }
 
-pub fn build_sql_task_executable() -> impl Executable<ExecuteSQLTask, Response = Output> {
+pub fn build_sql_task_executable() -> impl Executable<ExecuteSQLTask, Response = Table> {
     ExecutableBuilder::new()
         .map(SQLTaskMapper)
         .executable(SQLExecutable::new())

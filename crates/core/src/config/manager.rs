@@ -3,7 +3,7 @@ use std::{
     sync::Arc,
 };
 
-use crate::errors::OxyError;
+use crate::{agent::builders::fsm::config::AgenticConfig, errors::OxyError};
 
 use super::{
     model::{AgentConfig, AppConfig, Config, Database, Model, Workflow, WorkflowWithRawVariables},
@@ -103,8 +103,15 @@ impl ConfigManager {
         self.storage.load_agent_config(agent_name).await
     }
 
-    pub fn list_databases(&self) -> Result<&[Database], OxyError> {
-        Ok(self.config.databases.as_slice())
+    pub async fn resolve_agentic_workflow<P: AsRef<Path>>(
+        &self,
+        agent_name: P,
+    ) -> Result<AgenticConfig, OxyError> {
+        self.storage.load_agentic_workflow_config(agent_name).await
+    }
+
+    pub fn list_databases(&self) -> &[Database] {
+        self.config.databases.as_slice()
     }
 
     pub async fn list_agents(&self) -> Result<Vec<PathBuf>, OxyError> {

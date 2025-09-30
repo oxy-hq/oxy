@@ -31,8 +31,12 @@ impl Output {
         Output::Table(Table::new(file_path))
     }
 
-    pub fn table_with_reference(file_path: String, reference: TableReference) -> Self {
-        Output::Table(Table::with_reference(file_path, reference))
+    pub fn table_with_reference(
+        file_path: String,
+        reference: TableReference,
+        name: Option<String>,
+    ) -> Self {
+        Output::Table(Table::with_reference(file_path, reference, name, None))
     }
 
     pub fn sql(sql: String) -> Self {

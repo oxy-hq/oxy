@@ -1,7 +1,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-#[derive(Deserialize, Debug, JsonSchema, Serialize)]
+#[derive(Deserialize, Debug, JsonSchema, Serialize, Clone)]
 #[serde(rename_all = "lowercase")]
 pub enum ChartType {
     Line,
@@ -9,7 +9,7 @@ pub enum ChartType {
     Pie,
 }
 
-#[derive(Deserialize, Debug, JsonSchema, Serialize)]
+#[derive(Deserialize, Debug, JsonSchema, Serialize, Clone)]
 pub struct AxisConfig {
     #[schemars(
         description = "Type of axis scale: 'category' for categorical data, 'value' for numerical data, 'time' for time series, 'log' for logarithmic scale"
@@ -26,7 +26,7 @@ pub struct AxisConfig {
     pub data: Option<Vec<serde_json::Value>>,
 }
 
-#[derive(Deserialize, Debug, JsonSchema, Serialize)]
+#[derive(Deserialize, Debug, JsonSchema, Serialize, Clone)]
 pub struct SeriesConfig {
     #[schemars(description = "Display name for the series, shown in legend and tooltips")]
     pub name: Option<String>,
@@ -43,7 +43,7 @@ pub struct SeriesConfig {
     pub data: Option<Vec<serde_json::Value>>,
 }
 
-#[derive(Deserialize, Debug, JsonSchema, Serialize)]
+#[derive(Deserialize, Debug, JsonSchema, Serialize, Clone)]
 pub struct VisualizeParams {
     #[schemars(
         description = "X-axis configuration for controlling scale type, labels, and category data. Not applicable for pie charts"

@@ -7,7 +7,10 @@ use rmcp::model::Content;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
-use crate::{errors::OxyError, execute::types::Output};
+use crate::{
+    errors::OxyError,
+    execute::types::{Output, Table},
+};
 
 use super::reference::ReferenceKind;
 
@@ -269,6 +272,12 @@ impl TryFrom<OutputContainer> for Content {
 impl From<Output> for OutputContainer {
     fn from(val: Output) -> Self {
         OutputContainer::Single(val)
+    }
+}
+
+impl From<Table> for OutputContainer {
+    fn from(val: Table) -> Self {
+        OutputContainer::Single(Output::Table(val))
     }
 }
 

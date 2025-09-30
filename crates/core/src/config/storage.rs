@@ -1,7 +1,9 @@
 use std::path::{Path, PathBuf};
 use tokio::fs;
 
-use crate::{constants::UNPUBLISH_APP_DIR, errors::OxyError};
+use crate::{
+    agent::builders::fsm::config::AgenticConfig, constants::UNPUBLISH_APP_DIR, errors::OxyError,
+};
 
 use super::model::{AgentConfig, AppConfig, Config, Workflow, WorkflowWithRawVariables};
 
@@ -17,6 +19,10 @@ pub(super) trait ConfigStorage {
         &self,
         agent_ref: P,
     ) -> Result<AgentConfig, OxyError>;
+    async fn load_agentic_workflow_config<P: AsRef<Path>>(
+        &self,
+        agent_ref: P,
+    ) -> Result<AgenticConfig, OxyError>;
     async fn load_workflow_config<P: AsRef<Path>>(
         &self,
         workflow_ref: P,
@@ -219,6 +225,20 @@ impl ConfigStorage for LocalSource {
         if agent_config.name.is_empty() {
             agent_config.name = self.get_stem_by_extension(&resolved_path, AGENT_EXTENSION);
         }
+        Ok(agent_config)
+    }
+
+    async fn load_agentic_workflow_config<P: AsRef<Path>>(
+        &self,
+        agent_ref: P,
+    ) -> Result<AgenticConfig, OxyError> {
+        let resolved_path = PathBuf::from(&self.project_path).join(agent_ref);
+        let agent_yml = fs::read_to_string(&resolved_path).await.map_err(|e| {
+            OxyError::ConfigurationError(format!("Failed to read agent config from file: {e}"))
+        })?;
+        let mut agent_config: AgenticConfig = serde_yaml::from_str(&agent_yml).map_err(|e| {
+            OxyError::ConfigurationError(format!("Failed to deserialize agent config: {e}"))
+        })?;
         Ok(agent_config)
     }
 

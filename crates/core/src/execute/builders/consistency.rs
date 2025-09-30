@@ -156,6 +156,7 @@ where
 impl<I, E, P> Executable<I> for Consistency<E, P>
 where
     E: Executable<I> + Clone + Send + 'static,
+    E::Response: Send + 'static,
     P: ConsistencyPicker<E::Response> + Clone + Send + Sync,
     I: Clone + Send + 'static,
 {

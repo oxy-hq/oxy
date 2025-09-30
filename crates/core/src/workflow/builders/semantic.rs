@@ -275,6 +275,7 @@ impl Executable<ValidatedSemanticQuery> for SemanticQueryExecutable {
                 sql: sql_query,
                 database_ref: database.clone(),
             },
+            None,
         );
         execution_context
             .write_chunk(Chunk {

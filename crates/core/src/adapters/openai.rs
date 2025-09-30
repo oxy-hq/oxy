@@ -2,8 +2,10 @@ use async_openai::{
     Client,
     config::{AzureConfig, Config, OpenAIConfig},
     types::{
-        ChatCompletionNamedToolChoice, ChatCompletionTool, ChatCompletionToolArgs,
-        ChatCompletionToolType, FunctionName, FunctionObject, FunctionObjectArgs,
+        ChatCompletionMessageToolCall, ChatCompletionNamedToolChoice, ChatCompletionRequestMessage,
+        ChatCompletionTool, ChatCompletionToolArgs, ChatCompletionToolChoiceOption,
+        ChatCompletionToolType, CreateChatCompletionRequestArgs, CreateChatCompletionResponse,
+        CreateChatCompletionStreamResponse, FunctionName, FunctionObject, FunctionObjectArgs,
         ReasoningEffort as OpenAIReasoningEffort,
         responses::ReasoningConfig as OpenAIReasoningConfig,
     },
@@ -12,10 +14,11 @@ use axum::http::{HeaderMap, HeaderName, HeaderValue};
 use schemars::schema::RootSchema;
 use secrecy::SecretString;
 use std::{collections::HashMap, str::FromStr};
+use tokio_stream::StreamExt;
 
 use crate::{
     adapters::{
-        create_app_schema, secrets::SecretsManager,
+        create_app_schema, project::manager::ProjectManager, secrets::SecretsManager,
         semantic_tool_description::get_semantic_query_description, viz_schema,
     },
     config::{
@@ -507,5 +510,151 @@ impl AsyncFunctionObject for ChatCompletionTool {
             .function::<FunctionObject>(FunctionObject::from_tool_async(tool, config).await)
             .build()
             .unwrap()
+    }
+}
+
+pub trait RequestAdapter {
+    fn request_builder<M: Into<Vec<ChatCompletionRequestMessage>>>(
+        &self,
+        messages: M,
+    ) -> CreateChatCompletionRequestArgs;
+}
+
+#[derive(Clone)]
+pub struct OpenAIAdapter {
+    client: OpenAIClient,
+    model_name: String,
+}
+
+impl OpenAIAdapter {
+    pub async fn from_config(project: ProjectManager, model_ref: &str) -> Result<Self, OxyError> {
+        let model = project.config_manager.resolve_model(model_ref)?;
+        let config_type = model.into_openai_config(&project.secrets_manager).await?;
+        let client = Client::with_config(config_type);
+        Ok(Self {
+            client,
+            model_name: model.model_name().to_string(),
+        })
+    }
+
+    pub fn new(client: OpenAIClient, model_name: String) -> Self {
+        Self { client, model_name }
+    }
+
+    pub async fn generate_text<M: Into<Vec<ChatCompletionRequestMessage>>>(
+        &self,
+        messages: M,
+    ) -> Result<String, OxyError> {
+        let request = self
+            .request_builder(messages)
+            .build()
+            .map_err(|e| OxyError::RuntimeError(format!("Failed to build request: {e}")))?;
+        let response = self.client.chat().create(request).await?;
+        let result = self
+            .extract_response(&response)
+            .ok_or_else(|| OxyError::RuntimeError("No response from OpenAI".to_string()))?;
+        Ok(result)
+    }
+
+    pub async fn request_tool_call<
+        M: Into<Vec<ChatCompletionRequestMessage>>,
+        C: Into<Vec<ChatCompletionTool>>,
+    >(
+        &self,
+        messages: M,
+        tools: C,
+        tool_choice: Option<ChatCompletionToolChoiceOption>,
+        parallel_tool_calls: Option<bool>,
+    ) -> Result<Vec<ChatCompletionMessageToolCall>, OxyError> {
+        let mut request_builder = self.request_builder(messages);
+        request_builder.tools(tools);
+
+        if let Some(tool_choice) = tool_choice {
+            request_builder.tool_choice(tool_choice);
+        }
+
+        if let Some(parallel_tool_calls) = parallel_tool_calls {
+            request_builder.parallel_tool_calls(parallel_tool_calls);
+        }
+
+        let request = request_builder
+            .build()
+            .map_err(|e| OxyError::RuntimeError(format!("Failed to build request: {e}")))?;
+        let response = self
+            .client
+            .chat()
+            .create(request)
+            .await
+            .map_err(|e| OxyError::RuntimeError(format!("OpenAI API error: {e}")))?;
+
+        let result = self.extract_tool_calls(&response);
+        Ok(result)
+    }
+
+    pub async fn stream_text<M: Into<Vec<ChatCompletionRequestMessage>>>(
+        &self,
+        messages: M,
+    ) -> Result<impl tokio_stream::Stream<Item = Result<Option<String>, OxyError>>, OxyError> {
+        let request = self
+            .request_builder(messages)
+            .stream(true)
+            .build()
+            .map_err(|e| OxyError::RuntimeError(format!("Failed to build request: {e}")))?;
+
+        let stream = self
+            .client
+            .chat()
+            .create_stream(request)
+            .await
+            .map_err(|e| OxyError::RuntimeError(format!("OpenAI API error: {e}")))?
+            .map(|result| match result {
+                Ok(response) => {
+                    let stream_response = self.extract_stream(&response);
+                    Ok(stream_response)
+                }
+                Err(e) => Err(OxyError::RuntimeError(format!("OpenAI API error: {e}"))),
+            });
+        Ok(stream)
+    }
+
+    fn request_builder<M: Into<Vec<ChatCompletionRequestMessage>>>(
+        &self,
+        messages: M,
+    ) -> CreateChatCompletionRequestArgs {
+        let mut builder = CreateChatCompletionRequestArgs::default();
+        builder.model(&self.model_name).messages(messages);
+        builder
+    }
+
+    fn extract_response(&self, response: &CreateChatCompletionResponse) -> Option<String> {
+        response.choices.first().and_then(|choice| {
+            if let Some(content) = &choice.message.content {
+                return Some(content.clone());
+            }
+            None
+        })
+    }
+
+    fn extract_tool_calls(
+        &self,
+        response: &CreateChatCompletionResponse,
+    ) -> Vec<ChatCompletionMessageToolCall> {
+        response
+            .choices
+            .first()
+            .and_then(|choice| choice.message.tool_calls.clone())
+            .unwrap_or_default()
+    }
+
+    fn extract_stream(
+        &self,
+        stream_response: &CreateChatCompletionStreamResponse,
+    ) -> Option<String> {
+        stream_response.choices.first().and_then(|choice| {
+            if let Some(content) = &choice.delta.content {
+                return Some(content.clone());
+            }
+            None
+        })
     }
 }

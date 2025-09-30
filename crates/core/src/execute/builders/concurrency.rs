@@ -105,10 +105,12 @@ where
 impl<E, I, T, C> Executable<I> for Concurrency<E, T, C>
 where
     E: Executable<T> + Clone + Send + 'static,
+    E::Response: Send,
     I: IntoIterator<Item = T> + Send + 'static,
     T: Clone + Send + 'static,
     C: ConcurrencyControl<E::Response> + Clone + Send,
-    <C as ConcurrencyControl<<E as Executable<T>>::Response>>::Response: std::marker::Send,
+    C::Response: Send,
+    <C as ConcurrencyControl<<E as Executable<T>>::Response>>::Response: Send,
 {
     type Response = C::Response;
 

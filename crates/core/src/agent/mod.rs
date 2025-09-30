@@ -1,5 +1,6 @@
 use crate::{
     adapters::project::manager::ProjectManager,
+    agent::builders::fsm::{config::AgenticInput, machine::launch_agentic_workflow},
     config::{
         constants::AGENT_SOURCE,
         model::{AgentConfig, AgentType},
@@ -18,7 +19,7 @@ use minijinja::Value;
 pub use references::AgentReferencesHandler;
 use types::AgentInput;
 
-mod builders;
+pub mod builders;
 mod contexts;
 mod databases;
 mod references;
@@ -109,6 +110,46 @@ impl AgentLauncher {
         let response = handle.await?;
         event_handle.await??;
         response
+    }
+
+    pub async fn launch_agentic_workflow<H: EventHandler + Send + 'static>(
+        self,
+        agent_ref: &str,
+        agent_input: AgenticInput,
+        event_handler: H,
+    ) -> Result<OutputContainer, OxyError> {
+        let execution_context = self
+            .execution_context
+            .ok_or(OxyError::RuntimeError(
+                "ExecutionContext is required".to_string(),
+            ))?
+            .with_child_source(agent_ref.to_string(), AGENT_SOURCE.to_string());
+        let agent_ref = agent_ref.to_string();
+        let handle = tokio::spawn(async move {
+            execution_context
+                .write_kind(EventKind::Started {
+                    name: agent_ref.to_string(),
+                    attributes: Default::default(),
+                })
+                .await?;
+            let response =
+                launch_agentic_workflow(&execution_context, &agent_ref, agent_input).await;
+            execution_context
+                .write_kind(EventKind::Finished {
+                    attributes: Default::default(),
+                    message: Default::default(),
+                    error: response.as_ref().err().map(|e| e.to_string()),
+                })
+                .await?;
+            response
+        });
+
+        let buf_writer = self.buf_writer;
+        let event_handle =
+            tokio::spawn(async move { buf_writer.write_to_handler(event_handler).await });
+        let response = handle.await?;
+        event_handle.await??;
+        response.map(|res| res.into())
     }
 }
 

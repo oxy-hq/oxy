@@ -14,6 +14,7 @@ use crate::{
 #[derive(Debug, Clone)]
 pub struct DatabasesContext {
     cache: Arc<Mutex<HashMap<String, Value>>>,
+    database_keys: Vec<String>,
     config: ConfigManager,
     secrets_manager: SecretsManager,
 }
@@ -22,6 +23,11 @@ impl DatabasesContext {
     pub fn new(config: ConfigManager, secrets_manager: SecretsManager) -> Self {
         DatabasesContext {
             cache: Arc::new(Mutex::new(HashMap::new())),
+            database_keys: config
+                .list_databases()
+                .iter()
+                .map(|db| db.name.clone())
+                .collect(),
             config,
             secrets_manager,
         }
@@ -35,6 +41,14 @@ impl Object for DatabasesContext {
 
     fn get_value(self: &Arc<Self>, key: &Value) -> Option<Value> {
         let database_key = key.as_str();
+        if database_key.is_none()
+            || !self
+                .database_keys
+                .contains(&database_key.unwrap().to_string())
+        {
+            return None;
+        }
+
         match database_key {
             Some(database_key) => {
                 let mut cache = self.cache.lock().unwrap();

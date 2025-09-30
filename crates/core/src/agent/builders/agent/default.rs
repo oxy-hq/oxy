@@ -236,7 +236,7 @@ impl ParamMapper<DefaultAgentInput, DefaultAgentInput> for DefaultAgentMapper {
     }
 }
 
-async fn build_global_context(
+pub async fn build_global_context(
     execution_context: &ExecutionContext,
     agent_name: &str,
     default_agent: &DefaultAgent,

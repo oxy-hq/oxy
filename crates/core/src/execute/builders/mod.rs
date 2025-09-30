@@ -8,6 +8,7 @@ pub mod concurrency;
 pub mod consistency;
 pub mod export;
 pub mod fallback;
+pub mod fsm;
 pub mod map;
 pub mod memo;
 pub mod react;

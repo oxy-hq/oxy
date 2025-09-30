@@ -278,7 +278,7 @@ impl SemanticManager {
                 vec![resolved_db.clone().with_datasets(datasets)]
             }
             None => {
-                let all_dbs = self.config.list_databases()?.to_vec();
+                let all_dbs = self.config.list_databases().to_vec();
                 tracing::debug!(
                     "No filter provided, syncing all {} databases",
                     all_dbs.len()

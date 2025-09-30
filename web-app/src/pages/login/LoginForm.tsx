@@ -136,7 +136,10 @@ const LoginForm = () => {
       {authConfig.basic && (
         <div className="text-center text-sm">
           Don&apos;t have an account?{" "}
-          <Link to={ROUTES.AUTH.REGISTER} className="underline underline-offset-4">
+          <Link
+            to={ROUTES.AUTH.REGISTER}
+            className="underline underline-offset-4"
+          >
             Sign up
           </Link>
         </div>

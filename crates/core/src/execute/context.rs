@@ -21,7 +21,7 @@ use super::{
 
 #[async_trait::async_trait]
 pub trait Executable<I> {
-    type Response: Send;
+    type Response;
 
     async fn execute(
         &mut self,

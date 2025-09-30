@@ -25,7 +25,7 @@ use crate::{
     execute::{
         Executable, ExecutionContext,
         builders::{ExecutableBuilder, map::ParamMapper},
-        types::{EventKind, Output, OutputContainer},
+        types::{EventKind, Output, OutputContainer, Table},
     },
     service::types::SemanticQueryParams,
     tools::{
@@ -184,7 +184,7 @@ impl Executable<(String, Option<ToolType>, ToolRawInput)> for ToolExecutable {
                         .map(|output| output.into())
                 }
                 ToolType::ValidateSQL(sql_config) => {
-                    build_sql_executable(ValidateSQLExecutable::new())
+                    build_validate_sql_executable(ValidateSQLExecutable::new())
                         .execute(
                             execution_context,
                             SQLToolInput {
@@ -371,6 +371,7 @@ impl ParamMapper<SQLToolInput, SQLInput> for SQLMapper {
                 sql,
                 database,
                 dry_run_limit,
+                name: None,
             },
             None,
         ))
@@ -409,7 +410,18 @@ impl ParamMapper<VisualizeToolInput, VisualizeInput> for VisualizeMapper {
     }
 }
 
-fn build_sql_executable<E>(executable: E) -> impl Executable<SQLToolInput, Response = Output>
+fn build_sql_executable<E>(executable: E) -> impl Executable<SQLToolInput, Response = Table>
+where
+    E: Executable<SQLInput, Response = Table> + Send,
+{
+    ExecutableBuilder::new()
+        .map(SQLMapper)
+        .executable(executable)
+}
+
+fn build_validate_sql_executable<E>(
+    executable: E,
+) -> impl Executable<SQLToolInput, Response = Output>
 where
     E: Executable<SQLInput, Response = Output> + Send,
 {

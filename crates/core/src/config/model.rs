@@ -1167,6 +1167,9 @@ pub struct TempWorkflow {
 #[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
 #[garde(context(ValidationContext))]
 pub struct Task {
+    #[schemars(
+        description = "Unique name for the task within the workflow. Format: alphanumeric and underscores only, starting with a letter."
+    )]
     #[garde(length(min = 1))]
     pub name: String,
     #[serde(flatten)]
@@ -1452,9 +1455,9 @@ pub struct LineChartDisplay {
     pub x_axis_label: Option<String>,
     #[garde(skip)]
     pub y_axis_label: Option<String>,
-    #[schemars(description = "reference data output from a task using task name")]
     #[garde(length(min = 1))]
     #[garde(custom(validate_task_data_reference))]
+    #[schemars(description = "reference data output from a table using table name")]
     pub data: String,
     #[garde(skip)]
     pub series: Option<String>,
@@ -1473,6 +1476,7 @@ pub struct BarChartDisplay {
     pub title: Option<String>,
     #[garde(length(min = 1))]
     #[garde(custom(validate_task_data_reference))]
+    #[schemars(description = "reference data output from a table using table name")]
     pub data: String,
     #[garde(skip)]
     pub series: Option<String>,
@@ -1489,6 +1493,7 @@ pub struct PieChartDisplay {
     pub title: Option<String>,
     #[garde(length(min = 1))]
     #[garde(custom(validate_task_data_reference))]
+    #[schemars(description = "reference data output from a table using table name")]
     pub data: String,
 }
 
@@ -1518,7 +1523,7 @@ pub enum Display {
     Table(#[garde(dive)] TableDisplay),
 }
 
-#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone, Validate)]
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone, Validate, Default)]
 #[garde(context(ValidationContext))]
 pub struct AppConfig {
     #[schemars(description = "tasks to prepare the data for the app")]

@@ -68,6 +68,7 @@ where
 impl<I, E, W> Executable<I> for Export<E, W>
 where
     E: Executable<I> + Clone + Send + 'static,
+    E::Response: Send,
     I: Clone + Send + 'static,
     W: Exporter<I, E::Response> + Send,
 {

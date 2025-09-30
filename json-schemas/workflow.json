@@ -1054,6 +1054,7 @@
           ]
         },
         "name": {
+          "description": "Unique name for the task within the workflow. Format: alphanumeric and underscores only, starting with a letter.",
           "type": "string"
         }
       }

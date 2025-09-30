@@ -18,6 +18,7 @@ use crate::mcp::service::OxyMcpServer;
 use crate::sentry_config;
 use crate::service::agent::AgentCLIHandler;
 use crate::service::agent::run_agent;
+use crate::service::agent::run_agentic_workflow;
 use crate::service::eval::EvalEventsHandler;
 use crate::service::eval::run_eval;
 use crate::service::retrieval::{ReindexInput, SearchInput, reindex, search};
@@ -829,7 +830,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
 
                 let config_manager_clone = config_manager.clone();
                 let databases: HashMap<String, DatabaseDetails> = config_manager_clone
-                    .list_databases()?
+                    .list_databases()
                     .iter()
                     .map(|db| {
                         (
@@ -1044,6 +1045,42 @@ async fn handle_agent_file(file_path: &PathBuf, question: Option<String>) -> Res
     Ok(())
 }
 
+async fn handle_agentic_workflow_file(
+    file_path: &PathBuf,
+    question: Option<String>,
+) -> Result<(), OxyError> {
+    let agent_name = file_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("unknown");
+    sentry_config::add_agent_context(agent_name, question.as_deref());
+
+    let question = question.ok_or_else(|| {
+        OxyError::ArgumentError("Question is required for agentic workflow files".to_string())
+    })?;
+    let project_path = resolve_local_project_path()?;
+
+    let project_manager = ProjectBuilder::new()
+        .with_project_path(&project_path)
+        .await?
+        .with_runs_manager(RunsManager::default(Uuid::nil(), Uuid::nil()).await?)
+        .build()
+        .await
+        .map_err(|e| OxyError::from(anyhow::anyhow!("Failed to create project: {e}")))?;
+
+    println!("🤖 Running agentic workflow: {}", file_path.display());
+    let res = run_agentic_workflow(
+        project_manager,
+        file_path,
+        question,
+        AgentCLIHandler::default(),
+        vec![],
+    )
+    .await?;
+    println!("{:?}", res);
+    Ok(())
+}
+
 async fn handle_sql_file(
     file_path: &PathBuf,
     database: Option<String>,
@@ -1142,6 +1179,9 @@ pub async fn handle_run_command(run_args: RunArgs) -> Result<RunResult, OxyError
                 Ok(RunResult::Workflow)
             } else if file.ends_with(".agent.yml") {
                 handle_agent_file(&file_path, run_args.question).await?;
+                Ok(RunResult::Agent)
+            } else if file.ends_with(".aw.yml") {
+                handle_agentic_workflow_file(&file_path, run_args.question).await?;
                 Ok(RunResult::Agent)
             } else {
                 Err(OxyError::ArgumentError(
@@ -1400,7 +1440,7 @@ async fn handle_semantic_engine_command(semantic_args: SemanticEngineArgs) -> Re
 
         // Get database details from config
         let databases: HashMap<String, DatabaseDetails> = config
-            .list_databases()?
+            .list_databases()
             .iter()
             .map(|db| {
                 (

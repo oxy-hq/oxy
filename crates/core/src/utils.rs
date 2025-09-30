@@ -112,9 +112,13 @@ pub fn truncate_with_ellipsis(s: &str, max_width: Option<usize>) -> String {
     prefix
 }
 
-pub fn truncate_datasets(batches: &Vec<RecordBatch>) -> (Vec<RecordBatch>, bool) {
-    if !batches.is_empty() && batches[0].num_rows() > MAX_DISPLAY_ROWS {
-        return (vec![batches[0].slice(0, MAX_DISPLAY_ROWS)], true);
+pub fn truncate_datasets(
+    batches: &Vec<RecordBatch>,
+    max_display_rows: Option<usize>,
+) -> (Vec<RecordBatch>, bool) {
+    let max_rows = max_display_rows.unwrap_or(MAX_DISPLAY_ROWS);
+    if !batches.is_empty() && batches[0].num_rows() > max_rows {
+        return (vec![batches[0].slice(0, max_rows)], true);
     }
     (batches.to_vec(), false)
 }

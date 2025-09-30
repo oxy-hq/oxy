@@ -65,6 +65,7 @@ impl Executable<OmniInput> for OmniExecutable {
                 sql: sql.clone(),
                 database_ref: input.database.clone(),
             },
+            None,
         );
         execution_context
             .write_chunk(Chunk {

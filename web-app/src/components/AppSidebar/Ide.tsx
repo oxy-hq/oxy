@@ -9,7 +9,7 @@ import ROUTES from "@/libs/utils/routes";
 const Ide = () => {
   const location = useLocation();
   const { projectId } = useParams();
-  
+
   if (!projectId) {
     throw new Error("Project ID is required");
   }

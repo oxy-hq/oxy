@@ -5,7 +5,7 @@ use crate::{
     errors::OxyError,
     execute::{
         Executable, ExecutionContext,
-        types::{Chunk, EventKind, Output, SQL, TableReference},
+        types::{Chunk, EventKind, Output, SQL, Table, TableReference},
     },
     tools::types::SQLInput,
 };
@@ -21,7 +21,7 @@ impl SQLExecutable {
 
 #[async_trait::async_trait]
 impl Executable<SQLInput> for SQLExecutable {
-    type Response = Output;
+    type Response = Table;
 
     async fn execute(
         &mut self,
@@ -44,10 +44,9 @@ impl Executable<SQLInput> for SQLExecutable {
                 finished: true,
             })
             .await?;
-
         let config_manager = &execution_context.project.config_manager;
         let secrets_manager = &execution_context.project.secrets_manager;
-        let result: Result<Output, OxyError> = {
+        let result: Result<Table, OxyError> = {
             let connector = Connector::from_database(
                 &input.database,
                 config_manager,
@@ -56,12 +55,14 @@ impl Executable<SQLInput> for SQLExecutable {
             )
             .await?;
             let file_path = connector.run_query(&input.sql).await?;
-            let table = Output::table_with_reference(
+            let table = Table::with_reference(
                 file_path,
                 TableReference {
                     sql: input.sql.clone(),
                     database_ref: input.database.clone(),
                 },
+                input.name.clone(),
+                None,
             );
             Ok(table)
         };
@@ -70,7 +71,7 @@ impl Executable<SQLInput> for SQLExecutable {
                 execution_context
                     .write_chunk(Chunk {
                         key: None,
-                        delta: table.clone(),
+                        delta: table.clone().into(),
                         finished: true,
                     })
                     .await?;

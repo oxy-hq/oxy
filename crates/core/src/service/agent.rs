@@ -1,5 +1,6 @@
 use crate::adapters::project::manager::ProjectManager;
 use crate::agent::AgentLauncher;
+use crate::agent::builders::fsm::config::AgenticInput;
 use crate::agent::types::AgentInput;
 use crate::config::ConfigManager;
 use crate::config::constants::{CONCURRENCY_SOURCE, CONSISTENCY_SOURCE, WORKFLOW_SOURCE};
@@ -9,6 +10,11 @@ use crate::execute::types::{Event, EventKind, Output, OutputContainer, ProgressT
 use crate::execute::writer::{EventHandler, NoopHandler};
 use crate::theme::StyledText;
 use crate::utils::print_colored_sql;
+use async_openai::types::{
+    ChatCompletionRequestAssistantMessage, ChatCompletionRequestAssistantMessageContent,
+    ChatCompletionRequestMessage, ChatCompletionRequestUserMessage,
+    ChatCompletionRequestUserMessageContent,
+};
 use sea_orm::prelude::DateTimeWithTimeZone;
 use serde::Deserialize;
 use std::io::Write;
@@ -187,9 +193,50 @@ pub async fn run_agent<P: AsRef<Path>, H: EventHandler + Send + 'static>(
         .await
 }
 
+pub async fn run_agentic_workflow<P: AsRef<Path>, H: EventHandler + Send + 'static>(
+    project_manager: ProjectManager,
+    agent_ref: P,
+    prompt: String,
+    event_handler: H,
+    memory: Vec<Message>,
+) -> Result<OutputContainer, OxyError> {
+    AgentLauncher::new()
+        .with_project(project_manager)
+        .await?
+        .launch_agentic_workflow(
+            &agent_ref.as_ref().to_string_lossy().to_string(),
+            AgenticInput {
+                prompt,
+                trace: memory.into_iter().map(|m| m.into()).collect(),
+            },
+            event_handler,
+        )
+        .await
+}
+
 #[derive(Debug, Clone)]
 pub struct Message {
     pub content: String,
     pub is_human: bool,
     pub created_at: DateTimeWithTimeZone,
+}
+
+impl Into<ChatCompletionRequestMessage> for Message {
+    fn into(self) -> ChatCompletionRequestMessage {
+        if self.is_human {
+            ChatCompletionRequestUserMessage {
+                content: ChatCompletionRequestUserMessageContent::Text(self.content),
+                ..Default::default()
+            }
+            .into()
+        } else {
+            ChatCompletionRequestAssistantMessage {
+                content: Some(ChatCompletionRequestAssistantMessageContent::Text(
+                    self.content,
+                )),
+                ..Default::default()
+            }
+            .into()
+        }
+    }
 }

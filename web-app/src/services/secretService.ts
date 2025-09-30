@@ -42,7 +42,9 @@ export class SecretService {
    * List all secrets for the current user
    */
   static async listSecrets(projectId: string): Promise<SecretListResponse> {
-    const response = await apiClient.get<SecretListResponse>(`/${projectId}/secrets`);
+    const response = await apiClient.get<SecretListResponse>(
+      `/${projectId}/secrets`,
+    );
     return response.data;
   }
 
@@ -62,7 +64,10 @@ export class SecretService {
     id: string,
     request: UpdateSecretRequest,
   ): Promise<Secret> {
-    const response = await apiClient.put<Secret>(`/${projectId}/secrets/${id}`, request);
+    const response = await apiClient.put<Secret>(
+      `/${projectId}/secrets/${id}`,
+      request,
+    );
     return response.data;
   }
 

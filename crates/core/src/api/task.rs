@@ -1,4 +1,6 @@
-use crate::api::middlewares::project::ProjectManagerExtractor;
+use crate::{
+    api::middlewares::project::ProjectManagerExtractor, service::agent::run_agentic_workflow,
+};
 use async_trait::async_trait;
 use std::sync::{Arc, Mutex};
 use tokio::sync::Mutex as TokioMutex;
@@ -176,14 +178,28 @@ impl ChatHandler for TaskExecutor {
         let references = task_stream.references.clone();
         let usage_arc = task_stream.usage.clone();
 
-        let result = run_agent(
-            project_manager,
-            &agent_ref,
-            context.user_question.clone(),
-            task_stream,
-            context.memory.clone(),
-        )
-        .await;
+        let result = match agent_ref.to_string_lossy().ends_with(".aw.yml") {
+            true => {
+                run_agentic_workflow(
+                    project_manager,
+                    &agent_ref,
+                    context.user_question.clone(),
+                    task_stream,
+                    context.memory.clone(),
+                )
+                .await
+            }
+            false => {
+                run_agent(
+                    project_manager,
+                    &agent_ref,
+                    context.user_question.clone(),
+                    task_stream,
+                    context.memory.clone(),
+                )
+                .await
+            }
+        };
 
         match result {
             Ok(output_container) => {

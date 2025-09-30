@@ -49,8 +49,10 @@ pub struct TableReference {
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Table {
+    pub name: Option<String>,
     pub reference: Option<TableReference>,
     pub file_path: String,
+    pub max_display_rows: Option<usize>,
     #[serde(skip)]
     inner: OnceCell<ArrowTable>,
 }
@@ -64,16 +66,25 @@ impl Hash for Table {
 impl Table {
     pub fn new(file_path: String) -> Self {
         Table {
+            name: None,
             reference: None,
             file_path,
+            max_display_rows: None,
             inner: OnceCell::new(),
         }
     }
 
-    pub fn with_reference(file_path: String, reference: TableReference) -> Self {
+    pub fn with_reference(
+        file_path: String,
+        reference: TableReference,
+        name: Option<String>,
+        max_display_rows: Option<usize>,
+    ) -> Self {
         Table {
+            name,
             reference: Some(reference),
             file_path,
+            max_display_rows,
             inner: OnceCell::new(),
         }
     }
@@ -115,7 +126,7 @@ impl Table {
 
     pub fn to_2d_array(&self) -> Result<(Vec<Vec<String>>, bool), OxyError> {
         let table = self.get_inner()?;
-        let (truncated_results, truncated) = truncate_datasets(&table.batches);
+        let (truncated_results, truncated) = truncate_datasets(&table.batches, None);
         let table_2d_array = record_batches_to_2d_array(&truncated_results, &table.schema)
             .map_err(|err| {
                 OxyError::RuntimeError(format!("Failed to convert table to 2D array: {err}"))
@@ -135,7 +146,7 @@ impl Table {
         self.get_inner().ok()?;
         let table = self.inner.into_inner()?;
         let TableReference { sql, database_ref } = self.reference?;
-        let (truncated_results, truncated) = truncate_datasets(&table.batches);
+        let (truncated_results, truncated) = truncate_datasets(&table.batches, None);
         let formatted_results =
             record_batches_to_2d_array(&truncated_results, &table.schema).ok()?;
         Some(ReferenceKind::SqlQuery(QueryReference {
@@ -205,19 +216,26 @@ impl Display for Table {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self.get_inner() {
             Ok(inner) => {
-                let (truncated_results, truncated) = truncate_datasets(&inner.batches);
+                let (truncated_results, truncated) =
+                    truncate_datasets(&inner.batches, self.max_display_rows);
+                let table_name = if let Some(name) = &self.name {
+                    format!("table_name: {name} \n  ")
+                } else {
+                    "".to_string()
+                };
+                writeln!(f, "- {table_name}data:\n")?;
                 match record_batches_to_json(&truncated_results) {
                     Ok(json) => {
-                        writeln!(f, "{json}")?;
+                        writeln!(f, "{:2}{json}", "")?;
                         if truncated {
-                            writeln!(f, "Table results has been truncated.")?;
+                            writeln!(f, "{:2}{}", "", "Table results has been truncated.")?;
                         }
                         Ok(())
                     }
-                    Err(e) => writeln!(f, "Table({}): {}", &self.file_path, e),
+                    Err(e) => writeln!(f, "{:2}Table({}): {}", "", &self.file_path, e),
                 }
             }
-            Err(e) => writeln!(f, "Table({}): {}", &self.file_path, e),
+            Err(e) => writeln!(f, "{:2}Table({}): {}", "", &self.file_path, e),
         }
     }
 }

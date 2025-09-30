@@ -132,10 +132,6 @@ pub async fn list_databases(
     let databases = project_manager
         .config_manager
         .list_databases()
-        .map_err(|e| {
-            tracing::error!("Failed to list databases: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?
         .iter()
         .map(|db| DatabaseInfo {
             name: db.name.clone(),

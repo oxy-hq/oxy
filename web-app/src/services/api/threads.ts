@@ -28,22 +28,36 @@ export class ThreadService {
     return response.data;
   }
 
-  static async createThread(projectId: string, request: ThreadCreateRequest): Promise<ThreadItem> {
+  static async createThread(
+    projectId: string,
+    request: ThreadCreateRequest,
+  ): Promise<ThreadItem> {
     const response = await apiClient.post(`/${projectId}/threads`, request);
     return response.data;
   }
 
-  static async getThread(projectId: string, threadId: string): Promise<ThreadItem> {
+  static async getThread(
+    projectId: string,
+    threadId: string,
+  ): Promise<ThreadItem> {
     const response = await apiClient.get(`/${projectId}/threads/${threadId}`);
     return response.data;
   }
 
-  static async deleteThread(projectId: string, threadId: string): Promise<void> {
-    const response = await apiClient.delete(`/${projectId}/threads/${threadId}`);
+  static async deleteThread(
+    projectId: string,
+    threadId: string,
+  ): Promise<void> {
+    const response = await apiClient.delete(
+      `/${projectId}/threads/${threadId}`,
+    );
     return response.data;
   }
 
-  static async bulkDeleteThreads(projectId: string, threadIds: string[]): Promise<void> {
+  static async bulkDeleteThreads(
+    projectId: string,
+    threadIds: string[],
+  ): Promise<void> {
     const response = await apiClient.post(`/${projectId}/threads/bulk-delete`, {
       thread_ids: threadIds,
     });
@@ -55,8 +69,13 @@ export class ThreadService {
     return response.data;
   }
 
-  static async getThreadMessages(projectId: string, threadId: string): Promise<Message[]> {
-    const response = await apiClient.get(`/${projectId}/threads/${threadId}/messages`);
+  static async getThreadMessages(
+    projectId: string,
+    threadId: string,
+  ): Promise<Message[]> {
+    const response = await apiClient.get(
+      `/${projectId}/threads/${threadId}/messages`,
+    );
     return response.data;
   }
 
