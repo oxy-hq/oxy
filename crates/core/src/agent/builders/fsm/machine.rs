@@ -16,7 +16,7 @@ use crate::{
         },
         databases::DatabasesContext,
     },
-    config::constants::AGENT_REVISE_PLAN_TRANSITION,
+    config::constants::{AGENT_CONTINUE_PLAN_TRANSITION, AGENT_REVISE_PLAN_TRANSITION},
     errors::OxyError,
     execute::{
         Executable, ExecutionContext,
@@ -105,8 +105,10 @@ impl<S: TransitionContext + Send + Sync> Agent<S> {
                     vec![
                     ChatCompletionRequestUserMessage {
                     content: ChatCompletionRequestUserMessageContent::Text(
-                        "Based on the previous execution, decide if you need to revise your plan. If you do, select the 'update_plan' action, otherwise select 'follow_up_plan' to proceed with your current plan."
-                            .to_string(),
+                        format!("Based on the previous execution, decide if you need to revise your plan.
+                        If you do, select the '{AGENT_REVISE_PLAN_TRANSITION}' action,
+                        otherwise select '{AGENT_CONTINUE_PLAN_TRANSITION}' to proceed with your current plan.
+                        If you only change the next step of your plan, you can continue with '{AGENT_CONTINUE_PLAN_TRANSITION}'.")
                     ),
                     ..Default::default()
                 }

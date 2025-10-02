@@ -1,6 +1,7 @@
 use std::path::Path;
 use std::{collections::HashMap, fs, sync::Arc};
 
+use crate::adapters::connector::DOMO;
 use crate::adapters::secrets::SecretsManager;
 use crate::{
     adapters::connector::Connector,
@@ -16,6 +17,7 @@ use futures::StreamExt;
 use itertools::Itertools;
 use serde::Deserialize;
 use serde_arrow::from_record_batch;
+use slugify::slugify;
 
 pub struct ColumnNames {
     dataset: String,
@@ -372,6 +374,7 @@ async fn fetch_schema_models<T: for<'de> Deserialize<'de>>(
 pub struct SchemaLoader {
     database: Database,
     connector: Arc<Connector>,
+    secrets_manager: SecretsManager,
 }
 
 #[derive(Debug, Deserialize)]
@@ -440,6 +443,7 @@ impl SchemaLoader {
         Ok(SchemaLoader {
             database: database.clone(),
             connector,
+            secrets_manager: secrets_manager.clone(),
         })
     }
 
@@ -479,7 +483,7 @@ impl SchemaLoader {
                             path.file_stem().unwrap().to_string_lossy().to_string(),
                             SemanticModels {
                                 database: self.database.name.clone(),
-                                table: table_name.clone(),
+                                table: table_name,
                                 description: "".to_string(),
                                 dimensions,
                                 entities: vec![],
@@ -492,6 +496,39 @@ impl SchemaLoader {
                     result.insert("duckdb".to_string(), tables);
                 }
                 Ok(result)
+            }
+            DatabaseType::DOMO(domo) => {
+                let domo_client =
+                    DOMO::from_config(self.secrets_manager.clone(), domo.clone()).await?;
+                let domo_dataset = domo_client.dataset();
+                let dataset_info = domo_dataset.details(&domo.dataset_id).await?;
+                let file_stem = slugify!(&dataset_info.name, separator = "_", max_length = 60);
+                Ok(HashMap::from_iter([(
+                    "domo".to_string(),
+                    HashMap::from_iter([(
+                        file_stem,
+                        SemanticModels {
+                            database: self.database.name.clone(),
+                            table: dataset_info.name,
+                            description: dataset_info.description,
+                            dimensions: dataset_info
+                                .tables
+                                .into_iter()
+                                .flat_map(|table| table.columns)
+                                .map(|col| Dimension {
+                                    name: col.name,
+                                    description: col.description,
+                                    synonyms: col.synonyms,
+                                    sample: vec![],
+                                    data_type: Some(col.r#type),
+                                    is_partition_key: None,
+                                })
+                                .collect(),
+                            entities: vec![],
+                            measures: vec![],
+                        },
+                    )]),
+                )]))
             }
             DatabaseType::ClickHouse(_)
             | DatabaseType::Bigquery(_)
@@ -695,6 +732,7 @@ impl SchemaLoader {
                 });
                 Ok(datasets)
             }
+            DatabaseType::DOMO(_) => Ok(HashMap::new()),
             _ => Err(OxyError::ConfigurationError(
                 "Unsupported database type".to_string(),
             )),

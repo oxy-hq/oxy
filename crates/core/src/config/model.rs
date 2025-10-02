@@ -269,6 +269,17 @@ impl ClickHouse {
     }
 }
 
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone, Validate, Default)]
+#[garde(context(ValidationContext))]
+pub struct DOMO {
+    #[garde(length(min = 1))]
+    pub instance: String,
+    #[garde(length(min = 1))]
+    pub developer_token_var: String,
+    #[garde(length(min = 1))]
+    pub dataset_id: String,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, JsonSchema, Validate)]
 #[garde(context(AgentValidationContext))]
 #[serde(rename_all = "lowercase")]
@@ -562,6 +573,8 @@ pub enum DatabaseType {
     Mysql(#[garde(dive)] Mysql),
     #[serde(rename = "clickhouse")]
     ClickHouse(#[garde(dive)] ClickHouse),
+    #[serde(rename = "domo")]
+    DOMO(#[garde(dive)] DOMO),
 }
 
 impl std::fmt::Display for DatabaseType {
@@ -574,6 +587,7 @@ impl std::fmt::Display for DatabaseType {
             DatabaseType::Redshift(_) => write!(f, "redshift"),
             DatabaseType::Mysql(_) => write!(f, "mysql"),
             DatabaseType::ClickHouse(_) => write!(f, "clickhouse"),
+            DatabaseType::DOMO(_) => write!(f, "domo"),
         }
     }
 }
@@ -599,6 +613,7 @@ impl Database {
             DatabaseType::Mysql(_) => "mysql".to_owned(),
             DatabaseType::ClickHouse(_) => "clickhouse".to_string(),
             DatabaseType::Snowflake(_) => "snowflake".to_string(),
+            DatabaseType::DOMO(_) => "domo".to_string(),
         }
     }
 

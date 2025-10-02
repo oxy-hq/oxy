@@ -252,6 +252,11 @@ fn map_instance_type(
         "REAL" | "DOUBLE PRECISION" => InstanceType::Number,
         "CHAR" | "TIMESTAMPTZ" => InstanceType::String,
         "SUPER" => InstanceType::Object,
+        // map domo types to schemars instance types
+        "LONG" => InstanceType::Integer,
+        "DOUBLE" => InstanceType::Number,
+        "STRING" | "DATE" | "DATETIME" => InstanceType::String,
+        "BOOLEAN" => InstanceType::Boolean,
 
         _ => InstanceType::String, // Default case for unknown types
     };

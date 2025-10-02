@@ -130,28 +130,23 @@ fn default_plan_instruction() -> String {
 fn default_plan_example() -> String {
     "Example:
 
-    Given Available Actions:
+    Given the user query: Build a data app to analyze sales data in last quarter.
+    And Available Actions:
     ```
     ### Available Actions
     - { \"type\": \"query\", \"description\": \"Use this action to query the database with a specific question. The question should be clear and concise, focusing on the information you need from the database.\" }
     - { \"type\": \"build_table\", \"description\": \"Use this action to create a table that summarizes or organizes data in a structured format. Specify the columns and the data to be included in the table.\" }
-    - { \"type\": \"build_data_app\", \"description\": \"Use this action to create a data application that provides interactive data visualizations or dashboards. Specify the features and data sources for the app.\" }
     - { \"type\": \"end\", \"description\": \"Use this action to conclude the workflow and provide a final answer or summary based on the previous steps.\" }
     ```
 
-    Sample response format:
+    You should respond in the following format:
     ```
-    ### Steps to complete the task
-    1. query
-        - Query the database to get the total sales for the last quarter.
-    2. build_table
-        - Build a table to summarize the sales data by region and product category.
-    3. build_data_app
-        - Create a data app to visualize the sales trends over time.
-    4. end
-        - Summarize the findings and provide a final answer.
+    ### Plan to build a data app to analyze sales data
+    - **Query** the database to get the total sales for the last quarter.
+    - **Build table** to summarize the sales data by region and product category.
+    - **End** by building a data app to visualize the sales trends over the last year. And summarize the findings.
 
-    ### Next action: query
+    Lets take the next action: <action>
     ```
     ".to_string()
 }

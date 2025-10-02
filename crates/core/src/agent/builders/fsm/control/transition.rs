@@ -362,12 +362,27 @@ where
             },
         };
         let transition = get_transition().await?;
+        self.increase_iteration();
 
         match transition {
             Some(t) => {
                 self.set_transition_name(t.trigger.get_name());
+
+                // If the next transition is a start transition, we need to check if we should revise the plan
+                if t.trigger.is_start() && self.get_plan().is_some() {
+                    let should_revise = machine.should_revise_plan(self.get_messages()).await?;
+                    if !should_revise {
+                        return Ok(Some(Box::new(Idle::new())));
+                    }
+                }
+
+                let trigger_name = if t.trigger.is_start() {
+                    "plan"
+                } else {
+                    t.trigger.get_name()
+                };
                 let mut transition_message =
-                    format!("\n\nRunning transition: {}\n\n", t.trigger.get_name());
+                    format!("\n\nRunning transition: {}\n\n", trigger_name);
                 if let Some(obj) = &objective {
                     transition_message.push_str(&format!("With objective: {obj}\n\n"));
                 }
@@ -378,14 +393,6 @@ where
                         finished: true,
                     })
                     .await?;
-
-                // If the next transition is a start transition, we need to check if we should revise the plan
-                if t.trigger.is_start() && self.get_plan().is_some() {
-                    let should_revise = machine.should_revise_plan(self.get_messages()).await?;
-                    if !should_revise {
-                        return Ok(Some(Box::new(Idle::new())));
-                    }
-                }
 
                 Ok(Some(
                     self.build(execution_context, &machine.config, t, objective)

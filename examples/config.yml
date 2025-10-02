@@ -61,6 +61,12 @@ databases:
       default:
         - "hacker_news_*"
 
+  - name: domo
+    type: domo
+    dataset_id: 6ecc3faa-9368-4711-a1ad-b14dca55db53
+    developer_token_var: DOMO_DEVELOPER_TOKEN
+    instance: hyperquery-ai
+
 models:
   - name: openai-4o-mini
     vendor: openai

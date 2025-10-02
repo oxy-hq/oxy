@@ -354,6 +354,32 @@
               "type": "string"
             }
           }
+        },
+        {
+          "type": "object",
+          "required": [
+            "dataset_id",
+            "developer_token_var",
+            "instance",
+            "type"
+          ],
+          "properties": {
+            "dataset_id": {
+              "type": "string"
+            },
+            "developer_token_var": {
+              "type": "string"
+            },
+            "instance": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "domo"
+              ]
+            }
+          }
         }
       ],
       "required": [

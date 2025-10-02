@@ -2,6 +2,7 @@ use arrow::datatypes::SchemaRef;
 use arrow::record_batch::RecordBatch;
 use clickhouse::ClickHouse;
 use connectorx::ConnectorX;
+pub use domo::DOMO;
 use duckdb::DuckDB;
 use engine::Engine;
 use snowflake::Snowflake;
@@ -14,6 +15,7 @@ use crate::errors::OxyError;
 mod clickhouse;
 mod connectorx;
 mod constants;
+mod domo;
 mod duckdb;
 mod engine;
 mod snowflake;
@@ -28,6 +30,7 @@ enum EngineType {
     ConnectorX,
     ClickHouse,
     Snowflake,
+    DOMO,
 }
 
 #[derive(Debug)]
@@ -105,6 +108,9 @@ impl Connector {
                 secrets_manager.clone(),
                 config_manager.clone(),
             )),
+            DatabaseType::DOMO(domo) => {
+                EngineType::DOMO(DOMO::from_config(secrets_manager.clone(), domo.clone()).await?)
+            }
         };
         Ok(Connector { engine })
     }
