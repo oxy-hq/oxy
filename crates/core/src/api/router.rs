@@ -7,6 +7,7 @@ use crate::api::data;
 use crate::api::database;
 use crate::api::file;
 use crate::api::middlewares::project::project_middleware;
+use crate::api::middlewares::timeout::timeout_middleware;
 use crate::api::project;
 use crate::api::run;
 use crate::api::secrets;
@@ -29,8 +30,10 @@ use axum::routing::{get, post};
 use entity::projects;
 use sentry::integrations::tower::NewSentryLayer;
 use std::future::Future;
+use std::time::Duration;
 use tower::ServiceBuilder;
 use tower_http::cors::{Any, CorsLayer};
+use tower_http::timeout::TimeoutLayer;
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 
@@ -107,6 +110,7 @@ fn build_project_routes() -> Router<()> {
         .route("/charts/{file_path}", get(chart::get_chart))
         .route("/logs", get(thread::get_logs))
         .route("/events", get(run::workflow_events))
+        .route("/events/sync", get(run::workflow_events_sync))
         .route("/blocks", get(run::get_blocks))
         .route(
             "/runs/{source_id}/{run_index}",
@@ -149,9 +153,11 @@ fn build_workflow_routes() -> Router<()> {
         .route("/from-query", post(workflow::create_from_query))
         .route("/{pathb64}", get(workflow::get))
         .route("/{pathb64}/run", post(workflow::run_workflow))
+        .route("/{pathb64}/run-sync", post(workflow::run_workflow_sync))
         .route("/{pathb64}/logs", get(workflow::get_logs))
         .route("/{pathb64}/runs", get(run::get_workflow_runs))
         .route("/{pathb64}/runs", post(run::create_workflow_run))
+        .route("/{pathb64}/runs/{run_id}", get(workflow::get_workflow_run))
 }
 
 fn build_thread_routes() -> Router<()> {
@@ -164,6 +170,10 @@ fn build_thread_routes() -> Router<()> {
         .route("/{id}", delete(thread::delete_thread))
         .route("/{id}/task", post(task::ask_task))
         .route("/{id}/workflow", post(workflow::run_workflow_thread))
+        .route(
+            "/{id}/workflow-sync",
+            post(workflow::run_workflow_thread_sync),
+        )
         .route("/{id}/messages", get(message::get_messages_by_thread))
         .route("/{id}/agent", post(agent::ask_agent))
         .route("/{id}/stop", post(thread::stop_thread))
@@ -239,10 +249,12 @@ fn build_protected_routes() -> Router<()> {
 }
 
 fn apply_middleware(protected_routes: Router<()>) -> Result<Router<()>, OxyError> {
-    let protected_regular_routes = protected_routes.layer(middleware::from_fn_with_state(
-        AuthState::built_in(),
-        auth_middleware,
-    ));
+    let protected_regular_routes = protected_routes
+        .layer(middleware::from_fn(timeout_middleware))
+        .layer(middleware::from_fn_with_state(
+            AuthState::built_in(),
+            auth_middleware,
+        ));
 
     Ok(protected_regular_routes)
 }
@@ -252,9 +264,15 @@ pub async fn api_router() -> Result<Router, OxyError> {
     let protected_routes = apply_middleware(protected_routes)?;
     let app_routes = public_routes.merge(protected_routes);
     let cors = build_cors_layer();
+
+    // Global timeout for ALL requests (60 seconds) - aligned with load balancer limits
+    // Individual sync endpoints use their own configurable timeouts for workflow execution
+    let global_timeout = TimeoutLayer::new(Duration::from_secs(60));
+
     Ok(app_routes
         .with_state(())
         .layer(cors)
+        .layer(global_timeout)
         .layer(ServiceBuilder::new().layer(NewSentryLayer::<Request<Body>>::new_from_top())))
 }
 
@@ -280,6 +298,13 @@ pub async fn openapi_router() -> OpenApiRouter {
         .routes(routes!(project::get_project))
         .routes(routes!(project::delete_project))
         .routes(routes!(project::get_project_branches))
+        // Run routes
+        .routes(routes!(run::get_workflow_runs))
+        .routes(routes!(run::create_workflow_run))
+        .routes(routes!(run::cancel_workflow_run))
+        .routes(routes!(run::workflow_events))
+        .routes(routes!(run::workflow_events_sync))
+        .routes(routes!(run::get_blocks))
         // Thread routes
         .routes(routes!(thread::get_threads))
         .routes(routes!(thread::get_thread))
@@ -291,9 +316,14 @@ pub async fn openapi_router() -> OpenApiRouter {
         .routes(routes!(thread::get_logs))
         // Workflow routes
         .routes(routes!(workflow::list))
+        .routes(routes!(workflow::get))
         .routes(routes!(workflow::get_logs))
         .routes(routes!(workflow::run_workflow))
+        .routes(routes!(workflow::run_workflow_sync))
         .routes(routes!(workflow::run_workflow_thread))
+        .routes(routes!(workflow::run_workflow_thread_sync))
+        .routes(routes!(workflow::create_from_query))
+        .routes(routes!(workflow::get_workflow_run))
         .layer(cors)
         .layer(ServiceBuilder::new().layer(NewSentryLayer::<Request<Body>>::new_from_top()))
 }

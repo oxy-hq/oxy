@@ -128,6 +128,11 @@ async fn create_web_application() -> Result<Router, OxyError> {
     let openapi_router = crate::api::router::openapi_router().await;
     let mut openapi_doc = openapi_router.into_openapi().clone();
 
+    openapi_doc.info.title = "oxy-api-docs".to_string();
+    openapi_doc.info.description = Some("oxy api docs".to_string());
+    openapi_doc.info.contact = None;
+    openapi_doc.info.license = None;
+
     // Always add an API key security scheme using the default header.
     use crate::config::constants::DEFAULT_API_KEY_HEADER;
     use utoipa::openapi::security::{
@@ -150,7 +155,17 @@ async fn create_web_application() -> Result<Router, OxyError> {
 
     Ok(Router::new()
         .nest("/api", api_router)
-        .merge(SwaggerUi::new("/apidoc").url("/apidoc/openapi.json", openapi_doc))
+        .merge(
+            SwaggerUi::new("/apidoc")
+                .url("/apidoc/openapi.json", openapi_doc)
+                .config(
+                    utoipa_swagger_ui::Config::new(["/apidoc/openapi.json"])
+                        .persist_authorization(true)
+                        .deep_linking(true)
+                        .display_request_duration(true)
+                        .try_it_out_enabled(true),
+                ),
+        )
         .fallback_service(static_service)
         .layer(create_trace_layer()))
 }

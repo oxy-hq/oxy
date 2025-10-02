@@ -42,7 +42,7 @@ impl Authenticator for BuiltInAuthenticator {
         }
 
         // Fallback to X-API-Key header authentication.
-        authenticate_header(header).await.map_err(|e| e)
+        authenticate_header(header).await
     }
 }
 

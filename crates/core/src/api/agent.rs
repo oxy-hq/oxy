@@ -71,6 +71,10 @@ impl AgentConfigResponse {
     }
 }
 
+/// List all agents in a project
+///
+/// Retrieves all agent configurations available in the specified project.
+/// Returns a list of agent configs with their relative paths, prompts, models, and test definitions.
 #[utoipa::path(
     method(get),
     path = "/{project_id}/agents",
@@ -129,6 +133,10 @@ pub async fn get_agents(
     Ok(extract::Json(agents))
 }
 
+/// Get a specific agent configuration by path
+///
+/// Retrieves the complete configuration for a specific agent using its base64-encoded path.
+/// Returns agent definition including prompts, tools, model settings, and test cases.
 #[utoipa::path(
     method(get),
     path = "/{project_id}/agents/{pathb64}",
@@ -215,6 +223,16 @@ pub struct AskAgentRequest {
     pub question: String,
 }
 
+/// Ask a question to an agent and stream the response
+///
+/// Executes an agent with a user question and streams the response via Server-Sent Events.
+/// Returns real-time answer content, artifacts, references, and usage statistics. Supports
+/// text streaming, error handling, and artifact generation during execution.
+/// Ask a question to an agent and return complete response (synchronous)
+///
+/// Executes an agent with a user question and returns the complete response after execution.
+/// Aggregates all streaming events into a single response including content, references,
+/// usage statistics, and generated artifacts. Suitable for non-streaming clients.
 #[utoipa::path(
     method(post),
     path = "/{project_id}/agents/{pathb64}/ask",
@@ -323,6 +341,11 @@ impl ChatExecutionRequest for AskAgentNonStreamingRequest {
     }
 }
 
+/// Ask a question to an agent and return complete response (synchronous)
+///
+/// Executes an agent with a user question and returns the complete response after execution.
+/// Aggregates all streaming events into a single response including content, references,
+/// usage statistics, and generated artifacts. Suitable for non-streaming clients.
 #[utoipa::path(
     method(post),
     path = "/{project_id}/agents/{pathb64}/ask_sync",

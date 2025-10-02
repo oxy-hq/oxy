@@ -157,6 +157,10 @@ pub async fn get_threads(
     }))
 }
 
+/// Get a specific thread by ID
+///
+/// Retrieves detailed information about a single thread including its input, output,
+/// references, and processing status. The thread must belong to the authenticated user.
 #[utoipa::path(
     get,
     path = "/{project_id}/threads/{id}",
@@ -490,7 +494,11 @@ pub struct BulkDeleteThreadsRequest {
     pub thread_ids: Vec<String>,
 }
 
-/// Bulk delete multiple threads
+/// Bulk delete multiple threads by their IDs
+///
+/// Efficiently deletes multiple threads in a single operation. All threads must belong
+/// to the authenticated user. Invalid UUIDs will result in a 400 Bad Request error.
+/// Empty thread_ids array will also return 400 Bad Request.
 #[utoipa::path(
     post,
     path = "/{project_id}/threads/bulk-delete",
@@ -570,7 +578,11 @@ pub struct LogsResponse {
     pub logs: Vec<LogItem>,
 }
 
-/// Get logs for the authenticated user
+/// Get execution logs with associated thread information
+///
+/// Retrieves all execution logs for the authenticated user, including associated thread
+/// details such as title, input, output, and processing status. Logs are ordered by
+/// creation time in descending order (most recent first).
 #[utoipa::path(
     get,
     path = "/logs",

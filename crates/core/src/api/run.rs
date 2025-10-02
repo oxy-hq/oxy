@@ -27,6 +27,11 @@ pub struct PaginationQuery {
     pub size: Option<usize>,
 }
 
+/// Get paginated list of workflow runs
+///
+/// Retrieves all runs for a specific workflow with pagination support. Returns run metadata
+/// including status, timestamps, and references. The status is updated in real-time by checking
+/// if the workflow is currently active in the broadcaster.
 #[utoipa::path(
     get,
     path = "/{project_id}/workflows/{pathb64}/runs",
@@ -103,13 +108,11 @@ pub async fn get_workflow_runs(
 #[derive(Deserialize, ToSchema)]
 pub struct RetryParam {
     pub run_id: i32, // Run ID to retry
-    // None if not replaying, Some if replaying
     pub replay_id: Option<String>,
 }
 
 #[derive(serde::Deserialize, ToSchema)]
 pub struct CreateRunRequest {
-    // variables: Option<HashMap<String, serde_json::Value>>,
     retry_param: Option<RetryParam>,
 }
 
@@ -118,6 +121,12 @@ pub struct CreateRunResponse {
     pub run: RunInfo,
 }
 
+/// Create and execute a new workflow run
+///
+/// Creates a new workflow run and immediately begins execution. Supports retry functionality
+/// by providing a retry_param with run_id and optional replay_id. The workflow executes
+/// asynchronously and broadcasts events via SSE. Returns the run information including
+/// a unique task_id for tracking.
 #[utoipa::path(
     post,
     path = "/{project_id}/workflows/{pathb64}/runs",
@@ -283,6 +292,11 @@ pub struct CancelRunRequest {
     pub run_index: u32,
 }
 
+/// Cancel a running workflow execution
+///
+/// Attempts to cancel an actively running workflow by its source_id and run_index.
+/// The cancellation is handled by the task manager. Returns 200 on successful cancellation
+/// or 500 if the task is not found or cancellation fails.
 #[utoipa::path(
     delete,
     path = "/{project_id}/runs/{source_id}/{run_index}",
@@ -327,26 +341,32 @@ pub async fn cancel_workflow_run(
 #[derive(serde::Deserialize, ToSchema, Debug)]
 pub struct WorkflowEventsRequest {
     pub source_id: String,
-    pub run_index: i32,
+    pub run_index: Option<i32>,
 }
 
 impl From<WorkflowEventsRequest> for RunInfo {
     fn from(val: WorkflowEventsRequest) -> Self {
         RunInfo {
             source_id: val.source_id,
-            run_index: Some(val.run_index),
+            run_index: val.run_index,
             ..Default::default()
         }
     }
 }
 
+/// Subscribe to real-time workflow execution events via Server-Sent Events (SSE)
+///
+/// Establishes a persistent SSE connection to stream workflow execution events in real-time.
+/// Returns all historical events first, then streams new events as they occur. Automatically
+/// resolves to root workflow if the run is a child/retry run. If run_index is not specified,
+/// attempts to get the latest run for the workflow.
 #[utoipa::path(
     method(get),
     path = "/{project_id}/events",
     params(
         ("project_id" = Uuid, Path, description = "Project UUID"),
         ("source_id" = String, Query, description = "SourceID for workflow is the path to the workflow file"),
-        ("run_index" = i32, Query, description = "Run index")
+        ("run_index" = Option<i32>, Query, description = "Run index (defaults to latest run if not specified)")
     ),
     responses(
         (status = OK, description = "Success", content_type = "text/event-stream")
@@ -365,14 +385,34 @@ pub async fn workflow_events(
         tracing::error!("Failed to initialize RunsManager");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
-    let run_info = runs_manager
-        .find_run(&run_info.source_id, run_info.run_index)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to find run: {:?}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?
-        .ok_or(StatusCode::NOT_FOUND)?;
+
+    // If run_index is not specified, try to get the latest run
+    let run_info = if run_info.run_index.is_none() {
+        tracing::info!(
+            "No run_index specified, attempting to get latest run for source_id: {}",
+            run_info.source_id
+        );
+        runs_manager
+            .last_run(&run_info.source_id)
+            .await
+            .map_err(|e| {
+                tracing::error!("Failed to get latest run: {:?}", e);
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?
+            .ok_or_else(|| {
+                tracing::warn!("No runs found for source_id: {}", run_info.source_id);
+                StatusCode::NOT_FOUND
+            })?
+    } else {
+        runs_manager
+            .find_run(&run_info.source_id, run_info.run_index)
+            .await
+            .map_err(|e| {
+                tracing::error!("Failed to find run: {:?}", e);
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?
+            .ok_or(StatusCode::NOT_FOUND)?
+    };
     let run_info = match run_info.root_ref {
         Some(root_ref) => runs_manager
             .find_run(&root_ref.source_id, root_ref.run_index)
@@ -397,23 +437,242 @@ pub async fn workflow_events(
     )))
 }
 
+#[derive(serde::Serialize, ToSchema, Debug)]
+pub struct WorkflowEventsResponse {
+    pub events: Vec<serde_json::Value>,
+    pub completed: bool,
+}
+
+/// Get all workflow events after completion (synchronous)
+///
+/// Returns all workflow execution events in a single response after the workflow completes.
+/// If the workflow is still running, waits for completion and collects all events. For completed
+/// workflows, retrieves stored blocks and converts them to events. Supports both base64-encoded
+/// and plain source_id formats. If run_index is not specified, attempts to get the latest run.
+#[utoipa::path(
+    method(get),
+    path = "/{project_id}/events/sync",
+    params(
+        ("project_id" = Uuid, Path, description = "Project UUID"),
+        ("source_id" = String, Query, description = "SourceID for workflow (file path or base64-encoded path)"),
+        ("run_index" = Option<i32>, Query, description = "Run index (defaults to latest run if not specified)")
+    ),
+    responses(
+        (status = 200, description = "All workflow events after completion", body = WorkflowEventsResponse),
+        (status = 404, description = "Workflow run not found"),
+        (status = 401, description = "Unauthorized"),
+        (status = 500, description = "Internal server error")
+    ),
+    security(
+        ("ApiKey" = [])
+    ),
+    tag = "Runs"
+)]
+pub async fn workflow_events_sync(
+    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    Path(_project_id): Path<Uuid>,
+    Query(request): Query<WorkflowEventsRequest>,
+) -> Result<axum::extract::Json<WorkflowEventsResponse>, StatusCode> {
+    let source_id = if let Ok(decoded_bytes) = BASE64_STANDARD.decode(&request.source_id) {
+        if let Ok(decoded_string) = String::from_utf8(decoded_bytes) {
+            tracing::info!(
+                "Decoded base64 source_id: {} -> {}",
+                request.source_id,
+                decoded_string
+            );
+            decoded_string
+        } else {
+            request.source_id.clone()
+        }
+    } else {
+        request.source_id.clone()
+    };
+
+    let runs_manager = project_manager.runs_manager.clone().ok_or_else(|| {
+        tracing::error!("Failed to initialize RunsManager");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    tracing::info!(
+        "Looking for run: source_id={}, run_index={:?}",
+        source_id,
+        request.run_index
+    );
+
+    // If run_index is not specified, try to get the latest run
+    let run_info = if request.run_index.is_none() {
+        tracing::info!(
+            "No run_index specified, attempting to get latest run for source_id: {}",
+            source_id
+        );
+        runs_manager
+            .last_run(&source_id)
+            .await
+            .map_err(|e| {
+                tracing::error!("Failed to get latest run: {:?}", e);
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?
+            .ok_or_else(|| {
+                tracing::warn!("No runs found for source_id: {}", source_id);
+                StatusCode::NOT_FOUND
+            })?
+    } else {
+        runs_manager
+            .find_run(&source_id, request.run_index)
+            .await
+            .map_err(|e| {
+                tracing::error!("Failed to find run: {:?}", e);
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?
+            .ok_or_else(|| {
+                tracing::warn!(
+                    "Run not found: source_id={}, run_index={:?}",
+                    source_id,
+                    request.run_index
+                );
+                StatusCode::NOT_FOUND
+            })?
+    };
+
+    let run_info = match run_info.root_ref {
+        Some(root_ref) => {
+            tracing::info!(
+                "Found root reference, looking for root run: source_id={}, run_index={}",
+                root_ref.source_id,
+                root_ref.run_index.unwrap_or(0)
+            );
+            runs_manager
+                .find_run(&root_ref.source_id, root_ref.run_index)
+                .await
+                .map_err(|e| {
+                    tracing::error!("Failed to find root run: {:?}", e);
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?
+                .ok_or_else(|| {
+                    tracing::warn!(
+                        "Root run not found: source_id={}, run_index={}",
+                        root_ref.source_id,
+                        root_ref.run_index.unwrap_or(0)
+                    );
+                    StatusCode::NOT_FOUND
+                })?
+        }
+        None => {
+            tracing::info!("No root reference, using original run");
+            run_info
+        }
+    };
+
+    let run_id = run_info.task_id().map_err(|_| StatusCode::BAD_REQUEST)?;
+    tracing::info!("Getting sync events for run ID: {}", run_id);
+
+    let is_running = BROADCASTER.has_topic(&run_id).await;
+
+    if is_running {
+        let subscribed = BROADCASTER.subscribe(&run_id).await.map_err(|err| {
+            tracing::error!("Failed to subscribe to topic {run_id}: {err}");
+            Into::<StatusCode>::into(err)
+        })?;
+
+        let mut all_events = Vec::new();
+
+        for event in subscribed.items {
+            if let Ok(event_json) = serde_json::to_value(&event) {
+                all_events.push(event_json);
+            }
+        }
+
+        let mut receiver = subscribed.receiver;
+
+        while let Ok(event) = receiver.recv().await {
+            if let Ok(event_json) = serde_json::to_value(&event) {
+                all_events.push(event_json);
+            }
+        }
+
+        tracing::info!(
+            "Collected {} events for run ID: {}",
+            all_events.len(),
+            run_id
+        );
+
+        Ok(axum::extract::Json(WorkflowEventsResponse {
+            events: all_events,
+            completed: true,
+        }))
+    } else {
+        tracing::info!(
+            "Run ID {} is not active, attempting to get stored run details",
+            run_id
+        );
+
+        let run_details = runs_manager
+            .find_run_details(&run_info.source_id, run_info.run_index)
+            .await
+            .map_err(|e| {
+                tracing::warn!("Failed to get run details: {:?}", e);
+            })
+            .unwrap_or(None);
+
+        let events = if let Some(details) = run_details {
+            if let Some(blocks) = details.blocks {
+                tracing::info!("Found {} blocks for completed run", blocks.len());
+                blocks
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, block)| {
+                        serde_json::json!({
+                            "type": "block_execution",
+                            "index": i,
+                            "block": block,
+                            "timestamp": chrono::Utc::now().to_rfc3339()
+                        })
+                    })
+                    .collect()
+            } else {
+                tracing::info!("No blocks found for completed run");
+                vec![]
+            }
+        } else {
+            tracing::info!("No run details found for completed run");
+            vec![]
+        };
+
+        tracing::info!(
+            "Returning {} events for completed run ID: {}",
+            events.len(),
+            run_id
+        );
+
+        Ok(axum::extract::Json(WorkflowEventsResponse {
+            events,
+            completed: true,
+        }))
+    }
+}
+
 #[derive(serde::Deserialize, ToSchema, Debug)]
 pub struct BlocksRequest {
     pub source_id: String,
     pub run_index: Option<i32>,
 }
 
+/// Get execution blocks and details for a workflow run
+///
+/// Retrieves detailed execution information including blocks, children runs, and errors
+/// for a specific workflow run. Returns empty blocks if the workflow is currently running
+/// to avoid incomplete data. If run_index is not specified, attempts to get the latest run.
 #[utoipa::path(
     method(get),
     path = "/{project_id}/blocks",
     params(
         ("project_id" = Uuid, Path, description = "Project UUID"),
         ("sourceId" = Option<String>, Path, description = "Combination of SourceID and RunIndex in RunInfo"),
-        ("runIndex" = Option<String>, Query, description = "Run index to filter blocks")
+        ("runIndex" = Option<String>, Query, description = "Run index to filter blocks (defaults to latest run if not specified)")
     ),
     params(
         ("sourceId" = Option<String>, Path, description = "Combination of SourceID and RunIndex in RunInfo"),
-        ("runIndex" = Option<String>, Query, description = "Run index to filter blocks")
+        ("runIndex" = Option<String>, Query, description = "Run index to filter blocks (defaults to latest run if not specified)")
     ),
     responses(
         (status = OK, description = "Success", body = RunDetails)
@@ -426,8 +685,31 @@ pub async fn get_blocks(
     ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
     Query(block_request): Query<BlocksRequest>,
 ) -> Result<extract::Json<RunDetails>, StatusCode> {
-    let topic = match block_request.run_index {
-        Some(run_index) => format!("{}::{}", block_request.source_id, run_index),
+    let runs_manager = project_manager.runs_manager.clone().ok_or_else(|| {
+        tracing::error!("Failed to initialize RunsManager");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    // If run_index is not specified, try to get the latest run
+    let run_index = if block_request.run_index.is_none() {
+        tracing::info!(
+            "No run_index specified, attempting to get latest run for source_id: {}",
+            block_request.source_id
+        );
+        let latest_run = runs_manager
+            .last_run(&block_request.source_id)
+            .await
+            .map_err(|e| {
+                tracing::error!("Failed to get latest run: {:?}", e);
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
+        latest_run.and_then(|r| r.run_index)
+    } else {
+        block_request.run_index
+    };
+
+    let topic = match run_index {
+        Some(idx) => format!("{}::{}", block_request.source_id, idx),
         None => block_request.source_id.clone(),
     };
     if BROADCASTER.has_topic(&topic).await {
@@ -435,7 +717,7 @@ pub async fn get_blocks(
         return Ok(extract::Json(RunDetails {
             run_info: RunInfo {
                 source_id: block_request.source_id.clone(),
-                run_index: block_request.run_index,
+                run_index,
                 ..Default::default()
             },
             blocks: None,
@@ -443,21 +725,26 @@ pub async fn get_blocks(
             error: None,
         }));
     }
-    let runs_manager = project_manager.runs_manager.clone().ok_or_else(|| {
-        tracing::error!("Failed to initialize RunsManager");
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
+
     let run_details = runs_manager
-        .find_run_details(&block_request.source_id, block_request.run_index)
+        .find_run_details(&block_request.source_id, run_index)
         .await
         .map_err(|e| {
-            tracing::error!("Failed to get run details for {block_request:?}: {e:?}");
+            tracing::error!(
+                "Failed to get run details for source_id={}, run_index={:?}: {e:?}",
+                block_request.source_id,
+                run_index
+            );
             StatusCode::BAD_REQUEST
         })?;
     match run_details {
         Some(details) => Ok(extract::Json(details)),
         None => {
-            tracing::error!("Run details not found for {block_request:?}");
+            tracing::error!(
+                "Run details not found for source_id={}, run_index={:?}",
+                block_request.source_id,
+                run_index
+            );
             Err(StatusCode::NOT_FOUND)
         }
     }

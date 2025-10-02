@@ -8,8 +8,8 @@ use crate::{
         entity_graph::EntityGraph,
         file_writer::save_cube_semantics,
         models::{
-            CubeCube, CubeDimension, CubeMeasure, CubeMeasureFilter, CubeSemanticLayerWithDataSources, CubeView,
-            DatabaseDetails,
+            CubeCube, CubeDimension, CubeMeasure, CubeMeasureFilter,
+            CubeSemanticLayerWithDataSources, CubeView, DatabaseDetails,
         },
     },
     parse_semantic_layer_from_dir,
@@ -255,7 +255,7 @@ fn convert_measure_filters(
 
     for oxy_filter in oxy_filters {
         let translated_sql = translate_cross_entity_references(&oxy_filter.expr, entity_graph)?;
-        
+
         cube_filters.push(CubeMeasureFilter {
             sql: translated_sql,
         });
@@ -399,7 +399,7 @@ fn translate_cross_entity_references(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Entity, EntityType, Dimension, DimensionType, SemanticLayer};
+    use crate::{Dimension, DimensionType, Entity, EntityType, SemanticLayer};
 
     #[test]
     fn test_convert_measure_filters() {
@@ -428,13 +428,13 @@ mod tests {
             }],
             measures: None,
         };
-        
+
         let semantic_layer = SemanticLayer {
             views: vec![view],
             topics: None,
             metadata: None,
         };
-        
+
         let entity_graph = EntityGraph::from_semantic_layer(&semantic_layer).unwrap();
 
         // Create test measure filters
@@ -452,13 +452,13 @@ mod tests {
         // Convert filters
         let result = convert_measure_filters(&oxy_filters, &entity_graph);
         assert!(result.is_ok());
-        
+
         let cube_filters = result.unwrap();
         assert_eq!(cube_filters.len(), 2);
-        
+
         // Check first filter (simple SQL)
         assert_eq!(cube_filters[0].sql, "status = 'active'");
-        
+
         // Check second filter (should translate cross-entity references)
         assert_eq!(cube_filters[1].sql, "{test_view.field} > 100");
     }
@@ -481,28 +481,36 @@ mod tests {
             dimensions: vec![],
             measures: None,
         };
-        
+
         let semantic_layer = SemanticLayer {
             views: vec![view],
             topics: None,
             metadata: None,
         };
-        
+
         let entity_graph = EntityGraph::from_semantic_layer(&semantic_layer).unwrap();
 
         // Test different patterns
         let test_cases = vec![
             ("status = 'active'", "status = 'active'"), // No references
             ("{{order.amount}} > 100", "{orders.amount} > 100"), // Double brace entity reference
-            ("{order.status}", "{orders.status}"), // Single brace entity reference
-            ("{{field_name}}", "{field_name}"), // Simple field reference
-            ("{{order.total}} + {{order.tax}}", "{orders.total} + {orders.tax}"), // Multiple references
+            ("{order.status}", "{orders.status}"),      // Single brace entity reference
+            ("{{field_name}}", "{field_name}"),         // Simple field reference
+            (
+                "{{order.total}} + {{order.tax}}",
+                "{orders.total} + {orders.tax}",
+            ), // Multiple references
         ];
 
         for (input, expected) in test_cases {
             let result = translate_cross_entity_references(input, &entity_graph);
             assert!(result.is_ok(), "Failed to translate: {}", input);
-            assert_eq!(result.unwrap(), expected, "Translation mismatch for: {}", input);
+            assert_eq!(
+                result.unwrap(),
+                expected,
+                "Translation mismatch for: {}",
+                input
+            );
         }
     }
 }

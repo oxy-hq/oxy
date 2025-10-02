@@ -101,6 +101,10 @@ pub struct ProjectBranchesResponse {
     pub branches: Vec<ProjectBranch>,
 }
 
+/// List all GitHub repositories accessible with the provided access token.
+///
+/// This endpoint retrieves all repositories that the authenticated GitHub user has access to.
+/// The repositories are fetched directly from GitHub using the provided personal access token.
 #[utoipa::path(
     get,
     path = "/github/repositories",
@@ -245,6 +249,10 @@ pub async fn get_revision_info(
     Ok(ResponseJson(info))
 }
 
+/// Get detailed information about a specific project including its active branch.
+///
+/// This endpoint retrieves complete project details along with the currently active branch information.
+/// Requires authentication and returns project metadata, provider info, and active branch details.
 #[utoipa::path(
     get,
     path = "/projects/{project_id}",
@@ -312,6 +320,10 @@ pub async fn get_project(
     }))
 }
 
+/// Get all branches for a specific project.
+///
+/// This endpoint retrieves all branches (both local and remote) associated with a project.
+/// Returns branch metadata including names, revisions, sync status, and timestamps.
 #[utoipa::path(
     get,
     path = "/projects/{project_id}/branches",
@@ -410,6 +422,10 @@ pub async fn switch_project_active_branch(
     }
 }
 
+/// Delete a project from a workspace.
+///
+/// This endpoint permanently removes a project and all its associated data from the workspace.
+/// Only workspace owners and admins are authorized to delete projects. The operation is irreversible.
 #[utoipa::path(
     delete,
     path = "/projects/{project_id}",

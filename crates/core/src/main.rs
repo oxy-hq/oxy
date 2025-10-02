@@ -163,8 +163,8 @@ fn main() {
 
     // Log to stdout if `oxy serve`
     let args: Vec<String> = env::args().collect();
-    let log_to_stdout = args.iter().any(|a| a == "serve") ||
-        env::var("OXY_DEBUG")
+    let log_to_stdout = args.iter().any(|a| a == "serve")
+        || env::var("OXY_DEBUG")
             .as_deref()
             .unwrap_or("false")
             .eq_ignore_ascii_case("true");

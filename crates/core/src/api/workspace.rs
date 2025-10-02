@@ -131,6 +131,11 @@ pub async fn list_users(
     }))
 }
 
+/// Create a new workspace
+///
+/// Creates a new workspace for the authenticated user with owner role. Optionally creates
+/// an associated project by cloning from a Git repository (GitHub) when repo_id, token,
+/// branch, and provider are provided. Returns workspace details including the created project.
 #[utoipa::path(
     post,
     path = "/workspaces",
@@ -248,6 +253,11 @@ pub async fn create_workspace(
     }))
 }
 
+/// List all workspaces for the authenticated user
+///
+/// Retrieves all workspaces where the user is a member, along with their role (owner, admin, member)
+/// and associated project information. Returns workspace metadata including creation timestamps
+/// and the first project in each workspace.
 #[utoipa::path(
     get,
     path = "/workspaces",

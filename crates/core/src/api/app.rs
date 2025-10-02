@@ -53,6 +53,11 @@ fn create_error_response(error_msg: String) -> GetAppDataResponse {
     }
 }
 
+/// List all apps in the project
+///
+/// Retrieves all app configurations available in the project. Returns app metadata
+/// including names and relative paths. Apps are YAML-based configurations that define
+/// data visualization and dashboard components.
 #[utoipa::path(
     method(get),
     path = "/{project_id}/apps",

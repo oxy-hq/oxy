@@ -114,6 +114,11 @@ pub async fn list_users(
     }))
 }
 
+/// Create a new organization
+///
+/// Creates a new organization with the authenticated user as the owner. Organizations
+/// allow teams to collaborate on projects and manage access control. The creator is
+/// automatically assigned the owner role.
 #[utoipa::path(
     post,
     path = "/organizations",
@@ -239,6 +244,11 @@ pub async fn list_organizations(
     }))
 }
 
+/// List all organizations for the authenticated user
+///
+/// Retrieves all organizations where the user is a member, along with their role
+/// (owner, admin, member). Returns organization metadata including names, roles,
+/// and timestamps.
 pub async fn add_user_to_organization(
     AuthenticatedUserExtractor(requester): AuthenticatedUserExtractor,
     axum::extract::Path(organization_id): axum::extract::Path<Uuid>,
