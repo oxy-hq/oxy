@@ -6,8 +6,17 @@ import useSaveFile from "@/hooks/api/files/useSaveFile";
 import { configureMonacoYaml } from "monaco-yaml";
 import YamlWorker from "./yaml.worker.js?worker";
 
-window.MonacoEnvironment = {
-  getWorker: function (_workerId, label) {
+type WindowWithMonaco = Window & {
+  MonacoEnvironment?: {
+    getWorker?: (workerId?: string, label?: string) => Worker | Promise<Worker>;
+  };
+};
+
+(window as WindowWithMonaco).MonacoEnvironment = {
+  getWorker: function (
+    _workerId?: string,
+    label?: string,
+  ): Worker | Promise<Worker> {
     switch (label) {
       case "yaml":
         return new YamlWorker();

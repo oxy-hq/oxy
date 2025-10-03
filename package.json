@@ -21,17 +21,17 @@
     "eslint-plugin-promise": "^7.2.1",
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^5.2.0",
-    "eslint-plugin-react-refresh": "^0.4.20",
+    "eslint-plugin-react-refresh": "^0.4.23",
     "eslint-plugin-sonarjs": "^3.0.5",
     "eslint-plugin-unicorn": "^59.0.1",
     "globals": "^16.4.0",
     "husky": "^9.1.7",
-    "lint-staged": "^16.2.0",
+    "lint-staged": "^16.2.3",
     "prettier": "^3.6.2",
     "prettier-plugin-tailwindcss": "^0.6.14",
     "turbo": "^2.5.8",
-    "typescript": "^5.9.2",
-    "typescript-eslint": "^8.44.0"
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.45.0"
   },
   "pnpm": {
     "overrides": {
@@ -47,5 +47,5 @@
     ]
   },
   "name": "oxy",
-  "packageManager": "pnpm@10.16.0+sha256.dd62d38df1a6702c930fba14b92bc3ca3d5c24a6c7005b2e5355a98b898fa5d4"
+  "packageManager": "pnpm@10.18.0+sha512.e804f889f1cecc40d572db084eec3e4881739f8dec69c0ff10d2d1beff9a4e309383ba27b5b750059d7f4c149535b6cd0d2cb1ed3aeb739239a4284a68f40cfa"
 }
