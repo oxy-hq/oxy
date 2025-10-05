@@ -13,10 +13,7 @@
 
 ## The framework for agentic analytics
 
-Oxy is an open-source framework for agentic analytics. It is declarative by design and written in Rust. Oxy is built with the following product principles in mind: open-source, performant, code-native, declarative, composable, and secure.
-
-Agentic analytics applies software development lifecycle principles to AI-driven data analytics.
-Just as traditional software follows a build-test-deploy pipeline, agentic analytics establishes a structured workflow for data agents, involving agent creation, prompt testing, and production deployment.
+Oxy is an open-source framework for building comprehensive agentic analytics systems grounded in deterministic execution principles. Written in Rust and declarative by design, Oxy provides the foundational components needed to transform AI-driven data analysis into reliable, production-ready systems through structured primitives, semantic understanding, and predictable execution.
 
 To learn more, read our [docs](https://docs.oxy.tech).
 
