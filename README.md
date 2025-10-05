@@ -2,7 +2,6 @@
 
 <p align="center">
 <a href="#license"><img src="https://img.shields.io/badge/License-Apache--2.0-blue" alt="License"></a>
-<a href="https://discord.gg/m677N4EcRK"><img src="https://img.shields.io/discord/1344823951020527638?label=Discord&logo=discord&color=7289da" alt="Join us on Discord"></a>
 </p>
 
 <div align="center">
@@ -20,8 +19,6 @@ Agentic analytics applies software development lifecycle principles to AI-driven
 Just as traditional software follows a build-test-deploy pipeline, agentic analytics establishes a structured workflow for data agents, involving agent creation, prompt testing, and production deployment.
 
 To learn more, read our [docs](https://docs.oxy.tech).
-
-<https://github.com/user-attachments/assets/40ce54c6-810a-4843-ace1-0e57c0d2ae71>
 
 ### Quickstart
 
