@@ -4,7 +4,7 @@
 # ---------------------------------------------------------------------------------
 
 # Base image for Rust and Cargo Chef
-FROM lukemathwalker/cargo-chef:latest-rust-1.90.0-slim-bullseye AS chef
+FROM lukemathwalker/cargo-chef:latest-rust-1.90.0-bullseye AS chef
 WORKDIR /app
 
 # Stage 1: Dependency planner
