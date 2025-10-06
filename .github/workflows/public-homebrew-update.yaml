@@ -51,7 +51,7 @@ jobs:
             homebrew-oxy
 
       - name: Repository Dispatch
-        uses: peter-evans/repository-dispatch@v3
+        uses: peter-evans/repository-dispatch@v4
         with:
           token: ${{ steps.app-token.outputs.token }}
           repository: oxy-hq/homebrew-oxy
