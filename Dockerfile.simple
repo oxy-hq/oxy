@@ -1,5 +1,5 @@
 # Simple Dockerfile that installs Oxy using the curl method from get.oxy.tech
-FROM debian:bookworm-slim AS runtime
+FROM debian:bullseye-slim AS runtime
 WORKDIR /app
 
 ARG VERSION
