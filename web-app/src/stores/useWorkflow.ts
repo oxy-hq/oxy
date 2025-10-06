@@ -20,6 +20,7 @@ export type NodeData = {
 export enum TaskType {
   EXECUTE_SQL = "execute_sql",
   SEMANTIC_QUERY = "semantic_query",
+  OMNI_QUERY = "omni_query",
   FORMATTER = "formatter",
   AGENT = "agent",
   LOOP_SEQUENTIAL = "loop_sequential",
@@ -131,10 +132,20 @@ export type SemanticQueryTaskConfig = BaseTaskConfig & {
   offset?: number;
 };
 
+export type OmniQueryTaskConfig = BaseTaskConfig & {
+  type: TaskType.OMNI_QUERY;
+  integration: string;
+  topic: string;
+  fields: string[];
+  limit?: number;
+  sorts?: Record<string, string>;
+};
+
 // Unified TaskConfig type with discriminated union
 export type TaskConfig =
   | ExecuteSqlTaskConfig
   | SemanticQueryTaskConfig
+  | OmniQueryTaskConfig
   | FormatterTaskConfig
   | AgentTaskConfig
   | LoopSequentialTaskConfig
@@ -144,6 +155,7 @@ export type TaskConfig =
 export type TaskConfigWithId = (
   | ExecuteSqlTaskConfig
   | SemanticQueryTaskConfig
+  | OmniQueryTaskConfig
   | FormatterTaskConfig
   | AgentTaskConfig
   | LoopSequentialTaskConfigWithId

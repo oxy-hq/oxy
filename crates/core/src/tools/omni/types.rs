@@ -1,31 +1,14 @@
-use std::collections::HashSet;
+use crate::tools::types::OmniQueryParams;
 
-use crate::config::model::omni::OmniFilter;
-
-#[derive(Debug, Clone)]
-pub struct OmniExecutable;
-
-#[derive(Debug, Clone)]
-pub struct Filter {
-    pub field: String,
-    pub filter: OmniFilter,
+pub struct OmniQueryInput {
+    pub params: OmniQueryParams,
+    pub topic: String,
+    pub integration: String,
 }
 
-#[derive(Debug, Clone)]
-pub struct CompiledField {
-    pub sql: String,
-    pub required_views: HashSet<String>,
-    pub filters: Vec<Filter>,
-}
-
-#[derive(Debug, Clone)]
-pub struct SqlParts {
-    pub base_table: String,
-    pub join_clauses: Vec<String>,
-    pub select_clauses: Vec<String>,
-    pub where_clauses: Vec<String>,
-    pub order_clauses: Vec<String>,
-    pub group_clauses: Vec<String>,
-    pub having_clauses: Vec<String>,
-    pub limit: Option<u64>,
+#[derive(Clone)]
+pub struct OmniQueryToolInput {
+    pub param: String,
+    pub topic: String,
+    pub integration: String,
 }

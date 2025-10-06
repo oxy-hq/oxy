@@ -24,18 +24,16 @@ pub use manager::ConfigManager;
 
 impl Config {
     pub fn validate_config(&self) -> anyhow::Result<()> {
-        let _context = ValidationContext {
+        let context = ValidationContext {
             config: self.clone(),
-            metadata: Default::default(), // TODO: Implement proper metadata
+            metadata: None,
         };
-        // TODO: Implement validation logic
-        // match self.validate_with(&context) {
-        //     Ok(_) => Ok(()),
-        //     Err(e) => anyhow::bail!(OxyError::ConfigurationError(format!(
-        //         "Invalid configuration: {e}"
-        //     ))),
-        // }
-        Ok(())
+        match self.validate_with(&context) {
+            Ok(_) => Ok(()),
+            Err(e) => anyhow::bail!(OxyError::ConfigurationError(format!(
+                "Invalid configuration: {e}"
+            ))),
+        }
     }
 
     pub fn validate_workflow(&self, workflow: &Workflow) -> anyhow::Result<()> {

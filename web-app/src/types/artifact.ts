@@ -46,6 +46,25 @@ export type SemanticQueryArtifact = {
   };
 };
 
+export type OmniQueryArtifact = {
+  id: string;
+  name: string;
+  kind: "omni_query";
+  is_streaming?: boolean;
+  content: {
+    type: "omni_query";
+    value: {
+      database: string;
+      sql: string;
+      result: string[][];
+      is_result_truncated: boolean;
+      fields: string[];
+      limit?: number;
+      sorts?: Record<string, "asc" | "desc">;
+    };
+  };
+};
+
 export type AgentArtifact = {
   id: string;
   kind: "agent";
@@ -77,5 +96,6 @@ export type WorkflowArtifact = {
 export type Artifact =
   | SqlArtifact
   | SemanticQueryArtifact
+  | OmniQueryArtifact
   | AgentArtifact
   | WorkflowArtifact;

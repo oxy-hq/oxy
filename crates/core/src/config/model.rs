@@ -1,4 +1,3 @@
-use crate::config::model::omni::{ExecuteOmniTool, OmniTopicInfoTool};
 use crate::service::types::SemanticQueryParams;
 use garde::Validate;
 use indoc::indoc;
@@ -18,7 +17,7 @@ use super::validate::{AgentValidationContext, validate_model, validate_task};
 use crate::adapters::secrets::SecretsManager;
 use crate::config::validate::{
     ValidationContext, validate_agent_exists, validate_database_exists, validate_env_var,
-    validate_task_data_reference,
+    validate_omni_integration_exists, validate_task_data_reference,
 };
 use crate::config::validate::{validate_file_path, validate_optional_private_key_path};
 use crate::errors::OxyError;
@@ -26,7 +25,6 @@ pub use semantics::{SemanticDimension, Semantics};
 pub use variables::Variable;
 pub use workflow::WorkflowWithRawVariables;
 
-pub mod omni;
 mod semantics;
 mod variables;
 mod workflow;
@@ -47,20 +45,47 @@ pub struct Config {
     #[garde(skip)]
     #[schemars(skip)]
     pub project_path: PathBuf,
+
+    #[serde(default)]
+    #[garde(skip)]
+    pub integrations: Vec<Integration>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, JsonSchema, Validate)]
+#[garde(context(ValidationContext))]
+pub struct Integration {
+    #[garde(skip)]
+    pub name: String,
+    #[serde(flatten)]
+    #[garde(skip)]
+    pub integration_type: IntegrationType,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, JsonSchema)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum IntegrationType {
+    #[serde(rename = "omni")]
+    Omni(OmniIntegration),
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, JsonSchema, Validate)]
 #[garde(context(ValidationContext))]
 pub struct OmniIntegration {
-    #[garde(length(min = 1))]
-    pub api_token: String,
+    #[garde(custom(validate_env_var))]
+    pub api_key_var: String,
     #[garde(length(min = 1))]
     pub base_url: String,
+    #[garde(dive)]
+    pub topics: Vec<OmniTopic>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, JsonSchema, Validate)]
+#[garde(context(ValidationContext))]
+pub struct OmniTopic {
+    #[garde(length(min = 1))]
+    pub name: String,
     #[garde(length(min = 1))]
     pub model_id: String,
-    #[serde(default)]
-    #[garde(skip)]
-    pub enabled: bool,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug, JsonSchema)]
@@ -1080,6 +1105,28 @@ impl Hash for WorkflowTask {
     }
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
+#[garde(context(ValidationContext))]
+pub struct OmniQueryTask {
+    #[garde(custom(validate_omni_integration_exists))]
+    pub integration: String,
+    #[garde(length(min = 1))]
+    pub topic: String,
+    #[serde(flatten)]
+    #[garde(skip)]
+    pub query: crate::tools::types::OmniQueryParams,
+    #[garde(dive)]
+    pub export: Option<TaskExport>,
+}
+
+impl Hash for OmniQueryTask {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.integration.hash(state);
+        self.topic.hash(state);
+        self.query.hash(state);
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, JsonSchema, Hash)]
 #[serde(untagged)]
 pub enum LoopValues {
@@ -1154,6 +1201,8 @@ pub enum TaskType {
     ExecuteSQL(#[garde(dive)] ExecuteSQLTask),
     #[serde(rename = "semantic_query")]
     SemanticQuery(#[garde(dive)] SemanticQueryTask),
+    #[serde(rename = "omni_query")]
+    OmniQuery(#[garde(dive)] OmniQueryTask),
     #[serde(rename = "loop_sequential")]
     LoopSequential(#[garde(dive)] LoopSequentialTask),
     #[serde(rename = "formatter")]
@@ -1201,6 +1250,7 @@ impl Task {
             TaskType::Agent(_) => "agent",
             TaskType::ExecuteSQL(_) => "execute_sql",
             TaskType::SemanticQuery(_) => "semantic_query",
+            TaskType::OmniQuery(_) => "omni_query",
             TaskType::LoopSequential(_) => "loop",
             TaskType::Formatter(_) => "formatter",
             TaskType::Workflow(_) => "sub_workflow",
@@ -1455,6 +1505,15 @@ pub struct CreateDataAppTool {
 }
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
+pub struct OmniQueryTool {
+    pub name: String,
+    #[serde(default = "default_omni_query_tool_description")]
+    pub description: String,
+    pub topic: String,
+    pub integration: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
 pub struct MarkdownDisplay {
     pub content: String,
 }
@@ -1568,10 +1627,8 @@ pub enum ToolType {
     Agent(AgentTool),
     #[serde(rename = "create_data_app")]
     CreateDataApp(CreateDataAppTool),
-    #[serde(rename = "execute_omni")]
-    ExecuteOmni(ExecuteOmniTool),
-    #[serde(rename = "omni_topic_info")]
-    OmniTopicInfo(OmniTopicInfoTool),
+    #[serde(rename = "omni_query")]
+    OmniQuery(OmniQueryTool),
     #[serde(rename = "semantic_query")]
     SemanticQuery(SemanticQueryTool),
 }
@@ -1589,6 +1646,12 @@ impl From<ValidateSQLTool> for ToolType {
 impl From<RetrievalConfig> for ToolType {
     fn from(tool: RetrievalConfig) -> Self {
         ToolType::Retrieval(tool)
+    }
+}
+
+impl From<OmniQueryTool> for ToolType {
+    fn from(tool: OmniQueryTool) -> Self {
+        ToolType::OmniQuery(tool)
     }
 }
 
@@ -1677,6 +1740,10 @@ fn default_semantic_query_tool_description() -> String {
 
 fn default_cube_url() -> String {
     "http://localhost:4000".to_string()
+}
+
+fn default_omni_tool_description() -> String {
+    "Execute query on the database. Construct from Omni semantic model.".to_string()
 }
 
 fn default_validate_sql_tool_description() -> String {

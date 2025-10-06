@@ -1016,55 +1016,29 @@
         {
           "type": "object",
           "required": [
-            "database",
-            "model_path",
+            "integration",
             "name",
+            "topic",
             "type"
           ],
           "properties": {
-            "database": {
-              "type": "string"
-            },
             "description": {
-              "default": "Execute query on the database. Construct from Omni semantic model.",
+              "default": "Query data through Omni's semantic layer API. Use this tool to execute queries against topics, dimensions, and measures defined in the Omni semantic model.",
               "type": "string"
             },
-            "model_path": {
+            "integration": {
               "type": "string"
             },
             "name": {
               "type": "string"
             },
-            "type": {
-              "type": "string",
-              "enum": [
-                "execute_omni"
-              ]
-            }
-          }
-        },
-        {
-          "type": "object",
-          "required": [
-            "model_path",
-            "name",
-            "type"
-          ],
-          "properties": {
-            "description": {
-              "default": "Get details a about a omni topic. Including available fields",
-              "type": "string"
-            },
-            "model_path": {
-              "type": "string"
-            },
-            "name": {
+            "topic": {
               "type": "string"
             },
             "type": {
               "type": "string",
               "enum": [
-                "omni_topic_info"
+                "omni_query"
               ]
             }
           }

@@ -25,7 +25,7 @@ use crate::{
     },
     theme::StyledText,
     utils::file_path_to_source_id,
-    workflow::builders::RetryStrategy,
+    workflow::builders::{RetryStrategy, omni::build_omni_query_task_executable},
 };
 
 use super::{
@@ -197,6 +197,12 @@ impl Executable<TaskInput> for TaskExecutable {
                 .execute(&execution_context, execute_sqltask)
                 .await
                 .map(|output| output.into()),
+            TaskType::OmniQuery(omni_query_task) => {
+                let output = build_omni_query_task_executable()
+                    .execute(&execution_context, omni_query_task)
+                    .await?;
+                Ok(output.into())
+            }
             TaskType::LoopSequential(loop_sequential_task) => {
                 let loop_values = match runtime_input {
                     Some(RuntimeTaskInput::Loop { values }) => values,

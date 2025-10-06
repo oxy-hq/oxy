@@ -1,5 +1,6 @@
 import SqlArtifactPanel from "./ArtifactsContent/sql";
 import SemanticQueryArtifactPanel from "./ArtifactsContent/semantic-query";
+import OmniQueryArtifactPanel from "./ArtifactsContent/omni-query";
 import AgentArtifactPanel from "./ArtifactsContent/agent";
 import WorkflowArtifactPanel from "./ArtifactsContent/workflow";
 import { useQueries } from "@tanstack/react-query";
@@ -120,6 +121,10 @@ const ArtifactPanel = ({
 
     if (currentArtifact.kind === "semantic_query") {
       return <SemanticQueryArtifactPanel artifact={currentArtifact} />;
+    }
+
+    if (currentArtifact.kind === "omni_query") {
+      return <OmniQueryArtifactPanel artifact={currentArtifact} />;
     }
 
     if (currentArtifact.kind === "agent") {

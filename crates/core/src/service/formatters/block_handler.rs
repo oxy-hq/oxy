@@ -13,7 +13,8 @@ use crate::execute::types::{EventKind, Output, Source, Usage};
 use crate::service::formatters::logs_persister::LogsPersister;
 use crate::service::formatters::streaming_message_persister::StreamingMessagePersister;
 use crate::service::types::{
-    AnswerStream, ArtifactValue, ContainerKind, ExecuteSQL, SemanticQuery, SemanticQueryParams,
+    AnswerStream, ArtifactValue, ContainerKind, ExecuteSQL, OmniQuery, SemanticQuery,
+    SemanticQueryParams,
 };
 use crate::workflow::loggers::types::LogItem;
 
@@ -32,6 +33,7 @@ pub struct BlockHandler {
     streaming_message_persister: Option<Arc<StreamingMessagePersister>>,
     logs_persister: Option<Arc<LogsPersister>>,
     current_semantic_query: Option<SemanticQueryParams>,
+    current_omni_query: Option<crate::tools::types::OmniQueryParams>,
 }
 
 impl BlockHandler {
@@ -45,6 +47,7 @@ impl BlockHandler {
             streaming_message_persister: None,
             logs_persister: None,
             current_semantic_query: None,
+            current_omni_query: None,
         }
     }
 
@@ -373,6 +376,54 @@ impl BlockHandler {
                                     )
                                     .await?;
                             }
+                        }
+                        _ => {}
+                    },
+                    ArtifactKind::OmniQuery { topic, integration } => match &chunk.delta {
+                        Output::Table(table) => {
+                            let (table_2d_array, is_truncated) = table.to_2d_array()?;
+                            let query_params =
+                                self.current_omni_query.clone().unwrap_or_else(|| {
+                                    crate::tools::types::OmniQueryParams {
+                                        fields: vec![],
+                                        limit: None,
+                                        sorts: None,
+                                    }
+                                });
+
+                            let sorts_map = query_params.sorts.as_ref().map(|sorts| {
+                                sorts
+                                    .iter()
+                                    .map(|(k, v)| {
+                                        (
+                                            k.clone(),
+                                            match v {
+                                                crate::tools::types::OrderType::Ascending => {
+                                                    "asc".to_string()
+                                                }
+                                                crate::tools::types::OrderType::Descending => {
+                                                    "desc".to_string()
+                                                }
+                                            },
+                                        )
+                                    })
+                                    .collect()
+                            });
+
+                            self.stream_dispatcher
+                                .send_artifact_value(
+                                    artifact_id,
+                                    ArtifactValue::OmniQuery(OmniQuery {
+                                        result: table_2d_array,
+                                        is_result_truncated: is_truncated,
+                                        topic: topic.clone(),
+                                        fields: query_params.fields,
+                                        limit: query_params.limit,
+                                        sorts: sorts_map,
+                                    }),
+                                    &source.kind,
+                                )
+                                .await?;
                         }
                         _ => {}
                     },

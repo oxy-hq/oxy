@@ -25,11 +25,13 @@ import {
 import { ReactElement } from "react";
 import { TaskRun } from "@/services/types";
 import { randomKey } from "@/libs/utils/string";
+import { OmniIcon } from "./OmniIcon";
 import ROUTES from "@/libs/utils/routes";
 
 const nodeNameMap: Record<NodeType, string> = {
   execute_sql: "SQL",
   semantic_query: "Semantic Query",
+  omni_query: "Omni Query",
   loop_sequential: "Loop sequential",
   formatter: "Formatter",
   agent: "Agent",
@@ -49,6 +51,7 @@ const nodeIconMap: Record<NodeType, ReactElement> = {
   "conditional-else": <CircleAlert size={14} />,
   "conditional-if": <CircleHelp size={14} />,
   semantic_query: <Globe size={14} />,
+  omni_query: <OmniIcon className="w-[14px] h-[14px]" />,
 };
 
 type Props = {

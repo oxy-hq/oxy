@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use async_openai::types::ChatCompletionTool;
 use fallback::FallbackAgent;
 use oxy_semantic::Topic;
+use wildcard::Wildcard;
 
 use crate::{
     adapters::{
@@ -21,8 +22,8 @@ use crate::{
         ConfigManager,
         constants::ARTIFACT_SOURCE,
         model::{
-            AgentTool, ExecuteSQLTool, Model, ReasoningConfig, RoutingAgent, SemanticQueryTool,
-            ToolType, WorkflowTool,
+            AgentTool, ExecuteSQLTool, IntegrationType, Model, OmniQueryTool, ReasoningConfig,
+            RoutingAgent, SemanticQueryTool, ToolType, WorkflowTool,
         },
     },
     errors::OxyError,
@@ -48,10 +49,25 @@ pub(super) struct RoutingAgentInput {
     pub reasoning_config: Option<ReasoningConfig>,
 }
 
+pub struct OmniRoute {
+    pub integration_name: String,
+    pub topic_pattern: Option<String>, // None means full wildcard
+}
+
 #[derive(Debug, Clone)]
 pub(super) struct RoutingAgentExecutable;
 
 impl RoutingAgentExecutable {
+    fn parse_omni_route(route: &str) -> Result<(String, String), OxyError> {
+        if let Some((integration_name, topic)) = route.split_once("::") {
+            Ok((integration_name.to_string(), topic.to_string()))
+        } else {
+            Err(OxyError::AgentError(
+                "Invalid omni route format".to_string(),
+            ))
+        }
+    }
+
     async fn resolve_tool(
         &self,
         execution_context: &ExecutionContext,
@@ -59,88 +75,200 @@ impl RoutingAgentExecutable {
         description: Option<&str>,
         is_verified: bool,
     ) -> Result<ToolType, OxyError> {
-        let config_manager = &execution_context.project.config_manager;
-        let project_path = config_manager.project_path();
+        if file_ref.contains("::") {
+            self.resolve_integration_route(execution_context, file_ref, description)
+                .await
+        } else {
+            self.resolve_file_route(execution_context, file_ref, description, is_verified)
+                .await
+        }
+    }
+
+    async fn resolve_integration_route(
+        &self,
+        execution_context: &ExecutionContext,
+        file_ref: &str,
+        description: Option<&str>,
+    ) -> Result<ToolType, OxyError> {
+        let integration_name = file_ref
+            .split("::")
+            .next()
+            .ok_or_else(|| {
+                OxyError::AgentError(format!("Invalid integration route format: {}", file_ref))
+            })?
+            .to_string();
+
+        let integration = execution_context
+            .project
+            .config_manager
+            .get_integration_by_name(&integration_name)
+            .ok_or_else(|| {
+                OxyError::AgentError(format!("Integration '{}' not found", integration_name))
+            })?;
+
+        match &integration.integration_type {
+            IntegrationType::Omni(_) => {
+                let (integration_name, topic) = Self::parse_omni_route(file_ref)?;
+                let tool_description = Self::resolve_description(
+                    description,
+                    &format!(
+                        "Query {} topic from {} integration",
+                        topic, integration_name
+                    ),
+                );
+
+                Ok(ToolType::OmniQuery(OmniQueryTool {
+                    name: format!(
+                        "{}_query_{}",
+                        integration_name.to_lowercase(),
+                        topic.to_lowercase()
+                    ),
+                    description: tool_description,
+                    topic,
+                    integration: integration_name,
+                }))
+            }
+        }
+    }
+
+    async fn resolve_file_route(
+        &self,
+        execution_context: &ExecutionContext,
+        file_ref: &str,
+        description: Option<&str>,
+        is_verified: bool,
+    ) -> Result<ToolType, OxyError> {
         match file_ref {
             workflow_path if workflow_path.ends_with(".workflow.yml") => {
-                let workflow = config_manager.resolve_workflow(workflow_path).await?;
-                let tool_description = match description {
-                    Some(desc) => desc.to_string(),
-                    None => workflow.description.clone(),
-                };
-                Ok(ToolType::Workflow(WorkflowTool {
-                    name: to_openai_function_name(
-                        &PathBuf::from(workflow_path),
-                        &PathBuf::from(project_path),
-                    )?,
-                    workflow_ref: workflow_path.to_string(),
-                    variables: workflow.variables,
-                    description: tool_description,
-                    output_task_ref: None,
+                self.resolve_workflow_tool(
+                    execution_context,
+                    workflow_path,
+                    description,
                     is_verified,
-                }))
+                )
+                .await
             }
             agent_path if agent_path.ends_with(".agent.yml") => {
-                let agent = config_manager.resolve_agent(agent_path).await?;
-                let tool_description = match description {
-                    Some(desc) => desc.to_string(),
-                    None => agent.description.clone(),
-                };
-                Ok(ToolType::Agent(AgentTool {
-                    name: to_openai_function_name(
-                        &PathBuf::from(agent_path),
-                        &PathBuf::from(project_path),
-                    )?,
-                    agent_ref: agent_path.to_string(),
-                    description: tool_description,
-                    is_verified,
-                }))
+                self.resolve_agent_tool(execution_context, agent_path, description, is_verified)
+                    .await
             }
             topic_path if topic_path.ends_with(".topic.yml") => {
-                // Parse topic file to extract metadata
-                let topic_file_path = std::path::Path::new(topic_path);
-                if !topic_file_path.exists() {
-                    return Err(OxyError::AgentError(format!(
-                        "Topic file does not exist: {topic_path}"
-                    )));
-                }
-
-                // Read and parse the topic file directly
-                let content = tokio::fs::read_to_string(topic_file_path)
+                self.resolve_topic_tool(execution_context, topic_path, description)
                     .await
-                    .map_err(|e| {
-                        OxyError::AgentError(format!(
-                            "Failed to read topic file {}: {}",
-                            topic_path, e
-                        ))
-                    })?;
-
-                let topic: Topic = serde_yaml::from_str(&content).map_err(|e| {
-                    OxyError::AgentError(format!(
-                        "Failed to parse topic file {}: {}",
-                        topic_path, e
-                    ))
-                })?;
-
-                let tool_description = match description {
-                    Some(desc) => desc.to_string(),
-                    None => topic.description.clone(),
-                };
-
-                Ok(ToolType::SemanticQuery(SemanticQueryTool {
-                    name: to_openai_function_name(
-                        &PathBuf::from(topic_path),
-                        &PathBuf::from(project_path),
-                    )?,
-                    topic: Some(topic.name.clone()),
-                    description: tool_description,
-                    dry_run_limit: None,
-                }))
             }
             _ => Err(OxyError::AgentError(format!(
-                "Unsupported tool type for path: {file_ref}"
+                "Unsupported tool type for path: {}",
+                file_ref
             ))),
         }
+    }
+
+    async fn resolve_workflow_tool(
+        &self,
+        execution_context: &ExecutionContext,
+        workflow_path: &str,
+        description: Option<&str>,
+        is_verified: bool,
+    ) -> Result<ToolType, OxyError> {
+        let workflow = execution_context
+            .project
+            .config_manager
+            .resolve_workflow(workflow_path)
+            .await?;
+
+        let tool_description = Self::resolve_description(description, &workflow.description);
+
+        Ok(ToolType::Workflow(WorkflowTool {
+            name: to_openai_function_name(
+                &PathBuf::from(workflow_path),
+                &execution_context
+                    .project
+                    .config_manager
+                    .project_path()
+                    .to_path_buf(),
+            )?,
+            workflow_ref: workflow_path.to_string(),
+            variables: workflow.variables,
+            description: tool_description,
+            output_task_ref: None,
+            is_verified,
+        }))
+    }
+
+    async fn resolve_agent_tool(
+        &self,
+        execution_context: &ExecutionContext,
+        agent_path: &str,
+        description: Option<&str>,
+        is_verified: bool,
+    ) -> Result<ToolType, OxyError> {
+        let agent = execution_context
+            .project
+            .config_manager
+            .resolve_agent(agent_path)
+            .await?;
+        let tool_description = Self::resolve_description(description, &agent.description);
+
+        Ok(ToolType::Agent(AgentTool {
+            name: to_openai_function_name(
+                &PathBuf::from(agent_path),
+                &execution_context
+                    .project
+                    .config_manager
+                    .project_path()
+                    .to_path_buf(),
+            )?,
+            agent_ref: agent_path.to_string(),
+            description: tool_description,
+            is_verified,
+        }))
+    }
+
+    async fn resolve_topic_tool(
+        &self,
+        execution_context: &ExecutionContext,
+        topic_path: &str,
+        description: Option<&str>,
+    ) -> Result<ToolType, OxyError> {
+        let topic_file_path = std::path::Path::new(topic_path);
+        if !topic_file_path.exists() {
+            return Err(OxyError::AgentError(format!(
+                "Topic file does not exist: {}",
+                topic_path
+            )));
+        }
+
+        let content = tokio::fs::read_to_string(topic_file_path)
+            .await
+            .map_err(|e| {
+                OxyError::AgentError(format!("Failed to read topic file {}: {}", topic_path, e))
+            })?;
+
+        let topic: Topic = serde_yaml::from_str(&content).map_err(|e| {
+            OxyError::AgentError(format!("Failed to parse topic file {}: {}", topic_path, e))
+        })?;
+
+        let tool_description = Self::resolve_description(description, &topic.description);
+
+        Ok(ToolType::SemanticQuery(SemanticQueryTool {
+            name: to_openai_function_name(
+                &PathBuf::from(topic_path),
+                &execution_context
+                    .project
+                    .config_manager
+                    .project_path()
+                    .to_path_buf(),
+            )?,
+            topic: Some(topic.name.clone()),
+            description: tool_description,
+            dry_run_limit: None,
+        }))
+    }
+
+    fn resolve_description(description: Option<&str>, fallback: &str) -> String {
+        description
+            .map(|desc| desc.to_string())
+            .unwrap_or_else(|| fallback.to_string())
     }
 
     async fn resolve_document(
@@ -148,47 +276,59 @@ impl RoutingAgentExecutable {
         execution_context: &ExecutionContext,
         document: &Document,
     ) -> Result<ToolType, OxyError> {
-        let config_manager = &execution_context.project.config_manager;
-        let project_path = config_manager.project_path();
-        match document.id.as_str() {
-            sql_path if sql_path.ends_with(".sql") => {
-                if let Some(database_ref) = parse_sql_source_type(document.kind.as_str()) {
-                    config_manager.resolve_database(&database_ref)?;
-                    Ok(ToolType::ExecuteSQL(ExecuteSQLTool {
-                        database: database_ref.to_string(),
-                        description: document.content.to_string(),
-                        dry_run_limit: None,
-                        name: to_openai_function_name(
-                            &PathBuf::from(sql_path),
-                            &PathBuf::from(project_path),
-                        )?,
-                        sql: Some(tokio::fs::read_to_string(sql_path).await?),
-                    }))
-                } else {
-                    Err(OxyError::AgentError(format!(
-                        "Unsupported SQL source type for path: {}",
-                        &document.id
-                    )))
+        // Check if this looks like an integration route (contains "::")
+        if document.id.contains("::") {
+            self.resolve_tool(
+                execution_context,
+                &document.id,
+                Some(&document.content),
+                true,
+            )
+            .await
+        } else {
+            let config_manager = &execution_context.project.config_manager;
+            let project_path = config_manager.project_path();
+            // Regular document processing
+            match document.id.as_str() {
+                sql_path if sql_path.ends_with(".sql") => {
+                    if let Some(database_ref) = parse_sql_source_type(document.kind.as_str()) {
+                        config_manager.resolve_database(&database_ref)?;
+                        Ok(ToolType::ExecuteSQL(ExecuteSQLTool {
+                            database: database_ref.to_string(),
+                            description: document.content.to_string(),
+                            dry_run_limit: None,
+                            name: to_openai_function_name(
+                                &PathBuf::from(sql_path),
+                                &PathBuf::from(project_path),
+                            )?,
+                            sql: Some(tokio::fs::read_to_string(sql_path).await?),
+                        }))
+                    } else {
+                        Err(OxyError::AgentError(format!(
+                            "Unsupported SQL source type for path: {}",
+                            &document.id
+                        )))
+                    }
                 }
-            }
-            topic_path if topic_path.ends_with(".topic.yml") => {
-                // Handle topic files specifically
-                self.resolve_tool(
-                    execution_context,
-                    &document.id,
-                    Some(&document.content),
-                    true,
-                )
-                .await
-            }
-            _ => {
-                self.resolve_tool(
-                    execution_context,
-                    &document.id,
-                    Some(&document.content),
-                    true,
-                )
-                .await
+                topic_path if topic_path.ends_with(".topic.yml") => {
+                    // Handle topic files specifically
+                    self.resolve_tool(
+                        execution_context,
+                        &document.id,
+                        Some(&document.content),
+                        true,
+                    )
+                    .await
+                }
+                _ => {
+                    self.resolve_tool(
+                        execution_context,
+                        &document.id,
+                        Some(&document.content),
+                        true,
+                    )
+                    .await
+                }
             }
         }
     }

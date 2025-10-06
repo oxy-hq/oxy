@@ -131,6 +131,28 @@ pub fn validate_agent_exists(agent: &str, context: &ValidationContext) -> garde:
     Ok(())
 }
 
+pub fn validate_omni_integration_exists(
+    integration_name: &str,
+    context: &ValidationContext,
+) -> garde::Result {
+    let integration_exists = context.config.integrations.iter().any(|integration| {
+        integration.name == integration_name
+            && matches!(
+                &integration.integration_type,
+                crate::config::model::IntegrationType::Omni(_)
+            )
+    });
+
+    if integration_exists {
+        Ok(())
+    } else {
+        Err(format_error_message(
+            "Integration not found",
+            integration_name,
+        ))
+    }
+}
+
 pub fn validate_task(task_type: &TaskType, _context: &ValidationContext) -> garde::Result {
     match task_type {
         TaskType::Agent(task) => validate_export(
@@ -152,6 +174,11 @@ pub fn validate_task(task_type: &TaskType, _context: &ValidationContext) -> gard
             task.export.as_ref(),
             &[ExportFormat::JSON, ExportFormat::CSV, ExportFormat::SQL],
             "SemanticQuery",
+        ),
+        TaskType::OmniQuery(task) => validate_export(
+            task.export.as_ref(),
+            &[ExportFormat::JSON, ExportFormat::CSV, ExportFormat::SQL],
+            "OmniQuery",
         ),
         TaskType::Workflow(_) | TaskType::LoopSequential(_) | TaskType::Unknown => Ok(()),
         TaskType::Conditional(_) => Ok(()),

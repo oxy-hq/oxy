@@ -6,6 +6,7 @@ pub mod chat;
 pub mod eval;
 pub mod formatters;
 pub mod message;
+pub mod omni_sync;
 pub mod project_service;
 pub mod retrieval;
 pub mod secret_manager;

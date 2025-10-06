@@ -29,6 +29,13 @@
         }
       ]
     },
+    "integrations": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Integration"
+      }
+    },
     "models": {
       "type": "array",
       "items": {
@@ -423,6 +430,48 @@
         }
       ]
     },
+    "Integration": {
+      "type": "object",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "api_key_var",
+            "base_url",
+            "topics",
+            "type"
+          ],
+          "properties": {
+            "api_key_var": {
+              "type": "string"
+            },
+            "base_url": {
+              "type": "string"
+            },
+            "topics": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/OmniTopic"
+              }
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "omni"
+              ]
+            }
+          }
+        }
+      ],
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        }
+      }
+    },
     "Model": {
       "oneOf": [
         {
@@ -563,6 +612,21 @@
           }
         }
       ]
+    },
+    "OmniTopic": {
+      "type": "object",
+      "required": [
+        "model_id",
+        "name"
+      ],
+      "properties": {
+        "model_id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      }
     }
   }
 }

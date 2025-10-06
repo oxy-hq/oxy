@@ -23,6 +23,8 @@ pub enum ArtifactKind {
     ExecuteSQL { sql: String, database: String },
     #[serde(rename = "semantic_query")]
     SemanticQuery {},
+    #[serde(rename = "omni_query")]
+    OmniQuery { topic: String, integration: String },
 }
 
 impl std::fmt::Display for ArtifactKind {
@@ -38,6 +40,9 @@ impl std::fmt::Display for ArtifactKind {
             }
             ArtifactKind::SemanticQuery {} => {
                 write!(f, "semantic_query")
+            }
+            ArtifactKind::OmniQuery { .. } => {
+                write!(f, "omni_query")
             }
         }
     }
@@ -78,6 +83,10 @@ pub enum EventKind {
     },
     SemanticQueryGenerated {
         query: SemanticQueryParams,
+        is_verified: bool,
+    },
+    OmniQueryGenerated {
+        query: crate::tools::types::OmniQueryParams,
         is_verified: bool,
     },
     ArtifactFinished,

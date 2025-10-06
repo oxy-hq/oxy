@@ -231,6 +231,13 @@
         }
       ]
     },
+    "OrderType": {
+      "type": "string",
+      "enum": [
+        "asc",
+        "desc"
+      ]
+    },
     "SemanticQueryFilter": {
       "type": "object",
       "required": [
@@ -447,6 +454,65 @@
               "type": "string",
               "enum": [
                 "semantic_query"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "fields",
+            "integration",
+            "topic",
+            "type"
+          ],
+          "properties": {
+            "export": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/TaskExport"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "fields": {
+              "description": "Fields to select. Field name must be full name format {view}.{field_name}. No aggregation or any other syntax.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "integration": {
+              "type": "string"
+            },
+            "limit": {
+              "description": "Maximum number of rows to return.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "sorts": {
+              "description": "Fields to sort by with direction (asc/desc).",
+              "type": [
+                "object",
+                "null"
+              ],
+              "additionalProperties": {
+                "$ref": "#/definitions/OrderType"
+              }
+            },
+            "topic": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "omni_query"
               ]
             }
           }

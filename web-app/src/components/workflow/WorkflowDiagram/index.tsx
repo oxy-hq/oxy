@@ -26,6 +26,7 @@ const nodeTypes: Record<NodeType, typeof DiagramNode> = {
   conditional: DiagramNode,
   "conditional-else": DiagramNode,
   "conditional-if": DiagramNode,
+  omni_query: DiagramNode,
 } as const;
 
 interface WorkflowDiagramProps {

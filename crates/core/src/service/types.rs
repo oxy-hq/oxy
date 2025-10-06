@@ -4,6 +4,7 @@ use utoipa::ToSchema;
 
 use crate::{
     execute::types::{ReferenceKind, Table, Usage, event::ArtifactKind},
+    tools::types::OmniQueryParams,
     utils::get_file_stem,
     workflow::loggers::types::LogItem,
 };
@@ -156,6 +157,16 @@ pub struct SemanticQuery {
     pub offset: Option<u64>,
 }
 
+#[derive(Serialize, Deserialize, Clone, ToSchema, Debug)]
+pub struct OmniQuery {
+    pub result: Vec<Vec<String>>,
+    pub is_result_truncated: bool,
+    pub topic: String,
+    pub fields: Vec<String>,
+    pub limit: Option<u64>,
+    pub sorts: Option<std::collections::HashMap<String, String>>,
+}
+
 #[derive(Serialize, ToSchema)]
 #[serde(tag = "type", content = "value")]
 pub enum ArtifactValue {
@@ -167,9 +178,11 @@ pub enum ArtifactValue {
     ExecuteSQL(ExecuteSQL),
     #[serde(rename = "semantic_query")]
     SemanticQuery(SemanticQuery),
+    #[serde(rename = "omni_query")]
+    OmniQuery(OmniQuery),
 }
 
-#[derive(Serialize, Deserialize, ToSchema)]
+#[derive(Serialize, Deserialize, ToSchema, Debug)]
 #[serde(tag = "type", content = "value")]
 pub enum ArtifactContent {
     #[serde(rename = "workflow")]
@@ -197,6 +210,19 @@ pub enum ArtifactContent {
         limit: Option<u64>,
         offset: Option<u64>,
     },
+    #[serde(rename = "omni_query")]
+    OmniQuery(OmniArtifactContent),
+}
+
+#[derive(Serialize, Deserialize, ToSchema, Debug)]
+pub struct OmniArtifactContent {
+    pub result: Vec<Vec<String>>,
+    pub is_result_truncated: bool,
+    pub topic: String,
+    pub sql: String,
+    pub fields: Vec<String>,
+    pub limit: Option<u64>,
+    pub sorts: Option<std::collections::HashMap<String, String>>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -243,6 +269,7 @@ pub enum Content {
     Text(String),
     SQL(String),
     Table(Table),
+    OmniQuery(OmniQueryParams),
 }
 
 impl Content {
@@ -251,6 +278,11 @@ impl Content {
             Content::Text(text) => text.clone(),
             Content::SQL(sql) => format!("\n```sql\n{sql}\n```\n"),
             Content::Table(table) => table.to_markdown(),
+            Content::OmniQuery(omni_query_params) => {
+                let json = serde_json::to_string_pretty(omni_query_params)
+                    .unwrap_or_else(|_| "Failed to serialize OmniQueryParams".to_string());
+                format!("\n```json\n{json}\n```\n")
+            }
         }
     }
 }
@@ -397,6 +429,13 @@ impl Block {
                     log_items.push(LogItem::info(
                         format!("Result:\n{}\n", table.to_markdown(),),
                     ));
+                }
+                Content::OmniQuery(omni_query_params) => {
+                    let json = serde_json::to_string_pretty(omni_query_params)
+                        .unwrap_or_else(|_| "Failed to serialize OmniQueryParams".to_string());
+                    log_items.push(LogItem::info(format!(
+                        "Omni Query:\n```json\n{json}\n```\n"
+                    )));
                 }
             },
             BlockValue::Children { kind, children } => match kind {

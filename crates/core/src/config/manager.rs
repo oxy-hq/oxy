@@ -205,4 +205,14 @@ impl ConfigManager {
     pub fn project_path(&self) -> &std::path::Path {
         &self.config.project_path
     }
+
+    pub fn get_integration_by_name(
+        &self,
+        integration_name: &str,
+    ) -> Option<&crate::config::model::Integration> {
+        self.config
+            .integrations
+            .iter()
+            .find(|i| i.name == integration_name)
+    }
 }

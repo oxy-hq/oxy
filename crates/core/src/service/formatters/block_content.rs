@@ -22,6 +22,9 @@ impl ContentProcessor {
             Output::Text(text) => Some(Content::Text(text.clone())),
             Output::SQL(sql) => Some(Content::SQL(sql.to_string())),
             Output::Table(table) => Some(Content::Table(table.clone())),
+            Output::OmniQuery(omni_query_params) => {
+                Some(Content::OmniQuery(omni_query_params.clone()))
+            }
             _ => None,
         }
     }

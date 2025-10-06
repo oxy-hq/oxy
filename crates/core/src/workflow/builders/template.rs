@@ -79,6 +79,17 @@ impl TemplateRegister for &Task {
                     register.entry(&export.path.as_str())?;
                 }
             }
+            TaskType::OmniQuery(omni_query) => {
+                register.entry(&omni_query.integration.as_str())?;
+                register.entry(&omni_query.topic.as_str())?;
+                // Register field names as they might be templated
+                for field in &omni_query.query.fields {
+                    register.entry(&field.as_str())?;
+                }
+                if let Some(export) = &omni_query.export {
+                    register.entry(&export.path.as_str())?;
+                }
+            }
             TaskType::Formatter(formatter) => {
                 register.entry(&formatter.template.as_str())?;
                 if let Some(export) = &formatter.export {

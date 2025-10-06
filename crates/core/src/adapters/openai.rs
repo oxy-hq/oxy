@@ -1,3 +1,4 @@
+use crate::{agent::builders::fsm::config, config::model::IntegrationType};
 use async_openai::{
     Client,
     config::{AzureConfig, Config, OpenAIConfig},
@@ -11,9 +12,10 @@ use async_openai::{
     },
 };
 use axum::http::{HeaderMap, HeaderName, HeaderValue};
+use omni::MetadataStorage;
 use schemars::schema::RootSchema;
 use secrecy::SecretString;
-use std::{collections::HashMap, str::FromStr};
+use std::{collections::HashMap, path::PathBuf, str::FromStr};
 use tokio_stream::StreamExt;
 
 use crate::{
@@ -24,18 +26,12 @@ use crate::{
     config::{
         ConfigManager,
         constants::{ANTHROPIC_API_URL, GEMINI_API_URL},
-        model::{
-            Model, ReasoningConfig, ReasoningEffort, RetrievalConfig, ToolType,
-            omni::OmniSemanticModel,
-        },
+        model::{Model, ReasoningConfig, ReasoningEffort, RetrievalConfig, ToolType},
     },
     errors::OxyError,
     execute::types::event::ArtifactKind,
     service::types::SemanticQueryParams,
-    tools::types::{
-        AgentParams, EmptySQLParams, ExecuteOmniParams, OmniTopicInfoParams, RetrievalParams,
-        SQLParams,
-    },
+    tools::types::{AgentParams, EmptySQLParams, OmniQueryParams, RetrievalParams, SQLParams},
 };
 
 #[derive(Debug, Clone)]
@@ -305,7 +301,7 @@ impl IntoOpenAIConfig for RetrievalConfig {
 pub type OpenAIClient = Client<ConfigType>;
 
 pub trait OpenAIToolConfig {
-    fn description(&self, config: &ConfigManager) -> String;
+    async fn description(&self, config: &ConfigManager) -> String;
     fn tool_kind(&self) -> String;
     fn handle(&self) -> String;
     fn artifact(&self) -> Option<(String, ArtifactKind)>;
@@ -313,7 +309,7 @@ pub trait OpenAIToolConfig {
 }
 
 impl OpenAIToolConfig for &ToolType {
-    fn description(&self, config: &ConfigManager) -> String {
+    async fn description(&self, config: &ConfigManager) -> String {
         match self {
             ToolType::ExecuteSQL(e) => e.description.clone(),
             ToolType::ValidateSQL(v) => v.description.clone(),
@@ -322,6 +318,10 @@ impl OpenAIToolConfig for &ToolType {
             ToolType::Agent(agent_tool) => agent_tool.description.clone(),
             ToolType::Visualize(v) => v.description.clone(),
             ToolType::CreateDataApp(v) => v.description.clone(),
+            ToolType::OmniQuery(o) => match get_omni_query_description(o, config).await {
+                Ok(desc) => desc,
+                Err(_) => o.description.clone(),
+            },
             ToolType::SemanticQuery(s) => {
                 // Try to get enhanced description with semantic layer metadata
                 match get_semantic_query_description(s, config) {
@@ -331,17 +331,6 @@ impl OpenAIToolConfig for &ToolType {
                             "{}\n\nNo semantic layer metadata found. Please ensure you have semantic layer definitions in the 'semantics' directory.",
                             s.description
                         )
-                    }
-                }
-            }
-            ToolType::OmniTopicInfo(v) => v.get_description(),
-            ToolType::ExecuteOmni(execute_omni_tool) => {
-                let model: Result<OmniSemanticModel, OxyError> =
-                    execute_omni_tool.load_semantic_model();
-                match model {
-                    Ok(model) => model.get_description(),
-                    Err(e) => {
-                        format!("Failed to load semantic model: {e}")
                     }
                 }
             }
@@ -357,9 +346,8 @@ impl OpenAIToolConfig for &ToolType {
             ToolType::Agent(agent_tool) => agent_tool.name.clone(),
             ToolType::Visualize(v) => v.name.clone(),
             ToolType::CreateDataApp(create_data_app_tool) => create_data_app_tool.name.clone(),
+            ToolType::OmniQuery(o) => o.name.clone(),
             ToolType::SemanticQuery(s) => s.name.clone(),
-            ToolType::ExecuteOmni(e) => e.name.clone(),
-            ToolType::OmniTopicInfo(omni_topic_info_tool) => omni_topic_info_tool.name.clone(),
         }
     }
 
@@ -385,6 +373,13 @@ impl OpenAIToolConfig for &ToolType {
                 },
             )),
             ToolType::SemanticQuery(_sm) => Some((self.handle(), ArtifactKind::SemanticQuery {})),
+            ToolType::OmniQuery(om) => Some((
+                self.handle(),
+                ArtifactKind::OmniQuery {
+                    topic: om.topic.clone(),
+                    integration: om.integration.clone(),
+                },
+            )),
             _ => None,
         }
     }
@@ -398,9 +393,8 @@ impl OpenAIToolConfig for &ToolType {
             ToolType::Agent(_) => "agent".to_string(),
             ToolType::Visualize(_) => "visualize".to_string(),
             ToolType::CreateDataApp(_) => "create_data_app".to_string(),
+            ToolType::OmniQuery(_) => "omni_query".to_string(),
             ToolType::SemanticQuery(_) => "semantic_query".to_string(),
-            ToolType::ExecuteOmni(_) => "execute_omni".to_string(),
-            ToolType::OmniTopicInfo(_) => "omni_topic_info".to_string(),
         }
     }
 
@@ -419,17 +413,14 @@ impl OpenAIToolConfig for &ToolType {
             }
             ToolType::Agent(_) => Ok(serde_json::json!(&schemars::schema_for!(AgentParams))),
             ToolType::Visualize(_) => Ok(serde_json::from_str(viz_schema::VIZ_SCHEMA).unwrap()),
-            ToolType::ExecuteOmni(_) => {
-                Ok(serde_json::json!(&schemars::schema_for!(ExecuteOmniParams)))
-            }
-            ToolType::OmniTopicInfo(_) => Ok(serde_json::json!(&schemars::schema_for!(
-                OmniTopicInfoParams
-            ))),
             ToolType::CreateDataApp(_) => {
                 // we need to manually create the schema for CreateDataAppParams
                 // because this schema is quite complex and the library we use
                 // schemars does not generate a compatiible schema with OpenAI.
                 Ok(serde_json::from_str(create_app_schema::CREATE_APP_SCHEMA).unwrap())
+            }
+            ToolType::OmniQuery(_) => {
+                Ok(serde_json::json!(&schemars::schema_for!(OmniQueryParams)))
             }
             ToolType::SemanticQuery(_) => Ok(serde_json::json!(&schemars::schema_for!(
                 SemanticQueryParams
@@ -478,6 +469,186 @@ async fn generate_workflow_run_schema(
     Ok(json_schema)
 }
 
+async fn get_omni_query_description(
+    omni_tool: &crate::config::model::OmniQueryTool,
+    config: &ConfigManager,
+) -> Result<String, OxyError> {
+    let topic_name = omni_tool.topic.clone();
+
+    // Find the model_id for the specific topic in the correct integration
+    let model_id = config
+        .get_config()
+        .integrations
+        .iter()
+        .find_map(|integration| {
+            // First check if this is the correct integration by name
+            if integration.name == omni_tool.integration {
+                match &integration.integration_type {
+                    IntegrationType::Omni(int) => int
+                        .topics
+                        .iter()
+                        .find(|t| t.name == topic_name)
+                        .map(|t| t.model_id.as_str()),
+                }
+            } else {
+                None
+            }
+        })
+        .ok_or_else(|| {
+            OxyError::ConfigurationError(format!(
+                "Topic '{}' not found in integration '{}' or integration not found",
+                topic_name, omni_tool.integration
+            ))
+        })?;
+
+    get_omni_description(&topic_name, &omni_tool.integration, model_id, config)
+}
+
+fn get_omni_description(
+    topic: &str,
+    integration: &str,
+    model_id: &str,
+    config: &ConfigManager,
+) -> Result<String, OxyError> {
+    let storage = MetadataStorage::new(config.project_path(), integration.to_string());
+
+    // Get all available topics for the model
+    let topics = storage
+        .list_base_topics(model_id)
+        .map_err(|e| OxyError::ToolCallError {
+            call_id: "unknown".to_string(),
+            handle: "omni_query".to_string(),
+            param: "".to_string(),
+            msg: format!("Failed to list topics: {}", e),
+        })?;
+
+    if topics.is_empty() {
+        return Ok(format!(
+            "No metadata available for model '{}'. Please run 'oxy build' to synchronize metadata from the Omni API.",
+            model_id
+        ));
+    }
+
+    let mut description = String::new();
+    description.push_str(&format!("Query data from Omni semantic layer\n\n"));
+
+    // Topic is always required, load its metadata
+    let topic_metadata = storage
+        .load_merged_metadata(model_id, topic)
+        .map_err(|e| OxyError::ToolCallError {
+            call_id: "unknown".to_string(),
+            handle: "omni_query".to_string(),
+            param: "topic".to_string(),
+            msg: format!("Failed to load metadata for topic '{}': {}", topic, e),
+        })?
+        .ok_or_else(|| OxyError::ToolCallError {
+            call_id: "unknown".to_string(),
+            handle: "omni_query".to_string(),
+            param: "topic".to_string(),
+            msg: format!(
+                "No metadata found for topic '{}'. Please run 'oxy build' to synchronize metadata.",
+                topic
+            ),
+        })?;
+
+    description.push_str(&format!("**Topic: {}**\n", topic));
+    description.push_str(&format_topic_description(&topic_metadata));
+
+    description.push_str("\n**Usage Notes:**\n");
+    description.push_str("- Field names must use full format: {view}.{field_name}\n");
+    // Filters are not supported by the Omni API; do not suggest them
+    description.push_str("- Set appropriate limits for large datasets\n");
+    description.push_str("- Sort by relevant fields for better results\n");
+
+    Ok(description)
+}
+
+fn format_topic_description(topic: &omni::TopicMetadata) -> String {
+    let mut desc = String::new();
+
+    // Add custom description if available
+    if let Some(custom_desc) = &topic.custom_description {
+        desc.push_str(&format!("Additional Info: {}\n", custom_desc));
+    }
+
+    // Add agent hints if available
+    if let Some(hints) = &topic.agent_hints {
+        desc.push_str("Agent Hints:\n");
+        for hint in hints {
+            desc.push_str(&format!("- {}\n", hint));
+        }
+    }
+
+    // Add views and their fields
+    desc.push_str("\n**Views and Fields:**\n");
+    for view in &topic.views {
+        desc.push_str(&format!("\n*View: {}*\n", view.name));
+
+        // Add dimensions
+        if !view.dimensions.is_empty() {
+            desc.push_str("Dimensions:\n");
+            for dim in &view.dimensions {
+                desc.push_str(&format!(
+                    "- {}.{} ({})",
+                    dim.view_name, dim.field_name, dim.data_type
+                ));
+                if let Some(label) = &dim.label {
+                    desc.push_str(&format!(" - {}", label));
+                }
+                if let Some(dim_desc) = &dim.description {
+                    desc.push_str(&format!(" - {}", dim_desc));
+                }
+                if let Some(ai_context) = &dim.ai_context {
+                    desc.push_str(&format!(" [AI Context: {}]", ai_context));
+                }
+                desc.push('\n');
+            }
+        }
+
+        // Add measures
+        if !view.measures.is_empty() {
+            desc.push_str("Measures:\n");
+            for measure in &view.measures {
+                desc.push_str(&format!(
+                    "- {}.{} ({})",
+                    measure.view_name, measure.field_name, measure.data_type
+                ));
+                if let Some(label) = &measure.label {
+                    desc.push_str(&format!(" - {}", label));
+                }
+                if let Some(measure_desc) = &measure.description {
+                    desc.push_str(&format!(" - {}", measure_desc));
+                }
+                if let Some(ai_context) = &measure.ai_context {
+                    desc.push_str(&format!(" [AI Context: {}]", ai_context));
+                }
+                desc.push('\n');
+            }
+        }
+
+        // Add filter-only fields
+        if !view.filter_only_fields.is_empty() {
+            desc.push_str(&format!(
+                "Filter-only fields: {}\n",
+                view.filter_only_fields.join(", ")
+            ));
+        }
+    }
+
+    // Add examples if available
+    if let Some(examples) = &topic.examples {
+        desc.push_str("\n**Query Examples:**\n");
+        for example in examples {
+            desc.push_str(&format!("- {}: {}\n", example.description, example.query));
+            if let Some(expected) = &example.expected_result {
+                desc.push_str(&format!("  Expected: {}\n", expected));
+            }
+        }
+    }
+
+    desc
+}
+
 pub trait AsyncFunctionObject {
     async fn from_tool_async(tool: &ToolType, config: &ConfigManager) -> Self;
 }
@@ -487,7 +658,7 @@ impl AsyncFunctionObject for FunctionObject {
         let mut binding = FunctionObjectArgs::default();
         let mut function_args = binding
             .name(tool.handle())
-            .description(tool.description(config));
+            .description(tool.description(config).await);
         let params_schema = tool.params_schema(config).await.unwrap();
         if !params_schema.is_null()
             && params_schema.is_object()

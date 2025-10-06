@@ -6,7 +6,7 @@ use minijinja::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::errors::OxyError;
+use crate::{errors::OxyError, tools::types::OmniQueryParams};
 
 use super::{Document, Prompt, SQL, Table, output_container::Data, table::TableReference};
 
@@ -18,6 +18,7 @@ pub enum Output {
     Table(Table),
     Prompt(Prompt),
     Documents(Vec<Document>),
+    OmniQuery(OmniQueryParams),
 }
 
 impl Default for Output {
@@ -72,6 +73,10 @@ impl Output {
             Output::Bool(b) => Ok(Data::Bool(*b)),
             Output::Prompt(prompt) => Ok(Data::Text(prompt.to_string())),
             Output::Documents(_) => Ok(Data::None),
+            Output::OmniQuery(omni_query_params) => {
+                // this contains the params of omni query, not useful to return as data
+                Ok(Data::None)
+            }
         }
     }
 
@@ -88,6 +93,9 @@ impl Output {
                     markdown.push_str(&format!("{doc}\n"));
                 }
                 markdown
+            }
+            Output::OmniQuery(omni_query_params) => {
+                serde_json::to_string_pretty(omni_query_params).unwrap_or_default()
             }
         }
     }
@@ -146,6 +154,11 @@ impl std::fmt::Display for Output {
                 }
                 Ok(())
             }
+            Output::OmniQuery(omni_query_params) => {
+                let json =
+                    serde_json::to_string_pretty(omni_query_params).map_err(|_| std::fmt::Error)?;
+                write!(f, "{json}")
+            }
         }
     }
 }
@@ -191,6 +204,11 @@ impl Object for Output {
                     writeln!(f, "{doc}")?;
                 }
                 Ok(())
+            }
+            Output::OmniQuery(omni_query_params) => {
+                let json =
+                    serde_json::to_string_pretty(omni_query_params).map_err(|_| std::fmt::Error)?;
+                write!(f, "{json}")
             }
         }
     }

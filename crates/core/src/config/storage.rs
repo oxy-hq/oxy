@@ -203,6 +203,7 @@ impl ConfigStorage for LocalSource {
             models: [].to_vec(),
             databases: [].to_vec(),
             builder_agent: None,
+            integrations: vec![],
         });
         config.project_path = self.project_path.clone();
         config

@@ -194,10 +194,11 @@ enum SubCommand {
     /// Execute test cases defined in workflow files and generate metrics
     /// to validate workflow reliability and output quality.
     Test(TestArgs),
-    /// Build vector embeddings for hybrid search capabilities
+    /// Build vector embeddings and sync integrations
     ///
     /// Process your project files and create searchable embeddings for
-    /// enhanced semantic search and retrieval functionality.
+    /// enhanced semantic search and retrieval functionality. Also synchronizes
+    /// configured integrations like Omni semantic layer metadata.
     Build(BuildArgs),
     /// Perform semantic vector search across your project
     ///
@@ -256,6 +257,7 @@ enum SubCommand {
     /// Interact with configured AI agents to get answers about
     /// your data, generate queries, or analyze results.
     Ask(AskArgs),
+
     /// Database seeding commands for development and testing
     #[clap(hide = true)]
     Seed(SeedArgs),
@@ -804,6 +806,11 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
         }
         Some(SubCommand::Build(build_args)) => {
             sentry_config::add_operation_context("build", None);
+
+            // Synchronize Omni integration if configured
+            handle_omni_sync().await?;
+
+            // Build vector embeddings for routing agents
             let project_path = resolve_local_project_path()?.to_string_lossy().to_string();
             let config_manager = ConfigBuilder::new()
                 .with_project_path(project_path)?
@@ -1008,6 +1015,154 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
 
         None => {
             Args::command().print_help().unwrap();
+        }
+    }
+
+    Ok(())
+}
+
+async fn handle_omni_sync() -> Result<(), OxyError> {
+    use crate::service::omni_sync::OmniSyncService;
+    use omni::{OmniApiClient, OmniError as AdapterOmniError};
+
+    // Load configuration to get Omni integration settings
+    let project_path = resolve_local_project_path()?;
+
+    let project = ProjectBuilder::new()
+        .with_project_path(&project_path)
+        .await?
+        .with_runs_manager(RunsManager::default(Uuid::nil(), Uuid::nil()).await?)
+        .build()
+        .await
+        .map_err(|e| OxyError::from(anyhow::anyhow!("Failed to create project: {e}")))?;
+
+    let config = project.config_manager.clone();
+
+    // Get all Omni integration configurations - if none found, skip silently
+    let omni_integrations: Vec<_> = config
+        .get_config()
+        .integrations
+        .iter()
+        .filter_map(|integration| match &integration.integration_type {
+            crate::config::model::IntegrationType::Omni(omni_integration) => {
+                Some((integration.name.clone(), omni_integration.clone()))
+            }
+        })
+        .collect();
+
+    if omni_integrations.is_empty() {
+        // No Omni integrations configured, skip silently
+        return Ok(());
+    }
+
+    println!(
+        "🔗 Synchronizing {} Omni integration(s)...",
+        omni_integrations.len()
+    );
+
+    let mut all_sync_results = Vec::new();
+    let mut total_successful_topics = Vec::new();
+
+    for (integration_name, omni_integration) in omni_integrations {
+        println!("\n🔗 Processing integration: {}", integration_name);
+
+        // Resolve API key from environment variable
+        let api_key = project
+            .secrets_manager
+            .resolve_secret(&omni_integration.api_key_var)
+            .await?
+            .unwrap();
+        let base_url = omni_integration.base_url.clone();
+        let topics = omni_integration.topics.clone();
+
+        // Sync all configured topics for this integration
+        println!("🔄 Synchronizing Omni metadata for {} topics", topics.len());
+        let topics_to_sync: Vec<_> = topics.iter().collect();
+
+        // Create API client
+        let api_client =
+            OmniApiClient::new(base_url.clone(), api_key.clone()).map_err(|e| match e {
+                AdapterOmniError::ConfigError(msg) => {
+                    OxyError::ConfigurationError(format!("Omni configuration error: {}", msg))
+                }
+                _ => OxyError::RuntimeError(format!("Failed to create Omni API client: {}", e)),
+            })?;
+
+        // Create sync service
+        let sync_service =
+            OmniSyncService::new(api_client, &project_path, integration_name.clone());
+
+        // Perform synchronization for each topic in this integration
+        println!("📥 Fetching metadata from Omni API...");
+
+        let mut integration_results = Vec::new();
+        for topic in &topics_to_sync {
+            println!(
+                "  📋 Syncing topic: {} (model: {})",
+                topic.name, topic.model_id
+            );
+            let sync_result = sync_service
+                .sync_metadata(&topic.model_id, &topic.name)
+                .await
+                .map_err(|e| {
+                    OxyError::RuntimeError(format!(
+                        "Sync operation failed for topic '{}' (model '{}'): {}",
+                        topic.name, topic.model_id, e
+                    ))
+                })?;
+            integration_results.push(sync_result);
+        }
+
+        // Collect results for this integration
+        if let Some(first_result) = integration_results.into_iter().next() {
+            total_successful_topics.extend(first_result.successful_topics.clone());
+            all_sync_results.push(first_result);
+        }
+    }
+
+    // Display overall results
+    println!("\n{}", "🎉 Omni synchronization completed!".success());
+
+    if !all_sync_results.is_empty() {
+        let overall_success = all_sync_results.iter().all(|r| r.is_success());
+        let partial_success = all_sync_results.iter().any(|r| r.is_partial_success());
+
+        if overall_success {
+            println!(
+                "{}",
+                "All integrations synchronized successfully.".success()
+            );
+        } else if partial_success {
+            println!(
+                "{}",
+                "Partial synchronization completed with some errors.".warning()
+            );
+            // Show error summaries from failed integrations
+            for sync_result in &all_sync_results {
+                if let Some(error_summary) = sync_result.error_summary() {
+                    println!("\n{}", "Errors encountered:".warning());
+                    println!("{}", error_summary.error());
+                }
+            }
+        } else {
+            println!("{}", "Some integrations failed to synchronize.".error());
+            for sync_result in &all_sync_results {
+                if let Some(error_summary) = sync_result.error_summary() {
+                    println!("\n{}", "Errors encountered:".error());
+                    println!("{}", error_summary.error());
+                }
+            }
+            return Err(OxyError::RuntimeError(
+                "Some Omni sync operations failed".to_string(),
+            ));
+        }
+
+        // Show all successful topics across all integrations
+        if !total_successful_topics.is_empty() {
+            println!("\n{}", "Successfully synchronized topics:".success());
+            for topic in &total_successful_topics {
+                println!("  ✅ {}", topic);
+            }
         }
     }
 

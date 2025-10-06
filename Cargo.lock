@@ -5995,6 +5995,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "omni"
+version = "0.1.0"
+dependencies = [
+ "garde",
+ "rand 0.8.5",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "tempfile",
+ "thiserror 2.0.16",
+ "tokio",
+ "tracing",
+ "urlencoding",
+]
+
+[[package]]
 name = "once_cell"
 version = "1.21.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6243,6 +6260,7 @@ dependencies = [
  "migration",
  "minijinja",
  "ndarray",
+ "omni",
  "once_cell",
  "oxy-semantic",
  "parquet",
@@ -6297,6 +6315,7 @@ dependencies = [
  "utoipa-axum",
  "utoipa-swagger-ui",
  "uuid",
+ "wildcard",
  "xxhash-rust",
 ]
 
@@ -10630,6 +10649,15 @@ dependencies = [
  "libredox",
  "wasite",
  "web-sys",
+]
+
+[[package]]
+name = "wildcard"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f9b0540e91e49de3817c314da0dd3bc518093ceacc6ea5327cb0e1eb073e5189"
+dependencies = [
+ "thiserror 2.0.16",
 ]
 
 [[package]]

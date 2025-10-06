@@ -113,6 +113,10 @@ dimensions:
   - primary_database.dbt_prod_metrics.monthly_active_users_with_warehouse.ds
   - primary_database.dbt_prod_metrics.monthly_active_organizations_with_warehouse.ds
   - primary_database.dbt_prod_metrics.monthly_active_organizations.ds
+  - primary_database.dbt_prod_metrics.monthly_active_organizations.ds
+  - primary_database.dbt_prod_metrics.monthly_active_users.ds
+  - primary_database.dbt_prod_metrics.monthly_active_organizations_with_warehouse.ds
+  - primary_database.dbt_prod_metrics.monthly_active_users_with_warehouse.ds
 - name: event_type
   targets:
   - primary_database.dbt_prod_core.fct_user_events.event_type
@@ -408,8 +412,10 @@ dimensions:
   - primary_database.dbt_prod_metrics.monthly_active_users_with_warehouse.monthly_active_users_with_warehouse
   - primary_database.dbt_prod_metrics.monthly_active_users_with_warehouse.monthly_active_users_with_warehouse
   - primary_database.dbt_prod_metrics.monthly_active_users_with_warehouse.monthly_active_users_with_warehouse
+  - primary_database.dbt_prod_metrics.monthly_active_users_with_warehouse.monthly_active_users_with_warehouse
 - name: monthly_active_organizations_with_warehouse
   targets:
+  - primary_database.dbt_prod_metrics.monthly_active_organizations_with_warehouse.monthly_active_organizations_with_warehouse
   - primary_database.dbt_prod_metrics.monthly_active_organizations_with_warehouse.monthly_active_organizations_with_warehouse
   - primary_database.dbt_prod_metrics.monthly_active_organizations_with_warehouse.monthly_active_organizations_with_warehouse
   - primary_database.dbt_prod_metrics.monthly_active_organizations_with_warehouse.monthly_active_organizations_with_warehouse
@@ -432,8 +438,10 @@ dimensions:
   - primary_database.dbt_prod_metrics.monthly_active_organizations.monthly_active_organizations
   - primary_database.dbt_prod_metrics.monthly_active_organizations.monthly_active_organizations
   - primary_database.dbt_prod_metrics.monthly_active_organizations.monthly_active_organizations
+  - primary_database.dbt_prod_metrics.monthly_active_organizations.monthly_active_organizations
 - name: monthly_active_users
   targets:
+  - primary_database.dbt_prod_metrics.monthly_active_users.monthly_active_users
   - primary_database.dbt_prod_metrics.monthly_active_users.monthly_active_users
   - primary_database.dbt_prod_metrics.monthly_active_users.monthly_active_users
   - primary_database.dbt_prod_metrics.monthly_active_users.monthly_active_users
