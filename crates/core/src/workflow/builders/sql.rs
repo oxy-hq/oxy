@@ -8,7 +8,7 @@ use crate::{
     execute::{
         Executable, ExecutionContext,
         builders::{ExecutableBuilder, map::ParamMapper},
-        types::{Output, Table},
+        types::Table,
     },
     tools::{SQLExecutable, types::SQLInput},
 };

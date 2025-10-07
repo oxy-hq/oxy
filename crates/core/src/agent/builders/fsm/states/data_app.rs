@@ -194,8 +194,8 @@ impl TriggerBuilder for DataAppState {
     }
 }
 
-impl Into<OutputContainer> for DataAppState {
-    fn into(self) -> OutputContainer {
-        Output::Text(self.memory.get_content().to_string()).into()
+impl From<DataAppState> for OutputContainer {
+    fn from(val: DataAppState) -> Self {
+        Output::Text(val.memory.get_content().to_string()).into()
     }
 }

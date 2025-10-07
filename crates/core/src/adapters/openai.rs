@@ -1,4 +1,4 @@
-use crate::{agent::builders::fsm::config, config::model::IntegrationType};
+use crate::config::model::IntegrationType;
 use async_openai::{
     Client,
     config::{AzureConfig, Config, OpenAIConfig},
@@ -15,7 +15,7 @@ use axum::http::{HeaderMap, HeaderName, HeaderValue};
 use omni::MetadataStorage;
 use schemars::schema::RootSchema;
 use secrecy::SecretString;
-use std::{collections::HashMap, path::PathBuf, str::FromStr};
+use std::{collections::HashMap, str::FromStr};
 use tokio_stream::StreamExt;
 
 use crate::{
@@ -530,7 +530,7 @@ fn get_omni_description(
     }
 
     let mut description = String::new();
-    description.push_str(&format!("Query data from Omni semantic layer\n\n"));
+    description.push_str(&"Query data from Omni semantic layer\n\n".to_string());
 
     // Topic is always required, load its metadata
     let topic_metadata = storage

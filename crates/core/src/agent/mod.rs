@@ -149,7 +149,7 @@ impl AgentLauncher {
             tokio::spawn(async move { buf_writer.write_to_handler(event_handler).await });
         let response = handle.await?;
         event_handle.await??;
-        response.map(|res| res.into())
+        response.map(|res| res)
     }
 }
 

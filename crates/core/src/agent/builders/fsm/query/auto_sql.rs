@@ -153,7 +153,7 @@ impl<S> AutoSQL<S> {
 
         loop {
             let tool_call = self
-                .request_sql_tool_call(vec![instructions.clone(), failed_messages.clone()].concat())
+                .request_sql_tool_call([instructions.clone(), failed_messages.clone()].concat())
                 .await?;
             match self
                 .execute_query(execution_context, &config.database, &tool_call)
@@ -202,7 +202,7 @@ where
         mut state: Self::State,
     ) -> Result<Self::State, OxyError> {
         let (table, tool_call) = self.run_with_retry(execution_context).await?;
-        state.add_tool_call(&self.objective, tool_call, (&table).to_string());
+        state.add_tool_call(&self.objective, tool_call, table.to_string());
         state.add_table(table);
         Ok(state)
     }

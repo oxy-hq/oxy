@@ -1,5 +1,4 @@
 use base64::prelude::*;
-use chrono;
 use entity::prelude::Threads;
 use futures::TryFutureExt;
 use sea_orm::ActiveValue;
@@ -1378,7 +1377,7 @@ pub async fn get_workflow_run(
                 true
             }
         })
-        .map(|e| WorkflowEvent::from(e))
+        .map(WorkflowEvent::from)
         .filter(|e| {
             // Filter out internal metadata events
             !matches!(e, WorkflowEvent::TaskStarted { task_name, .. } if task_name == "internal_metadata")
@@ -1437,14 +1436,12 @@ fn parse_workflow_events(
                     .entry(content_id.clone())
                     .and_modify(|(existing_content, _)| {
                         // Merge text content chunks
-                        match (existing_content, item) {
-                            (
-                                ContentType::Text { content: existing },
-                                ContentType::Text { content: new },
-                            ) => {
-                                existing.push_str(new);
-                            }
-                            _ => {}
+                        if let (
+                            ContentType::Text { content: existing },
+                            ContentType::Text { content: new },
+                        ) = (existing_content, item)
+                        {
+                            existing.push_str(new);
                         }
                     })
                     .or_insert((item.clone(), false));
@@ -1454,14 +1451,12 @@ fn parse_workflow_events(
                     .entry(content_id.clone())
                     .and_modify(|(existing_content, is_done)| {
                         // Merge any final chunk
-                        match (existing_content, item) {
-                            (
-                                ContentType::Text { content: existing },
-                                ContentType::Text { content: new },
-                            ) => {
-                                existing.push_str(new);
-                            }
-                            _ => {}
+                        if let (
+                            ContentType::Text { content: existing },
+                            ContentType::Text { content: new },
+                        ) = (existing_content, item)
+                        {
+                            existing.push_str(new);
                         }
                         *is_done = true;
                     })

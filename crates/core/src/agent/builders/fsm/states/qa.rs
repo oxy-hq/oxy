@@ -108,8 +108,8 @@ impl TriggerBuilder for QAState {
     }
 }
 
-impl Into<OutputContainer> for QAState {
-    fn into(self) -> OutputContainer {
-        Output::Text(self.memory.get_content().to_string()).into()
+impl From<QAState> for OutputContainer {
+    fn from(val: QAState) -> Self {
+        Output::Text(val.memory.get_content().to_string()).into()
     }
 }

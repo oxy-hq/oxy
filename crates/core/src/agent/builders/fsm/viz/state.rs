@@ -43,9 +43,9 @@ impl std::fmt::Display for VizParams {
     }
 }
 
-impl Into<Display> for VizParams {
-    fn into(self) -> Display {
-        match self.config {
+impl From<VizParams> for Display {
+    fn from(val: VizParams) -> Self {
+        match val.config {
             VizParamsType::Line(config) => Display::LineChart(config),
             VizParamsType::Bar(config) => Display::BarChart(config),
             VizParamsType::Pie(config) => Display::PieChart(config),

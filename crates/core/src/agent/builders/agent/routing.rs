@@ -3,7 +3,6 @@ use std::path::PathBuf;
 use async_openai::types::ChatCompletionTool;
 use fallback::FallbackAgent;
 use oxy_semantic::Topic;
-use wildcard::Wildcard;
 
 use crate::{
     adapters::{

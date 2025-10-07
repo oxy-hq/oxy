@@ -3,4 +3,4 @@ mod state;
 mod trigger;
 
 pub use state::ArtifactsState;
-pub use trigger::{CollectArtifact, CollectArtifactDelegator, SubflowRun};
+pub use trigger::{CollectArtifact, CollectArtifactDelegator};

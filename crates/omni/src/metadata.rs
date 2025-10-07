@@ -241,7 +241,7 @@ impl MetadataMerger {
 
         let mut all_topics: Vec<String> = base_topics
             .into_iter()
-            .chain(overlay_topics.into_iter())
+            .chain(overlay_topics)
             .collect::<std::collections::HashSet<_>>() // Remove duplicates
             .into_iter()
             .collect();

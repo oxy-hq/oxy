@@ -1028,12 +1028,12 @@ impl QueryResponse {
 
     /// Checks if the query has timed out and needs polling
     pub fn has_timed_out(&self) -> bool {
-        self.timed_out.as_ref().map_or(false, |t| t == "true")
+        self.timed_out.as_ref().is_some_and(|t| t == "true")
     }
 
     /// Checks if the query is complete (not timed out)
     pub fn is_complete(&self) -> bool {
-        self.timed_out.as_ref().map_or(true, |t| t == "false")
+        self.timed_out.as_ref().is_none_or(|t| t == "false")
     }
 
     /// Gets the remaining job IDs for polling
@@ -1045,7 +1045,7 @@ impl QueryResponse {
     pub fn needs_polling(&self) -> bool {
         self.remaining_job_ids
             .as_ref()
-            .map_or(false, |ids| !ids.is_empty())
+            .is_some_and(|ids| !ids.is_empty())
     }
 }
 

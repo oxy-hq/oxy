@@ -24,10 +24,10 @@ impl PrepareData for Dataset {
     }
 }
 
-impl Into<OutputContainer> for Dataset {
-    fn into(self) -> OutputContainer {
+impl From<Dataset> for OutputContainer {
+    fn from(val: Dataset) -> Self {
         OutputContainer::List(
-            self.tables
+            val.tables
                 .into_iter()
                 .map(|t| {
                     let output: Output = t.into();

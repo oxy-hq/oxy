@@ -209,7 +209,7 @@ pub trait TriggerBuilder {
                         model.as_deref().unwrap_or(&agentic_config.model),
                     )
                     .await?;
-                    let transitions = vec![
+                    let transitions = [
                         transition.get_transition_names(),
                         vec![AGENT_END_TRANSITION.to_string()],
                     ]
@@ -340,7 +340,7 @@ where
 
         let mut objective = None;
         let mut get_transition = async || match &current_transition.next {
-            TransitionMode::Always(next) => machine.config.find_transition(&next).map(Some),
+            TransitionMode::Always(next) => machine.config.find_transition(next).map(Some),
             TransitionMode::Auto(items) => {
                 if items.is_empty() {
                     return Ok(None);
@@ -479,16 +479,14 @@ impl<S> Plan<S> {
             })
             .collect::<Vec<_>>()
             .join("\n");
-        let mut messages = vec![
-            vec![ChatCompletionRequestSystemMessage {
+        let mut messages = [vec![ChatCompletionRequestSystemMessage {
                 content: ChatCompletionRequestSystemMessageContent::Text(format!(
                     "## Instruction \n{instruction}\n{example}### Available Actions:\n{available_actions}",
                 )),
                 ..Default::default()
             }
             .into()],
-            messages,
-        ]
+            messages]
         .concat();
 
         if revise_plan {
@@ -580,11 +578,8 @@ where
         execution_context: &ExecutionContext,
         mut current_state: Self::State,
     ) -> Result<Self::State, OxyError> {
-        match &self.finalizer {
-            Some(finalizer) => {
-                current_state = finalizer.run(execution_context, current_state).await?;
-            }
-            None => {}
+        if let Some(finalizer) = &self.finalizer {
+            current_state = finalizer.run(execution_context, current_state).await?;
         }
 
         let instruction = execution_context

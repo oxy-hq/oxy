@@ -95,7 +95,7 @@ impl OmniQueryExecutable {
             })?;
 
         // Build query structure
-        let query_structure = self.build_query_structure(params, &topic, omni_config.clone())?;
+        let query_structure = self.build_query_structure(params, topic, omni_config.clone())?;
 
         // Create query request
         let query_request = QueryRequest::builder()
@@ -252,7 +252,7 @@ impl OmniQueryExecutable {
             .iter()
             .find_map(|integration| match &integration.integration_type {
                 crate::config::model::IntegrationType::Omni(omni_integration) => {
-                    if integration.name == integration_name.to_owned() {
+                    if integration.name == integration_name {
                         Some(omni_integration.clone())
                     } else {
                         None
@@ -333,7 +333,7 @@ impl OmniQueryExecutable {
         let schema = reader.schema();
 
         // Read all record batches
-        while let Some(batch_result) = reader.next() {
+        for batch_result in reader {
             let batch = batch_result.map_err(|e| format!("Failed to read Arrow batch: {}", e))?;
             record_batches.push(batch);
         }

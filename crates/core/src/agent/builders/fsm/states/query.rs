@@ -99,8 +99,8 @@ impl TriggerBuilder for QueryState {
     }
 }
 
-impl Into<OutputContainer> for QueryState {
-    fn into(self) -> OutputContainer {
-        Output::Text(self.memory.get_content().to_string()).into()
+impl From<QueryState> for OutputContainer {
+    fn from(val: QueryState) -> Self {
+        Output::Text(val.memory.get_content().to_string()).into()
     }
 }

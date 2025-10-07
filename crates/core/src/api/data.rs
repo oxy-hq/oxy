@@ -140,8 +140,7 @@ async fn handle_omni_sync(project: &ProjectManager) -> Result<(), OxyError> {
             })?;
 
         // Create sync service
-        let sync_service =
-            OmniSyncService::new(api_client, &project_path, integration_name.clone());
+        let sync_service = OmniSyncService::new(api_client, project_path, integration_name.clone());
 
         // Perform synchronization for each topic in this integration
         println!("📥 Fetching metadata from Omni API...");

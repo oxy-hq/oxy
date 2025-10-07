@@ -100,8 +100,7 @@ impl<S: TransitionContext + Send + Sync> Agent<S> {
         let tool_calls = self
             .adapter
             .request_tool_call(
-                vec![
-                    messages,
+                [messages,
                     vec![
                     ChatCompletionRequestUserMessage {
                     content: ChatCompletionRequestUserMessageContent::Text(
@@ -113,8 +112,7 @@ impl<S: TransitionContext + Send + Sync> Agent<S> {
                     ..Default::default()
                 }
                 .into(),
-                ],
-                ]
+                ]]
                 .concat(),
                 self.config.start.start.get_tools(),
                 Some(ChatCompletionToolChoiceOption::Required),

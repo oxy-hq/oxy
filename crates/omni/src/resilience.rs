@@ -225,6 +225,12 @@ pub struct ConnectionHealthChecker {
     retry_policy: RetryPolicy,
 }
 
+impl Default for ConnectionHealthChecker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ConnectionHealthChecker {
     /// Create a new health checker with default retry policy for health checks
     pub fn new() -> Self {

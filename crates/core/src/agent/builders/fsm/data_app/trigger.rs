@@ -87,7 +87,7 @@ where
             .collect::<Vec<_>>();
         let viz_displays = current_state
             .list_viz()
-            .into_iter()
+            .iter()
             .map(|v| v.clone().into())
             .collect::<Vec<Display>>();
         let markdown_display = current_state
@@ -100,7 +100,7 @@ where
             })
             .collect::<Vec<_>>();
         let app_config = AppConfig {
-            display: vec![markdown_display, viz_displays, table_displays].concat(),
+            display: [markdown_display, viz_displays, table_displays].concat(),
             tasks,
         };
         let file_name = format!("data_app_{}", ShortUuid::generate());

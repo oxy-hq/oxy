@@ -5,8 +5,8 @@ use super::{
     retrieval::RetrievalExecutable,
     sql::{SQLExecutable, ValidateSQLExecutable},
     types::{
-        AgentParams, CreateDataAppInput, OmniQueryParams, RetrievalInput, RetrievalParams,
-        SQLInput, SQLParams, ToolRawInput, VisualizeInput, WorkflowInput,
+        AgentParams, CreateDataAppInput, RetrievalInput, RetrievalParams, SQLInput, SQLParams,
+        ToolRawInput, VisualizeInput, WorkflowInput,
     },
 };
 use crate::{
@@ -26,9 +26,7 @@ use crate::{
     tools::{
         create_data_app::types::CreateDataAppParams,
         omni::{
-            executable::OmniQueryExecutable,
-            mapper::OmniQueryToolMapper,
-            types::{OmniQueryInput, OmniQueryToolInput},
+            executable::OmniQueryExecutable, mapper::OmniQueryToolMapper, types::OmniQueryToolInput,
         },
         visualize::{types::VisualizeParams, visualize::VisualizeExecutable},
         workflow::WorkflowExecutable,

@@ -240,7 +240,7 @@ impl OmniApiClient {
         let status = response.status();
 
         if status.is_success() {
-            response.json::<T>().await.map_err(|e| OmniError::from(e))
+            response.json::<T>().await.map_err(OmniError::from)
         } else {
             let status_code = status.as_u16();
             let url = response.url().to_string();
@@ -330,7 +330,7 @@ impl OmniApiClient {
             };
         }
 
-        let response_text = response.text().await.map_err(|e| OmniError::from(e))?;
+        let response_text = response.text().await.map_err(OmniError::from)?;
 
         debug!(
             response_length = response_text.len(),
@@ -364,30 +364,27 @@ impl OmniApiClient {
                         self.merge_query_response(&mut final_response, partial_response);
                     } else {
                         // Handle specific object types that might not map directly to QueryResponse
-                        if let Some(jobs_submitted) = json_value.get("jobs_submitted") {
-                            if let Ok(jobs_map) =
+                        if let Some(jobs_submitted) = json_value.get("jobs_submitted")
+                            && let Ok(jobs_map) =
                                 serde_json::from_value::<std::collections::HashMap<String, String>>(
                                     jobs_submitted.clone(),
                                 )
-                            {
-                                final_response.jobs_submitted = Some(jobs_map);
-                            }
+                        {
+                            final_response.jobs_submitted = Some(jobs_map);
                         }
 
-                        if let Some(remaining_job_ids) = json_value.get("remaining_job_ids") {
-                            if let Ok(job_ids) =
+                        if let Some(remaining_job_ids) = json_value.get("remaining_job_ids")
+                            && let Ok(job_ids) =
                                 serde_json::from_value::<Vec<String>>(remaining_job_ids.clone())
-                            {
-                                final_response.remaining_job_ids = Some(job_ids);
-                            }
+                        {
+                            final_response.remaining_job_ids = Some(job_ids);
                         }
 
-                        if let Some(timed_out) = json_value.get("timed_out") {
-                            if let Ok(timed_out_val) =
+                        if let Some(timed_out) = json_value.get("timed_out")
+                            && let Ok(timed_out_val) =
                                 serde_json::from_value::<String>(timed_out.clone())
-                            {
-                                final_response.timed_out = Some(timed_out_val);
-                            }
+                        {
+                            final_response.timed_out = Some(timed_out_val);
                         }
                     }
                 }
@@ -503,7 +500,7 @@ impl OmniApiClient {
     where
         T: for<'de> Deserialize<'de>,
     {
-        let response = request.send().await.map_err(|e| OmniError::HttpError(e))?;
+        let response = request.send().await.map_err(OmniError::HttpError)?;
 
         self.handle_response(response).await
     }
@@ -678,7 +675,7 @@ impl OmniApiClient {
                         .json(&request_clone)
                         .send()
                         .await
-                        .map_err(|e| OmniError::HttpError(e))?;
+                        .map_err(OmniError::HttpError)?;
 
                     self.handle_streaming_response(response).await
                 }

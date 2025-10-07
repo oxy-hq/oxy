@@ -278,14 +278,14 @@ impl MetadataStorage {
         topic_metadata: &TopicMetadata,
     ) -> Result<(), OmniError> {
         // Ensure parent directory exists
-        if let Some(parent) = file_path.parent() {
-            if let Err(e) = fs::create_dir_all(parent) {
-                return Err(OmniError::StorageError(format!(
-                    "Failed to create directory '{}': {}",
-                    parent.display(),
-                    e
-                )));
-            }
+        if let Some(parent) = file_path.parent()
+            && let Err(e) = fs::create_dir_all(parent)
+        {
+            return Err(OmniError::StorageError(format!(
+                "Failed to create directory '{}': {}",
+                parent.display(),
+                e
+            )));
         }
 
         // Serialize to YAML
@@ -312,14 +312,14 @@ impl MetadataStorage {
         overlay_metadata: &crate::models::OverlayTopicMetadata,
     ) -> Result<(), OmniError> {
         // Ensure parent directory exists
-        if let Some(parent) = file_path.parent() {
-            if let Err(e) = fs::create_dir_all(parent) {
-                return Err(OmniError::StorageError(format!(
-                    "Failed to create directory '{}': {}",
-                    parent.display(),
-                    e
-                )));
-            }
+        if let Some(parent) = file_path.parent()
+            && let Err(e) = fs::create_dir_all(parent)
+        {
+            return Err(OmniError::StorageError(format!(
+                "Failed to create directory '{}': {}",
+                parent.display(),
+                e
+            )));
         }
 
         // Serialize to YAML
@@ -451,15 +451,14 @@ impl MetadataStorage {
             })?;
 
             let path = entry.path();
-            if path.is_file() {
-                if let Some(extension) = path.extension() {
-                    if extension == "yaml" || extension == "yml" {
-                        if let Some(stem) = path.file_stem() {
-                            if let Some(topic_name) = stem.to_str() {
-                                topics.push(topic_name.to_string());
-                            }
-                        }
-                    }
+            if path.is_file()
+                && let Some(extension) = path.extension()
+            {
+                if (extension == "yaml" || extension == "yml")
+                    && let Some(stem) = path.file_stem()
+                    && let Some(topic_name) = stem.to_str()
+                {
+                    topics.push(topic_name.to_string());
                 }
             }
         }
@@ -607,13 +606,12 @@ impl MetadataStorage {
                             ));
                         }
                         // data_type and fully_qualified_name are optional in overlay
-                        if let Some(data_type) = &dimension.data_type {
-                            if data_type.trim().is_empty() {
-                                return Err(OmniError::ValidationError(
-                                    "Dimension data type cannot be empty when specified"
-                                        .to_string(),
-                                ));
-                            }
+                        if let Some(data_type) = &dimension.data_type
+                            && data_type.trim().is_empty()
+                        {
+                            return Err(OmniError::ValidationError(
+                                "Dimension data type cannot be empty when specified".to_string(),
+                            ));
                         }
                     }
                 }
@@ -632,12 +630,12 @@ impl MetadataStorage {
                             ));
                         }
                         // data_type and fully_qualified_name are optional in overlay
-                        if let Some(data_type) = &measure.data_type {
-                            if data_type.trim().is_empty() {
-                                return Err(OmniError::ValidationError(
-                                    "Measure data type cannot be empty when specified".to_string(),
-                                ));
-                            }
+                        if let Some(data_type) = &measure.data_type
+                            && data_type.trim().is_empty()
+                        {
+                            return Err(OmniError::ValidationError(
+                                "Measure data type cannot be empty when specified".to_string(),
+                            ));
                         }
                     }
                 }

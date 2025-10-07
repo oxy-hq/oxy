@@ -32,7 +32,7 @@ impl ParamMapper<OmniQueryTask, OmniQueryInput> for OmniQueryTaskMapper {
                 integration: input.integration,
                 topic: input.topic,
                 params: OmniQueryParams {
-                    fields: fields,
+                    fields,
                     limit: input.query.limit,
                     sorts: input.query.sorts,
                 },

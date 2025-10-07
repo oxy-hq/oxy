@@ -117,7 +117,7 @@ where
 
         loop {
             let tool_call = self
-                .request_viz_tool_call(vec![instructions.clone(), failed_messages.clone()].concat())
+                .request_viz_tool_call([instructions.clone(), failed_messages.clone()].concat())
                 .await?;
             match self.validate_viz(&tool_call).await {
                 Ok(viz) => return Ok((viz, tool_call)),
@@ -188,7 +188,7 @@ where
         let (viz, tool_call) = self
             .run_with_retry(execution_context, &current_state)
             .await?;
-        current_state.add_tool_call(&self.objective, tool_call, (&viz).to_string());
+        current_state.add_tool_call(&self.objective, tool_call, viz.to_string());
         current_state.collect_viz(viz);
         Ok(current_state)
     }

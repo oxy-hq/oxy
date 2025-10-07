@@ -1,7 +1,6 @@
 use async_openai::types::{
     ChatCompletionMessageToolCall, ChatCompletionRequestAssistantMessage,
     ChatCompletionRequestAssistantMessageContent, ChatCompletionRequestMessage,
-    ChatCompletionRequestSystemMessage, ChatCompletionRequestSystemMessageContent,
     ChatCompletionRequestToolMessage, ChatCompletionRequestToolMessageContent,
     ChatCompletionRequestUserMessage, ChatCompletionRequestUserMessageContent,
 };
@@ -81,9 +80,9 @@ impl TransitionContext for Memory {
     ) {
         self.messages.extend([
             ChatCompletionRequestAssistantMessage {
-                content: Some(ChatCompletionRequestAssistantMessageContent::Text(format!(
-                    "{objective}"
-                ))),
+                content: Some(ChatCompletionRequestAssistantMessageContent::Text(
+                    objective.to_string(),
+                )),
                 tool_calls: Some(vec![tool_call.clone()]),
                 ..Default::default()
             }
@@ -111,9 +110,9 @@ impl TransitionContext for Memory {
         };
         self.messages.push(
             ChatCompletionRequestAssistantMessage {
-                content: Some(ChatCompletionRequestAssistantMessageContent::Text(format!(
-                    "{plan}"
-                ))),
+                content: Some(ChatCompletionRequestAssistantMessageContent::Text(
+                    plan.to_string(),
+                )),
                 ..Default::default()
             }
             .into(),

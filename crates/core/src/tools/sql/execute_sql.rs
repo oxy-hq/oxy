@@ -5,7 +5,7 @@ use crate::{
     errors::OxyError,
     execute::{
         Executable, ExecutionContext,
-        types::{Chunk, EventKind, Output, SQL, Table, TableReference},
+        types::{Chunk, EventKind, SQL, Table, TableReference},
     },
     tools::types::SQLInput,
 };

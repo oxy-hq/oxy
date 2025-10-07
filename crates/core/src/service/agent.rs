@@ -204,7 +204,7 @@ pub async fn run_agentic_workflow<P: AsRef<Path>, H: EventHandler + Send + 'stat
         .with_project(project_manager)
         .await?
         .launch_agentic_workflow(
-            &agent_ref.as_ref().to_string_lossy().to_string(),
+            agent_ref.as_ref().to_string_lossy().as_ref(),
             AgenticInput {
                 prompt,
                 trace: memory.into_iter().map(|m| m.into()).collect(),
@@ -221,18 +221,18 @@ pub struct Message {
     pub created_at: DateTimeWithTimeZone,
 }
 
-impl Into<ChatCompletionRequestMessage> for Message {
-    fn into(self) -> ChatCompletionRequestMessage {
-        if self.is_human {
+impl From<Message> for ChatCompletionRequestMessage {
+    fn from(val: Message) -> Self {
+        if val.is_human {
             ChatCompletionRequestUserMessage {
-                content: ChatCompletionRequestUserMessageContent::Text(self.content),
+                content: ChatCompletionRequestUserMessageContent::Text(val.content),
                 ..Default::default()
             }
             .into()
         } else {
             ChatCompletionRequestAssistantMessage {
                 content: Some(ChatCompletionRequestAssistantMessageContent::Text(
-                    self.content,
+                    val.content,
                 )),
                 ..Default::default()
             }

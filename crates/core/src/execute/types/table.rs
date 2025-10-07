@@ -228,7 +228,7 @@ impl Display for Table {
                     Ok(json) => {
                         writeln!(f, "{:2}{json}", "")?;
                         if truncated {
-                            writeln!(f, "{:2}{}", "", "Table results has been truncated.")?;
+                            writeln!(f, "{:2}Table results has been truncated.", "")?;
                         }
                         Ok(())
                     }

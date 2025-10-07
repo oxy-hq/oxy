@@ -98,16 +98,14 @@ impl TemplateRegister for Start {
         &self,
         renderer: &crate::execute::renderer::Renderer,
     ) -> Result<(), OxyError> {
-        match &self.mode {
-            StartMode::Plan {
-                instruction,
-                example,
-                ..
-            } => {
-                renderer.register_template(instruction)?;
-                renderer.register_template(example)?;
-            }
-            _ => {}
+        if let StartMode::Plan {
+            instruction,
+            example,
+            ..
+        } = &self.mode
+        {
+            renderer.register_template(instruction)?;
+            renderer.register_template(example)?;
         }
         Ok(())
     }
@@ -118,11 +116,8 @@ impl TemplateRegister for End {
         &self,
         renderer: &crate::execute::renderer::Renderer,
     ) -> Result<(), OxyError> {
-        match &self.mode {
-            EndMode::Synthesize { instruction, .. } => {
-                renderer.register_template(instruction)?;
-            }
-            _ => {}
+        if let EndMode::Synthesize { instruction, .. } = &self.mode {
+            renderer.register_template(instruction)?;
         }
         Ok(())
     }
