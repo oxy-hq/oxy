@@ -2,7 +2,7 @@
 
 - Great AI support -> can provide sufficient context to the agent to answer the user question.
 - Have sufficient information to generate the SQL through a semantic query engine.
-- Declerative
+- Declarative
 - Flexible and easy to use.
 - Compatible with other semantic layers like Omni, Cube.js, AtScale, etc.. because we may need to ingest these semantic layers to our format or convert our semantic layer to theirs- Universal semantics layers ?
 
