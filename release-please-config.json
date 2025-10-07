@@ -20,6 +20,10 @@
       "release-type": "rust",
       "component": "entity"
     },
+    "crates/omni": {
+      "release-type": "rust",
+      "component": "omni"
+    },
     "web-app": {
       "release-type": "node",
       "component": "web-app"

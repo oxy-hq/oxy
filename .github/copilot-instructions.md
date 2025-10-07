@@ -7,6 +7,7 @@
   - `core/`: Main logic and agentic analytics primitives.
   - `entity/`: Database entities and ORM models.
   - `migration/`: Database migration CLI and logic.
+  - `omni/`: Misc utilities and integration helpers (lightweight runtime helpers and cross-cutting utilities).
   - `py/`: Python bindings and integration.
 - The `web-app/` directory contains a TypeScript/React frontend, built with Vite.
 - Example workflows, agents, and data are in `examples/` and `sample_project/`.
@@ -47,6 +48,7 @@
 - **External DBs**: Connect via migration CLI and SeaORM models.
 - **Python**: Interop via `crates/py/` and poetry.
 - **Frontend**: Communicates with backend via API endpoints (see `web-app/src/`).
+- **Omni**: Integration with Omni (https://omni.co/), a popular semantic layer product. Oxy can integrate with Omni to consume semantic models and surface analytics; typical integration paths include using Omni's connectors or APIs to fetch semantic definitions and query results, or exporting Oxy-derived models to Omni for centralized semantic governance.
 
 ## Key Files & Directories
 
@@ -54,6 +56,7 @@
 - `crates/entity/`: ORM models
 - `crates/migration/`: Migration CLI
 - `crates/semantic/`: Semantic system implementation
+- `crates/omni/`: Misc utilities and integration helpers used across crates
 - `web-app/`: Frontend code
 - `examples/`, `sample_project/`: Example agents, workflows, and configs
 - `docs/`: Documentation

@@ -4,5 +4,6 @@
   "crates/migration": "0.3.1",
   "crates/entity": "0.3.1",
   "crates/semantic": "0.3.1",
+  "crates/omni": "0.3.1",
   "web-app": "0.3.1"
 }
