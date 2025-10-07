@@ -19,7 +19,7 @@ assert_cmd = "2.0.17"
 async-openai = {version = "0.29.3", features = ["byot"]}
 async-stream = "0.3.6"
 async-trait = "0.1.89"
-axum = { version = "0.8.4", features = ["macros", "http2"] }
+axum = { version = "0.8.6", features = ["macros", "http2"] }
 axum-server = { version = "0.7.2", features = ["tls-rustls"] }
 base64 = "0.22"
 bcrypt = "0.17.1"
@@ -67,11 +67,11 @@ serde_json = "1.0.145"
 self_update = "0.42.0"
 slugify = "0.1.0"
 sqlformat = { git = "https://github.com/shssoichiro/sqlformat-rs.git", rev = "80255c7" }
-syntect = "5.2"
+syntect = "5.3"
 tabled = "0.20.0"
 terminal-light = "1.8.0"
 terminal_size = "0.4.3"
-thiserror = "2.0.16"
+thiserror = "2.0.17"
 tokio = { workspace = true }
 tokio-stream = "0.1.17"
 tokio-util = "0.7.16"
@@ -86,14 +86,14 @@ fxhash = "0.2.1"
 deser-incomplete = "0.1.2"
 snowflake-api = "0.11.0"
 rmcp = {git="https://github.com/modelcontextprotocol/rust-sdk.git", rev="9d6f9a2e0d199c6c7f2731bd6f8f7143af060a6b", features = ["server", "transport-sse-server", "transport-io"]}
-serde_with = "3.14.1"
+serde_with = "3.15.0"
 # we use chrono::DateTimeWithTimeZone, which is not currently supported by utoipa
 # need to use this until this PR is released https://github.com/juhaku/utoipa/pull/1367
 utoipa = {git="https://github.com/haitrr/utoipa.git", rev="776f86e", features = ["uuid", "chrono", "axum_extras"] }
 utoipa-axum = {git="https://github.com/haitrr/utoipa.git",rev="776f86e" }
 utoipa-swagger-ui={git="https://github.com/haitrr/utoipa.git",rev="776f86e", features = ["axum"] }
 strip-ansi-escapes = "=0.2.1"
-regex = "1.11.2"
+regex = "1.11.3"
 url = "2.5.7"
 gcp-bigquery-client = "0.25.1"
 fehler = "1.0.0"
