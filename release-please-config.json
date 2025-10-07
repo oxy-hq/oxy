@@ -40,7 +40,7 @@
     {
       "type": "linked-versions",
       "groupName": "oxy",
-      "components": ["core", "py", "migration", "entity", "web-app"]
+      "components": ["core", "py", "migration", "entity", "web-app", "omni"]
     }
   ],
   "changelog-sections": [
