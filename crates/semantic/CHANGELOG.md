@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.2](https://github.com/oxy-hq/oxy-internal/compare/0.3.1...0.3.2) (2025-10-07)
+
+
+### <!-- 0 -->🚀 Features
+
+* add sync apis for workflows ([#1148](https://github.com/oxy-hq/oxy-internal/issues/1148)) ([71fedcc](https://github.com/oxy-hq/oxy-internal/commit/71fedcc74e30ef075e88c32e26626260c05a5d9f))
+* semantic measure filters ([#1149](https://github.com/oxy-hq/oxy-internal/issues/1149)) ([7b4d914](https://github.com/oxy-hq/oxy-internal/commit/7b4d914d70a78c5d875b5934ce716f7fed780469))
+
 ## [0.3.1](https://github.com/oxy-hq/oxy-internal/compare/0.3.0...0.3.1) (2025-09-23)
 
 ## [0.3.0](https://github.com/oxy-hq/oxy-internal/compare/0.2.29...0.3.0) (2025-09-19)
