@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.33](https://github.com/oxy-hq/oxy-internal/compare/0.2.32...0.2.33) (2025-10-09)
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* failed to parse some valid clickhouse queries ([#1216](https://github.com/oxy-hq/oxy-internal/issues/1216)) ([d34051d](https://github.com/oxy-hq/oxy-internal/commit/d34051d0bb801ce91fbf281c5eac892a562c0774))
+
 ## [0.2.32](https://github.com/oxy-hq/oxy-internal/compare/0.2.31...0.2.32) (2025-09-23)
 
 

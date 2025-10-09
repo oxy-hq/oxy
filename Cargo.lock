@@ -3233,7 +3233,7 @@ dependencies = [
 
 [[package]]
 name = "entity"
-version = "0.2.32"
+version = "0.2.33"
 dependencies = [
  "chrono",
  "sea-orm",
@@ -5622,7 +5622,7 @@ dependencies = [
 
 [[package]]
 name = "migration"
-version = "0.2.32"
+version = "0.2.33"
 dependencies = [
  "async-std",
  "sea-orm-migration",
@@ -6262,7 +6262,7 @@ dependencies = [
 
 [[package]]
 name = "oxy"
-version = "0.2.32"
+version = "0.2.33"
 dependencies = [
  "aes-gcm",
  "aho-corasick",
@@ -6382,7 +6382,7 @@ dependencies = [
 
 [[package]]
 name = "oxy-semantic"
-version = "0.2.32"
+version = "0.2.33"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -7100,7 +7100,7 @@ dependencies = [
 
 [[package]]
 name = "py"
-version = "0.2.32"
+version = "0.2.33"
 dependencies = [
  "oxy",
  "pyo3",
