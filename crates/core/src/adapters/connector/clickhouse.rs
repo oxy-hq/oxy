@@ -27,14 +27,20 @@ impl ClickHouse {
         }
     }
 
-    pub fn strip_comments(query: &str) -> Result<String, OxyError> {
-        let ast = Parser::parse_sql(&ClickHouseDialect {}, query)
-            .map_err(|err| OxyError::DBError(format!("Failed to parse ClickHouse query: {err}")))?;
-        Ok(ast
-            .iter()
-            .map(|stmt| stmt.to_string())
-            .collect::<Vec<_>>()
-            .join("\n"))
+    pub fn try_strip_comments(query: &str) -> String {
+        match Parser::parse_sql(&ClickHouseDialect {}, query) {
+            Ok(ast) => ast
+                .iter()
+                .map(|stmt| stmt.to_string())
+                .collect::<Vec<_>>()
+                .join("\n"),
+            Err(err) => {
+                tracing::warn!(
+                    "Failed to parse ClickHouse query for comment stripping: {err}. Using original query."
+                );
+                query.to_string()
+            }
+        }
     }
 }
 
@@ -50,7 +56,7 @@ impl Engine for ClickHouse {
             .with_password(self.config.get_password(&self.secret_manager).await?)
             .with_database(self.config.database.clone());
 
-        let cleaned_query = ClickHouse::strip_comments(query)?;
+        let cleaned_query = ClickHouse::try_strip_comments(query);
         let mut cursor = client
             .query(&cleaned_query)
             .fetch_bytes("arrow")
