@@ -100,7 +100,7 @@ const RepositoryInfoSection = () => {
         </div>
       )}
 
-      {revisionInfo?.current_revision === revisionInfo?.latest_revision && (
+      {revisionInfo?.current_revision !== revisionInfo?.latest_revision && (
         <Button size="sm" onClick={() => setSyncDialogOpen(true)}>
           Sync Now
         </Button>
