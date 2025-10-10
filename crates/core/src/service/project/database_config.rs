@@ -299,17 +299,17 @@ impl DatabaseConfigBuilder {
         let private_key_path = snowflake_config
             .private_key_path
             .as_ref()
-            .map(|path| PathBuf::from(path));
+            .map(PathBuf::from);
 
         Ok(Database {
             name: db_name,
             database_type: DatabaseType::Snowflake(crate::config::model::Snowflake {
-                account: snowflake_config.account.unwrap_or_else(|| "".to_string()),
-                username: snowflake_config.username.unwrap_or_else(|| "".to_string()),
+                account: snowflake_config.account.unwrap_or_default(),
+                username: snowflake_config.username.unwrap_or_default(),
                 password: None,
                 password_var: Some(db_var_name),
-                warehouse: snowflake_config.warehouse.unwrap_or_else(|| "".to_string()),
-                database: snowflake_config.database.unwrap_or_else(|| "".to_string()),
+                warehouse: snowflake_config.warehouse.unwrap_or_default(),
+                database: snowflake_config.database.unwrap_or_default(),
                 role: snowflake_config.role,
                 private_key_path,
                 datasets: HashMap::new(),

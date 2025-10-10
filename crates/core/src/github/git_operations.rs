@@ -807,7 +807,7 @@ impl GitOperations {
         // Initialize git repository
         let init_output = Command::new("git")
             .arg("init")
-            .current_dir(&repo_path)
+            .current_dir(repo_path)
             .output()
             .await
             .map_err(|e| OxyError::RuntimeError(format!("Failed to execute git init: {e}")))?;
@@ -820,7 +820,7 @@ impl GitOperations {
         // Add all files
         let add_output = Command::new("git")
             .args(["add", "."])
-            .current_dir(&repo_path)
+            .current_dir(repo_path)
             .output()
             .await
             .map_err(|e| OxyError::RuntimeError(format!("Failed to execute git add: {e}")))?;
@@ -833,7 +833,7 @@ impl GitOperations {
         // Initial commit
         let commit_output = Command::new("git")
             .args(["commit", "-m", "Initial commit"])
-            .current_dir(&repo_path)
+            .current_dir(repo_path)
             .output()
             .await
             .map_err(|e| OxyError::RuntimeError(format!("Failed to execute git commit: {e}")))?;
@@ -848,7 +848,7 @@ impl GitOperations {
         // Rename branch to main
         let branch_output = Command::new("git")
             .args(["branch", "-M", "main"])
-            .current_dir(&repo_path)
+            .current_dir(repo_path)
             .output()
             .await
             .map_err(|e| OxyError::RuntimeError(format!("Failed to execute git branch: {e}")))?;
@@ -881,7 +881,7 @@ impl GitOperations {
         // Add remote origin
         let remote_output = Command::new("git")
             .args(["remote", "add", "origin", &remote_url_with_auth])
-            .current_dir(&repo_path)
+            .current_dir(repo_path)
             .output()
             .await
             .map_err(|e| {
@@ -898,7 +898,7 @@ impl GitOperations {
         // Push to origin
         let push_output = Command::new("git")
             .args(["push", "-u", "origin", "main"])
-            .current_dir(&repo_path)
+            .current_dir(repo_path)
             .output()
             .await
             .map_err(|e| OxyError::RuntimeError(format!("Failed to execute git push: {e}")))?;

@@ -530,7 +530,7 @@ fn get_omni_description(
     }
 
     let mut description = String::new();
-    description.push_str(&"Query data from Omni semantic layer\n\n".to_string());
+    description.push_str("Query data from Omni semantic layer\n\n");
 
     // Topic is always required, load its metadata
     let topic_metadata = storage

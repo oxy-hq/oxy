@@ -118,7 +118,7 @@ pub async fn create_git_namespace(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let git_namespace = entity::git_namespaces::ActiveModel {
-        user_id: Set(user.id.clone()),
+        user_id: Set(user.id),
         name: Set(installation.name),
         slug: Set(installation.slug),
         owner_type: Set(installation.owner_type),
@@ -146,7 +146,7 @@ pub async fn list_git_namespaces(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let git_namespaces = entity::git_namespaces::Entity::find()
-        .filter(entity::git_namespaces::Column::UserId.eq(user.id.clone()))
+        .filter(entity::git_namespaces::Column::UserId.eq(user.id))
         .all(&db)
         .await
         .map_err(|e| {

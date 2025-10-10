@@ -12,7 +12,6 @@ use serde::de::{self, Deserializer};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use utoipa::ToSchema;
-use uuid::Uuid;
 #[derive(Serialize, ToSchema)]
 pub struct DatabaseInfo {
     pub name: String,

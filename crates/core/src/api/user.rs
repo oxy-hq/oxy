@@ -2,7 +2,7 @@ use crate::auth::extractor::AuthenticatedUserExtractor;
 use crate::auth::types::AuthenticatedUser;
 use crate::auth::user::UserService;
 use axum::{
-    extract::{Json as JsonExtractor, Path, State},
+    extract::{Json as JsonExtractor, Path},
     http::StatusCode,
     response::Json,
 };

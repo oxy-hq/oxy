@@ -326,7 +326,7 @@ impl OmniQueryExecutable {
 
         // Create a cursor from the bytes and read the Arrow stream
         let cursor = Cursor::new(arrow_bytes);
-        let mut reader = StreamReader::try_new(cursor, None)
+        let reader = StreamReader::try_new(cursor, None)
             .map_err(|e| format!("Failed to create Arrow stream reader: {}", e))?;
 
         let mut record_batches = Vec::new();

@@ -98,7 +98,7 @@ pub struct WarehouseConfig {
 
 impl WarehouseConfig {
     pub fn get_postgres_config(&self) -> PostgresConfig {
-        serde_json::from_value::<PostgresConfig>(self.config.clone()).unwrap_or_else(|_| {
+        serde_json::from_value::<PostgresConfig>(self.config.clone()).unwrap_or({
             PostgresConfig {
                 host: None,
                 port: None,
@@ -111,7 +111,7 @@ impl WarehouseConfig {
     }
 
     pub fn get_redshift_config(&self) -> RedshiftConfig {
-        serde_json::from_value::<RedshiftConfig>(self.config.clone()).unwrap_or_else(|_| {
+        serde_json::from_value::<RedshiftConfig>(self.config.clone()).unwrap_or({
             RedshiftConfig {
                 host: None,
                 port: None,
@@ -124,7 +124,7 @@ impl WarehouseConfig {
     }
 
     pub fn get_mysql_config(&self) -> MysqlConfig {
-        serde_json::from_value::<MysqlConfig>(self.config.clone()).unwrap_or_else(|_| MysqlConfig {
+        serde_json::from_value::<MysqlConfig>(self.config.clone()).unwrap_or(MysqlConfig {
             host: None,
             port: None,
             user: None,
@@ -135,7 +135,7 @@ impl WarehouseConfig {
     }
 
     pub fn get_clickhouse_config(&self) -> ClickHouseConfig {
-        serde_json::from_value::<ClickHouseConfig>(self.config.clone()).unwrap_or_else(|_| {
+        serde_json::from_value::<ClickHouseConfig>(self.config.clone()).unwrap_or({
             ClickHouseConfig {
                 host: None,
                 user: None,
@@ -147,19 +147,17 @@ impl WarehouseConfig {
     }
 
     pub fn get_bigquery_config(&self) -> BigQueryConfig {
-        let result =
-            serde_json::from_value::<BigQueryConfig>(self.config.clone()).unwrap_or_else(|e| {
-                BigQueryConfig {
-                    key: None,
-                    dataset: None,
-                    dry_run_limit: None,
-                }
-            });
-        result
+        serde_json::from_value::<BigQueryConfig>(self.config.clone()).unwrap_or({
+            BigQueryConfig {
+                key: None,
+                dataset: None,
+                dry_run_limit: None,
+            }
+        })
     }
 
     pub fn get_duckdb_config(&self) -> DuckDBConfig {
-        serde_json::from_value::<DuckDBConfig>(self.config.clone()).unwrap_or_else(|_| {
+        serde_json::from_value::<DuckDBConfig>(self.config.clone()).unwrap_or({
             DuckDBConfig {
                 file_search_path: None,
             }
@@ -167,7 +165,7 @@ impl WarehouseConfig {
     }
 
     pub fn get_snowflake_config(&self) -> SnowflakeConfig {
-        serde_json::from_value::<SnowflakeConfig>(self.config.clone()).unwrap_or_else(|_| {
+        serde_json::from_value::<SnowflakeConfig>(self.config.clone()).unwrap_or({
             SnowflakeConfig {
                 account: None,
                 username: None,
@@ -233,7 +231,7 @@ pub struct ModelConfig {
 
 impl ModelConfig {
     pub fn get_openai_config(&self) -> OpenAIModelConfig {
-        serde_json::from_value::<OpenAIModelConfig>(self.config.clone()).unwrap_or_else(|_| {
+        serde_json::from_value::<OpenAIModelConfig>(self.config.clone()).unwrap_or({
             OpenAIModelConfig {
                 model_ref: None,
                 api_key: None,
@@ -243,7 +241,7 @@ impl ModelConfig {
     }
 
     pub fn get_google_config(&self) -> GoogleModelConfig {
-        serde_json::from_value::<GoogleModelConfig>(self.config.clone()).unwrap_or_else(|_| {
+        serde_json::from_value::<GoogleModelConfig>(self.config.clone()).unwrap_or({
             GoogleModelConfig {
                 model_ref: None,
                 api_key: None,
@@ -253,7 +251,7 @@ impl ModelConfig {
     }
 
     pub fn get_anthropic_config(&self) -> AnthropicModelConfig {
-        serde_json::from_value::<AnthropicModelConfig>(self.config.clone()).unwrap_or_else(|_| {
+        serde_json::from_value::<AnthropicModelConfig>(self.config.clone()).unwrap_or({
             AnthropicModelConfig {
                 model_ref: None,
                 api_key: None,
@@ -263,7 +261,7 @@ impl ModelConfig {
     }
 
     pub fn get_ollama_config(&self) -> OllamaModelConfig {
-        serde_json::from_value::<OllamaModelConfig>(self.config.clone()).unwrap_or_else(|_| {
+        serde_json::from_value::<OllamaModelConfig>(self.config.clone()).unwrap_or({
             OllamaModelConfig {
                 model_ref: None,
                 api_key: None,

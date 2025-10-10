@@ -8,6 +8,12 @@ pub struct Dataset {
     tables: Vec<Table>,
 }
 
+impl Default for Dataset {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Dataset {
     pub fn new() -> Self {
         Self { tables: vec![] }

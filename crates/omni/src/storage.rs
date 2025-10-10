@@ -453,13 +453,11 @@ impl MetadataStorage {
             let path = entry.path();
             if path.is_file()
                 && let Some(extension) = path.extension()
+                && (extension == "yaml" || extension == "yml")
+                && let Some(stem) = path.file_stem()
+                && let Some(topic_name) = stem.to_str()
             {
-                if (extension == "yaml" || extension == "yml")
-                    && let Some(stem) = path.file_stem()
-                    && let Some(topic_name) = stem.to_str()
-                {
-                    topics.push(topic_name.to_string());
-                }
+                topics.push(topic_name.to_string());
             }
         }
 
