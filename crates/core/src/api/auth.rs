@@ -78,7 +78,7 @@ pub struct AuthConfigResponse {
     pub auth_enabled: bool,
     pub google: Option<GoogleConfig>,
     pub basic: Option<bool>,
-    pub local: bool,
+    pub cloud: bool,
 }
 
 #[derive(Serialize)]
@@ -98,7 +98,7 @@ pub async fn get_config(
             auth_enabled: false,
             google: None,
             basic: None,
-            local: app_state.local,
+            cloud: app_state.cloud,
         }));
     }
     let google_client_id = auth_config
@@ -115,7 +115,7 @@ pub async fn get_config(
         auth_enabled: true,
         google: google_client_id.map(|client_id| GoogleConfig { client_id }),
         basic: Some(basic_auth_enabled),
-        local: app_state.local,
+        cloud: app_state.cloud,
     };
 
     Ok(Json(config))

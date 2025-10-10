@@ -56,7 +56,7 @@ const MainLayout = React.memo(function MainLayout() {
 
   const { isPending, isError, data } = useProject(
     projectId || "",
-    !!authConfig.local,
+    !!authConfig.cloud,
   );
   const { setProject, project } = useCurrentProject();
 
@@ -157,7 +157,7 @@ const MainLayout = React.memo(function MainLayout() {
           <Route path=":pathb64" element={<EditorPage />} />
         </Route>
 
-        {authConfig.local && <Route path="*" element={<Navigate to="/" />} />}
+        {!authConfig.cloud && <Route path="*" element={<Navigate to="/" />} />}
       </Routes>
     </HotkeysProvider>
   );
@@ -274,7 +274,7 @@ function App() {
     >
       <AuthProvider authConfig={authConfig}>
         <RouterProvider
-          router={authConfig.local ? getLocalRouter() : getRouter(authConfig)}
+          router={authConfig.cloud ? getRouter(authConfig) : getLocalRouter()}
         />
         <ShadcnToaster />
       </AuthProvider>

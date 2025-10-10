@@ -22,12 +22,12 @@ const getLocalProject = (): Project => ({
 });
 
 // Hook to fetch a single project
-export const useProject = (projectId: string, local: boolean) => {
+export const useProject = (projectId: string, cloud: boolean) => {
   return useQuery<Project>({
     queryKey: queryKeys.projects.item(projectId),
     queryFn: () =>
-      local ? getLocalProject() : ProjectService.getProject(projectId),
-    enabled: local || !!projectId,
+      cloud ? ProjectService.getProject(projectId) : getLocalProject(),
+    enabled: !cloud || !!projectId,
   });
 };
 

@@ -16,7 +16,7 @@ export const Header = () => {
   const { open } = useSidebar();
 
   const renderContent = () => {
-    if (authConfig.local) {
+    if (!authConfig.cloud) {
       return <div className="text-sm text-muted-foreground">Local mode</div>;
     }
     return (

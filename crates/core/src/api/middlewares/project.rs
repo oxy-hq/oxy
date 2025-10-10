@@ -72,7 +72,7 @@ pub async fn project_middleware(
     mut request: Request<axum::body::Body>,
     next: Next,
 ) -> Result<Response, StatusCode> {
-    if app_state.local {
+    if !app_state.cloud {
         // For local development, create a default/mock project entity
         let branch_id = Uuid::nil();
         let project = entity::projects::Model {

@@ -16,7 +16,7 @@ struct Claims {
 }
 
 pub struct BuiltInAuthenticator {
-    pub local: bool,
+    pub cloud: bool,
 }
 
 impl Default for BuiltInAuthenticator {
@@ -26,8 +26,8 @@ impl Default for BuiltInAuthenticator {
 }
 
 impl BuiltInAuthenticator {
-    pub fn new(local: bool) -> Self {
-        Self { local }
+    pub fn new(cloud: bool) -> Self {
+        Self { cloud }
     }
 }
 
@@ -35,7 +35,7 @@ impl Authenticator for BuiltInAuthenticator {
     type Error = OxyError;
 
     async fn authenticate(&self, header: &axum::http::HeaderMap) -> Result<Identity, Self::Error> {
-        if self.local {
+        if !self.cloud {
             return Ok(Identity {
                 idp_id: Some("local-user".to_string()),
                 picture: None,

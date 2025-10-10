@@ -24,11 +24,11 @@ export default function useCurrentProjectBranch() {
   }
 
   const isReadOnly =
-    !authConfig.local &&
-    project.active_branch?.name === selectedBranch &&
-    project.project_repo_id;
+    authConfig.cloud &&
+    project.project_repo_id &&
+    project.active_branch?.name === selectedBranch;
 
-  const gitEnabled = !!project.project_repo_id && !authConfig.local;
+  const gitEnabled = !!project.project_repo_id && authConfig.cloud;
 
   return {
     project,

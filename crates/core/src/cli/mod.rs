@@ -492,7 +492,7 @@ pub struct ServeArgs {
     tls_key: String,
 
     #[clap(long, default_value_t = false)]
-    local: bool,
+    cloud: bool,
 }
 
 #[derive(Parser, Debug)]

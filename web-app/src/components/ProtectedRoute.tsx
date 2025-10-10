@@ -10,7 +10,7 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   const { isAuthenticated, authConfig } = useAuth();
   const location = useLocation();
 
-  if (authConfig.local) {
+  if (!authConfig.cloud) {
     return <>{children}</>;
   }
 

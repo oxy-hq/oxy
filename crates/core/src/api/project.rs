@@ -409,7 +409,7 @@ pub async fn get_project_status(
     let (is_config_valid, required_secrets, error) =
         match ProjectBuilder::new().with_project_path(&project_path).await {
             Ok(builder) => {
-                if app_state.local {
+                if !app_state.cloud {
                     (true, Some(Vec::new()), None)
                 } else {
                     let secrets_manager = match SecretsManager::from_database(

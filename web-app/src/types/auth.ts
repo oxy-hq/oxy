@@ -41,7 +41,7 @@ export interface AuthConfigResponse {
     client_id: string;
   };
   basic?: boolean;
-  local?: boolean;
+  cloud?: boolean;
 }
 
 export interface UserListResponse {

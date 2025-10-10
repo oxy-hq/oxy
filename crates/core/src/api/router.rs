@@ -44,7 +44,7 @@ use super::task;
 
 #[derive(Clone)]
 pub struct AppState {
-    pub local: bool,
+    pub cloud: bool,
 }
 
 fn build_cors_layer() -> CorsLayer {
@@ -262,22 +262,22 @@ fn build_protected_routes(app_state: AppState) -> Router<AppState> {
 
 fn apply_middleware(
     protected_routes: Router<AppState>,
-    local: bool,
+    cloud: bool,
 ) -> Result<Router<AppState>, OxyError> {
     let protected_regular_routes = protected_routes
         .layer(middleware::from_fn(timeout_middleware))
         .layer(middleware::from_fn_with_state(
-            AuthState::built_in(local),
+            AuthState::built_in(cloud),
             auth_middleware,
         ));
 
     Ok(protected_regular_routes)
 }
-pub async fn api_router(local: bool) -> Result<Router, OxyError> {
-    let app_state = AppState { local };
+pub async fn api_router(cloud: bool) -> Result<Router, OxyError> {
+    let app_state = AppState { cloud };
     let public_routes = build_public_routes();
     let protected_routes = build_protected_routes(app_state.clone());
-    let protected_routes = apply_middleware(protected_routes, local)?;
+    let protected_routes = apply_middleware(protected_routes, cloud)?;
     let app_routes = public_routes.merge(protected_routes);
     let cors = build_cors_layer();
 

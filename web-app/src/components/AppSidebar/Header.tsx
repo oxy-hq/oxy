@@ -66,7 +66,7 @@ export function Header() {
             </Link>
           </SidebarMenuButton>
         </SidebarMenuItem>
-        {!authConfig.local && <Workspaces />}
+        {authConfig.cloud && <Workspaces />}
       </SidebarMenu>
     </SidebarGroup>
   );

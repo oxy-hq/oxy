@@ -35,7 +35,7 @@ pub async fn start_server_and_web_app(args: ServeArgs) -> Result<(), OxyError> {
     run_database_migrations().await?;
 
     let available_port = find_available_port(args.host.clone(), args.port).await?;
-    let app = create_web_application(args.local).await?;
+    let app = create_web_application(args.cloud).await?;
 
     serve_application(app, args).await
 }
@@ -95,8 +95,8 @@ async fn find_available_port(host: String, port: u16) -> Result<u16, OxyError> {
     Ok(chosen_port)
 }
 
-async fn create_web_application(local: bool) -> Result<Router, OxyError> {
-    let api_router = crate::api::router::api_router(local)
+async fn create_web_application(cloud: bool) -> Result<Router, OxyError> {
+    let api_router = crate::api::router::api_router(cloud)
         .await
         .map(|router| router.layer(create_trace_layer()))
         .map_err(|e| OxyError::RuntimeError(format!("Failed to create API router: {}", e)))?;

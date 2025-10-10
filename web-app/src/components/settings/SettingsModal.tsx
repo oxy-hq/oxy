@@ -39,7 +39,7 @@ export function SettingsModal() {
       title: "Github Settings",
       description: "Configure GitHub integration",
       icon: <Github className="w-4 h-4" />,
-      show: !authConfig.local,
+      show: authConfig.cloud,
       page: <GithubSettings />,
     },
     {
@@ -47,7 +47,7 @@ export function SettingsModal() {
       title: "Secret Management",
       description: "Manage sensitive data",
       icon: <Shield className="w-4 h-4" />,
-      show: !authConfig.local,
+      show: authConfig.cloud,
       page: <SecretManagement />,
     },
     {
@@ -63,7 +63,7 @@ export function SettingsModal() {
       title: "Users",
       description: "User management",
       icon: <Users className="w-4 h-4" />,
-      show: !authConfig.local,
+      show: authConfig.cloud,
       page: <UserManagement />,
     },
     {
@@ -71,7 +71,7 @@ export function SettingsModal() {
       title: "API Keys",
       description: "External access keys",
       icon: <Key className="w-4 h-4" />,
-      show: !authConfig.local,
+      show: authConfig.cloud,
       page: <ApiKeyManagement />,
     },
     {
