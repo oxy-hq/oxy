@@ -163,7 +163,7 @@ pub async fn update_user(
     }))
 }
 
-pub async fn logout(_state: State<()>) -> Result<Json<LogoutResponse>, StatusCode> {
+pub async fn logout() -> Result<Json<LogoutResponse>, StatusCode> {
     Ok(Json(LogoutResponse {
         logout_url: None,
         success: true,

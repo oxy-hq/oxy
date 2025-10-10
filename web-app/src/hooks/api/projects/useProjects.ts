@@ -3,12 +3,31 @@ import { ProjectService } from "@/services/api";
 import queryKeys from "../queryKey";
 import { Project, ProjectBranchesResponse } from "@/types/project";
 
+const getLocalProject = (): Project => ({
+  id: "00000000-0000-0000-0000-000000000000",
+  name: "Local Development Project",
+  workspace_id: "00000000-0000-0000-0000-000000000000",
+  project_repo_id: "00000000-0000-0000-0000-000000000000",
+  active_branch: {
+    name: "main",
+    sync_status: "synced",
+    revision: "00000000-0000-0000-0000-000000000000",
+    id: "00000000-0000-0000-0000-000000000000",
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    branch_type: "local",
+  },
+  created_at: new Date().toISOString(),
+  updated_at: new Date().toISOString(),
+});
+
 // Hook to fetch a single project
-export const useProject = (projectId: string) => {
+export const useProject = (projectId: string, local: boolean) => {
   return useQuery<Project>({
     queryKey: queryKeys.projects.item(projectId),
-    queryFn: () => ProjectService.getProject(projectId),
-    enabled: !!projectId,
+    queryFn: () =>
+      local ? getLocalProject() : ProjectService.getProject(projectId),
+    enabled: local || !!projectId,
   });
 };
 

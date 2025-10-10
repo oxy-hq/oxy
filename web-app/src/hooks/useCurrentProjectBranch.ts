@@ -1,8 +1,10 @@
+import { useAuth } from "@/contexts/AuthContext";
 import { useIDE } from "@/pages/ide";
 import useCurrentProject from "@/stores/useCurrentProject";
 import useIdeBranch from "@/stores/useIdeBranch";
 
 export default function useCurrentProjectBranch() {
+  const { authConfig } = useAuth();
   const { project } = useCurrentProject();
   const { insideIDE } = useIDE();
 
@@ -21,9 +23,17 @@ export default function useCurrentProjectBranch() {
     throw new Error("Branch is not selected");
   }
 
+  const isReadOnly =
+    !authConfig.local &&
+    project.active_branch?.name === selectedBranch &&
+    project.project_repo_id;
+
+  const gitEnabled = !!project.project_repo_id && !authConfig.local;
+
   return {
     project,
     branchName: selectedBranch,
-    isReadOnly: project.active_branch?.name === selectedBranch,
+    isReadOnly: isReadOnly,
+    gitEnabled: gitEnabled,
   };
 }

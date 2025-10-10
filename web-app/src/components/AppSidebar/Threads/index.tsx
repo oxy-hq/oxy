@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { MessagesSquare, MoreHorizontal, Trash2 } from "lucide-react";
-import { Link, useLocation, useParams } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import {
   SidebarMenuAction,
   SidebarMenuButton,
@@ -19,22 +19,20 @@ import ClearAllThreadsDialog from "./ClearAllThreadsDialog";
 import { Button } from "@/components/ui/shadcn/button";
 import ItemsSkeleton from "../ItemsSkeleton";
 import ROUTES from "@/libs/utils/routes";
+import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 
 const SIDEBAR_THREADS_LIMIT = 50;
 
 const Threads = () => {
   const location = useLocation();
-  const { projectId } = useParams();
+  const { project } = useCurrentProjectBranch();
+  const projectId = project.id;
   const { data: threadsResponse, isLoading } = useThreads(
     1,
     SIDEBAR_THREADS_LIMIT,
   );
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [showAll, setShowAll] = useState(false);
-
-  if (!projectId) {
-    return null;
-  }
 
   const threadsUri = ROUTES.PROJECT(projectId).THREADS;
   const isThreadsPage = location.pathname === threadsUri;

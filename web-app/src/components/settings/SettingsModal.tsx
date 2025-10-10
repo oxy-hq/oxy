@@ -17,6 +17,7 @@ import ApiKeyManagement from "./api-keys";
 import LogsManagement from "./activity-logs";
 import { Button } from "../ui/shadcn/button";
 import useSettingsPage from "@/stores/useSettingsPage";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface SettingsSection {
   id: string;
@@ -28,6 +29,7 @@ interface SettingsSection {
 }
 
 export function SettingsModal() {
+  const { authConfig } = useAuth();
   const { isOpen, setIsOpen } = useSettingsPage();
   const [activeSection, setActiveSection] = useState<string>("github-settings");
 
@@ -37,7 +39,7 @@ export function SettingsModal() {
       title: "Github Settings",
       description: "Configure GitHub integration",
       icon: <Github className="w-4 h-4" />,
-      show: true,
+      show: !authConfig.local,
       page: <GithubSettings />,
     },
     {
@@ -45,7 +47,7 @@ export function SettingsModal() {
       title: "Secret Management",
       description: "Manage sensitive data",
       icon: <Shield className="w-4 h-4" />,
-      show: true,
+      show: !authConfig.local,
       page: <SecretManagement />,
     },
     {
@@ -61,7 +63,7 @@ export function SettingsModal() {
       title: "Users",
       description: "User management",
       icon: <Users className="w-4 h-4" />,
-      show: true,
+      show: !authConfig.local,
       page: <UserManagement />,
     },
     {
@@ -69,7 +71,7 @@ export function SettingsModal() {
       title: "API Keys",
       description: "External access keys",
       icon: <Key className="w-4 h-4" />,
-      show: true,
+      show: !authConfig.local,
       page: <ApiKeyManagement />,
     },
     {

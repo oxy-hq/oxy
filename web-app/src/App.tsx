@@ -10,6 +10,7 @@ import {
 } from "react-router-dom";
 import Home from "@/pages/home";
 import WorkspacesPage from "@/pages/workspaces";
+import CreateWorkspacePage from "@/pages/create-workspace";
 import { AppSidebar } from "@/components/AppSidebar";
 import { Toaster as ShadcnToaster } from "@/components/ui/shadcn/sonner";
 import { SidebarProvider } from "@/components/ui/shadcn/sidebar";
@@ -26,10 +27,11 @@ import LoginPage from "./pages/login";
 import RegisterPage from "./pages/register";
 import EmailVerificationPage from "./pages/auth/EmailVerification";
 import GoogleCallback from "./pages/auth/GoogleCallback";
+import GitHubCallback from "./pages/github/callback";
 import ProtectedRoute from "./components/ProtectedRoute";
 import useAuthConfig from "./hooks/auth/useAuthConfig";
 import { Loader2 } from "lucide-react";
-import { AuthProvider } from "./contexts/AuthContext";
+import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { AuthConfigResponse } from "./types/auth";
 import { SettingsModal } from "./components/settings/SettingsModal";
 import ROUTES from "@/libs/utils/routes";
@@ -49,8 +51,13 @@ const MainPageWrapper = ({ children }: { children: React.ReactNode }) => {
 };
 
 const MainLayout = React.memo(function MainLayout() {
+  const { authConfig } = useAuth();
   const { projectId } = useParams();
-  const { isPending, isError, data } = useProject(projectId || "");
+
+  const { isPending, isError, data } = useProject(
+    projectId || "",
+    !!authConfig.local,
+  );
   const { setProject, project } = useCurrentProject();
 
   React.useEffect(() => {
@@ -149,10 +156,28 @@ const MainLayout = React.memo(function MainLayout() {
         <Route path="/ide" element={<IdePage />}>
           <Route path=":pathb64" element={<EditorPage />} />
         </Route>
+
+        {authConfig.local && <Route path="*" element={<Navigate to="/" />} />}
       </Routes>
     </HotkeysProvider>
   );
 });
+
+const getLocalRouter = () =>
+  createBrowserRouter(
+    createRoutesFromElements(
+      <Route>
+        <Route
+          path="/*"
+          element={
+            <SidebarProvider>
+              <MainLayout />
+            </SidebarProvider>
+          }
+        />
+      </Route>,
+    ),
+  );
 
 const getRouter = (authConfig: AuthConfigResponse) =>
   createBrowserRouter(
@@ -173,11 +198,30 @@ const getRouter = (authConfig: AuthConfigResponse) =>
           </>
         )}
 
+        {/* GitHub callback route for handling app installations */}
         <Route
-          path={ROUTES.ORG.ROOT}
+          path={ROUTES.GITHUB.CALLBACK}
+          element={
+            <ProtectedRoute>
+              <GitHubCallback />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path={ROUTES.WORKSPACE.ROOT}
           element={
             <ProtectedRoute>
               <WorkspacesPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path={ROUTES.WORKSPACE.CREATE_WORKSPACE}
+          element={
+            <ProtectedRoute>
+              <CreateWorkspacePage />
             </ProtectedRoute>
           }
         />
@@ -198,13 +242,13 @@ const getRouter = (authConfig: AuthConfigResponse) =>
           }
         />
 
-        <Route path="*" element={<Navigate to={ROUTES.ORG.ROOT} />} />
+        <Route path="*" element={<Navigate to={ROUTES.WORKSPACE.ROOT} />} />
 
         <Route
           path={ROUTES.ROOT}
           element={
             <ProtectedRoute>
-              <Navigate to={ROUTES.ORG.ROOT} replace />
+              <Navigate to={ROUTES.WORKSPACE.ROOT} replace />
             </ProtectedRoute>
           }
         />
@@ -229,7 +273,9 @@ function App() {
       showDialog
     >
       <AuthProvider authConfig={authConfig}>
-        <RouterProvider router={getRouter(authConfig)} />
+        <RouterProvider
+          router={authConfig.local ? getLocalRouter() : getRouter(authConfig)}
+        />
         <ShadcnToaster />
       </AuthProvider>
     </ErrorBoundary>

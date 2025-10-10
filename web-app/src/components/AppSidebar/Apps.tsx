@@ -1,5 +1,5 @@
 import { LayoutDashboard } from "lucide-react";
-import { Link, useLocation, useParams } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import {
   SidebarMenuButton,
   SidebarMenuItem,
@@ -10,14 +10,13 @@ import {
 import useApps from "@/hooks/api/apps/useApps";
 import ItemsSkeleton from "./ItemsSkeleton";
 import ROUTES from "@/libs/utils/routes";
+import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 
 export function Apps() {
   const location = useLocation();
   const { data: apps, isPending } = useApps();
-  const { projectId } = useParams();
-  if (!projectId) {
-    return null;
-  }
+  const { project } = useCurrentProjectBranch();
+  const projectId = project.id;
 
   return (
     <SidebarMenuItem>

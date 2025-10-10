@@ -1,8 +1,8 @@
 import { apiClient } from "./axios";
 import {
+  CreateWorkspaceRequest,
   Workspace,
   WorkspaceListResponse,
-  CreateWorkspaceRequest,
 } from "@/types/workspace";
 
 export class WorkspaceService {
@@ -14,7 +14,19 @@ export class WorkspaceService {
   static async createWorkspace(
     request: CreateWorkspaceRequest,
   ): Promise<Workspace> {
-    const response = await apiClient.post("/workspaces", request);
+    const payload = {
+      ...request,
+      ...(request.github
+        ? {
+            github: {
+              ...request.github,
+              namespace_id: request.github.namespace?.id || null,
+              repo_id: request.github.repository?.id || null,
+            },
+          }
+        : undefined),
+    };
+    const response = await apiClient.post("/workspaces", payload);
     return response.data;
   }
 }

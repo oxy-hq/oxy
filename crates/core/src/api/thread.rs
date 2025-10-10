@@ -1,4 +1,5 @@
 use crate::api::middlewares::project::ProjectManagerExtractor;
+use crate::api::router::ProjectExtractor;
 use crate::{
     auth::extractor::AuthenticatedUserExtractor, db::client::establish_connection,
     execute::types::ReferenceKind, service::task_manager::TASK_MANAGER,
@@ -82,7 +83,7 @@ pub struct CreateThreadRequest {
     tag = "Threads"
 )]
 pub async fn get_threads(
-    Path(project_id): Path<Uuid>,
+    ProjectExtractor(project): ProjectExtractor,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     Query(pagination): Query<PaginationQuery>,
 ) -> Result<extract::Json<ThreadsResponse>, StatusCode> {
@@ -96,6 +97,7 @@ pub async fn get_threads(
     let page = page.max(1);
     let total = Threads::find()
         .filter(threads::Column::UserId.eq(Some(user.id)))
+        .filter(threads::Column::ProjectId.eq(project.id))
         .count(&connection)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -121,7 +123,7 @@ pub async fn get_threads(
 
     let threads = Threads::find()
         .filter(threads::Column::UserId.eq(Some(user.id)))
-        .filter(threads::Column::ProjectId.eq(project_id))
+        .filter(threads::Column::ProjectId.eq(project.id))
         .order_by_desc(threads::Column::CreatedAt)
         .offset(offset)
         .limit(limit)
@@ -231,7 +233,7 @@ pub async fn get_thread(
     tag = "Threads"
 )]
 pub async fn create_thread(
-    Path(project_id): Path<Uuid>,
+    ProjectExtractor(project): ProjectExtractor,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     extract::Json(thread_request): extract::Json<CreateThreadRequest>,
 ) -> Result<extract::Json<ThreadItem>, StatusCode> {
@@ -239,11 +241,6 @@ pub async fn create_thread(
         tracing::error!("Failed to establish database connection: {}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
-    let project = entity::projects::Entity::find_by_id(project_id)
-        .one(&connection)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-        .ok_or(StatusCode::NOT_FOUND)?;
 
     let new_thread = entity::threads::ActiveModel {
         id: ActiveValue::Set(Uuid::new_v4()),
@@ -394,7 +391,7 @@ fn remove_all_files_in_dir<P: AsRef<std::path::Path>>(dir: P) {
 )]
 pub async fn delete_all_threads(
     ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
-    Path(project_id): Path<Uuid>,
+    ProjectExtractor(project): ProjectExtractor,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
 ) -> Result<StatusCode, StatusCode> {
     let connection = establish_connection().await.map_err(|e| {
@@ -403,7 +400,7 @@ pub async fn delete_all_threads(
     })?;
     Threads::delete_many()
         .filter(threads::Column::UserId.eq(Some(user.id)))
-        .filter(threads::Column::ProjectId.eq(project_id))
+        .filter(threads::Column::ProjectId.eq(project.id))
         .exec(&connection)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -518,7 +515,7 @@ pub struct BulkDeleteThreadsRequest {
     tag = "Threads"
 )]
 pub async fn bulk_delete_threads(
-    Path(project_id): Path<Uuid>,
+    ProjectExtractor(project): ProjectExtractor,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     extract::Json(request): extract::Json<BulkDeleteThreadsRequest>,
 ) -> Result<StatusCode, StatusCode> {
@@ -541,7 +538,7 @@ pub async fn bulk_delete_threads(
         .filter(
             threads::Column::UserId
                 .eq(Some(user.id))
-                .and(threads::Column::ProjectId.eq(project_id))
+                .and(threads::Column::ProjectId.eq(project.id))
                 .and(threads::Column::Id.is_in(thread_uuids)),
         )
         .exec(&connection)

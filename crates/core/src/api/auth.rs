@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 use uuid::Uuid;
 
+use crate::api::router::AppState;
 use crate::config::constants::AUTHENTICATION_SECRET_KEY;
 use crate::{
     db::{client::establish_connection, filters::UserQueryFilterExt},
@@ -77,6 +78,7 @@ pub struct AuthConfigResponse {
     pub auth_enabled: bool,
     pub google: Option<GoogleConfig>,
     pub basic: Option<bool>,
+    pub local: bool,
 }
 
 #[derive(Serialize)]
@@ -84,7 +86,9 @@ pub struct GoogleConfig {
     pub client_id: String,
 }
 
-pub async fn get_config(State(_auth): State<()>) -> Result<Json<AuthConfigResponse>, StatusCode> {
+pub async fn get_config(
+    State(app_state): State<AppState>,
+) -> Result<Json<AuthConfigResponse>, StatusCode> {
     let auth_config = crate::config::oxy::get_oxy_config()
         .ok()
         .and_then(|config| config.authentication);
@@ -94,6 +98,7 @@ pub async fn get_config(State(_auth): State<()>) -> Result<Json<AuthConfigRespon
             auth_enabled: false,
             google: None,
             basic: None,
+            local: app_state.local,
         }));
     }
     let google_client_id = auth_config
@@ -110,6 +115,7 @@ pub async fn get_config(State(_auth): State<()>) -> Result<Json<AuthConfigRespon
         auth_enabled: true,
         google: google_client_id.map(|client_id| GoogleConfig { client_id }),
         basic: Some(basic_auth_enabled),
+        local: app_state.local,
     };
 
     Ok(Json(config))

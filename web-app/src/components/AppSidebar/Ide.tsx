@@ -1,20 +1,17 @@
 import { SquareTerminal } from "lucide-react";
-import { Link, useLocation, useParams } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/shadcn/sidebar";
 import ROUTES from "@/libs/utils/routes";
+import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 
 const Ide = () => {
   const location = useLocation();
-  const { projectId } = useParams();
+  const { project } = useCurrentProjectBranch();
 
-  if (!projectId) {
-    throw new Error("Project ID is required");
-  }
-
-  const ideUri = ROUTES.PROJECT(projectId).IDE.ROOT;
+  const ideUri = ROUTES.PROJECT(project.id).IDE.ROOT;
   const isIdePage = location.pathname.startsWith(ideUri);
 
   return (

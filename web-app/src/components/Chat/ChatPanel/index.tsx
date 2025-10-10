@@ -12,7 +12,7 @@ import {
   Workflow,
 } from "lucide-react";
 import { useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import AgentsDropdown, { Agent } from "./AgentsDropdown";
 import useBuilderAvailable from "@/hooks/api/useBuilderAvailable";
 import {
@@ -26,16 +26,15 @@ import useAskAgent from "@/hooks/messaging/agent";
 import useAskTask from "@/hooks/messaging/task";
 import useRunWorkflowThread from "@/hooks/workflow/useRunWorkflowThread";
 import ROUTES from "@/libs/utils/routes";
+import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 
 const ToggleGroupItemClasses =
   "data-[state=on]:border data-[state=on]:border-blue-500 data-[state=on]:bg-blue-500 data-[state=on]:text-white hover:bg-blue-500/20 hover:text-blue-300 hover:border-blue-400/50 transition-colors border-gray-600 rounded-md text-gray-400";
 
 const ChatPanel = () => {
   const navigate = useNavigate();
-  const { projectId } = useParams();
-  if (!projectId) {
-    throw new Error("Project ID is required");
-  }
+  const { project } = useCurrentProjectBranch();
+  const projectId = project.id;
 
   const { sendMessage } = useAskAgent();
 

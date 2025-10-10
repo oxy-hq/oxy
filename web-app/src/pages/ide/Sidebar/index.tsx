@@ -102,7 +102,7 @@ const Sidebar = ({
                 variant="ghost"
                 size="sm"
                 onClick={handleCreateFile}
-                disabled={isReadOnly}
+                disabled={!!isReadOnly}
                 tooltip={isReadOnly ? "Read-only mode" : "New File"}
               >
                 <FilePlus />
@@ -112,7 +112,7 @@ const Sidebar = ({
                 variant="ghost"
                 size="sm"
                 onClick={handleCreateFolder}
-                disabled={isReadOnly}
+                disabled={!!isReadOnly}
                 tooltip={isReadOnly ? "Read-only mode" : "New Folder"}
               >
                 <FolderPlus />

@@ -20,6 +20,7 @@ export interface EditorPageWrapperProps {
   editorClassName?: string;
   readOnly?: boolean;
   onFileValueChange?: (value: string) => void;
+  git?: boolean;
 }
 
 const EditorPageWrapper = ({
@@ -30,6 +31,7 @@ const EditorPageWrapper = ({
   pageContentClassName,
   className,
   readOnly,
+  git = false,
   onSaved,
   onFileValueChange,
 }: EditorPageWrapperProps) => {
@@ -128,6 +130,7 @@ const EditorPageWrapper = ({
           onSave={onSave}
           isReadonly={readOnly}
           onShowDiff={onShowDiff}
+          git={git}
         />
         <FileEditor
           ref={fileEditorRef}
@@ -137,6 +140,7 @@ const EditorPageWrapper = ({
           onSaved={onSaved}
           onValueChange={onFileValueChange}
           readOnly={readOnly}
+          git={git}
         />
       </div>
     );
@@ -196,6 +200,7 @@ const EditorPageWrapper = ({
                 onSave={onSave}
                 isReadonly={readOnly}
                 onShowDiff={onShowDiff}
+                git={git}
               />
               <FileEditor
                 ref={fileEditorRef}
@@ -205,6 +210,7 @@ const EditorPageWrapper = ({
                 onSaved={onSaved}
                 onValueChange={onFileValueChange}
                 readOnly={readOnly}
+                git={git}
               />
             </div>
             {preview}

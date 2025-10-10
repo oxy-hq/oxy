@@ -9,7 +9,7 @@ import {
   TableRow,
 } from "@/components/ui/shadcn/table";
 import { Skeleton } from "@/components/ui/shadcn/skeleton";
-import { Link, useParams } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { DataTablePagination } from "./Pagination";
 import {
   ColumnDef,
@@ -24,6 +24,7 @@ import { useRef, useState } from "react";
 import { Button } from "@/components/ui/shadcn/button";
 import { RefreshCcw, XIcon } from "lucide-react";
 import ROUTES from "@/libs/utils/routes";
+import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 
 export const WorkflowRuns = ({
   workflowId,
@@ -32,7 +33,8 @@ export const WorkflowRuns = ({
   workflowId: string;
   onClose?: () => void;
 }) => {
-  const { projectId } = useParams<{ projectId: string }>();
+  const { project } = useCurrentProjectBranch();
+  const projectId = project?.id;
   const [pagination, setPagination] = useState<PaginationState>({
     pageIndex: 0,
     pageSize: 50,

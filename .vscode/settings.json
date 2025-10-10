@@ -1,4 +1,5 @@
 {
   "kiroAgent.configureMCP": "Disabled",
-  "npm.packageManager": "pnpm"
+  "npm.packageManager": "pnpm",
+  "cSpell.words": ["utoipa"]
 }

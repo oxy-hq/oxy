@@ -52,7 +52,7 @@ impl GitOperations {
             if repo_url.starts_with("https://github.com/") {
                 repo_url.replace(
                     "https://github.com/",
-                    &format!("https://{}@github.com/", token),
+                    &format!("https://x-access-token:{}@github.com/", token),
                 )
             } else if repo_url.starts_with("https://") {
                 // For other HTTPS URLs, insert token after https://
@@ -95,8 +95,10 @@ impl GitOperations {
             repo_path.display()
         );
 
-        // Note: token parameter is for future use when additional authentication might be needed
-        let _ = token;
+        // Update remote URL with authentication if token is provided
+        if let Some(token) = token {
+            Self::update_remote_url_with_auth(repo_path, token).await?;
+        }
 
         if !repo_path.exists() {
             return Err(OxyError::RuntimeError(format!(
@@ -189,8 +191,15 @@ impl GitOperations {
             repo_path.display()
         );
 
-        // Note: token parameter is for future use when additional authentication might be needed
-        let _ = token;
+        // Update remote URL with authentication if token is provided
+        if let Some(token) = token {
+            Self::update_remote_url_with_auth(repo_path, token).await?;
+        }
+
+        let _ = Command::new("git")
+            .args(["config", "--global", "push.autoSetupRemote", "true"])
+            .output()
+            .await;
 
         if !repo_path.exists() {
             return Err(OxyError::RuntimeError(format!(
@@ -412,8 +421,10 @@ impl GitOperations {
             repo_path.display()
         );
 
-        // Note: token parameter is for future use when additional authentication might be needed
-        let _ = token;
+        // Update remote URL with authentication if token is provided
+        if let Some(token) = token {
+            Self::update_remote_url_with_auth(repo_path, token).await?;
+        }
         if !Self::is_git_repository(repo_path).await {
             return Err(OxyError::RuntimeError(format!(
                 "Directory is not a git repository: {}",
@@ -540,7 +551,11 @@ impl GitOperations {
         }
     }
 
-    pub async fn switch_branch(repo_path: &Path, branch: &str) -> Result<(), OxyError> {
+    pub async fn switch_branch(
+        repo_path: &Path,
+        branch: &str,
+        token: &str,
+    ) -> Result<(), OxyError> {
         info!(
             "Switching to branch '{}' in repository at {}",
             branch,
@@ -553,6 +568,8 @@ impl GitOperations {
                 repo_path.display()
             )));
         }
+
+        Self::update_remote_url_with_auth(repo_path, token).await?;
 
         let fetch_output = Command::new("git")
             .current_dir(repo_path)
@@ -766,5 +783,205 @@ impl GitOperations {
 
         let content = String::from_utf8_lossy(&output.stdout).to_string();
         Ok(content)
+    }
+
+    /// Initialize a new git repository, create initial files, and push to remote
+    pub async fn init_and_push_repository(
+        repo_path: &Path,
+        remote_url: &str,
+        token: Option<&str>,
+    ) -> Result<(), OxyError> {
+        info!(
+            "Initializing and pushing new repository at {} to {}",
+            repo_path.display(),
+            remote_url
+        );
+
+        // Ensure parent directory exists
+        if let Some(parent) = repo_path.parent() {
+            tokio::fs::create_dir_all(parent).await.map_err(|e| {
+                OxyError::IOError(format!("Failed to create repository directory: {e}"))
+            })?;
+        }
+
+        // Initialize git repository
+        let init_output = Command::new("git")
+            .arg("init")
+            .current_dir(&repo_path)
+            .output()
+            .await
+            .map_err(|e| OxyError::RuntimeError(format!("Failed to execute git init: {e}")))?;
+
+        if !init_output.status.success() {
+            let stderr = String::from_utf8_lossy(&init_output.stderr);
+            return Err(OxyError::RuntimeError(format!("Git init failed: {stderr}")));
+        }
+
+        // Add all files
+        let add_output = Command::new("git")
+            .args(["add", "."])
+            .current_dir(&repo_path)
+            .output()
+            .await
+            .map_err(|e| OxyError::RuntimeError(format!("Failed to execute git add: {e}")))?;
+
+        if !add_output.status.success() {
+            let stderr = String::from_utf8_lossy(&add_output.stderr);
+            return Err(OxyError::RuntimeError(format!("Git add failed: {stderr}")));
+        }
+
+        // Initial commit
+        let commit_output = Command::new("git")
+            .args(["commit", "-m", "Initial commit"])
+            .current_dir(&repo_path)
+            .output()
+            .await
+            .map_err(|e| OxyError::RuntimeError(format!("Failed to execute git commit: {e}")))?;
+
+        if !commit_output.status.success() {
+            let stderr = String::from_utf8_lossy(&commit_output.stderr);
+            return Err(OxyError::RuntimeError(format!(
+                "Git commit failed: {stderr}"
+            )));
+        }
+
+        // Rename branch to main
+        let branch_output = Command::new("git")
+            .args(["branch", "-M", "main"])
+            .current_dir(&repo_path)
+            .output()
+            .await
+            .map_err(|e| OxyError::RuntimeError(format!("Failed to execute git branch: {e}")))?;
+
+        if !branch_output.status.success() {
+            let stderr = String::from_utf8_lossy(&branch_output.stderr);
+            return Err(OxyError::RuntimeError(format!(
+                "Git branch rename failed: {stderr}"
+            )));
+        }
+
+        // Prepare the repository URL with token if provided
+        let remote_url_with_auth = if let Some(token) = token {
+            if remote_url.starts_with("https://github.com/") {
+                remote_url.replace(
+                    "https://github.com/",
+                    &format!("https://x-access-token:{}@github.com/", token),
+                )
+            } else if remote_url.starts_with("https://") {
+                // For other HTTPS URLs, insert token after https://
+                remote_url.replacen("https://", &format!("https://{}@", token), 1)
+            } else {
+                // For non-HTTPS URLs, use as-is
+                remote_url.to_string()
+            }
+        } else {
+            remote_url.to_string()
+        };
+
+        // Add remote origin
+        let remote_output = Command::new("git")
+            .args(["remote", "add", "origin", &remote_url_with_auth])
+            .current_dir(&repo_path)
+            .output()
+            .await
+            .map_err(|e| {
+                OxyError::RuntimeError(format!("Failed to execute git remote add: {e}"))
+            })?;
+
+        if !remote_output.status.success() {
+            let stderr = String::from_utf8_lossy(&remote_output.stderr);
+            return Err(OxyError::RuntimeError(format!(
+                "Git remote add failed: {stderr}"
+            )));
+        }
+
+        // Push to origin
+        let push_output = Command::new("git")
+            .args(["push", "-u", "origin", "main"])
+            .current_dir(&repo_path)
+            .output()
+            .await
+            .map_err(|e| OxyError::RuntimeError(format!("Failed to execute git push: {e}")))?;
+
+        if !push_output.status.success() {
+            let stderr = String::from_utf8_lossy(&push_output.stderr);
+            return Err(OxyError::RuntimeError(format!("Git push failed: {stderr}")));
+        }
+
+        info!(
+            "Successfully initialized and pushed repository to {}",
+            remote_url
+        );
+
+        Ok(())
+    }
+
+    /// Update the remote origin URL with authentication token
+    async fn update_remote_url_with_auth(repo_path: &Path, token: &str) -> Result<(), OxyError> {
+        // Get current remote URL
+        let remote_output = Command::new("git")
+            .current_dir(repo_path)
+            .args(["remote", "get-url", "origin"])
+            .output()
+            .await
+            .map_err(|e| OxyError::RuntimeError(format!("Failed to get remote URL: {e}")))?;
+
+        if !remote_output.status.success() {
+            let stderr = String::from_utf8_lossy(&remote_output.stderr);
+            return Err(OxyError::RuntimeError(format!(
+                "Failed to get remote URL: {stderr}"
+            )));
+        }
+
+        let current_url = String::from_utf8_lossy(&remote_output.stdout)
+            .trim()
+            .to_string();
+
+        // Remove existing authentication if present
+        let clean_url = if current_url.contains("@github.com") {
+            if let Some(at_pos) = current_url.find("@github.com") {
+                if let Some(protocol_end) = current_url.find("://") {
+                    format!("https://github.com{}", &current_url[at_pos + 11..])
+                } else {
+                    current_url
+                }
+            } else {
+                current_url
+            }
+        } else {
+            current_url
+        };
+
+        // Add authentication to the URL
+        let authenticated_url = if clean_url.starts_with("https://github.com/") {
+            clean_url.replace(
+                "https://github.com/",
+                &format!("https://x-access-token:{}@github.com/", token),
+            )
+        } else if clean_url.starts_with("https://") {
+            // For other HTTPS URLs, insert token after https://
+            clean_url.replacen("https://", &format!("https://{}@", token), 1)
+        } else {
+            // For non-HTTPS URLs, use as-is
+            clean_url
+        };
+
+        // Update the remote URL
+        let set_url_output = Command::new("git")
+            .current_dir(repo_path)
+            .args(["remote", "set-url", "origin", &authenticated_url])
+            .output()
+            .await
+            .map_err(|e| OxyError::RuntimeError(format!("Failed to set remote URL: {e}")))?;
+
+        if !set_url_output.status.success() {
+            let stderr = String::from_utf8_lossy(&set_url_output.stderr);
+            return Err(OxyError::RuntimeError(format!(
+                "Failed to set remote URL: {stderr}"
+            )));
+        }
+
+        info!("Updated remote URL with authentication");
+        Ok(())
     }
 }

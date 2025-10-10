@@ -2,16 +2,15 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useWorkspaces } from "@/hooks/api/workspaces/useWorkspaces";
 import { Input } from "@/components/ui/shadcn/input";
-import { Search } from "lucide-react";
+import { Search, PlusCircle } from "lucide-react";
+import { Button } from "@/components/ui/shadcn/button";
 import ROUTES from "@/libs/utils/routes";
 import Header from "./components/Header";
 import Content from "./content";
-import NewWorkspaceDialog from "./new_workspace_dialog";
 import { Workspace } from "@/types/workspace";
 
 export default function WorkspacesPage() {
   const navigate = useNavigate();
-  const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
   const { data: workspacesData, isLoading, error, refetch } = useWorkspaces();
@@ -29,7 +28,7 @@ export default function WorkspacesPage() {
   const handleClearSearch = () => setSearchQuery("");
 
   return (
-    <div className="flex flex-col w-full">
+    <div className="flex flex-col w-full overflow-auto customScrollbar">
       <Header />
 
       <div className="flex-1 p-6 max-w-6xl mx-auto max-w-[1200px] w-full">
@@ -50,10 +49,10 @@ export default function WorkspacesPage() {
                   </div>
                 )}
             </div>
-            <NewWorkspaceDialog
-              isOpen={isModalOpen}
-              onOpenChange={setIsModalOpen}
-            />
+            <Button onClick={() => navigate(ROUTES.WORKSPACE.CREATE_WORKSPACE)}>
+              <PlusCircle className="mr-2 h-4 w-4" />
+              New Workspace
+            </Button>
           </div>
         </div>
 

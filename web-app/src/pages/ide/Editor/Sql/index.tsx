@@ -6,7 +6,7 @@ import EditorPageWrapper from "../components/EditorPageWrapper";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 
 const SqlEditor = ({ pathb64 }: { pathb64: string }) => {
-  const { isReadOnly } = useCurrentProjectBranch();
+  const { isReadOnly, gitEnabled } = useCurrentProjectBranch();
   const [result, setResult] = useState<string[][]>([]);
   const [sql, setSql] = useState("");
   const { mutate: executeSql, isPending: loading } = useExecuteSql();
@@ -29,7 +29,8 @@ const SqlEditor = ({ pathb64 }: { pathb64: string }) => {
       onFileValueChange={setSql}
       pageContentClassName="flex-col"
       editorClassName={"h-1/2 w-full"}
-      readOnly={isReadOnly}
+      readOnly={!!isReadOnly}
+      git={gitEnabled}
       headerActions={
         <HeaderActions
           onExecuteSql={handleExecuteSql}

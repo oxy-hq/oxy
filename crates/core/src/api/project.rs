@@ -1,3 +1,4 @@
+use axum::extract::State;
 use entity::settings::SyncStatus;
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
@@ -7,11 +8,11 @@ use uuid::Uuid;
 use crate::adapters::project::builder::ProjectBuilder;
 use crate::adapters::secrets::SecretsManager;
 use crate::api::middlewares::project::{BranchQuery, ProjectManagerExtractor, ProjectPath};
+use crate::api::router::AppState;
+use crate::auth::extractor::AuthenticatedUserExtractor;
 use crate::db::client::establish_connection;
-use crate::github::{GitHubRepository, GithubBranch};
-use crate::service::project_service::ProjectService;
+use crate::service::project::ProjectService;
 use crate::service::secret_manager::SecretManagerService;
-use crate::{auth::extractor::AuthenticatedUserExtractor, github::GitHubClient};
 
 use entity::{prelude::WorkspaceUsers, workspace_users};
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
@@ -45,17 +46,6 @@ impl From<SyncStatus> for ApiSyncStatus {
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
-pub struct GitHubTokenQuery {
-    pub token: String,
-}
-
-#[derive(Debug, Deserialize, ToSchema)]
-pub struct ListBranchesQuery {
-    pub token: String,
-    pub repo_full_name: String,
-}
-
-#[derive(Debug, Deserialize, ToSchema)]
 pub struct SwitchBranchRequest {
     pub branch: String,
 }
@@ -71,7 +61,7 @@ pub struct ProjectDetailsResponse {
     pub id: Uuid,
     pub name: String,
     pub workspace_id: Uuid,
-    pub provider: Option<String>,
+    pub project_repo_id: Option<Uuid>,
     pub active_branch: Option<ProjectBranch>,
     pub created_at: String,
     pub updated_at: String,
@@ -99,67 +89,6 @@ pub struct ProjectBranch {
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ProjectBranchesResponse {
     pub branches: Vec<ProjectBranch>,
-}
-
-/// List all GitHub repositories accessible with the provided access token.
-///
-/// This endpoint retrieves all repositories that the authenticated GitHub user has access to.
-/// The repositories are fetched directly from GitHub using the provided personal access token.
-#[utoipa::path(
-    get,
-    path = "/github/repositories",
-    params(
-        ("token" = String, Query, description = "GitHub access token")
-    ),
-    responses(
-        (status = 200, description = "List of repositories retrieved successfully", body = Vec<GitHubRepository>),
-        (status = 400, description = "Invalid request"),
-        (status = 401, description = "Unauthorized"),
-        (status = 500, description = "Internal server error")
-    ),
-    security(
-        ("ApiKey" = [])
-    ),
-    tag = "Projects"
-)]
-pub async fn list_repositories(
-    Query(query): Query<GitHubTokenQuery>,
-) -> Result<Json<Vec<GitHubRepository>>, StatusCode> {
-    let client = match GitHubClient::new(query.token.clone()) {
-        Ok(client) => client,
-        Err(e) => {
-            error!("Failed to create GitHub client: {}", e);
-            return Err(StatusCode::BAD_REQUEST);
-        }
-    };
-
-    match client.list_repositories().await {
-        Ok(repositories) => Ok(Json(repositories)),
-        Err(e) => {
-            error!("Failed to fetch repositories: {}", e);
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
-        }
-    }
-}
-
-pub async fn list_branches(
-    Query(query): Query<ListBranchesQuery>,
-) -> Result<Json<Vec<GithubBranch>>, StatusCode> {
-    let client = match GitHubClient::new(query.token.clone()) {
-        Ok(client) => client,
-        Err(e) => {
-            error!("Failed to create GitHub client: {}", e);
-            return Err(StatusCode::BAD_REQUEST);
-        }
-    };
-
-    match client.list_branches(query.repo_full_name).await {
-        Ok(branches) => Ok(Json(branches)),
-        Err(e) => {
-            error!("Failed to fetch branches: {}", e);
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
-        }
-    }
 }
 
 pub async fn pull_changes(
@@ -206,25 +135,6 @@ pub async fn push_changes(
             Ok(ResponseJson(ProjectResponse {
                 success: false,
                 message: format!("Failed to push changes: {e}"),
-            }))
-        }
-    }
-}
-
-pub async fn change_git_token(
-    Path(project_id): Path<Uuid>,
-    Json(request): Json<GitHubTokenQuery>,
-) -> Result<ResponseJson<ProjectResponse>, StatusCode> {
-    match ProjectService::update_project_token(project_id, request.token).await {
-        Ok(_) => Ok(ResponseJson(ProjectResponse {
-            success: true,
-            message: "Git token updated successfully".to_string(),
-        })),
-        Err(e) => {
-            error!("Failed to update git token: {}", e);
-            Ok(ResponseJson(ProjectResponse {
-                success: false,
-                message: format!("Failed to update git token: {e}"),
             }))
         }
     }
@@ -304,7 +214,7 @@ pub async fn get_project(
         id: project.id,
         name: project.name,
         workspace_id: project.workspace_id,
-        provider: project.provider,
+        project_repo_id: project.project_repo_id,
         created_at: project.created_at.to_string(),
         updated_at: project.updated_at.to_string(),
         active_branch: Some(ProjectBranch {
@@ -490,18 +400,21 @@ pub struct ProjectStatus {
 }
 
 pub async fn get_project_status(
+    State(app_state): State<AppState>,
     ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
     Path(ProjectPath { project_id }): Path<ProjectPath>,
 ) -> Result<axum::response::Json<ProjectStatus>, StatusCode> {
-    info!("Getting overall project status for project: {}", project_id);
-
     let project_path = project_manager.config_manager.project_path();
 
     let (is_config_valid, required_secrets, error) =
         match ProjectBuilder::new().with_project_path(&project_path).await {
             Ok(builder) => {
-                let secrets_manager =
-                    match SecretsManager::from_database(SecretManagerService::new(project_id)) {
+                if app_state.local {
+                    (true, Some(Vec::new()), None)
+                } else {
+                    let secrets_manager = match SecretsManager::from_database(
+                        SecretManagerService::new(project_id),
+                    ) {
                         Ok(sm) => sm,
                         Err(e) => {
                             error!("Failed to create secrets manager: {}", e);
@@ -509,20 +422,21 @@ pub async fn get_project_status(
                         }
                     };
 
-                match builder.with_secrets_manager(secrets_manager).build().await {
-                    Ok(config) => {
-                        let secrets = match config.get_required_secrets().await {
-                            Ok(secrets) => secrets,
-                            Err(e) => {
-                                error!("Failed to get required secrets: {}", e);
-                                None
-                            }
-                        };
-                        (true, secrets, None)
-                    }
-                    Err(e) => {
-                        error!("Failed to build config: {}", e);
-                        (false, None, Some(e.to_string()))
+                    match builder.with_secrets_manager(secrets_manager).build().await {
+                        Ok(config) => {
+                            let secrets = match config.get_required_secrets().await {
+                                Ok(secrets) => secrets,
+                                Err(e) => {
+                                    error!("Failed to get required secrets: {}", e);
+                                    None
+                                }
+                            };
+                            (true, secrets, None)
+                        }
+                        Err(e) => {
+                            error!("Failed to build config: {}", e);
+                            (false, None, Some(e.to_string()))
+                        }
                     }
                 }
             }
@@ -558,4 +472,79 @@ pub async fn project_health_check(
 ) -> Result<ResponseJson<String>, StatusCode> {
     info!("Health check for workspace: {}", workspace_id);
     Ok(ResponseJson("OK".to_string()))
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct CreateRepoFromProjectRequest {
+    pub git_namespace_id: Uuid,
+    pub repo_name: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct CreateRepoFromProjectResponse {
+    pub success: bool,
+    pub message: String,
+}
+
+#[utoipa::path(
+    post,
+    path = "/projects/{project_id}/create-repo",
+    request_body = CreateRepoFromProjectRequest,
+    params(
+        ("project_id" = Uuid, Path, description = "Project ID")
+    ),
+    responses(
+        (status = 200, description = "Repository created successfully", body = CreateRepoFromProjectResponse),
+        (status = 400, description = "Bad request - project already has repository or invalid parameters"),
+        (status = 404, description = "Project or git namespace not found"),
+        (status = 500, description = "Internal server error")
+    ),
+    tag = "Projects"
+)]
+pub async fn create_repo_from_project(
+    Path(project_id): Path<Uuid>,
+    Json(request): Json<CreateRepoFromProjectRequest>,
+) -> Result<ResponseJson<CreateRepoFromProjectResponse>, StatusCode> {
+    info!(
+        "Creating repository '{}' for project {} using git namespace {}",
+        request.repo_name, project_id, request.git_namespace_id
+    );
+
+    match crate::service::project::project_operations::ProjectService::create_repo_from_project(
+        project_id,
+        request.git_namespace_id,
+        request.repo_name.clone(),
+    )
+    .await
+    {
+        Ok(()) => {
+            info!("Successfully created repository for project {}", project_id);
+            Ok(ResponseJson(CreateRepoFromProjectResponse {
+                success: true,
+                message: format!(
+                    "Repository '{}' created and linked to project successfully",
+                    request.repo_name
+                ),
+            }))
+        }
+        Err(e) => {
+            error!(
+                "Failed to create repository for project {}: {}",
+                project_id, e
+            );
+            let status_code = match e {
+                crate::errors::OxyError::RuntimeError(ref msg)
+                    if msg.contains("already has a repository") =>
+                {
+                    StatusCode::BAD_REQUEST
+                }
+                crate::errors::OxyError::RuntimeError(ref msg) if msg.contains("not found") => {
+                    StatusCode::NOT_FOUND
+                }
+                _ => StatusCode::INTERNAL_SERVER_ERROR,
+            };
+
+            Err(status_code)
+        }
+    }
 }

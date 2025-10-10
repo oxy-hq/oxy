@@ -6,7 +6,7 @@ import {
 } from "@/stores/useWorkflow";
 import { Button } from "@/components/ui/shadcn/button";
 import TruncatedText from "@/components/TruncatedText";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { headerHeight } from "../../layout/constants";
 import {
   Bot,
@@ -27,6 +27,7 @@ import { TaskRun } from "@/services/types";
 import { randomKey } from "@/libs/utils/string";
 import { OmniIcon } from "./OmniIcon";
 import ROUTES from "@/libs/utils/routes";
+import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 
 const nodeNameMap: Record<NodeType, string> = {
   execute_sql: "SQL",
@@ -128,7 +129,8 @@ const SubWorkflowNavigateButton = ({
   taskRun,
 }: SubWorkflowNavigateButtonProps) => {
   const navigate = useNavigate();
-  const { projectId } = useParams();
+  const { project } = useCurrentProjectBranch();
+  const projectId = project.id;
 
   const handleClick = () => {
     if (!projectId) return;

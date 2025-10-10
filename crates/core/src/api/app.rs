@@ -72,7 +72,6 @@ fn create_error_response(error_msg: String) -> GetAppDataResponse {
     )
 )]
 pub async fn list_apps(
-    Path(_project_id): Path<Uuid>,
     ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
 ) -> Result<extract::Json<Vec<AppItem>>, StatusCode> {
     let config_manager = &project_manager.config_manager;

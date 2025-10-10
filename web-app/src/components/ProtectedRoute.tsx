@@ -10,6 +10,10 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   const { isAuthenticated, authConfig } = useAuth();
   const location = useLocation();
 
+  if (authConfig.local) {
+    return <>{children}</>;
+  }
+
   if (!authConfig.is_built_in_mode || !authConfig.auth_enabled) {
     return <>{children}</>;
   }

@@ -7,17 +7,25 @@ const ROUTES = {
     VERIFY_EMAIL: "/verify-email",
     GOOGLE_CALLBACK: "/auth/google/callback",
   },
+  GITHUB: {
+    CALLBACK: "/github/callback",
+  },
   SETTINGS: {
     GITHUB: "/github-settings",
     SECRETS_SETUP: "/secrets/setup",
   },
 
-  ORG: {
+  WORKSPACE: {
     ROOT: "/workspaces",
+    CREATE_WORKSPACE: "/create-workspace",
   },
 
   PROJECT: (projectId: string) => {
-    const base = `/projects/${projectId}`;
+    let base = `/projects/${projectId}`;
+    if (projectId === "00000000-0000-0000-0000-000000000000") {
+      base = ``;
+    }
+
     return {
       ROOT: base,
       HOME: `${base}/home`,

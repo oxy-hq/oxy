@@ -1,5 +1,5 @@
 import { Home, DiamondPlus, ChevronsLeft } from "lucide-react";
-import { Link, useLocation, useParams } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import {
   SidebarGroup,
   SidebarHeader,
@@ -12,28 +12,31 @@ import useTheme from "@/stores/useTheme";
 import { Button } from "@/components/ui/shadcn/button";
 import ROUTES from "@/libs/utils/routes";
 import Workspaces from "./Workspaces";
+import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import { useAuth } from "@/contexts/AuthContext";
 
 export function Header() {
   const location = useLocation();
 
+  const { authConfig } = useAuth();
+
   const { theme } = useTheme();
   const { toggleSidebar, open } = useSidebar();
-  const { projectId } = useParams();
-  if (!projectId) {
-    return null;
-  }
+  const { project } = useCurrentProjectBranch();
+  const projectId = project.id;
   const homeUri = ROUTES.PROJECT(projectId).HOME;
   const isHome = location.pathname === homeUri;
 
   return (
-    <SidebarGroup className="gap-2">
+    <SidebarGroup className="gap-4">
       <SidebarHeader className="pt-0 pb-0 pl-1-5 h-[32px] flex-row items-center justify-between">
-        <div>
+        <Link to={homeUri} className="flex gap-2 items-center min-w-0">
           <img
             src={theme === "dark" ? "/oxy-dark.svg" : "/oxy-light.svg"}
             alt="Oxy"
           />
-        </div>
+          <span className="text-sm font-medium truncate">{project.name}</span>
+        </Link>
 
         {open && (
           <Button
@@ -63,7 +66,7 @@ export function Header() {
             </Link>
           </SidebarMenuButton>
         </SidebarMenuItem>
-        <Workspaces />
+        {!authConfig.local && <Workspaces />}
       </SidebarMenu>
     </SidebarGroup>
   );

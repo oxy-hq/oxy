@@ -5,7 +5,6 @@ type Props = {
   task: TaskConfigWithId;
 };
 
-
 export function OmniQueryNode({ task }: Props) {
   return <NodeHeader name={task.name} type={task.type} />;
 }

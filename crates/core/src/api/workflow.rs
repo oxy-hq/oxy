@@ -74,7 +74,6 @@ pub struct GetWorkflowResponse {
     tag = "Workflows"
 )]
 pub async fn list(
-    Path(_project_id): Path<Uuid>,
     ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
 ) -> Result<impl IntoResponse, StatusCode> {
     let config_manager = project_manager.config_manager;
@@ -1114,7 +1113,6 @@ pub struct CreateFromQueryResponse {
     tag = "Workflows"
 )]
 pub async fn create_from_query(
-    extract::Path(_project_id): Path<Uuid>,
     ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
     extract::Json(request): extract::Json<CreateFromQueryRequest>,
 ) -> Result<extract::Json<CreateFromQueryResponse>, StatusCode> {

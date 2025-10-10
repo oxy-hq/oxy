@@ -126,7 +126,6 @@ pub async fn sync_database(
 
 pub async fn list_databases(
     ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
-    Path(_project_id): Path<Uuid>,
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
 ) -> Result<Json<Vec<DatabaseInfo>>, StatusCode> {
     let databases = project_manager

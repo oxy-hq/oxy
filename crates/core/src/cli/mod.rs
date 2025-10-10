@@ -454,7 +454,7 @@ struct SyncArgs {
 }
 
 #[derive(Parser, Debug)]
-struct ServeArgs {
+pub struct ServeArgs {
     /// Port number for the web application server
     ///
     /// Specify which port to bind the Oxy web interface.
@@ -490,6 +490,9 @@ struct ServeArgs {
     /// TLS private key file for HTTPS (local development)
     #[clap(long, default_value = "localhost+2-key.pem")]
     tls_key: String,
+
+    #[clap(long, default_value_t = false)]
+    local: bool,
 }
 
 #[derive(Parser, Debug)]
@@ -931,15 +934,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             }
         }
         Some(SubCommand::Serve(serve_args)) => {
-            if let Err(e) = start_server_and_web_app(
-                serve_args.port,
-                serve_args.host,
-                serve_args.http2_only,
-                serve_args.tls_cert,
-                serve_args.tls_key,
-            )
-            .await
-            {
+            if let Err(e) = start_server_and_web_app(serve_args).await {
                 eprintln!("{}", format!("Server failed: {e}").error());
                 exit(1);
             }

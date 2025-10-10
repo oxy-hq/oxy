@@ -11,7 +11,7 @@ import useFileTree from "@/hooks/api/files/useFileTree";
 import { FileTreeModel } from "@/types/file";
 import { toast } from "sonner";
 import ROUTES from "@/libs/utils/routes";
-import useCurrentProject from "@/stores/useCurrentProject";
+import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 
 export type CreationType = "file" | "folder";
 
@@ -25,15 +25,13 @@ interface NewNodeProps {
 const NewNode = React.forwardRef<HTMLInputElement, NewNodeProps>(
   ({ creationType, onCreated, onCancel, currentPath }, ref) => {
     const { data } = useFileTree();
-    const { project } = useCurrentProject();
+    const { project } = useCurrentProjectBranch();
+
     const [newItemName, setNewItemName] = React.useState("");
     const createFile = useCreateFile();
     const createFolder = useCreateFolder();
     const navigate = useNavigate();
     const [error, setError] = React.useState(false);
-    if (!project) {
-      throw new Error("Project ID is required");
-    }
 
     const projectId = project.id;
 

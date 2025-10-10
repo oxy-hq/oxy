@@ -21,7 +21,8 @@ const AgentEditor = ({ pathb64 }: { pathb64: string }) => {
   const [selected, setSelected] = useState<string>("preview");
   const queryClient = useQueryClient();
   const { setMessages } = useAgentThreadStore();
-  const { project, branchName, isReadOnly } = useCurrentProjectBranch();
+  const { project, branchName, isReadOnly, gitEnabled } =
+    useCurrentProjectBranch();
 
   const { data: agent, isLoading } = useAgent(pathb64);
   const { runTest } = useTests();
@@ -43,9 +44,10 @@ const AgentEditor = ({ pathb64 }: { pathb64: string }) => {
           queryKey: queryKeys.agent.list(project.id, branchName),
         });
       }}
-      readOnly={isReadOnly}
+      readOnly={!!isReadOnly}
       pageContentClassName="md:flex-row flex-col"
       editorClassName="md:w-1/2 w-full h-1/2 md:h-full"
+      git={gitEnabled}
       preview={
         <div className="flex-1 overflow-hidden flex flex-col">
           <div className="flex justify-between p-4 flex-shrink-0 relative z-10 bg-background">

@@ -36,6 +36,8 @@ mod m20250902_073902_add_active_branch_id_to_projects_table;
 mod m20250902_080016_add_branch_id_to_runs_table;
 mod m20250902_080217_add_project_branch_id_to_run_index_runs_table;
 mod m20250923_064746_change_organization_to_workspace;
+mod m20250924_015621_create_project_repos_and_update_projects;
+mod m20250929_081920_create_git_namespaces_table;
 
 pub struct Migrator;
 
@@ -78,6 +80,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20250902_080016_add_branch_id_to_runs_table::Migration),
             Box::new(m20250902_080217_add_project_branch_id_to_run_index_runs_table::Migration),
             Box::new(m20250923_064746_change_organization_to_workspace::Migration),
+            Box::new(m20250924_015621_create_project_repos_and_update_projects::Migration),
+            Box::new(m20250929_081920_create_git_namespaces_table::Migration),
         ]
     }
 }

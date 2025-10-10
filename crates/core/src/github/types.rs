@@ -12,14 +12,14 @@ pub struct GitHubRepository {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-pub struct GithubBranch {
+pub struct GitHubBranch {
     pub name: String,
 }
 
 /// Settings for the GitHub integration
 #[derive(Debug, Clone)]
 pub struct GitHubSettings {
-    pub github_token: String,
+    pub app_installation_id: String,
     pub selected_repo_id: Option<i64>,
     pub revision: Option<String>,
     pub sync_status: entity::settings::SyncStatus,
@@ -27,9 +27,9 @@ pub struct GitHubSettings {
 }
 
 impl GitHubSettings {
-    pub fn new(github_token: String) -> Self {
+    pub fn new(app_installation_id: String) -> Self {
         Self {
-            github_token,
+            app_installation_id,
             selected_repo_id: None,
             revision: None,
             sync_status: entity::settings::SyncStatus::Idle,

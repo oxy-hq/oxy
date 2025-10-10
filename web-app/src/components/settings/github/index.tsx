@@ -1,14 +1,17 @@
-import { Separator } from "@/components/ui/shadcn/separator";
 import PageWrapper from "../components/PageWrapper";
-import { GitHubTokenSection } from "./GitHubTokenSection";
 import RepositoryInfoSection from "./RepositoryInfoSection";
+import useCurrentProject from "@/stores/useCurrentProject";
+import { CreateRepository } from "@/components/CreateRepository";
 
 export default function GithubSettings() {
+  const { project } = useCurrentProject();
   return (
     <PageWrapper title="GitHub">
-      <RepositoryInfoSection />
-      <Separator className="my-6" />
-      <GitHubTokenSection />
+      {project?.project_repo_id ? (
+        <RepositoryInfoSection />
+      ) : (
+        <CreateRepository />
+      )}
     </PageWrapper>
   );
 }

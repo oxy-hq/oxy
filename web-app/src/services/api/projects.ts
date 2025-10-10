@@ -109,4 +109,16 @@ export class ProjectService {
     const response = await apiClient.post(`/${projectId}/git-token`, { token });
     return response.data;
   }
+
+  static async createRepoFromProject(
+    projectId: string,
+    gitNamespaceId: string,
+    repoName: string,
+  ): Promise<{ success: boolean; message: string }> {
+    const response = await apiClient.post(`/${projectId}/create-repo`, {
+      git_namespace_id: gitNamespaceId,
+      repo_name: repoName,
+    });
+    return response.data;
+  }
 }

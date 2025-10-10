@@ -22,6 +22,7 @@ interface Props {
   onValueChange?: (value: string) => void;
   onSaved?: () => void;
   readOnly?: boolean;
+  git: boolean;
 }
 
 const FileEditor = forwardRef<FileEditorRef, Props>(
@@ -33,12 +34,13 @@ const FileEditor = forwardRef<FileEditorRef, Props>(
       onValueChange,
       onSaved,
       readOnly = false,
+      git = false,
     },
     ref,
   ) => {
     const fileName = atob(pathb64);
     const { data: fileContent, isPending } = useFile(pathb64);
-    const { data: originalContent } = useFileGit(pathb64);
+    const { data: originalContent } = useFileGit(pathb64, git);
     const [showDiff, setShowDiff] = useState(false);
 
     const [currentFileContent, setCurrentFileContent] = useState(fileContent);

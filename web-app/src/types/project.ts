@@ -2,7 +2,7 @@ export interface Project {
   id: string;
   name: string;
   workspace_id: string;
-  repo_id: number;
+  project_repo_id?: string;
   active_branch: ProjectBranch | null;
   created_at: string;
   updated_at: string;
@@ -11,13 +11,6 @@ export interface Project {
 export interface ProjectsResponse {
   projects: Project[];
   total: number;
-}
-
-export interface CreateProjectRequest {
-  repo_id: number;
-  token: string;
-  branch: string;
-  provider: string;
 }
 
 export interface CreateProjectResponse {

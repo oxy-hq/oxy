@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import useDeleteAllThread from "@/hooks/api/threads/useDeleteAllThread";
 import {
   AlertDialog,
@@ -12,6 +12,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/shadcn/alert-dialog";
 import ROUTES from "@/libs/utils/routes";
+import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 
 interface ClearAllThreadsDialogProps {
   open: boolean;
@@ -23,7 +24,8 @@ const ClearAllThreadsDialog = ({
   onOpenChange,
 }: ClearAllThreadsDialogProps) => {
   const navigate = useNavigate();
-  const { projectId } = useParams();
+  const { project } = useCurrentProjectBranch();
+  const projectId = project.id;
   const { mutate: clearAllThreads } = useDeleteAllThread();
 
   const confirm = useCallback(() => {

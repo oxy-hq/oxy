@@ -28,6 +28,7 @@ export const Editor = ({ pathb64 }: { pathb64: string }) => {
 
 const EditorPage = () => {
   const { pathb64 } = useParams();
+
   return <Editor key={pathb64 ?? ""} pathb64={pathb64 ?? ""} />;
 };
 

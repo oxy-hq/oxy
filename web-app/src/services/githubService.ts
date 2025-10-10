@@ -87,6 +87,41 @@ export class GitHubService {
   }
 
   /**
+   * Update GitHub App installation for a project
+   */
+  static async updateProjectGithubApp(
+    projectId: string,
+    installationId: string,
+    appId?: string,
+  ): Promise<{ success: boolean; message: string }> {
+    const response = await apiClient.put(`/github/app/project/${projectId}`, {
+      installation_id: installationId,
+      app_id: appId,
+    });
+    return response.data;
+  }
+
+  /**
+   * Create a project with GitHub App installation
+   */
+  static async createProjectWithGithubApp(
+    workspaceId: string,
+    installationId: string,
+    repoId: number,
+    branchName: string,
+  ): Promise<{ success: boolean; message: string }> {
+    const response = await apiClient.post(
+      `/github/app/project/${workspaceId}`,
+      {
+        installation_id: installationId,
+        repo_id: repoId,
+        branch_name: branchName,
+      },
+    );
+    return response.data;
+  }
+
+  /**
    * Sync GitHub repository
    */
   static async syncGitHubRepository(): Promise<{

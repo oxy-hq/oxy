@@ -6257,6 +6257,7 @@ dependencies = [
  "clickhouse",
  "colored",
  "connectorx",
+ "constant_time_eq",
  "csv",
  "deser-incomplete",
  "dirs 6.0.0",

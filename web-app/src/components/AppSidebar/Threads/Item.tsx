@@ -1,5 +1,5 @@
 import { MoreHorizontal, Trash2 } from "lucide-react";
-import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { ThreadItem } from "@/types/chat";
 import {
   SidebarMenuAction,
@@ -16,6 +16,7 @@ import { useCallback } from "react";
 import useDeleteThread from "@/hooks/api/threads/useDeleteThread";
 import { cn } from "@/libs/shadcn/utils";
 import ROUTES from "@/libs/utils/routes";
+import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 
 interface ItemProps {
   thread: ThreadItem;
@@ -24,12 +25,10 @@ interface ItemProps {
 const Item = ({ thread }: ItemProps) => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { projectId } = useParams();
   const { mutate: deleteThread } = useDeleteThread();
 
-  if (!projectId) {
-    throw new Error("Project ID is required");
-  }
+  const { project } = useCurrentProjectBranch();
+  const projectId = project.id;
 
   const threadUri = ROUTES.PROJECT(projectId).THREAD(thread.id);
   const isActive = location.pathname === threadUri;

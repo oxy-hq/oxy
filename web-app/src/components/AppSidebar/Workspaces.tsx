@@ -8,12 +8,12 @@ import ROUTES from "@/libs/utils/routes";
 
 export default function Workspaces() {
   const location = useLocation();
-  const isWorkspacesPage = location.pathname.startsWith(ROUTES.ORG.ROOT);
+  const isWorkspacesPage = location.pathname.startsWith(ROUTES.WORKSPACE.ROOT);
 
   return (
     <SidebarMenuItem>
       <SidebarMenuButton asChild isActive={isWorkspacesPage}>
-        <Link to={ROUTES.ORG.ROOT}>
+        <Link to={ROUTES.WORKSPACE.ROOT}>
           <Building2 />
           <span>Workspaces</span>
         </Link>

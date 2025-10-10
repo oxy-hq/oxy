@@ -15,17 +15,19 @@ struct Claims {
     iat: usize,
 }
 
-pub struct BuiltInAuthenticator;
+pub struct BuiltInAuthenticator {
+    pub local: bool,
+}
 
 impl Default for BuiltInAuthenticator {
     fn default() -> Self {
-        Self::new()
+        Self::new(false)
     }
 }
 
 impl BuiltInAuthenticator {
-    pub fn new() -> Self {
-        Self
+    pub fn new(local: bool) -> Self {
+        Self { local }
     }
 }
 
@@ -33,6 +35,14 @@ impl Authenticator for BuiltInAuthenticator {
     type Error = OxyError;
 
     async fn authenticate(&self, header: &axum::http::HeaderMap) -> Result<Identity, Self::Error> {
+        if self.local {
+            return Ok(Identity {
+                idp_id: Some("local-user".to_string()),
+                picture: None,
+                name: Some("Local User".to_string()),
+                email: "<local-user@example.com>".to_string(),
+            });
+        };
         match self.extract_token(header) {
             Ok(token) => match self.validate(&token) {
                 Ok(identity) => return Ok(identity),

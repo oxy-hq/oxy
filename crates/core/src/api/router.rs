@@ -6,6 +6,7 @@ use crate::api::chart;
 use crate::api::data;
 use crate::api::database;
 use crate::api::file;
+use crate::api::github;
 use crate::api::middlewares::project::project_middleware;
 use crate::api::middlewares::timeout::timeout_middleware;
 use crate::api::project;
@@ -41,6 +42,11 @@ use super::app;
 use super::message;
 use super::task;
 
+#[derive(Clone)]
+pub struct AppState {
+    pub local: bool,
+}
+
 fn build_cors_layer() -> CorsLayer {
     CorsLayer::new()
         .allow_origin(Any)
@@ -48,7 +54,7 @@ fn build_cors_layer() -> CorsLayer {
         .allow_headers(tower_http::cors::Any)
 }
 
-fn build_public_routes() -> Router<()> {
+fn build_public_routes() -> Router<AppState> {
     Router::new()
         .route("/auth/config", get(auth::get_config))
         .route("/auth/login", post(auth::login))
@@ -57,15 +63,18 @@ fn build_public_routes() -> Router<()> {
         .route("/auth/validate_email", post(auth::validate_email))
 }
 
-fn build_global_routes() -> Router<()> {
+fn build_global_routes() -> Router<AppState> {
     Router::new()
         .route("/user", get(user::get_current_user))
         .route("/logout", get(user::logout))
-        .route("/github/repositories", get(project::list_repositories))
-        .route("/github/branches", get(project::list_branches))
+        .route("/github/repositories", get(github::list_repositories))
+        .route("/github/branches", get(github::list_branches))
+        .route("/github/namespaces", get(github::list_git_namespaces))
+        .route("/github/install-app-url", get(github::gen_install_app_url))
+        .route("/github/namespaces", post(github::create_git_namespace))
 }
 
-fn build_workspace_routes() -> Router<()> {
+fn build_workspace_routes() -> Router<AppState> {
     Router::new()
         .route("/", get(workspace::list_workspaces))
         .route("/", post(workspace::create_workspace))
@@ -84,7 +93,7 @@ fn build_workspace_routes() -> Router<()> {
         )
 }
 
-fn build_project_routes() -> Router<()> {
+fn build_project_routes() -> Router<AppState> {
     Router::new()
         .route("/details", get(project::get_project))
         .route("/status", get(project::get_project_status))
@@ -97,7 +106,7 @@ fn build_project_routes() -> Router<()> {
         )
         .route("/pull-changes", post(project::pull_changes))
         .route("/push-changes", post(project::push_changes))
-        .route("/git-token", post(project::change_git_token))
+        .route("/create-repo", post(project::create_repo_from_project))
         .nest("/workflows", build_workflow_routes())
         .nest("/threads", build_thread_routes())
         .nest("/agents", build_agent_routes())
@@ -147,7 +156,7 @@ where
     }
 }
 
-fn build_workflow_routes() -> Router<()> {
+fn build_workflow_routes() -> Router<AppState> {
     Router::new()
         .route("/", get(workflow::list))
         .route("/from-query", post(workflow::create_from_query))
@@ -160,7 +169,7 @@ fn build_workflow_routes() -> Router<()> {
         .route("/{pathb64}/runs/{run_id}", get(workflow::get_workflow_run))
 }
 
-fn build_thread_routes() -> Router<()> {
+fn build_thread_routes() -> Router<AppState> {
     Router::new()
         .route("/", get(thread::get_threads))
         .route("/", post(thread::create_thread))
@@ -179,7 +188,7 @@ fn build_thread_routes() -> Router<()> {
         .route("/{id}/stop", post(thread::stop_thread))
 }
 
-fn build_agent_routes() -> Router<()> {
+fn build_agent_routes() -> Router<AppState> {
     Router::new()
         .route("/", get(agent::get_agents))
         .route("/{pathb64}", get(agent::get_agent))
@@ -188,7 +197,7 @@ fn build_agent_routes() -> Router<()> {
         .route("/{pathb64}/tests/{test_index}", post(agent::run_test))
 }
 
-fn build_api_key_routes() -> Router<()> {
+fn build_api_key_routes() -> Router<AppState> {
     Router::new()
         .route("/", get(api_keys::list_api_keys))
         .route("/", post(api_keys::create_api_key))
@@ -196,7 +205,7 @@ fn build_api_key_routes() -> Router<()> {
         .route("/{id}", delete(api_keys::delete_api_key))
 }
 
-fn build_file_routes() -> Router<()> {
+fn build_file_routes() -> Router<AppState> {
     Router::new()
         .route("/", get(file::get_file_tree))
         .route("/diff-summary", get(file::get_diff_summary))
@@ -211,7 +220,7 @@ fn build_file_routes() -> Router<()> {
         .route("/{pathb64}/new-folder", post(file::create_folder))
 }
 
-fn build_database_routes() -> Router<()> {
+fn build_database_routes() -> Router<AppState> {
     Router::new()
         .route("/", get(database::list_databases))
         .route("/sync", post(database::sync_database))
@@ -219,7 +228,7 @@ fn build_database_routes() -> Router<()> {
         .route("/clean", post(database::clean_data))
 }
 
-fn build_secret_routes() -> Router<()> {
+fn build_secret_routes() -> Router<AppState> {
     Router::new()
         .route("/", get(secrets::list_secrets))
         .route("/", post(secrets::create_secret))
@@ -229,7 +238,7 @@ fn build_secret_routes() -> Router<()> {
         .route("/{id}", delete(secrets::delete_secret))
 }
 
-fn build_app_routes() -> Router<()> {
+fn build_app_routes() -> Router<AppState> {
     Router::new()
         .route("/", get(app::list_apps))
         .route("/{pathb64}", get(app::get_app_data))
@@ -238,30 +247,37 @@ fn build_app_routes() -> Router<()> {
         .route("/file/{pathb64}", get(app::get_data))
 }
 
-fn build_protected_routes() -> Router<()> {
+fn build_protected_routes(app_state: AppState) -> Router<AppState> {
     Router::new()
         .merge(build_global_routes())
         .nest("/workspaces", build_workspace_routes())
         .nest(
             "/{project_id}",
-            build_project_routes().layer(middleware::from_fn(project_middleware)),
+            build_project_routes().layer(middleware::from_fn_with_state(
+                app_state,
+                project_middleware,
+            )),
         )
 }
 
-fn apply_middleware(protected_routes: Router<()>) -> Result<Router<()>, OxyError> {
+fn apply_middleware(
+    protected_routes: Router<AppState>,
+    local: bool,
+) -> Result<Router<AppState>, OxyError> {
     let protected_regular_routes = protected_routes
         .layer(middleware::from_fn(timeout_middleware))
         .layer(middleware::from_fn_with_state(
-            AuthState::built_in(),
+            AuthState::built_in(local),
             auth_middleware,
         ));
 
     Ok(protected_regular_routes)
 }
-pub async fn api_router() -> Result<Router, OxyError> {
+pub async fn api_router(local: bool) -> Result<Router, OxyError> {
+    let app_state = AppState { local };
     let public_routes = build_public_routes();
-    let protected_routes = build_protected_routes();
-    let protected_routes = apply_middleware(protected_routes)?;
+    let protected_routes = build_protected_routes(app_state.clone());
+    let protected_routes = apply_middleware(protected_routes, local)?;
     let app_routes = public_routes.merge(protected_routes);
     let cors = build_cors_layer();
 
@@ -270,7 +286,7 @@ pub async fn api_router() -> Result<Router, OxyError> {
     let global_timeout = TimeoutLayer::new(Duration::from_secs(60));
 
     Ok(app_routes
-        .with_state(())
+        .with_state(app_state.clone())
         .layer(cors)
         .layer(global_timeout)
         .layer(ServiceBuilder::new().layer(NewSentryLayer::<Request<Body>>::new_from_top())))
@@ -298,6 +314,7 @@ pub async fn openapi_router() -> OpenApiRouter {
         .routes(routes!(project::get_project))
         .routes(routes!(project::delete_project))
         .routes(routes!(project::get_project_branches))
+        .routes(routes!(project::create_repo_from_project))
         // Run routes
         .routes(routes!(run::get_workflow_runs))
         .routes(routes!(run::create_workflow_run))

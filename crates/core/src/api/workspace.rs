@@ -1,13 +1,14 @@
-use crate::auth::extractor::AuthenticatedUserExtractor;
 use crate::db::client::establish_connection;
-use crate::service::project_service::ProjectService;
+use crate::service::project::ProjectService;
+use crate::{
+    auth::extractor::AuthenticatedUserExtractor, service::project::models::CreateWorkspaceRequest,
+};
 use axum::{extract::Json as JsonExtractor, http::StatusCode, response::Json};
-use entity::projects;
 use entity::{
     prelude::{WorkspaceUsers, Workspaces},
     workspace_users, workspaces,
 };
-use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set, TransactionTrait};
+use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -27,7 +28,6 @@ pub struct ProjectInfo {
     pub id: String,
     pub name: String,
     pub workspace_id: String,
-    pub provider: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -36,15 +36,6 @@ pub struct ProjectInfo {
 pub struct WorkspaceListResponse {
     pub workspaces: Vec<WorkspaceResponse>,
     pub total: usize,
-}
-
-#[derive(Deserialize, ToSchema)]
-pub struct CreateWorkspaceRequest {
-    pub name: String,
-    pub repo_id: Option<i64>,
-    pub token: Option<String>,
-    pub branch: Option<String>,
-    pub provider: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -154,103 +145,7 @@ pub async fn create_workspace(
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     JsonExtractor(req): JsonExtractor<CreateWorkspaceRequest>,
 ) -> Result<Json<WorkspaceResponse>, StatusCode> {
-    let db = establish_connection().await.map_err(|e| {
-        tracing::error!("Database connection failed: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-
-    let txn = db.begin().await.map_err(|e| {
-        tracing::error!("Failed to begin transaction: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-
-    let workspace_id = Uuid::new_v4();
-    let now = chrono::Utc::now().into();
-
-    let workspace = workspaces::ActiveModel {
-        id: Set(workspace_id),
-        name: Set(req.name.clone()),
-        created_at: Set(now),
-        updated_at: Set(now),
-    };
-
-    let created_ws = workspace.insert(&txn).await.map_err(|e| {
-        tracing::error!("Failed to create workspace: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-
-    let ws_user = workspace_users::ActiveModel {
-        id: Set(Uuid::new_v4()),
-        workspace_id: Set(workspace_id),
-        user_id: Set(user.id),
-        role: Set("owner".to_string()),
-        created_at: Set(now),
-        updated_at: Set(now),
-    };
-
-    ws_user.insert(&txn).await.map_err(|e| {
-        tracing::error!("Failed to add user to workspace: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-
-    let mut project_info: Option<ProjectInfo> = None;
-    if let (Some(repo_id), Some(token), Some(branch), Some(provider_str)) =
-        (req.repo_id, req.token, req.branch, req.provider)
-    {
-        let provider = match projects::ProjectProvider::from_str(&provider_str) {
-            Ok(p) => p,
-            Err(_) => {
-                tracing::error!("Invalid provider: {}", provider_str);
-                return Err(StatusCode::BAD_REQUEST);
-            }
-        };
-
-        let txn_rollback = |txn: sea_orm::DatabaseTransaction| async move {
-            if let Err(e) = txn.rollback().await {
-                tracing::error!("Failed to rollback transaction: {}", e);
-            }
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
-        };
-
-        match ProjectService::create_project_with_repo_and_pull(
-            workspace_id,
-            token,
-            repo_id,
-            branch,
-            provider,
-        )
-        .await
-        {
-            Ok((project, _branch, _local_path)) => {
-                project_info = Some(ProjectInfo {
-                    id: project.id.to_string(),
-                    name: project.name,
-                    workspace_id: project.workspace_id.to_string(),
-                    provider: project.provider,
-                    created_at: project.created_at.to_string(),
-                    updated_at: project.updated_at.to_string(),
-                });
-            }
-            Err(e) => {
-                tracing::error!("Failed to create project: {}", e);
-                return txn_rollback(txn).await;
-            }
-        }
-    }
-
-    txn.commit().await.map_err(|e| {
-        tracing::error!("Failed to commit transaction: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-
-    Ok(Json(WorkspaceResponse {
-        id: created_ws.id.to_string(),
-        name: created_ws.name,
-        role: "owner".to_string(),
-        created_at: created_ws.created_at.to_string(),
-        updated_at: created_ws.updated_at.to_string(),
-        project: project_info,
-    }))
+    ProjectService::create_workspace_new(user.id, req).await
 }
 
 /// List all workspaces for the authenticated user
@@ -315,7 +210,6 @@ pub async fn list_workspaces(
                     id: project.id.to_string(),
                     name: project.name.clone(),
                     workspace_id: project.workspace_id.to_string(),
-                    provider: project.provider.clone(),
                     created_at: project.created_at.to_string(),
                     updated_at: project.updated_at.to_string(),
                 })

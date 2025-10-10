@@ -9,7 +9,8 @@ import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 const AppEditor = ({ pathb64 }: { pathb64: string }) => {
   const [previewKey, setPreviewKey] = useState<string>(randomKey());
   const queryClient = useQueryClient();
-  const { project, branchName, isReadOnly } = useCurrentProjectBranch();
+  const { project, branchName, isReadOnly, gitEnabled } =
+    useCurrentProjectBranch();
   const projectId = project.id;
 
   const onSaved = () => {
@@ -28,7 +29,8 @@ const AppEditor = ({ pathb64 }: { pathb64: string }) => {
       onSaved={onSaved}
       pageContentClassName="md:flex-row flex-col"
       editorClassName="md:w-1/2 w-full h-1/2 md:h-full"
-      readOnly={isReadOnly}
+      readOnly={!!isReadOnly}
+      git={gitEnabled}
       preview={
         <div className="flex-1 overflow-hidden">
           <AppPreview key={previewKey} appPath64={pathb64 ?? ""} />

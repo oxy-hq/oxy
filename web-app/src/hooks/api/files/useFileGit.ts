@@ -6,8 +6,8 @@ import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 
 export default function useFileGit(
   pathb64: string,
-  commit = "HEAD",
   enabled = true,
+  commit = "HEAD",
   refetchOnWindowFocus = false,
   refetchOnMount: boolean | "always" = true,
 ) {

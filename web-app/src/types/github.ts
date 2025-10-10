@@ -6,10 +6,28 @@ export interface GitHubRepository {
   description?: string;
   default_branch: string;
   updated_at: string;
+  clone_url: string;
 }
 
 export interface GitHubBranch {
   name: string;
+}
+
+export interface GitHubNamespace {
+  id: string;
+  owner_type: string;
+  slug: string;
+  name: string;
+}
+
+export interface GitHubNamespacesResponse {
+  installations: GitHubNamespace[];
+}
+
+export interface CreateGitNamespaceRequest {
+  installation_id: string;
+  state: string;
+  code: string;
 }
 
 export interface ProjectStatus {
@@ -52,4 +70,9 @@ export interface SelectRepositoryResponse {
 
 export interface ListRepositoriesResponse {
   repositories: GitHubRepository[];
+}
+
+export interface GitHubAppInstallationRequest {
+  installation_id: string;
+  // app_id field removed: we now use environment variables for app_id
 }

@@ -24,7 +24,7 @@ export class WorkflowService {
     const response = await apiClient.get(`/${projectId}/workflows/${pathb64}`, {
       params: { branch: branchName },
     });
-    return response.data.data;
+    return response.data.workflow;
   }
 
   static async getWorkflowLogs(

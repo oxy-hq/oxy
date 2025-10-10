@@ -26,6 +26,7 @@ interface HeaderProps {
   onSave: () => void;
   isReadonly?: boolean;
   onShowDiff?: () => void;
+  git: boolean;
 }
 
 const EditorHeader = ({
@@ -34,6 +35,7 @@ const EditorHeader = ({
   actions,
   onSave,
   onShowDiff,
+  git = false,
   isReadonly = false,
 }: HeaderProps) => {
   return (
@@ -101,7 +103,7 @@ const EditorHeader = ({
         {fileState == "saving" && (
           <Loader2 className="w-4 h-4 text-yellow-500 animate-[spin_0.2s_linear_infinite]" />
         )}
-        {onShowDiff && (
+        {onShowDiff && git && (
           <Tooltip>
             <TooltipTrigger asChild>
               <Button variant="outline" size="sm" onClick={onShowDiff}>

@@ -6,15 +6,13 @@ use reqwest::{
 };
 use serde_json::Value;
 
-/// GitHub API client for repository operations
 pub struct GitHubClient {
     client: Client,
     base_url: String,
 }
 
 impl GitHubClient {
-    /// Create a new GitHub client with the provided token
-    pub fn new(token: String) -> Result<Self, OxyError> {
+    pub fn from_token(token: String) -> Result<Self, OxyError> {
         let mut headers = HeaderMap::new();
         headers.insert(
             AUTHORIZATION,
@@ -41,16 +39,12 @@ impl GitHubClient {
         })
     }
 
-    /// Test the GitHub token by fetching user information
-    pub async fn validate_token(&self) -> Result<(), OxyError> {
-        let url = format!("{}/user", self.base_url);
+    pub async fn validate_connection(&self) -> Result<(), OxyError> {
+        let url = format!("{}/installation", self.base_url);
 
-        let response = self
-            .client
-            .get(&url)
-            .send()
-            .await
-            .map_err(|e| OxyError::RuntimeError(format!("Failed to validate token: {e}")))?;
+        let response = self.client.get(&url).send().await.map_err(|e| {
+            OxyError::RuntimeError(format!("Failed to validate GitHub connection: {e}"))
+        })?;
 
         if !response.status().is_success() {
             return Err(OxyError::RuntimeError(format!(
@@ -63,7 +57,6 @@ impl GitHubClient {
         Ok(())
     }
 
-    /// List repositories accessible to the authenticated user
     pub async fn list_repositories(&self) -> Result<Vec<GitHubRepository>, OxyError> {
         let mut all_repos = Vec::new();
         let mut page = 1;
@@ -88,7 +81,7 @@ impl GitHubClient {
     pub async fn list_branches(
         &self,
         full_repo_name: String,
-    ) -> Result<Vec<GithubBranch>, OxyError> {
+    ) -> Result<Vec<GitHubBranch>, OxyError> {
         let mut all_branches = Vec::new();
         let mut page = 1;
         let per_page = 100;
@@ -111,14 +104,13 @@ impl GitHubClient {
         Ok(all_branches)
     }
 
-    /// Get authenticated user's repositories with pagination
     pub async fn list_repositories_paginated(
         &self,
         page: u32,
         per_page: u32,
     ) -> Result<Vec<GitHubRepository>, OxyError> {
         let url = format!(
-            "{}/user/repos?sort=updated&page={}&per_page={}",
+            "{}/installation/repositories?sort=updated&page={}&per_page={}",
             self.base_url, page, per_page
         );
 
@@ -135,20 +127,26 @@ impl GitHubClient {
             )));
         }
 
-        let repos: Vec<GitHubRepository> = response.json().await.map_err(|e| {
-            OxyError::RuntimeError(format!("Failed to parse repositories response: {e}"))
-        })?;
+        // The installation repositories endpoint returns a different structure with repositories nested
+        #[derive(serde::Deserialize)]
+        struct InstallationRepositoriesResponse {
+            repositories: Vec<GitHubRepository>,
+        }
 
-        Ok(repos)
+        let response_data: InstallationRepositoriesResponse =
+            response.json().await.map_err(|e| {
+                OxyError::RuntimeError(format!("Failed to parse repositories response: {e}"))
+            })?;
+
+        Ok(response_data.repositories)
     }
 
-    /// Get branches of a repository with pagination
     pub async fn list_branches_paginated(
         &self,
         full_repo_name: String,
         page: u32,
         per_page: u32,
-    ) -> Result<Vec<GithubBranch>, OxyError> {
+    ) -> Result<Vec<GitHubBranch>, OxyError> {
         let url = format!(
             "{}/repos/{}/branches?page={}&per_page={}",
             self.base_url, full_repo_name, page, per_page
@@ -169,16 +167,14 @@ impl GitHubClient {
             )));
         }
 
-        let branches: Vec<GithubBranch> = response.json().await.map_err(|e| {
+        let branches: Vec<GitHubBranch> = response.json().await.map_err(|e| {
             OxyError::RuntimeError(format!("Failed to parse branches response: {e}"))
         })?;
 
         Ok(branches)
     }
 
-    /// Get repository details by ID
     pub async fn get_repository(&self, repo_id: i64) -> Result<GitHubRepository, OxyError> {
-        // Directly get the repository by ID from the GitHub API
         let url = format!("{}/repositories/{}", self.base_url, repo_id);
 
         let response = self
@@ -203,14 +199,12 @@ impl GitHubClient {
         Ok(repo)
     }
 
-    /// Get the latest commit hash from the default branch of a repository
     pub async fn get_latest_commit_hash(&self, repo_id: i64) -> Result<String, OxyError> {
         let repo = self.get_repository(repo_id).await?;
         self.get_branch_commit_hash(repo_id, &repo.default_branch)
             .await
     }
 
-    /// Get the latest commit hash from a specific branch
     pub async fn get_branch_commit_hash(
         &self,
         repo_id: i64,
@@ -233,7 +227,6 @@ impl GitHubClient {
                 OxyError::RuntimeError(format!("Failed to parse branch response: {e}"))
             })?;
 
-            // Extract commit SHA from the response
             let commit_sha = branch_data
                 .get("commit")
                 .and_then(|c| c.get("sha"))
@@ -256,7 +249,6 @@ impl GitHubClient {
         }
     }
 
-    /// Get detailed commit information by SHA
     pub async fn get_commit_details(
         &self,
         repo_id: i64,
@@ -277,7 +269,6 @@ impl GitHubClient {
                 OxyError::RuntimeError(format!("Failed to parse commit response: {e}"))
             })?;
 
-            // Extract commit information from the response
             let sha = commit_data
                 .get("sha")
                 .and_then(|s| s.as_str())
@@ -334,15 +325,57 @@ impl GitHubClient {
             )))
         }
     }
-}
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+    pub async fn create_repository(
+        &self,
+        repo_name: &str,
+        description: Option<&str>,
+        private: Option<bool>,
+        owner_type: Option<&str>,
+        owner: Option<&str>,
+    ) -> Result<GitHubRepository, OxyError> {
+        let url = if owner_type == Some("User") {
+            format!("{}/user/repos", self.base_url)
+        } else {
+            format!("{}/orgs/{}/repos", self.base_url, owner.unwrap())
+        };
 
-    #[test]
-    fn test_client_creation() {
-        let client = GitHubClient::new("test_token".to_string());
-        assert!(client.is_ok());
+        let mut payload = serde_json::json!({
+            "name": repo_name,
+        });
+
+        if let Some(desc) = description {
+            payload["description"] = serde_json::Value::String(desc.to_string());
+        }
+
+        if let Some(is_private) = private {
+            payload["private"] = serde_json::Value::Bool(is_private);
+        }
+
+        let response = self
+            .client
+            .post(&url)
+            .json(&payload)
+            .send()
+            .await
+            .map_err(|e| OxyError::RuntimeError(format!("Failed to create repository: {e}")))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+
+            return Err(OxyError::RuntimeError(format!(
+                "GitHub API error creating repository: HTTP {status} - {error_text}. Note: For user accounts with GitHub Apps, the app must have 'Contents' and 'Administration' repository permissions, and the user account must allow the app to create repositories."
+            )));
+        }
+
+        let repo: GitHubRepository = response.json().await.map_err(|e| {
+            OxyError::RuntimeError(format!("Failed to parse repository creation response: {e}"))
+        })?;
+
+        Ok(repo)
     }
 }

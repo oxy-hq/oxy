@@ -1,6 +1,6 @@
 use crate::api::middlewares::project::ProjectManagerExtractor;
 use crate::github::{FileStatus, GitOperations};
-use crate::service::project_service::ProjectService;
+use crate::service::project::ProjectService;
 use axum::Json;
 use axum::extract::{self, Path};
 use axum::http::StatusCode;
@@ -350,7 +350,6 @@ impl Display for FileTree {
 
 pub async fn get_file_tree(
     ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
-    Path(_project_id): Path<Uuid>,
 ) -> Result<extract::Json<Vec<FileTree>>, StatusCode> {
     let project_path = project_manager.config_manager.project_path();
     let project_path = PathBuf::from(project_path);

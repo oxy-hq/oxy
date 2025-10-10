@@ -377,7 +377,6 @@ impl From<WorkflowEventsRequest> for RunInfo {
 )]
 pub async fn workflow_events(
     ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
-    Path(_project_id): Path<Uuid>,
     Query(request): Query<WorkflowEventsRequest>,
 ) -> Result<impl axum::response::IntoResponse, StatusCode> {
     let run_info: RunInfo = request.into();
@@ -470,7 +469,6 @@ pub struct WorkflowEventsResponse {
 )]
 pub async fn workflow_events_sync(
     ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
-    Path(_project_id): Path<Uuid>,
     Query(request): Query<WorkflowEventsRequest>,
 ) -> Result<axum::extract::Json<WorkflowEventsResponse>, StatusCode> {
     let source_id = if let Ok(decoded_bytes) = BASE64_STANDARD.decode(&request.source_id) {

@@ -26,9 +26,9 @@ impl<T> Clone for AuthState<T> {
 }
 
 impl AuthState<BuiltInAuthenticator> {
-    pub fn built_in() -> Self {
+    pub fn built_in(local: bool) -> Self {
         Self {
-            authenticator: Arc::new(BuiltInAuthenticator::new()),
+            authenticator: Arc::new(BuiltInAuthenticator::new(local)),
         }
     }
 }

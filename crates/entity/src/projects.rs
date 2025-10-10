@@ -40,9 +40,7 @@ pub struct Model {
     pub id: Uuid,
     pub name: String,
     pub workspace_id: Uuid,
-    pub repo_id: Option<String>,
-    pub token: Option<String>,
-    pub provider: Option<String>,
+    pub project_repo_id: Option<Uuid>,
     pub active_branch_id: Uuid,
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
@@ -58,6 +56,14 @@ pub enum Relation {
         on_delete = "Cascade"
     )]
     Workspaces,
+    #[sea_orm(
+        belongs_to = "super::project_repos::Entity",
+        from = "Column::ProjectRepoId",
+        to = "super::project_repos::Column::Id",
+        on_update = "NoAction",
+        on_delete = "SetNull"
+    )]
+    ProjectRepos,
     #[sea_orm(has_many = "super::branches::Entity")]
     Branches,
     #[sea_orm(has_many = "super::runs::Entity")]
@@ -71,6 +77,12 @@ pub enum Relation {
 impl Related<super::workspaces::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Workspaces.def()
+    }
+}
+
+impl Related<super::project_repos::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::ProjectRepos.def()
     }
 }
 

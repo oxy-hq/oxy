@@ -1,4 +1,5 @@
-// Auth marker type removed; router uses unit `()` state now.
+use crate::cli::ServeArgs;
+use crate::config::constants::DEFAULT_API_KEY_HEADER;
 use crate::db::client::establish_connection;
 use crate::errors::OxyError;
 use crate::theme::StyledText;
@@ -18,6 +19,10 @@ use tower::service_fn;
 use tower_http::trace::{self, TraceLayer};
 use tower_serve_static::ServeDir;
 use tracing::Level;
+use utoipa::openapi::security::{
+    ApiKey as OApiKey, ApiKeyValue, SecurityRequirement, SecurityScheme,
+};
+use utoipa::openapi::server::Server;
 use utoipa_swagger_ui::SwaggerUi;
 
 #[cfg(target_os = "windows")]
@@ -26,43 +31,13 @@ static DIST: Dir = include_dir!("D:\\a\\oxy\\oxy\\crates\\core\\dist");
 static DIST: Dir = include_dir!("$CARGO_MANIFEST_DIR/dist");
 const ASSETS_CACHE_CONTROL: &str = "public, max-age=31536000, immutable";
 
-pub struct ServerConfig {
-    pub port: u16,
-    pub host: String,
-    pub http2_only: bool,
-    pub tls_cert: String,
-    pub tls_key: String,
-}
-
-pub async fn start_server_and_web_app(
-    port: u16,
-    host: String,
-    http2_only: bool,
-    tls_cert: String,
-    tls_key: String,
-) -> Result<(), OxyError> {
-    let config: ServerConfig = ServerConfig {
-        port,
-        host,
-        http2_only,
-        tls_cert,
-        tls_key,
-    };
-
+pub async fn start_server_and_web_app(args: ServeArgs) -> Result<(), OxyError> {
     run_database_migrations().await?;
 
-    let available_port = find_available_port(config.host.clone(), config.port).await?;
-    let app = create_web_application().await?;
+    let available_port = find_available_port(args.host.clone(), args.port).await?;
+    let app = create_web_application(args.local).await?;
 
-    serve_application(
-        app,
-        config.host,
-        available_port,
-        config.http2_only,
-        config.tls_cert,
-        config.tls_key,
-    )
-    .await
+    serve_application(app, args).await
 }
 
 async fn run_database_migrations() -> Result<(), OxyError> {
@@ -120,8 +95,8 @@ async fn find_available_port(host: String, port: u16) -> Result<u16, OxyError> {
     Ok(chosen_port)
 }
 
-async fn create_web_application() -> Result<Router, OxyError> {
-    let api_router = crate::api::router::api_router()
+async fn create_web_application(local: bool) -> Result<Router, OxyError> {
+    let api_router = crate::api::router::api_router(local)
         .await
         .map(|router| router.layer(create_trace_layer()))
         .map_err(|e| OxyError::RuntimeError(format!("Failed to create API router: {}", e)))?;
@@ -132,13 +107,6 @@ async fn create_web_application() -> Result<Router, OxyError> {
     openapi_doc.info.description = Some("oxy api docs".to_string());
     openapi_doc.info.contact = None;
     openapi_doc.info.license = None;
-
-    // Always add an API key security scheme using the default header.
-    use crate::config::constants::DEFAULT_API_KEY_HEADER;
-    use utoipa::openapi::security::{
-        ApiKey as OApiKey, ApiKeyValue, SecurityRequirement, SecurityScheme,
-    };
-    use utoipa::openapi::server::Server;
 
     let name = "ApiKey".to_string();
     let mut components = openapi_doc.components.take().unwrap_or_default();
@@ -214,29 +182,22 @@ async fn handle_static_files(
     Ok(response)
 }
 
-async fn serve_application(
-    app: Router,
-    host: String,
-    port: u16,
-    http2_only: bool,
-    tls_cert: String,
-    tls_key: String,
-) -> Result<(), OxyError> {
-    let socket_addr = format!("{}:{}", host, port)
+async fn serve_application(app: Router, args: ServeArgs) -> Result<(), OxyError> {
+    let socket_addr = format!("{}:{}", args.host, args.port)
         .parse()
-        .or_else(|_| Ok(SocketAddr::from(([0, 0, 0, 0], port))))
+        .or_else(|_| Ok(SocketAddr::from(([0, 0, 0, 0], args.port))))
         .map_err(|e: std::net::AddrParseError| {
             OxyError::RuntimeError(format!("Invalid address: {}", e))
         })?;
 
-    let display_host = if host == "0.0.0.0" {
+    let display_host = if args.host == "0.0.0.0" {
         "localhost"
     } else {
-        &host
+        &args.host
     };
 
-    let protocol = if http2_only { "https" } else { "http" };
-    let protocol_info = if http2_only {
+    let protocol = if args.http2_only { "https" } else { "http" };
+    let protocol_info = if args.http2_only {
         " (HTTP/2 ONLY)"
     } else {
         " (HTTP/1.1+HTTP/2)"
@@ -244,19 +205,24 @@ async fn serve_application(
     println!(
         "{} {}{}",
         "Web app running at".text(),
-        format!("{}://{}:{}", protocol, display_host, port).secondary(),
+        format!("{}://{}:{}", protocol, display_host, args.port).secondary(),
         protocol_info
     );
 
     let shutdown = create_shutdown_signal();
 
-    if http2_only {
+    if args.http2_only {
         // If TLS cert/key files exist, use HTTPS+HTTP/2
-        let cert_exists = std::path::Path::new(&tls_cert).exists();
-        let key_exists = std::path::Path::new(&tls_key).exists();
+        let cert_exists = std::path::Path::new(&args.tls_cert).exists();
+        let key_exists = std::path::Path::new(&args.tls_key).exists();
         let config = if cert_exists && key_exists {
             tracing::info!("Using provided TLS cert/key files for HTTPS (TLS) and HTTP/2");
-            match axum_server::tls_rustls::RustlsConfig::from_pem_file(&tls_cert, &tls_key).await {
+            match axum_server::tls_rustls::RustlsConfig::from_pem_file(
+                &args.tls_cert,
+                &args.tls_key,
+            )
+            .await
+            {
                 Ok(cfg) => cfg,
                 Err(e) => {
                     eprintln!("Failed to load TLS cert/key: {}", e);

@@ -1,8 +1,9 @@
+import { CreateWorkspaceState } from "@/pages/create-workspace";
+
 export interface ProjectInfo {
   id: string;
   name: string;
   workspace_id: string;
-  provider?: string;
   created_at: string;
   updated_at: string;
 }
@@ -21,13 +22,7 @@ export interface WorkspaceListResponse {
   total: number;
 }
 
-export interface CreateWorkspaceRequest {
-  name: string;
-  repo_id?: number;
-  token?: string;
-  branch?: string;
-  provider?: string;
-}
+export type CreateWorkspaceRequest = CreateWorkspaceState;
 
 export interface MessageResponse {
   message: string;

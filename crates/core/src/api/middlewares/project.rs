@@ -2,13 +2,15 @@ use crate::adapters::project::builder::ProjectBuilder;
 use crate::adapters::project::manager::ProjectManager;
 use crate::adapters::runs::RunsManager;
 use crate::adapters::secrets::SecretsManager;
+use crate::api::router::AppState;
 use crate::auth::extractor::AuthenticatedUserExtractor;
+use crate::config::resolve_local_project_path;
 use crate::db::client::establish_connection;
 use crate::github::GitOperations;
 use crate::service::retrieval::EnumIndexManager;
 use crate::service::secret_manager::SecretManagerService;
-use axum::extract::Query;
 use axum::extract::{FromRequestParts, Path};
+use axum::extract::{Query, State};
 use axum::http::request::Parts;
 use axum::{
     http::{Request, StatusCode},
@@ -63,12 +65,108 @@ fn should_skip_project_manager(uri_path: &str) -> bool {
 }
 
 pub async fn project_middleware(
+    State(app_state): State<AppState>,
     Path(ProjectPath { project_id }): Path<ProjectPath>,
     Query(query): Query<BranchQuery>,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     mut request: Request<axum::body::Body>,
     next: Next,
 ) -> Result<Response, StatusCode> {
+    if app_state.local {
+        // For local development, create a default/mock project entity
+        let branch_id = Uuid::nil();
+        let project = entity::projects::Model {
+            id: Uuid::nil(),
+            name: "Local Development Project".to_string(),
+            workspace_id: Uuid::nil(),
+            project_repo_id: None,
+            active_branch_id: Uuid::nil(),
+            created_at: chrono::Utc::now().into(),
+            updated_at: chrono::Utc::now().into(),
+        };
+
+        request.extensions_mut().insert(project);
+
+        match resolve_local_project_path() {
+            Ok(project_path) => {
+                match ProjectBuilder::new()
+                    .with_project_path_and_fallback_config(&project_path)
+                    .await
+                {
+                    Ok(mut builder) => {
+                        if let Ok(secrets_manager) = SecretsManager::from_environment() {
+                            builder = builder.with_secrets_manager(secrets_manager);
+                        } else {
+                            tracing::warn!(
+                                "Failed to create secrets manager for project {}, continuing without it",
+                                project_id
+                            );
+                        }
+                        match RunsManager::default(project_id, branch_id).await {
+                            Ok(runs_manager) => {
+                                builder = builder.with_runs_manager(runs_manager);
+                            }
+                            Err(e) => {
+                                tracing::warn!(
+                                    "Failed to create runs manager for project {}: {}, continuing without it",
+                                    project_id,
+                                    e
+                                );
+                            }
+                        }
+                        match builder.build().await {
+                            Ok(project_manager) => {
+                                match EnumIndexManager::init_from_config(
+                                    project_manager.config_manager.clone(),
+                                )
+                                .await
+                                {
+                                    Ok(_) => {
+                                        tracing::debug!(
+                                            "Enum index initialized successfully for project {}",
+                                            project_id
+                                        );
+                                    }
+                                    Err(e) => {
+                                        tracing::debug!(
+                                            "Enum index initialization skipped for project {}: {}",
+                                            project_id,
+                                            e
+                                        );
+                                    }
+                                }
+                                request.extensions_mut().insert(project_manager);
+                            }
+                            Err(e) => {
+                                tracing::warn!(
+                                    "Failed to build project manager for project {}: {}, continuing without it",
+                                    project_id,
+                                    e
+                                );
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            "Failed to set project path in project builder for project {}: {}, continuing without project manager",
+                            project_id,
+                            e
+                        );
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to resolve local project path for project {}: {}, continuing without project manager",
+                    project_id,
+                    e
+                );
+            }
+        }
+
+        return Ok(next.run(request).await);
+    }
+
     println!("Project ID from path: {}", project_id);
     let db = establish_connection().await.map_err(|e| {
         tracing::error!("Failed to establish database connection: {}", e);
