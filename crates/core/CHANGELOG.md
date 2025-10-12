@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.3](https://github.com/oxy-hq/oxy-internal/compare/0.3.2...0.3.3) (2025-10-10)
+
+
+### <!-- 0 -->🚀 Features
+
+* use cloud flag for oxy serve ([#1224](https://github.com/oxy-hq/oxy-internal/issues/1224)) ([daebf58](https://github.com/oxy-hq/oxy-internal/commit/daebf58890e5778610aaa7a449ff2f2266a32b49))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* failed to parse some valid clickhouse queries ([#1217](https://github.com/oxy-hq/oxy-internal/issues/1217)) ([5e9e370](https://github.com/oxy-hq/oxy-internal/commit/5e9e37059ff264cdbc6c2d422ea473318db66930))
+
 ## [0.3.2](https://github.com/oxy-hq/oxy-internal/compare/0.3.1...0.3.2) (2025-10-07)
 
 
