@@ -8,6 +8,7 @@ pub struct EntityBuilder {
     entity_type: Option<EntityType>,
     description: Option<String>,
     key: Option<String>,
+    keys: Option<Vec<String>>,
     label: Option<String>,
 }
 
@@ -18,6 +19,7 @@ impl EntityBuilder {
             entity_type: None,
             description: None,
             key: None,
+            keys: None,
             label: None,
         }
     }
@@ -52,17 +54,32 @@ impl EntityBuilder {
         self
     }
 
+    pub fn keys<I, S>(mut self, keys: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.keys = Some(keys.into_iter().map(|k| k.into()).collect());
+        self
+    }
+
     pub fn label<S: Into<String>>(mut self, label: S) -> Self {
         self.label = Some(label.into());
         self
     }
 
     pub fn build(self) -> Result<Entity, String> {
+        // Validate that at least one of key or keys is provided
+        if self.key.is_none() && self.keys.is_none() {
+            return Err("Entity must have either 'key' or 'keys' specified".to_string());
+        }
+
         let entity = Entity {
             name: self.name.ok_or("Entity name is required")?,
             entity_type: self.entity_type.ok_or("Entity type is required")?,
             description: self.description.ok_or("Entity description is required")?,
-            key: self.key.ok_or("Entity key is required")?,
+            key: self.key,
+            keys: self.keys,
         };
 
         let validation = entity.validate();

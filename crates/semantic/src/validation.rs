@@ -69,9 +69,36 @@ impl SemanticValidator for Entity {
             result.add_error("Entity description cannot be empty".to_string());
         }
 
-        // Validate key
-        if self.key.is_empty() {
-            result.add_error("Entity key cannot be empty".to_string());
+        // Validate key or keys
+        if self.key.is_none() && self.keys.is_none() {
+            result.add_error("Entity must have either 'key' or 'keys' specified".to_string());
+        }
+
+        if self.key.is_some() && self.keys.is_some() {
+            result.add_warning(
+                "Entity has both 'key' and 'keys' specified. Using 'keys' and ignoring 'key'"
+                    .to_string(),
+            );
+        }
+
+        // Validate single key
+        if let Some(ref key) = self.key {
+            if key.is_empty() {
+                result.add_error("Entity key cannot be empty".to_string());
+            }
+        }
+
+        // Validate multiple keys
+        if let Some(ref keys) = self.keys {
+            if keys.is_empty() {
+                result.add_error("Entity keys cannot be an empty array".to_string());
+            } else {
+                for (idx, key) in keys.iter().enumerate() {
+                    if key.is_empty() {
+                        result.add_error(format!("Entity key at index {} cannot be empty", idx));
+                    }
+                }
+            }
         }
 
         result
@@ -463,4 +490,210 @@ pub fn validate_semantic_layer(
     semantic_layer: &SemanticLayer,
 ) -> Result<ValidationResult, SemanticLayerError> {
     Ok(semantic_layer.validate())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Entity, EntityType};
+
+    #[test]
+    fn test_entity_validation_with_single_key() {
+        let entity = Entity {
+            name: "customer".to_string(),
+            entity_type: EntityType::Primary,
+            description: "Customer entity".to_string(),
+            key: Some("customer_id".to_string()),
+            keys: None,
+        };
+
+        let result = entity.validate();
+        assert!(result.is_valid);
+        assert!(result.errors.is_empty());
+    }
+
+    #[test]
+    fn test_entity_validation_with_composite_keys() {
+        let entity = Entity {
+            name: "order_item".to_string(),
+            entity_type: EntityType::Primary,
+            description: "Order item entity".to_string(),
+            key: None,
+            keys: Some(vec!["order_id".to_string(), "line_item_id".to_string()]),
+        };
+
+        let result = entity.validate();
+        assert!(result.is_valid);
+        assert!(result.errors.is_empty());
+    }
+
+    #[test]
+    fn test_entity_validation_with_both_key_and_keys() {
+        let entity = Entity {
+            name: "test_entity".to_string(),
+            entity_type: EntityType::Primary,
+            description: "Test entity".to_string(),
+            key: Some("id".to_string()),
+            keys: Some(vec!["id".to_string(), "tenant_id".to_string()]),
+        };
+
+        let result = entity.validate();
+        assert!(result.is_valid);
+        // Should have a warning about both being specified
+        assert_eq!(result.warnings.len(), 1);
+        assert!(result.warnings[0].contains("both 'key' and 'keys'"));
+    }
+
+    #[test]
+    fn test_entity_validation_missing_keys() {
+        let entity = Entity {
+            name: "test_entity".to_string(),
+            entity_type: EntityType::Primary,
+            description: "Test entity".to_string(),
+            key: None,
+            keys: None,
+        };
+
+        let result = entity.validate();
+        assert!(!result.is_valid);
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.contains("must have either 'key' or 'keys'"))
+        );
+    }
+
+    #[test]
+    fn test_entity_validation_empty_key() {
+        let entity = Entity {
+            name: "test_entity".to_string(),
+            entity_type: EntityType::Primary,
+            description: "Test entity".to_string(),
+            key: Some("".to_string()),
+            keys: None,
+        };
+
+        let result = entity.validate();
+        assert!(!result.is_valid);
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.contains("key cannot be empty"))
+        );
+    }
+
+    #[test]
+    fn test_entity_validation_empty_keys_array() {
+        let entity = Entity {
+            name: "test_entity".to_string(),
+            entity_type: EntityType::Primary,
+            description: "Test entity".to_string(),
+            key: None,
+            keys: Some(vec![]),
+        };
+
+        let result = entity.validate();
+        assert!(!result.is_valid);
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.contains("keys cannot be an empty array"))
+        );
+    }
+
+    #[test]
+    fn test_entity_validation_empty_string_in_keys() {
+        let entity = Entity {
+            name: "test_entity".to_string(),
+            entity_type: EntityType::Primary,
+            description: "Test entity".to_string(),
+            key: None,
+            keys: Some(vec!["key1".to_string(), "".to_string(), "key3".to_string()]),
+        };
+
+        let result = entity.validate();
+        assert!(!result.is_valid);
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.contains("key at index 1 cannot be empty"))
+        );
+    }
+
+    #[test]
+    fn test_entity_get_keys_with_single_key() {
+        let entity = Entity {
+            name: "test".to_string(),
+            entity_type: EntityType::Primary,
+            description: "Test".to_string(),
+            key: Some("id".to_string()),
+            keys: None,
+        };
+
+        let keys = entity.get_keys();
+        assert_eq!(keys, vec!["id".to_string()]);
+    }
+
+    #[test]
+    fn test_entity_get_keys_with_composite_keys() {
+        let entity = Entity {
+            name: "test".to_string(),
+            entity_type: EntityType::Primary,
+            description: "Test".to_string(),
+            key: None,
+            keys: Some(vec!["key1".to_string(), "key2".to_string()]),
+        };
+
+        let keys = entity.get_keys();
+        assert_eq!(keys, vec!["key1".to_string(), "key2".to_string()]);
+    }
+
+    #[test]
+    fn test_entity_get_keys_prefers_keys_over_key() {
+        let entity = Entity {
+            name: "test".to_string(),
+            entity_type: EntityType::Primary,
+            description: "Test".to_string(),
+            key: Some("single_key".to_string()),
+            keys: Some(vec!["key1".to_string(), "key2".to_string()]),
+        };
+
+        let keys = entity.get_keys();
+        // Should return keys, not key
+        assert_eq!(keys, vec!["key1".to_string(), "key2".to_string()]);
+    }
+
+    #[test]
+    fn test_entity_is_composite() {
+        let single_key = Entity {
+            name: "test".to_string(),
+            entity_type: EntityType::Primary,
+            description: "Test".to_string(),
+            key: Some("id".to_string()),
+            keys: None,
+        };
+        assert!(!single_key.is_composite());
+
+        let composite_key = Entity {
+            name: "test".to_string(),
+            entity_type: EntityType::Primary,
+            description: "Test".to_string(),
+            key: None,
+            keys: Some(vec!["key1".to_string(), "key2".to_string()]),
+        };
+        assert!(composite_key.is_composite());
+
+        let single_element_keys = Entity {
+            name: "test".to_string(),
+            entity_type: EntityType::Primary,
+            description: "Test".to_string(),
+            key: None,
+            keys: Some(vec!["id".to_string()]),
+        };
+        assert!(!single_element_keys.is_composite());
+    }
 }

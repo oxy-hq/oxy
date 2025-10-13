@@ -27,8 +27,33 @@ pub struct Entity {
     pub entity_type: EntityType,
     /// Human-readable description of what this entity represents
     pub description: String,
-    /// The dimension that should be used as the key for the entity
-    pub key: String,
+    /// The dimension(s) that should be used as the key for the entity
+    /// Can be a single key or multiple keys for composite primary keys
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
+    /// Multiple keys for composite primary keys
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub keys: Option<Vec<String>>,
+}
+
+impl Entity {
+    /// Returns all keys for the entity as a vector
+    /// If both `key` and `keys` are set, returns `keys`
+    /// If only `key` is set, returns a single-element vector
+    pub fn get_keys(&self) -> Vec<String> {
+        if let Some(ref keys) = self.keys {
+            keys.clone()
+        } else if let Some(ref key) = self.key {
+            vec![key.clone()]
+        } else {
+            vec![]
+        }
+    }
+
+    /// Returns true if this entity has composite keys (multiple keys)
+    pub fn is_composite(&self) -> bool {
+        self.keys.as_ref().map(|k| k.len() > 1).unwrap_or(false)
+    }
 }
 
 /// Represents the data type of a dimension

@@ -134,10 +134,43 @@ impl EntityGraph {
 
                     if let (Some(primary_ent), Some(foreign_ent)) = (primary_entity, foreign_entity)
                     {
-                        let join_condition = format!(
-                            "{{{}.{}}} = {{{}.{}}}",
-                            foreign_view, foreign_ent.key, primary_view, primary_ent.key
-                        );
+                        // Get keys from both entities
+                        let primary_keys = primary_ent.get_keys();
+                        let foreign_keys = foreign_ent.get_keys();
+
+                        // Validate that both entities have the same number of keys
+                        if primary_keys.len() != foreign_keys.len() {
+                            return Err(SemanticLayerError::ConfigurationError(format!(
+                                "Entity '{}' has mismatched key counts: primary entity in view '{}' has {} key(s), foreign entity in view '{}' has {} key(s)",
+                                entity_name,
+                                primary_view,
+                                primary_keys.len(),
+                                foreign_view,
+                                foreign_keys.len()
+                            )));
+                        }
+
+                        // Build join condition for single or composite keys
+                        let join_condition = if primary_keys.len() == 1 {
+                            // Simple single-key join
+                            format!(
+                                "{{{}.{}}} = {{{}.{}}}",
+                                foreign_view, foreign_keys[0], primary_view, primary_keys[0]
+                            )
+                        } else {
+                            // Composite key join with AND conditions
+                            primary_keys
+                                .iter()
+                                .zip(foreign_keys.iter())
+                                .map(|(pk, fk)| {
+                                    format!(
+                                        "{{{}.{}}} = {{{}.{}}}",
+                                        foreign_view, fk, primary_view, pk
+                                    )
+                                })
+                                .collect::<Vec<_>>()
+                                .join(" AND ")
+                        };
 
                         let join = JoinRelationship {
                             from_view: foreign_view.clone(),
@@ -275,5 +308,204 @@ impl EntityGraph {
         }
 
         joins
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Entity, EntityType, SemanticLayer, View};
+
+    #[test]
+    fn test_composite_key_join_generation() {
+        // Create a view with composite primary key
+        let order_items_view = View {
+            name: "order_items".to_string(),
+            description: "Order line items".to_string(),
+            table: Some("order_items".to_string()),
+            sql: None,
+            datasource: Some("test_db".to_string()),
+            label: None,
+            entities: vec![Entity {
+                name: "order_item".to_string(),
+                entity_type: EntityType::Primary,
+                description: "Order item entity".to_string(),
+                key: None,
+                keys: Some(vec!["order_id".to_string(), "line_item_id".to_string()]),
+            }],
+            dimensions: vec![],
+            measures: None,
+        };
+
+        // Create a view with composite foreign key
+        let shipments_view = View {
+            name: "shipments".to_string(),
+            description: "Order shipments".to_string(),
+            table: Some("shipments".to_string()),
+            sql: None,
+            datasource: Some("test_db".to_string()),
+            label: None,
+            entities: vec![
+                Entity {
+                    name: "shipment".to_string(),
+                    entity_type: EntityType::Primary,
+                    description: "Shipment entity".to_string(),
+                    key: Some("shipment_id".to_string()),
+                    keys: None,
+                },
+                Entity {
+                    name: "order_item".to_string(),
+                    entity_type: EntityType::Foreign,
+                    description: "Order item being shipped".to_string(),
+                    key: None,
+                    keys: Some(vec!["order_id".to_string(), "line_item_id".to_string()]),
+                },
+            ],
+            dimensions: vec![],
+            measures: None,
+        };
+
+        let semantic_layer = SemanticLayer {
+            views: vec![order_items_view, shipments_view],
+            topics: None,
+            metadata: None,
+        };
+
+        let entity_graph = EntityGraph::from_semantic_layer(&semantic_layer).unwrap();
+
+        // Check that a join was generated
+        assert_eq!(entity_graph.joins.len(), 1);
+
+        let join = &entity_graph.joins[0];
+        assert_eq!(join.from_view, "shipments");
+        assert_eq!(join.to_view, "order_items");
+
+        // Check that the join condition includes both keys with AND
+        assert!(join.on_condition.contains("order_id"));
+        assert!(join.on_condition.contains("line_item_id"));
+        assert!(join.on_condition.contains(" AND "));
+
+        // Check the exact format
+        assert_eq!(
+            join.on_condition,
+            "{shipments.order_id} = {order_items.order_id} AND {shipments.line_item_id} = {order_items.line_item_id}"
+        );
+    }
+
+    #[test]
+    fn test_mismatched_composite_key_counts() {
+        // Create a view with 2-column composite key
+        let view1 = View {
+            name: "view1".to_string(),
+            description: "View 1".to_string(),
+            table: Some("view1".to_string()),
+            sql: None,
+            datasource: Some("test_db".to_string()),
+            label: None,
+            entities: vec![Entity {
+                name: "entity1".to_string(),
+                entity_type: EntityType::Primary,
+                description: "Entity with 2 keys".to_string(),
+                key: None,
+                keys: Some(vec!["key1".to_string(), "key2".to_string()]),
+            }],
+            dimensions: vec![],
+            measures: None,
+        };
+
+        // Create a view with 3-column composite key (mismatch)
+        let view2 = View {
+            name: "view2".to_string(),
+            description: "View 2".to_string(),
+            table: Some("view2".to_string()),
+            sql: None,
+            datasource: Some("test_db".to_string()),
+            label: None,
+            entities: vec![Entity {
+                name: "entity1".to_string(),
+                entity_type: EntityType::Foreign,
+                description: "Entity with 3 keys".to_string(),
+                key: None,
+                keys: Some(vec![
+                    "key1".to_string(),
+                    "key2".to_string(),
+                    "key3".to_string(),
+                ]),
+            }],
+            dimensions: vec![],
+            measures: None,
+        };
+
+        let semantic_layer = SemanticLayer {
+            views: vec![view1, view2],
+            topics: None,
+            metadata: None,
+        };
+
+        // This should return an error due to mismatched key counts
+        let result = EntityGraph::from_semantic_layer(&semantic_layer);
+        assert!(result.is_err());
+
+        if let Err(err) = result {
+            let err_msg = format!("{:?}", err);
+            assert!(err_msg.contains("mismatched key counts"));
+        }
+    }
+
+    #[test]
+    fn test_single_key_still_works() {
+        // Test that single-key entities still work correctly
+        let customers_view = View {
+            name: "customers".to_string(),
+            description: "Customers".to_string(),
+            table: Some("customers".to_string()),
+            sql: None,
+            datasource: Some("test_db".to_string()),
+            label: None,
+            entities: vec![Entity {
+                name: "customer".to_string(),
+                entity_type: EntityType::Primary,
+                description: "Customer entity".to_string(),
+                key: Some("customer_id".to_string()),
+                keys: None,
+            }],
+            dimensions: vec![],
+            measures: None,
+        };
+
+        let orders_view = View {
+            name: "orders".to_string(),
+            description: "Orders".to_string(),
+            table: Some("orders".to_string()),
+            sql: None,
+            datasource: Some("test_db".to_string()),
+            label: None,
+            entities: vec![Entity {
+                name: "customer".to_string(),
+                entity_type: EntityType::Foreign,
+                description: "Customer who placed order".to_string(),
+                key: Some("customer_id".to_string()),
+                keys: None,
+            }],
+            dimensions: vec![],
+            measures: None,
+        };
+
+        let semantic_layer = SemanticLayer {
+            views: vec![customers_view, orders_view],
+            topics: None,
+            metadata: None,
+        };
+
+        let entity_graph = EntityGraph::from_semantic_layer(&semantic_layer).unwrap();
+
+        // Check that a join was generated
+        assert_eq!(entity_graph.joins.len(), 1);
+
+        let join = &entity_graph.joins[0];
+        assert_eq!(
+            join.on_condition,
+            "{orders.customer_id} = {customers.customer_id}"
+        );
     }
 }

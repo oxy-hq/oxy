@@ -1,0 +1,6 @@
+return_id,order_id,line_item_id,return_date,reason,quantity,refund_amount,status
+7001,1001,3,2024-01-25,defective,1,15.19,refunded
+7002,1002,2,2024-01-28,wrong_item,1,33.99,approved
+7003,1003,1,2024-02-01,not_as_described,1,49.99,pending
+7004,1004,1,2024-02-03,changed_mind,1,15.99,rejected
+7005,1005,2,2024-02-05,defective,2,53.99,refunded

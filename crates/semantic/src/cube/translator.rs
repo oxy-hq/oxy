@@ -181,7 +181,8 @@ fn convert_dimensions(
         // Check if this dimension is the key for a primary entity
         let is_primary_key = dimension.primary_key.unwrap_or(false)
             || view.entities.iter().any(|entity| {
-                entity.entity_type == EntityType::Primary && entity.key == dimension.name
+                entity.entity_type == EntityType::Primary
+                    && entity.get_keys().contains(&dimension.name)
             });
 
         let translated_sql = translate_cross_entity_references(&dimension.expr, entity_graph)?;
@@ -414,7 +415,8 @@ mod tests {
             entities: vec![Entity {
                 name: "test_entity".to_string(),
                 entity_type: EntityType::Primary,
-                key: "id".to_string(),
+                key: Some("id".to_string()),
+                keys: None,
                 description: "Test entity".to_string(),
             }],
             dimensions: vec![Dimension {
@@ -475,7 +477,8 @@ mod tests {
             entities: vec![Entity {
                 name: "order".to_string(),
                 entity_type: EntityType::Primary,
-                key: "order_id".to_string(),
+                key: Some("order_id".to_string()),
+                keys: None,
                 description: "Order entity".to_string(),
             }],
             dimensions: vec![],
