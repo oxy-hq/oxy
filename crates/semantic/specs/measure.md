@@ -21,14 +21,14 @@ measures:
   - name: total_revenue
     type: sum
     description: "Total revenue from orders"
-    expr: { order_amount }
+    expr: "{{ order_amount }}"
     samples: [1234567.89, 987654.32, 2345678.90]
     synonyms: ["revenue", "sales", "income", "total_sales"]
 
   - name: average_order_value
     type: average
     description: "Average order value"
-    expr: { order_amount }
+    expr: "{{ order_amount }}"
     samples: [156.78, 89.99, 234.56]
     synonyms: ["aov", "avg_order_value", "mean_order_amount"]
 ```
@@ -40,9 +40,8 @@ measures:
 | `name`        | string | Yes         | Unique identifier for the measure within the view                                           |
 | `type`        | string | Yes         | Measure type: `count`, `sum`, `average`, `min`, `max`, `count_distinct`, `median`, `custom` |
 | `description` | string | No          | Human-readable description of what this measure represents                                  |
-| `expr`        | string | Conditional | SQL expression for the measure (required for most types, not for `count`)                   |
+| `expr`        | string | Conditional | SQL expression for the measure (required for all types except `count`)                      |
 | `filters`     | array  | No          | List of filters to apply to the measure calculation                                         |
-| `sql`         | string | No          | Custom SQL expression (for custom type)                                                     |
 | `samples`     | array  | No          | Sample values or example outputs to help users understand the measure                       |
 | `synonyms`    | array  | No          | Alternative names or terms that refer to this measure                                       |
 
@@ -66,7 +65,7 @@ Calculates the sum of a numeric field.
 - name: total_revenue
   type: sum
   description: "Total revenue from all orders"
-  expr: { order_amount }
+  expr: "{{ order_amount }}"
 ```
 
 ### Average
@@ -77,7 +76,7 @@ Calculates the arithmetic mean of a numeric field.
 - name: average_order_value
   type: average
   description: "Average order value"
-  expr: { order_amount }
+  expr: "{{ order_amount }}"
 ```
 
 ### Min/Max
@@ -88,12 +87,12 @@ Finds the minimum or maximum value of a field.
 - name: min_order_amount
   type: min
   description: "Smallest order amount"
-  expr: { order_amount }
+  expr: "{{ order_amount }}"
 
 - name: max_order_amount
   type: max
   description: "Largest order amount"
-  expr: { order_amount }
+  expr: "{{ order_amount }}"
 ```
 
 ### Count Distinct
@@ -104,7 +103,7 @@ Counts the number of unique values in a field.
 - name: unique_customers
   type: count_distinct
   description: "Number of unique customers"
-  expr: { customer_id }
+  expr: "{{ customer_id }}"
 ```
 
 ### Median
@@ -115,7 +114,7 @@ Calculates the median (50th percentile) value.
 - name: median_order_value
   type: median
   description: "Median order value"
-  expr: { order_amount }
+  expr: "{{ order_amount }}"
 ```
 
 ### Custom
@@ -126,7 +125,7 @@ Allows for complex custom SQL expressions.
 - name: weighted_average_rating
   type: custom
   description: "Rating weighted by number of reviews"
-  sql: |
+  expr: |
     SUM(rating * review_count) / 
     NULLIF(SUM(review_count), 0)
 ```
@@ -147,14 +146,14 @@ measures:
   - name: total_revenue
     type: sum
     description: "Total revenue from orders"
-    expr: { order_amount }
+    expr: "{{ order_amount }}"
     samples: [2456789.12, 3123456.78, 1987654.32]
     synonyms: ["revenue", "sales", "gross_revenue", "total_sales"]
 
   - name: total_net_revenue
     type: sum
     description: "Total net revenue after discounts"
-    expr: { net_amount }
+    expr: "{{ net_amount }}"
     samples: [2123456.78, 2789012.34, 1654321.09]
     synonyms: ["net_revenue", "net_sales", "revenue_after_discounts"]
 
@@ -162,14 +161,14 @@ measures:
   - name: average_order_value
     type: average
     description: "Average order value"
-    expr: { order_amount }
+    expr: "{{ order_amount }}"
     samples: [156.78, 189.45, 134.22]
     synonyms: ["aov", "avg_order_value", "mean_order_amount"]
 
   - name: median_order_value
     type: median
     description: "Median order value"
-    expr: { order_amount }
+    expr: "{{ order_amount }}"
     samples: [89.99, 95.50, 78.25]
     synonyms: ["median_order_amount", "middle_order_value"]
 
@@ -177,14 +176,14 @@ measures:
   - name: unique_customers
     type: count_distinct
     description: "Number of unique customers"
-    expr: { customer_id }
+    expr: "{{ customer_id }}"
     samples: [8547, 9234, 7891]
     synonyms: ["customer_count", "distinct_customers", "unique_buyers"]
 
   - name: unique_products
     type: count_distinct
     description: "Number of unique products ordered"
-    expr: { product_id }
+    expr: "{{ product_id }}"
     samples: [1234, 1456, 1098]
     synonyms: ["product_count", "distinct_products", "unique_items"]
 
@@ -193,51 +192,39 @@ measures:
     type: count
     description: "Number of large orders (>= $1000)"
     filters:
-      - field: order_amount
-        operator: ">="
-        value: 1000
+      - expr: "{{ order_amount }} >= 1000"
 
   - name: small_orders
     type: count
     description: "Number of small orders (< $50)"
     filters:
-      - field: order_amount
-        operator: "<"
-        value: 50
+      - expr: "{{ order_amount }} < 50"
 
   - name: cancelled_orders
     type: count
     description: "Number of cancelled orders"
     filters:
-      - field: status
-        operator: "="
-        value: cancelled
+      - expr: "{{ status }} = 'cancelled'"
 
   # Time-based measures
   - name: orders_last_30_days
     type: count
     description: "Orders placed in the last 30 days"
     filters:
-      - field: order_date
-        operator: ">="
-        value: "DATE_SUB(CURRENT_DATE(), INTERVAL 30 DAY)"
+      - expr: "{{ order_date }} >= DATE_SUB(CURRENT_DATE(), INTERVAL 30 DAY)"
 
   # Customer behavior measures
   - name: first_time_customer_orders
     type: count
     description: "Orders from first-time customers"
     filters:
-      - field: is_first_order
-        operator: "="
-        value: true
+      - expr: "{{ is_first_order }} = true"
 
   - name: repeat_customer_orders
     type: count
     description: "Orders from repeat customers"
     filters:
-      - field: is_first_order
-        operator: "="
-        value: false
+      - expr: "{{ is_first_order }} = false"
 ```
 
 ### Customer Measures
@@ -251,33 +238,29 @@ measures:
   - name: total_customer_lifetime_value
     type: sum
     description: "Sum of all customer lifetime values"
-    expr: { lifetime_value }
+    expr: "{{ lifetime_value }}"
 
   - name: average_customer_lifetime_value
     type: average
     description: "Average customer lifetime value"
-    expr: { lifetime_value }
+    expr: "{{ lifetime_value }}"
 
   - name: active_customers
     type: count
     description: "Number of active customers"
     filters:
-      - field: status
-        operator: "="
-        value: active
+      - expr: "{{ status }} = 'active'"
 
   - name: high_value_customers
     type: count
     description: "Customers with lifetime value over $1000"
     filters:
-      - field: lifetime_value
-        operator: ">="
-        value: 1000
+      - expr: "{{ lifetime_value }} >= 1000"
 
   - name: customer_acquisition_cost
     type: custom
     description: "Average cost to acquire a customer"
-    sql: |
+    expr: |
       CASE 
         WHEN COUNT(DISTINCT customer_id) > 0 
         THEN SUM(marketing_spend) / COUNT(DISTINCT customer_id)
@@ -296,17 +279,17 @@ measures:
   - name: transaction_volume
     type: sum
     description: "Total transaction volume"
-    expr: { amount }
+    expr: "{{ amount }}"
 
   - name: average_transaction_size
     type: average
     description: "Average transaction amount"
-    expr: { amount }
+    expr: "{{ amount }}"
 
   - name: fraud_rate
     type: custom
     description: "Percentage of transactions flagged as fraud"
-    sql: |
+    expr: |
       COUNT(CASE WHEN is_fraud = true THEN 1 END) * 100.0 / 
       NULLIF(COUNT(*), 0)
 
@@ -314,9 +297,7 @@ measures:
     type: count
     description: "Number of fraudulent transactions"
     filters:
-      - field: is_fraud
-        operator: "="
-        value: true
+      - expr: "{{ is_fraud }} = true"
 ```
 
 ## Advanced Features
@@ -329,14 +310,10 @@ Measures can include filters to calculate specific subsets:
 - name: premium_customer_revenue
   type: sum
   description: "Revenue from premium customers only"
-  expr: { order_amount }
+  expr: "{{ order_amount }}"
   filters:
-    - field: customer_tier
-      operator: "="
-      value: premium
-    - field: order_date
-      operator: ">="
-      value: "2024-01-01"
+    - expr: "{{ customer_tier }} = 'premium'"
+    - expr: "{{ order_date }} >= '2024-01-01'"
 ```
 
 ### Complex Custom Measures
@@ -347,7 +324,7 @@ Use custom SQL for sophisticated calculations:
 - name: customer_concentration_index
   type: custom
   description: "Herfindahl index measuring customer concentration"
-  sql: |
+  expr: |
     SUM(
       POWER(
         customer_revenue / SUM(customer_revenue) OVER(), 
@@ -358,7 +335,7 @@ Use custom SQL for sophisticated calculations:
 - name: cohort_retention_rate
   type: custom
   description: "3-month retention rate for customer cohorts"
-  sql: |
+  expr: |
     COUNT(DISTINCT CASE 
       WHEN DATEDIFF(last_order_date, first_order_date) >= 90 
       THEN customer_id 
@@ -373,16 +350,14 @@ Calculate measures over specific time periods:
 - name: trailing_12_month_revenue
   type: sum
   description: "Revenue over the last 12 months"
-  expr: { order_amount }
+  expr: "{{ order_amount }}"
   filters:
-    - field: order_date
-      operator: ">="
-      value: "DATE_SUB(CURRENT_DATE(), INTERVAL 12 MONTH)"
+    - expr: "{{ order_date }} >= DATE_SUB(CURRENT_DATE(), INTERVAL 12 MONTH)"
 
 - name: year_over_year_growth
   type: custom
   description: "Year-over-year revenue growth rate"
-  sql: |
+  expr: |
     (SUM(CASE WHEN order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 12 MONTH) 
               THEN order_amount ELSE 0 END) -
      SUM(CASE WHEN order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 24 MONTH) 
@@ -393,20 +368,20 @@ Calculate measures over specific time periods:
                     THEN order_amount ELSE 0 END), 0)
 ```
 
-## Filter Operators
+## Filter Expressions
 
-Supported operators for measure filters:
+Filters use SQL-like expressions with field references in `{{ }}` syntax:
 
-| Operator      | Description           | Example                        |
-| ------------- | --------------------- | ------------------------------ |
-| `=`           | Equals                | `value: active`                |
-| `!=`          | Not equals            | `value: cancelled`             |
-| `>`           | Greater than          | `value: 100`                   |
-| `>=`          | Greater than or equal | `value: 100`                   |
-| `<`           | Less than             | `value: 1000`                  |
-| `<=`          | Less than or equal    | `value: 1000`                  |
-| `IN`          | In list               | `value: [active, pending]`     |
-| `NOT IN`      | Not in list           | `value: [cancelled, refunded]` |
-| `LIKE`        | Pattern matching      | `value: "%premium%"`           |
-| `IS NULL`     | Is null               | `value: null`                  |
-| `IS NOT NULL` | Is not null           | `value: not_null`              |
+| Operator      | Description           | Example                                                 |
+| ------------- | --------------------- | ------------------------------------------------------- |
+| `=`           | Equals                | `expr: "{{ status }} = 'active'"`                       |
+| `!=`          | Not equals            | `expr: "{{ status }} != 'cancelled'"`                   |
+| `>`           | Greater than          | `expr: "{{ amount }} > 100"`                            |
+| `>=`          | Greater than or equal | `expr: "{{ amount }} >= 100"`                           |
+| `<`           | Less than             | `expr: "{{ amount }} < 1000"`                           |
+| `<=`          | Less than or equal    | `expr: "{{ amount }} <= 1000"`                          |
+| `IN`          | In list               | `expr: "{{ status }} IN ('active', 'pending')"`         |
+| `NOT IN`      | Not in list           | `expr: "{{ status }} NOT IN ('cancelled', 'refunded')"` |
+| `LIKE`        | Pattern matching      | `expr: "{{ name }} LIKE '%premium%'"`                   |
+| `IS NULL`     | Is null               | `expr: "{{ field }} IS NULL"`                           |
+| `IS NOT NULL` | Is not null           | `expr: "{{ field }} IS NOT NULL"`                       |

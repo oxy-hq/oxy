@@ -34,7 +34,6 @@ dimensions:
     type: string
     description: "Unique identifier for the order"
     expr: order_id
-    primary_key: true
 
 measures:
   - name: count
@@ -44,17 +43,16 @@ measures:
 
 ## Properties
 
-| Property      | Type   | Required    | Description                                                   |
-| ------------- | ------ | ----------- | ------------------------------------------------------------- |
-| `name`        | string | Yes         | Unique identifier for the view within the semantic layer      |
-| `description` | string | Yes         | Human-readable description of what this view represents       |
-| `label`       | string | No          | Display name for the view (defaults to name if not specified) |
-| `datasource`  | string | Yes         | Name of the datasource to use for this view                   |
-| `table`       | string | Conditional | Database table reference (required if `sql` not specified)    |
-| `sql`         | string | Conditional | Custom SQL query (required if `table` not specified)          |
-| `entities`    | array  | Yes         | List of entities that define the core objects in this view    |
-| `dimensions`  | array  | Yes         | List of dimensions (attributes) available in this view        |
-| `measures`    | array  | No          | List of measures (aggregations) available in this view        |
+| Property      | Type   | Required    | Description                                                |
+| ------------- | ------ | ----------- | ---------------------------------------------------------- |
+| `name`        | string | Yes         | Unique identifier for the view within the semantic layer   |
+| `description` | string | Yes         | Human-readable description of what this view represents    |
+| `datasource`  | string | Yes         | Name of the datasource to use for this view                |
+| `table`       | string | Conditional | Database table reference (required if `sql` not specified) |
+| `sql`         | string | Conditional | Custom SQL query (required if `table` not specified)       |
+| `entities`    | array  | Yes         | List of entities that define the core objects in this view |
+| `dimensions`  | array  | Yes         | List of dimensions (attributes) available in this view     |
+| `measures`    | array  | No          | List of measures (aggregations) available in this view     |
 
 ## Datasource Configuration
 
@@ -147,7 +145,6 @@ sql: |
 ```yaml
 name: orders
 description: "Order transactions and related data"
-label: "Orders"
 datasource: "ecommerce"
 table: "public.orders"
 
@@ -172,7 +169,6 @@ dimensions:
     type: string
     description: "Unique identifier for the order"
     expr: order_id
-    primary_key: true
 
   - name: customer_id
     type: string
@@ -226,49 +222,33 @@ measures:
   - name: total_revenue
     type: sum
     description: "Total revenue from orders"
-    expr: { { order_amount } }
+    expr: "{{ order_amount }}"
     format: "$#,##0.00"
 
   - name: total_net_revenue
     type: sum
     description: "Total net revenue after discounts"
-    expr: { { net_amount } }
+    expr: "{{ net_amount }}"
     format: "$#,##0.00"
 
   - name: average_order_value
     type: average
     description: "Average order value"
-    expr: { { order_amount } }
+    expr: "{{ order_amount }}"
     format: "$#,##0.00"
 
   - name: unique_customers
     type: count_distinct
     description: "Number of unique customers"
-    expr: { { customer_id } }
+    expr: "{{ customer_id }}"
 
   - name: large_orders
     type: count
     description: "Number of large orders (>= $1000)"
-    filters:
-      - field: order_amount
-        operator: ">="
-        value: 1000
-
-  - name: cancellation_rate
-    type: ratio
-    description: "Percentage of orders that were cancelled"
-    numerator: { { cancelled_orders } }
-    denominator: { { count } }
-    format: "#0.0%"
 
   - name: cancelled_orders
     type: count
     description: "Number of cancelled orders"
-    filters:
-      - field: status
-        operator: "="
-        value: cancelled
-    hidden: true
 ```
 
 ### Customer Demographics View
@@ -276,7 +256,6 @@ measures:
 ```yaml
 name: customers
 description: "Customer profile and demographic information"
-label: "Customers"
 datasource: "crm"
 table: "public.customers"
 
@@ -291,7 +270,6 @@ dimensions:
     type: string
     description: "Unique customer identifier"
     expr: customer_id
-    primary_key: true
 
   - name: email
     type: string
@@ -334,10 +312,6 @@ measures:
   - name: new_customers_last_30_days
     type: count
     description: "Customers registered in the last 30 days"
-    filters:
-      - field: registration_date
-        operator: ">="
-        value: "DATE_SUB(CURRENT_DATE(), INTERVAL 30 DAY)"
 ```
 
 ### Financial Transactions View
@@ -383,7 +357,6 @@ dimensions:
     type: string
     description: "Unique transaction identifier"
     expr: transaction_id
-    primary_key: true
 
   - name: account_id
     type: string
@@ -429,30 +402,18 @@ measures:
   - name: transaction_volume
     type: sum
     description: "Total transaction volume"
-    expr: { { amount } }
+    expr: "{{ amount }}"
     format: "$#,##0.00"
 
   - name: average_transaction_size
     type: average
     description: "Average transaction amount"
-    expr: { { amount } }
+    expr: "{{ amount }}"
     format: "$#,##0.00"
-
-  - name: fraud_rate
-    type: ratio
-    description: "Percentage of transactions flagged as fraud"
-    numerator: { { fraudulent_transactions } }
-    denominator: { { transaction_count } }
-    format: "#0.00%"
 
   - name: fraudulent_transactions
     type: count
     description: "Number of fraudulent transactions"
-    filters:
-      - field: is_fraudulent
-        operator: "="
-        value: true
-    hidden: true
 ```
 
 ## Advanced Features
@@ -502,12 +463,12 @@ measures:
   - name: total_revenue
     type: sum
     description: "Total revenue from orders"
-    expr: {{order.order_amount}}
+    expr: "{{order.order_amount}}"
 
   - name: customer_lifetime_value
     type: custom
     description: "Average order value per customer"
-    expr: {{order.total_revenue}} / {{customer.customer_count}}
+    expr: "{{order.total_revenue}} / {{customer.customer_count}}"
 
 dimensions:
   - name: customer_segment
@@ -568,7 +529,6 @@ dimensions:
     type: string
     description: "Customer identifier"
     expr: customer_id
-    primary_key: true # Hints at indexing strategy
 
   - name: order_date
     type: date

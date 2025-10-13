@@ -41,6 +41,12 @@
                   "learn-about-oxy/context",
                   "learn-about-oxy/data-apps",
                   "learn-about-oxy/debugging",
+                  {
+                    "group": "Semantic Layer",
+                    "pages": [
+                      "learn-about-oxy/semantic-layer"
+                    ]
+                  },
                   "learn-about-oxy/semantic-model",
                   "learn-about-oxy/testing",
                   "learn-about-oxy/workflows",
@@ -185,6 +191,12 @@
             "pages": [
               "reference/oxy-commands",
               "reference/database-sync"
+            ]
+          },
+          {
+            "group": "Semantic Layer",
+            "pages": [
+              "reference/semantic-layer-reference"
             ]
           }
         ]
