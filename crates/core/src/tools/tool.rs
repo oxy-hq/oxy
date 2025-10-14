@@ -359,8 +359,8 @@ impl ParamMapper<SemanticQueryToolInput, ValidatedSemanticQuery> for SemanticQue
         if let Some(ref topic) = topic {
             if *topic != semantic_params.topic {
                 return Err(OxyError::ArgumentError(format!(
-                    "Topic mismatch: expected '{}', got '{}'",
-                    topic, semantic_params.topic
+                    "Invalid topic: expected '{}'",
+                    topic
                 )));
             }
         } else {

@@ -99,8 +99,6 @@ pub struct Dimension {
     pub samples: Option<Vec<String>>,
     /// Alternative names or terms that refer to this dimension
     pub synonyms: Option<Vec<String>>,
-    /// Whether this dimension is a primary key
-    pub primary_key: Option<bool>,
 }
 
 /// Represents the type of a measure aggregation
@@ -159,8 +157,6 @@ pub struct Measure {
     pub expr: Option<String>,
     /// List of filters to apply to the measure calculation
     pub filters: Option<Vec<MeasureFilter>>,
-    /// Custom SQL expression (for custom type)
-    pub sql: Option<String>,
     /// Sample values or example outputs to help users understand the measure
     pub samples: Option<Vec<String>>,
     /// Alternative names or terms that refer to this measure

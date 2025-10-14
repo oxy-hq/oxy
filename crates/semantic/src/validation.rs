@@ -185,17 +185,9 @@ impl SemanticValidator for Measure {
                 }
             }
             MeasureType::Custom => {
-                // Custom measures require either expr or sql
-                if self.expr.is_none() && self.sql.is_none() {
-                    result.add_error(
-                        "Custom measures require either 'expr' or 'sql' field".to_string(),
-                    );
-                }
-                if self.expr.is_some() && self.sql.is_some() {
-                    result.add_warning(
-                        "Custom measures should specify either 'expr' or 'sql', not both"
-                            .to_string(),
-                    );
+                // Custom measures require expr
+                if self.expr.is_none() {
+                    result.add_error("Custom measures require an 'expr' field".to_string());
                 }
             }
             _ => {
@@ -292,7 +284,6 @@ impl SemanticValidator for View {
             result.add_error("View must have at least one dimension".to_string());
         } else {
             let mut dimension_names = HashSet::new();
-            let mut primary_key_count = 0;
 
             for dimension in &self.dimensions {
                 // Check for duplicate dimension names
@@ -303,19 +294,8 @@ impl SemanticValidator for View {
                     ));
                 }
 
-                // Count primary keys
-                if dimension.primary_key.unwrap_or(false) {
-                    primary_key_count += 1;
-                }
-
                 // Validate individual dimension
                 result.merge(dimension.validate());
-            }
-
-            // Validate primary key count
-            if primary_key_count == 0 {
-                result
-                    .add_warning("View should have at least one primary key dimension".to_string());
             }
         }
 

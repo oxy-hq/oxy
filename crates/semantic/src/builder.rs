@@ -110,7 +110,6 @@ pub struct DimensionBuilder {
     label: Option<String>,
     samples: Option<Vec<String>>,
     synonyms: Option<Vec<String>>,
-    primary_key: Option<bool>,
 }
 
 impl DimensionBuilder {
@@ -123,7 +122,6 @@ impl DimensionBuilder {
             label: None,
             samples: None,
             synonyms: None,
-            primary_key: None,
         }
     }
 
@@ -209,11 +207,6 @@ impl DimensionBuilder {
         self
     }
 
-    pub fn primary_key(mut self, is_primary_key: bool) -> Self {
-        self.primary_key = Some(is_primary_key);
-        self
-    }
-
     pub fn build(self) -> Result<Dimension, String> {
         let dimension = Dimension {
             name: self.name.ok_or("Dimension name is required")?,
@@ -222,7 +215,6 @@ impl DimensionBuilder {
             expr: self.expr.ok_or("Dimension expr is required")?,
             samples: self.samples,
             synonyms: self.synonyms,
-            primary_key: self.primary_key,
         };
 
         let validation = dimension.validate();
@@ -252,7 +244,6 @@ pub struct MeasureBuilder {
     expr: Option<String>,
     label: Option<String>,
     filters: Option<Vec<MeasureFilter>>,
-    sql: Option<String>,
     samples: Option<Vec<String>>,
     synonyms: Option<Vec<String>>,
 }
@@ -266,7 +257,6 @@ impl MeasureBuilder {
             expr: None,
             label: None,
             filters: None,
-            sql: None,
             samples: None,
             synonyms: None,
         }
@@ -337,11 +327,6 @@ impl MeasureBuilder {
         self
     }
 
-    pub fn sql<S: Into<String>>(mut self, sql: S) -> Self {
-        self.sql = Some(sql.into());
-        self
-    }
-
     pub fn samples<I, S>(mut self, samples: I) -> Self
     where
         I: IntoIterator<Item = S>,
@@ -387,7 +372,6 @@ impl MeasureBuilder {
             description: self.description,
             expr: self.expr,
             filters: self.filters,
-            sql: self.sql,
             samples: self.samples,
             synonyms: self.synonyms,
         };

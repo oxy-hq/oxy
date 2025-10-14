@@ -179,11 +179,9 @@ fn convert_dimensions(
         .to_string();
 
         // Check if this dimension is the key for a primary entity
-        let is_primary_key = dimension.primary_key.unwrap_or(false)
-            || view.entities.iter().any(|entity| {
-                entity.entity_type == EntityType::Primary
-                    && entity.get_keys().contains(&dimension.name)
-            });
+        let is_primary_key = view.entities.iter().any(|entity| {
+            entity.entity_type == EntityType::Primary && entity.get_keys().contains(&dimension.name)
+        });
 
         let translated_sql = translate_cross_entity_references(&dimension.expr, entity_graph)?;
 
@@ -424,7 +422,6 @@ mod tests {
                 expr: "test_column".to_string(),
                 dimension_type: DimensionType::String,
                 description: None,
-                primary_key: Some(false),
                 synonyms: None,
                 samples: None,
             }],
