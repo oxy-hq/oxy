@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.4](https://github.com/oxy-hq/oxy-internal/compare/0.3.3...0.3.4) (2025-10-14)
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* semantics bug ([#1237](https://github.com/oxy-hq/oxy-internal/issues/1237)) ([4070b3f](https://github.com/oxy-hq/oxy-internal/commit/4070b3f1f4a42107eb46611e19f5ec4f446abd35))
+
 ## [0.3.3](https://github.com/oxy-hq/oxy-internal/compare/0.3.2...0.3.3) (2025-10-10)
 
 
