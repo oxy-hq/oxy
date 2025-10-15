@@ -1,5 +1,5 @@
 use serde_json::Value as JsonValue;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::{
     adapters::connector::Connector,
@@ -232,8 +232,16 @@ impl Executable<ValidatedSemanticQuery> for SemanticQueryExecutable {
             input.task.query
         );
 
-        // Step 1: Convert to CubeJS query and get SQL
-        let cubejs_query = self.convert_to_cubejs_query(&input.task, &input.topic.name)?;
+        // Step 1: Extract unique views from requested fields to determine join hints
+        let requested_views = self.extract_views_from_query(&input.task, &input.topic.name);
+
+        // Step 2: Convert to CubeJS query and get SQL with base_view enforcement
+        let cubejs_query = self.convert_to_cubejs_query(
+            &input.task,
+            &input.topic.name,
+            input.topic.base_view.as_ref(),
+            &requested_views,
+        )?;
         tracing::info!(
             "Generated CubeJS query for topic '{}': {cubejs_query:?}",
             input.task.query.topic
@@ -302,6 +310,71 @@ impl Executable<ValidatedSemanticQuery> for SemanticQueryExecutable {
 }
 
 impl SemanticQueryExecutable {
+    /// Extract unique view names from the query fields (dimensions, measures, filters, orders)
+    fn extract_views_from_query(&self, task: &SemanticQueryTask, topic_name: &str) -> Vec<String> {
+        let mut views = HashSet::new();
+
+        // Extract from dimensions
+        for dim in &task.query.dimensions {
+            if let Some(view_name) = self.extract_view_name(dim, topic_name) {
+                views.insert(view_name);
+            }
+        }
+
+        // Extract from measures
+        for measure in &task.query.measures {
+            if let Some(view_name) = self.extract_view_name(measure, topic_name) {
+                views.insert(view_name);
+            }
+        }
+
+        // Extract from filters
+        for filter in &task.query.filters {
+            if let Some(view_name) = self.extract_view_name(&filter.field, topic_name) {
+                views.insert(view_name);
+            }
+        }
+
+        // Extract from orders
+        for order in &task.query.orders {
+            if let Some(view_name) = self.extract_view_name(&order.field, topic_name) {
+                views.insert(view_name);
+            }
+        }
+
+        views.into_iter().collect()
+    }
+
+    /// Extract view name from a field reference
+    /// Field can be in format "view.field" or just "field" (assumes topic name as view)
+    fn extract_view_name(&self, field: &str, topic_name: &str) -> Option<String> {
+        if field.contains('.') {
+            field.split('.').next().map(|s| s.to_string())
+        } else {
+            // If no view prefix, assume it's from the topic itself
+            Some(topic_name.to_string())
+        }
+    }
+
+    /// Generate join hints for base_view enforcement
+    /// Returns an array of [from_view, to_view] pairs that CubeJS should use for joins.
+    /// This ensures all joins start from the base_view, creating a star schema pattern
+    /// where the base_view is at the center and all other views join to it.
+    fn generate_join_hints(&self, base_view: &str, requested_views: &[String]) -> Vec<JsonValue> {
+        let mut hints = Vec::new();
+
+        for view in requested_views {
+            // Don't create a hint for the base view to itself
+            if view != base_view {
+                // Create a join hint from base_view to this view
+                // Format: ["base_view", "target_view"]
+                hints.push(serde_json::json!([base_view, view]));
+            }
+        }
+
+        hints
+    }
+
     /// Determine the database from the topic's views
     fn determine_database_from_topic(
         &self,
@@ -327,11 +400,27 @@ impl SemanticQueryExecutable {
         &self,
         task: &SemanticQueryTask,
         topic_name: &str,
+        base_view: Option<&String>,
+        requested_views: &[String],
     ) -> Result<JsonValue, OxyError> {
         let mut query = serde_json::json!({
             "measures": task.query.measures,
             "dimensions": task.query.dimensions
         });
+
+        // Add join hints if base_view is specified
+        // This enforces that all joins start from the base_view
+        if let Some(base_view_name) = base_view {
+            let join_hints = self.generate_join_hints(base_view_name, requested_views);
+            if !join_hints.is_empty() {
+                query["joinHints"] = JsonValue::Array(join_hints);
+                tracing::info!(
+                    "Applied base_view enforcement: all joins will start from '{}' (join hints: {:?})",
+                    base_view_name,
+                    query["joinHints"]
+                );
+            }
+        }
 
         // Add filters if present
         if !task.query.filters.is_empty() {

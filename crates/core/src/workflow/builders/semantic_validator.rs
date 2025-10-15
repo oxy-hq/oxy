@@ -418,6 +418,11 @@ fn validate_orders(
     Ok(())
 }
 
+/// Extracts the view name from a fully-qualified field (e.g., "orders.total" -> "orders")
+fn extract_view_from_field(field: &str) -> Option<String> {
+    field.split('.').next().map(|s| s.to_string())
+}
+
 /// Validates that operator and value types are compatible
 fn validate_operator_value_compatibility(filter: &SemanticFilter) -> Result<(), OxyError> {
     let is_array = filter.value.is_array();
@@ -582,4 +587,59 @@ fn levenshtein_distance(s1: &str, s2: &str) -> usize {
     }
 
     prev_row[s2_len]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        config::model::SemanticQueryTask,
+        service::types::{SemanticQueryFilter, SemanticQueryOrder, SemanticQueryParams},
+    };
+    use oxy_semantic::{Dimension, Measure, Topic, View};
+
+    fn create_test_topic(name: &str, base_view: Option<String>) -> Topic {
+        Topic {
+            name: name.to_string(),
+            description: "Test topic".to_string(),
+            views: vec!["orders".to_string(), "customers".to_string()],
+            base_view,
+            retrieval: None,
+        }
+    }
+
+    fn create_test_task(
+        topic: &str,
+        dimensions: Vec<&str>,
+        measures: Vec<&str>,
+    ) -> SemanticQueryTask {
+        SemanticQueryTask {
+            query: SemanticQueryParams {
+                topic: topic.to_string(),
+                dimensions: dimensions.iter().map(|d| d.to_string()).collect(),
+                measures: measures.iter().map(|m| m.to_string()).collect(),
+                filters: vec![],
+                orders: vec![],
+                limit: None,
+                offset: None,
+            },
+            export: None,
+        }
+    }
+
+    #[test]
+    fn test_extract_view_from_field() {
+        assert_eq!(
+            extract_view_from_field("orders.total"),
+            Some("orders".to_string())
+        );
+        assert_eq!(
+            extract_view_from_field("customers.name"),
+            Some("customers".to_string())
+        );
+        assert_eq!(
+            extract_view_from_field("simple_field"),
+            Some("simple_field".to_string())
+        );
+    }
 }

@@ -272,6 +272,32 @@ impl EntityGraph {
         None // No path found
     }
 
+    /// Validates that all views in a topic are reachable from the base view
+    ///
+    /// Returns a vector of unreachable view names if any views cannot be reached,
+    /// or an empty vector if all views are reachable.
+    pub fn validate_base_view_reachability(
+        &self,
+        base_view: &str,
+        topic_views: &[String],
+    ) -> Vec<String> {
+        let mut unreachable_views = Vec::new();
+
+        for view in topic_views {
+            // Skip the base view itself
+            if view == base_view {
+                continue;
+            }
+
+            // Check if there's a path from base_view to this view
+            if self.find_join_path(base_view, view).is_none() {
+                unreachable_views.push(view.clone());
+            }
+        }
+
+        unreachable_views
+    }
+
     /// Get joins for a specific view
     pub fn get_joins_for_view(&self, view_name: &str) -> Vec<&JoinRelationship> {
         self.joins
@@ -292,16 +318,31 @@ impl EntityGraph {
                 &join.from_view
             };
 
-            // Create CubeJS join definition
-            let cube_join = CubeJoin {
-                name: target_view.clone(),
-                sql: join.on_condition.clone(),
-                relationship: match join.relationship_type {
+            // Determine the relationship type from the perspective of the current view
+            // If the join direction is reversed, we need to flip the relationship
+            let relationship = if join.from_view == view_name {
+                // We're joining in the stored direction
+                match join.relationship_type {
                     RelationshipType::OneToOne => "one_to_one".to_string(),
                     RelationshipType::OneToMany => "one_to_many".to_string(),
                     RelationshipType::ManyToOne => "many_to_one".to_string(),
                     RelationshipType::ManyToMany => "many_to_many".to_string(),
-                },
+                }
+            } else {
+                // We're joining in the reverse direction, flip the relationship
+                match join.relationship_type {
+                    RelationshipType::OneToOne => "one_to_one".to_string(), // Symmetric
+                    RelationshipType::OneToMany => "many_to_one".to_string(), // Flip
+                    RelationshipType::ManyToOne => "one_to_many".to_string(), // Flip
+                    RelationshipType::ManyToMany => "many_to_many".to_string(), // Symmetric
+                }
+            };
+
+            // Create CubeJS join definition
+            let cube_join = CubeJoin {
+                name: target_view.clone(),
+                sql: join.on_condition.clone(),
+                relationship,
             };
 
             joins.push(cube_join);

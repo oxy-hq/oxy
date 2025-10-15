@@ -1,4 +1,5 @@
 use crate::SemanticLayerError;
+use crate::cube::entity_graph::EntityGraph;
 use crate::models::*;
 use std::collections::HashSet;
 
@@ -386,6 +387,18 @@ impl SemanticValidator for Topic {
             }
         }
 
+        // Validate base_view if specified
+        if let Some(ref base_view) = self.base_view {
+            if base_view.is_empty() {
+                result.add_error("Topic base_view cannot be empty".to_string());
+            } else if !self.views.contains(base_view) {
+                result.add_error(format!(
+                    "Topic base_view '{}' must be included in the views list",
+                    base_view
+                ));
+            }
+        }
+
         result
     }
 }
@@ -456,6 +469,32 @@ impl SemanticValidator for SemanticLayer {
                             topic.name,
                             datasources.into_iter().collect::<Vec<_>>().join(", ")
                         ));
+                    }
+                }
+
+                // Validate base_view reachability if specified
+                if let Some(ref base_view) = topic.base_view {
+                    // Build entity graph to check reachability
+                    match EntityGraph::from_semantic_layer(self) {
+                        Ok(entity_graph) => {
+                            let unreachable_views = entity_graph
+                                .validate_base_view_reachability(base_view, &topic.views);
+
+                            if !unreachable_views.is_empty() {
+                                result.add_error(format!(
+                                    "Topic '{}' has base_view '{}' but the following views are not reachable via joins: {}. Ensure all views have proper entity relationships defined.",
+                                    topic.name,
+                                    base_view,
+                                    unreachable_views.join(", ")
+                                ));
+                            }
+                        }
+                        Err(e) => {
+                            result.add_warning(format!(
+                                "Could not validate base_view reachability for topic '{}': {}",
+                                topic.name, e
+                            ));
+                        }
                     }
                 }
             }
@@ -675,5 +714,206 @@ mod tests {
             keys: Some(vec!["id".to_string()]),
         };
         assert!(!single_element_keys.is_composite());
+    }
+
+    #[test]
+    fn test_topic_base_view_validation() {
+        use crate::Topic;
+
+        // Test valid topic with base_view
+        let valid_topic = Topic {
+            name: "sales".to_string(),
+            description: "Sales data".to_string(),
+            views: vec!["orders".to_string(), "customers".to_string()],
+            base_view: Some("orders".to_string()),
+            retrieval: None,
+        };
+        let result = valid_topic.validate();
+        assert!(result.is_valid, "Valid topic should pass validation");
+
+        // Test topic with base_view not in views list
+        let invalid_topic = Topic {
+            name: "sales".to_string(),
+            description: "Sales data".to_string(),
+            views: vec!["orders".to_string(), "customers".to_string()],
+            base_view: Some("products".to_string()),
+            retrieval: None,
+        };
+        let result = invalid_topic.validate();
+        assert!(
+            !result.is_valid,
+            "Topic with base_view not in views should fail"
+        );
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.contains("must be included in the views list")),
+            "Should have error about base_view not in views"
+        );
+
+        // Test topic with empty base_view
+        let empty_base_view_topic = Topic {
+            name: "sales".to_string(),
+            description: "Sales data".to_string(),
+            views: vec!["orders".to_string(), "customers".to_string()],
+            base_view: Some("".to_string()),
+            retrieval: None,
+        };
+        let result = empty_base_view_topic.validate();
+        assert!(!result.is_valid, "Topic with empty base_view should fail");
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.contains("base_view cannot be empty")),
+            "Should have error about empty base_view"
+        );
+    }
+
+    #[test]
+    fn test_semantic_layer_base_view_reachability() {
+        use crate::{Dimension, DimensionType, SemanticLayer, Topic, View};
+
+        // Create views with proper entity relationships
+        let orders_view = View {
+            name: "orders".to_string(),
+            description: "Orders".to_string(),
+            table: Some("orders".to_string()),
+            sql: None,
+            datasource: Some("test_db".to_string()),
+            label: None,
+            entities: vec![
+                Entity {
+                    name: "order".to_string(),
+                    entity_type: EntityType::Primary,
+                    description: "Order entity".to_string(),
+                    key: Some("order_id".to_string()),
+                    keys: None,
+                },
+                Entity {
+                    name: "customer".to_string(),
+                    entity_type: EntityType::Foreign,
+                    description: "Customer who placed order".to_string(),
+                    key: Some("customer_id".to_string()),
+                    keys: None,
+                },
+            ],
+            dimensions: vec![Dimension {
+                name: "order_id".to_string(),
+                dimension_type: DimensionType::String,
+                description: Some("Order ID".to_string()),
+                expr: "order_id".to_string(),
+                samples: None,
+                synonyms: None,
+            }],
+            measures: None,
+        };
+
+        let customers_view = View {
+            name: "customers".to_string(),
+            description: "Customers".to_string(),
+            table: Some("customers".to_string()),
+            sql: None,
+            datasource: Some("test_db".to_string()),
+            label: None,
+            entities: vec![Entity {
+                name: "customer".to_string(),
+                entity_type: EntityType::Primary,
+                description: "Customer entity".to_string(),
+                key: Some("customer_id".to_string()),
+                keys: None,
+            }],
+            dimensions: vec![Dimension {
+                name: "customer_id".to_string(),
+                dimension_type: DimensionType::String,
+                description: Some("Customer ID".to_string()),
+                expr: "customer_id".to_string(),
+                samples: None,
+                synonyms: None,
+            }],
+            measures: None,
+        };
+
+        // Create an unreachable view (no entity connection)
+        let products_view = View {
+            name: "products".to_string(),
+            description: "Products".to_string(),
+            table: Some("products".to_string()),
+            sql: None,
+            datasource: Some("test_db".to_string()),
+            label: None,
+            entities: vec![Entity {
+                name: "product".to_string(),
+                entity_type: EntityType::Primary,
+                description: "Product entity".to_string(),
+                key: Some("product_id".to_string()),
+                keys: None,
+            }],
+            dimensions: vec![Dimension {
+                name: "product_id".to_string(),
+                dimension_type: DimensionType::String,
+                description: Some("Product ID".to_string()),
+                expr: "product_id".to_string(),
+                samples: None,
+                synonyms: None,
+            }],
+            measures: None,
+        };
+
+        // Topic with reachable views
+        let valid_topic = Topic {
+            name: "sales".to_string(),
+            description: "Sales data".to_string(),
+            views: vec!["orders".to_string(), "customers".to_string()],
+            base_view: Some("orders".to_string()),
+            retrieval: None,
+        };
+
+        let valid_layer = SemanticLayer {
+            views: vec![orders_view.clone(), customers_view.clone()],
+            topics: Some(vec![valid_topic]),
+            metadata: None,
+        };
+
+        let result = valid_layer.validate();
+        assert!(
+            result.is_valid,
+            "Semantic layer with reachable views should pass: {:?}",
+            result.errors
+        );
+
+        // Topic with unreachable view
+        let invalid_topic = Topic {
+            name: "sales_with_products".to_string(),
+            description: "Sales with products".to_string(),
+            views: vec![
+                "orders".to_string(),
+                "customers".to_string(),
+                "products".to_string(),
+            ],
+            base_view: Some("orders".to_string()),
+            retrieval: None,
+        };
+
+        let invalid_layer = SemanticLayer {
+            views: vec![orders_view, customers_view, products_view],
+            topics: Some(vec![invalid_topic]),
+            metadata: None,
+        };
+
+        let result = invalid_layer.validate();
+        assert!(
+            !result.is_valid,
+            "Semantic layer with unreachable views should fail"
+        );
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.contains("not reachable via joins")),
+            "Should have error about unreachable views: {:?}",
+            result.errors
+        );
     }
 }

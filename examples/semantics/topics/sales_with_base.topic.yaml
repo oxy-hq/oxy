@@ -1,0 +1,7 @@
+name: sales_with_base
+description: "Sales analysis with enforced base view for consistent join semantics"
+base_view: orders
+views:
+  - orders
+  - customers
+  - products

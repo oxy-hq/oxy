@@ -533,6 +533,7 @@ pub struct TopicBuilder {
     name: Option<String>,
     description: Option<String>,
     views: Vec<String>,
+    base_view: Option<String>,
     retrieval: Option<TopicRetrievalConfig>,
 }
 
@@ -542,6 +543,7 @@ impl TopicBuilder {
             name: None,
             description: None,
             views: Vec::new(),
+            base_view: None,
             retrieval: None,
         }
     }
@@ -570,11 +572,17 @@ impl TopicBuilder {
         self
     }
 
+    pub fn base_view<S: Into<String>>(mut self, base_view: S) -> Self {
+        self.base_view = Some(base_view.into());
+        self
+    }
+
     pub fn build(self) -> Result<Topic, String> {
         let topic = Topic {
             name: self.name.ok_or("Topic name is required")?,
             description: self.description.ok_or("Topic description is required")?,
             views: self.views,
+            base_view: self.base_view,
             retrieval: self.retrieval,
         };
 

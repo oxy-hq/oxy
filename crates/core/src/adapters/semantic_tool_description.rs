@@ -92,6 +92,9 @@ fn build_no_topics_message(description: &mut String, specified_topic: Option<&st
 
 fn build_topic_metadata(description: &mut String, topic: &Topic, semantic_layer: &SemanticLayer) {
     description.push_str(&format!("\n# Topic: {}\n", topic.name));
+    if let Some(base_view) = &topic.base_view {
+        description.push_str(&format!("\nBase view: {}\n", base_view));
+    }
     description.push_str(&format!("{}\n", topic.description));
 
     let topic_views = get_topic_views(topic, semantic_layer);

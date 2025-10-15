@@ -216,6 +216,9 @@ pub struct Topic {
     pub description: String,
     /// List of view names included in this topic
     pub views: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    pub base_view: Option<String>,
     /// Optional retrieval configuration for this topic
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]

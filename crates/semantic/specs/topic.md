@@ -20,6 +20,9 @@ Topics are defined in `.topic.yaml` files within the `topics/` directory:
 name: sales
 description: "Sales data model including orders, customers, and products"
 
+# The base view from which all other views should be joined
+base_view: orders
+
 # Include views in this topic
 views:
   - orders
@@ -29,11 +32,27 @@ views:
 
 ## Properties
 
-| Property      | Type   | Required | Description                                       |
-| ------------- | ------ | -------- | ------------------------------------------------- |
-| `name`        | string | Yes      | Unique identifier for the topic                   |
-| `description` | string | Yes      | Human-readable description of the business domain |
-| `views`       | array  | Yes      | List of view names included in this topic         |
+| Property      | Type   | Required | Description                                                                       |
+| ------------- | ------ | -------- | --------------------------------------------------------------------------------- |
+| `name`        | string | Yes      | Unique identifier for the topic                                                   |
+| `description` | string | Yes      | Human-readable description of the business domain                                 |
+| `base_view`   | string | No       | The primary view that serves as the starting point for all queries in this topic. |
+| `views`       | array  | Yes      | List of view names included in this topic                                         |
+
+## Base View Behavior
+
+When a `base_view` is specified for a topic, it enforces a strict query construction pattern:
+
+- **All queries must start from the base view**: The base view serves as the root of the join tree for every query in the topic
+- **Consistent join paths**: Other views are always joined to the base view (directly or transitively).
+
+**Example**: In a `sales` topic with `base_view: orders`, a query for "customer lifetime value" would:
+
+1. Start from the `orders` view
+2. Join to the `customers` view via the relationship defined in the views
+3. Aggregate order data grouped by customer
+
+The query **cannot** start directly from `customers` and join to `orders` - it must always originate from `orders`.
 
 ## Examples
 
@@ -43,6 +62,7 @@ views:
 # topics/sales.topic.yaml
 name: sales
 description: "Sales performance and order management data"
+base_view: orders
 views:
   - orders
   - order_items
@@ -52,6 +72,7 @@ views:
 # topics/marketing.topic.yaml
 name: marketing
 description: "Marketing campaigns, attribution, and customer acquisition"
+base_view: campaigns
 views:
   - campaigns
   - attribution
@@ -61,6 +82,7 @@ views:
 # topics/finance.topic.yaml
 name: finance
 description: "Financial reporting, revenue recognition, and accounting"
+base_view: financial_transactions
 views:
   - revenue_recognition
   - financial_transactions
@@ -74,6 +96,7 @@ views:
 # topics/product_usage.topic.yaml
 name: product_usage
 description: "Product engagement, feature usage, and user behavior analytics"
+base_view: user_sessions
 views:
   - user_sessions
   - feature_usage
@@ -83,6 +106,7 @@ views:
 # topics/customer_success.topic.yaml
 name: customer_success
 description: "Customer health, retention, and support metrics"
+base_view: customer_health
 views:
   - customer_health
   - support_tickets
@@ -92,6 +116,7 @@ views:
 # topics/growth.topic.yaml
 name: growth
 description: "User acquisition, activation, and growth metrics"
+base_view: user_signups
 views:
   - user_signups
   - onboarding_funnel
@@ -105,6 +130,7 @@ views:
 # topics/patient_care.topic.yaml
 name: patient_care
 description: "Patient outcomes, treatment effectiveness, and care quality"
+base_view: patient_records
 views:
   - patient_records
   - treatments
@@ -114,6 +140,7 @@ views:
 # topics/operations.topic.yaml
 name: operations
 description: "Hospital operations, resource utilization, and efficiency"
+base_view: facility_metrics
 views:
   - bed_utilization
   - staff_scheduling
