@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.5](https://github.com/oxy-hq/oxy-internal/compare/0.3.4...0.3.5) (2025-10-15)
+
+
+### <!-- 0 -->🚀 Features
+
+* base view support ([#1249](https://github.com/oxy-hq/oxy-internal/issues/1249)) ([91235f9](https://github.com/oxy-hq/oxy-internal/commit/91235f9fd5d2354f05eb73a6b23aab843573e2fb))
+
 ## [0.3.4](https://github.com/oxy-hq/oxy-internal/compare/0.3.3...0.3.4) (2025-10-14)
 
 
