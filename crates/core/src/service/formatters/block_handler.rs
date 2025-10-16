@@ -100,7 +100,11 @@ impl BlockHandler {
         Ok(())
     }
 
-    async fn handle_artifact_finished(&mut self, source: &Source) -> Result<(), OxyError> {
+    async fn handle_artifact_finished(
+        &mut self,
+        source: &Source,
+        error: Option<String>,
+    ) -> Result<(), OxyError> {
         // Get the last block before it's closed (for artifact storage)
         if let Some(active_block) = self.block_manager.last_block()
             && active_block.is_artifact()
@@ -112,7 +116,7 @@ impl BlockHandler {
         // Finish the artifact
         if let Some(artifact_id) = self.artifact_tracker.finish_artifact() {
             self.stream_dispatcher
-                .send_artifact_done(&artifact_id, &source.kind)
+                .send_artifact_done(&artifact_id, error, &source.kind)
                 .await?;
         }
 
@@ -465,13 +469,14 @@ impl SourceHandler for BlockHandler {
                     .await?;
             }
 
-            EventKind::ArtifactFinished => {
+            EventKind::ArtifactFinished { error } => {
                 tracing::info!(
-                    "Handling artifact finished: source_id={}, kind={}",
+                    "Handling artifact finished: source_id={}, kind={}, error={:?}",
                     source.id,
-                    source.kind
+                    source.kind,
+                    error
                 );
-                self.handle_artifact_finished(source).await?;
+                self.handle_artifact_finished(source, error.clone()).await?;
             }
 
             EventKind::Started {

@@ -200,9 +200,11 @@ impl Executable<(String, Option<ToolType>, ToolRawInput)> for ToolExecutable {
                 }
             };
 
+            // Write ArtifactFinished event after execution with error if present
             if artifact.is_some() {
+                let error = tool_ret.as_ref().err().map(|e| e.to_string());
                 artifact_context
-                    .write_kind(EventKind::ArtifactFinished)
+                    .write_kind(EventKind::ArtifactFinished { error })
                     .await?;
             }
 

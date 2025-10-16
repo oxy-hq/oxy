@@ -38,6 +38,17 @@ pub enum OxyError {
     AuthorizationError(String),
     #[error("{0}")]
     ValidationError(String),
+    #[error("Missing required filter: {filter}")]
+    MissingRequiredFilter { filter: String },
+    #[error("Unsupported filter: {filter}")]
+    UnsupportedFilter { filter: String },
+    #[error("Invalid type for filter '{filter}': expected {expected}, got {actual}. {details}")]
+    InvalidFilterType {
+        filter: String,
+        expected: String,
+        actual: String,
+        details: String,
+    },
     #[error("{0}")]
     CryptographyError(String),
     #[error("{0}")]
@@ -78,6 +89,9 @@ impl OxyError {
             OxyError::AuthenticationError(_) => "authentication",
             OxyError::AuthorizationError(_) => "authorization",
             OxyError::ValidationError(_) => "validation",
+            OxyError::MissingRequiredFilter { .. } => "filter_validation",
+            OxyError::UnsupportedFilter { .. } => "filter_validation",
+            OxyError::InvalidFilterType { .. } => "filter_validation",
             OxyError::CryptographyError(_) => "cryptography",
             OxyError::InitializationError(_) => "initialization",
             OxyError::JobError(_) => "job",
@@ -106,6 +120,9 @@ impl OxyError {
             OxyError::AuthenticationError(_) => sentry::Level::Warning,
             OxyError::AuthorizationError(_) => sentry::Level::Warning,
             OxyError::ValidationError(_) => sentry::Level::Warning,
+            OxyError::MissingRequiredFilter { .. } => sentry::Level::Warning,
+            OxyError::UnsupportedFilter { .. } => sentry::Level::Warning,
+            OxyError::InvalidFilterType { .. } => sentry::Level::Warning,
             OxyError::CryptographyError(_) => sentry::Level::Error,
             OxyError::InitializationError(_) => sentry::Level::Error,
             OxyError::JobError(_) => sentry::Level::Error,
@@ -135,6 +152,34 @@ impl OxyError {
                 scope.set_extra("handle", handle.clone().into());
                 scope.set_extra("param", param.clone().into());
             });
+        }
+
+        // Add filter-specific context for filter validation errors
+        match self {
+            OxyError::MissingRequiredFilter { filter } => {
+                sentry::configure_scope(|scope| {
+                    scope.set_extra("filter_name", filter.clone().into());
+                });
+            }
+            OxyError::UnsupportedFilter { filter } => {
+                sentry::configure_scope(|scope| {
+                    scope.set_extra("filter_name", filter.clone().into());
+                });
+            }
+            OxyError::InvalidFilterType {
+                filter,
+                expected,
+                actual,
+                details,
+            } => {
+                sentry::configure_scope(|scope| {
+                    scope.set_extra("filter_name", filter.clone().into());
+                    scope.set_extra("expected_type", expected.clone().into());
+                    scope.set_extra("actual_type", actual.clone().into());
+                    scope.set_extra("error_details", details.clone().into());
+                });
+            }
+            _ => {}
         }
 
         sentry::capture_error(self);
@@ -217,6 +262,9 @@ impl From<OxyError> for StatusCode {
             OxyError::AuthenticationError(_) => StatusCode::UNAUTHORIZED,
             OxyError::AuthorizationError(_) => StatusCode::FORBIDDEN,
             OxyError::ValidationError(_) => StatusCode::BAD_REQUEST,
+            OxyError::MissingRequiredFilter { .. } => StatusCode::BAD_REQUEST,
+            OxyError::UnsupportedFilter { .. } => StatusCode::BAD_REQUEST,
+            OxyError::InvalidFilterType { .. } => StatusCode::BAD_REQUEST,
             OxyError::CryptographyError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             OxyError::InitializationError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             OxyError::JobError(_) => StatusCode::INTERNAL_SERVER_ERROR,

@@ -243,6 +243,7 @@ pub enum AnswerContent {
     },
     ArtifactDone {
         id: String,
+        error: Option<String>,
     },
     Error {
         message: String,

@@ -5,9 +5,12 @@ use connectorx::ConnectorX;
 pub use domo::DOMO;
 use duckdb::DuckDB;
 use engine::Engine;
+use serde_json::Value;
 use snowflake::Snowflake;
+use std::collections::HashMap;
 
 use crate::adapters::secrets::SecretsManager;
+use crate::adapters::session_filters::{FilterProcessor, SessionFilters};
 use crate::config::ConfigManager;
 use crate::config::model::DatabaseType;
 use crate::errors::OxyError;
@@ -44,6 +47,7 @@ impl Connector {
         config_manager: &ConfigManager,
         secrets_manager: &SecretsManager,
         dry_run_limit: Option<u64>,
+        filters: Option<SessionFilters>,
     ) -> Result<Self, OxyError> {
         let database = config_manager.resolve_database(database_ref)?;
         let engine = match &database.database_type {
@@ -101,7 +105,12 @@ impl Connector {
                 EngineType::ConnectorX(ConnectorX::new(database.dialect(), db_path, None))
             }
             DatabaseType::ClickHouse(ch) => {
-                EngineType::ClickHouse(ClickHouse::new(ch.clone(), secrets_manager.clone()))
+                let validated = Self::validate_filters(database_ref, &ch.filters, filters)?;
+                let mut clickhouse = ClickHouse::new(ch.clone(), secrets_manager.clone());
+                if let Some(filters) = validated {
+                    clickhouse = clickhouse.with_filters(filters);
+                }
+                EngineType::ClickHouse(clickhouse)
             }
             DatabaseType::Snowflake(snowflake) => EngineType::Snowflake(Snowflake::new(
                 snowflake.clone(),
@@ -143,5 +152,62 @@ impl Connector {
 
     pub async fn dry_run(&self, query: &str) -> Result<(Vec<RecordBatch>, SchemaRef), OxyError> {
         self.engine.dry_run(query).await
+    }
+
+    /// Validate api request filters against configured database filter schemas
+    fn validate_filters(
+        database_ref: &str,
+        schemas: &HashMap<String, schemars::schema::SchemaObject>,
+        filters: Option<SessionFilters>,
+    ) -> Result<Option<SessionFilters>, OxyError> {
+        let Some(filters) = filters else {
+            // Log when no filters provided (may be required for some databases)
+            if !schemas.is_empty() {
+                tracing::debug!(
+                    database = %database_ref,
+                    configured_filters = ?schemas.keys().collect::<Vec<_>>(),
+                    "No filters provided for database with filter schema"
+                );
+            }
+            return Ok(None);
+        };
+
+        if schemas.is_empty() {
+            // Security event: filters provided but not configured
+            tracing::warn!(
+                database = %database_ref,
+                provided_filters = ?filters.keys().collect::<Vec<_>>(),
+                "Filters provided for database but no filter schema configured - ignoring filters"
+            );
+            return Ok(None);
+        }
+
+        // Log filter validation attempt for audit trail
+        tracing::info!(
+            database = %database_ref,
+            provided_filters = ?filters.keys().collect::<Vec<_>>(),
+            configured_filters = ?schemas.keys().collect::<Vec<_>>(),
+            "Validating filters for database query"
+        );
+
+        let processor = FilterProcessor::new(schemas.clone());
+        let validated = processor.process_filters(filters.into()).map_err(|e| {
+            // Log filter validation failure as security event
+            tracing::error!(
+                database = %database_ref,
+                error = %e,
+                "Filter validation failed - rejecting request"
+            );
+            e
+        })?;
+
+        // Log successful filter validation for audit trail
+        tracing::info!(
+            database = %database_ref,
+            validated_filters = ?validated.keys().collect::<Vec<_>>(),
+            "Filter validation successful - applying filters to query"
+        );
+
+        Ok(Some(validated))
     }
 }

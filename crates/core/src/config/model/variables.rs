@@ -10,6 +10,7 @@ use serde::{
 };
 use serde_json::Value;
 
+use crate::config::schema_type_converter;
 use crate::errors::OxyError;
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default)]
@@ -63,156 +64,8 @@ impl Variables {
         value: &Value,
         schema: &SchemaObject,
     ) -> Result<Value, OxyError> {
-        if let Some(instance_type) = &schema.instance_type {
-            match instance_type {
-                SingleOrVec::Single(instance_type) => {
-                    Self::convert_to_single_type(value, instance_type.as_ref())
-                }
-                SingleOrVec::Vec(types) => {
-                    // Try each type in order until one succeeds
-                    for instance_type in types {
-                        if let Ok(converted) = Self::convert_to_single_type(value, instance_type) {
-                            return Ok(converted);
-                        }
-                    }
-                    Err(OxyError::ArgumentError(format!(
-                        "Cannot convert {value:?} to any of the allowed types: {types:?}"
-                    )))
-                }
-            }
-        } else {
-            Ok(value.clone())
-        }
-    }
-
-    fn convert_to_single_type(
-        value: &Value,
-        target_type: &InstanceType,
-    ) -> Result<Value, OxyError> {
-        match target_type {
-            InstanceType::Integer => Self::to_integer(value),
-            InstanceType::Number => Self::to_number(value),
-            InstanceType::Boolean => Self::to_boolean(value),
-            InstanceType::String => Self::to_string(value),
-            InstanceType::Array => match value {
-                Value::Array(_) => Ok(value.clone()),
-                _ => Self::type_error("array", value),
-            },
-            InstanceType::Object => match value {
-                Value::Object(_) => Ok(value.clone()),
-                _ => Self::type_error("object", value),
-            },
-            InstanceType::Null => match value {
-                Value::Null => Ok(value.clone()),
-                _ => Self::type_error("null", value),
-            },
-        }
-    }
-
-    fn to_integer(value: &Value) -> Result<Value, OxyError> {
-        match value {
-            Value::String(s) => {
-                let trimmed = s.trim();
-
-                // Try parsing as integer first
-                if let Ok(i) = trimmed.parse::<i64>() {
-                    return Ok(Value::Number(serde_json::Number::from(i)));
-                }
-
-                // Try parsing as float and converting to int
-                if let Ok(f) = trimmed.parse::<f64>()
-                    && f.fract() == 0.0
-                    && f >= i64::MIN as f64
-                    && f <= i64::MAX as f64
-                {
-                    return Ok(Value::Number(serde_json::Number::from(f as i64)));
-                }
-
-                Err(OxyError::ArgumentError(format!(
-                    "Cannot convert '{s}' to integer"
-                )))
-            }
-            Value::Number(n) => {
-                if n.is_i64() || n.is_u64() {
-                    Ok(value.clone())
-                } else if let Some(f) = n.as_f64() {
-                    if f.fract() == 0.0 && f >= i64::MIN as f64 && f <= i64::MAX as f64 {
-                        Ok(Value::Number(serde_json::Number::from(f as i64)))
-                    } else {
-                        Err(OxyError::ArgumentError(format!(
-                            "Cannot convert float {f} to integer without precision loss"
-                        )))
-                    }
-                } else {
-                    Err(OxyError::ArgumentError(format!(
-                        "Invalid number format: {n:?}"
-                    )))
-                }
-            }
-            _ => Self::type_error("integer", value),
-        }
-    }
-
-    fn to_number(value: &Value) -> Result<Value, OxyError> {
-        match value {
-            Value::String(s) => {
-                let trimmed = s.trim();
-                trimmed
-                    .parse::<f64>()
-                    .ok()
-                    .and_then(serde_json::Number::from_f64)
-                    .map(Value::Number)
-                    .ok_or_else(|| {
-                        OxyError::ArgumentError(format!("Cannot convert '{s}' to number"))
-                    })
-            }
-            Value::Number(_) => Ok(value.clone()),
-            _ => Self::type_error("number", value),
-        }
-    }
-
-    fn to_boolean(value: &Value) -> Result<Value, OxyError> {
-        match value {
-            Value::String(s) => match s.to_lowercase().trim() {
-                "true" | "yes" | "1" | "on" | "y" => Ok(Value::Bool(true)),
-                "false" | "no" | "0" | "off" | "n" => Ok(Value::Bool(false)),
-                _ => Err(OxyError::ArgumentError(format!(
-                    "Cannot convert '{s}' to boolean"
-                ))),
-            },
-            Value::Bool(_) => Ok(value.clone()),
-            Value::Number(n) => {
-                let is_truthy = n
-                    .as_i64()
-                    .map(|i| i != 0)
-                    .or_else(|| n.as_f64().map(|f| f != 0.0))
-                    .ok_or_else(|| {
-                        OxyError::ArgumentError(format!("Cannot convert number {n:?} to boolean"))
-                    })?;
-                Ok(Value::Bool(is_truthy))
-            }
-            _ => Self::type_error("boolean", value),
-        }
-    }
-
-    fn to_string(value: &Value) -> Result<Value, OxyError> {
-        let string_value = match value {
-            Value::String(_) => value.clone(),
-            Value::Number(n) => Value::String(n.to_string()),
-            Value::Bool(b) => Value::String(b.to_string()),
-            Value::Null => Value::String("null".to_string()),
-            Value::Array(_) | Value::Object(_) => Value::String(
-                serde_json::to_string(value)
-                    .map_err(|e| OxyError::ArgumentError(format!("Serialization error: {e}")))?,
-            ),
-        };
-        Ok(string_value)
-    }
-
-    fn type_error(expected_type: &str, actual_value: &Value) -> Result<Value, OxyError> {
-        Err(OxyError::ArgumentError(format!(
-            "Expected {expected_type} value, got {actual_value:?}"
-        )))
+        schema_type_converter::convert_value_to_schema_type(value, schema)
+            .map_err(|(_, _, details)| OxyError::ArgumentError(details))
     }
 
     // Parse YAML and directly convert to JSON Value without intermediate string conversion

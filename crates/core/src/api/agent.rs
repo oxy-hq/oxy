@@ -1,5 +1,7 @@
-use crate::api::middlewares::project::ProjectManagerExtractor;
-use crate::execute::types::ReferenceKind;
+use crate::{
+    adapters::session_filters::SessionFilters, api::middlewares::project::ProjectManagerExtractor,
+    execute::types::ReferenceKind,
+};
 use std::{path::PathBuf, pin::Pin};
 
 use crate::{
@@ -221,6 +223,9 @@ pub async fn run_test(
 #[derive(Deserialize, ToSchema)]
 pub struct AskAgentRequest {
     pub question: String,
+
+    #[serde(default)]
+    pub filters: Option<SessionFilters>,
 }
 
 /// Ask a question to an agent and stream the response
@@ -265,6 +270,7 @@ pub async fn ask_agent_preview(
     })?;
 
     let (tx, rx) = tokio::sync::mpsc::channel(100);
+    let filters = payload.filters;
 
     let _ = tokio::spawn(async move {
         let tx_clone = tx.clone();
@@ -276,6 +282,7 @@ pub async fn ask_agent_preview(
             payload.question,
             block_handler,
             vec![],
+            filters,
         )
         .await;
 
@@ -320,6 +327,7 @@ pub struct ArtifactInfo {
     pub title: String,
     pub kind: String,
     pub is_verified: bool,
+    pub error: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, ToSchema, Debug, Clone)]
@@ -328,16 +336,25 @@ pub struct AskAgentResponse {
     pub references: Vec<crate::execute::types::ReferenceKind>,
     pub usage: Option<crate::execute::types::Usage>,
     pub artifacts: Vec<ArtifactInfo>,
+    pub success: bool,
+    pub error_message: Option<String>,
 }
 
 #[derive(Deserialize, ToSchema)]
 pub struct AskAgentNonStreamingRequest {
     pub question: String,
+
+    #[serde(default)]
+    pub filters: Option<SessionFilters>,
 }
 
 impl ChatExecutionRequest for AskAgentNonStreamingRequest {
     fn get_question(&self) -> Option<String> {
         Some(self.question.clone())
+    }
+
+    fn get_filters(&self) -> Option<SessionFilters> {
+        self.filters.clone()
     }
 }
 
@@ -348,7 +365,7 @@ impl ChatExecutionRequest for AskAgentNonStreamingRequest {
 /// usage statistics, and generated artifacts. Suitable for non-streaming clients.
 #[utoipa::path(
     method(post),
-    path = "/{project_id}/agents/{pathb64}/ask_sync",
+    path = "/{project_id}/agents/{pathb64}/ask-sync",
     params(
         ("project_id" = Uuid, Path, description = "Project UUID"),
         ("pathb64" = String, Path, description = "Base64 encoded path to the agent")
@@ -382,6 +399,7 @@ pub async fn ask_agent_sync(
 
     let project_manager_clone = project_manager.clone();
     let question = payload.question.clone();
+    let filters = payload.filters;
 
     let _ = tokio::spawn(async move {
         let tx_clone = tx.clone();
@@ -393,6 +411,7 @@ pub async fn ask_agent_sync(
             question,
             block_handler,
             vec![],
+            filters,
         )
         .await;
 
@@ -433,6 +452,8 @@ pub async fn ask_agent_sync(
     let mut artifacts: Vec<ArtifactInfo> = Vec::new();
     let mut artifact_map: std::collections::HashMap<String, ArtifactInfo> =
         std::collections::HashMap::new();
+    let mut has_error = false;
+    let mut first_error: Option<String> = None;
 
     while let Some(stream_item) = rx.recv().await {
         match stream_item.content {
@@ -443,6 +464,10 @@ pub async fn ask_agent_sync(
             }
             AnswerContent::Error { message } => {
                 content.push_str(&message);
+                has_error = true;
+                if first_error.is_none() {
+                    first_error = Some(message);
+                }
             }
             AnswerContent::Usage {
                 usage: stream_usage,
@@ -460,11 +485,22 @@ pub async fn ask_agent_sync(
                     title,
                     kind: kind.to_string(),
                     is_verified,
+                    error: None,
                 };
                 artifact_map.insert(id, artifact_info);
             }
-            AnswerContent::ArtifactDone { id } => {
-                if let Some(artifact) = artifact_map.remove(&id) {
+            AnswerContent::ArtifactDone { id, error } => {
+                if let Some(mut artifact) = artifact_map.remove(&id) {
+                    if let Some(err) = error {
+                        has_error = true;
+                        artifact.error = Some(err.clone());
+                        if first_error.is_none() {
+                            first_error = Some(format!(
+                                "Failed to execute {} artifact: {}",
+                                artifact.kind, err
+                            ));
+                        }
+                    }
                     artifacts.push(artifact);
                 }
             }
@@ -474,22 +510,41 @@ pub async fn ask_agent_sync(
         references.extend(stream_item.references);
     }
 
+    // Determine success and error_message
+    let success = !has_error;
+    let error_message = first_error.or_else(|| {
+        if content.contains("🔴 Error:") {
+            Some("Agent execution failed".to_string())
+        } else {
+            None
+        }
+    });
+
     Ok(extract::Json(AskAgentResponse {
         content,
         references,
         usage,
         artifacts,
+        success,
+        error_message,
     }))
 }
 
 #[derive(Deserialize)]
 pub struct AskThreadRequest {
     pub question: Option<String>,
+
+    #[serde(default)]
+    pub filters: Option<SessionFilters>,
 }
 
 impl ChatExecutionRequest for AskThreadRequest {
     fn get_question(&self) -> Option<String> {
         self.question.clone()
+    }
+
+    fn get_filters(&self) -> Option<SessionFilters> {
+        self.filters.clone()
     }
 }
 
@@ -525,6 +580,7 @@ impl ChatHandler for AgentExecutor {
             context.user_question.clone(),
             block_handler,
             context.memory.clone(),
+            context.filters.clone(),
         )
         .await;
 

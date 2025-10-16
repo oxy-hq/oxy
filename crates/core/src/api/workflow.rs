@@ -4,9 +4,12 @@ use futures::TryFutureExt;
 use sea_orm::ActiveValue;
 use sea_orm::EntityTrait;
 use serde::Deserialize;
+use serde_json::Value;
 use std::path::PathBuf;
 use utoipa::ToSchema;
 use uuid::Uuid;
+
+use crate::adapters::session_filters::SessionFilters;
 
 use std::fs::File;
 use std::sync::Arc;
@@ -209,6 +212,9 @@ pub struct WorkflowRetryParam {
 #[derive(Deserialize, ToSchema)]
 pub struct RunWorkflowRequest {
     retry_param: Option<WorkflowRetryParam>,
+
+    #[serde(default)]
+    pub filters: Option<SessionFilters>,
 }
 
 /// Execute a workflow and stream results via Server-Sent Events
@@ -237,6 +243,7 @@ pub struct RunWorkflowRequest {
 pub async fn run_workflow(
     Path((_project_id, pathb64)): Path<(Uuid, String)>,
     ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    extract::Json(request): extract::Json<RunWorkflowRequest>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let decoded_path = BASE64_STANDARD.decode(pathb64).map_err(|e| {
         tracing::info!("{:?}", e);
@@ -260,6 +267,8 @@ pub async fn run_workflow(
 
     let (logger, receiver) = build_workflow_api_logger(&full_workflow_path, None).await;
 
+    let filters = request.filters;
+
     let _ = tokio::spawn(async move {
         tracing::info!("Workflow run started");
         let rs = run_workflow_service(
@@ -268,6 +277,7 @@ pub async fn run_workflow(
             RetryStrategy::NoRetry,
             None,
             project_manager.clone(),
+            filters,
         )
         .await;
         match rs {
@@ -327,6 +337,7 @@ async fn ensure_workflow_thread_unlocked(
         ("project_id" = Uuid, Path, description = "Project UUID"),
         ("pathb64" = String, Path, description = "Thread ID or encoded id")
     ),
+    request_body = RunWorkflowRequest,
     responses(
         (status = 200, description = "Workflow thread execution started successfully - returns streaming logs", content_type = "text/event-stream"),
         (status = 400, description = "Bad request - invalid thread ID"),
@@ -342,6 +353,7 @@ async fn ensure_workflow_thread_unlocked(
 pub async fn run_workflow_thread(
     Path((_project_id, id)): Path<(Uuid, String)>,
     ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    extract::Json(request): extract::Json<RunWorkflowRequest>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let config_manager = project_manager.config_manager.clone();
 
@@ -414,6 +426,7 @@ pub async fn run_workflow_thread(
 
     let connection_clone = connection.clone();
     let thread_clone = thread.clone();
+    let filters = request.filters;
 
     let _ = tokio::spawn(async move {
         let result = service::run_workflow(
@@ -422,6 +435,7 @@ pub async fn run_workflow_thread(
             RetryStrategy::NoRetry,
             None,
             project_manager.clone(),
+            filters,
         )
         .await;
 
@@ -483,7 +497,10 @@ pub struct RunWorkflowThreadSyncResponse {
 }
 
 #[derive(Deserialize, ToSchema)]
-pub struct RunWorkflowThreadRequest {}
+pub struct RunWorkflowThreadRequest {
+    #[serde(default)]
+    pub filters: Option<SessionFilters>,
+}
 
 /// Execute a workflow thread and wait for completion (synchronous)
 ///
@@ -515,7 +532,7 @@ pub async fn run_workflow_thread_sync(
     Path((_project_id, id)): Path<(Uuid, String)>,
     ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
     timeout_config: TimeoutConfig,
-    extract::Json(_request): extract::Json<RunWorkflowThreadRequest>,
+    extract::Json(request): extract::Json<RunWorkflowThreadRequest>,
 ) -> Result<extract::Json<RunWorkflowThreadSyncResponse>, StatusCode> {
     let config_manager = project_manager.config_manager.clone();
 
@@ -594,6 +611,7 @@ pub async fn run_workflow_thread_sync(
     let thread_clone = thread.clone();
     let config_manager_clone = config_manager.clone();
     let workflow_ref_clone = workflow_ref.clone();
+    let filters = request.filters;
 
     let mut workflow_task = tokio::spawn(async move {
         let result = service::run_workflow(
@@ -602,6 +620,7 @@ pub async fn run_workflow_thread_sync(
             RetryStrategy::NoRetry,
             None,
             project_manager.clone(),
+            filters,
         )
         .await;
 
@@ -882,6 +901,8 @@ pub async fn run_workflow_sync(
     let mut event_receiver = subscription.receiver;
     let mut all_events = subscription.items;
 
+    let filters = request.filters;
+
     let mut workflow_task = tokio::spawn({
         let project_manager = project_manager.clone();
         let path = path.clone();
@@ -894,6 +915,7 @@ pub async fn run_workflow_sync(
                 topic_ref,
                 retry_strategy,
                 None,
+                filters,
             )
             .await;
 

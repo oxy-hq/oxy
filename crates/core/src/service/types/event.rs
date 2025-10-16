@@ -133,9 +133,9 @@ impl TryFrom<Event> for EventKind {
                     artifact_metadata: kind,
                     is_verified,
                 }),
-                ExecuteEventKind::ArtifactFinished => Ok(EventKind::ArtifactFinished {
+                ExecuteEventKind::ArtifactFinished { error } => Ok(EventKind::ArtifactFinished {
                     artifact_id: event.source.id.to_string(),
-                    error: None,
+                    error,
                 }),
                 _ => Err(OxyError::ArgumentError(
                     "Unsupported event kind".to_string(),

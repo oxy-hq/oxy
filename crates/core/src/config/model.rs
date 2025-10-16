@@ -275,6 +275,15 @@ pub struct ClickHouse {
     #[serde(default)]
     #[garde(skip)]
     pub schemas: HashMap<String, Vec<String>>,
+    #[serde(default)]
+    #[garde(skip)]
+    pub role: Option<String>,
+    #[serde(default)]
+    #[garde(skip)]
+    pub settings_prefix: Option<String>,
+    #[serde(default)]
+    #[garde(skip)]
+    pub filters: HashMap<String, schemars::schema::SchemaObject>,
 }
 
 impl ClickHouse {

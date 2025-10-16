@@ -1,5 +1,8 @@
-use crate::adapters::connector::{Connector, load_result};
-use crate::adapters::project::manager::ProjectManager;
+use crate::adapters::{
+    connector::{Connector, load_result},
+    project::manager::ProjectManager,
+    session_filters::SessionFilters,
+};
 use crate::api::middlewares::project::{ProjectManagerExtractor, ProjectPath};
 use crate::errors::OxyError;
 use crate::execute::types::utils::record_batches_to_2d_array;
@@ -14,6 +17,9 @@ use utoipa::ToSchema;
 pub struct SQLParams {
     pub sql: String,
     pub database: String,
+
+    #[serde(default)]
+    pub filters: Option<SessionFilters>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -31,9 +37,14 @@ pub async fn execute_sql(
 ) -> Result<extract::Json<Vec<Vec<String>>>, StatusCode> {
     let config_manager = project_manager.config_manager.clone();
     let secrets_manager = project_manager.secrets_manager.clone();
-    let connector =
-        Connector::from_database(&payload.database, &config_manager, &secrets_manager, None)
-            .await?;
+    let connector = Connector::from_database(
+        &payload.database,
+        &config_manager,
+        &secrets_manager,
+        None,
+        payload.filters,
+    )
+    .await?;
     let file_path = connector.run_query(&payload.sql).await?;
 
     let (batches, schema) =

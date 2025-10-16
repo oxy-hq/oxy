@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fmt::Debug;
 
 use minijinja::Value;
@@ -8,6 +9,7 @@ use crate::{
     adapters::{
         checkpoint::{CheckpointContext, CheckpointData},
         project::manager::ProjectManager,
+        session_filters::SessionFilters,
     },
     errors::OxyError,
     execute::{builders::checkpoint::CheckpointId, renderer::Renderer, types::Usage},
@@ -37,6 +39,9 @@ pub struct ExecutionContext {
     pub renderer: Renderer,
     pub project: ProjectManager,
     pub checkpoint: Option<CheckpointContext>,
+    /// Filters to apply to all SQL queries in this execution context
+    /// Set by API request, transparent to workflows/agents
+    pub filters: Option<SessionFilters>,
 }
 
 impl ExecutionContext {
@@ -53,6 +58,7 @@ impl ExecutionContext {
             renderer,
             project,
             checkpoint,
+            filters: None,
         }
     }
 
@@ -67,6 +73,7 @@ impl ExecutionContext {
             renderer: self.renderer.clone(),
             project: self.project.clone(),
             checkpoint: self.checkpoint.clone(),
+            filters: self.filters.clone(),
         }
     }
 
@@ -77,6 +84,7 @@ impl ExecutionContext {
             renderer: self.renderer.clone(),
             project: self.project.clone(),
             checkpoint: Some(checkpoint),
+            filters: self.filters.clone(),
         }
     }
 
@@ -88,6 +96,7 @@ impl ExecutionContext {
                 renderer: self.renderer.clone(),
                 project: self.project.clone(),
                 checkpoint: Some(checkpoint_context.with_current_ref(child_ref)),
+                filters: self.filters.clone(),
             }
         } else {
             ExecutionContext {
@@ -96,6 +105,7 @@ impl ExecutionContext {
                 renderer: self.renderer.clone(),
                 project: self.project.clone(),
                 checkpoint: None,
+                filters: self.filters.clone(),
             }
         }
     }
@@ -107,6 +117,7 @@ impl ExecutionContext {
             renderer: self.renderer.clone(),
             project: self.project.clone(),
             checkpoint: self.checkpoint.clone(),
+            filters: self.filters.clone(),
         }
     }
 
@@ -117,6 +128,7 @@ impl ExecutionContext {
             renderer,
             project: self.project.clone(),
             checkpoint: self.checkpoint.clone(),
+            filters: self.filters.clone(),
         }
     }
 
@@ -129,6 +141,7 @@ impl ExecutionContext {
                 .switch_context(global_context, Value::UNDEFINED),
             project: self.project.clone(),
             checkpoint: self.checkpoint.clone(),
+            filters: self.filters.clone(),
         }
     }
 
@@ -139,6 +152,7 @@ impl ExecutionContext {
             renderer: self.renderer.wrap(context),
             project: self.project.clone(),
             checkpoint: self.checkpoint.clone(),
+            filters: self.filters.clone(),
         }
     }
 
@@ -223,6 +237,7 @@ pub struct ExecutionContextBuilder {
     project: Option<ProjectManager>,
     writer: Option<Sender<Event>>,
     checkpoint: Option<CheckpointContext>,
+    filters: Option<SessionFilters>,
 }
 
 impl Default for ExecutionContextBuilder {
@@ -239,6 +254,7 @@ impl ExecutionContextBuilder {
             project: None,
             writer: None,
             checkpoint: None,
+            filters: None,
         }
     }
 
@@ -276,6 +292,11 @@ impl ExecutionContextBuilder {
         self
     }
 
+    pub fn with_filters(mut self, filters: impl Into<Option<SessionFilters>>) -> Self {
+        self.filters = filters.into();
+        self
+    }
+
     pub fn build(self) -> Result<ExecutionContext, OxyError> {
         let source = self
             .source
@@ -296,6 +317,40 @@ impl ExecutionContextBuilder {
             renderer,
             project,
             checkpoint: self.checkpoint,
+            filters: self.filters,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    use std::collections::HashMap;
+
+    #[test]
+    fn test_execution_context_builder_with_filters() {
+        let mut filters = HashMap::new();
+        filters.insert("org_id".to_string(), json!(789));
+        filters.insert("account_id".to_string(), json!(123));
+
+        let builder = ExecutionContextBuilder::new().with_filters(Some(filters.clone().into()));
+
+        assert!(builder.filters.is_some());
+        let builder_filters = builder.filters.unwrap();
+        assert_eq!(builder_filters.get("org_id"), Some(&json!(789)));
+        assert_eq!(builder_filters.get("account_id"), Some(&json!(123)));
+    }
+
+    #[test]
+    fn test_execution_context_builder_without_filters() {
+        let builder = ExecutionContextBuilder::new();
+        assert!(builder.filters.is_none());
+    }
+
+    #[test]
+    fn test_execution_context_builder_filters_none() {
+        let builder = ExecutionContextBuilder::new().with_filters(None);
+        assert!(builder.filters.is_none());
     }
 }

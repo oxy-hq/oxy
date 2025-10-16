@@ -174,6 +174,9 @@ fn collect_clickhouse_conf() -> Result<DatabaseType, InitError> {
         database,
         schemas: Default::default(),
         password_var: None,
+        role: None,
+        settings_prefix: None,
+        filters: Default::default(),
     }))
 }
 

@@ -2,6 +2,7 @@ use std::path::PathBuf;
 pub mod auth;
 pub mod model;
 mod parser;
+pub mod schema_type_converter;
 pub mod validate;
 use garde::Validate;
 mod builder;

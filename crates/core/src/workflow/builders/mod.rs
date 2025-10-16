@@ -1,7 +1,7 @@
 use crate::{
     adapters::{
         checkpoint::RunInfo, project::manager::ProjectManager, runs::RunsManager,
-        secrets::SecretsManager,
+        secrets::SecretsManager, session_filters::SessionFilters,
     },
     config::{ConfigManager, constants::WORKFLOW_SOURCE, model::Task},
     errors::OxyError,
@@ -52,6 +52,7 @@ pub struct WorkflowInput {
 pub struct WorkflowLauncher {
     execution_context: Option<ExecutionContext>,
     buf_writer: BufWriter,
+    filters: Option<SessionFilters>,
 }
 
 impl Default for WorkflowLauncher {
@@ -65,7 +66,13 @@ impl WorkflowLauncher {
         Self {
             execution_context: None,
             buf_writer: BufWriter::new(),
+            filters: None,
         }
+    }
+
+    pub fn with_filters(mut self, filters: impl Into<Option<SessionFilters>>) -> Self {
+        self.filters = filters.into();
+        self
     }
 
     async fn get_global_context(
@@ -115,6 +122,7 @@ impl WorkflowLauncher {
                 id: "workflow".to_string(),
                 kind: WORKFLOW_SOURCE.to_string(),
             })
+            .with_filters(self.filters.clone())
             .build()?;
 
         let config_manager = execution_context.project.config_manager.clone();

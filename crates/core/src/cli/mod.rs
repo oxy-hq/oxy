@@ -653,6 +653,7 @@ async fn handle_workflow_file(
             },
             None,
             project,
+            None,
         )
         .await?;
     } else if retry {
@@ -664,6 +665,7 @@ async fn handle_workflow_file(
             RetryStrategy::LastFailure,
             None,
             project,
+            None,
         )
         .await?;
     } else {
@@ -675,6 +677,7 @@ async fn handle_workflow_file(
             RetryStrategy::NoRetry,
             None,
             project,
+            None,
         )
         .await?;
     }
@@ -992,6 +995,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                 ask_args.question,
                 AgentCLIHandler::default(),
                 vec![],
+                None,
             )
             .await?;
         }
@@ -1190,6 +1194,7 @@ async fn handle_agent_file(file_path: &PathBuf, question: Option<String>) -> Res
         question,
         AgentCLIHandler::default(),
         vec![],
+        None,
     )
     .await?;
     Ok(())
@@ -1273,7 +1278,8 @@ async fn handle_sql_file(
     // Print colored SQL and execute query
     print_colored_sql(&query);
     let secrets_manager = SecretsManager::from_environment()?;
-    let connector = Connector::from_database(&database, config, &secrets_manager, None).await?;
+    let connector =
+        Connector::from_database(&database, config, &secrets_manager, None, None).await?;
     let (datasets, schema) = match dry_run {
         false => connector.run_query_and_load(&query).await,
         true => connector.dry_run(&query).await,

@@ -213,6 +213,7 @@ impl OxyMcpServer {
             RetryStrategy::NoRetry,
             variables,
             self.project_manager.clone(),
+            None,
         )
         .await
         .map_err(|e| rmcp::Error::internal_error(format!("Failed to run workflow: {e}"), None))?;

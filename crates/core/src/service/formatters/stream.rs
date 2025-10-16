@@ -55,11 +55,19 @@ impl StreamDispatcher {
         Ok(())
     }
 
-    pub async fn send_artifact_done(&self, id: &str, step: &str) -> Result<(), OxyError> {
+    pub async fn send_artifact_done(
+        &self,
+        id: &str,
+        error: Option<String>,
+        step: &str,
+    ) -> Result<(), OxyError> {
         let _ = self
             .sender
             .send(AnswerStream {
-                content: AnswerContent::ArtifactDone { id: id.to_string() },
+                content: AnswerContent::ArtifactDone {
+                    id: id.to_string(),
+                    error,
+                },
                 references: vec![],
                 is_error: false,
                 step: step.to_string(),

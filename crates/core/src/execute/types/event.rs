@@ -89,7 +89,9 @@ pub enum EventKind {
         query: crate::tools::types::OmniQueryParams,
         is_verified: bool,
     },
-    ArtifactFinished,
+    ArtifactFinished {
+        error: Option<String>,
+    },
     // UI events
     Progress {
         progress: ProgressType,

@@ -216,6 +216,9 @@ impl DatabaseConfigBuilder {
                     .database
                     .unwrap_or_else(|| "default".to_string()),
                 schemas: HashMap::new(),
+                role: None,
+                settings_prefix: None,
+                filters: HashMap::new(),
             }),
         })
     }

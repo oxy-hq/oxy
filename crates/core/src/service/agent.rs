@@ -1,4 +1,4 @@
-use crate::adapters::project::manager::ProjectManager;
+use crate::adapters::{project::manager::ProjectManager, session_filters::SessionFilters};
 use crate::agent::AgentLauncher;
 use crate::agent::builders::fsm::config::AgenticInput;
 use crate::agent::types::AgentInput;
@@ -17,9 +17,11 @@ use async_openai::types::{
 };
 use sea_orm::prelude::DateTimeWithTimeZone;
 use serde::Deserialize;
-use std::io::Write;
-use std::path::Path;
-use std::path::PathBuf;
+use std::{
+    collections::HashMap,
+    io::Write,
+    path::{Path, PathBuf},
+};
 use utoipa::ToSchema;
 
 use super::eval::PBarsHandler;
@@ -47,7 +49,7 @@ pub async fn ask_adhoc(
     let config_manager = project.config_manager.clone();
 
     let agent_path = get_path_by_name(config_manager, agent).await?;
-    let result = match run_agent(project, &agent_path, question, NoopHandler, vec![]).await {
+    let result = match run_agent(project, &agent_path, question, NoopHandler, vec![], None).await {
         Ok(output) => output.to_string(),
         Err(e) => format!("Error running agent: {e}"),
     };
@@ -178,8 +180,10 @@ pub async fn run_agent<P: AsRef<Path>, H: EventHandler + Send + 'static>(
     prompt: String,
     event_handler: H,
     memory: Vec<Message>,
+    filters: Option<SessionFilters>,
 ) -> Result<OutputContainer, OxyError> {
     AgentLauncher::new()
+        .with_filters(filters)
         .with_project(project)
         .await?
         .launch(

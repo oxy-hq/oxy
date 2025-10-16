@@ -725,8 +725,14 @@ impl SemanticQueryExecutable {
         let secret_manager = &execution_context.project.secrets_manager;
 
         // Create database connector
-        let connector =
-            Connector::from_database(database_ref, config_manager, secret_manager, None).await?;
+        let connector = Connector::from_database(
+            database_ref,
+            config_manager,
+            secret_manager,
+            None,
+            execution_context.filters.clone(),
+        )
+        .await?;
 
         // Execute SQL query
         tracing::info!("Executing SQL query: {}", sql);

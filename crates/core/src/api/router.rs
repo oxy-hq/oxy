@@ -193,7 +193,7 @@ fn build_agent_routes() -> Router<AppState> {
         .route("/", get(agent::get_agents))
         .route("/{pathb64}", get(agent::get_agent))
         .route("/{pathb64}/ask", post(agent::ask_agent_preview))
-        .route("/{pathb64}/ask_sync", post(agent::ask_agent_sync))
+        .route("/{pathb64}/ask-sync", post(agent::ask_agent_sync))
         .route("/{pathb64}/tests/{test_index}", post(agent::run_test))
 }
 

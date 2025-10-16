@@ -1,5 +1,5 @@
 use crate::{
-    adapters::project::manager::ProjectManager,
+    adapters::{project::manager::ProjectManager, session_filters::SessionFilters},
     agent::builders::fsm::{config::AgenticInput, machine::launch_agentic_workflow},
     config::{
         constants::AGENT_SOURCE,
@@ -17,6 +17,7 @@ use builders::AgentExecutable;
 pub use builders::{OneShotInput, OpenAIExecutableResponse, build_openai_executable};
 use minijinja::Value;
 pub use references::AgentReferencesHandler;
+use std::collections::HashMap;
 use types::AgentInput;
 
 pub mod builders;
@@ -37,6 +38,7 @@ impl TemplateRegister for AgentConfig {
 pub struct AgentLauncher {
     execution_context: Option<ExecutionContext>,
     buf_writer: BufWriter,
+    filters: Option<SessionFilters>,
 }
 
 impl AgentLauncher {
@@ -44,7 +46,13 @@ impl AgentLauncher {
         Self {
             execution_context: None,
             buf_writer: BufWriter::new(),
+            filters: None,
         }
+    }
+
+    pub fn with_filters(mut self, filters: impl Into<Option<SessionFilters>>) -> Self {
+        self.filters = filters.into();
+        self
     }
 
     pub fn with_external_context(
@@ -68,6 +76,7 @@ impl AgentLauncher {
                     id: AGENT_SOURCE.to_string(),
                     kind: AGENT_SOURCE.to_string(),
                 })
+                .with_filters(self.filters.clone())
                 .build()?,
         );
         Ok(self)

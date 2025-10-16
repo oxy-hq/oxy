@@ -8,11 +8,13 @@ use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, EntityTrait, Order, QueryFilter, QueryOrder,
     QuerySelect,
 };
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::{
+    adapters::session_filters::SessionFilters,
+    api::agent::AskAgentResponse,
     db::client::establish_connection,
     errors::OxyError,
     execute::types::Usage,
@@ -29,6 +31,9 @@ use crate::{
 
 pub trait ChatExecutionRequest {
     fn get_question(&self) -> Option<String>;
+    fn get_filters(&self) -> Option<SessionFilters> {
+        None
+    }
 }
 
 #[derive(Clone)]
@@ -39,6 +44,7 @@ pub struct ChatExecutionContext {
     pub streaming_persister: Arc<StreamingMessagePersister>,
     pub logs_persister: Arc<LogsPersister>,
     pub cancellation_tokens: CancellationTokens,
+    pub filters: Option<SessionFilters>,
 }
 
 impl ChatExecutionContext {
@@ -57,7 +63,13 @@ impl ChatExecutionContext {
             streaming_persister,
             logs_persister,
             cancellation_tokens,
+            filters: None,
         }
+    }
+
+    pub fn with_filters(mut self, filters: impl Into<Option<SessionFilters>>) -> Self {
+        self.filters = filters.into();
+        self
     }
 }
 
@@ -194,7 +206,8 @@ impl ChatService {
             streaming_persister,
             logs_persister,
             cancellation_tokens,
-        );
+        )
+        .with_filters(payload.get_filters());
 
         let (tx, rx) = tokio::sync::mpsc::channel(100);
 
@@ -213,9 +226,6 @@ impl ChatService {
         executor: E,
         user_id: Uuid,
     ) -> Result<crate::api::agent::AskAgentResponse, StatusCode> {
-        use crate::api::agent::AskAgentResponse;
-        use std::collections::HashMap;
-
         // Validate input parameters first
         self.validate_request_parameters(&id, &payload, &user_id)?;
 
@@ -303,7 +313,8 @@ impl ChatService {
             streaming_persister.clone(),
             logs_persister,
             cancellation_tokens,
-        );
+        )
+        .with_filters(payload.get_filters());
 
         let (tx, mut rx) = tokio::sync::mpsc::channel(100);
         let connection = self.connection.clone();
@@ -361,6 +372,8 @@ impl ChatService {
         let mut usage = None;
         let mut artifacts = Vec::new();
         let mut artifact_map = HashMap::new();
+        let mut has_error = false;
+        let mut first_error: Option<String> = None;
 
         // Collect responses while the task is running
         while let Some(stream_item) = rx.recv().await {
@@ -373,6 +386,10 @@ impl ChatService {
                 crate::service::types::AnswerContent::Error { message } => {
                     // Don't return error immediately, let task complete
                     content.push_str(&message);
+                    has_error = true;
+                    if first_error.is_none() {
+                        first_error = Some(message);
+                    }
                 }
                 crate::service::types::AnswerContent::Usage {
                     usage: stream_usage,
@@ -390,11 +407,22 @@ impl ChatService {
                         title,
                         kind: kind.to_string(),
                         is_verified,
+                        error: None,
                     };
                     artifact_map.insert(id, artifact_info);
                 }
-                crate::service::types::AnswerContent::ArtifactDone { id } => {
-                    if let Some(artifact) = artifact_map.remove(&id) {
+                crate::service::types::AnswerContent::ArtifactDone { id, error } => {
+                    if let Some(mut artifact) = artifact_map.remove(&id) {
+                        if let Some(err) = &error {
+                            has_error = true;
+                            if first_error.is_none() {
+                                first_error = Some(format!(
+                                    "Failed to execute {} artifact: {}",
+                                    artifact.kind, err
+                                ));
+                            }
+                        }
+                        artifact.error = error;
                         artifacts.push(artifact);
                     }
                 }
@@ -419,6 +447,10 @@ impl ChatService {
             }
             Ok(Err(error)) => {
                 tracing::error!("Task failed with error: {}", error);
+                has_error = true;
+                if first_error.is_none() {
+                    first_error = Some(error.to_string());
+                }
                 if content.is_empty() {
                     content = format!("🔴 Error: {}", error);
                 }
@@ -426,6 +458,10 @@ impl ChatService {
             }
             Err(e) => {
                 tracing::error!("Task panicked: {}", e);
+                has_error = true;
+                if first_error.is_none() {
+                    first_error = Some("An unexpected error occurred".to_string());
+                }
                 if content.is_empty() {
                     content = "🔴 An unexpected error occurred".to_string();
                 }
@@ -439,11 +475,23 @@ impl ChatService {
         // Handle any final errors
         final_result?;
 
+        // Determine success and error_message
+        let success = !has_error;
+        let error_message = first_error.or_else(|| {
+            if content.contains("🔴 Error:") {
+                Some("Agent execution failed".to_string())
+            } else {
+                None
+            }
+        });
+
         Ok(AskAgentResponse {
             content,
             references,
             usage,
             artifacts,
+            success,
+            error_message,
         })
     }
 
