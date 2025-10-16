@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.6](https://github.com/oxy-hq/oxy-internal/compare/0.3.5...0.3.6) (2025-10-16)
+
+
+### <!-- 0 -->🚀 Features
+
+* clickhouse row filtering via api ([#1212](https://github.com/oxy-hq/oxy-internal/issues/1212)) ([e1f43d5](https://github.com/oxy-hq/oxy-internal/commit/e1f43d51c1255c28967a25c9642d79de9067e012))
+
 ## [0.3.5](https://github.com/oxy-hq/oxy-internal/compare/0.3.4...0.3.5) (2025-10-15)
 
 
