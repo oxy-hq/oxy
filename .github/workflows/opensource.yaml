@@ -16,7 +16,7 @@ permissions:
 jobs:
   move-code:
     runs-on: ubuntu-latest
-    if: ${{ ((github.event_name == 'push' && github.repository == 'oxy-hq/oxy-internal') || (github.event_name == 'pull_request_target' && github.repository == 'oxy-hq/oxy')) && !(startsWith(github.actor, 'github-actions')) }}
+    if: ${{ ((github.event_name == 'push' && github.repository == 'oxy-hq/oxy-internal') || (github.event_name == 'pull_request_target' && github.repository == 'oxy-hq/oxy' && github.actor != 'dependabot[bot]' )) }}
     steps:
       - uses: actions/create-github-app-token@v2
         name: Create GitHub App Token
