@@ -66,13 +66,11 @@ use std::net::SocketAddr;
 use tracing::{debug, error};
 
 // Constants
-const CUBE_CONFIG_DIR_PATH: &str = ".local/share/oxy/cube";
+const CUBE_CONFIG_DIR_PATH: &str = ".semantics";
 
-/// Get the cube configuration directory path
+/// Get the cube configuration directory path (inside the project directory)
 fn get_cube_config_dir() -> Result<PathBuf, OxyError> {
-    let home = std::env::var("HOME")
-        .map_err(|_| OxyError::RuntimeError("Could not find HOME directory".to_string()))?;
-    Ok(PathBuf::from(home).join(CUBE_CONFIG_DIR_PATH))
+    Ok(resolve_local_project_path()?.join(CUBE_CONFIG_DIR_PATH))
 }
 
 type Variable = (String, String);
@@ -831,10 +829,17 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             .await?;
 
             // Process semantic layer to generate CubeJS schema
-            let semantic_dir = resolve_local_project_path()?.join("semantics");
+            let semantic_dir = resolve_semantics_dir()?;
             if semantic_dir.exists() {
-                // target_dir: ~/.local/share/oxy/cube
+                // target_dir: .semantics/ (inside project directory)
                 let target_dir = get_cube_config_dir()?;
+
+                // Clean up existing cube directory for fresh generation
+                if target_dir.exists() {
+                    std::fs::remove_dir_all(&target_dir).map_err(|e| {
+                        OxyError::RuntimeError(format!("Failed to clean cube directory: {}", e))
+                    })?;
+                }
 
                 // Ensure the target directory exists
                 std::fs::create_dir_all(&target_dir).map_err(|e| {
@@ -1575,7 +1580,7 @@ async fn handle_semantic_engine_command(semantic_args: SemanticEngineArgs) -> Re
     let project_path = resolve_local_project_path()?;
 
     // Check if semantic layer exists
-    let semantic_dir = project_path.join("semantics");
+    let semantic_dir = resolve_semantics_dir()?;
     if !semantic_dir.exists() {
         return Err(OxyError::ConfigurationError(
             "No semantic layer found. Please create a 'semantics' directory with your semantic definitions.".to_string()
@@ -1593,6 +1598,34 @@ async fn handle_semantic_engine_command(semantic_args: SemanticEngineArgs) -> Re
 
     if !cube_config_dir.exists() {
         println!("🔄 Generating Cube.js configuration from semantic layer...");
+
+        // Get database details from config
+        let databases: HashMap<String, DatabaseDetails> = config
+            .list_databases()
+            .iter()
+            .map(|db| {
+                (
+                    db.name.clone(),
+                    DatabaseDetails {
+                        name: db.name.clone(),
+                        db_type: db.dialect(),
+                    },
+                )
+            })
+            .collect();
+
+        // Process semantic layer to generate CubeJS schema
+        process_semantic_layer_to_cube(semantic_dir.clone(), cube_config_dir.clone(), databases)
+            .await?;
+        println!("✅ Cube.js configuration generated successfully");
+    } else {
+        // Clean up existing cube directory and regenerate for isolation
+        println!("🧹 Cleaning existing Cube.js configuration...");
+        std::fs::remove_dir_all(&cube_config_dir).map_err(|e| {
+            OxyError::RuntimeError(format!("Failed to clean cube directory: {}", e))
+        })?;
+
+        println!("🔄 Regenerating Cube.js configuration from semantic layer...");
 
         // Get database details from config
         let databases: HashMap<String, DatabaseDetails> = config
@@ -1684,7 +1717,8 @@ async fn handle_semantic_engine_command(semantic_args: SemanticEngineArgs) -> Re
         docker_cmd.args(["-e", &env_var]);
     }
 
-    docker_cmd.args(["cubejs/cube:latest"]);
+    // Allow configuring Cube version ?
+    docker_cmd.args(["cubejs/cube:v1.3.81"]);
 
     let display_host = if semantic_args.host == "0.0.0.0" {
         "localhost"

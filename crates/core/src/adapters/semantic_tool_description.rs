@@ -23,8 +23,7 @@ pub fn get_semantic_query_description(
 }
 
 fn load_semantic_layer(config_manager: &config::ConfigManager) -> Result<SemanticLayer, OxyError> {
-    let project_path = config_manager.project_path();
-    let semantic_dir = project_path.join("semantics");
+    let semantic_dir = config_manager.semantics_path();
 
     if !semantic_dir.exists() {
         return Err(OxyError::ConfigurationError(

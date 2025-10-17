@@ -157,7 +157,7 @@ pub async fn validate_semantic_query_task(
     task: &SemanticQueryTask,
 ) -> Result<ValidatedSemanticQuery, OxyError> {
     // Load semantic layer metadata from the project's semantics directory
-    let semantic_dir = config.project_path().join("semantics");
+    let semantic_dir = config.semantics_path();
 
     if !semantic_dir.exists() {
         return Err(SemanticQueryError::MetadataMissing {

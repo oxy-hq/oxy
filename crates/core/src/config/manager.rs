@@ -206,6 +206,11 @@ impl ConfigManager {
         &self.config.project_path
     }
 
+    /// Gets the semantics directory path (project_path/semantics)
+    pub fn semantics_path(&self) -> PathBuf {
+        self.config.project_path.join("semantics")
+    }
+
     pub fn get_integration_by_name(
         &self,
         integration_name: &str,
