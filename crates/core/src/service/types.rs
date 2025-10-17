@@ -115,6 +115,7 @@ pub struct SemanticQueryParams {
     #[schemars(
         description = "List of dimensions to include in the query. Format: <view_name>.<dimension_name>"
     )]
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub dimensions: Vec<String>,
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub filters: Vec<SemanticQueryFilter>,

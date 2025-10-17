@@ -187,6 +187,15 @@ impl Executable<(String, Option<ToolType>, ToolRawInput)> for ToolExecutable {
                 ToolType::SemanticQuery(semantic_query_tool) => {
                     let semantic_params =
                         serde_json::from_str::<SemanticQueryParams>(&input.param)?;
+                    if let Some(tool_topic) = semantic_query_tool.topic.clone() {
+                        if semantic_params.topic != tool_topic {
+                            return Err(OxyError::ArgumentError(format!(
+                                "Invalid topic: expected '{}'",
+                                tool_topic
+                            )));
+                        }
+                    }
+
                     build_semantic_query_executable()
                         .execute(
                             execution_context,
@@ -357,20 +366,6 @@ impl ParamMapper<SemanticQueryToolInput, ValidatedSemanticQuery> for SemanticQue
             param: semantic_params,
             topic,
         } = input;
-
-        if let Some(ref topic) = topic {
-            if *topic != semantic_params.topic {
-                return Err(OxyError::ArgumentError(format!(
-                    "Invalid topic: expected '{}'",
-                    topic
-                )));
-            }
-        } else {
-            tracing::debug!("SemanticQueryToolInput topic: None");
-        }
-
-        // Use the structured parameters directly (no JSON parsing needed)
-        // SemanticQueryParams already contains the correct types, no conversion needed
 
         // For now, semantic query tools don't support export directly
         // Export functionality is handled at the task level

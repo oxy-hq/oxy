@@ -390,7 +390,6 @@
         {
           "type": "object",
           "required": [
-            "dimensions",
             "topic",
             "type"
           ],
