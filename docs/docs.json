@@ -195,6 +195,12 @@
             ]
           },
           {
+            "group": "Configuration",
+            "pages": [
+              "reference/environment-variables"
+            ]
+          },
+          {
             "group": "Semantic Layer",
             "pages": [
               "reference/semantic-layer-reference"

@@ -52,7 +52,12 @@ impl Connector {
         let database = config_manager.resolve_database(database_ref)?;
         let engine = match &database.database_type {
             DatabaseType::Bigquery(bigquery) => {
-                let key_path = config_manager.resolve_file(&bigquery.key_path).await?;
+                let key_path_str = bigquery.get_key_path(secrets_manager).await?;
+                let key_path = if bigquery.key_path.is_some() {
+                    config_manager.resolve_file(&key_path_str).await?
+                } else {
+                    key_path_str
+                };
                 println!("BigQuery key path resolved: {}", key_path);
                 EngineType::ConnectorX(ConnectorX::new(
                     database.dialect(),
@@ -66,26 +71,24 @@ impl Connector {
                     .await?,
             )),
             DatabaseType::Postgres(pg) => {
-                let db_name = pg.database.clone().unwrap_or_default();
                 let db_path = format!(
                     "{}:{}@{}:{}/{}",
-                    pg.user.clone().unwrap_or_default(),
+                    pg.get_user(secrets_manager).await?,
                     pg.get_password(secrets_manager).await?,
-                    pg.host.clone().unwrap_or_default(),
-                    pg.port.clone().unwrap_or_default(),
-                    db_name,
+                    pg.get_host(secrets_manager).await?,
+                    pg.get_port(secrets_manager).await?,
+                    pg.get_database(secrets_manager).await?,
                 );
                 EngineType::ConnectorX(ConnectorX::new(database.dialect(), db_path, None))
             }
             DatabaseType::Redshift(rs) => {
-                let db_name = rs.database.clone().unwrap_or_default();
                 let db_path = format!(
                     "{}:{}@{}:{}/{}?cxprotocol={}",
-                    rs.user.clone().unwrap_or_default(),
+                    rs.get_user(secrets_manager).await?,
                     rs.get_password(secrets_manager).await?,
-                    rs.host.clone().unwrap_or_default(),
-                    rs.port.clone().unwrap_or_default(),
-                    db_name,
+                    rs.get_host(secrets_manager).await?,
+                    rs.get_port(secrets_manager).await?,
+                    rs.get_database(secrets_manager).await?,
                     // https://github.com/sfu-db/connector-x/blob/534617477f78b092ba169c71e64778b86d5853ad/connectorx-python/connectorx/__init__.py#L50-L66
                     // redshift only supports cursor protocol
                     "cursor"
@@ -93,14 +96,13 @@ impl Connector {
                 EngineType::ConnectorX(ConnectorX::new(database.dialect(), db_path, None))
             }
             DatabaseType::Mysql(my) => {
-                let db_name = my.database.clone().unwrap_or_default();
                 let db_path = format!(
                     "{}:{}@{}:{}/{}",
-                    my.user.clone().unwrap_or_default(),
+                    my.get_user(secrets_manager).await?,
                     my.get_password(secrets_manager).await?,
-                    my.host.clone().unwrap_or_default(),
-                    my.port.clone().unwrap_or_default(),
-                    db_name
+                    my.get_host(secrets_manager).await?,
+                    my.get_port(secrets_manager).await?,
+                    my.get_database(secrets_manager).await?,
                 );
                 EngineType::ConnectorX(ConnectorX::new(database.dialect(), db_path, None))
             }

@@ -43,7 +43,7 @@ impl ClickHouse {
         if let Some(role) = &self.config.role {
             tracing::debug!(
                 role = %role,
-                database = %self.config.database,
+                database = ?self.config.database,
                 "Applying role to ClickHouse query"
             );
             client = client.with_option("role", role);
@@ -52,7 +52,7 @@ impl ClickHouse {
         // Apply filters as session variables
         if let Some(filters) = &self.filters {
             tracing::info!(
-                database = %self.config.database,
+                database = ?self.config.database,
                 filter_count = filters.len(),
                 filters = ?filters.keys().collect::<Vec<_>>(),
                 settings_prefix = ?self.config.settings_prefix,
@@ -88,7 +88,7 @@ impl ClickHouse {
             }
         } else {
             tracing::debug!(
-                database = %self.config.database,
+                database = ?self.config.database,
                 "No filters to apply to ClickHouse query"
             );
         }
@@ -126,17 +126,17 @@ impl Engine for ClickHouse {
         _dry_run_limit: Option<u64>,
     ) -> Result<(Vec<RecordBatch>, SchemaRef), OxyError> {
         let client = Client::default()
-            .with_url(self.config.host.clone())
-            .with_user(self.config.user.clone())
+            .with_url(self.config.get_host(&self.secret_manager).await?)
+            .with_user(self.config.get_user(&self.secret_manager).await?)
             .with_password(self.config.get_password(&self.secret_manager).await?)
-            .with_database(self.config.database.clone());
+            .with_database(self.config.get_database(&self.secret_manager).await?);
 
         // Apply filters (role + session variables) before executing query
         let client = self.apply_filters(client);
 
         // Log query execution with filter context for audit trail
         tracing::info!(
-            database = %self.config.database,
+            database = ?self.config.database,
             has_filters = self.filters.is_some(),
             filter_count = self.filters.as_ref().map(|f| f.len()).unwrap_or(0),
             role = ?self.config.role,
@@ -150,7 +150,7 @@ impl Engine for ClickHouse {
             .map_err(|err| {
                 // Log query execution failure with filter context
                 tracing::error!(
-                    database = %self.config.database,
+                    database = ?self.config.database,
                     has_filters = self.filters.is_some(),
                     error = %err,
                     "ClickHouse query execution failed"

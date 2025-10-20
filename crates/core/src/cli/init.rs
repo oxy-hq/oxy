@@ -96,10 +96,14 @@ fn collect_postgres_conf() -> Result<DatabaseType, InitError> {
 
     Ok(DatabaseType::Postgres(Postgres {
         host: Some(host),
+        host_var: None,
         port: Some(port),
+        port_var: None,
         user: Some(user),
+        user_var: None,
         password: Some(password),
         database: Some(database),
+        database_var: None,
         password_var: None,
     }))
 }
@@ -124,10 +128,14 @@ fn collect_redshift_conf() -> Result<DatabaseType, InitError> {
 
     Ok(DatabaseType::Redshift(Redshift {
         host: Some(host),
+        host_var: None,
         port: Some(port),
+        port_var: None,
         user: Some(user),
+        user_var: None,
         password: Some(password),
         database: Some(database),
+        database_var: None,
         password_var: None,
     }))
 }
@@ -147,10 +155,14 @@ fn collect_mysql_conf() -> Result<DatabaseType, InitError> {
 
     Ok(DatabaseType::Mysql(Mysql {
         host: Some(host),
+        host_var: None,
         port: Some(port),
+        port_var: None,
         user: Some(user),
+        user_var: None,
         password: Some(password),
         database: Some(database),
+        database_var: None,
         password_var: None,
     }))
 }
@@ -168,10 +180,13 @@ fn collect_clickhouse_conf() -> Result<DatabaseType, InitError> {
     }
 
     Ok(DatabaseType::ClickHouse(ClickHouse {
-        host,
-        user,
+        host: Some(host),
+        host_var: None,
+        user: Some(user),
+        user_var: None,
         password: Some(password),
-        database,
+        database: Some(database),
+        database_var: None,
         schemas: Default::default(),
         password_var: None,
         role: None,
@@ -203,7 +218,12 @@ fn choose_database_type() -> Result<DatabaseType, InitError> {
             }
             "2" => {
                 return Ok(DatabaseType::Bigquery(BigQuery {
-                    key_path: PathBuf::from(prompt_with_default("Key path", "bigquery.key", None)?),
+                    key_path: Some(PathBuf::from(prompt_with_default(
+                        "Key path",
+                        "bigquery.key",
+                        None,
+                    )?)),
+                    key_path_var: None,
                     dataset: Some(prompt_with_default(
                         "Dataset",
                         "bigquery-public-data",

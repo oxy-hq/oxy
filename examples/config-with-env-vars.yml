@@ -1,0 +1,143 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/oxy-hq/oxy/refs/heads/main/json-schemas/config.json
+
+# This example demonstrates how to use environment variables for database connection configurations.
+# All connection parameters can now be read from environment variables using the `_var` suffix.
+#
+# For complete documentation, see: https://docs.oxy.tech/reference/environment-variables
+
+databases:
+  # ClickHouse with full environment variable support
+  - name: clickhouse
+    type: clickhouse
+    host_var: CLICKHOUSE_HOST              # e.g., http://clickhouse.clickhouse:8123
+    user_var: CLICKHOUSE_USER              # e.g., default
+    password_var: CLICKHOUSE_PASSWORD      # Required for authentication
+    database_var: CLICKHOUSE_DATABASE      # e.g., restaurant_analytics
+    schemas:
+      restaurant_analytics:
+        - "restaurant_analytics___*"
+
+  # ClickHouse with mixed configuration (some from env, some hardcoded)
+  - name: clickhouse_mixed
+    type: clickhouse
+    host_var: CLICKHOUSE_HOST              # From environment
+    user: default                          # Hardcoded
+    password_var: CLICKHOUSE_PASSWORD      # From environment
+    database: analytics                    # Hardcoded
+    schemas:
+      analytics:
+        - "*"
+
+  # PostgreSQL with full environment variable support
+  - name: postgres
+    type: postgres
+    host_var: POSTGRES_HOST                # e.g., postgres.example.com
+    port_var: POSTGRES_PORT                # e.g., 5432
+    user_var: POSTGRES_USER                # e.g., app_user
+    password_var: POSTGRES_PASSWORD        # Required for authentication
+    database_var: POSTGRES_DATABASE        # e.g., production_db
+
+  # PostgreSQL with defaults (localhost:5432, user: postgres, db: postgres)
+  - name: postgres_local
+    type: postgres
+    password_var: POSTGRES_PASSWORD        # Only password from env, rest use defaults
+
+  # MySQL with environment variables
+  - name: mysql
+    type: mysql
+    host_var: MYSQL_HOST                   # e.g., mysql.example.com
+    port_var: MYSQL_PORT                   # e.g., 3306
+    user_var: MYSQL_USER                   # e.g., app_user
+    password_var: MYSQL_PASSWORD           # Required for authentication
+    database_var: MYSQL_DATABASE           # e.g., production_db
+
+  # Redshift with environment variables
+  - name: redshift
+    type: redshift
+    host_var: REDSHIFT_HOST                # e.g., cluster.region.redshift.amazonaws.com
+    port_var: REDSHIFT_PORT                # e.g., 5439
+    user_var: REDSHIFT_USER                # e.g., admin
+    password_var: REDSHIFT_PASSWORD        # Required for authentication
+    database_var: REDSHIFT_DATABASE        # e.g., analytics
+
+  # BigQuery with key path from environment variable
+  - name: bigquery
+    type: bigquery
+    key_path_var: BIGQUERY_KEY_PATH        # Path to service account key file
+    dataset: production_data
+    dry_run_limit: 1000
+
+  # BigQuery with mixed configuration
+  - name: bigquery_mixed
+    type: bigquery
+    key_path: /path/to/local/key.json      # Hardcoded path
+    datasets:
+      analytics:
+        - "events_*"
+      reporting:
+        - "*"
+
+  # Traditional configuration (still supported for backward compatibility)
+  - name: postgres_traditional
+    type: postgres
+    host: "localhost"
+    port: "5432"
+    user: "postgres"
+    password_var: POSTGRES_PASSWORD
+    database: "mydb"
+
+  # Snowflake (existing style, still supported)
+  - name: snowflake
+    type: snowflake
+    account: my_account
+    username: my_user
+    password_var: SNOWFLAKE_PASSWORD
+    warehouse: COMPUTE_WH
+    database: ANALYTICS_DB
+
+models:
+  - name: openai-4o-mini
+    vendor: openai
+    model_ref: gpt-4o-mini
+    key_var: OPENAI_API_KEY
+
+defaults:
+  database: postgres_from_env
+
+# Example .env file to use with this configuration:
+#
+# # ClickHouse
+# CLICKHOUSE_HOST=http://clickhouse.example.com:8123
+# CLICKHOUSE_USER=default
+# CLICKHOUSE_PASSWORD=your_password
+# CLICKHOUSE_DATABASE=restaurant_analytics
+#
+# # PostgreSQL
+# POSTGRES_HOST=postgres.example.com
+# POSTGRES_PORT=5432
+# POSTGRES_USER=app_user
+# POSTGRES_PASSWORD=your_password
+# POSTGRES_DATABASE=production_db
+#
+# # MySQL
+# MYSQL_HOST=mysql.example.com
+# MYSQL_PORT=3306
+# MYSQL_USER=app_user
+# MYSQL_PASSWORD=your_password
+# MYSQL_DATABASE=production_db
+#
+# # Redshift
+# REDSHIFT_HOST=cluster.region.redshift.amazonaws.com
+# REDSHIFT_PORT=5439
+# REDSHIFT_USER=admin
+# REDSHIFT_PASSWORD=your_password
+# REDSHIFT_DATABASE=analytics
+#
+# # BigQuery
+# BIGQUERY_KEY_PATH=/path/to/service-account-key.json
+#
+# # Snowflake
+# SNOWFLAKE_PASSWORD=your_password
+#
+# # OpenAI
+# OPENAI_API_KEY=sk-...

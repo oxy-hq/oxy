@@ -133,15 +133,24 @@ pub struct Measure {
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone, Validate, Default)]
 #[garde(context(ValidationContext))]
 pub struct Postgres {
-    #[garde(length(min = 1))]
     #[serde(default)]
+    #[garde(skip)]
     pub host: Option<String>,
-    #[garde(length(min = 1))]
     #[serde(default)]
+    #[garde(skip)]
+    pub host_var: Option<String>,
+    #[serde(default)]
+    #[garde(skip)]
     pub port: Option<String>,
-    #[garde(length(min = 1))]
     #[serde(default)]
+    #[garde(skip)]
+    pub port_var: Option<String>,
+    #[serde(default)]
+    #[garde(skip)]
     pub user: Option<String>,
+    #[serde(default)]
+    #[garde(skip)]
+    pub user_var: Option<String>,
     #[garde(skip)]
     #[schemars(skip)]
     #[serde(default)]
@@ -149,9 +158,12 @@ pub struct Postgres {
     #[serde(default)]
     #[garde(skip)]
     pub password_var: Option<String>,
-    #[garde(length(min = 1))]
     #[serde(default)]
+    #[garde(skip)]
     pub database: Option<String>,
+    #[serde(default)]
+    #[garde(skip)]
+    pub database_var: Option<String>,
 }
 
 impl Postgres {
@@ -169,20 +181,97 @@ impl Postgres {
             None => Err(OxyError::SecretNotFound(self.password_var.clone())),
         }
     }
+
+    pub async fn get_host(&self, secret_manager: &SecretsManager) -> Result<String, OxyError> {
+        if let Some(host) = &self.host
+            && !host.is_empty()
+        {
+            return Ok(host.clone());
+        }
+        if let Some(host_var) = &self.host_var {
+            let value = secret_manager.resolve_secret(host_var).await?;
+            match value {
+                Some(res) => Ok(res),
+                None => Err(OxyError::SecretNotFound(Some(host_var.clone()))),
+            }
+        } else {
+            Ok("localhost".to_string())
+        }
+    }
+
+    pub async fn get_port(&self, secret_manager: &SecretsManager) -> Result<String, OxyError> {
+        if let Some(port) = &self.port
+            && !port.is_empty()
+        {
+            return Ok(port.clone());
+        }
+        if let Some(port_var) = &self.port_var {
+            let value = secret_manager.resolve_secret(port_var).await?;
+            match value {
+                Some(res) => Ok(res),
+                None => Err(OxyError::SecretNotFound(Some(port_var.clone()))),
+            }
+        } else {
+            Ok("5432".to_string())
+        }
+    }
+
+    pub async fn get_user(&self, secret_manager: &SecretsManager) -> Result<String, OxyError> {
+        if let Some(user) = &self.user
+            && !user.is_empty()
+        {
+            return Ok(user.clone());
+        }
+        if let Some(user_var) = &self.user_var {
+            let value = secret_manager.resolve_secret(user_var).await?;
+            match value {
+                Some(res) => Ok(res),
+                None => Err(OxyError::SecretNotFound(Some(user_var.clone()))),
+            }
+        } else {
+            Ok("postgres".to_string())
+        }
+    }
+
+    pub async fn get_database(&self, secret_manager: &SecretsManager) -> Result<String, OxyError> {
+        if let Some(database) = &self.database
+            && !database.is_empty()
+        {
+            return Ok(database.clone());
+        }
+        if let Some(database_var) = &self.database_var {
+            let value = secret_manager.resolve_secret(database_var).await?;
+            match value {
+                Some(res) => Ok(res),
+                None => Err(OxyError::SecretNotFound(Some(database_var.clone()))),
+            }
+        } else {
+            Ok("postgres".to_string())
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone, Validate, Default)]
 #[garde(context(ValidationContext))]
 pub struct Redshift {
-    #[garde(length(min = 1))]
     #[serde(default)]
+    #[garde(skip)]
     pub host: Option<String>,
-    #[garde(length(min = 1))]
     #[serde(default)]
+    #[garde(skip)]
+    pub host_var: Option<String>,
+    #[serde(default)]
+    #[garde(skip)]
     pub port: Option<String>,
-    #[garde(length(min = 1))]
     #[serde(default)]
+    #[garde(skip)]
+    pub port_var: Option<String>,
+    #[serde(default)]
+    #[garde(skip)]
     pub user: Option<String>,
+    #[serde(default)]
+    #[garde(skip)]
+    pub user_var: Option<String>,
     #[garde(skip)]
     #[schemars(skip)]
     #[serde(default)]
@@ -190,9 +279,12 @@ pub struct Redshift {
     #[serde(default)]
     #[garde(skip)]
     pub password_var: Option<String>,
-    #[garde(length(min = 1))]
     #[serde(default)]
+    #[garde(skip)]
     pub database: Option<String>,
+    #[serde(default)]
+    #[garde(skip)]
+    pub database_var: Option<String>,
 }
 
 impl Redshift {
@@ -210,20 +302,97 @@ impl Redshift {
             None => Err(OxyError::SecretNotFound(self.password_var.clone())),
         }
     }
+
+    pub async fn get_host(&self, secret_manager: &SecretsManager) -> Result<String, OxyError> {
+        if let Some(host) = &self.host
+            && !host.is_empty()
+        {
+            return Ok(host.clone());
+        }
+        if let Some(host_var) = &self.host_var {
+            let value = secret_manager.resolve_secret(host_var).await?;
+            match value {
+                Some(res) => Ok(res),
+                None => Err(OxyError::SecretNotFound(Some(host_var.clone()))),
+            }
+        } else {
+            Ok("localhost".to_string())
+        }
+    }
+
+    pub async fn get_port(&self, secret_manager: &SecretsManager) -> Result<String, OxyError> {
+        if let Some(port) = &self.port
+            && !port.is_empty()
+        {
+            return Ok(port.clone());
+        }
+        if let Some(port_var) = &self.port_var {
+            let value = secret_manager.resolve_secret(port_var).await?;
+            match value {
+                Some(res) => Ok(res),
+                None => Err(OxyError::SecretNotFound(Some(port_var.clone()))),
+            }
+        } else {
+            Ok("5439".to_string())
+        }
+    }
+
+    pub async fn get_user(&self, secret_manager: &SecretsManager) -> Result<String, OxyError> {
+        if let Some(user) = &self.user
+            && !user.is_empty()
+        {
+            return Ok(user.clone());
+        }
+        if let Some(user_var) = &self.user_var {
+            let value = secret_manager.resolve_secret(user_var).await?;
+            match value {
+                Some(res) => Ok(res),
+                None => Err(OxyError::SecretNotFound(Some(user_var.clone()))),
+            }
+        } else {
+            Ok("awsuser".to_string())
+        }
+    }
+
+    pub async fn get_database(&self, secret_manager: &SecretsManager) -> Result<String, OxyError> {
+        if let Some(database) = &self.database
+            && !database.is_empty()
+        {
+            return Ok(database.clone());
+        }
+        if let Some(database_var) = &self.database_var {
+            let value = secret_manager.resolve_secret(database_var).await?;
+            match value {
+                Some(res) => Ok(res),
+                None => Err(OxyError::SecretNotFound(Some(database_var.clone()))),
+            }
+        } else {
+            Ok("dev".to_string())
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone, Validate, Default)]
 #[garde(context(ValidationContext))]
 pub struct Mysql {
-    #[garde(length(min = 1))]
     #[serde(default)]
+    #[garde(skip)]
     pub host: Option<String>,
-    #[garde(length(min = 1))]
     #[serde(default)]
+    #[garde(skip)]
+    pub host_var: Option<String>,
+    #[serde(default)]
+    #[garde(skip)]
     pub port: Option<String>,
-    #[garde(length(min = 1))]
     #[serde(default)]
+    #[garde(skip)]
+    pub port_var: Option<String>,
+    #[serde(default)]
+    #[garde(skip)]
     pub user: Option<String>,
+    #[serde(default)]
+    #[garde(skip)]
+    pub user_var: Option<String>,
     #[garde(skip)]
     #[schemars(skip)]
     #[serde(default)]
@@ -231,9 +400,12 @@ pub struct Mysql {
     #[serde(default)]
     #[garde(skip)]
     pub password_var: Option<String>,
-    #[garde(length(min = 1))]
     #[serde(default)]
+    #[garde(skip)]
     pub database: Option<String>,
+    #[serde(default)]
+    #[garde(skip)]
+    pub database_var: Option<String>,
 }
 
 impl Mysql {
@@ -251,17 +423,91 @@ impl Mysql {
             None => Err(OxyError::SecretNotFound(self.password_var.clone())),
         }
     }
+
+    pub async fn get_host(&self, secret_manager: &SecretsManager) -> Result<String, OxyError> {
+        if let Some(host) = &self.host
+            && !host.is_empty()
+        {
+            return Ok(host.clone());
+        }
+        if let Some(host_var) = &self.host_var {
+            let value = secret_manager.resolve_secret(host_var).await?;
+            match value {
+                Some(res) => Ok(res),
+                None => Err(OxyError::SecretNotFound(Some(host_var.clone()))),
+            }
+        } else {
+            Ok("localhost".to_string())
+        }
+    }
+
+    pub async fn get_port(&self, secret_manager: &SecretsManager) -> Result<String, OxyError> {
+        if let Some(port) = &self.port
+            && !port.is_empty()
+        {
+            return Ok(port.clone());
+        }
+        if let Some(port_var) = &self.port_var {
+            let value = secret_manager.resolve_secret(port_var).await?;
+            match value {
+                Some(res) => Ok(res),
+                None => Err(OxyError::SecretNotFound(Some(port_var.clone()))),
+            }
+        } else {
+            Ok("3306".to_string())
+        }
+    }
+
+    pub async fn get_user(&self, secret_manager: &SecretsManager) -> Result<String, OxyError> {
+        if let Some(user) = &self.user
+            && !user.is_empty()
+        {
+            return Ok(user.clone());
+        }
+        if let Some(user_var) = &self.user_var {
+            let value = secret_manager.resolve_secret(user_var).await?;
+            match value {
+                Some(res) => Ok(res),
+                None => Err(OxyError::SecretNotFound(Some(user_var.clone()))),
+            }
+        } else {
+            Ok("root".to_string())
+        }
+    }
+
+    pub async fn get_database(&self, secret_manager: &SecretsManager) -> Result<String, OxyError> {
+        if let Some(database) = &self.database
+            && !database.is_empty()
+        {
+            return Ok(database.clone());
+        }
+        if let Some(database_var) = &self.database_var {
+            let value = secret_manager.resolve_secret(database_var).await?;
+            match value {
+                Some(res) => Ok(res),
+                None => Err(OxyError::SecretNotFound(Some(database_var.clone()))),
+            }
+        } else {
+            Ok("mysql".to_string())
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone, Validate, Default)]
 #[garde(context(ValidationContext))]
 pub struct ClickHouse {
     #[serde(default)]
-    #[garde(length(min = 1))]
-    pub host: String,
+    #[garde(skip)]
+    pub host: Option<String>,
     #[serde(default)]
-    #[garde(length(min = 1))]
-    pub user: String,
+    #[garde(skip)]
+    pub host_var: Option<String>,
+    #[serde(default)]
+    #[garde(skip)]
+    pub user: Option<String>,
+    #[serde(default)]
+    #[garde(skip)]
+    pub user_var: Option<String>,
     #[serde(default)]
     #[garde(skip)]
     #[schemars(skip)]
@@ -270,8 +516,11 @@ pub struct ClickHouse {
     #[garde(skip)]
     pub password_var: Option<String>,
     #[serde(default)]
-    #[garde(length(min = 1))]
-    pub database: String,
+    #[garde(skip)]
+    pub database: Option<String>,
+    #[serde(default)]
+    #[garde(skip)]
+    pub database_var: Option<String>,
     #[serde(default)]
     #[garde(skip)]
     pub schemas: HashMap<String, Vec<String>>,
@@ -299,6 +548,63 @@ impl ClickHouse {
         match value {
             Some(res) => Ok(res),
             None => Err(OxyError::SecretNotFound(self.password_var.clone())),
+        }
+    }
+
+    pub async fn get_host(&self, secret_manager: &SecretsManager) -> Result<String, OxyError> {
+        if let Some(host) = &self.host
+            && !host.is_empty()
+        {
+            return Ok(host.clone());
+        }
+        if let Some(host_var) = &self.host_var {
+            let value = secret_manager.resolve_secret(host_var).await?;
+            match value {
+                Some(res) => Ok(res),
+                None => Err(OxyError::SecretNotFound(Some(host_var.clone()))),
+            }
+        } else {
+            Err(OxyError::ConfigurationError(
+                "ClickHouse host or host_var must be specified".to_string(),
+            ))
+        }
+    }
+
+    pub async fn get_user(&self, secret_manager: &SecretsManager) -> Result<String, OxyError> {
+        if let Some(user) = &self.user
+            && !user.is_empty()
+        {
+            return Ok(user.clone());
+        }
+        if let Some(user_var) = &self.user_var {
+            let value = secret_manager.resolve_secret(user_var).await?;
+            match value {
+                Some(res) => Ok(res),
+                None => Err(OxyError::SecretNotFound(Some(user_var.clone()))),
+            }
+        } else {
+            Err(OxyError::ConfigurationError(
+                "ClickHouse user or user_var must be specified".to_string(),
+            ))
+        }
+    }
+
+    pub async fn get_database(&self, secret_manager: &SecretsManager) -> Result<String, OxyError> {
+        if let Some(database) = &self.database
+            && !database.is_empty()
+        {
+            return Ok(database.clone());
+        }
+        if let Some(database_var) = &self.database_var {
+            let value = secret_manager.resolve_secret(database_var).await?;
+            match value {
+                Some(res) => Ok(res),
+                None => Err(OxyError::SecretNotFound(Some(database_var.clone()))),
+            }
+        } else {
+            Err(OxyError::ConfigurationError(
+                "ClickHouse database or database_var must be specified".to_string(),
+            ))
         }
     }
 }
@@ -505,8 +811,12 @@ pub struct Defaults {
 #[derive(Serialize, Deserialize, Debug, Validate, Clone, JsonSchema)]
 #[garde(context(ValidationContext))]
 pub struct BigQuery {
-    #[garde(custom(validate_file_path))]
-    pub key_path: PathBuf,
+    #[garde(skip)]
+    #[serde(default)]
+    pub key_path: Option<PathBuf>,
+    #[garde(skip)]
+    #[serde(default)]
+    pub key_path_var: Option<String>,
     #[garde(length(min = 1))]
     pub dataset: Option<String>,
     #[serde(default)]
@@ -514,6 +824,25 @@ pub struct BigQuery {
     pub datasets: HashMap<String, Vec<String>>,
     #[garde(range(min = 1))]
     pub dry_run_limit: Option<u64>,
+}
+
+impl BigQuery {
+    pub async fn get_key_path(&self, secret_manager: &SecretsManager) -> Result<String, OxyError> {
+        if let Some(key_path) = &self.key_path {
+            return Ok(key_path.to_string_lossy().to_string());
+        }
+        if let Some(key_path_var) = &self.key_path_var {
+            let value = secret_manager.resolve_secret(key_path_var).await?;
+            match value {
+                Some(res) => Ok(res),
+                None => Err(OxyError::SecretNotFound(Some(key_path_var.clone()))),
+            }
+        } else {
+            Err(OxyError::ConfigurationError(
+                "BigQuery key_path or key_path_var must be specified".to_string(),
+            ))
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Validate, Clone, JsonSchema)]

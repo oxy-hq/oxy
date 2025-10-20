@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": ["Bash(cargo build:*)", "Bash(cargo check:*)"],
+    "deny": [],
+    "ask": []
+  }
+}

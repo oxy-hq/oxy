@@ -88,11 +88,15 @@ impl DatabaseConfigBuilder {
             name: db_name,
             database_type: DatabaseType::Postgres(crate::config::model::Postgres {
                 host: postgres_config.host,
+                host_var: None,
                 port: postgres_config.port,
+                port_var: None,
                 user: postgres_config.user,
+                user_var: None,
                 password: None,
                 password_var: Some(db_var_name),
                 database: postgres_config.database,
+                database_var: None,
             }),
         })
     }
@@ -127,11 +131,15 @@ impl DatabaseConfigBuilder {
             name: db_name,
             database_type: DatabaseType::Redshift(crate::config::model::Redshift {
                 host: redshift_config.host,
+                host_var: None,
                 port: redshift_config.port,
+                port_var: None,
                 user: redshift_config.user,
+                user_var: None,
                 password: None,
                 password_var: Some(db_var_name),
                 database: redshift_config.database,
+                database_var: None,
             }),
         })
     }
@@ -166,11 +174,15 @@ impl DatabaseConfigBuilder {
             name: db_name,
             database_type: DatabaseType::Mysql(crate::config::model::Mysql {
                 host: mysql_config.host,
+                host_var: None,
                 port: mysql_config.port,
+                port_var: None,
                 user: mysql_config.user,
+                user_var: None,
                 password: None,
                 password_var: Some(db_var_name),
                 database: mysql_config.database,
+                database_var: None,
             }),
         })
     }
@@ -204,17 +216,26 @@ impl DatabaseConfigBuilder {
         Ok(Database {
             name: db_name,
             database_type: DatabaseType::ClickHouse(crate::config::model::ClickHouse {
-                host: clickhouse_config
-                    .host
-                    .unwrap_or_else(|| "localhost".to_string()),
-                user: clickhouse_config
-                    .user
-                    .unwrap_or_else(|| "default".to_string()),
+                host: Some(
+                    clickhouse_config
+                        .host
+                        .unwrap_or_else(|| "localhost".to_string()),
+                ),
+                host_var: None,
+                user: Some(
+                    clickhouse_config
+                        .user
+                        .unwrap_or_else(|| "default".to_string()),
+                ),
+                user_var: None,
                 password: None,
                 password_var: Some(db_var_name),
-                database: clickhouse_config
-                    .database
-                    .unwrap_or_else(|| "default".to_string()),
+                database: Some(
+                    clickhouse_config
+                        .database
+                        .unwrap_or_else(|| "default".to_string()),
+                ),
+                database_var: None,
                 schemas: HashMap::new(),
                 role: None,
                 settings_prefix: None,
@@ -252,7 +273,8 @@ impl DatabaseConfigBuilder {
         Ok(Database {
             name: db_name,
             database_type: DatabaseType::Bigquery(crate::config::model::BigQuery {
-                key_path,
+                key_path: Some(key_path),
+                key_path_var: None,
                 dataset: bigquery_config.dataset,
                 datasets: HashMap::new(),
                 dry_run_limit: bigquery_config.dry_run_limit,

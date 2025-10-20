@@ -33,4 +33,24 @@ models:
     api_url: http://localhost:11434/v1
     api_key: secret
 ```
-To get more information about connecting to databases or models, you can reference our [integrations](integrations/overview) section.
+
+## Environment Variables
+
+You can use environment variables for database connection parameters instead of hardcoding values. This is recommended for production deployments and keeping sensitive data out of version control.
+
+For example:
+```yaml
+databases:
+  - name: postgres_prod
+    type: postgres
+    host_var: POSTGRES_HOST
+    user_var: POSTGRES_USER
+    password_var: POSTGRES_PASSWORD
+    database_var: POSTGRES_DATABASE
+```
+
+See the [Environment Variables Reference](/reference/environment-variables) for complete documentation.
+
+## Additional Resources
+
+To get more information about connecting to databases or models, you can reference our [integrations](/integrations/overview) section.
