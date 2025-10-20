@@ -96,14 +96,26 @@ impl ClickHouse {
         client
     }
 
-    pub fn strip_comments(query: &str) -> Result<String, OxyError> {
-        let ast = Parser::parse_sql(&ClickHouseDialect {}, query)
-            .map_err(|err| OxyError::DBError(format!("Failed to parse ClickHouse query: {err}")))?;
-        Ok(ast
-            .iter()
-            .map(|stmt| stmt.to_string())
-            .collect::<Vec<_>>()
-            .join("\n"))
+    pub fn strip_comments(query: &str) -> String {
+        match Parser::parse_sql(&ClickHouseDialect {}, query) {
+            Ok(ast) => {
+                // Successfully parsed - strip comments by converting AST back to string
+                ast.iter()
+                    .map(|stmt| stmt.to_string())
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            }
+            Err(err) => {
+                // Parsing failed - likely due to dialect mismatch (e.g., backticks from CubeJS)
+                // ClickHouse can handle the query natively, so pass it through
+                tracing::warn!(
+                    error = %err,
+                    "Failed to parse ClickHouse query for comment stripping, passing through unchanged. \
+                    This is expected when using CubeJS with ClickHouse."
+                );
+                query.to_string()
+            }
+        }
     }
 }
 
@@ -131,7 +143,7 @@ impl Engine for ClickHouse {
             "Executing ClickHouse query with filters applied"
         );
 
-        let cleaned_query = ClickHouse::strip_comments(query)?;
+        let cleaned_query = ClickHouse::strip_comments(query);
         let mut cursor = client
             .query(&cleaned_query)
             .fetch_bytes("arrow")
