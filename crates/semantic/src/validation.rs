@@ -83,10 +83,10 @@ impl SemanticValidator for Entity {
         }
 
         // Validate single key
-        if let Some(ref key) = self.key {
-            if key.is_empty() {
-                result.add_error("Entity key cannot be empty".to_string());
-            }
+        if let Some(ref key) = self.key
+            && key.is_empty()
+        {
+            result.add_error("Entity key cannot be empty".to_string());
         }
 
         // Validate multiple keys

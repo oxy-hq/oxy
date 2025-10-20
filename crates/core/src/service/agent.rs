@@ -18,7 +18,6 @@ use async_openai::types::{
 use sea_orm::prelude::DateTimeWithTimeZone;
 use serde::Deserialize;
 use std::{
-    collections::HashMap,
     io::Write,
     path::{Path, PathBuf},
 };

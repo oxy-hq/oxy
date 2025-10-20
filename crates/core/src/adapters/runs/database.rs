@@ -132,9 +132,7 @@ impl RunsStorage for RunsDatabaseStorage {
                                     branch_id: ActiveValue::Set(branch_id),
                                     created_at: ActiveValue::Set(chrono::Utc::now().into()),
                                     updated_at: ActiveValue::Set(chrono::Utc::now().into()),
-                                    variables: ActiveValue::Set(
-                                        variables.clone().map(|vars| Variables(vars)),
-                                    ),
+                                    variables: ActiveValue::Set(variables.clone().map(Variables)),
                                     ..Default::default()
                                 };
                                 match root_ref {

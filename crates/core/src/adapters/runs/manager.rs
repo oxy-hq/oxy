@@ -115,7 +115,7 @@ impl RunsManager {
             } => {
                 let run_info = self
                     .find_run(
-                        &source_id,
+                        source_id,
                         Some((*run_index).try_into().map_err(|_| {
                             OxyError::RuntimeError("Run index conversion failed".to_string())
                         })?),
@@ -135,7 +135,7 @@ impl RunsManager {
             } => {
                 let run_info = self
                     .update_run_variables(
-                        &source_id,
+                        source_id,
                         (*run_index).try_into().map_err(|_| {
                             OxyError::RuntimeError("Run index conversion failed".to_string())
                         })?,
@@ -145,7 +145,7 @@ impl RunsManager {
                 Ok((run_info, replay_id.clone()))
             }
             RetryStrategy::LastFailure => {
-                let run_info = self.last_run(&source_id).await?;
+                let run_info = self.last_run(source_id).await?;
                 match run_info {
                     Some(run_info) => Ok((run_info, None)),
                     None => Err(OxyError::RuntimeError(format!(
@@ -154,7 +154,7 @@ impl RunsManager {
                 }
             }
             RetryStrategy::NoRetry { variables } => self
-                .new_run(&source_id, variables.clone())
+                .new_run(source_id, variables.clone())
                 .await
                 .map(|run| (run, None)),
             RetryStrategy::Preview => {

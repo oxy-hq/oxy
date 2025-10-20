@@ -17,7 +17,6 @@ use builders::AgentExecutable;
 pub use builders::{OneShotInput, OpenAIExecutableResponse, build_openai_executable};
 use minijinja::Value;
 pub use references::AgentReferencesHandler;
-use std::collections::HashMap;
 use types::AgentInput;
 
 pub mod builders;

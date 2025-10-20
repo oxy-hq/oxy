@@ -187,13 +187,13 @@ impl Executable<(String, Option<ToolType>, ToolRawInput)> for ToolExecutable {
                 ToolType::SemanticQuery(semantic_query_tool) => {
                     let semantic_params =
                         serde_json::from_str::<SemanticQueryParams>(&input.param)?;
-                    if let Some(tool_topic) = semantic_query_tool.topic.clone() {
-                        if semantic_params.topic != tool_topic {
-                            return Err(OxyError::ArgumentError(format!(
-                                "Invalid topic: expected '{}'",
-                                tool_topic
-                            )));
-                        }
+                    if let Some(tool_topic) = semantic_query_tool.topic.clone()
+                        && semantic_params.topic != tool_topic
+                    {
+                        return Err(OxyError::ArgumentError(format!(
+                            "Invalid topic: expected '{}'",
+                            tool_topic
+                        )));
                     }
 
                     build_semantic_query_executable()

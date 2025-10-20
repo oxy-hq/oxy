@@ -107,7 +107,7 @@ impl FilterProcessor {
             Value::Bool(b) => b.to_string(),
             Value::Array(arr) => arr
                 .iter()
-                .map(|v| Self::to_session_value(v))
+                .map(Self::to_session_value)
                 .collect::<Vec<_>>()
                 .join(","),
             Value::Null => String::new(),

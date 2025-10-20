@@ -305,9 +305,7 @@ pub async fn create_workflow_run(
         })
         .await;
 
-    Ok(extract::Json(CreateRunResponse {
-        run: run_info.into(),
-    }))
+    Ok(extract::Json(CreateRunResponse { run: run_info }))
 }
 
 #[derive(serde::Deserialize, ToSchema, Debug)]

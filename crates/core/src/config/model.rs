@@ -15,11 +15,11 @@ pub use variables::Variables;
 
 use super::validate::{AgentValidationContext, validate_model, validate_task};
 use crate::adapters::secrets::SecretsManager;
+use crate::config::validate::validate_optional_private_key_path;
 use crate::config::validate::{
     ValidationContext, validate_agent_exists, validate_database_exists, validate_env_var,
     validate_omni_integration_exists, validate_task_data_reference,
 };
-use crate::config::validate::{validate_file_path, validate_optional_private_key_path};
 use crate::errors::OxyError;
 pub use semantics::{SemanticDimension, Semantics};
 pub use variables::Variable;

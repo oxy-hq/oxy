@@ -312,12 +312,11 @@ pub fn convert_value_to_schema_type(value: &Value, schema: &SchemaObject) -> Con
             SingleOrVec::Vec(types) => {
                 // First, check if the value already matches one of the types without conversion
                 for instance_type in types {
-                    if value_matches_type(value, instance_type) {
-                        if let Ok(converted) =
+                    if value_matches_type(value, instance_type)
+                        && let Ok(converted) =
                             convert_to_single_type_with_schema(value, instance_type, schema)
-                        {
-                            return Ok(converted);
-                        }
+                    {
+                        return Ok(converted);
                     }
                 }
 

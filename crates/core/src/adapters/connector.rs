@@ -5,7 +5,6 @@ use connectorx::ConnectorX;
 pub use domo::DOMO;
 use duckdb::DuckDB;
 use engine::Engine;
-use serde_json::Value;
 use snowflake::Snowflake;
 use std::collections::HashMap;
 
@@ -193,7 +192,7 @@ impl Connector {
         );
 
         let processor = FilterProcessor::new(schemas.clone());
-        let validated = processor.process_filters(filters.into()).map_err(|e| {
+        let validated = processor.process_filters(filters).map_err(|e| {
             // Log filter validation failure as security event
             tracing::error!(
                 database = %database_ref,

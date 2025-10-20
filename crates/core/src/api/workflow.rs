@@ -5,7 +5,6 @@ use indexmap::IndexMap;
 use sea_orm::ActiveValue;
 use sea_orm::EntityTrait;
 use serde::Deserialize;
-use serde_json::Value;
 use std::collections::HashSet;
 use std::path::PathBuf;
 use utoipa::ToSchema;
