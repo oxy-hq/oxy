@@ -298,12 +298,12 @@ impl Executable<TaskInput> for TaskExecutable {
                             .execute(
                                 &task_execution_context,
                                 WorkflowInput {
-                                    retry: RetryStrategy::Retry {
+                                    retry: RetryStrategy::RetryWithVariables {
                                         replay_id: run_info.get_replay_id(),
                                         run_index: run_info.get_run_index(),
+                                        variables: variables.map(|v| v.into_iter().collect()),
                                     },
                                     workflow_ref: workflow_task.src.to_string_lossy().to_string(),
-                                    variables,
                                 },
                             )
                             .await
@@ -313,9 +313,10 @@ impl Executable<TaskInput> for TaskExecutable {
                             .execute(
                                 &task_execution_context,
                                 WorkflowInput {
-                                    retry: RetryStrategy::NoRetry,
+                                    retry: RetryStrategy::NoRetry {
+                                        variables: variables.map(|v| v.into_iter().collect()),
+                                    },
                                     workflow_ref: workflow_task.src.to_string_lossy().to_string(),
-                                    variables,
                                 },
                             )
                             .await
@@ -421,6 +422,7 @@ impl ParamMapper<(Option<usize>, Task), TaskInput> for TaskChainMapper {
                             .get_child_run_info(
                                 &task_input.replay_id(),
                                 &file_path_to_source_id(&workflow_task.src),
+                                variables.clone().map(|v| v.into_iter().collect()),
                             )
                             .await?;
                         Some(run_info)

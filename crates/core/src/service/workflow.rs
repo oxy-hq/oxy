@@ -1,15 +1,15 @@
 use base64::{Engine, prelude::BASE64_STANDARD};
 use serde::Serialize;
 use slugify::slugify;
-use std::{
-    collections::HashMap,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 use utoipa::ToSchema;
 
 use super::eval::PBarsHandler;
 use crate::{
-    adapters::{project::manager::ProjectManager, session_filters::SessionFilters},
+    adapters::{
+        checkpoint::types::RetryStrategy, project::manager::ProjectManager,
+        session_filters::SessionFilters,
+    },
     config::{
         ConfigManager,
         constants::{CONCURRENCY_SOURCE, CONSISTENCY_SOURCE, TASK_SOURCE, WORKFLOW_SOURCE},
@@ -22,7 +22,7 @@ use crate::{
         writer::EventHandler,
     },
     workflow::{
-        RetryStrategy, WorkflowInput, WorkflowLauncher,
+        WorkflowInput, WorkflowLauncher,
         loggers::types::{LogItem, WorkflowLogger},
     },
 };
@@ -155,7 +155,6 @@ pub async fn run_workflow<P: AsRef<Path>, L: WorkflowLogger + 'static>(
     path: P,
     logger: L,
     retry_strategy: RetryStrategy,
-    variables: Option<HashMap<String, serde_json::Value>>,
     project_manager: ProjectManager,
     filters: Option<SessionFilters>,
 ) -> Result<OutputContainer, OxyError> {
@@ -166,7 +165,6 @@ pub async fn run_workflow<P: AsRef<Path>, L: WorkflowLogger + 'static>(
         .launch(
             WorkflowInput {
                 workflow_ref: path.as_ref().to_string_lossy().to_string(),
-                variables,
                 retry: retry_strategy,
             },
             WorkflowEventHandler::new(logger),
@@ -179,7 +177,6 @@ pub async fn run_workflow_v2<P: AsRef<Path>, H: EventHandler + Send + Sync + 'st
     path: P,
     handler: H,
     retry_strategy: RetryStrategy,
-    variables: Option<HashMap<String, serde_json::Value>>,
     filters: Option<SessionFilters>,
 ) -> Result<OutputContainer, OxyError> {
     WorkflowLauncher::new()
@@ -189,7 +186,6 @@ pub async fn run_workflow_v2<P: AsRef<Path>, H: EventHandler + Send + Sync + 'st
         .launch(
             WorkflowInput {
                 workflow_ref: path.as_ref().to_string_lossy().to_string(),
-                variables,
                 retry: retry_strategy,
             },
             handler,

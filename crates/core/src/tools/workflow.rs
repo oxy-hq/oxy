@@ -1,10 +1,11 @@
 use crate::{
+    adapters::checkpoint::types::RetryStrategy,
     errors::OxyError,
     execute::{
         Executable, ExecutionContext,
         types::{Chunk, Output, OutputContainer, Prompt},
     },
-    workflow::{RetryStrategy, WorkflowInput, WorkflowLauncherExecutable},
+    workflow::{WorkflowInput, WorkflowLauncherExecutable},
 };
 
 use super::types::WorkflowInput as WorkflowToolInput;
@@ -38,9 +39,10 @@ impl Executable<WorkflowToolInput> for WorkflowExecutable {
             .execute(
                 execution_context,
                 WorkflowInput {
-                    retry: RetryStrategy::NoRetry,
+                    retry: RetryStrategy::NoRetry {
+                        variables: input.variables.map(|v| v.into_iter().collect()),
+                    },
                     workflow_ref: input.workflow_config.workflow_ref.clone(),
-                    variables: input.variables,
                 },
             )
             .await

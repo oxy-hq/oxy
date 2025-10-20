@@ -22,6 +22,8 @@ sea-orm-migration = { version = "1.1.16", features = [
   "with-uuid",
 ] }
 log = { version = "0.4" }
+serde_json = { version = "1.0.145" }
+indexmap = { version = "2.11.4", features = ["serde"] }
 
 [workspace.package]
 # TODO: turn this on when https://github.com/googleapis/release-please/issues number 2111 is fixed

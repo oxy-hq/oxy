@@ -5,6 +5,7 @@ mod migrate;
 mod seed;
 mod serve;
 
+use crate::adapters::checkpoint::types::RetryStrategy;
 use crate::adapters::connector::Connector;
 use crate::adapters::project::builder::ProjectBuilder;
 use crate::adapters::runs::RunsManager;
@@ -28,7 +29,6 @@ use crate::theme::StyledText;
 use crate::theme::detect_true_color_support;
 use crate::theme::get_current_theme_mode;
 use crate::utils::print_colored_sql;
-use crate::workflow::RetryStrategy;
 use crate::workflow::loggers::cli::WorkflowCLILogger;
 use clap::CommandFactory;
 use clap::Parser;
@@ -649,7 +649,6 @@ async fn handle_workflow_file(
                 replay_id: Some(replay_id),
                 run_index: run_id,
             },
-            None,
             project,
             None,
         )
@@ -661,7 +660,6 @@ async fn handle_workflow_file(
             workflow_name,
             WorkflowCLILogger,
             RetryStrategy::LastFailure,
-            None,
             project,
             None,
         )
@@ -672,8 +670,7 @@ async fn handle_workflow_file(
         run_workflow(
             workflow_name,
             WorkflowCLILogger,
-            RetryStrategy::NoRetry,
-            None,
+            RetryStrategy::NoRetry { variables: None },
             project,
             None,
         )

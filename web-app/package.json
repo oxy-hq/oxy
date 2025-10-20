@@ -47,6 +47,7 @@
     "@radix-ui/react-toggle-group": "^1.1.11",
     "@radix-ui/react-tooltip": "^1.2.8",
     "@radix-ui/react-visually-hidden": "^1.2.3",
+    "@remoteoss/json-schema-form": "0.12.1-beta.0",
     "@sentry/react": "^10.19.0",
     "@sentry/vite-plugin": "^4.3.0",
     "@tailwindcss/vite": "^4.1.14",

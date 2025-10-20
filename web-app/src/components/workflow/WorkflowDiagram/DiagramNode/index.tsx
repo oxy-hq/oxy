@@ -79,8 +79,9 @@ export function DiagramNode({
             }
             runWorkflow.mutate({
               workflowId: task.workflowId,
-              retryParam: {
-                run_id: +runId,
+              retryType: {
+                type: "retry",
+                run_index: +runId,
                 replay_id: taskRunId,
               },
             });

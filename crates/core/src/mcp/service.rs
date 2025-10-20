@@ -15,6 +15,7 @@ use serde_json::{Map, Value, json};
 
 use crate::{
     adapters::{
+        checkpoint::types::RetryStrategy,
         project::{builder::ProjectBuilder, manager::ProjectManager},
         runs::RunsManager,
         secrets::SecretsManager,
@@ -25,7 +26,7 @@ use crate::{
         agent::{ask_adhoc, get_agent_config, list_agents},
         workflow::{get_workflow, list_workflows, run_workflow},
     },
-    workflow::{RetryStrategy, loggers::NoopLogger},
+    workflow::loggers::NoopLogger,
 };
 
 #[derive(Debug, Clone)]
@@ -210,8 +211,9 @@ impl OxyMcpServer {
         let output = run_workflow(
             &PathBuf::from(workflow_info.path.clone()),
             NoopLogger {},
-            RetryStrategy::NoRetry,
-            variables,
+            RetryStrategy::NoRetry {
+                variables: variables.map(|v| v.into_iter().collect()),
+            },
             self.project_manager.clone(),
             None,
         )

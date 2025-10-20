@@ -9,8 +9,10 @@ use serde::Deserialize;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
+use crate::adapters::checkpoint::types::RetryStrategy;
 use crate::api::middlewares::project::ProjectManagerExtractor;
 use crate::errors::OxyError;
+use crate::execute::types::OutputContainer;
 use crate::execute::writer::Handler;
 use crate::service::block::GroupBlockHandler;
 use crate::service::statics::BROADCASTER;
@@ -19,7 +21,6 @@ use crate::service::types::pagination::{Paginated, Pagination};
 use crate::service::types::run::{RunDetails, RunInfo, RunStatus};
 use crate::service::workflow::run_workflow_v2;
 use crate::utils::{create_sse_broadcast, file_path_to_source_id};
-use crate::workflow::RetryStrategy;
 
 #[derive(serde::Deserialize, ToSchema)]
 pub struct PaginationQuery {
@@ -113,7 +114,8 @@ pub struct RetryParam {
 
 #[derive(serde::Deserialize, ToSchema)]
 pub struct CreateRunRequest {
-    retry_param: Option<RetryParam>,
+    #[serde(flatten)]
+    retry_strategy: RetryStrategy,
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, ToSchema)]
@@ -160,38 +162,27 @@ pub async fn create_workflow_run(
         StatusCode::BAD_REQUEST
     })?);
 
+    let workflow_config = project_manager
+        .config_manager
+        .resolve_workflow(&path)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to get workflow config: {:?}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
     let runs_manager = project_manager.runs_manager.clone().ok_or_else(|| {
         tracing::error!("Failed to initialize RunsManager");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
-
-    let run_info = match &payload.retry_param {
-        None => runs_manager
-            .new_run(&file_path_to_source_id(&path))
-            .await
-            .map_err(|e| {
-                tracing::error!("Failed to create run: {:?}", e);
-                StatusCode::INTERNAL_SERVER_ERROR
-            }),
-        Some(retry_param) => {
-            let run_id = retry_param.run_id;
-            runs_manager
-                .find_run(&file_path_to_source_id(&path), Some(run_id))
-                .await
-                .map_err(|e| {
-                    tracing::error!("Failed to retry run: {:?}", e);
-                    StatusCode::INTERNAL_SERVER_ERROR
-                })?
-                .ok_or_else(|| {
-                    tracing::error!("Run with ID {} not found", retry_param.run_id);
-                    StatusCode::NOT_FOUND
-                })
-        }
-    }?;
-    let replay_id = payload
-        .retry_param
-        .as_ref()
-        .and_then(|p| p.replay_id.clone());
+    let (run_info, replay_id) = runs_manager
+        .get_run_info(&file_path_to_source_id(&path), &payload.retry_strategy)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to get run info: {:?}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+    // If this is a retry on child, resolve to the root run
     let (run_info, replay_id) = match run_info.root_ref {
         Some(root_ref) => runs_manager
             .find_run(&root_ref.source_id, root_ref.run_index)
@@ -224,9 +215,35 @@ pub async fn create_workflow_run(
     })?;
     let run_index = run_info.run_index.ok_or(StatusCode::BAD_REQUEST)?;
     let topic_id = task_id.clone();
-    let callback_fn = async move || -> Result<(), OxyError> {
+    let cb_source_id = run_info.source_id.clone();
+    let callback_fn = async move |output: Option<OutputContainer>| -> Result<(), OxyError> {
         // Handle the completion of the run and broadcast events
         if let Some(closed) = BROADCASTER.remove_topic(&topic_id).await {
+            let last_task_ref = workflow_config.tasks.last().map(|t| t.name.clone());
+            if let Some(output) = output
+                && let Some(last_task_name) = last_task_ref
+            {
+                let outputs = output.find_ref(&last_task_name)?;
+                let last_output = outputs.first();
+                if let Some(last_output) = last_output {
+                    tracing::info!(
+                        "Final output for task '{}': {:?}",
+                        last_task_name,
+                        last_output
+                    );
+                    runs_manager
+                        .update_run_output(
+                            &cb_source_id,
+                            run_index,
+                            last_task_name,
+                            last_output.to_json()?,
+                        )
+                        .await?;
+                } else {
+                    tracing::info!("No output found for the last task '{}'", last_task_name);
+                }
+            };
+
             let mut group_handler = GroupBlockHandler::new();
             for event in closed.items {
                 group_handler.handle_event(event).await?;
@@ -249,7 +266,6 @@ pub async fn create_workflow_run(
                     .try_into()
                     .map_err(|e| tracing::error!("Failed to convert run_index to u32: {}", e))
                     .unwrap_or(0); // Default to 0 if conversion fails
-
                 run_workflow_v2(
                     project_manager.clone(),
                     source_id,
@@ -259,23 +275,28 @@ pub async fn create_workflow_run(
                         run_index: converted_run_index,
                     },
                     None,
-                    None,
                 )
             };
             tokio::select! {
                 _ = cancellation_token.cancelled() => {
                     tracing::info!("Task {task_id} was cancelled");
-                    if let Err(err) = callback_fn().await {
+                    if let Err(err) = callback_fn(None).await {
                         tracing::error!("Failed to handle callback for task {task_id}: {err}");
                     }
                 }
                 res = run_fut => {
-                    match res {
-                        Ok(_) => tracing::info!("Task {task_id} completed successfully"),
-                        Err(err) => tracing::error!("Task {task_id} failed: {err}"),
-                    }
+                    let output = match res {
+                        Ok(value) => {
+                            tracing::info!("Task {task_id} completed successfully");
+                            Some(value)
+                        },
+                        Err(err) => {
+                            tracing::error!("Task {task_id} failed: {err}");
+                            None
+                        },
+                    };
 
-                    if let Err(err) = callback_fn().await {
+                    if let Err(err) = callback_fn(output).await {
                         tracing::error!("Failed to handle callback for task {task_id}: {err}");
                     }
                 }
@@ -284,7 +305,9 @@ pub async fn create_workflow_run(
         })
         .await;
 
-    Ok(extract::Json(CreateRunResponse { run: run_info }))
+    Ok(extract::Json(CreateRunResponse {
+        run: run_info.into(),
+    }))
 }
 
 #[derive(serde::Deserialize, ToSchema, Debug)]
@@ -381,7 +404,7 @@ pub async fn workflow_events(
     Query(request): Query<WorkflowEventsRequest>,
 ) -> Result<impl axum::response::IntoResponse, StatusCode> {
     let run_info: RunInfo = request.into();
-    let runs_manager = project_manager.runs_manager.clone().ok_or_else(|| {
+    let runs_manager = project_manager.runs_manager.as_ref().ok_or_else(|| {
         tracing::error!("Failed to initialize RunsManager");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
@@ -487,7 +510,7 @@ pub async fn workflow_events_sync(
         request.source_id.clone()
     };
 
-    let runs_manager = project_manager.runs_manager.clone().ok_or_else(|| {
+    let runs_manager = project_manager.runs_manager.as_ref().ok_or_else(|| {
         tracing::error!("Failed to initialize RunsManager");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
@@ -684,7 +707,7 @@ pub async fn get_blocks(
     ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
     Query(block_request): Query<BlocksRequest>,
 ) -> Result<extract::Json<RunDetails>, StatusCode> {
-    let runs_manager = project_manager.runs_manager.clone().ok_or_else(|| {
+    let runs_manager = project_manager.runs_manager.as_ref().ok_or_else(|| {
         tracing::error!("Failed to initialize RunsManager");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
@@ -722,6 +745,7 @@ pub async fn get_blocks(
             blocks: None,
             children: None,
             error: None,
+            output: None,
         }));
     }
 

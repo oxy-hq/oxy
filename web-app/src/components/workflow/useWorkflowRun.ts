@@ -3,7 +3,7 @@ import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import ROUTES from "@/libs/utils/routes";
 import { randomKey } from "@/libs/utils/string";
 import { RunService } from "@/services/api";
-import { Block, LogItem, TaskRun, WorkflowRetryParam } from "@/services/types";
+import { Block, LogItem, RetryType, TaskRun } from "@/services/types";
 import { useBlockStore } from "@/stores/block";
 import { GroupSlice } from "@/stores/slices/group";
 import useWorkflow, { TaskConfigWithId } from "@/stores/useWorkflow";
@@ -358,15 +358,15 @@ export const useWorkflowRun = () => {
   return useMutation({
     mutationFn: async ({
       workflowId,
-      retryParam,
+      retryType,
     }: {
       workflowId: string;
-      retryParam?: WorkflowRetryParam;
+      retryType: RetryType;
     }) => {
       return await RunService.createRun(project.id, branchName, {
         type: "workflow",
         workflowId,
-        retry_param: retryParam,
+        retryType,
       });
     },
     onSuccess(data) {

@@ -1,6 +1,7 @@
 use itertools::Itertools;
 
 use crate::{
+    adapters::checkpoint::types::RetryStrategy,
     agent::types::AgentInput,
     config::{
         constants::EVAL_SOURCE,
@@ -13,7 +14,7 @@ use crate::{
         types::EventKind,
     },
     theme::StyledText,
-    workflow::{RetryStrategy, WorkflowInput},
+    workflow::WorkflowInput,
 };
 
 use super::{
@@ -85,8 +86,7 @@ impl ParamMapper<EvalInput, Vec<(usize, EvalConfig, EvalTarget)>> for EvalMapper
                             },
                             EvalTarget::Workflow(WorkflowInput {
                                 workflow_ref: workflow_ref.to_string(),
-                                retry: RetryStrategy::NoRetry,
-                                variables: None,
+                                retry: RetryStrategy::NoRetry { variables: None },
                             }),
                         )
                     })

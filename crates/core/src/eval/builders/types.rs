@@ -1,13 +1,15 @@
 use std::collections::HashMap;
 
+use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    adapters::checkpoint::types::RetryStrategy,
     agent::types::AgentInput,
     errors::OxyError,
     execute::types::{Output, TargetOutput},
     theme::StyledText,
-    workflow::{RetryStrategy, WorkflowInput},
+    workflow::WorkflowInput,
 };
 
 pub struct EvalInput {
@@ -55,12 +57,13 @@ impl EvalRecord {
     ) -> EvalTarget {
         match target {
             EvalTarget::Workflow(workflow_input) => EvalTarget::Workflow(WorkflowInput {
-                retry: RetryStrategy::NoRetry,
+                retry: RetryStrategy::NoRetry {
+                    variables: Some(IndexMap::from_iter([(
+                        workflow_variable_name.clone().unwrap_or_default(),
+                        serde_json::to_value(&self.query).unwrap(),
+                    )])),
+                },
                 workflow_ref: workflow_input.workflow_ref.clone(),
-                variables: Some(HashMap::from_iter([(
-                    workflow_variable_name.clone().unwrap_or_default(),
-                    serde_json::to_value(&self.query).unwrap(),
-                )])),
             }),
             EvalTarget::Agent(agent_input) => EvalTarget::Agent(AgentInput {
                 agent_ref: agent_input.agent_ref.clone(),

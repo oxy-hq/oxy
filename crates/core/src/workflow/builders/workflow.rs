@@ -2,7 +2,6 @@ use std::{collections::HashMap, path::PathBuf};
 
 use itertools::Itertools;
 use schemars::schema::SchemaObject;
-use serde_json::Value;
 
 use crate::{
     adapters::checkpoint::RunInfo,
@@ -117,23 +116,22 @@ impl WorkflowMapper {
 }
 
 #[async_trait::async_trait]
-impl ParamMapper<(String, Option<HashMap<String, Value>>, RunInfo), WorkflowRunInput>
-    for WorkflowMapper
-{
+impl ParamMapper<(String, RunInfo), WorkflowRunInput> for WorkflowMapper {
     async fn map(
         &self,
         execution_context: &ExecutionContext,
-        input: (String, Option<HashMap<String, Value>>, RunInfo),
+        input: (String, RunInfo),
     ) -> Result<(WorkflowRunInput, Option<ExecutionContext>), OxyError> {
         // Extract the workflow reference and variables from the input
-        let (workflow_ref, variables, run_info) = input;
+        let (workflow_ref, run_info) = input;
         let workflow = self
             .resolve_workflow_variables_schema(execution_context, workflow_ref.clone())
             .await?;
 
         // Validate the workflow variables against the schema
         let variables_schema = workflow.variables.clone().unwrap_or_default();
-        let variables = variables_schema.resolve_params(variables)?;
+        let variables = variables_schema
+            .resolve_params(run_info.get_variables().map(|v| v.into_iter().collect()))?;
         let json_schema: serde_json::Value = (&variables_schema).into();
         let instance = serde_json::to_value(&variables).map_err(|err| {
             OxyError::ArgumentError(format!(
@@ -177,7 +175,7 @@ impl ParamMapper<(String, Option<HashMap<String, Value>>, RunInfo), WorkflowRunI
 }
 
 pub(super) fn build_workflow_executable()
--> impl Executable<(String, Option<HashMap<String, Value>>, RunInfo), Response = OutputContainer> {
+-> impl Executable<(String, RunInfo), Response = OutputContainer> {
     ExecutableBuilder::new()
         .map(WorkflowMapper)
         .checkpoint_root()

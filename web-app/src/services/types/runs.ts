@@ -1,16 +1,31 @@
 import { Block, GroupArtifactType, GroupWorkflowType } from "./blocks";
 
-export type WorkflowRetryParam = {
-  run_id: number;
+export interface Retry {
+  type: "retry";
+  run_index: number;
   // Formatted as "{parent_task_id}[.{child_task_id}][-{loop_index}]" or "" empty for all tasks
-  replay_id: string;
-};
+  replay_id?: string;
+}
+
+export interface RetryWithVariables {
+  type: "retry_with_variables";
+  run_index: number;
+  // Formatted as "{parent_task_id}[.{child_task_id}][-{loop_index}]" or "" empty for all tasks
+  replay_id?: string;
+  variables?: Record<string, unknown>;
+}
+
+export interface NoRetry {
+  type: "no_retry";
+  variables?: Record<string, unknown>;
+}
+
+export type RetryType = Retry | RetryWithVariables | NoRetry;
 
 export type CreateRunPayload = {
   type: "workflow";
   workflowId: string;
-  variables?: Record<string, unknown>;
-  retry_param?: WorkflowRetryParam;
+  retryType: RetryType;
 };
 
 export type CreateRunResponse = {

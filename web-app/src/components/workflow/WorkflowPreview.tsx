@@ -10,6 +10,7 @@ import {
 import { cn } from "@/libs/shadcn/utils";
 import { Button } from "@/components/ui/shadcn/button";
 import {
+  ChevronDownIcon,
   History,
   LoaderCircle,
   LoaderCircleIcon,
@@ -29,6 +30,14 @@ import {
 } from "./useWorkflowRun";
 import { useBlockStore } from "@/stores/block";
 import { WorkflowRuns } from "./WorkflowRuns";
+import { useVariables, Variables } from "./WorkflowDiagram/Variables";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "../ui/shadcn/dropdown-menu";
+import { ButtonGroup } from "../ui/shadcn/button-group";
 
 const WorkflowDiagram = React.lazy(() => import("./WorkflowDiagram"));
 
@@ -50,6 +59,14 @@ export const WorkflowPreview = ({
   const { stream, cancel } = useStreamEvents();
   const setGroupBlocks = useBlockStore((state) => state.setGroupBlocks);
   const isProcessing = useIsProcessing(path, runId || "");
+  const variablesSchema = useMemo(() => {
+    return {
+      type: "object",
+      properties: workflowConfig?.variables,
+    };
+  }, [workflowConfig]);
+  const { setIsOpen } = useVariables();
+
   const groups = useGetBlocks(
     path,
     runId ? +runId : undefined,
@@ -95,8 +112,29 @@ export const WorkflowPreview = ({
   }, [groups, relativePath, runId, setGroupBlocks]);
 
   const runHandler = async () => {
+    // check config has variables
+    if (!workflowConfig) return;
+    const hasVariables =
+      workflowConfig.variables &&
+      Object.values(workflowConfig.variables).some((v) => v !== undefined);
+
+    if (hasVariables) {
+      setIsOpen(true, (data) => {
+        return run.mutateAsync({
+          workflowId: relativePath,
+          retryType: {
+            type: "no_retry",
+            variables: data,
+          },
+        });
+      });
+      return;
+    }
     await run.mutateAsync({
       workflowId: relativePath,
+      retryType: {
+        type: "no_retry",
+      },
     });
   };
 
@@ -113,8 +151,9 @@ export const WorkflowPreview = ({
     if (runId) {
       await run.mutateAsync({
         workflowId: relativePath,
-        retryParam: {
-          run_id: parseInt(runId, 10),
+        retryType: {
+          type: "retry",
+          run_index: parseInt(runId, 10),
           replay_id: "",
         },
       });
@@ -204,14 +243,48 @@ export const WorkflowPreview = ({
                       <StopCircle className="w-4 h-4" />
                     </Button>
                   ) : (
-                    <Button
-                      variant="outline"
-                      onClick={replayAllHandler}
-                      disabled={run.isPending}
-                      tooltip={"Replay Workflow Run"}
-                    >
-                      <RotateCcw className="w-4 h-4" />
-                    </Button>
+                    <ButtonGroup>
+                      <Button
+                        variant="outline"
+                        onClick={replayAllHandler}
+                        disabled={run.isPending}
+                        tooltip={"Replay Workflow Run"}
+                      >
+                        <RotateCcw className="w-4 h-4" />
+                        Replay
+                      </Button>
+                      {workflowConfig.variables ? (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="outline" className="!pl-2">
+                              <ChevronDownIcon />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent
+                            align="end"
+                            className="[--radius:1rem]"
+                          >
+                            <DropdownMenuItem
+                              onClick={() => {
+                                setIsOpen(true, (data) => {
+                                  return run.mutateAsync({
+                                    workflowId: relativePath,
+                                    retryType: {
+                                      type: "retry_with_variables",
+                                      run_index: parseInt(runId, 10),
+                                      replay_id: "",
+                                      variables: data,
+                                    },
+                                  });
+                                });
+                              }}
+                            >
+                              Replay With Variables
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      ) : null}
+                    </ButtonGroup>
                   ))}
                 <Button
                   variant="default"
@@ -225,6 +298,9 @@ export const WorkflowPreview = ({
                     <PlayIcon className="w-4 h-4" />
                   )}
                 </Button>
+                {workflowConfig.variables ? (
+                  <Variables schema={variablesSchema} />
+                ) : null}
               </div>
             </div>
           </ResizablePanel>

@@ -173,6 +173,7 @@ export type WorkflowConfig = {
   name: string;
   tasks: TaskConfig[];
   path?: string;
+  variables?: Record<string, unknown>;
 };
 
 export type TaskNode = Node<NodeData, NodeType>;

@@ -1,10 +1,12 @@
 use base64::prelude::*;
 use entity::prelude::Threads;
 use futures::TryFutureExt;
+use indexmap::IndexMap;
 use sea_orm::ActiveValue;
 use sea_orm::EntityTrait;
 use serde::Deserialize;
 use serde_json::Value;
+use std::collections::HashSet;
 use std::path::PathBuf;
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -15,17 +17,18 @@ use std::fs::File;
 use std::sync::Arc;
 use std::sync::Mutex;
 
+use crate::adapters::checkpoint::types::RetryStrategy;
 use crate::api::middlewares::project::ProjectManagerExtractor;
 use crate::api::middlewares::timeout::TimeoutConfig;
 use crate::config::model::Workflow;
 use crate::service::statics::BROADCASTER;
 use crate::service::thread::streaming_workflow_persister::StreamingWorkflowPersister;
+use crate::service::types::run::RunStatus;
 use crate::service::workflow as service;
 use crate::service::workflow::WorkflowInfo;
 use crate::service::workflow::get_workflow;
 use crate::service::workflow::run_workflow as run_workflow_service;
 use crate::utils::create_sse_stream;
-use crate::workflow::RetryStrategy;
 use crate::workflow::loggers::api::WorkflowAPILogger;
 use crate::workflow::loggers::types::LogItem;
 use crate::workflow::loggers::types::WorkflowLogger;
@@ -211,6 +214,8 @@ pub struct WorkflowRetryParam {
 
 #[derive(Deserialize, ToSchema)]
 pub struct RunWorkflowRequest {
+    #[schema(value_type = Object)]
+    variables: Option<IndexMap<String, serde_json::Value>>,
     retry_param: Option<WorkflowRetryParam>,
 
     #[serde(default)]
@@ -274,8 +279,7 @@ pub async fn run_workflow(
         let rs = run_workflow_service(
             path,
             logger.clone(),
-            RetryStrategy::NoRetry,
-            None,
+            RetryStrategy::NoRetry { variables: None },
             project_manager.clone(),
             filters,
         )
@@ -432,8 +436,7 @@ pub async fn run_workflow_thread(
         let result = service::run_workflow(
             &workflow_ref,
             logger,
-            RetryStrategy::NoRetry,
-            None,
+            RetryStrategy::NoRetry { variables: None },
             project_manager.clone(),
             filters,
         )
@@ -617,8 +620,7 @@ pub async fn run_workflow_thread_sync(
         let result = service::run_workflow(
             &workflow_ref_clone,
             logger,
-            RetryStrategy::NoRetry,
-            None,
+            RetryStrategy::NoRetry { variables: None },
             project_manager.clone(),
             filters,
         )
@@ -861,19 +863,24 @@ pub async fn run_workflow_sync(
             run_index: retry_param.run_id.parse().unwrap_or(0),
         }
     } else {
-        RetryStrategy::NoRetry
+        RetryStrategy::NoRetry {
+            variables: request.variables.clone(),
+        }
     };
 
     // Generate a run_id and create broadcast topic
-    let runs_manager = project_manager.runs_manager.clone().ok_or_else(|| {
+    let runs_manager = project_manager.runs_manager.as_ref().ok_or_else(|| {
         tracing::error!("RunsManager not initialized");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    let run_info = runs_manager.new_run(&source_id).await.map_err(|e| {
-        tracing::error!("Failed to create new run: {:?}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
+    let run_info = runs_manager
+        .new_run(&source_id, request.variables.clone())
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to create new run: {:?}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
 
     let run_id = run_info.run_index.ok_or_else(|| {
         tracing::error!("Run index not available");
@@ -914,7 +921,6 @@ pub async fn run_workflow_sync(
                 path.clone(),
                 topic_ref,
                 retry_strategy,
-                None,
                 filters,
             )
             .await;
@@ -1268,6 +1274,7 @@ pub struct WorkflowRunResponse {
     pub error_message: Option<String>,
     pub events: Vec<WorkflowEvent>,
     pub content: Option<serde_json::Value>,
+    pub output: Option<serde_json::Value>,
 }
 
 /// Get workflow run status with optional wait for completion
@@ -1358,7 +1365,7 @@ pub async fn get_workflow_run(
             // Not found in broadcast, try database for historical runs
             tracing::info!("Run {} not found in broadcast, querying database", task_id);
 
-            let runs_manager = project_manager.runs_manager.ok_or_else(|| {
+            let runs_manager = project_manager.runs_manager.as_ref().ok_or_else(|| {
                 tracing::error!("RunsManager not available");
                 StatusCode::INTERNAL_SERVER_ERROR
             })?;
@@ -1404,14 +1411,45 @@ pub async fn get_workflow_run(
         })
         .collect();
 
+    let runs_manager = project_manager.runs_manager.ok_or_else(|| {
+        tracing::error!("RunsManager not available");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    let run_details = runs_manager
+        .find_run_details(&source_id, Some(run_id))
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to query run from database: {:?}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?
+        .ok_or_else(|| {
+            tracing::warn!("Run not found: {}", task_id);
+            StatusCode::NOT_FOUND
+        })?;
+    let topics = BROADCASTER.list_topics::<HashSet<String>>().await;
+    let mut run_info = run_details.run_info;
+    let task_id = match &run_info.root_ref {
+        Some(root_ref) => root_ref.task_id().ok(),
+        None => run_info.task_id().ok(),
+    };
+    if let Some(task_id) = task_id {
+        let status = match (topics.contains(&task_id), &run_info.status) {
+            (true, _) => RunStatus::Running,
+            (false, RunStatus::Pending) => RunStatus::Canceled,
+            _ => run_info.status.clone(),
+        };
+        run_info.set_status(status);
+    }
     Ok(extract::Json(WorkflowRunResponse {
         run_id,
-        status,
+        status: run_info.status.to_string(),
         success,
         completed,
         error_message,
         events: api_events,
         content,
+        output: run_details.output,
     }))
 }
 

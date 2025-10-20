@@ -5,7 +5,11 @@ use std::{
     sync::Arc,
 };
 
-use arrow::{array::RecordBatch, datatypes::Schema};
+use arrow::{
+    array::RecordBatch,
+    datatypes::Schema,
+    json::{StructMode, WriterBuilder, writer::JsonArray},
+};
 use minijinja::{
     Value,
     value::{Enumerator, Object, ObjectExt, ObjectRepr},
@@ -203,6 +207,56 @@ impl Table {
         let table = self.get_inner().ok()?;
         let TableReference { sql, .. } = self.reference.clone()?;
         Some((sql, &table.schema, &table.batches))
+    }
+
+    pub fn to_json(&self) -> Result<serde_json::Map<String, serde_json::Value>, OxyError> {
+        let table = self.get_inner()?;
+        let mut json_value = serde_json::Map::new();
+        let fields = table
+            .schema
+            .fields()
+            .iter()
+            .map(|f| {
+                let mut field = serde_json::Map::new();
+                field.insert(
+                    "name".to_string(),
+                    serde_json::Value::String(f.name().to_string()),
+                );
+                field.insert(
+                    "dtype".to_string(),
+                    serde_json::Value::String(format!("{}", f.data_type())),
+                );
+                serde_json::Value::Object(field)
+            })
+            .collect::<Vec<_>>();
+        json_value.insert("schema".to_string(), serde_json::Value::Array(fields));
+        json_value.insert(
+            "type".to_string(),
+            serde_json::Value::String("table".to_string()),
+        );
+        json_value.insert(
+            "row_count".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(
+                table.batches.iter().map(|b| b.num_rows()).sum::<usize>(),
+            )),
+        );
+        let mut object_output: Vec<u8> = Vec::new();
+        let mut writer = WriterBuilder::new()
+            .with_struct_mode(StructMode::ListOnly)
+            .build::<_, JsonArray>(&mut object_output);
+        writer
+            .write_batches(&table.batches.iter().collect::<Vec<_>>())
+            .map_err(|err| {
+                OxyError::RuntimeError(format!("Failed to write JSON batches: {err}"))
+            })?;
+        writer.finish().map_err(|err| {
+            OxyError::RuntimeError(format!("Failed to finish writing JSON batches: {err}"))
+        })?;
+        json_value.insert(
+            "data".to_string(),
+            serde_json::from_slice(writer.into_inner().as_slice())?,
+        );
+        Ok(json_value)
     }
 }
 

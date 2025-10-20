@@ -1,9 +1,13 @@
+use indexmap::IndexMap;
 use uuid::Uuid;
 
 use crate::{
-    adapters::runs::{
-        database::RunsDatabaseStorage,
-        storage::{RunsStorage, RunsStorageImpl},
+    adapters::{
+        checkpoint::types::RetryStrategy,
+        runs::{
+            database::RunsDatabaseStorage,
+            storage::{RunsStorage, RunsStorageImpl},
+        },
     },
     db::client::establish_connection,
     errors::OxyError,
@@ -49,6 +53,29 @@ impl RunsManager {
         self.storage.find_run_details(source_id, run_index).await
     }
 
+    pub async fn update_run_variables(
+        &self,
+        source_id: &str,
+        run_index: i32,
+        variables: Option<IndexMap<String, serde_json::Value>>,
+    ) -> Result<RunInfo, OxyError> {
+        self.storage
+            .update_run_variables(source_id, run_index, variables)
+            .await
+    }
+
+    pub async fn update_run_output(
+        &self,
+        source_id: &str,
+        run_index: i32,
+        task_name: String,
+        output: serde_json::Value,
+    ) -> Result<(), OxyError> {
+        self.storage
+            .update_run_output(source_id, run_index, task_name, output)
+            .await
+    }
+
     pub async fn find_run(
         &self,
         source_id: &str,
@@ -59,14 +86,80 @@ impl RunsManager {
     pub async fn last_run(&self, source_id: &str) -> Result<Option<RunInfo>, OxyError> {
         self.storage.last_run(source_id).await
     }
-    pub async fn new_run(&self, source_id: &str) -> Result<RunInfo, OxyError> {
-        self.storage.new_run(source_id, None).await
+    pub async fn new_run(
+        &self,
+        source_id: &str,
+        variables: Option<IndexMap<String, serde_json::Value>>,
+    ) -> Result<RunInfo, OxyError> {
+        self.storage.new_run(source_id, None, variables).await
     }
     pub async fn nested_run(
         &self,
         source_id: &str,
         root_ref: RootReference,
+        variables: Option<IndexMap<String, serde_json::Value>>,
     ) -> Result<RunInfo, OxyError> {
-        self.storage.new_run(source_id, Some(root_ref)).await
+        self.storage
+            .new_run(source_id, Some(root_ref), variables)
+            .await
+    }
+    pub async fn get_run_info(
+        &self,
+        source_id: &str,
+        retry_strategy: &RetryStrategy,
+    ) -> Result<(RunInfo, Option<String>), OxyError> {
+        match retry_strategy {
+            RetryStrategy::Retry {
+                replay_id,
+                run_index,
+            } => {
+                let run_info = self
+                    .find_run(
+                        &source_id,
+                        Some((*run_index).try_into().map_err(|_| {
+                            OxyError::RuntimeError("Run index conversion failed".to_string())
+                        })?),
+                    )
+                    .await?;
+                match run_info {
+                    Some(run_info) => Ok((run_info, replay_id.clone())),
+                    None => Err(OxyError::RuntimeError(format!(
+                        "Run with index {run_index} not found for workflow {source_id}"
+                    ))),
+                }
+            }
+            RetryStrategy::RetryWithVariables {
+                replay_id,
+                run_index,
+                variables,
+            } => {
+                let run_info = self
+                    .update_run_variables(
+                        &source_id,
+                        (*run_index).try_into().map_err(|_| {
+                            OxyError::RuntimeError("Run index conversion failed".to_string())
+                        })?,
+                        variables.clone(),
+                    )
+                    .await?;
+                Ok((run_info, replay_id.clone()))
+            }
+            RetryStrategy::LastFailure => {
+                let run_info = self.last_run(&source_id).await?;
+                match run_info {
+                    Some(run_info) => Ok((run_info, None)),
+                    None => Err(OxyError::RuntimeError(format!(
+                        "Last failure run not found for workflow {source_id}"
+                    ))),
+                }
+            }
+            RetryStrategy::NoRetry { variables } => self
+                .new_run(&source_id, variables.clone())
+                .await
+                .map(|run| (run, None)),
+            RetryStrategy::Preview => {
+                todo!("Preview mode is not implemented yet")
+            }
+        }
     }
 }

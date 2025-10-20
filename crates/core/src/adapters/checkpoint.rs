@@ -1,5 +1,6 @@
 use database::DatabaseStorage;
 use file::FileStorage;
+use indexmap::IndexMap;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
@@ -12,6 +13,7 @@ use crate::{
 
 mod database;
 mod file;
+pub mod types;
 
 pub struct CheckpointBuilder {
     storage: Option<CheckpointStorageImpl>,
@@ -147,6 +149,7 @@ impl CheckpointContext {
         &self,
         replay_id: &str,
         source_id: &str,
+        variables: Option<IndexMap<String, serde_json::Value>>,
     ) -> Result<RunInfo, OxyError> {
         let checkpoint_data = self
             .storage
@@ -157,16 +160,24 @@ impl CheckpointContext {
         root_ref.replay_ref = self.get_full_ref(replay_id);
         let mut run_info: RunInfo = match checkpoint_data {
             Some(checkpoint_data) => match checkpoint_data.run_info {
-                Some(run_info) => run_info,
+                Some(run_info) => self
+                    .run_storage
+                    .update_run_variables(
+                        &run_info.get_source_id(),
+                        run_info.get_run_index() as i32,
+                        variables,
+                    )
+                    .await?
+                    .try_into()?,
                 None => self
                     .run_storage
-                    .nested_run(source_id, root_ref)
+                    .nested_run(source_id, root_ref, variables)
                     .await?
                     .try_into()?,
             },
             None => self
                 .run_storage
-                .nested_run(source_id, root_ref)
+                .nested_run(source_id, root_ref, variables)
                 .await?
                 .try_into()?,
         };
@@ -229,15 +240,18 @@ impl CheckpointContext {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RunInfo {
     source_id: String,
     run_index: u32,
+    variables: Option<IndexMap<String, serde_json::Value>>,
     // Nested replay ID for checkpoints
     // This is used to identify the specific run in a replay context
     // It can be empty if this is a replay all
     replay_id: Option<String>,
     success: bool,
+    // Root reference for nested runs
+    root_ref: Option<RootReference>,
 }
 
 impl RunInfo {
@@ -246,12 +260,16 @@ impl RunInfo {
         run_index: u32,
         replay_id: Option<String>,
         success: bool,
+        variables: Option<IndexMap<String, serde_json::Value>>,
+        root_ref: Option<RootReference>,
     ) -> Self {
         RunInfo {
             source_id,
             run_index,
             replay_id,
             success,
+            variables,
+            root_ref,
         }
     }
 
@@ -274,6 +292,18 @@ impl RunInfo {
     pub fn get_run_index(&self) -> u32 {
         self.run_index
     }
+
+    pub fn get_variables(&self) -> Option<IndexMap<String, serde_json::Value>> {
+        self.variables.clone()
+    }
+
+    pub fn get_root_ref(&self) -> Option<RootReference> {
+        self.root_ref.clone()
+    }
+
+    pub fn task_id(&self) -> String {
+        format!("{}::{}", self.source_id, self.run_index)
+    }
 }
 
 impl TryFrom<PublicRunInfo> for RunInfo {
@@ -292,6 +322,8 @@ impl TryFrom<PublicRunInfo> for RunInfo {
                 })?,
             None,
             is_completed,
+            value.variables,
+            value.root_ref,
         ))
     }
 }

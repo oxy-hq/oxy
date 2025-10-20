@@ -1,3 +1,5 @@
+use indexmap::IndexMap;
+
 use crate::{
     adapters::runs::database::RunsDatabaseStorage,
     errors::OxyError,
@@ -15,8 +17,22 @@ pub trait RunsStorage {
         &self,
         source_id: &str,
         root_ref: Option<RootReference>,
+        variables: Option<IndexMap<String, serde_json::Value>>,
     ) -> Result<RunInfo, OxyError>;
     async fn upsert_run(&self, group: Group) -> Result<(), OxyError>;
+    async fn update_run_variables(
+        &self,
+        source_id: &str,
+        run_index: i32,
+        variables: Option<IndexMap<String, serde_json::Value>>,
+    ) -> Result<RunInfo, OxyError>;
+    async fn update_run_output(
+        &self,
+        source_id: &str,
+        run_index: i32,
+        task_name: String,
+        output: serde_json::Value,
+    ) -> Result<(), OxyError>;
     async fn find_run(
         &self,
         source_id: &str,

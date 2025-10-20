@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use entity::runs::Variables;
+use indexmap::IndexMap;
 use sea_orm::{
     ActiveValue, QueryOrder, QuerySelect, TransactionError, TransactionTrait, prelude::*,
 };
@@ -63,6 +65,7 @@ impl RunsStorage for RunsDatabaseStorage {
             source_id: run.source_id,
             run_index: run.run_index,
             status,
+            variables: run.variables.map(|v| v.to_inner()),
             created_at: run.created_at.into(),
             updated_at: run.updated_at.into(),
         }))
@@ -72,6 +75,7 @@ impl RunsStorage for RunsDatabaseStorage {
         &self,
         source_id: &str,
         root_ref: Option<RootReference>,
+        variables: Option<IndexMap<String, serde_json::Value>>,
     ) -> Result<RunInfo, OxyError> {
         let connection = self.connection.clone();
         let project_id = self.project_id;
@@ -93,6 +97,7 @@ impl RunsStorage for RunsDatabaseStorage {
                 let branch_id = branch_id;
                 let source_id = source_id.clone();
                 let root_ref = root_ref.clone();
+                let variables = variables.clone();
                 async move {
                     connection
                         .transaction::<_, RunInfo, DbErr>(move |txn| {
@@ -127,6 +132,9 @@ impl RunsStorage for RunsDatabaseStorage {
                                     branch_id: ActiveValue::Set(branch_id),
                                     created_at: ActiveValue::Set(chrono::Utc::now().into()),
                                     updated_at: ActiveValue::Set(chrono::Utc::now().into()),
+                                    variables: ActiveValue::Set(
+                                        variables.clone().map(|vars| Variables(vars)),
+                                    ),
                                     ..Default::default()
                                 };
                                 match root_ref {
@@ -153,6 +161,7 @@ impl RunsStorage for RunsDatabaseStorage {
                                     root_ref,
                                     source_id: source_id.to_string(),
                                     run_index,
+                                    variables,
                                     status: RunStatus::Pending,
                                     created_at: chrono::Utc::now(),
                                     updated_at: chrono::Utc::now(),
@@ -289,6 +298,96 @@ impl RunsStorage for RunsDatabaseStorage {
         Ok(())
     }
 
+    async fn update_run_variables(
+        &self,
+        source_id: &str,
+        run_index: i32,
+        variables: Option<IndexMap<String, serde_json::Value>>,
+    ) -> Result<RunInfo, OxyError> {
+        let variables_json = variables
+            .as_ref()
+            .map(|vars| {
+                serde_json::to_value(vars).map_err(|err| {
+                    OxyError::SerializerError(format!("Failed to serialize variables: {err}"))
+                })
+            })
+            .transpose()?;
+
+        let updated_run = entity::runs::Entity::update_many()
+            .col_expr(entity::runs::Column::Variables, Expr::value(variables_json))
+            .col_expr(
+                entity::runs::Column::UpdatedAt,
+                Expr::value(sea_orm::Value::from(chrono::Utc::now())),
+            )
+            .filter(
+                entity::runs::Column::SourceId
+                    .eq(source_id)
+                    .and(entity::runs::Column::RunIndex.eq(Some(run_index)))
+                    .and(entity::runs::Column::ProjectId.eq(self.project_id))
+                    .and(entity::runs::Column::BranchId.eq(self.branch_id)),
+            )
+            .exec(&self.connection)
+            .await
+            .map_err(|err| OxyError::DBError(format!("Failed to update run variables: {err}")))?;
+
+        if updated_run.rows_affected == 0 {
+            return Err(OxyError::RuntimeError(format!(
+                "No run found for source_id: {} with run_index: {}",
+                source_id, run_index
+            )));
+        }
+
+        // Fetch the updated run to return the RunInfo
+        let run =
+            self.find_run(source_id, Some(run_index))
+                .await?
+                .ok_or(OxyError::RuntimeError(format!(
+                    "Run not found after update for source_id: {} with run_index: {}",
+                    source_id, run_index
+                )))?;
+
+        Ok(run)
+    }
+
+    async fn update_run_output(
+        &self,
+        source_id: &str,
+        run_index: i32,
+        task_name: String,
+        output: serde_json::Value,
+    ) -> Result<(), OxyError> {
+        let output_json = serde_json::to_value(&entity::runs::Output { task_name, output })
+            .map_err(|err| {
+                OxyError::SerializerError(format!("Failed to serialize output: {err}"))
+            })?;
+
+        let updated_run = entity::runs::Entity::update_many()
+            .col_expr(entity::runs::Column::Output, Expr::value(Some(output_json)))
+            .col_expr(
+                entity::runs::Column::UpdatedAt,
+                Expr::value(sea_orm::Value::from(chrono::Utc::now())),
+            )
+            .filter(
+                entity::runs::Column::SourceId
+                    .eq(source_id)
+                    .and(entity::runs::Column::RunIndex.eq(Some(run_index)))
+                    .and(entity::runs::Column::ProjectId.eq(self.project_id))
+                    .and(entity::runs::Column::BranchId.eq(self.branch_id)),
+            )
+            .exec(&self.connection)
+            .await
+            .map_err(|err| OxyError::DBError(format!("Failed to update run output: {err}")))?;
+
+        if updated_run.rows_affected == 0 {
+            return Err(OxyError::RuntimeError(format!(
+                "No run found for source_id: {} with run_index: {}",
+                source_id, run_index
+            )));
+        }
+
+        Ok(())
+    }
+
     async fn find_run(
         &self,
         source_id: &str,
@@ -322,6 +421,7 @@ impl RunsStorage for RunsDatabaseStorage {
                     (Some(_), None) => RunStatus::Completed,
                     (None, None) => RunStatus::Pending,
                 },
+                variables: run.variables.map(|v| v.to_inner()),
                 created_at: run.created_at.into(),
                 updated_at: run.updated_at.into(),
             });
@@ -385,12 +485,17 @@ impl RunsStorage for RunsDatabaseStorage {
                     run_index: run.root_run_index,
                     replay_ref: run.root_replay_ref.unwrap_or_default(),
                 }),
+                variables: run.variables.map(|v| v.to_inner()),
                 source_id: run.source_id,
                 run_index: run.run_index,
                 status,
                 created_at: run.created_at.into(),
                 updated_at: run.updated_at.into(),
             },
+            output: run
+                .output
+                .as_ref()
+                .and_then(|output_json| serde_json::to_value(output_json.clone()).ok()),
             children,
             blocks,
             error: run.error,
@@ -443,6 +548,7 @@ impl RunsStorage for RunsDatabaseStorage {
                     (Some(_), None) => RunStatus::Completed,
                     (None, None) => RunStatus::Pending,
                 },
+                variables: run.variables.map(|v| v.to_inner()),
                 created_at: run.created_at.into(),
                 updated_at: run.updated_at.into(),
             })

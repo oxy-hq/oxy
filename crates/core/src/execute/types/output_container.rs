@@ -128,6 +128,79 @@ impl OutputContainer {
             OutputContainer::Variable(output) => output.to_string(),
         }
     }
+    pub fn to_json(&self) -> Result<serde_json::Value, OxyError> {
+        match self {
+            OutputContainer::List(list) => {
+                let mut rs = vec![];
+                for item in list {
+                    rs.push(item.to_json()?);
+                }
+                Ok(serde_json::Value::Object(serde_json::Map::from_iter([
+                    ("type".to_string(), serde_json::Value::from("list")),
+                    (
+                        "value".to_string(),
+                        serde_json::Value::Array(rs.into_iter().collect()),
+                    ),
+                ])))
+            }
+            OutputContainer::Map(map) => {
+                let mut rs = serde_json::Map::new();
+                for (k, v) in map {
+                    rs.insert(k.clone(), v.to_json()?);
+                }
+                Ok(serde_json::Value::Object(serde_json::Map::from_iter([
+                    ("type".to_string(), serde_json::Value::from("map")),
+                    ("value".to_string(), serde_json::Value::Object(rs)),
+                ])))
+            }
+            OutputContainer::Single(output) => {
+                let mut value = serde_json::Map::new();
+                match output {
+                    Output::Bool(b) => {
+                        value.insert("type".to_string(), serde_json::Value::from("bool"));
+                        value.insert("value".to_string(), serde_json::Value::from(*b));
+                    }
+                    Output::Text(t) => {
+                        value.insert("type".to_string(), serde_json::Value::from("text"));
+                        value.insert("value".to_string(), serde_json::Value::from(t.clone()));
+                    }
+                    Output::Prompt(p) => {
+                        value.insert("type".to_string(), serde_json::Value::from("text"));
+                        value.insert("value".to_string(), serde_json::Value::from(p.0.clone()));
+                    }
+                    Output::SQL(s) => {
+                        value.insert("type".to_string(), serde_json::Value::from("sql"));
+                        value.insert("value".to_string(), serde_json::Value::from(s.0.clone()));
+                    }
+                    Output::Table(t) => {
+                        value = t.to_json()?;
+                    }
+                    _ => {
+                        value.insert("type".to_string(), serde_json::Value::from("unknown"));
+                        value.insert(
+                            "value".to_string(),
+                            serde_json::Value::from(format!("{output}")),
+                        );
+                    }
+                }
+                Ok(serde_json::Value::Object(value))
+            }
+            OutputContainer::Metadata { value, .. } => value.output.to_json(),
+            OutputContainer::Consistency { value, score } => {
+                let mut map = serde_json::Map::new();
+                map.insert("type".to_string(), serde_json::Value::from("consistency"));
+                map.insert("value".to_string(), value.output.to_json()?);
+                map.insert("score".to_string(), serde_json::Value::from(*score));
+                Ok(serde_json::Value::Object(map))
+            }
+            OutputContainer::Variable(output) => {
+                Ok(serde_json::Value::Object(serde_json::Map::from_iter([
+                    ("type".to_string(), serde_json::Value::from("variable")),
+                    ("value".to_string(), output.clone()),
+                ])))
+            }
+        }
+    }
 
     pub fn to_data(
         self,

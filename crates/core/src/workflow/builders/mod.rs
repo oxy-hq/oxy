@@ -1,7 +1,10 @@
 use crate::{
     adapters::{
-        checkpoint::RunInfo, project::manager::ProjectManager, runs::RunsManager,
-        secrets::SecretsManager, session_filters::SessionFilters,
+        checkpoint::{RunInfo, types::RetryStrategy},
+        project::manager::ProjectManager,
+        runs::RunsManager,
+        secrets::SecretsManager,
+        session_filters::SessionFilters,
     },
     config::{ConfigManager, constants::WORKFLOW_SOURCE, model::Task},
     errors::OxyError,
@@ -15,7 +18,6 @@ use crate::{
     utils::file_path_to_source_id,
 };
 use minijinja::context;
-use serde_json::Value as JsonValue;
 use std::{collections::HashMap, path::PathBuf};
 use workflow::{build_tasks_executable, build_workflow_executable};
 
@@ -31,21 +33,9 @@ mod task;
 mod template;
 mod workflow;
 
-#[derive(Debug, Clone)]
-pub enum RetryStrategy {
-    Retry {
-        replay_id: Option<String>,
-        run_index: u32,
-    },
-    LastFailure,
-    NoRetry,
-    Preview,
-}
-
 #[derive(Clone, Debug)]
 pub struct WorkflowInput {
     pub workflow_ref: String,
-    pub variables: Option<HashMap<String, JsonValue>>,
     pub retry: RetryStrategy,
 }
 
@@ -166,6 +156,24 @@ impl WorkflowLauncher {
                     ))),
                 }
             }
+            RetryStrategy::RetryWithVariables {
+                replay_id,
+                run_index,
+                variables,
+            } => {
+                let run_info = runs_manager
+                    .update_run_variables(
+                        &source_id,
+                        (*run_index).try_into().map_err(|_| {
+                            OxyError::RuntimeError("Run index conversion failed".to_string())
+                        })?,
+                        variables.clone(),
+                    )
+                    .await?;
+                let mut run_info: RunInfo = run_info.try_into()?;
+                run_info.set_replay_id(replay_id.clone());
+                Ok(run_info)
+            }
             RetryStrategy::LastFailure => {
                 let run_info = runs_manager.last_run(&source_id).await?;
                 match run_info {
@@ -179,8 +187,8 @@ impl WorkflowLauncher {
                     ))),
                 }
             }
-            RetryStrategy::NoRetry => runs_manager
-                .new_run(&source_id)
+            RetryStrategy::NoRetry { variables } => runs_manager
+                .new_run(&source_id, variables.clone())
                 .await
                 .map(|run| run.try_into())?,
             RetryStrategy::Preview => {
@@ -254,13 +262,12 @@ impl WorkflowLauncher {
         let response = {
             let WorkflowInput {
                 workflow_ref,
-                variables,
                 retry: _,
             } = workflow_input;
             let response = {
                 let mut executable = build_workflow_executable();
                 executable
-                    .execute(&execution_context, (workflow_ref, variables, run_info))
+                    .execute(&execution_context, (workflow_ref, run_info))
                     .await
             };
             execution_context

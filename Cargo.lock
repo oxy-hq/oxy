@@ -3225,8 +3225,10 @@ name = "entity"
 version = "0.3.6"
 dependencies = [
  "chrono",
+ "indexmap 2.11.4",
  "sea-orm",
  "serde",
+ "serde_json",
 ]
 
 [[package]]

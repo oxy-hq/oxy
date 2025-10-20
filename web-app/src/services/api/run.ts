@@ -100,7 +100,7 @@ export class RunService {
     const workflowId = btoa(payload.workflowId);
     const response = await apiClient.post(
       `/${projectId}/workflows/${workflowId}/runs`,
-      payload,
+      payload.retryType,
       { params: { branch: branchName } },
     );
     return response.data;
