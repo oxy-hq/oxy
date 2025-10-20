@@ -1,7 +1,6 @@
 import { useState } from "react";
 import EditorPageWrapper from "../components/EditorPageWrapper";
 import AgentPreview from "./Preview";
-import { randomKey } from "@/libs/utils/string";
 import {
   ToggleGroup,
   ToggleGroupItem,
@@ -11,21 +10,26 @@ import { Button } from "@/components/ui/shadcn/button";
 import { BrushCleaning, Play } from "lucide-react";
 import useAgent from "@/hooks/api/agents/useAgent";
 import useTests from "@/stores/useTests";
-import { useQueryClient } from "@tanstack/react-query";
-import queryKeys from "@/hooks/api/queryKey";
 import useAgentThreadStore from "@/stores/useAgentThread";
-import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import { useEditorContext } from "../contexts/useEditorContext";
+import { useEditorQueryInvalidation } from "../useEditorQueryInvalidation";
+import { usePreviewRefresh } from "../usePreviewRefresh";
 
-const AgentEditor = ({ pathb64 }: { pathb64: string }) => {
-  const [previewKey, setPreviewKey] = useState<string>(randomKey());
+const AgentEditor = () => {
+  const { pathb64, project, branchName, isReadOnly, gitEnabled } =
+    useEditorContext();
+  const { previewKey, refreshPreview } = usePreviewRefresh();
   const [selected, setSelected] = useState<string>("preview");
-  const queryClient = useQueryClient();
   const { setMessages } = useAgentThreadStore();
-  const { project, branchName, isReadOnly, gitEnabled } =
-    useCurrentProjectBranch();
+  const { invalidateAgentQueries } = useEditorQueryInvalidation();
 
   const { data: agent, isLoading } = useAgent(pathb64);
   const { runTest } = useTests();
+
+  const handleSaved = () => {
+    refreshPreview();
+    invalidateAgentQueries();
+  };
 
   const handleRunAllTests = () => {
     if (isLoading) return;
@@ -38,15 +42,8 @@ const AgentEditor = ({ pathb64 }: { pathb64: string }) => {
   return (
     <EditorPageWrapper
       pathb64={pathb64}
-      onSaved={() => {
-        setPreviewKey(randomKey());
-        queryClient.invalidateQueries({
-          queryKey: queryKeys.agent.list(project.id, branchName),
-        });
-      }}
-      readOnly={!!isReadOnly}
-      pageContentClassName="md:flex-row flex-col"
-      editorClassName="md:w-1/2 w-full h-1/2 md:h-full"
+      onSaved={handleSaved}
+      readOnly={isReadOnly}
       git={gitEnabled}
       preview={
         <div className="flex-1 overflow-hidden flex flex-col">
@@ -91,9 +88,9 @@ const AgentEditor = ({ pathb64 }: { pathb64: string }) => {
 
           <div className="flex-1 overflow-auto">
             {selected === "preview" ? (
-              <AgentPreview key={previewKey} agentPathb64={pathb64 ?? ""} />
+              <AgentPreview key={previewKey} agentPathb64={pathb64} />
             ) : (
-              <AgentTests key={previewKey} agentPathb64={pathb64 ?? ""} />
+              <AgentTests key={previewKey} agentPathb64={pathb64} />
             )}
           </div>
         </div>

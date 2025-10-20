@@ -1,37 +1,10 @@
 import { useMonaco, OnMount } from "@monaco-editor/react";
 import { useCallback, useEffect, useRef } from "react";
-import { monacoGitHubDarkDefaultTheme } from "@/components/FileEditor/hooks/github-dark-theme";
 import { FileState } from "@/components/FileEditor";
 import useSaveFile from "@/hooks/api/files/useSaveFile";
-import { configureMonacoYaml } from "monaco-yaml";
-import YamlWorker from "./yaml.worker.js?worker";
+import { configureMonaco, configureMonacoEnvironment } from "../monacoConfig";
 
-type WindowWithMonaco = Window & {
-  MonacoEnvironment?: {
-    getWorker?: (workerId?: string, label?: string) => Worker | Promise<Worker>;
-  };
-};
-
-(window as WindowWithMonaco).MonacoEnvironment = {
-  getWorker: function (
-    _workerId?: string,
-    label?: string,
-  ): Worker | Promise<Worker> {
-    switch (label) {
-      case "yaml":
-        return new YamlWorker();
-      case "editorWorkerService":
-      default:
-        return new Worker(
-          new URL(
-            "monaco-editor/esm/vs/editor/editor.worker.js",
-            import.meta.url,
-          ),
-          { type: "module" },
-        );
-    }
-  },
-};
+configureMonacoEnvironment();
 
 interface UseMonacoEditorProps {
   fileState: FileState;
@@ -47,27 +20,29 @@ const useMonacoEditor = ({
   onSaved,
 }: UseMonacoEditorProps) => {
   const { mutate: saveFile } = useSaveFile();
-
   const monaco = useMonaco();
-  const lastSavedVersionId = useRef<number | null>(null);
   const isConfigured = useRef<boolean>(false);
 
   const handleSaveFile = useCallback(
     (afterSave?: () => void) => {
       if (fileState === "saving") return;
       if (!monaco) return;
+
       const editor = monaco.editor;
       if (!editor) return;
+
       const model = editor.getModels()[0];
       if (!model) return;
+
       const data = model.getValue();
-      if (!data && data !== "") return;
+      if (data === null || data === undefined) return;
+
+      onFileStateChange("saving");
 
       saveFile(
-        { pathb64: pathb64 ?? "", data },
+        { pathb64, data },
         {
           onSuccess: () => {
-            lastSavedVersionId.current = model.getAlternativeVersionId();
             onFileStateChange("saved");
             onSaved?.();
             afterSave?.();
@@ -82,35 +57,7 @@ const useMonacoEditor = ({
   useEffect(() => {
     if (monaco && !isConfigured.current) {
       isConfigured.current = true;
-
-      monaco.editor.defineTheme("github-dark", monacoGitHubDarkDefaultTheme);
-      monaco.editor.setTheme("github-dark");
-
-      configureMonacoYaml(monaco, {
-        enableSchemaRequest: true,
-        hover: true,
-        completion: true,
-        validate: true,
-        format: true,
-        schemas: [
-          {
-            fileMatch: ["**/*.app.yml", "**/*.app.yaml"],
-            uri: "https://raw.githubusercontent.com/oxy-hq/oxy/refs/heads/main/json-schemas/app.json",
-          },
-          {
-            fileMatch: ["**/*.agent.yml", "**/*.agent.yaml"],
-            uri: "https://raw.githubusercontent.com/oxy-hq/oxy/refs/heads/main/json-schemas/agent.json",
-          },
-          {
-            fileMatch: ["**/*.workflow.yml", "**/*.workflow.yaml"],
-            uri: "https://raw.githubusercontent.com/oxy-hq/oxy/refs/heads/main/json-schemas/workflow.json",
-          },
-          {
-            fileMatch: ["**/config.yml", "**/config.yaml"],
-            uri: "https://raw.githubusercontent.com/oxy-hq/oxy/refs/heads/main/json-schemas/config.json",
-          },
-        ],
-      });
+      configureMonaco(monaco);
 
       monaco.editor.addEditorAction({
         id: "save-file",
@@ -121,14 +68,12 @@ const useMonacoEditor = ({
     }
   }, [monaco, handleSaveFile]);
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const handleEditorMount: OnMount = (_editor) => {
-    // Reset the last saved version on mount
-  };
+  const handleEditorMount: OnMount = useCallback(() => {
+    // Editor mounted successfully
+  }, []);
 
   return {
     monaco,
-    lastSavedVersionId,
     handleEditorMount,
     handleSaveFile,
   };

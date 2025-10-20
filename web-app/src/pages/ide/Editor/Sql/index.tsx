@@ -3,17 +3,18 @@ import useExecuteSql from "@/hooks/api/useExecuteSql";
 import HeaderActions from "./HeaderActions";
 import Results from "./Results";
 import EditorPageWrapper from "../components/EditorPageWrapper";
-import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import { useEditorContext } from "../contexts/useEditorContext";
 
-const SqlEditor = ({ pathb64 }: { pathb64: string }) => {
-  const { isReadOnly, gitEnabled } = useCurrentProjectBranch();
+const SqlEditor = () => {
+  const { pathb64, isReadOnly, gitEnabled } = useEditorContext();
   const [result, setResult] = useState<string[][]>([]);
   const [sql, setSql] = useState("");
   const { mutate: executeSql, isPending: loading } = useExecuteSql();
+
   const handleExecuteSql = (database: string) => {
     executeSql(
       {
-        pathb64: pathb64 ?? "",
+        pathb64,
         sql,
         database,
       },
@@ -27,10 +28,9 @@ const SqlEditor = ({ pathb64 }: { pathb64: string }) => {
     <EditorPageWrapper
       pathb64={pathb64}
       onFileValueChange={setSql}
-      pageContentClassName="flex-col"
-      editorClassName={"h-1/2 w-full"}
-      readOnly={!!isReadOnly}
+      readOnly={isReadOnly}
       git={gitEnabled}
+      defaultDirection="vertical"
       headerActions={
         <HeaderActions
           onExecuteSql={handleExecuteSql}

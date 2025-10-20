@@ -1,12 +1,13 @@
-import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import EditorPageWrapper from "../components/EditorPageWrapper";
+import { useEditorContext } from "../contexts/useEditorContext";
 
-const DefaultEditor = ({ pathb64 }: { pathb64: string }) => {
-  const { isReadOnly, gitEnabled } = useCurrentProjectBranch();
+const DefaultEditor = () => {
+  const { pathb64, isReadOnly, gitEnabled } = useEditorContext();
+
   return (
     <EditorPageWrapper
       pathb64={pathb64}
-      readOnly={!!isReadOnly}
+      readOnly={isReadOnly}
       git={gitEnabled}
     />
   );

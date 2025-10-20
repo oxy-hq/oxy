@@ -1,4 +1,4 @@
-import { JSX, useRef, useState, useEffect } from "react";
+import { JSX, useRef, useState, useEffect, useMemo, useCallback } from "react";
 import FileEditor, { FileEditorRef, FileState } from "@/components/FileEditor";
 import EditorHeader from "../EditorHeader";
 import { cn } from "@/libs/shadcn/utils";
@@ -8,7 +8,8 @@ import {
   ResizableHandle,
 } from "@/components/ui/shadcn/resizable";
 
-const MIN_PANE_MIN_PERCENT = 10;
+const MIN_PANE_SIZE_PERCENT = 10;
+const NARROW_VIEWPORT_BREAKPOINT = 800;
 
 export interface EditorPageWrapperProps {
   pathb64: string;
@@ -21,200 +22,126 @@ export interface EditorPageWrapperProps {
   readOnly?: boolean;
   onFileValueChange?: (value: string) => void;
   git?: boolean;
+  defaultDirection?: "horizontal" | "vertical";
 }
+
+// Custom hook for viewport detection
+const useViewportDetection = (
+  breakpoint: number = NARROW_VIEWPORT_BREAKPOINT,
+) => {
+  const [isNarrowViewport, setIsNarrowViewport] = useState(false);
+
+  useEffect(() => {
+    const handleResize = () => {
+      try {
+        setIsNarrowViewport(window.innerWidth < breakpoint);
+      } catch {
+        // Ignore errors (e.g., SSR)
+      }
+    };
+
+    handleResize();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, [breakpoint]);
+
+  return isNarrowViewport;
+};
 
 const EditorPageWrapper = ({
   pathb64,
   preview,
   headerActions,
-  editorClassName,
-  pageContentClassName,
   className,
   readOnly,
   git = false,
   onSaved,
   onFileValueChange,
+  defaultDirection = "horizontal",
 }: EditorPageWrapperProps) => {
   const filePath = atob(pathb64 ?? "");
   const [fileState, setFileState] = useState<FileState>("saved");
   const fileEditorRef = useRef<FileEditorRef>(null);
 
-  const onSave = () => {
-    if (fileEditorRef.current) {
-      fileEditorRef.current.save();
-    }
-  };
+  const isNarrowViewport = useViewportDetection();
+  const hasPreview = !!preview;
 
-  const onShowDiff = () => {
-    if (fileEditorRef.current) {
-      fileEditorRef.current.toggleDiffView();
-    }
-  };
+  const layoutDirection = useMemo(() => {
+    return isNarrowViewport ? "vertical" : defaultDirection;
+  }, [defaultDirection, isNarrowViewport]);
 
-  // Determine whether we should use split pane (when preview exists and file types match)
-  const isSql = filePath.endsWith(".sql");
-  const shouldSplit =
-    !!preview &&
-    (isSql ||
-      filePath.endsWith(".agent.yml") ||
-      filePath.endsWith(".workflow.yml") ||
-      filePath.endsWith(".app.yml"));
-  // detect narrow viewport width (switch preview orientation for agent/app files)
-  const [isNarrowViewport, setIsNarrowViewport] = useState(false);
-  useEffect(() => {
-    const onResize = () => {
-      try {
-        setIsNarrowViewport(window.innerWidth < 800);
-      } catch {
-        /* ignore */
-      }
-    };
-    onResize();
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
+  const handleSave = useCallback(() => {
+    fileEditorRef.current?.save();
   }, []);
 
-  const isAgentOrApp =
-    filePath.endsWith(".agent.yml") || filePath.endsWith(".app.yml");
-  let orient: "horizontal" | "vertical";
-  if (isSql) orient = "horizontal";
-  else if (isAgentOrApp && isNarrowViewport) orient = "vertical";
-  else orient = "horizontal";
-  const storageKey = `split:${filePath}:${orient}`;
-  let groupDirection: "horizontal" | "vertical";
-  if (isSql) groupDirection = "vertical";
-  else if (isAgentOrApp)
-    groupDirection = isNarrowViewport ? "vertical" : "horizontal";
-  else groupDirection = "horizontal";
-  const containerRef = useRef<HTMLDivElement | null>(null);
+  const handleShowDiff = useCallback(() => {
+    fileEditorRef.current?.toggleDiffView();
+  }, []);
 
-  // initialize percent from storage safely and keep a ref in sync so
-  // event handlers can access the latest value without re-registering.
-  const initialPercent = (() => {
-    try {
-      const v = storageKey ? localStorage.getItem(storageKey) : null;
-      return v ? Number(v) : 50;
-    } catch {
-      return 50;
-    }
-  })();
+  const storageKey = `ide:split:${filePath}`;
 
-  const [percent, setPercent] = useState<number>(initialPercent);
+  const fileEditorProps = {
+    ref: fileEditorRef,
+    fileState,
+    pathb64: pathb64 ?? "",
+    onFileStateChange: setFileState,
+    onSaved,
+    onValueChange: onFileValueChange,
+    readOnly,
+    git,
+  };
 
-  useEffect(() => {
-    if (!shouldSplit) return;
-    try {
-      const v = storageKey ? localStorage.getItem(storageKey) : null;
-      if (v) setPercent(Number(v));
-      else setPercent(50);
-    } catch {
-      /* ignore */
-    }
-  }, [storageKey, shouldSplit]);
+  const editorHeaderProps = {
+    filePath,
+    fileState,
+    actions: headerActions,
+    onSave: handleSave,
+    isReadonly: readOnly,
+    onShowDiff: handleShowDiff,
+    git,
+  };
 
-  // Small helpers to reduce duplication in the split rendering
-  function EditorPane({ isSql }: { isSql: boolean }) {
-    return (
+  const renderEditor = () => (
+    <div
+      className={cn(
+        "flex flex-col bg-editor-background overflow-hidden min-h-0",
+      )}
+      style={{ width: "100%", height: "100%" }}
+    >
+      <EditorHeader {...editorHeaderProps} />
+      <FileEditor {...fileEditorProps} />
+    </div>
+  );
+
+  const renderPreview = () =>
+    preview ? (
       <div
-        className={cn(
-          "flex flex-col bg-editor-background overflow-hidden min-h-0",
-          !isSql && "min-w-0",
-          editorClassName,
-        )}
-        style={{ width: "100%", height: "100%" }}
-      >
-        <EditorHeader
-          filePath={filePath}
-          fileState={fileState}
-          actions={headerActions}
-          onSave={onSave}
-          isReadonly={readOnly}
-          onShowDiff={onShowDiff}
-          git={git}
-        />
-        <FileEditor
-          ref={fileEditorRef}
-          fileState={fileState}
-          pathb64={pathb64 ?? ""}
-          onFileStateChange={setFileState}
-          onSaved={onSaved}
-          onValueChange={onFileValueChange}
-          readOnly={readOnly}
-          git={git}
-        />
-      </div>
-    );
-  }
-
-  function PreviewPane({ isSql }: { isSql: boolean }) {
-    return (
-      <div
-        className={cn(
-          "flex-1 flex flex-col overflow-hidden min-h-0",
-          !isSql && "min-w-0",
-        )}
+        className="flex-1 flex flex-col overflow-hidden min-h-0"
         style={{ width: "100%", height: "100%" }}
       >
         {preview}
       </div>
-    );
-  }
+    ) : null;
 
   return (
     <div className={cn("flex h-full flex-col", className)}>
-      <div
-        ref={containerRef}
-        className={cn("flex-1 flex overflow-hidden", pageContentClassName)}
-      >
-        {shouldSplit ? (
-          // Use project's Resizable wrapper which uses react-resizable-panels
+      <div className={cn("flex-1 flex overflow-hidden")}>
+        {hasPreview ? (
           <ResizablePanelGroup
-            direction={groupDirection}
+            autoSaveId={storageKey}
+            direction={layoutDirection}
             className="h-full flex-1 flex overflow-hidden"
           >
-            <ResizablePanel
-              minSize={MIN_PANE_MIN_PERCENT}
-              defaultSize={percent}
-            >
-              <EditorPane isSql={isSql} />
+            <ResizablePanel minSize={MIN_PANE_SIZE_PERCENT} defaultSize={50}>
+              {renderEditor()}
             </ResizablePanel>
 
             <ResizableHandle withHandle />
 
-            <ResizablePanel>
-              <PreviewPane isSql={isSql} />
-            </ResizablePanel>
+            <ResizablePanel>{renderPreview()}</ResizablePanel>
           </ResizablePanelGroup>
         ) : (
-          <>
-            <div
-              className={cn(
-                "flex-1 flex flex-col bg-editor-background",
-                editorClassName,
-              )}
-            >
-              <EditorHeader
-                filePath={filePath}
-                fileState={fileState}
-                actions={headerActions}
-                onSave={onSave}
-                isReadonly={readOnly}
-                onShowDiff={onShowDiff}
-                git={git}
-              />
-              <FileEditor
-                ref={fileEditorRef}
-                fileState={fileState}
-                pathb64={pathb64 ?? ""}
-                onFileStateChange={setFileState}
-                onSaved={onSaved}
-                onValueChange={onFileValueChange}
-                readOnly={readOnly}
-                git={git}
-              />
-            </div>
-            {preview}
-          </>
+          renderEditor()
         )}
       </div>
     </div>

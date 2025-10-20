@@ -1,24 +1,20 @@
-import { useState } from "react";
 import EditorPageWrapper from "../components/EditorPageWrapper";
-import { randomKey } from "@/libs/utils/string";
 import { WorkflowPreview } from "@/components/workflow/WorkflowPreview";
-import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import { useEditorContext } from "../contexts/useEditorContext";
+import { usePreviewRefresh } from "../usePreviewRefresh";
 
-const WorkflowEditor = ({ pathb64 }: { pathb64: string }) => {
-  const [previewKey, setPreviewKey] = useState<string>(randomKey());
-  const { isReadOnly, gitEnabled } = useCurrentProjectBranch();
+const WorkflowEditor = () => {
+  const { pathb64, isReadOnly, gitEnabled } = useEditorContext();
+  const { previewKey, refreshPreview } = usePreviewRefresh();
+
   return (
     <EditorPageWrapper
       pathb64={pathb64}
-      pageContentClassName="md:flex-row flex-col"
-      editorClassName="md:w-1/2 w-full h-1/2 md:h-full"
-      readOnly={!!isReadOnly}
-      onSaved={() => {
-        setPreviewKey(randomKey());
-      }}
+      readOnly={isReadOnly}
+      onSaved={refreshPreview}
       preview={
-        <div className="flex-1">
-          <WorkflowPreview key={previewKey} pathb64={pathb64 ?? ""} />
+        <div className="flex-1 overflow-hidden">
+          <WorkflowPreview key={previewKey} pathb64={pathb64} />
         </div>
       }
       git={gitEnabled}

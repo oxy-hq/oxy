@@ -86,7 +86,7 @@ const EditorHeader = ({
         <FileStatus fileState={fileState} />
       </div>
 
-      <div className="flex gap-2 items-center p-2">
+      <div className="flex gap-2 items-center p-2 min-h-[48px]">
         {fileState == "modified" && !isReadonly && (
           <Button
             variant="secondary"

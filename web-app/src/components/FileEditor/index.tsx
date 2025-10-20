@@ -1,12 +1,14 @@
 import Editor, { DiffEditor } from "@monaco-editor/react";
 import useFile from "@/hooks/api/files/useFile";
 import useFileGit from "@/hooks/api/files/useFileGit";
-import { forwardRef, useEffect, useImperativeHandle, useState } from "react";
+import { forwardRef, useImperativeHandle, useState, useMemo } from "react";
 import { Loader2 } from "lucide-react";
 import UnsavedChangesDialog from "./UnsavedChangesDialog";
 import { useNavigationBlock } from "./hooks/useNavigationBlock";
 import { getLanguageFromFileName } from "./constants";
 import useMonacoEditor from "./hooks/useMonacoEditor";
+import { decodeFilePath } from "@/utils/fileTypes";
+import { useFileContentManager } from "./hooks/useFileContentManager";
 
 export type FileState = "saved" | "modified" | "saving";
 
@@ -38,20 +40,17 @@ const FileEditor = forwardRef<FileEditorRef, Props>(
     },
     ref,
   ) => {
-    const fileName = atob(pathb64);
+    const fileName = decodeFilePath(pathb64);
     const { data: fileContent, isPending } = useFile(pathb64);
     const { data: originalContent } = useFileGit(pathb64, git);
     const [showDiff, setShowDiff] = useState(false);
 
-    const [currentFileContent, setCurrentFileContent] = useState(fileContent);
-
-    useEffect(() => {
-      onValueChange?.(fileContent || "");
-    }, [fileContent, onValueChange]);
-
-    useEffect(() => {
-      setCurrentFileContent(fileContent);
-    }, [fileContent]);
+    const { content, handleContentChange } = useFileContentManager({
+      initialContent: fileContent || "",
+      onValueChange,
+      onFileStateChange,
+      readOnly,
+    });
 
     const { handleEditorMount, handleSaveFile } = useMonacoEditor({
       onFileStateChange,
@@ -63,10 +62,19 @@ const FileEditor = forwardRef<FileEditorRef, Props>(
     const { unsavedChangesDialogOpen, setUnsavedChangesDialogOpen, blocker } =
       useNavigationBlock(fileState);
 
-    useImperativeHandle(ref, () => ({
-      save: () => handleSaveFile(),
-      toggleDiffView: () => setShowDiff(!showDiff),
-    }));
+    const language = useMemo(
+      () => getLanguageFromFileName(fileName),
+      [fileName],
+    );
+
+    useImperativeHandle(
+      ref,
+      () => ({
+        save: () => handleSaveFile(),
+        toggleDiffView: () => setShowDiff(!showDiff),
+      }),
+      [handleSaveFile, showDiff],
+    );
 
     const handleSaveAndNavigate = () => {
       handleSaveFile(() => blocker.proceed?.());
@@ -80,7 +88,7 @@ const FileEditor = forwardRef<FileEditorRef, Props>(
       );
     }
 
-    if (!fileContent && fileContent != "") {
+    if (fileContent === null || fileContent === undefined) {
       return null;
     }
 
@@ -99,8 +107,8 @@ const FileEditor = forwardRef<FileEditorRef, Props>(
                 height={originalContent ? "calc(100% - 50px)" : "100%"}
                 width="100%"
                 original={originalContent}
-                modified={currentFileContent ?? ""}
-                language={getLanguageFromFileName(fileName)}
+                modified={content}
+                language={language}
                 loading={
                   <Loader2 className="w-4 h-4 animate-[spin_0.2s_linear_infinite] text-[white]" />
                 }
@@ -121,8 +129,8 @@ const FileEditor = forwardRef<FileEditorRef, Props>(
                 height={originalContent ? "calc(100% - 50px)" : "100%"}
                 width="100%"
                 defaultValue={fileContent ?? ""}
-                language={getLanguageFromFileName(fileName)}
-                value={currentFileContent}
+                language={language}
+                value={content}
                 loading={
                   <Loader2 className="w-4 h-4 animate-[spin_0.2s_linear_infinite] text-[white]" />
                 }
@@ -134,12 +142,7 @@ const FileEditor = forwardRef<FileEditorRef, Props>(
                   automaticLayout: true,
                   readOnly: readOnly,
                 }}
-                onChange={(value) => {
-                  if (readOnly) return;
-                  onValueChange?.(value || "");
-                  onFileStateChange("modified");
-                  setCurrentFileContent(value);
-                }}
+                onChange={(value) => handleContentChange(value || "")}
                 onMount={handleEditorMount}
               />
             )}
