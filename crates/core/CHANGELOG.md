@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.3.7](https://github.com/oxy-hq/oxy-internal/compare/0.3.6...0.3.7) (2025-10-21)
+
+
+### <!-- 0 -->🚀 Features
+
+* support now function to get current time ([#1283](https://github.com/oxy-hq/oxy-internal/issues/1283)) ([adfc765](https://github.com/oxy-hq/oxy-internal/commit/adfc765ae00a0f63f1bf0e821c4725416527a16a))
+* support reading address and other connection info from env ([#1269](https://github.com/oxy-hq/oxy-internal/issues/1269)) ([0e1fce3](https://github.com/oxy-hq/oxy-internal/commit/0e1fce3f6f562ee2c496da448cec8fffb86fb7e3))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* agent stop on invalid topic, dimensions required in workflow task. ([#1268](https://github.com/oxy-hq/oxy-internal/issues/1268)) ([51dbfff](https://github.com/oxy-hq/oxy-internal/commit/51dbfffc8f76d520978ef5d2ad83bf103c7a2790))
+* cube dir isolation and clean up before rebuild ([#1264](https://github.com/oxy-hq/oxy-internal/issues/1264)) ([f75b40f](https://github.com/oxy-hq/oxy-internal/commit/f75b40f3adaf91d7996b4830b69e64dcba8b6bfa))
+* parsing for cube / semantic sql queries ([#1270](https://github.com/oxy-hq/oxy-internal/issues/1270)) ([13173a2](https://github.com/oxy-hq/oxy-internal/commit/13173a2eec12c5e9510a31e02a552a6c92978623))
+* remove unused keys to prevent parse error ([#1285](https://github.com/oxy-hq/oxy-internal/issues/1285)) ([5b85d2f](https://github.com/oxy-hq/oxy-internal/commit/5b85d2f4c9f32901306a36f46f8e4e18b42fffcb))
+
 ## [0.3.6](https://github.com/oxy-hq/oxy-internal/compare/0.3.5...0.3.6) (2025-10-16)
 
 

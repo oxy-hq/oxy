@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.4](https://github.com/oxy-hq/oxy-internal/compare/0.3.3...0.3.4) (2025-10-21)
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* closes [#1113](https://github.com/oxy-hq/oxy-internal/issues/1113) ide issues ([#1256](https://github.com/oxy-hq/oxy-internal/issues/1256)) ([d701ab8](https://github.com/oxy-hq/oxy-internal/commit/d701ab8a47577ef7655a432283cc0a40d7902ddd))
+
 ## [0.3.3](https://github.com/oxy-hq/oxy-internal/compare/0.3.2...0.3.3) (2025-10-10)
 
 
