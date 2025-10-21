@@ -3,11 +3,69 @@ use std::{
     sync::{Arc, RwLock},
 };
 
+use chrono::{DateTime, Local, Utc};
 use futures::TryFutureExt;
 use minijinja::{Environment, Value, context, value::Enumerator};
 use tokio::task::spawn_blocking;
 
 use crate::errors::OxyError;
+
+/// Helper function to add the now() global function to a minijinja Environment.
+///
+/// The `now()` function is available in all Jinja2 templates (including agent system instructions)
+/// and returns the current datetime, optionally formatted via strftime.
+///
+/// # Usage in Templates
+///
+/// ```jinja2
+/// {{ now() }}                           # Returns current local datetime in RFC3339 format
+/// {{ now(utc=true) }}                   # Returns current UTC datetime in RFC3339 format
+/// {{ now(fmt='%Y-%m-%d') }}            # Returns current date as "2024-10-21"
+/// {{ now(utc=true, fmt='%Y-%m-%d %H:%M:%S') }}  # Returns UTC datetime as "2024-10-21 15:30:45"
+/// ```
+///
+/// # Parameters
+///
+/// - `utc` (optional, default: false): If true, returns UTC time; otherwise returns local time
+/// - `fmt` (optional): A strftime format string for custom datetime formatting
+///
+/// # Common Format Strings
+///
+/// - `%Y-%m-%d` - Date (e.g., "2024-10-21")
+/// - `%Y-%m-%d %H:%M:%S` - Datetime (e.g., "2024-10-21 15:30:45")
+/// - `%A, %B %d, %Y` - Full date (e.g., "Monday, October 21, 2024")
+/// - `%I:%M %p` - 12-hour time (e.g., "03:30 PM")
+///
+fn add_now_function(env: &mut Environment<'static>) {
+    env.add_function(
+        "now",
+        |kwargs: minijinja::value::Kwargs| -> Result<String, minijinja::Error> {
+            let utc = kwargs.get::<Option<bool>>("utc")?.unwrap_or(false);
+            let fmt = kwargs.get::<Option<String>>("fmt")?;
+
+            let datetime_str = if utc {
+                let now: DateTime<Utc> = Utc::now();
+                if let Some(format) = fmt {
+                    now.format(&format).to_string()
+                } else {
+                    now.to_rfc3339()
+                }
+            } else {
+                let now: DateTime<Local> = Local::now();
+                if let Some(format) = fmt {
+                    now.format(&format).to_string()
+                } else {
+                    now.to_rfc3339()
+                }
+            };
+            Ok(datetime_str)
+        },
+    );
+}
+
+fn add_global_functions(env: &mut Environment<'static>) {
+    add_now_function(env);
+}
 
 pub trait TemplateRegister: Sync + Send {
     fn register_template(&self, renderer: &Renderer) -> Result<(), OxyError>;
@@ -36,7 +94,8 @@ pub struct Renderer {
 
 impl Renderer {
     pub fn new(global_context: Value) -> Self {
-        let env = Environment::new();
+        let mut env = setup_jinja_environment();
+
         Renderer {
             env: Arc::new(RwLock::new(env)),
             global_context: Arc::new(global_context),
@@ -65,8 +124,10 @@ impl Renderer {
     }
 
     pub fn switch_context(&self, global_context: Value, context: Value) -> Renderer {
+        let env = setup_jinja_environment();
+
         Renderer {
-            env: Arc::new(RwLock::new(Environment::new())),
+            env: Arc::new(RwLock::new(env)),
             global_context: Arc::new(global_context),
             current_context: context,
         }
@@ -231,5 +292,58 @@ impl<'register> ChildRegister<'register> {
     pub fn entry<T: TemplateRegister>(&self, value: &T) -> Result<&Self, OxyError> {
         value.register_template(self.renderer)?;
         Ok(self)
+    }
+}
+
+pub fn setup_jinja_environment() -> Environment<'static> {
+    let mut env = Environment::new();
+    add_global_functions(&mut env);
+    env
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use minijinja::context;
+
+    #[test]
+    fn test_now_function_default() {
+        let renderer = Renderer::new(context! {});
+        let template = "{{ now() }}";
+        renderer.register_template(template).unwrap();
+        let result = renderer.render(template).unwrap();
+        // Should return a non-empty datetime string
+        assert!(!result.is_empty());
+    }
+
+    #[test]
+    fn test_now_function_with_utc() {
+        let renderer = Renderer::new(context! {});
+        let template = "{{ now(utc=true) }}";
+        renderer.register_template(template).unwrap();
+        let result = renderer.render(template).unwrap();
+        // Should return a non-empty UTC datetime string
+        assert!(!result.is_empty());
+    }
+
+    #[test]
+    fn test_now_function_with_format() {
+        let renderer = Renderer::new(context! {});
+        let template = "{{ now(fmt='%Y-%m-%d') }}";
+        renderer.register_template(template).unwrap();
+        let result = renderer.render(template).unwrap();
+        // Should return a date in YYYY-MM-DD format
+        assert_eq!(result.len(), 10, "Expected YYYY-MM-DD format"); // YYYY-MM-DD is 10 characters
+        assert!(result.contains('-'));
+    }
+
+    #[test]
+    fn test_now_function_with_utc_and_format() {
+        let renderer = Renderer::new(context! {});
+        let template = "{{ now(utc=true, fmt='%Y-%m-%d %H:%M:%S') }}";
+        renderer.register_template(template).unwrap();
+        let result = renderer.render(template).unwrap();
+        // Should return a datetime in YYYY-MM-DD HH:MM:SS format
+        assert_eq!(result.len(), 19, "Expected YYYY-MM-DD HH:MM:SS format"); // "YYYY-MM-DD HH:MM:SS" is 19 characters
     }
 }
