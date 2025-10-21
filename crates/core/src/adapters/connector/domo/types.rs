@@ -1,4 +1,4 @@
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, Debug)]
 pub struct ExecuteQueryRequest {
     pub sql: String,
 }
@@ -7,22 +7,14 @@ pub struct ExecuteQueryRequest {
 #[serde(rename_all = "camelCase")]
 pub struct ColumnMetadata {
     pub r#type: String,
-    pub data_source_id: String,
-    pub max_length: Option<i64>,
-    pub min_length: Option<i64>,
-    pub period_index: Option<i64>,
 }
 
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExecuteQueryResponse {
-    pub datasource: String,
     pub metadata: Vec<ColumnMetadata>,
     pub columns: Vec<String>,
     pub rows: Vec<Vec<serde_json::Value>>,
-    pub num_rows: u64,
-    pub num_columns: u64,
-    pub fromcache: bool,
 }
 
 #[derive(serde::Deserialize)]
