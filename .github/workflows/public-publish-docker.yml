@@ -210,6 +210,9 @@ jobs:
             docker pull ghcr.io/${{ github.repository_owner }}/oxy-semantic-engine:$TAG
             \`\`\`
 
+          EOF
+          fi
+
           cat >> $GITHUB_STEP_SUMMARY << 'EOF'
 
           ---
