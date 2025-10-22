@@ -22,7 +22,7 @@ impl<'a> DOMODataset<'a> {
         }
     }
 
-    async fn info(&self, dataset_id: &str) -> Result<DatasetInfo, OxyError> {
+    pub async fn info(&self, dataset_id: &str) -> Result<DatasetInfo, OxyError> {
         let info_url = format!("/data/v3/datasources/{dataset_id}");
         let response =
             self.domo.get(&info_url).send().await.map_err(|err| {

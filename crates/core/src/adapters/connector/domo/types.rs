@@ -37,7 +37,7 @@ pub struct DatasetSchema {
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DatasetDetails {
-    pub name: String,
+    pub name: Option<String>,
     #[serde(skip)]
     pub description: String,
     pub tables: Vec<DatasetSchema>,

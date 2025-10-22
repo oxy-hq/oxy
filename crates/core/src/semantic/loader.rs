@@ -501,16 +501,17 @@ impl SchemaLoader {
                 let domo_client =
                     DOMO::from_config(self.secrets_manager.clone(), domo.clone()).await?;
                 let domo_dataset = domo_client.dataset();
+                let dataset = domo_dataset.info(&domo.dataset_id).await?;
                 let dataset_info = domo_dataset.details(&domo.dataset_id).await?;
-                let file_stem = slugify!(&dataset_info.name, separator = "_", max_length = 60);
+                let file_stem = slugify!(&dataset.name, separator = "_", max_length = 60);
                 Ok(HashMap::from_iter([(
                     "domo".to_string(),
                     HashMap::from_iter([(
                         file_stem,
                         SemanticModels {
                             database: self.database.name.clone(),
-                            table: dataset_info.name,
-                            description: dataset_info.description,
+                            table: dataset.name,
+                            description: dataset.description,
                             dimensions: dataset_info
                                 .tables
                                 .into_iter()
