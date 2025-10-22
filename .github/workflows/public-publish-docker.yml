@@ -32,7 +32,7 @@ jobs:
   build-and-publish:
     if: github.repository == 'oxy-hq/oxy'
     concurrency:
-      group: docker-publish-${{ github.ref_name }}-${{ matrix.target }}-${{ matrix.arch }}
+      group: docker-publish-${{ github.ref_name }}-${{ matrix.target.name }}-${{ matrix.arch }}
       cancel-in-progress: true
     strategy:
       fail-fast: true
