@@ -139,16 +139,26 @@ jobs:
             `bash <(curl --proto '=https' --tlsv1.2 -LsSf https://nightly.oxy.tech)`
 
   build-and-publish-docker:
+    name: Build ${{ matrix.target.name }} nightly Docker image for ${{ matrix.arch }}
     if: github.repository == 'oxy-hq/oxy'
     needs: [build-nightly]
     concurrency:
-      group: docker-publish-nightly-${{ matrix.arch }}
+      group: docker-publish-nightly-${{ matrix.target.name }}-${{ matrix.arch }}
       cancel-in-progress: true
     runs-on: ${{ matrix.arch == 'linux/amd64' && 'ubuntu-latest' || 'ubuntu-24.04-arm' }}
     strategy:
       fail-fast: true
       matrix:
         arch: [linux/amd64, linux/arm64]
+        target:
+          - name: runtime
+            image: oxy
+            dockerfile: Dockerfile
+            target: runtime
+          - name: semantic-engine
+            image: oxy-semantic-engine
+            dockerfile: Dockerfile
+            target: semantic-engine
     permissions:
       packages: write
       contents: read
@@ -188,35 +198,48 @@ jobs:
         id: short_sha
         run: echo "short_sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
 
-      - name: Build and push ${{ matrix.arch }} image
+      - name: Build and push ${{ matrix.target.name }} ${{ matrix.arch }} image
         run: |
           DATE_TAG=${{ steps.date.outputs.current_date }}
           SHA_TAG=${{ steps.short_sha.outputs.short_sha }}
           ARCH_TAG=$(echo "${{ matrix.arch }}" | awk -F'/' '{print $2}')
+          TARGET_NAME="${{ matrix.target.name }}"
+          IMAGE_NAME="${{ matrix.target.image }}"
+          DOCKERFILE="${{ matrix.target.dockerfile }}"
+          TARGET_STAGE="${{ matrix.target.target }}"
 
-          # Use Dockerfile.simple for faster builds with nightly upstream
-          docker build -f Dockerfile.simple \
-            --build-arg UPSTREAM=nightly.oxy.tech \
-            --platform ${{ matrix.arch }} \
-            -t ghcr.io/${{ github.repository_owner }}/oxy:nightly-$DATE_TAG-$ARCH_TAG .
-          docker push ghcr.io/${{ github.repository_owner }}/oxy:nightly-$DATE_TAG-$ARCH_TAG
+          echo "Building $TARGET_NAME nightly for ${{ matrix.arch }}..."
 
-          docker build -f Dockerfile.simple \
-            --build-arg UPSTREAM=nightly.oxy.tech \
+          docker build -f $DOCKERFILE \
+            --target $TARGET_STAGE \
             --platform ${{ matrix.arch }} \
-            -t ghcr.io/${{ github.repository_owner }}/oxy:nightly-$SHA_TAG-$ARCH_TAG .
-          docker push ghcr.io/${{ github.repository_owner }}/oxy:nightly-$SHA_TAG-$ARCH_TAG
+            -t ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:nightly-$DATE_TAG-$ARCH_TAG .
+          docker push ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:nightly-$DATE_TAG-$ARCH_TAG
 
-          docker build -f Dockerfile.simple \
-            --build-arg UPSTREAM=nightly.oxy.tech \
+          docker build -f $DOCKERFILE \
+            --target $TARGET_STAGE \
             --platform ${{ matrix.arch }} \
-            -t ghcr.io/${{ github.repository_owner }}/oxy:nightly-latest-$ARCH_TAG .
-          docker push ghcr.io/${{ github.repository_owner }}/oxy:nightly-latest-$ARCH_TAG
+            -t ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:nightly-$SHA_TAG-$ARCH_TAG .
+          docker push ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:nightly-$SHA_TAG-$ARCH_TAG
+
+          docker build -f $DOCKERFILE \
+            --target $TARGET_STAGE \
+            --platform ${{ matrix.arch }} \
+            -t ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:nightly-latest-$ARCH_TAG .
+          docker push ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:nightly-latest-$ARCH_TAG
 
   create-and-push-nightly-manifest:
+    name: Create ${{ matrix.target.name }} nightly manifest
     if: github.repository == 'oxy-hq/oxy'
     needs: build-and-publish-docker
     runs-on: ubuntu-24.04-arm
+    strategy:
+      matrix:
+        target:
+          - name: runtime
+            image: oxy
+          - name: semantic-engine
+            image: oxy-semantic-engine
     steps:
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
@@ -224,16 +247,28 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Get current date
         id: date
         run: echo "current_date=$(date -u +'%Y%m%d')" >> $GITHUB_OUTPUT
-      - name: Create and push multi-arch manifest
+
+      - name: Create and push multi-arch manifests for ${{ matrix.target.name }}
         run: |
-          docker manifest create ghcr.io/${{ github.repository_owner }}/oxy:nightly-${{ steps.date.outputs.current_date }} \
-            ghcr.io/${{ github.repository_owner }}/oxy:nightly-${{ steps.date.outputs.current_date }}-amd64 \
-            ghcr.io/${{ github.repository_owner }}/oxy:nightly-${{ steps.date.outputs.current_date }}-arm64
-          docker manifest push ghcr.io/${{ github.repository_owner }}/oxy:nightly-${{ steps.date.outputs.current_date }}
-          docker manifest create ghcr.io/${{ github.repository_owner }}/oxy:nightly-latest \
-            ghcr.io/${{ github.repository_owner }}/oxy:nightly-latest-amd64 \
-            ghcr.io/${{ github.repository_owner }}/oxy:nightly-latest-arm64
-          docker manifest push ghcr.io/${{ github.repository_owner }}/oxy:nightly-latest
+          DATE_TAG=${{ steps.date.outputs.current_date }}
+          IMAGE_NAME="${{ matrix.target.image }}"
+
+          echo "Creating nightly manifests for $IMAGE_NAME..."
+
+          # Create and push date-tagged manifest
+          docker manifest create ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:nightly-$DATE_TAG \
+            ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:nightly-$DATE_TAG-amd64 \
+            ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:nightly-$DATE_TAG-arm64
+          docker manifest push ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:nightly-$DATE_TAG
+
+          # Create and push latest manifest
+          docker manifest create ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:nightly-latest \
+            ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:nightly-latest-amd64 \
+            ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:nightly-latest-arm64
+          docker manifest push ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:nightly-latest
+
+          echo "✅ Published nightly manifests for $IMAGE_NAME"

@@ -20,6 +20,7 @@ target/
 
 # Ignore Docker-related files
 Dockerfile
+Dockerfile.*
 .dockerignore
 
 # Ignore temporary files
@@ -31,9 +32,8 @@ Dockerfile
 .DS_Store
 Thumbs.db
 
-# dockerfiles
-docker-compose.yml
-
+docker-compose*.yml
+Dockerfile
 
 # examples, because we will mount them later
 examples/

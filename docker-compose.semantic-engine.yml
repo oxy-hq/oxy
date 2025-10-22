@@ -1,0 +1,65 @@
+# This docker-compose setup runs Oxy from the examples/ folder
+# - The examples/ folder contains sample semantic layer definitions, config.yml, and workflows
+# - Both services mount examples/ as their working directory
+# - The semantic engine automatically generates Cube.js config from examples/semantics/
+# - Copy examples/.env.example to examples/.env and configure your database credentials
+
+services:
+  oxy:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    ports:
+      - "3000:3000"
+    volumes:
+      - oxy-data:/var/lib/oxy/data
+      # Mount the examples folder as the working directory
+      - ./examples:/app:rw
+    env_file:
+      - .env
+    environment:
+      - OXY_STATE_DIR=/var/lib/oxy/data
+      - OXY_DATABASE_URL=postgresql://admin:password@postgres:5432/default
+      - CUBEJS_API_URL=http://semantic-engine:4000
+    working_dir: /app
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  semantic-engine:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: semantic-engine
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./examples:/app:rw
+    working_dir: /app
+
+
+  # Example database (replace with your actual database)
+  postgres:
+    image: postgres
+    container_name: postgres
+    hostname: postgres
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: default
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "admin", "-d", "default"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 2s
+    restart: unless-stopped
+
+volumes:
+  oxy-data:
+  postgres-data:

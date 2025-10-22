@@ -1,4 +1,4 @@
-name: Publish Docker Image
+name: Publish Docker Images
 
 on:
   workflow_dispatch:
@@ -7,6 +7,15 @@ on:
         description: "Tag or branch to release"
         required: true
         default: ""
+      build_targets:
+        description: "Build targets (runtime, semantic-engine, or both)"
+        required: false
+        default: "both"
+        type: choice
+        options:
+          - both
+          - runtime
+          - semantic-engine
   push:
     tags:
       - "[0-9]+.[0-9]+.[0-9]+"
@@ -23,12 +32,17 @@ jobs:
   build-and-publish:
     if: github.repository == 'oxy-hq/oxy'
     concurrency:
-      group: docker-publish-${{ github.ref_name }}-${{ matrix.arch }}
+      group: docker-publish-${{ github.ref_name }}-${{ matrix.target }}-${{ matrix.arch }}
       cancel-in-progress: true
     strategy:
       fail-fast: true
       matrix:
         arch: [linux/amd64, linux/arm64]
+        target:
+          - name: runtime
+            image: oxy
+          - name: semantic-engine
+            image: oxy-semantic-engine
     runs-on: ${{ matrix.arch == 'linux/amd64' && 'ubuntu-latest' || 'ubuntu-24.04-arm' }}
     steps:
       - name: Checkout code
@@ -50,31 +64,156 @@ jobs:
           TAG_NAME="${{ inputs.tag || github.ref_name }}"
           echo "tag=$TAG_NAME" >> $GITHUB_OUTPUT
 
-      - name: Build and push ${{ matrix.arch }} image
+      - name: Check if should build ${{ matrix.target.name }}
+        id: should_build
+        run: |
+          BUILD_TARGETS="${{ inputs.build_targets || 'both' }}"
+          TARGET="${{ matrix.target.name }}"
+
+          if [ "$BUILD_TARGETS" = "both" ] || [ "$BUILD_TARGETS" = "$TARGET" ]; then
+            echo "should_build=true" >> $GITHUB_OUTPUT
+            echo "✅ Building $TARGET"
+          else
+            echo "should_build=false" >> $GITHUB_OUTPUT
+            echo "⏭️  Skipping $TARGET"
+          fi
+
+      - name: Build and push ${{ matrix.arch }} image for ${{ matrix.target.name }}
+        if: steps.should_build.outputs.should_build == 'true'
         run: |
           ARCH_TAG=$(echo "${{ matrix.arch }}" | awk -F'/' '{print $2}')
-          docker build -t ghcr.io/${{ github.repository_owner }}/oxy:${{ steps.docker_tag.outputs.tag }}-$ARCH_TAG .
-          docker push ghcr.io/${{ github.repository_owner }}/oxy:${{ steps.docker_tag.outputs.tag }}-$ARCH_TAG
+          TARGET_NAME="${{ matrix.target.name }}"
+          IMAGE_NAME="${{ matrix.target.image }}"
+
+          echo "Building $TARGET_NAME for ${{ matrix.arch }}..."
+
+          # Build with appropriate target flag
+          if [ "$TARGET_NAME" = "runtime" ]; then
+            docker build --target runtime \
+              -t ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:${{ steps.docker_tag.outputs.tag }}-$ARCH_TAG \
+              .
+          else
+            docker build --target semantic-engine \
+              -t ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:${{ steps.docker_tag.outputs.tag }}-$ARCH_TAG \
+              .
+          fi
+
+          echo "Pushing ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:${{ steps.docker_tag.outputs.tag }}-$ARCH_TAG"
+          docker push ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:${{ steps.docker_tag.outputs.tag }}-$ARCH_TAG
 
   create-and-push-manifest:
     if: github.repository == 'oxy-hq/oxy'
     needs: build-and-publish
     runs-on: ubuntu-24.04-arm
+    strategy:
+      matrix:
+        target:
+          - name: runtime
+            image: oxy
+          - name: semantic-engine
+            image: oxy-semantic-engine
     steps:
+      - name: Check if should publish ${{ matrix.target.name }}
+        id: should_publish
+        run: |
+          BUILD_TARGETS="${{ inputs.build_targets || 'both' }}"
+          TARGET="${{ matrix.target.name }}"
+
+          if [ "$BUILD_TARGETS" = "both" ] || [ "$BUILD_TARGETS" = "$TARGET" ]; then
+            echo "should_publish=true" >> $GITHUB_OUTPUT
+            echo "✅ Publishing manifest for $TARGET"
+          else
+            echo "should_publish=false" >> $GITHUB_OUTPUT
+            echo "⏭️  Skipping manifest for $TARGET"
+          fi
+
       - name: Log in to GitHub Container Registry
+        if: steps.should_publish.outputs.should_publish == 'true'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set Docker tag
+        if: steps.should_publish.outputs.should_publish == 'true'
+        id: docker_tag
+        run: |
+          TAG_NAME="${{ inputs.tag || github.ref_name }}"
+          echo "tag=$TAG_NAME" >> $GITHUB_OUTPUT
+
+      - name: Create and push multi-arch manifest for ${{ matrix.target.name }}
+        if: steps.should_publish.outputs.should_publish == 'true'
+        run: |
+          IMAGE_NAME="${{ matrix.target.image }}"
+          TAG="${{ steps.docker_tag.outputs.tag }}"
+
+          echo "Creating manifest for ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:$TAG"
+
+          docker manifest create ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:$TAG \
+            ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:$TAG-amd64 \
+            ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:$TAG-arm64
+
+          docker manifest push ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:$TAG
+
+          echo "✅ Published ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:$TAG"
+
+  create-deployment-summary:
+    if: github.repository == 'oxy-hq/oxy'
+    needs: create-and-push-manifest
+    runs-on: ubuntu-latest
+    steps:
       - name: Set Docker tag
         id: docker_tag
         run: |
           TAG_NAME="${{ inputs.tag || github.ref_name }}"
           echo "tag=$TAG_NAME" >> $GITHUB_OUTPUT
-      - name: Create and push multi-arch manifest
+
+      - name: Determine which images were built
+        id: images
         run: |
-          docker manifest create ghcr.io/${{ github.repository_owner }}/oxy:${{ steps.docker_tag.outputs.tag }} \
-            ghcr.io/${{ github.repository_owner }}/oxy:${{ steps.docker_tag.outputs.tag }}-amd64 \
-            ghcr.io/${{ github.repository_owner }}/oxy:${{ steps.docker_tag.outputs.tag }}-arm64
-          docker manifest push ghcr.io/${{ github.repository_owner }}/oxy:${{ steps.docker_tag.outputs.tag }}
+          BUILD_TARGETS="${{ inputs.build_targets || 'both' }}"
+          echo "targets=$BUILD_TARGETS" >> $GITHUB_OUTPUT
+
+      - name: Create deployment summary
+        run: |
+          BUILD_TARGETS="${{ steps.images.outputs.targets }}"
+          TAG="${{ steps.docker_tag.outputs.tag }}"
+
+          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+          # 🚀 Docker Images Published
+
+          ## Published Images
+
+          EOF
+
+          if [ "$BUILD_TARGETS" = "both" ] || [ "$BUILD_TARGETS" = "runtime" ]; then
+            cat >> $GITHUB_STEP_SUMMARY << EOF
+          ### Oxy Runtime
+          - **Image:** \`ghcr.io/${{ github.repository_owner }}/oxy:$TAG\`
+          - **Architectures:** linux/amd64, linux/arm64
+          - **Pull:**
+            \`\`\`bash
+            docker pull ghcr.io/${{ github.repository_owner }}/oxy:$TAG
+            \`\`\`
+
+          EOF
+          fi
+
+          if [ "$BUILD_TARGETS" = "both" ] || [ "$BUILD_TARGETS" = "semantic-engine" ]; then
+            cat >> $GITHUB_STEP_SUMMARY << EOF
+          ### Oxy Semantic Engine
+          - **Image:** \`ghcr.io/${{ github.repository_owner }}/oxy-semantic-engine:$TAG\`
+          - **Architectures:** linux/amd64, linux/arm64
+          - **Pull:**
+            \`\`\`bash
+            docker pull ghcr.io/${{ github.repository_owner }}/oxy-semantic-engine:$TAG
+            \`\`\`
+
+          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+
+          ---
+          **Built from:** `${{ github.sha }}`
+          **Tag/Branch:** `${{ github.ref_name }}`
+          **Workflow:** [${{ github.run_id }}](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
+          EOF

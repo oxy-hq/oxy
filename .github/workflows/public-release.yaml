@@ -187,16 +187,26 @@ jobs:
           files: artifacts/**/*
 
   build-and-publish-simple:
-    name: Build simple Docker image for ${{ matrix.arch }}
+    name: Build ${{ matrix.target.name }} Docker image for ${{ matrix.arch }}
     if: github.repository == 'oxy-hq/oxy'
     needs: [release]
     runs-on: ${{ matrix.os }}
     concurrency:
-      group: docker-publish-simple-release-${{ inputs.tag || github.ref_name }}-${{ matrix.arch }}
+      group: docker-publish-release-${{ inputs.tag || github.ref_name }}-${{ matrix.target.name }}-${{ matrix.arch }}
       cancel-in-progress: true
     strategy:
       fail-fast: true
       matrix:
+        arch: [linux/amd64, linux/arm64]
+        target:
+          - name: runtime
+            image: oxy
+            dockerfile: Dockerfile
+            target: runtime
+          - name: semantic-engine
+            image: oxy-semantic-engine
+            dockerfile: Dockerfile
+            target: semantic-engine
         include:
           - arch: linux/amd64
             os: ubuntu-latest
@@ -222,20 +232,35 @@ jobs:
           TAG_NAME="${{ inputs.tag || github.ref_name }}"
           echo "tag=$TAG_NAME" >> $GITHUB_OUTPUT
 
-      - name: Build and push simple ${{ matrix.arch }} image
+      - name: Build and push ${{ matrix.target.name }} ${{ matrix.arch }} image
         run: |
           ARCH_TAG=$(echo "${{ matrix.arch }}" | awk -F'/' '{print $2}')
-          docker build -f Dockerfile.simple \
-            --build-arg VERSION=${{ steps.docker_tag.outputs.tag }} \
-            --build-arg UPSTREAM="get.oxy.tech" \
-            -t ghcr.io/${{ github.repository_owner }}/oxy:${{ steps.docker_tag.outputs.tag }}-simple-$ARCH_TAG .
-          docker push ghcr.io/${{ github.repository_owner }}/oxy:${{ steps.docker_tag.outputs.tag }}-simple-$ARCH_TAG
+          TAG_NAME="${{ steps.docker_tag.outputs.tag }}"
+          TARGET_NAME="${{ matrix.target.name }}"
+          IMAGE_NAME="${{ matrix.target.image }}"
+          DOCKERFILE="${{ matrix.target.dockerfile }}"
+          TARGET_STAGE="${{ matrix.target.target }}"
+
+          echo "Building $TARGET_NAME for ${{ matrix.arch }}..."
+
+          # Build with target stage
+          docker build -f $DOCKERFILE \
+            --target $TARGET_STAGE \
+            -t ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:$TAG_NAME-$ARCH_TAG .
+          docker push ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:$TAG_NAME-$ARCH_TAG
 
   create-and-push-simple-manifest:
-    name: Create simple Docker manifest
+    name: Create ${{ matrix.target.name }} Docker manifest
     if: github.repository == 'oxy-hq/oxy'
     needs: [build-and-publish-simple]
     runs-on: ubuntu-24.04-arm
+    strategy:
+      matrix:
+        target:
+          - name: runtime
+            image: oxy
+          - name: semantic-engine
+            image: oxy-semantic-engine
     steps:
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
@@ -250,9 +275,17 @@ jobs:
           TAG_NAME="${{ inputs.tag || github.ref_name }}"
           echo "tag=$TAG_NAME" >> $GITHUB_OUTPUT
 
-      - name: Create and push multi-arch manifest for simple image
+      - name: Create and push multi-arch manifest for ${{ matrix.target.name }}
         run: |
-          docker manifest create ghcr.io/${{ github.repository_owner }}/oxy:${{ steps.docker_tag.outputs.tag }}-simple \
-            ghcr.io/${{ github.repository_owner }}/oxy:${{ steps.docker_tag.outputs.tag }}-simple-amd64 \
-            ghcr.io/${{ github.repository_owner }}/oxy:${{ steps.docker_tag.outputs.tag }}-simple-arm64
-          docker manifest push ghcr.io/${{ github.repository_owner }}/oxy:${{ steps.docker_tag.outputs.tag }}-simple
+          TAG_NAME="${{ steps.docker_tag.outputs.tag }}"
+          IMAGE_NAME="${{ matrix.target.image }}"
+
+          echo "Creating manifest for ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:$TAG_NAME"
+
+          docker manifest create ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:$TAG_NAME \
+            ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:$TAG_NAME-amd64 \
+            ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:$TAG_NAME-arm64
+
+          docker manifest push ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:$TAG_NAME
+
+          echo "✅ Published ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:$TAG_NAME"

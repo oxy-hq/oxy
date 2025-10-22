@@ -73,6 +73,35 @@ fn get_cube_config_dir() -> Result<PathBuf, OxyError> {
     Ok(resolve_local_project_path()?.join(CUBE_CONFIG_DIR_PATH))
 }
 
+/// Clear all contents of a directory without removing the directory itself
+///
+/// This is useful when the directory is mounted as a Docker volume, where
+/// removing the directory itself would fail with "Device or resource busy"
+fn clear_directory_contents(dir_path: &PathBuf) -> Result<(), OxyError> {
+    for entry in std::fs::read_dir(dir_path)
+        .map_err(|e| OxyError::RuntimeError(format!("Failed to read directory: {}", e)))?
+    {
+        let entry = entry.map_err(|e| {
+            OxyError::RuntimeError(format!("Failed to read directory entry: {}", e))
+        })?;
+        let path = entry.path();
+        if path.is_dir() {
+            std::fs::remove_dir_all(&path).map_err(|e| {
+                OxyError::RuntimeError(format!(
+                    "Failed to remove directory {}: {}",
+                    path.display(),
+                    e
+                ))
+            })?;
+        } else {
+            std::fs::remove_file(&path).map_err(|e| {
+                OxyError::RuntimeError(format!("Failed to remove file {}: {}", path.display(), e))
+            })?;
+        }
+    }
+    Ok(())
+}
+
 type Variable = (String, String);
 fn parse_variable(env: &str) -> Result<Variable, OxyError> {
     if let Some((var, value)) = env.split_once('=') {
@@ -269,6 +298,12 @@ enum SubCommand {
     /// Launch a Cube.js server that provides access to your semantic layer
     /// with pre-configured data sources and schema definitions.
     SemanticEngine(SemanticEngineArgs),
+    /// Prepare Cube.js configuration from semantic layer without starting server
+    ///
+    /// Generate Cube.js schema files from your semantic layer definitions.
+    /// Useful for deploying to containerized environments or when running
+    /// Cube.js separately from the Oxy CLI.
+    PrepareSemanticEngine(PrepareSemanticEngineArgs),
 }
 
 #[derive(Parser, Debug)]
@@ -595,6 +630,21 @@ pub struct SemanticEngineArgs {
     log_level: String,
 }
 
+#[derive(Parser, Debug)]
+pub struct PrepareSemanticEngineArgs {
+    /// Output directory for generated Cube.js configuration
+    ///
+    /// Specify where to write the generated Cube.js schema files.
+    /// If not specified, uses the default .semantics directory.
+    #[clap(long)]
+    output_dir: Option<PathBuf>,
+    /// Force regeneration even if configuration already exists
+    ///
+    /// Clean and regenerate all Cube.js configuration files.
+    #[clap(long, default_value_t = false)]
+    force: bool,
+}
+
 async fn handle_workflow_file(
     workflow_name: &PathBuf,
     retry: bool,
@@ -719,6 +769,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             SubCommand::Seed(_) => "seed",
             SubCommand::Clean(_) => "clean",
             SubCommand::SemanticEngine(_) => "semantic-engine",
+            SubCommand::PrepareSemanticEngine(_) => "prepare-semantic-engine",
         };
 
         sentry_config::add_breadcrumb(
@@ -833,15 +884,15 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
 
                 // Clean up existing cube directory for fresh generation
                 if target_dir.exists() {
-                    std::fs::remove_dir_all(&target_dir).map_err(|e| {
-                        OxyError::RuntimeError(format!("Failed to clean cube directory: {}", e))
+                    // Instead of removing the directory itself (which fails when mounted as a volume),
+                    // remove all contents within it
+                    clear_directory_contents(&target_dir)?;
+                } else {
+                    // Ensure the target directory exists if it doesn't
+                    std::fs::create_dir_all(&target_dir).map_err(|e| {
+                        OxyError::RuntimeError(format!("Failed to create cube directory: {}", e))
                     })?;
                 }
-
-                // Ensure the target directory exists
-                std::fs::create_dir_all(&target_dir).map_err(|e| {
-                    OxyError::RuntimeError(format!("Failed to create cube directory: {}", e))
-                })?;
 
                 let config_manager_clone = config_manager.clone();
                 let databases: HashMap<String, DatabaseDetails> = config_manager_clone
@@ -1012,6 +1063,10 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
 
         Some(SubCommand::SemanticEngine(semantic_args)) => {
             handle_semantic_engine_command(semantic_args).await?;
+        }
+
+        Some(SubCommand::PrepareSemanticEngine(prepare_args)) => {
+            handle_prepare_semantic_engine_command(prepare_args).await?;
         }
 
         None => {
@@ -1576,14 +1631,6 @@ async fn handle_semantic_engine_command(semantic_args: SemanticEngineArgs) -> Re
     // Ensure we're in a valid project
     let project_path = resolve_local_project_path()?;
 
-    // Check if semantic layer exists
-    let semantic_dir = resolve_semantics_dir()?;
-    if !semantic_dir.exists() {
-        return Err(OxyError::ConfigurationError(
-            "No semantic layer found. Please create a 'semantics' directory with your semantic definitions.".to_string()
-        ));
-    }
-
     // Get config first to get database details
     let config = ConfigBuilder::new()
         .with_project_path(&project_path)?
@@ -1593,57 +1640,8 @@ async fn handle_semantic_engine_command(semantic_args: SemanticEngineArgs) -> Re
     // Ensure cube configuration directory exists
     let cube_config_dir = get_cube_config_dir()?;
 
-    if !cube_config_dir.exists() {
-        println!("🔄 Generating Cube.js configuration from semantic layer...");
-
-        // Get database details from config
-        let databases: HashMap<String, DatabaseDetails> = config
-            .list_databases()
-            .iter()
-            .map(|db| {
-                (
-                    db.name.clone(),
-                    DatabaseDetails {
-                        name: db.name.clone(),
-                        db_type: db.dialect(),
-                    },
-                )
-            })
-            .collect();
-
-        // Process semantic layer to generate CubeJS schema
-        process_semantic_layer_to_cube(semantic_dir.clone(), cube_config_dir.clone(), databases)
-            .await?;
-        println!("✅ Cube.js configuration generated successfully");
-    } else {
-        // Clean up existing cube directory and regenerate for isolation
-        println!("🧹 Cleaning existing Cube.js configuration...");
-        std::fs::remove_dir_all(&cube_config_dir).map_err(|e| {
-            OxyError::RuntimeError(format!("Failed to clean cube directory: {}", e))
-        })?;
-
-        println!("🔄 Regenerating Cube.js configuration from semantic layer...");
-
-        // Get database details from config
-        let databases: HashMap<String, DatabaseDetails> = config
-            .list_databases()
-            .iter()
-            .map(|db| {
-                (
-                    db.name.clone(),
-                    DatabaseDetails {
-                        name: db.name.clone(),
-                        db_type: db.dialect(),
-                    },
-                )
-            })
-            .collect();
-
-        // Process semantic layer to generate CubeJS schema
-        process_semantic_layer_to_cube(semantic_dir.clone(), cube_config_dir.clone(), databases)
-            .await?;
-        println!("✅ Cube.js configuration generated successfully");
-    }
+    // Always regenerate configuration for isolation
+    generate_cube_config(cube_config_dir.clone(), true).await?;
 
     // Check if Docker is available
     let docker_check = Command::new("docker").args(["--version"]).output();
@@ -1745,6 +1743,93 @@ async fn handle_semantic_engine_command(semantic_args: SemanticEngineArgs) -> Re
             "Cube.js container exited with non-zero status".to_string(),
         ));
     }
+
+    Ok(())
+}
+
+/// Generate Cube.js configuration from semantic layer
+async fn generate_cube_config(cube_config_dir: PathBuf, force: bool) -> Result<(), OxyError> {
+    // Ensure we're in a valid project
+    let project_path = resolve_local_project_path()?;
+
+    // Check if semantic layer exists
+    let semantic_dir = resolve_semantics_dir()?;
+    if !semantic_dir.exists() {
+        return Err(OxyError::ConfigurationError(
+            "No semantic layer found. Please create a 'semantics' directory with your semantic definitions.".to_string()
+        ));
+    }
+
+    // Get config first to get database details
+    let config = ConfigBuilder::new()
+        .with_project_path(&project_path)?
+        .build()
+        .await?;
+
+    if cube_config_dir.exists() && !force {
+        println!(
+            "✅ Cube.js configuration already exists at {}",
+            cube_config_dir.display()
+        );
+        return Ok(());
+    }
+
+    if cube_config_dir.exists() {
+        // Clean up existing cube directory contents and regenerate
+        println!("🧹 Cleaning existing Cube.js configuration...");
+        // Instead of removing the directory itself (which fails when mounted as a volume),
+        // remove all contents within it
+        clear_directory_contents(&cube_config_dir)?;
+    }
+
+    println!("🔄 Generating Cube.js configuration from semantic layer...");
+
+    // Get database details from config
+    let databases: HashMap<String, DatabaseDetails> = config
+        .list_databases()
+        .iter()
+        .map(|db| {
+            (
+                db.name.clone(),
+                DatabaseDetails {
+                    name: db.name.clone(),
+                    db_type: db.dialect(),
+                },
+            )
+        })
+        .collect();
+
+    // Process semantic layer to generate CubeJS schema
+    process_semantic_layer_to_cube(semantic_dir.clone(), cube_config_dir.clone(), databases)
+        .await?;
+
+    println!(
+        "✅ Cube.js configuration generated successfully at {}",
+        cube_config_dir.display()
+    );
+    Ok(())
+}
+
+async fn handle_prepare_semantic_engine_command(
+    prepare_args: PrepareSemanticEngineArgs,
+) -> Result<(), OxyError> {
+    sentry_config::add_operation_context("prepare-semantic-engine", None);
+
+    let cube_config_dir = prepare_args
+        .output_dir
+        .unwrap_or_else(|| get_cube_config_dir().unwrap());
+
+    generate_cube_config(cube_config_dir, prepare_args.force).await?;
+
+    println!();
+    println!(
+        "{}",
+        "📦 Cube.js configuration is ready for deployment".text()
+    );
+    println!(
+        "{}",
+        "You can now run Cube.js natively or in a container using the generated config".tertiary()
+    );
 
     Ok(())
 }
