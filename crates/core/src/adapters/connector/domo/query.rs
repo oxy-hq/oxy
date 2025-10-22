@@ -62,6 +62,7 @@ impl<'a> DOMOQuery<'a> {
                     "STRING" => arrow::datatypes::DataType::Utf8,
                     "LONG" => arrow::datatypes::DataType::Int64,
                     "DOUBLE" => arrow::datatypes::DataType::Float64,
+                    "DECIMAL" => arrow::datatypes::DataType::Float64, // Treat DECIMAL as Float64
                     "BOOLEAN" => arrow::datatypes::DataType::Boolean,
                     "DATE" => arrow::datatypes::DataType::Date32,
                     "DATETIME" => arrow::datatypes::DataType::Timestamp(
@@ -108,6 +109,12 @@ impl<'a> DOMOQuery<'a> {
                     std::sync::Arc::new(array)
                 }
                 "DOUBLE" => {
+                    let float_values: Vec<Option<f64>> =
+                        values.iter().map(|v| v.as_f64()).collect();
+                    let array = arrow::array::Float64Array::from(float_values);
+                    std::sync::Arc::new(array)
+                }
+                "DECIMAL" => {
                     let float_values: Vec<Option<f64>> =
                         values.iter().map(|v| v.as_f64()).collect();
                     let array = arrow::array::Float64Array::from(float_values);
