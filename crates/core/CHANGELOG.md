@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.8](https://github.com/oxy-hq/oxy-internal/compare/0.3.7...0.3.8) (2025-10-22)
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* force DECIMAL to float ([#1290](https://github.com/oxy-hq/oxy-internal/issues/1290)) ([cae6598](https://github.com/oxy-hq/oxy-internal/commit/cae6598eec457b7d4222691527d921b101c14875))
+
 ## [0.3.7](https://github.com/oxy-hq/oxy-internal/compare/0.3.6...0.3.7) (2025-10-21)
 
 
