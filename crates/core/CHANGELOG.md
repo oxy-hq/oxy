@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.9](https://github.com/oxy-hq/oxy-internal/compare/0.3.8...0.3.9) (2025-10-22)
+
+
+### <!-- 0 -->🚀 Features
+
+* separate stage for preparing semantic layer and avoid docker in docker ([#1284](https://github.com/oxy-hq/oxy-internal/issues/1284)) ([54ca89d](https://github.com/oxy-hq/oxy-internal/commit/54ca89d38ed8d09a7351380a93f509772b7d984f))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* domo sync fail ([#1293](https://github.com/oxy-hq/oxy-internal/issues/1293)) ([d0c185b](https://github.com/oxy-hq/oxy-internal/commit/d0c185b65122058f6edb696eedcc6d59839826cc))
+
 ## [0.3.8](https://github.com/oxy-hq/oxy-internal/compare/0.3.7...0.3.8) (2025-10-22)
 
 

@@ -1,9 +1,9 @@
 {
-  "crates/core": "0.3.8",
-  "crates/py": "0.3.8",
-  "crates/migration": "0.3.8",
-  "crates/entity": "0.3.8",
-  "crates/semantic": "0.3.8",
-  "crates/omni": "0.3.8",
-  "web-app": "0.3.5"
+  "crates/core": "0.3.9",
+  "crates/py": "0.3.9",
+  "crates/migration": "0.3.9",
+  "crates/entity": "0.3.9",
+  "crates/semantic": "0.3.9",
+  "crates/omni": "0.3.9",
+  "web-app": "0.3.6"
 }
