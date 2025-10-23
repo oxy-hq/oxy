@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.11](https://github.com/oxy-hq/oxy-internal/compare/0.3.10...0.3.11) (2025-10-23)
+
+
+### <!-- 0 -->🚀 Features
+
+* support topic default filters ([#1259](https://github.com/oxy-hq/oxy-internal/issues/1259)) ([ce19e90](https://github.com/oxy-hq/oxy-internal/commit/ce19e90bb26ee79d947bc4de3e1c7c9549d89417))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* handle session variable arrays via multiple requests ([#1267](https://github.com/oxy-hq/oxy-internal/issues/1267)) ([fdbac5f](https://github.com/oxy-hq/oxy-internal/commit/fdbac5fd19cd983ffd55a2e23d596feba2339f61))
+
 ## [0.3.10](https://github.com/oxy-hq/oxy-internal/compare/0.3.9...0.3.10) (2025-10-22)
 
 
