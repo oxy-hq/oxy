@@ -1,0 +1,336 @@
+# Oxy Development Guidelines
+
+You are an AI assistant helping develop Oxy, an open-source Rust-based framework for building comprehensive agentic analytics systems. Follow these guidelines strictly.
+
+## Project Overview
+
+Oxy is a declarative, deterministic framework for agentic analytics:
+- **Core Language**: Rust (edition 2024, rust-version 1.90.0)
+- **Frontend**: TypeScript/React with Vite
+- **Architecture**: Multi-crate Rust workspace + monorepo with pnpm
+- **Database**: SeaORM with SQLite/PostgreSQL support
+- **Python Bindings**: PyO3-based Python integration
+
+## Code Quality Standards
+
+### Rust Guidelines
+
+1. **Safety & Idiomatic Rust**
+   - Prefer `Result<T, E>` and `Option<T>` over panics
+   - Use `?` operator for error propagation
+   - Avoid `.unwrap()` and `.expect()` in production code (use in tests only)
+   - Follow Rust 2024 edition idioms and best practices
+   - Use `clippy` recommendations: `cargo clippy --all-targets --all-features`
+
+2. **Error Handling**
+   - Use the custom error types in `crates/core/src/errors.rs`
+   - Provide context with error messages using `anyhow` or `thiserror`
+   - Never silently ignore errors
+   - Example:
+     ```rust
+     use crate::errors::OxyError;
+
+     fn process_data() -> Result<(), OxyError> {
+         let data = fetch_data()
+             .map_err(|e| OxyError::DataFetchError(e.to_string()))?;
+         Ok(())
+     }
+     ```
+
+3. **Async/Await**
+   - Use `tokio` runtime for async operations
+   - Prefer `async/await` over manual futures
+   - Be mindful of blocking operations in async contexts
+   - Use `tokio::spawn` for concurrent tasks
+
+4. **Testing**
+   - Write unit tests for all public functions
+   - Use `#[cfg(test)]` modules
+   - Integration tests go in `crates/*/tests/`
+   - Run tests: `cargo test --workspace`
+   - Example:
+     ```rust
+     #[cfg(test)]
+     mod tests {
+         use super::*;
+
+         #[test]
+         fn test_function() {
+             assert_eq!(2 + 2, 4);
+         }
+     }
+     ```
+
+5. **Database & ORM**
+   - Use SeaORM entities from `crates/entity/`
+   - Migrations managed via `cargo run -p migration`
+   - Always handle database errors gracefully
+   - Use transactions for multi-step operations
+
+6. **Module Organization**
+   - Keep modules focused and cohesive
+   - Use `pub(crate)` for internal APIs
+   - Document public APIs with `///` doc comments
+   - Export key types from `lib.rs`
+
+### TypeScript/React Guidelines
+
+1. **Type Safety**
+   - Always use TypeScript, never `any` (use `unknown` if needed)
+   - Define interfaces for all data structures
+   - Use proper type guards for runtime checks
+   - Leverage path aliases: `@/*` for `src/*`
+
+2. **React Best Practices**
+   - Use functional components and hooks
+   - Memoize expensive calculations with `useMemo`
+   - Use `useCallback` for callback props
+   - Extract reusable logic into custom hooks
+   - Follow composition over inheritance
+
+3. **Component Structure**
+   ```typescript
+   // Good structure
+   import { useState, useEffect } from 'react';
+
+   interface MyComponentProps {
+     title: string;
+     onAction: () => void;
+   }
+
+   export function MyComponent({ title, onAction }: MyComponentProps) {
+     const [state, setState] = useState<string>('');
+
+     useEffect(() => {
+       // effect logic
+     }, []);
+
+     return <div>{title}</div>;
+   }
+   ```
+
+4. **State Management**
+   - Use React Context for cross-component state
+   - Keep state as local as possible
+   - Consider using reducers for complex state logic
+
+5. **Testing**
+   - Write tests with Vitest
+   - Test user interactions, not implementation details
+   - Use React Testing Library patterns
+
+## Project Structure
+
+### Rust Workspace
+```
+crates/
+├── core/       # Main logic and agentic analytics primitives
+├── entity/     # Database entities and ORM models (SeaORM)
+├── migration/  # Database migration CLI
+├── semantic/   # Semantic system implementation
+├── omni/       # Utilities and integration helpers
+└── py/         # Python bindings (PyO3)
+```
+
+### Frontend
+```
+web-app/
+├── src/
+│   ├── components/  # React components
+│   ├── hooks/       # Custom React hooks
+│   ├── types/       # TypeScript type definitions
+│   └── utils/       # Utility functions
+```
+
+### Examples & Config
+```
+examples/         # Example agents and workflows (YAML)
+sample_project/   # Sample project setup
+docs/            # Documentation
+```
+
+## Development Workflow
+
+### Building & Testing
+```bash
+# Rust
+cargo build --workspace          # Build all crates
+cargo test --workspace           # Run all tests
+cargo clippy --all-targets       # Lint
+cargo fmt --all                  # Format
+
+# Frontend
+cd web-app
+pnpm install                     # Install dependencies
+pnpm dev                         # Development server
+pnpm build                       # Production build
+pnpm lint                        # ESLint
+pnpm format                      # Prettier
+
+# Database migrations
+cargo run -p migration -- up     # Run migrations
+cargo run -p migration -- down   # Rollback
+```
+
+### Git Conventions
+- Use [Conventional Commits](https://www.conventionalcommits.org/)
+- Format: `<type>(<scope>): <description>`
+- Types: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`
+- Examples:
+  - `feat(core): add semantic query optimization`
+  - `fix(migration): resolve connection pool leak`
+  - `docs(readme): update installation instructions`
+
+### Code Review Checklist
+- [ ] All tests pass
+- [ ] No clippy warnings (Rust)
+- [ ] No ESLint errors (TypeScript)
+- [ ] Code is formatted (`cargo fmt`, `pnpm format`)
+- [ ] Public APIs have documentation
+- [ ] Breaking changes are documented
+- [ ] Migrations are reversible
+
+## AI Assistant Behavior
+
+### When Writing Code
+1. **Understand First**: Ask clarifying questions if requirements are unclear
+2. **Follow Patterns**: Match existing code style and patterns in the codebase
+3. **Test Coverage**: Include tests for new functionality
+4. **Documentation**: Add doc comments for public APIs
+5. **Error Handling**: Always handle errors appropriately
+6. **Performance**: Consider performance implications, especially for data-intensive operations
+
+### When Refactoring
+1. Explain the reasoning behind changes
+2. Ensure backward compatibility unless explicitly breaking
+3. Update related tests and documentation
+4. Run full test suite before proposing changes
+
+### When Debugging
+1. Reproduce the issue first
+2. Check logs and error messages
+3. Verify assumptions with tests
+4. Explain the root cause and fix
+
+### Code Review Focus
+- Correctness and reliability
+- Performance and scalability
+- Security implications
+- Maintainability and readability
+- Test coverage
+
+## Security & Privacy
+
+1. **Secrets Management**
+   - Never commit secrets or API keys
+   - Use `.env` files (not tracked in git)
+   - Use environment variables for configuration
+
+2. **Input Validation**
+   - Validate all external inputs
+   - Sanitize user-provided data
+   - Use parameterized queries for database operations
+
+3. **Dependencies**
+   - Keep dependencies up to date
+   - Review security advisories: `cargo audit`
+   - Minimize dependency footprint
+
+## Integration Points
+
+### Database
+- SeaORM for type-safe database access
+- Migrations via `migration` crate
+- Support for SQLite (development) and PostgreSQL (production)
+
+### Python Interop
+- PyO3 bindings in `crates/py/`
+- Follow Python naming conventions in exposed APIs
+- Handle GIL properly in async contexts
+
+### Omni Integration
+- Omni is a semantic layer product (https://omni.co/)
+- Integration helpers in `crates/omni/`
+- Consume semantic models via Omni connectors/APIs
+- Support exporting Oxy models to Omni
+
+### Agent/Workflow System
+- YAML-based agent definitions
+- Examples in `examples/` and `sample_project/`
+- Declarative and deterministic execution
+
+## Performance Considerations
+
+1. **Rust**
+   - Use `release` profile for benchmarking
+   - Profile with `cargo flamegraph` or `perf`
+   - Consider using `Arc` and `Mutex` for shared state
+   - Prefer `&str` over `String` for read-only strings
+
+2. **Database**
+   - Use connection pooling
+   - Batch operations where possible
+   - Index frequently queried columns
+   - Monitor query performance
+
+3. **Frontend**
+   - Code splitting for large bundles
+   - Lazy load components when appropriate
+   - Optimize re-renders with `memo` and `useMemo`
+   - Use production builds for performance testing
+
+## Documentation Standards
+
+### Rust Doc Comments
+```rust
+/// Processes analytics data for the given agent.
+///
+/// # Arguments
+/// * `agent_id` - The unique identifier of the agent
+/// * `data` - The raw analytics data to process
+///
+/// # Returns
+/// Returns `Ok(ProcessedData)` on success, or an `OxyError` on failure.
+///
+/// # Errors
+/// * `OxyError::InvalidAgent` - If the agent_id is not found
+/// * `OxyError::ProcessingError` - If data processing fails
+///
+/// # Example
+/// ```
+/// let result = process_analytics("agent-123", raw_data)?;
+/// ```
+pub fn process_analytics(agent_id: &str, data: RawData) -> Result<ProcessedData, OxyError> {
+    // implementation
+}
+```
+
+### TypeScript JSDoc
+```typescript
+/**
+ * Fetches agent configuration from the API.
+ *
+ * @param agentId - The unique identifier of the agent
+ * @returns Promise resolving to the agent configuration
+ * @throws {APIError} If the API request fails
+ *
+ * @example
+ * ```typescript
+ * const config = await fetchAgentConfig('agent-123');
+ * ```
+ */
+export async function fetchAgentConfig(agentId: string): Promise<AgentConfig> {
+  // implementation
+}
+```
+
+## Resources
+
+- **Documentation**: https://docs.oxy.tech
+- **DeepWiki**: https://deepwiki.com/oxy-hq/oxy
+- **Repository**: https://github.com/oxy-hq/oxy
+- **Issues**: https://github.com/oxy-hq/oxy/issues
+
+---
+
+Remember: Write clear, maintainable, well-tested code that follows Rust and TypeScript best practices. When in doubt, favor simplicity and clarity over cleverness.
