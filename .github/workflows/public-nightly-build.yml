@@ -95,7 +95,7 @@ jobs:
         uses: actions/setup-node@v6
         id: setup-node
         with:
-          node-version: lts/*
+          node-version: 24.x
           cache: 'pnpm'
       - name: Install dependencies & Build web-app
         env:
