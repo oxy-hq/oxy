@@ -13,7 +13,7 @@ COPY . .
 RUN cargo chef prepare --recipe-path recipe.json
 
 # Stage 2: Build the web application
-FROM node:lts AS web-builder
+FROM node:24-slim AS web-builder
 WORKDIR /app
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
