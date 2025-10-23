@@ -4,6 +4,7 @@ use arrow::record_batch::RecordBatch;
 use clickhouse::Client;
 use sqlparser::{dialect::ClickHouseDialect, parser::Parser};
 use std::io::Cursor;
+use uuid::Uuid;
 
 use crate::adapters::secrets::SecretsManager;
 use crate::adapters::session_filters::{FilterProcessor, SessionFilters};
@@ -35,9 +36,23 @@ impl ClickHouse {
         self
     }
 
+    /// Escape a value for use in a ClickHouse SET statement
+    /// Single quotes are escaped by doubling them: ' -> ''
+    /// Backslashes are escaped: \ -> \\
+    fn escape_for_set(value: &str) -> String {
+        value.replace('\\', "\\\\").replace('\'', "''")
+    }
+
     /// Apply filters and role to a query client
-    fn apply_filters(&self, client: Client) -> Client {
+    ///
+    /// Returns a tuple of:
+    /// - Client with scalar filters applied via .with_option() and role set
+    /// - Vec of (session_key, csv_value) pairs for array filters that need SET commands
+    ///
+    /// Array filters are handled separately to avoid URI length limits when using sessions.
+    fn apply_filters(&self, client: Client) -> (Client, Vec<(String, String)>) {
         let mut client = client;
+        let mut array_filters = Vec::new();
 
         // Apply role if configured
         if let Some(role) = &self.config.role {
@@ -77,14 +92,25 @@ impl ClickHouse {
 
                 let session_value = FilterProcessor::to_session_value(value);
 
-                tracing::debug!(
-                    filter_name = %key,
-                    session_key = %session_key,
-                    session_value = %session_value,
-                    "Setting ClickHouse session variable for filter"
-                );
-
-                client = client.with_option(&session_key, &session_value);
+                // Arrays are handled via SET commands in a session to avoid URI length limits
+                if value.is_array() {
+                    tracing::debug!(
+                        filter_name = %key,
+                        session_key = %session_key,
+                        session_value_length = session_value.len(),
+                        "Queuing array filter for SET command in session"
+                    );
+                    array_filters.push((session_key, session_value));
+                } else {
+                    // Scalar values use with_option (added to URI/query params)
+                    tracing::debug!(
+                        filter_name = %key,
+                        session_key = %session_key,
+                        session_value_length = session_value.len(),
+                        "Setting ClickHouse scalar filter via with_option"
+                    );
+                    client = client.with_option(&session_key, &session_value);
+                }
             }
         } else {
             tracing::debug!(
@@ -93,7 +119,7 @@ impl ClickHouse {
             );
         }
 
-        client
+        (client, array_filters)
     }
 
     pub fn strip_comments(query: &str) -> String {
@@ -125,51 +151,91 @@ impl Engine for ClickHouse {
         query: &str,
         _dry_run_limit: Option<u64>,
     ) -> Result<(Vec<RecordBatch>, SchemaRef), OxyError> {
-        let client = Client::default()
+        let base_client = Client::default()
             .with_url(self.config.get_host(&self.secret_manager).await?)
             .with_user(self.config.get_user(&self.secret_manager).await?)
             .with_password(self.config.get_password(&self.secret_manager).await?)
             .with_database(self.config.get_database(&self.secret_manager).await?);
 
-        // Apply filters (role + session variables) before executing query
-        let client = self.apply_filters(client);
+        tracing::debug!("ClickHouse client created, applying filters");
 
-        // Log query execution with filter context for audit trail
+        // Apply filters (role + session variables) - separates scalar and array filters
+        let (client, array_filters) = self.apply_filters(base_client);
+        let cleaned_query = ClickHouse::strip_comments(query);
+
+        // Necessary when sending more than one query (i.e. for setting array filters)
+        let session_id = format!("oxy-{}", Uuid::new_v4());
+
         tracing::info!(
             database = ?self.config.database,
-            has_filters = self.filters.is_some(),
-            filter_count = self.filters.as_ref().map(|f| f.len()).unwrap_or(0),
+            host = ?self.config.host,
+            filter_names = ?self.filters.as_ref().map(|f| f.keys().collect::<Vec<_>>()),
             role = ?self.config.role,
-            "Executing ClickHouse query with filters applied"
+            session_id = %session_id,
+            has_array_filters = !array_filters.is_empty(),
+            query_length = cleaned_query.len(),
+            query_preview = %if cleaned_query.len() > 500 {
+                format!("{}...", &cleaned_query[..500])
+            } else {
+                cleaned_query.clone()
+            },
+            "Executing ClickHouse query with session"
         );
 
-        let cleaned_query = ClickHouse::strip_comments(query);
-        let mut cursor = client
+        let session_client = client.with_option("session_id", &session_id);
+
+        // Execute SET commands for array filters (if any)
+        for (session_key, session_value) in &array_filters {
+            let escaped_value = Self::escape_for_set(session_value);
+            let set_sql = format!("SET {} = '{}'", session_key, escaped_value);
+
+            tracing::debug!(
+                session_key = %session_key,
+                value_length = session_value.len(),
+                "Executing SET command for array filter in session"
+            );
+
+            session_client
+                .query(&set_sql)
+                .execute()
+                .await
+                .map_err(|err| {
+                    tracing::error!(
+                        session_key = %session_key,
+                        error = %err,
+                        "Failed to SET array filter in ClickHouse session"
+                    );
+                    OxyError::DBError(format!("Failed to SET {}: {}", session_key, err))
+                })?;
+        }
+
+        // Execute the actual query in the session
+        let mut cursor = session_client
             .query(&cleaned_query)
             .fetch_bytes("arrow")
             .map_err(|err| {
-                // Log query execution failure with filter context
                 tracing::error!(
                     database = ?self.config.database,
+                    session_id = %session_id,
                     has_filters = self.filters.is_some(),
                     error = %err,
-                    "ClickHouse query execution failed"
+                    "ClickHouse query execution failed in session"
                 );
                 OxyError::DBError(format!("ClickHouse query error: {err}"))
             })?;
-        let chunks = cursor.collect().await;
-        match chunks {
-            Ok(chunks) => {
-                let cursor = Cursor::new(chunks);
-                let reader = FileReader::try_new(cursor, None).unwrap();
-                let batches: Vec<RecordBatch> = reader
-                    .map(|result| result.map_err(|e| connector_internal_error(LOAD_RESULT, &e)))
-                    .collect::<Result<_, _>>()?;
+        let chunks = cursor
+            .collect()
+            .await
+            .map_err(|e| OxyError::DBError(format!("Error fetching data: {}", e)))?;
 
-                let schema = batches[0].schema();
-                Ok((batches, schema))
-            }
-            Err(e) => Err(OxyError::DBError(format!("Error fetching data: {e}")))?,
-        }
+        let cursor = Cursor::new(chunks);
+        let reader = FileReader::try_new(cursor, None)
+            .map_err(|e| OxyError::DBError(format!("Failed to create Arrow reader: {}", e)))?;
+        let schema = reader.schema();
+        let batches: Vec<RecordBatch> = reader
+            .map(|result| result.map_err(|e| connector_internal_error(LOAD_RESULT, &e)))
+            .collect::<Result<_, _>>()?;
+
+        Ok((batches, schema))
     }
 }
