@@ -1340,23 +1340,209 @@ impl Hash for SemanticQueryTask {
 // Supporting Enums & Structs
 // -----------------------------------------------------------------------------
 #[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema, Hash, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum SemanticOperator {
-    Eq,
-    Neq,
-    Gt,
-    Gte,
-    Lt,
-    Lte,
-    In,
-    NotIn,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema, Hash, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum SemanticOrderDirection {
     Asc,
     Desc,
+}
+
+/// Scalar comparison filter (eq, neq, gt, gte, lt, lte)
+#[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
+#[garde(context(ValidationContext))]
+pub struct ScalarFilter {
+    #[garde(skip)]
+    pub value: Value,
+}
+
+/// Array-based filter (in, not_in)
+#[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
+#[garde(context(ValidationContext))]
+pub struct ArrayFilter {
+    #[garde(skip)]
+    pub values: Vec<Value>,
+}
+
+/// Date range filter (in_date_range, not_in_date_range)
+#[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
+#[garde(context(ValidationContext))]
+pub struct DateRangeFilter {
+    #[garde(skip)]
+    pub from: Value,
+    #[garde(skip)]
+    pub to: Value,
+}
+
+impl DateRangeFilter {
+    /// Convert relative date expressions to ISO datetime strings
+    /// Supports natural language expressions like "now", "today", "7 days ago", "last week", etc.
+    /// Uses chrono-english for robust natural language parsing.
+    pub fn resolve_relative_dates(&self) -> Result<Self, crate::errors::OxyError> {
+        Ok(Self {
+            from: Self::resolve_date_value(&self.from)?,
+            to: Self::resolve_date_value(&self.to)?,
+        })
+    }
+
+    fn resolve_date_value(value: &Value) -> Result<Value, crate::errors::OxyError> {
+        match value {
+            Value::String(s) => {
+                let resolved = Self::parse_relative_date(s)?;
+                Ok(Value::String(resolved))
+            }
+            other => Ok(other.clone()),
+        }
+    }
+
+    fn parse_relative_date(expr: &str) -> Result<String, crate::errors::OxyError> {
+        use chrono::Utc;
+
+        // Try parsing with chrono-english for natural language dates
+        match chrono_english::parse_date_string(expr, Utc::now(), chrono_english::Dialect::Us) {
+            Ok(datetime) => Ok(datetime.to_rfc3339()),
+            Err(_) => {
+                // If chrono-english can't parse it, assume it's already a valid datetime string
+                // and return it as-is
+                Ok(expr.to_string())
+            }
+        }
+    }
+}
+
+/// Enum representing different filter types with their appropriate value types
+#[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
+#[garde(context(ValidationContext))]
+#[serde(tag = "op", content = "value")]
+pub enum SemanticFilterType {
+    #[serde(rename = "eq")]
+    Eq(#[garde(dive)] ScalarFilter),
+    #[serde(rename = "neq")]
+    Neq(#[garde(dive)] ScalarFilter),
+    #[serde(rename = "gt")]
+    Gt(#[garde(dive)] ScalarFilter),
+    #[serde(rename = "gte")]
+    Gte(#[garde(dive)] ScalarFilter),
+    #[serde(rename = "lt")]
+    Lt(#[garde(dive)] ScalarFilter),
+    #[serde(rename = "lte")]
+    Lte(#[garde(dive)] ScalarFilter),
+    #[serde(rename = "in")]
+    In(#[garde(dive)] ArrayFilter),
+    #[serde(rename = "not_in")]
+    NotIn(#[garde(dive)] ArrayFilter),
+    #[serde(rename = "in_date_range")]
+    InDateRange(#[garde(dive)] DateRangeFilter),
+    #[serde(rename = "not_in_date_range")]
+    NotInDateRange(#[garde(dive)] DateRangeFilter),
+}
+
+impl Hash for SemanticFilterType {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        // Hash the discriminant first
+        std::mem::discriminant(self).hash(state);
+        // Then hash the value(s)
+        match self {
+            SemanticFilterType::Eq(f)
+            | SemanticFilterType::Neq(f)
+            | SemanticFilterType::Gt(f)
+            | SemanticFilterType::Gte(f)
+            | SemanticFilterType::Lt(f)
+            | SemanticFilterType::Lte(f) => {
+                if let Ok(s) = serde_json::to_string(&f.value) {
+                    s.hash(state);
+                }
+            }
+            SemanticFilterType::In(f) | SemanticFilterType::NotIn(f) => {
+                for v in &f.values {
+                    if let Ok(s) = serde_json::to_string(v) {
+                        s.hash(state);
+                    }
+                }
+            }
+            SemanticFilterType::InDateRange(f) | SemanticFilterType::NotInDateRange(f) => {
+                if let Ok(s) = serde_json::to_string(&f.from) {
+                    s.hash(state);
+                }
+                if let Ok(s) = serde_json::to_string(&f.to) {
+                    s.hash(state);
+                }
+            }
+        }
+    }
+}
+
+impl PartialEq for SemanticFilterType {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (SemanticFilterType::Eq(a), SemanticFilterType::Eq(b))
+            | (SemanticFilterType::Neq(a), SemanticFilterType::Neq(b))
+            | (SemanticFilterType::Gt(a), SemanticFilterType::Gt(b))
+            | (SemanticFilterType::Gte(a), SemanticFilterType::Gte(b))
+            | (SemanticFilterType::Lt(a), SemanticFilterType::Lt(b))
+            | (SemanticFilterType::Lte(a), SemanticFilterType::Lte(b)) => {
+                serde_json::to_string(&a.value).ok() == serde_json::to_string(&b.value).ok()
+            }
+            (SemanticFilterType::In(a), SemanticFilterType::In(b))
+            | (SemanticFilterType::NotIn(a), SemanticFilterType::NotIn(b)) => {
+                a.values.len() == b.values.len()
+                    && a.values.iter().zip(b.values.iter()).all(|(x, y)| {
+                        serde_json::to_string(x).ok() == serde_json::to_string(y).ok()
+                    })
+            }
+            (SemanticFilterType::InDateRange(a), SemanticFilterType::InDateRange(b))
+            | (SemanticFilterType::NotInDateRange(a), SemanticFilterType::NotInDateRange(b)) => {
+                serde_json::to_string(&a.from).ok() == serde_json::to_string(&b.from).ok()
+                    && serde_json::to_string(&a.to).ok() == serde_json::to_string(&b.to).ok()
+            }
+            _ => false,
+        }
+    }
+}
+
+impl Eq for SemanticFilterType {}
+
+impl SemanticFilterType {
+    /// Get the operator name as a string (for CubeJS conversion)
+    pub fn operator_name(&self) -> &'static str {
+        match self {
+            SemanticFilterType::Eq(_) => "equals",
+            SemanticFilterType::Neq(_) => "notEquals",
+            SemanticFilterType::Gt(_) => "gt",
+            SemanticFilterType::Gte(_) => "gte",
+            SemanticFilterType::Lt(_) => "lt",
+            SemanticFilterType::Lte(_) => "lte",
+            SemanticFilterType::In(_) => "equals",
+            SemanticFilterType::NotIn(_) => "notEquals",
+            SemanticFilterType::InDateRange(_) => "inDateRange",
+            SemanticFilterType::NotInDateRange(_) => "notInDateRange",
+        }
+    }
+
+    /// Get the values as a Vec<Value> for CubeJS conversion
+    pub fn values(&self) -> Vec<Value> {
+        match self {
+            SemanticFilterType::Eq(f)
+            | SemanticFilterType::Neq(f)
+            | SemanticFilterType::Gt(f)
+            | SemanticFilterType::Gte(f)
+            | SemanticFilterType::Lt(f)
+            | SemanticFilterType::Lte(f) => vec![f.value.clone()],
+            SemanticFilterType::In(f) | SemanticFilterType::NotIn(f) => f.values.clone(),
+            SemanticFilterType::InDateRange(f) | SemanticFilterType::NotInDateRange(f) => {
+                vec![f.from.clone(), f.to.clone()]
+            }
+        }
+    }
+
+    /// Check if this filter type requires array values
+    pub fn requires_array(&self) -> bool {
+        matches!(
+            self,
+            SemanticFilterType::In(_)
+                | SemanticFilterType::NotIn(_)
+                | SemanticFilterType::InDateRange(_)
+                | SemanticFilterType::NotInDateRange(_)
+        )
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
@@ -1364,23 +1550,15 @@ pub enum SemanticOrderDirection {
 pub struct SemanticFilter {
     #[garde(length(min = 1))]
     pub field: String,
-    #[garde(skip)]
-    pub op: SemanticOperator,
-    // Value kept generic to allow scalar or array (templating handled later). We
-    // use serde_json::Value for forward compatibility (e.g., numbers, bools).
-    #[garde(skip)]
-    pub value: Value,
+    #[serde(flatten)]
+    #[garde(dive)]
+    pub filter_type: SemanticFilterType,
 }
 
 impl Hash for SemanticFilter {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.field.hash(state);
-        self.op.hash(state);
-        // Hash normalized JSON value to maintain cache key stability.
-        // Simpler approach: serialize; if serialization fails we skip (unlikely).
-        if let Ok(s) = serde_json::to_string(&self.value) {
-            s.hash(state);
-        }
+        self.filter_type.hash(state);
     }
 }
 

@@ -535,6 +535,7 @@ pub struct TopicBuilder {
     views: Vec<String>,
     base_view: Option<String>,
     retrieval: Option<TopicRetrievalConfig>,
+    default_filters: Option<Vec<TopicFilter>>,
 }
 
 impl TopicBuilder {
@@ -545,6 +546,7 @@ impl TopicBuilder {
             views: Vec::new(),
             base_view: None,
             retrieval: None,
+            default_filters: None,
         }
     }
 
@@ -577,6 +579,19 @@ impl TopicBuilder {
         self
     }
 
+    pub fn default_filter(mut self, field: String, filter_type: TopicFilterType) -> Self {
+        let filter = TopicFilter { field, filter_type };
+        self.default_filters
+            .get_or_insert_with(Vec::new)
+            .push(filter);
+        self
+    }
+
+    pub fn default_filters(mut self, filters: Vec<TopicFilter>) -> Self {
+        self.default_filters = Some(filters);
+        self
+    }
+
     pub fn build(self) -> Result<Topic, String> {
         let topic = Topic {
             name: self.name.ok_or("Topic name is required")?,
@@ -584,6 +599,7 @@ impl TopicBuilder {
             views: self.views,
             base_view: self.base_view,
             retrieval: self.retrieval,
+            default_filters: self.default_filters,
         };
 
         let validation = topic.validate();

@@ -399,6 +399,18 @@ impl SemanticValidator for Topic {
             }
         }
 
+        // Validate default_filters if specified
+        if let Some(ref filters) = self.default_filters {
+            for (i, filter) in filters.iter().enumerate() {
+                if filter.field.trim().is_empty() {
+                    result.add_error(format!(
+                        "Default filter at index {} has empty field name",
+                        i
+                    ));
+                }
+            }
+        }
+
         result
     }
 }
@@ -727,6 +739,7 @@ mod tests {
             views: vec!["orders".to_string(), "customers".to_string()],
             base_view: Some("orders".to_string()),
             retrieval: None,
+            default_filters: None,
         };
         let result = valid_topic.validate();
         assert!(result.is_valid, "Valid topic should pass validation");
@@ -738,6 +751,7 @@ mod tests {
             views: vec!["orders".to_string(), "customers".to_string()],
             base_view: Some("products".to_string()),
             retrieval: None,
+            default_filters: None,
         };
         let result = invalid_topic.validate();
         assert!(
@@ -759,6 +773,7 @@ mod tests {
             views: vec!["orders".to_string(), "customers".to_string()],
             base_view: Some("".to_string()),
             retrieval: None,
+            default_filters: None,
         };
         let result = empty_base_view_topic.validate();
         assert!(!result.is_valid, "Topic with empty base_view should fail");
@@ -768,6 +783,83 @@ mod tests {
                 .iter()
                 .any(|e| e.contains("base_view cannot be empty")),
             "Should have error about empty base_view"
+        );
+    }
+
+    #[test]
+    fn test_topic_default_filters_validation() {
+        use crate::{Topic, TopicArrayFilter, TopicFilter, TopicFilterType, TopicScalarFilter};
+
+        // Test valid topic with default_filters
+        let valid_topic = Topic {
+            name: "sales".to_string(),
+            description: "Sales data".to_string(),
+            views: vec!["orders".to_string()],
+            base_view: None,
+            retrieval: None,
+            default_filters: Some(vec![
+                TopicFilter {
+                    field: "status".to_string(),
+                    filter_type: TopicFilterType::Neq(TopicScalarFilter {
+                        value: serde_json::json!("cancelled"),
+                    }),
+                },
+                TopicFilter {
+                    field: "amount".to_string(),
+                    filter_type: TopicFilterType::Gt(TopicScalarFilter {
+                        value: serde_json::json!(0),
+                    }),
+                },
+            ]),
+        };
+        let result = valid_topic.validate();
+        assert!(
+            result.is_valid,
+            "Valid topic with default_filters should pass validation"
+        );
+
+        // Test topic with empty filter field
+        let invalid_topic = Topic {
+            name: "sales".to_string(),
+            description: "Sales data".to_string(),
+            views: vec!["orders".to_string()],
+            base_view: None,
+            retrieval: None,
+            default_filters: Some(vec![TopicFilter {
+                field: "".to_string(),
+                filter_type: TopicFilterType::Eq(TopicScalarFilter {
+                    value: serde_json::json!("test"),
+                }),
+            }]),
+        };
+        let result = invalid_topic.validate();
+        assert!(
+            !result.is_valid,
+            "Topic with empty filter field should fail"
+        );
+        assert!(
+            result.errors.iter().any(|e| e.contains("empty field name")),
+            "Should have error about empty filter field"
+        );
+
+        // Test topic with whitespace-only filter field
+        let whitespace_topic = Topic {
+            name: "sales".to_string(),
+            description: "Sales data".to_string(),
+            views: vec!["orders".to_string()],
+            base_view: None,
+            retrieval: None,
+            default_filters: Some(vec![TopicFilter {
+                field: "   ".to_string(),
+                filter_type: TopicFilterType::In(TopicArrayFilter {
+                    values: vec![serde_json::json!("a"), serde_json::json!("b")],
+                }),
+            }]),
+        };
+        let result = whitespace_topic.validate();
+        assert!(
+            !result.is_valid,
+            "Topic with whitespace-only filter field should fail"
         );
     }
 
@@ -868,6 +960,7 @@ mod tests {
             views: vec!["orders".to_string(), "customers".to_string()],
             base_view: Some("orders".to_string()),
             retrieval: None,
+            default_filters: None,
         };
 
         let valid_layer = SemanticLayer {
@@ -894,6 +987,7 @@ mod tests {
             ],
             base_view: Some("orders".to_string()),
             retrieval: None,
+            default_filters: None,
         };
 
         let invalid_layer = SemanticLayer {

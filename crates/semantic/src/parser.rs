@@ -166,7 +166,7 @@ impl SemanticLayerParser {
         topics_dir: &Path,
     ) -> Result<(Vec<Topic>, Vec<String>, Vec<PathBuf>), SemanticLayerError> {
         let mut topics = Vec::new();
-        let mut warnings = Vec::new();
+        let warnings = Vec::new();
         let mut parsed_files = Vec::new();
 
         let entries = fs::read_dir(topics_dir).map_err(|e| {
@@ -180,19 +180,15 @@ impl SemanticLayerParser {
             let path = entry.path();
 
             if path.is_file() && self.is_topic_file(&path) {
-                match self.parse_topic_file(&path) {
-                    Ok(topic) => {
-                        topics.push(topic);
-                        parsed_files.push(path);
-                    }
-                    Err(e) => {
-                        warnings.push(format!(
-                            "Failed to parse topic file {}: {}",
-                            path.display(),
-                            e
-                        ));
-                    }
-                }
+                let topic = self.parse_topic_file(&path).map_err(|e| {
+                    SemanticLayerError::ParsingError(format!(
+                        "Failed to parse topic file {}: {}",
+                        path.display(),
+                        e
+                    ))
+                })?;
+                topics.push(topic);
+                parsed_files.push(path);
             }
         }
 

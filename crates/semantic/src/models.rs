@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
     fmt::{Display, Formatter},
+    hash::Hash,
 };
 
 use crate::errors::SemanticLayerError;
@@ -223,6 +224,147 @@ pub struct Topic {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub retrieval: Option<TopicRetrievalConfig>,
+    /// Default filters to apply to all queries in this topic
+    /// Uses structured filters (field, operator, value) consistent with query filters
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    pub default_filters: Option<Vec<TopicFilter>>,
+}
+
+/// Scalar filter value (for eq, neq, gt, gte, lt, lte)
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct TopicScalarFilter {
+    pub value: serde_json::Value,
+}
+
+/// Array filter values (for in, not_in)
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct TopicArrayFilter {
+    pub values: Vec<serde_json::Value>,
+}
+
+/// Date range filter values (for in_date_range, not_in_date_range)
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct TopicDateRangeFilter {
+    pub from: serde_json::Value,
+    pub to: serde_json::Value,
+}
+
+/// Operators for topic filters - subset of semantic filter operators
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum TopicFilterType {
+    #[serde(rename = "eq")]
+    Eq(TopicScalarFilter),
+    #[serde(rename = "neq")]
+    Neq(TopicScalarFilter),
+    #[serde(rename = "gt")]
+    Gt(TopicScalarFilter),
+    #[serde(rename = "gte")]
+    Gte(TopicScalarFilter),
+    #[serde(rename = "lt")]
+    Lt(TopicScalarFilter),
+    #[serde(rename = "lte")]
+    Lte(TopicScalarFilter),
+    #[serde(rename = "in")]
+    In(TopicArrayFilter),
+    #[serde(rename = "not_in")]
+    NotIn(TopicArrayFilter),
+    #[serde(rename = "in_date_range")]
+    InDateRange(TopicDateRangeFilter),
+    #[serde(rename = "not_in_date_range")]
+    NotInDateRange(TopicDateRangeFilter),
+}
+
+impl PartialEq for TopicFilterType {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (TopicFilterType::Eq(a), TopicFilterType::Eq(b))
+            | (TopicFilterType::Neq(a), TopicFilterType::Neq(b))
+            | (TopicFilterType::Gt(a), TopicFilterType::Gt(b))
+            | (TopicFilterType::Gte(a), TopicFilterType::Gte(b))
+            | (TopicFilterType::Lt(a), TopicFilterType::Lt(b))
+            | (TopicFilterType::Lte(a), TopicFilterType::Lte(b)) => {
+                serde_json::to_string(&a.value).ok() == serde_json::to_string(&b.value).ok()
+            }
+            (TopicFilterType::In(a), TopicFilterType::In(b))
+            | (TopicFilterType::NotIn(a), TopicFilterType::NotIn(b)) => {
+                a.values.len() == b.values.len()
+                    && a.values.iter().zip(b.values.iter()).all(|(x, y)| {
+                        serde_json::to_string(x).ok() == serde_json::to_string(y).ok()
+                    })
+            }
+            (TopicFilterType::InDateRange(a), TopicFilterType::InDateRange(b))
+            | (TopicFilterType::NotInDateRange(a), TopicFilterType::NotInDateRange(b)) => {
+                serde_json::to_string(&a.from).ok() == serde_json::to_string(&b.from).ok()
+                    && serde_json::to_string(&a.to).ok() == serde_json::to_string(&b.to).ok()
+            }
+            _ => false,
+        }
+    }
+}
+
+impl Eq for TopicFilterType {}
+
+impl Hash for TopicFilterType {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        // Hash the discriminant first
+        std::mem::discriminant(self).hash(state);
+        // Then hash the value(s)
+        match self {
+            TopicFilterType::Eq(f)
+            | TopicFilterType::Neq(f)
+            | TopicFilterType::Gt(f)
+            | TopicFilterType::Gte(f)
+            | TopicFilterType::Lt(f)
+            | TopicFilterType::Lte(f) => {
+                if let Ok(s) = serde_json::to_string(&f.value) {
+                    s.hash(state);
+                }
+            }
+            TopicFilterType::In(f) | TopicFilterType::NotIn(f) => {
+                for v in &f.values {
+                    if let Ok(s) = serde_json::to_string(v) {
+                        s.hash(state);
+                    }
+                }
+            }
+            TopicFilterType::InDateRange(f) | TopicFilterType::NotInDateRange(f) => {
+                if let Ok(s) = serde_json::to_string(&f.from) {
+                    s.hash(state);
+                }
+                if let Ok(s) = serde_json::to_string(&f.to) {
+                    s.hash(state);
+                }
+            }
+        }
+    }
+}
+
+/// Filter for topic-level filtering - simpler version of SemanticFilter
+/// Uses the same structure as query filters for consistency
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct TopicFilter {
+    /// Field name to filter on (e.g., "status", "created_at")
+    pub field: String,
+    /// Filter type with embedded value
+    #[serde(flatten)]
+    pub filter_type: TopicFilterType,
+}
+
+impl PartialEq for TopicFilter {
+    fn eq(&self, other: &Self) -> bool {
+        self.field == other.field && self.filter_type == other.filter_type
+    }
+}
+
+impl Eq for TopicFilter {}
+
+impl Hash for TopicFilter {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.field.hash(state);
+        self.filter_type.hash(state);
+    }
 }
 
 /// Represents the complete semantic layer configuration

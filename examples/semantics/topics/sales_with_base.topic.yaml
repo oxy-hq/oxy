@@ -5,3 +5,7 @@ views:
   - orders
   - customers
   - products
+default_filters:
+  - field: "status"
+    op: "not_in"
+    value: ["cancelled", "refunded"]

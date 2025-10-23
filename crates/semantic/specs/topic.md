@@ -28,16 +28,23 @@ views:
   - orders
   - customers
   - products
+
+# Optional: Default filters applied to all queries in this topic
+default_filters:
+  - field: "status"
+    op: "neq"
+    value: "cancelled"
 ````
 
 ## Properties
 
-| Property      | Type   | Required | Description                                                                       |
-| ------------- | ------ | -------- | --------------------------------------------------------------------------------- |
-| `name`        | string | Yes      | Unique identifier for the topic                                                   |
-| `description` | string | Yes      | Human-readable description of the business domain                                 |
-| `base_view`   | string | No       | The primary view that serves as the starting point for all queries in this topic. |
-| `views`       | array  | Yes      | List of view names included in this topic                                         |
+| Property          | Type   | Required | Description                                                                       |
+| ----------------- | ------ | -------- | --------------------------------------------------------------------------------- |
+| `name`            | string | Yes      | Unique identifier for the topic                                                   |
+| `description`     | string | Yes      | Human-readable description of the business domain                                 |
+| `base_view`       | string | No       | The primary view that serves as the starting point for all queries in this topic. |
+| `views`           | array  | Yes      | List of view names included in this topic                                         |
+| `default_filters` | array  | No       | List of structured filters automatically applied to all queries in this topic     |
 
 ## Base View Behavior
 
@@ -68,6 +75,13 @@ views:
   - order_items
   - customers
   - products
+default_filters:
+  - field: "status"
+    op: "not_in"
+    value: ["cancelled", "refunded"]
+  - field: "is_test"
+    op: "eq"
+    value: false
 
 # topics/marketing.topic.yaml
 name: marketing
@@ -78,6 +92,10 @@ views:
   - attribution
   - customer_acquisition
   - website_sessions
+default_filters:
+  - field: "campaign_status"
+    op: "eq"
+    value: "active"
 
 # topics/finance.topic.yaml
 name: finance
@@ -88,6 +106,10 @@ views:
   - financial_transactions
   - cost_centers
   - budgets
+default_filters:
+  - field: "is_reconciled"
+    op: "eq"
+    value: true
 ```
 
 ### SaaS Business Topics
@@ -102,6 +124,10 @@ views:
   - feature_usage
   - user_journeys
   - product_events
+default_filters:
+  - field: "session_duration_seconds"
+    op: "gt"
+    value: 10
 
 # topics/customer_success.topic.yaml
 name: customer_success
@@ -112,6 +138,10 @@ views:
   - support_tickets
   - churn_analysis
   - renewal_forecasts
+default_filters:
+  - field: "customer_status"
+    op: "in"
+    values: ["active", "at_risk"]
 
 # topics/growth.topic.yaml
 name: growth
@@ -122,6 +152,13 @@ views:
   - onboarding_funnel
   - activation_metrics
   - cohort_analysis
+default_filters:
+  - field: "is_spam"
+    op: "eq"
+    value: false
+  - field: "signup_source"
+    op: "neq"
+    value: "internal_testing"
 ```
 
 ### Healthcare Topics

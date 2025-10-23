@@ -15,7 +15,8 @@ pub use builder::{
 pub use errors::SemanticLayerError;
 pub use models::{
     AccessLevel, Dimension, DimensionType, Entity, EntityType, Measure, MeasureFilter, MeasureType,
-    SemanticLayer, SemanticTableRef, Topic, View,
+    SemanticLayer, SemanticTableRef, Topic, TopicArrayFilter, TopicDateRangeFilter, TopicFilter,
+    TopicFilterType, TopicScalarFilter, View,
 };
 pub use parser::{ParseResult, ParserConfig, SemanticLayerParser, parse_semantic_layer_from_dir};
 pub use types::SyncMetrics;

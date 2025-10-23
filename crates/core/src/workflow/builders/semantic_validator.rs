@@ -1,6 +1,6 @@
 use crate::{
     config::ConfigManager,
-    config::model::{SemanticFilter, SemanticOperator, SemanticQueryTask},
+    config::model::{SemanticFilter, SemanticFilterType, SemanticQueryTask},
     errors::OxyError,
 };
 use oxy_semantic::{SemanticLayer, Topic, View, parse_semantic_layer_from_dir};
@@ -25,10 +25,6 @@ pub enum SemanticQueryError {
         suggestions: Vec<String>,
     },
     EmptySelection,
-    InvalidOperator {
-        op: SemanticOperator,
-        value_type: String,
-    },
     InvalidValueType {
         field: String,
         expected: String,
@@ -95,13 +91,6 @@ impl std::fmt::Display for SemanticQueryError {
             SemanticQueryError::EmptySelection => {
                 write!(f, "At least one dimension or measure must be selected")
             }
-            SemanticQueryError::InvalidOperator { op, value_type } => {
-                write!(
-                    f,
-                    "Operator {:?} cannot be used with {} values",
-                    op, value_type
-                )
-            }
             SemanticQueryError::InvalidValueType {
                 field,
                 expected,
@@ -138,7 +127,6 @@ impl From<SemanticQueryError> for OxyError {
             | SQE::UnknownMeasure { .. }
             | SQE::UnknownDimension { .. }
             | SQE::EmptySelection
-            | SQE::InvalidOperator { .. }
             | SQE::InvalidValueType { .. }
             | SQE::UnsupportedFilters { .. } => OxyError::ValidationError(err.to_string()),
             // Configuration / environment issues
@@ -357,23 +345,68 @@ fn validate_filters(
 
         // Validate operator and value type compatibility
         // Convert SemanticQueryFilter to SemanticFilter for validation
-        let op = match filter.op.as_str() {
-            "eq" => SemanticOperator::Eq,
-            "neq" => SemanticOperator::Neq,
-            "gt" => SemanticOperator::Gt,
-            "gte" => SemanticOperator::Gte,
-            "lt" => SemanticOperator::Lt,
-            "lte" => SemanticOperator::Lte,
-            "in" => SemanticOperator::In,
-            "not_in" => SemanticOperator::NotIn,
-            _ => SemanticOperator::Eq, // Default fallback
+        let filter_type = match filter.op.as_str() {
+            "eq" => SemanticFilterType::Eq(crate::config::model::ScalarFilter {
+                value: filter.value.clone(),
+            }),
+            "neq" => SemanticFilterType::Neq(crate::config::model::ScalarFilter {
+                value: filter.value.clone(),
+            }),
+            "gt" => SemanticFilterType::Gt(crate::config::model::ScalarFilter {
+                value: filter.value.clone(),
+            }),
+            "gte" => SemanticFilterType::Gte(crate::config::model::ScalarFilter {
+                value: filter.value.clone(),
+            }),
+            "lt" => SemanticFilterType::Lt(crate::config::model::ScalarFilter {
+                value: filter.value.clone(),
+            }),
+            "lte" => SemanticFilterType::Lte(crate::config::model::ScalarFilter {
+                value: filter.value.clone(),
+            }),
+            "in" => {
+                let values = if let Value::Array(arr) = &filter.value {
+                    arr.clone()
+                } else {
+                    vec![filter.value.clone()]
+                };
+                SemanticFilterType::In(crate::config::model::ArrayFilter { values })
+            }
+            "not_in" => {
+                let values = if let Value::Array(arr) = &filter.value {
+                    arr.clone()
+                } else {
+                    vec![filter.value.clone()]
+                };
+                SemanticFilterType::NotIn(crate::config::model::ArrayFilter { values })
+            }
+            "in_date_range" => {
+                let values = if let Value::Array(arr) = &filter.value {
+                    arr.clone()
+                } else {
+                    vec![filter.value.clone()]
+                };
+                let from = values.first().cloned().unwrap_or(Value::Null);
+                let to = values.get(1).cloned().unwrap_or(Value::Null);
+                SemanticFilterType::InDateRange(crate::config::model::DateRangeFilter { from, to })
+            }
+            "not_in_date_range" => {
+                let values = if let Value::Array(arr) = &filter.value {
+                    arr.clone()
+                } else {
+                    vec![filter.value.clone()]
+                };
+                let from = values.first().cloned().unwrap_or(Value::Null);
+                let to = values.get(1).cloned().unwrap_or(Value::Null);
+                SemanticFilterType::NotInDateRange(crate::config::model::DateRangeFilter {
+                    from,
+                    to,
+                })
+            }
+            _ => SemanticFilterType::Eq(crate::config::model::ScalarFilter {
+                value: filter.value.clone(),
+            }), // Default fallback
         };
-        let semantic_filter = SemanticFilter {
-            field: filter.field.clone(),
-            op,
-            value: filter.value.clone(),
-        };
-        validate_operator_value_compatibility(&semantic_filter)?;
     }
 
     Ok(())
@@ -421,39 +454,6 @@ fn validate_orders(
 /// Extracts the view name from a fully-qualified field (e.g., "orders.total" -> "orders")
 fn extract_view_from_field(field: &str) -> Option<String> {
     field.split('.').next().map(|s| s.to_string())
-}
-
-/// Validates that operator and value types are compatible
-fn validate_operator_value_compatibility(filter: &SemanticFilter) -> Result<(), OxyError> {
-    let is_array = filter.value.is_array();
-
-    match filter.op {
-        SemanticOperator::In | SemanticOperator::NotIn => {
-            if !is_array {
-                return Err(SemanticQueryError::InvalidOperator {
-                    op: filter.op.clone(),
-                    value_type: "non-array".to_string(),
-                }
-                .into());
-            }
-        }
-        SemanticOperator::Eq
-        | SemanticOperator::Neq
-        | SemanticOperator::Gt
-        | SemanticOperator::Gte
-        | SemanticOperator::Lt
-        | SemanticOperator::Lte => {
-            if is_array {
-                return Err(SemanticQueryError::InvalidOperator {
-                    op: filter.op.clone(),
-                    value_type: "array".to_string(),
-                }
-                .into());
-            }
-        }
-    }
-
-    Ok(())
 }
 
 /// Gets a human-readable name for a JSON value type
@@ -592,11 +592,8 @@ fn levenshtein_distance(s1: &str, s2: &str) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        config::model::SemanticQueryTask,
-        service::types::{SemanticQueryFilter, SemanticQueryOrder, SemanticQueryParams},
-    };
-    use oxy_semantic::{Dimension, Measure, Topic, View};
+    use crate::{config::model::SemanticQueryTask, service::types::SemanticQueryParams};
+    use oxy_semantic::Topic;
 
     fn create_test_topic(name: &str, base_view: Option<String>) -> Topic {
         Topic {
@@ -605,6 +602,7 @@ mod tests {
             views: vec!["orders".to_string(), "customers".to_string()],
             base_view,
             retrieval: None,
+            default_filters: None,
         }
     }
 

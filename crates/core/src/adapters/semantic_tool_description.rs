@@ -16,7 +16,7 @@ pub fn get_semantic_query_description(
         &mut description,
         &semantic_layer,
         semantic_tool.topic.as_deref(),
-    );
+    )?;
 
     tracing::info!("Semantic layer description: {}", description);
     Ok(description)
@@ -42,27 +42,30 @@ fn get_topics_metadata(
     description: &mut String,
     semantic_layer: &SemanticLayer,
     specified_topic: Option<&str>,
-) {
+) -> Result<(), OxyError> {
     let Some(topics) = &semantic_layer.topics else {
-        description.push_str("\nNo topics found in the semantic layer.\n");
-        return;
+        return Err(OxyError::ConfigurationError(
+            "No topics found in the semantic layer.".to_string(),
+        ));
     };
 
     if topics.is_empty() {
-        description.push_str("\nNo topics available in the semantic layer.\n");
-        return;
+        return Err(OxyError::ConfigurationError(
+            "No topics available in the semantic layer.".to_string(),
+        ));
     }
 
     let filtered_topics = filter_topics(topics, specified_topic);
 
     if filtered_topics.is_empty() {
-        build_no_topics_message(description, specified_topic);
-        return;
+        return Err(build_no_topics_error(specified_topic));
     }
 
     for topic in filtered_topics {
         build_topic_metadata(description, topic, semantic_layer);
     }
+
+    Ok(())
 }
 
 fn filter_topics<'a>(topics: &'a [Topic], specified_topic: Option<&str>) -> Vec<&'a Topic> {
@@ -75,16 +78,14 @@ fn filter_topics<'a>(topics: &'a [Topic], specified_topic: Option<&str>) -> Vec<
     }
 }
 
-fn build_no_topics_message(description: &mut String, specified_topic: Option<&str>) {
+fn build_no_topics_error(specified_topic: Option<&str>) -> OxyError {
     match specified_topic {
-        Some(topic_name) => {
-            description.push_str(&format!(
-                "\nSpecified topic '{}' not found in the semantic layer.\n",
-                topic_name
-            ));
-        }
+        Some(topic_name) => OxyError::ConfigurationError(format!(
+            "Specified topic '{}' not found in the semantic layer.",
+            topic_name
+        )),
         None => {
-            description.push_str("\nNo topics available in the semantic layer.\n");
+            OxyError::ConfigurationError("No topics available in the semantic layer.".to_string())
         }
     }
 }
