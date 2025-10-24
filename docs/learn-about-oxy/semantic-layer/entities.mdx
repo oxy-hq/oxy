@@ -1,0 +1,256 @@
+---
+title: "Entities"
+description: "Define entities and relationships in your semantic layer"
+---
+
+## Overview
+
+**Entities** represent distinct objects or concepts in your data model (like customers, orders, or products). They enable automatic relationship discovery and intelligent joins between views.
+
+When you define entities consistently across views, the semantic layer automatically understands relationships and can join data seamlessly.
+
+## Entity Types
+
+### Primary Entity
+
+Each view should have exactly one primary entity representing the main subject:
+
+```yaml
+entities:
+  - name: order
+    type: primary
+    description: "Individual order transaction"
+    key: order_id
+```
+
+### Foreign Entity
+
+Foreign entities reference objects primarily defined in other views:
+
+```yaml
+entities:
+  - name: customer
+    type: foreign
+    description: "Customer who placed the order"
+    key: customer_id
+
+  - name: product
+    type: foreign
+    description: "Product in the order"
+    key: product_id
+```
+
+## Entity Properties
+
+| Property      | Type          | Required | Description                                                   |
+| ------------- | ------------- | -------- | ------------------------------------------------------------- |
+| `name`        | string        | Yes      | Unique identifier for the entity                              |
+| `type`        | string        | Yes      | Entity type: `primary` or `foreign`                           |
+| `description` | string        | Yes      | Human-readable description                                    |
+| `key`         | string        | No*      | The dimension that serves as the entity key (single key)      |
+| `keys`        | array[string] | No*      | The dimensions that serve as the entity keys (composite keys) |
+
+*Note: Either `key` or `keys` must be provided, but not both.
+
+## Simple Entity Keys
+
+Use the `key` property for entities with a single identifier:
+
+```yaml
+# views/orders.view.yml
+entities:
+  - name: order
+    type: primary
+    key: order_id
+
+  - name: customer
+    type: foreign
+    key: customer_id
+
+# views/customers.view.yml
+entities:
+  - name: customer
+    type: primary
+    key: customer_id
+```
+
+Now queries can seamlessly join these views:
+- "Show total revenue by customer acquisition channel"
+- "What's the average order value for customers from email campaigns?"
+
+## Composite Keys
+
+For entities with composite keys, use the `keys` field:
+
+```yaml
+# views/order_items.view.yml
+entities:
+  - name: order_item
+    type: primary
+    description: "Individual line item within an order"
+    keys:
+      - order_id
+      - line_item_id
+
+# views/order_shipments.view.yml
+entities:
+  - name: order_item
+    type: foreign
+    description: "Line item being shipped"
+    keys:
+      - order_id
+      - line_item_id
+```
+
+The semantic layer will automatically join these views on both `order_id` and `line_item_id`.
+
+## How Entities Enable Joins
+
+When you define entities consistently across views, Oxy automatically:
+
+1. **Identifies relationships** between views based on matching entity names
+2. **Generates JOIN clauses** using the entity keys
+3. **Enables cross-view queries** without manual join logic
+
+### Example: Multi-View Query
+
+Given these view definitions:
+
+```yaml
+# views/orders.view.yml
+entities:
+  - name: order
+    type: primary
+    key: order_id
+  - name: customer
+    type: foreign
+    key: customer_id
+
+# views/customers.view.yml
+entities:
+  - name: customer
+    type: primary
+    key: customer_id
+
+# views/order_items.view.yml
+entities:
+  - name: order_item
+    type: primary
+    key: item_id
+  - name: order
+    type: foreign
+    key: order_id
+  - name: product
+    type: foreign
+    key: product_id
+
+# views/products.view.yml
+entities:
+  - name: product
+    type: primary
+    key: product_id
+```
+
+Users can ask questions that span all these views:
+- "What's the total revenue by product category?" (joins orders, order_items, products)
+- "Show me customer lifetime value by acquisition channel" (joins customers, orders)
+- "Which products have the highest return rates?" (joins products, order_items, orders)
+
+## Best Practices
+
+### Naming
+
+- Use singular nouns (e.g., `customer`, `order`, `product`)
+- Use consistent names across all views
+- Match the business terminology your organization uses
+
+### Design
+
+- Each view should have exactly one primary entity
+- Add foreign entities for all relationships to other views
+- Ensure entity keys reference valid dimensions in the view
+
+### Performance
+
+- Index the columns used as entity keys in your database
+- For composite keys, create composite indexes on those columns
+- Consider the cardinality of joins when designing entities
+
+## Common Patterns
+
+### One-to-Many Relationships
+
+```yaml
+# Customer (one) to Orders (many)
+# views/customers.view.yml
+entities:
+  - name: customer
+    type: primary
+    key: customer_id
+
+# views/orders.view.yml
+entities:
+  - name: order
+    type: primary
+    key: order_id
+  - name: customer
+    type: foreign
+    key: customer_id
+```
+
+### Many-to-Many Relationships
+
+```yaml
+# Products (many) to Orders (many) through OrderItems
+# views/products.view.yml
+entities:
+  - name: product
+    type: primary
+    key: product_id
+
+# views/order_items.view.yml (junction table)
+entities:
+  - name: order_item
+    type: primary
+    key: item_id
+  - name: product
+    type: foreign
+    key: product_id
+  - name: order
+    type: foreign
+    key: order_id
+
+# views/orders.view.yml
+entities:
+  - name: order
+    type: primary
+    key: order_id
+```
+
+### Hierarchical Relationships
+
+```yaml
+# Employee hierarchy (self-referential)
+# views/employees.view.yml
+entities:
+  - name: employee
+    type: primary
+    key: employee_id
+  - name: manager
+    type: foreign
+    key: manager_id
+```
+
+## Related Documentation
+
+<CardGroup cols={2}>
+  <Card title="Views" icon="database" href="/learn-about-oxy/semantic-layer/views">
+    Learn about creating views
+  </Card>
+  <Card title="Dimensions" icon="grid" href="/learn-about-oxy/semantic-layer/dimensions">
+    Define dimensions for your entities
+  </Card>
+  <Card title="Overview" icon="book" href="/learn-about-oxy/semantic-layer">
+    Back to semantic layer overview
+  </Card>
+</CardGroup>

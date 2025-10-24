@@ -109,7 +109,71 @@ filters:
 name: string                    # Required: Topic identifier
 description: string             # Required: Business domain description
 views: [string]                 # Required: List of view names
+base_view: string               # Optional: Base view for query optimization
+default_filters: []             # Optional: Default filters for all queries
 ```
+
+### Default Filters
+
+Apply filters automatically to all queries in a topic:
+
+```yaml
+default_filters:
+  - field: string               # Field to filter (e.g., "status", "tenant_id")
+    filter_type:                # Filter operator with value
+      eq:                       # Operator: eq, neq, gt, gte, lt, lte, in, not_in, in_date_range, not_in_date_range
+        value: any              # Value to filter by
+```
+
+**Examples:**
+
+```yaml
+# Single equality filter
+default_filters:
+  - field: status
+    filter_type:
+      eq:
+        value: "active"
+
+# Multiple filters (AND logic)
+default_filters:
+  - field: tenant_id
+    filter_type:
+      eq:
+        value: 1
+  - field: deleted_at
+    filter_type:
+      eq:
+        value: null
+
+# Array filter
+default_filters:
+  - field: status
+    filter_type:
+      in:
+        values: ["pending", "processing", "shipped"]
+
+# Date range filter
+default_filters:
+  - field: order_date
+    filter_type:
+      in_date_range:
+        from: "2024-01-01"
+        to: "2024-12-31"
+
+# Numeric comparison
+default_filters:
+  - field: total_amount
+    filter_type:
+      gte:
+        value: 1000
+```
+
+**Use Cases:**
+- Multi-tenancy (filter by tenant/org)
+- Data governance (restrict to specific subsets)
+- Active records only (exclude soft-deleted)
+- Time-based defaults (recent data only)
 
 ## Cross-View References
 
@@ -245,6 +309,42 @@ measures:
       SUM(total_amount) / NULLIF(COUNT(DISTINCT customer_id), 0)
 ```
 
+### Topic with Default Filters
+
+```yaml
+name: tenant_sales
+description: "Sales analytics scoped to specific tenant"
+views:
+  - orders
+  - customers
+  - products
+default_filters:
+  - field: orders.tenant_id
+    filter_type:
+      eq:
+        value: 1
+  - field: orders.status
+    filter_type:
+      in:
+        values: ["completed", "shipped"]
+```
+
+### Topic with Date Range Filter
+
+```yaml
+name: recent_activity
+description: "Activity from last 30 days"
+views:
+  - events
+  - users
+default_filters:
+  - field: events.created_at
+    filter_type:
+      in_date_range:
+        from: "{{ subtract_days(current_date(), 30) }}"
+        to: "{{ current_date() }}"
+```
+
 ## Validation Checklist
 
 - [ ] Each view has a unique name
@@ -255,6 +355,8 @@ measures:
 - [ ] Cross-view references use correct syntax: `{{view.field}}`
 - [ ] Topic view references exist
 - [ ] Datasource names match configuration
+- [ ] Default filter fields reference valid dimensions in topic views
+- [ ] Default filter operators match field data types
 
 ## Common Errors
 

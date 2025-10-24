@@ -44,7 +44,13 @@
                   {
                     "group": "Semantic Layer",
                     "pages": [
-                      "learn-about-oxy/semantic-layer"
+                      "learn-about-oxy/semantic-layer",
+                      "learn-about-oxy/semantic-layer/views",
+                      "learn-about-oxy/semantic-layer/entities",
+                      "learn-about-oxy/semantic-layer/dimensions",
+                      "learn-about-oxy/semantic-layer/measures",
+                      "learn-about-oxy/semantic-layer/topics",
+                      "learn-about-oxy/semantic-layer/usage"
                     ]
                   },
                   "learn-about-oxy/semantic-model",

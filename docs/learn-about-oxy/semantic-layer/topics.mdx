@@ -1,0 +1,320 @@
+---
+title: "Topics"
+description: "Organize views by business domain with topics"
+---
+
+## Overview
+
+**Topics** are collections of related views organized by business domain. They help users discover and explore related data concepts together, and provide a way to apply default filters and configurations across multiple views.
+
+## Creating Topics
+
+Create a file with the `.topic.yml` extension in your `semantics/topics/` directory:
+
+```yaml semantics/topics/sales.topic.yml
+name: sales
+description: "Sales transactions, revenue, and performance analytics"
+views:
+  - orders
+  - order_items
+  - customers
+  - products
+```
+
+## Topic Properties
+
+| Property         | Type   | Required | Description                                    |
+| ---------------- | ------ | -------- | ---------------------------------------------- |
+| `name`           | string | Yes      | Unique identifier for the topic                |
+| `description`    | string | Yes      | Description of the business domain             |
+| `views`          | array  | Yes      | List of view names in this topic               |
+| `base_view`      | string | No       | Specify a base view for query optimization     |
+| `default_filters`| array  | No       | Default filters applied to all queries         |
+
+## Base View
+
+The `base_view` property allows you to specify a primary view that serves as the foundation for queries within the topic. This helps optimize query performance and provides better context for AI agents when generating queries.
+
+### When to Use Base View
+
+Use a base view when:
+- **One view is central**: Your topic has a primary fact table that other views join to
+- **Query optimization**: You want to guide the query engine on which view to start from
+- **Agent guidance**: You want to provide AI agents with context about the primary entity
+
+### Example with Base View
+
+```yaml semantics/topics/sales.topic.yml
+name: sales
+description: "Sales transactions, revenue, and performance analytics"
+base_view: orders
+views:
+  - orders
+  - order_items
+  - customers
+  - products
+```
+
+In this example, `orders` is the base view because most sales queries start from orders and join to related entities like customers and products.
+
+### Benefits
+
+- **Performance**: Queries start from the most logical table, reducing unnecessary joins
+- **Context**: AI agents understand which entity is primary when generating queries
+- **Consistency**: Ensures queries follow a consistent pattern
+
+<Note>
+  The `base_view` must be included in the `views` array. If specified, it provides a hint to the query engine but doesn't restrict which views can be queried.
+</Note>
+
+## Default Filters
+
+You can apply default filters to a topic that will be automatically applied to every query. This is useful for:
+- **Business rules**: Apply standard business logic (e.g., only active records)
+- **Time-based filtering**: Default to recent data (e.g., last 90 days)
+- **Multi-tenancy**: Filter to specific tenants or organizations
+
+Default filters use the same syntax as query filters and support all filter operators.
+
+### Active Records Only
+
+```yaml semantics/topics/active_customers.topic.yml
+name: active_customers
+description: "Analytics for active customers only"
+views:
+  - customers
+  - orders
+default_filters:
+  - field: customers.status
+    filter_type:
+      eq:
+        value: "active"
+  - field: customers.deleted_at
+    filter_type:
+      eq:
+        value: null
+```
+
+### Recent Data Filter
+
+```yaml semantics/topics/recent_sales.topic.yml
+name: recent_sales
+description: "Sales data for last 90 days"
+views:
+  - orders
+  - order_items
+default_filters:
+  - field: orders.order_date
+    filter_type:
+      in_date_range:
+        from: "90 days ago"
+        to: "now"
+```
+
+### Multiple Filter Conditions
+
+```yaml semantics/topics/high_value_completed_orders.topic.yml
+name: high_value_completed_orders
+description: "Completed orders over $1000"
+views:
+  - orders
+  - customers
+default_filters:
+  - field: orders.order_status
+    filter_type:
+      eq:
+        value: "completed"
+  - field: orders.total_amount
+    filter_type:
+      gte:
+        value: 1000
+```
+
+### Multi-Tenancy
+
+```yaml semantics/topics/tenant_analytics.topic.yml
+name: tenant_analytics
+description: "Analytics scoped to a specific tenant"
+views:
+  - orders
+  - customers
+  - products
+default_filters:
+  - field: orders.tenant_id
+    filter_type:
+      eq:
+        value: "tenant_abc123"
+```
+
+## Filter Operators
+
+Default filters support all standard operators:
+
+| Operator         | Description                          | Example                                    |
+| ---------------- | ------------------------------------ | ------------------------------------------ |
+| `eq`             | Equals                               | `field: status, eq: { value: "active" }`   |
+| `neq`            | Not equals                           | `field: status, neq: { value: "deleted" }` |
+| `gt`             | Greater than                         | `field: amount, gt: { value: 100 }`        |
+| `gte`            | Greater than or equal                | `field: amount, gte: { value: 100 }`       |
+| `lt`             | Less than                            | `field: amount, lt: { value: 1000 }`       |
+| `lte`            | Less than or equal                   | `field: amount, lte: { value: 1000 }`      |
+| `in`             | In array                             | `field: status, in: { values: ["pending", "processing"] }` |
+| `not_in`         | Not in array                         | `field: status, not_in: { values: ["cancelled", "failed"] }` |
+| `in_date_range`  | Within date range                    | `field: date, in_date_range: { from: "2024-01-01", to: "2024-12-31" }` |
+| `not_in_date_range` | Outside date range                | `field: date, not_in_date_range: { from: "2024-01-01", to: "2024-12-31" }` |
+
+<Note>
+  Default filters are applied with **AND** logic along with any user-provided filters. This means all default filters must be satisfied in addition to any filters specified in the query.
+</Note>
+
+## Example Topics
+
+### E-commerce Analytics
+
+```yaml semantics/topics/ecommerce.topic.yml
+name: ecommerce_analytics
+description: "Complete e-commerce analytics including orders, customers, and products"
+views:
+  - orders
+  - order_items
+  - customers
+  - products
+  - shipping_addresses
+```
+
+### Marketing
+
+```yaml semantics/topics/marketing.topic.yml
+name: marketing
+description: "Marketing campaigns, attribution, and customer acquisition"
+views:
+  - campaigns
+  - campaign_performance
+  - attribution
+  - website_sessions
+```
+
+### Finance
+
+```yaml semantics/topics/finance.topic.yml
+name: finance
+description: "Financial reporting and revenue analytics"
+views:
+  - revenue_recognition
+  - transactions
+  - cost_centers
+  - budgets
+```
+
+### Product Analytics
+
+```yaml semantics/topics/product.topic.yml
+name: product_analytics
+description: "Product usage and feature adoption"
+views:
+  - user_events
+  - feature_usage
+  - user_sessions
+  - product_metrics
+default_filters:
+  - field: user_events.event_date
+    filter_type:
+      in_date_range:
+        from: "30 days ago"
+        to: "now"
+```
+
+### Customer Success
+
+```yaml semantics/topics/customer_success.topic.yml
+name: customer_success
+description: "Customer health and retention metrics"
+views:
+  - customers
+  - support_tickets
+  - usage_metrics
+  - churn_indicators
+default_filters:
+  - field: customers.status
+    filter_type:
+      eq:
+        value: "active"
+```
+
+## Best Practices
+
+### Organization
+
+- Group related views that are commonly queried together
+- Create topics aligned with business domains or departments
+- Keep topics focused—avoid including unrelated views
+
+### Naming
+
+- Use descriptive names that reflect the business domain
+- Use lowercase with underscores for consistency
+- Consider the end-user perspective when naming
+
+### Default Filters
+
+- Use default filters for consistent business logic
+- Document why default filters are applied
+- Be mindful of performance implications
+- Test queries with default filters enabled
+
+### Documentation
+
+- Provide clear descriptions of the topic's scope
+- Document which views are included and why
+- Explain any default filters and their purpose
+
+## Using Topics
+
+Topics are used in three main ways:
+
+### 1. In Agents
+
+```yaml agents/analytics.agent.yml
+tools:
+  - name: semantic_query
+    type: semantic_query
+    topic: ecommerce_analytics
+```
+
+### 2. In Workflows
+
+```yaml workflows/sales_report.workflow.yml
+tasks:
+  - name: sales_metrics
+    type: semantic_query
+    topic: sales
+    dimensions:
+      - orders.order_date
+    measures:
+      - orders.total_revenue
+```
+
+### 3. In Routing Agents
+
+```yaml agents/_routing.agent.yml
+routes:
+  - "semantics/topics/sales.topic.yml"
+  - "semantics/topics/marketing.topic.yml"
+  - "semantics/topics/*.topic.yml"  # Include all topics
+```
+
+See [Using the Semantic Layer](/learn-about-oxy/semantic-layer/usage) for detailed examples.
+
+## Related Documentation
+
+<CardGroup cols={2}>
+  <Card title="Views" icon="database" href="/learn-about-oxy/semantic-layer/views">
+    Create views for your topics
+  </Card>
+  <Card title="Usage" icon="rocket" href="/learn-about-oxy/semantic-layer/usage">
+    Use topics in agents and workflows
+  </Card>
+  <Card title="Overview" icon="book" href="/learn-about-oxy/semantic-layer">
+    Back to semantic layer overview
+  </Card>
+</CardGroup>

@@ -1,0 +1,433 @@
+---
+title: "Measures"
+description: "Define measures and metrics for quantitative analysis"
+---
+
+## Overview
+
+**Measures** are quantitative calculations and aggregations that provide business insights (like total revenue, average order value, or customer count).
+
+Measures enable you to analyze and aggregate your data in meaningful ways, providing the "what" to your dimensions' "how."
+
+## Measure Types
+
+| Type             | Description                      | Example                                  |
+| ---------------- | -------------------------------- | ---------------------------------------- |
+| `count`          | Count of records                 | Total number of orders                   |
+| `sum`            | Sum of values                    | Total revenue                            |
+| `average`        | Arithmetic mean                  | Average order value                      |
+| `min`            | Minimum value                    | Smallest order amount                    |
+| `max`            | Maximum value                    | Largest order amount                     |
+| `count_distinct` | Count of unique values           | Number of unique customers               |
+| `median`         | Median (50th percentile)         | Median order value                       |
+| `custom`         | Custom SQL expression            | Complex calculations                     |
+
+## Measure Properties
+
+| Property      | Type   | Required    | Description                                      |
+| ------------- | ------ | ----------- | ------------------------------------------------ |
+| `name`        | string | Yes         | Unique identifier within the view                |
+| `type`        | string | Yes         | Measure type                                     |
+| `description` | string | No          | Human-readable description                       |
+| `expr`        | string | Conditional | SQL expression (required for most types)         |
+| `filters`     | array  | No          | Filters to apply to the measure                  |
+| `samples`     | array  | No          | Example values for documentation                 |
+| `synonyms`    | array  | No          | Alternative names                                |
+
+## Basic Measures
+
+### Count
+
+Count the number of records:
+
+```yaml
+measures:
+  # Simple count
+  - name: total_orders
+    type: count
+    description: "Total number of orders"
+    synonyms: ["order_count", "number_of_orders"]
+
+  # Count is the only measure type that doesn't require 'expr'
+  - name: total_records
+    type: count
+    description: "Total number of records in the view"
+```
+
+### Sum
+
+Sum numeric values:
+
+```yaml
+measures:
+  - name: total_revenue
+    type: sum
+    description: "Total revenue from all orders"
+    expr: total_amount
+    synonyms: ["revenue", "sales", "total_sales"]
+
+  - name: total_quantity
+    type: sum
+    description: "Total quantity of items sold"
+    expr: quantity
+```
+
+### Average
+
+Calculate the arithmetic mean:
+
+```yaml
+measures:
+  - name: avg_order_value
+    type: average
+    description: "Average order value"
+    expr: total_amount
+    synonyms: ["aov", "average_order_amount", "mean_order_value"]
+
+  - name: avg_rating
+    type: average
+    description: "Average product rating"
+    expr: rating
+```
+
+### Min/Max
+
+Find minimum or maximum values:
+
+```yaml
+measures:
+  - name: min_order_amount
+    type: min
+    description: "Smallest order amount"
+    expr: total_amount
+
+  - name: max_order_amount
+    type: max
+    description: "Largest order amount"
+    expr: total_amount
+
+  - name: first_order_date
+    type: min
+    description: "Date of first order"
+    expr: order_date
+
+  - name: last_order_date
+    type: max
+    description: "Date of most recent order"
+    expr: order_date
+```
+
+### Count Distinct
+
+Count unique values:
+
+```yaml
+measures:
+  - name: unique_customers
+    type: count_distinct
+    description: "Number of unique customers"
+    expr: customer_id
+    synonyms: ["customer_count", "distinct_customers"]
+
+  - name: unique_products
+    type: count_distinct
+    description: "Number of unique products sold"
+    expr: product_id
+```
+
+### Median
+
+Calculate the median value:
+
+```yaml
+measures:
+  - name: median_order_value
+    type: median
+    description: "Median order value"
+    expr: total_amount
+
+  - name: median_delivery_days
+    type: median
+    description: "Median delivery time in days"
+    expr: delivery_days
+```
+
+## Filtered Measures
+
+Apply filters to create conditional aggregations:
+
+```yaml
+measures:
+  # Large orders (>= $1000)
+  - name: large_orders_count
+    type: count
+    description: "Number of large orders (>= $1000)"
+    filters:
+      - expr: "{{total_amount}} >= 1000"
+
+  # Completed orders only
+  - name: completed_orders_revenue
+    type: sum
+    description: "Revenue from completed orders"
+    expr: total_amount
+    filters:
+      - expr: "{{order_status}} = 'completed'"
+
+  # High-value customer revenue
+  - name: high_value_customer_revenue
+    type: sum
+    description: "Revenue from high-value customers"
+    expr: total_amount
+    filters:
+      - expr: "{{customer.value_segment}} = 'High Value'"
+
+  # Male customers
+  - name: male_customers
+    type: count
+    description: "Count of male customers"
+    filters:
+      - expr: "{{gender}} = 'M'"
+
+  # Multiple conditions
+  - name: premium_shipped_orders
+    type: count
+    description: "Premium orders that have shipped"
+    filters:
+      - expr: "{{shipping_method}} = 'Premium'"
+      - expr: "{{order_status}} = 'shipped'"
+```
+
+## Custom Measures
+
+For complex calculations, use the `custom` type:
+
+```yaml
+measures:
+  # Division with null handling
+  - name: revenue_per_customer
+    type: custom
+    description: "Revenue per unique customer"
+    expr: |
+      SUM(total_amount) / NULLIF(COUNT(DISTINCT customer_id), 0)
+
+  # Weighted average
+  - name: weighted_avg_rating
+    type: custom
+    description: "Rating weighted by review count"
+    expr: |
+      SUM(rating * review_count) / NULLIF(SUM(review_count), 0)
+
+  # Percentage calculation
+  - name: conversion_rate
+    type: custom
+    description: "Conversion rate as percentage"
+    expr: |
+      (COUNT(DISTINCT CASE WHEN order_id IS NOT NULL THEN customer_id END) * 100.0) 
+      / NULLIF(COUNT(DISTINCT customer_id), 0)
+
+  # Ratio
+  - name: repeat_customer_rate
+    type: custom
+    description: "Percentage of customers with multiple orders"
+    expr: |
+      (COUNT(DISTINCT CASE WHEN total_orders > 1 THEN customer_id END) * 100.0)
+      / NULLIF(COUNT(DISTINCT customer_id), 0)
+
+  # Conditional aggregation
+  - name: net_promoter_score
+    type: custom
+    description: "Net Promoter Score (NPS)"
+    expr: |
+      (COUNT(CASE WHEN rating >= 9 THEN 1 END) * 100.0 
+       - COUNT(CASE WHEN rating <= 6 THEN 1 END) * 100.0)
+      / NULLIF(COUNT(*), 0)
+```
+
+## Cross-Entity Measures
+
+Reference dimensions or measures from related entities using `{{entity.field}}` syntax:
+
+```yaml
+# In orders.view.yml
+measures:
+  # Sum across related entity
+  - name: total_order_item_quantity
+    type: sum
+    description: "Total quantity from all order items"
+    expr: "{{ order_item.quantity }}"
+
+  # Count from related entity
+  - name: items_count
+    type: count
+    description: "Total number of items in orders"
+    expr: "{{ order_item.order_item_id }}"
+
+  # Custom calculation with related entities
+  - name: avg_items_per_order
+    type: custom
+    description: "Average number of items per order"
+    expr: |
+      COUNT(DISTINCT {{ order_item.item_id }}) 
+      / NULLIF(COUNT(DISTINCT {{ order.order_id }}), 0)
+
+  # Revenue per product
+  - name: revenue_per_product
+    type: custom
+    description: "Average revenue per product"
+    expr: |
+      SUM({{ order.total_revenue }}) 
+      / NULLIF(COUNT(DISTINCT {{ product.product_id }}), 0)
+```
+
+## Best Practices
+
+### Naming
+
+- Use descriptive names that indicate the metric (e.g., `total_revenue`, `avg_order_value`)
+- Prefix with aggregation type when helpful (e.g., `avg_`, `total_`, `max_`)
+- Avoid technical prefixes like `msr_` or `measure_`
+
+### Documentation
+
+- Always provide clear descriptions
+- Add synonyms for metrics commonly referenced with different terms
+- Document any business rules or calculations
+- Include example values when helpful
+
+### Expression Design
+
+- Always use `NULLIF` to prevent division by zero
+- Handle NULL values appropriately in calculations
+- Consider performance implications of complex expressions
+- Test custom measures thoroughly
+
+### Filtered Measures
+
+- Use filtered measures instead of creating separate views
+- Name filtered measures descriptively (e.g., `large_orders_count`)
+- Document the filter conditions in the description
+- Consider performance when applying multiple filters
+
+## Common Patterns
+
+### Revenue Metrics
+
+```yaml
+measures:
+  - name: total_revenue
+    type: sum
+    description: "Total revenue"
+    expr: total_amount
+    
+  - name: avg_order_value
+    type: average
+    description: "Average order value"
+    expr: total_amount
+    
+  - name: revenue_per_customer
+    type: custom
+    description: "Average revenue per customer"
+    expr: SUM(total_amount) / NULLIF(COUNT(DISTINCT customer_id), 0)
+    
+  - name: gross_margin
+    type: custom
+    description: "Gross margin as percentage"
+    expr: ((SUM(revenue) - SUM(cost)) / NULLIF(SUM(revenue), 0)) * 100
+```
+
+### Customer Metrics
+
+```yaml
+measures:
+  - name: total_customers
+    type: count_distinct
+    description: "Total unique customers"
+    expr: customer_id
+    
+  - name: new_customers
+    type: count_distinct
+    description: "New customers (first order)"
+    expr: customer_id
+    filters:
+      - expr: "{{is_first_order}} = true"
+    
+  - name: repeat_customers
+    type: count_distinct
+    description: "Customers with multiple orders"
+    expr: customer_id
+    filters:
+      - expr: "{{total_orders}} > 1"
+    
+  - name: customer_retention_rate
+    type: custom
+    description: "Percentage of repeat customers"
+    expr: |
+      (COUNT(DISTINCT CASE WHEN total_orders > 1 THEN customer_id END) * 100.0)
+      / NULLIF(COUNT(DISTINCT customer_id), 0)
+```
+
+### Product Performance
+
+```yaml
+measures:
+  - name: units_sold
+    type: sum
+    description: "Total units sold"
+    expr: quantity
+    
+  - name: avg_unit_price
+    type: average
+    description: "Average unit price"
+    expr: unit_price
+    
+  - name: inventory_turnover
+    type: custom
+    description: "Inventory turnover ratio"
+    expr: SUM(quantity_sold) / NULLIF(AVG(inventory_quantity), 0)
+    
+  - name: sell_through_rate
+    type: custom
+    description: "Sell-through rate as percentage"
+    expr: |
+      (SUM(quantity_sold) * 100.0) 
+      / NULLIF(SUM(quantity_available), 0)
+```
+
+### Time-Based Metrics
+
+```yaml
+measures:
+  - name: avg_fulfillment_days
+    type: average
+    description: "Average days from order to fulfillment"
+    expr: DATEDIFF(day, order_date, fulfillment_date)
+    
+  - name: max_delivery_days
+    type: max
+    description: "Maximum delivery time"
+    expr: DATEDIFF(day, order_date, delivery_date)
+    
+  - name: on_time_delivery_rate
+    type: custom
+    description: "Percentage of on-time deliveries"
+    expr: |
+      (COUNT(CASE WHEN delivery_date <= promised_date THEN 1 END) * 100.0)
+      / NULLIF(COUNT(*), 0)
+```
+
+## Related Documentation
+
+<CardGroup cols={2}>
+  <Card title="Dimensions" icon="grid" href="/learn-about-oxy/semantic-layer/dimensions">
+    Define dimensions for grouping
+  </Card>
+  <Card title="Views" icon="database" href="/learn-about-oxy/semantic-layer/views">
+    Learn about creating views
+  </Card>
+  <Card title="Entities" icon="link" href="/learn-about-oxy/semantic-layer/entities">
+    Define entities and relationships
+  </Card>
+  <Card title="Overview" icon="book" href="/learn-about-oxy/semantic-layer">
+    Back to semantic layer overview
+  </Card>
+</CardGroup>

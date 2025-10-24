@@ -1,5 +1,5 @@
 ---
-title: "Semantic Layer"
+title: "Overview"
 description: "Build a comprehensive semantic layer to power AI-driven analytics"
 ---
 
@@ -13,7 +13,7 @@ Think of it as a translation layer between your technical data infrastructure an
   Oxy also supports a simpler semantic model format (`.sem.yml`) for straightforward use cases. See [Semantic Model](/learn-about-oxy/semantic-model) for a lighter-weight alternative.
 </Note>
 
-### Key Benefits
+## Key Benefits
 
 - **AI-Optimized**: Provides rich context for AI agents to understand your data and generate accurate queries
 - **Declarative**: Define business logic once in YAML, use it everywhere
@@ -35,21 +35,31 @@ A view defines:
 - Available dimensions (attributes)
 - Available measures (metrics and aggregations)
 
+[Learn more about Views →](/learn-about-oxy/semantic-layer/views)
+
 ### Entities
 
 **Entities** represent distinct objects or concepts in your data model (like customers, orders, or products). They enable automatic relationship discovery and intelligent joins between views.
+
+[Learn more about Entities →](/learn-about-oxy/semantic-layer/entities)
 
 ### Dimensions
 
 **Dimensions** are attributes that describe your entities. They're used for grouping, filtering, and segmenting data (like order status, customer name, or product category).
 
+[Learn more about Dimensions →](/learn-about-oxy/semantic-layer/dimensions)
+
 ### Measures
 
 **Measures** are quantitative calculations and aggregations that provide business insights (like total revenue, average order value, or customer count).
 
+[Learn more about Measures →](/learn-about-oxy/semantic-layer/measures)
+
 ### Topics
 
 **Topics** are collections of related views organized by business domain. They help users discover and explore related data concepts together.
+
+[Learn more about Topics →](/learn-about-oxy/semantic-layer/topics)
 
 ## Project Structure
 
@@ -70,13 +80,9 @@ your-project/
 │       └── campaigns.view.yml
 ```
 
-## Creating Views
+## Quick Start
 
-Views are the foundation of your semantic layer. They define how to access and interpret your data.
-
-### Basic View Structure
-
-Create a file with the `.view.yml` extension in your `semantics/views/` directory:
+Here's a simple example to get you started:
 
 ```yaml semantics/views/orders.view.yml
 name: orders
@@ -87,946 +93,114 @@ table: "orders.csv"
 entities:
   - name: order
     type: primary
-    description: "Individual order transaction"
     key: order_id
 
-  - name: customer
-    type: foreign
-    description: "Customer who placed the order"
-    key: customer_id
-
 dimensions:
-  - name: order_id
-    type: number
-    description: "Unique order identifier"
-    expr: id
-
   - name: order_date
     type: date
-    description: "Date when order was placed"
     expr: order_date
-
+  
   - name: order_status
     type: string
-    description: "Current status of the order"
     expr: status
-    samples: ["pending", "shipped", "delivered", "cancelled"]
-
-  - name: total_amount
-    type: number
-    description: "Total order amount"
-    expr: total_amount
+    samples: ["pending", "shipped", "delivered"]
 
 measures:
   - name: total_orders
     type: count
-    description: "Total number of orders"
-
+    
   - name: total_revenue
     type: sum
-    description: "Total revenue from all orders"
-    expr: total_amount
-
-  - name: avg_order_value
-    type: average
-    description: "Average order value"
     expr: total_amount
 ```
 
-### View Properties
-
-| Property      | Type   | Required    | Description                                                   |
-| ------------- | ------ | ----------- | ------------------------------------------------------------- |
-| `name`        | string | Yes         | Unique identifier for the view                                |
-| `description` | string | Yes         | Human-readable description of what this view represents       |
-| `datasource`  | string | Yes         | Name of the datasource to use                                 |
-| `table`       | string | Conditional | Database table reference (required if `sql` not specified)    |
-| `sql`         | string | Conditional | Custom SQL query (required if `table` not specified)          |
-| `entities`    | array  | Yes         | List of entities in this view                                 |
-| `dimensions`  | array  | Yes         | List of dimensions (attributes)                               |
-| `measures`    | array  | No          | List of measures (aggregations)                               |
-
-### SQL-Based Views
-
-For complex transformations, use custom SQL instead of a direct table reference:
-
-```yaml semantics/views/customer_metrics.view.yml
-name: customer_metrics
-description: "Aggregated customer metrics and segmentation"
-datasource: "analytics"
-sql: |
-  SELECT 
-    customer_id,
-    COUNT(DISTINCT order_id) as total_orders,
-    SUM(order_amount) as lifetime_value,
-    MAX(order_date) as last_order_date,
-    MIN(order_date) as first_order_date,
-    CASE 
-      WHEN SUM(order_amount) >= 1000 THEN 'High Value'
-      WHEN SUM(order_amount) >= 500 THEN 'Medium Value'
-      ELSE 'Low Value'
-    END as value_segment
-  FROM orders
-  GROUP BY customer_id
-
-entities:
-  - name: customer
-    type: primary
-    description: "Customer entity with aggregated metrics"
-    key: customer_id
-
-dimensions:
-  - name: customer_id
-    type: number
-    description: "Customer identifier"
-    expr: customer_id
-
-  - name: total_orders
-    type: number
-    description: "Number of orders placed by customer"
-    expr: total_orders
-
-  - name: value_segment
-    type: string
-    description: "Customer value segmentation"
-    expr: value_segment
-    samples: ["High Value", "Medium Value", "Low Value"]
-
-measures:
-  - name: total_customers
-    type: count
-    description: "Total number of customers"
-
-  - name: avg_lifetime_value
-    type: average
-    description: "Average customer lifetime value"
-    expr: lifetime_value
-```
-
-## Defining Entities
-
-Entities represent the core objects in your data and enable automatic joins between views.
-
-### Entity Types
-
-#### Primary Entity
-
-Each view should have exactly one primary entity representing the main subject:
-
-```yaml
-entities:
-  - name: order
-    type: primary
-    description: "Individual order transaction"
-    key: order_id
-```
-
-#### Foreign Entity
-
-Foreign entities reference objects primarily defined in other views:
-
-```yaml
-entities:
-  - name: customer
-    type: foreign
-    description: "Customer who placed the order"
-    key: customer_id
-
-  - name: product
-    type: foreign
-    description: "Product in the order"
-    key: product_id
-```
-
-### Entity Properties
-
-| Property      | Type          | Required | Description                                                   |
-| ------------- | ------------- | -------- | ------------------------------------------------------------- |
-| `name`        | string        | Yes      | Unique identifier for the entity                              |
-| `type`        | string        | Yes      | Entity type: `primary` or `foreign`                           |
-| `description` | string        | Yes      | Human-readable description                                    |
-| `key`         | string        | No*      | The dimension that serves as the entity key (single key)      |
-| `keys`        | array[string] | No*      | The dimensions that serve as the entity keys (composite keys) |
-
-*Note: Either `key` or `keys` must be provided, but not both.
-
-### How Entities Enable Joins
-
-When you define entities consistently across views, the semantic layer automatically understands relationships:
-
-```yaml
-# views/orders.view.yml
-entities:
-  - name: customer
-    type: foreign
-    key: customer_id
-
-# views/customers.view.yml
-entities:
-  - name: customer
-    type: primary
-    key: customer_id
-```
-
-For entities with composite keys, use the `keys` field:
-
-```yaml
-# views/order_items.view.yml
-entities:
-  - name: order_item
-    type: primary
-    description: "Individual line item within an order"
-    keys:
-      - order_id
-      - line_item_id
-
-# views/order_shipments.view.yml
-entities:
-  - name: order_item
-    type: foreign
-    description: "Line item being shipped"
-    keys:
-      - order_id
-      - line_item_id
-```
-
-Now queries can seamlessly join these views:
-- "Show total revenue by customer acquisition channel"
-- "What's the average order value for customers from email campaigns?"
-
-## Defining Dimensions
-
-Dimensions are the descriptive attributes of your data used for filtering and grouping.
-
-### Dimension Types
-
-Oxy supports five dimension types:
-
-| Type       | Description                              | Example Values                          |
-| ---------- | ---------------------------------------- | --------------------------------------- |
-| `string`   | Text and categorical data                | "pending", "John Smith", "Electronics"  |
-| `number`   | Numeric values                           | 42, 3.14, 1000                          |
-| `date`     | Date values                              | "2024-03-15"                            |
-| `datetime` | Date and time values                     | "2024-03-15T14:30:00Z"                  |
-| `boolean`  | True/false values                        | true, false                             |
-
-### Dimension Properties
-
-| Property      | Type     | Required | Description                                            |
-| ------------- | -------- | -------- | ------------------------------------------------------ |
-| `name`        | string   | Yes      | Unique identifier within the view                      |
-| `type`        | string   | Yes      | Data type                                              |
-| `description` | string   | No       | Human-readable description                             |
-| `expr`        | string   | Yes      | SQL expression                                         |
-| `samples`     | array    | No       | Example values for documentation                       |
-| `synonyms`    | array    | No       | Alternative names for natural language queries         |
-
-### Examples
-
-```yaml
-dimensions:
-  # String dimension with samples and synonyms
-  - name: order_status
-    type: string
-    description: "Current order status"
-    expr: status
-    samples: ["pending", "processing", "shipped", "delivered"]
-    synonyms: ["status", "order_state", "fulfillment_status"]
-
-  # Date dimension
-  - name: order_date
-    type: date
-    description: "Date when order was placed"
-    expr: order_date
-    synonyms: ["purchase_date", "date_ordered"]
-
-  # Number dimension
-  - name: quantity
-    type: number
-    description: "Quantity of items"
-    expr: quantity
-    samples: [1, 5, 10]
-
-  # Boolean dimension
-  - name: is_first_order
-    type: boolean
-    description: "Whether this is customer's first order"
-    expr: is_first_order
-
-  # Computed dimension
-  - name: order_year
-    type: number
-    description: "Year of the order"
-    expr: EXTRACT(YEAR FROM order_date)
-```
-
-### Using Synonyms
-
-Synonyms help AI agents understand natural language queries:
-
-```yaml
-- name: revenue
-  type: number
-  expr: total_amount
-  synonyms: ["sales", "income", "total_sales", "gross_revenue"]
-```
-
-This allows queries like:
-- "What's the total **sales** this month?"
-- "Show me **income** by region"
-- "Compare **gross revenue** year over year"
-
-## Defining Measures
-
-Measures provide quantitative insights through aggregations and calculations.
-
-### Measure Types
-
-| Type             | Description                      | Example                                  |
-| ---------------- | -------------------------------- | ---------------------------------------- |
-| `count`          | Count of records                 | Total number of orders                   |
-| `sum`            | Sum of values                    | Total revenue                            |
-| `average`        | Arithmetic mean                  | Average order value                      |
-| `min`            | Minimum value                    | Smallest order amount                    |
-| `max`            | Maximum value                    | Largest order amount                     |
-| `count_distinct` | Count of unique values           | Number of unique customers               |
-| `median`         | Median (50th percentile)         | Median order value                       |
-| `custom`         | Custom SQL expression            | Complex calculations                     |
-
-### Measure Properties
-
-| Property      | Type   | Required    | Description                                      |
-| ------------- | ------ | ----------- | ------------------------------------------------ |
-| `name`        | string | Yes         | Unique identifier within the view                |
-| `type`        | string | Yes         | Measure type                                     |
-| `description` | string | No          | Human-readable description                       |
-| `expr`        | string | Conditional | SQL expression (required for most types)         |
-| `filters`     | array  | No          | Filters to apply to the measure                  |
-| `samples`     | array  | No          | Example values for documentation                 |
-| `synonyms`    | array  | No          | Alternative names                                |
-
-### Examples
-
-```yaml
-measures:
-  # Simple count
-  - name: total_orders
-    type: count
-    description: "Total number of orders"
-    synonyms: ["order_count", "number_of_orders"]
-
-  # Sum
-  - name: total_revenue
-    type: sum
-    description: "Total revenue from all orders"
-    expr: total_amount
-    synonyms: ["revenue", "sales", "total_sales"]
-
-  # Average
-  - name: avg_order_value
-    type: average
-    description: "Average order value"
-    expr: total_amount
-    synonyms: ["aov", "average_order_amount"]
-
-  # Count distinct
-  - name: unique_customers
-    type: count_distinct
-    description: "Number of unique customers"
-    expr: customer_id
-    synonyms: ["customer_count", "distinct_customers"]
-
-  # Min/Max
-  - name: min_order_amount
-    type: min
-    description: "Smallest order amount"
-    expr: total_amount
-
-  - name: max_order_amount
-    type: max
-    description: "Largest order amount"
-    expr: total_amount
-
-  # Median
-  - name: median_order_value
-    type: median
-    description: "Median order value"
-    expr: total_amount
-```
-
-### Filtered Measures
-
-Apply filters to create conditional aggregations:
-
-```yaml
-measures:
-  # Large orders (>= $1000)
-  - name: large_orders_count
-    type: count
-    description: "Number of large orders (>= $1000)"
-    filters:
-      - expr: "{{total_amount}} >= 1000"
-
-  # High-value customer revenue
-  - name: high_value_customer_revenue
-    type: sum
-    description: "Revenue from high-value customers"
-    expr: total_amount
-    filters:
-      - expr: "{{customer.value_segment}} = 'High Value'"
-
-  # Male customers
-  - name: male_customers
-    type: count
-    description: "Count of male customers"
-    filters:
-      - expr: "{{gender}} = 'M'"
-```
-
-### Custom Measures
-
-For complex calculations, use the `custom` type:
-
-```yaml
-- name: revenue_per_customer
-  type: custom
-  description: "Revenue per unique customer"
-  expr: |
-    SUM(total_amount) / NULLIF(COUNT(DISTINCT customer_id), 0)
-
-- name: weighted_avg_rating
-  type: custom
-  description: "Rating weighted by review count"
-  expr: |
-    SUM(rating * review_count) / NULLIF(SUM(review_count), 0)
-```
-
-### Cross-Entity Measures
-
-Reference dimensions or measures from related entities using `{{entity.field}}` syntax:
-
-```yaml
-# In orders.view.yml
-measures:
-  - name: total_order_item_quantity
-    type: sum
-    description: "Total quantity from all order items"
-    expr: "{{ order_item.quantity }}"
-
-  - name: items_count
-    type: count
-    description: "Total number of items in orders"
-    expr: "{{ order_item.order_item_id }}"
-
-  - name: customer_lifetime_value
-    type: custom
-    description: "Average order value per customer"
-    expr: "{{ order.total_revenue }} / {{ customer.customer_count }}"
-```
-
-## Organizing with Topics
-
-Topics group related views by business domain for better organization and discovery.
-
-### Creating Topics
-
-Create a file with the `.topic.yml` extension in your `semantics/topics/` directory:
-
-```yaml semantics/topics/sales.topic.yml
-name: sales
-description: "Sales transactions, revenue, and performance analytics"
-views:
-  - orders
-  - order_items
-  - customers
-  - products
-```
-
-### Topic Properties
-
-| Property      | Type   | Required | Description                       |
-| ------------- | ------ | -------- | --------------------------------- |
-| `name`        | string | Yes      | Unique identifier for the topic   |
-| `description` | string | Yes      | Description of the business domain|
-| `views`       | array  | Yes      | List of view names in this topic  |
-
-### Example Topics
-
-```yaml semantics/topics/ecommerce.topic.yml
-name: ecommerce_analytics
-description: "Complete e-commerce analytics including orders, customers, and products"
-views:
-  - orders
-  - order_items
-  - customers
-  - products
-  - shipping_addresses
-```
-
-```yaml semantics/topics/marketing.topic.yml
-name: marketing
-description: "Marketing campaigns, attribution, and customer acquisition"
-views:
-  - campaigns
-  - campaign_performance
-  - attribution
-  - website_sessions
-```
-
-```yaml semantics/topics/finance.topic.yml
-name: finance
-description: "Financial reporting and revenue analytics"
-views:
-  - revenue_recognition
-  - transactions
-  - cost_centers
-  - budgets
-```
-
-## Using the Semantic Layer
-
-Once you've defined your semantic layer with views, entities, dimensions, and measures, you need to build it before use:
+Build your semantic layer:
 
 ```bash
 oxy build
 ```
 
-This command validates and compiles your semantic layer definitions, making them available to agents, workflows, and routing agents. Always run `oxy build` after creating or modifying semantic layer files to ensure your changes are picked up.
+Then use it in an agent:
 
-After building, you can use the semantic layer across different components of Oxy. The semantic layer provides a consistent, business-friendly interface for querying data.
-
-### In Agents
-
-Add the `semantic_query` tool to your agent to enable it to query the semantic layer directly. The agent can then answer business questions using your defined metrics and dimensions.
-
-#### Basic Setup
-
-```yaml agents/analytics.agent.yml
+```yaml agents/analyst.agent.yml
 model: "openai-4o-mini"
-description: "Data analyst agent that can answer business questions"
-
-system_instructions: |
-  You are a data analyst expert. Your task is to help users answer 
-  questions based on data using the semantic layer.
-  
-  Use the semantic_query tool to query data. The tool gives you access
-  to pre-defined business metrics and dimensions.
-
 tools:
   - name: semantic_query
     type: semantic_query
-    topic: ecommerce_analytics  # The topic to query
-```
-
-#### Tool Configuration
-
-The `semantic_query` tool has the following properties:
-
-| Property | Type   | Required | Description                                    |
-| -------- | ------ | -------- | ---------------------------------------------- |
-| `name`   | string | Yes      | Unique identifier for the tool                 |
-| `type`   | string | Yes      | Must be `semantic_query`                       |
-| `topic`  | string | Yes      | Name of the semantic topic to query            |
-
-#### Example Queries
-
-Once configured, your agent can handle queries like:
-
-- "What's the total revenue by customer segment?"
-- "Show me the top 5 products by sales this month"
-- "What's the average order value for each acquisition channel?"
-
-The agent will use the semantic layer to understand available dimensions and measures, then construct appropriate queries.
-
-#### Multiple Topics
-
-You can add multiple `semantic_query` tools for different topics:
-
-```yaml
-tools:
-  - name: sales_query
-    type: semantic_query
     topic: sales
-
-  - name: marketing_query
-    type: semantic_query
-    topic: marketing
-
-  - name: finance_query
-    type: semantic_query
-    topic: finance
 ```
 
-### In Workflows
+## Detailed Guides
 
-Use the `semantic_query` task type in workflows to execute structured queries against your semantic layer. This is ideal for automated reporting, data pipelines, and scheduled analytics.
+Explore each component of the semantic layer in detail:
 
-#### Basic Workflow Task
+<CardGroup cols={2}>
+  <Card title="Views" icon="database" href="/learn-about-oxy/semantic-layer/views">
+    Create and manage views that represent your data models
+  </Card>
+  <Card title="Entities" icon="link" href="/learn-about-oxy/semantic-layer/entities">
+    Define entities and relationships for automatic joins
+  </Card>
+  <Card title="Dimensions" icon="grid" href="/learn-about-oxy/semantic-layer/dimensions">
+    Add dimensions for filtering and grouping
+  </Card>
+  <Card title="Measures" icon="chart-line" href="/learn-about-oxy/semantic-layer/measures">
+    Define measures and metrics for analysis
+  </Card>
+  <Card title="Topics" icon="folder" href="/learn-about-oxy/semantic-layer/topics">
+    Organize views into business domain topics
+  </Card>
+  <Card title="Usage" icon="rocket" href="/learn-about-oxy/semantic-layer/usage">
+    Use the semantic layer in agents, workflows, and routing
+  </Card>
+</CardGroup>
 
-```yaml workflows/sales_report.workflow.yml
-name: weekly_sales_report
-description: Generate weekly sales performance report
-
-tasks:
-  - name: sales_metrics
-    type: semantic_query
-    topic: ecommerce_analytics
-    dimensions:
-      - orders.order_status
-      - customers.acquisition_channel
-    measures:
-      - orders.total_revenue
-      - orders.total_orders
-      - orders.avg_order_value
-    orders:
-      - field: orders.total_revenue
-        direction: desc
-    limit: 10
-
-  - name: create_report
-    type: agent
-    agent_ref: agents/report_generator.agent.yml
-    prompt: |
-      Create a weekly sales report based on this data:
-      {{ sales_metrics }}
-      
-      Include insights on:
-      - Top performing channels
-      - Order status breakdown
-      - Key trends
-```
-
-#### Semantic Query Task Properties
-
-| Property      | Type   | Required | Description                                      |
-| ------------- | ------ | -------- | ------------------------------------------------ |
-| `type`        | string | Yes      | Must be `semantic_query`                         |
-| `topic`       | string | Yes      | Name of the semantic topic to query              |
-| `dimensions`  | array  | No       | List of dimensions to include (view.field format)|
-| `measures`    | array  | No       | List of measures to calculate (view.field format)|
-| `filters`     | array  | No       | Filters to apply to the query                    |
-| `orders`      | array  | No       | Sort order for results                           |
-| `limit`       | number | No       | Maximum number of rows to return                 |
-
-#### Field Referencing
-
-Reference dimensions and measures using the format `view_name.field_name`:
-
-```yaml
-dimensions:
-  - orders.order_date          # From orders view
-  - customers.customer_name    # From customers view
-  - products.product_category  # From products view
-
-measures:
-  - orders.total_revenue       # Sum measure from orders
-  - orders.avg_order_value     # Average measure from orders
-  - customers.total_customers  # Count measure from customers
-```
-
-#### Filtering Data
-
-Apply filters to narrow down your results:
-
-```yaml
-- name: high_value_orders
-  type: semantic_query
-  topic: ecommerce_analytics
-  dimensions:
-    - orders.order_id
-    - customers.customer_name
-  measures:
-    - orders.total_revenue
-  filters:
-    - field: orders.total_amount
-      operator: ">="
-      value: 1000
-    - field: orders.order_status
-      operator: "="
-      value: "delivered"
-  orders:
-    - field: orders.total_revenue
-      direction: desc
-  limit: 20
-```
-
-#### Ordering Results
-
-Control the sort order of your results:
-
-```yaml
-orders:
-  - field: orders.total_revenue
-    direction: desc           # Sort by revenue descending
-  - field: customers.customer_name
-    direction: asc            # Then by customer name ascending
-```
-
-#### Advanced Example
-
-```yaml workflows/customer_analysis.workflow.yml
-name: customer_segmentation_analysis
-description: Analyze customer segments and buying patterns
-
-variables:
-  min_orders:
-    type: number
-    description: Minimum number of orders for analysis
-    default: 5
-
-tasks:
-  - name: customer_segments
-    type: semantic_query
-    topic: ecommerce_analytics
-    dimensions:
-      - customers.acquisition_channel
-      - customers.customer_name
-    measures:
-      - orders.total_orders
-      - orders.total_revenue
-      - orders.avg_order_value
-    filters:
-      - field: orders.total_orders
-        operator: ">="
-        value: "{{ min_orders }}"
-    orders:
-      - field: orders.total_revenue
-        direction: desc
-    limit: 50
-
-  - name: channel_performance
-    type: semantic_query
-    topic: ecommerce_analytics
-    dimensions:
-      - customers.acquisition_channel
-      - orders.order_status
-    measures:
-      - orders.total_revenue
-      - orders.total_orders
-    orders:
-      - field: customers.acquisition_channel
-        direction: asc
-
-  - name: generate_insights
-    type: agent
-    agent_ref: agents/analyst.agent.yml
-    prompt: |
-      Analyze this customer data and provide strategic insights:
-      
-      Customer Segments:
-      {{ customer_segments }}
-      
-      Channel Performance:
-      {{ channel_performance }}
-      
-      Focus on:
-      1. Which channels drive the most value?
-      2. Customer retention patterns
-      3. Recommendations for optimization
-```
-
-### In Routing Agents
-
-Routing agents can include semantic topics as routes, enabling intelligent task routing based on semantic understanding.
-
-#### Adding Topics to Routes
-
-```yaml agents/_routing.agent.yml
-model: "openai-4o-mini"
-type: routing
-description: "Main routing agent for data analysis"
-
-routes:
-  # Include specific topics
-  - "semantics/topics/ecommerce_analytics.topic.yml"
-  - "semantics/topics/sales.topic.yml"
-  
-  # Or use glob patterns to include all topics
-  - "semantics/topics/*.topic.yml"
-  
-  # Mix with other route types
-  - "agents/specialized_analyst.agent.yml"
-  - "workflows/*.workflow.yml"
-
-route_fallback: agents/default.agent.yml
-```
-
-#### Complete Routing Example
-
-```yaml agents/_data_router.agent.yml
-model: "openai-4o-mini"
-type: routing
-description: "Intelligent data analysis router"
-
-system_instructions: |
-  You are a routing agent for data analysis tasks.
-  
-  Route to semantic topics for:
-  - Metrics and KPI queries
-  - Standard business questions
-  - Data exploration requests
-  
-  Route to specialized agents for:
-  - Complex analysis requiring custom logic
-  - Tasks needing multiple data sources
-  
-  Route to workflows for:
-  - Automated reporting
-  - Multi-step processes
-
-routes:
-  # Semantic layer topics
-  - "semantics/topics/sales.topic.yml"
-  - "semantics/topics/marketing.topic.yml"
-  - "semantics/topics/finance.topic.yml"
-  - "semantics/topics/operations.topic.yml"
-  
-  # Specialized agents
-  - "agents/data_scientist.agent.yml"
-  - "agents/report_generator.agent.yml"
-  
-  # Automated workflows
-  - "workflows/daily_reports.workflow.yml"
-  - "workflows/data_quality.workflow.yml"
-
-route_fallback: agents/general_assistant.agent.yml
-
-reasoning:
-  effort: low
-```
-## Best Practices
-
-### Naming Conventions
-
-- **Views**: Use lowercase, descriptive names (e.g., `orders`, `customer_metrics`)
-- **Entities**: Use singular nouns (e.g., `customer`, `order`, `product`)
-- **Dimensions**: Use descriptive names without prefixes (e.g., `order_date` not `dim_order_date`)
-- **Measures**: Use descriptive names that indicate the metric (e.g., `total_revenue`, `avg_order_value`)
-
-### Documentation
-
-- Always provide clear descriptions for views, entities, dimensions, and measures
-- Include sample values for dimensions to help users understand the data
-- Add synonyms for common alternative terms your users might use
-- Document any business rules or calculations in measure descriptions
-
-### Organization
-
-- Group related views into topics by business domain
-- Keep views focused on a single primary entity
-- Use foreign entities to establish relationships between views
-- Organize files in a clear directory structure
+## Examples
 
 ### Performance
 
 - Use table references when possible instead of complex SQL
 - Pre-aggregate data in SQL-based views when appropriate
 - Index the key columns referenced in entity definitions
-- Consider materializing complex SQL views in your database
 
-## Examples
+## Next Steps
 
-### E-commerce Semantic Layer
+Now that you understand the semantic layer, dive deeper into specific components:
 
-```yaml semantics/views/orders.view.yml
-name: orders
-description: "Customer orders with shipping and payment information"
-datasource: "ecommerce_db"
-table: "public.orders"
+<Steps>
+  <Step title="Create Views">
+    Start by creating views that represent your data models. [Learn about Views →](/learn-about-oxy/semantic-layer/views)
+  </Step>
+  <Step title="Define Entities">
+    Add entities to enable automatic joins between views. [Learn about Entities →](/learn-about-oxy/semantic-layer/entities)
+  </Step>
+  <Step title="Add Dimensions & Measures">
+    Define the dimensions and measures that users will query. [Dimensions →](/learn-about-oxy/semantic-layer/dimensions) | [Measures →](/learn-about-oxy/semantic-layer/measures)
+  </Step>
+  <Step title="Organize with Topics">
+    Group related views into business domain topics. [Learn about Topics →](/learn-about-oxy/semantic-layer/topics)
+  </Step>
+  <Step title="Use in Agents & Workflows">
+    Put your semantic layer to work in agents and workflows. [Learn about Usage →](/learn-about-oxy/semantic-layer/usage)
+  </Step>
+</Steps>
 
-entities:
-  - name: order
-    type: primary
-    description: "Individual order transaction"
-    key: order_id
-  - name: customer
-    type: foreign
-    description: "Customer who placed the order"
-    key: customer_id
+## Related Documentation
 
-dimensions:
-  - name: order_id
-    type: number
-    description: "Unique order identifier"
-    expr: id
-  - name: order_date
-    type: date
-    description: "Date when order was placed"
-    expr: order_date
-    synonyms: ["purchase_date", "date_ordered"]
-  - name: order_status
-    type: string
-    description: "Current order status"
-    expr: status
-    samples: ["pending", "processing", "shipped", "delivered", "cancelled"]
-
-measures:
-  - name: total_orders
-    type: count
-    description: "Total number of orders"
-  - name: total_revenue
-    type: sum
-    description: "Total revenue from all orders"
-    expr: total_amount
-    synonyms: ["revenue", "sales"]
-  - name: avg_order_value
-    type: average
-    description: "Average order value"
-    expr: total_amount
-    synonyms: ["aov"]
-```
-
-```yaml semantics/views/customers.view.yml
-name: customers
-description: "Customer profiles and segmentation"
-datasource: "ecommerce_db"
-table: "public.customers"
-
-entities:
-  - name: customer
-    type: primary
-    description: "Individual customer"
-    key: customer_id
-
-dimensions:
-  - name: customer_id
-    type: number
-    description: "Unique customer identifier"
-    expr: id
-  - name: customer_name
-    type: string
-    description: "Customer full name"
-    expr: name
-    synonyms: ["name", "full_name"]
-  - name: email
-    type: string
-    description: "Customer email address"
-    expr: email
-  - name: acquisition_channel
-    type: string
-    description: "How the customer was acquired"
-    expr: acquisition_channel
-    samples: ["organic", "paid_search", "social", "email", "referral"]
-
-measures:
-  - name: total_customers
-    type: count
-    description: "Total number of customers"
-  - name: unique_customers
-    type: count_distinct
-    description: "Count of unique customers"
-    expr: id
-```
-
-```yaml semantics/topics/ecommerce.topic.yml
-name: ecommerce
-description: "Complete e-commerce analytics"
-views:
-  - orders
-  - customers
-  - products
-  - order_items
-```
+<CardGroup cols={2}>
+  <Card title="Quick Reference" icon="book" href="/reference/semantic-layer-reference">
+    Semantic layer syntax reference
+  </Card>
+  <Card title="Semantic Model" icon="file-code" href="/learn-about-oxy/semantic-model">
+    Simpler semantic model format
+  </Card>
+  <Card title="Context" icon="database" href="/learn-about-oxy/context">
+    Providing context to agents
+  </Card>
+  <Card title="Data Sources" icon="plug" href="/integrations/overview">
+    Configure data sources
+  </Card>
+</CardGroup>
 
 ## Related Documentation
 

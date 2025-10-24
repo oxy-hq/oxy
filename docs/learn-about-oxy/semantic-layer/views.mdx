@@ -1,0 +1,186 @@
+---
+title: "Views"
+description: "Create and manage views in your semantic layer"
+---
+
+## Overview
+
+**Views** represent logical data models that define how to access and interpret data. They encapsulate the business logic needed to transform raw tables into meaningful business concepts.
+
+A view defines:
+- How to access data (table or custom SQL)
+- What entities exist in the data
+- Available dimensions (attributes)
+- Available measures (metrics and aggregations)
+
+## Basic View Structure
+
+Create a file with the `.view.yml` extension in your `semantics/views/` directory:
+
+```yaml semantics/views/orders.view.yml
+name: orders
+description: "Order transactions and related data"
+datasource: "local"
+table: "orders.csv"
+
+entities:
+  - name: order
+    type: primary
+    description: "Individual order transaction"
+    key: order_id
+
+  - name: customer
+    type: foreign
+    description: "Customer who placed the order"
+    key: customer_id
+
+dimensions:
+  - name: order_id
+    type: number
+    description: "Unique order identifier"
+    expr: id
+
+  - name: order_date
+    type: date
+    description: "Date when order was placed"
+    expr: order_date
+
+  - name: order_status
+    type: string
+    description: "Current status of the order"
+    expr: status
+    samples: ["pending", "shipped", "delivered", "cancelled"]
+
+  - name: total_amount
+    type: number
+    description: "Total order amount"
+    expr: total_amount
+
+measures:
+  - name: total_orders
+    type: count
+    description: "Total number of orders"
+
+  - name: total_revenue
+    type: sum
+    description: "Total revenue from all orders"
+    expr: total_amount
+
+  - name: avg_order_value
+    type: average
+    description: "Average order value"
+    expr: total_amount
+```
+
+## View Properties
+
+| Property      | Type   | Required    | Description                                                   |
+| ------------- | ------ | ----------- | ------------------------------------------------------------- |
+| `name`        | string | Yes         | Unique identifier for the view                                |
+| `description` | string | Yes         | Human-readable description of what this view represents       |
+| `datasource`  | string | Yes         | Name of the datasource to use                                 |
+| `table`       | string | Conditional | Database table reference (required if `sql` not specified)    |
+| `sql`         | string | Conditional | Custom SQL query (required if `table` not specified)          |
+| `entities`    | array  | Yes         | List of entities in this view                                 |
+| `dimensions`  | array  | Yes         | List of dimensions (attributes)                               |
+| `measures`    | array  | No          | List of measures (aggregations)                               |
+
+## SQL-Based Views
+
+For complex transformations, use custom SQL instead of a direct table reference:
+
+```yaml semantics/views/customer_metrics.view.yml
+name: customer_metrics
+description: "Aggregated customer metrics and segmentation"
+datasource: "analytics"
+sql: |
+  SELECT 
+    customer_id,
+    COUNT(DISTINCT order_id) as total_orders,
+    SUM(order_amount) as lifetime_value,
+    MAX(order_date) as last_order_date,
+    MIN(order_date) as first_order_date,
+    CASE 
+      WHEN SUM(order_amount) >= 1000 THEN 'High Value'
+      WHEN SUM(order_amount) >= 500 THEN 'Medium Value'
+      ELSE 'Low Value'
+    END as value_segment
+  FROM orders
+  GROUP BY customer_id
+
+entities:
+  - name: customer
+    type: primary
+    description: "Customer entity with aggregated metrics"
+    key: customer_id
+
+dimensions:
+  - name: customer_id
+    type: number
+    description: "Customer identifier"
+    expr: customer_id
+
+  - name: total_orders
+    type: number
+    description: "Number of orders placed by customer"
+    expr: total_orders
+
+  - name: value_segment
+    type: string
+    description: "Customer value segmentation"
+    expr: value_segment
+    samples: ["High Value", "Medium Value", "Low Value"]
+
+measures:
+  - name: total_customers
+    type: count
+    description: "Total number of customers"
+
+  - name: avg_lifetime_value
+    type: average
+    description: "Average customer lifetime value"
+    expr: lifetime_value
+```
+
+## Best Practices
+
+### Naming
+
+- Use lowercase, descriptive names (e.g., `orders`, `customer_metrics`)
+- Keep names concise but clear
+- Avoid technical prefixes like `tbl_` or `view_`
+
+### Structure
+
+- Keep views focused on a single primary entity
+- Use foreign entities to establish relationships between views
+- Organize related views in the same directory
+
+### Performance
+
+- Use table references when possible instead of complex SQL
+- Pre-aggregate data in SQL-based views when appropriate
+- Index the key columns referenced in entity definitions
+
+### Documentation
+
+- Always provide clear descriptions
+- Include sample values for important dimensions
+- Document any business rules or calculations
+
+## Related Documentation
+
+<CardGroup cols={2}>
+  <Card title="Entities" icon="link" href="/learn-about-oxy/semantic-layer/entities">
+    Define entities and relationships
+  </Card>
+  <Card title="Dimensions" icon="grid" href="/learn-about-oxy/semantic-layer/dimensions">
+    Add dimensions to your views
+  </Card>
+  <Card title="Measures" icon="chart-line" href="/learn-about-oxy/semantic-layer/measures">
+    Define measures and metrics
+  </Card>
+  <Card title="Overview" icon="book" href="/learn-about-oxy/semantic-layer">
+    Back to semantic layer overview
+  </Card>
+</CardGroup>
