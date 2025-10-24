@@ -92,7 +92,7 @@
     "react-resizable-panels": "^3.0.6",
     "react-resize-detector": "^12.3.0",
     "react-router-dom": "^7.9.4",
-    "react-syntax-highlighter": "15.6.6",
+    "react-syntax-highlighter": "16.0.0",
     "react-textarea-autosize": "^8.5.9",
     "react-window": "^2.2.1",
     "rehype-raw": "^7.0.0",
