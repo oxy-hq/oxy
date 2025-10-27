@@ -532,6 +532,41 @@
               ]
             }
           }
+        },
+        {
+          "type": "object",
+          "required": [
+            "token_var",
+            "type"
+          ],
+          "properties": {
+            "database": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "schemas": {
+              "default": {},
+              "type": "object",
+              "additionalProperties": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "token_var": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "motherduck"
+              ]
+            }
+          }
         }
       ],
       "required": [

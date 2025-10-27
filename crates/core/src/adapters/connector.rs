@@ -5,6 +5,7 @@ use connectorx::ConnectorX;
 pub use domo::DOMO;
 use duckdb::DuckDB;
 use engine::Engine;
+use motherduck::MotherDuck;
 use snowflake::Snowflake;
 use std::collections::HashMap;
 
@@ -20,6 +21,7 @@ mod constants;
 mod domo;
 mod duckdb;
 mod engine;
+mod motherduck;
 mod snowflake;
 mod utils;
 
@@ -33,6 +35,7 @@ enum EngineType {
     ClickHouse,
     Snowflake,
     DOMO,
+    MotherDuck,
 }
 
 #[derive(Debug)]
@@ -121,6 +124,9 @@ impl Connector {
             DatabaseType::DOMO(domo) => {
                 EngineType::DOMO(DOMO::from_config(secrets_manager.clone(), domo.clone()).await?)
             }
+            DatabaseType::MotherDuck(motherduck) => EngineType::MotherDuck(
+                MotherDuck::from_config(secrets_manager.clone(), motherduck.clone()).await?,
+            ),
         };
         Ok(Connector { engine })
     }

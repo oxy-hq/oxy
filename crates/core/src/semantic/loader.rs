@@ -285,6 +285,45 @@ impl GetSchemaQuery for Database {
                 })
                 .collect::<Result<Vec<_>, OxyError>>(),
 
+            DatabaseType::DuckDB(_) => {
+                // DuckDB uses the information_schema structure
+                let query = format!(
+                    "SELECT table_schema,
+                            table_name,
+                            column_name,
+                            data_type,
+                            FALSE as is_partitioning_column,
+                            NULL as description
+                     FROM information_schema.columns
+                     WHERE table_schema NOT IN ('information_schema', 'pg_catalog')
+                     ORDER BY table_schema, table_name, ordinal_position"
+                );
+                tracing::debug!("DuckDB schema query: {}", query);
+                Ok(vec![query])
+            }
+
+            DatabaseType::MotherDuck(_) => {
+                // MotherDuck uses the same information_schema structure as DuckDB
+                // but we filter by schemas specified in config
+                self.datasets()
+                    .iter()
+                    .map(|(schema, tables)| {
+                        let query = GetSchemaQueryBuilder::default()
+                            .with_column_names(
+                                ColumnNames::default()
+                                    .with_is_partitioning_column("FALSE as is_partitioning_column")
+                                    .with_description("NULL as description"),
+                            )
+                            .with_filter_dataset(schema.to_string())
+                            .with_filter_tables(tables.clone())
+                            .with_columns_table("information_schema.columns".to_string())
+                            .build();
+                        tracing::debug!("MotherDuck schema query for schema '{}': {}", schema, query);
+                        Ok(query)
+                    })
+                    .collect::<Result<Vec<_>, OxyError>>()
+            }
+
             _ => Err(OxyError::ConfigurationError(
                 "Unsupported database type".to_string(),
             )),
@@ -325,6 +364,22 @@ impl GetSchemaQuery for Database {
                 // Snowflake's GET_DDL function requires constant arguments and cannot be used
                 // in bulk queries with dynamic table names. DDL information is not critical
                 // for semantic model generation, so we skip it for Snowflake.
+                Ok(vec![])
+            }
+
+            DatabaseType::DuckDB(_) => {
+                // DuckDB supports querying table DDL via information_schema when available
+                let query = "SELECT table_schema, sql as ddl FROM information_schema.tables WHERE table_schema NOT IN ('information_schema', 'pg_catalog') AND sql IS NOT NULL".to_string();
+                tracing::debug!("DuckDB DDL query: {}", query);
+                Ok(vec![query])
+            }
+
+            DatabaseType::MotherDuck(_) => {
+                // MotherDuck's information_schema doesn't expose DDL statements via sql column
+                // DDL information is not critical for semantic model generation, so we skip it
+                tracing::debug!(
+                    "MotherDuck: Skipping DDL queries (not supported via information_schema)"
+                );
                 Ok(vec![])
             }
 
@@ -533,11 +588,13 @@ impl SchemaLoader {
             }
             DatabaseType::ClickHouse(_)
             | DatabaseType::Bigquery(_)
-            | DatabaseType::Snowflake(_) => {
+            | DatabaseType::Snowflake(_)
+            | DatabaseType::MotherDuck(_) => {
                 let db_type = match &self.database.database_type {
                     DatabaseType::ClickHouse(_) => "ClickHouse",
                     DatabaseType::Bigquery(_) => "BigQuery",
                     DatabaseType::Snowflake(_) => "Snowflake",
+                    DatabaseType::MotherDuck(_) => "MotherDuck",
                     _ => "Unknown",
                 };
                 tracing::debug!(
@@ -733,7 +790,7 @@ impl SchemaLoader {
                 });
                 Ok(datasets)
             }
-            DatabaseType::DOMO(_) => Ok(HashMap::new()),
+            DatabaseType::DOMO(_) | DatabaseType::MotherDuck(_) => Ok(HashMap::new()),
             _ => Err(OxyError::ConfigurationError(
                 "Unsupported database type".to_string(),
             )),

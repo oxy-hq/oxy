@@ -620,6 +620,29 @@ pub struct DOMO {
     pub dataset_id: String,
 }
 
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone, Validate, Default)]
+#[garde(context(ValidationContext))]
+pub struct MotherDuck {
+    #[garde(custom(validate_env_var))]
+    pub token_var: String,
+    #[serde(default)]
+    #[garde(skip)]
+    pub database: Option<String>,
+    #[serde(default)]
+    #[garde(skip)]
+    pub schemas: HashMap<String, Vec<String>>,
+}
+
+impl MotherDuck {
+    pub async fn get_token(&self, secret_manager: &SecretsManager) -> Result<String, OxyError> {
+        let value = secret_manager.resolve_secret(&self.token_var).await?;
+        match value {
+            Some(res) => Ok(res),
+            None => Err(OxyError::SecretNotFound(Some(self.token_var.clone()))),
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, JsonSchema, Validate)]
 #[garde(context(AgentValidationContext))]
 #[serde(rename_all = "lowercase")]
@@ -938,6 +961,8 @@ pub enum DatabaseType {
     ClickHouse(#[garde(dive)] ClickHouse),
     #[serde(rename = "domo")]
     DOMO(#[garde(dive)] DOMO),
+    #[serde(rename = "motherduck")]
+    MotherDuck(#[garde(dive)] MotherDuck),
 }
 
 impl std::fmt::Display for DatabaseType {
@@ -951,6 +976,7 @@ impl std::fmt::Display for DatabaseType {
             DatabaseType::Mysql(_) => write!(f, "mysql"),
             DatabaseType::ClickHouse(_) => write!(f, "clickhouse"),
             DatabaseType::DOMO(_) => write!(f, "domo"),
+            DatabaseType::MotherDuck(_) => write!(f, "motherduck"),
         }
     }
 }
@@ -977,6 +1003,7 @@ impl Database {
             DatabaseType::ClickHouse(_) => "clickhouse".to_string(),
             DatabaseType::Snowflake(_) => "snowflake".to_string(),
             DatabaseType::DOMO(_) => "domo".to_string(),
+            DatabaseType::MotherDuck(_) => "duckdb".to_string(),
         }
     }
 
@@ -1004,6 +1031,13 @@ impl Database {
                     HashMap::from_iter([("CORE".to_string(), vec!["*".to_string()])]) // Default to CORE schema
                 } else {
                     sf.datasets.clone()
+                }
+            }
+            DatabaseType::MotherDuck(md) => {
+                if md.schemas.is_empty() {
+                    HashMap::from_iter([(String::default(), vec!["*".to_string()])])
+                } else {
+                    md.schemas.clone()
                 }
             }
             _ => Default::default(),
