@@ -1,15 +1,12 @@
-use crate::{
-    adapters::session_filters::SessionFilters, api::middlewares::project::ProjectManagerExtractor,
-    execute::types::ReferenceKind,
-};
 use std::{path::PathBuf, pin::Pin};
 
 use crate::{
-    adapters::project::manager::ProjectManager,
+    adapters::{project::manager::ProjectManager, session_filters::SessionFilters},
+    api::middlewares::project::ProjectManagerExtractor,
     auth::extractor::AuthenticatedUserExtractor,
-    config::model::AgentConfig,
+    config::model::{AgentConfig, ConnectionOverrides},
     errors::OxyError,
-    execute::types::Usage,
+    execute::types::{ReferenceKind, Usage},
     service::{
         agent::run_agent,
         chat::{ChatExecutionContext, ChatExecutionRequest, ChatHandler, ChatService},
@@ -226,6 +223,10 @@ pub struct AskAgentRequest {
 
     #[serde(default)]
     pub filters: Option<SessionFilters>,
+
+    #[serde(default)]
+    #[schema(value_type = Object)]
+    pub connections: Option<ConnectionOverrides>,
 }
 
 /// Ask a question to an agent and stream the response
@@ -271,6 +272,7 @@ pub async fn ask_agent_preview(
 
     let (tx, rx) = tokio::sync::mpsc::channel(100);
     let filters = payload.filters;
+    let connections = payload.connections;
 
     let _ = tokio::spawn(async move {
         let tx_clone = tx.clone();
@@ -283,6 +285,7 @@ pub async fn ask_agent_preview(
             block_handler,
             vec![],
             filters,
+            connections,
         )
         .await;
 
@@ -346,6 +349,10 @@ pub struct AskAgentNonStreamingRequest {
 
     #[serde(default)]
     pub filters: Option<SessionFilters>,
+
+    #[serde(default)]
+    #[schema(value_type = Object)]
+    pub connections: Option<ConnectionOverrides>,
 }
 
 impl ChatExecutionRequest for AskAgentNonStreamingRequest {
@@ -355,6 +362,10 @@ impl ChatExecutionRequest for AskAgentNonStreamingRequest {
 
     fn get_filters(&self) -> Option<SessionFilters> {
         self.filters.clone()
+    }
+
+    fn get_connections(&self) -> Option<ConnectionOverrides> {
+        self.connections.clone()
     }
 }
 
@@ -400,6 +411,7 @@ pub async fn ask_agent_sync(
     let project_manager_clone = project_manager.clone();
     let question = payload.question.clone();
     let filters = payload.filters;
+    let connections = payload.connections;
 
     let _ = tokio::spawn(async move {
         let tx_clone = tx.clone();
@@ -412,6 +424,7 @@ pub async fn ask_agent_sync(
             block_handler,
             vec![],
             filters,
+            connections,
         )
         .await;
 
@@ -536,6 +549,9 @@ pub struct AskThreadRequest {
 
     #[serde(default)]
     pub filters: Option<SessionFilters>,
+
+    #[serde(default)]
+    pub connections: Option<ConnectionOverrides>,
 }
 
 impl ChatExecutionRequest for AskThreadRequest {
@@ -545,6 +561,10 @@ impl ChatExecutionRequest for AskThreadRequest {
 
     fn get_filters(&self) -> Option<SessionFilters> {
         self.filters.clone()
+    }
+
+    fn get_connections(&self) -> Option<ConnectionOverrides> {
+        self.connections.clone()
     }
 }
 
@@ -581,6 +601,7 @@ impl ChatHandler for AgentExecutor {
             block_handler,
             context.memory.clone(),
             context.filters.clone(),
+            context.connections.clone(),
         )
         .await;
 

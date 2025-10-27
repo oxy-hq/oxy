@@ -157,9 +157,11 @@ pub async fn run_workflow<P: AsRef<Path>, L: WorkflowLogger + 'static>(
     retry_strategy: RetryStrategy,
     project_manager: ProjectManager,
     filters: Option<SessionFilters>,
+    connections: Option<crate::config::model::ConnectionOverrides>,
 ) -> Result<OutputContainer, OxyError> {
     WorkflowLauncher::new()
         .with_filters(filters)
+        .with_connections(connections)
         .with_project(project_manager)
         .await?
         .launch(
@@ -178,9 +180,11 @@ pub async fn run_workflow_v2<P: AsRef<Path>, H: EventHandler + Send + Sync + 'st
     handler: H,
     retry_strategy: RetryStrategy,
     filters: Option<SessionFilters>,
+    connections: Option<crate::config::model::ConnectionOverrides>,
 ) -> Result<OutputContainer, OxyError> {
     WorkflowLauncher::new()
         .with_filters(filters)
+        .with_connections(connections)
         .with_project(project_manager)
         .await?
         .launch(

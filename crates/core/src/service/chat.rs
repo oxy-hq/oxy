@@ -15,6 +15,7 @@ use uuid::Uuid;
 use crate::{
     adapters::session_filters::SessionFilters,
     api::agent::AskAgentResponse,
+    config::model::ConnectionOverrides,
     db::client::establish_connection,
     errors::OxyError,
     execute::types::Usage,
@@ -34,6 +35,9 @@ pub trait ChatExecutionRequest {
     fn get_filters(&self) -> Option<SessionFilters> {
         None
     }
+    fn get_connections(&self) -> Option<ConnectionOverrides> {
+        None
+    }
 }
 
 #[derive(Clone)]
@@ -45,6 +49,7 @@ pub struct ChatExecutionContext {
     pub logs_persister: Arc<LogsPersister>,
     pub cancellation_tokens: CancellationTokens,
     pub filters: Option<SessionFilters>,
+    pub connections: Option<ConnectionOverrides>,
 }
 
 impl ChatExecutionContext {
@@ -64,11 +69,17 @@ impl ChatExecutionContext {
             logs_persister,
             cancellation_tokens,
             filters: None,
+            connections: None,
         }
     }
 
     pub fn with_filters(mut self, filters: impl Into<Option<SessionFilters>>) -> Self {
         self.filters = filters.into();
+        self
+    }
+
+    pub fn with_connections(mut self, connections: impl Into<Option<ConnectionOverrides>>) -> Self {
+        self.connections = connections.into();
         self
     }
 }
@@ -207,7 +218,8 @@ impl ChatService {
             logs_persister,
             cancellation_tokens,
         )
-        .with_filters(payload.get_filters());
+        .with_filters(payload.get_filters())
+        .with_connections(payload.get_connections());
 
         let (tx, rx) = tokio::sync::mpsc::channel(100);
 
@@ -314,7 +326,8 @@ impl ChatService {
             logs_persister,
             cancellation_tokens,
         )
-        .with_filters(payload.get_filters());
+        .with_filters(payload.get_filters())
+        .with_connections(payload.get_connections());
 
         let (tx, mut rx) = tokio::sync::mpsc::channel(100);
         let connection = self.connection.clone();

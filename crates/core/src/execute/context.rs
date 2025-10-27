@@ -10,6 +10,7 @@ use crate::{
         project::manager::ProjectManager,
         session_filters::SessionFilters,
     },
+    config::model::ConnectionOverrides,
     errors::OxyError,
     execute::{builders::checkpoint::CheckpointId, renderer::Renderer, types::Usage},
 };
@@ -41,6 +42,9 @@ pub struct ExecutionContext {
     /// Filters to apply to all SQL queries in this execution context
     /// Set by API request, transparent to workflows/agents
     pub filters: Option<SessionFilters>,
+    /// Connection overrides to apply to database connections in this execution context
+    /// Set by API request, transparent to workflows/agents
+    pub connections: Option<ConnectionOverrides>,
 }
 
 impl ExecutionContext {
@@ -58,6 +62,7 @@ impl ExecutionContext {
             project,
             checkpoint,
             filters: None,
+            connections: None,
         }
     }
 
@@ -73,6 +78,7 @@ impl ExecutionContext {
             project: self.project.clone(),
             checkpoint: self.checkpoint.clone(),
             filters: self.filters.clone(),
+            connections: self.connections.clone(),
         }
     }
 
@@ -84,6 +90,7 @@ impl ExecutionContext {
             project: self.project.clone(),
             checkpoint: Some(checkpoint),
             filters: self.filters.clone(),
+            connections: self.connections.clone(),
         }
     }
 
@@ -96,6 +103,7 @@ impl ExecutionContext {
                 project: self.project.clone(),
                 checkpoint: Some(checkpoint_context.with_current_ref(child_ref)),
                 filters: self.filters.clone(),
+                connections: self.connections.clone(),
             }
         } else {
             ExecutionContext {
@@ -105,6 +113,7 @@ impl ExecutionContext {
                 project: self.project.clone(),
                 checkpoint: None,
                 filters: self.filters.clone(),
+                connections: self.connections.clone(),
             }
         }
     }
@@ -117,6 +126,7 @@ impl ExecutionContext {
             project: self.project.clone(),
             checkpoint: self.checkpoint.clone(),
             filters: self.filters.clone(),
+            connections: self.connections.clone(),
         }
     }
 
@@ -128,6 +138,7 @@ impl ExecutionContext {
             project: self.project.clone(),
             checkpoint: self.checkpoint.clone(),
             filters: self.filters.clone(),
+            connections: self.connections.clone(),
         }
     }
 
@@ -141,6 +152,7 @@ impl ExecutionContext {
             project: self.project.clone(),
             checkpoint: self.checkpoint.clone(),
             filters: self.filters.clone(),
+            connections: self.connections.clone(),
         }
     }
 
@@ -152,6 +164,7 @@ impl ExecutionContext {
             project: self.project.clone(),
             checkpoint: self.checkpoint.clone(),
             filters: self.filters.clone(),
+            connections: self.connections.clone(),
         }
     }
 
@@ -237,6 +250,7 @@ pub struct ExecutionContextBuilder {
     writer: Option<Sender<Event>>,
     checkpoint: Option<CheckpointContext>,
     filters: Option<SessionFilters>,
+    connections: Option<ConnectionOverrides>,
 }
 
 impl Default for ExecutionContextBuilder {
@@ -254,6 +268,7 @@ impl ExecutionContextBuilder {
             writer: None,
             checkpoint: None,
             filters: None,
+            connections: None,
         }
     }
 
@@ -296,6 +311,11 @@ impl ExecutionContextBuilder {
         self
     }
 
+    pub fn with_connections(mut self, connections: impl Into<Option<ConnectionOverrides>>) -> Self {
+        self.connections = connections.into();
+        self
+    }
+
     pub fn build(self) -> Result<ExecutionContext, OxyError> {
         let source = self
             .source
@@ -317,6 +337,7 @@ impl ExecutionContextBuilder {
             project,
             checkpoint: self.checkpoint,
             filters: self.filters,
+            connections: self.connections,
         })
     }
 }

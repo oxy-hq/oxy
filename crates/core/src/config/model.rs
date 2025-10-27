@@ -10,6 +10,7 @@ use std::cmp::PartialEq;
 use std::collections::HashMap;
 use std::hash::Hash;
 use std::path::PathBuf;
+use utoipa::ToSchema;
 
 pub use variables::Variables;
 
@@ -1082,6 +1083,30 @@ impl Database {
         }
     }
 }
+
+/// Override database connection parameters at runtime
+///
+/// Allows overriding database connection parameters (host, database) at request time
+/// for databases that support filters. Both fields are optional - can override one or both.
+/// Used primarily by third-party API consumers to dynamically modify connection settings
+/// for databases defined in config.yml.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, ToSchema)]
+pub struct ConnectionOverride {
+    /// Override the database host/URL
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub host: Option<String>,
+
+    /// Override the database name
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub database: Option<String>,
+}
+
+/// Map of database name to connection overrides
+///
+/// Keys should match database names defined in config.yml under the `databases` section.
+/// This allows API requests to override connection parameters for specific databases
+/// without modifying the base configuration.
+pub type ConnectionOverrides = HashMap<String, ConnectionOverride>;
 
 #[derive(Deserialize, Debug, Clone, Serialize, JsonSchema)]
 pub struct AzureModel {

@@ -4,6 +4,7 @@ use crate::adapters::{
     session_filters::SessionFilters,
 };
 use crate::api::middlewares::project::{ProjectManagerExtractor, ProjectPath};
+use crate::config::model::ConnectionOverrides;
 use crate::errors::OxyError;
 use crate::execute::types::utils::record_batches_to_2d_array;
 use crate::service::retrieval::{ReindexInput, reindex};
@@ -20,6 +21,10 @@ pub struct SQLParams {
 
     #[serde(default)]
     pub filters: Option<SessionFilters>,
+
+    #[serde(default)]
+    #[schema(value_type = Object)]
+    pub connections: Option<ConnectionOverrides>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -43,6 +48,7 @@ pub async fn execute_sql(
         &secrets_manager,
         None,
         payload.filters,
+        payload.connections,
     )
     .await?;
     let file_path = connector.run_query(&payload.sql).await?;

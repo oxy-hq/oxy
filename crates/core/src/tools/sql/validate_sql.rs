@@ -31,6 +31,7 @@ impl Executable<SQLInput> for ValidateSQLExecutable {
             secrets_manager,
             None,
             execution_context.filters.clone(),
+            execution_context.connections.clone(),
         )
         .await?;
         let success = match connector.explain_query(&input.sql).await {

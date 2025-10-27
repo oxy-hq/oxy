@@ -6,6 +6,7 @@ use crate::{
         secrets::SecretsManager,
         session_filters::SessionFilters,
     },
+    config::model::ConnectionOverrides,
     config::{ConfigManager, constants::WORKFLOW_SOURCE, model::Task},
     errors::OxyError,
     execute::{
@@ -43,6 +44,7 @@ pub struct WorkflowLauncher {
     execution_context: Option<ExecutionContext>,
     buf_writer: BufWriter,
     filters: Option<SessionFilters>,
+    connections: Option<ConnectionOverrides>,
 }
 
 impl Default for WorkflowLauncher {
@@ -57,11 +59,17 @@ impl WorkflowLauncher {
             execution_context: None,
             buf_writer: BufWriter::new(),
             filters: None,
+            connections: None,
         }
     }
 
     pub fn with_filters(mut self, filters: impl Into<Option<SessionFilters>>) -> Self {
         self.filters = filters.into();
+        self
+    }
+
+    pub fn with_connections(mut self, connections: impl Into<Option<ConnectionOverrides>>) -> Self {
+        self.connections = connections.into();
         self
     }
 
@@ -113,6 +121,7 @@ impl WorkflowLauncher {
                 kind: WORKFLOW_SOURCE.to_string(),
             })
             .with_filters(self.filters.clone())
+            .with_connections(self.connections.clone())
             .build()?;
 
         let config_manager = execution_context.project.config_manager.clone();

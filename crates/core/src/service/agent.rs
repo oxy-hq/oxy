@@ -1,15 +1,19 @@
-use crate::adapters::{project::manager::ProjectManager, session_filters::SessionFilters};
-use crate::agent::AgentLauncher;
-use crate::agent::builders::fsm::config::AgenticInput;
-use crate::agent::types::AgentInput;
-use crate::config::ConfigManager;
-use crate::config::constants::{CONCURRENCY_SOURCE, CONSISTENCY_SOURCE, WORKFLOW_SOURCE};
-use crate::config::model::AgentConfig;
-use crate::errors::OxyError;
-use crate::execute::types::{Event, EventKind, Output, OutputContainer, ProgressType};
-use crate::execute::writer::{EventHandler, NoopHandler};
-use crate::theme::StyledText;
-use crate::utils::print_colored_sql;
+use crate::{
+    adapters::{project::manager::ProjectManager, session_filters::SessionFilters},
+    agent::{AgentLauncher, builders::fsm::config::AgenticInput, types::AgentInput},
+    config::{
+        ConfigManager,
+        constants::{CONCURRENCY_SOURCE, CONSISTENCY_SOURCE, WORKFLOW_SOURCE},
+        model::{AgentConfig, ConnectionOverrides},
+    },
+    errors::OxyError,
+    execute::{
+        types::{Event, EventKind, Output, OutputContainer, ProgressType},
+        writer::{EventHandler, NoopHandler},
+    },
+    theme::StyledText,
+    utils::print_colored_sql,
+};
 use async_openai::types::{
     ChatCompletionRequestAssistantMessage, ChatCompletionRequestAssistantMessageContent,
     ChatCompletionRequestMessage, ChatCompletionRequestUserMessage,
@@ -48,7 +52,17 @@ pub async fn ask_adhoc(
     let config_manager = project.config_manager.clone();
 
     let agent_path = get_path_by_name(config_manager, agent).await?;
-    let result = match run_agent(project, &agent_path, question, NoopHandler, vec![], None).await {
+    let result = match run_agent(
+        project,
+        &agent_path,
+        question,
+        NoopHandler,
+        vec![],
+        None,
+        None,
+    )
+    .await
+    {
         Ok(output) => output.to_string(),
         Err(e) => format!("Error running agent: {e}"),
     };
@@ -180,9 +194,11 @@ pub async fn run_agent<P: AsRef<Path>, H: EventHandler + Send + 'static>(
     event_handler: H,
     memory: Vec<Message>,
     filters: Option<SessionFilters>,
+    connections: Option<ConnectionOverrides>,
 ) -> Result<OutputContainer, OxyError> {
     AgentLauncher::new()
         .with_filters(filters)
+        .with_connections(connections)
         .with_project(project)
         .await?
         .launch(

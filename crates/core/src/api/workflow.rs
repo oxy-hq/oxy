@@ -10,37 +10,37 @@ use std::path::PathBuf;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::adapters::session_filters::SessionFilters;
+use std::{
+    fs::{File, OpenOptions},
+    sync::{Arc, Mutex},
+};
 
-use std::fs::File;
-use std::sync::Arc;
-use std::sync::Mutex;
-
-use crate::adapters::checkpoint::types::RetryStrategy;
-use crate::api::middlewares::project::ProjectManagerExtractor;
-use crate::api::middlewares::timeout::TimeoutConfig;
-use crate::config::model::Workflow;
-use crate::service::statics::BROADCASTER;
-use crate::service::thread::streaming_workflow_persister::StreamingWorkflowPersister;
-use crate::service::types::run::RunStatus;
-use crate::service::workflow as service;
-use crate::service::workflow::WorkflowInfo;
-use crate::service::workflow::get_workflow;
-use crate::service::workflow::run_workflow as run_workflow_service;
-use crate::utils::create_sse_stream;
-use crate::workflow::loggers::api::WorkflowAPILogger;
-use crate::workflow::loggers::types::LogItem;
-use crate::workflow::loggers::types::WorkflowLogger;
-use axum::extract::{self, Path};
-use axum::http::StatusCode;
-use axum::response::IntoResponse;
-use axum::response::sse::Sse;
+use crate::{
+    adapters::{checkpoint::types::RetryStrategy, session_filters::SessionFilters},
+    api::middlewares::{project::ProjectManagerExtractor, timeout::TimeoutConfig},
+    config::model::{ConnectionOverrides, Workflow},
+    db::client::establish_connection,
+    service::{
+        statics::BROADCASTER,
+        thread::streaming_workflow_persister::StreamingWorkflowPersister,
+        types::run::RunStatus,
+        workflow as service,
+        workflow::{WorkflowInfo, get_workflow, run_workflow as run_workflow_service},
+    },
+    utils::create_sse_stream,
+    workflow::loggers::{
+        api::WorkflowAPILogger,
+        types::{LogItem, WorkflowLogger},
+    },
+};
+use axum::{
+    extract::{self, Path},
+    http::StatusCode,
+    response::{IntoResponse, sse::Sse},
+};
 use sea_orm::ActiveModelTrait;
 use serde::Serialize;
-use std::fs::OpenOptions;
 use tokio::sync::mpsc;
-
-use crate::db::client::establish_connection;
 
 // =================================================================================================
 // UTILITY FUNCTIONS
@@ -219,6 +219,10 @@ pub struct RunWorkflowRequest {
 
     #[serde(default)]
     pub filters: Option<SessionFilters>,
+
+    #[serde(default)]
+    #[schema(value_type = Object)]
+    pub connections: Option<ConnectionOverrides>,
 }
 
 /// Execute a workflow and stream results via Server-Sent Events
@@ -272,6 +276,7 @@ pub async fn run_workflow(
     let (logger, receiver) = build_workflow_api_logger(&full_workflow_path, None).await;
 
     let filters = request.filters;
+    let connections = request.connections;
 
     let _ = tokio::spawn(async move {
         tracing::info!("Workflow run started");
@@ -281,6 +286,7 @@ pub async fn run_workflow(
             RetryStrategy::NoRetry { variables: None },
             project_manager.clone(),
             filters,
+            connections,
         )
         .await;
         match rs {
@@ -430,6 +436,7 @@ pub async fn run_workflow_thread(
     let connection_clone = connection.clone();
     let thread_clone = thread.clone();
     let filters = request.filters;
+    let connections = request.connections;
 
     let _ = tokio::spawn(async move {
         let result = service::run_workflow(
@@ -438,6 +445,7 @@ pub async fn run_workflow_thread(
             RetryStrategy::NoRetry { variables: None },
             project_manager.clone(),
             filters,
+            connections,
         )
         .await;
 
@@ -502,6 +510,9 @@ pub struct RunWorkflowThreadSyncResponse {
 pub struct RunWorkflowThreadRequest {
     #[serde(default)]
     pub filters: Option<SessionFilters>,
+
+    #[serde(default)]
+    pub connections: Option<ConnectionOverrides>,
 }
 
 /// Execute a workflow thread and wait for completion (synchronous)
@@ -614,6 +625,7 @@ pub async fn run_workflow_thread_sync(
     let config_manager_clone = config_manager.clone();
     let workflow_ref_clone = workflow_ref.clone();
     let filters = request.filters;
+    let connections = request.connections;
 
     let mut workflow_task = tokio::spawn(async move {
         let result = service::run_workflow(
@@ -622,6 +634,7 @@ pub async fn run_workflow_thread_sync(
             RetryStrategy::NoRetry { variables: None },
             project_manager.clone(),
             filters,
+            connections,
         )
         .await;
 
@@ -908,6 +921,7 @@ pub async fn run_workflow_sync(
     let mut all_events = subscription.items;
 
     let filters = request.filters;
+    let connections = request.connections;
 
     let mut workflow_task = tokio::spawn({
         let project_manager = project_manager.clone();
@@ -921,6 +935,7 @@ pub async fn run_workflow_sync(
                 topic_ref,
                 retry_strategy,
                 filters,
+                connections,
             )
             .await;
 

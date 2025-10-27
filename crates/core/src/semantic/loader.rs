@@ -493,7 +493,8 @@ impl SchemaLoader {
         secrets_manager: &SecretsManager,
     ) -> Result<Self, OxyError> {
         let connector = Arc::new(
-            Connector::from_database(&database.name, config, secrets_manager, None, None).await?,
+            Connector::from_database(&database.name, config, secrets_manager, None, None, None)
+                .await?,
         );
         Ok(SchemaLoader {
             database: database.clone(),

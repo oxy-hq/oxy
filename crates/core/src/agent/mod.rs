@@ -3,7 +3,7 @@ use crate::{
     agent::builders::fsm::{config::AgenticInput, machine::launch_agentic_workflow},
     config::{
         constants::AGENT_SOURCE,
-        model::{AgentConfig, AgentType},
+        model::{AgentConfig, AgentType, ConnectionOverrides},
     },
     errors::OxyError,
     execute::{
@@ -38,6 +38,7 @@ pub struct AgentLauncher {
     execution_context: Option<ExecutionContext>,
     buf_writer: BufWriter,
     filters: Option<SessionFilters>,
+    connections: Option<ConnectionOverrides>,
 }
 
 impl AgentLauncher {
@@ -46,11 +47,17 @@ impl AgentLauncher {
             execution_context: None,
             buf_writer: BufWriter::new(),
             filters: None,
+            connections: None,
         }
     }
 
     pub fn with_filters(mut self, filters: impl Into<Option<SessionFilters>>) -> Self {
         self.filters = filters.into();
+        self
+    }
+
+    pub fn with_connections(mut self, connections: impl Into<Option<ConnectionOverrides>>) -> Self {
+        self.connections = connections.into();
         self
     }
 
@@ -76,6 +83,7 @@ impl AgentLauncher {
                     kind: AGENT_SOURCE.to_string(),
                 })
                 .with_filters(self.filters.clone())
+                .with_connections(self.connections.clone())
                 .build()?,
         );
         Ok(self)

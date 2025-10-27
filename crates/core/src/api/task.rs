@@ -197,6 +197,7 @@ impl ChatHandler for TaskExecutor {
                     task_stream,
                     context.memory.clone(),
                     context.filters.clone(),
+                    context.connections.clone(),
                 )
                 .await
             }

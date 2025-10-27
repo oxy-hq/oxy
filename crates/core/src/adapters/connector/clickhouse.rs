@@ -6,10 +6,14 @@ use sqlparser::{dialect::ClickHouseDialect, parser::Parser};
 use std::io::Cursor;
 use uuid::Uuid;
 
-use crate::adapters::secrets::SecretsManager;
-use crate::adapters::session_filters::{FilterProcessor, SessionFilters};
-use crate::config::model::ClickHouse as ConfigClickHouse;
-use crate::errors::OxyError;
+use crate::{
+    adapters::{
+        secrets::SecretsManager,
+        session_filters::{FilterProcessor, SessionFilters},
+    },
+    config::model::{ClickHouse as ConfigClickHouse, ConnectionOverride},
+    errors::OxyError,
+};
 
 use super::constants::LOAD_RESULT;
 use super::engine::Engine;
@@ -20,6 +24,7 @@ pub(super) struct ClickHouse {
     pub config: ConfigClickHouse,
     pub secret_manager: SecretsManager,
     pub filters: Option<SessionFilters>,
+    pub overrides: Option<ConnectionOverride>,
 }
 
 impl ClickHouse {
@@ -28,11 +33,17 @@ impl ClickHouse {
             config,
             secret_manager,
             filters: None,
+            overrides: None,
         }
     }
 
     pub fn with_filters(mut self, filters: SessionFilters) -> Self {
         self.filters = Some(filters);
+        self
+    }
+
+    pub fn with_overrides(mut self, overrides: ConnectionOverride) -> Self {
+        self.overrides = Some(overrides);
         self
     }
 
@@ -151,11 +162,36 @@ impl Engine for ClickHouse {
         query: &str,
         _dry_run_limit: Option<u64>,
     ) -> Result<(Vec<RecordBatch>, SchemaRef), OxyError> {
+        // Determine host and database - use overrides if present, otherwise use config
+        let host = match self.overrides.as_ref().and_then(|o| o.host.as_ref()) {
+            Some(override_host) => {
+                tracing::info!(
+                    original_host = ?self.config.host,
+                    override_host = %override_host,
+                    "Using overridden ClickHouse host"
+                );
+                override_host.clone()
+            }
+            None => self.config.get_host(&self.secret_manager).await?,
+        };
+
+        let database = match self.overrides.as_ref().and_then(|o| o.database.as_ref()) {
+            Some(override_database) => {
+                tracing::info!(
+                    original_database = ?self.config.database,
+                    override_database = %override_database,
+                    "Using overridden ClickHouse database"
+                );
+                override_database.clone()
+            }
+            None => self.config.get_database(&self.secret_manager).await?,
+        };
+
         let base_client = Client::default()
-            .with_url(self.config.get_host(&self.secret_manager).await?)
+            .with_url(&host)
             .with_user(self.config.get_user(&self.secret_manager).await?)
             .with_password(self.config.get_password(&self.secret_manager).await?)
-            .with_database(self.config.get_database(&self.secret_manager).await?);
+            .with_database(&database);
 
         tracing::debug!("ClickHouse client created, applying filters");
 
@@ -167,8 +203,8 @@ impl Engine for ClickHouse {
         let session_id = format!("oxy-{}", Uuid::new_v4());
 
         tracing::info!(
-            database = ?self.config.database,
-            host = ?self.config.host,
+            database = ?database,
+            host = ?host,
             filter_names = ?self.filters.as_ref().map(|f| f.keys().collect::<Vec<_>>()),
             role = ?self.config.role,
             session_id = %session_id,

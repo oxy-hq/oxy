@@ -978,6 +978,7 @@ impl SemanticQueryExecutable {
             secret_manager,
             None,
             execution_context.filters.clone(),
+            execution_context.connections.clone(),
         )
         .await?;
 

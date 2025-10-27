@@ -9,11 +9,17 @@ use motherduck::MotherDuck;
 use snowflake::Snowflake;
 use std::collections::HashMap;
 
-use crate::adapters::secrets::SecretsManager;
-use crate::adapters::session_filters::{FilterProcessor, SessionFilters};
-use crate::config::ConfigManager;
-use crate::config::model::DatabaseType;
-use crate::errors::OxyError;
+use crate::{
+    adapters::{
+        secrets::SecretsManager,
+        session_filters::{FilterProcessor, SessionFilters},
+    },
+    config::{
+        ConfigManager,
+        model::{ConnectionOverride, ConnectionOverrides, DatabaseType},
+    },
+    errors::OxyError,
+};
 
 mod clickhouse;
 mod connectorx;
@@ -50,6 +56,7 @@ impl Connector {
         secrets_manager: &SecretsManager,
         dry_run_limit: Option<u64>,
         filters: Option<SessionFilters>,
+        connections: Option<ConnectionOverrides>,
     ) -> Result<Self, OxyError> {
         let database = config_manager.resolve_database(database_ref)?;
         let engine = match &database.database_type {
@@ -109,10 +116,16 @@ impl Connector {
                 EngineType::ConnectorX(ConnectorX::new(database.dialect(), db_path, None))
             }
             DatabaseType::ClickHouse(ch) => {
-                let validated = Self::validate_filters(database_ref, &ch.filters, filters)?;
+                let validated_filters = Self::validate_filters(database_ref, &ch.filters, filters)?;
+                let connection_overrides =
+                    Self::extract_connection_override(database_ref, connections)?;
+
                 let mut clickhouse = ClickHouse::new(ch.clone(), secrets_manager.clone());
-                if let Some(filters) = validated {
+                if let Some(filters) = validated_filters {
                     clickhouse = clickhouse.with_filters(filters);
+                }
+                if let Some(connection_overrides) = connection_overrides {
+                    clickhouse = clickhouse.with_overrides(connection_overrides);
                 }
                 EngineType::ClickHouse(clickhouse)
             }
@@ -159,6 +172,33 @@ impl Connector {
 
     pub async fn dry_run(&self, query: &str) -> Result<(Vec<RecordBatch>, SchemaRef), OxyError> {
         self.engine.dry_run(query).await
+    }
+
+    /// Extract connection override for a specific database
+    ///
+    /// Returns the override config if present in the connections map and the database name exists.
+    /// Returns error if the database name in connections doesn't exist in config.yml.
+    fn extract_connection_override(
+        database_ref: &str,
+        connections: Option<ConnectionOverrides>,
+    ) -> Result<Option<ConnectionOverride>, OxyError> {
+        let Some(connections) = connections else {
+            return Ok(None);
+        };
+
+        let Some(connection_override) = connections.get(database_ref) else {
+            // No override for this database - that's fine
+            return Ok(None);
+        };
+
+        tracing::info!(
+            database = %database_ref,
+            has_host_override = connection_override.host.is_some(),
+            has_database_override = connection_override.database.is_some(),
+            "Applying connection overrides for database"
+        );
+
+        Ok(Some(connection_override.clone()))
     }
 
     /// Validate api request filters against configured database filter schemas
