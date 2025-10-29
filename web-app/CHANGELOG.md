@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.11](https://github.com/oxy-hq/oxy-internal/compare/0.3.10...0.3.11) (2025-10-29)
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* typing lags with long threads ([#1306](https://github.com/oxy-hq/oxy-internal/issues/1306)) ([7419bf7](https://github.com/oxy-hq/oxy-internal/commit/7419bf7186d68f9bcb85bebffe09e1f9776b6e31))
+
 ## [0.3.10](https://github.com/oxy-hq/oxy-internal/compare/0.3.6...0.3.10) (2025-10-22)
 
 

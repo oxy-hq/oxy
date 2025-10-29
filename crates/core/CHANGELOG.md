@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.12](https://github.com/oxy-hq/oxy-internal/compare/0.3.11...0.3.12) (2025-10-29)
+
+
+### <!-- 0 -->🚀 Features
+
+* db / host overrides via api `connections` param ([#1300](https://github.com/oxy-hq/oxy-internal/issues/1300)) ([c76507e](https://github.com/oxy-hq/oxy-internal/commit/c76507e1744c3c13707010a2e4685aa7a594e535))
+* motherduck support ([#1304](https://github.com/oxy-hq/oxy-internal/issues/1304)) ([b99ef3c](https://github.com/oxy-hq/oxy-internal/commit/b99ef3c46709a26ab2afa232146aba1ce45330a8))
+
 ## [0.3.11](https://github.com/oxy-hq/oxy-internal/compare/0.3.10...0.3.11) (2025-10-23)
 
 
