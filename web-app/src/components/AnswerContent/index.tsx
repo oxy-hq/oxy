@@ -19,4 +19,6 @@ function AnswerContent({ content, className, onArtifactClick }: Props) {
   );
 }
 
-export default memo(AnswerContent);
+export default memo(AnswerContent, (prevProps, nextProps) => {
+  return prevProps.content === nextProps.content;
+});
