@@ -163,7 +163,7 @@ jobs:
     needs: [build-cli]
     steps:
       - name: Download release assets from artifacts
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v6
         with:
           path: artifacts
           merge-multiple: true
