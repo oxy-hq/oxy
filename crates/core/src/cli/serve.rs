@@ -34,7 +34,7 @@ const ASSETS_CACHE_CONTROL: &str = "public, max-age=31536000, immutable";
 pub async fn start_server_and_web_app(args: ServeArgs) -> Result<(), OxyError> {
     run_database_migrations().await?;
 
-    let available_port = find_available_port(args.host.clone(), args.port).await?;
+    let _available_port = find_available_port(args.host.clone(), args.port).await?;
     let app = create_web_application(args.cloud).await?;
 
     serve_application(app, args).await

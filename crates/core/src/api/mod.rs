@@ -8,6 +8,7 @@ pub mod data;
 pub mod database;
 pub mod file;
 pub mod github;
+pub mod healthcheck;
 pub mod message;
 pub mod middlewares;
 pub mod project;

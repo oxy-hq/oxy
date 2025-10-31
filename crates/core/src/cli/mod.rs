@@ -136,7 +136,7 @@ fn parse_variable(env: &str) -> Result<Variable, OxyError> {
                 option_env!("GITHUB_REPOSITORY"),
                 option_env!("GITHUB_SHA")
             ) {
-                (Some(server), Some(repo), Some(sha)) => format!("{}/repo/{}/commit/{} ({})", server, repo, sha, sha),
+                (Some(server), Some(repo), Some(sha)) => format!("{}/{}/commit/{} ({})", server, repo, sha, sha),
                 _ => option_env!("GITHUB_SHA").unwrap_or("unknown").to_string(),
             },
             workflow_link = match (
@@ -144,7 +144,7 @@ fn parse_variable(env: &str) -> Result<Variable, OxyError> {
                 option_env!("GITHUB_REPOSITORY"),
                 option_env!("GITHUB_RUN_ID")
             ) {
-                (Some(server), Some(repo), Some(run_id)) => format!("{}/repo/{}/actions/runs/{} ({})", server, repo, run_id, run_id),
+                (Some(server), Some(repo), Some(run_id)) => format!("{}/{}/actions/runs/{} ({})", server, repo, run_id, run_id),
                 _ => option_env!("GITHUB_RUN_ID").unwrap_or("unknown").to_string(),
             },
         ).into_boxed_str()) as &'static str

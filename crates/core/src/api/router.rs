@@ -7,6 +7,7 @@ use crate::api::data;
 use crate::api::database;
 use crate::api::file;
 use crate::api::github;
+use crate::api::healthcheck;
 use crate::api::middlewares::project::project_middleware;
 use crate::api::middlewares::timeout::timeout_middleware;
 use crate::api::project;
@@ -56,6 +57,9 @@ fn build_cors_layer() -> CorsLayer {
 
 fn build_public_routes() -> Router<AppState> {
     Router::new()
+        .route("/health", get(healthcheck::health_check))
+        .route("/ready", get(healthcheck::readiness_check))
+        .route("/live", get(healthcheck::liveness_check))
         .route("/auth/config", get(auth::get_config))
         .route("/auth/login", post(auth::login))
         .route("/auth/register", post(auth::register))
@@ -296,6 +300,10 @@ pub async fn openapi_router() -> OpenApiRouter {
     let cors = build_cors_layer();
 
     OpenApiRouter::new()
+        // Health check routes
+        .routes(routes!(healthcheck::health_check))
+        .routes(routes!(healthcheck::readiness_check))
+        .routes(routes!(healthcheck::liveness_check))
         // Agent routes
         .routes(routes!(agent::get_agents))
         .routes(routes!(agent::ask_agent_preview))
