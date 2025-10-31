@@ -1,55 +1,57 @@
-import { cx } from "class-variance-authority";
-import ExpandableOutput from "./ExpandableOutput";
-import { LogType } from "@/services/types";
-
-const getLogColor = (logType: LogType) => {
-  switch (logType) {
-    case "info":
-      return "";
-    case "error":
-      return "text-red-500";
-    case "warning":
-      return "text-yellow-500";
-    case "success":
-      return "text-green-500";
-    default:
-      return "text-gray-500";
-  }
-};
+import { LogItem } from "@/services/types";
+import Markdown from "@/components/Markdown";
+import { ChevronDown, ChevronRight } from "lucide-react";
 
 type OutputItemProps = {
-  content: string;
-  timestamp: string;
-  logType: LogType;
   onArtifactClick?: (id: string) => void;
+  log: LogItem;
+  isPending?: boolean;
+  depth?: number;
+  isExpandable?: boolean;
+  isExpanded?: boolean;
+  onToggleExpanded?: () => void;
+  isLasted?: boolean;
 };
 
 const OutputItem = ({
-  content = "",
-  timestamp,
-  logType,
+  depth = 0,
+  log,
   onArtifactClick,
+  isExpandable = false,
+  isExpanded = false,
+  onToggleExpanded,
 }: OutputItemProps) => {
-  const lineNumbers = content.split("\n").length;
-  if (lineNumbers > 1) {
+  if (isExpandable && onToggleExpanded) {
     return (
-      <ExpandableOutput
-        onArtifactClick={onArtifactClick}
-        content={content}
-        timestamp={timestamp}
-      />
+      <div
+        className="w-full min-w-[500px]"
+        style={{ paddingLeft: depth > 0 ? `${depth * 24}px` : undefined }}
+      >
+        <div
+          className="w-full flex items-center justify-center py-2 gap-2 cursor-pointer"
+          onClick={onToggleExpanded}
+        >
+          {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+
+          <div className="flex-1 text-sm flex justify-between items-center">
+            <span>{log.content}</span>
+            <span className="text-gray-400 text-xs flex justify-end">
+              {log.timestamp}
+            </span>
+          </div>
+        </div>
+      </div>
     );
   }
 
   return (
-    <div className="border-b p-2 border-border flex justify-between items-stretch text-xs">
-      <div className="w-10"></div>
-      <span className="flex-1 flex justify-between items-center">
-        <span className={cx("flex-1", getLogColor(logType))}>{content}</span>
-      </span>
-      <span className="text-background-foreground text-xs flex justify-end">
-        {timestamp}
-      </span>
+    <div
+      className="min-w-[500px]"
+      style={{
+        paddingLeft: depth > 0 ? `${depth * 24}px` : undefined,
+      }}
+    >
+      <Markdown onArtifactClick={onArtifactClick}>{log.content}</Markdown>
     </div>
   );
 };

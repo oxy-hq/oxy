@@ -6,7 +6,7 @@ import {
 } from "@/stores/useWorkflow";
 import { Button } from "@/components/ui/shadcn/button";
 import TruncatedText from "@/components/TruncatedText";
-import { useNavigate } from "react-router-dom";
+import { createSearchParams, useLocation, useNavigate } from "react-router-dom";
 import { headerHeight } from "../../layout/constants";
 import {
   Bot,
@@ -24,7 +24,6 @@ import {
 } from "lucide-react";
 import { ReactElement } from "react";
 import { TaskRun } from "@/services/types";
-import { randomKey } from "@/libs/utils/string";
 import { OmniIcon } from "./OmniIcon";
 import ROUTES from "@/libs/utils/routes";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
@@ -128,6 +127,7 @@ const SubWorkflowNavigateButton = ({
   task,
   taskRun,
 }: SubWorkflowNavigateButtonProps) => {
+  const location = useLocation();
   const navigate = useNavigate();
   const { project } = useCurrentProjectBranch();
   const projectId = project.id;
@@ -136,12 +136,19 @@ const SubWorkflowNavigateButton = ({
     if (!projectId) return;
 
     const pathb64 = btoa(task.src);
-    const runPath = taskRun?.subWorkflowRunId
-      ? `/runs/${taskRun.subWorkflowRunId}`
-      : "";
 
-    const workflowRoute = ROUTES.PROJECT(projectId).WORKFLOW(pathb64);
-    navigate(workflowRoute.ROOT + runPath + `#${randomKey()}`);
+    let workflowPath = ROUTES.PROJECT(projectId).WORKFLOW(pathb64).ROOT;
+
+    const ideRoute = ROUTES.PROJECT(projectId).IDE.ROOT;
+    if (location.pathname.startsWith(ideRoute)) {
+      workflowPath = ROUTES.PROJECT(projectId).IDE.FILE(pathb64);
+    }
+    navigate({
+      pathname: workflowPath,
+      search: createSearchParams({
+        run: taskRun?.subWorkflowRunId?.toString() || "",
+      }).toString(),
+    });
   };
 
   return (

@@ -17,7 +17,7 @@ const TableVirtualized = ({ table_id, tables }: Props) => {
 
   const rowVirtualizer = useVirtualizer({
     count: rows.length,
-    estimateSize: () => 34,
+    estimateSize: () => 37,
     getScrollElement: () => parentRef.current,
     overscan: 20,
   });
@@ -29,50 +29,58 @@ const TableVirtualized = ({ table_id, tables }: Props) => {
   return (
     <div
       ref={parentRef}
-      className="max-h-[370px] py-2 overflow-auto customScrollbar full-width"
+      className="overflow-auto customScrollbar scrollbar-gutter-auto rounded-lg border border-[#27272A]"
+      style={{
+        position: "relative",
+        height: `${Math.min(rowVirtualizer.getTotalSize() + 40, 400)}px`,
+      }}
     >
-      <div style={{ height: `${rowVirtualizer.getTotalSize()}px` }}>
-        <table>
-          <thead className="text-muted-foreground">
-            {header.map((cell, i) => (
-              <th
-                key={i}
-                className="min-w-[140px] px-4 py-2 text-left border-b border-border font-normal"
-                title={cell}
-              >
-                {cell}
-              </th>
-            ))}
-          </thead>
+      <table className="w-full text-sm">
+        <thead className="text-muted-foreground">
+          {header.map((cell, i) => (
+            <th
+              key={i}
+              className="min-w-[140px]  px-4 py-2 text-left border-b border-r border-[#27272A] font-medium last:border-r-0"
+              title={cell}
+            >
+              {cell}
+            </th>
+          ))}
+        </thead>
 
-          <tbody>
-            {rowVirtualizer.getVirtualItems().map((virtualRow, index) => {
-              const row = rows[virtualRow.index];
-              return (
-                <tr
-                  key={virtualRow.index}
-                  style={{
-                    height: `${virtualRow.size}px`,
-                    transform: `translateY(${
-                      virtualRow.start - index * virtualRow.size
-                    }px)`,
-                  }}
-                >
-                  {row.map((cell, i) => (
-                    <td
-                      key={i}
-                      className="min-w-[140px] px-4 py-2 text-left border-b border-border"
-                      title={cell}
-                    >
-                      {cell}
-                    </td>
-                  ))}
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+        <tbody
+          style={{
+            height: `${rowVirtualizer.getTotalSize()}px`,
+            position: "relative",
+          }}
+        >
+          {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+            const row = rows[virtualRow.index];
+            return (
+              <tr
+                key={virtualRow.index}
+                style={{
+                  height: `${virtualRow.size}px`,
+                  transform: `translateY(${virtualRow.start}px)`,
+                  position: "absolute",
+                  width: "100%",
+                  display: "flex",
+                }}
+              >
+                {row.map((cell, i) => (
+                  <td
+                    key={i}
+                    className="min-w-[140px] w-full px-4 py-2 text-left border-r border-[#27272A] last:border-r-0 [tr:not(:last-child)>&]:border-b"
+                    title={cell}
+                  >
+                    {cell}
+                  </td>
+                ))}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 };

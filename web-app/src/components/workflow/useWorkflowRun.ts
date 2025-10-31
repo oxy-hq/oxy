@@ -1,7 +1,5 @@
 import queryKeys from "@/hooks/api/queryKey";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
-import ROUTES from "@/libs/utils/routes";
-import { randomKey } from "@/libs/utils/string";
 import { RunService } from "@/services/api";
 import { Block, LogItem, RetryType, TaskRun } from "@/services/types";
 import { useBlockStore } from "@/stores/block";
@@ -10,7 +8,7 @@ import useWorkflow, { TaskConfigWithId } from "@/stores/useWorkflow";
 import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
 import { PaginationState } from "@tanstack/react-table";
 import { useCallback, useMemo, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { createSearchParams, useLocation, useNavigate } from "react-router-dom";
 
 const taskRunSelector = (
   blockId: string,
@@ -78,29 +76,38 @@ const logSelector = (
   const block = blocks[blockId];
   switch (block?.type) {
     case "group": {
-      return logsSelector(block.group_id)(groupSlice);
+      return [
+        {
+          content: `Group started: ${block.group_id}`,
+          log_type: "info",
+          timestamp: new Date().toISOString(),
+          append: false,
+          children: logsSelector(block.group_id)(groupSlice),
+          is_streaming: block.is_streaming,
+        },
+      ];
     }
     case "task": {
+      const children = block.children.flatMap((childId) => {
+        return logSelector(childId, blocks, groupSlice);
+      });
+      if (block.error) {
+        children.push({
+          content: `Error in ${block.type} run: ${block.error}`,
+          log_type: "error",
+          timestamp: new Date().toISOString(),
+          append: false,
+        });
+      }
       return [
         {
           content: `Task started: ${block.task_name}`,
           log_type: "info",
           timestamp: new Date().toISOString(),
           append: false,
+          children: children,
+          is_streaming: block.is_streaming,
         },
-        ...(block.error
-          ? [
-              {
-                content: `Error in ${block.type} run: ${block.error}`,
-                log_type: "error",
-                timestamp: new Date().toISOString(),
-                append: false,
-              } as LogItem,
-            ]
-          : []),
-        ...block.children.flatMap((childId) => {
-          return logSelector(childId, blocks, groupSlice);
-        }),
       ];
     }
     case "text": {
@@ -110,19 +117,21 @@ const logSelector = (
           log_type: "info",
           timestamp: new Date().toISOString(),
           append: false,
+          is_streaming: block.is_streaming,
         },
       ];
     }
     case "sql": {
       return [
         {
-          content: `SQL Query:\n${"```sql\n"}${block.sql_query}${"\n```"}`,
+          content: `SQL Query\n${"```sql\n"}${block.sql_query}${"\n```"}`,
           log_type: "info",
           timestamp: new Date().toISOString(),
           append: false,
+          is_streaming: block.is_streaming,
         },
         {
-          content: `Result:\n\n${block.result
+          content: `Result\n\n${block.result
             .map((row, index) => {
               const separator =
                 index === 0 ? "\n" + "|---".repeat(row.length) + "|" : "";
@@ -133,6 +142,7 @@ const logSelector = (
           log_type: "info",
           timestamp: new Date().toISOString(),
           append: false,
+          is_streaming: block.is_streaming,
         },
       ];
     }
@@ -151,6 +161,7 @@ const logsSelector =
     const group = groupSlice.groups[groupKey];
     const blocks = groupSlice.groupBlocks[groupKey]?.blocks ?? {};
     const root = groupSlice.groupBlocks[groupKey]?.root ?? [];
+
     if (!group) {
       return [];
     }
@@ -172,6 +183,7 @@ const logsSelector =
         log_type: "info",
         timestamp: new Date().toISOString(),
         append: false,
+        is_streaming: group.is_streaming || false,
       },
 
       ...root.flatMap((blockId) => {
@@ -351,6 +363,7 @@ export const useTaskRun = (task: TaskConfigWithId) => {
 };
 
 export const useWorkflowRun = () => {
+  const location = useLocation();
   const { project, branchName } = useCurrentProjectBranch();
   const navigate = useNavigate();
   const setGroupBlocks = useBlockStore((state) => state.setGroupBlocks);
@@ -370,13 +383,14 @@ export const useWorkflowRun = () => {
       });
     },
     onSuccess(data) {
-      const workflowId = data.run.source_id;
       const runIndex = data.run.run_index;
       setGroupBlocks(data.run, {}, []);
-      const runUri = ROUTES.PROJECT(project.id)
-        .WORKFLOW(btoa(workflowId))
-        .RUN(runIndex.toString());
-      navigate(runUri + `#${randomKey()}`);
+      navigate({
+        pathname: location.pathname,
+        search: createSearchParams({
+          run: runIndex.toString(),
+        }).toString(),
+      });
     },
   });
 };

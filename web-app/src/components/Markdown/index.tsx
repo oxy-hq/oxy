@@ -52,7 +52,13 @@ const getExtendedComponents = (data?: MarkdownData): ExtendedComponents => ({
   h3: ({ children }) => (
     <h3 className="text-xl font-medium mt-4 mb-2">{children}</h3>
   ),
-  p: ({ children }) => <p className="text-base leading-7 mb-2">{children}</p>,
+  h4: ({ children }) => (
+    <h4 className="text-lg font-medium mt-4 mb-2">{children}</h4>
+  ),
+  h5: ({ children }) => (
+    <h5 className="text-md font-medium mt-4 mb-2">{children}</h5>
+  ),
+  p: ({ children }) => <p className="text-sm leading-7 mb-2">{children}</p>,
   ul: ({ children }) => (
     <ul className="list-disc pl-6 mb-2 [&>li]:mb-1">{children}</ul>
   ),
@@ -63,7 +69,7 @@ const getExtendedComponents = (data?: MarkdownData): ExtendedComponents => ({
   ),
   li: ({ children }) => <li>{children}</li>,
   pre: ({ children }) => (
-    <pre className="bg-muted p-4 rounded overflow-auto text-sm">{children}</pre>
+    <pre className="overflow-auto text-sm">{children}</pre>
   ),
   blockquote: ({ children }) => (
     <blockquote className="border-l-4 pl-4 italic text-muted-foreground my-4">
@@ -71,8 +77,8 @@ const getExtendedComponents = (data?: MarkdownData): ExtendedComponents => ({
     </blockquote>
   ),
   table: ({ children, ...props }) => (
-    <div className="overflow-auto customScrollbar">
-      <table className="w-full border-collapse border-hidden" {...props}>
+    <div className="max-h-96 overflow-auto customScrollbar scrollbar-gutter-auto rounded-lg border border-[#27272A]">
+      <table className="w-full border-collapse text-sm" {...props}>
         {children}
       </table>
     </div>
@@ -84,7 +90,7 @@ const getExtendedComponents = (data?: MarkdownData): ExtendedComponents => ({
   ),
   th: ({ children, ...props }) => (
     <th
-      className="min-w-[140px] px-4 py-2 text-left border-b border-border font-normal"
+      className="min-w-[140px] px-4 py-2 text-left border-b border-r border-[#27272A] font-medium last:border-r-0"
       {...props}
     >
       {children}
@@ -92,7 +98,7 @@ const getExtendedComponents = (data?: MarkdownData): ExtendedComponents => ({
   ),
   td: ({ children, ...props }) => (
     <td
-      className="min-w-[140px] px-4 py-2 text-left border-b border-border"
+      className="min-w-[140px] px-4 py-2 text-left border-r border-[#27272A] last:border-r-0 [tr:not(:last-child)>&]:border-b"
       {...props}
     >
       {children}
@@ -121,19 +127,25 @@ const getExtendedComponents = (data?: MarkdownData): ExtendedComponents => ({
 function Markdown({ children, onArtifactClick }: Props) {
   const { newMarkdown, tables } = extractLargeTables(children || "");
   return (
-    <ReactMarkdown
-      remarkPlugins={[
-        directive,
-        remarkGfm,
-        ChartPlugin,
-        ArtifactPlugin,
-        TableVirtualizedPlugin,
-      ]}
-      rehypePlugins={[rehypeRaw, [rehypeSanitize, sanitizeSchema]]}
-      components={getExtendedComponents({ tables, onArtifactClick })}
+    <div
+      style={{
+        fontSize: "14px",
+      }}
     >
-      {newMarkdown}
-    </ReactMarkdown>
+      <ReactMarkdown
+        remarkPlugins={[
+          directive,
+          remarkGfm,
+          ChartPlugin,
+          ArtifactPlugin,
+          TableVirtualizedPlugin,
+        ]}
+        rehypePlugins={[rehypeRaw, [rehypeSanitize, sanitizeSchema]]}
+        components={getExtendedComponents({ tables, onArtifactClick })}
+      >
+        {newMarkdown}
+      </ReactMarkdown>
+    </div>
   );
 }
 

@@ -1,5 +1,5 @@
 import React, { useMemo } from "react";
-import { useLocation, useParams } from "react-router-dom";
+import { useLocation, useParams, useSearchParams } from "react-router-dom";
 import WorkflowPageHeader from "./Header";
 import { WorkflowPreview } from "@/components/workflow/WorkflowPreview";
 
@@ -24,7 +24,9 @@ export const Workflow: React.FC<{ pathb64: string; runId?: string }> = ({
 };
 
 const WorkflowPage = () => {
-  const { pathb64, runId } = useParams();
+  const { pathb64 } = useParams();
+  const [searchParams] = useSearchParams();
+  const runId = searchParams.get("run") || undefined;
   return (
     <Workflow
       key={`${pathb64}-${runId}`}

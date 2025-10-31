@@ -11,7 +11,6 @@ import { cn } from "@/libs/shadcn/utils";
 import { Button } from "@/components/ui/shadcn/button";
 import {
   ChevronDownIcon,
-  History,
   LoaderCircle,
   LoaderCircleIcon,
   LogsIcon,
@@ -29,7 +28,6 @@ import {
   useWorkflowRun,
 } from "./useWorkflowRun";
 import { useBlockStore } from "@/stores/block";
-import { WorkflowRuns } from "./WorkflowRuns";
 import { useVariables, Variables } from "./WorkflowDiagram/Variables";
 import {
   DropdownMenu,
@@ -44,14 +42,16 @@ const WorkflowDiagram = React.lazy(() => import("./WorkflowDiagram"));
 export const WorkflowPreview = ({
   pathb64,
   runId,
+  direction = "horizontal",
 }: {
   pathb64: string;
   runId?: string;
+  direction?: "horizontal" | "vertical";
 }) => {
   const path = useMemo(() => atob(pathb64), [pathb64]);
   const relativePath = path;
   const [showOutput, setShowOutput] = React.useState(!!runId);
-  const [showRuns, setShowRuns] = React.useState(!runId);
+
   const { data: workflowConfig } = useWorkflowConfig(path);
   const run = useWorkflowRun();
   const cancelRun = useCancelWorkflowRun();
@@ -186,141 +186,116 @@ export const WorkflowPreview = ({
   }
 
   return (
-    <ResizablePanelGroup direction="horizontal">
+    <ResizablePanelGroup direction={direction}>
       <ResizablePanel
         defaultSize={50}
         minSize={20}
         className={cn(!showOutput && "flex-1!")}
       >
-        <ResizablePanelGroup direction="vertical">
-          <ResizablePanel defaultSize={70} minSize={20}>
-            <div className="relative h-full w-full">
-              <ReactFlowProvider>
-                <Suspense
-                  fallback={
-                    <div className="flex items-center justify-center h-full w-full">
-                      <LoaderCircleIcon className="animate-spin" />
-                    </div>
-                  }
-                >
-                  <WorkflowDiagram
-                    workflowId={path}
-                    workflowConfig={workflowConfig}
-                    runId={runId}
-                  />
-                </Suspense>
-              </ReactFlowProvider>
-              <div className="absolute bottom-4 right-4 flex items-center gap-2">
-                {!showRuns && (
-                  <Button
-                    tooltip={"Show Workflow Runs"}
-                    variant="outline"
-                    onClick={() => setShowRuns(!showRuns)}
-                  >
-                    <History className="w-4 h-4" />
-                  </Button>
-                )}
-                {!showOutput && (
-                  <Button
-                    variant="outline"
-                    onClick={toggleOutput}
-                    tooltip={"Show Logs Output"}
-                  >
-                    <LogsIcon className="w-4 h-4" />
-                  </Button>
-                )}
-              </div>
-
-              <div className="absolute top-4 right-4 flex items-center gap-2">
-                {!!runId &&
-                  (isProcessing ? (
-                    <Button
-                      variant="outline"
-                      onClick={cancelRunHandler}
-                      disabled={cancelRun.isPending}
-                      tooltip={"Cancel Workflow Run"}
-                    >
-                      <StopCircle className="w-4 h-4" />
-                    </Button>
-                  ) : (
-                    <ButtonGroup>
-                      <Button
-                        variant="outline"
-                        onClick={replayAllHandler}
-                        disabled={run.isPending}
-                        tooltip={"Replay Workflow Run"}
-                      >
-                        <RotateCcw className="w-4 h-4" />
-                        Replay
-                      </Button>
-                      {workflowConfig.variables ? (
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="outline" className="!pl-2">
-                              <ChevronDownIcon />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent
-                            align="end"
-                            className="[--radius:1rem]"
-                          >
-                            <DropdownMenuItem
-                              onClick={() => {
-                                setIsOpen(true, (data) => {
-                                  return run.mutateAsync({
-                                    workflowId: relativePath,
-                                    retryType: {
-                                      type: "retry_with_variables",
-                                      run_index: parseInt(runId, 10),
-                                      replay_id: "",
-                                      variables: data,
-                                    },
-                                  });
-                                });
-                              }}
-                            >
-                              Replay With Variables
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      ) : null}
-                    </ButtonGroup>
-                  ))}
-                <Button
-                  variant="default"
-                  onClick={runHandler}
-                  disabled={run.isPending}
-                  tooltip={run.isPending ? "Running..." : "Run Workflow"}
-                >
-                  {run.isPending ? (
-                    <LoaderCircle className="animate-spin" />
-                  ) : (
-                    <PlayIcon className="w-4 h-4" />
-                  )}
-                </Button>
-                {workflowConfig.variables ? (
-                  <Variables schema={variablesSchema} />
-                ) : null}
-              </div>
-            </div>
-          </ResizablePanel>
-          <ResizableHandle />
-
-          <ResizablePanel
-            defaultSize={30}
-            minSize={20}
-            className={cn(!showRuns && "flex-[unset]!")}
-          >
-            {showRuns && (
-              <WorkflowRuns
+        <div className="relative h-full w-full">
+          <ReactFlowProvider>
+            <Suspense
+              fallback={
+                <div className="flex items-center justify-center h-full w-full">
+                  <LoaderCircleIcon className="animate-spin" />
+                </div>
+              }
+            >
+              <WorkflowDiagram
                 workflowId={path}
-                onClose={() => setShowRuns(false)}
+                workflowConfig={workflowConfig}
+                runId={runId}
               />
+            </Suspense>
+          </ReactFlowProvider>
+          <div className="absolute bottom-4 right-4 flex items-center gap-2">
+            {!showOutput && (
+              <Button
+                variant="outline"
+                onClick={toggleOutput}
+                tooltip={"Show Logs Output"}
+              >
+                <LogsIcon className="w-4 h-4" />
+              </Button>
             )}
-          </ResizablePanel>
-        </ResizablePanelGroup>
+          </div>
+
+          <div className="absolute top-4 right-4 flex items-center gap-2">
+            {!!runId &&
+              (isProcessing ? (
+                <Button
+                  variant="outline"
+                  onClick={cancelRunHandler}
+                  disabled={cancelRun.isPending}
+                  tooltip={"Cancel Workflow Run"}
+                >
+                  <StopCircle className="w-4 h-4" />
+                </Button>
+              ) : (
+                <ButtonGroup>
+                  <Button
+                    variant="outline"
+                    onClick={replayAllHandler}
+                    disabled={run.isPending}
+                    tooltip={"Replay Workflow Run"}
+                  >
+                    <RotateCcw className="w-4 h-4" />
+                    Replay
+                  </Button>
+                  {workflowConfig.variables ? (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="outline" className="!pl-2">
+                          <ChevronDownIcon />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent
+                        align="end"
+                        className="[--radius:1rem]"
+                      >
+                        <DropdownMenuItem
+                          onClick={() => {
+                            setIsOpen(true, (data) => {
+                              return run.mutateAsync({
+                                workflowId: relativePath,
+                                retryType: {
+                                  type: "retry_with_variables",
+                                  run_index: parseInt(runId, 10),
+                                  replay_id: "",
+                                  variables: data,
+                                },
+                              });
+                            });
+                          }}
+                        >
+                          Replay With Variables
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  ) : null}
+                </ButtonGroup>
+              ))}
+            <Button
+              variant="default"
+              onClick={runHandler}
+              disabled={run.isPending}
+              tooltip={run.isPending ? "Running..." : "Run Workflow"}
+            >
+              {run.isPending ? (
+                <LoaderCircle className="animate-spin" />
+              ) : (
+                <PlayIcon className="w-4 h-4" />
+              )}
+            </Button>
+            {workflowConfig.variables ? (
+              <Variables schema={variablesSchema} />
+            ) : null}
+          </div>
+        </div>
       </ResizablePanel>
+
       <ResizableHandle />
+
       <ResizablePanel
         defaultSize={50}
         minSize={20}
@@ -328,10 +303,11 @@ export const WorkflowPreview = ({
       >
         {showOutput && (
           <WorkflowOutput
+            workflowId={path}
             logs={logs}
-            showOutput={showOutput}
             toggleOutput={toggleOutput}
-            isPending={run.isPending}
+            isPending={isProcessing}
+            runId={runId}
           />
         )}
       </ResizablePanel>

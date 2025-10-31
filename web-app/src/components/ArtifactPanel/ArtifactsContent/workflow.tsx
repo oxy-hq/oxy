@@ -3,7 +3,8 @@ import { ReactFlowProvider } from "@xyflow/react";
 import useWorkflowConfig from "@/hooks/api/workflows/useWorkflowConfig";
 import { Skeleton } from "@/components/ui/shadcn/skeleton";
 import WorkflowDiagram from "@/components/workflow/WorkflowDiagram";
-import WorkflowOutput from "@/components/workflow/output";
+import OutputLogs from "@/components/workflow/output/Logs";
+import EmptyState from "@/components/ui/EmptyState";
 
 type Props = {
   artifact: WorkflowArtifact;
@@ -37,13 +38,25 @@ const WorkflowArtifactPanel = ({ artifact, onArtifactClick }: Props) => {
       </div>
 
       <div className="flex-1">
-        <WorkflowOutput
-          logs={artifact.content.value.output ?? []}
-          showOutput={true}
-          toggleOutput={() => {}}
-          isPending={artifact.is_streaming || false}
-          onArtifactClick={onArtifactClick}
-        />
+        <div className="bg-sidebar-background h-full flex flex-col">
+          {(artifact.content.value.output ?? []).length === 0 && (
+            <EmptyState
+              className="mt-[150px]"
+              title="No logs yet"
+              description="Run the workflow to see the logs"
+            />
+          )}
+          {(artifact.content.value.output ?? []).length > 0 && (
+            <div className="flex-1 min-h-0">
+              <OutputLogs
+                onArtifactClick={onArtifactClick}
+                isPending={artifact.is_streaming || false}
+                logs={artifact.content.value.output ?? []}
+                onlyShowResult={false}
+              />
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

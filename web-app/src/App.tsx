@@ -138,14 +138,6 @@ const MainLayout = React.memo(function MainLayout() {
           }
         />
         <Route
-          path="/workflows/:pathb64/runs/:runId"
-          element={
-            <MainPageWrapper>
-              <WorkflowPage />
-            </MainPageWrapper>
-          }
-        />
-        <Route
           path="/apps/:pathb64"
           element={
             <MainPageWrapper>

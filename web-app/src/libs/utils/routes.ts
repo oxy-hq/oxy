@@ -39,7 +39,6 @@ const ROUTES = {
         const wfBase = `${base}/workflows/${pathb64}`;
         return {
           ROOT: wfBase,
-          RUN: (runId: string) => `${wfBase}/runs/${runId}`,
         };
       },
 
