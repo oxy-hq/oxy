@@ -1,0 +1,513 @@
+---
+title: "Cloud Mode Deployment"
+description: "Deploy Oxy in cloud-native mode with workspace management and GitHub project synchronization"
+sidebarTitle: "Cloud Mode"
+---
+
+## Overview
+
+Oxy supports two deployment modes to accommodate different use cases:
+
+1. **Local Mode** (Default) - Traditional folder-based deployment for development and self-hosted environments
+2. **Cloud Mode** - Location-independent deployment designed for cloud platforms with centralized workspace management
+
+## Deployment Modes Comparison
+
+| Feature | Local Mode | Cloud Mode (`--cloud`) |
+|---------|-----------|------------------------|
+| **Project Location** | Must run within project directory | Can start from any location |
+| **File Editing** | Full IDE editing capabilities | Read-only project files |
+| **Project Source** | Local file system | Synced from GitHub repositories |
+| **Configuration** | File-based (`config.yml`) | Environment variables + database |
+| **Workspace Management** | Single project per instance | Multi-project workspaces |
+| **Use Case** | Development, self-hosted | Cloud deployments, SaaS |
+
+## Cloud Mode Architecture
+
+### Key Components
+
+```mermaid
+graph TB
+    subgraph "Cloud Deployment"
+        Server[Oxy Server<br/>--cloud flag]
+        
+        subgraph "Workspace Layer"
+            WS[Workspace Manager]
+            Projects[Multiple Projects]
+        end
+        
+        subgraph "Project Sources"
+            GitHub[GitHub Repositories]
+            Config[Environment Variables]
+            Secrets[Database Secrets]
+        end
+        
+        subgraph "Storage"
+            DB[(Database)]
+            ProjectFiles[Synced Project Files]
+        end
+    end
+    
+    Server --> WS
+    WS --> Projects
+    Projects --> GitHub
+    Projects --> Config
+    Projects --> Secrets
+    Projects --> DB
+    GitHub --> ProjectFiles
+```
+
+### How It Works
+
+In cloud mode, Oxy operates differently from local mode:
+
+1. **Location Independence**: The server doesn't require a fixed project directory. You can start it from anywhere:
+   ```bash
+   oxy serve --cloud --port 3000
+   ```
+
+2. **Workspace Organization**: Projects are organized within workspaces, allowing multiple isolated environments in a single deployment.
+
+3. **GitHub Synchronization**: Project files (agents, workflows, SQL queries) are synced from GitHub repositories rather than edited locally.
+
+4. **Read-Only IDE**: The web interface provides read-only access to project files. Changes must be made via Git and synced.
+
+5. **Environment-Based Configuration**: Database connections and other settings are read from environment variables and stored in the database, not from local `config.yml` files.
+
+## Starting in Cloud Mode
+
+### Basic Usage
+
+```bash
+# Start Oxy in cloud mode
+oxy serve --cloud
+
+# Specify custom port
+oxy serve --cloud --port 8080
+
+# Bind to specific host
+oxy serve --cloud --host 0.0.0.0 --port 3000
+```
+
+### Environment Variables
+
+Cloud mode relies on environment variables for configuration:
+
+```bash
+# Database connection
+DATABASE_URL=postgresql://user:pass@localhost:5432/oxy
+
+# API keys and secrets (stored in database per project)
+OPENAI_API_KEY=sk-...
+ANTHROPIC_API_KEY=sk-ant-...
+
+# GitHub integration (for project sync)
+GITHUB_TOKEN=ghp_...
+GITHUB_APP_ID=123456
+GITHUB_APP_PRIVATE_KEY=...
+
+# SMTP for authentication
+SMTP_USER=noreply@yourdomain.com
+SMTP_PASSWORD=...
+SMTP_SERVER=smtp.gmail.com
+SMTP_PORT=587
+```
+
+## Workspace Management
+
+### Creating Workspaces
+
+Workspaces organize multiple projects and users in cloud deployments:
+
+```bash
+# Via API
+POST /api/workspaces
+{
+  "name": "Production Workspace",
+  "description": "Main production environment"
+}
+```
+
+### Managing Projects
+
+Projects within workspaces are synced from GitHub:
+
+```bash
+# Create project from GitHub repository
+POST /api/{workspace_id}/projects
+{
+  "name": "Analytics Project",
+  "repository_url": "https://github.com/org/analytics-project",
+  "branch": "main"
+}
+```
+
+### Project Synchronization
+
+When a project is created or updated:
+
+1. Oxy clones the GitHub repository
+2. Project files (`.agent.yml`, `.workflow.yml`, `.sql`) are imported
+3. Configuration is merged with environment variables
+4. Database schemas are synced
+5. Vector embeddings are built for semantic search
+
+## Configuration in Cloud Mode
+
+### Database Configuration
+
+Instead of `config.yml`, databases are configured via environment variables:
+
+```bash
+# PostgreSQL
+POSTGRES_HOST=db.example.com
+POSTGRES_PORT=5432
+POSTGRES_USER=analytics_user
+POSTGRES_PASSWORD=secure_password
+POSTGRES_DATABASE=analytics_db
+
+# BigQuery
+BIGQUERY_PROJECT_ID=my-gcp-project
+BIGQUERY_CREDENTIALS_JSON='{"type":"service_account",...}'
+
+# Snowflake
+SNOWFLAKE_ACCOUNT=xy12345.us-east-1
+SNOWFLAKE_USER=analytics_user
+SNOWFLAKE_PASSWORD=...
+SNOWFLAKE_WAREHOUSE=COMPUTE_WH
+SNOWFLAKE_DATABASE=ANALYTICS
+```
+
+### Secret Management
+
+Secrets are stored in the database and scoped to projects:
+
+```bash
+# Secrets are managed via API
+POST /api/{project_id}/secrets
+{
+  "key": "OPENAI_API_KEY",
+  "value": "sk-...",
+  "description": "OpenAI API key for agents"
+}
+```
+
+## Read-Only Project Files
+
+In cloud mode, project files are synchronized from GitHub and are read-only in the web interface:
+
+### What's Read-Only
+
+- Agent configurations (`.agent.yml`)
+- Workflow definitions (`.workflow.yml`)
+- SQL queries (`.sql`)
+- Semantic layer schemas
+- Application configurations (`.app.yml`)
+
+### Making Changes
+
+To update project files in cloud mode:
+
+1. **Commit to GitHub**: Make changes in your Git repository
+2. **Sync Project**: Trigger a sync via the web interface or API
+3. **Changes Applied**: Updated files are pulled and become available
+
+```bash
+# Trigger project sync via API
+POST /api/{project_id}/sync
+{
+  "branch": "main"
+}
+```
+
+## Authentication in Cloud Mode
+
+Cloud mode uses the same built-in authentication as local mode:
+
+- Email/password authentication with SMTP verification
+- Optional Google OAuth integration
+- User management via the web interface
+- Workspace-based access control
+
+## Deployment Scenarios
+
+### Docker Container
+
+```dockerfile
+FROM ubuntu:22.04
+
+# Install Oxy
+RUN curl --proto '=https' --tlsv1.2 -LsSf https://internal.oxy.tech | bash
+
+# Set environment variables
+ENV DATABASE_URL=postgresql://user:pass@db:5432/oxy
+ENV OPENAI_API_KEY=sk-...
+
+# Expose port
+EXPOSE 3000
+
+# Start in cloud mode
+CMD ["oxy", "serve", "--cloud", "--port", "3000"]
+```
+
+### Kubernetes Deployment
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: oxy-cloud
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: oxy
+  template:
+    metadata:
+      labels:
+        app: oxy
+    spec:
+      containers:
+      - name: oxy
+        image: oxy:latest
+        args:
+          - "serve"
+          - "--cloud"
+          - "--port"
+          - "3000"
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: oxy-secrets
+              key: database-url
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: oxy-secrets
+              key: openai-api-key
+        ports:
+        - containerPort: 3000
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 3000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+```
+
+### AWS ECS with Cloud Mode
+
+```json
+{
+  "family": "oxy-cloud",
+  "containerDefinitions": [
+    {
+      "name": "oxy",
+      "image": "oxy:latest",
+      "command": ["oxy", "serve", "--cloud", "--port", "3000"],
+      "environment": [
+        {
+          "name": "DATABASE_URL",
+          "value": "postgresql://..."
+        }
+      ],
+      "secrets": [
+        {
+          "name": "OPENAI_API_KEY",
+          "valueFrom": "arn:aws:ssm:region:account:parameter/oxy/openai-key"
+        }
+      ],
+      "portMappings": [
+        {
+          "containerPort": 3000,
+          "protocol": "tcp"
+        }
+      ]
+    }
+  ]
+}
+```
+
+## Local Mode (Default)
+
+For comparison, local mode operates traditionally:
+
+```bash
+# Navigate to your project directory
+cd /path/to/oxy-project
+
+# Start in local mode (no --cloud flag)
+oxy serve --port 3000
+```
+
+### Local Mode Features
+
+- **Full File Editing**: Edit agents, workflows, and SQL directly in the IDE
+- **Local Configuration**: Uses `config.yml` in the project directory
+- **Single Project**: One project per server instance
+- **Development Friendly**: Rapid iteration with immediate file changes
+- **Git Optional**: Can work without Git integration
+
+## Migration Guide
+
+### From Local to Cloud Mode
+
+If you're migrating from local mode to cloud mode:
+
+1. **Push to GitHub**: Ensure your project is in a Git repository
+2. **Extract Secrets**: Move secrets from `config.yml` to environment variables
+3. **Create Workspace**: Set up a workspace in cloud mode
+4. **Create Project**: Link your GitHub repository
+5. **Configure Environment**: Set all required environment variables
+6. **Test**: Verify agents and workflows work as expected
+
+### From Cloud to Local Mode
+
+To move from cloud to local development:
+
+1. **Clone Repository**: Clone your project from GitHub
+2. **Create config.yml**: Add database connections and model configurations
+3. **Set Environment**: Add secrets to `.env` file
+4. **Start Locally**: Run `oxy serve` without `--cloud` flag
+
+## Best Practices
+
+### For Cloud Mode
+
+1. **Version Control**: Keep all project files in Git
+2. **Environment Separation**: Use different workspaces for dev/staging/prod
+3. **Secret Rotation**: Regularly rotate API keys and database credentials
+4. **Monitoring**: Set up health checks and logging
+5. **Backup**: Regular database backups for workspace and project data
+
+### For Local Mode
+
+1. **Git Tracking**: Track changes to agents and workflows
+2. **Environment Files**: Use `.env` for local secrets (never commit)
+3. **Documentation**: Document local setup requirements
+4. **Testing**: Test workflows locally before deploying to cloud
+
+## Troubleshooting
+
+### Cloud Mode Issues
+
+**Server won't start without project directory**
+```bash
+# Make sure you're using the --cloud flag
+oxy serve --cloud
+```
+
+**Projects not syncing from GitHub**
+```bash
+# Check GitHub token permissions
+# Ensure repository access is granted
+# Verify webhook configuration
+```
+
+**Database connection errors**
+```bash
+# Verify DATABASE_URL environment variable
+echo $DATABASE_URL
+
+# Test database connectivity
+psql $DATABASE_URL -c "SELECT 1"
+```
+
+### Local Mode Issues
+
+**Configuration not found**
+```bash
+# Ensure you're in a project directory
+ls config.yml
+
+# Or initialize a new project
+oxy init
+```
+
+**Changes not reflected**
+```bash
+# Local mode has immediate file updates
+# Try restarting the server if needed
+```
+
+## API Differences
+
+### Cloud Mode APIs
+
+Cloud mode exposes additional workspace management endpoints:
+
+```bash
+# Workspace management
+GET    /api/workspaces
+POST   /api/workspaces
+GET    /api/workspaces/{id}
+
+# Project management
+GET    /api/{workspace_id}/projects
+POST   /api/{workspace_id}/projects
+GET    /api/{project_id}
+POST   /api/{project_id}/sync
+
+# User management
+GET    /api/workspaces/{id}/users
+POST   /api/workspaces/{id}/users
+```
+
+### Local Mode APIs
+
+Local mode focuses on project execution:
+
+```bash
+# Project operations (single project)
+GET    /api/agents
+GET    /api/workflows
+POST   /api/workflows/{path}/run
+
+# No workspace management
+# Project path is inferred from server location
+```
+
+## Security Considerations
+
+### Cloud Mode
+
+- **Multi-tenancy**: Workspaces provide isolation between organizations
+- **Access Control**: Role-based permissions within workspaces
+- **Secret Storage**: Encrypted secrets in database
+- **Audit Logging**: Track all operations for compliance
+- **Network Isolation**: Configure security groups appropriately
+
+### Local Mode
+
+- **Single User**: Designed for individual developers
+- **File System**: Secrets in local `.env` files
+- **Network**: Typically runs on localhost
+- **Access**: SSH or local access only
+
+## Summary
+
+Cloud mode enables Oxy to run as a multi-tenant platform with:
+
+- ✅ Location-independent deployment
+- ✅ GitHub project synchronization  
+- ✅ Workspace organization
+- ✅ Environment-based configuration
+- ✅ Read-only project files
+- ✅ Centralized secret management
+
+While local mode remains ideal for development with:
+
+- ✅ Direct file editing
+- ✅ Rapid iteration
+- ✅ Simple setup
+- ✅ Single project focus
+- ✅ Full Git control
+
+Choose cloud mode for production deployments and SaaS offerings, and local mode for development and self-hosted single-project scenarios.

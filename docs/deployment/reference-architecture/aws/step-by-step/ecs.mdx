@@ -1,23 +1,25 @@
 ---
-title: "ECS Deployment with Built-in Authentication"
-description: "Simplified ECS deployment guide using Oxy's built-in authentication system with container orchestration"
-sidebarTitle: "ECS Built-in Auth"
+title: "ECS Deployment Guide for Oxy"
+description: "Complete step-by-step guide for deploying Oxy on AWS ECS with Fargate and EFS for scalable, persistent data storage"
+sidebarTitle: "ECS Setup"
 ---
 
 ## Overview
 
-This deployment includes:
+The ECS deployment provides a scalable, managed container platform with the following components:
 - **ECS Cluster**: Managed container orchestration using Fargate
 - **EFS File System**: Shared, persistent storage across containers
-- **Application Load Balancer**: For high availability and SSL termination
-- **Built-in Authentication**: Uses Oxy's native authentication system
-- **Auto Scaling**: Automatic scaling based on demand
+- **Application Load Balancer**: For distributing traffic
+- **Auto Scaling**: Automatic scaling based on CPU/memory utilization
+- **Service Discovery**: For internal service communication
 
 ## Prerequisites
 
 Before starting, ensure you have:
 - AWS CLI configured with appropriate permissions
 - Docker installed locally for building and pushing images
+- Docker images for Oxy application built and pushed to ECR
+- Domain name configured in Route53 (optional)
 - Basic familiarity with AWS Console and CLI
 
 ## Step 1: Network Infrastructure Setup
@@ -28,7 +30,7 @@ Before starting, ensure you have:
 # Create VPC
 VPC_ID=$(aws ec2 create-vpc \
   --cidr-block 10.0.0.0/16 \
-  --tag-specifications 'ResourceType=vpc,Tags=[{Key=Name,Value=oxy-ecs-simple-vpc}]' \
+  --tag-specifications 'ResourceType=vpc,Tags=[{Key=Name,Value=oxy-ecs-vpc}]' \
   --query 'Vpc.VpcId' --output text)
 
 # Enable DNS hostnames
@@ -36,7 +38,7 @@ aws ec2 modify-vpc-attribute --vpc-id $VPC_ID --enable-dns-hostnames
 
 # Create Internet Gateway
 IGW_ID=$(aws ec2 create-internet-gateway \
-  --tag-specifications 'ResourceType=internet-gateway,Tags=[{Key=Name,Value=oxy-ecs-simple-igw}]' \
+  --tag-specifications 'ResourceType=internet-gateway,Tags=[{Key=Name,Value=oxy-ecs-igw}]' \
   --query 'InternetGateway.InternetGatewayId' --output text)
 
 # Attach Internet Gateway to VPC
@@ -47,14 +49,14 @@ SUBNET_1_ID=$(aws ec2 create-subnet \
   --vpc-id $VPC_ID \
   --cidr-block 10.0.1.0/24 \
   --availability-zone us-west-2a \
-  --tag-specifications 'ResourceType=subnet,Tags=[{Key=Name,Value=oxy-ecs-simple-subnet-1}]' \
+  --tag-specifications 'ResourceType=subnet,Tags=[{Key=Name,Value=oxy-ecs-public-subnet-1}]' \
   --query 'Subnet.SubnetId' --output text)
 
 SUBNET_2_ID=$(aws ec2 create-subnet \
   --vpc-id $VPC_ID \
   --cidr-block 10.0.2.0/24 \
   --availability-zone us-west-2b \
-  --tag-specifications 'ResourceType=subnet,Tags=[{Key=Name,Value=oxy-ecs-simple-subnet-2}]' \
+  --tag-specifications 'ResourceType=subnet,Tags=[{Key=Name,Value=oxy-ecs-public-subnet-2}]' \
   --query 'Subnet.SubnetId' --output text)
 
 # Enable auto-assign public IP
@@ -64,7 +66,7 @@ aws ec2 modify-subnet-attribute --subnet-id $SUBNET_2_ID --map-public-ip-on-laun
 # Create route table
 ROUTE_TABLE_ID=$(aws ec2 create-route-table \
   --vpc-id $VPC_ID \
-  --tag-specifications 'ResourceType=route-table,Tags=[{Key=Name,Value=oxy-ecs-simple-rt}]' \
+  --tag-specifications 'ResourceType=route-table,Tags=[{Key=Name,Value=oxy-ecs-public-rt}]' \
   --query 'RouteTable.RouteTableId' --output text)
 
 # Add route to Internet Gateway
@@ -80,10 +82,10 @@ aws ec2 associate-route-table --subnet-id $SUBNET_2_ID --route-table-id $ROUTE_T
 ```bash
 # Create security group for ECS tasks
 ECS_SG_ID=$(aws ec2 create-security-group \
-  --group-name oxy-ecs-simple-tasks-sg \
-  --description "Security group for Oxy ECS tasks with built-in auth" \
+  --group-name oxy-ecs-tasks-sg \
+  --description "Security group for Oxy ECS tasks" \
   --vpc-id $VPC_ID \
-  --tag-specifications 'ResourceType=security-group,Tags=[{Key=Name,Value=oxy-ecs-simple-tasks-sg}]' \
+  --tag-specifications 'ResourceType=security-group,Tags=[{Key=Name,Value=oxy-ecs-tasks-sg}]' \
   --query 'GroupId' --output text)
 
 # Allow HTTP access (port 3000 for Oxy)
@@ -109,10 +111,10 @@ aws ec2 authorize-security-group-ingress \
 
 # Create security group for ALB
 ALB_SG_ID=$(aws ec2 create-security-group \
-  --group-name oxy-ecs-simple-alb-sg \
-  --description "Security group for Oxy ECS ALB" \
+  --group-name oxy-ecs-alb-sg \
+  --description "Security group for Oxy ECS Application Load Balancer" \
   --vpc-id $VPC_ID \
-  --tag-specifications 'ResourceType=security-group,Tags=[{Key=Name,Value=oxy-ecs-simple-alb-sg}]' \
+  --tag-specifications 'ResourceType=security-group,Tags=[{Key=Name,Value=oxy-ecs-alb-sg}]' \
   --query 'GroupId' --output text)
 
 # Allow HTTP and HTTPS for ALB
@@ -130,10 +132,10 @@ aws ec2 authorize-security-group-ingress \
 
 # Create security group for EFS
 EFS_SG_ID=$(aws ec2 create-security-group \
-  --group-name oxy-ecs-simple-efs-sg \
+  --group-name oxy-ecs-efs-sg \
   --description "Security group for Oxy ECS EFS" \
   --vpc-id $VPC_ID \
-  --tag-specifications 'ResourceType=security-group,Tags=[{Key=Name,Value=oxy-ecs-simple-efs-sg}]' \
+  --tag-specifications 'ResourceType=security-group,Tags=[{Key=Name,Value=oxy-ecs-efs-sg}]' \
   --query 'GroupId' --output text)
 
 # Allow NFS access from ECS tasks
@@ -151,11 +153,11 @@ aws ec2 authorize-security-group-ingress \
 ```bash
 # Create EFS file system
 EFS_ID=$(aws efs create-file-system \
-  --creation-token oxy-ecs-simple-$(date +%s) \
+  --creation-token oxy-ecs-workspace-$(date +%s) \
   --performance-mode generalPurpose \
   --throughput-mode provisioned \
   --provisioned-throughput-in-mibps 20 \
-  --tags Key=Name,Value=oxy-ecs-simple-workspace \
+  --tags Key=Name,Value=oxy-ecs-workspace \
   --query 'FileSystemId' \
   --output text)
 
@@ -181,7 +183,7 @@ ACCESS_POINT_ID=$(aws efs create-access-point \
   --file-system-id $EFS_ID \
   --posix-user Uid=0,Gid=0 \
   --root-directory Path=/oxy-workspace,CreationInfo='{OwnerUid=0,OwnerGid=0,Permissions=755}' \
-  --tags Key=Name,Value=oxy-simple-access-point \
+  --tags Key=Name,Value=oxy-workspace-access-point \
   --query 'AccessPointId' \
   --output text)
 
@@ -195,55 +197,30 @@ echo "Created EFS Access Point: $ACCESS_POINT_ID"
 ```bash
 # Create ECR repository for Oxy
 aws ecr create-repository \
-  --repository-name oxy-simple-app \
+  --repository-name oxy-app \
   --region us-west-2
 
 # Get account ID for ECR URI
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-ECR_URI="${ACCOUNT_ID}.dkr.ecr.us-west-2.amazonaws.com/oxy-simple-app"
+ECR_URI="${ACCOUNT_ID}.dkr.ecr.us-west-2.amazonaws.com/oxy-app"
 
 # Get login token
 aws ecr get-login-password --region us-west-2 | \
   docker login --username AWS --password-stdin $ECR_URI
 ```
 
-### 3.2 Create Application Files
+### 3.2 Build and Push Oxy Container
 
-Create the application configuration and Dockerfile:
+Create a `Dockerfile` for your Oxy application:
 
-```bash
-# Create config.yml
-cat > config.yml << 'EOF'
-databases:
-  - name: "shared_duckdb"
-    type: "duckdb"
-    dataset: "/mnt/efs/oxy_data/shared.db"
-
-models:
-  - name: "gpt-4"
-    vendor: "openai"
-    model_ref: "gpt-4"
-    key_var: "OPENAI_API_KEY"
-
-authentication:
-  basic:
-    smtp_user: "noreply@yourdomain.com"
-    smtp_password_var: "SMTP_PASSWORD"
-    smtp_server: "smtp.gmail.com"
-    smtp_port: 587
-
-defaults:
-  database: "shared_duckdb"
-EOF
-
-# Create Dockerfile
-cat > Dockerfile << 'EOF'
+```dockerfile
 FROM ubuntu:22.04
 
 # Install dependencies
 RUN apt-get update && apt-get install -y \
     curl \
     ca-certificates \
+    awscli \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Oxy
@@ -252,43 +229,32 @@ RUN curl --proto '=https' --tlsv1.2 -LsSf https://internal.oxy.tech | /bin/bash
 # Create app directory
 WORKDIR /app
 
-# Copy configuration file
-COPY config.yml /app/config.yml
-
-# Create data directory
-RUN mkdir -p /mnt/efs
+# Copy application files
+COPY . .
 
 # Expose ports
 EXPOSE 3000 8000
 
 # Create startup script
 RUN echo '#!/bin/bash\n\
-echo "Starting Oxy with built-in authentication..."\n\
-/usr/local/bin/oxy serve --auth-mode built-in --config /app/config.yml --port 3000 & \n\
+/usr/local/bin/oxy serve --port 3000 & \n\
 /usr/local/bin/oxy mcp-sse --port 8000 & \n\
 wait' > /app/start.sh && chmod +x /app/start.sh
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:3000/health || exit 1
-
 CMD ["/app/start.sh"]
-EOF
 ```
 
-### 3.3 Build and Push Container
+Build and push the image:
 
 ```bash
 # Build the image
-docker build -t oxy-simple-app .
+docker build -t oxy-app .
 
 # Tag for ECR
-docker tag oxy-simple-app:latest $ECR_URI:latest
+docker tag oxy-app:latest $ECR_URI:latest
 
 # Push to ECR
 docker push $ECR_URI:latest
-
-echo "Container image pushed to: $ECR_URI:latest"
 ```
 
 ## Step 4: Create IAM Roles
@@ -314,13 +280,42 @@ EOF
 
 # Create execution role
 aws iam create-role \
-  --role-name OxyECSSimpleExecutionRole \
+  --role-name OxyECSExecutionRole \
   --assume-role-policy-document file://ecs-task-execution-trust-policy.json
 
 # Attach AWS managed policy
 aws iam attach-role-policy \
-  --role-name OxyECSSimpleExecutionRole \
+  --role-name OxyECSExecutionRole \
   --policy-arn arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+
+# Create custom policy for Parameter Store and ECR access
+cat > ecs-execution-policy.json << 'EOF'
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ssm:GetParameters",
+        "ssm:GetParameter",
+        "secretsmanager:GetSecretValue"
+      ],
+      "Resource": [
+        "arn:aws:ssm:us-west-2:*:parameter/oxy-playground/*",
+        "arn:aws:secretsmanager:us-west-2:*:secret:oxy-playground/*"
+      ]
+    }
+  ]
+}
+EOF
+
+aws iam create-policy \
+  --policy-name OxyECSExecutionPolicy \
+  --policy-document file://ecs-execution-policy.json
+
+aws iam attach-role-policy \
+  --role-name OxyECSExecutionRole \
+  --policy-arn arn:aws:iam::${ACCOUNT_ID}:policy/OxyECSExecutionPolicy
 ```
 
 ### 4.2 Create ECS Task Role
@@ -328,7 +323,7 @@ aws iam attach-role-policy \
 ```bash
 # Create task role
 aws iam create-role \
-  --role-name OxyECSSimpleTaskRole \
+  --role-name OxyECSTaskRole \
   --assume-role-policy-document file://ecs-task-execution-trust-policy.json
 
 # Create policy for EFS access
@@ -344,22 +339,27 @@ cat > ecs-task-policy.json << 'EOF'
         "elasticfilesystem:ClientRootAccess"
       ],
       "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ssm:GetParameter",
+        "ssm:GetParameters",
+        "ssm:GetParametersByPath"
+      ],
+      "Resource": "arn:aws:ssm:us-west-2:*:parameter/oxy-playground/*"
     }
   ]
 }
 EOF
 
-# Get account ID
-ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-
-# Create and attach policy
 aws iam create-policy \
-  --policy-name OxyECSSimpleTaskPolicy \
+  --policy-name OxyECSTaskPolicy \
   --policy-document file://ecs-task-policy.json
 
 aws iam attach-role-policy \
-  --role-name OxyECSSimpleTaskRole \
-  --policy-arn arn:aws:iam::${ACCOUNT_ID}:policy/OxyECSSimpleTaskPolicy
+  --role-name OxyECSTaskRole \
+  --policy-arn arn:aws:iam::${ACCOUNT_ID}:policy/OxyECSTaskPolicy
 ```
 
 ## Step 5: Create ECS Cluster and Service
@@ -369,10 +369,11 @@ aws iam attach-role-policy \
 ```bash
 # Create ECS cluster
 CLUSTER_ARN=$(aws ecs create-cluster \
-  --cluster-name oxy-simple \
-  --capacity-providers FARGATE \
-  --default-capacity-provider-strategy capacityProvider=FARGATE,weight=1 \
-  --tags key=Name,value=oxy-simple-cluster \
+  --cluster-name oxy-playground \
+  --capacity-providers FARGATE FARGATE_SPOT \
+  --default-capacity-provider-strategy capacityProvider=FARGATE,weight=1,base=1 \
+  --configuration executeCommandConfiguration='{logging=OVERRIDE,logConfiguration={cloudWatchLogGroupName="/aws/ecs/oxy-playground",cloudWatchEncryptionEnabled=true}}' \
+  --tags key=Name,value=oxy-playground \
   --query 'cluster.clusterArn' \
   --output text)
 
@@ -380,7 +381,7 @@ echo "Created ECS Cluster: $CLUSTER_ARN"
 
 # Create CloudWatch log group
 aws logs create-log-group \
-  --log-group-name "/aws/ecs/oxy-simple" \
+  --log-group-name "/aws/ecs/oxy-playground" \
   --retention-in-days 30
 ```
 
@@ -390,13 +391,13 @@ aws logs create-log-group \
 # Create task definition JSON
 cat > oxy-task-definition.json << EOF
 {
-  "family": "oxy-simple-app",
+  "family": "oxy-app",
   "networkMode": "awsvpc",
   "requiresCompatibilities": ["FARGATE"],
-  "cpu": "512",
-  "memory": "1024",
-  "executionRoleArn": "arn:aws:iam::${ACCOUNT_ID}:role/OxyECSSimpleExecutionRole",
-  "taskRoleArn": "arn:aws:iam::${ACCOUNT_ID}:role/OxyECSSimpleTaskRole",
+  "cpu": "1024",
+  "memory": "2048",
+  "executionRoleArn": "arn:aws:iam::${ACCOUNT_ID}:role/OxyECSExecutionRole",
+  "taskRoleArn": "arn:aws:iam::${ACCOUNT_ID}:role/OxyECSTaskRole",
   "containerDefinitions": [
     {
       "name": "oxy-app",
@@ -419,14 +420,6 @@ cat > oxy-task-definition.json << EOF
         {
           "name": "AWS_REGION",
           "value": "us-west-2"
-        },
-        {
-          "name": "OPENAI_API_KEY",
-          "value": "your_openai_api_key_here"
-        },
-        {
-          "name": "SMTP_PASSWORD",
-          "value": "your_smtp_password_here"
         }
       ],
       "mountPoints": [
@@ -439,18 +432,12 @@ cat > oxy-task-definition.json << EOF
       "logConfiguration": {
         "logDriver": "awslogs",
         "options": {
-          "awslogs-group": "/aws/ecs/oxy-simple",
+          "awslogs-group": "/aws/ecs/oxy-playground",
           "awslogs-region": "us-west-2",
           "awslogs-stream-prefix": "ecs"
         }
       },
-      "healthCheck": {
-        "command": ["CMD-SHELL", "curl -f http://localhost:3000/health || exit 1"],
-        "interval": 30,
-        "timeout": 5,
-        "retries": 3,
-        "startPeriod": 60
-      }
+      "essential": true
     }
   ],
   "volumes": [
@@ -475,20 +462,43 @@ TASK_DEF_ARN=$(aws ecs register-task-definition \
 echo "Created Task Definition: $TASK_DEF_ARN"
 ```
 
-## Step 6: Create Application Load Balancer
+## Step 6: Configure Application and Load Balancer
 
-### 6.1 Create Application Load Balancer
+### 6.1 Store Configuration in Parameter Store
+
+```bash
+# Store application environment
+aws ssm put-parameter \
+  --name "/oxy-playground/oxy/env" \
+  --value "$(cat << 'EOF'
+OXY_STATE_DIR=/mnt/efs/oxy_data
+AWS_REGION=us-west-2
+BIGQUERY_CREDENTIALS_PATH=/mnt/efs/bigquery-sample.key
+EOF
+)" \
+  --type "String" \
+  --region us-west-2
+
+# Store BigQuery credentials if needed
+# aws ssm put-parameter \
+#   --name "/oxy-playground/oxy/bigquery_key" \
+#   --value "$(cat path/to/bigquery-key.json)" \
+#   --type "SecureString" \
+#   --region us-west-2
+```
+
+### 6.2 Create Application Load Balancer
 
 ```bash
 # Create ALB
 ALB_ARN=$(aws elbv2 create-load-balancer \
-  --name oxy-simple-alb \
+  --name oxy-ecs-alb \
   --subnets $SUBNET_1_ID $SUBNET_2_ID \
   --security-groups $ALB_SG_ID \
   --scheme internet-facing \
   --type application \
   --ip-address-type ipv4 \
-  --tags Key=Name,Value=oxy-simple-alb \
+  --tags Key=Name,Value=oxy-ecs-alb \
   --query 'LoadBalancers[0].LoadBalancerArn' \
   --output text)
 
@@ -496,7 +506,7 @@ echo "Created ALB: $ALB_ARN"
 
 # Create target group
 TG_ARN=$(aws elbv2 create-target-group \
-  --name oxy-simple-tg \
+  --name oxy-ecs-tg \
   --protocol HTTP \
   --port 3000 \
   --vpc-id $VPC_ID \
@@ -530,29 +540,90 @@ echo "ALB DNS: $ALB_DNS"
 
 ## Step 7: Create ECS Service
 
-### 7.1 Create ECS Service
+### 7.1 Create Service Discovery
+
+```bash
+# Create service discovery namespace
+NAMESPACE_ID=$(aws servicediscovery create-private-dns-namespace \
+  --name oxy-ecs.local \
+  --vpc $VPC_ID \
+  --query 'OperationId' \
+  --output text)
+
+# Wait for namespace creation to complete
+while true; do
+  STATUS=$(aws servicediscovery get-operation --operation-id $NAMESPACE_ID --query 'Operation.Status' --output text)
+  if [ "$STATUS" = "SUCCESS" ]; then
+    break
+  fi
+  echo "Waiting for namespace creation..."
+  sleep 10
+done
+
+# Get namespace ID
+NAMESPACE_ID=$(aws servicediscovery list-namespaces \
+  --filters Name=NAME,Values=oxy-ecs.local \
+  --query 'Namespaces[0].Id' \
+  --output text)
+
+# Create service discovery service
+SERVICE_DISCOVERY_ID=$(aws servicediscovery create-service \
+  --name oxy-app \
+  --namespace-id $NAMESPACE_ID \
+  --dns-config '{
+    "DnsRecords": [
+      {
+        "Type": "A",
+        "TTL": 60
+      }
+    ]
+  }' \
+  --query 'Service.Id' \
+  --output text)
+
+echo "Created Service Discovery: $SERVICE_DISCOVERY_ID"
+```
+
+### 7.2 Create ECS Service
 
 ```bash
 # Create ECS service
 SERVICE_ARN=$(aws ecs create-service \
-  --cluster oxy-simple \
-  --service-name oxy-simple-service \
-  --task-definition oxy-simple-app \
+  --cluster oxy-playground \
+  --service-name oxy-app \
+  --task-definition oxy-app \
   --desired-count 2 \
-  --launch-type FARGATE \
-  --network-configuration "awsvpcConfiguration={subnets=[$SUBNET_1_ID,$SUBNET_2_ID],securityGroups=[$ECS_SG_ID],assignPublicIp=ENABLED}" \
-  --load-balancers targetGroupArn=$TG_ARN,containerName=oxy-app,containerPort=3000 \
-  --health-check-grace-period-seconds 60 \
-  --tags key=Name,value=oxy-simple-service \
+  --capacity-provider-strategy '[
+    {
+      "capacityProvider": "FARGATE",
+      "weight": 100,
+      "base": 1
+    }
+  ]' \
+  --network-configuration '{
+    "awsvpcConfiguration": {
+      "subnets": ["'$SUBNET_1_ID'", "'$SUBNET_2_ID'"],
+      "securityGroups": ["'$ECS_SG_ID'"],
+      "assignPublicIp": "ENABLED"
+    }
+  }' \
+  --load-balancers '[
+    {
+      "targetGroupArn": "'$TG_ARN'",
+      "containerName": "oxy-app",
+      "containerPort": 3000
+    }
+  ]' \
+  --service-registries '[
+    {
+      "registryArn": "arn:aws:servicediscovery:us-west-2:'$ACCOUNT_ID':service/'$SERVICE_DISCOVERY_ID'"
+    }
+  ]' \
+  --enable-execute-command \
   --query 'service.serviceArn' \
   --output text)
 
 echo "Created ECS Service: $SERVICE_ARN"
-
-# Wait for service to stabilize
-echo "Waiting for service to stabilize..."
-aws ecs wait services-stable --cluster oxy-simple --services oxy-simple-service
-echo "Service is stable"
 ```
 
 ## Step 8: Set Up Auto Scaling
@@ -563,18 +634,18 @@ echo "Service is stable"
 # Register scalable target
 aws application-autoscaling register-scalable-target \
   --service-namespace ecs \
-  --scalable-dimension ecs:service:DesiredCount \
-  --resource-id service/oxy-simple/oxy-simple-service \
+  --resource-id "service/oxy-playground/oxy-app" \
+  --scalable-dimension "ecs:service:DesiredCount" \
   --min-capacity 1 \
   --max-capacity 10
 
-# Create scaling policy for CPU utilization
+# Create scaling policy
 aws application-autoscaling put-scaling-policy \
   --service-namespace ecs \
-  --scalable-dimension ecs:service:DesiredCount \
-  --resource-id service/oxy-simple/oxy-simple-service \
-  --policy-name oxy-simple-cpu-scaling \
-  --policy-type TargetTrackingScaling \
+  --resource-id "service/oxy-playground/oxy-app" \
+  --scalable-dimension "ecs:service:DesiredCount" \
+  --policy-name "oxy-app-cpu-scaling" \
+  --policy-type "TargetTrackingScaling" \
   --target-tracking-scaling-policy-configuration '{
     "TargetValue": 70.0,
     "PredefinedMetricSpecification": {
@@ -585,40 +656,12 @@ aws application-autoscaling put-scaling-policy \
   }'
 ```
 
-## Step 9: Access Your Application
+## Step 9: Access Application
 
-### 9.1 Access the Application
-
-```bash
-echo "Access your Oxy application at: http://$ALB_DNS"
-echo "The application may take a few minutes to fully start up."
-```
-
-### 9.2 First-Time Setup
-
-1. Open your browser and navigate to `http://$ALB_DNS`
-2. You'll be prompted to create an admin account
-3. Enter your email and password to create the first user
-4. The application will send a verification email (if SMTP is configured)
-
-### 9.3 Update Environment Variables
-
-To update API keys or other environment variables:
-
-1. Edit the task definition JSON file
-2. Register a new task definition revision
-3. Update the service to use the new task definition
+Access your Oxy application through the Application Load Balancer:
 
 ```bash
-# Update task definition with new environment variables
-# Edit oxy-task-definition.json with new values
-aws ecs register-task-definition --cli-input-json file://oxy-task-definition.json
-
-# Update service to use new task definition
-aws ecs update-service \
-  --cluster oxy-simple \
-  --service oxy-simple-service \
-  --task-definition oxy-simple-app
+echo "Access your application at: http://$ALB_DNS"
 ```
 
 ## Step 10: Monitor Your ECS Deployment
@@ -627,17 +670,17 @@ aws ecs update-service \
 
 ```bash
 # Get cluster info
-aws ecs describe-clusters --clusters oxy-simple
+aws ecs describe-clusters --clusters oxy-playground
 
 # Check service status
 aws ecs describe-services \
-  --cluster oxy-simple \
-  --services oxy-simple-service
+  --cluster oxy-playground \
+  --services oxy-app
 
 # List running tasks
 aws ecs list-tasks \
-  --cluster oxy-simple \
-  --service-name oxy-simple-service
+  --cluster oxy-playground \
+  --service-name oxy-app
 ```
 
 ### 10.2 Monitor Logs
@@ -645,12 +688,12 @@ aws ecs list-tasks \
 ```bash
 # View service logs
 aws logs describe-log-streams \
-  --log-group-name "/aws/ecs/oxy-simple"
+  --log-group-name "/aws/ecs/oxy-playground"
 
 # Get latest log events
 aws logs get-log-events \
-  --log-group-name "/aws/ecs/oxy-simple" \
-  --log-stream-name "$(aws logs describe-log-streams --log-group-name "/aws/ecs/oxy-simple" --order-by LastEventTime --descending --max-items 1 --query 'logStreams[0].logStreamName' --output text)"
+  --log-group-name "/aws/ecs/oxy-playground" \
+  --log-stream-name "$(aws logs describe-log-streams --log-group-name "/aws/ecs/oxy-playground" --order-by LastEventTime --descending --max-items 1 --query 'logStreams[0].logStreamName' --output text)"
 ```
 
 ### 10.3 EFS Data Management
@@ -671,72 +714,156 @@ aws efs describe-file-systems --file-system-id $EFS_ID
 
 ```bash
 # Check task definition
-aws ecs describe-task-definition --task-definition oxy-simple-app
+aws ecs describe-task-definition --task-definition oxy-app
 
 # Check stopped tasks
 aws ecs list-tasks \
-  --cluster oxy-simple \
+  --cluster oxy-playground \
   --desired-status STOPPED
 
 # Get task failure reasons
-STOPPED_TASK=$(aws ecs list-tasks --cluster oxy-simple --desired-status STOPPED --query 'taskArns[0]' --output text)
-aws ecs describe-tasks --cluster oxy-simple --tasks $STOPPED_TASK
+aws ecs describe-tasks \
+  --cluster oxy-playground \
+  --tasks <task-arn>
 ```
 
-#### 2. Health check failures
+#### 2. EFS mount issues
+
+```bash
+# Verify EFS mount targets
+aws efs describe-mount-targets --file-system-id $EFS_ID
+
+# Check security group rules for port 2049
+aws ec2 describe-security-groups --group-ids $EFS_SG_ID
+```
+
+#### 3. Load balancer health checks failing
 
 ```bash
 # Check target group health
 aws elbv2 describe-target-health --target-group-arn $TG_ARN
 
-# Check container logs for startup issues
-aws logs get-log-events \
-  --log-group-name "/aws/ecs/oxy-simple" \
-  --log-stream-name "ecs/oxy-app/$(date +%Y/%m/%d)"
+# Verify container port mappings
+aws ecs describe-task-definition \
+  --task-definition oxy-app \
+  --query 'taskDefinition.containerDefinitions[0].portMappings'
 ```
 
-#### 3. EFS mount issues
+#### 4. Auto scaling not working
 
 ```bash
-# Verify EFS mount targets are available
-aws efs describe-mount-targets --file-system-id $EFS_ID
+# Check auto scaling policies
+aws application-autoscaling describe-scaling-policies \
+  --service-namespace ecs \
+  --resource-id "service/oxy-playground/oxy-app"
 
-# Check EFS security group allows NFS traffic
-aws ec2 describe-security-groups --group-ids $EFS_SG_ID
+# Monitor CloudWatch metrics
+aws cloudwatch get-metric-statistics \
+  --namespace AWS/ECS \
+  --metric-name CPUUtilization \
+  --start-time $(date -u -d '1 hour ago' +%Y-%m-%dT%H:%M:%S) \
+  --end-time $(date -u +%Y-%m-%dT%H:%M:%S) \
+  --period 300 \
+  --statistics Average \
+  --dimensions Name=ServiceName,Value=oxy-app Name=ClusterName,Value=oxy-playground
 ```
+
+## Scaling and Performance
+
+### Horizontal Scaling
+
+- Update service desired count: `aws ecs update-service --cluster oxy-playground --service oxy-app --desired-count 5`
+- Configure auto-scaling policies based on CPU/memory metrics
+- Use FARGATE_SPOT for cost optimization
+
+### Vertical Scaling
+
+- Update task definition with increased CPU and memory allocations
+- Adjust EFS provisioned throughput for higher IOPS requirements
+- Consider task placement strategies for better resource distribution
+
+### Cost Optimization
+
+- Use Fargate Spot capacity providers for non-critical workloads
+- Enable EFS Intelligent Tiering for automatic cost optimization
+- Implement scheduled scaling for predictable traffic patterns
 
 ## Production Considerations
 
 ### Security Best Practices
 
-1. **Use Secrets Manager**: Store sensitive values like API keys in AWS Secrets Manager
-2. **Enable EFS encryption**: Encrypt data at rest and in transit
-3. **Use private subnets**: Move containers to private subnets with NAT Gateway
-4. **Enable VPC Flow Logs**: Monitor network traffic
-5. **Regular updates**: Keep container images updated
+1. **Enable ECS Exec for debugging**:
 
-### Performance Optimization
+   ```bash
+   aws ecs execute-command \
+     --cluster oxy-playground \
+     --task <task-arn> \
+     --container oxy-app \
+     --interactive \
+     --command "/bin/bash"
+   ```
 
-1. **Right-size containers**: Monitor CPU and memory usage to optimize resource allocation
-2. **EFS Performance**: Consider using Max I/O mode for high-throughput workloads
-3. **ALB optimization**: Enable connection draining and appropriate timeouts
-4. **Container placement**: Use placement strategies for better resource distribution
+2. **Use Secrets Manager for sensitive data**:
+
+   ```bash
+   # Create secret
+   aws secretsmanager create-secret \
+     --name oxy-app-secrets \
+     --description "Oxy application secrets"
+   ```
+
+3. **Enable VPC Flow Logs**:
+
+   ```bash
+   # Create VPC Flow Logs
+   aws ec2 create-flow-logs \
+     --resource-type VPC \
+     --resource-ids $VPC_ID \
+     --traffic-type ALL \
+     --log-destination-type cloud-watch-logs \
+     --log-group-name VPCFlowLogs
+   ```
 
 ### Monitoring and Alerting
 
 ```bash
-# Create CloudWatch alarms
+# Create CloudWatch alarm for high CPU
 aws cloudwatch put-metric-alarm \
-  --alarm-name "OxySimple-HighCPU" \
-  --alarm-description "Alert when CPU exceeds 80%" \
+  --alarm-name "OxyECSHighCPU" \
+  --alarm-description "Oxy ECS service high CPU" \
   --metric-name CPUUtilization \
   --namespace AWS/ECS \
   --statistic Average \
   --period 300 \
   --threshold 80 \
   --comparison-operator GreaterThanThreshold \
-  --dimensions Name=ServiceName,Value=oxy-simple-service Name=ClusterName,Value=oxy-simple \
-  --evaluation-periods 2
+  --dimensions Name=ServiceName,Value=oxy-app Name=ClusterName,Value=oxy-playground
+
+# Create alarm for task count
+aws cloudwatch put-metric-alarm \
+  --alarm-name "OxyECSLowTaskCount" \
+  --alarm-description "Oxy ECS service low task count" \
+  --metric-name RunningTaskCount \
+  --namespace AWS/ECS \
+  --statistic Average \
+  --period 300 \
+  --threshold 1 \
+  --comparison-operator LessThanThreshold \
+  --dimensions Name=ServiceName,Value=oxy-app Name=ClusterName,Value=oxy-playground
+```
+
+### EFS Data Backup
+
+```bash
+# Enable EFS backup
+aws efs put-backup-policy \
+  --file-system-id $EFS_ID \
+  --backup-policy Status=ENABLED
+
+# Create manual backup
+aws efs create-backup-policy \
+  --file-system-id $EFS_ID \
+  --backup-policy Status=ENABLED
 ```
 
 ## Cleanup
@@ -746,45 +873,69 @@ To destroy the infrastructure:
 ```bash
 # Stop ECS service
 aws ecs update-service \
-  --cluster oxy-simple \
-  --service oxy-simple-service \
+  --cluster oxy-playground \
+  --service oxy-app \
   --desired-count 0
 
 # Wait for tasks to stop
 aws ecs wait services-stable \
-  --cluster oxy-simple \
-  --services oxy-simple-service
+  --cluster oxy-playground \
+  --services oxy-app
 
 # Delete ECS service
 aws ecs delete-service \
-  --cluster oxy-simple \
-  --service oxy-simple-service
+  --cluster oxy-playground \
+  --service oxy-app
+
+# Delete task definition (mark as inactive)
+aws ecs deregister-task-definition \
+  --task-definition $(aws ecs describe-task-definition --task-definition oxy-app --query 'taskDefinition.taskDefinitionArn' --output text)
 
 # Delete ECS cluster
-aws ecs delete-cluster --cluster oxy-simple
+aws ecs delete-cluster --cluster oxy-playground
 
-# Delete ALB and target group
+# Delete auto scaling resources
+aws application-autoscaling deregister-scalable-target \
+  --service-namespace ecs \
+  --resource-id "service/oxy-playground/oxy-app" \
+  --scalable-dimension "ecs:service:DesiredCount"
+
+# Delete load balancer
 aws elbv2 delete-load-balancer --load-balancer-arn $ALB_ARN
+
+# Wait for ALB deletion
 aws elbv2 wait load-balancers-deleted --load-balancer-arns $ALB_ARN
+
+# Delete target group
 aws elbv2 delete-target-group --target-group-arn $TG_ARN
+
+# Delete service discovery
+aws servicediscovery delete-service --id $SERVICE_DISCOVERY_ID
+aws servicediscovery delete-namespace --id $NAMESPACE_ID
 
 # Delete EFS resources
 aws efs delete-access-point --access-point-id $ACCESS_POINT_ID
 aws efs delete-mount-target --mount-target-id $MT_1_ID
 aws efs delete-mount-target --mount-target-id $MT_2_ID
+
+# Wait for mount targets to be deleted
 aws efs wait mount-target-deleted --mount-target-id $MT_1_ID
 aws efs wait mount-target-deleted --mount-target-id $MT_2_ID
+
+# Delete EFS file system
 aws efs delete-file-system --file-system-id $EFS_ID
 
-# Delete IAM roles and policies
-aws iam detach-role-policy --role-name OxyECSSimpleExecutionRole --policy-arn arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
-aws iam detach-role-policy --role-name OxyECSSimpleTaskRole --policy-arn arn:aws:iam::${ACCOUNT_ID}:policy/OxyECSSimpleTaskPolicy
-aws iam delete-role --role-name OxyECSSimpleExecutionRole
-aws iam delete-role --role-name OxyECSSimpleTaskRole
-aws iam delete-policy --policy-arn arn:aws:iam::${ACCOUNT_ID}:policy/OxyECSSimpleTaskPolicy
+# Delete IAM resources
+aws iam detach-role-policy --role-name OxyECSExecutionRole --policy-arn arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+aws iam detach-role-policy --role-name OxyECSExecutionRole --policy-arn arn:aws:iam::${ACCOUNT_ID}:policy/OxyECSExecutionPolicy
+aws iam detach-role-policy --role-name OxyECSTaskRole --policy-arn arn:aws:iam::${ACCOUNT_ID}:policy/OxyECSTaskPolicy
+aws iam delete-role --role-name OxyECSExecutionRole
+aws iam delete-role --role-name OxyECSTaskRole
+aws iam delete-policy --policy-arn arn:aws:iam::${ACCOUNT_ID}:policy/OxyECSExecutionPolicy
+aws iam delete-policy --policy-arn arn:aws:iam::${ACCOUNT_ID}:policy/OxyECSTaskPolicy
 
 # Delete ECR repository
-aws ecr delete-repository --repository-name oxy-simple-app --force
+aws ecr delete-repository --repository-name oxy-app --force
 
 # Delete security groups
 aws ec2 delete-security-group --group-id $ECS_SG_ID
@@ -802,15 +953,18 @@ aws ec2 delete-internet-gateway --internet-gateway-id $IGW_ID
 aws ec2 delete-vpc --vpc-id $VPC_ID
 
 # Delete CloudWatch log group
-aws logs delete-log-group --log-group-name "/aws/ecs/oxy-simple"
+aws logs delete-log-group --log-group-name "/aws/ecs/oxy-playground"
 
-# Clean up local files
-rm config.yml Dockerfile oxy-task-definition.json ecs-task-*.json
+# Delete Parameter Store parameters
+aws ssm delete-parameter --name "/oxy-playground/oxy/env"
 ```
 
 ## Next Steps
 
-- [EC2 Deployment with Built-in Auth](./ec2-builtin-auth) - For simpler single-instance deployment
-- [Production Hardening Guide](../production-setup) - Security and performance optimizations
-- [CI/CD Pipeline Setup](../ci-cd) - Automated deployment pipelines
-- [Monitoring and Alerting](../monitoring) - Comprehensive monitoring setup
+- Implement CI/CD pipelines with AWS CodePipeline or GitHub Actions
+- Set up comprehensive monitoring with DataDog or New Relic
+- Configure log aggregation with ELK stack or AWS OpenSearch
+- Implement disaster recovery with multi-region deployment
+- Set up cost monitoring and optimization alerts
+- Consider using AWS Fargate Profiles for better cost optimization
+- Implement blue/green deployments with AWS CodeDeploy

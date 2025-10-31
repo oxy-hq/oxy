@@ -8,56 +8,13 @@ This document provides an architectural overview of the Oxy deployment options u
 
 ## High-Level Architecture
 
-### With AWS Cognito Authentication
-
 ```mermaid
 graph TB
     subgraph "AWS Cloud"
         subgraph "VPC"
             subgraph "Public Subnets"
-                ALB[Application Load Balancer<br/>with Cognito Integration]
+                ALB[Application Load Balancer]
                 EC2[EC2 Instance]
-                ECS_Tasks[ECS Fargate Tasks]
-            end
-            
-            subgraph "Storage Layer"
-                EBS[EBS Volume<br/>EC2 Data Persistence]
-                EFS[EFS File System<br/>ECS Data Persistence]
-            end
-        end
-        
-        subgraph "Authentication"
-            Cognito[AWS Cognito<br/>User Pool + Client]
-            CognitoDomain[Cognito Domain<br/>Hosted UI]
-        end
-        
-        subgraph "Configuration"
-            SSM[AWS Systems Manager<br/>Parameter Store]
-        end
-    end
-    
-    ALB --> Cognito
-    Cognito --> CognitoDomain
-    ALB --> EC2
-    ALB --> ECS_Tasks
-    EC2 --> EBS
-    ECS_Tasks --> EFS
-    EC2 --> SSM
-    ECS_Tasks --> SSM
-    
-    classDef cognitoStyle fill:#ff9900,stroke:#ff6600,stroke-width:2px
-    class Cognito,CognitoDomain cognitoStyle
-```
-
-### With Built-in Authentication (Simplified)
-
-```mermaid
-graph TB
-    subgraph "AWS Cloud"
-        subgraph "VPC"
-            subgraph "Public Subnets"
-                ALB[Application Load Balancer<br/>HTTP Only]
-                EC2[EC2 Instance<br/>Direct Access]
                 ECS_Tasks[ECS Fargate Tasks]
             end
             
@@ -78,6 +35,7 @@ graph TB
         end
     end
     
+    ALB --> EC2
     ALB --> ECS_Tasks
     EC2 --> EBS
     ECS_Tasks --> EFS
@@ -111,57 +69,6 @@ Container-based deployment with automatic scaling and high availability.
 - **Architecture**: Fargate containers with EFS shared storage
 
 ## Common Components
-
-### Authentication Flow
-#### AWS Cognito Authentication Flow
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant ALB
-    participant Cognito
-    participant OxyApp
-
-    User->>ALB: Request access
-    ALB->>Cognito: Authenticate user
-    Cognito->>User: Login page
-    User->>Cognito: Credentials
-    Cognito->>ALB: JWT Token
-    ALB->>OxyApp: Authenticated request
-    OxyApp->>User: Oxy interface
-```
-
-#### Built-in Authentication Flow
-```mermaid
-sequenceDiagram
-    participant User
-    participant ALB
-    participant OxyApp
-    participant SMTP
-    participant GoogleOAuth
-
-    User->>ALB: Request access
-    ALB->>OxyApp: Forward request
-    OxyApp->>User: Login page (built-in)
-    
-    alt Email/Password Auth
-        User->>OxyApp: Email & Password
-        OxyApp->>SMTP: Send verification email
-        SMTP->>User: Verification email
-        User->>OxyApp: Verify & confirm
-        OxyApp->>User: Session token & access
-    else Google OAuth (Optional)
-        User->>OxyApp: Google OAuth request
-        OxyApp->>GoogleOAuth: Redirect to Google
-        GoogleOAuth->>User: Google login page
-        User->>GoogleOAuth: Google credentials
-        GoogleOAuth->>OxyApp: OAuth token
-        OxyApp->>User: Session token & access
-    end
-```
-
-### Data Flow
-
 ```mermaid
 graph LR
     subgraph "Data Sources"
@@ -200,16 +107,8 @@ graph LR
 
 ## Next Steps
 
-Choose your deployment architecture and authentication method:
-
-### EC2 Deployment
-- [EC2 Architecture Details](./ec2-architecture) - Detailed EC2 deployment architecture
-- [EC2 Built-in Auth Setup](./step-by-step/ec2-builtin-auth) - Quick setup with native authentication
-- [EC2 Cognito Setup](./step-by-step/ec2-cognito) - Enterprise setup with AWS Cognito
+Choose your deployment architecture:
 
 ### ECS Deployment  
 - [ECS Architecture Details](./ecs-architecture) - Detailed ECS deployment architecture
-- [ECS Built-in Auth Setup](./step-by-step/ecs-builtin-auth) - Container deployment with native authentication
-- [ECS Cognito Setup](./step-by-step/ecs-cognito) - Enterprise container deployment with AWS Cognito
-
-**Recommendation**: Start with built-in authentication for faster setup, then migrate to Cognito for enterprise requirements.
+- [ECS Setup Guide](./step-by-step/ecs) - Step-by-step container deployment guide

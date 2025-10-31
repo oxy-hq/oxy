@@ -9,7 +9,7 @@ sidebarTitle: "EC2 Setup"
 The EC2 deployment provides a simple, cost-effective way to run Oxy with the following components:
 - **EC2 Instance**: ARM64-based t4g.small instance running Ubuntu 22.04
 - **EBS Storage**: 10GB persistent volume for application data
-- **Application Load Balancer**: With AWS Cognito authentication
+- **Application Load Balancer**: For traffic routing
 - **Security Groups**: Configured for web traffic and SSH access
 
 ## Prerequisites
@@ -271,7 +271,7 @@ Type=forking
 User=ubuntu
 WorkingDirectory=/mnt/data
 EnvironmentFile=/mnt/data/oxy.env
-ExecStart=/bin/bash -c '/usr/local/bin/oxy serve --auth-mode cognito --port 3000 & /usr/local/bin/oxy mcp-sse --port 8000 & wait'
+ExecStart=/bin/bash -c '/usr/local/bin/oxy serve --port 3000 & /usr/local/bin/oxy mcp-sse --port 8000 & wait'
 Restart=always
 RestartSec=10
 
@@ -395,53 +395,7 @@ aws ssm put-parameter \
   --region us-west-2
 ```
 
-## Step 5: Set Up Cognito Authentication
-
-### 5.1 Create Cognito User Pool
-
-```bash
-# Create user pool
-USER_POOL_ID=$(aws cognito-idp create-user-pool \
-  --pool-name oxy-users \
-  --policies '{
-    "PasswordPolicy": {
-      "MinimumLength": 8,
-      "RequireUppercase": true,
-      "RequireLowercase": true,
-      "RequireNumbers": true,
-      "RequireSymbols": true
-    }
-  }' \
-  --auto-verified-attributes email \
-  --username-attributes email \
-  --query 'UserPool.Id' \
-  --output text)
-
-echo "Created User Pool: $USER_POOL_ID"
-
-# Create user pool client
-CLIENT_ID=$(aws cognito-idp create-user-pool-client \
-  --user-pool-id $USER_POOL_ID \
-  --client-name oxy-alb-client \
-  --generate-secret \
-  --supported-identity-providers COGNITO \
-  --callback-urls "https://your-domain.com/oauth2/idpresponse" \
-  --logout-urls "https://your-domain.com/logout" \
-  --allowed-o-auth-flows code \
-  --allowed-o-auth-scopes openid email profile \
-  --allowed-o-auth-flows-user-pool-client \
-  --query 'UserPoolClient.ClientId' \
-  --output text)
-
-echo "Created Client: $CLIENT_ID"
-
-# Create user pool domain
-aws cognito-idp create-user-pool-domain \
-  --domain oxy-auth-$(date +%s) \
-  --user-pool-id $USER_POOL_ID
-```
-
-### 5.2 Create Application Load Balancer
+## Step 5: Create Application Load Balancer
 
 ```bash
 # Create ALB
@@ -481,12 +435,7 @@ aws elbv2 create-listener \
   --load-balancer-arn $ALB_ARN \
   --protocol HTTP \
   --port 80 \
-  --default-actions Type=authenticate-cognito,AuthenticateCognitoConfig='{
-    "UserPoolArn":"arn:aws:cognito-idp:us-west-2:'$ACCOUNT_ID':userpool/'$USER_POOL_ID'",
-    "UserPoolClientId":"'$CLIENT_ID'",
-    "UserPoolDomain":"oxy-auth-'$(date +%s)'",
-    "OnUnauthenticatedRequest":"authenticate"
-  }',Type=forward,TargetGroupArn=$TG_ARN
+  --default-actions Type=forward,TargetGroupArn=$TG_ARN
 ```
 
 ## Step 6: Access Your Oxy Instance
@@ -526,30 +475,7 @@ sudo systemctl status oxy
 sudo journalctl -u oxy -f  # Follow logs
 ```
 
-## Step 7: Create Cognito Users
-
-### 7.1 Create Admin User
-
-```bash
-# Create a user in Cognito
-aws cognito-idp admin-create-user \
-  --user-pool-id $USER_POOL_ID \
-  --username admin \
-  --user-attributes Name=email,Value=admin@your-domain.com \
-  --temporary-password TempPass123! \
-  --message-action SUPPRESS \
-  --region us-west-2
-
-# Set permanent password
-aws cognito-idp admin-set-user-password \
-  --user-pool-id $USER_POOL_ID \
-  --username admin \
-  --password SecureAdminPass123! \
-  --permanent \
-  --region us-west-2
-```
-
-## Step 8: Monitoring and Maintenance
+## Step 7: Monitoring and Maintenance
 
 ### 8.1 Monitor Instance Health
 
@@ -615,14 +541,6 @@ aws ec2 describe-security-groups --group-ids $ALB_SG_ID
 aws elbv2 describe-target-health --target-group-arn $TG_ARN
 ```
 
-#### 4. Cognito authentication issues
-
-```bash
-# Verify Cognito configuration
-aws cognito-idp describe-user-pool --user-pool-id $USER_POOL_ID
-aws cognito-idp describe-user-pool-client --user-pool-id $USER_POOL_ID --client-id $CLIENT_ID
-```
-
 ## Scaling Considerations
 
 For the EC2 deployment:
@@ -652,9 +570,6 @@ aws elbv2 delete-load-balancer --load-balancer-arn $ALB_ARN
 
 # Delete target group
 aws elbv2 delete-target-group --target-group-arn $TG_ARN
-
-# Delete Cognito user pool
-aws cognito-idp delete-user-pool --user-pool-id $USER_POOL_ID
 
 # Delete security groups
 aws ec2 delete-security-group --group-id $EC2_SG_ID
