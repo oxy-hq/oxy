@@ -762,6 +762,52 @@ impl OpenAIAdapter {
         Ok(result)
     }
 
+    pub async fn request_tool_call_with_usage<
+        M: Into<Vec<ChatCompletionRequestMessage>>,
+        C: Into<Vec<ChatCompletionTool>>,
+    >(
+        &self,
+        execution_context: &crate::execute::ExecutionContext,
+        messages: M,
+        tools: C,
+        tool_choice: Option<ChatCompletionToolChoiceOption>,
+        parallel_tool_calls: Option<bool>,
+    ) -> Result<Vec<ChatCompletionMessageToolCall>, OxyError> {
+        let mut request_builder = self.request_builder(messages);
+        request_builder.tools(tools);
+
+        if let Some(tool_choice) = tool_choice {
+            request_builder.tool_choice(tool_choice);
+        }
+
+        if let Some(parallel_tool_calls) = parallel_tool_calls {
+            request_builder.parallel_tool_calls(parallel_tool_calls);
+        }
+
+        let request = request_builder
+            .build()
+            .map_err(|e| OxyError::RuntimeError(format!("Failed to build request: {e}")))?;
+        let response = self
+            .client
+            .chat()
+            .create(request)
+            .await
+            .map_err(|e| OxyError::RuntimeError(format!("OpenAI API error: {e}")))?;
+
+        // Write usage data if available
+        if let Some(usage_data) = &response.usage {
+            execution_context
+                .write_usage(crate::execute::types::Usage::new(
+                    usage_data.prompt_tokens as i32,
+                    usage_data.completion_tokens as i32,
+                ))
+                .await?;
+        }
+
+        let result = self.extract_tool_calls(&response);
+        Ok(result)
+    }
+
     pub async fn stream_text<M: Into<Vec<ChatCompletionRequestMessage>>>(
         &self,
         messages: M,

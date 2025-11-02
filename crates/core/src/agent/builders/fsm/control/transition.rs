@@ -351,7 +351,7 @@ where
                 }
 
                 let (transition, transition_objective) = machine
-                    .select_transition(items, self.get_messages())
+                    .select_transition(execution_context, items, self.get_messages())
                     .await?;
                 objective = Some(transition_objective);
                 Ok(Some(transition))
@@ -370,7 +370,9 @@ where
 
                 // If the next transition is a start transition, we need to check if we should revise the plan
                 if t.trigger.is_start() && self.get_plan().is_some() {
-                    let should_revise = machine.should_revise_plan(self.get_messages()).await?;
+                    let should_revise = machine
+                        .should_revise_plan(execution_context, self.get_messages())
+                        .await?;
                     if !should_revise {
                         return Ok(Some(Box::new(Idle::new())));
                     }

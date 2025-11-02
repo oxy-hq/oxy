@@ -102,11 +102,13 @@ impl<S> AutoSQL<S> {
 
     async fn request_sql_tool_call(
         &self,
+        execution_context: &ExecutionContext,
         messages: Vec<ChatCompletionRequestMessage>,
     ) -> Result<ChatCompletionMessageToolCall, OxyError> {
         let tool_calls = self
             .openai_adapter
-            .request_tool_call(
+            .request_tool_call_with_usage(
+                execution_context,
                 messages,
                 vec![self.config.get_tool()],
                 Some(ChatCompletionToolChoiceOption::Required),
@@ -153,7 +155,10 @@ impl<S> AutoSQL<S> {
 
         loop {
             let tool_call = self
-                .request_sql_tool_call([instructions.clone(), failed_messages.clone()].concat())
+                .request_sql_tool_call(
+                    execution_context,
+                    [instructions.clone(), failed_messages.clone()].concat(),
+                )
                 .await?;
             match self
                 .execute_query(execution_context, &config.database, &tool_call)

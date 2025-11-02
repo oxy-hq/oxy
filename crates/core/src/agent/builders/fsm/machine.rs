@@ -60,6 +60,7 @@ impl<S: TransitionContext + Send + Sync> Agent<S> {
 
     pub async fn select_transition(
         &self,
+        execution_context: &ExecutionContext,
         items: &[String],
         messages: Vec<ChatCompletionRequestMessage>,
     ) -> Result<(Transition, String), OxyError> {
@@ -71,7 +72,8 @@ impl<S: TransitionContext + Send + Sync> Agent<S> {
             .collect::<Vec<_>>();
         let tool_calls = self
             .adapter
-            .request_tool_call(
+            .request_tool_call_with_usage(
+                execution_context,
                 messages,
                 tools,
                 Some(ChatCompletionToolChoiceOption::Required),
@@ -95,11 +97,13 @@ impl<S: TransitionContext + Send + Sync> Agent<S> {
 
     pub async fn should_revise_plan(
         &self,
+        execution_context: &ExecutionContext,
         messages: Vec<ChatCompletionRequestMessage>,
     ) -> Result<bool, OxyError> {
         let tool_calls = self
             .adapter
-            .request_tool_call(
+            .request_tool_call_with_usage(
+                execution_context,
                 [messages,
                     vec![
                     ChatCompletionRequestUserMessage {

@@ -78,11 +78,13 @@ where
 
     async fn request_viz_tool_call(
         &self,
+        execution_context: &ExecutionContext,
         messages: Vec<ChatCompletionRequestMessage>,
     ) -> Result<ChatCompletionMessageToolCall, OxyError> {
         let tool_calls = self
             .adapter
-            .request_tool_call(
+            .request_tool_call_with_usage(
+                execution_context,
                 messages,
                 vec![self.config.get_tool()],
                 Some(ChatCompletionToolChoiceOption::Required),
@@ -117,7 +119,10 @@ where
 
         loop {
             let tool_call = self
-                .request_viz_tool_call([instructions.clone(), failed_messages.clone()].concat())
+                .request_viz_tool_call(
+                    execution_context,
+                    [instructions.clone(), failed_messages.clone()].concat(),
+                )
                 .await?;
             match self.validate_viz(&tool_call).await {
                 Ok(viz) => return Ok((viz, tool_call)),
