@@ -1,0 +1,87 @@
+---
+title: "Okta Authentication"
+description: "Configure Okta OAuth 2.0 authentication for Oxy"
+---
+
+# Okta Authentication
+
+Oxy supports Okta OAuth 2.0 authentication, allowing users to sign in using their Okta credentials. This provides enterprise-grade authentication with support for SSO, MFA, and centralized user management.
+
+## Prerequisites
+
+Before configuring Okta authentication, you need:
+
+1. An Okta account (or Okta Developer account)
+2. Administrative access to create an OAuth 2.0 application
+3. Your Okta domain (e.g., `dev-12345678.okta.com`)
+
+## Setting Up Okta Application
+
+### Step 1: Create an OAuth 2.0 Application
+
+1. Log in to your Okta Admin Console
+2. Navigate to **Applications** → **Applications**
+3. Click **Create App Integration**
+4. Select **OIDC - OpenID Connect**
+5. Choose **Web Application**
+6. Click **Next**
+
+### Step 2: Configure Application Settings
+
+Configure your application with the following settings:
+
+**App integration name**: `Oxy` (or your preferred name)
+
+**Sign-in redirect URIs**:
+```
+http://localhost:3000/auth/okta/callback (for development)
+https://your-domain.com/auth/okta/callback (for production)
+```
+
+**Sign-out redirect URIs**:
+```
+http://localhost:3000 (for development)
+https://your-domain.com (for production)
+```
+
+**Controlled access**: Choose who can access this application (e.g., Everyone, specific groups)
+
+### Step 3: Get Client Credentials
+
+After creating the application:
+
+1. Go to the **General** tab of your application
+2. Copy the **Client ID**
+3. Copy the **Client secret** (you may need to reveal it)
+4. Note your **Okta domain** from the URL (e.g., `dev-12345678.okta.com`)
+
+### Step 4: Configure Authorization Server (Optional)
+
+By default, Oxy uses the `default` authorization server. If you need to use a custom authorization server:
+
+1. Navigate to **Security** → **API** → **Authorization Servers**
+2. Note the issuer URI of your authorization server
+3. Update the Oxy code if needed (see Advanced Configuration below)
+
+## Configuring Oxy
+
+### Environment Variables
+
+Set the following environment variables:
+
+```bash
+# Okta OAuth Configuration
+OKTA_CLIENT_ID=your_client_id_here
+OKTA_CLIENT_SECRET=your_client_secret_here
+OKTA_DOMAIN=dev-12345678.okta.com
+```
+
+## Starting Oxy with Okta Authentication
+
+Start the Oxy server:
+
+```bash
+oxy serve --cloud # authentication is not supported in local mode
+```
+
+The authentication configuration will be automatically loaded from environment variables or the config file.

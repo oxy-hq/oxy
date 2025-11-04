@@ -64,6 +64,7 @@ fn build_public_routes() -> Router<AppState> {
         .route("/auth/login", post(auth::login))
         .route("/auth/register", post(auth::register))
         .route("/auth/google", post(auth::google_auth))
+        .route("/auth/okta", post(auth::okta_auth))
         .route("/auth/validate_email", post(auth::validate_email))
 }
 

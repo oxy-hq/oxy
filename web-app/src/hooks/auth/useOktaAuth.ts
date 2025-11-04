@@ -1,41 +1,40 @@
 import { useMutation } from "@tanstack/react-query";
 import { AuthService } from "@/services/api";
-import { GoogleAuthRequest, AuthResponse } from "@/types/auth";
+import { OktaAuthRequest, AuthResponse } from "@/types/auth";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
 import ROUTES from "@/libs/utils/routes";
 
-const GOOGLE_REDIRECT_URI = `${window.location.origin}/auth/google/callback`;
-const GOOGLE_STATE_KEY = "google_oauth_state";
+const OKTA_REDIRECT_URI = `${window.location.origin}/auth/okta/callback`;
+const OKTA_STATE_KEY = "okta_oauth_state";
 
-export const useGoogleAuth = () => {
+export const useOktaAuth = () => {
   const { login } = useAuth();
   const navigate = useNavigate();
 
-  return useMutation<AuthResponse, Error, GoogleAuthRequest>({
-    mutationFn: AuthService.googleAuth,
+  return useMutation<AuthResponse, Error, OktaAuthRequest>({
+    mutationFn: AuthService.oktaAuth,
     onSuccess: (data) => {
       // Clear state after successful authentication
-      sessionStorage.removeItem(GOOGLE_STATE_KEY);
+      sessionStorage.removeItem(OKTA_STATE_KEY);
       login(data.token, data.user);
       navigate(ROUTES.ROOT);
     },
     onError: (error) => {
-      console.error("Google auth failed:", error);
+      console.error("Okta auth failed:", error);
       // Clear state on error
-      sessionStorage.removeItem(GOOGLE_STATE_KEY);
+      sessionStorage.removeItem(OKTA_STATE_KEY);
       navigate(ROUTES.AUTH.LOGIN);
     },
   });
 };
 
-export const initiateGoogleAuth = (client_id: string) => {
-  const url = new URL("https://accounts.google.com/o/oauth2/v2/auth");
+export const initiateOktaAuth = (client_id: string, domain: string) => {
+  const url = new URL(`https://${domain}/oauth2/v1/authorize`);
   url.searchParams.set("client_id", client_id);
-  url.searchParams.set("redirect_uri", GOOGLE_REDIRECT_URI);
+  url.searchParams.set("redirect_uri", OKTA_REDIRECT_URI);
   url.searchParams.set("response_type", "code");
   url.searchParams.set("scope", "openid email profile");
-  url.searchParams.set("access_type", "offline");
 
   // Generate cryptographically secure random state for CSRF protection
   const state = crypto.randomUUID
@@ -43,7 +42,7 @@ export const initiateGoogleAuth = (client_id: string) => {
     : generateSecureRandomState();
 
   // Store state in sessionStorage for validation on callback
-  sessionStorage.setItem(GOOGLE_STATE_KEY, state);
+  sessionStorage.setItem(OKTA_STATE_KEY, state);
   url.searchParams.set("state", state);
 
   window.location.href = url.toString();
@@ -66,13 +65,13 @@ const generateSecureRandomState = (): string => {
  * @param receivedState - The state parameter received in the callback
  * @returns true if state is valid, false otherwise
  */
-export const validateGoogleState = (receivedState: string | null): boolean => {
+export const validateOktaState = (receivedState: string | null): boolean => {
   if (!receivedState) {
     console.error("CSRF validation failed: No state parameter received");
     return false;
   }
 
-  const storedState = sessionStorage.getItem(GOOGLE_STATE_KEY);
+  const storedState = sessionStorage.getItem(OKTA_STATE_KEY);
   if (!storedState) {
     console.error("CSRF validation failed: No stored state found");
     return false;

@@ -41,6 +41,11 @@ pub struct GoogleAuthRequest {
 }
 
 #[derive(Deserialize)]
+pub struct OktaAuthRequest {
+    pub code: String,
+}
+
+#[derive(Deserialize)]
 pub struct ValidateEmailRequest {
     pub token: String,
 }
@@ -77,6 +82,7 @@ pub struct AuthConfigResponse {
     pub is_built_in_mode: bool,
     pub auth_enabled: bool,
     pub google: Option<GoogleConfig>,
+    pub okta: Option<OktaConfig>,
     pub basic: Option<bool>,
     pub cloud: bool,
 }
@@ -84,6 +90,12 @@ pub struct AuthConfigResponse {
 #[derive(Serialize)]
 pub struct GoogleConfig {
     pub client_id: String,
+}
+
+#[derive(Serialize)]
+pub struct OktaConfig {
+    pub client_id: String,
+    pub domain: String,
 }
 
 pub async fn get_config(
@@ -97,6 +109,7 @@ pub async fn get_config(
             is_built_in_mode: true,
             auth_enabled: false,
             google: None,
+            okta: None,
             basic: None,
             cloud: app_state.cloud,
         }));
@@ -105,6 +118,13 @@ pub async fn get_config(
         .as_ref()
         .and_then(|auth| auth.google.as_ref())
         .map(|google| google.client_id.clone());
+    let okta_config = auth_config
+        .as_ref()
+        .and_then(|auth| auth.okta.as_ref())
+        .map(|okta| OktaConfig {
+            client_id: okta.client_id.clone(),
+            domain: okta.domain.clone(),
+        });
     let basic_auth_enabled = auth_config
         .as_ref()
         .and_then(|auth| auth.basic.as_ref())
@@ -114,6 +134,7 @@ pub async fn get_config(
         is_built_in_mode: true,
         auth_enabled: true,
         google: google_client_id.map(|client_id| GoogleConfig { client_id }),
+        okta: okta_config,
         basic: Some(basic_auth_enabled),
         cloud: app_state.cloud,
     };
@@ -380,6 +401,92 @@ pub async fn google_auth(
     Ok(Json(auth_response))
 }
 
+pub async fn okta_auth(
+    headers: HeaderMap,
+    extract::Json(okta_request): extract::Json<OktaAuthRequest>,
+) -> Result<Json<AuthResponse>, StatusCode> {
+    let base_url = extract_base_url_from_headers(&headers);
+    tracing::info!("Base URL for Okta auth: {}", base_url);
+    let user_info = exchange_okta_code_for_user_info(&okta_request.code, &base_url)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to exchange Okta code: {}", e);
+            StatusCode::UNAUTHORIZED
+        })?;
+
+    let connection = establish_connection().await.map_err(|e| {
+        tracing::error!("Failed to establish database connection: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    let user = match Users::find()
+        .filter_by_email(&user_info.email)
+        .one(&connection)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to query user: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })? {
+        Some(existing_user) if existing_user.status == UserStatus::Deleted => {
+            // User account has been deleted - unauthorized
+            tracing::warn!(
+                "Deleted user {} attempted to authenticate via Okta",
+                user_info.email
+            );
+            return Err(StatusCode::UNAUTHORIZED);
+        }
+        Some(existing_user) => {
+            // Update existing user info
+            let mut user_update: users::ActiveModel = existing_user.clone().into();
+            user_update.name = Set(user_info.name.clone());
+            user_update.picture = Set(user_info.picture.clone());
+            user_update.email_verified = Set(true);
+            user_update.last_login_at = Set(chrono::Utc::now().into());
+            user_update.update(&connection).await.map_err(|e| {
+                tracing::error!("Failed to update user: {}", e);
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?
+        }
+        None => {
+            let new_user = users::ActiveModel {
+                id: Set(Uuid::new_v4()),
+                email: Set(user_info.email.clone()),
+                name: Set(user_info.name.clone()),
+                picture: Set(user_info.picture.clone()),
+                password_hash: Set(None),
+                email_verified: Set(true),
+                email_verification_token: Set(None),
+                role: Set(users::UserRole::Member),
+                status: Set(UserStatus::Active),
+                created_at: sea_orm::ActiveValue::NotSet,
+                last_login_at: sea_orm::ActiveValue::NotSet,
+            };
+
+            new_user.insert(&connection).await.map_err(|e| {
+                tracing::error!("Failed to create user: {}", e);
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?
+        }
+    };
+
+    let token = create_auth_token(user.clone()).await.map_err(|e| {
+        tracing::error!("Failed to create auth token: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    let auth_response = AuthResponse {
+        token,
+        user: UserInfo {
+            id: user.id.to_string(),
+            email: user.email,
+            name: user.name,
+            picture: user.picture,
+        },
+    };
+
+    Ok(Json(auth_response))
+}
+
 pub async fn validate_email(
     extract::Json(validate_request): extract::Json<ValidateEmailRequest>,
 ) -> Result<Json<AuthResponse>, StatusCode> {
@@ -545,6 +652,8 @@ async fn exchange_google_code_for_user_info(
         "redirect_uri": redirect_uri
     });
 
+    // Note: Google supports application/json for token exchange (non-standard but accepted)
+    // Standard OAuth 2.0 requires application/x-www-form-urlencoded
     let token_response = client
         .post("https://oauth2.googleapis.com/token")
         .header("Content-Type", "application/json")
@@ -552,10 +661,27 @@ async fn exchange_google_code_for_user_info(
         .send()
         .await
         .map_err(|e| {
+            tracing::error!("Failed to send token request to Google: {}", e);
             OxyError::ConfigurationError(format!("Failed to exchange code for token: {e}"))
         })?;
 
+    // Check response status before parsing
+    let status = token_response.status();
+    if !status.is_success() {
+        let error_body = token_response.text().await.unwrap_or_default();
+        tracing::error!(
+            "Google token exchange failed with status {}: {}",
+            status,
+            error_body
+        );
+        return Err(OxyError::ConfigurationError(format!(
+            "Google token exchange failed with status {}: {}",
+            status, error_body
+        )));
+    }
+
     let token_data: serde_json::Value = token_response.json().await.map_err(|e| {
+        tracing::error!("Failed to parse Google token response: {}", e);
         OxyError::ConfigurationError(format!("Failed to parse token response: {e}"))
     })?;
 
@@ -568,15 +694,161 @@ async fn exchange_google_code_for_user_info(
         .header("Authorization", format!("Bearer {access_token}"))
         .send()
         .await
-        .map_err(|e| OxyError::ConfigurationError(format!("Failed to get user info: {e}")))?;
+        .map_err(|e| {
+            tracing::error!("Failed to send userinfo request to Google: {}", e);
+            OxyError::ConfigurationError(format!("Failed to get user info: {e}"))
+        })?;
 
-    let user_info: GoogleUserInfo = user_info_response
-        .json()
-        .await
-        .map_err(|e| OxyError::ConfigurationError(format!("Failed to parse user info: {e}")))?;
+    // Check response status before parsing
+    let status = user_info_response.status();
+    if !status.is_success() {
+        let error_body = user_info_response.text().await.unwrap_or_default();
+        tracing::error!(
+            "Google userinfo request failed with status {}: {}",
+            status,
+            error_body
+        );
+        return Err(OxyError::ConfigurationError(format!(
+            "Google userinfo request failed with status {}: {}",
+            status, error_body
+        )));
+    }
+
+    let user_info: GoogleUserInfo = user_info_response.json().await.map_err(|e| {
+        tracing::error!("Failed to parse Google userinfo response: {}", e);
+        OxyError::ConfigurationError(format!("Failed to parse user info: {e}"))
+    })?;
 
     tracing::info!(
         "Successfully exchanged Google authorization code for user: {}",
+        user_info.email
+    );
+
+    Ok(user_info)
+}
+
+#[derive(Deserialize)]
+struct OktaUserInfo {
+    email: String,
+    name: String,
+    picture: Option<String>,
+}
+
+async fn exchange_okta_code_for_user_info(
+    code: &str,
+    base_url: &str,
+) -> Result<OktaUserInfo, OxyError> {
+    tracing::info!(
+        "Starting Okta code exchange - base_url: {}, code_prefix: {}...",
+        base_url,
+        &code.chars().take(10).collect::<String>()
+    );
+
+    let auth_config = crate::config::oxy::get_oxy_config()
+        .ok()
+        .and_then(|config| config.authentication);
+
+    let okta_config = auth_config.and_then(|auth| auth.okta).ok_or_else(|| {
+        tracing::error!("Okta OAuth configuration not found in config");
+        OxyError::ConfigurationError("Okta OAuth configuration not found".to_string())
+    })?;
+
+    let client = reqwest::Client::new();
+
+    let redirect_uri = format!("{base_url}/auth/okta/callback");
+
+    tracing::info!(
+        "Okta token exchange parameters - domain: {}, redirect_uri: {}, client_id: {}",
+        okta_config.domain,
+        redirect_uri,
+        okta_config.client_id
+    );
+
+    let client_secret = okta_config.client_secret;
+    let okta_domain = okta_config.domain;
+
+    // Exchange authorization code for tokens
+    // OAuth 2.0 requires application/x-www-form-urlencoded for token requests
+    let token_params = [
+        ("client_id", okta_config.client_id.as_str()),
+        ("client_secret", client_secret.as_str()),
+        ("code", code),
+        ("grant_type", "authorization_code"),
+        ("redirect_uri", redirect_uri.as_str()),
+    ];
+
+    // Use org authorization server (matches /oauth2/v1/authorize from frontend)
+    let token_url = format!("https://{}/oauth2/v1/token", okta_domain);
+
+    let token_response = client
+        .post(&token_url)
+        .form(&token_params)
+        .send()
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to send token request to Okta: {}", e);
+            OxyError::ConfigurationError(format!("Failed to exchange code for token: {e}"))
+        })?;
+
+    // Check response status before parsing
+    let status = token_response.status();
+    if !status.is_success() {
+        let error_body = token_response.text().await.unwrap_or_default();
+        tracing::error!(
+            "Okta token exchange failed with status {}: {}",
+            status,
+            error_body
+        );
+        return Err(OxyError::ConfigurationError(format!(
+            "Okta token exchange failed with status {}: {}",
+            status, error_body
+        )));
+    }
+
+    let token_data: serde_json::Value = token_response.json().await.map_err(|e| {
+        tracing::error!("Failed to parse Okta token response: {}", e);
+        OxyError::ConfigurationError(format!("Failed to parse token response: {e}"))
+    })?;
+
+    let access_token = token_data["access_token"]
+        .as_str()
+        .ok_or_else(|| OxyError::ConfigurationError("No access token in response".to_string()))?;
+
+    // Get user info using the access token (use org authorization server)
+    let userinfo_url = format!("https://{}/oauth2/v1/userinfo", okta_domain);
+
+    let user_info_response = client
+        .get(&userinfo_url)
+        .header("Authorization", format!("Bearer {access_token}"))
+        .send()
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to send userinfo request to Okta: {}", e);
+            OxyError::ConfigurationError(format!("Failed to get user info: {e}"))
+        })?;
+
+    // Check response status before parsing
+    let status = user_info_response.status();
+    if !status.is_success() {
+        let error_body = user_info_response.text().await.unwrap_or_default();
+        tracing::error!(
+            "Okta userinfo request failed with status {}: {}",
+            status,
+            error_body
+        );
+        return Err(OxyError::ConfigurationError(format!(
+            "Okta userinfo request failed with status {}: {}",
+            status, error_body
+        )));
+    }
+
+    let user_info: OktaUserInfo = user_info_response.json().await.map_err(|e| {
+        tracing::error!("Failed to parse Okta userinfo response: {}", e);
+        OxyError::ConfigurationError(format!("Failed to parse user info: {e}"))
+    })?;
+
+    tracing::info!(
+        "Successfully exchanged Okta authorization code for user: {}",
         user_info.email
     );
 

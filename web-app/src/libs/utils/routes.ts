@@ -6,6 +6,7 @@ const ROUTES = {
     REGISTER: "/register",
     VERIFY_EMAIL: "/verify-email",
     GOOGLE_CALLBACK: "/auth/google/callback",
+    OKTA_CALLBACK: "/auth/okta/callback",
   },
   GITHUB: {
     CALLBACK: "/github/callback",

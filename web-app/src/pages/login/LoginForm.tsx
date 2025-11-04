@@ -8,6 +8,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { AxiosError } from "axios";
 import LoginWithGoogleButton from "./LoginWithGoogleButton";
+import LoginWithOktaButton from "./LoginWithOktaButton";
 import { useAuth } from "@/contexts/AuthContext";
 import ROUTES from "@/libs/utils/routes";
 
@@ -116,7 +117,7 @@ const LoginForm = () => {
             <Button type="submit" className="w-full" disabled={isPending}>
               {isPending ? "Logging in..." : "Login"}
             </Button>
-            {authConfig.google && (
+            {(authConfig.google || authConfig.okta) && (
               <div className="after:border-border relative text-center text-sm after:absolute after:inset-0 after:top-1/2 after:z-0 after:flex after:items-center after:border-t">
                 <span className="bg-background text-muted-foreground relative z-10 px-2">
                   Or continue with
@@ -130,6 +131,13 @@ const LoginForm = () => {
           <LoginWithGoogleButton
             disabled={isPending}
             clientId={authConfig.google.client_id}
+          />
+        )}
+        {authConfig.okta && (
+          <LoginWithOktaButton
+            disabled={isPending}
+            clientId={authConfig.okta.client_id}
+            domain={authConfig.okta.domain}
           />
         )}
       </div>

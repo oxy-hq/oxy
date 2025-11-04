@@ -13,6 +13,10 @@ export interface GoogleAuthRequest {
   code: string;
 }
 
+export interface OktaAuthRequest {
+  code: string;
+}
+
 export interface ValidateEmailRequest {
   token: string;
 }
@@ -39,6 +43,10 @@ export interface AuthConfigResponse {
   auth_enabled: boolean;
   google?: {
     client_id: string;
+  };
+  okta?: {
+    client_id: string;
+    domain: string;
   };
   basic?: boolean;
   cloud?: boolean;

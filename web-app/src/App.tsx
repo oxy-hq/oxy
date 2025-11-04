@@ -27,6 +27,7 @@ import LoginPage from "./pages/login";
 import RegisterPage from "./pages/register";
 import EmailVerificationPage from "./pages/auth/EmailVerification";
 import GoogleCallback from "./pages/auth/GoogleCallback";
+import OktaCallback from "./pages/auth/OktaCallback";
 import GitHubCallback from "./pages/github/callback";
 import ProtectedRoute from "./components/ProtectedRoute";
 import useAuthConfig from "./hooks/auth/useAuthConfig";
@@ -186,6 +187,10 @@ const getRouter = (authConfig: AuthConfigResponse) =>
             <Route
               path={ROUTES.AUTH.GOOGLE_CALLBACK}
               element={<GoogleCallback />}
+            />
+            <Route
+              path={ROUTES.AUTH.OKTA_CALLBACK}
+              element={<OktaCallback />}
             />
           </>
         )}

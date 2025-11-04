@@ -7,6 +7,7 @@ const publicAPIPaths = [
   "/auth/register",
   "/auth/verify-email",
   "/auth/google",
+  "/auth/okta",
   "/auth/config",
 ];
 

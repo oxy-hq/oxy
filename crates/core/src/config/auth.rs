@@ -10,6 +10,8 @@ pub struct Authentication {
     pub basic: Option<BasicAuth>,
     #[garde(dive)]
     pub google: Option<GoogleAuth>,
+    #[garde(dive)]
+    pub okta: Option<OktaAuth>,
 }
 
 #[derive(Serialize, Deserialize, Validate, Debug, Clone, JsonSchema)]
@@ -31,6 +33,16 @@ pub struct GoogleAuth {
     pub client_id: String,
     #[garde(length(min = 1))]
     pub client_secret: String,
+}
+
+#[derive(Serialize, Deserialize, Validate, Debug, Clone, JsonSchema)]
+pub struct OktaAuth {
+    #[garde(length(min = 1))]
+    pub client_id: String,
+    #[garde(length(min = 1))]
+    pub client_secret: String,
+    #[garde(length(min = 1))]
+    pub domain: String,
 }
 
 impl Authentication {
@@ -59,6 +71,22 @@ impl Authentication {
             _ => None,
         };
 
-        Ok(Authentication { basic, google })
+        let okta_client_id = env::var("OKTA_CLIENT_ID").ok();
+        let okta_client_secret = env::var("OKTA_CLIENT_SECRET").ok();
+        let okta_domain = env::var("OKTA_DOMAIN").ok();
+        let okta = match (okta_client_id, okta_client_secret, okta_domain) {
+            (Some(id), Some(secret), Some(domain)) => Some(OktaAuth {
+                client_id: id,
+                client_secret: secret,
+                domain,
+            }),
+            _ => None,
+        };
+
+        Ok(Authentication {
+            basic,
+            google,
+            okta,
+        })
     }
 }

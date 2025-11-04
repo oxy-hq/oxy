@@ -3,6 +3,7 @@ import {
   LoginRequest,
   RegisterRequest,
   GoogleAuthRequest,
+  OktaAuthRequest,
   ValidateEmailRequest,
   AuthResponse,
   MessageResponse,
@@ -22,6 +23,11 @@ export class AuthService {
 
   static async googleAuth(request: GoogleAuthRequest): Promise<AuthResponse> {
     const response = await apiClient.post("/auth/google", request);
+    return response.data;
+  }
+
+  static async oktaAuth(request: OktaAuthRequest): Promise<AuthResponse> {
+    const response = await apiClient.post("/auth/okta", request);
     return response.data;
   }
 
