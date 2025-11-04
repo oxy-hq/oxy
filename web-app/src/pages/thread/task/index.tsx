@@ -3,15 +3,16 @@ import EditorTab from "@/pages/thread/task/EditorTab";
 import Messages from "@/pages/thread/messages";
 import { ThreadService } from "@/services/api";
 import { ThreadItem } from "@/types/chat";
-import { useRef, useCallback } from "react";
-import { useEffect } from "react";
-import { useState } from "react";
+import { useRef, useEffect, useState } from "react";
 import useTaskThreadStore from "@/stores/useTaskThread";
 import useAskTask from "@/hooks/messaging/task";
 import Header from "./Header";
 import ProcessingWarning from "../ProcessingWarning";
 import { toast } from "sonner";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import { useSmartScroll } from "@/hooks/useSmartScroll";
+
+const MESSAGES_WARNING_THRESHOLD = 10;
 
 const TaskThread = ({
   thread,
@@ -26,14 +27,17 @@ const TaskThread = ({
   const isInitialLoad = useRef(false);
   const { getTaskThread, setMessages, setFilePath } = useTaskThreadStore();
   const taskThread = getTaskThread(thread.id);
-  const bottomRef = useRef<HTMLDivElement>(null);
   const { messages, isLoading, filePath } = taskThread;
 
   const { sendMessage } = useAskTask();
 
   const [followUpQuestion, setFollowUpQuestion] = useState("");
-  const messagesContainerRef = useRef<HTMLDivElement>(null);
-  const shouldShowWarning = messages.length > 10;
+
+  const { scrollContainerRef: messagesContainerRef, bottomRef } =
+    useSmartScroll({ messages });
+
+  const isThreadBusy = isLoading || thread.is_processing;
+  const shouldShowWarning = messages.length > MESSAGES_WARNING_THRESHOLD;
 
   useEffect(() => {
     if (thread.source && filePath !== thread.source) {
@@ -41,7 +45,45 @@ const TaskThread = ({
     }
   }, [filePath, setFilePath, thread]);
 
-  const fetchMessages = useCallback(async () => {
+  // Initial message loading
+  useEffect(() => {
+    if (messages.length > 0 || isLoading) return;
+    if (isInitialLoad.current) return;
+
+    isInitialLoad.current = true;
+
+    const fetchMessages = async () => {
+      try {
+        const messages = await ThreadService.getThreadMessages(
+          project.id,
+          thread.id,
+        );
+        setMessages(thread.id, messages);
+        setFilePath(thread.id, thread.source);
+      } catch (error) {
+        console.error("Failed to fetch message history:", error);
+      }
+    };
+
+    fetchMessages();
+  }, [
+    isLoading,
+    messages.length,
+    project.id,
+    thread.id,
+    thread.source,
+    setMessages,
+    setFilePath,
+  ]);
+
+  const handleSendMessage = async () => {
+    if (!followUpQuestion.trim() || isLoading) return;
+
+    await sendMessage(followUpQuestion, thread.id);
+    setFollowUpQuestion("");
+  };
+
+  const handleRefresh = async () => {
     try {
       const messages = await ThreadService.getThreadMessages(
         project.id,
@@ -52,51 +94,28 @@ const TaskThread = ({
     } catch (error) {
       console.error("Failed to fetch message history:", error);
     }
-  }, [setFilePath, setMessages, thread.id, thread.source, project.id]);
-
-  const streamingMessage = messages.find((message) => message.isStreaming);
-
-  useEffect(() => {
-    const behavior = streamingMessage?.content ? "instant" : "smooth";
-    bottomRef.current?.scrollIntoView({ behavior });
-  }, [messages, streamingMessage?.content]);
-
-  useEffect(() => {
-    if (messages.length > 0 || isLoading) return;
-
-    if (isInitialLoad.current) return;
-    isInitialLoad.current = true;
-    fetchMessages();
-  }, [fetchMessages, isLoading, messages.length]);
-
-  const handleSendMessage = useCallback(async () => {
-    if (!followUpQuestion.trim() || isLoading) return;
-
-    await sendMessage(followUpQuestion, thread.id);
-    setFollowUpQuestion("");
-  }, [followUpQuestion, isLoading, sendMessage, thread.id]);
-
-  useEffect(() => {
-    if (messagesContainerRef.current) {
-      messagesContainerRef.current.scrollTop =
-        messagesContainerRef.current.scrollHeight;
-    }
-  }, [messages]);
+    refetchThread();
+  };
 
   const filePathB64 = filePath ? btoa(filePath) : undefined;
 
-  const onStop = useCallback(() => {
-    ThreadService.stopThread(projectId, thread.id)
-      // eslint-disable-next-line promise/always-return
-      .then(() => {
-        refetchThread();
-        fetchMessages();
-      })
-      .catch((error) => {
-        toast.error(`Failed to stop thread: ${error.message}`);
-        console.error("Failed to stop thread:", error);
-      });
-  }, [fetchMessages, refetchThread, thread.id, projectId]);
+  const onStop = async () => {
+    try {
+      await ThreadService.stopThread(projectId, thread.id);
+      refetchThread();
+
+      // Re-fetch messages after stopping
+      const messages = await ThreadService.getThreadMessages(
+        project.id,
+        thread.id,
+      );
+      setMessages(thread.id, messages);
+      setFilePath(thread.id, thread.source);
+    } catch (error) {
+      toast.error(`Failed to stop thread: ${(error as Error).message}`);
+      console.error("Failed to stop thread:", error);
+    }
+  };
 
   return (
     <div className="flex flex-col h-full">
@@ -116,17 +135,14 @@ const TaskThread = ({
               <ProcessingWarning
                 threadId={thread.id}
                 isLoading={isLoading}
-                onRefresh={() => {
-                  fetchMessages();
-                  refetchThread();
-                }}
+                onRefresh={handleRefresh}
               />
               <MessageInput
                 value={followUpQuestion}
                 onChange={setFollowUpQuestion}
                 onSend={handleSendMessage}
-                disabled={isLoading || thread.is_processing}
-                isLoading={isLoading || thread.is_processing}
+                disabled={isThreadBusy}
+                isLoading={isThreadBusy}
                 showWarning={shouldShowWarning}
                 onStop={onStop}
               />

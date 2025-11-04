@@ -1,6 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import dayjs from "dayjs";
-import relativeTime from "dayjs/plugin/relativeTime";
 
 import MessageInput from "@/components/MessageInput";
 import useAskAgent from "@/hooks/messaging/agent";
@@ -13,15 +11,14 @@ import ArtifactPanelContainer from "./components/ArtifactPanelContainer";
 import { ThreadService } from "@/services/api";
 import { toast } from "sonner";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import { useSmartScroll } from "@/hooks/useSmartScroll";
 
-dayjs.extend(relativeTime);
+const MESSAGES_WARNING_THRESHOLD = 10;
 
 interface AgentThreadProps {
   thread: ThreadItem;
   refetchThread: () => void;
 }
-
-const MESSAGES_WARNING_THRESHOLD = 10;
 
 const AgentThread = ({ thread, refetchThread }: AgentThreadProps) => {
   const { project } = useCurrentProjectBranch();
@@ -29,7 +26,6 @@ const AgentThread = ({ thread, refetchThread }: AgentThreadProps) => {
   const isInitialLoad = useRef(false);
   const { getAgentThread, setMessages } = useAgentThreadStore();
   const { sendMessage } = useAskAgent();
-  const bottomRef = useRef<HTMLDivElement>(null);
 
   const agentThread = getAgentThread(thread.id);
   const { messages, isLoading } = agentThread;
@@ -37,6 +33,9 @@ const AgentThread = ({ thread, refetchThread }: AgentThreadProps) => {
   const [selectedArtifactIds, setSelectedArtifactIds] = useState<string[]>([]);
   const [followUpQuestion, setFollowUpQuestion] = useState("");
 
+  const { scrollContainerRef, bottomRef } = useSmartScroll({ messages });
+
+  const isThreadBusy = isLoading || thread.is_processing;
   const shouldShowWarning = messages.length >= MESSAGES_WARNING_THRESHOLD;
 
   const handleArtifactClick = (id: string) => setSelectedArtifactIds([id]);
@@ -47,13 +46,6 @@ const AgentThread = ({ thread, refetchThread }: AgentThreadProps) => {
     sendMessage(followUpQuestion, thread.id);
     setFollowUpQuestion("");
   }, [followUpQuestion, isLoading, sendMessage, thread.id]);
-
-  const streamingMessage = messages.find((message) => message.isStreaming);
-
-  useEffect(() => {
-    const behavior = streamingMessage?.content ? "instant" : "smooth";
-    bottomRef.current?.scrollIntoView({ behavior });
-  }, [messages, streamingMessage?.content]);
 
   const fetchMessages = useCallback(async () => {
     try {
@@ -75,17 +67,20 @@ const AgentThread = ({ thread, refetchThread }: AgentThreadProps) => {
     fetchMessages();
   }, [fetchMessages, isLoading, messages]);
 
-  const onStop = useCallback(() => {
-    ThreadService.stopThread(projectId, thread.id)
-      // eslint-disable-next-line promise/always-return
-      .then(() => {
-        refetchThread();
-        fetchMessages();
-      })
-      .catch((error) => {
-        toast.error(`Failed to stop thread: ${error.message}`);
-        console.error("Failed to stop thread:", error);
-      });
+  const handleRefresh = useCallback(() => {
+    fetchMessages();
+    refetchThread();
+  }, [fetchMessages, refetchThread]);
+
+  const onStop = useCallback(async () => {
+    try {
+      await ThreadService.stopThread(projectId, thread.id);
+      refetchThread();
+      fetchMessages();
+    } catch (error) {
+      toast.error(`Failed to stop thread: ${(error as Error).message}`);
+      console.error("Failed to stop thread:", error);
+    }
   }, [fetchMessages, refetchThread, thread.id, projectId]);
 
   return (
@@ -94,7 +89,10 @@ const AgentThread = ({ thread, refetchThread }: AgentThreadProps) => {
 
       <div className="overflow-hidden flex-1 flex items-center w-full justify-center">
         <div className="flex-1 w-full h-full overflow-hidden flex flex-col gap-4">
-          <div className="flex-1 w-full customScrollbar overflow-auto">
+          <div
+            ref={scrollContainerRef}
+            className="flex-1 w-full customScrollbar overflow-auto"
+          >
             <div className="max-w-[742px] w-full p-4 mx-auto">
               <Messages
                 messages={messages}
@@ -108,10 +106,7 @@ const AgentThread = ({ thread, refetchThread }: AgentThreadProps) => {
             <ProcessingWarning
               threadId={thread.id}
               isLoading={isLoading}
-              onRefresh={() => {
-                fetchMessages();
-                refetchThread();
-              }}
+              onRefresh={handleRefresh}
             />
 
             <MessageInput
@@ -119,9 +114,9 @@ const AgentThread = ({ thread, refetchThread }: AgentThreadProps) => {
               onChange={setFollowUpQuestion}
               onSend={handleSendMessage}
               onStop={onStop}
-              disabled={isLoading || thread.is_processing}
+              disabled={isThreadBusy}
               showWarning={shouldShowWarning}
-              isLoading={isLoading || thread.is_processing}
+              isLoading={isThreadBusy}
             />
           </div>
         </div>
