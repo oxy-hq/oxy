@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.3.14](https://github.com/oxy-hq/oxy-internal/compare/0.3.13...0.3.14) (2025-11-05)
+
+
+### <!-- 0 -->🚀 Features
+
+* add authentication for local mode ([#1340](https://github.com/oxy-hq/oxy-internal/issues/1340)) ([ff5766e](https://github.com/oxy-hq/oxy-internal/commit/ff5766e51d784c1e1fbd7b76423babc431f3961d))
+* add healthcheck endpoint ([#1325](https://github.com/oxy-hq/oxy-internal/issues/1325)) ([e454765](https://github.com/oxy-hq/oxy-internal/commit/e454765927986d6fb29242141f57e8ff6901d41e))
+* add Okta authentication support and related documentation ([#1328](https://github.com/oxy-hq/oxy-internal/issues/1328)) ([cb6247c](https://github.com/oxy-hq/oxy-internal/commit/cb6247cb27cdf3efddb0e1a3d525f8a6bb131601))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* intermediate LLM calls during agent execution were not tracking token usage ([e04b00e](https://github.com/oxy-hq/oxy-internal/commit/e04b00e938002451c6ea8ad98ef067e9c072ff4d))
+* intermediate LLM calls during agent execution were not tracking token usage ([#1329](https://github.com/oxy-hq/oxy-internal/issues/1329)) ([8758c68](https://github.com/oxy-hq/oxy-internal/commit/8758c689cfd92028fb7a57cbd619b3f61f2f225c))
+
 ## [0.3.13](https://github.com/oxy-hq/oxy-internal/compare/0.3.12...0.3.13) (2025-10-30)
 
 

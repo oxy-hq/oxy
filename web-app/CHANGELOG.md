@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.3.14](https://github.com/oxy-hq/oxy-internal/compare/0.3.13...0.3.14) (2025-11-05)
+
+
+### <!-- 0 -->🚀 Features
+
+* add authentication for local mode ([#1340](https://github.com/oxy-hq/oxy-internal/issues/1340)) ([ff5766e](https://github.com/oxy-hq/oxy-internal/commit/ff5766e51d784c1e1fbd7b76423babc431f3961d))
+* add Okta authentication support and related documentation ([#1328](https://github.com/oxy-hq/oxy-internal/issues/1328)) ([cb6247c](https://github.com/oxy-hq/oxy-internal/commit/cb6247cb27cdf3efddb0e1a3d525f8a6bb131601))
+* implement smart scrolling for message threads ([#1330](https://github.com/oxy-hq/oxy-internal/issues/1330)) ([4d051c5](https://github.com/oxy-hq/oxy-internal/commit/4d051c51fb4d03c10f3a8c0f445127129065e9d6))
+* workflow output ux updates ([#1294](https://github.com/oxy-hq/oxy-internal/issues/1294)) ([092cef7](https://github.com/oxy-hq/oxy-internal/commit/092cef7e5234065a66228f7cf45968c916837f91))
+
 ## [0.3.13](https://github.com/oxy-hq/oxy-internal/compare/0.3.11...0.3.13) (2025-10-30)
 
 
