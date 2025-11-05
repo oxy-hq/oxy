@@ -10,14 +10,12 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   const { isAuthenticated, authConfig } = useAuth();
   const location = useLocation();
 
-  if (!authConfig.cloud) {
-    return <>{children}</>;
-  }
-
+  // If authentication is not enabled, allow access without checking auth
   if (!authConfig.is_built_in_mode || !authConfig.auth_enabled) {
     return <>{children}</>;
   }
 
+  // Authentication is enabled - check if user is authenticated
   if (!isAuthenticated()) {
     return (
       <Navigate to={ROUTES.AUTH.LOGIN} state={{ from: location }} replace />

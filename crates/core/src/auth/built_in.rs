@@ -35,14 +35,27 @@ impl Authenticator for BuiltInAuthenticator {
     type Error = OxyError;
 
     async fn authenticate(&self, header: &axum::http::HeaderMap) -> Result<Identity, Self::Error> {
+        // In non-cloud mode, check if any authentication methods are configured
+        // If YES: enforce authentication (same as cloud mode)
+        // If NO: use guest user (backward compatibility)
         if !self.cloud {
-            return Ok(Identity {
-                idp_id: Some("local-user".to_string()),
-                picture: None,
-                name: Some("Local User".to_string()),
-                email: "<local-user@example.com>".to_string(),
-            });
-        };
+            let has_auth_configured = crate::config::oxy::get_oxy_config()
+                .ok()
+                .and_then(|config| config.authentication)
+                .map(|auth| auth.basic.is_some() || auth.google.is_some() || auth.okta.is_some())
+                .unwrap_or(false);
+
+            if !has_auth_configured {
+                return Ok(Identity {
+                    idp_id: Some("local-user".to_string()),
+                    picture: None,
+                    name: Some("Local User".to_string()),
+                    email: "<local-user@example.com>".to_string(),
+                });
+            }
+        }
+
+        // Enforce authentication (for both cloud mode and non-cloud with auth configured)
         match self.extract_token(header) {
             Ok(token) => match self.validate(&token) {
                 Ok(identity) => return Ok(identity),

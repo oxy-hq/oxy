@@ -156,16 +156,44 @@ const MainLayout = React.memo(function MainLayout() {
   );
 });
 
-const getLocalRouter = () =>
+const getLocalRouter = (authConfig: AuthConfigResponse) =>
   createBrowserRouter(
     createRoutesFromElements(
       <Route>
+        {/* Auth routes for non-cloud mode when auth is enabled */}
+        {authConfig.is_built_in_mode && authConfig.auth_enabled && (
+          <>
+            <Route path={ROUTES.AUTH.LOGIN} element={<LoginPage />} />
+            <Route path={ROUTES.AUTH.REGISTER} element={<RegisterPage />} />
+            <Route
+              path={ROUTES.AUTH.VERIFY_EMAIL}
+              element={<EmailVerificationPage />}
+            />
+            <Route
+              path={ROUTES.AUTH.GOOGLE_CALLBACK}
+              element={<GoogleCallback />}
+            />
+            <Route
+              path={ROUTES.AUTH.OKTA_CALLBACK}
+              element={<OktaCallback />}
+            />
+          </>
+        )}
+
         <Route
           path="/*"
           element={
-            <SidebarProvider>
-              <MainLayout />
-            </SidebarProvider>
+            authConfig.auth_enabled ? (
+              <ProtectedRoute>
+                <SidebarProvider>
+                  <MainLayout />
+                </SidebarProvider>
+              </ProtectedRoute>
+            ) : (
+              <SidebarProvider>
+                <MainLayout />
+              </SidebarProvider>
+            )
           }
         />
       </Route>,
@@ -271,7 +299,11 @@ function App() {
     >
       <AuthProvider authConfig={authConfig}>
         <RouterProvider
-          router={authConfig.cloud ? getRouter(authConfig) : getLocalRouter()}
+          router={
+            authConfig.cloud
+              ? getRouter(authConfig)
+              : getLocalRouter(authConfig)
+          }
         />
         <ShadcnToaster />
       </AuthProvider>

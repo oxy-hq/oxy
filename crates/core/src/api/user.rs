@@ -176,3 +176,34 @@ pub async fn get_current_user(
 ) -> Result<Json<UserInfo>, StatusCode> {
     Ok(Json(user.into()))
 }
+
+/// Public endpoint that returns current user if authenticated, null if not
+/// This prevents redirect loops when auth is enabled
+pub async fn get_current_user_public(
+    axum::extract::State(app_state): axum::extract::State<crate::api::router::AppState>,
+    headers: axum::http::HeaderMap,
+) -> Result<Json<Option<UserInfo>>, StatusCode> {
+    // Try to authenticate using the same logic as the middleware
+    // If successful, return user info; if not, return null (not an error)
+    use crate::auth::authenticator::Authenticator;
+    use crate::auth::built_in::BuiltInAuthenticator;
+
+    let authenticator = BuiltInAuthenticator::new(app_state.cloud);
+
+    match authenticator.authenticate(&headers).await {
+        Ok(identity) => {
+            // Get or create user based on identity
+            match UserService::get_or_create_user(&identity).await {
+                Ok(user) => Ok(Json(Some(user.into()))),
+                Err(e) => {
+                    tracing::error!("Failed to get user from identity: {}", e);
+                    Ok(Json(None))
+                }
+            }
+        }
+        Err(_) => {
+            // Not authenticated - return null instead of error
+            Ok(Json(None))
+        }
+    }
+}

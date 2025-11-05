@@ -83,10 +83,12 @@ impl Authentication {
             _ => None,
         };
 
-        Ok(Authentication {
+        let auth = Authentication {
             basic,
             google,
             okta,
-        })
+        };
+
+        Ok(auth)
     }
 }

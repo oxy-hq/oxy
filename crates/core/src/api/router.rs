@@ -66,11 +66,11 @@ fn build_public_routes() -> Router<AppState> {
         .route("/auth/google", post(auth::google_auth))
         .route("/auth/okta", post(auth::okta_auth))
         .route("/auth/validate_email", post(auth::validate_email))
+        .route("/user", get(user::get_current_user_public))
 }
 
 fn build_global_routes() -> Router<AppState> {
     Router::new()
-        .route("/user", get(user::get_current_user))
         .route("/logout", get(user::logout))
         .route("/github/repositories", get(github::list_repositories))
         .route("/github/branches", get(github::list_branches))

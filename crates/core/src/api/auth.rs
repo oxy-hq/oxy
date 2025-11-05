@@ -104,7 +104,23 @@ pub async fn get_config(
     let auth_config = crate::config::oxy::get_oxy_config()
         .ok()
         .and_then(|config| config.authentication);
-    if auth_config.is_none() {
+
+    let has_google = auth_config
+        .as_ref()
+        .and_then(|auth| auth.google.as_ref())
+        .is_some();
+    let has_okta = auth_config
+        .as_ref()
+        .and_then(|auth| auth.okta.as_ref())
+        .is_some();
+    let has_basic = auth_config
+        .as_ref()
+        .and_then(|auth| auth.basic.as_ref())
+        .is_some();
+
+    let auth_enabled = has_google || has_okta || has_basic;
+
+    if !auth_enabled {
         return Ok(Json(AuthConfigResponse {
             is_built_in_mode: true,
             auth_enabled: false,
@@ -114,6 +130,7 @@ pub async fn get_config(
             cloud: app_state.cloud,
         }));
     }
+
     let google_client_id = auth_config
         .as_ref()
         .and_then(|auth| auth.google.as_ref())
@@ -125,19 +142,23 @@ pub async fn get_config(
             client_id: okta.client_id.clone(),
             domain: okta.domain.clone(),
         });
-    let basic_auth_enabled = auth_config
-        .as_ref()
-        .and_then(|auth| auth.basic.as_ref())
-        .is_some();
 
     let config = AuthConfigResponse {
         is_built_in_mode: true,
         auth_enabled: true,
         google: google_client_id.map(|client_id| GoogleConfig { client_id }),
         okta: okta_config,
-        basic: Some(basic_auth_enabled),
+        basic: Some(has_basic),
         cloud: app_state.cloud,
     };
+
+    tracing::info!(
+        "Returning auth config: google={}, okta={}, basic={}, cloud={}",
+        has_google,
+        has_okta,
+        has_basic,
+        app_state.cloud
+    );
 
     Ok(Json(config))
 }
