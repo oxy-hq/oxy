@@ -49,6 +49,8 @@ const ROUTES = {
         ROOT: `${base}/ide`,
         FILE: (pathb64: string) => `${base}/ide/${pathb64}`,
       },
+
+      ONTOLOGY: `${base}/ontology`,
     };
   },
 } as const;

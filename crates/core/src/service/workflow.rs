@@ -31,6 +31,10 @@ use crate::{
 pub struct WorkflowInfo {
     pub name: String,
     pub path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tasks: Option<Vec<serde_json::Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
 }
 
 pub async fn list_workflows(config_manager: ConfigManager) -> Result<Vec<WorkflowInfo>, OxyError> {
@@ -45,13 +49,17 @@ pub async fn list_workflows(config_manager: ConfigManager) -> Result<Vec<Workflo
             .and_then(|s| s.to_str())
             .and_then(|s| s.strip_suffix(".workflow"))
         {
+            let relative_path_str = path
+                .strip_prefix(project_path)
+                .unwrap_or(&path)
+                .to_string_lossy()
+                .to_string();
+
             workflows.push(WorkflowInfo {
                 name: name.to_string(),
-                path: path
-                    .strip_prefix(project_path)
-                    .unwrap_or(&path)
-                    .to_string_lossy()
-                    .to_string(),
+                path: relative_path_str,
+                tasks: None,
+                description: None,
             });
         }
     }

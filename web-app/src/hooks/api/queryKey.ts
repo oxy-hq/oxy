@@ -184,6 +184,12 @@ const artifactKeys = {
     [...artifactKeys.all, "get", projectId, branchName, id] as const,
 };
 
+const ontologyKeys = {
+  all: ["ontology"] as const,
+  graph: (projectId: string, branchName: string) =>
+    [...ontologyKeys.all, "graph", projectId, branchName] as const,
+};
+
 const queryKeys = {
   agent: agentKeys,
   thread: threadKeys,
@@ -202,6 +208,7 @@ const queryKeys = {
   repositories: repositoryKeys,
   config: configKeys,
   artifact: artifactKeys,
+  ontology: ontologyKeys,
 };
 
 export default queryKeys;

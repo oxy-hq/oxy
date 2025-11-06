@@ -22,6 +22,7 @@ import React from "react";
 import IdePage from "./pages/ide";
 import EditorPage from "./pages/ide/Editor";
 import AppPage from "./pages/app";
+import OntologyPage from "@/pages/ontology";
 import { HotkeysProvider } from "react-hotkeys-hook";
 import LoginPage from "./pages/login";
 import RegisterPage from "./pages/register";
@@ -149,6 +150,14 @@ const MainLayout = React.memo(function MainLayout() {
         <Route path="/ide" element={<IdePage />}>
           <Route path=":pathb64" element={<EditorPage />} />
         </Route>
+        <Route
+          path="/ontology"
+          element={
+            <MainPageWrapper>
+              <OntologyPage />
+            </MainPageWrapper>
+          }
+        />
 
         {!authConfig.cloud && <Route path="*" element={<Navigate to="/" />} />}
       </Routes>
