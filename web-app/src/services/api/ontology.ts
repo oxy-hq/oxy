@@ -244,30 +244,50 @@ export class OntologyService {
       checkTasksForSqlReferences(workflow.tasks);
     });
 
+    // Helper to add SQL queries matching a pattern
+    const addMatchingSqlQueries = (pattern: string) => {
+      if (!pattern.endsWith(".sql")) return;
+      sqlQueries.forEach((query) => {
+        if (matchesPattern(query.path, pattern)) {
+          referencedSqlQueries.add(query.path);
+        }
+      });
+    };
+
+    // Helper to extract SQL paths from context item
+    const extractSqlPathsFromContext = (
+      contextItem: string | { name?: string; type?: string; src?: string[] },
+    ): string[] => {
+      if (typeof contextItem === "string") {
+        return [contextItem];
+      }
+      if (
+        contextItem &&
+        typeof contextItem === "object" &&
+        Array.isArray(contextItem.src)
+      ) {
+        return contextItem.src.filter(
+          (srcPath): srcPath is string => typeof srcPath === "string",
+        );
+      }
+      return [];
+    };
+
     // Check agents for SQL references in context and routes
     agents.forEach((agent) => {
       // Check context field
       if (agent.context) {
-        agent.context.forEach((contextPath) => {
-          if (contextPath.endsWith(".sql")) {
-            sqlQueries.forEach((query) => {
-              if (matchesPattern(query.path, contextPath)) {
-                referencedSqlQueries.add(query.path);
-              }
-            });
-          }
+        agent.context.forEach((contextItem) => {
+          const paths = extractSqlPathsFromContext(contextItem);
+          paths.forEach(addMatchingSqlQueries);
         });
       }
 
       // Check routes field (for routing agents)
       if (agent.routes) {
         agent.routes.forEach((route) => {
-          if (route.endsWith(".sql")) {
-            sqlQueries.forEach((query) => {
-              if (matchesPattern(query.path, route)) {
-                referencedSqlQueries.add(query.path);
-              }
-            });
+          if (typeof route === "string") {
+            addMatchingSqlQueries(route);
           }
         });
       }
@@ -347,6 +367,8 @@ export class OntologyService {
       // Link routing agent to topics and workflows via routes
       if (agent.agentType === "routing" && agent.routes) {
         agent.routes.forEach((route) => {
+          if (typeof route !== "string") return;
+
           // Handle topic routes
           if (route.endsWith(".topic.yml") || route.endsWith(".topic.yaml")) {
             const matchedTopics = nodes.filter(
@@ -424,24 +446,25 @@ export class OntologyService {
 
       // Link agent to SQL queries via context
       if (agent.context) {
-        agent.context.forEach((contextPath) => {
-          if (contextPath.endsWith(".sql")) {
-            const matchedQueries = nodes.filter(
-              (n) =>
-                n.type === "sql_query" &&
-                n.data.path &&
-                matchesPattern(n.data.path, contextPath),
-            );
-            matchedQueries.forEach((queryNode) => {
-              edges.push({
-                id: `${agentId}->${queryNode.id}`,
-                source: agentId,
-                target: queryNode.id,
-                label: "uses",
-                type: "uses",
-              });
+        const allPaths = agent.context.flatMap(extractSqlPathsFromContext);
+        const sqlPaths = allPaths.filter((path) => path.endsWith(".sql"));
+
+        sqlPaths.forEach((contextPath) => {
+          const matchedQueries = nodes.filter(
+            (n) =>
+              n.type === "sql_query" &&
+              n.data.path &&
+              matchesPattern(n.data.path, contextPath),
+          );
+          matchedQueries.forEach((queryNode) => {
+            edges.push({
+              id: `${agentId}->${queryNode.id}`,
+              source: agentId,
+              target: queryNode.id,
+              label: "uses",
+              type: "uses",
             });
-          }
+          });
         });
       }
     });
@@ -472,7 +495,9 @@ export class OntologyService {
       }>;
       routes?: string[];
       route_fallback?: string;
-      context?: string[];
+      context?: Array<
+        string | { name?: string; type?: string; src?: string[] }
+      >;
     }>;
     sqlQueries: Array<{
       name: string;
@@ -494,7 +519,9 @@ export class OntologyService {
       }>;
       routes?: string[];
       route_fallback?: string;
-      context?: string[];
+      context?: Array<
+        string | { name?: string; type?: string; src?: string[] }
+      >;
     }> = [];
     const sqlQueries: Array<{
       name: string;
