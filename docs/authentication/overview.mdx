@@ -6,11 +6,7 @@ sidebarTitle: "Overview"
 
 # Authentication in Oxy
 
-Oxy provides flexible authentication options for cloud mode deployments. Authentication is **only available when running in cloud mode** (`--cloud` flag) and is designed for multi-tenant, production environments.
-
-<Warning>
-Authentication is not available in local mode. Local mode deployments are intended for single-user development environments and rely on network-level security (SSH, VPN, localhost access).
-</Warning>
+Oxy provides flexible authentication options for both local and cloud mode deployments. Authentication supports both single-user local development environments and multi-tenant cloud deployments.
 
 ## Quick Start
 
@@ -59,8 +55,8 @@ export OKTA_CLIENT_ID=your_okta_client_id
 export OKTA_CLIENT_SECRET=your_okta_client_secret
 export OKTA_DOMAIN=your-domain.okta.com
 
-# Start Oxy
-oxy serve --cloud --port 3000
+# Start Oxy (works in both local and cloud mode)
+oxy serve --port 3000
 ```
 
 ## Multiple Authentication Methods
@@ -77,15 +73,5 @@ export OKTA_CLIENT_ID=your_okta_client_id
 export OKTA_CLIENT_SECRET=your_okta_client_secret
 export OKTA_DOMAIN=your-domain.okta.com
 
-oxy serve --cloud  # authentication is not supported in local mode
+oxy serve
 ```
-
-## Using a Reverse Proxy for Authentication
-
-For local mode, you can deploy Oxy behind a reverse proxy that handles authentication, such as [oauth2-proxy](https://oauth2-proxy.github.io/oauth2-proxy/) or a custom NGINX/Traefik setup. This approach allows you to:
-
-- Integrate with enterprise SSO providers (Okta, Azure AD, Auth0, etc.)
-- Add additional authentication layers (JWT, SAML, LDAP)
-- Centralize access control and audit logging
-
-However, this method only protects access at the network level and does not integrate with Oxy's user management system

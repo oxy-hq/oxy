@@ -20,6 +20,7 @@ Oxy supports two deployment modes to accommodate different use cases:
 | **Project Source** | Local file system | Synced from GitHub repositories |
 | **Configuration** | File-based (`config.yml`) | Environment variables + database |
 | **Workspace Management** | Single project per instance | Multi-project workspaces |
+| **Authentication** | Optional - Single user when enabled | Required for multi-user access |
 | **Use Case** | Development, self-hosted | Cloud deployments, SaaS |
 
 ## Cloud Mode Architecture
@@ -222,12 +223,15 @@ POST /api/{project_id}/sync
 
 ## Authentication in Cloud Mode
 
-Cloud mode uses the same built-in authentication as local mode:
+Cloud mode uses the same built-in authentication system as local mode, with additional workspace-based access control:
 
 - Email/password authentication with SMTP verification
 - Optional Google OAuth integration
+- Optional Okta OAuth integration
 - User management via the web interface
-- Workspace-based access control
+- Workspace-based access control (cloud mode only)
+
+The key difference is that cloud mode requires authentication for multi-user access, while local mode can optionally enable authentication or run without it for single-user development.
 
 ## Deployment Scenarios
 
@@ -354,6 +358,23 @@ oxy serve --port 3000
 - **Single Project**: One project per server instance
 - **Development Friendly**: Rapid iteration with immediate file changes
 - **Git Optional**: Can work without Git integration
+- **Authentication**: Optional - supports the same authentication methods as cloud mode
+
+### Authentication in Local Mode
+
+Local mode can optionally enable authentication using the same system as cloud mode:
+
+```bash
+# Run without authentication (default - single user mode)
+oxy serve --port 3000
+
+# Run with authentication enabled
+export SMTP_USER=noreply@yourdomain.com
+export SMTP_PASSWORD=your_smtp_password
+oxy serve --port 3000
+```
+
+When authentication is configured in local mode, the system behaves similarly to cloud mode but without workspace management.
 
 ## Migration Guide
 
@@ -486,10 +507,11 @@ POST   /api/workflows/{path}/run
 
 ### Local Mode
 
-- **Single User**: Designed for individual developers
-- **File System**: Secrets in local `.env` files
+- **Authentication**: Optional - can enable same auth methods as cloud mode
+- **Single/Multi User**: Primarily single user, but supports multi-user when auth is enabled
+- **File System**: Secrets in local `.env` files or config.yml
 - **Network**: Typically runs on localhost
-- **Access**: SSH or local access only
+- **Access**: SSH, local access, or authenticated web access
 
 ## Summary
 
@@ -509,5 +531,6 @@ While local mode remains ideal for development with:
 - ✅ Simple setup
 - ✅ Single project focus
 - ✅ Full Git control
+- ✅ Optional authentication for multi-user scenarios
 
-Choose cloud mode for production deployments and SaaS offerings, and local mode for development and self-hosted single-project scenarios.
+Choose cloud mode for production deployments and SaaS offerings, and local mode for development and self-hosted scenarios (both single-user and multi-user supported).
