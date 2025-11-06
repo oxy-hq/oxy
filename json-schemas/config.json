@@ -143,6 +143,13 @@
                 }
               }
             },
+            "filters": {
+              "default": {},
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/definitions/SchemaObject"
+              }
+            },
             "password": {
               "type": [
                 "string",
@@ -163,6 +170,12 @@
               ]
             },
             "role": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "schema": {
               "type": [
                 "string",
                 "null"

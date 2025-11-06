@@ -10,7 +10,7 @@ defaults:
 models:
   - vendor: openai
     name: openai-4.1
-    model_ref: gpt-4o
+    model_ref: gpt-4.1
     key_var: OPENAI_API_KEY
     api_url: https://api.openai.com/v1
 
@@ -21,7 +21,7 @@ databases:
     # Connection parameters
     # Replace with your actual ClickHouse instance details
     host: https://server-id.us-east-1.aws.clickhouse.cloud:8443
-    user: clickhouse_user_name
+    user: clickhouse_username
     password_var: CLICKHOUSE_PWD
     database: clickhouse_database_name
     

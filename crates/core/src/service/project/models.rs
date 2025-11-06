@@ -85,6 +85,7 @@ pub struct SnowflakeConfig {
     pub password_var: Option<String>,
     pub warehouse: Option<String>,
     pub database: Option<String>,
+    pub schema: Option<String>,
     pub role: Option<String>,
     pub private_key_path: Option<String>,
 }
@@ -173,6 +174,7 @@ impl WarehouseConfig {
                 password_var: None,
                 warehouse: None,
                 database: None,
+                schema: None,
                 role: None,
                 private_key_path: None,
             }

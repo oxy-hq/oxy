@@ -49,6 +49,14 @@ pub enum OxyError {
         actual: String,
         details: String,
     },
+    #[error(
+        "Filter size limit exceeded for database '{database}': {size_bytes} bytes exceeds limit of {limit_bytes} bytes"
+    )]
+    FilterSizeLimitExceeded {
+        database: String,
+        size_bytes: usize,
+        limit_bytes: usize,
+    },
     #[error("{0}")]
     CryptographyError(String),
     #[error("{0}")]
@@ -92,6 +100,7 @@ impl OxyError {
             OxyError::MissingRequiredFilter { .. } => "filter_validation",
             OxyError::UnsupportedFilter { .. } => "filter_validation",
             OxyError::InvalidFilterType { .. } => "filter_validation",
+            OxyError::FilterSizeLimitExceeded { .. } => "filter_validation",
             OxyError::CryptographyError(_) => "cryptography",
             OxyError::InitializationError(_) => "initialization",
             OxyError::JobError(_) => "job",
@@ -123,6 +132,7 @@ impl OxyError {
             OxyError::MissingRequiredFilter { .. } => sentry::Level::Warning,
             OxyError::UnsupportedFilter { .. } => sentry::Level::Warning,
             OxyError::InvalidFilterType { .. } => sentry::Level::Warning,
+            OxyError::FilterSizeLimitExceeded { .. } => sentry::Level::Warning,
             OxyError::CryptographyError(_) => sentry::Level::Error,
             OxyError::InitializationError(_) => sentry::Level::Error,
             OxyError::JobError(_) => sentry::Level::Error,
@@ -265,6 +275,7 @@ impl From<OxyError> for StatusCode {
             OxyError::MissingRequiredFilter { .. } => StatusCode::BAD_REQUEST,
             OxyError::UnsupportedFilter { .. } => StatusCode::BAD_REQUEST,
             OxyError::InvalidFilterType { .. } => StatusCode::BAD_REQUEST,
+            OxyError::FilterSizeLimitExceeded { .. } => StatusCode::BAD_REQUEST,
             OxyError::CryptographyError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             OxyError::InitializationError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             OxyError::JobError(_) => StatusCode::INTERNAL_SERVER_ERROR,

@@ -16,7 +16,7 @@ use crate::{
     },
     config::{
         ConfigManager,
-        model::{ConnectionOverride, ConnectionOverrides, DatabaseType},
+        model::{ConnectionOverrides, DatabaseType},
     },
     errors::OxyError,
 };
@@ -117,23 +117,31 @@ impl Connector {
             }
             DatabaseType::ClickHouse(ch) => {
                 let validated_filters = Self::validate_filters(database_ref, &ch.filters, filters)?;
-                let connection_overrides =
-                    Self::extract_connection_override(database_ref, connections)?;
 
-                let mut clickhouse = ClickHouse::new(ch.clone(), secrets_manager.clone());
+                let mut clickhouse_connector = ClickHouse::new(ch.clone(), secrets_manager.clone());
                 if let Some(filters) = validated_filters {
-                    clickhouse = clickhouse.with_filters(filters);
+                    clickhouse_connector = clickhouse_connector.with_filters(filters);
                 }
-                if let Some(connection_overrides) = connection_overrides {
-                    clickhouse = clickhouse.with_overrides(connection_overrides);
-                }
-                EngineType::ClickHouse(clickhouse)
+                clickhouse_connector =
+                    clickhouse_connector.with_overrides(database_ref, connections)?;
+                EngineType::ClickHouse(clickhouse_connector)
             }
-            DatabaseType::Snowflake(snowflake) => EngineType::Snowflake(Snowflake::new(
-                snowflake.clone(),
-                secrets_manager.clone(),
-                config_manager.clone(),
-            )),
+            DatabaseType::Snowflake(snowflake) => {
+                let validated_filters =
+                    Self::validate_filters(database_ref, &snowflake.filters, filters)?;
+
+                let mut snowflake_connector = Snowflake::new(
+                    snowflake.clone(),
+                    secrets_manager.clone(),
+                    config_manager.clone(),
+                );
+                if let Some(filters) = validated_filters {
+                    snowflake_connector = snowflake_connector.with_filters(filters);
+                }
+                snowflake_connector =
+                    snowflake_connector.with_overrides(database_ref, connections)?;
+                EngineType::Snowflake(snowflake_connector)
+            }
             DatabaseType::DOMO(domo) => {
                 EngineType::DOMO(DOMO::from_config(secrets_manager.clone(), domo.clone()).await?)
             }
@@ -172,33 +180,6 @@ impl Connector {
 
     pub async fn dry_run(&self, query: &str) -> Result<(Vec<RecordBatch>, SchemaRef), OxyError> {
         self.engine.dry_run(query).await
-    }
-
-    /// Extract connection override for a specific database
-    ///
-    /// Returns the override config if present in the connections map and the database name exists.
-    /// Returns error if the database name in connections doesn't exist in config.yml.
-    fn extract_connection_override(
-        database_ref: &str,
-        connections: Option<ConnectionOverrides>,
-    ) -> Result<Option<ConnectionOverride>, OxyError> {
-        let Some(connections) = connections else {
-            return Ok(None);
-        };
-
-        let Some(connection_override) = connections.get(database_ref) else {
-            // No override for this database - that's fine
-            return Ok(None);
-        };
-
-        tracing::info!(
-            database = %database_ref,
-            has_host_override = connection_override.host.is_some(),
-            has_database_override = connection_override.database.is_some(),
-            "Applying connection overrides for database"
-        );
-
-        Ok(Some(connection_override.clone()))
     }
 
     /// Validate api request filters against configured database filter schemas

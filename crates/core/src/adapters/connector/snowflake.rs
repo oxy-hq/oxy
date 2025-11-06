@@ -7,10 +7,14 @@ use snowflake_api::{QueryResult, SnowflakeApi};
 use std::sync::Arc;
 
 use crate::adapters::secrets::SecretsManager;
-use crate::config::{ConfigManager, model::Snowflake as SnowflakeConfig};
+use crate::adapters::session_filters::{FilterProcessor, SessionFilters};
+use crate::config::{
+    ConfigManager,
+    model::{ConnectionOverrides, Snowflake as SnowflakeConfig, SnowflakeConnectionOverride},
+};
 use crate::errors::OxyError;
 
-use super::constants::{CREATE_CONN, EXECUTE_QUERY};
+use super::constants::{CREATE_CONN, EXECUTE_QUERY, SNOWFLAKE_SESSION_VAR_LIMIT};
 use super::engine::Engine;
 use super::utils::connector_internal_error;
 
@@ -19,6 +23,8 @@ pub(super) struct Snowflake {
     pub config: SnowflakeConfig,
     pub secret_manager: SecretsManager,
     pub config_manager: ConfigManager,
+    pub filters: Option<SessionFilters>,
+    pub overrides: Option<SnowflakeConnectionOverride>,
 }
 
 impl Snowflake {
@@ -31,7 +37,115 @@ impl Snowflake {
             config,
             secret_manager,
             config_manager,
+            filters: None,
+            overrides: None,
         }
+    }
+
+    pub fn with_filters(mut self, filters: SessionFilters) -> Self {
+        self.filters = Some(filters);
+        self
+    }
+
+    /// Apply connection overrides from the connections HashMap
+    ///
+    /// Extracts Snowflake-specific overrides for the given database reference.
+    /// Returns an error if a ClickHouse override is provided for a Snowflake database.
+    pub fn with_overrides(
+        mut self,
+        database_ref: &str,
+        connections: Option<ConnectionOverrides>,
+    ) -> Result<Self, OxyError> {
+        if let Some(ovr) = connections
+            .as_ref()
+            .and_then(|c| c.get(database_ref))
+            .cloned()
+        {
+            let sf: SnowflakeConnectionOverride = ovr.try_into()?;
+            tracing::info!(
+                database = %database_ref,
+                has_database_override = sf.database.is_some(),
+                has_schema_override = sf.schema.is_some(),
+                has_warehouse_override = sf.warehouse.is_some(),
+                has_account_override = sf.account.is_some(),
+                "Applying Snowflake connection overrides"
+            );
+            self.overrides = Some(sf);
+        }
+        Ok(self)
+    }
+
+    /// Build SET statements for session variables from filters
+    /// Returns error if total size exceeds Snowflake's limit
+    fn build_filter_statements(&self, database_name: &str) -> Result<Vec<String>, OxyError> {
+        let Some(filters) = &self.filters else {
+            return Ok(Vec::new());
+        };
+
+        let mut statements = Vec::new();
+        let mut total_size = 0;
+
+        for (key, value) in filters.iter() {
+            // Skip null values - optional filters that weren't provided
+            if value.is_null() {
+                tracing::debug!(
+                    filter_name = %key,
+                    "Skipping null filter value - optional filter not provided"
+                );
+                continue;
+            }
+
+            // Convert filter name to uppercase (Snowflake convention)
+            let var_name = key.to_uppercase();
+
+            // Serialize the value to a session variable string
+            let var_value = FilterProcessor::to_session_value(value);
+
+            // Escape single quotes in the value for SQL
+            let escaped_value = var_value.replace('\'', "''");
+
+            // Build the SET statement
+            let statement = format!("SET {} = '{}'", var_name, escaped_value);
+
+            // Track size (the value size is what counts toward the limit)
+            total_size += var_value.len();
+
+            tracing::debug!(
+                filter_name = %key,
+                var_name = %var_name,
+                value_size = var_value.len(),
+                total_size = total_size,
+                "Building Snowflake SET statement for filter"
+            );
+
+            statements.push(statement);
+        }
+
+        // Check if we exceeded the limit
+        if total_size > SNOWFLAKE_SESSION_VAR_LIMIT {
+            tracing::error!(
+                database = %database_name,
+                total_size = total_size,
+                limit = SNOWFLAKE_SESSION_VAR_LIMIT,
+                filter_count = statements.len(),
+                "Filter size exceeds Snowflake session variable limit"
+            );
+            return Err(OxyError::FilterSizeLimitExceeded {
+                database: database_name.to_string(),
+                size_bytes: total_size,
+                limit_bytes: SNOWFLAKE_SESSION_VAR_LIMIT,
+            });
+        }
+
+        tracing::info!(
+            database = %database_name,
+            statement_count = statements.len(),
+            total_size = total_size,
+            limit = SNOWFLAKE_SESSION_VAR_LIMIT,
+            "Successfully built Snowflake filter statements"
+        );
+
+        Ok(statements)
     }
 }
 
@@ -42,6 +156,47 @@ impl Engine for Snowflake {
         _dry_run_limit: Option<u64>,
     ) -> Result<(Vec<RecordBatch>, SchemaRef), OxyError> {
         tracing::debug!("🔍 Snowflake query: {}", query);
+
+        // Determine warehouse, database, schema, account from config with potential overrides
+        let warehouse = self
+            .overrides
+            .as_ref()
+            .and_then(|o| o.warehouse.as_ref())
+            .map(|w| w.as_str())
+            .unwrap_or(self.config.warehouse.as_str());
+
+        let database = self
+            .overrides
+            .as_ref()
+            .and_then(|o| o.database.as_ref())
+            .map(|d| d.as_str())
+            .unwrap_or(self.config.database.as_str());
+
+        let schema = match &self.overrides {
+            Some(o) if o.schema.is_some() => o.schema.as_deref(),
+            _ => self.config.schema.as_deref(),
+        };
+
+        let account = self
+            .overrides
+            .as_ref()
+            .and_then(|o| o.account.as_ref())
+            .map(|a| a.as_str())
+            .unwrap_or(self.config.account.as_str());
+
+        if self.overrides.is_some() {
+            tracing::info!(
+                original_account = %self.config.account,
+                original_warehouse = %self.config.warehouse,
+                original_database = %self.config.database,
+                original_schema = ?self.config.schema,
+                override_account = %account,
+                override_warehouse = %warehouse,
+                override_database = %database,
+                override_schema = ?schema,
+                "Using connection overrides for Snowflake"
+            );
+        }
 
         let config = self.config.clone();
         let api = if let Some(private_key_path) = &config.private_key_path {
@@ -65,10 +220,10 @@ impl Engine for Snowflake {
             })?;
 
             SnowflakeApi::with_certificate_auth(
-                config.account.as_str(),
-                Some(config.warehouse.as_str()),
-                Some(config.database.as_str()),
-                None,
+                account,
+                Some(warehouse),
+                Some(database),
+                schema,
                 &config.username,
                 config.role.as_deref(),
                 &private_key_content,
@@ -84,10 +239,10 @@ impl Engine for Snowflake {
             tracing::debug!("🔑 Snowflake: Using password authentication");
             // Use password authentication
             SnowflakeApi::with_password_auth(
-                config.account.as_str(),
-                Some(config.warehouse.as_str()),
-                Some(config.database.as_str()),
-                None,
+                account,
+                Some(warehouse),
+                Some(database),
+                schema,
                 &config.username,
                 config.role.as_deref(),
                 &config.get_password(&self.secret_manager).await?,
@@ -102,10 +257,51 @@ impl Engine for Snowflake {
         };
 
         tracing::debug!("✅ Snowflake: Connection established successfully");
-        tracing::debug!("⚡ Snowflake: Executing query...");
 
+        // Build filter SET statements if filters are present
+        let filter_statements = self.build_filter_statements(database)?;
+
+        // Execute each SET statement individually to establish session variables
+        if !filter_statements.is_empty() {
+            tracing::info!(
+                database = %database,
+                filter_count = filter_statements.len(),
+                "⚡ Snowflake: Executing SET statements for session filters"
+            );
+
+            for (idx, statement) in filter_statements.iter().enumerate() {
+                tracing::debug!(
+                    statement_num = idx + 1,
+                    total = filter_statements.len(),
+                    statement = %statement,
+                    "Executing SET statement"
+                );
+
+                api.exec(statement).await.map_err(|err| {
+                    tracing::error!(
+                        database = %database,
+                        statement = %statement,
+                        error = %err,
+                        "❌ Snowflake: Failed to execute SET statement"
+                    );
+                    connector_internal_error(EXECUTE_QUERY, &err)
+                })?;
+            }
+
+            tracing::debug!("✅ Snowflake: All SET statements executed successfully");
+        } else {
+            tracing::debug!("⚡ Snowflake: No filters to apply, executing query directly");
+        }
+
+        // Execute the actual query (session variables are already set)
+        tracing::debug!("⚡ Snowflake: Executing main query...");
         let res = api.exec(query).await.map_err(|err| {
-            tracing::error!("❌ Snowflake: Query execution failed: {}", err);
+            tracing::error!(
+                database = %database,
+                has_filters = !filter_statements.is_empty(),
+                error = %err,
+                "❌ Snowflake: Query execution failed"
+            );
             connector_internal_error(EXECUTE_QUERY, &err)
         })?;
         let record_batches: Vec<RecordBatch>;

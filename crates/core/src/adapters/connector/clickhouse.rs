@@ -11,7 +11,9 @@ use crate::{
         secrets::SecretsManager,
         session_filters::{FilterProcessor, SessionFilters},
     },
-    config::model::{ClickHouse as ConfigClickHouse, ConnectionOverride},
+    config::model::{
+        ClickHouse as ConfigClickHouse, ClickHouseConnectionOverride, ConnectionOverrides,
+    },
     errors::OxyError,
 };
 
@@ -24,7 +26,7 @@ pub(super) struct ClickHouse {
     pub config: ConfigClickHouse,
     pub secret_manager: SecretsManager,
     pub filters: Option<SessionFilters>,
-    pub overrides: Option<ConnectionOverride>,
+    pub overrides: Option<ClickHouseConnectionOverride>,
 }
 
 impl ClickHouse {
@@ -42,9 +44,30 @@ impl ClickHouse {
         self
     }
 
-    pub fn with_overrides(mut self, overrides: ConnectionOverride) -> Self {
-        self.overrides = Some(overrides);
-        self
+    /// Apply connection overrides from the connections HashMap
+    ///
+    /// Extracts ClickHouse-specific overrides for the given database reference.
+    /// Returns an error if a Snowflake override is provided for a ClickHouse database.
+    pub fn with_overrides(
+        mut self,
+        database_ref: &str,
+        connections: Option<ConnectionOverrides>,
+    ) -> Result<Self, OxyError> {
+        if let Some(ovr) = connections
+            .as_ref()
+            .and_then(|c| c.get(database_ref))
+            .cloned()
+        {
+            let ch: ClickHouseConnectionOverride = ovr.try_into()?;
+            tracing::info!(
+                database = %database_ref,
+                has_host_override = ch.host.is_some(),
+                has_database_override = ch.database.is_some(),
+                "Applying ClickHouse connection overrides"
+            );
+            self.overrides = Some(ch);
+        }
+        Ok(self)
     }
 
     /// Escape a value for use in a ClickHouse SET statement

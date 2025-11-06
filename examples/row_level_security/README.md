@@ -11,9 +11,13 @@ Oxy supports two security features via API parameters:
 
 ## Configuration
 
-See [`clickhouse/config.yml`](./clickhouse/config.yml) for the database configuration example.
+This directory contains configuration examples for different databases:
+- ClickHouse: See [`clickhouse/config.yml`](./clickhouse/config.yml)
+- Snowflake: See [`snowflake/config.yml`](./snowflake/config.yml)
 
-**Note**: You must create the corresponding role and row policies in ClickHouse for filters to work. See [`Clickhouse docs`](https://clickhouse.com/docs/operations/access-rights) for more information.
+**Note**: You must create the corresponding role and row policies in your database for filters to work:
+- **ClickHouse**: See [ClickHouse Access Rights docs](https://clickhouse.com/docs/operations/access-rights)
+- **Snowflake**: See [Snowflake Row Access Policies docs](https://docs.snowflake.com/en/user-guide/security-row-intro)
 
 ## API Usage Examples
 
@@ -21,31 +25,10 @@ See [`clickhouse/config.yml`](./clickhouse/config.yml) for the database configur
 
 Add the `filters` parameter to your API request body. Filters are validated against the schema in `config.yml` and applied as ClickHouse session settings.
 
-**Example: SQL Execution with Filters**
-
-```bash
-curl -X POST http://localhost:8080/api/data/sql \
-  -H "Content-Type: application/json" \
-  -d '{
-    "sql": "SELECT * FROM sales WHERE created_at >= today()",
-    "database": "clickhouse",
-    "filters": {
-      "tenant_id": 12345,
-      "project_ids": [100, 101, 102]
-    }
-  }'
-```
-
-This applies the filters as ClickHouse session settings:
-```sql
-SET SQL_tenant_id = 12345;
-SET SQL_project_ids = [100, 101, 102];
-```
-
 **Example: Agent Request with Filters**
 
 ```bash
-curl -X POST http://localhost:8080/api/agents/my-agent/ask \
+curl -X POST http://localhost:3000/{project_id}/agents/{pathb64}/ask-sync \
   -H "Content-Type: application/json" \
   -d '{
     "question": "What are the total sales for this month?",
@@ -56,31 +39,30 @@ curl -X POST http://localhost:8080/api/agents/my-agent/ask \
   }'
 ```
 
-**Example: Workflow Request with Filters**
-
-```bash
-curl -X POST http://localhost:8080/api/workflows/my-workflow/run \
-  -H "Content-Type: application/json" \
-  -d '{
-    "filters": {
-      "tenant_id": 12345,
-      "project_ids": [100, 101, 102]
-    }
-  }'
-```
-
 ### B. Applying Connection Overrides
 
-Add the `connections` parameter to override the `host` or `database` for a specific database connection.
+Add the `connections` parameter to override connection parameters for specific databases.
+The available override fields depend on the database type:
 
-**Example: Override Database**
+**ClickHouse overrides:**
+- `host` - Override the ClickHouse host/URL
+- `database` - Override the database name
+
+**Snowflake overrides:**
+- `account` - Override the account identifier
+- `warehouse` - Override the warehouse
+- `database` - Override the database name
+- `schema` - Override the schema
+
+#### ClickHouse Examples
+
+**Example: Override ClickHouse Database**
 
 ```bash
-curl -X POST http://localhost:8080/api/data/sql \
+curl -X POST http://localhost:3000/{project_id}/agents/{pathb64}/ask-sync \
   -H "Content-Type: application/json" \
   -d '{
-    "sql": "SELECT * FROM sales",
-    "database": "clickhouse",
+    "question": "What are my recent sales?",
     "connections": {
       "clickhouse": {
         "database": "tenant_12345"
@@ -89,14 +71,13 @@ curl -X POST http://localhost:8080/api/data/sql \
   }'
 ```
 
-**Example: Override Host**
+**Example: Override ClickHouse Host**
 
 ```bash
-curl -X POST http://localhost:8080/api/data/sql \
+curl -X POST http://localhost:3000/{project_id}/agents/{pathb64}/ask-sync \
   -H "Content-Type: application/json" \
   -d '{
-    "sql": "SELECT * FROM large_table",
-    "database": "clickhouse",
+    "question": "What are my recent sales?",
     "connections": {
       "clickhouse": {
         "host": "https://replica.us-east-1.aws.clickhouse.cloud:8443"
@@ -105,12 +86,13 @@ curl -X POST http://localhost:8080/api/data/sql \
   }'
 ```
 
-**Example: Override Both Host and Database**
+**Example: Override Both ClickHouse Host and Database**
 
 ```bash
-curl -X POST http://localhost:8080/api/workflows/my-workflow/run \
+curl -X POST http://localhost:3000/{project_id}/agents/{pathb64}/ask-sync \
   -H "Content-Type: application/json" \
   -d '{
+    "question": "What are the top performing projects?",
     "connections": {
       "clickhouse": {
         "host": "https://tenant-dedicated.us-west-2.aws.clickhouse.cloud:8443",
@@ -120,10 +102,63 @@ curl -X POST http://localhost:8080/api/workflows/my-workflow/run \
   }'
 ```
 
-**Example: Combine Filters and Connection Overrides**
+#### Snowflake Examples
+
+**Example: Override Snowflake Warehouse**
 
 ```bash
-curl -X POST http://localhost:8080/api/agents/my-agent/ask \
+curl -X POST http://localhost:3000/{project_id}/agents/{pathb64}/ask-sync \
+  -H "Content-Type: application/json" \
+  -d '{
+    "question": "What are my recent sales?",
+    "connections": {
+      "snowflake": {
+        "warehouse": "TENANT_12345_WH"
+      }
+    }
+  }'
+```
+
+**Example: Override Snowflake Database and Schema**
+
+```bash
+curl -X POST http://localhost:3000/{project_id}/agents/{pathb64}/ask-sync \
+  -H "Content-Type: application/json" \
+  -d '{
+    "question": "What are the top performing projects?",
+    "connections": {
+      "snowflake": {
+        "database": "TENANT_12345_DB",
+        "schema": "ANALYTICS"
+      }
+    }
+  }'
+```
+
+**Example: Override All Snowflake Connection Parameters**
+
+```bash
+curl -X POST http://localhost:3000/{project_id}/agents/{pathb64}/ask-sync \
+  -H "Content-Type: application/json" \
+  -d '{
+    "question": "What are the total sales for this quarter?",
+    "connections": {
+      "snowflake": {
+        "account": "tenant12345",
+        "warehouse": "TENANT_COMPUTE_WH",
+        "database": "TENANT_ANALYTICS",
+        "schema": "PUBLIC"
+      }
+    }
+  }'
+```
+
+#### Combined Examples
+
+**Example: Combine ClickHouse Filters and Connection Overrides**
+
+```bash
+curl -X POST http://localhost:3000/{project_id}/agents/{pathb64}/ask-sync \
   -H "Content-Type: application/json" \
   -d '{
     "question": "What are the top performing projects?",
@@ -135,6 +170,27 @@ curl -X POST http://localhost:8080/api/agents/my-agent/ask \
       "clickhouse": {
         "host": "https://tenant-12345.us-east-1.aws.clickhouse.cloud:8443",
         "database": "tenant_12345"
+      }
+    }
+  }'
+```
+
+**Example: Combine Snowflake Filters and Connection Overrides**
+
+```bash
+curl -X POST http://localhost:3000/{project_id}/agents/{pathb64}/ask-sync \
+  -H "Content-Type: application/json" \
+  -d '{
+    "question": "What are the top performing regions?",
+    "filters": {
+      "tenant_id": 12345,
+      "region_ids": [1, 2, 3]
+    },
+    "connections": {
+      "snowflake": {
+        "warehouse": "TENANT_12345_WH",
+        "database": "TENANT_12345_DB",
+        "schema": "ANALYTICS"
       }
     }
   }'

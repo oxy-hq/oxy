@@ -893,6 +893,8 @@ pub struct Snowflake {
     #[garde(skip)]
     pub database: String,
     #[garde(skip)]
+    pub schema: Option<String>,
+    #[garde(skip)]
     pub role: Option<String>,
     #[garde(custom(validate_optional_private_key_path))]
     #[serde(default)]
@@ -900,6 +902,9 @@ pub struct Snowflake {
     #[garde(skip)]
     #[serde(default)]
     pub datasets: HashMap<String, Vec<String>>,
+    #[serde(default)]
+    #[garde(skip)]
+    pub filters: HashMap<String, schemars::schema::SchemaObject>,
 }
 
 impl Snowflake {
@@ -1084,15 +1089,13 @@ impl Database {
     }
 }
 
-/// Override database connection parameters at runtime
+/// ClickHouse-specific connection override parameters
 ///
-/// Allows overriding database connection parameters (host, database) at request time
-/// for databases that support filters. Both fields are optional - can override one or both.
-/// Used primarily by third-party API consumers to dynamically modify connection settings
-/// for databases defined in config.yml.
+/// Allows overriding ClickHouse connection parameters at request time.
+/// Used primarily by third-party API consumers to dynamically modify connection settings.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, ToSchema)]
-pub struct ConnectionOverride {
-    /// Override the database host/URL
+pub struct ClickHouseConnectionOverride {
+    /// Override the ClickHouse host/URL
     #[serde(skip_serializing_if = "Option::is_none")]
     pub host: Option<String>,
 
@@ -1101,11 +1104,72 @@ pub struct ConnectionOverride {
     pub database: Option<String>,
 }
 
+/// Snowflake-specific connection override parameters
+///
+/// Allows overriding Snowflake connection parameters at request time.
+/// Used primarily by third-party API consumers to dynamically modify connection settings.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, ToSchema)]
+pub struct SnowflakeConnectionOverride {
+    /// Override the database name
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub database: Option<String>,
+
+    /// Override the schema
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub schema: Option<String>,
+
+    /// Override the warehouse
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub warehouse: Option<String>,
+
+    /// Override the account identifier
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub account: Option<String>,
+}
+
+/// Database-specific connection override
+///
+/// Different databases support different override parameters.
+/// The connector will deserialize to the appropriate variant based on the database type.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, ToSchema)]
+#[serde(untagged)]
+pub enum ConnectionOverride {
+    ClickHouse(ClickHouseConnectionOverride),
+    Snowflake(SnowflakeConnectionOverride),
+}
+
+impl TryFrom<ConnectionOverride> for ClickHouseConnectionOverride {
+    type Error = crate::errors::OxyError;
+    fn try_from(ovr: ConnectionOverride) -> Result<Self, Self::Error> {
+        let ConnectionOverride::ClickHouse(ch) = ovr else {
+            return Err(crate::errors::OxyError::ConfigurationError(
+                "Invalid override type for ClickHouse".into(),
+            ));
+        };
+        Ok(ch)
+    }
+}
+
+impl TryFrom<ConnectionOverride> for SnowflakeConnectionOverride {
+    type Error = crate::errors::OxyError;
+    fn try_from(ovr: ConnectionOverride) -> Result<Self, Self::Error> {
+        let ConnectionOverride::Snowflake(sf) = ovr else {
+            return Err(crate::errors::OxyError::ConfigurationError(
+                "Invalid override type for Snowflake".into(),
+            ));
+        };
+        Ok(sf)
+    }
+}
+
 /// Map of database name to connection overrides
 ///
 /// Keys should match database names defined in config.yml under the `databases` section.
 /// This allows API requests to override connection parameters for specific databases
 /// without modifying the base configuration.
+///
+/// The override structure depends on the database type - the connector will automatically
+/// deserialize to the correct variant based on the database configuration.
 pub type ConnectionOverrides = HashMap<String, ConnectionOverride>;
 
 #[derive(Deserialize, Debug, Clone, Serialize, JsonSchema)]

@@ -1,7 +1,11 @@
-use crate::config::model::{Database, DatabaseType};
-use crate::errors::OxyError;
-use crate::service::project::models::{WarehouseConfig, WarehousesFormData};
-use crate::service::secret_manager::{CreateSecretParams, SecretManagerService};
+use crate::{
+    config::model::{Database, DatabaseType, Snowflake},
+    errors::OxyError,
+    service::{
+        project::models::{WarehouseConfig, WarehousesFormData},
+        secret_manager::{CreateSecretParams, SecretManagerService},
+    },
+};
 use axum::http::StatusCode;
 use sea_orm::DatabaseConnection;
 use std::collections::HashMap;
@@ -328,16 +332,18 @@ impl DatabaseConfigBuilder {
 
         Ok(Database {
             name: db_name,
-            database_type: DatabaseType::Snowflake(crate::config::model::Snowflake {
+            database_type: DatabaseType::Snowflake(Snowflake {
                 account: snowflake_config.account.unwrap_or_default(),
                 username: snowflake_config.username.unwrap_or_default(),
                 password: None,
                 password_var: Some(db_var_name),
                 warehouse: snowflake_config.warehouse.unwrap_or_default(),
                 database: snowflake_config.database.unwrap_or_default(),
+                schema: snowflake_config.schema,
                 role: snowflake_config.role,
                 private_key_path,
                 datasets: HashMap::new(),
+                filters: HashMap::new(),
             }),
         })
     }
