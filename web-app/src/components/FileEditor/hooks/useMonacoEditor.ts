@@ -22,6 +22,9 @@ const useMonacoEditor = ({
   const { mutate: saveFile } = useSaveFile();
   const monaco = useMonaco();
   const isConfigured = useRef<boolean>(false);
+  const saveHandlerRef = useRef<((afterSave?: () => void) => void) | null>(
+    null,
+  );
 
   const handleSaveFile = useCallback(
     (afterSave?: () => void) => {
@@ -55,6 +58,10 @@ const useMonacoEditor = ({
   );
 
   useEffect(() => {
+    saveHandlerRef.current = handleSaveFile;
+  }, [handleSaveFile]);
+
+  useEffect(() => {
     if (monaco && !isConfigured.current) {
       isConfigured.current = true;
       configureMonaco(monaco);
@@ -63,10 +70,10 @@ const useMonacoEditor = ({
         id: "save-file",
         label: "Save File",
         keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS],
-        run: () => handleSaveFile(),
+        run: () => saveHandlerRef.current?.(),
       });
     }
-  }, [monaco, handleSaveFile]);
+  }, [monaco]);
 
   const handleEditorMount: OnMount = useCallback(() => {
     // Editor mounted successfully
