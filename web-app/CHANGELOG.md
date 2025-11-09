@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.3.15](https://github.com/oxy-hq/oxy-internal/compare/0.3.14...0.3.15) (2025-11-07)
+
+
+### <!-- 0 -->🚀 Features
+
+* functioning v0 ontology graph ([#1341](https://github.com/oxy-hq/oxy-internal/issues/1341)) ([af8b9b9](https://github.com/oxy-hq/oxy-internal/commit/af8b9b93c69e714c804468d6b61ea184261915a5))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* handle agent context objects with src arrays in ontology graph ([#1344](https://github.com/oxy-hq/oxy-internal/issues/1344)) ([410c260](https://github.com/oxy-hq/oxy-internal/commit/410c260066fac85215a851297edf5979c0083085))
+* ide save file bugs ([#1345](https://github.com/oxy-hq/oxy-internal/issues/1345)) ([ed65162](https://github.com/oxy-hq/oxy-internal/commit/ed651627490376b965c08278381ea0c72d6269d1))
+
 ## [0.3.14](https://github.com/oxy-hq/oxy-internal/compare/0.3.13...0.3.14) (2025-11-05)
 
 

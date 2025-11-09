@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.15](https://github.com/oxy-hq/oxy-internal/compare/0.3.14...0.3.15) (2025-11-07)
+
+
+### <!-- 0 -->🚀 Features
+
+* functioning v0 ontology graph ([#1341](https://github.com/oxy-hq/oxy-internal/issues/1341)) ([af8b9b9](https://github.com/oxy-hq/oxy-internal/commit/af8b9b93c69e714c804468d6b61ea184261915a5))
+* snowflake row level security ([#1327](https://github.com/oxy-hq/oxy-internal/issues/1327)) ([534f2b9](https://github.com/oxy-hq/oxy-internal/commit/534f2b940675970f024acf14bd436fb268f1917e))
+
 ## [0.3.14](https://github.com/oxy-hq/oxy-internal/compare/0.3.13...0.3.14) (2025-11-05)
 
 
