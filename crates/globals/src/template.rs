@@ -137,10 +137,10 @@ impl<'a> TemplateEngine<'a> {
 
         // Check for runtime overrides first
         let override_key = format!("{}.{}", file_name, object_path);
-        if let Ok(overrides) = self.registry.get_overrides() {
-            if let Some(override_value) = overrides.get(&override_key) {
-                return Ok(override_value.clone());
-            }
+        if let Ok(overrides) = self.registry.get_overrides()
+            && let Some(override_value) = overrides.get(&override_key)
+        {
+            return Ok(override_value.clone());
         }
 
         // Fallback to file-based values

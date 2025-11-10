@@ -162,7 +162,7 @@ impl Executable<TaskInput> for TaskExecutable {
 
                         // Try to parse back as JSON, otherwise keep as string
                         let rendered_value = serde_json::from_str(&rendered)
-                            .unwrap_or_else(|_| serde_json::Value::String(rendered));
+                            .unwrap_or(serde_json::Value::String(rendered));
 
                         rendered_vars.insert(key.clone(), rendered_value);
                     }

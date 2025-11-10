@@ -237,7 +237,7 @@ impl VariableEncoder {
     /// * Result containing decoded variable path or error if invalid hex
     fn decode_hex_variable_path(&self, hex_path: &str) -> Result<String, VariableError> {
         // Convert hex string back to bytes
-        if hex_path.len() % 2 != 0 {
+        if !hex_path.len().is_multiple_of(2) {
             return Err(VariableError::InvalidEncoding(format!(
                 "Hex path must have even length: {}",
                 hex_path

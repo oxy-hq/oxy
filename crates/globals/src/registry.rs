@@ -393,10 +393,10 @@ impl GlobalRegistry {
 
         // Check for runtime overrides first
         let override_key = format!("{}.{}", file_name, object_path);
-        if let Ok(overrides) = self.get_overrides() {
-            if let Some(override_value) = overrides.get(&override_key) {
-                return Ok(override_value.clone());
-            }
+        if let Ok(overrides) = self.get_overrides()
+            && let Some(override_value) = overrides.get(&override_key)
+        {
+            return Ok(override_value.clone());
         }
 
         // Fallback to file-based values
@@ -476,16 +476,14 @@ impl GlobalRegistry {
                 Value::Sequence(items) => {
                     let mut found = false;
                     for item in items {
-                        if let Value::Mapping(map) = item {
-                            if let Some(Value::String(name)) =
-                                map.get(&Value::String("name".to_string()))
-                            {
-                                if name == component {
-                                    current_value = item.clone();
-                                    found = true;
-                                    break;
-                                }
-                            }
+                        if let Value::Mapping(map) = item
+                            && let Some(Value::String(name)) =
+                                map.get(Value::String("name".to_string()))
+                            && name == component
+                        {
+                            current_value = item.clone();
+                            found = true;
+                            break;
                         }
                     }
                     if !found {
@@ -501,7 +499,7 @@ impl GlobalRegistry {
                 // Map format: { customer_id: { ... }, ... }
                 Value::Mapping(map) => {
                     current_value = map
-                        .get(&Value::String(component.to_string()))
+                        .get(Value::String(component.to_string()))
                         .cloned()
                         .ok_or_else(|| {
                             GlobalError::ObjectNotFound(format!(
@@ -1057,7 +1055,7 @@ impl GlobalRegistry {
             Value::Mapping(map) => {
                 // Check if this mapping has an inherits_from field
                 let has_inheritance = map
-                    .get(&Value::String("inherits_from".to_string()))
+                    .get(Value::String("inherits_from".to_string()))
                     .and_then(|v| v.as_str())
                     .map(GlobalReference::is_global_reference)
                     .unwrap_or(false);

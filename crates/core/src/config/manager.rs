@@ -220,7 +220,7 @@ impl ConfigManager {
     }
 
     pub fn database_semantic_path(&self) -> PathBuf {
-        return self.config.project_path.join(DATABASE_SEMANTIC_PATH);
+        self.config.project_path.join(DATABASE_SEMANTIC_PATH)
     }
 
     pub fn globals_path(&self) -> PathBuf {

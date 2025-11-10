@@ -59,35 +59,35 @@ impl RuntimeVariableResolver {
         let mut context = JsonValue::Object(serde_json::Map::new());
 
         // Build context with priority order (later sources override earlier ones)
-        if let Some(env) = env_vars {
-            if let JsonValue::Object(ref mut ctx) = context {
-                for (key, value) in env {
-                    ctx.insert(key, value);
-                }
+        if let Some(env) = env_vars
+            && let JsonValue::Object(ref mut ctx) = context
+        {
+            for (key, value) in env {
+                ctx.insert(key, value);
             }
         }
 
-        if let Some(globals) = globals {
-            if let JsonValue::Object(ref mut ctx) = context {
-                for (key, value) in globals {
-                    ctx.insert(key, value);
-                }
+        if let Some(globals) = globals
+            && let JsonValue::Object(ref mut ctx) = context
+        {
+            for (key, value) in globals {
+                ctx.insert(key, value);
             }
         }
 
-        if let Some(agent) = agent_vars {
-            if let JsonValue::Object(ref mut ctx) = context {
-                for (key, value) in agent {
-                    ctx.insert(key, value);
-                }
+        if let Some(agent) = agent_vars
+            && let JsonValue::Object(ref mut ctx) = context
+        {
+            for (key, value) in agent {
+                ctx.insert(key, value);
             }
         }
 
-        if let Some(workflow) = workflow_vars {
-            if let JsonValue::Object(ref mut ctx) = context {
-                for (key, value) in workflow {
-                    ctx.insert(key, value);
-                }
+        if let Some(workflow) = workflow_vars
+            && let JsonValue::Object(ref mut ctx) = context
+        {
+            for (key, value) in workflow {
+                ctx.insert(key, value);
             }
         }
 

@@ -36,7 +36,7 @@ impl ObjectInheritanceEngine {
         };
 
         // Check if this object has an inherits_from field
-        let inherits_from = match mapping.get(&Value::String("inherits_from".to_string())) {
+        let inherits_from = match mapping.get(Value::String("inherits_from".to_string())) {
             Some(Value::String(reference)) => reference.clone(),
             Some(_) => {
                 return Err(GlobalError::InvalidYamlStructure {
@@ -220,10 +220,11 @@ impl ObjectInheritanceEngine {
 
         // Analyze child properties
         for (key, _value) in child_map {
-            if let Value::String(key_str) = key {
-                if key_str != "inherits_from" && !parent_map.contains_key(key) {
-                    new_properties.push(key_str.clone());
-                }
+            if let Value::String(key_str) = key
+                && key_str != "inherits_from"
+                && !parent_map.contains_key(key)
+            {
+                new_properties.push(key_str.clone());
             }
         }
 

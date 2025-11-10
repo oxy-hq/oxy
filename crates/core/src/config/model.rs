@@ -2637,8 +2637,8 @@ impl ToolType {
                 })?;
 
                 // Try to parse back as JSON, otherwise keep as string
-                let rendered_value = serde_json::from_str(&rendered)
-                    .unwrap_or_else(|_| serde_json::Value::String(rendered));
+                let rendered_value =
+                    serde_json::from_str(&rendered).unwrap_or(serde_json::Value::String(rendered));
 
                 rendered_vars.insert(key.clone(), rendered_value);
             }
@@ -2664,37 +2664,34 @@ impl ToolType {
                 let mut new_schema = schema.clone();
 
                 // If there's a default value in metadata, render it
-                if let Some(metadata) = &schema.metadata {
-                    if let Some(default_value) = &metadata.default {
-                        let value_str = if default_value.is_string() {
-                            default_value.as_str().unwrap_or_default().to_string()
-                        } else {
-                            serde_json::to_string(default_value).map_err(|e| {
-                                OxyError::RuntimeError(format!(
-                                    "Failed to serialize variable {}: {}",
-                                    key, e
-                                ))
-                            })?
-                        };
-
-                        // Register template before rendering
-                        renderer.register_template(&value_str)?;
-                        let rendered = renderer.render_async(&value_str).await.map_err(|e| {
+                if let Some(metadata) = &schema.metadata
+                    && let Some(default_value) = &metadata.default
+                {
+                    let value_str = if default_value.is_string() {
+                        default_value.as_str().unwrap_or_default().to_string()
+                    } else {
+                        serde_json::to_string(default_value).map_err(|e| {
                             OxyError::RuntimeError(format!(
-                                "Failed to render variable {}: {}",
+                                "Failed to serialize variable {}: {}",
                                 key, e
                             ))
-                        })?;
+                        })?
+                    };
 
-                        // Try to parse back as JSON, otherwise keep as string
-                        let rendered_value = serde_json::from_str(&rendered)
-                            .unwrap_or_else(|_| serde_json::Value::String(rendered));
+                    // Register template before rendering
+                    renderer.register_template(&value_str)?;
+                    let rendered = renderer.render_async(&value_str).await.map_err(|e| {
+                        OxyError::RuntimeError(format!("Failed to render variable {}: {}", key, e))
+                    })?;
 
-                        // Update the metadata with rendered default value
-                        let mut new_metadata = (**metadata).clone();
-                        new_metadata.default = Some(rendered_value);
-                        new_schema.metadata = Some(Box::new(new_metadata));
-                    }
+                    // Try to parse back as JSON, otherwise keep as string
+                    let rendered_value = serde_json::from_str(&rendered)
+                        .unwrap_or(serde_json::Value::String(rendered));
+
+                    // Update the metadata with rendered default value
+                    let mut new_metadata = (**metadata).clone();
+                    new_metadata.default = Some(rendered_value);
+                    new_schema.metadata = Some(Box::new(new_metadata));
                 }
 
                 rendered_schemas.insert(key.clone(), new_schema);

@@ -107,7 +107,7 @@ pub struct Renderer {
 
 impl Renderer {
     pub fn new(global_context: Value) -> Self {
-        let mut env = setup_jinja_environment();
+        let env = setup_jinja_environment();
 
         Renderer {
             env: Arc::new(RwLock::new(env)),

@@ -844,7 +844,7 @@ impl SemanticQueryExecutable {
             .collect();
 
         // Create variable resolver from multiple sources with priority order
-        let mut resolver = RuntimeVariableResolver::from_sources(
+        let resolver = RuntimeVariableResolver::from_sources(
             Some(variables),   // Task variables have highest priority
             None,              // No agent variables for now (could be added later)
             Some(global_vars), // Global variables from config

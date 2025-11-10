@@ -79,16 +79,14 @@ impl GlobalParser {
                 Value::Sequence(items) => {
                     let mut found = false;
                     for item in items {
-                        if let Value::Mapping(map) = item {
-                            if let Some(Value::String(name)) =
-                                map.get(&Value::String("name".to_string()))
-                            {
-                                if name == component {
-                                    current_value = item.clone();
-                                    found = true;
-                                    break;
-                                }
-                            }
+                        if let Value::Mapping(map) = item
+                            && let Some(Value::String(name)) =
+                                map.get(Value::String("name".to_string()))
+                            && name == component
+                        {
+                            current_value = item.clone();
+                            found = true;
+                            break;
                         }
                     }
                     if !found {
@@ -104,7 +102,7 @@ impl GlobalParser {
                 // Map format: { customer_id: { ... }, ... }
                 Value::Mapping(map) => {
                     current_value = map
-                        .get(&Value::String(component.to_string()))
+                        .get(Value::String(component.to_string()))
                         .cloned()
                         .ok_or_else(|| {
                             GlobalError::ObjectNotFound(format!(
@@ -154,15 +152,14 @@ impl GlobalParser {
         for entry in entries {
             let entry = entry?;
             let path = entry.path();
-            if path.is_file() {
-                if let Some(extension) = path.extension() {
-                    if extension == "yml" || extension == "yaml" {
-                        if let Some(file_stem) = path.file_stem() {
-                            if let Some(name) = file_stem.to_str() {
-                                files.push(name.to_string());
-                            }
-                        }
-                    }
+            if path.is_file()
+                && let Some(extension) = path.extension()
+            {
+                if (extension == "yml" || extension == "yaml")
+                    && let Some(file_stem) = path.file_stem()
+                    && let Some(name) = file_stem.to_str()
+                {
+                    files.push(name.to_string());
                 }
             }
         }

@@ -149,17 +149,17 @@ impl SemanticLayerParser {
                 }
             }
             // Collect variables from table references
-            if let Some(table) = &view.table {
-                if encoder.has_variables(table) {
-                    let vars = encoder.extract_variables(table);
-                    variables_found.extend(vars);
-                }
+            if let Some(table) = &view.table
+                && encoder.has_variables(table)
+            {
+                let vars = encoder.extract_variables(table);
+                variables_found.extend(vars);
             }
-            if let Some(sql) = &view.sql {
-                if encoder.has_variables(sql) {
-                    let vars = encoder.extract_variables(sql);
-                    variables_found.extend(vars);
-                }
+            if let Some(sql) = &view.sql
+                && encoder.has_variables(sql)
+            {
+                let vars = encoder.extract_variables(sql);
+                variables_found.extend(vars);
             }
         }
 
@@ -394,49 +394,79 @@ impl SemanticLayerParser {
         let encoder = VariableEncoder::new();
 
         // Process dimensions if they exist
-        if let Some(dimensions) = processed_value.get_mut("dimensions") {
-            if let Some(dimensions_array) = dimensions.as_sequence_mut() {
-                for dimension in dimensions_array {
-                    if let Some(dimension_map) = dimension.as_mapping_mut() {
-                        if let Some(expr_value) = dimension_map.get("expr") {
-                            if let Some(expr_str) = expr_value.as_str() {
-                                // Validate variable syntax
-                                let validation = validate_variable_syntax(
-                                    expr_str,
-                                    &format!("Dimension in {}", file_path.display()),
-                                );
-                                if !validation.is_valid {
-                                    return Err(SemanticLayerError::ValidationError(
-                                        validation.errors.join("; "),
-                                    ));
-                                }
+        if let Some(dimensions) = processed_value.get_mut("dimensions")
+            && let Some(dimensions_array) = dimensions.as_sequence_mut()
+        {
+            for dimension in dimensions_array {
+                if let Some(dimension_map) = dimension.as_mapping_mut()
+                    && let Some(expr_value) = dimension_map.get("expr")
+                    && let Some(expr_str) = expr_value.as_str()
+                {
+                    // Validate variable syntax
+                    let validation = validate_variable_syntax(
+                        expr_str,
+                        &format!("Dimension in {}", file_path.display()),
+                    );
+                    if !validation.is_valid {
+                        return Err(SemanticLayerError::ValidationError(
+                            validation.errors.join("; "),
+                        ));
+                    }
 
-                                // Store original expression if it contains variables
-                                if encoder.has_variables(expr_str) {
-                                    dimension_map.insert(
-                                        serde_yaml::Value::String("original_expr".to_string()),
-                                        serde_yaml::Value::String(expr_str.to_string()),
-                                    );
-                                }
-                            }
-                        }
+                    // Store original expression if it contains variables
+                    if encoder.has_variables(expr_str) {
+                        dimension_map.insert(
+                            serde_yaml::Value::String("original_expr".to_string()),
+                            serde_yaml::Value::String(expr_str.to_string()),
+                        );
                     }
                 }
             }
         }
 
         // Process measures if they exist
-        if let Some(measures) = processed_value.get_mut("measures") {
-            if let Some(measures_array) = measures.as_sequence_mut() {
-                for measure in measures_array {
-                    if let Some(measure_map) = measure.as_mapping_mut() {
-                        // Process measure expression
-                        if let Some(expr_value) = measure_map.get("expr") {
-                            if let Some(expr_str) = expr_value.as_str() {
+        if let Some(measures) = processed_value.get_mut("measures")
+            && let Some(measures_array) = measures.as_sequence_mut()
+        {
+            for measure in measures_array {
+                if let Some(measure_map) = measure.as_mapping_mut() {
+                    // Process measure expression
+                    if let Some(expr_value) = measure_map.get("expr")
+                        && let Some(expr_str) = expr_value.as_str()
+                    {
+                        // Validate variable syntax
+                        let validation = validate_variable_syntax(
+                            expr_str,
+                            &format!("Measure in {}", file_path.display()),
+                        );
+                        if !validation.is_valid {
+                            return Err(SemanticLayerError::ValidationError(
+                                validation.errors.join("; "),
+                            ));
+                        }
+
+                        // Store original expression if it contains variables
+                        if encoder.has_variables(expr_str) {
+                            measure_map.insert(
+                                serde_yaml::Value::String("original_expr".to_string()),
+                                serde_yaml::Value::String(expr_str.to_string()),
+                            );
+                        }
+                    }
+
+                    // Process measure filters
+                    if let Some(filters) = measure_map.get_mut("filters")
+                        && let Some(filters_array) = filters.as_sequence_mut()
+                    {
+                        for filter in filters_array {
+                            if let Some(filter_map) = filter.as_mapping_mut()
+                                && let Some(expr_value) = filter_map.get("expr")
+                                && let Some(expr_str) = expr_value.as_str()
+                            {
                                 // Validate variable syntax
                                 let validation = validate_variable_syntax(
                                     expr_str,
-                                    &format!("Measure in {}", file_path.display()),
+                                    &format!("Measure filter in {}", file_path.display()),
                                 );
                                 if !validation.is_valid {
                                     return Err(SemanticLayerError::ValidationError(
@@ -446,51 +476,10 @@ impl SemanticLayerParser {
 
                                 // Store original expression if it contains variables
                                 if encoder.has_variables(expr_str) {
-                                    measure_map.insert(
+                                    filter_map.insert(
                                         serde_yaml::Value::String("original_expr".to_string()),
                                         serde_yaml::Value::String(expr_str.to_string()),
                                     );
-                                }
-                            }
-                        }
-
-                        // Process measure filters
-                        if let Some(filters) = measure_map.get_mut("filters") {
-                            if let Some(filters_array) = filters.as_sequence_mut() {
-                                for filter in filters_array {
-                                    if let Some(filter_map) = filter.as_mapping_mut() {
-                                        if let Some(expr_value) = filter_map.get("expr") {
-                                            if let Some(expr_str) = expr_value.as_str() {
-                                                // Validate variable syntax
-                                                let validation = validate_variable_syntax(
-                                                    expr_str,
-                                                    &format!(
-                                                        "Measure filter in {}",
-                                                        file_path.display()
-                                                    ),
-                                                );
-                                                if !validation.is_valid {
-                                                    return Err(
-                                                        SemanticLayerError::ValidationError(
-                                                            validation.errors.join("; "),
-                                                        ),
-                                                    );
-                                                }
-
-                                                // Store original expression if it contains variables
-                                                if encoder.has_variables(expr_str) {
-                                                    filter_map.insert(
-                                                        serde_yaml::Value::String(
-                                                            "original_expr".to_string(),
-                                                        ),
-                                                        serde_yaml::Value::String(
-                                                            expr_str.to_string(),
-                                                        ),
-                                                    );
-                                                }
-                                            }
-                                        }
-                                    }
                                 }
                             }
                         }
@@ -500,32 +489,30 @@ impl SemanticLayerParser {
         }
 
         // Process table references
-        if let Some(table_value) = processed_value.get("table") {
-            if let Some(table_str) = table_value.as_str() {
-                let validation = validate_variable_syntax(
-                    table_str,
-                    &format!("Table reference in {}", file_path.display()),
-                );
-                if !validation.is_valid {
-                    return Err(SemanticLayerError::ValidationError(
-                        validation.errors.join("; "),
-                    ));
-                }
+        if let Some(table_value) = processed_value.get("table")
+            && let Some(table_str) = table_value.as_str()
+        {
+            let validation = validate_variable_syntax(
+                table_str,
+                &format!("Table reference in {}", file_path.display()),
+            );
+            if !validation.is_valid {
+                return Err(SemanticLayerError::ValidationError(
+                    validation.errors.join("; "),
+                ));
             }
         }
 
         // Process SQL queries
-        if let Some(sql_value) = processed_value.get("sql") {
-            if let Some(sql_str) = sql_value.as_str() {
-                let validation = validate_variable_syntax(
-                    sql_str,
-                    &format!("SQL query in {}", file_path.display()),
-                );
-                if !validation.is_valid {
-                    return Err(SemanticLayerError::ValidationError(
-                        validation.errors.join("; "),
-                    ));
-                }
+        if let Some(sql_value) = processed_value.get("sql")
+            && let Some(sql_str) = sql_value.as_str()
+        {
+            let validation =
+                validate_variable_syntax(sql_str, &format!("SQL query in {}", file_path.display()));
+            if !validation.is_valid {
+                return Err(SemanticLayerError::ValidationError(
+                    validation.errors.join("; "),
+                ));
             }
         }
 
@@ -570,7 +557,7 @@ impl SemanticLayerParser {
         }
 
         check_value(yaml_value, &format!("Topic in {}", file_path.display()))
-            .map_err(|e| SemanticLayerError::ValidationError(e))?;
+            .map_err(SemanticLayerError::ValidationError)?;
 
         Ok(())
     }

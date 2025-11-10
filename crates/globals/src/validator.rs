@@ -63,10 +63,10 @@ impl GlobalValidator {
         // Check if file exists
         if let Err(_) = self.parser.load_file(&reference.file_name) {
             // Suggest available files
-            if let Ok(files) = self.parser.list_global_files() {
-                if !files.is_empty() {
-                    suggestions.push(format!("Available global files: {}", files.join(", ")));
-                }
+            if let Ok(files) = self.parser.list_global_files()
+                && !files.is_empty()
+            {
+                suggestions.push(format!("Available global files: {}", files.join(", ")));
             }
         } else {
             // File exists, check path components
@@ -89,7 +89,7 @@ impl GlobalValidator {
                                 .iter()
                                 .filter_map(|item| {
                                     if let Value::Mapping(map) = item {
-                                        map.get(&Value::String("name".to_string()))
+                                        map.get(Value::String("name".to_string()))
                                             .and_then(|v| v.as_str())
                                             .map(|s| s.to_string())
                                     } else {

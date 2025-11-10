@@ -287,8 +287,7 @@ impl GetSchemaQuery for Database {
 
             DatabaseType::DuckDB(_) => {
                 // DuckDB uses the information_schema structure
-                let query = format!(
-                    "SELECT table_schema,
+                let query = "SELECT table_schema,
                             table_name,
                             column_name,
                             data_type,
@@ -296,8 +295,7 @@ impl GetSchemaQuery for Database {
                             NULL as description
                      FROM information_schema.columns
                      WHERE table_schema NOT IN ('information_schema', 'pg_catalog')
-                     ORDER BY table_schema, table_name, ordinal_position"
-                );
+                     ORDER BY table_schema, table_name, ordinal_position".to_string();
                 tracing::debug!("DuckDB schema query: {}", query);
                 Ok(vec![query])
             }

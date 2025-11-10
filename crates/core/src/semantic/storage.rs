@@ -7,7 +7,7 @@ use tokio::fs::{create_dir_all, read_dir, read_to_string};
 use crate::{
     config::{
         ConfigManager,
-        constants::{DATABASE_SEMANTIC_PATH, GLOBAL_SEMANTIC_PATH, SEMANTIC_MODEL_PATH},
+        constants::SEMANTIC_MODEL_PATH,
         model::{SemanticModels, Semantics},
     },
     errors::OxyError,
@@ -65,7 +65,7 @@ impl SemanticFileStorage {
             base_path: base_path.to_string_lossy().to_string(),
             semantic_path: SEMANTIC_MODEL_PATH.to_string(),
             override_mode,
-            global_registry: global_registry,
+            global_registry,
         })
     }
 
