@@ -63,17 +63,17 @@ pub mod sync {
         );
 
         let sem_files = [
-            "monthly_active_organizations.sem.yml",
-            "monthly_active_organizations_with_warehouse.sem.yml",
-            "monthly_active_users.sem.yml",
-            "monthly_active_users_with_warehouse.sem.yml",
+            "monthly_active_organizations.schema.yml",
+            "monthly_active_organizations_with_warehouse.schema.yml",
+            "monthly_active_users.schema.yml",
+            "monthly_active_users_with_warehouse.schema.yml",
         ];
 
         for sem_file in &sem_files {
             let sem_path = models_dir.join(sem_file);
-            assert!(sem_path.exists(), "Missing .sem.yml file: {sem_file}");
+            assert!(sem_path.exists(), "Missing .schema.yml file: {sem_file}");
 
-            let file_name_without_ext = sem_file.replace(".sem.yml", "");
+            let file_name_without_ext = sem_file.replace(".schema.yml", "");
             assert!(
                 file_contains(
                     &sem_path,
@@ -109,7 +109,7 @@ pub mod sync {
         assert!(sql_file.exists(), "SQL file was not created");
         assert!(models_dir.exists(), "Models directory was not created");
 
-        let dummy_file = models_dir.join("dummy_test_file.sem.yml");
+        let dummy_file = models_dir.join("dummy_test_file.schema.yml");
         std::fs::write(&dummy_file, "test content for deletion")
             .expect("Failed to write dummy file");
         assert!(dummy_file.exists(), "Failed to create dummy file for test");

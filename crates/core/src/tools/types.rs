@@ -94,6 +94,7 @@ pub struct SQLInput {
 pub struct AgentParams {
     #[schemars(description = "Chat with your prompt")]
     pub prompt: String,
+    pub variables: Option<HashMap<String, serde_json::Value>>,
 }
 
 pub struct VisualizeInput {

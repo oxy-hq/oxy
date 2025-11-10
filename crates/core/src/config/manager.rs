@@ -3,7 +3,11 @@ use std::{
     sync::Arc,
 };
 
-use crate::{agent::builders::fsm::config::AgenticConfig, errors::OxyError};
+use crate::{
+    agent::builders::fsm::config::AgenticConfig,
+    config::constants::{DATABASE_SEMANTIC_PATH, GLOBAL_SEMANTIC_PATH},
+    errors::OxyError,
+};
 
 use super::{
     model::{AgentConfig, AppConfig, Config, Database, Model, Workflow, WorkflowWithRawVariables},
@@ -209,6 +213,26 @@ impl ConfigManager {
     /// Gets the semantics directory path (project_path/semantics)
     pub fn semantics_path(&self) -> PathBuf {
         self.config.project_path.join("semantics")
+    }
+
+    pub fn global_semantic_path(&self) -> PathBuf {
+        self.config.project_path.join(GLOBAL_SEMANTIC_PATH)
+    }
+
+    pub fn database_semantic_path(&self) -> PathBuf {
+        return self.config.project_path.join(DATABASE_SEMANTIC_PATH);
+    }
+
+    pub fn globals_path(&self) -> PathBuf {
+        self.config.project_path.join("globals")
+    }
+
+    pub fn get_globals_registry(&self) -> oxy_globals::GlobalRegistry {
+        let globals_path = self.globals_path();
+        if !globals_path.exists() {
+            std::fs::create_dir_all(&globals_path).unwrap();
+        }
+        oxy_globals::GlobalRegistry::new(globals_path)
     }
 
     pub fn get_integration_by_name(

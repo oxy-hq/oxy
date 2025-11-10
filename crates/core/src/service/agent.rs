@@ -60,6 +60,8 @@ pub async fn ask_adhoc(
         vec![],
         None,
         None,
+        None, // No globals
+        None, // No variables
     )
     .await
     {
@@ -195,10 +197,13 @@ pub async fn run_agent<P: AsRef<Path>, H: EventHandler + Send + 'static>(
     memory: Vec<Message>,
     filters: Option<SessionFilters>,
     connections: Option<ConnectionOverrides>,
+    globals: Option<indexmap::IndexMap<String, serde_json::Value>>,
+    variables: Option<std::collections::HashMap<String, serde_json::Value>>,
 ) -> Result<OutputContainer, OxyError> {
     AgentLauncher::new()
         .with_filters(filters)
         .with_connections(connections)
+        .with_globals(globals)
         .with_project(project)
         .await?
         .launch(
@@ -206,6 +211,7 @@ pub async fn run_agent<P: AsRef<Path>, H: EventHandler + Send + 'static>(
                 agent_ref: agent_ref.as_ref().to_string_lossy().to_string(),
                 prompt,
                 memory,
+                variables,
             },
             event_handler,
         )

@@ -1,5 +1,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use std::collections::HashMap;
 use utoipa::ToSchema;
 
 use crate::{
@@ -125,6 +127,12 @@ pub struct SemanticQueryParams {
     pub limit: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub offset: Option<u64>,
+    /// Variables for semantic layer expressions (e.g. table names, column names, filters)
+    #[schemars(
+        description = "Variables to resolve in semantic layer expressions. Use {{variables.variable_name}} syntax in semantic definitions."
+    )]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub variables: Option<HashMap<String, Value>>,
 }
 
 impl std::hash::Hash for SemanticQueryParams {
@@ -140,6 +148,13 @@ impl std::hash::Hash for SemanticQueryParams {
         }
         self.limit.hash(state);
         self.offset.hash(state);
+        // Variables affect query results, so include them in hash
+        if let Some(variables) = &self.variables {
+            for (key, value) in variables {
+                key.hash(state);
+                value.to_string().hash(state); // Hash the JSON string representation
+            }
+        }
     }
 }
 

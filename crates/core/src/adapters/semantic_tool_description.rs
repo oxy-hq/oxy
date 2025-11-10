@@ -31,9 +31,11 @@ fn load_semantic_layer(config_manager: &config::ConfigManager) -> Result<Semanti
         ));
     }
 
-    let parse_result = parse_semantic_layer_from_dir(&semantic_dir).map_err(|e| {
-        OxyError::ConfigurationError(format!("Failed to parse semantic layer: {}", e))
-    })?;
+    let parse_result =
+        parse_semantic_layer_from_dir(&semantic_dir, config_manager.get_globals_registry())
+            .map_err(|e| {
+                OxyError::ConfigurationError(format!("Failed to parse semantic layer: {}", e))
+            })?;
 
     Ok(parse_result.semantic_layer)
 }

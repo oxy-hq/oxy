@@ -1,7 +1,7 @@
 name: users
 description: Test view for users
 datasource: local
-table: users.csv
+table: "{{globals.tables.users}}.csv"
 entities:
 - name: user
   type: primary
@@ -22,4 +22,4 @@ measures:
 - name: total_count
   type: count
   description: Total count of users
-  samples: [1250, 1387, 1456]
+  samples: ['1250', '1387', '1456']

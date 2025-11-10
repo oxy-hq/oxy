@@ -8,12 +8,71 @@ description: "Quick reference for semantic layer syntax and properties"
 ```
 your-project/
 ├── config.yml
+├── globals/                    # Optional: Global reusable definitions
+│   └── semantics.yml
+├── semantics.yml              # Optional: Global dimension mappings
 └── semantics/
     ├── topics/
     │   └── *.topic.yml
     └── views/
         └── *.view.yml
 ```
+
+## Global Semantics
+
+Global semantics allow reusable definitions in `globals/semantics.yml`:
+
+```yaml
+entities:
+  customer:
+    name: customer
+    type: primary
+    description: Customer entity
+    key: customer_id
+
+dimensions:
+  customer_id:
+    name: customer_id
+    type: number
+    description: Unique customer identifier
+    expr: customer_id
+
+measures:
+  total_orders:
+    name: total_orders
+    type: count
+    description: Total number of orders
+
+descriptions:
+  order_status: "Current status of the order"
+
+tables:
+  orders: "dim_orders"
+  customers: "dim_customers"
+```
+
+**Inheritance Syntax:**
+```yaml
+# In semantic views
+dimensions:
+  - inherits_from: globals.semantics.dimensions.customer_id
+    # Additional properties...
+
+# In semantics.yml
+dimensions:
+  - name: customer_id
+    inherits_from: globals.semantics.dimensions.customer_id
+    targets:
+      - database.schema.table.column
+```
+
+**Template Variables:**
+```yaml
+table: "{{globals.semantics.tables.orders}}.csv"
+description: "{{globals.semantics.descriptions.order_status}}"
+```
+
+See [Global Semantics](/learn-about-oxy/globals) for detailed information.
 
 ## View Definition
 

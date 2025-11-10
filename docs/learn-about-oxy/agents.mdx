@@ -23,6 +23,85 @@ Specifically, in our agent `yml` files, you need to specify the following:
 | context              | A list of files that can be injected into `system_instructions`                            | Optional |
 | tools                | Tools to use, see the Tools section below                                                  | Optional |
 | database             | Database to use (defined in [config.yml](/learn-about-oxy/config), referenced by `name`)  | Optional |
+| variables            | Variable schema definition using JSON Schema                                               | Optional |
+
+## Variables
+
+Agents can define typed variables with JSON Schema validation. This enables:
+- **Type Safety**: Validate input types (string, integer, boolean, etc.)
+- **Documentation**: Provide clear descriptions of expected inputs
+- **Defaults**: Set default values for optional parameters
+- **Constraints**: Define enums, min/max values, and patterns
+
+### Defining Variables
+
+```yaml my-agent.agent.yml
+model: openai-4.1-mini
+
+variables:
+  database:
+    type: string
+    description: Database to query
+    default: "production"
+    enum:
+      - development
+      - staging
+      - production
+  
+  max_results:
+    type: integer
+    description: Maximum number of results to return
+    default: 100
+    minimum: 1
+    maximum: 1000
+  
+  verbose:
+    type: boolean
+    description: Enable verbose output
+    default: false
+
+system_instructions: |
+  Query the {{ database }} database.
+  Return up to {{ max_results }} results.
+  {% if verbose %}Include detailed explanations.{% endif %}
+```
+
+### Passing Variables from Workflows
+
+When using an agent in a workflow, you can pass variables to override defaults:
+
+```yaml workflow.yml
+variables:
+  target_env:
+    type: string
+    default: staging
+
+tasks:
+  - name: analyze_data
+    type: agent
+    agent_ref: analytics.agent.yml
+    prompt: Analyze recent sales trends
+    variables:
+      database: "{{ target_env }}"
+      max_results: 500
+      verbose: true
+```
+
+### Using Global Variables
+
+Variables can reference global semantics:
+
+```yaml agent.yml
+variables:
+  orders_table:
+    type: string
+    default: "{{ globals.semantics.tables.orders }}"
+
+system_instructions: |
+  Query data from the {{ orders_table }} table.
+```
+
+See [Globals](/learn-about-oxy/globals) for more information.
 
 ## Context
 
@@ -36,7 +115,7 @@ Each context entry in the list requires three fields:
 | ----- | --------------------------------------------------------------------------------- | ------------------- |
 | name  | Identifier for the context that will be used in system\_instructions              | "anon\_youtube"     |
 | type  | Type of the context file (e.g., file, semantic\_model)                            | "semantic\_model"   |
-| src   | Path to the source file relative to the project root (can be single file or list) | "data/acme.sem.yml" |
+| src   | Path to the source file relative to the project root (can be single file or list) | "data/acme.schema.yml" |
 
 You can reference `file`-type context objects in your system\_instructions using the following syntax:
 `{{ context.name }}`
@@ -183,7 +262,7 @@ model: "openai-4.1-mini"
 context:
   - name: anon_youtube
     type: semantic_model
-    src: data/acme.sem.yml
+    src: data/acme.schema.yml
 system_instructions: |
   ## Instructions
   You are a Data Analyst expert. Your role is to assist the user in generating and executing SQL queries to answer their questions.

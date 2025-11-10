@@ -1,0 +1,6 @@
+name: test_analytics
+description: Test topic for variable testing
+
+views:
+  - test_users
+  - test_sales

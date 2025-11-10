@@ -35,6 +35,7 @@ impl Executable<AgentInput> for AgentExecutable {
             agent_ref,
             prompt,
             memory,
+            variables: runtime_variables,
         } = input;
         let config_manager = &execution_context.project.config_manager;
         let agent_config = config_manager
@@ -43,6 +44,34 @@ impl Executable<AgentInput> for AgentExecutable {
             .map_err(|e| {
                 OxyError::ConfigurationError(format!("Failed to resolve agent config: {e}"))
             })?;
+
+        // Resolve variables by merging runtime params with defaults
+        let resolved_variables = if let Some(variables_config) = &agent_config.variables {
+            variables_config.resolve_params(runtime_variables)?
+        } else if runtime_variables.is_some() {
+            tracing::warn!(
+                "Runtime variables provided but agent '{}' has no variables schema",
+                agent_ref
+            );
+            HashMap::new()
+        } else {
+            HashMap::new()
+        };
+
+        // Build template context with variables
+        // Variables are added to the renderer context alongside globals
+        let routing_context = if !resolved_variables.is_empty() {
+            let variables_value = minijinja::Value::from_serialize(&resolved_variables);
+            tracing::info!(
+                "Agent '{}' resolved variables: {:?}",
+                agent_ref,
+                resolved_variables
+            );
+            execution_context.wrap_render_context(&variables_value)
+        } else {
+            execution_context.clone()
+        };
+
         let source_id = short_uuid::short!();
         let handler = AgentReferencesHandler::new(
             execution_context.writer.clone(),
@@ -57,7 +86,7 @@ impl Executable<AgentInput> for AgentExecutable {
             (AGENT_SOURCE_PROMPT.to_string(), prompt.to_string()),
         ]);
         let routing_context =
-            execution_context.with_child_source(source_id.to_string(), AGENT_SOURCE.to_string());
+            routing_context.with_child_source(source_id.to_string(), AGENT_SOURCE.to_string());
         let output_container = match agent_config.r#type {
             AgentType::Default(default_agent) => {
                 tracing::debug!("Executing default agent: {:?}", &default_agent);

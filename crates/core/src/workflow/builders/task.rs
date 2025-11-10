@@ -145,6 +145,32 @@ impl Executable<TaskInput> for TaskExecutable {
         let new_value = match task.task_type {
             TaskType::Agent(agent_task) => {
                 let prompt = execution_context.renderer.render(&agent_task.prompt)?;
+
+                // Render agent task variables with workflow context
+                let rendered_variables = if let Some(vars) = &agent_task.variables {
+                    let mut rendered_vars = HashMap::new();
+                    for (key, value) in vars {
+                        // Convert value to string for rendering
+                        let value_str = if value.is_string() {
+                            value.as_str().unwrap_or_default().to_string()
+                        } else {
+                            serde_json::to_string(value)?
+                        };
+
+                        // Render the value with workflow context
+                        let rendered = execution_context.renderer.render(&value_str)?;
+
+                        // Try to parse back as JSON, otherwise keep as string
+                        let rendered_value = serde_json::from_str(&rendered)
+                            .unwrap_or_else(|_| serde_json::Value::String(rendered));
+
+                        rendered_vars.insert(key.clone(), rendered_value);
+                    }
+                    Some(rendered_vars)
+                } else {
+                    None
+                };
+
                 match &agent_task.consistency_run {
                     consistency_run if *consistency_run > 1 => {
                         let mut executable = ExecutableBuilder::new()
@@ -164,6 +190,7 @@ impl Executable<TaskInput> for TaskExecutable {
                                     agent_ref: agent_task.agent_ref.to_string(),
                                     prompt,
                                     memory: vec![],
+                                    variables: rendered_variables.clone(),
                                 },
                             )
                             .await
@@ -181,6 +208,7 @@ impl Executable<TaskInput> for TaskExecutable {
                                     agent_ref: agent_task.agent_ref.to_string(),
                                     prompt,
                                     memory: vec![],
+                                    variables: rendered_variables,
                                 },
                             )
                             .await

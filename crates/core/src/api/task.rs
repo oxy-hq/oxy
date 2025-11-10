@@ -198,6 +198,8 @@ impl ChatHandler for TaskExecutor {
                     context.memory.clone(),
                     context.filters.clone(),
                     context.connections.clone(),
+                    None, // No globals from task
+                    None, // TODO: Support variables from task context
                 )
                 .await
             }

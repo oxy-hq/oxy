@@ -1,3 +1,4 @@
+use oxy_globals::GlobalRegistry;
 use regex::Regex;
 use std::{collections::HashMap, path::PathBuf};
 
@@ -13,6 +14,7 @@ use crate::{
         },
     },
     parse_semantic_layer_from_dir,
+    variables::VariableEncoder,
 };
 
 /// Main translator for converting Oxy semantic layers to CubeJS format
@@ -61,6 +63,7 @@ async fn translate_oxy_to_cube(
 ) -> Result<CubeSemanticLayerWithDataSources, SemanticLayerError> {
     let mut cubes = Vec::new();
     let mut cube_views = Vec::new();
+    let mut variable_mappings = HashMap::new();
 
     println!(
         "Translating {} views from Oxy to Cube format",
@@ -80,18 +83,31 @@ async fn translate_oxy_to_cube(
 
     // Convert Oxy views to Cube cubes or views
     for view in oxy.views {
-        let cube_dimensions = convert_dimensions(view.clone(), &entity_graph)?;
-        let cube_measures = convert_measures(&view, &entity_graph)?;
+        let (cube_dimensions, mut encoder) = convert_dimensions(view.clone(), &entity_graph)?;
+        let cube_measures = convert_measures(&view, &entity_graph, &mut encoder)?;
+
+        // Store variable mappings for this view if any variables were encoded
+        let encoder_mapping = encoder.get_mapping();
+        if !encoder_mapping.is_empty() {
+            variable_mappings.insert(view.name.clone(), encoder_mapping.clone());
+        }
 
         // Create cube or view based on whether it has a table or SQL
         if let Some(table) = &view.table {
+            // Encode variables in table reference
+            let encoded_table = if encoder.has_variables(table) {
+                encoder.encode_expression(table)
+            } else {
+                table.clone()
+            };
+
             // Generate joins for this cube
             let cube_joins = entity_graph.generate_cube_joins(&view.name);
 
             // This is a table-based cube
             cubes.push(CubeCube {
                 name: view.name.clone(),
-                sql_table: Some(table.clone()),
+                sql_table: Some(encoded_table),
                 sql: None,
                 data_source: view.datasource.clone(),
                 title: view.label.clone().or_else(|| Some(view.name.clone())),
@@ -102,10 +118,17 @@ async fn translate_oxy_to_cube(
                 pre_aggregations: std::collections::HashMap::new(),
             });
         } else if let Some(sql) = &view.sql {
+            // Encode variables in SQL query
+            let encoded_sql = if encoder.has_variables(sql) {
+                encoder.encode_expression(sql)
+            } else {
+                sql.clone()
+            };
+
             // This is a SQL-based view
             cube_views.push(CubeView {
                 name: view.name.clone(),
-                sql: sql.clone(),
+                sql: encoded_sql,
                 data_source: view.datasource.clone(),
                 title: view.label.clone().or_else(|| Some(view.name.clone())),
                 description: Some(view.description.clone()),
@@ -157,6 +180,7 @@ async fn translate_oxy_to_cube(
         cubes,
         views: cube_views,
         data_sources,
+        variable_mappings,
     })
 }
 
@@ -164,8 +188,9 @@ async fn translate_oxy_to_cube(
 fn convert_dimensions(
     view: View,
     entity_graph: &EntityGraph,
-) -> Result<Vec<CubeDimension>, SemanticLayerError> {
+) -> Result<(Vec<CubeDimension>, VariableEncoder), SemanticLayerError> {
     let mut cube_dimensions = Vec::new();
+    let mut encoder = VariableEncoder::new();
 
     // Convert dimensions
     for dimension in &view.dimensions {
@@ -183,7 +208,14 @@ fn convert_dimensions(
             entity.entity_type == EntityType::Primary && entity.get_keys().contains(&dimension.name)
         });
 
-        let translated_sql = translate_cross_entity_references(&dimension.expr, entity_graph)?;
+        // Encode variables in the expression before processing
+        let encoded_expr = if dimension.has_variables() {
+            encoder.encode_expression(&dimension.expr)
+        } else {
+            dimension.expr.clone()
+        };
+
+        let translated_sql = translate_cross_entity_references(&encoded_expr, entity_graph)?;
 
         cube_dimensions.push(CubeDimension {
             name: dimension.name.clone(),
@@ -195,13 +227,14 @@ fn convert_dimensions(
         });
     }
 
-    Ok(cube_dimensions)
+    Ok((cube_dimensions, encoder))
 }
 
 /// Convert Oxy measures to CubeJS measures
 fn convert_measures(
     view: &View,
     entity_graph: &EntityGraph,
+    encoder: &mut VariableEncoder,
 ) -> Result<Vec<CubeMeasure>, SemanticLayerError> {
     let mut cube_measures = Vec::new();
 
@@ -221,11 +254,19 @@ fn convert_measures(
             .to_string();
 
             let sql_expr = measure.expr.clone().unwrap_or_else(|| "1".to_string());
-            let translated_sql = translate_cross_entity_references(&sql_expr, entity_graph)?;
+
+            // Encode variables in the expression before processing
+            let encoded_expr = if measure.has_variables() && measure.expr.is_some() {
+                encoder.encode_expression(&sql_expr)
+            } else {
+                sql_expr
+            };
+
+            let translated_sql = translate_cross_entity_references(&encoded_expr, entity_graph)?;
 
             // Convert measure filters from Oxy to CubeJS format
             let cube_filters = if let Some(oxy_filters) = &measure.filters {
-                Some(convert_measure_filters(oxy_filters, entity_graph)?)
+                Some(convert_measure_filters(oxy_filters, entity_graph, encoder)?)
             } else {
                 None
             };
@@ -249,11 +290,19 @@ fn convert_measures(
 fn convert_measure_filters(
     oxy_filters: &[MeasureFilter],
     entity_graph: &EntityGraph,
+    encoder: &mut VariableEncoder,
 ) -> Result<Vec<CubeMeasureFilter>, SemanticLayerError> {
     let mut cube_filters = Vec::new();
 
     for oxy_filter in oxy_filters {
-        let translated_sql = translate_cross_entity_references(&oxy_filter.expr, entity_graph)?;
+        // Encode variables in the filter expression before processing
+        let encoded_expr = if oxy_filter.has_variables() {
+            encoder.encode_expression(&oxy_filter.expr)
+        } else {
+            oxy_filter.expr.clone()
+        };
+
+        let translated_sql = translate_cross_entity_references(&encoded_expr, entity_graph)?;
 
         cube_filters.push(CubeMeasureFilter {
             sql: translated_sql,
@@ -268,6 +317,7 @@ pub async fn process_semantic_layer_to_cube(
     semantic_dir: PathBuf,
     target_dir: PathBuf,
     databases: HashMap<String, DatabaseDetails>,
+    globals_registry: GlobalRegistry,
 ) -> Result<(), SemanticLayerError> {
     println!("🔄 Processing semantic layer...");
 
@@ -282,19 +332,12 @@ pub async fn process_semantic_layer_to_cube(
     println!("📂 Loading semantic layer from: {}", semantic_dir.display());
 
     // Parse the semantic layer from the directory structure
-    let parse_result = parse_semantic_layer_from_dir(semantic_dir).map_err(|e| {
-        SemanticLayerError::ParsingError(format!("Failed to parse semantic layer: {}", e))
-    })?;
+    let parse_result =
+        parse_semantic_layer_from_dir(semantic_dir, globals_registry).map_err(|e| {
+            SemanticLayerError::ParsingError(format!("Failed to parse semantic layer: {}", e))
+        })?;
 
     let semantic_layer = parse_result.semantic_layer;
-
-    // Print warnings if any
-    if !parse_result.warnings.is_empty() {
-        println!("⚠️  Warnings during parsing:");
-        for warning in &parse_result.warnings {
-            println!("   - {}", warning);
-        }
-    }
 
     println!(
         "✅ Successfully loaded semantic layer with {} views",
@@ -420,6 +463,7 @@ mod tests {
             dimensions: vec![Dimension {
                 name: "test_dimension".to_string(),
                 expr: "test_column".to_string(),
+                original_expr: None,
                 dimension_type: DimensionType::String,
                 description: None,
                 synonyms: None,
@@ -440,16 +484,19 @@ mod tests {
         let oxy_filters = vec![
             MeasureFilter {
                 expr: "status = 'active'".to_string(),
+                original_expr: None,
                 description: Some("Filter for active records".to_string()),
             },
             MeasureFilter {
                 expr: "{{test_entity.field}} > 100".to_string(),
+                original_expr: None,
                 description: None,
             },
         ];
 
         // Convert filters
-        let result = convert_measure_filters(&oxy_filters, &entity_graph);
+        let mut encoder = VariableEncoder::new();
+        let result = convert_measure_filters(&oxy_filters, &entity_graph, &mut encoder);
         assert!(result.is_ok());
 
         let cube_filters = result.unwrap();

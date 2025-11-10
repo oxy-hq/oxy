@@ -1,0 +1,30 @@
+name: Globals Example Agent
+description: |
+  Example agent demonstrating the use of globals and variables in system instructions.
+  This agent can reference global semantic definitions and runtime variables in its prompts.
+
+model: "openai-4.1"
+
+variables:
+  orders_table:
+    description: The name of the orders table in the semantic model
+    type: string
+    default: orders
+
+system_instructions: |
+      You are a helpful data analytics assistant.
+      
+      Available tables: {{ globals.tables.table_names | tojson }}.
+      Orders table: {{ orders_table }}.
+      
+      When answering questions, reference the available models and dimensions appropriately.
+      Provide clear, data-driven insights based on the semantic layer.
+    
+tools: 
+  - name: get_5_orders
+    type: workflow
+    description: Retrieve 5 sample orders from the orders table
+    workflow_ref: workflows/semantic_variables.workflow.yml
+
+max_tool_calls: 10
+max_tool_concurrency: 5

@@ -227,6 +227,14 @@ pub struct AskAgentRequest {
     #[serde(default)]
     #[schema(value_type = Object)]
     pub connections: Option<ConnectionOverrides>,
+
+    #[serde(default)]
+    #[schema(value_type = Object)]
+    pub globals: Option<indexmap::IndexMap<String, serde_json::Value>>,
+
+    #[serde(default)]
+    #[schema(value_type = Object)]
+    pub variables: Option<std::collections::HashMap<String, serde_json::Value>>,
 }
 
 /// Ask a question to an agent and stream the response
@@ -270,9 +278,40 @@ pub async fn ask_agent_preview(
         StatusCode::BAD_REQUEST
     })?;
 
+    // Load agent config to validate variables against schema
+    if let Some(ref runtime_vars) = payload.variables {
+        let agent_config = project_manager
+            .config_manager
+            .resolve_agent(&path)
+            .await
+            .map_err(|e| {
+                tracing::error!("Failed to resolve agent config: {}", e);
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
+
+        // Validate variables against schema if agent has variables defined
+        if let Some(variables_schema) = &agent_config.variables {
+            // Use resolve_params to validate - it returns OxyError::ArgumentError on validation failure
+            variables_schema
+                .resolve_params(Some(runtime_vars.clone()))
+                .map_err(|e| {
+                    tracing::warn!("Variable validation failed: {}", e);
+                    // ArgumentError maps to BAD_REQUEST in OxyError -> StatusCode conversion
+                    StatusCode::from(e)
+                })?;
+        } else {
+            tracing::warn!(
+                "Runtime variables provided but agent '{}' has no variables schema",
+                path
+            );
+        }
+    }
+
     let (tx, rx) = tokio::sync::mpsc::channel(100);
     let filters = payload.filters;
     let connections = payload.connections;
+    let globals = payload.globals;
+    let variables = payload.variables;
 
     let _ = tokio::spawn(async move {
         let tx_clone = tx.clone();
@@ -286,6 +325,8 @@ pub async fn ask_agent_preview(
             vec![],
             filters,
             connections,
+            globals,
+            variables,
         )
         .await;
 
@@ -353,6 +394,14 @@ pub struct AskAgentNonStreamingRequest {
     #[serde(default)]
     #[schema(value_type = Object)]
     pub connections: Option<ConnectionOverrides>,
+
+    #[serde(default)]
+    #[schema(value_type = Object)]
+    pub globals: Option<indexmap::IndexMap<String, serde_json::Value>>,
+
+    #[serde(default)]
+    #[schema(value_type = Object)]
+    pub variables: Option<std::collections::HashMap<String, serde_json::Value>>,
 }
 
 impl ChatExecutionRequest for AskAgentNonStreamingRequest {
@@ -366,6 +415,10 @@ impl ChatExecutionRequest for AskAgentNonStreamingRequest {
 
     fn get_connections(&self) -> Option<ConnectionOverrides> {
         self.connections.clone()
+    }
+
+    fn get_globals(&self) -> Option<indexmap::IndexMap<String, serde_json::Value>> {
+        self.globals.clone()
     }
 }
 
@@ -406,12 +459,43 @@ pub async fn ask_agent_sync(
         StatusCode::BAD_REQUEST
     })?;
 
+    // Load agent config to validate variables against schema
+    if let Some(ref runtime_vars) = payload.variables {
+        let agent_config = project_manager
+            .config_manager
+            .resolve_agent(&path)
+            .await
+            .map_err(|e| {
+                tracing::error!("Failed to resolve agent config: {}", e);
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
+
+        // Validate variables against schema if agent has variables defined
+        if let Some(variables_schema) = &agent_config.variables {
+            // Use resolve_params to validate - it returns OxyError::ArgumentError on validation failure
+            variables_schema
+                .resolve_params(Some(runtime_vars.clone()))
+                .map_err(|e| {
+                    tracing::warn!("Variable validation failed: {}", e);
+                    // ArgumentError maps to BAD_REQUEST in OxyError -> StatusCode conversion
+                    StatusCode::from(e)
+                })?;
+        } else {
+            tracing::warn!(
+                "Runtime variables provided but agent '{}' has no variables schema",
+                path
+            );
+        }
+    }
+
     let (tx, mut rx) = mpsc::channel(100);
 
     let project_manager_clone = project_manager.clone();
     let question = payload.question.clone();
     let filters = payload.filters;
     let connections = payload.connections;
+    let globals = payload.globals;
+    let variables = payload.variables;
 
     let _ = tokio::spawn(async move {
         let tx_clone = tx.clone();
@@ -425,6 +509,8 @@ pub async fn ask_agent_sync(
             vec![],
             filters,
             connections,
+            globals,
+            variables,
         )
         .await;
 
@@ -552,6 +638,9 @@ pub struct AskThreadRequest {
 
     #[serde(default)]
     pub connections: Option<ConnectionOverrides>,
+
+    #[serde(default)]
+    pub globals: Option<indexmap::IndexMap<String, serde_json::Value>>,
 }
 
 impl ChatExecutionRequest for AskThreadRequest {
@@ -565,6 +654,10 @@ impl ChatExecutionRequest for AskThreadRequest {
 
     fn get_connections(&self) -> Option<ConnectionOverrides> {
         self.connections.clone()
+    }
+
+    fn get_globals(&self) -> Option<indexmap::IndexMap<String, serde_json::Value>> {
+        self.globals.clone()
     }
 }
 
@@ -602,6 +695,8 @@ impl ChatHandler for AgentExecutor {
             context.memory.clone(),
             context.filters.clone(),
             context.connections.clone(),
+            context.globals.clone(),
+            None, // TODO: Support variables from thread context
         )
         .await;
 

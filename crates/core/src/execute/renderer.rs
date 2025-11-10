@@ -65,6 +65,19 @@ fn add_now_function(env: &mut Environment<'static>) {
 
 fn add_global_functions(env: &mut Environment<'static>) {
     add_now_function(env);
+
+    // Add tojson filter for converting values to JSON strings
+    env.add_filter(
+        "tojson",
+        |value: Value| -> Result<String, minijinja::Error> {
+            serde_json::to_string(&value).map_err(|e| {
+                minijinja::Error::new(
+                    minijinja::ErrorKind::InvalidOperation,
+                    format!("Failed to convert to JSON: {}", e),
+                )
+            })
+        },
+    );
 }
 
 pub trait TemplateRegister: Sync + Send {

@@ -1,0 +1,4 @@
+table_names: ["order_items", "customers"]
+users: "users"
+orders: "orders"
+products: "products"

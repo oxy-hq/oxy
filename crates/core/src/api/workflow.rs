@@ -211,6 +211,8 @@ pub struct WorkflowRetryParam {
     pub replay_id: Option<String>,
 }
 
+pub type GlobalOverrides = IndexMap<String, serde_json::Value>;
+
 #[derive(Deserialize, ToSchema)]
 pub struct RunWorkflowRequest {
     #[schema(value_type = Object)]
@@ -223,6 +225,10 @@ pub struct RunWorkflowRequest {
     #[serde(default)]
     #[schema(value_type = Object)]
     pub connections: Option<ConnectionOverrides>,
+
+    #[serde(default)]
+    #[schema(value_type = Object)]
+    pub globals: Option<GlobalOverrides>,
 }
 
 /// Execute a workflow and stream results via Server-Sent Events
@@ -277,6 +283,7 @@ pub async fn run_workflow(
 
     let filters = request.filters;
     let connections = request.connections;
+    let globals = request.globals;
 
     let _ = tokio::spawn(async move {
         tracing::info!("Workflow run started");
@@ -287,6 +294,7 @@ pub async fn run_workflow(
             project_manager.clone(),
             filters,
             connections,
+            globals,
         )
         .await;
         match rs {
@@ -446,6 +454,7 @@ pub async fn run_workflow_thread(
             project_manager.clone(),
             filters,
             connections,
+            None, // No globals for thread execution (not in request)
         )
         .await;
 
@@ -635,6 +644,7 @@ pub async fn run_workflow_thread_sync(
             project_manager.clone(),
             filters,
             connections,
+            None, // No globals for thread sync execution (not in request)
         )
         .await;
 
@@ -922,6 +932,7 @@ pub async fn run_workflow_sync(
 
     let filters = request.filters;
     let connections = request.connections;
+    let globals = request.globals;
 
     let mut workflow_task = tokio::spawn({
         let project_manager = project_manager.clone();
@@ -936,6 +947,7 @@ pub async fn run_workflow_sync(
                 retry_strategy,
                 filters,
                 connections,
+                globals,
             )
             .await;
 

@@ -1,7 +1,12 @@
 use crate::SemanticLayerError;
 use crate::models::*;
-use crate::validation::{ValidationResult, validate_semantic_layer};
+use crate::validation::{ValidationResult, validate_semantic_layer, validate_variable_syntax};
+use crate::variables::VariableEncoder;
+use minijinja::{Environment, context};
+use oxy_globals::{GlobalRegistry, TemplateResolver};
+use regex::Regex;
 use serde_yaml;
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -47,51 +52,49 @@ pub struct ParseResult {
     pub warnings: Vec<String>,
     /// List of files that were parsed
     pub parsed_files: Vec<PathBuf>,
+    /// All variables found across the semantic layer
+    pub variables_found: HashSet<String>,
 }
 
 /// Parser for semantic layer configurations
 pub struct SemanticLayerParser {
     config: ParserConfig,
+    global_registry: GlobalRegistry,
 }
 
 impl SemanticLayerParser {
     /// Creates a new parser with the given configuration
-    pub fn new(config: ParserConfig) -> Self {
-        Self { config }
-    }
-
-    /// Creates a new parser with default configuration for the given base path
-    pub fn with_base_path<P: AsRef<Path>>(base_path: P) -> Self {
-        Self::new(ParserConfig::new(base_path))
+    pub fn new(config: ParserConfig, global_registry: GlobalRegistry) -> Self {
+        Self {
+            config,
+            global_registry,
+        }
     }
 
     /// Parses the semantic layer from the configured directory structure
     pub fn parse(&self) -> Result<ParseResult, SemanticLayerError> {
         let mut views = Vec::new();
         let mut topics = Vec::new();
-        let mut warnings = Vec::new();
         let mut parsed_files = Vec::new();
 
         // Parse views from views/ directory
         let views_dir = self.config.base_path.join("views");
         if views_dir.exists() {
-            let (parsed_views, view_warnings, view_files) = self.parse_views(&views_dir)?;
+            let (parsed_views, view_files) = self.parse_views(&views_dir)?;
             views.extend(parsed_views);
-            warnings.extend(view_warnings);
             parsed_files.extend(view_files);
         } else {
-            warnings.push(format!(
+            return Err(SemanticLayerError::IOError(format!(
                 "Views directory not found: {}",
                 views_dir.display()
-            ));
+            )));
         }
 
         // Parse topics from topics/ directory
         let topics_dir = self.config.base_path.join("topics");
         if topics_dir.exists() {
-            let (parsed_topics, topic_warnings, topic_files) = self.parse_topics(&topics_dir)?;
+            let (parsed_topics, topic_files) = self.parse_topics(&topics_dir)?;
             topics.extend(parsed_topics);
-            warnings.extend(topic_warnings);
             parsed_files.extend(topic_files);
         }
 
@@ -113,11 +116,62 @@ impl SemanticLayerParser {
             None
         };
 
+        // Collect all variables used across the semantic layer
+        let mut variables_found = HashSet::new();
+        let encoder = VariableEncoder::new();
+
+        for view in &semantic_layer.views {
+            // Collect variables from dimensions
+            for dimension in &view.dimensions {
+                if dimension.has_variables() {
+                    let vars = encoder.extract_variables(&dimension.expr);
+                    variables_found.extend(vars);
+                }
+            }
+            // Collect variables from measures
+            if let Some(measures) = &view.measures {
+                for measure in measures {
+                    if measure.has_variables() {
+                        if let Some(expr) = &measure.expr {
+                            let vars = encoder.extract_variables(expr);
+                            variables_found.extend(vars);
+                        }
+                        // Also check filters
+                        if let Some(filters) = &measure.filters {
+                            for filter in filters {
+                                if filter.has_variables() {
+                                    let vars = encoder.extract_variables(&filter.expr);
+                                    variables_found.extend(vars);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            // Collect variables from table references
+            if let Some(table) = &view.table {
+                if encoder.has_variables(table) {
+                    let vars = encoder.extract_variables(table);
+                    variables_found.extend(vars);
+                }
+            }
+            if let Some(sql) = &view.sql {
+                if encoder.has_variables(sql) {
+                    let vars = encoder.extract_variables(sql);
+                    variables_found.extend(vars);
+                }
+            }
+        }
+
+        // Topics don't have their own dimensions/measures, they reference views
+        // So no need to check topics for variables
+
         Ok(ParseResult {
             semantic_layer,
             validation,
-            warnings,
+            warnings: Vec::new(), // No warnings anymore - errors fail immediately
             parsed_files,
+            variables_found,
         })
     }
 
@@ -125,9 +179,8 @@ impl SemanticLayerParser {
     fn parse_views(
         &self,
         views_dir: &Path,
-    ) -> Result<(Vec<View>, Vec<String>, Vec<PathBuf>), SemanticLayerError> {
+    ) -> Result<(Vec<View>, Vec<PathBuf>), SemanticLayerError> {
         let mut views = Vec::new();
-        let mut warnings = Vec::new();
         let mut parsed_files = Vec::new();
 
         let entries = fs::read_dir(views_dir).map_err(|e| {
@@ -141,32 +194,21 @@ impl SemanticLayerParser {
             let path = entry.path();
 
             if path.is_file() && self.is_view_file(&path) {
-                match self.parse_view_file(&path) {
-                    Ok(view) => {
-                        views.push(view);
-                        parsed_files.push(path);
-                    }
-                    Err(e) => {
-                        warnings.push(format!(
-                            "Failed to parse view file {}: {}",
-                            path.display(),
-                            e
-                        ));
-                    }
-                }
+                let view = self.parse_view_file(&path)?;
+                views.push(view);
+                parsed_files.push(path);
             }
         }
 
-        Ok((views, warnings, parsed_files))
+        Ok((views, parsed_files))
     }
 
     /// Parses all topic files from the given directory
     fn parse_topics(
         &self,
         topics_dir: &Path,
-    ) -> Result<(Vec<Topic>, Vec<String>, Vec<PathBuf>), SemanticLayerError> {
+    ) -> Result<(Vec<Topic>, Vec<PathBuf>), SemanticLayerError> {
         let mut topics = Vec::new();
-        let warnings = Vec::new();
         let mut parsed_files = Vec::new();
 
         let entries = fs::read_dir(topics_dir).map_err(|e| {
@@ -180,31 +222,67 @@ impl SemanticLayerParser {
             let path = entry.path();
 
             if path.is_file() && self.is_topic_file(&path) {
-                let topic = self.parse_topic_file(&path).map_err(|e| {
-                    SemanticLayerError::ParsingError(format!(
-                        "Failed to parse topic file {}: {}",
-                        path.display(),
-                        e
-                    ))
-                })?;
+                let topic = self.parse_topic_file(&path)?;
                 topics.push(topic);
                 parsed_files.push(path);
             }
         }
 
-        Ok((topics, warnings, parsed_files))
+        Ok((topics, parsed_files))
     }
 
     /// Parses a single view file
     fn parse_view_file(&self, path: &Path) -> Result<View, SemanticLayerError> {
+        // Read raw YAML content as a string (before parsing)
         let content = fs::read_to_string(path).map_err(|e| {
             SemanticLayerError::IOError(format!("Failed to read file {}: {}", path.display(), e))
         })?;
 
-        let view: View = serde_yaml::from_str(&content).map_err(|e| {
+        // Render the YAML template with Jinja2 (resolves both {{globals.*}} and {{variables.*}})
+        let rendered_content = self.render_yaml_template(&content, path)?;
+
+        // Parse the rendered YAML
+        let mut yaml_value: serde_yaml::Value =
+            serde_yaml::from_str(&rendered_content).map_err(|e| {
+                let location_info = if let Some(location) = e.location() {
+                    format!(" at line {}, column {}", location.line(), location.column())
+                } else {
+                    String::new()
+                };
+                SemanticLayerError::ParsingError(format!(
+                    "Failed to parse rendered YAML in {}{}: {}",
+                    path.display(),
+                    location_info,
+                    e
+                ))
+            })?;
+
+        // Resolve inheritance (inherits_from fields)
+        yaml_value = self
+            .global_registry
+            .resolve_with_inheritance(&yaml_value)
+            .map_err(|e| {
+                SemanticLayerError::ParsingError(format!(
+                    "Failed to resolve global references in {}: {}",
+                    path.display(),
+                    e
+                ))
+            })?;
+
+        // Store original expressions before any variable processing
+        yaml_value = self.preprocess_variables(&yaml_value, path)?;
+
+        // Now deserialize into View struct
+        let view: View = serde_yaml::from_value(yaml_value).map_err(|e| {
+            let location_info = if let Some(location) = e.location() {
+                format!(" at line {}, column {}", location.line(), location.column())
+            } else {
+                String::new()
+            };
             SemanticLayerError::ParsingError(format!(
-                "Failed to parse YAML in {}: {}",
+                "Failed to deserialize view from {}{}: {}",
                 path.display(),
+                location_info,
                 e
             ))
         })?;
@@ -218,10 +296,61 @@ impl SemanticLayerParser {
             SemanticLayerError::IOError(format!("Failed to read file {}: {}", path.display(), e))
         })?;
 
-        let topic: Topic = serde_yaml::from_str(&content).map_err(|e| {
+        // First parse as generic YAML value
+        let mut yaml_value: serde_yaml::Value = serde_yaml::from_str(&content).map_err(|e| {
+            let location_info = if let Some(location) = e.location() {
+                format!(" at line {}, column {}", location.line(), location.column())
+            } else {
+                String::new()
+            };
             SemanticLayerError::ParsingError(format!(
-                "Failed to parse YAML in {}: {}",
+                "Failed to parse YAML in {}{}: {}",
                 path.display(),
+                location_info,
+                e
+            ))
+        })?;
+
+        // Resolve templates and global references if registry is available
+        // First resolve templates ({{globals.path}} expressions)
+        yaml_value = self
+            .global_registry
+            .resolve_templates(&yaml_value)
+            .map_err(|e| {
+                SemanticLayerError::ParsingError(format!(
+                    "Failed to resolve templates in {}: {}",
+                    path.display(),
+                    e
+                ))
+            })?;
+
+        // Then resolve inheritance (inherits_from fields)
+        yaml_value = self
+            .global_registry
+            .resolve_with_inheritance(&yaml_value)
+            .map_err(|e| {
+                SemanticLayerError::ParsingError(format!(
+                    "Failed to resolve global references in {}: {}",
+                    path.display(),
+                    e
+                ))
+            })?;
+
+        // Topics don't currently have direct variable support in their structure,
+        // but validate any variable syntax if present for future compatibility
+        self.validate_topic_variables(&yaml_value, path)?;
+
+        // Now deserialize into Topic struct
+        let topic: Topic = serde_yaml::from_value(yaml_value).map_err(|e| {
+            let location_info = if let Some(location) = e.location() {
+                format!(" at line {}, column {}", location.line(), location.column())
+            } else {
+                String::new()
+            };
+            SemanticLayerError::ParsingError(format!(
+                "Failed to deserialize topic from {}{}: {}",
+                path.display(),
+                location_info,
                 e
             ))
         })?;
@@ -255,6 +384,197 @@ impl SemanticLayerParser {
                 .unwrap_or(false)
     }
 
+    /// Preprocesses variables in YAML value to store original expressions and validate syntax
+    fn preprocess_variables(
+        &self,
+        yaml_value: &serde_yaml::Value,
+        file_path: &Path,
+    ) -> Result<serde_yaml::Value, SemanticLayerError> {
+        let mut processed_value = yaml_value.clone();
+        let encoder = VariableEncoder::new();
+
+        // Process dimensions if they exist
+        if let Some(dimensions) = processed_value.get_mut("dimensions") {
+            if let Some(dimensions_array) = dimensions.as_sequence_mut() {
+                for dimension in dimensions_array {
+                    if let Some(dimension_map) = dimension.as_mapping_mut() {
+                        if let Some(expr_value) = dimension_map.get("expr") {
+                            if let Some(expr_str) = expr_value.as_str() {
+                                // Validate variable syntax
+                                let validation = validate_variable_syntax(
+                                    expr_str,
+                                    &format!("Dimension in {}", file_path.display()),
+                                );
+                                if !validation.is_valid {
+                                    return Err(SemanticLayerError::ValidationError(
+                                        validation.errors.join("; "),
+                                    ));
+                                }
+
+                                // Store original expression if it contains variables
+                                if encoder.has_variables(expr_str) {
+                                    dimension_map.insert(
+                                        serde_yaml::Value::String("original_expr".to_string()),
+                                        serde_yaml::Value::String(expr_str.to_string()),
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Process measures if they exist
+        if let Some(measures) = processed_value.get_mut("measures") {
+            if let Some(measures_array) = measures.as_sequence_mut() {
+                for measure in measures_array {
+                    if let Some(measure_map) = measure.as_mapping_mut() {
+                        // Process measure expression
+                        if let Some(expr_value) = measure_map.get("expr") {
+                            if let Some(expr_str) = expr_value.as_str() {
+                                // Validate variable syntax
+                                let validation = validate_variable_syntax(
+                                    expr_str,
+                                    &format!("Measure in {}", file_path.display()),
+                                );
+                                if !validation.is_valid {
+                                    return Err(SemanticLayerError::ValidationError(
+                                        validation.errors.join("; "),
+                                    ));
+                                }
+
+                                // Store original expression if it contains variables
+                                if encoder.has_variables(expr_str) {
+                                    measure_map.insert(
+                                        serde_yaml::Value::String("original_expr".to_string()),
+                                        serde_yaml::Value::String(expr_str.to_string()),
+                                    );
+                                }
+                            }
+                        }
+
+                        // Process measure filters
+                        if let Some(filters) = measure_map.get_mut("filters") {
+                            if let Some(filters_array) = filters.as_sequence_mut() {
+                                for filter in filters_array {
+                                    if let Some(filter_map) = filter.as_mapping_mut() {
+                                        if let Some(expr_value) = filter_map.get("expr") {
+                                            if let Some(expr_str) = expr_value.as_str() {
+                                                // Validate variable syntax
+                                                let validation = validate_variable_syntax(
+                                                    expr_str,
+                                                    &format!(
+                                                        "Measure filter in {}",
+                                                        file_path.display()
+                                                    ),
+                                                );
+                                                if !validation.is_valid {
+                                                    return Err(
+                                                        SemanticLayerError::ValidationError(
+                                                            validation.errors.join("; "),
+                                                        ),
+                                                    );
+                                                }
+
+                                                // Store original expression if it contains variables
+                                                if encoder.has_variables(expr_str) {
+                                                    filter_map.insert(
+                                                        serde_yaml::Value::String(
+                                                            "original_expr".to_string(),
+                                                        ),
+                                                        serde_yaml::Value::String(
+                                                            expr_str.to_string(),
+                                                        ),
+                                                    );
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Process table references
+        if let Some(table_value) = processed_value.get("table") {
+            if let Some(table_str) = table_value.as_str() {
+                let validation = validate_variable_syntax(
+                    table_str,
+                    &format!("Table reference in {}", file_path.display()),
+                );
+                if !validation.is_valid {
+                    return Err(SemanticLayerError::ValidationError(
+                        validation.errors.join("; "),
+                    ));
+                }
+            }
+        }
+
+        // Process SQL queries
+        if let Some(sql_value) = processed_value.get("sql") {
+            if let Some(sql_str) = sql_value.as_str() {
+                let validation = validate_variable_syntax(
+                    sql_str,
+                    &format!("SQL query in {}", file_path.display()),
+                );
+                if !validation.is_valid {
+                    return Err(SemanticLayerError::ValidationError(
+                        validation.errors.join("; "),
+                    ));
+                }
+            }
+        }
+
+        Ok(processed_value)
+    }
+
+    /// Validates variable syntax in topic files (for future compatibility)
+    fn validate_topic_variables(
+        &self,
+        yaml_value: &serde_yaml::Value,
+        file_path: &Path,
+    ) -> Result<(), SemanticLayerError> {
+        // Topics don't currently support direct variables, but we validate
+        // any variable-like syntax for future compatibility and clear error messages
+
+        // Check string values recursively for variable syntax
+        fn check_value(value: &serde_yaml::Value, context: &str) -> Result<(), String> {
+            match value {
+                serde_yaml::Value::String(s) => {
+                    let validation = validate_variable_syntax(s, context);
+                    if !validation.is_valid {
+                        return Err(validation.errors.join("; "));
+                    }
+                }
+                serde_yaml::Value::Mapping(map) => {
+                    for (key, val) in map {
+                        if let Some(key_str) = key.as_str() {
+                            let new_context = format!("{}.{}", context, key_str);
+                            check_value(val, &new_context)?;
+                        }
+                    }
+                }
+                serde_yaml::Value::Sequence(seq) => {
+                    for (i, val) in seq.iter().enumerate() {
+                        let new_context = format!("{}[{}]", context, i);
+                        check_value(val, &new_context)?;
+                    }
+                }
+                _ => {}
+            }
+            Ok(())
+        }
+
+        check_value(yaml_value, &format!("Topic in {}", file_path.display()))
+            .map_err(|e| SemanticLayerError::ValidationError(e))?;
+
+        Ok(())
+    }
+
     /// Parses a single semantic layer file (for backwards compatibility)
     pub fn parse_file<P: AsRef<Path>>(path: P) -> Result<SemanticLayer, SemanticLayerError> {
         let content = fs::read_to_string(path.as_ref()).map_err(|e| {
@@ -266,10 +586,99 @@ impl SemanticLayerParser {
         })?;
 
         let semantic_layer: SemanticLayer = serde_yaml::from_str(&content).map_err(|e| {
-            SemanticLayerError::ParsingError(format!("Failed to parse YAML: {}", e))
+            let location_info = if let Some(location) = e.location() {
+                format!(" at line {}, column {}", location.line(), location.column())
+            } else {
+                String::new()
+            };
+            SemanticLayerError::ParsingError(format!(
+                "Failed to parse YAML{}: {}",
+                location_info, e
+            ))
         })?;
 
         Ok(semantic_layer)
+    }
+
+    /// Render YAML template using Jinja2 with globals and variables context
+    ///
+    /// This method creates a unified Jinja2 context with both globals and variables,
+    /// then renders the YAML template in a single pass.
+    /// Only renders templates that reference globals.* or variables.*
+    fn render_yaml_template(
+        &self,
+        yaml_content: &str,
+        path: &Path,
+    ) -> Result<String, SemanticLayerError> {
+        // Build Jinja2 context with globals
+        let globals_context = self.global_registry.to_jinja_context().map_err(|e| {
+            SemanticLayerError::ParsingError(format!(
+                "Failed to build globals context for {}: {}",
+                path.display(),
+                e
+            ))
+        })?;
+
+        // Pre-process: temporarily replace non-globals templates with placeholders
+        // Variables should be preserved as-is for encoding by the CubeJS translator
+        let placeholder_prefix = "___TEMPLATE_PLACEHOLDER_";
+        let mut placeholders = Vec::new();
+        let re = Regex::new(r"\{\{[^}]+\}\}").unwrap();
+
+        let protected_content = re
+            .replace_all(yaml_content, |caps: &regex::Captures| {
+                let matched = caps.get(0).unwrap().as_str();
+                // Check if this template references globals.* or variables.*
+                let inner = matched
+                    .trim_start_matches("{{")
+                    .trim_end_matches("}}")
+                    .trim();
+                if inner.starts_with("globals.") {
+                    // Keep globals templates for rendering
+                    matched.to_string()
+                } else {
+                    // Replace ALL other templates (including variables.*) with placeholders
+                    // Variables will be encoded later by the CubeJS translator
+                    let placeholder = format!("{}{}", placeholder_prefix, placeholders.len());
+                    placeholders.push(matched.to_string());
+                    placeholder
+                }
+            })
+            .to_string();
+
+        // Create minijinja environment
+        let mut env = Environment::new();
+        env.set_auto_escape_callback(|_| minijinja::AutoEscape::None);
+
+        // Compile template from the protected YAML string
+        let template = env.template_from_str(&protected_content).map_err(|e| {
+            SemanticLayerError::ParsingError(format!(
+                "Failed to compile template in {}: {}",
+                path.display(),
+                e
+            ))
+        })?;
+
+        // Render with context (only globals are rendered at parse time)
+        let mut rendered = template
+            .render(context! {
+                globals => globals_context,
+            })
+            .map_err(|e| {
+                SemanticLayerError::ParsingError(format!(
+                    "Failed to render template in {}: {}",
+                    path.display(),
+                    e
+                ))
+            })?;
+
+        // Restore the original templates that were placeholders
+        for (i, original) in placeholders.iter().enumerate() {
+            let placeholder = format!("{}{}", placeholder_prefix, i);
+            rendered = rendered.replace(&placeholder, original);
+        }
+
+        Ok(rendered)
     }
 
     /// Exports a semantic layer to YAML format
@@ -345,7 +754,9 @@ impl SemanticLayerParser {
 /// Convenience function to parse semantic layer from a directory
 pub fn parse_semantic_layer_from_dir<P: AsRef<Path>>(
     path: P,
+    global_registry: GlobalRegistry,
 ) -> Result<ParseResult, SemanticLayerError> {
-    let parser = SemanticLayerParser::with_base_path(path);
+    let parser_config = ParserConfig::new(path);
+    let parser = SemanticLayerParser::new(parser_config, global_registry);
     parser.parse()
 }

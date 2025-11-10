@@ -1,9 +1,11 @@
+use regex::Regex;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
     fmt::{Display, Formatter},
     hash::Hash,
+    sync::OnceLock,
 };
 
 use crate::errors::SemanticLayerError;
@@ -96,6 +98,9 @@ pub struct Dimension {
     pub description: Option<String>,
     /// SQL expression that defines how to calculate this dimension
     pub expr: String,
+    /// Original expression before variable encoding (if variables were used)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub original_expr: Option<String>,
     /// Example values to help users understand the dimension content
     pub samples: Option<Vec<String>>,
     /// Alternative names or terms that refer to this dimension
@@ -140,6 +145,9 @@ impl Display for MeasureType {
 pub struct MeasureFilter {
     /// SQL expression for the filter condition
     pub expr: String,
+    /// Original expression before variable encoding (if variables were used)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub original_expr: Option<String>,
     /// Human-readable description of the filter
     pub description: Option<String>,
 }
@@ -156,12 +164,78 @@ pub struct Measure {
     pub description: Option<String>,
     /// SQL expression for the measure (required for most types, not for count)
     pub expr: Option<String>,
+    /// Original expression before variable encoding (if variables were used)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub original_expr: Option<String>,
     /// List of filters to apply to the measure calculation
     pub filters: Option<Vec<MeasureFilter>>,
     /// Sample values or example outputs to help users understand the measure
     pub samples: Option<Vec<String>>,
     /// Alternative names or terms that refer to this measure
     pub synonyms: Option<Vec<String>>,
+}
+
+impl Dimension {
+    /// Check if the dimension expression contains variable references
+    pub fn has_variables(&self) -> bool {
+        static VARIABLE_REGEX: OnceLock<Regex> = OnceLock::new();
+        let regex = VARIABLE_REGEX.get_or_init(|| {
+            Regex::new(r"\{\{variables\.[^}]+\}\}").expect("Variable regex pattern should be valid")
+        });
+
+        regex.is_match(&self.expr)
+    }
+
+    /// Get the original expression if available, otherwise return the current expression
+    pub fn get_original_expr(&self) -> &str {
+        self.original_expr.as_ref().unwrap_or(&self.expr)
+    }
+}
+
+impl Measure {
+    /// Check if the measure expression contains variable references
+    pub fn has_variables(&self) -> bool {
+        static VARIABLE_REGEX: OnceLock<Regex> = OnceLock::new();
+        let regex = VARIABLE_REGEX.get_or_init(|| {
+            Regex::new(r"\{\{variables\.[^}]+\}\}").expect("Variable regex pattern should be valid")
+        });
+
+        // Check both the main expression and filter expressions
+        let expr_has_vars = self
+            .expr
+            .as_ref()
+            .map(|e| regex.is_match(e))
+            .unwrap_or(false);
+        let filters_have_vars = self
+            .filters
+            .as_ref()
+            .map(|filters| filters.iter().any(|f| f.has_variables()))
+            .unwrap_or(false);
+
+        expr_has_vars || filters_have_vars
+    }
+
+    /// Get the original expression if available, otherwise return the current expression
+    pub fn get_original_expr(&self) -> Option<&str> {
+        self.original_expr.as_deref().or(self.expr.as_deref())
+    }
+}
+
+impl MeasureFilter {
+    /// Check if the filter expression contains variable references
+    pub fn has_variables(&self) -> bool {
+        static VARIABLE_REGEX: OnceLock<Regex> = OnceLock::new();
+        let regex = VARIABLE_REGEX.get_or_init(|| {
+            Regex::new(r"\{\{variables\.[^}]+\}\}").expect("Variable regex pattern should be valid")
+        });
+
+        regex.is_match(&self.expr)
+    }
+
+    /// Get the original expression if available, otherwise return the current expression
+    pub fn get_original_expr(&self) -> &str {
+        self.original_expr.as_ref().unwrap_or(&self.expr)
+    }
 }
 
 /// Represents a view in the semantic layer

@@ -1,3 +1,4 @@
+use regex::Regex;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::fs;
@@ -36,6 +37,9 @@ pub async fn save_cube_semantics(
     }
 
     println!("Saving Cube semantics to: {}", expanded_dir);
+
+    // Validate that encoded variables are CubeJS-safe before writing
+    validate_encoded_variables(&cube)?;
 
     let cubes_count = cube.cubes.len();
     let views_count = cube.views.len();
@@ -91,6 +95,23 @@ pub async fn save_cube_semantics(
         })?;
 
         println!("  ⚙️  Created cube.js configuration file");
+    }
+
+    // Save variable mappings metadata for runtime decoding
+    if !cube.variable_mappings.is_empty() {
+        let mappings_file_path = dir_path.join("variable_mappings.json");
+        let mappings_json = serde_json::to_string_pretty(&cube.variable_mappings).map_err(|e| {
+            SemanticLayerError::IOError(format!("Failed to serialize variable mappings: {}", e))
+        })?;
+
+        fs::write(&mappings_file_path, mappings_json).map_err(|e| {
+            SemanticLayerError::IOError(format!("Failed to write variable mappings file: {}", e))
+        })?;
+
+        println!(
+            "  🔀 Created variable mappings file with {} view mappings",
+            cube.variable_mappings.len()
+        );
     }
 
     println!(
@@ -195,4 +216,115 @@ fn generate_view_yaml(view: &CubeView) -> Result<String, SemanticLayerError> {
     }
 
     Ok(yaml_content)
+}
+
+/// Validate that encoded variables in the cube data are safe for CubeJS
+fn validate_encoded_variables(
+    cube: &CubeSemanticLayerWithDataSources,
+) -> Result<(), SemanticLayerError> {
+    // CubeJS-safe identifier regex: alphanumeric and underscores, starting with letter or underscore
+    let safe_identifier =
+        Regex::new(r"^[a-zA-Z_][a-zA-Z0-9_]*$").expect("Safe identifier regex should compile");
+
+    let encoded_var_pattern =
+        Regex::new(r"__VAR_[a-zA-Z0-9_]+__").expect("Encoded variable pattern should compile");
+
+    // Validate dimensions in cubes
+    for cube_def in &cube.cubes {
+        for dimension in &cube_def.dimensions {
+            // Find encoded variables in the SQL
+            for encoded_match in encoded_var_pattern.find_iter(&dimension.sql) {
+                let encoded_var = encoded_match.as_str();
+                if !safe_identifier.is_match(encoded_var) {
+                    return Err(SemanticLayerError::ValidationError(format!(
+                        "Encoded variable '{}' in dimension '{}' is not CubeJS-safe",
+                        encoded_var, dimension.name
+                    )));
+                }
+            }
+        }
+
+        // Validate measures in cubes
+        for measure in &cube_def.measures {
+            for encoded_match in encoded_var_pattern.find_iter(&measure.sql) {
+                let encoded_var = encoded_match.as_str();
+                if !safe_identifier.is_match(encoded_var) {
+                    return Err(SemanticLayerError::ValidationError(format!(
+                        "Encoded variable '{}' in measure '{}' is not CubeJS-safe",
+                        encoded_var, measure.name
+                    )));
+                }
+            }
+
+            // Validate measure filters
+            if let Some(filters) = &measure.filters {
+                for filter in filters {
+                    for encoded_match in encoded_var_pattern.find_iter(&filter.sql) {
+                        let encoded_var = encoded_match.as_str();
+                        if !safe_identifier.is_match(encoded_var) {
+                            return Err(SemanticLayerError::ValidationError(format!(
+                                "Encoded variable '{}' in measure filter for measure '{}' is not CubeJS-safe",
+                                encoded_var, measure.name
+                            )));
+                        }
+                    }
+                }
+            }
+        }
+
+        // Validate table references
+        if let Some(table) = &cube_def.sql_table {
+            for encoded_match in encoded_var_pattern.find_iter(table) {
+                let encoded_var = encoded_match.as_str();
+                if !safe_identifier.is_match(encoded_var) {
+                    return Err(SemanticLayerError::ValidationError(format!(
+                        "Encoded variable '{}' in table reference for cube '{}' is not CubeJS-safe",
+                        encoded_var, cube_def.name
+                    )));
+                }
+            }
+        }
+    }
+
+    // Validate views
+    for view in &cube.views {
+        // Validate SQL queries
+        for encoded_match in encoded_var_pattern.find_iter(&view.sql) {
+            let encoded_var = encoded_match.as_str();
+            if !safe_identifier.is_match(encoded_var) {
+                return Err(SemanticLayerError::ValidationError(format!(
+                    "Encoded variable '{}' in SQL for view '{}' is not CubeJS-safe",
+                    encoded_var, view.name
+                )));
+            }
+        }
+
+        // Validate dimensions in views
+        for dimension in &view.dimensions {
+            for encoded_match in encoded_var_pattern.find_iter(&dimension.sql) {
+                let encoded_var = encoded_match.as_str();
+                if !safe_identifier.is_match(encoded_var) {
+                    return Err(SemanticLayerError::ValidationError(format!(
+                        "Encoded variable '{}' in dimension '{}' of view '{}' is not CubeJS-safe",
+                        encoded_var, dimension.name, view.name
+                    )));
+                }
+            }
+        }
+
+        // Validate measures in views
+        for measure in &view.measures {
+            for encoded_match in encoded_var_pattern.find_iter(&measure.sql) {
+                let encoded_var = encoded_match.as_str();
+                if !safe_identifier.is_match(encoded_var) {
+                    return Err(SemanticLayerError::ValidationError(format!(
+                        "Encoded variable '{}' in measure '{}' of view '{}' is not CubeJS-safe",
+                        encoded_var, measure.name, view.name
+                    )));
+                }
+            }
+        }
+    }
+
+    Ok(())
 }

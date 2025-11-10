@@ -217,6 +217,7 @@ impl OxyMcpServer {
             self.project_manager.clone(),
             None,
             None,
+            None, // No globals override from MCP
         )
         .await
         .map_err(|e| rmcp::Error::internal_error(format!("Failed to run workflow: {e}"), None))?;

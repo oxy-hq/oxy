@@ -1,0 +1,79 @@
+# Example global semantics definitions
+# This file demonstrates how to define global concepts that can be reused across multiple specifications
+
+entities:
+  customer:
+    name: customer
+    type: primary
+    description: Primary customer entity
+    key: customer_id
+
+  product:
+    name: product
+    type: foreign
+    description: Product entity reference
+    key: product_id
+
+  order:
+    name: order
+    type: primary
+    description: Primary order entity
+    key: order_id
+
+dimensions:
+  customer_id:
+    type: number
+    name: customer_id
+    description: Unique customer identifier
+    expr: customer_id
+
+  customer_name:
+    name: customer_name
+    type: string
+    description: Customer name
+    expr: name
+  customer_email:
+    name: customer_email
+    type: string
+    description: Customer email address
+    expr: email
+
+  user_id:
+    name: user_id
+    type: number
+    description: Unique user identifier
+    expr: user_id
+
+  email:
+    name: email
+    type: string
+    description: Email address
+    expr: email
+
+
+measures:
+  - total_sales:
+    name: total_sales
+    type: sum
+    description: Total sales amount
+    expr: amount
+
+  - total_orders:
+    name: total_orders
+    type: count
+    description: Number of orders
+  - average_order_value:
+    name: average_order_value
+    type: average
+    description: Average value per order
+    expr: total_amount
+
+  - customer_count:
+    name: customer_count
+    type: count_distinct
+    description: Number of unique customers
+    expr: customer_id
+
+descriptions:
+  shipping_address: Shipping address for the order
+  order_status: Current status of the order

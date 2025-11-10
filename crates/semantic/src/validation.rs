@@ -1,7 +1,9 @@
 use crate::SemanticLayerError;
 use crate::cube::entity_graph::EntityGraph;
 use crate::models::*;
+use regex::Regex;
 use std::collections::HashSet;
+use std::sync::OnceLock;
 
 /// Validation result for semantic layer components
 #[derive(Debug, Clone)]
@@ -42,6 +44,49 @@ impl Default for ValidationResult {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Validates variable syntax in expressions
+///
+/// Checks for proper variable syntax: {{variables.name}} format
+/// Detects malformed expressions and provides helpful error messages
+pub fn validate_variable_syntax(expr: &str, context: &str) -> ValidationResult {
+    let mut result = ValidationResult::new();
+
+    static VALID_VARIABLE_REGEX: OnceLock<Regex> = OnceLock::new();
+    static MALFORMED_VARIABLE_REGEX: OnceLock<Regex> = OnceLock::new();
+
+    let valid_regex = VALID_VARIABLE_REGEX.get_or_init(|| {
+        Regex::new(r"\{\{variables\.[a-zA-Z_][a-zA-Z0-9_.]*\}\}")
+            .expect("Valid variable regex should compile")
+    });
+
+    let malformed_regex = MALFORMED_VARIABLE_REGEX.get_or_init(|| {
+        Regex::new(r"\{\{variables[^}]*\}\}").expect("Malformed variable regex should compile")
+    });
+
+    // Find all variable-like patterns
+    for capture in malformed_regex.find_iter(expr) {
+        let var_expr = capture.as_str();
+
+        // Check if it's a valid variable expression
+        if !valid_regex.is_match(var_expr) {
+            result.add_error(format!(
+                "{} contains invalid variable syntax: '{}'. Variables must use format: {{{{variables.name}}}}",
+                context, var_expr
+            ));
+        }
+    }
+
+    // Check for incomplete variable expressions like {{variables or {{variables.}}
+    if expr.contains("{{variables") && !expr.contains("{{variables.") {
+        result.add_error(format!(
+            "{} contains incomplete variable expression. Variables must include a name after 'variables.'",
+            context
+        ));
+    }
+
+    result
 }
 
 /// Validator trait for semantic layer components
@@ -148,6 +193,18 @@ impl SemanticValidator for Dimension {
             }
         }
 
+        // Validate variable syntax in expressions
+        result.merge(validate_variable_syntax(
+            &self.expr,
+            &format!("Dimension '{}'", self.name),
+        ));
+        if let Some(ref original_expr) = self.original_expr {
+            result.merge(validate_variable_syntax(
+                original_expr,
+                &format!("Dimension '{}' original expression", self.name),
+            ));
+        }
+
         result
     }
 }
@@ -212,6 +269,40 @@ impl SemanticValidator for Measure {
             for synonym in synonyms {
                 if !unique_synonyms.insert(synonym) {
                     result.add_warning(format!("Duplicate synonym '{}' found", synonym));
+                }
+            }
+        }
+
+        // Validate variable syntax in expressions
+        if let Some(ref expr) = self.expr {
+            result.merge(validate_variable_syntax(
+                expr,
+                &format!("Measure '{}'", self.name),
+            ));
+        }
+        if let Some(ref original_expr) = self.original_expr {
+            result.merge(validate_variable_syntax(
+                original_expr,
+                &format!("Measure '{}' original expression", self.name),
+            ));
+        }
+
+        // Validate variable syntax in filters
+        if let Some(ref filters) = self.filters {
+            for (i, filter) in filters.iter().enumerate() {
+                result.merge(validate_variable_syntax(
+                    &filter.expr,
+                    &format!("Measure '{}' filter {}", self.name, i + 1),
+                ));
+                if let Some(ref original_expr) = filter.original_expr {
+                    result.merge(validate_variable_syntax(
+                        original_expr,
+                        &format!(
+                            "Measure '{}' filter {} original expression",
+                            self.name,
+                            i + 1
+                        ),
+                    ));
                 }
             }
         }
@@ -896,6 +987,7 @@ mod tests {
                 dimension_type: DimensionType::String,
                 description: Some("Order ID".to_string()),
                 expr: "order_id".to_string(),
+                original_expr: None,
                 samples: None,
                 synonyms: None,
             }],
@@ -921,6 +1013,7 @@ mod tests {
                 dimension_type: DimensionType::String,
                 description: Some("Customer ID".to_string()),
                 expr: "customer_id".to_string(),
+                original_expr: None,
                 samples: None,
                 synonyms: None,
             }],
@@ -947,6 +1040,7 @@ mod tests {
                 dimension_type: DimensionType::String,
                 description: Some("Product ID".to_string()),
                 expr: "product_id".to_string(),
+                original_expr: None,
                 samples: None,
                 synonyms: None,
             }],

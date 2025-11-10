@@ -6292,6 +6292,7 @@ dependencies = [
  "omni",
  "once_cell",
  "oxy-semantic",
+ "oxy_globals",
  "parquet",
  "predicates",
  "pyo3",
@@ -6353,11 +6354,28 @@ name = "oxy-semantic"
 version = "0.3.15"
 dependencies = [
  "indexmap 2.12.0",
+ "minijinja",
+ "oxy_globals",
  "regex",
  "schemars 0.8.22",
  "serde",
  "serde_json",
  "serde_yaml",
+ "tempfile",
+ "thiserror 2.0.17",
+]
+
+[[package]]
+name = "oxy_globals"
+version = "0.1.0"
+dependencies = [
+ "indexmap 2.12.0",
+ "minijinja",
+ "regex",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "tempfile",
  "thiserror 2.0.17",
 ]
 

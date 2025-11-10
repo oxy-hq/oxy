@@ -314,6 +314,13 @@
               "enum": [
                 "agent"
               ]
+            },
+            "variables": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "additionalProperties": true
             }
           }
         },
@@ -454,6 +461,14 @@
               "enum": [
                 "semantic_query"
               ]
+            },
+            "variables": {
+              "description": "Variables to resolve in semantic layer expressions. Use {{variables.variable_name}} syntax in semantic definitions.",
+              "type": [
+                "object",
+                "null"
+              ],
+              "additionalProperties": true
             }
           }
         },

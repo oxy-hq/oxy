@@ -46,6 +46,17 @@ impl SemanticManager {
         })
     }
 
+    /// Set global overrides in the underlying GlobalRegistry
+    ///
+    /// This allows runtime overrides of global values that take precedence over files.
+    /// Should be called before loading semantics.
+    pub fn set_global_overrides(
+        &mut self,
+        overrides: indexmap::IndexMap<String, serde_json::Value>,
+    ) -> Result<(), OxyError> {
+        self.storage.set_global_overrides(overrides)
+    }
+
     pub async fn load_database_info(&self, database_ref: &str) -> Result<DatabaseInfo, OxyError> {
         let database = self.config.resolve_database(database_ref)?;
         let datasets = match self.storage.load_datasets(database_ref).await {
@@ -126,6 +137,19 @@ impl SemanticManager {
     ) -> Result<SemanticDimensionsContexts, OxyError> {
         let (_, gsm) = self.load_global_semantics().await?;
         Ok(SemanticDimensionsContexts::new(gsm, variables_contexts))
+    }
+
+    /// Get all globals as a YAML value for use in template contexts
+    ///
+    /// This method returns all global values from the GlobalRegistry as a combined
+    /// YAML value that can be used in minijinja template contexts.
+    ///
+    /// # Returns
+    ///
+    /// A Result containing the globals as a YAML value, or an error if the globals
+    /// cannot be loaded or there is no GlobalRegistry.
+    pub fn get_globals_value(&self) -> Result<serde_yaml::Value, OxyError> {
+        self.storage.get_globals_value()
     }
 
     async fn sync(

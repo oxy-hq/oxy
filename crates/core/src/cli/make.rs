@@ -186,6 +186,7 @@ async fn create_agent_file(
                     description: "".to_string(),
                     database: "local".to_string(),
                     dry_run_limit: None,
+                    variables: None,
                     sql: None,
                 })],
             },
@@ -194,6 +195,7 @@ async fn create_agent_file(
         description: "".to_string(),
         retrieval: Default::default(),
         reasoning: None,
+        variables: None,
     };
 
     serde_yaml::to_writer(std::fs::File::create(&agent_file)?, &agent_content)?;
@@ -224,7 +226,7 @@ pub async fn handle_make_command(make_args: &MakeArgs) -> anyhow::Result<()> {
     println!("Created SQL file: {}", sql_file_path.display());
 
     // Create semantic file
-    let semantic_file_path = data_dir.join(format!("{}.sem.yml", setup.file_name_without_ext));
+    let semantic_file_path = data_dir.join(format!("{}.schema.yml", setup.file_name_without_ext));
     let semantic_content = create_semantic_models(&setup.file_path, &db_file_path, &db_dir)?;
     serde_yaml::to_writer(
         std::fs::File::create(&semantic_file_path)?,

@@ -20,17 +20,17 @@ dimensions:
   type: number
   description: Unique order item identifier
   expr: id
-  samples: [1001, 1002, 1003]
+  samples: ['1001', '1002', '1003']
 - name: order_id
   type: number
   description: Order identifier
   expr: order_id
-  samples: [501, 502, 503]
+  samples: ['501', '502', '503']
 - name: fruit_id
   type: number
   description: Fruit identifier
   expr: fruit_id
-  samples: [101, 102, 103]
+  samples: ['101', '102', '103']
 - name: quantity
   type: number
   description: Quantity of this fruit in the order
@@ -51,17 +51,17 @@ measures:
 - name: total_order_items
   type: count
   description: Total number of order items
-  samples: [1234, 1567, 1890]
+  samples: ['1234', '1567', '1890']
 - name: total_line_value
   type: sum
   description: Total value of all line items
   expr: line_total
-  samples: [45678.90, 52341.25, 38976.50]
+  samples: ['45678.90', '52341.25', '38976.50']
 - name: total_quantity_ordered
   type: sum
   description: Total quantity of all items ordered
   expr: quantity
-  samples: [2345, 2678, 2123]
+  samples: ['2345', '2678', '2123']
 - name: avg_line_value
   type: average
   description: Average line item value

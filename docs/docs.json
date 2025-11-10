@@ -41,6 +41,7 @@
                   "learn-about-oxy/context",
                   "learn-about-oxy/data-apps",
                   "learn-about-oxy/debugging",
+                  "learn-about-oxy/globals",
                   {
                     "group": "Semantic Layer",
                     "pages": [
@@ -50,7 +51,8 @@
                       "learn-about-oxy/semantic-layer/dimensions",
                       "learn-about-oxy/semantic-layer/measures",
                       "learn-about-oxy/semantic-layer/topics",
-                      "learn-about-oxy/semantic-layer/usage"
+                      "learn-about-oxy/semantic-layer/usage",
+                      "learn-about-oxy/semantic-layer/global-inheritance"
                     ]
                   },
                   "learn-about-oxy/semantic-model",

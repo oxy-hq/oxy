@@ -185,7 +185,7 @@ impl Executable<(String, Option<ToolType>, ToolRawInput)> for ToolExecutable {
                     .await
                     .map(|output| output.into()),
                 ToolType::SemanticQuery(semantic_query_tool) => {
-                    let semantic_params =
+                    let mut semantic_params =
                         serde_json::from_str::<SemanticQueryParams>(&input.param)?;
                     if let Some(tool_topic) = semantic_query_tool.topic.clone()
                         && semantic_params.topic != tool_topic
@@ -194,6 +194,22 @@ impl Executable<(String, Option<ToolType>, ToolRawInput)> for ToolExecutable {
                             "Invalid topic: expected '{}'",
                             tool_topic
                         )));
+                    }
+
+                    // Merge tool-level variables with query-level variables
+                    // Tool variables take precedence over query variables
+                    if let Some(tool_variables) = &semantic_query_tool.variables {
+                        let merged_variables = match semantic_params.variables.as_mut() {
+                            Some(query_vars) => {
+                                // Start with query variables, then override with tool variables
+                                for (key, value) in tool_variables {
+                                    query_vars.insert(key.clone(), value.clone());
+                                }
+                                Some(query_vars.clone())
+                            }
+                            None => Some(tool_variables.clone()),
+                        };
+                        semantic_params.variables = merged_variables;
                     }
 
                     build_semantic_query_executable()
@@ -364,7 +380,7 @@ impl ParamMapper<SemanticQueryToolInput, ValidatedSemanticQuery> for SemanticQue
     ) -> Result<(ValidatedSemanticQuery, Option<ExecutionContext>), OxyError> {
         let SemanticQueryToolInput {
             param: semantic_params,
-            topic,
+            topic: _topic,
         } = input;
 
         // For now, semantic query tools don't support export directly
@@ -373,8 +389,9 @@ impl ParamMapper<SemanticQueryToolInput, ValidatedSemanticQuery> for SemanticQue
 
         // Create a SemanticQueryTask from the parameters
         let task = SemanticQueryTask {
-            query: semantic_params,
+            query: semantic_params.clone(),
             export,
+            variables: semantic_params.variables, // Pass variables from tool input
         };
 
         // Validate the semantic query task
@@ -537,6 +554,7 @@ impl ParamMapper<AgentToolInput, AgentInput> for AgentMapper {
                 agent_ref: agent_config.agent_ref.to_string(),
                 prompt: params.prompt.to_string(),
                 memory: vec![],
+                variables: params.variables.clone(),
             },
             None,
         ))

@@ -17,7 +17,7 @@ terminology.
 ### Organization and Formatting Rules
 
 - A semantic model should be organized under the `data` folder.
-- Use the `.sem.yml` extension to distinguish it from other files in the `data` folder. e.g. `finance.sem.yml`
+- Use the `.schema.yml` extension to distinguish it from other files in the `data` folder. e.g. `finance.schema.yml`
 
 ## Core Components
 
@@ -51,7 +51,7 @@ Moreover, for the `measures` key, the following fields attributes are available:
 
 The following example displays a complete configuration:
 
-```yaml data/anon_youtube.sem.yml
+```yaml data/anon_youtube.schema.yml
 table: content_level_monthly_stats_fruits_veggies.csv
 database: local
 description: Lorem ipsum
@@ -85,7 +85,7 @@ For agents to utilize the semantic model, you need to include the semantic model
 context:
   - name: anon_youtube_model
     type: semantic_model
-    src: data/anon_youtube.sem.yml
+    src: data/anon_youtube.schema.yml
 ```
 
 For more information, refer to context objects in the [Agents](/learn-about-oxy/agents#context) documentation.

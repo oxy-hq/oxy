@@ -705,6 +705,10 @@ pub struct AgentConfig {
     pub retrieval: Option<RouteRetrievalConfig>,
     #[garde(dive)]
     pub reasoning: Option<ReasoningConfig>,
+
+    #[serde(flatten)]
+    #[garde(skip)]
+    pub variables: Option<Variables>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, JsonSchema, Validate)]
@@ -1348,6 +1352,9 @@ pub struct AgentTask {
     #[garde(skip)]
     pub consistency_run: usize,
 
+    #[garde(skip)]
+    pub variables: Option<HashMap<String, Value>>,
+
     #[garde(dive)]
     pub export: Option<TaskExport>,
 }
@@ -1356,6 +1363,12 @@ impl Hash for AgentTask {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.agent_ref.hash(state);
         self.prompt.hash(state);
+        if let Some(ref vars) = self.variables {
+            for (key, value) in vars.iter().sorted_by_cached_key(|(key, _)| *key) {
+                key.hash(state);
+                value.hash(state);
+            }
+        }
     }
 }
 
@@ -1450,11 +1463,23 @@ pub struct SemanticQueryTask {
     // Optional export configuration (reuses existing task export logic)
     #[garde(dive)]
     pub export: Option<TaskExport>,
+
+    // Optional variables for semantic layer expressions
+    #[garde(skip)]
+    #[serde(default)]
+    pub variables: Option<HashMap<String, Value>>,
 }
 
 impl Hash for SemanticQueryTask {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.query.hash(state);
+        // Variables affect query results, so include them in hash
+        if let Some(variables) = &self.variables {
+            for (key, value) in variables {
+                key.hash(state);
+                value.to_string().hash(state); // Hash the JSON string representation
+            }
+        }
         // Export options don't affect semantic equivalence for caching
     }
 }
@@ -2041,6 +2066,8 @@ pub struct AgentTool {
     pub name: String,
     pub description: String,
     pub agent_ref: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub variables: Option<Variables>,
     #[serde(skip)]
     #[schemars(skip)]
     pub is_verified: bool,
@@ -2113,6 +2140,8 @@ pub struct ExecuteSQLTool {
     pub description: String,
     pub database: String,
     pub dry_run_limit: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub variables: Option<HashMap<String, Value>>,
 
     #[serde(skip)]
     #[schemars(skip)]
@@ -2126,6 +2155,8 @@ pub struct SemanticQueryTool {
     pub description: String,
     pub dry_run_limit: Option<u64>,
     pub topic: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub variables: Option<HashMap<String, Value>>,
 }
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
@@ -2300,6 +2331,384 @@ impl From<SemanticQueryTool> for ToolType {
     }
 }
 
+impl ToolType {
+    /// Render tool configuration with variable substitution using the provided renderer
+    pub async fn render(
+        &self,
+        renderer: &crate::execute::renderer::Renderer,
+    ) -> Result<Self, crate::errors::OxyError> {
+        use crate::errors::OxyError;
+
+        Ok(match self {
+            ToolType::ExecuteSQL(tool) => {
+                // Register and render description
+                renderer.register_template(&tool.description)?;
+                let rendered_description =
+                    renderer
+                        .render_async(&tool.description)
+                        .await
+                        .map_err(|e| {
+                            OxyError::RuntimeError(format!(
+                                "Failed to render ExecuteSQL description: {}",
+                                e
+                            ))
+                        })?;
+                // Register and render database
+                renderer.register_template(&tool.database)?;
+                let rendered_database =
+                    renderer.render_async(&tool.database).await.map_err(|e| {
+                        OxyError::RuntimeError(format!(
+                            "Failed to render ExecuteSQL database: {}",
+                            e
+                        ))
+                    })?;
+
+                // Render variables if present
+                let rendered_variables = Self::render_variables(&tool.variables, renderer).await?;
+
+                ToolType::ExecuteSQL(ExecuteSQLTool {
+                    name: tool.name.clone(),
+                    description: rendered_description,
+                    database: rendered_database,
+                    dry_run_limit: tool.dry_run_limit,
+                    variables: rendered_variables,
+                    sql: tool.sql.clone(),
+                })
+            }
+            ToolType::ValidateSQL(tool) => {
+                // Register and render description
+                renderer.register_template(&tool.description)?;
+                let rendered_description =
+                    renderer
+                        .render_async(&tool.description)
+                        .await
+                        .map_err(|e| {
+                            OxyError::RuntimeError(format!(
+                                "Failed to render ValidateSQL description: {}",
+                                e
+                            ))
+                        })?;
+                // Register and render database
+                renderer.register_template(&tool.database)?;
+                let rendered_database =
+                    renderer.render_async(&tool.database).await.map_err(|e| {
+                        OxyError::RuntimeError(format!(
+                            "Failed to render ValidateSQL database: {}",
+                            e
+                        ))
+                    })?;
+
+                ToolType::ValidateSQL(ValidateSQLTool {
+                    name: tool.name.clone(),
+                    description: rendered_description,
+                    database: rendered_database,
+                })
+            }
+            ToolType::SemanticQuery(tool) => {
+                // Register and render description
+                renderer.register_template(&tool.description)?;
+                let rendered_description =
+                    renderer
+                        .render_async(&tool.description)
+                        .await
+                        .map_err(|e| {
+                            OxyError::RuntimeError(format!(
+                                "Failed to render SemanticQuery description: {}",
+                                e
+                            ))
+                        })?;
+                let rendered_topic = if let Some(topic) = &tool.topic {
+                    renderer.register_template(topic)?;
+                    Some(renderer.render_async(topic).await.map_err(|e| {
+                        OxyError::RuntimeError(format!(
+                            "Failed to render SemanticQuery topic: {}",
+                            e
+                        ))
+                    })?)
+                } else {
+                    None
+                };
+
+                // Render variables if present
+                let rendered_variables = Self::render_variables(&tool.variables, renderer).await?;
+
+                ToolType::SemanticQuery(SemanticQueryTool {
+                    name: tool.name.clone(),
+                    description: rendered_description,
+                    dry_run_limit: tool.dry_run_limit,
+                    topic: rendered_topic,
+                    variables: rendered_variables,
+                })
+            }
+            ToolType::OmniQuery(tool) => {
+                // Register and render description
+                renderer.register_template(&tool.description)?;
+                let rendered_description =
+                    renderer
+                        .render_async(&tool.description)
+                        .await
+                        .map_err(|e| {
+                            OxyError::RuntimeError(format!(
+                                "Failed to render OmniQuery description: {}",
+                                e
+                            ))
+                        })?;
+                // Register and render topic
+                renderer.register_template(&tool.topic)?;
+                let rendered_topic = renderer.render_async(&tool.topic).await.map_err(|e| {
+                    OxyError::RuntimeError(format!("Failed to render OmniQuery topic: {}", e))
+                })?;
+                // Register and render integration
+                renderer.register_template(&tool.integration)?;
+                let rendered_integration =
+                    renderer
+                        .render_async(&tool.integration)
+                        .await
+                        .map_err(|e| {
+                            OxyError::RuntimeError(format!(
+                                "Failed to render OmniQuery integration: {}",
+                                e
+                            ))
+                        })?;
+
+                ToolType::OmniQuery(OmniQueryTool {
+                    name: tool.name.clone(),
+                    description: rendered_description,
+                    topic: rendered_topic,
+                    integration: rendered_integration,
+                })
+            }
+            ToolType::Workflow(tool) => {
+                // Register and render description
+                renderer.register_template(&tool.description)?;
+                let rendered_description =
+                    renderer
+                        .render_async(&tool.description)
+                        .await
+                        .map_err(|e| {
+                            OxyError::RuntimeError(format!(
+                                "Failed to render Workflow description: {}",
+                                e
+                            ))
+                        })?;
+                // Register and render workflow_ref
+                renderer.register_template(&tool.workflow_ref)?;
+                let rendered_workflow_ref = renderer
+                    .render_async(&tool.workflow_ref)
+                    .await
+                    .map_err(|e| {
+                        OxyError::RuntimeError(format!("Failed to render Workflow ref: {}", e))
+                    })?;
+
+                // Variables in WorkflowTool are passed through, not rendered here
+                ToolType::Workflow(WorkflowTool {
+                    name: tool.name.clone(),
+                    description: rendered_description,
+                    workflow_ref: rendered_workflow_ref,
+                    variables: tool.variables.clone(),
+                    output_task_ref: tool.output_task_ref.clone(),
+                    is_verified: tool.is_verified,
+                })
+            }
+            ToolType::Agent(tool) => {
+                // Register and render description
+                renderer.register_template(&tool.description)?;
+                let rendered_description =
+                    renderer
+                        .render_async(&tool.description)
+                        .await
+                        .map_err(|e| {
+                            OxyError::RuntimeError(format!(
+                                "Failed to render Agent description: {}",
+                                e
+                            ))
+                        })?;
+                // Register and render agent_ref
+                renderer.register_template(&tool.agent_ref)?;
+                let rendered_agent_ref =
+                    renderer.render_async(&tool.agent_ref).await.map_err(|e| {
+                        OxyError::RuntimeError(format!("Failed to render Agent ref: {}", e))
+                    })?;
+
+                // Render variables if present
+                let rendered_variables =
+                    Self::render_variables_schema(&tool.variables, renderer).await?;
+
+                ToolType::Agent(AgentTool {
+                    name: tool.name.clone(),
+                    description: rendered_description,
+                    agent_ref: rendered_agent_ref,
+                    variables: rendered_variables,
+                    is_verified: tool.is_verified,
+                })
+            }
+            ToolType::Retrieval(tool) => {
+                // Register and render description
+                renderer.register_template(&tool.description)?;
+                let rendered_description =
+                    renderer
+                        .render_async(&tool.description)
+                        .await
+                        .map_err(|e| {
+                            OxyError::RuntimeError(format!(
+                                "Failed to render Retrieval description: {}",
+                                e
+                            ))
+                        })?;
+
+                ToolType::Retrieval(RetrievalConfig {
+                    name: tool.name.clone(),
+                    description: rendered_description,
+                    src: tool.src.clone(),
+                    api_url: tool.api_url.clone(),
+                    api_key: tool.api_key.clone(),
+                    key_var: tool.key_var.clone(),
+                    embedding_config: tool.embedding_config.clone(),
+                    db_config: tool.db_config.clone(),
+                })
+            }
+            ToolType::Visualize(tool) => {
+                // Register and render description
+                renderer.register_template(&tool.description)?;
+                let rendered_description =
+                    renderer
+                        .render_async(&tool.description)
+                        .await
+                        .map_err(|e| {
+                            OxyError::RuntimeError(format!(
+                                "Failed to render Visualize description: {}",
+                                e
+                            ))
+                        })?;
+
+                ToolType::Visualize(VisualizeTool {
+                    name: tool.name.clone(),
+                    description: rendered_description,
+                })
+            }
+            ToolType::CreateDataApp(tool) => {
+                // Register and render description
+                renderer.register_template(&tool.description)?;
+                let rendered_description =
+                    renderer
+                        .render_async(&tool.description)
+                        .await
+                        .map_err(|e| {
+                            OxyError::RuntimeError(format!(
+                                "Failed to render CreateDataApp description: {}",
+                                e
+                            ))
+                        })?;
+
+                ToolType::CreateDataApp(CreateDataAppTool {
+                    name: tool.name.clone(),
+                    description: rendered_description,
+                })
+            }
+        })
+    }
+
+    /// Helper method to render variables with the renderer
+    async fn render_variables(
+        variables: &Option<HashMap<String, Value>>,
+        renderer: &crate::execute::renderer::Renderer,
+    ) -> Result<Option<HashMap<String, Value>>, crate::errors::OxyError> {
+        use crate::errors::OxyError;
+
+        if let Some(vars) = variables {
+            let mut rendered_vars = HashMap::new();
+            for (key, value) in vars {
+                // Convert to string, render, then parse back to Value
+                let value_str = if value.is_string() {
+                    value.as_str().unwrap_or_default().to_string()
+                } else {
+                    serde_json::to_string(value).map_err(|e| {
+                        OxyError::RuntimeError(format!(
+                            "Failed to serialize variable {}: {}",
+                            key, e
+                        ))
+                    })?
+                };
+
+                // Register template before rendering
+                renderer.register_template(&value_str)?;
+                let rendered = renderer.render_async(&value_str).await.map_err(|e| {
+                    OxyError::RuntimeError(format!("Failed to render variable {}: {}", key, e))
+                })?;
+
+                // Try to parse back as JSON, otherwise keep as string
+                let rendered_value = serde_json::from_str(&rendered)
+                    .unwrap_or_else(|_| serde_json::Value::String(rendered));
+
+                rendered_vars.insert(key.clone(), rendered_value);
+            }
+            Ok(Some(rendered_vars))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Helper method to render Variables (schema-based) with the renderer
+    async fn render_variables_schema(
+        variables: &Option<Variables>,
+        renderer: &crate::execute::renderer::Renderer,
+    ) -> Result<Option<Variables>, crate::errors::OxyError> {
+        use crate::errors::OxyError;
+
+        if let Some(vars) = variables {
+            // Variables contains SchemaObject with default values, not runtime values
+            // We only need to render the default values in the schema metadata
+            let mut rendered_schemas = HashMap::new();
+
+            for (key, schema) in &vars.variables {
+                let mut new_schema = schema.clone();
+
+                // If there's a default value in metadata, render it
+                if let Some(metadata) = &schema.metadata {
+                    if let Some(default_value) = &metadata.default {
+                        let value_str = if default_value.is_string() {
+                            default_value.as_str().unwrap_or_default().to_string()
+                        } else {
+                            serde_json::to_string(default_value).map_err(|e| {
+                                OxyError::RuntimeError(format!(
+                                    "Failed to serialize variable {}: {}",
+                                    key, e
+                                ))
+                            })?
+                        };
+
+                        // Register template before rendering
+                        renderer.register_template(&value_str)?;
+                        let rendered = renderer.render_async(&value_str).await.map_err(|e| {
+                            OxyError::RuntimeError(format!(
+                                "Failed to render variable {}: {}",
+                                key, e
+                            ))
+                        })?;
+
+                        // Try to parse back as JSON, otherwise keep as string
+                        let rendered_value = serde_json::from_str(&rendered)
+                            .unwrap_or_else(|_| serde_json::Value::String(rendered));
+
+                        // Update the metadata with rendered default value
+                        let mut new_metadata = (**metadata).clone();
+                        new_metadata.default = Some(rendered_value);
+                        new_schema.metadata = Some(Box::new(new_metadata));
+                    }
+                }
+
+                rendered_schemas.insert(key.clone(), new_schema);
+            }
+
+            Ok(Some(Variables {
+                variables: rendered_schemas,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+}
+
 fn default_openai_api_url() -> Option<String> {
     Some("https://api.openai.com/v1".to_string())
 }
@@ -2374,7 +2783,7 @@ fn default_sql_tool_description() -> String {
 }
 
 fn default_semantic_query_tool_description() -> String {
-    "Query the semantic layer using natural language. This tool generates SQL from semantic models via CubeJS and executes it.".to_string()
+    "Query the database via the semantic layer.".to_string()
 }
 
 fn default_cube_url() -> String {

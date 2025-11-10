@@ -107,7 +107,14 @@ impl OxyError {
             OxyError::LanceDBError(_) => "lancedb",
             OxyError::SerdeArrowError(_) => "serde_arrow",
             OxyError::ToolCallError { .. } => "tool_call",
-            OxyError::SemanticLayerError(_semantic_layer_error) => "configuration",
+            OxyError::SemanticLayerError(semantic_layer_error) => match semantic_layer_error {
+                SemanticLayerError::VariableError(_) => "semantic_variable",
+                SemanticLayerError::ConfigurationError(_) => "semantic_configuration",
+                SemanticLayerError::ValidationError(_) => "semantic_validation",
+                SemanticLayerError::ParsingError(_) => "semantic_parsing",
+                SemanticLayerError::IOError(_) => "semantic_io",
+                SemanticLayerError::UnknownError(_) => "semantic_unknown",
+            },
         }
     }
 

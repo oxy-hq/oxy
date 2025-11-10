@@ -12,10 +12,12 @@ Oxy supports two security features via API parameters:
 ## Configuration
 
 This directory contains configuration examples for different databases:
+
 - ClickHouse: See [`clickhouse/config.yml`](./clickhouse/config.yml)
 - Snowflake: See [`snowflake/config.yml`](./snowflake/config.yml)
 
 **Note**: You must create the corresponding role and row policies in your database for filters to work:
+
 - **ClickHouse**: See [ClickHouse Access Rights docs](https://clickhouse.com/docs/operations/access-rights)
 - **Snowflake**: See [Snowflake Row Access Policies docs](https://docs.snowflake.com/en/user-guide/security-row-intro)
 
@@ -45,10 +47,12 @@ Add the `connections` parameter to override connection parameters for specific d
 The available override fields depend on the database type:
 
 **ClickHouse overrides:**
+
 - `host` - Override the ClickHouse host/URL
 - `database` - Override the database name
 
 **Snowflake overrides:**
+
 - `account` - Override the account identifier
 - `warehouse` - Override the warehouse
 - `database` - Override the database name
@@ -195,4 +199,3 @@ curl -X POST http://localhost:3000/{project_id}/agents/{pathb64}/ask-sync \
     }
   }'
 ```
-

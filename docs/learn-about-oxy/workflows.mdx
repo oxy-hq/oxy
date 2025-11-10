@@ -154,17 +154,125 @@ example, if you are trying to build an automated analysis, and want this to be
 modular with respect to the date. We enable this behavior through the use of
 the `variables` key.
 
+## Basic Variables
+
+Simple variables can be defined as key-value pairs:
+
 ```yaml
 variables:
   brand: Underbelly
+  date: 2024-01-15
 ```
 
-Each entry of `variables` should be specified as a key-value pair, and these
-variables can be referenced within task fields by name using Jinja as follows:
+Variables can be referenced within task fields using Jinja syntax:
 
 ```yaml
-    {{ brand }}
+tasks:
+  - name: analyze_brand
+    type: agent
+    agent_ref: default
+    prompt: |
+      Analyze performance for {{ brand }} on {{ date }}
 ```
+
+## Typed Variables with JSON Schema
+
+For better validation and documentation, you can define variables using JSON Schema:
+
+```yaml
+variables:
+  target_database:
+    type: string
+    description: Database to analyze
+    default: "analytics_db"
+  
+  analysis_period:
+    type: string
+    description: Time period for analysis
+    default: "last_30_days"
+    enum:
+      - last_7_days
+      - last_30_days
+      - last_quarter
+      - custom
+  
+  max_results:
+    type: integer
+    description: Maximum number of results
+    default: 100
+    minimum: 1
+    maximum: 1000
+  
+  include_archived:
+    type: boolean
+    description: Include archived records
+    default: false
+```
+
+## Passing Variables to Tasks
+
+Variables can be passed to different task types:
+
+### Agent Tasks
+
+```yaml
+tasks:
+  - name: analyze_sales
+    type: agent
+    agent_ref: analytics.agent.yml
+    prompt: |
+      Analyze sales data for {{ analysis_period }}
+    variables:
+      database: "{{ target_database }}"
+      period: "{{ analysis_period }}"
+      limit: "{{ max_results }}"
+```
+
+### SQL Tasks
+
+```yaml
+tasks:
+  - name: query_data
+    type: execute_sql
+    sql_file: sales_query.sql
+    database: local
+    variables:
+      table_name: "{{ target_table }}"
+      date_column: "{{ date_field }}"
+```
+
+### Semantic Query Tasks
+
+```yaml
+tasks:
+  - name: semantic_query
+    type: semantic_query
+    topic: sales
+    dimensions:
+      - orders.order_id
+    variables:
+      orders_table: "{{ orders_table }}"
+```
+
+## Global Variables
+
+Variables can reference global semantics values:
+
+```yaml
+variables:
+  orders_table:
+    type: string
+    default: "{{ globals.semantics.tables.orders }}"
+  
+tasks:
+  - name: query_orders
+    type: semantic_query
+    topic: sales
+    variables:
+      table: "{{ orders_table }}"
+```
+
+See [Global](/learn-about-oxy/globals) for more information.
 
 # Examples
 

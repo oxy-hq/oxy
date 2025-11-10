@@ -1,6 +1,6 @@
 use crate::{
     config::ConfigManager,
-    config::model::{SemanticFilter, SemanticFilterType, SemanticQueryTask},
+    config::model::{SemanticFilterType, SemanticQueryTask},
     errors::OxyError,
 };
 use oxy_semantic::{SemanticLayer, Topic, View, parse_semantic_layer_from_dir};
@@ -154,11 +154,10 @@ pub async fn validate_semantic_query_task(
         .into());
     }
 
-    let parse_result = parse_semantic_layer_from_dir(&semantic_dir).map_err(|e| {
-        SemanticQueryError::ExecutionFailed {
+    let parse_result = parse_semantic_layer_from_dir(&semantic_dir, config.get_globals_registry())
+        .map_err(|e| SemanticQueryError::ExecutionFailed {
             details: format!("Failed to parse semantic layer: {}", e),
-        }
-    })?;
+        })?;
 
     let semantic_layer = parse_result.semantic_layer;
 
@@ -620,8 +619,10 @@ mod tests {
                 orders: vec![],
                 limit: None,
                 offset: None,
+                variables: None,
             },
             export: None,
+            variables: None,
         }
     }
 

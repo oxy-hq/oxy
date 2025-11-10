@@ -14,7 +14,7 @@
     },
     "crates/semantic": {
       "release-type": "rust",
-      "component": "migration"
+      "component": "semantic"
     },
     "crates/entity": {
       "release-type": "rust",
@@ -23,6 +23,10 @@
     "crates/omni": {
       "release-type": "rust",
       "component": "omni"
+    },
+    "crates/globals": {
+      "release-type": "rust",
+      "component": "globals"
     },
     "web-app": {
       "release-type": "node",

@@ -1,3 +1,4 @@
+use oxy_semantic::variables::RuntimeVariableResolver;
 use serde_json::Value as JsonValue;
 use std::collections::{HashMap, HashSet};
 
@@ -36,6 +37,29 @@ pub fn render_semantic_query(
         .iter()
         .map(|m| render_string(renderer, m, "measure"))
         .collect::<Result<Vec<_>, _>>()?;
+
+    // Render variables if present
+    let variables = task
+        .variables
+        .as_ref()
+        .map(|vars| {
+            vars.iter()
+                .map(|(k, v)| {
+                    if let Some(template) = v.as_str() {
+                        let rendered_value = renderer.eval_expression(template)?;
+                        let json_value = serde_json::to_value(rendered_value)?;
+                        let final_value = match json_value.is_null() {
+                            true => v.clone(),
+                            false => json_value,
+                        };
+                        Ok((k.to_string(), final_value))
+                    } else {
+                        Ok((k.to_string(), v.clone()))
+                    }
+                })
+                .collect::<Result<HashMap<String, JsonValue>, OxyError>>()
+        })
+        .transpose()?;
 
     let filters = task
         .query
@@ -158,8 +182,10 @@ pub fn render_semantic_query(
             orders,
             limit: task.query.limit,
             offset: task.query.offset,
+            variables: variables.clone(),
         },
         export: task.export.clone(),
+        variables,
     })
 }
 
@@ -364,7 +390,15 @@ impl Executable<ValidatedSemanticQuery> for SemanticQueryExecutable {
             input.task.query.topic
         );
 
-        let sql_query = self.get_sql_from_cubejs(&cubejs_query).await?;
+        let mut sql_query = self.get_sql_from_cubejs(&cubejs_query).await?;
+
+        // Step 1.5: Resolve variables in SQL if present
+        if let Some(variables) = &input.task.variables {
+            tracing::info!("Resolving variables in SQL query: {:?}", variables);
+            sql_query =
+                self.resolve_variables_in_sql(execution_context, sql_query, variables.clone())?;
+            tracing::info!("SQL query after variable resolution: {}", sql_query);
+        }
 
         // Determine database from topic's views
         let database = self.determine_database_from_topic(&input)?;
@@ -786,6 +820,46 @@ impl SemanticQueryExecutable {
         };
 
         serde_json::json!([field_name, direction])
+    }
+
+    /// Resolve variables in SQL query using RuntimeVariableResolver
+    fn resolve_variables_in_sql(
+        &self,
+        execution_context: &ExecutionContext,
+        sql_query: String,
+        variables: HashMap<String, JsonValue>,
+    ) -> Result<String, OxyError> {
+        // TODO: Implement global variables extraction from GlobalRegistry
+        // For now, we'll use an empty HashMap for globals
+        let global_vars: HashMap<String, JsonValue> = HashMap::new();
+
+        // Collect environment variables (prefixed with OXY_)
+        let env_vars: HashMap<String, JsonValue> = std::env::vars()
+            .filter(|(key, _)| key.starts_with("OXY_VAR_"))
+            .map(|(key, value)| {
+                // Remove OXY_VAR_ prefix for cleaner variable names
+                let var_name = key.strip_prefix("OXY_VAR_").unwrap_or(&key).to_lowercase();
+                (var_name, JsonValue::String(value))
+            })
+            .collect();
+
+        // Create variable resolver from multiple sources with priority order
+        let mut resolver = RuntimeVariableResolver::from_sources(
+            Some(variables),   // Task variables have highest priority
+            None,              // No agent variables for now (could be added later)
+            Some(global_vars), // Global variables from config
+            Some(env_vars),    // Environment variables (lowest priority)
+        )
+        .map_err(|e| {
+            OxyError::RuntimeError(format!("Failed to create variable resolver: {}", e))
+        })?;
+
+        // Resolve variables in the SQL query
+        let resolved_sql = resolver.resolve_sql_variables(sql_query).map_err(|e| {
+            OxyError::RuntimeError(format!("Failed to resolve variables in SQL: {}", e))
+        })?;
+
+        Ok(resolved_sql)
     }
 
     /// Get SQL query from CubeJS /sql endpoint and handle parameters

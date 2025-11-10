@@ -92,6 +92,14 @@ impl Executable<DefaultAgentInput> for DefaultAgentExecutable {
             model_config.model_name()
         );
         tracing::info!("System instructions: {}", system_instructions);
+
+        // Render all tool configurations with variables
+        let mut rendered_tools = Vec::new();
+        for tool in tools.iter() {
+            let rendered_tool = tool.render(&execution_context.renderer).await?;
+            rendered_tools.push(rendered_tool);
+        }
+
         let client = OpenAIClient::with_config(
             model_config
                 .into_openai_config(&execution_context.project.secrets_manager)
@@ -151,7 +159,7 @@ impl Executable<DefaultAgentInput> for DefaultAgentExecutable {
         let config = execution_context.project.config_manager.clone();
         let mut react_executable = build_react_loop(
             agent_name,
-            tools,
+            rendered_tools,
             max_tool_concurrency,
             client,
             model_config.model_name().to_string(),
@@ -224,8 +232,16 @@ impl ParamMapper<DefaultAgentInput, DefaultAgentInput> for DefaultAgentMapper {
             &input.prompt,
         )
         .await?;
+
+        // Merge the existing current_context (which contains variables) with the new global_context
+        let existing_context = execution_context.renderer.get_context();
+        let merged_context = context! {
+            ..global_context,
+            ..existing_context,
+        };
+
         let renderer = Renderer::from_template(
-            global_context,
+            merged_context,
             &input.default_agent.system_instructions.as_str(),
         )
         .map_err(|e| {
@@ -258,12 +274,20 @@ pub async fn build_global_context(
     let semantic_dimensions_contexts = semantic_manager
         .get_semantic_dimensions_contexts(&semantic_contexts)
         .await?;
+
+    // Get globals from the semantic manager
+    let globals_value = semantic_manager.get_globals_value()?;
+
+    // Convert serde_yaml::Value to minijinja::Value
+    let globals = Value::from_serialize(&globals_value);
+
     Ok(context! {
         context => Value::from_object(contexts),
         databases => Value::from_object(databases),
         models => Value::from_object(semantic_contexts),
         dimensions => Value::from_object(semantic_dimensions_contexts),
-        tools => Value::from_object(tools)
+        tools => Value::from_object(tools),
+        globals => globals,
     })
 }
 

@@ -260,6 +260,7 @@ impl WorkspaceCreator {
             public: agent.public.unwrap_or(true),
             retrieval: None,
             reasoning: None,
+            variables: None,
         };
 
         if let Some(tools) = &agent.tools {
@@ -278,6 +279,7 @@ impl WorkspaceCreator {
                                 .to_string(),
                             sql: None,
                             dry_run_limit: None,
+                            variables: None,
                         };
                         ToolType::ExecuteSQL(execute_sql_config)
                     }

@@ -166,10 +166,12 @@ pub async fn run_workflow<P: AsRef<Path>, L: WorkflowLogger + 'static>(
     project_manager: ProjectManager,
     filters: Option<SessionFilters>,
     connections: Option<crate::config::model::ConnectionOverrides>,
+    globals: Option<indexmap::IndexMap<String, serde_json::Value>>,
 ) -> Result<OutputContainer, OxyError> {
     WorkflowLauncher::new()
         .with_filters(filters)
         .with_connections(connections)
+        .with_globals(globals)
         .with_project(project_manager)
         .await?
         .launch(
@@ -189,10 +191,12 @@ pub async fn run_workflow_v2<P: AsRef<Path>, H: EventHandler + Send + Sync + 'st
     retry_strategy: RetryStrategy,
     filters: Option<SessionFilters>,
     connections: Option<crate::config::model::ConnectionOverrides>,
+    globals: Option<indexmap::IndexMap<String, serde_json::Value>>,
 ) -> Result<OutputContainer, OxyError> {
     WorkflowLauncher::new()
         .with_filters(filters)
         .with_connections(connections)
+        .with_globals(globals)
         .with_project(project_manager)
         .await?
         .launch(

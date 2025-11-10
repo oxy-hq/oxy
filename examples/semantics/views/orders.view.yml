@@ -1,7 +1,7 @@
 name: orders
 description: Customer orders with shipping and payment information
 datasource: local
-table: orders.csv
+table: "{{variables.orders_table}}.csv"
 entities:
 - name: order
   type: primary
@@ -13,17 +13,14 @@ entities:
   key: customer_id
 - name: shipping_address
   type: foreign
-  description: Shipping address for the order
+  description: "{{ globals.semantics.descriptions.shipping_address }}"
   key: shipping_address_id
 dimensions:
 - name: order_id
   type: number
   description: Unique order identifier
   expr: id
-- name: customer_id
-  type: number
-  description: Customer identifier
-  expr: customer_id
+- inherits_from: globals.semantics.dimensions.customer_id
 - name: shipping_address_id
   type: number
   description: Shipping address identifier
@@ -34,7 +31,7 @@ dimensions:
   expr: order_date
 - name: order_status
   type: string
-  description: Current status of the order
+  description: "{{ globals.semantics.descriptions.order_status }}"
   expr: status
 - name: total_amount
   type: number
@@ -49,9 +46,7 @@ dimensions:
   description: Tax amount for the order
   expr: tax_amount
 measures:
-- name: total_orders
-  type: count
-  description: Total number of orders
+- inherits_from: globals.semantics.measures.total_orders
 - name: total_order_value
   type: sum
   description: Total value of all orders

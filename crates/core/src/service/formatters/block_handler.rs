@@ -321,6 +321,7 @@ impl BlockHandler {
                                         orders: vec![],
                                         limit: None,
                                         offset: None,
+                                        variables: None,
                                     }
                                 });
 
@@ -357,6 +358,7 @@ impl BlockHandler {
                                             orders: vec![],
                                             limit: None,
                                             offset: None,
+                                            variables: None,
                                         }
                                     });
 

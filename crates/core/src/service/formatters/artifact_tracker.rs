@@ -182,6 +182,7 @@ impl ArtifactTracker {
             orders: vec![],
             limit: None,
             offset: None,
+            variables: None,
         };
         let query = query_params.unwrap_or(default_params);
 

@@ -1,7 +1,9 @@
 use crate::{
+    adapters::secrets::SecretsManager,
     adapters::{project::manager::ProjectManager, session_filters::SessionFilters},
     agent::builders::fsm::{config::AgenticInput, machine::launch_agentic_workflow},
     config::{
+        ConfigManager,
         constants::AGENT_SOURCE,
         model::{AgentConfig, AgentType, ConnectionOverrides},
     },
@@ -12,10 +14,11 @@ use crate::{
         types::{EventKind, OutputContainer, Source},
         writer::{BufWriter, EventHandler},
     },
+    semantic::SemanticManager,
 };
 use builders::AgentExecutable;
 pub use builders::{OneShotInput, OpenAIExecutableResponse, build_openai_executable};
-use minijinja::Value;
+use minijinja::{Value, context};
 pub use references::AgentReferencesHandler;
 use types::AgentInput;
 
@@ -39,6 +42,7 @@ pub struct AgentLauncher {
     buf_writer: BufWriter,
     filters: Option<SessionFilters>,
     connections: Option<ConnectionOverrides>,
+    globals: Option<indexmap::IndexMap<String, serde_json::Value>>,
 }
 
 impl AgentLauncher {
@@ -48,6 +52,7 @@ impl AgentLauncher {
             buf_writer: BufWriter::new(),
             filters: None,
             connections: None,
+            globals: None,
         }
     }
 
@@ -61,31 +66,89 @@ impl AgentLauncher {
         self
     }
 
-    pub fn with_external_context(
+    pub fn with_globals(
+        mut self,
+        globals: impl Into<Option<indexmap::IndexMap<String, serde_json::Value>>>,
+    ) -> Self {
+        self.globals = globals.into();
+        self
+    }
+
+    async fn get_global_context(
+        &self,
+        config: ConfigManager,
+        secrets_manager: SecretsManager,
+    ) -> Result<Value, OxyError> {
+        let mut semantic_manager =
+            SemanticManager::from_config(config, secrets_manager, false).await?;
+
+        // Apply global overrides to the GlobalRegistry before loading semantics
+        if let Some(globals) = &self.globals {
+            semantic_manager.set_global_overrides(globals.clone())?;
+        }
+
+        let semantic_variables_contexts =
+            semantic_manager.get_semantic_variables_contexts().await?;
+        let semantic_dimensions_contexts = semantic_manager
+            .get_semantic_dimensions_contexts(&semantic_variables_contexts)
+            .await?;
+
+        // Get globals from the semantic manager
+        let globals_value = semantic_manager.get_globals_value()?;
+
+        // Convert serde_yaml::Value to minijinja::Value
+        let globals = Value::from_serialize(&globals_value);
+
+        let global_context = context! {
+            models => Value::from_object(semantic_variables_contexts),
+            dimensions => Value::from_object(semantic_dimensions_contexts),
+            globals => globals,
+        };
+
+        Ok(global_context)
+    }
+
+    pub async fn with_external_context(
         mut self,
         execution_context: &ExecutionContext,
     ) -> Result<Self, OxyError> {
-        self.execution_context =
-            Some(execution_context.wrap_writer(self.buf_writer.create_writer(None)?));
+        let config_manager = execution_context.project.config_manager.clone();
+        let secrets_manager = execution_context.project.secrets_manager.clone();
+        let tx = self.buf_writer.create_writer(None)?;
+        let global_context = self
+            .get_global_context(config_manager, secrets_manager)
+            .await?;
+        self.execution_context = Some(
+            execution_context
+                .wrap_writer(tx)
+                .wrap_global_context(global_context),
+        );
         Ok(self)
     }
 
     pub async fn with_project(mut self, project_manager: ProjectManager) -> Result<Self, OxyError> {
         let tx = self.buf_writer.create_writer(None)?;
-        self.execution_context = Some(
-            ExecutionContextBuilder::new()
-                .with_project_manager(project_manager)
-                .with_global_context(Value::UNDEFINED)
-                .with_writer(tx)
-                .with_source(Source {
-                    parent_id: None,
-                    id: AGENT_SOURCE.to_string(),
-                    kind: AGENT_SOURCE.to_string(),
-                })
-                .with_filters(self.filters.clone())
-                .with_connections(self.connections.clone())
-                .build()?,
-        );
+        let mut execution_context = ExecutionContextBuilder::new()
+            .with_project_manager(project_manager)
+            .with_global_context(Value::UNDEFINED)
+            .with_writer(tx)
+            .with_source(Source {
+                parent_id: None,
+                id: AGENT_SOURCE.to_string(),
+                kind: AGENT_SOURCE.to_string(),
+            })
+            .with_filters(self.filters.clone())
+            .with_connections(self.connections.clone())
+            .build()?;
+
+        let config_manager = execution_context.project.config_manager.clone();
+        let secrets_manager = execution_context.project.secrets_manager.clone();
+
+        let global_context = self
+            .get_global_context(config_manager, secrets_manager)
+            .await?;
+        execution_context = execution_context.wrap_global_context(global_context);
+        self.execution_context = Some(execution_context);
         Ok(self)
     }
 
@@ -182,7 +245,8 @@ impl Executable<AgentInput> for AgentLauncherExecutable {
         input: AgentInput,
     ) -> Result<Self::Response, OxyError> {
         AgentLauncher::new()
-            .with_external_context(execution_context)?
+            .with_external_context(execution_context)
+            .await?
             .launch(input, execution_context.writer.clone())
             .await
     }

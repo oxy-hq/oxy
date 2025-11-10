@@ -118,6 +118,7 @@ impl ParamMapper<EvalInput, Vec<(usize, EvalConfig, EvalTarget)>> for EvalMapper
                                     _ => "".to_string(),
                                 },
                                 memory: vec![],
+                                variables: None,
                             }),
                         ))
                     })

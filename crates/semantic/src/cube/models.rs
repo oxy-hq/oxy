@@ -1,3 +1,4 @@
+use crate::variables::VariableMapping;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -132,6 +133,9 @@ pub struct CubeSemanticLayerWithDataSources {
     pub cubes: Vec<CubeCube>,
     pub views: Vec<CubeView>,
     pub data_sources: Vec<CubeDataSource>,
+    /// Variable mappings for decoding encoded variables during runtime
+    #[serde(skip_serializing_if = "HashMap::is_empty")]
+    pub variable_mappings: HashMap<String, VariableMapping>,
 }
 
 pub struct DatabaseConfig {

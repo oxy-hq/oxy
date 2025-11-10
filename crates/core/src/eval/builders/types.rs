@@ -69,6 +69,7 @@ impl EvalRecord {
                 agent_ref: agent_input.agent_ref.clone(),
                 prompt: self.query.clone(),
                 memory: vec![],
+                variables: None,
             }),
         }
     }

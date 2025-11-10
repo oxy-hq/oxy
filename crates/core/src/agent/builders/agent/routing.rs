@@ -219,6 +219,7 @@ impl RoutingAgentExecutable {
             )?,
             agent_ref: agent_path.to_string(),
             description: tool_description,
+            variables: None, // TODO: Support tool-level variables in Phase 5
             is_verified,
         }))
     }
@@ -261,6 +262,7 @@ impl RoutingAgentExecutable {
             topic: Some(topic.name.clone()),
             description: tool_description,
             dry_run_limit: None,
+            variables: None,
         }))
     }
 
@@ -300,6 +302,7 @@ impl RoutingAgentExecutable {
                                 &PathBuf::from(sql_path),
                                 &PathBuf::from(project_path),
                             )?,
+                            variables: None,
                             sql: Some(tokio::fs::read_to_string(sql_path).await?),
                         }))
                     } else {
@@ -398,10 +401,18 @@ impl Executable<RoutingAgentInput> for RoutingAgentExecutable {
                 &prompt,
             )
             .await?;
+
+        // Render all tool configurations with variables
+        let mut rendered_tools = Vec::new();
+        for tool in tool_configs.iter() {
+            let rendered_tool = tool.render(&execution_context.renderer).await?;
+            rendered_tools.push(rendered_tool);
+        }
+
         let mut react_loop_executable = build_react_loop(
             agent_name.clone(),
             model,
-            tool_configs,
+            rendered_tools,
             routing_agent.synthesize_results,
             config_manager,
             secrets_manager,

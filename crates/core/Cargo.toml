@@ -37,6 +37,7 @@ email_address = "0.2.9"
 entity = { path = "../entity" }
 omni = { path = "../omni" }
 oxy-semantic = { path = "../semantic" }
+oxy_globals = { path = "../globals" }
 enum_dispatch = "0.3.13"
 futures = "0.3.31"
 garde = { version = "0.22.0", features = ["full"] }

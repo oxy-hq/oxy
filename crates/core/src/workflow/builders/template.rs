@@ -57,6 +57,15 @@ impl TemplateRegister for &Task {
             }
             TaskType::Agent(agent) => {
                 register.entry(&agent.prompt.as_str())?;
+                // Register agent task variables for template rendering
+                if let Some(variables) = &agent.variables {
+                    register.entries(
+                        variables
+                            .values()
+                            .filter_map(|value| value.as_str())
+                            .collect::<Vec<&str>>(),
+                    )?;
+                }
                 if let Some(export) = &agent.export {
                     register.entry(&export.path.as_str())?;
                 }

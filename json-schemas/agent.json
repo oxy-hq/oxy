@@ -61,6 +61,12 @@
       "items": {
         "$ref": "#/definitions/EvalConfig"
       }
+    },
+    "variables": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/definitions/SchemaObject"
+      }
     }
   },
   "definitions": {
@@ -796,6 +802,13 @@
               "enum": [
                 "execute_sql"
               ]
+            },
+            "variables": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "additionalProperties": true
             }
           }
         },
@@ -988,6 +1001,16 @@
               "enum": [
                 "agent"
               ]
+            },
+            "variables": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/Variables"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             }
           }
         },
@@ -1051,7 +1074,7 @@
           ],
           "properties": {
             "description": {
-              "default": "Query the semantic layer using natural language. This tool generates SQL from semantic models via CubeJS and executes it.",
+              "default": "Query the database via the semantic layer.",
               "type": "string"
             },
             "dry_run_limit": {
@@ -1076,6 +1099,13 @@
               "enum": [
                 "semantic_query"
               ]
+            },
+            "variables": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "additionalProperties": true
             }
           }
         }

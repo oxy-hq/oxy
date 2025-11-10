@@ -1,0 +1,27 @@
+name: test_sales
+description: Test sales view with nested variable paths
+
+table: "{{variables.database.schema}}.{{variables.database.table}}"
+
+dimensions:
+  - name: sale_id
+    expr: "id"
+    type: string
+    primary_key: true
+
+  - name: sale_date
+    expr: "{{variables.columns.date}}"
+    type: time
+
+  - name: region
+    expr: "region"
+    type: string
+
+measures:
+  - name: total_revenue
+    expr: "SUM({{variables.columns.amount}})"
+    type: number
+
+  - name: sale_count
+    expr: "COUNT(*)"
+    type: number

@@ -37,6 +37,7 @@ use make::handle_make_command;
 use minijinja::{Environment, Value};
 use model::AgentConfig;
 use model::{Config, Semantics, Workflow};
+use oxy_globals::GlobalRegistry;
 use oxy_semantic::cube::models::DatabaseDetails;
 use oxy_semantic::cube::translator::process_semantic_layer_to_cube;
 use pyo3::Bound;
@@ -702,6 +703,7 @@ async fn handle_workflow_file(
             project,
             None,
             None,
+            None, // No globals override from CLI
         )
         .await?;
     } else if retry {
@@ -714,6 +716,7 @@ async fn handle_workflow_file(
             project,
             None,
             None,
+            None, // No globals override from CLI
         )
         .await?;
     } else {
@@ -726,6 +729,7 @@ async fn handle_workflow_file(
             project,
             None,
             None,
+            None, // No globals override from CLI
         )
         .await?;
     }
@@ -912,7 +916,13 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                     })
                     .collect();
 
-                process_semantic_layer_to_cube(semantic_dir, target_dir, databases).await?;
+                process_semantic_layer_to_cube(
+                    semantic_dir,
+                    target_dir,
+                    databases,
+                    config_manager.get_globals_registry(),
+                )
+                .await?;
             } else {
                 println!("No semantic directory found at {}", semantic_dir.display());
             }
@@ -1053,6 +1063,8 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                 vec![],
                 None,
                 None,
+                None, // No globals from CLI
+                None, // No variables from CLI (yet)
             )
             .await?;
         }
@@ -1257,6 +1269,8 @@ async fn handle_agent_file(file_path: &PathBuf, question: Option<String>) -> Res
         vec![],
         None,
         None,
+        None, // No globals from CLI
+        None, // No variables from CLI (yet)
     )
     .await?;
     Ok(())
@@ -1646,7 +1660,7 @@ async fn handle_semantic_engine_command(semantic_args: SemanticEngineArgs) -> Re
     let cube_config_dir = get_cube_config_dir()?;
 
     // Always regenerate configuration for isolation
-    generate_cube_config(cube_config_dir.clone(), true).await?;
+    generate_cube_config(cube_config_dir.clone(), true, config.get_globals_registry()).await?;
 
     // Check if Docker is available
     let docker_check = Command::new("docker").args(["--version"]).output();
@@ -1753,7 +1767,11 @@ async fn handle_semantic_engine_command(semantic_args: SemanticEngineArgs) -> Re
 }
 
 /// Generate Cube.js configuration from semantic layer
-async fn generate_cube_config(cube_config_dir: PathBuf, force: bool) -> Result<(), OxyError> {
+async fn generate_cube_config(
+    cube_config_dir: PathBuf,
+    force: bool,
+    globals_registry: GlobalRegistry,
+) -> Result<(), OxyError> {
     // Ensure we're in a valid project
     let project_path = resolve_local_project_path()?;
 
@@ -1805,8 +1823,13 @@ async fn generate_cube_config(cube_config_dir: PathBuf, force: bool) -> Result<(
         .collect();
 
     // Process semantic layer to generate CubeJS schema
-    process_semantic_layer_to_cube(semantic_dir.clone(), cube_config_dir.clone(), databases)
-        .await?;
+    process_semantic_layer_to_cube(
+        semantic_dir.clone(),
+        cube_config_dir.clone(),
+        databases,
+        globals_registry,
+    )
+    .await?;
 
     println!(
         "✅ Cube.js configuration generated successfully at {}",
@@ -1824,7 +1847,17 @@ async fn handle_prepare_semantic_engine_command(
         .output_dir
         .unwrap_or_else(|| get_cube_config_dir().unwrap());
 
-    generate_cube_config(cube_config_dir, prepare_args.force).await?;
+    let config_manager = ConfigBuilder::new()
+        .with_project_path(&resolve_local_project_path()?)?
+        .build()
+        .await?;
+
+    generate_cube_config(
+        cube_config_dir,
+        prepare_args.force,
+        config_manager.get_globals_registry(),
+    )
+    .await?;
 
     println!();
     println!(

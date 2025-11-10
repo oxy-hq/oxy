@@ -1,0 +1,33 @@
+name: test_users
+description: Test view with variables for end-to-end testing
+
+table: "{{variables.schema}}.{{variables.table_prefix}}_users"
+
+dimensions:
+  - name: user_id
+    expr: "{{variables.id_column}}"
+    type: string
+    primary_key: true
+
+  - name: user_name
+    expr: "name"
+    type: string
+
+  - name: user_email
+    expr: "email"
+    type: string
+
+  - name: created_date
+    expr: "{{variables.date_column}}"
+    type: time
+
+measures:
+  - name: total_users
+    expr: "COUNT(DISTINCT {{variables.id_column}})"
+    type: number
+
+  - name: active_users
+    expr: "COUNT(DISTINCT {{variables.id_column}})"
+    type: number
+    filters:
+      - expr: "{{variables.status_filter}}"

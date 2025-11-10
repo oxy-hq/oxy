@@ -213,6 +213,7 @@ impl DimensionBuilder {
             dimension_type: self.dimension_type.ok_or("Dimension type is required")?,
             description: self.description,
             expr: self.expr.ok_or("Dimension expr is required")?,
+            original_expr: None,
             samples: self.samples,
             synonyms: self.synonyms,
         };
@@ -360,7 +361,11 @@ impl MeasureBuilder {
     }
 
     pub fn filter(mut self, expr: String, description: Option<String>) -> Self {
-        let filter = MeasureFilter { expr, description };
+        let filter = MeasureFilter {
+            expr,
+            original_expr: None,
+            description,
+        };
         self.filters.get_or_insert_with(Vec::new).push(filter);
         self
     }
@@ -371,6 +376,7 @@ impl MeasureBuilder {
             measure_type: self.measure_type.ok_or("Measure type is required")?,
             description: self.description,
             expr: self.expr,
+            original_expr: None,
             filters: self.filters,
             samples: self.samples,
             synonyms: self.synonyms,

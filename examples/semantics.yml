@@ -7,16 +7,6 @@ dimensions:
   targets:
   - primary_database.dbt_prod_core.dim_user_document_stats.readers
   - primary_database.dbt_prod_core.dim_document_stats.readers
-- name: id_user
-  targets:
-  - primary_database.dbt_prod_core.dim_user_document_stats.id_user
-  - primary_database.dbt_prod_core.dim_recent_user_activity.id_user
-  - primary_database.dbt_prod_core.fct_user_events.id_user
-  - primary_database.dbt_prod_core.dim_users_for_reverse_etl.id_user
-  - primary_database.dbt_prod_core.dim_searchers.id_user
-  - primary_database.dbt_prod_core.dim_users.id_user
-  - primary_database.dbt_prod_core.fct_table_searches.id_user
-  - primary_database.dbt_prod_core.fct_user_events_active.id_user
 - name: reads_non_creator
   targets:
   - primary_database.dbt_prod_core.dim_user_document_stats.reads_non_creator
@@ -33,23 +23,14 @@ dimensions:
   targets:
   - primary_database.dbt_prod_core.dim_user_document_stats.executions
   - primary_database.dbt_prod_core.dim_document_stats.executions
-- name: email
-  targets:
-  - primary_database.dbt_prod_core.dim_recent_user_activity.email
-  - primary_database.dbt_prod_core.fct_typeform_leads.email
-  - primary_database.dbt_prod_core.dim_typeform_private_beta_invites.email
-  - primary_database.dbt_prod_core.dim_users_for_reverse_etl.email
-  - primary_database.dbt_prod_core.fct_typeform_private_beta_requests.email
-  - primary_database.dbt_prod_core.fct_typeform_responses.email
-  - primary_database.dbt_prod_core.dim_users.email
-  - primary_database.dbt_prod_core.dim_typeform_prequel_beta_signup_2.email
-  - primary_database.dbt_prod_core.fct_typeform_answers.email
-  - primary_database.dbt_prod_core.dim_typeform_leads.email
 - name: name
   targets:
   - primary_database.dbt_prod_core.dim_recent_user_activity.name
   - primary_database.dbt_prod_core.dim_users_for_reverse_etl.name
   - primary_database.dbt_prod_core.dim_users.name
+  - local.duckdb.customer.name
+  - local.duckdb.fruit.name
+  - local.duckdb.fruit_suppliers.name
 - name: organization_subdomain
   targets:
   - primary_database.dbt_prod_core.dim_recent_user_activity.organization_subdomain
@@ -116,6 +97,42 @@ dimensions:
   - primary_database.dbt_prod_metrics.monthly_active_organizations.ds
   - primary_database.dbt_prod_metrics.monthly_active_users.ds
   - primary_database.dbt_prod_metrics.monthly_active_organizations_with_warehouse.ds
+  - primary_database.dbt_prod_metrics.monthly_active_users_with_warehouse.ds
+  - primary_database.dbt_prod_metrics.monthly_active_organizations_with_warehouse.ds
+  - primary_database.dbt_prod_metrics.monthly_active_users.ds
+  - primary_database.dbt_prod_metrics.monthly_active_users_with_warehouse.ds
+  - primary_database.dbt_prod_metrics.monthly_active_organizations.ds
+  - primary_database.dbt_prod_metrics.monthly_active_users.ds
+  - primary_database.dbt_prod_metrics.monthly_active_organizations.ds
+  - primary_database.dbt_prod_metrics.monthly_active_organizations_with_warehouse.ds
+  - primary_database.dbt_prod_metrics.monthly_active_users_with_warehouse.ds
+  - primary_database.dbt_prod_metrics.monthly_active_users.ds
+  - primary_database.dbt_prod_metrics.monthly_active_organizations.ds
+  - primary_database.dbt_prod_metrics.monthly_active_users_with_warehouse.ds
+  - primary_database.dbt_prod_metrics.monthly_active_organizations_with_warehouse.ds
+  - primary_database.dbt_prod_metrics.monthly_active_organizations.ds
+  - primary_database.dbt_prod_metrics.monthly_active_users_with_warehouse.ds
+  - primary_database.dbt_prod_metrics.monthly_active_users.ds
+  - primary_database.dbt_prod_metrics.monthly_active_organizations_with_warehouse.ds
+  - primary_database.dbt_prod_metrics.monthly_active_users_with_warehouse.ds
+  - primary_database.dbt_prod_metrics.monthly_active_organizations_with_warehouse.ds
+  - primary_database.dbt_prod_metrics.monthly_active_users.ds
+  - primary_database.dbt_prod_metrics.monthly_active_organizations.ds
+  - primary_database.dbt_prod_metrics.monthly_active_organizations.ds
+  - primary_database.dbt_prod_metrics.monthly_active_organizations_with_warehouse.ds
+  - primary_database.dbt_prod_metrics.monthly_active_users.ds
+  - primary_database.dbt_prod_metrics.monthly_active_users_with_warehouse.ds
+  - primary_database.dbt_prod_metrics.monthly_active_organizations_with_warehouse.ds
+  - primary_database.dbt_prod_metrics.monthly_active_users.ds
+  - primary_database.dbt_prod_metrics.monthly_active_users_with_warehouse.ds
+  - primary_database.dbt_prod_metrics.monthly_active_organizations.ds
+  - primary_database.dbt_prod_metrics.monthly_active_users.ds
+  - primary_database.dbt_prod_metrics.monthly_active_organizations.ds
+  - primary_database.dbt_prod_metrics.monthly_active_users_with_warehouse.ds
+  - primary_database.dbt_prod_metrics.monthly_active_organizations_with_warehouse.ds
+  - primary_database.dbt_prod_metrics.monthly_active_organizations_with_warehouse.ds
+  - primary_database.dbt_prod_metrics.monthly_active_users.ds
+  - primary_database.dbt_prod_metrics.monthly_active_organizations.ds
   - primary_database.dbt_prod_metrics.monthly_active_users_with_warehouse.ds
 - name: event_type
   targets:
@@ -352,6 +369,13 @@ dimensions:
   - primary_database.python_prod.v1_search_table.id
   - primary_database.python_prod.v1_users.id
   - primary_database.python_prod.v1_organizations.id
+  - local.duckdb.customer.id
+  - local.duckdb.orders.id
+  - local.duckdb.fruit_supplier_relationships.id
+  - local.duckdb.fruit.id
+  - local.duckdb.fruit_sales.id
+  - local.duckdb.fruit_suppliers.id
+  - local.duckdb.shipping_addresses.id
 - name: sent_at
   targets:
   - primary_database.python_prod.v1_tables_popular_tables.sent_at
@@ -364,12 +388,6 @@ dimensions:
   - primary_database.python_prod.v1_search_table.received_at
   - primary_database.python_prod.v1_users.received_at
   - primary_database.python_prod.v1_organizations.received_at
-- name: timestamp
-  targets:
-  - primary_database.python_prod.v1_tables_popular_tables.timestamp
-  - primary_database.python_prod.v1_search_table.timestamp
-  - primary_database.python_prod.v1_users.timestamp
-  - primary_database.python_prod.v1_organizations.timestamp
 - name: original_timestamp
   targets:
   - primary_database.python_prod.v1_tables_popular_tables.original_timestamp
@@ -388,6 +406,7 @@ dimensions:
   - primary_database.python_prod.v1_search_table.user_id
   - primary_database.python_prod.v1_users.user_id
   - primary_database.python_prod.v1_organizations.user_id
+  - local.duckdb.users.user_id
 - name: uuid_ts
   targets:
   - primary_database.python_prod.v1_tables_popular_tables.uuid_ts
@@ -413,8 +432,26 @@ dimensions:
   - primary_database.dbt_prod_metrics.monthly_active_users_with_warehouse.monthly_active_users_with_warehouse
   - primary_database.dbt_prod_metrics.monthly_active_users_with_warehouse.monthly_active_users_with_warehouse
   - primary_database.dbt_prod_metrics.monthly_active_users_with_warehouse.monthly_active_users_with_warehouse
+  - primary_database.dbt_prod_metrics.monthly_active_users_with_warehouse.monthly_active_users_with_warehouse
+  - primary_database.dbt_prod_metrics.monthly_active_users_with_warehouse.monthly_active_users_with_warehouse
+  - primary_database.dbt_prod_metrics.monthly_active_users_with_warehouse.monthly_active_users_with_warehouse
+  - primary_database.dbt_prod_metrics.monthly_active_users_with_warehouse.monthly_active_users_with_warehouse
+  - primary_database.dbt_prod_metrics.monthly_active_users_with_warehouse.monthly_active_users_with_warehouse
+  - primary_database.dbt_prod_metrics.monthly_active_users_with_warehouse.monthly_active_users_with_warehouse
+  - primary_database.dbt_prod_metrics.monthly_active_users_with_warehouse.monthly_active_users_with_warehouse
+  - primary_database.dbt_prod_metrics.monthly_active_users_with_warehouse.monthly_active_users_with_warehouse
+  - primary_database.dbt_prod_metrics.monthly_active_users_with_warehouse.monthly_active_users_with_warehouse
 - name: monthly_active_organizations_with_warehouse
   targets:
+  - primary_database.dbt_prod_metrics.monthly_active_organizations_with_warehouse.monthly_active_organizations_with_warehouse
+  - primary_database.dbt_prod_metrics.monthly_active_organizations_with_warehouse.monthly_active_organizations_with_warehouse
+  - primary_database.dbt_prod_metrics.monthly_active_organizations_with_warehouse.monthly_active_organizations_with_warehouse
+  - primary_database.dbt_prod_metrics.monthly_active_organizations_with_warehouse.monthly_active_organizations_with_warehouse
+  - primary_database.dbt_prod_metrics.monthly_active_organizations_with_warehouse.monthly_active_organizations_with_warehouse
+  - primary_database.dbt_prod_metrics.monthly_active_organizations_with_warehouse.monthly_active_organizations_with_warehouse
+  - primary_database.dbt_prod_metrics.monthly_active_organizations_with_warehouse.monthly_active_organizations_with_warehouse
+  - primary_database.dbt_prod_metrics.monthly_active_organizations_with_warehouse.monthly_active_organizations_with_warehouse
+  - primary_database.dbt_prod_metrics.monthly_active_organizations_with_warehouse.monthly_active_organizations_with_warehouse
   - primary_database.dbt_prod_metrics.monthly_active_organizations_with_warehouse.monthly_active_organizations_with_warehouse
   - primary_database.dbt_prod_metrics.monthly_active_organizations_with_warehouse.monthly_active_organizations_with_warehouse
   - primary_database.dbt_prod_metrics.monthly_active_organizations_with_warehouse.monthly_active_organizations_with_warehouse
@@ -439,8 +476,26 @@ dimensions:
   - primary_database.dbt_prod_metrics.monthly_active_organizations.monthly_active_organizations
   - primary_database.dbt_prod_metrics.monthly_active_organizations.monthly_active_organizations
   - primary_database.dbt_prod_metrics.monthly_active_organizations.monthly_active_organizations
+  - primary_database.dbt_prod_metrics.monthly_active_organizations.monthly_active_organizations
+  - primary_database.dbt_prod_metrics.monthly_active_organizations.monthly_active_organizations
+  - primary_database.dbt_prod_metrics.monthly_active_organizations.monthly_active_organizations
+  - primary_database.dbt_prod_metrics.monthly_active_organizations.monthly_active_organizations
+  - primary_database.dbt_prod_metrics.monthly_active_organizations.monthly_active_organizations
+  - primary_database.dbt_prod_metrics.monthly_active_organizations.monthly_active_organizations
+  - primary_database.dbt_prod_metrics.monthly_active_organizations.monthly_active_organizations
+  - primary_database.dbt_prod_metrics.monthly_active_organizations.monthly_active_organizations
+  - primary_database.dbt_prod_metrics.monthly_active_organizations.monthly_active_organizations
 - name: monthly_active_users
   targets:
+  - primary_database.dbt_prod_metrics.monthly_active_users.monthly_active_users
+  - primary_database.dbt_prod_metrics.monthly_active_users.monthly_active_users
+  - primary_database.dbt_prod_metrics.monthly_active_users.monthly_active_users
+  - primary_database.dbt_prod_metrics.monthly_active_users.monthly_active_users
+  - primary_database.dbt_prod_metrics.monthly_active_users.monthly_active_users
+  - primary_database.dbt_prod_metrics.monthly_active_users.monthly_active_users
+  - primary_database.dbt_prod_metrics.monthly_active_users.monthly_active_users
+  - primary_database.dbt_prod_metrics.monthly_active_users.monthly_active_users
+  - primary_database.dbt_prod_metrics.monthly_active_users.monthly_active_users
   - primary_database.dbt_prod_metrics.monthly_active_users.monthly_active_users
   - primary_database.dbt_prod_metrics.monthly_active_users.monthly_active_users
   - primary_database.dbt_prod_metrics.monthly_active_users.monthly_active_users
@@ -482,9 +537,6 @@ dimensions:
 - name: property
   targets:
   - local.duckdb.content_level_monthly_stats_fruits_veggies.property
-- name: content_type
-  targets:
-  - local.duckdb.content_level_monthly_stats_fruits_veggies.content_type
 - name: content_id
   targets:
   - local.duckdb.content_level_monthly_stats_fruits_veggies.content_id
@@ -506,3 +558,150 @@ dimensions:
 - name: revenue
   targets:
   - local.duckdb.monthly_revenue_by_region.revenue
+- name: gender
+  targets:
+  - local.duckdb.customer.gender
+- name: tracking_number
+  targets:
+  - local.duckdb.order_shipments.tracking_number
+- name: actual_delivery
+  targets:
+  - local.duckdb.order_shipments.actual_delivery
+- name: shipment_id
+  targets:
+  - local.duckdb.order_shipments.shipment_id
+- name: order_id
+  targets:
+  - local.duckdb.order_shipments.order_id
+  - local.duckdb.order_items.order_id
+  - local.duckdb.order_returns.order_id
+- name: status
+  targets:
+  - local.duckdb.order_shipments.status
+  - local.duckdb.orders.status
+  - local.duckdb.order_returns.status
+- name: line_item_id
+  targets:
+  - local.duckdb.order_shipments.line_item_id
+  - local.duckdb.order_items.line_item_id
+  - local.duckdb.order_returns.line_item_id
+- name: carrier
+  targets:
+  - local.duckdb.order_shipments.carrier
+- name: shipped_date
+  targets:
+  - local.duckdb.order_shipments.shipped_date
+- name: estimated_delivery
+  targets:
+  - local.duckdb.order_shipments.estimated_delivery
+- name: content_type
+  targets:
+  - local.duckdb.content_level_monthly_stats_fruits_veggies.content_type
+- name: order_date
+  targets:
+  - local.duckdb.orders.order_date
+- name: customer_id
+  targets:
+  - local.duckdb.orders.customer_id
+  - local.duckdb.fruit_sales.customer_id
+  - local.duckdb.shipping_addresses.customer_id
+- name: shipping_address_id
+  targets:
+  - local.duckdb.orders.shipping_address_id
+- name: shipping_cost
+  targets:
+  - local.duckdb.orders.shipping_cost
+- name: total_amount
+  targets:
+  - local.duckdb.orders.total_amount
+- name: tax_amount
+  targets:
+  - local.duckdb.orders.tax_amount
+- name: fruit_id
+  targets:
+  - local.duckdb.fruit_supplier_relationships.fruit_id
+  - local.duckdb.fruit_sales.fruit_id
+- name: supplier_id
+  targets:
+  - local.duckdb.fruit_supplier_relationships.supplier_id
+- name: wholesale_price
+  targets:
+  - local.duckdb.fruit_supplier_relationships.wholesale_price
+- name: min_order_qty
+  targets:
+  - local.duckdb.fruit_supplier_relationships.min_order_qty
+- name: is_primary_supplier
+  targets:
+  - local.duckdb.fruit_supplier_relationships.is_primary_supplier
+- name: lead_time_days
+  targets:
+  - local.duckdb.fruit_supplier_relationships.lead_time_days
+- name: price
+  targets:
+  - local.duckdb.fruit.price
+- name: date
+  targets:
+  - local.duckdb.fruit_sales.date
+- name: quantity
+  targets:
+  - local.duckdb.fruit_sales.quantity
+  - local.duckdb.order_items.quantity
+  - local.duckdb.order_returns.quantity
+- name: amount
+  targets:
+  - local.duckdb.fruit_sales.amount
+- name: discount_percent
+  targets:
+  - local.duckdb.order_items.discount_percent
+- name: product_id
+  targets:
+  - local.duckdb.order_items.product_id
+- name: unit_price
+  targets:
+  - local.duckdb.order_items.unit_price
+- name: user_name
+  targets:
+  - local.duckdb.users.user_name
+- name: contact_email
+  targets:
+  - local.duckdb.fruit_suppliers.contact_email
+- name: contact_phone
+  targets:
+  - local.duckdb.fruit_suppliers.contact_phone
+- name: rating
+  targets:
+  - local.duckdb.fruit_suppliers.rating
+- name: country
+  targets:
+  - local.duckdb.fruit_suppliers.country
+  - local.duckdb.shipping_addresses.country
+- name: refund_amount
+  targets:
+  - local.duckdb.order_returns.refund_amount
+- name: return_date
+  targets:
+  - local.duckdb.order_returns.return_date
+- name: return_id
+  targets:
+  - local.duckdb.order_returns.return_id
+- name: reason
+  targets:
+  - local.duckdb.order_returns.reason
+- name: is_default
+  targets:
+  - local.duckdb.shipping_addresses.is_default
+- name: address_line_1
+  targets:
+  - local.duckdb.shipping_addresses.address_line_1
+- name: city
+  targets:
+  - local.duckdb.shipping_addresses.city
+- name: postal_code
+  targets:
+  - local.duckdb.shipping_addresses.postal_code
+- name: address_line_2
+  targets:
+  - local.duckdb.shipping_addresses.address_line_2
+- name: state
+  targets:
+  - local.duckdb.shipping_addresses.state
