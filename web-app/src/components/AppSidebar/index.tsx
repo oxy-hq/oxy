@@ -1,8 +1,6 @@
 import {
   Sidebar as ShadcnSidebar,
-  SidebarContent,
   SidebarGroup,
-  SidebarGroupContent,
   SidebarGroupLabel,
   SidebarMenu,
 } from "@/components/ui/shadcn/sidebar";
@@ -18,23 +16,22 @@ export function AppSidebar() {
     <ShadcnSidebar className="bg-sidebar-background">
       <Header />
 
-      <SidebarGroup>
-        <SidebarGroupLabel>Developer Console</SidebarGroupLabel>
-        <SidebarMenu>
-          <Ide />
-        </SidebarMenu>
-      </SidebarGroup>
-      <SidebarContent className="customScrollbar flex flex-col">
+      <div className="customScrollbar flex flex-col flex-1 overflow-auto min-h-0 scrollbar-gutter-auto">
         <SidebarGroup>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              <Threads />
-              <Workflows />
-              <Apps />
-            </SidebarMenu>
-          </SidebarGroupContent>
+          <SidebarGroupLabel>Developer Console</SidebarGroupLabel>
+          <SidebarMenu>
+            <Ide />
+          </SidebarMenu>
         </SidebarGroup>
-      </SidebarContent>
+        <SidebarGroup>
+          <SidebarGroupLabel>Workspace</SidebarGroupLabel>
+          <SidebarMenu>
+            <Threads />
+            <Workflows />
+            <Apps />
+          </SidebarMenu>
+        </SidebarGroup>
+      </div>
       <Footer />
     </ShadcnSidebar>
   );
