@@ -12,6 +12,8 @@ import { ThreadService } from "@/services/api";
 import { toast } from "sonner";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { useSmartScroll } from "@/hooks/useSmartScroll";
+import { Button } from "@/components/ui/shadcn/button";
+import { ArrowDown } from "lucide-react";
 
 const MESSAGES_WARNING_THRESHOLD = 10;
 
@@ -33,7 +35,8 @@ const AgentThread = ({ thread, refetchThread }: AgentThreadProps) => {
   const [selectedArtifactIds, setSelectedArtifactIds] = useState<string[]>([]);
   const [followUpQuestion, setFollowUpQuestion] = useState("");
 
-  const { scrollContainerRef, bottomRef } = useSmartScroll({ messages });
+  const { scrollContainerRef, bottomRef, isAtBottom, scrollToBottom } =
+    useSmartScroll({ messages });
 
   const isThreadBusy = isLoading || thread.is_processing;
   const shouldShowWarning = messages.length >= MESSAGES_WARNING_THRESHOLD;
@@ -45,7 +48,8 @@ const AgentThread = ({ thread, refetchThread }: AgentThreadProps) => {
 
     sendMessage(followUpQuestion, thread.id);
     setFollowUpQuestion("");
-  }, [followUpQuestion, isLoading, sendMessage, thread.id]);
+    scrollToBottom();
+  }, [followUpQuestion, isLoading, scrollToBottom, sendMessage, thread.id]);
 
   const fetchMessages = useCallback(async () => {
     try {
@@ -88,21 +92,35 @@ const AgentThread = ({ thread, refetchThread }: AgentThreadProps) => {
       <ThreadHeader thread={thread} />
 
       <div className="overflow-hidden flex-1 flex items-center w-full justify-center">
-        <div className="flex-1 w-full h-full overflow-hidden flex flex-col gap-4">
-          <div
-            ref={scrollContainerRef}
-            className="flex-1 w-full customScrollbar overflow-auto"
-          >
-            <div className="max-w-[742px] w-full p-4 mx-auto">
-              <Messages
-                messages={messages}
-                onArtifactClick={handleArtifactClick}
-              />
-              <div ref={bottomRef} />
+        <div className="flex-1 w-full h-full overflow-hidden flex flex-col">
+          <div className="flex-1 w-full relative overflow-hidden">
+            <div
+              ref={scrollContainerRef}
+              className="h-full w-full customScrollbar overflow-auto"
+            >
+              <div className="max-w-[742px] w-full p-4 mx-auto">
+                <Messages
+                  messages={messages}
+                  onArtifactClick={handleArtifactClick}
+                />
+                <div ref={bottomRef} />
+              </div>
             </div>
+
+            {!isAtBottom && (
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={scrollToBottom}
+                className="rounded-full absolute bottom-2 left-1/2 -translate-x-1/2 transition-all z-10"
+                aria-label="Scroll to latest"
+              >
+                <ArrowDown />
+              </Button>
+            )}
           </div>
 
-          <div className="flex flex-col p-4 gap-1 pt-0 max-w-[742px] mx-auto w-full">
+          <div className="flex-shrink-0 flex flex-col p-4 gap-1 pt-0 max-w-[742px] mx-auto w-full">
             <ProcessingWarning
               threadId={thread.id}
               isLoading={isLoading}

@@ -11,6 +11,8 @@ import ProcessingWarning from "../ProcessingWarning";
 import { toast } from "sonner";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { useSmartScroll } from "@/hooks/useSmartScroll";
+import { Button } from "@/components/ui/shadcn/button";
+import { ArrowDown } from "lucide-react";
 
 const MESSAGES_WARNING_THRESHOLD = 10;
 
@@ -33,7 +35,7 @@ const TaskThread = ({
 
   const [followUpQuestion, setFollowUpQuestion] = useState("");
 
-  const { scrollContainerRef: messagesContainerRef, bottomRef } =
+  const { scrollContainerRef, bottomRef, isAtBottom, scrollToBottom } =
     useSmartScroll({ messages });
 
   const isThreadBusy = isLoading || thread.is_processing;
@@ -79,6 +81,7 @@ const TaskThread = ({
   const handleSendMessage = async () => {
     if (!followUpQuestion.trim() || isLoading) return;
 
+    scrollToBottom();
     await sendMessage(followUpQuestion, thread.id);
     setFollowUpQuestion("");
   };
@@ -121,32 +124,43 @@ const TaskThread = ({
     <div className="flex flex-col h-full">
       <Header thread={thread} />
       <div className="flex flex-1 overflow-hidden">
-        <div className="flex-1 flex flex-col h-full">
-          <div className="flex flex-col flex-1 w-full py-4 h-full">
+        <div className="flex-1 flex flex-col h-full overflow-hidden">
+          <div className="flex-1 w-full relative overflow-hidden">
             <div
-              ref={messagesContainerRef}
-              className="flex flex-col flex-1 [scrollbar-gutter:stable_both-edges] overflow-y-auto customScrollbar w-full"
+              ref={scrollContainerRef}
+              className="h-full py-4 [scrollbar-gutter:stable_both-edges] overflow-y-auto customScrollbar w-full"
             >
               <Messages messages={messages} />
               <div ref={bottomRef} />
             </div>
+            {!isAtBottom && (
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={scrollToBottom}
+                className="rounded-full absolute bottom-2 left-1/2 -translate-x-1/2 transition-all z-10"
+                aria-label="Scroll to latest"
+              >
+                <ArrowDown />
+              </Button>
+            )}
+          </div>
 
-            <div className="p-6 pt-0 max-w-page-content mx-auto w-full">
-              <ProcessingWarning
-                threadId={thread.id}
-                isLoading={isLoading}
-                onRefresh={handleRefresh}
-              />
-              <MessageInput
-                value={followUpQuestion}
-                onChange={setFollowUpQuestion}
-                onSend={handleSendMessage}
-                disabled={isThreadBusy}
-                isLoading={isThreadBusy}
-                showWarning={shouldShowWarning}
-                onStop={onStop}
-              />
-            </div>
+          <div className="flex-shrink-0 p-6 pt-0 max-w-page-content mx-auto w-full">
+            <ProcessingWarning
+              threadId={thread.id}
+              isLoading={isLoading}
+              onRefresh={handleRefresh}
+            />
+            <MessageInput
+              value={followUpQuestion}
+              onChange={setFollowUpQuestion}
+              onSend={handleSendMessage}
+              disabled={isThreadBusy}
+              isLoading={isThreadBusy}
+              showWarning={shouldShowWarning}
+              onStop={onStop}
+            />
           </div>
         </div>
         <div className="border-l flex-1 h-full">
