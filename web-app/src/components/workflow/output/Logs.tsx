@@ -12,6 +12,7 @@ interface FlattenedLogItem {
   depth: number;
   isExpandable: boolean;
   parentId?: string;
+  isLastRootItem: boolean;
 }
 
 interface OutputLogsProps {
@@ -31,7 +32,7 @@ const OutputLogs: React.FC<OutputLogsProps> = ({
 }) => {
   const parentRef = React.useRef<HTMLDivElement | null>(null);
   const bottomRef = React.useRef<HTMLDivElement | null>(null);
-  const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
+  const [itemStates, setItemStates] = useState<Map<string, boolean>>(new Map());
 
   const flattenedLogs = useMemo(() => {
     const flattened: FlattenedLogItem[] = [];
@@ -44,6 +45,7 @@ const OutputLogs: React.FC<OutputLogsProps> = ({
       items.forEach((log, index) => {
         const id = parentId ? `${parentId}-${index}` : `root-${index}`;
         const isExpandable = !!(log.children && log.children.length > 0);
+        const isLastRootItem = depth === 0 && index === items.length - 1;
 
         flattened.push({
           id,
@@ -51,11 +53,14 @@ const OutputLogs: React.FC<OutputLogsProps> = ({
           depth,
           isExpandable,
           parentId,
+          isLastRootItem,
         });
-        if (
-          isExpandable &&
-          (expandedItems.has(id) || (isPending && index === items.length - 1))
-        ) {
+
+        const itemState = itemStates.get(id);
+        const shouldExpand =
+          itemState === true || (itemState === undefined && isLastRootItem);
+
+        if (isExpandable && shouldExpand) {
           flattenRecursive(log.children!, depth + 1, id);
         }
       });
@@ -63,16 +68,17 @@ const OutputLogs: React.FC<OutputLogsProps> = ({
 
     flattenRecursive(logs);
     return flattened;
-  }, [logs, expandedItems, isPending]);
+  }, [logs, itemStates]);
 
-  const toggleExpanded = useCallback((id: string) => {
-    setExpandedItems((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
+  const toggleExpanded = useCallback((id: string, isLastRootItem: boolean) => {
+    setItemStates((prev) => {
+      const next = new Map(prev);
+      const currentState = next.get(id);
+
+      const isCurrentlyExpanded =
+        currentState === true || (currentState === undefined && isLastRootItem);
+
+      next.set(id, !isCurrentlyExpanded);
       return next;
     });
   }, []);
@@ -147,8 +153,10 @@ const OutputLogs: React.FC<OutputLogsProps> = ({
               const flatItem = flattenedLogs[virtualItem.index];
               if (!flatItem) return null;
 
-              const isLasted = virtualItem.index === flattenedLogs.length - 1;
-              const isExpanded = expandedItems.has(flatItem.id);
+              const itemState = itemStates.get(flatItem.id);
+              const isExpanded =
+                itemState === true ||
+                (itemState === undefined && flatItem.isLastRootItem);
 
               return (
                 <div
@@ -163,8 +171,9 @@ const OutputLogs: React.FC<OutputLogsProps> = ({
                     depth={flatItem.depth}
                     isExpandable={flatItem.isExpandable}
                     isExpanded={isExpanded}
-                    onToggleExpanded={() => toggleExpanded(flatItem.id)}
-                    isLasted={isLasted}
+                    onToggleExpanded={() =>
+                      toggleExpanded(flatItem.id, flatItem.isLastRootItem)
+                    }
                   />
                 </div>
               );

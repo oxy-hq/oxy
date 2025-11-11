@@ -10,7 +10,6 @@ type OutputItemProps = {
   isExpandable?: boolean;
   isExpanded?: boolean;
   onToggleExpanded?: () => void;
-  isLasted?: boolean;
 };
 
 const OutputItem = ({
