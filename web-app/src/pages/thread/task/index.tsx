@@ -11,6 +11,7 @@ import ProcessingWarning from "../ProcessingWarning";
 import { toast } from "sonner";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { useSmartScroll } from "@/hooks/useSmartScroll";
+import { ScrollToBottomButton } from "@/components/ScrollToBottomButton";
 
 const MESSAGES_WARNING_THRESHOLD = 10;
 
@@ -33,8 +34,12 @@ const TaskThread = ({
 
   const [followUpQuestion, setFollowUpQuestion] = useState("");
 
-  const { scrollContainerRef: messagesContainerRef, bottomRef } =
-    useSmartScroll({ messages });
+  const {
+    scrollContainerRef: messagesContainerRef,
+    bottomRef,
+    scrollToBottom,
+    showScrollButton,
+  } = useSmartScroll({ messages });
 
   const isThreadBusy = isLoading || thread.is_processing;
   const shouldShowWarning = messages.length > MESSAGES_WARNING_THRESHOLD;
@@ -121,7 +126,7 @@ const TaskThread = ({
     <div className="flex flex-col h-full">
       <Header thread={thread} />
       <div className="flex flex-1 overflow-hidden">
-        <div className="flex-1 flex flex-col h-full">
+        <div className="flex-1 flex flex-col h-full relative">
           <div className="flex flex-col flex-1 w-full py-4 h-full">
             <div
               ref={messagesContainerRef}
@@ -130,6 +135,11 @@ const TaskThread = ({
               <Messages messages={messages} />
               <div ref={bottomRef} />
             </div>
+
+            <ScrollToBottomButton
+              visible={showScrollButton}
+              onClick={() => scrollToBottom()}
+            />
 
             <div className="p-6 pt-0 max-w-page-content mx-auto w-full">
               <ProcessingWarning

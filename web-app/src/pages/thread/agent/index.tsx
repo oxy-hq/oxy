@@ -12,6 +12,7 @@ import { ThreadService } from "@/services/api";
 import { toast } from "sonner";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { useSmartScroll } from "@/hooks/useSmartScroll";
+import { ScrollToBottomButton } from "@/components/ScrollToBottomButton";
 
 const MESSAGES_WARNING_THRESHOLD = 10;
 
@@ -33,7 +34,8 @@ const AgentThread = ({ thread, refetchThread }: AgentThreadProps) => {
   const [selectedArtifactIds, setSelectedArtifactIds] = useState<string[]>([]);
   const [followUpQuestion, setFollowUpQuestion] = useState("");
 
-  const { scrollContainerRef, bottomRef } = useSmartScroll({ messages });
+  const { scrollContainerRef, bottomRef, scrollToBottom, showScrollButton } =
+    useSmartScroll({ messages });
 
   const isThreadBusy = isLoading || thread.is_processing;
   const shouldShowWarning = messages.length >= MESSAGES_WARNING_THRESHOLD;
@@ -88,7 +90,7 @@ const AgentThread = ({ thread, refetchThread }: AgentThreadProps) => {
       <ThreadHeader thread={thread} />
 
       <div className="overflow-hidden flex-1 flex items-center w-full justify-center">
-        <div className="flex-1 w-full h-full overflow-hidden flex flex-col gap-4">
+        <div className="flex-1 w-full h-full overflow-hidden flex flex-col gap-4 relative">
           <div
             ref={scrollContainerRef}
             className="flex-1 w-full customScrollbar overflow-auto"
@@ -101,6 +103,11 @@ const AgentThread = ({ thread, refetchThread }: AgentThreadProps) => {
               <div ref={bottomRef} />
             </div>
           </div>
+
+          <ScrollToBottomButton
+            visible={showScrollButton}
+            onClick={() => scrollToBottom()}
+          />
 
           <div className="flex flex-col p-4 gap-1 pt-0 max-w-[742px] mx-auto w-full">
             <ProcessingWarning
