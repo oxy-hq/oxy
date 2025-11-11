@@ -719,7 +719,7 @@ impl SchemaLoader {
                         .and_then(|e| e.to_str())
                         .unwrap_or("")
                         .to_lowercase();
-                    let file_name = path.file_stem().unwrap().to_string_lossy().to_string();
+                    let file_name = path.file_name().unwrap().to_string_lossy().to_string();
                     let columns = match ext.as_str() {
                         "csv" => {
                             let sql = format!(
