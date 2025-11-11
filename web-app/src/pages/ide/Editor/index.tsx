@@ -10,7 +10,7 @@ const EditorPage = () => {
   }
 
   return (
-    <EditorProvider pathb64={pathb64}>
+    <EditorProvider key={pathb64} pathb64={pathb64}>
       <EditorRouter />
     </EditorProvider>
   );
