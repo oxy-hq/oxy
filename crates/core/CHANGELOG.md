@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.16](https://github.com/oxy-hq/oxy-internal/compare/0.3.15...0.3.16) (2025-11-11)
+
+
+### <!-- 0 -->🚀 Features
+
+* unify semantics ([#1213](https://github.com/oxy-hq/oxy-internal/issues/1213)) ([9b1c3a3](https://github.com/oxy-hq/oxy-internal/commit/9b1c3a3b22a32c74612be694708cd42eb551e1bf))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* include file extension inside the duckdb schema sql ([#1357](https://github.com/oxy-hq/oxy-internal/issues/1357)) ([c058715](https://github.com/oxy-hq/oxy-internal/commit/c0587155653e3383a29fc47c5db933b300a4767c))
+
 ## [0.3.15](https://github.com/oxy-hq/oxy-internal/compare/0.3.14...0.3.15) (2025-11-07)
 
 

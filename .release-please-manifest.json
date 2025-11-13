@@ -1,10 +1,10 @@
 {
-  "crates/globals": "0.3.15",
-  "crates/core": "0.3.15",
-  "crates/py": "0.3.15",
-  "crates/migration": "0.3.15",
-  "crates/entity": "0.3.15",
-  "crates/semantic": "0.3.15",
-  "crates/omni": "0.3.15",
-  "web-app": "0.3.15"
+  "crates/globals": "0.3.16",
+  "crates/core": "0.3.16",
+  "crates/py": "0.3.16",
+  "crates/migration": "0.3.16",
+  "crates/entity": "0.3.16",
+  "crates/semantic": "0.3.16",
+  "crates/omni": "0.3.16",
+  "web-app": "0.3.16"
 }

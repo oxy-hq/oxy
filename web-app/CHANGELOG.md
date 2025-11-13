@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.3.16](https://github.com/oxy-hq/oxy-internal/compare/0.3.15...0.3.16) (2025-11-11)
+
+
+### <!-- 0 -->🚀 Features
+
+* add ScrollToBottomButton component and integrate with useSmartScroll hook ([0efb46d](https://github.com/oxy-hq/oxy-internal/commit/0efb46d582c2bf7f7b69f988c6026305aeea8c0c))
+* implement auto-expand for the last log item in OutputLogs ([#1359](https://github.com/oxy-hq/oxy-internal/issues/1359)) ([c2d15f5](https://github.com/oxy-hq/oxy-internal/commit/c2d15f5b073d2bccb80bf44aa0f8463aeb4bdc01))
+* improve auto scrolling and add a scroll to latest ([#1360](https://github.com/oxy-hq/oxy-internal/issues/1360)) ([309d573](https://github.com/oxy-hq/oxy-internal/commit/309d5739b339f902c29c8e903496d59f8f44b29e))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* ide save file bugs ([#1355](https://github.com/oxy-hq/oxy-internal/issues/1355)) ([a6f4660](https://github.com/oxy-hq/oxy-internal/commit/a6f46608d2456c723604ffd3e48907866a25f77c))
+* sidebar bugs ([#1356](https://github.com/oxy-hq/oxy-internal/issues/1356)) ([e1e6bde](https://github.com/oxy-hq/oxy-internal/commit/e1e6bde2b0e0c93d799bfd4a6e45317a3bb236ac))
+
 ## [0.3.15](https://github.com/oxy-hq/oxy-internal/compare/0.3.14...0.3.15) (2025-11-07)
 
 
