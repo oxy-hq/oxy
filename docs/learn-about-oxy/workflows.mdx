@@ -29,12 +29,32 @@ Specific task types have additional property requirements.
 
 ## `type: execute_sql`
 
-Executes a SQL query referenced by filename.
+Executes a SQL query either referenced by filename or provided inline.
 
 | Component | Description                                              | Type     |
 | --------- | -------------------------------------------------------- | -------- |
-| sql\_file  | The sql file within the `data` directory to execute      | required |
+| sql\_file  | The sql file within the `data` directory to execute      | required (or use `sql_query`) |
+| sql\_query | Inline SQL query to execute (alternative to `sql_file`)  | required (or use `sql_file`) |
 | database  | The name of the `database` to execute the query against  | required |
+
+You can use either `sql_file` to reference a SQL file, or `sql_query` to provide the SQL inline.
+**Note:** These options are mutually exclusive—only one should be used at a time. Specifying both in a single task is not allowed.
+
+```yaml
+# Using sql_file
+- name: query_with_file
+  type: execute_sql
+  sql_file: my_query.sql
+  database: local
+
+# Using sql_query inline
+- name: query_inline
+  type: execute_sql
+  sql_query: |
+    SELECT * FROM users
+    WHERE created_at > '2024-01-01'
+  database: local
+```
 
 ## `type: formatter`
 
