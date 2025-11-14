@@ -67,6 +67,7 @@ fn build_public_routes() -> Router<AppState> {
         .route("/auth/okta", post(auth::okta_auth))
         .route("/auth/validate_email", post(auth::validate_email))
         .route("/user", get(user::get_current_user_public))
+        .route("/webhooks/github", post(github::github_webhook))
 }
 
 fn build_global_routes() -> Router<AppState> {

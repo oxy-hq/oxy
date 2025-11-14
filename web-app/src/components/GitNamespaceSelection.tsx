@@ -12,6 +12,8 @@ import {
   useGitHubNamespaces,
 } from "@/hooks/api/github";
 import { openGitHubAppInstallation } from "@/utils/githubAppInstall";
+import { useEffect } from "react";
+import { INSTALL_GITHUB_APP_COMPLETED } from "@/pages/github/callback";
 
 interface Props {
   value?: string;
@@ -19,8 +21,11 @@ interface Props {
 }
 
 export const GitNamespaceSelection = ({ value, onChange }: Props) => {
-  const { data: gitNamespaces = [], isPending: isLoadingNamespaces } =
-    useGitHubNamespaces();
+  const {
+    data: gitNamespaces = [],
+    isPending: isLoadingNamespaces,
+    refetch,
+  } = useGitHubNamespaces();
 
   const { data: installAppUrl, isPending: isLoadingInstallApp } =
     useGitHubInstallAppUrl();
@@ -36,6 +41,19 @@ export const GitNamespaceSelection = ({ value, onChange }: Props) => {
       }
     }
   };
+
+  useEffect(() => {
+    window.addEventListener("message", (event) => {
+      if (event.origin !== window.location.origin) return;
+      console.log("Received message:", event);
+      if (event.data === INSTALL_GITHUB_APP_COMPLETED) {
+        refetch();
+      }
+    });
+    return () => {
+      window.removeEventListener("message", () => {});
+    };
+  }, [refetch]);
 
   const handleOnChange = (selectedValue: string) => {
     if (selectedValue === "add-new-namespace") {

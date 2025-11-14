@@ -1,6 +1,8 @@
 use axum::{
+    body::Bytes,
     extract::{Json, Query},
-    response::Json as ResponseJson,
+    http::HeaderMap,
+    response::{Json as ResponseJson, Redirect},
 };
 use chrono::{DateTime, Duration, Utc};
 use hmac::{Hmac, Mac};
@@ -11,11 +13,12 @@ use sha2::Sha256;
 use tracing::error;
 use uuid::Uuid;
 
-use crate::auth::extractor::AuthenticatedUserExtractor;
 use crate::db::client::establish_connection;
 use crate::github::app_auth::GitHubAppAuth;
 use crate::github::client::GitHubClient;
 use crate::github::types::{GitHubBranch, GitHubRepository};
+use crate::github::webhook;
+use crate::{api::user, auth::extractor::AuthenticatedUserExtractor};
 
 #[derive(Debug, Serialize)]
 pub struct GitHubNamespace {
@@ -87,6 +90,7 @@ pub async fn gen_install_app_url(
     let encoded_state = urlencoding::encode(&state);
     let app_slug =
         std::env::var("GITHUB_APP_SLUG").map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
     let url = format!(
         "https://github.com/apps/{}/installations/new?state={}",
         app_slug, encoded_state
@@ -305,4 +309,17 @@ pub fn validate_github_state(state: &str, user_id: &Uuid) -> Result<bool, axum::
         provided_signature.as_bytes(),
         expected_signature.as_bytes(),
     ))
+}
+
+pub async fn github_webhook(
+    headers: HeaderMap,
+    payload: Bytes,
+) -> Result<StatusCode, axum::http::StatusCode> {
+    let signature = headers
+        .get("X-Hub-Signature-256")
+        .and_then(|v| v.to_str().ok())
+        .ok_or(StatusCode::BAD_REQUEST)?
+        .to_string();
+
+    webhook::handle_webhook(signature, payload).await
 }

@@ -4,6 +4,8 @@ import { getInstallationInfoFromUrl } from "@/utils/githubAppInstall";
 import { useNavigate } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 
+export const INSTALL_GITHUB_APP_COMPLETED = "install_github_app_completed";
+
 /**
  * GitHub callback page that handles redirects from GitHub App installations
  * This page extracts installation_id and state from URL parameters and creates a git namespace
@@ -31,16 +33,16 @@ export default function GitHubCallback() {
         }
 
         // Create git namespace with installation_id and state
-        await createGitNamespace.mutateAsync(
-          { installation_id: installationId, state, code },
-          {
-            onError: (err: Error | unknown) => {
-              const errorMsg =
-                err instanceof Error ? err.message : "Unknown error";
-              setError(`Failed to process GitHub installation: ${errorMsg}`);
-            },
-          },
+        await createGitNamespace.mutateAsync({
+          installation_id: installationId,
+          state,
+          code,
+        });
+        window.opener.postMessage(
+          INSTALL_GITHUB_APP_COMPLETED,
+          window.location.origin,
         );
+        window.close();
       } catch (err: Error | unknown) {
         const errorMsg = err instanceof Error ? err.message : "Unknown error";
         setError(`Unexpected error: ${errorMsg}`);
