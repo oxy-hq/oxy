@@ -3,7 +3,7 @@ use crate::service::project::database_config::DatabaseConfigBuilder;
 use crate::service::project::model_config::ModelConfigBuilder;
 use crate::service::project::models::{ModelsFormData, WarehousesFormData};
 use axum::http::StatusCode;
-use sea_orm::DatabaseConnection;
+use sea_orm::DatabaseTransaction;
 use std::fs;
 use std::path::Path;
 use tracing::error;
@@ -18,13 +18,13 @@ impl ConfigBuilder {
         warehouses: &WarehousesFormData,
         models: &ModelsFormData,
         repo_path: &Path,
-        db: &DatabaseConnection,
+        txn: &DatabaseTransaction,
     ) -> std::result::Result<(), StatusCode> {
         let config_models =
-            ModelConfigBuilder::build_model_configs(project_id, user_id, models, db).await?;
+            ModelConfigBuilder::build_model_configs(project_id, user_id, models, txn).await?;
 
         let config_databases = DatabaseConfigBuilder::build_database_configs(
-            project_id, user_id, warehouses, db, repo_path,
+            project_id, user_id, warehouses, txn, repo_path,
         )
         .await?;
 

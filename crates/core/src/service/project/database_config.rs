@@ -7,7 +7,7 @@ use crate::{
     },
 };
 use axum::http::StatusCode;
-use sea_orm::DatabaseConnection;
+use sea_orm::DatabaseTransaction;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tracing::{error, warn};
@@ -20,7 +20,7 @@ impl DatabaseConfigBuilder {
         project_id: Uuid,
         user_id: Uuid,
         warehouses_form: &WarehousesFormData,
-        db: &DatabaseConnection,
+        txn: &DatabaseTransaction,
         repo_path: &Path,
     ) -> std::result::Result<Vec<Database>, StatusCode> {
         let mut config_databases = Vec::new();
@@ -33,22 +33,24 @@ impl DatabaseConfigBuilder {
 
             let database = match warehouse.r#type.as_str() {
                 "postgres" => {
-                    Self::build_postgres_config(project_id, user_id, db_name, warehouse, db).await?
+                    Self::build_postgres_config(project_id, user_id, db_name, warehouse, txn)
+                        .await?
                 }
                 "redshift" => {
-                    Self::build_redshift_config(project_id, user_id, db_name, warehouse, db).await?
+                    Self::build_redshift_config(project_id, user_id, db_name, warehouse, txn)
+                        .await?
                 }
                 "mysql" => {
-                    Self::build_mysql_config(project_id, user_id, db_name, warehouse, db).await?
+                    Self::build_mysql_config(project_id, user_id, db_name, warehouse, txn).await?
                 }
                 "clickhouse" => {
-                    Self::build_clickhouse_config(project_id, user_id, db_name, warehouse, db)
+                    Self::build_clickhouse_config(project_id, user_id, db_name, warehouse, txn)
                         .await?
                 }
                 "bigquery" => Self::build_bigquery_config(db_name, warehouse, repo_path).await?,
                 "duckdb" => Self::build_duckdb_config(db_name, warehouse),
                 "snowflake" => {
-                    Self::build_snowflake_config(project_id, user_id, db_name, warehouse, db)
+                    Self::build_snowflake_config(project_id, user_id, db_name, warehouse, txn)
                         .await?
                 }
                 _ => {
@@ -67,7 +69,7 @@ impl DatabaseConfigBuilder {
         user_id: Uuid,
         db_name: String,
         warehouse: &WarehouseConfig,
-        db: &DatabaseConnection,
+        txn: &DatabaseTransaction,
     ) -> std::result::Result<Database, StatusCode> {
         let postgres_config = warehouse.get_postgres_config();
 
@@ -79,7 +81,7 @@ impl DatabaseConfigBuilder {
                 user_id,
                 db_var_name.clone(),
                 password.clone(),
-                db,
+                txn,
             )
             .await
             .map_err(|e| {
@@ -110,7 +112,7 @@ impl DatabaseConfigBuilder {
         user_id: Uuid,
         db_name: String,
         warehouse: &WarehouseConfig,
-        db: &DatabaseConnection,
+        txn: &DatabaseTransaction,
     ) -> std::result::Result<Database, StatusCode> {
         let redshift_config = warehouse.get_redshift_config();
 
@@ -122,7 +124,7 @@ impl DatabaseConfigBuilder {
                 user_id,
                 db_var_name.clone(),
                 password.clone(),
-                db,
+                txn,
             )
             .await
             .map_err(|e| {
@@ -153,7 +155,7 @@ impl DatabaseConfigBuilder {
         user_id: Uuid,
         db_name: String,
         warehouse: &WarehouseConfig,
-        db: &DatabaseConnection,
+        txn: &DatabaseTransaction,
     ) -> std::result::Result<Database, StatusCode> {
         let mysql_config = warehouse.get_mysql_config();
 
@@ -165,7 +167,7 @@ impl DatabaseConfigBuilder {
                 user_id,
                 db_var_name.clone(),
                 password.clone(),
-                db,
+                txn,
             )
             .await
             .map_err(|e| {
@@ -196,7 +198,7 @@ impl DatabaseConfigBuilder {
         user_id: Uuid,
         db_name: String,
         warehouse: &WarehouseConfig,
-        db: &DatabaseConnection,
+        txn: &DatabaseTransaction,
     ) -> std::result::Result<Database, StatusCode> {
         let clickhouse_config = warehouse.get_clickhouse_config();
 
@@ -208,7 +210,7 @@ impl DatabaseConfigBuilder {
                 user_id,
                 db_var_name.clone(),
                 password.clone(),
-                db,
+                txn,
             )
             .await
             .map_err(|e| {
@@ -304,7 +306,7 @@ impl DatabaseConfigBuilder {
         user_id: Uuid,
         db_name: String,
         warehouse: &WarehouseConfig,
-        db: &DatabaseConnection,
+        txn: &DatabaseTransaction,
     ) -> std::result::Result<Database, StatusCode> {
         let snowflake_config = warehouse.get_snowflake_config();
 
@@ -316,7 +318,7 @@ impl DatabaseConfigBuilder {
                 user_id,
                 db_var_name.clone(),
                 password.clone(),
-                db,
+                txn,
             )
             .await
             .map_err(|e| {
@@ -353,7 +355,7 @@ impl DatabaseConfigBuilder {
         user_id: Uuid,
         key: String,
         value: String,
-        db: &DatabaseConnection,
+        txn: &DatabaseTransaction,
     ) -> Result<(), OxyError> {
         let secret_manager = SecretManagerService::new(project_id);
         let create_params = CreateSecretParams {
@@ -363,7 +365,7 @@ impl DatabaseConfigBuilder {
             created_by: user_id,
         };
 
-        secret_manager.create_secret(db, create_params).await?;
+        secret_manager.create_secret(txn, create_params).await?;
         Ok(())
     }
 }

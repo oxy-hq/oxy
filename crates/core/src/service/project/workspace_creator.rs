@@ -142,13 +142,8 @@ impl WorkspaceCreator {
         let repo_path = Self::create_project_directory(project.id, branch.id)?;
 
         if let (Some(warehouses), Some(models)) = (&req.warehouses, &req.model) {
-            let db = establish_connection().await.map_err(|e| {
-                error!("Database connection failed: {}", e);
-                StatusCode::INTERNAL_SERVER_ERROR
-            })?;
-
             ConfigBuilder::create_project_config(
-                project.id, user_id, warehouses, models, &repo_path, &db,
+                project.id, user_id, warehouses, models, &repo_path, txn,
             )
             .await?;
         }

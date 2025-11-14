@@ -6,7 +6,7 @@ use crate::service::project::models::{
 };
 use crate::service::secret_manager::{CreateSecretParams, SecretManagerService};
 use axum::http::StatusCode;
-use sea_orm::DatabaseConnection;
+use sea_orm::DatabaseTransaction;
 use tracing::error;
 use uuid::Uuid;
 
@@ -17,20 +17,20 @@ impl ModelConfigBuilder {
         project_id: Uuid,
         user_id: Uuid,
         models_form: &ModelsFormData,
-        db: &DatabaseConnection,
+        txn: &DatabaseTransaction,
     ) -> std::result::Result<Vec<Model>, StatusCode> {
         let mut config_models = Vec::new();
 
         for model_config in &models_form.models {
             let model = match &model_config.vendor {
                 ModelVendor::OpenAI => {
-                    Self::build_openai_model(project_id, user_id, model_config, db).await?
+                    Self::build_openai_model(project_id, user_id, model_config, txn).await?
                 }
                 ModelVendor::Anthropic => {
-                    Self::build_anthropic_model(project_id, user_id, model_config, db).await?
+                    Self::build_anthropic_model(project_id, user_id, model_config, txn).await?
                 }
                 ModelVendor::Google => {
-                    Self::build_google_model(project_id, user_id, model_config, db).await?
+                    Self::build_google_model(project_id, user_id, model_config, txn).await?
                 }
                 ModelVendor::Ollama => Self::build_ollama_model(model_config),
             };
@@ -45,7 +45,7 @@ impl ModelConfigBuilder {
         project_id: Uuid,
         user_id: Uuid,
         model_config: &ModelConfig,
-        db: &DatabaseConnection,
+        txn: &DatabaseTransaction,
     ) -> std::result::Result<Model, StatusCode> {
         let openai_config: OpenAIModelConfig = model_config.get_openai_config();
 
@@ -65,7 +65,7 @@ impl ModelConfigBuilder {
             openai_config
                 .api_key
                 .unwrap_or_else(|| "OPENAI_API_KEY".to_string()),
-            db,
+            txn,
         )
         .await
         .map_err(|e| {
@@ -87,7 +87,7 @@ impl ModelConfigBuilder {
         project_id: Uuid,
         user_id: Uuid,
         model_config: &ModelConfig,
-        db: &DatabaseConnection,
+        txn: &DatabaseTransaction,
     ) -> std::result::Result<Model, StatusCode> {
         let anthropic_config: AnthropicModelConfig = model_config.get_anthropic_config();
 
@@ -107,7 +107,7 @@ impl ModelConfigBuilder {
             anthropic_config
                 .api_key
                 .unwrap_or_else(|| "ANTHROPIC_API_KEY".to_string()),
-            db,
+            txn,
         )
         .await
         .map_err(|e| {
@@ -127,7 +127,7 @@ impl ModelConfigBuilder {
         project_id: Uuid,
         user_id: Uuid,
         model_config: &ModelConfig,
-        db: &DatabaseConnection,
+        txn: &DatabaseTransaction,
     ) -> std::result::Result<Model, StatusCode> {
         let google_config: GoogleModelConfig = model_config.get_google_config();
 
@@ -147,7 +147,7 @@ impl ModelConfigBuilder {
             google_config
                 .api_key
                 .unwrap_or_else(|| "GOOGLE_API_KEY".to_string()),
-            db,
+            txn,
         )
         .await
         .map_err(|e| {
@@ -192,7 +192,7 @@ impl ModelConfigBuilder {
         user_id: Uuid,
         key: String,
         value: String,
-        db: &DatabaseConnection,
+        txn: &DatabaseTransaction,
     ) -> Result<(), OxyError> {
         let secret_manager = SecretManagerService::new(project_id);
         let create_params = CreateSecretParams {
@@ -202,7 +202,7 @@ impl ModelConfigBuilder {
             created_by: user_id,
         };
 
-        secret_manager.create_secret(db, create_params).await?;
+        secret_manager.create_secret(txn, create_params).await?;
         Ok(())
     }
 }

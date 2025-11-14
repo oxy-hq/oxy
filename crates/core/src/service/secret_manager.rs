@@ -149,11 +149,14 @@ impl SecretManagerService {
     }
 
     /// Create a new secret
-    pub async fn create_secret(
+    pub async fn create_secret<C>(
         &self,
-        db: &DatabaseConnection,
+        db: &C,
         params: CreateSecretParams,
-    ) -> Result<SecretInfo, OxyError> {
+    ) -> Result<SecretInfo, OxyError>
+    where
+        C: sea_orm::ConnectionTrait,
+    {
         tracing::info!("Creating secret: {}", params.name);
         Self::validate_secret_name(&params.name)?;
         let sanitized_value = Self::sanitize_secret_value(&params.value)?;
@@ -271,7 +274,10 @@ impl SecretManagerService {
     }
 
     /// List all secrets (without values)
-    pub async fn list_secrets(&self, db: &DatabaseConnection) -> Result<Vec<SecretInfo>, OxyError> {
+    pub async fn list_secrets<C>(&self, db: &C) -> Result<Vec<SecretInfo>, OxyError>
+    where
+        C: sea_orm::ConnectionTrait,
+    {
         let secrets = Secret::find()
             .filter(secrets::Column::IsActive.eq(true))
             .filter(secrets::Column::ProjectId.eq(self.project_id))
@@ -295,12 +301,15 @@ impl SecretManagerService {
     }
 
     /// Update a secret
-    pub async fn update_secret(
+    pub async fn update_secret<C>(
         &self,
-        db: &DatabaseConnection,
+        db: &C,
         name: &str,
         params: UpdateSecretParams,
-    ) -> Result<SecretInfo, OxyError> {
+    ) -> Result<SecretInfo, OxyError>
+    where
+        C: sea_orm::ConnectionTrait,
+    {
         let secret = Secret::find()
             .filter(secrets::Column::Name.eq(name))
             .filter(secrets::Column::IsActive.eq(true))
@@ -346,7 +355,10 @@ impl SecretManagerService {
     }
 
     /// Delete a secret (soft delete)
-    pub async fn delete_secret(&self, db: &DatabaseConnection, name: &str) -> Result<(), OxyError> {
+    pub async fn delete_secret<C>(&self, db: &C, name: &str) -> Result<(), OxyError>
+    where
+        C: sea_orm::ConnectionTrait,
+    {
         let secret = Secret::find()
             .filter(secrets::Column::Name.eq(name))
             .filter(secrets::Column::IsActive.eq(true))
