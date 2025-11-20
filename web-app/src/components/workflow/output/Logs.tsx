@@ -21,6 +21,8 @@ interface OutputLogsProps {
   contentClassName?: string;
   onlyShowResult?: boolean;
   onArtifactClick?: (id: string) => void;
+  expandAll?: number;
+  collapseAll?: number;
 }
 
 const OutputLogs: React.FC<OutputLogsProps> = ({
@@ -29,6 +31,8 @@ const OutputLogs: React.FC<OutputLogsProps> = ({
   contentClassName,
   onlyShowResult,
   onArtifactClick,
+  expandAll,
+  collapseAll,
 }) => {
   const parentRef = React.useRef<HTMLDivElement | null>(null);
   const bottomRef = React.useRef<HTMLDivElement | null>(null);
@@ -69,6 +73,31 @@ const OutputLogs: React.FC<OutputLogsProps> = ({
     flattenRecursive(logs);
     return flattened;
   }, [logs, itemStates]);
+
+  // Handle expand all
+  React.useEffect(() => {
+    if (expandAll && expandAll > 0) {
+      const allExpandableIds: string[] = [];
+      const collectIds = (items: LogItem[], parentId?: string) => {
+        items.forEach((log, index) => {
+          const id = parentId ? `${parentId}-${index}` : `root-${index}`;
+          if (log.children && log.children.length > 0) {
+            allExpandableIds.push(id);
+            collectIds(log.children, id);
+          }
+        });
+      };
+      collectIds(logs);
+      setItemStates(new Map(allExpandableIds.map((id) => [id, true])));
+    }
+  }, [expandAll, logs]);
+
+  // Handle collapse all
+  React.useEffect(() => {
+    if (collapseAll && collapseAll > 0) {
+      setItemStates(new Map());
+    }
+  }, [collapseAll]);
 
   const toggleExpanded = useCallback((id: string, isLastRootItem: boolean) => {
     setItemStates((prev) => {

@@ -25,9 +25,25 @@ const WorkflowOutput: React.FC<WorkflowOutputProps> = ({
   onArtifactClick,
 }) => {
   const [showLogs, setShowLogs] = React.useState(true);
+  const [expandAll, setExpandAll] = React.useState(0);
+  const [collapseAll, setCollapseAll] = React.useState(0);
+
+  const handleExpandAll = () => {
+    setExpandAll((prev) => prev + 1);
+  };
+
+  const handleCollapseAll = () => {
+    setCollapseAll((prev) => prev + 1);
+  };
+
   return (
     <div className="h-full flex flex-col bg-card">
-      <Header toggleOutput={toggleOutput} />
+      <Header
+        toggleOutput={toggleOutput}
+        logs={logs}
+        onExpandAll={handleExpandAll}
+        onCollapseAll={handleCollapseAll}
+      />
 
       <div className="flex justify-between items-center p-4 bg-card">
         <RunSelection workflowId={workflowId} runId={runId} />
@@ -55,6 +71,8 @@ const WorkflowOutput: React.FC<WorkflowOutputProps> = ({
             isPending={isPending}
             logs={logs}
             onlyShowResult={!showLogs}
+            expandAll={expandAll}
+            collapseAll={collapseAll}
           />
         </div>
       )}
