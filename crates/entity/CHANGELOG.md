@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.17](https://github.com/oxy-hq/oxy-internal/compare/0.3.16...0.3.17) (2025-11-20)
+
+
+### <!-- 0 -->🚀 Features
+
+* deep research ([#1367](https://github.com/oxy-hq/oxy-internal/issues/1367)) ([e498b05](https://github.com/oxy-hq/oxy-internal/commit/e498b0508c3a7e6ade929d78ca3a3666504b9c97))
+
 ## [0.3.16](https://github.com/oxy-hq/oxy-internal/compare/0.3.15...0.3.16) (2025-11-11)
 
 ## [0.3.15](https://github.com/oxy-hq/oxy-internal/compare/0.3.14...0.3.15) (2025-11-07)

@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.3.17](https://github.com/oxy-hq/oxy-internal/compare/0.3.16...0.3.17) (2025-11-20)
+
+
+### <!-- 0 -->🚀 Features
+
+* deep research ([#1367](https://github.com/oxy-hq/oxy-internal/issues/1367)) ([e498b05](https://github.com/oxy-hq/oxy-internal/commit/e498b0508c3a7e6ade929d78ca3a3666504b9c97))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* closes [#1319](https://github.com/oxy-hq/oxy-internal/issues/1319) workflow preview with error ([#1377](https://github.com/oxy-hq/oxy-internal/issues/1377)) ([084cccb](https://github.com/oxy-hq/oxy-internal/commit/084cccbaf2b8387a639a71ed4f94f0e1af0847b3))
+* github app webhook ([#1362](https://github.com/oxy-hq/oxy-internal/issues/1362)) ([f2136a4](https://github.com/oxy-hq/oxy-internal/commit/f2136a428329135397a6d52970aa75f23abb1389))
+* sqlite transaction ([#1368](https://github.com/oxy-hq/oxy-internal/issues/1368)) ([659b819](https://github.com/oxy-hq/oxy-internal/commit/659b819de360429e87dd6804078ea9a649f0ebe3))
+
 ## [0.3.16](https://github.com/oxy-hq/oxy-internal/compare/0.3.15...0.3.16) (2025-11-11)
 
 
