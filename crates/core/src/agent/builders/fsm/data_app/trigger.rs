@@ -18,7 +18,11 @@ use crate::{
         AppConfig, Display, ExecuteSQLTask, MarkdownDisplay, SQL, TableDisplay, Task, TaskType,
     },
     errors::OxyError,
-    execute::{Executable, ExecutionContext, builders::fsm::Trigger},
+    execute::{
+        Executable, ExecutionContext,
+        builders::fsm::Trigger,
+        types::{Chunk, Output},
+    },
     tools::{
         create_data_app::{CreateDataAppExecutable, types::CreateDataAppParams},
         types::CreateDataAppInput,
@@ -105,9 +109,11 @@ where
         };
         let file_name = format!("data_app_{}", ShortUuid::generate());
         let mut executable = CreateDataAppExecutable;
+        let build_app_context = execution_context
+            .with_child_source(uuid::Uuid::new_v4().to_string(), "data_app".to_string());
         let response = executable
             .execute(
-                execution_context,
+                &build_app_context,
                 CreateDataAppInput {
                     param: CreateDataAppParams {
                         file_name,
@@ -212,7 +218,16 @@ where
         execution_context: &ExecutionContext,
         mut current_state: Self::State,
     ) -> Result<Self::State, OxyError> {
-        let content = self.run_insight(execution_context, &current_state).await?;
+        let insight_context = execution_context
+            .with_child_source(uuid::Uuid::new_v4().to_string(), "insight".to_string());
+        let content = self.run_insight(&insight_context, &current_state).await?;
+        insight_context
+            .write_chunk(Chunk {
+                delta: Output::Text(content.clone()),
+                finished: true,
+                key: Some("insight".to_string()),
+            })
+            .await?;
         current_state.collect_insight(content.clone());
         current_state.add_message(content);
         Ok(current_state)

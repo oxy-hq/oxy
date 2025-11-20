@@ -34,6 +34,13 @@ export type TaskContent = {
   task_metadata?: TaskMetadata;
 };
 
+export type StepContent = {
+  type: "step";
+  id: string;
+  step_type: StepType;
+  objective?: string;
+};
+
 export type TextContent = {
   type: "text";
   content: string;
@@ -47,9 +54,21 @@ export type SqlContent = {
   is_result_truncated: boolean;
 };
 
+export type VizContent = {
+  type: "viz";
+  name: string;
+  title: string;
+  config: unknown;
+};
+
 export type GroupContent = {
   type: "group";
   group_id: string;
+};
+
+export type DataAppContent = {
+  type: "data_app";
+  file_path: string;
 };
 
 export type ArtifactWorkflowMetadata = {
@@ -81,16 +100,21 @@ export type ArtifactContent = {
 
 export type BlockContent =
   | TaskContent
+  | StepContent
   | TextContent
   | SqlContent
+  | VizContent
+  | DataAppContent
   | GroupContent;
 
-export type Block = {
+export type BlockBase = {
   id: string;
   children: string[];
   error?: string;
   is_streaming?: boolean;
-} & BlockContent;
+};
+
+export type Block = BlockBase & BlockContent;
 
 export type GroupWorkflowType = {
   type: "workflow";
@@ -107,11 +131,17 @@ export type GroupArtifactType = {
   is_verified: boolean;
 };
 
+export type GroupAgenticType = {
+  type: "agentic";
+  agent_id: string;
+  run_id: string;
+};
+
 export type Group = {
   id: string;
   error?: string;
   is_streaming?: boolean;
-} & (GroupWorkflowType | GroupArtifactType);
+} & (GroupWorkflowType | GroupArtifactType | GroupAgenticType);
 
 export type WorkflowStartedEvent = {
   type: "workflow_started";
@@ -152,6 +182,46 @@ export type TaskEvent =
   | TaskFinishedEvent
   | TaskMetadataEvent;
 
+export type AgenticEvent = AgenticStartedEvent | AgenticFinishedEvent;
+
+export type AgenticStartedEvent = {
+  type: "agentic_started";
+  agent_id: string;
+  run_id: string;
+};
+
+export type AgenticFinishedEvent = {
+  type: "agentic_finished";
+  agent_id: string;
+  run_id: string;
+  error?: string;
+};
+
+export type StepEvent = StepStartedEvent | StepFinishedEvent;
+
+export type StepType =
+  | "idle"
+  | "plan"
+  | "end"
+  | "query"
+  | "visualize"
+  | "insight"
+  | "subflow"
+  | "build_app";
+
+export type StepStartedEvent = {
+  type: "step_started";
+  id: string;
+  step_type: StepType;
+  objective?: string;
+};
+
+export type StepFinishedEvent = {
+  type: "step_finished";
+  step_id: string;
+  error?: string;
+};
+
 export type ContentEvent = {
   type: "content_added" | "content_done";
   content_id: string;
@@ -177,5 +247,7 @@ export type ArtifactEvent = ArtifactStartedEvent | ArtifactFinishedEvent;
 export type BlockEvent =
   | WorkflowEvent
   | TaskEvent
+  | AgenticEvent
+  | StepEvent
   | ContentEvent
   | ArtifactEvent;

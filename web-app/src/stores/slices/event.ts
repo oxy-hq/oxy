@@ -50,6 +50,25 @@ export const createEventSlice: StateCreator<
         get().setGroupProcessing(artifact_id, false);
         break;
       }
+      case "agentic_started": {
+        const { agent_id, run_id } = event;
+        const blockId = `${agent_id}::${run_id}`;
+        get().addGroup(blockId, {
+          id: blockId,
+          type: "agentic",
+          agent_id,
+          run_id,
+        });
+        break;
+      }
+      case "agentic_finished": {
+        const { agent_id, run_id } = event;
+        const blockId = `${agent_id}::${run_id}`;
+        get().removeGroup(blockId, event.error);
+        get().setGroupProcessing(blockId, false);
+        break;
+      }
+
       case "task_started": {
         const { task_id, task_name, task_metadata } = event;
         get().upsertBlockToStack(task_id, {
@@ -70,6 +89,22 @@ export const createEventSlice: StateCreator<
       case "task_finished": {
         const { task_id } = event;
         get().removeBlockStack(task_id, event.error);
+        break;
+      }
+
+      case "step_started": {
+        const { id, step_type, objective } = event;
+        get().upsertBlockToStack(id, {
+          type: "step",
+          id,
+          step_type,
+          objective,
+        });
+        break;
+      }
+      case "step_finished": {
+        const { step_id, error } = event;
+        get().removeBlockStack(step_id, error);
         break;
       }
 

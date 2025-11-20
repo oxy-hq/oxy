@@ -125,6 +125,7 @@ fn build_project_routes() -> Router<AppState> {
         .route("/charts/{file_path}", get(chart::get_chart))
         .route("/logs", get(thread::get_logs))
         .route("/events", get(run::workflow_events))
+        .route("/events/lookup", get(task::agentic_events))
         .route("/events/sync", get(run::workflow_events_sync))
         .route("/blocks", get(run::get_blocks))
         .route(
@@ -184,6 +185,7 @@ fn build_thread_routes() -> Router<AppState> {
         .route("/{id}", get(thread::get_thread))
         .route("/{id}", delete(thread::delete_thread))
         .route("/{id}/task", post(task::ask_task))
+        .route("/{id}/agentic", post(task::ask_agentic))
         .route("/{id}/workflow", post(workflow::run_workflow_thread))
         .route(
             "/{id}/workflow-sync",

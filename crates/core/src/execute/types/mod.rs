@@ -11,6 +11,7 @@ mod sql;
 mod table;
 mod usage;
 pub mod utils;
+mod viz;
 
 pub use data_app::DataApp;
 pub use display::ProgressType;
@@ -26,3 +27,4 @@ pub use reference::ReferenceKind;
 pub use sql::SQL;
 pub use table::{Table, TableReference};
 pub use usage::Usage;
+pub use viz::{VizParams, VizParamsType};

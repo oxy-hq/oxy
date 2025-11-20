@@ -2188,7 +2188,7 @@ pub struct MarkdownDisplay {
     pub content: String,
 }
 
-#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone, Validate)]
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone, Validate, ToSchema)]
 #[garde(context(ValidationContext))]
 pub struct LineChartDisplay {
     #[garde(length(min = 1))]
@@ -2209,7 +2209,7 @@ pub struct LineChartDisplay {
     pub title: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone, Validate)]
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone, Validate, ToSchema)]
 #[garde(context(ValidationContext))]
 pub struct BarChartDisplay {
     #[garde(length(min = 1))]
@@ -2226,7 +2226,7 @@ pub struct BarChartDisplay {
     pub series: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone, Validate)]
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone, Validate, ToSchema)]
 #[garde(context(ValidationContext))]
 pub struct PieChartDisplay {
     #[garde(length(min = 1))]

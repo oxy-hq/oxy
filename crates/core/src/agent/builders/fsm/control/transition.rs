@@ -15,6 +15,7 @@ use crate::{
         data_app::config::Insight,
         machine::Agent,
         query::config::Query,
+        trigger::StepTrigger,
         viz::config::Visualize,
     },
     config::constants::AGENT_END_TRANSITION,
@@ -22,7 +23,7 @@ use crate::{
     execute::{
         ExecutionContext,
         builders::fsm::{State, Trigger},
-        types::{Chunk, Output},
+        types::{Chunk, Output, event::Step},
     },
 };
 
@@ -196,6 +197,11 @@ pub trait TriggerBuilder {
     where
         Self: std::fmt::Debug + Sized + Send + Sync + TransitionContext + 'static,
     {
+        tracing::info!(
+            "Building trigger '{}' of type {:?}",
+            transition.trigger.get_name(),
+            transition.trigger
+        );
         match &transition.trigger {
             TriggerType::Start(start_config) => match &start_config.mode {
                 StartMode::Default => Ok(Box::new(Idle::new())),
@@ -256,6 +262,7 @@ pub trait TriggerBuilder {
                 }
             }
             TriggerType::Query(query_config) => {
+                tracing::info!("Building Query Trigger {query_config:?}");
                 self.build_query_trigger(
                     execution_context,
                     agentic_config,
@@ -309,8 +316,15 @@ where
     ) -> Result<Box<dyn Trigger<State = Self>>, OxyError> {
         let start_transition = machine.config.start_transition();
         self.set_transition_name(start_transition.trigger.get_name());
-        self.build(execution_context, &machine.config, start_transition, None)
-            .await
+        Ok(StepTrigger::boxed(
+            Step::new(
+                uuid::Uuid::new_v4().to_string(),
+                start_transition.trigger.get_step_kind(),
+                None,
+            ),
+            self.build(execution_context, &machine.config, start_transition, None)
+                .await?,
+        ))
     }
 
     async fn next_trigger(
@@ -320,17 +334,10 @@ where
     ) -> Result<Option<Box<dyn Trigger<State = Self>>>, OxyError> {
         // Check if max iterations reached
         if self.max_iterations_reached(machine.config.max_iterations) {
-            execution_context
-                .write_chunk(Chunk {
-                    key: None,
-                    delta: Output::Text(format!(
-                        "\n\n`max_iterations` of {} reached. Ending the agentic workflow.\n\n",
-                        machine.config.max_iterations
-                    )),
-                    finished: true,
-                })
-                .await?;
-            return Ok(None);
+            return Err(OxyError::RuntimeError(format!(
+                "Max iterations of {} reached",
+                machine.config.max_iterations
+            )));
         }
 
         let current_transition = machine.config.find_transition(self.transition_name())?;
@@ -362,7 +369,6 @@ where
             },
         };
         let transition = get_transition().await?;
-        self.increase_iteration();
 
         match transition {
             Some(t) => {
@@ -378,28 +384,16 @@ where
                     }
                 }
 
-                let trigger_name = if t.trigger.is_start() {
-                    "plan"
-                } else {
-                    t.trigger.get_name()
-                };
-                let mut transition_message =
-                    format!("\n\nRunning transition: {}\n\n", trigger_name);
-                if let Some(obj) = &objective {
-                    transition_message.push_str(&format!("With objective: {obj}\n\n"));
-                }
-                execution_context
-                    .write_chunk(Chunk {
-                        key: None,
-                        delta: Output::Text(transition_message),
-                        finished: true,
-                    })
-                    .await?;
-
-                Ok(Some(
+                self.increase_iteration();
+                Ok(Some(StepTrigger::boxed(
+                    Step::new(
+                        uuid::Uuid::new_v4().to_string(),
+                        t.trigger.get_step_kind(),
+                        objective.clone(),
+                    ),
                     self.build(execution_context, &machine.config, t, objective)
                         .await?,
-                ))
+                )))
             }
             None => Ok(None),
         }
@@ -524,9 +518,11 @@ where
             .await?;
         let mut stream = self.adapter.stream_text(messages).await?;
         let mut content = String::new();
+        let streaming_context = execution_context
+            .with_child_source(uuid::Uuid::new_v4().to_string(), "text".to_string());
         while let Some(chunk) = stream.next().await.transpose()?.flatten() {
             content.push_str(&chunk);
-            execution_context
+            streaming_context
                 .write_chunk(Chunk {
                     key: None,
                     delta: Output::Text(chunk),
@@ -534,7 +530,7 @@ where
                 })
                 .await?;
         }
-        execution_context
+        streaming_context
             .write_chunk(Chunk {
                 key: None,
                 delta: Output::Text("".to_string()),
@@ -598,9 +594,11 @@ where
         messages.extend(current_state.get_messages());
         let mut stream = self.adapter.stream_text(messages).await?;
         let mut content = String::new();
+        let streaming_context = execution_context
+            .with_child_source(uuid::Uuid::new_v4().to_string(), "text".to_string());
         while let Some(chunk) = stream.next().await.transpose()?.flatten() {
             content.push_str(&chunk);
-            execution_context
+            streaming_context
                 .write_chunk(Chunk {
                     key: None,
                     delta: Output::Text(chunk),
@@ -609,7 +607,7 @@ where
                 .await?;
         }
         current_state.set_content(content);
-        execution_context
+        streaming_context
             .write_chunk(Chunk {
                 key: None,
                 delta: Output::Text("".to_string()),

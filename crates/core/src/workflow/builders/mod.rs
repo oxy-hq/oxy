@@ -223,7 +223,7 @@ impl WorkflowLauncher {
                 }
             }
             RetryStrategy::NoRetry { variables } => runs_manager
-                .new_run(&source_id, variables.clone())
+                .new_run(&source_id, variables.clone(), None)
                 .await
                 .map(|run| run.try_into())?,
             RetryStrategy::Preview => {

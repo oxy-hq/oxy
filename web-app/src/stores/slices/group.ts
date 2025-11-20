@@ -12,6 +12,7 @@ export interface GroupSlice {
   groupBlocks: Record<string, BlockSlice>;
   groupStack: string[];
   groups: Record<string, Group>;
+  groupAliases: Record<string, string>;
   processingGroups: Record<string, boolean>;
   setGroupBlocks: (
     runInfo: RunInfo,
@@ -70,6 +71,7 @@ export const createGroupSlice: StateCreator<
   groupStack: [],
   groups: {},
   processingGroups: {},
+  groupAliases: {},
   setGroupBlocks: (
     runInfo: RunInfo,
     blocks?: Record<string, Block>,
@@ -92,6 +94,20 @@ export const createGroupSlice: StateCreator<
             run_id: runInfo.run_index.toString(),
             error,
           };
+
+      if (state.groups[groupId]) {
+        return {
+          groups: {
+            ...state.groups,
+            [groupId]: groupData,
+          },
+          groupAliases: {
+            ...state.groupAliases,
+            ...(runInfo.lookup_id ? { [runInfo.lookup_id]: groupId } : {}),
+          },
+        };
+      }
+
       return {
         groupBlocks: {
           ...state.groupBlocks,
@@ -104,6 +120,10 @@ export const createGroupSlice: StateCreator<
         groups: {
           ...state.groups,
           [groupId]: groupData,
+        },
+        groupAliases: {
+          ...state.groupAliases,
+          ...(runInfo.lookup_id ? { [runInfo.lookup_id]: groupId } : {}),
         },
       };
     }),

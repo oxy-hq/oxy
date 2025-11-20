@@ -1,5 +1,15 @@
 use crate::{
-    api::middlewares::project::ProjectManagerExtractor, service::agent::run_agentic_workflow,
+    adapters::checkpoint::types::RetryStrategy,
+    api::middlewares::project::ProjectManagerExtractor,
+    dispatcher::run::Dispatcher,
+    execute::types::event::Step,
+    service::{
+        agent::{AgenticRunner, run_agentic_workflow},
+        chat,
+        statics::BROADCASTER,
+        types::run::RunInfo,
+    },
+    utils::create_sse_broadcast,
 };
 use async_trait::async_trait;
 use std::sync::{Arc, Mutex};
@@ -22,12 +32,12 @@ use crate::{
     },
 };
 use axum::{
-    extract::{self, Path},
+    extract::{self, Path, Query},
     http::StatusCode,
     response::IntoResponse,
 };
 use sea_orm::{ActiveModelTrait, ActiveValue};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::Sender;
 
 #[derive(Deserialize)]
@@ -250,4 +260,110 @@ pub async fn ask_task(
     execution_manager
         .execute_request(id, payload, executor, user.id, project_id)
         .await
+}
+
+#[derive(Deserialize)]
+pub struct AskAgenticRequest {
+    pub question: String,
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct AskAgenticResponse {
+    pub run_info: RunInfo,
+    pub message_id: Uuid,
+}
+
+pub async fn ask_agentic(
+    Path((project_id, id)): Path<(Uuid, String)>,
+    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
+    extract::Json(payload): extract::Json<AskAgenticRequest>,
+) -> Result<extract::Json<AskAgenticResponse>, StatusCode> {
+    let chat_service = ChatService::new().await?;
+    let thread_id = chat_service.parse_thread_id(&id)?;
+    chat_service
+        .new_user_question(thread_id.clone(), &payload.question)
+        .await?;
+    let memory = chat_service
+        .build_conversation_memory(thread_id.clone())
+        .await?;
+    let config_manager = project_manager.config_manager.clone();
+    let agent_ref = config_manager
+        .get_builder_agent_path()
+        .await
+        .map_err(|e| OxyError::RuntimeError(format!("Failed to get builder agent path: {e}")))?;
+    let source_id = agent_ref.to_string_lossy().to_string();
+    let message_id = chat_service.new_agentic_message(thread_id).await?;
+    let lookup_id = message_id.clone();
+
+    let run_info = Dispatcher::new(project_manager)
+        .dispatch(
+            source_id.to_string(),
+            RetryStrategy::NoRetry { variables: None },
+            AgenticRunner::new(payload.question.clone(), memory),
+            Some(lookup_id),
+        )
+        .await
+        .map_err(|err| {
+            tracing::error!("Failed to dispatch agentic task: {}", err);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+    Ok(extract::Json(AskAgenticResponse {
+        run_info,
+        message_id,
+    }))
+}
+
+#[derive(Deserialize)]
+pub struct AgenticEventsRequest {
+    pub lookup_id: String,
+}
+
+pub async fn agentic_events(
+    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    Query(request): Query<AgenticEventsRequest>,
+) -> Result<impl axum::response::IntoResponse, StatusCode> {
+    let runs_manager = project_manager.runs_manager.as_ref().ok_or_else(|| {
+        tracing::error!("Failed to initialize RunsManager");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+    let run_details = runs_manager
+        .lookup(&request.lookup_id)
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                "Failed to lookup run by lookup_id {}: {:?}",
+                request.lookup_id,
+                e
+            );
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?
+        .ok_or_else(|| {
+            tracing::warn!("No run found for lookup_id: {}", request.lookup_id);
+            StatusCode::NOT_FOUND
+        })?;
+    let run_info = run_details.run_info;
+    let run_info = match run_info.root_ref {
+        Some(root_ref) => runs_manager
+            .find_run(&root_ref.source_id, root_ref.run_index)
+            .await
+            .map_err(|e| {
+                tracing::error!("Failed to find root run: {:?}", e);
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?
+            .ok_or(StatusCode::NOT_FOUND)?,
+        None => run_info,
+    };
+
+    let run_id = run_info.task_id().map_err(|_| StatusCode::BAD_REQUEST)?;
+    tracing::info!("Subscribing to events for run ID: {}", run_id);
+    let subscribed = BROADCASTER.subscribe(&run_id).await.map_err(|err| {
+        tracing::error!("Failed to subscribe to topic {run_id}: {err}");
+        Into::<StatusCode>::into(err)
+    })?;
+    tracing::info!("Subscribed to events for run ID: {}", run_id);
+    Ok(axum::response::sse::Sse::new(create_sse_broadcast(
+        subscribed.items,
+        subscribed.receiver,
+    )))
 }

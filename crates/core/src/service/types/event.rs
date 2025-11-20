@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     adapters::runs::Mergeable,
+    agent::builders::fsm::config::AgenticConfig,
     config::{
         constants::{
             ARTIFACT_SOURCE, CONCURRENCY_SOURCE, CONSISTENCY_SOURCE, TASK_SOURCE, WORKFLOW_SOURCE,
@@ -9,7 +10,10 @@ use crate::{
         model::Workflow,
     },
     errors::OxyError,
-    execute::types::{Event, EventKind as ExecuteEventKind, Output, event::ArtifactKind},
+    execute::types::{
+        Event, EventKind as ExecuteEventKind, Output, Usage,
+        event::{ArtifactKind, Step},
+    },
     service::types::{content::ContentType, task::TaskMetadata},
 };
 
@@ -47,6 +51,27 @@ pub enum EventKind {
     },
     ArtifactFinished {
         artifact_id: String,
+        error: Option<String>,
+    },
+    Usage {
+        usage: Usage,
+    },
+    AgenticStarted {
+        agent_id: String,
+        run_id: String,
+        agent_config: AgenticConfig,
+    },
+    AgenticFinished {
+        agent_id: String,
+        run_id: String,
+        error: Option<String>,
+    },
+    StepStarted {
+        #[serde(flatten)]
+        step: Step,
+    },
+    StepFinished {
+        step_id: String,
         error: Option<String>,
     },
     ContentAdded {
@@ -219,6 +244,31 @@ impl TryFrom<Event> for EventKind {
                 )),
             },
             _ => match event.kind {
+                ExecuteEventKind::StepStarted { step } => Ok(EventKind::StepStarted { step }),
+                ExecuteEventKind::StepFinished { step_id, error } => {
+                    Ok(EventKind::StepFinished { step_id, error })
+                }
+                ExecuteEventKind::AgenticStarted {
+                    agent_id,
+                    run_id,
+                    agent_config,
+                } => Ok(EventKind::AgenticStarted {
+                    agent_id,
+                    run_id,
+                    agent_config: serde_json::from_value(agent_config).map_err(|e| {
+                        OxyError::RuntimeError(format!("Failed to deserialize agentic config: {e}"))
+                    })?,
+                }),
+                ExecuteEventKind::AgenticFinished {
+                    agent_id,
+                    run_id,
+                    error,
+                } => Ok(EventKind::AgenticFinished {
+                    agent_id,
+                    run_id,
+                    error,
+                }),
+                ExecuteEventKind::Usage { usage } => Ok(EventKind::Usage { usage }),
                 ExecuteEventKind::Updated { chunk } => match chunk.delta.clone() {
                     Output::SQL(sql) => Ok(EventKind::ContentDone {
                         content_id: event.source.id.to_string(),
@@ -260,6 +310,14 @@ impl TryFrom<Event> for EventKind {
                         "Unsupported event kind".to_string(),
                     )),
                 },
+                ExecuteEventKind::DataAppCreated { data_app } => Ok(EventKind::ContentDone {
+                    content_id: event.source.id.to_string(),
+                    item: ContentType::DataApp(data_app),
+                }),
+                ExecuteEventKind::VizGenerated { viz } => Ok(EventKind::ContentDone {
+                    content_id: event.source.id.to_string(),
+                    item: ContentType::Viz(viz),
+                }),
                 _ => Err(OxyError::ArgumentError(
                     "Unsupported event kind".to_string(),
                 )),

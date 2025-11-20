@@ -62,6 +62,7 @@ impl<S> AutoSQL<S> {
         &self,
         execution_context: &ExecutionContext,
     ) -> Result<Vec<ChatCompletionRequestMessage>, OxyError> {
+        tracing::info!("Query Objective: {}", self.objective);
         let semantic_manager = SemanticManager::from_config(
             execution_context.project.config_manager.clone(),
             execution_context.project.secrets_manager.clone(),
@@ -206,7 +207,11 @@ where
         execution_context: &ExecutionContext,
         mut state: Self::State,
     ) -> Result<Self::State, OxyError> {
-        let (table, tool_call) = self.run_with_retry(execution_context).await?;
+        let query_context = execution_context
+            .with_child_source(uuid::Uuid::new_v4().to_string(), "query".to_string());
+        tracing::info!("Running AutoSQL Trigger for objective: {}", self.objective);
+        let (table, tool_call) = self.run_with_retry(&query_context).await?;
+        tracing::info!("AutoSQL Tool Call: {:?}", tool_call);
         state.add_tool_call(&self.objective, tool_call, table.to_string());
         state.add_table(table);
         Ok(state)

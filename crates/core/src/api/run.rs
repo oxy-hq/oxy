@@ -175,39 +175,21 @@ pub async fn create_workflow_run(
         tracing::error!("Failed to initialize RunsManager");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
-    let (run_info, replay_id) = runs_manager
-        .get_run_info(&file_path_to_source_id(&path), &payload.retry_strategy)
+    let (source_run_info, root_run_info) = runs_manager
+        .get_root_run(
+            &file_path_to_source_id(&path),
+            &payload.retry_strategy,
+            None,
+        )
         .await
         .map_err(|e| {
             tracing::error!("Failed to get run info: {:?}", e);
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
-    // If this is a retry on child, resolve to the root run
-    let (run_info, replay_id) = match run_info.root_ref {
-        Some(root_ref) => runs_manager
-            .find_run(&root_ref.source_id, root_ref.run_index)
-            .await
-            .map_err(|e| {
-                tracing::error!("Failed to find root run: {:?}", e);
-                StatusCode::INTERNAL_SERVER_ERROR
-            })?
-            .ok_or(StatusCode::NOT_FOUND)
-            .map(|run| {
-                (
-                    run,
-                    replay_id.map(|id| {
-                        if id.is_empty() {
-                            root_ref.replay_ref.clone()
-                        } else {
-                            format!("{}.{}", root_ref.replay_ref, id)
-                        }
-                    }),
-                )
-            })?,
-        None => (run_info, replay_id),
-    };
-    tracing::info!("Creating new run {:?} with {:?}", run_info, replay_id);
+    let replay_id = payload.retry_strategy.replay_id(&source_run_info.root_ref);
+    let run_info = root_run_info.unwrap_or(source_run_info);
 
+    tracing::info!("Creating new run {:?} with {:?}", run_info, replay_id);
     let task_id = run_info.task_id()?;
     let topic_ref = BROADCASTER.create_topic(&task_id).await.map_err(|err| {
         tracing::error!("Failed to create topic for task ID {task_id}: {err}");

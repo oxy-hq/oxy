@@ -28,6 +28,12 @@ pub enum Relation {
         on_delete = "Cascade"
     )]
     Threads,
+    #[sea_orm(
+        has_many = "super::runs::Entity",
+        from = "Column::Id",
+        to = "super::runs::Column::LookupId"
+    )]
+    Runs,
 }
 
 impl Related<super::threads::Entity> for Entity {
@@ -39,6 +45,12 @@ impl Related<super::threads::Entity> for Entity {
 impl Related<super::artifacts::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Artifacts.def()
+    }
+}
+
+impl Related<super::runs::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Runs.def()
     }
 }
 

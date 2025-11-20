@@ -523,7 +523,7 @@ impl ChatService {
         })
     }
 
-    fn parse_thread_id(&self, id: &str) -> Result<Uuid, StatusCode> {
+    pub fn parse_thread_id(&self, id: &str) -> Result<Uuid, StatusCode> {
         Uuid::parse_str(id).map_err(|e| {
             tracing::warn!("Invalid thread ID format '{}': {}", id, e);
             StatusCode::BAD_REQUEST
@@ -592,47 +592,7 @@ impl ChatService {
         thread: &entity::threads::Model,
     ) -> Result<String, StatusCode> {
         let user_question = match payload.get_question() {
-            Some(question) => {
-                // Validate question content
-                if question.trim().is_empty() {
-                    tracing::warn!("Empty question provided for thread {}", thread.id);
-                    return Err(StatusCode::BAD_REQUEST);
-                }
-
-                if question.len() > 10000 {
-                    // Reasonable limit
-                    tracing::warn!(
-                        "Question too long ({} chars) for thread {}",
-                        question.len(),
-                        thread.id
-                    );
-                    return Err(StatusCode::BAD_REQUEST);
-                }
-
-                let new_message = entity::messages::ActiveModel {
-                    id: ActiveValue::Set(Uuid::new_v4()),
-                    content: ActiveValue::Set(question.clone()),
-                    is_human: ActiveValue::Set(true),
-                    thread_id: ActiveValue::Set(thread.id),
-                    created_at: ActiveValue::default(),
-                    ..Default::default()
-                };
-
-                new_message.insert(&self.connection).await.map_err(|e| {
-                    tracing::error!(
-                        "Failed to insert user message for thread {}: {}",
-                        thread.id,
-                        e
-                    );
-                    StatusCode::INTERNAL_SERVER_ERROR
-                })?;
-
-                tracing::debug!(
-                    "Successfully inserted user message for thread {}",
-                    thread.id
-                );
-                question
-            }
+            Some(question) => self.new_user_question(thread.id.clone(), &question).await?,
             None => {
                 // When no question is provided, use the thread's input
                 let messages = Messages::find()
@@ -669,7 +629,84 @@ impl ChatService {
         Ok(user_question)
     }
 
-    async fn build_conversation_memory(&self, thread_id: Uuid) -> Result<Vec<Message>, StatusCode> {
+    pub async fn new_user_question(
+        &self,
+        thread_id: Uuid,
+        question: &str,
+    ) -> Result<String, StatusCode> {
+        // Validate question content
+        if question.trim().is_empty() {
+            tracing::warn!("Empty question provided for thread {}", thread_id);
+            return Err(StatusCode::BAD_REQUEST);
+        }
+
+        if question.len() > 10000 {
+            // Reasonable limit
+            tracing::warn!(
+                "Question too long ({} chars) for thread {}",
+                question.len(),
+                thread_id
+            );
+            return Err(StatusCode::BAD_REQUEST);
+        }
+
+        let new_message = entity::messages::ActiveModel {
+            id: ActiveValue::Set(Uuid::new_v4()),
+            content: ActiveValue::Set(question.to_string()),
+            is_human: ActiveValue::Set(true),
+            thread_id: ActiveValue::Set(thread_id),
+            created_at: ActiveValue::default(),
+            ..Default::default()
+        };
+
+        new_message.insert(&self.connection).await.map_err(|e| {
+            tracing::error!(
+                "Failed to insert user message for thread {}: {}",
+                thread_id,
+                e
+            );
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+        tracing::debug!(
+            "Successfully inserted user message for thread {}",
+            thread_id
+        );
+
+        Ok(question.to_string())
+    }
+
+    pub async fn new_agentic_message(&self, thread_id: Uuid) -> Result<Uuid, StatusCode> {
+        let new_message = entity::messages::ActiveModel {
+            id: ActiveValue::Set(Uuid::new_v4()),
+            content: ActiveValue::Set(String::new()),
+            is_human: ActiveValue::Set(false),
+            thread_id: ActiveValue::Set(thread_id),
+            created_at: ActiveValue::default(),
+            ..Default::default()
+        };
+
+        let message = new_message.insert(&self.connection).await.map_err(|e| {
+            tracing::error!(
+                "Failed to insert agentic message for thread {}: {}",
+                thread_id,
+                e
+            );
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+        tracing::debug!(
+            "Successfully inserted agentic message for thread {}",
+            thread_id
+        );
+
+        Ok(message.id)
+    }
+
+    pub async fn build_conversation_memory(
+        &self,
+        thread_id: Uuid,
+    ) -> Result<Vec<Message>, StatusCode> {
         let mut messages = Messages::find()
             .filter(entity::messages::Column::ThreadId.eq(thread_id))
             .order_by(entity::messages::Column::CreatedAt, Order::Desc)

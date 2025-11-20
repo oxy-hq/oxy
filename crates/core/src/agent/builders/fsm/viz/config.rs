@@ -97,7 +97,7 @@ const VIZ_SCHEMA: &str = r##"
               "description": "reference data output from a table using table name",
               "type": "string"
             },
-            "name": { "type": "string" },
+            "name": { "type": "string", "description": "The name of the category column to group_by in the data." },
             "title": { "type": ["string", "null"] },
             "type": { "enum": ["pie"], "type": "string" },
             "value": { "type": "string" }

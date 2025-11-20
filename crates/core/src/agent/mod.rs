@@ -196,6 +196,7 @@ impl AgentLauncher {
         agent_ref: &str,
         agent_input: AgenticInput,
         event_handler: H,
+        run_id: Option<String>,
     ) -> Result<OutputContainer, OxyError> {
         let execution_context = self
             .execution_context
@@ -204,19 +205,25 @@ impl AgentLauncher {
             ))?
             .with_child_source(agent_ref.to_string(), AGENT_SOURCE.to_string());
         let agent_ref = agent_ref.to_string();
+        let agent_config = execution_context
+            .project
+            .config_manager
+            .resolve_agentic_workflow(&agent_ref)
+            .await?;
         let handle = tokio::spawn(async move {
             execution_context
-                .write_kind(EventKind::Started {
-                    name: agent_ref.to_string(),
-                    attributes: Default::default(),
+                .write_kind(EventKind::AgenticStarted {
+                    agent_id: agent_ref.to_string(),
+                    run_id: run_id.clone().unwrap_or_default(),
+                    agent_config: serde_json::to_value(&agent_config)?,
                 })
                 .await?;
             let response =
                 launch_agentic_workflow(&execution_context, &agent_ref, agent_input).await;
             execution_context
-                .write_kind(EventKind::Finished {
-                    attributes: Default::default(),
-                    message: Default::default(),
+                .write_kind(EventKind::AgenticFinished {
+                    agent_id: agent_ref.to_string(),
+                    run_id: run_id.clone().unwrap_or_default(),
                     error: response.as_ref().err().map(|e| e.to_string()),
                 })
                 .await?;

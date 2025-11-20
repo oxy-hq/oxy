@@ -65,6 +65,7 @@ impl RunsStorage for RunsDatabaseStorage {
             source_id: run.source_id,
             run_index: run.run_index,
             status,
+            lookup_id: run.lookup_id.map(|id| id.to_string()),
             variables: run.variables.map(|v| v.to_inner()),
             created_at: run.created_at.into(),
             updated_at: run.updated_at.into(),
@@ -76,6 +77,7 @@ impl RunsStorage for RunsDatabaseStorage {
         source_id: &str,
         root_ref: Option<RootReference>,
         variables: Option<IndexMap<String, serde_json::Value>>,
+        lookup_id: Option<Uuid>,
     ) -> Result<RunInfo, OxyError> {
         let connection = self.connection.clone();
         let project_id = self.project_id;
@@ -98,6 +100,8 @@ impl RunsStorage for RunsDatabaseStorage {
                 let source_id = source_id.clone();
                 let root_ref = root_ref.clone();
                 let variables = variables.clone();
+                let lookup_id_clone = lookup_id.clone();
+
                 async move {
                     connection
                         .transaction::<_, RunInfo, DbErr>(move |txn| {
@@ -133,6 +137,7 @@ impl RunsStorage for RunsDatabaseStorage {
                                     created_at: ActiveValue::Set(chrono::Utc::now().into()),
                                     updated_at: ActiveValue::Set(chrono::Utc::now().into()),
                                     variables: ActiveValue::Set(variables.clone().map(Variables)),
+                                    lookup_id: ActiveValue::Set(lookup_id_clone.clone()),
                                     ..Default::default()
                                 };
                                 match root_ref {
@@ -159,6 +164,7 @@ impl RunsStorage for RunsDatabaseStorage {
                                     root_ref,
                                     source_id: source_id.to_string(),
                                     run_index,
+                                    lookup_id: lookup_id_clone.map(|id| id.to_string()),
                                     variables,
                                     status: RunStatus::Pending,
                                     created_at: chrono::Utc::now(),
@@ -237,6 +243,12 @@ impl RunsStorage for RunsDatabaseStorage {
                     run_id,
                 } => (
                     workflow_id,
+                    Some(run_id.parse::<i32>().map_err(|_| {
+                        OxyError::RuntimeError("Invalid run index format".to_string())
+                    })?),
+                ),
+                GroupId::Agentic { agent_id, run_id } => (
+                    agent_id,
                     Some(run_id.parse::<i32>().map_err(|_| {
                         OxyError::RuntimeError("Invalid run index format".to_string())
                     })?),
@@ -414,6 +426,7 @@ impl RunsStorage for RunsDatabaseStorage {
                 }),
                 source_id: run.source_id,
                 run_index: run.run_index,
+                lookup_id: run.lookup_id.map(|id| id.to_string()),
                 status: match (run.blocks, run.error) {
                     (_, Some(_)) => RunStatus::Failed,
                     (Some(_), None) => RunStatus::Completed,
@@ -486,6 +499,77 @@ impl RunsStorage for RunsDatabaseStorage {
                 variables: run.variables.map(|v| v.to_inner()),
                 source_id: run.source_id,
                 run_index: run.run_index,
+                lookup_id: run.lookup_id.map(|id| id.to_string()),
+                status,
+                created_at: run.created_at.into(),
+                updated_at: run.updated_at.into(),
+            },
+            output: run
+                .output
+                .as_ref()
+                .and_then(|output_json| serde_json::to_value(output_json.clone()).ok()),
+            children,
+            blocks,
+            error: run.error,
+        }))
+    }
+
+    async fn lookup(&self, lookup_id: &str) -> Result<Option<RunDetails>, OxyError> {
+        let lookup_id = Uuid::parse_str(lookup_id).map_err(|err| {
+            OxyError::ArgumentError(format!("Invalid lookup_id format, must be UUID: {err}"))
+        })?;
+        let run = entity::runs::Entity::find()
+            .filter(
+                entity::runs::Column::LookupId
+                    .eq(lookup_id)
+                    .and(entity::runs::Column::ProjectId.eq(self.project_id))
+                    .and(entity::runs::Column::BranchId.eq(self.branch_id)),
+            )
+            .one(&self.connection)
+            .await
+            .map_err(|err| OxyError::DBError(format!("Failed to fetch run by lookup_id: {err}")))?;
+        if run.is_none() {
+            return Ok(None);
+        }
+        let run = run.unwrap();
+
+        let status = match (&run.blocks, &run.error) {
+            (_, Some(_)) => RunStatus::Failed,
+            (Some(_), None) => RunStatus::Completed,
+            (None, None) => RunStatus::Pending,
+        };
+        let blocks = run
+            .blocks
+            .map(|blocks_json| {
+                serde_json::from_value::<HashMap<String, Block>>(blocks_json).map_err(|err| {
+                    OxyError::SerializerError(format!("Failed to deserialize blocks: {err}"))
+                })
+            })
+            .transpose()?;
+        let children = run
+            .children
+            .map(|children_json| {
+                serde_json::from_value::<Vec<String>>(children_json).map_err(|err| {
+                    OxyError::SerializerError(format!("Failed to deserialize children: {err}"))
+                })
+            })
+            .transpose()?;
+
+        Ok(Some(RunDetails {
+            run_info: RunInfo {
+                metadata: run
+                    .metadata
+                    .as_ref()
+                    .and_then(|json| serde_json::from_value::<GroupKind>(json.clone()).ok()),
+                root_ref: run.root_source_id.as_ref().map(|source_id| RootReference {
+                    source_id: source_id.clone(),
+                    run_index: run.root_run_index,
+                    replay_ref: run.root_replay_ref.unwrap_or_default(),
+                }),
+                variables: run.variables.map(|v| v.to_inner()),
+                source_id: run.source_id,
+                run_index: run.run_index,
+                lookup_id: run.lookup_id.map(|id| id.to_string()),
                 status,
                 created_at: run.created_at.into(),
                 updated_at: run.updated_at.into(),
@@ -541,6 +625,7 @@ impl RunsStorage for RunsDatabaseStorage {
                 }),
                 source_id: run.source_id,
                 run_index: run.run_index,
+                lookup_id: run.lookup_id.map(|id| id.to_string()),
                 status: match (run.blocks, run.error) {
                     (_, Some(_)) => RunStatus::Failed,
                     (Some(_), None) => RunStatus::Completed,

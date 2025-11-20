@@ -1,6 +1,6 @@
 use crate::{
     agent::builders::fsm::{
-        control::config::{End, EndMode, Start, StartMode},
+        control::config::{End, EndMode, OutputArtifact, Start, StartMode},
         data_app::config::Insight,
         query::config::Query,
         subflow::config::Subflow,
@@ -8,7 +8,7 @@ use crate::{
     },
     config::constants::{AGENT_END_TRANSITION, AGENT_START_TRANSITION},
     errors::OxyError,
-    execute::renderer::TemplateRegister,
+    execute::{renderer::TemplateRegister, types::event::StepKind},
 };
 
 use async_openai::types::{
@@ -287,6 +287,23 @@ impl TriggerType {
             TriggerType::Visualize(v) => &v.name,
             TriggerType::Insight(i) => &i.name,
             TriggerType::Subflow(s) => &s.name,
+        }
+    }
+
+    pub fn get_step_kind(&self) -> StepKind {
+        match self {
+            TriggerType::Start(s) => match s.mode {
+                StartMode::Plan { .. } => StepKind::Plan,
+                _ => StepKind::Idle,
+            },
+            TriggerType::End(e) => match e.output_artifact {
+                OutputArtifact::App => StepKind::BuildApp,
+                _ => StepKind::End,
+            },
+            TriggerType::Query(_) => StepKind::Query,
+            TriggerType::Visualize(_) => StepKind::Visualize,
+            TriggerType::Insight(_) => StepKind::Insight,
+            TriggerType::Subflow(_) => StepKind::Subflow,
         }
     }
 

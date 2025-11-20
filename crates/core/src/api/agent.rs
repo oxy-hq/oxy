@@ -37,19 +37,23 @@ use uuid::Uuid;
 #[derive(Serialize)]
 pub struct BuilderAvailabilityResponse {
     pub available: bool,
+    pub builder_path: Option<String>,
 }
 
 pub async fn check_builder_availability(
     ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
 ) -> Result<extract::Json<BuilderAvailabilityResponse>, StatusCode> {
-    let is_available = project_manager
+    let builder_path_res = project_manager
         .config_manager
         .get_builder_agent_path()
-        .await
-        .is_ok();
+        .await;
+    let is_available = builder_path_res.is_ok();
 
     Ok(extract::Json(BuilderAvailabilityResponse {
         available: is_available,
+        builder_path: builder_path_res
+            .ok()
+            .map(|p| p.to_string_lossy().to_string()),
     }))
 }
 

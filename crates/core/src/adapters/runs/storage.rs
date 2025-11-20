@@ -1,4 +1,5 @@
 use indexmap::IndexMap;
+use uuid::Uuid;
 
 use crate::{
     adapters::runs::database::RunsDatabaseStorage,
@@ -18,6 +19,7 @@ pub trait RunsStorage {
         source_id: &str,
         root_ref: Option<RootReference>,
         variables: Option<IndexMap<String, serde_json::Value>>,
+        lookup_id: Option<Uuid>,
     ) -> Result<RunInfo, OxyError>;
     async fn upsert_run(&self, group: Group) -> Result<(), OxyError>;
     async fn update_run_variables(
@@ -48,6 +50,7 @@ pub trait RunsStorage {
         source_id: &str,
         pagination: &Pagination,
     ) -> Result<Paginated<RunInfo>, OxyError>;
+    async fn lookup(&self, lookup_id: &str) -> Result<Option<RunDetails>, OxyError>;
 }
 
 #[enum_dispatch::enum_dispatch(RunsStorage)]

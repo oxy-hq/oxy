@@ -9,12 +9,14 @@ use async_openai::types::{
 use crate::{
     adapters::openai::OpenAIAdapter,
     agent::builders::fsm::{
-        control::TransitionContext,
-        query::PrepareData,
-        viz::{config::Visualize, state::VizParams},
+        control::TransitionContext, query::PrepareData, viz::config::Visualize,
     },
     errors::OxyError,
-    execute::{ExecutionContext, builders::fsm::Trigger},
+    execute::{
+        ExecutionContext,
+        builders::fsm::Trigger,
+        types::{EventKind, VizParams},
+    },
 };
 
 pub struct GenerateViz<S> {
@@ -190,8 +192,11 @@ where
         execution_context: &ExecutionContext,
         mut current_state: Self::State,
     ) -> Result<Self::State, OxyError> {
-        let (viz, tool_call) = self
-            .run_with_retry(execution_context, &current_state)
+        let viz_context = execution_context
+            .with_child_source(uuid::Uuid::new_v4().to_string(), "visualize".to_string());
+        let (viz, tool_call) = self.run_with_retry(&viz_context, &current_state).await?;
+        viz_context
+            .write_kind(EventKind::VizGenerated { viz: viz.clone() })
             .await?;
         current_state.add_tool_call(&self.objective, tool_call, viz.to_string());
         current_state.collect_viz(viz);

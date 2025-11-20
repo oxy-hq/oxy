@@ -79,7 +79,7 @@ export const WorkflowPreview = ({
     const streamCall = async (relativePath: string, runId: string) => {
       return stream
         .mutateAsync({
-          workflowId: relativePath,
+          sourceId: relativePath,
           runIndex: parseInt(runId, 10),
         })
         .catch((error) => {
@@ -162,7 +162,7 @@ export const WorkflowPreview = ({
       });
       setShowOutput(true);
       await stream.mutateAsync({
-        workflowId: relativePath,
+        sourceId: relativePath,
         runIndex: parseInt(runId, 10),
       });
     }

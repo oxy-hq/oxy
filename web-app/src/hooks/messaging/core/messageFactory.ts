@@ -1,3 +1,4 @@
+import { RunInfo } from "@/services/types";
 import { Message } from "@/types/chat";
 
 export const STREAMING_MESSAGE_PREFIX = "temp-";
@@ -8,6 +9,27 @@ export const DEFAULT_USAGE = {
 } as const;
 
 export class MessageFactory {
+  static createAgenticMessage(
+    messageId: string,
+    threadId: string,
+    runInfo: RunInfo,
+  ): Message {
+    return {
+      id: messageId,
+      thread_id: threadId,
+      content: "",
+      references: [],
+      steps: [],
+      is_human: false,
+      isStreaming: false,
+      usage: DEFAULT_USAGE,
+      artifacts: {},
+      created_at: new Date().toISOString(),
+      file_path: "",
+      run_info: runInfo,
+    };
+  }
+
   static createStreamingMessage(
     threadId: string,
     prefix = "streaming",

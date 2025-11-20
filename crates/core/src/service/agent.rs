@@ -1,16 +1,21 @@
 use crate::{
-    adapters::{project::manager::ProjectManager, session_filters::SessionFilters},
+    adapters::{
+        checkpoint::types::RetryStrategy, project::manager::ProjectManager, runs::TopicRef,
+        session_filters::SessionFilters,
+    },
     agent::{AgentLauncher, builders::fsm::config::AgenticInput, types::AgentInput},
     config::{
         ConfigManager,
         constants::{CONCURRENCY_SOURCE, CONSISTENCY_SOURCE, WORKFLOW_SOURCE},
         model::{AgentConfig, ConnectionOverrides},
     },
+    dispatcher::run::Dispatch,
     errors::OxyError,
     execute::{
         types::{Event, EventKind, Output, OutputContainer, ProgressType},
         writer::{EventHandler, NoopHandler},
     },
+    service::types::event::EventKind as DispatchEventKind,
     theme::StyledText,
     utils::print_colored_sql,
 };
@@ -235,6 +240,7 @@ pub async fn run_agentic_workflow<P: AsRef<Path>, H: EventHandler + Send + 'stat
                 trace: memory.into_iter().map(|m| m.into()).collect(),
             },
             event_handler,
+            None,
         )
         .await
 }
@@ -263,5 +269,41 @@ impl From<Message> for ChatCompletionRequestMessage {
             }
             .into()
         }
+    }
+}
+
+pub struct AgenticRunner {
+    prompt: String,
+    memory: Vec<Message>,
+}
+
+impl AgenticRunner {
+    pub fn new(prompt: String, memory: Vec<Message>) -> Self {
+        Self { prompt, memory }
+    }
+}
+
+#[async_trait::async_trait]
+impl Dispatch for AgenticRunner {
+    async fn run(
+        &self,
+        project_manager: ProjectManager,
+        topic_ref: TopicRef<DispatchEventKind>,
+        source_id: String,
+        retry_strategy: RetryStrategy,
+    ) -> Result<OutputContainer, OxyError> {
+        AgentLauncher::new()
+            .with_project(project_manager)
+            .await?
+            .launch_agentic_workflow(
+                &source_id,
+                AgenticInput {
+                    prompt: self.prompt.clone(),
+                    trace: self.memory.iter().cloned().map(|m| m.into()).collect(),
+                },
+                topic_ref,
+                retry_strategy.run_index().map(|i| i.to_string()),
+            )
+            .await
     }
 }

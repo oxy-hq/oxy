@@ -60,7 +60,12 @@ impl BlockHandler {
     }
 
     pub fn upsert_block(&mut self, block_id: String, block_kind: BlockKind) {
-        let parent_id = self.block_stack.last().cloned();
+        let parent_id = self
+            .block_stack
+            .last()
+            .cloned()
+            .map(|p| if p == block_id { None } else { Some(p) })
+            .flatten();
 
         match self.blocks.get_mut(&block_id) {
             Some(block) => {
@@ -165,6 +170,12 @@ impl Handler for BlockHandler {
             EventKind::TaskFinished { task_id, error } => {
                 self.finish_block(task_id.clone(), error);
             }
+            EventKind::StepStarted { step } => {
+                self.upsert_block(step.id.clone(), BlockKind::Step(step));
+            }
+            EventKind::StepFinished { step_id, error } => {
+                self.finish_block(step_id, error);
+            }
             EventKind::ContentAdded { content_id, item } => {
                 self.upsert_block(
                     content_id.clone(),
@@ -181,6 +192,8 @@ impl Handler for BlockHandler {
                             result,
                             is_result_truncated,
                         },
+                        ContentType::DataApp(data_app) => BlockKind::DataApp(data_app),
+                        ContentType::Viz(viz) => BlockKind::Viz(viz),
                     },
                 );
             }
@@ -200,6 +213,8 @@ impl Handler for BlockHandler {
                             result,
                             is_result_truncated,
                         },
+                        ContentType::DataApp(data_app) => BlockKind::DataApp(data_app),
+                        ContentType::Viz(viz) => BlockKind::Viz(viz),
                     },
                 );
                 self.finish_block(content_id, None);
@@ -318,6 +333,25 @@ impl Handler for GroupBlockHandler {
             } => {
                 // Handle workflow finish
                 self.end_group(format!("{workflow_id}::{run_id}"), error.clone());
+            }
+            EventKind::AgenticStarted {
+                agent_id,
+                run_id,
+                agent_config,
+            } => {
+                self.start_group(GroupKind::Agentic {
+                    agent_id: agent_id.clone(),
+                    run_id: run_id.clone(),
+                    agent_config: agent_config.clone(),
+                });
+            }
+            EventKind::AgenticFinished {
+                agent_id,
+                run_id,
+                error,
+            } => {
+                // Handle agentic finish
+                self.end_group(format!("{agent_id}::{run_id}"), error.clone());
             }
             EventKind::ArtifactStarted {
                 artifact_id,

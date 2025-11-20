@@ -34,7 +34,7 @@ export class ArtifactService {
 export class BuilderService {
   static async checkBuilderAvailability(
     projectId: string,
-  ): Promise<{ available: boolean }> {
+  ): Promise<{ available: boolean; builder_path?: string }> {
     const response = await apiClient.get(`/${projectId}/builder-availability`);
     return response.data;
   }

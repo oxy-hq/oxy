@@ -1,15 +1,25 @@
 use std::{collections::HashMap, path::PathBuf};
 
 use serde::{Deserialize, Serialize};
-use utoipa::ToSchema;
+use utoipa::{
+    ToSchema,
+    openapi::{RefOr, Schema},
+};
 
-use crate::{execute::types::Usage, service::types::SemanticQueryParams};
+use crate::{
+    execute::types::{Usage, VizParams},
+    service::types::SemanticQueryParams,
+};
 
 use super::{Chunk, ProgressType, ReferenceKind};
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
 pub struct DataApp {
+    #[schema(schema_with = any_schema)]
     pub file_path: PathBuf,
+}
+fn any_schema() -> impl Into<RefOr<Schema>> {
+    RefOr::T(Schema::default())
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
@@ -48,6 +58,52 @@ impl std::fmt::Display for ArtifactKind {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
+#[serde(rename_all = "snake_case", tag = "step_type")]
+pub enum StepKind {
+    Idle,
+    Plan,
+    Query,
+    Visualize,
+    Insight,
+    Subflow,
+    BuildApp,
+    End,
+}
+
+impl std::fmt::Display for StepKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            StepKind::Idle => write!(f, "idle"),
+            StepKind::Plan => write!(f, "plan"),
+            StepKind::Query => write!(f, "query"),
+            StepKind::Visualize => write!(f, "visualize"),
+            StepKind::Insight => write!(f, "insight"),
+            StepKind::Subflow => write!(f, "subflow"),
+            StepKind::BuildApp => write!(f, "build_app"),
+            StepKind::End => write!(f, "end"),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
+pub struct Step {
+    pub id: String,
+    #[serde(flatten)]
+    pub kind: StepKind,
+    pub objective: Option<String>,
+}
+
+impl Step {
+    pub fn new(id: String, kind: StepKind, objective: Option<String>) -> Self {
+        Self {
+            id,
+            kind,
+            objective,
+        }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum EventKind {
     // Output events
@@ -74,7 +130,9 @@ pub enum EventKind {
         title: String,
         is_verified: bool,
     },
-
+    VizGenerated {
+        viz: VizParams,
+    },
     SQLQueryGenerated {
         query: String,
         database: String,
@@ -104,6 +162,24 @@ pub enum EventKind {
     },
     Error {
         message: String,
+    },
+    // Agentic workflow events
+    AgenticStarted {
+        agent_id: String,
+        run_id: String,
+        agent_config: serde_json::Value,
+    },
+    AgenticFinished {
+        agent_id: String,
+        run_id: String,
+        error: Option<String>,
+    },
+    StepStarted {
+        step: Step,
+    },
+    StepFinished {
+        step_id: String,
+        error: Option<String>,
     },
 }
 

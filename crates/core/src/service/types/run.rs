@@ -3,6 +3,7 @@ use crate::{
     service::types::block::{Block, GroupKind},
 };
 use indexmap::IndexMap;
+use sea_orm::FromQueryResult;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use utoipa::ToSchema;
@@ -38,6 +39,7 @@ pub struct RunInfo {
     pub metadata: Option<GroupKind>,
     pub source_id: String,
     pub run_index: Option<i32>,
+    pub lookup_id: Option<String>,
     pub status: RunStatus,
     #[schema(value_type = Object)]
     pub variables: Option<IndexMap<String, serde_json::Value>>,
@@ -67,10 +69,13 @@ impl RunInfo {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, ToSchema, Default)]
+#[derive(Serialize, Deserialize, Debug, Clone, ToSchema, Default, FromQueryResult)]
 pub struct RootReference {
+    #[sea_orm(from_alias = "root_source_id")]
     pub source_id: String,
+    #[sea_orm(from_alias = "root_run_index")]
     pub run_index: Option<i32>,
+    #[sea_orm(from_alias = "root_replay_ref")]
     pub replay_ref: String,
 }
 

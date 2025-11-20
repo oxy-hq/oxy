@@ -6,6 +6,7 @@ pub mod cli;
 pub mod config;
 pub mod constants;
 pub mod db;
+pub mod dispatcher;
 pub mod errors;
 mod eval;
 pub mod execute;

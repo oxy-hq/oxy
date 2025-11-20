@@ -7,6 +7,7 @@ import PageSkeleton from "@/components/PageSkeleton";
 import { AlertTriangle } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import queryKeys from "@/hooks/api/queryKey";
+import AgenticThread from "./agentic";
 
 const ThreadNotFound = () => (
   <div className="flex flex-col items-center justify-center h-64 p-8 text-center">
@@ -59,6 +60,8 @@ const Thread = () => {
         return <AgentThread thread={thread} refetchThread={refetchThread} />;
       case "task":
         return <TaskThread thread={thread} refetchThread={refetchThread} />;
+      case "agentic":
+        return <AgenticThread thread={thread} />;
       default:
         return <AgentThread thread={thread} refetchThread={refetchThread} />;
     }

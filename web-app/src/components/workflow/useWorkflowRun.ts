@@ -417,17 +417,16 @@ export const useCancelWorkflowRun = () => {
 
 export const useStreamEvents = () => {
   const { project, branchName } = useCurrentProjectBranch();
-
   const abortControllerRef = useRef<AbortController | null>(null);
   const handleEvent = useBlockStore((state) => state.handleEvent);
   const cleanupGroupStacks = useBlockStore((state) => state.cleanupGroupStacks);
   const setGroupProcessing = useBlockStore((state) => state.setGroupProcessing);
   const mutation = useMutation({
     mutationFn: async ({
-      workflowId,
+      sourceId,
       runIndex,
     }: {
-      workflowId: string;
+      sourceId: string;
       runIndex: number;
     }) => {
       if (abortControllerRef.current) {
@@ -439,38 +438,35 @@ export const useStreamEvents = () => {
         project.id,
         branchName,
         {
-          sourceId: workflowId,
+          sourceId,
           runIndex,
         },
         handleEvent,
         () => {
           cleanupGroupStacks("Cancelled");
-          const groupId = getGroupId(workflowId, runIndex.toString());
+          const groupId = getGroupId(sourceId, runIndex.toString());
           setGroupProcessing(groupId, false);
           abortControllerRef.current = null;
         },
         (error) => {
           console.error("Stream error:", error);
-          const groupId = getGroupId(workflowId, runIndex.toString());
+          const groupId = getGroupId(sourceId, runIndex.toString());
           setGroupProcessing(groupId, false);
           abortControllerRef.current = null;
         },
         abortControllerRef.current?.signal,
       );
     },
-    onMutate: ({ workflowId, runIndex }) => {
-      const groupId = getGroupId(workflowId, runIndex.toString());
+    onMutate: ({ sourceId, runIndex }) => {
+      const groupId = getGroupId(sourceId, runIndex.toString());
       setGroupProcessing(groupId, true);
     },
-    onError: (_error, { workflowId, runIndex }) => {
-      const groupId = getGroupId(workflowId, runIndex.toString());
-      setGroupProcessing(groupId, false);
-    },
-    onSuccess: (_data, { workflowId, runIndex }) => {
-      const groupId = getGroupId(workflowId, runIndex.toString());
+    onError: (_error, { sourceId, runIndex }) => {
+      const groupId = getGroupId(sourceId, runIndex.toString());
       setGroupProcessing(groupId, false);
     },
   });
+
   const cancel = useCallback(() => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();

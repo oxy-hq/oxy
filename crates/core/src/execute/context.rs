@@ -12,7 +12,11 @@ use crate::{
     },
     config::model::ConnectionOverrides,
     errors::OxyError,
-    execute::{builders::checkpoint::CheckpointId, renderer::Renderer, types::Usage},
+    execute::{
+        builders::checkpoint::CheckpointId,
+        renderer::Renderer,
+        types::{Usage, event::Step},
+    },
 };
 
 use super::{
@@ -178,6 +182,19 @@ impl ExecutionContext {
 
     pub async fn write_chunk(&self, chunk: Chunk) -> Result<(), OxyError> {
         self.write_kind(EventKind::Updated { chunk }).await
+    }
+
+    pub async fn write_step_started(&self, step: Step) -> Result<(), OxyError> {
+        self.write_kind(EventKind::StepStarted { step }).await
+    }
+
+    pub async fn write_step_finished(
+        &self,
+        step_id: String,
+        error: Option<String>,
+    ) -> Result<(), OxyError> {
+        self.write_kind(EventKind::StepFinished { step_id, error })
+            .await
     }
 
     pub async fn write_data_app(

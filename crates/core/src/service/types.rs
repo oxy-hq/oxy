@@ -5,7 +5,10 @@ use std::collections::HashMap;
 use utoipa::ToSchema;
 
 use crate::{
-    execute::types::{ReferenceKind, Table, Usage, event::ArtifactKind},
+    execute::types::{
+        ReferenceKind, Table, Usage,
+        event::{ArtifactKind, Step},
+    },
     tools::types::OmniQueryParams,
     utils::get_file_stem,
     workflow::loggers::types::LogItem,
@@ -269,6 +272,13 @@ pub enum AnswerContent {
     },
     DataApp {
         file_path: String,
+    },
+    StepStarted {
+        step: Step,
+    },
+    StepFinished {
+        step_id: String,
+        error: Option<String>,
     },
 }
 

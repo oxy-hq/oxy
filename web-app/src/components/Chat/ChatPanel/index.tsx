@@ -27,6 +27,8 @@ import useAskTask from "@/hooks/messaging/task";
 import useRunWorkflowThread from "@/hooks/workflow/useRunWorkflowThread";
 import ROUTES from "@/libs/utils/routes";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import { useAskAgentic } from "@/stores/agentic";
+import { toast } from "sonner";
 
 const ToggleGroupItemClasses =
   "data-[state=on]:border data-[state=on]:border-blue-500 data-[state=on]:bg-blue-500 data-[state=on]:text-white hover:bg-blue-500/20 hover:text-blue-300 hover:border-blue-400/50 transition-colors border-gray-600 rounded-md text-gray-400";
@@ -44,25 +46,45 @@ const ChatPanel = () => {
 
   const [agent, setAgent] = useState<Agent | null>(null);
   const [workflow, setWorkflow] = useState<WorkflowOption | null>(null);
+  const { mutateAsync: sendAgenticMessage } = useAskAgentic();
 
   const { mutate: createThread, isPending } = useThreadMutation((data) => {
+    let promise: Promise<unknown>;
     switch (data.source_type) {
       case "agent":
-        sendMessage(data.input, data.id);
+        promise = sendMessage(data.input, data.id);
         break;
       case "task":
-        sendTaskMessage(data.input, data.id);
+        promise = sendTaskMessage(data.input, data.id);
+        break;
+      case "agentic":
+        promise = sendAgenticMessage({
+          prompt: data.input,
+          threadId: data.id,
+        });
         break;
       case "workflow":
-        runWorkflow(data.id);
+        promise = runWorkflow(data.id);
         break;
+      default:
+        promise = Promise.resolve();
     }
-    const threadUri = ROUTES.PROJECT(projectId).THREAD(data.id);
-    navigate(threadUri);
+    promise
+      .then(() => {
+        const threadUri = ROUTES.PROJECT(projectId).THREAD(data.id);
+        navigate(threadUri);
+        return threadUri;
+      })
+      .catch((error) => {
+        toast.error("Error sending thread message:", error);
+      });
   });
 
-  const { isAvailable: isBuilderAvailable, isLoading: isCheckingBuilder } =
-    useBuilderAvailable();
+  const {
+    isAvailable: isBuilderAvailable,
+    isLoading: isCheckingBuilder,
+    isAgentic,
+  } = useBuilderAvailable();
 
   const [message, setMessage] = useState("");
   const { formRef, onKeyDown } = useEnterSubmit();
@@ -87,7 +109,7 @@ const ChatPanel = () => {
           createThread({
             title: title,
             source: "",
-            source_type: "task",
+            source_type: isAgentic ? "agentic" : "task",
             input: message,
           });
         }

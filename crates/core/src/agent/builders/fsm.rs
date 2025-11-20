@@ -5,4 +5,5 @@ pub mod machine;
 pub mod query;
 pub mod states;
 pub mod subflow;
+pub mod trigger;
 pub mod viz;

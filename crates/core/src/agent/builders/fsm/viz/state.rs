@@ -1,47 +1,8 @@
-use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
-
 use crate::{
     agent::builders::fsm::viz::CollectViz,
-    config::model::{BarChartDisplay, Display, LineChartDisplay, PieChartDisplay},
+    config::model::Display,
+    execute::types::{VizParams, VizParamsType},
 };
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(tag = "type", rename_all = "snake_case")]
-#[serde(deny_unknown_fields)]
-pub enum VizParamsType {
-    Line(LineChartDisplay),
-    Bar(BarChartDisplay),
-    Pie(PieChartDisplay),
-}
-
-impl std::fmt::Display for VizParamsType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            VizParamsType::Line(_) => write!(f, "line"),
-            VizParamsType::Bar(_) => write!(f, "bar"),
-            VizParamsType::Pie(_) => write!(f, "pie"),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct VizParams {
-    pub name: String,
-    pub title: String,
-    pub config: VizParamsType,
-}
-
-impl std::fmt::Display for VizParams {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "Visualization: {}\nTitle: {}\nType: {}",
-            self.name, self.title, self.config
-        )
-    }
-}
 
 impl From<VizParams> for Display {
     fn from(val: VizParams) -> Self {

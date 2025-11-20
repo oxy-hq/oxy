@@ -9,6 +9,8 @@ import {
   StreamEventsPayload,
   GetBlocksRequest,
   GetBlocksResponse,
+  CreateAgenticRunPayload,
+  CreateAgenticRunResponse,
 } from "../types";
 import { PaginationState } from "@tanstack/react-table";
 
@@ -114,6 +116,21 @@ export class RunService {
   ): Promise<void> {
     const response = await apiClient.delete(
       `/${projectId}/runs/${btoa(sourceId)}/${runIndex}`,
+      { params: { branch: branchName } },
+    );
+    return response.data;
+  }
+
+  static async createAgenticRun(
+    projectId: string,
+    branchName: string,
+    payload: CreateAgenticRunPayload,
+  ): Promise<CreateAgenticRunResponse> {
+    const response = await apiClient.post(
+      `/${projectId}/threads/${payload.threadId}/agentic`,
+      {
+        question: payload.prompt,
+      },
       { params: { branch: branchName } },
     );
     return response.data;

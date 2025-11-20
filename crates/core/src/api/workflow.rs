@@ -920,7 +920,7 @@ pub async fn run_workflow_sync(
     })?;
 
     let run_info = runs_manager
-        .new_run(&source_id, request.variables.clone())
+        .new_run(&source_id, request.variables.clone(), None)
         .await
         .map_err(|e| {
             tracing::error!("Failed to create new run: {:?}", e);
@@ -1310,6 +1310,13 @@ impl From<&crate::service::types::event::EventKind> for WorkflowEvent {
                     task_name: String::from("internal_metadata"),
                 }
             }
+            _ => {
+                // For any other event types, return a generic placeholder
+                WorkflowEvent::TaskStarted {
+                    task_id: String::new(),
+                    task_name: String::from("internal_metadata"),
+                }
+            }
         }
     }
 }
@@ -1675,6 +1682,9 @@ fn reconstruct_events_from_run_details(
                 }
                 BlockKind::Group { .. } => {
                     // Skip group blocks, they're just containers
+                }
+                _ => {
+                    // Handle other block kinds as needed
                 }
             }
         }

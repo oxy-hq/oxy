@@ -53,6 +53,10 @@ impl RunsManager {
         self.storage.find_run_details(source_id, run_index).await
     }
 
+    pub async fn lookup(&self, lookup_id: &str) -> Result<Option<RunDetails>, OxyError> {
+        self.storage.lookup(lookup_id).await
+    }
+
     pub async fn update_run_variables(
         &self,
         source_id: &str,
@@ -90,8 +94,11 @@ impl RunsManager {
         &self,
         source_id: &str,
         variables: Option<IndexMap<String, serde_json::Value>>,
+        lookup_id: Option<Uuid>,
     ) -> Result<RunInfo, OxyError> {
-        self.storage.new_run(source_id, None, variables).await
+        self.storage
+            .new_run(source_id, None, variables, lookup_id)
+            .await
     }
     pub async fn nested_run(
         &self,
@@ -100,17 +107,18 @@ impl RunsManager {
         variables: Option<IndexMap<String, serde_json::Value>>,
     ) -> Result<RunInfo, OxyError> {
         self.storage
-            .new_run(source_id, Some(root_ref), variables)
+            .new_run(source_id, Some(root_ref), variables, None)
             .await
     }
     pub async fn get_run_info(
         &self,
         source_id: &str,
         retry_strategy: &RetryStrategy,
-    ) -> Result<(RunInfo, Option<String>), OxyError> {
+        lookup_id: Option<Uuid>,
+    ) -> Result<RunInfo, OxyError> {
         match retry_strategy {
             RetryStrategy::Retry {
-                replay_id,
+                replay_id: _,
                 run_index,
             } => {
                 let run_info = self
@@ -121,15 +129,12 @@ impl RunsManager {
                         })?),
                     )
                     .await?;
-                match run_info {
-                    Some(run_info) => Ok((run_info, replay_id.clone())),
-                    None => Err(OxyError::RuntimeError(format!(
-                        "Run with index {run_index} not found for workflow {source_id}"
-                    ))),
-                }
+                run_info.ok_or(OxyError::RuntimeError(format!(
+                    "Run with index {run_index} not found for workflow {source_id}"
+                )))
             }
             RetryStrategy::RetryWithVariables {
-                replay_id,
+                replay_id: _,
                 run_index,
                 variables,
             } => {
@@ -142,24 +147,42 @@ impl RunsManager {
                         variables.clone(),
                     )
                     .await?;
-                Ok((run_info, replay_id.clone()))
+                Ok(run_info)
             }
             RetryStrategy::LastFailure => {
                 let run_info = self.last_run(source_id).await?;
-                match run_info {
-                    Some(run_info) => Ok((run_info, None)),
-                    None => Err(OxyError::RuntimeError(format!(
-                        "Last failure run not found for workflow {source_id}"
-                    ))),
-                }
+                run_info.ok_or(OxyError::RuntimeError(format!(
+                    "Last failure run not found for workflow {source_id}"
+                )))
             }
-            RetryStrategy::NoRetry { variables } => self
-                .new_run(source_id, variables.clone())
-                .await
-                .map(|run| (run, None)),
+            RetryStrategy::NoRetry { variables } => {
+                self.new_run(source_id, variables.clone(), lookup_id).await
+            }
             RetryStrategy::Preview => {
                 todo!("Preview mode is not implemented yet")
             }
+        }
+    }
+
+    pub async fn get_root_run(
+        &self,
+        source_id: &str,
+        retry_strategy: &RetryStrategy,
+        lookup_id: Option<Uuid>,
+    ) -> Result<(RunInfo, Option<RunInfo>), OxyError> {
+        let run_info = self
+            .get_run_info(source_id, retry_strategy, lookup_id)
+            .await?;
+        if let Some(root_ref) = &run_info.root_ref {
+            let root_run_info = self.find_run(source_id, root_ref.run_index).await?;
+            root_run_info
+                .ok_or(OxyError::RuntimeError(format!(
+                    "Root run not found for {}",
+                    source_id
+                )))
+                .map(|r| (run_info, Some(r)))
+        } else {
+            Ok((run_info, None))
         }
     }
 }
