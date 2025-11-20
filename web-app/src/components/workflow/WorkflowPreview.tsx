@@ -11,6 +11,7 @@ import { cn } from "@/libs/shadcn/utils";
 import { Button } from "@/components/ui/shadcn/button";
 import {
   ChevronDownIcon,
+  CircleAlert,
   LoaderCircle,
   LoaderCircleIcon,
   LogsIcon,
@@ -36,6 +37,8 @@ import {
   DropdownMenuTrigger,
 } from "../ui/shadcn/dropdown-menu";
 import { ButtonGroup } from "../ui/shadcn/button-group";
+import { Alert, AlertDescription, AlertTitle } from "../ui/shadcn/alert";
+import { get } from "lodash";
 
 const WorkflowDiagram = React.lazy(() => import("./WorkflowDiagram"));
 
@@ -52,7 +55,7 @@ export const WorkflowPreview = ({
   const relativePath = path;
   const [showOutput, setShowOutput] = React.useState(!!runId);
 
-  const { data: workflowConfig } = useWorkflowConfig(path);
+  const { data: workflowConfig, error } = useWorkflowConfig(path);
   const run = useWorkflowRun();
   const cancelRun = useCancelWorkflowRun();
   const logs = useWorkflowLogs(path, runId || "");
@@ -169,7 +172,7 @@ export const WorkflowPreview = ({
     setShowOutput(!showOutput);
   };
 
-  if (!workflowConfig) {
+  if (!workflowConfig && !error) {
     return (
       <div className="w-full">
         <div className="flex flex-col gap-10 max-w-page-content mx-auto p-10">
@@ -181,6 +184,19 @@ export const WorkflowPreview = ({
             </div>
           ))}
         </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    const errorMessage = get(error, "response.data.error", error.message);
+    return (
+      <div className="p-4">
+        <Alert variant="destructive">
+          <CircleAlert />
+          <AlertTitle>Error Loading Workflow</AlertTitle>
+          <AlertDescription>{errorMessage}</AlertDescription>
+        </Alert>
       </div>
     );
   }

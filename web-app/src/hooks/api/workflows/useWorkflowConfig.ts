@@ -44,6 +44,7 @@ const useWorkflowConfig = (relative_path: string) => {
     queryKey: queryKeys.workflow.get(project.id, branchName, relative_path),
     queryFn: () => fetchWorkflow(project.id, branchName, relative_path),
     enabled: true,
+    retry: false,
   });
 };
 

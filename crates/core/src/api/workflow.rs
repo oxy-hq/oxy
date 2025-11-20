@@ -60,6 +60,11 @@ pub struct GetWorkflowResponse {
     pub workflow: crate::config::model::Workflow,
 }
 
+#[derive(Serialize, ToSchema)]
+pub struct ErrorResponse {
+    pub error: String,
+}
+
 /// List all workflows in the project
 ///
 /// Retrieves a list of all workflow configurations available in the project.
@@ -116,21 +121,39 @@ pub async fn list(
 pub async fn get(
     Path((_project_id, pathb64)): Path<(Uuid, String)>,
     ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
-) -> Result<extract::Json<GetWorkflowResponse>, StatusCode> {
+) -> Result<extract::Json<GetWorkflowResponse>, (StatusCode, extract::Json<ErrorResponse>)> {
     let decoded_path = BASE64_STANDARD.decode(pathb64).map_err(|e| {
-        tracing::info!("{:?}", e);
-        StatusCode::BAD_REQUEST
+        tracing::warn!("Failed to decode base64 path: {:?}", e);
+        (
+            StatusCode::BAD_REQUEST,
+            extract::Json(ErrorResponse {
+                error: format!("Invalid base64 encoding: {}", e),
+            }),
+        )
     })?;
     let path = String::from_utf8(decoded_path).map_err(|e| {
-        tracing::info!("{:?}", e);
-        StatusCode::BAD_REQUEST
+        tracing::warn!("Failed to convert path to UTF-8: {:?}", e);
+        (
+            StatusCode::BAD_REQUEST,
+            extract::Json(ErrorResponse {
+                error: format!("Invalid UTF-8 in path: {}", e),
+            }),
+        )
     })?;
 
     let config_manager = project_manager.config_manager;
 
     match get_workflow(PathBuf::from(path), config_manager.clone()).await {
         Ok(workflow) => Ok(extract::Json(GetWorkflowResponse { workflow })),
-        Err(_) => Err(StatusCode::NOT_FOUND),
+        Err(error) => {
+            tracing::error!("Error retrieving workflow: {:?}", error);
+            Err((
+                StatusCode::BAD_REQUEST,
+                extract::Json(ErrorResponse {
+                    error: error.to_string(),
+                }),
+            ))
+        }
     }
 }
 
