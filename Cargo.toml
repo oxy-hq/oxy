@@ -8,14 +8,14 @@ resolver = "2"
 [workspace.dependencies]
 tokio = { version = "1.48", features = ["full"] }
 chrono = "*"
-sea-orm = { version = "1.1.17", features = [
+sea-orm = { version = "1.1.19", features = [
   "sqlx-sqlite",
   "sqlx-postgres",
   "runtime-tokio-rustls",
   "macros",
   "with-chrono",
 ] }
-sea-orm-migration = { version = "1.1.17", features = [
+sea-orm-migration = { version = "1.1.19", features = [
   "sqlx-sqlite",
   "sqlx-postgres",
   "runtime-tokio-rustls",
@@ -23,7 +23,7 @@ sea-orm-migration = { version = "1.1.17", features = [
 ] }
 log = { version = "0.4" }
 serde_json = { version = "1.0.145" }
-indexmap = { version = "2.12.0", features = ["serde"] }
+indexmap = { version = "2.12.1", features = ["serde"] }
 
 [workspace.package]
 # TODO: turn this on when https://github.com/googleapis/release-please/issues number 2111 is fixed

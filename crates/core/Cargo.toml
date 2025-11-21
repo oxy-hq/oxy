@@ -19,13 +19,13 @@ assert_cmd = "2.1.1"
 async-openai = {version = "0.30.1", features = ["byot"]}
 async-stream = "0.3.6"
 async-trait = "0.1.89"
-axum = { version = "0.8.6", features = ["macros", "http2"] }
-axum-server = { version = "0.7.2", features = ["tls-rustls"] }
+axum = { version = "0.8.7", features = ["macros", "http2"] }
+axum-server = { version = "0.7.3", features = ["tls-rustls"] }
 base64 = "0.22"
 bcrypt = "0.17.1"
 chrono = { workspace = true }
 chrono-english = "0.1.8"
-clap = { version = "4.5.51", features = ["derive"] }
+clap = { version = "4.5.53", features = ["derive"] }
 clickhouse = { version = "0.13.3", features = ["rustls-tls"] }
 colored = "3.0.0"
 connectorx = { version = "0.4.4", features = ["dst_arrow", "src_bigquery", "src_postgres", "src_mysql"] }
@@ -88,7 +88,7 @@ fxhash = "0.2.1"
 deser-incomplete = "0.1.2"
 snowflake-api = "0.11.0"
 rmcp = {git="https://github.com/modelcontextprotocol/rust-sdk.git", rev="9d6f9a2e0d199c6c7f2731bd6f8f7143af060a6b", features = ["server", "transport-sse-server", "transport-io"]}
-serde_with = "3.15.1"
+serde_with = "3.16.0"
 # we use chrono::DateTimeWithTimeZone, which is not currently supported by utoipa
 # need to use this until this PR is released https://github.com/juhaku/utoipa/pull/1367
 utoipa = {git="https://github.com/haitrr/utoipa.git", rev="776f86e", features = ["uuid", "chrono", "axum_extras"] }
@@ -102,9 +102,9 @@ fehler = "1.0.0"
 sqlparser = "0.37.0"
 backoff = { version = "0.4.0", features = ["tokio"] }
 rustc_version_runtime = "0.3.0"
-apalis = "0.7.3"
-apalis-core = "0.7.3"
-apalis-sql = { version = "0.7.3", features = ["sqlite", "postgres", "tokio"] }
+apalis = "0.7.4"
+apalis-core = "0.7.4"
+apalis-sql = { version = "0.7.4", features = ["sqlite", "postgres", "tokio"] }
 sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "sqlite", "postgres"] }
 rustls = { version = "0.23.35", features = ["aws_lc_rs"] }
 parquet = "=54.2.1"  # needs to be the same with arrow version
