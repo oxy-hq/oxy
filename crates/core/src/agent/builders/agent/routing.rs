@@ -13,7 +13,7 @@ use crate::{
     agent::{
         OpenAIExecutableResponse,
         builders::{
-            openai::{OneShotInput, OpenAIExecutable, SimpleMapper},
+            openai::{OneShotInput, OpenAIExecutable, SimpleMapper, build_openai_executable},
             tool::OpenAITool,
         },
     },
@@ -488,7 +488,7 @@ async fn build_react_loop(
 
     let client = OpenAIClient::with_config(model.into_openai_config(secrets_manager).await?);
     let deduplicated_tools = deduplicate_tools(tools)?;
-    Ok(builder.memo(vec![]).executable(OpenAIExecutable::new(
+    Ok(builder.memo(vec![]).executable(build_openai_executable(
         client,
         model.model_name().to_string(),
         deduplicated_tools,

@@ -3,7 +3,11 @@ use minijinja::{Value, context};
 use rapidfuzz::distance::levenshtein::normalized_distance;
 
 use crate::{
-    agent::{OneShotInput, build_openai_executable},
+    adapters::openai::{IntoOpenAIConfig, OpenAIClient},
+    agent::{
+        OneShotInput,
+        builders::{SimpleMapper, build_openai_executable},
+    },
     config::{
         constants::{EVAL_METRICS_POSTFIX, EVAL_SOURCE},
         model::{DistanceMethod, SolverKind},
@@ -105,13 +109,23 @@ impl Executable<(SolverKind, Vec<(TargetOutput, TargetOutput)>)> for SolverExecu
                     },
                 };
                 let model = config_manager.resolve_model(model_ref)?;
-                let agent = build_openai_executable(model, secret_manager).await?;
+                let client =
+                    OpenAIClient::with_config(model.into_openai_config(secret_manager).await?);
+                let agent = build_openai_executable(
+                    client,
+                    model.model_name().to_string(),
+                    vec![],
+                    None,
+                    None,
+                    false,
+                );
                 let mut eval_executable = ExecutableBuilder::new()
                     .concurrency(self.concurrency)
                     .map(LLMSolverMapper {
                         prompt_template: llm_solver.prompt.to_string(),
                         task_description: None,
                     })
+                    .map(SimpleMapper)
                     .executable(agent);
                 let results = eval_executable.execute(&metric_context, outputs).await?;
                 let metric = results

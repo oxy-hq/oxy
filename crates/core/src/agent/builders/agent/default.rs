@@ -1,6 +1,6 @@
 use crate::adapters::openai::{AsyncFunctionObject, IntoOpenAIConfig};
 use crate::agent::OpenAIExecutableResponse;
-use crate::agent::builders::openai::OpenAIExecutable;
+use crate::agent::builders::openai::{OpenAIExecutable, build_openai_executable};
 use crate::agent::builders::tool::OpenAITool;
 use crate::agent::contexts::Contexts;
 use crate::agent::databases::DatabasesContext;
@@ -203,7 +203,7 @@ async fn build_react_loop(
             max_iterations,
         )
         .memo(vec![])
-        .executable(OpenAIExecutable::new(
+        .executable(build_openai_executable(
             client,
             model,
             tools,

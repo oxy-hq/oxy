@@ -1,8 +1,10 @@
 use std::sync::Arc;
 
-use tokio::sync::Mutex;
-use tokio::sync::mpsc::Sender;
-
+use super::artifact_tracker::ArtifactTracker;
+use super::block_content::ContentProcessor;
+use super::block_manager::BlockManager;
+use super::block_reader::BlockHandlerReader;
+use super::stream::StreamDispatcher;
 use crate::config::constants::{
     AGENT_SOURCE, CONCURRENCY_SOURCE, CONSISTENCY_SOURCE, TASK_SOURCE, WORKFLOW_SOURCE,
 };
@@ -17,12 +19,8 @@ use crate::service::types::{
     SemanticQueryParams,
 };
 use crate::workflow::loggers::types::LogItem;
-
-use super::artifact_tracker::ArtifactTracker;
-use super::block_content::ContentProcessor;
-use super::block_manager::BlockManager;
-use super::block_reader::BlockHandlerReader;
-use super::stream::StreamDispatcher;
+use tokio::sync::Mutex;
+use tokio::sync::mpsc::Sender;
 
 pub struct BlockHandler {
     block_manager: BlockManager,

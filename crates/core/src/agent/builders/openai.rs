@@ -8,7 +8,6 @@ use async_openai::{
         ChatCompletionRequestSystemMessageArgs, ChatCompletionRequestUserMessageArgs,
         ChatCompletionStreamOptions, ChatCompletionTool, ChatCompletionToolChoiceOption,
         ChatCompletionToolType, CreateChatCompletionRequestArgs, FunctionCall,
-        responses::ReasoningConfig,
     },
 };
 use deser_incomplete::from_json_str;
@@ -17,21 +16,15 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::{
-    adapters::{
-        openai::{IntoOpenAIConfig, OpenAIClient},
-        secrets::SecretsManager,
-    },
+    adapters::openai::OpenAIClient,
     config::{
         constants::{AGENT_RETRY_MAX_ELAPSED_TIME, AGENT_SOURCE_CONTENT},
-        model::Model,
+        model::ReasoningConfig,
     },
     errors::OxyError,
     execute::{
         Executable, ExecutionContext,
-        builders::{
-            ExecutableBuilder,
-            map::{MapInput, ParamMapper},
-        },
+        builders::map::ParamMapper,
         types::{Chunk, EventKind, Output},
     },
     service::agent::Message,
@@ -43,7 +36,7 @@ use crate::execute::types::Usage;
 
 #[derive(JsonSchema, Deserialize, Debug, Clone)]
 #[serde(untagged, rename_all = "camelCase", deny_unknown_fields)]
-enum AgentResponseData {
+pub enum AgentResponseData {
     #[schemars(
         description = "Use when returning the result of an SQL query for the specified file_path. Do not use if file_path is not provided. Don't use for data app."
     )]
@@ -56,7 +49,7 @@ enum AgentResponseData {
 
 #[derive(JsonSchema, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
-struct AgentResponse {
+pub struct AgentResponse {
     pub data: AgentResponseData,
 }
 
@@ -110,10 +103,13 @@ fn is_oss_model(model: &str) -> bool {
             && !model.starts_with("gemini"))
 }
 
+use crate::agent::builders::openai_response::OpenAIResponseExecutable;
+
 #[derive(Clone, Debug)]
 pub enum OpenAIOrOSSExecutable {
     OpenAI(OpenAIExecutable),
     OSS(OSSExecutable),
+    OpenAIResponse(OpenAIResponseExecutable),
 }
 
 #[async_trait::async_trait]
@@ -128,6 +124,9 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIOrOSSExecutable {
         match self {
             OpenAIOrOSSExecutable::OpenAI(exec) => exec.execute(execution_context, input).await,
             OpenAIOrOSSExecutable::OSS(exec) => exec.execute(execution_context, input).await,
+            OpenAIOrOSSExecutable::OpenAIResponse(exec) => {
+                exec.execute(execution_context, input).await
+            }
         }
     }
 }
@@ -151,6 +150,7 @@ impl OpenAIExecutable {
         reasoning_config: Option<ReasoningConfig>,
         synthesize_mode: bool,
     ) -> Self {
+        print!("Building OpenAI executable for model: {}", model);
         Self {
             client: Arc::new(client),
             model,
@@ -211,6 +211,7 @@ impl OpenAIExecutable {
         has_written: &mut bool,
         message: &str,
     ) -> Result<(), OxyError> {
+        print!("Processing content chunk for model: {}", self.model);
         content.push_str(message);
 
         // Try structured parsing first, fallback to plain text
@@ -348,12 +349,8 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
                 })
                 .stream(true);
 
-            if let Some(ReasoningConfig {
-                effort: Some(reasoning_effort),
-                ..
-            }) = &self.reasoning_config
-            {
-                builder.reasoning_effort(reasoning_effort.clone());
+            if let Some(ReasoningConfig { effort }) = &self.reasoning_config {
+                builder.reasoning_effort(effort.clone());
             }
 
             if let Some(tool_choice) = &self.tool_choice {
@@ -556,12 +553,8 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OSSExecutable {
             builder.tools(self.tool_configs.clone());
         }
 
-        if let Some(ReasoningConfig {
-            effort: Some(reasoning_effort),
-            ..
-        }) = &self.reasoning_config
-        {
-            builder.reasoning_effort(reasoning_effort.clone());
+        if let Some(ReasoningConfig { effort }) = &self.reasoning_config {
+            builder.reasoning_effort(effort.clone());
         }
 
         let request = builder.build().map_err(|err| {
@@ -674,59 +667,41 @@ impl ParamMapper<OneShotInput, Vec<ChatCompletionRequestMessage>> for SimpleMapp
     }
 }
 
-pub async fn build_openai_executable(
-    model: &Model,
-    secrets_manager: &SecretsManager,
-) -> Result<
-    MapInput<OpenAIOrOSSExecutable, SimpleMapper, Vec<ChatCompletionRequestMessage>>,
-    OxyError,
-> {
-    let model_name = model.model_name();
-    let exec = if is_oss_model(model_name) {
-        OpenAIOrOSSExecutable::OSS(OSSExecutable::new(
-            OpenAIClient::with_config(model.into_openai_config(secrets_manager).await?),
-            model_name.to_string(),
-            vec![],
-            None,
-            None,
-        ))
-    } else {
-        OpenAIOrOSSExecutable::OpenAI(OpenAIExecutable::new(
-            OpenAIClient::with_config(model.into_openai_config(secrets_manager).await?),
-            model_name.to_string(),
-            vec![],
-            None,
-            None,
-            false,
-        ))
-    };
-    Ok(ExecutableBuilder::new().map(SimpleMapper).executable(exec))
-}
-
-pub async fn build_openai_executable_with_tools(
-    model: &Model,
-    tools: Vec<ChatCompletionTool>,
-    secrets_manager: &SecretsManager,
-) -> Result<OpenAIOrOSSExecutable, OxyError> {
-    let model_name = model.model_name();
-    let client = OpenAIClient::with_config(model.into_openai_config(secrets_manager).await?);
-
-    if is_oss_model(model_name) {
-        Ok(OpenAIOrOSSExecutable::OSS(OSSExecutable::new(
+pub fn build_openai_executable(
+    client: OpenAIClient,
+    model: String,
+    tool_configs: Vec<ChatCompletionTool>,
+    tool_choice: Option<ChatCompletionToolChoiceOption>,
+    reasoning_config: Option<ReasoningConfig>,
+    synthesize_mode: bool,
+) -> OpenAIOrOSSExecutable {
+    if let Some(_) = &reasoning_config {
+        return OpenAIOrOSSExecutable::OpenAIResponse(OpenAIResponseExecutable::new(
             client,
-            model_name.to_string(),
-            tools,
-            None,
-            None,
-        )))
-    } else {
-        Ok(OpenAIOrOSSExecutable::OpenAI(OpenAIExecutable::new(
-            client,
-            model_name.to_string(),
-            tools,
-            None,
-            None,
-            false,
-        )))
+            model,
+            tool_configs,
+            tool_choice,
+            reasoning_config,
+            synthesize_mode,
+        ));
     }
+
+    if is_oss_model(&model) {
+        return OpenAIOrOSSExecutable::OSS(OSSExecutable::new(
+            client,
+            model,
+            tool_configs,
+            tool_choice,
+            reasoning_config,
+        ));
+    }
+
+    OpenAIOrOSSExecutable::OpenAI(OpenAIExecutable::new(
+        client,
+        model,
+        tool_configs,
+        tool_choice,
+        reasoning_config,
+        synthesize_mode,
+    ))
 }

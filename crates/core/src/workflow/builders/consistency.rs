@@ -4,7 +4,11 @@ use itertools::Itertools;
 use tokio::task::JoinHandle;
 
 use crate::{
-    agent::{OneShotInput, OpenAIExecutableResponse, build_openai_executable},
+    adapters::openai::{IntoOpenAIConfig, OpenAIClient},
+    agent::{
+        OneShotInput, OpenAIExecutableResponse,
+        builders::{SimpleMapper, build_openai_executable},
+    },
     config::constants::CONSISTENCY_PROMPT,
     errors::OxyError,
     execute::{
@@ -161,8 +165,19 @@ impl ConsistencyPicker<OutputContainer> for AgentPicker {
         let config_manager = execution_context.project.config_manager.clone();
         let agent_config = config_manager.resolve_agent(self.agent_ref.clone()).await?;
         let model = config_manager.resolve_model(&agent_config.model)?;
-        let agent =
-            build_openai_executable(model, &execution_context.project.secrets_manager).await?;
+        let client = OpenAIClient::with_config(
+            model
+                .into_openai_config(&execution_context.project.secrets_manager)
+                .await?,
+        );
+        let agent = build_openai_executable(
+            client,
+            model.model_name().to_string(),
+            vec![],
+            None,
+            None,
+            false,
+        );
         let mut consistency_evaluator = ExecutableBuilder::new()
             .concurrency_control(
                 10,
@@ -174,6 +189,7 @@ impl ConsistencyPicker<OutputContainer> for AgentPicker {
             .map(AgentPromptMapper {
                 task_description: self.task_description.clone(),
             })
+            .map(SimpleMapper)
             .executable(agent);
         consistency_evaluator
             .execute(execution_context, output_pairs)

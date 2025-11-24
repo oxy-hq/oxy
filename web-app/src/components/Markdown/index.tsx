@@ -9,12 +9,14 @@ import rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import ArtifactPlugin from "./plugins/ArtifactPlugin";
 import ChartPlugin from "./plugins/ChartPlugin";
+import ReasoningPlugin from "./plugins/ReasoningPlugin";
 import ChartContainer from "./components/Chart";
 import ArtifactContainer from "./components/Artifact";
+import ReasoningContainer from "./components/Reasoning";
 import TableVirtualized from "./components/TableVirtualized";
 import CodeBlock from "./components/CodeBlock";
-import { extractLargeTables } from "./utils/extractLargeTables";
 import TableVirtualizedPlugin from "./plugins/TableVirtualizedPlugin";
+import { extractLargeTables } from "./utils/extractLargeTables";
 
 interface MarkdownData {
   tables?: string[][][];
@@ -28,12 +30,14 @@ const sanitizeSchema = {
     chart: ["chart_src"],
     artifact: ["artifactId", "kind", "title", "is_verified"],
     table_virtualized: ["table_id"],
+    reasoning: [],
   },
   tagNames: [
     ...(defaultSchema.tagNames || []),
     "chart",
     "artifact",
     "table_virtualized",
+    "reasoning",
   ],
 };
 
@@ -109,6 +113,9 @@ const getExtendedComponents = (data?: MarkdownData): ExtendedComponents => ({
   artifact: (props) => (
     <ArtifactContainer {...props} onClick={data?.onArtifactClick} />
   ),
+  reasoning: (props: { children?: React.ReactNode }) => (
+    <ReasoningContainer>{props.children}</ReasoningContainer>
+  ),
   table_virtualized: (props) => (
     <TableVirtualized {...props} tables={data?.tables ?? []} />
   ),
@@ -126,6 +133,7 @@ const getExtendedComponents = (data?: MarkdownData): ExtendedComponents => ({
 
 function Markdown({ children, onArtifactClick }: Props) {
   const { newMarkdown, tables } = extractLargeTables(children || "");
+
   return (
     <div
       style={{
@@ -138,6 +146,7 @@ function Markdown({ children, onArtifactClick }: Props) {
           remarkGfm,
           ChartPlugin,
           ArtifactPlugin,
+          ReasoningPlugin,
           TableVirtualizedPlugin,
         ]}
         rehypePlugins={[rehypeRaw, [rehypeSanitize, sanitizeSchema]]}

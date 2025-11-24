@@ -12,6 +12,9 @@ declare module "react-markdown" {
       is_verified: string;
       children: React.ReactNode;
     }>;
+    reasoning?: React.ComponentType<{
+      children: React.ReactNode;
+    }>;
     reference?: React.ComponentType<{ children: React.ReactNode }>;
     table_virtualized?: React.ComponentType<{ table_id: string }>;
   };

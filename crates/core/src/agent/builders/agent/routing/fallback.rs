@@ -9,7 +9,10 @@ use crate::{
     },
     agent::{
         OpenAIExecutableResponse,
-        builders::{openai::OpenAIExecutable, tool::OpenAITool},
+        builders::{
+            openai::{OpenAIExecutable, OpenAIOrOSSExecutable, build_openai_executable},
+            tool::OpenAITool,
+        },
     },
     config::{
         ConfigManager,
@@ -21,7 +24,7 @@ use crate::{
 
 #[derive(Debug, Clone)]
 pub struct FallbackAgent {
-    agent: OpenAIExecutable,
+    agent: OpenAIOrOSSExecutable,
     tool_executable: OpenAITool,
 }
 
@@ -36,7 +39,7 @@ impl FallbackAgent {
     ) -> Result<Self, OxyError> {
         let model_name = model.model_name();
         Ok(Self {
-            agent: OpenAIExecutable::new(
+            agent: build_openai_executable(
                 OpenAIClient::with_config(model.into_openai_config(secrets_manager).await?),
                 model_name.to_string(),
                 vec![ChatCompletionTool::from_tool_async(&tool_config, config).await],
