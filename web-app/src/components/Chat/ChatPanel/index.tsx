@@ -28,7 +28,6 @@ import useRunWorkflowThread from "@/hooks/workflow/useRunWorkflowThread";
 import ROUTES from "@/libs/utils/routes";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { useAskAgentic } from "@/stores/agentic";
-import { toast } from "sonner";
 
 const ToggleGroupItemClasses =
   "data-[state=on]:border data-[state=on]:border-blue-500 data-[state=on]:bg-blue-500 data-[state=on]:text-white hover:bg-blue-500/20 hover:text-blue-300 hover:border-blue-400/50 transition-colors border-gray-600 rounded-md text-gray-400";
@@ -49,35 +48,25 @@ const ChatPanel = () => {
   const { mutateAsync: sendAgenticMessage } = useAskAgentic();
 
   const { mutate: createThread, isPending } = useThreadMutation((data) => {
-    let promise: Promise<unknown>;
     switch (data.source_type) {
       case "agent":
-        promise = sendMessage(data.input, data.id);
+        sendMessage(data.input, data.id);
         break;
       case "task":
-        promise = sendTaskMessage(data.input, data.id);
+        sendTaskMessage(data.input, data.id);
         break;
       case "agentic":
-        promise = sendAgenticMessage({
+        sendAgenticMessage({
           prompt: data.input,
           threadId: data.id,
         });
         break;
       case "workflow":
-        promise = runWorkflow(data.id);
+        runWorkflow(data.id);
         break;
-      default:
-        promise = Promise.resolve();
     }
-    promise
-      .then(() => {
-        const threadUri = ROUTES.PROJECT(projectId).THREAD(data.id);
-        navigate(threadUri);
-        return threadUri;
-      })
-      .catch((error) => {
-        toast.error("Error sending thread message:", error);
-      });
+    const threadUri = ROUTES.PROJECT(projectId).THREAD(data.id);
+    navigate(threadUri);
   });
 
   const {
