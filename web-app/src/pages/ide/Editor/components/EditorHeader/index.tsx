@@ -6,7 +6,6 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from "@/components/ui/shadcn/breadcrumb";
-import { FileState } from "@/components/FileEditor";
 import FileStatus from "./FileStatus";
 import { cn } from "@/libs/shadcn/utils";
 import { Fragment } from "react/jsx-runtime";
@@ -18,26 +17,19 @@ import {
   TooltipTrigger,
 } from "@/components/ui/shadcn/tooltip";
 import { SIDEBAR_REVEAL_FILE } from "@/pages/ide/Sidebar/events";
+import { useFileEditorContext } from "@/components/FileEditor/useFileEditorContext";
 
 interface HeaderProps {
   filePath: string;
-  fileState: FileState;
   actions?: React.ReactNode;
-  onSave: () => void;
-  isReadonly?: boolean;
-  onShowDiff?: () => void;
-  git: boolean;
+  readOnly?: boolean;
 }
 
-const EditorHeader = ({
-  filePath,
-  fileState,
-  actions,
-  onSave,
-  onShowDiff,
-  git = false,
-  isReadonly = false,
-}: HeaderProps) => {
+const EditorHeader = ({ filePath, actions, readOnly = false }: HeaderProps) => {
+  const {
+    state: { fileState, git, showDiff },
+    actions: fileActions,
+  } = useFileEditorContext();
   return (
     <div
       className={cn(
@@ -87,26 +79,30 @@ const EditorHeader = ({
       </div>
 
       <div className="flex gap-2 items-center p-2 min-h-[48px]">
-        {fileState == "modified" && !isReadonly && (
+        {fileState == "modified" && !readOnly && (
           <Button
             variant="secondary"
             size="sm"
             className="text-foreground hover:text-secondary-foreground"
-            onClick={onSave}
+            onClick={() => fileActions.save()}
           >
             Save changes
           </Button>
         )}
-        {fileState == "modified" && isReadonly && (
+        {fileState == "modified" && readOnly && (
           <span className="text-sm text-muted-foreground">Read-only mode</span>
         )}
         {fileState == "saving" && (
           <Loader2 className="w-4 h-4 text-yellow-500 animate-[spin_0.2s_linear_infinite]" />
         )}
-        {onShowDiff && git && (
+        {git && (
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="outline" size="sm" onClick={onShowDiff}>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => fileActions.setShowDiff(!showDiff)}
+              >
                 <FileDiff className="w-4 h-4" />
               </Button>
             </TooltipTrigger>

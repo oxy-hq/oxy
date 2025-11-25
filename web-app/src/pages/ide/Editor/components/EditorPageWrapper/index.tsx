@@ -1,5 +1,5 @@
-import { JSX, useRef, useState, useEffect, useMemo, useCallback } from "react";
-import FileEditor, { FileEditorRef, FileState } from "@/components/FileEditor";
+import { JSX, useState, useEffect, useMemo } from "react";
+import FileEditor from "@/components/FileEditor";
 import EditorHeader from "../EditorHeader";
 import { cn } from "@/libs/shadcn/utils";
 import {
@@ -7,25 +7,30 @@ import {
   ResizablePanel,
   ResizableHandle,
 } from "@/components/ui/shadcn/resizable";
+import { FileEditorProvider } from "@/components/FileEditor/FileEditorContext";
 
 const MIN_PANE_SIZE_PERCENT = 10;
 const NARROW_VIEWPORT_BREAKPOINT = 800;
 
+export interface EditorPageWrapperRef {
+  setContent: (newContent: string) => void;
+}
+
 export interface EditorPageWrapperProps {
   pathb64: string;
   onSaved?: () => void;
+  onChanged?: (content: string) => void;
   preview?: JSX.Element;
   headerActions?: JSX.Element;
   className?: string;
   pageContentClassName?: string;
   editorClassName?: string;
   readOnly?: boolean;
-  onFileValueChange?: (value: string) => void;
   git?: boolean;
   defaultDirection?: "horizontal" | "vertical";
+  customEditor?: JSX.Element;
 }
 
-// Custom hook for viewport detection
 const useViewportDetection = (
   breakpoint: number = NARROW_VIEWPORT_BREAKPOINT,
 ) => {
@@ -56,12 +61,11 @@ const EditorPageWrapper = ({
   readOnly,
   git = false,
   onSaved,
-  onFileValueChange,
+  onChanged,
   defaultDirection = "horizontal",
+  customEditor,
 }: EditorPageWrapperProps) => {
   const filePath = atob(pathb64 ?? "");
-  const [fileState, setFileState] = useState<FileState>("saved");
-  const fileEditorRef = useRef<FileEditorRef>(null);
 
   const isNarrowViewport = useViewportDetection();
   const hasPreview = !!preview;
@@ -70,36 +74,7 @@ const EditorPageWrapper = ({
     return isNarrowViewport ? "vertical" : defaultDirection;
   }, [defaultDirection, isNarrowViewport]);
 
-  const handleSave = useCallback(() => {
-    fileEditorRef.current?.save();
-  }, []);
-
-  const handleShowDiff = useCallback(() => {
-    fileEditorRef.current?.toggleDiffView();
-  }, []);
-
   const storageKey = `ide:split:${filePath}`;
-
-  const fileEditorProps = {
-    ref: fileEditorRef,
-    fileState,
-    pathb64: pathb64 ?? "",
-    onFileStateChange: setFileState,
-    onSaved,
-    onValueChange: onFileValueChange,
-    readOnly,
-    git,
-  };
-
-  const editorHeaderProps = {
-    filePath,
-    fileState,
-    actions: headerActions,
-    onSave: handleSave,
-    isReadonly: readOnly,
-    onShowDiff: handleShowDiff,
-    git,
-  };
 
   const renderEditor = () => (
     <div
@@ -108,8 +83,19 @@ const EditorPageWrapper = ({
       )}
       style={{ width: "100%", height: "100%" }}
     >
-      <EditorHeader {...editorHeaderProps} />
-      <FileEditor {...fileEditorProps} />
+      <EditorHeader
+        readOnly={readOnly}
+        actions={headerActions}
+        filePath={filePath}
+      />
+      {customEditor ? (
+        customEditor
+      ) : (
+        <FileEditor
+          readOnly={readOnly}
+          className={customEditor ? "hidden" : ""}
+        />
+      )}
     </div>
   );
 
@@ -124,27 +110,34 @@ const EditorPageWrapper = ({
     ) : null;
 
   return (
-    <div className={cn("flex h-full flex-col", className)}>
-      <div className={cn("flex-1 flex overflow-hidden")}>
-        {hasPreview ? (
-          <ResizablePanelGroup
-            autoSaveId={storageKey}
-            direction={layoutDirection}
-            className="h-full flex-1 flex overflow-hidden"
-          >
-            <ResizablePanel minSize={MIN_PANE_SIZE_PERCENT} defaultSize={50}>
-              {renderEditor()}
-            </ResizablePanel>
+    <FileEditorProvider
+      pathb64={pathb64}
+      git={git}
+      onSaved={onSaved}
+      onChanged={onChanged}
+    >
+      <div className={cn("flex h-full flex-col", className)}>
+        <div className={cn("flex-1 flex overflow-hidden")}>
+          {hasPreview ? (
+            <ResizablePanelGroup
+              autoSaveId={storageKey}
+              direction={layoutDirection}
+              className="h-full flex-1 flex overflow-hidden"
+            >
+              <ResizablePanel minSize={MIN_PANE_SIZE_PERCENT} defaultSize={50}>
+                {renderEditor()}
+              </ResizablePanel>
 
-            <ResizableHandle withHandle />
+              <ResizableHandle withHandle />
 
-            <ResizablePanel>{renderPreview()}</ResizablePanel>
-          </ResizablePanelGroup>
-        ) : (
-          renderEditor()
-        )}
+              <ResizablePanel>{renderPreview()}</ResizablePanel>
+            </ResizablePanelGroup>
+          ) : (
+            renderEditor()
+          )}
+        </div>
       </div>
-    </div>
+    </FileEditorProvider>
   );
 };
 

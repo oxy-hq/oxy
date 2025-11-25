@@ -13,7 +13,7 @@ variables:
     description: "Type of risk category to analyze"
     enum:
       - "high-risk"
-      - "medium-risk" 
+      - "medium-risk"
       - "low-risk"
       - "risky"
     default: "high-risk"
@@ -39,4 +39,4 @@ retrieval:
 tasks:
   - name: test_task
     type: formatter
-    template: "This is a test for {{asset}} {{category_type}} analysis (top {{top_n}})" 
+    template: "This is a test for {{asset}} {{category_type}} analysis (top {{top_n}})"

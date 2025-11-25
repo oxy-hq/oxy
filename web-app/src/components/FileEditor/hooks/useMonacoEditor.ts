@@ -1,88 +1,53 @@
-import { useMonaco, OnMount } from "@monaco-editor/react";
-import { useCallback, useEffect, useRef } from "react";
-import { FileState } from "@/components/FileEditor";
-import useSaveFile from "@/hooks/api/files/useSaveFile";
+import { useMonaco } from "@monaco-editor/react";
+import { useEffect, useRef } from "react";
 import { configureMonaco, configureMonacoEnvironment } from "../monacoConfig";
 
 configureMonacoEnvironment();
 
 interface UseMonacoEditorProps {
-  fileState: FileState;
-  pathb64: string;
-  onFileStateChange: (state: FileState) => void;
-  onSaved?: () => void;
+  saveFile: (onSuccess?: () => void) => void;
 }
 
-const useMonacoEditor = ({
-  onFileStateChange,
-  fileState,
-  pathb64,
-  onSaved,
-}: UseMonacoEditorProps) => {
-  const { mutate: saveFile } = useSaveFile();
+const useMonacoEditor = ({ saveFile }: UseMonacoEditorProps) => {
   const monaco = useMonaco();
   const isConfigured = useRef<boolean>(false);
-  const saveHandlerRef = useRef<((afterSave?: () => void) => void) | null>(
-    null,
-  );
-
-  const handleSaveFile = useCallback(
-    (afterSave?: () => void) => {
-      if (fileState === "saving") return;
-      if (!monaco) return;
-
-      const editor = monaco.editor;
-      if (!editor) return;
-
-      const model = editor.getModels()[0];
-      if (!model) return;
-
-      const data = model.getValue();
-      if (data === null || data === undefined) return;
-
-      onFileStateChange("saving");
-
-      saveFile(
-        { pathb64, data },
-        {
-          onSuccess: () => {
-            onFileStateChange("saved");
-            onSaved?.();
-            afterSave?.();
-          },
-          onError: () => onFileStateChange("modified"),
-        },
-      );
-    },
-    [fileState, pathb64, monaco, saveFile, onFileStateChange, onSaved],
-  );
-
-  useEffect(() => {
-    saveHandlerRef.current = handleSaveFile;
-  }, [handleSaveFile]);
 
   useEffect(() => {
     if (monaco && !isConfigured.current) {
       isConfigured.current = true;
       configureMonaco(monaco);
-
-      monaco.editor.addEditorAction({
-        id: "save-file",
-        label: "Save File",
-        keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS],
-        run: () => saveHandlerRef.current?.(),
-      });
     }
   }, [monaco]);
 
-  const handleEditorMount: OnMount = useCallback(() => {
-    // Editor mounted successfully
-  }, []);
+  useEffect(() => {
+    let commandDisposer: (() => void) | undefined;
+
+    if (monaco) {
+      const commandId = "save-file";
+      monaco.editor.registerCommand(commandId, () => {
+        saveFile();
+      });
+      const keybindingRule = monaco.editor.addKeybindingRule({
+        keybinding: monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS,
+        command: commandId,
+      });
+
+      commandDisposer = () => {
+        if (keybindingRule) {
+          keybindingRule.dispose();
+        }
+      };
+    }
+
+    return () => {
+      if (commandDisposer) {
+        commandDisposer();
+      }
+    };
+  }, [monaco, saveFile]);
 
   return {
     monaco,
-    handleEditorMount,
-    handleSaveFile,
   };
 };
 

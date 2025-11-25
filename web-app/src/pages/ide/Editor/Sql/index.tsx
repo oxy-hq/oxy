@@ -27,7 +27,7 @@ const SqlEditor = () => {
   return (
     <EditorPageWrapper
       pathb64={pathb64}
-      onFileValueChange={setSql}
+      onChanged={setSql}
       readOnly={isReadOnly}
       git={gitEnabled}
       defaultDirection="vertical"
