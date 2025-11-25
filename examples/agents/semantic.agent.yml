@@ -11,7 +11,7 @@ tools:
 
   - name: semantic_query
     type: semantic_query
-    topic: ecommerce_analytics
+    topic: fruit_business
 
   - name: generate_chart
     type: visualize

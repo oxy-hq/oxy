@@ -54,6 +54,7 @@ fn init_tracing_logging(log_to_stdout: bool) {
         EnvFilter::new(log_level)
             // Core Oxy components
             .add_directive("oxy=info".parse().unwrap())
+            .add_directive("oxy_semantic=info".parse().unwrap())
             .add_directive("tower_http=info".parse().unwrap())
             // Only enable trace-level HTTP logging in debug builds or when explicitly requested
             .add_directive(if cfg!(debug_assertions) {

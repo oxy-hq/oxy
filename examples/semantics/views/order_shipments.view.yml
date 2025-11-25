@@ -7,7 +7,7 @@ entities:
     type: primary
     description: "Individual shipment record"
     key: shipment_id
-  - name: order_items_composite
+  - name: order_item
     type: foreign
     description: "Order line item being shipped (composite foreign key)"
     keys:

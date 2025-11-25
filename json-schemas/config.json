@@ -36,6 +36,17 @@
         "$ref": "#/definitions/Integration"
       }
     },
+    "mcp": {
+      "description": "Optional MCP configuration for exposing resources as tools If not specified, all agents and workflows are exposed by default",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/McpConfig"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "models": {
       "type": "array",
       "items": {
@@ -675,6 +686,19 @@
       "properties": {
         "name": {
           "type": "string"
+        }
+      }
+    },
+    "McpConfig": {
+      "type": "object",
+      "properties": {
+        "tools": {
+          "description": "List of file patterns to expose as MCP tools Supports glob patterns like \"agents/*.agent.yml\" Examples: - \"agents/sql-generator.agent.yml\" (specific file) - \"agents/*.agent.yml\" (all agents in directory) - \"workflows/**/*.workflow.yml\" (all workflows recursively) - \"semantics/topics/*.topic.yml\" (semantic topics) - \"sqls/queries/*.sql\" (SQL files)",
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       }
     },

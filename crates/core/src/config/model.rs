@@ -50,6 +50,12 @@ pub struct Config {
     #[serde(default)]
     #[garde(skip)]
     pub integrations: Vec<Integration>,
+
+    /// Optional MCP configuration for exposing resources as tools
+    /// If not specified, all agents and workflows are exposed by default
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[garde(dive)]
+    pub mcp: Option<McpConfig>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, JsonSchema, Validate)]
@@ -87,6 +93,22 @@ pub struct OmniTopic {
     pub name: String,
     #[garde(length(min = 1))]
     pub model_id: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, JsonSchema, Validate)]
+#[garde(context(ValidationContext))]
+pub struct McpConfig {
+    /// List of file patterns to expose as MCP tools
+    /// Supports glob patterns like "agents/*.agent.yml"
+    /// Examples:
+    /// - "agents/sql-generator.agent.yml" (specific file)
+    /// - "agents/*.agent.yml" (all agents in directory)
+    /// - "workflows/**/*.workflow.yml" (all workflows recursively)
+    /// - "semantics/topics/*.topic.yml" (semantic topics)
+    /// - "sqls/queries/*.sql" (SQL files)
+    #[serde(default)]
+    #[garde(skip)]
+    pub tools: Vec<String>,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug, JsonSchema)]

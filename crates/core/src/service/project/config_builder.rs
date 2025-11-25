@@ -35,6 +35,7 @@ impl ConfigBuilder {
             builder_agent: None,
             project_path: repo_path.to_path_buf(),
             integrations: Vec::new(),
+            mcp: None,
         };
 
         Self::write_config_file(&config, repo_path)

@@ -1,8 +1,0 @@
-name: test_users
-description: A test topic for user-related data analysis and reporting
-views:
-  - users_view
-tags:
-  - analytics
-  - users
-  - reporting

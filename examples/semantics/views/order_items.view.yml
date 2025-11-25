@@ -1,76 +1,56 @@
 name: order_items
-description: Individual items within orders, linking orders to products
+description: Order line items with composite primary key (order_id, line_item_id)
 datasource: local
 table: order_items.csv
 entities:
-- name: order_item
-  type: primary
-  description: Primary order item entity
-  key: order_item_id
-- name: order
-  type: foreign
-  description: Order this item belongs to
-  key: order_id
-- name: fruit
-  type: foreign
-  description: Fruit product in this order item
-  key: fruit_id
+  - name: order_item
+    type: primary
+    description: "Individual line item within an order - identified by order_id and line_item_id together"
+    keys:
+      - order_id
+      - line_item_id
+  - name: order
+    type: foreign
+    description: "Order containing this line item"
+    key: order_id
+  - name: fruit
+    type: foreign
+    description: "Product in this line item"
+    key: product_id
 dimensions:
-- name: order_item_id
-  type: number
-  description: Unique order item identifier
-  expr: id
-  samples: ['1001', '1002', '1003']
-- name: order_id
-  type: number
-  description: Order identifier
-  expr: order_id
-  samples: ['501', '502', '503']
-- name: fruit_id
-  type: number
-  description: Fruit identifier
-  expr: fruit_id
-  samples: ['101', '102', '103']
-- name: quantity
-  type: number
-  description: Quantity of this fruit in the order
-  expr: quantity
-- name: unit_price
-  type: number
-  description: Price per unit at time of order
-  expr: unit_price
-- name: line_total
-  type: number
-  description: Total for this line item
-  expr: line_total
-- name: discount_amount
-  type: number
-  description: Discount applied to this line item
-  expr: discount_amount
+  - name: order_id
+    type: number
+    description: "Order identifier (part of composite key)"
+    expr: order_id
+  - name: line_item_id
+    type: number
+    description: "Line item identifier within the order (part of composite key)"
+    expr: line_item_id
+  - name: product_id
+    type: number
+    description: "Product identifier"
+    expr: product_id
+  - name: quantity
+    type: number
+    description: "Quantity ordered"
+    expr: quantity
+  - name: unit_price
+    type: number
+    description: "Price per unit"
+    expr: unit_price
+  - name: discount_percent
+    type: number
+    description: "Discount percentage applied"
+    expr: discount_percent
 measures:
-- name: total_order_items
-  type: count
-  description: Total number of order items
-  samples: ['1234', '1567', '1890']
-- name: total_line_value
-  type: sum
-  description: Total value of all line items
-  expr: line_total
-  samples: ['45678.90', '52341.25', '38976.50']
-- name: total_quantity_ordered
-  type: sum
-  description: Total quantity of all items ordered
-  expr: quantity
-  samples: ['2345', '2678', '2123']
-- name: avg_line_value
-  type: average
-  description: Average line item value
-  expr: line_total
-- name: total_discounts_given
-  type: sum
-  description: Total discounts given
-  expr: discount_amount
-- name: distinct_fruits_ordered
-  type: count_distinct
-  description: Number of distinct fruits ordered
-  expr: fruit_id
+  - name: total_items
+    type: count
+    description: "Total number of line items"
+  - name: total_revenue
+    type: sum
+    description: "Total revenue from line items"
+    expr: quantity * unit_price * (1 - discount_percent / 100)
+  - name: average_quantity
+    type: average
+    description: "Average quantity per line item"
+    expr: quantity

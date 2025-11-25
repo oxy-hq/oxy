@@ -22,6 +22,16 @@ pub fn get_semantic_query_description(
     Ok(description)
 }
 
+/// Build semantic layer description for a specific topic
+/// Used by MCP tools and other contexts where we have a Topic directly
+pub fn build_semantic_topic_description(topic: &Topic, semantic_layer: &SemanticLayer) -> String {
+    let mut description = String::new();
+    description.push_str(&topic.description);
+    description.push_str("\n\n**Semantic layer:**\n");
+    build_topic_metadata(&mut description, topic, semantic_layer);
+    description
+}
+
 fn load_semantic_layer(config_manager: &config::ConfigManager) -> Result<SemanticLayer, OxyError> {
     let semantic_dir = config_manager.semantics_path();
 

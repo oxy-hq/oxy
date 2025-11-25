@@ -15,7 +15,6 @@ pub async fn establish_connection() -> Result<DatabaseConnection, OxyError> {
             "sqlite://{}/db.sqlite?mode=rwc",
             state_dir.to_string_lossy()
         );
-        tracing::info!("Using default database path: {}", db_path);
         Database::connect(db_path).await.map_err(|e| {
             tracing::error!("Failed to connect to database: {}", e);
             OxyError::Database(e.to_string())

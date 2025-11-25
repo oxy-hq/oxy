@@ -74,7 +74,6 @@ measures:
 - name: items_count
   description: Total number of items in the order
   type: count
-  expr: "{{order_item.order_item_id}}"
 - name: quantity_per_item
   type: average
   description: Average quantity of each item in the order

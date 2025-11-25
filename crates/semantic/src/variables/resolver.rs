@@ -39,6 +39,7 @@ impl RuntimeVariableResolver {
 
         // Add support for template evaluation
         env.set_auto_escape_callback(|_| minijinja::AutoEscape::None);
+        env.set_undefined_behavior(minijinja::UndefinedBehavior::Strict);
 
         Ok(RuntimeVariableResolver {
             env,
@@ -109,7 +110,7 @@ impl RuntimeVariableResolver {
     }
 
     /// Extract nested value from context using dot notation
-    fn get_nested_value(&self, path: &str) -> Option<JsonValue> {
+    fn get_nested_value(&self, path: &str) -> Result<JsonValue, VariableError> {
         // Use minijinja's built-in path resolution
         let parts: Vec<&str> = path.split('.').collect();
         let mut current = self.context.clone();
@@ -118,22 +119,23 @@ impl RuntimeVariableResolver {
             if let Ok(value) = current.get_attr(part) {
                 // Check if the value is undefined (which means the key doesn't exist)
                 if value.is_undefined() {
-                    return None;
+                    return Err(VariableError::VariableNotFound(path.to_string()));
                 }
                 current = value;
             } else {
-                return None;
+                return Err(VariableError::VariableNotFound(path.to_string()));
             }
         }
 
         // Convert minijinja Value to JsonValue
-        let json_value = serde_json::to_value(current).ok()?;
+        let json_value = serde_json::to_value(current)
+            .map_err(|e| VariableError::InvalidSyntax(format!("Failed to convert value: {}", e)))?;
 
-        // Return None if the final value is null (meaning key doesn't exist)
+        // Return error if the final value is null (meaning key doesn't exist)
         if json_value.is_null() {
-            None
+            Err(VariableError::VariableNotFound(path.to_string()))
         } else {
-            Some(json_value)
+            Ok(json_value)
         }
     }
 }
@@ -148,7 +150,6 @@ impl VariableResolver for RuntimeVariableResolver {
         };
 
         self.get_nested_value(lookup_path)
-            .ok_or_else(|| VariableError::VariableNotFound(variable_path.to_string()))
     }
 
     fn resolve_expression(&self, expr: &str) -> Result<String, VariableError> {
@@ -160,6 +161,12 @@ impl VariableResolver for RuntimeVariableResolver {
         let template = self.env.template_from_str(expr).map_err(|e| {
             VariableError::InvalidSyntax(format!("Template compilation failed: {}", e))
         })?;
+
+        tracing::info!(
+            "Rendering expression: {} with context: {:?}",
+            expr,
+            self.context
+        );
 
         let result = template.render(&self.context).map_err(|e| {
             if e.to_string().contains("undefined") {
@@ -176,6 +183,7 @@ impl VariableResolver for RuntimeVariableResolver {
             }
         })?;
 
+        tracing::info!("Resolved expression: {} -> {}", expr, result);
         Ok(result)
     }
 

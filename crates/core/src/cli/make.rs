@@ -250,6 +250,7 @@ pub async fn handle_make_command(make_args: &MakeArgs) -> anyhow::Result<()> {
         project_path: PathBuf::from("."),
         builder_agent: None,
         integrations: vec![],
+        mcp: None,
     };
     serde_yaml::to_writer(
         std::fs::File::create(setup.output_dir.join("config.yml"))?,

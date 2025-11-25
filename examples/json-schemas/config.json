@@ -36,6 +36,16 @@
         "$ref": "#/definitions/Integration"
       }
     },
+    "mcp": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/McpConfig"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "models": {
       "type": "array",
       "items": {
@@ -783,6 +793,20 @@
         },
         "name": {
           "type": "string"
+        }
+      }
+    },
+    "McpConfig": {
+      "type": "object",
+      "description": "Configuration for MCP tool exposure",
+      "properties": {
+        "tools": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "List of file patterns to expose as MCP tools. Supports glob patterns like 'agents/*.agent.yml'. Examples: 'agents/sql-generator.agent.yml' (specific file), 'agents/*.agent.yml' (all agents), 'workflows/**/*.workflow.yml' (recursive), 'semantics/topics/*.topic.yml' (topics), 'sqls/queries/*.sql' (SQL files)"
         }
       }
     },

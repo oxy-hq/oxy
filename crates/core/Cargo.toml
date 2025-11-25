@@ -87,7 +87,7 @@ secrecy = "0.10.3"
 fxhash = "0.2.1"
 deser-incomplete = "0.1.2"
 snowflake-api = "0.11.0"
-rmcp = {git="https://github.com/modelcontextprotocol/rust-sdk.git", rev="9d6f9a2e0d199c6c7f2731bd6f8f7143af060a6b", features = ["server", "transport-sse-server", "transport-io"]}
+rmcp = {version = "0.8.5", features = ["server", "transport-sse-server", "transport-io"]}
 serde_with = "3.16.0"
 # we use chrono::DateTimeWithTimeZone, which is not currently supported by utoipa
 # need to use this until this PR is released https://github.com/juhaku/utoipa/pull/1367

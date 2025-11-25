@@ -392,13 +392,11 @@ impl Executable<ValidatedSemanticQuery> for SemanticQueryExecutable {
 
         let mut sql_query = self.get_sql_from_cubejs(&cubejs_query).await?;
 
-        // Step 1.5: Resolve variables in SQL if present
-        if let Some(variables) = &input.task.variables {
-            tracing::info!("Resolving variables in SQL query: {:?}", variables);
-            sql_query =
-                self.resolve_variables_in_sql(execution_context, sql_query, variables.clone())?;
-            tracing::info!("SQL query after variable resolution: {}", sql_query);
-        }
+        let variables = input.task.variables.clone().unwrap_or_default();
+
+        tracing::info!("Resolving variables in SQL query: {:?}", variables);
+        sql_query = self.resolve_variables_in_sql(execution_context, sql_query, variables)?;
+        tracing::info!("SQL query after variable resolution: {}", sql_query);
 
         // Determine database from topic's views
         let database = self.determine_database_from_topic(&input)?;

@@ -7,7 +7,7 @@ entities:
     type: primary
     description: "Individual return record"
     key: return_id
-  - name: order_items_composite
+  - name: order_item
     type: foreign
     description: "Order line item being returned (composite foreign key)"
     keys:

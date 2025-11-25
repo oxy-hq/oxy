@@ -1,6 +1,7 @@
 pub mod clean;
 mod init;
 mod make;
+mod mcp;
 mod migrate;
 mod seed;
 mod serve;
@@ -10,12 +11,12 @@ use crate::adapters::connector::Connector;
 use crate::adapters::project::builder::ProjectBuilder;
 use crate::adapters::runs::RunsManager;
 use crate::adapters::secrets::SecretsManager;
+use crate::cli::mcp::{start_mcp_sse_server, start_mcp_stdio};
 use crate::cli::migrate::migrate;
 use crate::config::model::AppConfig;
 use crate::config::*;
 use crate::errors::OxyError;
 use crate::execute::types::utils::record_batches_to_table;
-use crate::mcp::service::OxyMcpServer;
 use crate::sentry_config;
 use crate::service::agent::AgentCLIHandler;
 use crate::service::agent::run_agent;
@@ -47,8 +48,6 @@ use pyo3::PyAny;
 use pyo3::PyErr;
 use pyo3::Python;
 use pyo3::types::PyAnyMethods;
-use rmcp::transport::SseServer;
-use rmcp::{ServiceExt, transport::stdio};
 use serve::start_server_and_web_app;
 use std::backtrace;
 use std::collections::BTreeMap;
@@ -57,13 +56,11 @@ use std::error::Error;
 use std::path::PathBuf;
 use std::process::Command;
 use std::process::exit;
-use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use init::init;
 
 use dotenv;
-use std::net::SocketAddr;
 use tracing::{debug, error};
 
 // Constants
@@ -173,28 +170,46 @@ struct Args {
 
 #[derive(Parser, Debug)]
 struct McpArgs {
-    /// Path to the Oxy project directory
-    ///
-    /// Specify the root directory of your Oxy project where
-    /// config.yml and other project files are located.
-    #[clap(long)]
-    pub project_path: PathBuf,
+    #[clap(subcommand)]
+    pub transport: McpTransport,
 }
 
 #[derive(Parser, Debug)]
-struct McpSseArgs {
-    /// Port number for the MCP Server-Sent Events server
+enum McpTransport {
+    /// Start MCP server with stdio transport
     ///
-    /// Specify which port to bind the MCP SSE server for
-    /// web-based integrations. Default is 8000.
-    #[clap(long, default_value_t = 8000)]
-    port: u16,
-    /// Host address to bind the MCP SSE server
+    /// Launch an MCP server using standard input/output for direct
+    /// integration with local AI tools and development environments.
+    Stdio {
+        /// Path to the Oxy project directory (required)
+        ///
+        /// Specify the root directory of your Oxy project where
+        /// config.yml and other project files are located.
+        project_path: PathBuf,
+    },
+    /// Start MCP server with Server-Sent Events transport
     ///
-    /// Specify which host address to bind the MCP SSE server.
-    /// Default is 0.0.0.0 to listen on all interfaces.
-    #[clap(long, default_value = "0.0.0.0")]
-    host: String,
+    /// Launch a web-accessible MCP server that enables integration with
+    /// MCP-compatible AI tools and applications via HTTP/SSE.
+    Sse {
+        /// Path to the Oxy project directory (optional, defaults to current directory)
+        ///
+        /// Specify the root directory of your Oxy project where
+        /// config.yml and other project files are located.
+        project_path: Option<PathBuf>,
+        /// Port number for the MCP Server-Sent Events server
+        ///
+        /// Specify which port to bind the MCP SSE server for
+        /// web-based integrations. Default is 8000.
+        #[clap(long, default_value_t = 8000)]
+        port: u16,
+        /// Host address to bind the MCP SSE server
+        ///
+        /// Specify which host address to bind the MCP SSE server.
+        /// Default is 0.0.0.0 to listen on all interfaces.
+        #[clap(long, default_value = "0.0.0.0")]
+        host: String,
+    },
 }
 
 #[derive(Parser, Debug)]
@@ -243,16 +258,11 @@ enum SubCommand {
     /// Check your config.yml, workflow files, and agent configurations
     /// for errors and compliance with the expected schema.
     Validate,
-    /// Start MCP (Model Context Protocol) server with Server-Sent Events transport
+    /// Start MCP (Model Context Protocol) server
     ///
-    /// Launch a web-accessible MCP server that enables integration with
-    /// MCP-compatible AI tools and applications via HTTP/SSE.
-    McpSse(McpSseArgs),
-    /// Start MCP (Model Context Protocol) server with stdio transport
-    ///
-    /// Launch an MCP server using standard input/output for direct
-    /// integration with local AI tools and development environments.
-    McpStdio(McpArgs),
+    /// Launch an MCP server with either stdio or SSE transport for
+    /// integration with AI tools and development environments.
+    Mcp(McpArgs),
     /// Migrate the database schema to the latest version
     Migrate,
     /// Start the web application server with API endpoints
@@ -766,8 +776,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             SubCommand::Validate => "validate",
             SubCommand::Migrate => "migrate",
             SubCommand::Serve(_) => "serve",
-            SubCommand::McpSse(_) => "mcp-sse",
-            SubCommand::McpStdio(_) => "mcp-stdio",
+            SubCommand::Mcp(_) => "mcp",
             SubCommand::SelfUpdate => "self-update",
             SubCommand::TestTheme => "test-theme",
             SubCommand::GenConfigSchema(_) => "gen-config-schema",
@@ -1008,20 +1017,30 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                 exit(1);
             }
         }
-        Some(SubCommand::McpSse(mcp_sse_args)) => {
-            let cancellation_token = start_mcp_sse_server(mcp_sse_args.port, mcp_sse_args.host)
-                .await
-                .expect("Failed to start MCP SSE server");
+        Some(SubCommand::Mcp(mcp_args)) => match mcp_args.transport {
+            McpTransport::Stdio { project_path } => {
+                let env_path = project_path.join(".env");
+                dotenv::from_path(env_path).ok();
+                let _ = start_mcp_stdio(project_path).await;
+            }
+            McpTransport::Sse {
+                project_path,
+                port,
+                host,
+            } => {
+                let project_path = match project_path {
+                    Some(path) => path,
+                    None => resolve_local_project_path()?,
+                };
+                let cancellation_token = start_mcp_sse_server(port, host, project_path)
+                    .await
+                    .expect("Failed to start MCP SSE server");
 
-            tokio::signal::ctrl_c().await.unwrap();
-            println!("Shutting down server...");
-            cancellation_token.cancel();
-        }
-        Some(SubCommand::McpStdio(args)) => {
-            let env_path = args.project_path.join(".env");
-            dotenv::from_path(env_path).ok();
-            let _ = start_mcp_stdio(args.project_path).await;
-        }
+                tokio::signal::ctrl_c().await.unwrap();
+                println!("Shutting down server...");
+                cancellation_token.cancel();
+            }
+        },
         Some(SubCommand::SelfUpdate) => {
             if let Err(e) = handle_check_for_updates().await {
                 error!(error = %e, "Failed to update");
@@ -1449,84 +1468,6 @@ pub async fn handle_run_command(run_args: RunArgs) -> Result<RunResult, OxyError
             "Invalid file extension. Must be .workflow.yml, .agent.yml, or .sql".into(),
         )),
     }
-}
-
-pub async fn start_mcp_stdio(project_path: PathBuf) -> anyhow::Result<()> {
-    let service = OxyMcpServer::new(project_path)
-        .await?
-        .serve(stdio())
-        .await
-        .inspect_err(|e| {
-            error!(error = ?e, "Error in MCP stdio server");
-        })?;
-
-    service.waiting().await?;
-    Ok(())
-}
-
-pub async fn start_mcp_sse_server(
-    mut port: u16,
-    host: String,
-) -> anyhow::Result<CancellationToken> {
-    // require webserver to be started inside the project path
-    let project_path = match resolve_local_project_path() {
-        Ok(path) => path,
-        Err(e) => {
-            eprintln!("Failed to find project path: {e}");
-            std::process::exit(1);
-        }
-    };
-
-    let original_port = port;
-    let mut port_increment_count = 0;
-    const MAX_PORT_INCREMENTS: u16 = 10;
-
-    loop {
-        match tokio::net::TcpListener::bind((host.as_str(), port)).await {
-            Ok(_) => break,
-            Err(e) => {
-                if port <= 1024 && e.kind() == std::io::ErrorKind::PermissionDenied {
-                    eprintln!(
-                        "Permission denied binding to port {port}. Try running with sudo or use a port above 1024."
-                    );
-                    std::process::exit(1);
-                }
-
-                if port_increment_count >= MAX_PORT_INCREMENTS {
-                    eprintln!(
-                        "Failed to bind to any port after trying {} ports starting from {}. Error: {}",
-                        port_increment_count + 1,
-                        original_port,
-                        e
-                    );
-                    std::process::exit(1);
-                }
-
-                println!("Port {port} for mcp is occupied. Trying next port...");
-                port += 1;
-                port_increment_count += 1;
-            }
-        }
-    }
-
-    let service = OxyMcpServer::new(project_path.clone()).await?;
-    let bind = format!("{host}:{port}")
-        .parse::<SocketAddr>()
-        .unwrap_or_else(|_| SocketAddr::from(([0, 0, 0, 0], port)));
-    let ct = SseServer::serve(bind)
-        .await?
-        .with_service(move || service.to_owned());
-
-    let display_host = if host == "0.0.0.0" {
-        "localhost"
-    } else {
-        &host
-    };
-    println!(
-        "{}",
-        format!("MCP server running at http://{display_host}:{port}").secondary()
-    );
-    anyhow::Ok(ct)
 }
 
 pub async fn handle_test_command(test_args: TestArgs) -> Result<(), OxyError> {

@@ -129,3 +129,10 @@ defaults:
   database: local
 
 builder_agent: agents/builder.agent.yml
+
+mcp:
+  tools:
+    - semantics/topics/fruit_business.topic.yml
+    - data/*.sql
+    - agents/*.agent.yml
+    - workflows/*.workflow.yml
