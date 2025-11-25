@@ -14,11 +14,12 @@ const WorkflowThread = ({
   thread: ThreadItem;
   refetchThread: () => void;
 }) => {
-  const { setLogs } = useWorkflowThreadStore();
-  const { logs, isLoading } = useWorkflowThreadStore(
-    (state) =>
-      state.workflowThread.get(thread.id) || { logs: [], isLoading: false },
-  );
+  const { setLogs, workflowThread } = useWorkflowThreadStore();
+
+  const { logs, isLoading } = workflowThread.get(thread.id) || {
+    logs: [],
+    isLoading: false,
+  };
 
   useEffect(() => {
     if (thread.output && !isLoading) {
