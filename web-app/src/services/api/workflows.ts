@@ -89,6 +89,7 @@ export class WorkflowService {
     const url = `${apiBaseURL}/${projectId}/threads/${threadId}/workflow?${searchParams.toString()}`;
     await fetchSSE(url, {
       onMessage: onLogItem,
+      body: {},
     });
   }
 }

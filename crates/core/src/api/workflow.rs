@@ -393,7 +393,6 @@ async fn ensure_workflow_thread_unlocked(
 pub async fn run_workflow_thread(
     Path((_project_id, id)): Path<(Uuid, String)>,
     ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
-    extract::Json(request): extract::Json<RunWorkflowRequest>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let config_manager = project_manager.config_manager.clone();
 
@@ -466,8 +465,6 @@ pub async fn run_workflow_thread(
 
     let connection_clone = connection.clone();
     let thread_clone = thread.clone();
-    let filters = request.filters;
-    let connections = request.connections;
 
     let _ = tokio::spawn(async move {
         let result = service::run_workflow(
@@ -475,8 +472,8 @@ pub async fn run_workflow_thread(
             logger,
             RetryStrategy::NoRetry { variables: None },
             project_manager.clone(),
-            filters,
-            connections,
+            None,
+            None,
             None, // No globals for thread execution (not in request)
         )
         .await;
