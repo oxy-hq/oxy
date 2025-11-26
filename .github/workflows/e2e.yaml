@@ -208,7 +208,7 @@ jobs:
 
       # Send Slack notification on main branch failure
       - name: Send Slack notification
-        if: failure() && github.ref == 'refs/heads/main'
+        if: failure() && github.ref == 'refs/heads/main' && github.repository == 'oxy-hq/oxy-internal'
         uses: slackapi/slack-github-action@v2.0.0
         with:
           method: chat.postMessage
