@@ -98,22 +98,6 @@ jobs:
         with:
           make-default: true
 
-      - name: Install PostgreSQL client
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y postgresql-client
-
-      - name: Wait for PostgreSQL
-        run: |
-          until pg_isready -h localhost -p 5432 -U admin; do
-            echo "Waiting for PostgreSQL..."
-            sleep 2
-          done
-          echo "PostgreSQL is ready!"
-        env:
-          PGPASSWORD: password
-
-      # Setup Node.js and pnpm
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
@@ -140,35 +124,17 @@ jobs:
           touch examples/bigquery-sample.key
           echo "$BIGQUERY_SAMPLE_KEY" > examples/bigquery-sample.key
 
-      # Run migrations
-      - name: Run database migrations
-        run: |
-          cd examples
-          cargo run -- migrate
-          echo "Migrations completed"
-
       # Start backend server in background
       - name: Start Oxy backend server
         run: |
           cd examples
           cargo run -- serve &
           echo $! > /tmp/oxy-server.pid
-          echo "Backend server started with PID $(cat /tmp/oxy-server.pid)"
-
-      # Wait for backend to be ready
-      - name: Wait for backend server
-        run: |
-          echo "Waiting for backend server to be ready..."
-          timeout 60 bash -c 'until curl -s http://localhost:3000/health > /dev/null 2>&1; do sleep 2; done'
-          echo "Backend server is ready!"
-
       # Run E2E tests
       - name: Run Playwright tests
         run: |
           cd web-app
           pnpm test:e2e
-        env:
-          CI: true
 
       # Upload test results
       - name: Upload Playwright report
