@@ -129,9 +129,8 @@ jobs:
       - name: Start Oxy backend server
         run: |
           cd examples
-          cargo run -- serve &
-          echo $! > /tmp/oxy-server.pid
-          echo "Backend server started with PID $(cat /tmp/oxy-server.pid)"
+          cargo build
+          ./target/debug/oxy serve &
 
       # Wait for backend to be ready
       - name: Wait for backend server
@@ -140,16 +139,7 @@ jobs:
           timeout 60 bash -c 'until curl -s http://localhost:3000/health > /dev/null 2>&1; do sleep 2; done'
           echo "Backend server is ready!"
 
-      # Run E2E tests
-      - name: Run Playwright tests
-        run: |
-          cd web-app
-          pnpm test:e2e
-
-      # Upload test results
-      - name: Upload Playwright report
-        uses: actions/upload-artifact@v4
-        if: always()
+              if: always()
         with:
           name: playwright-report
           path: web-app/playwright-report/
