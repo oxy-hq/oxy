@@ -80,6 +80,7 @@ const StatusBorder = ({
           "-z-1 absolute -left-[1px] -top-[1px] h-[calc(100%+2px)] w-[calc(100%+2px)] rounded-[10px] border-2",
           className,
         )}
+        data-testid="workflow-node-status-border"
       />
       {children}
     </>

@@ -92,6 +92,7 @@ export const LineChart = ({
       options={chartOptions}
       isLoading={isLoading}
       title={display.title}
+      testId="app-line-chart"
     />
   );
 };

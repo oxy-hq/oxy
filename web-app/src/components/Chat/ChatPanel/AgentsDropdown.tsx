@@ -53,6 +53,7 @@ const AgentsDropdown = ({
           disabled={isPending || disabled}
           variant="outline"
           className="bg-sidebar-background border-sidebar-background"
+          data-testid="agent-selector-button"
         >
           <span>{agentSelected?.name}</span>
           {isPending ? <Loader2 className="animate-spin" /> : <ChevronDown />}

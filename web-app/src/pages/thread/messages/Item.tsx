@@ -12,6 +12,7 @@ const MessageItem = memo(({ msg, onArtifactClick }: Props) => (
   <div
     key={msg.id}
     className={`mb-6 p-4 rounded-lg ${msg.is_human ? "bg-muted/50" : "bg-secondary/20"}`}
+    data-testid={`message-${msg.is_human ? 'human' : 'agent'}`}
   >
     {msg.is_human ? (
       <UserMessage content={msg.content} createdAt={msg.created_at} />

@@ -183,10 +183,10 @@ export default defineConfig({
   clearScreen: false,
   server: {
     port: 5173,
-    https: {
-      key: "../localhost+2-key.pem",
-      cert: "../localhost+2.pem",
-    },
+    // https: {
+    //   key: "../localhost+2-key.pem",
+    //   cert: "../localhost+2.pem",
+    // },
     // Enable faster dependency pre-bundling during development
     fs: {
       // Allow serving files from one level up to the project root

@@ -93,6 +93,7 @@ export const BarChart = ({
       isLoading={isLoading}
       options={chartOptions}
       title={display.title}
+      testId="app-bar-chart"
     />
   );
 };

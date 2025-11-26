@@ -131,6 +131,7 @@ const OutputLogs: React.FC<OutputLogsProps> = ({
   );
   const getScrollElement = useCallback(() => parentRef.current, [parentRef]);
 
+  // eslint-disable-next-line react-hooks/incompatible-library
   const logsVirtualizer = useVirtualizer({
     count: flattenedLogs.length,
     getScrollElement,
@@ -165,6 +166,7 @@ const OutputLogs: React.FC<OutputLogsProps> = ({
     <div
       ref={parentRef}
       className="h-full relative overflow-y-auto customScrollbar break-all contain-strict scrollbar-gutter-auto bg-card p-4 pt-0"
+      data-testid="workflow-output-logs"
     >
       {!onlyShowResult && (
         <div

@@ -1,6 +1,11 @@
 {
   "permissions": {
-    "allow": ["Bash(cargo build:*)", "Bash(cargo check:*)", "Bash(cat:*)"],
+    "allow": [
+      "Bash(cargo build:*)",
+      "Bash(cargo check:*)",
+      "Bash(cat:*)",
+      "Bash(lsof:*)"
+    ],
     "deny": [],
     "ask": []
   }

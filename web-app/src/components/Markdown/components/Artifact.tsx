@@ -72,6 +72,9 @@ const ArtifactContainer = React.memo(
         <div
           className="cursor-pointer hover:bg-muted transition-colors skip-revert w-fit flex items-center space-x-4 rounded-md border border-base-border shadow-sm p-4 mb-1"
           onClick={handleClick}
+          data-testid="agent-artifact"
+          data-artifact-kind={kind}
+          data-artifact-id={artifactId}
         >
           {icon}
           <div className="flex-1 space-y-1">

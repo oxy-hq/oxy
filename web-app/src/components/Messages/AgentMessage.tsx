@@ -34,7 +34,10 @@ const AgentMessage = ({
         }}
       />
       {showAgentThinking && (
-        <div className="flex gap-2 items-start">
+        <div
+          className="flex gap-2 items-start"
+          data-testid="agent-loading-state"
+        >
           <img
             className="w-8 h-8"
             src={
@@ -47,12 +50,18 @@ const AgentMessage = ({
         </div>
       )}
       {showAnswer && (
-        <div className="flex gap-2 items-start w-full">
+        <div
+          className="flex gap-2 items-start w-full"
+          data-testid="agent-message-container"
+        >
           {showAvatar && (
             <img className="w-8 h-8 rounded-full" src="/logo.svg" alt="Oxy" />
           )}
           <div className="flex-1 w-full">
-            <div className="p-4 w-full rounded-xl bg-base-card border border-base-border shadow-sm flex flex-col gap-2 overflow-x-auto">
+            <div
+              className="p-4 w-full rounded-xl bg-base-card border border-base-border shadow-sm flex flex-col gap-2 overflow-x-auto"
+              data-testid="agent-message-content"
+            >
               <ThreadSteps steps={steps} isLoading={isStreaming} />
               <AnswerContent
                 content={content}

@@ -29,7 +29,10 @@ export default function AppPreview({ appPath64, runButton = true }: Props) {
   const handleRun = () => runApp(appPath64);
 
   return (
-    <div className="h-full w-full relative overflow-hidden">
+    <div
+      className="h-full w-full relative overflow-hidden"
+      data-testid="app-preview"
+    >
       {runButton && (
         <Button
           className="absolute bottom-6 right-6 z-1"

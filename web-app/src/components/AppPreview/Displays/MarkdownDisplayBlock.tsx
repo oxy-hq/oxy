@@ -15,7 +15,7 @@ export const MarkdownDisplayBlock = ({
     dataContainer as object,
   );
   return (
-    <div className="markdown-display">
+    <div className="markdown-display" data-testid="app-markdown-display-block">
       <Markdown>{rendered_content}</Markdown>
     </div>
   );

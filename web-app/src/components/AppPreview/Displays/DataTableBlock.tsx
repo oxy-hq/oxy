@@ -65,7 +65,10 @@ export const DataTableBlock = ({
     );
 
   return (
-    <div className="flex flex-col gap-4 items-left">
+    <div
+      className="flex flex-col gap-4 items-left"
+      data-testid="app-data-table-block"
+    >
       <h2 className="text-xl font-bold text-foreground">{display.title}</h2>
       <DataTable className="border">
         {!table ? (

@@ -209,7 +209,11 @@ const ChatPanel = () => {
           {mode === "workflow" && (
             <WorkflowsDropdown onSelect={setWorkflow} workflow={workflow} />
           )}
-          <Button disabled={disabled()} type="submit">
+          <Button
+            disabled={disabled()}
+            type="submit"
+            data-testid="chat-panel-submit-button"
+          >
             {isPending ? <Loader2 className="animate-spin" /> : submitIcon}
           </Button>
         </div>

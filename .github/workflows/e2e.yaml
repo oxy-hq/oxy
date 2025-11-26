@@ -1,0 +1,276 @@
+name: E2E Tests
+
+on:
+  pull_request_review:
+    types:
+      - submitted
+  push:
+    branches:
+      - main
+    paths:
+      - "web-app/**"
+      - "crates/**"
+      - "examples/**"
+      - ".github/workflows/e2e.yaml"
+  # Allow manual trigger
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  RUST_LOG: info
+
+concurrency:
+  group: e2e-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  e2e-tests:
+    name: E2E Tests (Playwright)
+    # Only run on approved PRs, main pushes, or manual trigger
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'push' ||
+      (github.event_name == 'pull_request_review' && github.event.review.state == 'approved')
+    runs-on: ${{ github.repository == 'oxy-hq/oxy-internal' && 'warp-ubuntu-latest-arm64-4x' || 'ubuntu-latest' }}
+    timeout-minutes: 30
+    env:
+      OXY_STATE_DIR: ${{ github.workspace }}/examples
+      OXY_DATABASE_URL: postgresql://admin:password@localhost:5432/default
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      BIGQUERY_SAMPLE_KEY: ${{ secrets.BIGQUERY_SAMPLE_KEY }}
+
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: admin
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: default
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U admin -d default"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Collect Workflow Telemetry
+        uses: catchpoint/workflow-telemetry-action@v2
+        with:
+          theme: dark
+          metric_frequency: 3
+          comment_on_pr: false
+
+      # Setup Rust
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: e2e
+
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install mold linker
+        uses: rui314/setup-mold@v1
+        if: runner.os == 'Linux'
+        with:
+          make-default: true
+
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Wait for PostgreSQL
+        run: |
+          until pg_isready -h localhost -p 5432 -U admin; do
+            echo "Waiting for PostgreSQL..."
+            sleep 2
+          done
+          echo "PostgreSQL is ready!"
+        env:
+          PGPASSWORD: password
+
+      # Setup Node.js and pnpm
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.x
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --prefer-frozen-lockfile
+
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install --with-deps chromium
+
+      # Setup BigQuery credentials if needed
+      - name: Setup BigQuery credentials
+        if: env.BIGQUERY_SAMPLE_KEY
+        run: |
+          touch examples/bigquery-sample.key
+          echo "$BIGQUERY_SAMPLE_KEY" > examples/bigquery-sample.key
+
+      # Run migrations
+      - name: Run database migrations
+        run: |
+          cd examples
+          cargo run -- migrate
+          echo "Migrations completed"
+
+      # Start backend server in background
+      - name: Start Oxy backend server
+        run: |
+          cd examples
+          cargo run -- serve &
+          echo $! > /tmp/oxy-server.pid
+          echo "Backend server started with PID $(cat /tmp/oxy-server.pid)"
+
+      # Wait for backend to be ready
+      - name: Wait for backend server
+        run: |
+          echo "Waiting for backend server to be ready..."
+          timeout 60 bash -c 'until curl -s http://localhost:3000/health > /dev/null 2>&1; do sleep 2; done'
+          echo "Backend server is ready!"
+
+      # Run E2E tests
+      - name: Run Playwright tests
+        run: |
+          cd web-app
+          pnpm test:e2e
+        env:
+          CI: true
+
+      # Upload test results
+      - name: Upload Playwright report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report
+          path: web-app/playwright-report/
+          retention-days: 7
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-results
+          path: web-app/test-results/
+          retention-days: 7
+
+      # Cleanup
+      - name: Stop backend server
+        if: always()
+        run: |
+          if [ -f /tmp/oxy-server.pid ]; then
+            kill $(cat /tmp/oxy-server.pid) || true
+            echo "Backend server stopped"
+          fi
+
+      - name: Show server logs
+        if: failure()
+        run: |
+          echo "=== Backend Server Logs ==="
+          if [ -f examples/oxy.log ]; then
+            tail -n 100 examples/oxy.log
+          else
+            echo "No server logs found"
+          fi
+
+      # Send Slack notification on main branch failure
+      - name: Send Slack notification
+        if: failure() && github.ref == 'refs/heads/main'
+        uses: slackapi/slack-github-action@v2.0.0
+        with:
+          method: chat.postMessage
+          token: ${{ secrets.SLACK_BOT_TOKEN }}
+          payload: |
+            {
+              "channel": "eng-events-e2e",
+              "text": "🚨 E2E Tests Failed on Main Branch",
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": {
+                    "type": "plain_text",
+                    "text": "🚨 E2E Tests Failed on Main Branch"
+                  }
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Repository:*\n${{ github.repository }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Branch:*\n${{ github.ref_name }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Commit:*\n<${{ github.event.head_commit.url }}|${{ github.sha }}>"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Author:*\n${{ github.event.head_commit.author.name }}"
+                    }
+                  ]
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*Commit Message:*\n${{ github.event.head_commit.message }}"
+                  }
+                },
+                {
+                  "type": "actions",
+                  "elements": [
+                    {
+                      "type": "button",
+                      "text": {
+                        "type": "plain_text",
+                        "text": "View Workflow Run"
+                      },
+                      "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                    },
+                    {
+                      "type": "button",
+                      "text": {
+                        "type": "plain_text",
+                        "text": "View Commit"
+                      },
+                      "url": "${{ github.event.head_commit.url }}"
+                    }
+                  ]
+                }
+              ]
+            }

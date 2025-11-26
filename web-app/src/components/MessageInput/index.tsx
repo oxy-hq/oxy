@@ -70,6 +70,7 @@ const MessageInput = ({
               size="icon"
               className="absolute right-2 transform top-1/2 -translate-y-1/2"
               onClick={onStop}
+              data-testid="message-input-stop-button"
             >
               <CircleX />
             </Button>
@@ -79,6 +80,7 @@ const MessageInput = ({
               className="absolute right-2 transform top-1/2 -translate-y-1/2"
               onClick={onSend}
               disabled={!value.trim() || disabled}
+              data-testid="message-input-send-button"
             >
               <ArrowRight className="h-5 w-5" />
             </Button>

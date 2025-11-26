@@ -296,6 +296,7 @@ export const WorkflowPreview = ({
               onClick={runHandler}
               disabled={run.isPending}
               tooltip={run.isPending ? "Running..." : "Run Workflow"}
+              data-testid="run-workflow-button"
             >
               {run.isPending ? (
                 <LoaderCircle className="animate-spin" />

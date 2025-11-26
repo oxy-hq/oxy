@@ -54,6 +54,7 @@ const OutputItem = ({
       <div
         className="w-full min-w-[500px] group"
         style={{ paddingLeft: depth > 0 ? `${depth * 24}px` : undefined }}
+        data-testid="workflow-output-item"
       >
         <div
           className="w-full flex items-center justify-center py-2 gap-2 cursor-pointer hover:bg-accent/50 rounded"
@@ -96,6 +97,7 @@ const OutputItem = ({
       style={{
         paddingLeft: depth > 0 ? `${depth * 24}px` : undefined,
       }}
+      data-testid="workflow-output-item"
     >
       <div className="flex items-start gap-2">
         <div className="flex-1">

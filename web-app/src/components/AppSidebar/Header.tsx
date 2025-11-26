@@ -55,7 +55,7 @@ export function Header() {
           <SidebarMenuButton asChild>
             <Link to={homeUri}>
               <DiamondPlus />
-              <span>Start new thread</span>
+              <span data-testid="start-new-thread">Start new thread</span>
             </Link>
           </SidebarMenuButton>
         </SidebarMenuItem>

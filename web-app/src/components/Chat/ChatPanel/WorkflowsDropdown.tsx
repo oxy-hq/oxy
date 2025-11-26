@@ -47,6 +47,7 @@ const WorkflowsDropdown = ({ onSelect, workflow, disabled = false }: Props) => {
           disabled={isLoading || disabled}
           variant="outline"
           className="bg-sidebar-background border-sidebar-background"
+          data-testid="workflow-selector-button"
         >
           <span>{workflow?.name}</span>
           {isLoading ? <Loader2 className="animate-spin" /> : <ChevronDown />}

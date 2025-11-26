@@ -45,7 +45,7 @@ export function Workflows() {
                   asChild
                   isActive={location.pathname === workflowUri}
                 >
-                  <Link to={workflowUri}>
+                  <Link to={workflowUri} data-testid={`workflow-link-${workflow.name}`}>
                     <span>{workflow.name}</span>
                   </Link>
                 </SidebarMenuSubButton>

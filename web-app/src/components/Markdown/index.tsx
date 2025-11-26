@@ -139,6 +139,7 @@ function Markdown({ children, onArtifactClick }: Props) {
       style={{
         fontSize: "14px",
       }}
+      data-testid="agent-response-text"
     >
       <ReactMarkdown
         remarkPlugins={[

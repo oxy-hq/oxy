@@ -39,7 +39,7 @@ export function Apps() {
                   asChild
                   isActive={location.pathname === appUri}
                 >
-                  <Link to={appUri}>
+                  <Link to={appUri} data-testid={`app-link-${app.name}`}>
                     <span>{app.name}</span>
                   </Link>
                 </SidebarMenuSubButton>
