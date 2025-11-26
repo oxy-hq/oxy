@@ -21,19 +21,3 @@ export function startServer() {
   console.log("Server started successfully.");
   return serverProcess;
 }
-
-export function startServerReadonly() {
-  console.log("Starting server in readonly mode...");
-  // eslint-disable-next-line sonarjs/no-os-command-from-path
-  const serverProcess = spawn("cargo", ["run", "serve", "--readonly"], {
-    stdio: "inherit",
-    shell: true,
-  });
-
-  serverProcess.on("error", (err) => {
-    console.error(`Failed to start server: ${err.message}`);
-  });
-
-  console.log("Server started successfully.");
-  return serverProcess;
-}
