@@ -85,7 +85,7 @@ jobs:
       - name: Setup cargo cache
         uses: Swatinem/rust-cache@v2
         with:
-          key: e2e
+          key: test
 
       - name: Install Protoc
         uses: arduino/setup-protoc@v3
@@ -130,14 +130,22 @@ jobs:
         run: |
           cd examples
           cargo build
-          ../target/debug/oxy serve &
+          nohup ../target/debug/oxy serve > ../oxy-server.log 2>&1 &
+          echo $! > /tmp/oxy-server.pid
+          echo "Backend server started with PID: $(cat /tmp/oxy-server.pid)"
 
       # Wait for backend to be ready
       - name: Wait for backend server
         run: |
           echo "Waiting for backend server to be ready..."
-          timeout 10 bash -c 'until curl -s http://localhost:3000/health > /dev/null 2>&1; do sleep 2; done'
-          echo "Backend server is ready!"
+          timeout 30 bash -c 'until curl -s http://localhost:3000/health > /dev/null 2>&1; do echo "Waiting for health endpoint..."; sleep 2; done'
+          echo "Backend health endpoint is responding!"
+
+          # Give the backend additional time to scan and load apps from the examples directory
+          echo "Waiting for backend to initialize apps..."
+          sleep 10
+
+          echo "Backend server should now be fully ready!"
 
       # Run E2E tests
       - name: Run Playwright tests
@@ -146,22 +154,45 @@ jobs:
           pnpm test:e2e
 
 
-      # Upload test results
+      # Upload test results and traces
       - name: Upload Playwright report
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: playwright-report
           path: web-app/playwright-report/
-          retention-days: 7
+          retention-days: 1
 
-      - name: Upload test results
+      - name: Upload test results with traces
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: playwright-results
           path: web-app/test-results/
           retention-days: 7
+        # This includes traces, screenshots, and videos for failed tests
+        # To view traces: download the artifact and run `npx playwright show-trace path/to/trace.zip`
+
+      - name: Show trace instructions
+        if: failure()
+        run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "📹 Test traces, screenshots, and videos have been captured!"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo ""
+          echo "To view the test traces:"
+          echo "  1. Download the 'playwright-results' artifact from this workflow run"
+          echo "  2. Extract the zip file"
+          echo "  3. Run: npx playwright show-trace path/to/trace.zip"
+          echo ""
+          echo "The trace viewer will open in your browser with:"
+          echo "  • Full test execution timeline"
+          echo "  • Screenshots at each step"
+          echo "  • Network requests/responses"
+          echo "  • Console logs"
+          echo "  • DOM snapshots"
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
       # Cleanup
       - name: Stop backend server
@@ -176,10 +207,16 @@ jobs:
         if: failure()
         run: |
           echo "=== Backend Server Logs ==="
-          if [ -f examples/oxy.log ]; then
-            tail -n 100 examples/oxy.log
+          if [ -f oxy-server.log ]; then
+            tail -n 200 oxy-server.log
           else
-            echo "No server logs found"
+            echo "No server logs found at oxy-server.log"
+          fi
+
+          echo ""
+          echo "=== Checking if server process is still running ==="
+          if [ -f /tmp/oxy-server.pid ]; then
+            ps -p $(cat /tmp/oxy-server.pid) || echo "Server process not running"
           fi
 
       # Send Slack notification on main branch failure
