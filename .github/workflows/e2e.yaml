@@ -129,8 +129,9 @@ jobs:
       - name: Start Oxy backend server
         run: |
           cd examples
-          cargo build
-          ./target/debug/oxy serve &
+          cargo run -- serve &
+          echo $! > /tmp/oxy-server.pid
+          echo "Backend server started with PID $(cat /tmp/oxy-server.pid)"
 
       # Wait for backend to be ready
       - name: Wait for backend server
