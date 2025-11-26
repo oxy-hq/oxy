@@ -130,7 +130,7 @@ jobs:
         run: |
           cd examples
           cargo build
-          nohup ../target/debug/oxy serve > ../oxy-server.log 2>&1 &
+          nohup ../target/debug/oxy serve --http2-only > ../oxy-server.log 2>&1 &
           echo $! > /tmp/oxy-server.pid
           echo "Backend server started with PID: $(cat /tmp/oxy-server.pid)"
 
@@ -169,7 +169,7 @@ jobs:
         with:
           name: playwright-results
           path: web-app/test-results/
-          retention-days: 7
+          retention-days: 1
         # This includes traces, screenshots, and videos for failed tests
         # To view traces: download the artifact and run `npx playwright show-trace path/to/trace.zip`
 
