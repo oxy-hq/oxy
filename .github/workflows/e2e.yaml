@@ -129,7 +129,9 @@ jobs:
         run: pnpm install --prefer-frozen-lockfile
 
       - name: Install Playwright browsers
-        run: pnpm exec playwright install --with-deps chromium
+        working-directory: web-app
+        run: |
+          pnpm exec playwright install --with-deps chromium
 
       # Setup BigQuery credentials if needed
       - name: Setup BigQuery credentials
