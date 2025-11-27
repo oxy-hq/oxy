@@ -12,17 +12,10 @@ const PageHeader = ({ onSave, filePath, fileState }: PageHeaderProps) => {
   return (
     <div className="h-12 flex items-center justify-between p-4 bg-sidebar-background">
       <div></div>
-      <p className="text-sm" data-testid="ide-breadcrumb">
-        {filePath}
-      </p>
+      <p className="text-sm">{filePath}</p>
       <div className="flex items-center">
         {fileState == "modified" && (
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={onSave}
-            data-testid="ide-save-button"
-          >
+          <Button variant="secondary" size="sm" onClick={onSave}>
             Save changes
           </Button>
         )}

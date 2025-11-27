@@ -91,10 +91,7 @@ const ThreadsPagination: React.FC<ThreadsPaginationProps> = ({
       />
 
       {total_pages > 1 && (
-        <div
-          className={cn("flex-shrink-0", isMobile && "justify-center")}
-          data-testid="threads-pagination"
-        >
+        <div className={cn("flex-shrink-0", isMobile && "justify-center")}>
           <Pagination>
             <PaginationContent className="flex-wrap justify-center">
               <PaginationItem>

@@ -4,9 +4,7 @@
       "Bash(cargo build:*)",
       "Bash(cargo check:*)",
       "Bash(cat:*)",
-      "Bash(lsof:*)",
-      "Bash(pkill:*)",
-      "Bash(pnpm test:e2e:*)"
+      "Bash(lsof:*)"
     ],
     "deny": [],
     "ask": []

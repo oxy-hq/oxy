@@ -26,10 +26,7 @@ const ItemsPerPageFilter: React.FC<ItemsPerPageFilterProps> = ({
       onValueChange={(value) => onLimitChange(Number(value))}
       disabled={isLoading}
     >
-      <SelectTrigger
-        className="min-w-[70px] justify-between border-border"
-        data-testid="threads-per-page-selector"
-      >
+      <SelectTrigger className="min-w-[70px] justify-between border-border">
         <SelectValue />
       </SelectTrigger>
       <SelectContent align="end" className="min-w-[70px]">

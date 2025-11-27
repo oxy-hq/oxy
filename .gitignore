@@ -102,4 +102,3 @@ examples/.oxy_state/
 .playwright-mcp/before-submit.png
 .playwright-mcp/chat-complete.png
 .playwright-mcp/homepage.png
-examples/test-file-for-e2e.txt

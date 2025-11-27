@@ -54,7 +54,7 @@ const Threads = () => {
       <ClearAllThreadsDialog open={confirmOpen} onOpenChange={setConfirmOpen} />
       <SidebarMenuItem>
         <SidebarMenuButton asChild isActive={isThreadsPage}>
-          <Link to={threadsUri} data-testid="sidebar-threads-toggle">
+          <Link to={threadsUri}>
             <MessagesSquare />
             <span>Threads</span>
           </Link>

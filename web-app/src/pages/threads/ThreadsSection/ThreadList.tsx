@@ -48,7 +48,6 @@ const ThreadListItem = ({
 
   return (
     <div
-      data-testid="thread-item"
       className={cn(
         "flex gap-4 rounded-lg border p-4 relative",
         "group hover:border-accent-main-000 cursor-pointer",
@@ -66,17 +65,10 @@ const ThreadListItem = ({
         onClick={(e) => e.stopPropagation()}
       />
       <div className="flex flex-col gap-4">
-        <Badge variant="secondary" data-testid="thread-agent-type">
-          {thread.source}
-        </Badge>
+        <Badge variant="secondary">{thread.source}</Badge>
         <div className="flex flex-col gap-2">
-          <h2 className="text-xl font-medium" data-testid="thread-title">
-            {thread.title}
-          </h2>
-          <p
-            className="text-xs text-muted-foreground"
-            data-testid="thread-timestamp"
-          >
+          <h2 className="text-xl font-medium ">{thread.title}</h2>
+          <p className="text-xs text-muted-foreground">
             {timeAgo(thread.created_at)}
           </p>
         </div>

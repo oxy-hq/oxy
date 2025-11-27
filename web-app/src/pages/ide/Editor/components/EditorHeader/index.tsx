@@ -38,7 +38,7 @@ const EditorHeader = ({ filePath, actions, readOnly = false }: HeaderProps) => {
       )}
     >
       <div className="flex gap-1.5 items-center">
-        <Breadcrumb data-testid="ide-breadcrumb">
+        <Breadcrumb>
           <BreadcrumbList>
             {filePath.split("/").map((part, index, array) => (
               <Fragment key={`${index}-breadcrumb`}>
@@ -85,7 +85,6 @@ const EditorHeader = ({ filePath, actions, readOnly = false }: HeaderProps) => {
             size="sm"
             className="text-foreground hover:text-secondary-foreground"
             onClick={() => fileActions.save()}
-            data-testid="ide-save-button"
           >
             Save changes
           </Button>

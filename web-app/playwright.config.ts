@@ -13,7 +13,7 @@ export default defineConfig({
   retries: 2,
   workers: process.env.PLAYWRIGHT_WORKERS
     ? Number(process.env.PLAYWRIGHT_WORKERS)
-    : 5,
+    : 3,
   /* Reporter to use. See https://playwright.dev/docs/test-reporters */
   reporter: process.env.CI ? "github" : "html",
   /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
@@ -33,20 +33,7 @@ export default defineConfig({
   projects: [
     {
       name: "chromium",
-      use: {
-        ...devices["Desktop Chrome"],
-        // Run headless by default, unless --headed flag is used
-        headless: !process.env.HEADED,
-        launchOptions: {
-          // Prevent browser from stealing focus
-          args: [
-            "--disable-blink-features=AutomationControlled",
-            "--disable-background-timer-throttling",
-            "--disable-backgrounding-occluded-windows",
-            "--disable-renderer-backgrounding",
-          ],
-        },
-      },
+      use: { ...devices["Desktop Chrome"], headless: !!process.env.CI },
     },
   ],
 
