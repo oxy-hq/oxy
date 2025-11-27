@@ -165,7 +165,7 @@ jobs:
 
       - name: Upload test results with traces
         uses: actions/upload-artifact@v4
-        if: always()
+        if: failure()
         with:
           name: playwright-results
           path: web-app/test-results/
