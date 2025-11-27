@@ -1,0 +1,46 @@
+services:
+  oxy:
+    image: ghcr.io/oxy-hq/oxy:0.3.17
+    container_name: oxy-demo
+    ports:
+      - "3000:3000"
+    working_dir: /workspace
+    volumes:
+      # Project directory - users can edit files from outside Docker
+      - ./examples:/workspace
+      # State directory - persists oxy data
+      - oxy-state:/var/lib/oxy/data
+    environment:
+      # Point oxy to use the persistent state directory
+      - OXY_STATE_DIR=/var/lib/oxy/data
+      # Database connection to postgres service
+      - DATABASE_URL=postgres://demo:demo@postgres:5432/demo
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    command: ["oxy", "serve", "--host", "0.0.0.0", "--port", "3000"]
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: oxy-postgres
+    environment:
+      POSTGRES_USER: demo
+      POSTGRES_PASSWORD: demo
+      POSTGRES_DB: demo
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U demo -d demo"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  oxy-state:
+  postgres-data:

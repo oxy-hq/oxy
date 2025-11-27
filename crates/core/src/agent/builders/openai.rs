@@ -211,7 +211,6 @@ impl OpenAIExecutable {
         has_written: &mut bool,
         message: &str,
     ) -> Result<(), OxyError> {
-        print!("Processing content chunk for model: {}", self.model);
         content.push_str(message);
 
         // Try structured parsing first, fallback to plain text

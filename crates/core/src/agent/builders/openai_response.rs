@@ -289,7 +289,6 @@ impl OpenAIResponseExecutable {
         has_written: &mut bool,
         message: &str,
     ) -> Result<(), OxyError> {
-        tracing::debug!("Processing content chunk for model: {}", self.model);
         content.push_str(message);
 
         if tool_calls.is_empty()
