@@ -150,7 +150,7 @@ jobs:
             db: postgres
     services:
       postgres:
-        image: postgres:15
+        image: postgres:18-alpine
         env:
           POSTGRES_USER: admin
           POSTGRES_PASSWORD: password
@@ -184,7 +184,7 @@ jobs:
       - name: Prep cargo cache
         uses: Swatinem/rust-cache@v2
         with:
-          key: ${{ matrix.task }}
+          shared-key: ${{ matrix.task }}
       # protobuf is required by lance https://github.com/lancedb/lance/issues/3073
       - name: Install Protoc
         uses: arduino/setup-protoc@v3
