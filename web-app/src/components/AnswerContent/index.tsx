@@ -13,7 +13,10 @@ type Props = {
 
 function AnswerContent({ content, className, onArtifactClick }: Props) {
   return (
-    <div className={cn("flex flex-col gap-4", className)}>
+    <div
+      className={cn("flex flex-col gap-4", className)}
+      data-testid="agent-response-text"
+    >
       <Markdown onArtifactClick={onArtifactClick}>{content}</Markdown>
     </div>
   );

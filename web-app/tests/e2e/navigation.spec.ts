@@ -1,0 +1,106 @@
+import { test, expect } from "@playwright/test";
+import { resetProject } from "./utils";
+
+test.describe("Navigation", () => {
+  test.beforeEach(async ({ page }) => {
+    resetProject();
+    await page.goto("/");
+  });
+
+  test("should navigate to home page", async ({ page }) => {
+    await page.goto("/threads");
+
+    // Navigate back to home
+    await page.getByRole("link", { name: "Home" }).click();
+
+    // Verify we're on the home page
+    await expect(page).toHaveURL(/\/(home)?$/);
+    await expect(
+      page.getByRole("textbox", { name: "Ask anything" }),
+    ).toBeVisible();
+  });
+
+  test("should navigate to threads page", async ({ page }) => {
+    // Click on Threads link
+    await page.getByRole("link", { name: "Threads" }).click();
+
+    // Verify navigation
+    await expect(page).toHaveURL(/\/threads/);
+    await expect(
+      page.getByRole("heading", { name: "Threads", level: 1 }),
+    ).toBeVisible();
+  });
+
+  test("should navigate to ontology page", async ({ page }) => {
+    // Click on Ontology link
+    await page.getByRole("link", { name: "Ontology" }).click();
+
+    // Verify navigation
+    await expect(page).toHaveURL(/\/ontology/);
+
+    // Wait for ontology graph to load
+    await expect(page.getByText("Ontology Overview")).toBeVisible({
+      timeout: 10000,
+    });
+  });
+
+  test("should navigate to IDE page", async ({ page }) => {
+    // Click on IDE link
+    await page.getByRole("link", { name: "IDE" }).click();
+
+    // Verify navigation
+    await expect(page).toHaveURL(/\/ide/);
+    await expect(page.getByText("Files").first()).toBeVisible();
+    await expect(page.getByText("Local mode")).toBeVisible();
+  });
+
+  test("should navigate to thread detail from sidebar", async ({ page }) => {
+    // Wait for threads to load in sidebar and click on first thread
+    const firstThread = page
+      .locator('[data-testid^="sidebar-thread-link-"]')
+      .first();
+    await expect(firstThread).toBeVisible({ timeout: 10000 });
+    await firstThread.click();
+
+    // Verify we're on a thread detail page
+    await expect(page).toHaveURL(/\/threads\/.+/);
+    await expect(
+      page.getByRole("textbox", { name: "Ask a follow-up question..." }),
+    ).toBeVisible();
+  });
+
+  test("should navigate to workflow page from sidebar", async ({ page }) => {
+    // Find and click on a workflow link
+    await page
+      .getByTestId("workflow-link-fruit_sales_report")
+      .click({ timeout: 10000 });
+
+    // Verify navigation to workflow page
+    await expect(page).toHaveURL(/\/workflows\/.+/);
+  });
+
+  test("should navigate to app page from sidebar", async ({ page }) => {
+    // Find and click on an app link
+    const appLink = page.locator('[data-testid^="app-link-"]').first();
+    await expect(appLink).toBeVisible({ timeout: 10000 });
+    await appLink.click();
+
+    // Verify navigation to app page
+    await expect(page).toHaveURL(/\/apps\/.+/);
+  });
+
+  test("should maintain sidebar state across navigation", async ({ page }) => {
+    // Verify sidebar is visible
+    await expect(page.getByRole("link", { name: "Home" })).toBeVisible();
+
+    // Navigate to different pages
+    await page.getByRole("link", { name: "Threads" }).click();
+    await expect(page.getByRole("link", { name: "Home" })).toBeVisible();
+
+    await page.getByRole("link", { name: "IDE" }).click();
+    await expect(page.getByRole("link", { name: "Home" })).toBeVisible();
+
+    await page.getByRole("link", { name: "Ontology" }).click();
+    await expect(page.getByRole("link", { name: "Home" })).toBeVisible();
+  });
+});

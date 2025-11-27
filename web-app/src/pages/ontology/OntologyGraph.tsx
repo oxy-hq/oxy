@@ -649,16 +649,25 @@ function OntologyGraphInner({ data }: OntologyGraphProps) {
           <div className="text-sm font-semibold mb-2 text-sidebar-foreground">
             Ontology Overview
           </div>
-          <div className="space-y-1 text-sm text-sidebar-foreground/70">
+          <div
+            className="space-y-1 text-sm text-sidebar-foreground/70"
+            data-testid="ontology-stats"
+          >
             <div className="flex justify-between gap-4">
               <span>Total Nodes:</span>
-              <span className="font-medium text-sidebar-foreground">
+              <span
+                className="font-medium text-sidebar-foreground"
+                data-testid="ontology-total-nodes"
+              >
                 {nodeCount}
               </span>
             </div>
             <div className="flex justify-between gap-4">
               <span>Total Edges:</span>
-              <span className="font-medium text-sidebar-foreground">
+              <span
+                className="font-medium text-sidebar-foreground"
+                data-testid="ontology-total-edges"
+              >
                 {edgeCount}
               </span>
             </div>
@@ -688,7 +697,10 @@ function OntologyGraphInner({ data }: OntologyGraphProps) {
                 setFocusedNodeId(null);
               }}
             >
-              <SelectTrigger className="h-9 text-sm bg-sidebar-accent border-sidebar-border text-sidebar-foreground">
+              <SelectTrigger
+                className="h-9 text-sm bg-sidebar-accent border-sidebar-border text-sidebar-foreground"
+                data-testid="ontology-filter-type"
+              >
                 <SelectValue placeholder="Select focus" />
               </SelectTrigger>
               <SelectContent>

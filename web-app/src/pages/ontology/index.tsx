@@ -53,7 +53,7 @@ export default function OntologyPage() {
   }
 
   return (
-    <div className="h-screen w-screen">
+    <div className="h-screen w-screen" data-testid="ontology-graph-container">
       <OntologyGraph data={data} />
     </div>
   );

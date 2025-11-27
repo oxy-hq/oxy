@@ -47,3 +47,5 @@ tools:
 tests:
   - type: consistency
     task_description: "how many content type are there in the database?"
+
+  # New configuration line
