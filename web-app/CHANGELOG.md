@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.3.18](https://github.com/oxy-hq/oxy-internal/compare/0.3.17...0.3.18) (2025-11-27)
+
+
+### <!-- 0 -->🚀 Features
+
+* closes [#1298](https://github.com/oxy-hq/oxy-internal/issues/1298) spike gui editor v2 ([#1323](https://github.com/oxy-hq/oxy-internal/issues/1323)) ([7c40737](https://github.com/oxy-hq/oxy-internal/commit/7c40737323e8b1e3f66a3b7a6fa525d9e240573a))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* break empty workflow thread page ([#1383](https://github.com/oxy-hq/oxy-internal/issues/1383)) ([06cb57b](https://github.com/oxy-hq/oxy-internal/commit/06cb57badfc444d216d1785089b9297dfdcc350a))
+* can not run workflow thread ([#1392](https://github.com/oxy-hq/oxy-internal/issues/1392)) ([28fd804](https://github.com/oxy-hq/oxy-internal/commit/28fd8048ec5db8d88377b9b4f1276c59e696d513))
+* navigate to thread page after send message in the home page ([#1389](https://github.com/oxy-hq/oxy-internal/issues/1389)) ([b2cd0e9](https://github.com/oxy-hq/oxy-internal/commit/b2cd0e942e3a8d1e51e34815104a5b3052c7af9f))
+
 ## [0.3.17](https://github.com/oxy-hq/oxy-internal/compare/0.3.16...0.3.17) (2025-11-20)
 
 

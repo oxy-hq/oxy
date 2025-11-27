@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.3.18](https://github.com/oxy-hq/oxy-internal/compare/0.3.17...0.3.18) (2025-11-27)
+
+
+### <!-- 0 -->🚀 Features
+
+* add a docker-compose that serves as demo entrypoint ([#1390](https://github.com/oxy-hq/oxy-internal/issues/1390)) ([b31e701](https://github.com/oxy-hq/oxy-internal/commit/b31e701746efc14bc4cd182f9f70d74b355dede0))
+* flexible mcp ([#1378](https://github.com/oxy-hq/oxy-internal/issues/1378)) ([5953017](https://github.com/oxy-hq/oxy-internal/commit/5953017085fcdb267f05180fec67c2be7928888c))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* can not run workflow thread ([#1392](https://github.com/oxy-hq/oxy-internal/issues/1392)) ([28fd804](https://github.com/oxy-hq/oxy-internal/commit/28fd8048ec5db8d88377b9b4f1276c59e696d513))
+
 ## [0.3.17](https://github.com/oxy-hq/oxy-internal/compare/0.3.16...0.3.17) (2025-11-20)
 
 

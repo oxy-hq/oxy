@@ -3232,7 +3232,7 @@ dependencies = [
 
 [[package]]
 name = "entity"
-version = "0.3.17"
+version = "0.3.18"
 dependencies = [
  "chrono",
  "indexmap 2.12.1",
@@ -5597,7 +5597,7 @@ dependencies = [
 
 [[package]]
 name = "migration"
-version = "0.3.17"
+version = "0.3.18"
 dependencies = [
  "async-std",
  "sea-orm-migration",
@@ -6047,7 +6047,7 @@ dependencies = [
 
 [[package]]
 name = "omni"
-version = "0.3.17"
+version = "0.3.18"
 dependencies = [
  "garde",
  "rand 0.8.5",
@@ -6254,7 +6254,7 @@ dependencies = [
 
 [[package]]
 name = "oxy"
-version = "0.3.17"
+version = "0.3.18"
 dependencies = [
  "aes-gcm",
  "aho-corasick",
@@ -6375,7 +6375,7 @@ dependencies = [
 
 [[package]]
 name = "oxy-semantic"
-version = "0.3.17"
+version = "0.3.18"
 dependencies = [
  "indexmap 2.12.1",
  "minijinja",
@@ -6392,7 +6392,7 @@ dependencies = [
 
 [[package]]
 name = "oxy_globals"
-version = "0.3.17"
+version = "0.3.18"
 dependencies = [
  "indexmap 2.12.1",
  "minijinja",
@@ -7070,7 +7070,7 @@ dependencies = [
 
 [[package]]
 name = "py"
-version = "0.3.17"
+version = "0.3.18"
 dependencies = [
  "oxy",
  "pyo3",

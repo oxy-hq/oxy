@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.18](https://github.com/oxy-hq/oxy-internal/compare/0.3.17...0.3.18) (2025-11-27)
+
+
+### <!-- 0 -->🚀 Features
+
+* flexible mcp ([#1378](https://github.com/oxy-hq/oxy-internal/issues/1378)) ([5953017](https://github.com/oxy-hq/oxy-internal/commit/5953017085fcdb267f05180fec67c2be7928888c))
+
 ## [0.3.17](https://github.com/oxy-hq/oxy-internal/compare/0.3.16...0.3.17) (2025-11-20)
 
 ## [0.3.16](https://github.com/oxy-hq/oxy-internal/compare/0.3.15...0.3.16) (2025-11-11)
