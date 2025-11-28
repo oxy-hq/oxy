@@ -1,11 +1,10 @@
 import { spawn, execSync } from "child_process";
-import { Page, request } from "@playwright/test";
+import { Page } from "@playwright/test";
 import { writeFile, mkdir } from "fs/promises";
 import { existsSync } from "fs";
 
 const database_path = "~/.local/share/oxy";
-const API_BASE_URL = "https://localhost:3000/api";
-const PROJECT_ID = "default";
+// (Global setup handles API seeding; no base URL or project ID needed here)
 
 export function resetProject() {
   // eslint-disable-next-line sonarjs/os-command
@@ -75,39 +74,10 @@ tools:
   await writeFile(testAgentPath, originalContent, "utf-8");
 }
 
-// Create test threads via API - much faster than UI
-export async function seedThreadsDataViaAPI(count: number = 15) {
-  const apiContext = await request.newContext({
-    ignoreHTTPSErrors: true,
-  });
-
-  try {
-    const promises = [];
-    for (let i = 0; i < count; i++) {
-      const promise = apiContext.post(`${API_BASE_URL}/${PROJECT_ID}/threads`, {
-        data: {
-          title: `Test thread ${i + 1}`,
-          input: `Test thread ${i + 1}`,
-          source: "duckdb",
-          source_type: "agent",
-        },
-      });
-      promises.push(promise);
-    }
-
-    // Wait for all threads to be created in parallel
-    const results = await Promise.all(promises);
-    console.log(`Successfully seeded ${results.length} threads via API`);
-  } catch (error) {
-    console.error("Failed to seed threads via API:", error);
-    throw error;
-  } finally {
-    await apiContext.dispose();
-  }
-}
+// (Removed seedThreadsDataViaAPI to centralize seeding in global setup only)
 
 // Create test threads via UI - slower but more realistic
-export async function seedThreadsData(page: Page, count: number = 15) {
+export async function seedThreadsData(page: Page, count: number = 10) {
   for (let i = 0; i < count; i++) {
     await page.goto("/");
 

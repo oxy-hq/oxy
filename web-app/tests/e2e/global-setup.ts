@@ -1,5 +1,6 @@
 import { writeFile, mkdir } from "fs/promises";
 import { existsSync } from "fs";
+import { resetProject } from "./utils";
 
 async function globalSetup() {
   console.log("Setting up test files for E2E tests...");
@@ -33,6 +34,8 @@ tools:
 `;
 
   try {
+    // Reset database/storage before creating files & seeding threads
+    resetProject();
     // Create test file
     await writeFile(testFilePath, testFileContent, "utf-8");
     console.log(`✓ Created ${testFilePath}`);
@@ -47,9 +50,11 @@ tools:
     console.log(`✓ Created ${testAgentPath}`);
 
     // Give the backend file watcher a moment to detect the new files
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    await new Promise((resolve) => setTimeout(resolve, 1500));
 
-    console.log("Test files setup complete!");
+    console.log(
+      "Global E2E setup complete (mocked threads handled via route interception).",
+    );
   } catch (error) {
     console.error("Failed to setup test files:", error);
     throw error;

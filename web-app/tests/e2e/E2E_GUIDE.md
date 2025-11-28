@@ -86,7 +86,7 @@ test.describe("Feature", () => {
 - Use test IDs for reliable selectors
 - Keep tests independent with `resetProject()`
 - Test user flows, not implementation
-- Use `seedThreadsDataViaAPI()` for test data (faster than UI)
+- Thread data is mocked via route interception (`mockThreadsEndpoints`) for deterministic state
 - Use `beforeAll` for expensive setup that can be shared across tests
 
 **❌ Don't:**
@@ -98,23 +98,6 @@ test.describe("Feature", () => {
 - Seed test data via UI when API is available
 
 ## Performance Optimizations
-
-The test suite has been optimized for fast execution:
-
-**API-based Test Data:**
-
-```typescript
-// ✅ Fast - Use API for seeding test data
-test.beforeAll(async () => {
-  resetProject();
-  await seedThreadsDataViaAPI(15); // Creates 15 threads in parallel
-});
-
-// ❌ Slow - Don't use UI for test data
-test.beforeEach(async ({ page }) => {
-  await seedThreadsData(page, 15); // Takes much longer
-});
-```
 
 **Playwright Configuration:**
 
@@ -128,8 +111,8 @@ test.beforeEach(async ({ page }) => {
 
 - Full test suite (42 tests): ~1 minute
 - Tests run fully in parallel
-- API thread seeding: ~1-2 seconds for 15 threads
-- UI thread seeding: ~30-45 seconds for 15 threads
+- Mocked threads: near-zero overhead
+- UI thread seeding (legacy, avoided): ~30-45 seconds for 15 threads
 
 ## Common Patterns
 
