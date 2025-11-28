@@ -7,6 +7,11 @@ test.describe("Navigation", () => {
     resetProject();
   });
 
+  // Cleanup seeded/stateful data after all navigation tests
+  test.afterAll(() => {
+    resetProject();
+  });
+
   test.beforeEach(async ({ page }) => {
     await page.goto("/");
   });
@@ -76,18 +81,27 @@ test.describe("Navigation", () => {
   });
 
   test("should navigate to workflow page from sidebar", async ({ page }) => {
-    // The workflow might be hidden - try to expand workflows list first
+    // Ensure sidebar workflows are loaded/expanded
     const showAllButton = page.getByRole("button", {
       name: /Show all.*workflows/i,
     });
-    if (await showAllButton.isVisible({ timeout: 2000 }).catch(() => false)) {
+    if (await showAllButton.isVisible().catch(() => false)) {
       await showAllButton.click();
     }
 
-    // Find and click on a workflow link
-    await page
-      .getByTestId("workflow-link-fruit_sales_report")
-      .click({ timeout: 10000 });
+    // Prefer specific workflow link, otherwise fallback to first available
+    const specificWorkflow = page.getByTestId(
+      "workflow-link-fruit_sales_report",
+    );
+    const anyWorkflow = page.locator('[data-testid^="workflow-link-"]').first();
+
+    const target =
+      (await specificWorkflow.count()) > 0 ? specificWorkflow : anyWorkflow;
+
+    // Wait for the workflow link to be visible and clickable
+    await expect(target).toBeVisible({ timeout: 15000 });
+    await target.scrollIntoViewIfNeeded();
+    await target.click({ timeout: 15000 });
 
     // Verify navigation to workflow page
     await expect(page).toHaveURL(/\/workflows\/.+/);

@@ -125,4 +125,9 @@ test.describe("Threads Listing Page", () => {
       .locator("role=checkbox");
     await expect(firstCheckbox).toBeVisible();
   });
+
+  // Cleanup seeded data after all tests in this suite
+  test.afterAll(() => {
+    resetProject();
+  });
 });
