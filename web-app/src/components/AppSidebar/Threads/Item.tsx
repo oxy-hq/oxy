@@ -47,7 +47,7 @@ const Item = ({ thread }: ItemProps) => {
   return (
     <SidebarMenuSubItem key={thread.id}>
       <SidebarMenuSubButton asChild isActive={isActive}>
-        <Link to={threadUri}>
+        <Link to={threadUri} data-testid={`sidebar-thread-link-${thread.id}`}>
           <span className="truncate">{thread.title}</span>
         </Link>
       </SidebarMenuSubButton>
@@ -67,6 +67,7 @@ const Item = ({ thread }: ItemProps) => {
           <DropdownMenuItem
             className="cursor-pointer"
             onSelect={handleDeleteThread}
+            data-testid={`sidebar-thread-delete-${thread.id}`}
           >
             <Trash2 className="text-destructive" />
             <span className="text-destructive">Delete</span>
