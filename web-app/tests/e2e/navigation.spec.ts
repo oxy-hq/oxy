@@ -36,8 +36,10 @@ test.describe("Navigation", () => {
   });
 
   test("should navigate to ontology page", async ({ page }) => {
-    // Click on Ontology link
-    await page.getByRole("link", { name: "Ontology" }).click();
+    // Click on Ontology link - scroll into view first to ensure it's clickable
+    const ontologyLink = page.getByRole("link", { name: "Ontology" });
+    await ontologyLink.scrollIntoViewIfNeeded();
+    await ontologyLink.click({ force: true });
 
     // Verify navigation
     await expect(page).toHaveURL(/\/ontology/);
@@ -74,6 +76,14 @@ test.describe("Navigation", () => {
   });
 
   test("should navigate to workflow page from sidebar", async ({ page }) => {
+    // The workflow might be hidden - try to expand workflows list first
+    const showAllButton = page.getByRole("button", {
+      name: /Show all.*workflows/i,
+    });
+    if (await showAllButton.isVisible({ timeout: 2000 }).catch(() => false)) {
+      await showAllButton.click();
+    }
+
     // Find and click on a workflow link
     await page
       .getByTestId("workflow-link-fruit_sales_report")

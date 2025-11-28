@@ -1,16 +1,14 @@
 import { test, expect } from "@playwright/test";
-import { resetProject, resetTestFile } from "./utils";
+import { resetProject, resetTestFile, resetTestAgentFile } from "./utils";
 import { IDEPage } from "./pages/IDEPage";
 
 test.describe("IDE Functionality", () => {
   test.beforeEach(async ({ page }) => {
     resetProject();
-    await page.goto("/ide");
-  });
-
-  // Clean up test file modifications after each test
-  test.afterEach(async () => {
+    // Create/reset test files before each test so they're available in the IDE
     await resetTestFile();
+    await resetTestAgentFile();
+    await page.goto("/ide");
   });
 
   test("should display file browser with folders and files", async ({
@@ -199,15 +197,21 @@ test.describe("IDE Functionality", () => {
     test("should edit YAML file in agents folder", async ({ page }) => {
       const idePage = new IDEPage(page);
 
-      await idePage.expandFolder("agents", "duckdb.agent.yml");
-      await idePage.openFile("duckdb.agent.yml");
-      await idePage.insertTextAtEnd("  # New configuration line");
+      // Use the dedicated test agent file that's gitignored
+      await idePage.expandFolder("agents", "test-agent-e2e.agent.yml");
+      await idePage.openFile("test-agent-e2e.agent.yml");
+
+      // Test edit and save functionality
+      await idePage.insertTextAtEnd("  # Test configuration line");
       await idePage.verifySaveButtonVisible();
       await idePage.saveFile();
 
-      // Undo the change to avoid leaving git modifications
-      await idePage.undo();
+      // Make another edit
+      await idePage.insertTextAtEnd("\n  # Another test line");
+      await idePage.verifySaveButtonVisible();
       await idePage.saveFile();
+
+      // File will be reset by beforeEach in next test, so no need to clean up
     });
   });
 });

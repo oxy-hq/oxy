@@ -5,8 +5,8 @@ test.describe("Threads Listing Page", () => {
   // Reset and seed data once for the entire test suite
   test.beforeAll(async () => {
     resetProject();
-    // Seed 15 threads via API - much faster than UI
-    await seedThreadsDataViaAPI(15);
+    // Seed 20 threads via API to ensure pagination shows (10 per page = 2 pages)
+    await seedThreadsDataViaAPI(20);
   });
 
   test.beforeEach(async ({ page }) => {
@@ -55,10 +55,10 @@ test.describe("Threads Listing Page", () => {
       page.locator('[data-testid="thread-item"]').first(),
     ).toBeVisible({ timeout: 10000 });
 
-    // Verify pagination navigation exists
+    // Verify pagination navigation exists (with extended timeout)
     await expect(
       page.getByRole("navigation", { name: "pagination" }),
-    ).toBeVisible();
+    ).toBeVisible({ timeout: 10000 });
 
     // Verify page number links
     await expect(

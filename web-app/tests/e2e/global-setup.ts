@@ -1,0 +1,59 @@
+import { writeFile, mkdir } from "fs/promises";
+import { existsSync } from "fs";
+
+async function globalSetup() {
+  console.log("Setting up test files for E2E tests...");
+
+  // Ensure test file exists
+  const testFilePath = "../examples/test-file-for-e2e.txt";
+  const testFileContent = `# Test File for E2E Tests
+
+This file is used for IDE E2E tests.
+It gets modified during tests and reset after each test.
+`;
+
+  // Ensure test agent file exists
+  const testAgentPath = "../examples/agents/test-agent-e2e.agent.yml";
+  const testAgentContent = `# Test Agent for E2E Tests
+description: "A test agent used for IDE E2E tests"
+name: test-agent-e2e
+
+model: "openai-4o-mini"
+
+system_instructions: |
+  You are a test agent used for E2E testing.
+  This file gets modified during tests and reset after each test.
+
+output_format: default
+
+tools:
+  - name: execute_sql
+    type: execute_sql
+    database: local
+`;
+
+  try {
+    // Create test file
+    await writeFile(testFilePath, testFileContent, "utf-8");
+    console.log(`✓ Created ${testFilePath}`);
+
+    // Ensure agents directory exists
+    if (!existsSync("../examples/agents")) {
+      await mkdir("../examples/agents", { recursive: true });
+    }
+
+    // Create test agent file
+    await writeFile(testAgentPath, testAgentContent, "utf-8");
+    console.log(`✓ Created ${testAgentPath}`);
+
+    // Give the backend file watcher a moment to detect the new files
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+
+    console.log("Test files setup complete!");
+  } catch (error) {
+    console.error("Failed to setup test files:", error);
+    throw error;
+  }
+}
+
+export default globalSetup;
