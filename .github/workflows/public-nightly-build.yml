@@ -24,9 +24,19 @@ permissions:
   packages: write
 
 jobs:
+  changesets:
+    name: Changesets
+    # Run changesets to detect impacted areas on push/dispatch; nightly schedule proceeds regardless
+    uses: ./.github/workflows/changesets.yaml
+
   build-channel:
     # Only build in public repo; supports nightly (cron) and edge (main pushes)
-    if: github.repository == 'oxy-hq/oxy'
+    needs: [changesets]
+    if: github.repository == 'oxy-hq/oxy' && (
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
+      needs.changesets.outputs.oxy == 'true' || needs.changesets.outputs.web-app == 'true'
+    )
     name: Build ${{ github.event_name == 'schedule' && 'Nightly' || 'Edge' }} CLI for ${{ matrix.job.target }}
     runs-on: ${{ matrix.job.os }}
     strategy:
@@ -126,7 +136,7 @@ jobs:
       - name: Determine channel and tags
         id: channel
         run: |
-          SHORT_SHA=$(git rev-parse --short HEAD)
+          SHORT_SHA=${GITHUB_SHA::7}
           EVENT="$GITHUB_EVENT_NAME"
           DATE="${{ steps.date.outputs.current_date }}"
           if [ "$EVENT" = "schedule" ]; then
@@ -180,7 +190,12 @@ jobs:
 
   build-and-publish-docker:
     name: Build ${{ matrix.target.name }} ${{ github.event_name == 'schedule' && 'nightly' || 'edge' }} Docker image for ${{ matrix.arch }}
-    if: github.repository == 'oxy-hq/oxy'
+    needs: [changesets, build-channel]
+    if: github.repository == 'oxy-hq/oxy' && (
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
+      needs.changesets.outputs.oxy == 'true'
+    )
     concurrency:
       group: docker-publish-nightly-${{ matrix.target.name }}-${{ matrix.arch }}
       cancel-in-progress: true
@@ -236,7 +251,7 @@ jobs:
       - name: Determine channel and tags
         id: channel
         run: |
-          SHORT_SHA=$(git rev-parse --short HEAD)
+          SHORT_SHA=${GITHUB_SHA::7}
           DATE="${{ steps.date.outputs.current_date }}"
           if [ "$GITHUB_EVENT_NAME" = "schedule" ]; then
             CHANNEL="nightly"
@@ -325,7 +340,6 @@ jobs:
       - name: Determine channel
         id: channel
         run: |
-          SHORT_SHA=$(git rev-parse --short HEAD)
           DATE="${{ steps.date.outputs.current_date }}"
           if [ "$GITHUB_EVENT_NAME" = "schedule" ]; then
             CHANNEL="nightly"
