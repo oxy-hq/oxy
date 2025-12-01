@@ -187,11 +187,7 @@ jobs:
   build-and-publish-docker:
     name: Build ${{ matrix.target.name }} ${{ github.event_name == 'schedule' && 'nightly' || 'edge' }} Docker image for ${{ matrix.arch }}
     needs: [changesets, build-channel]
-    if: github.repository == 'oxy-hq/oxy' && (
-      github.event_name == 'schedule' ||
-      github.event_name == 'workflow_dispatch' ||
-      needs.changesets.outputs.oxy == 'true'
-    )
+    if: github.repository == 'oxy-hq/oxy' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || needs.changesets.outputs.oxy == 'true')
     concurrency:
       group: docker-publish-nightly-${{ matrix.target.name }}-${{ matrix.arch }}
       cancel-in-progress: true
