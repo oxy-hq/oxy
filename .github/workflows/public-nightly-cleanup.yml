@@ -1,0 +1,75 @@
+name: Public Nightly Cleanup
+
+on:
+  schedule:
+    - cron: "0 5 * * 0" # Weekly Sunday 05:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  cleanup-old-nightly:
+    name: Cleanup nightly releases and Docker tags older than 60 days
+    if: github.repository == 'oxy-hq/oxy'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Calculate cutoff date
+        id: cutoff
+        run: |
+          CUTOFF=$(date -u -d '60 days ago' +'%Y%m%d')
+          echo "cutoff=${CUTOFF}" >> $GITHUB_OUTPUT
+          echo "Cutoff date (YYYYMMDD): ${CUTOFF}"
+
+      - name: Install GitHub CLI and jq
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y jq
+          curl -sL https://github.com/cli/cli/releases/download/v2.62.0/gh_2.62.0_linux_amd64.deb -o gh.deb
+          sudo dpkg -i gh.deb
+
+      - name: Delete nightly releases in oxy-nightly older than cutoff
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          CUTOFF="${{ steps.cutoff.outputs.cutoff }}"
+          echo "Fetching releases from oxy-hq/oxy-nightly..."
+          gh api repos/oxy-hq/oxy-nightly/releases --paginate \
+            | jq -r '.[] | "\(.tag_name) \(.id) \(.created_at)"' \
+            | while read -r TAG ID CREATED; do
+                if [[ "$TAG" == nightly-* ]]; then
+                  DATE_PART=$(echo "$TAG" | sed -E 's/^nightly-([0-9]{8}).*/\1/')
+                  if [[ $DATE_PART =~ ^[0-9]{8}$ && "$DATE_PART" < "$CUTOFF" ]]; then
+                    echo "Deleting release $TAG (id=$ID, created=$CREATED)"
+                    gh api -X DELETE repos/oxy-hq/oxy-nightly/releases/$ID || true
+                  fi
+                fi
+              done
+
+      - name: Delete old nightly Docker tags (oxy, oxy-semantic-engine)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          CUTOFF="${{ steps.cutoff.outputs.cutoff }}"
+          OWNER="${{ github.repository_owner }}"
+          for PKG in oxy oxy-semantic-engine; do
+            echo "Fetching container versions for ghcr.io/$OWNER/$PKG..."
+            gh api -H "Accept: application/vnd.github+json" \
+              /orgs/$OWNER/packages/container/$PKG/versions --paginate \
+              | jq -c '.[]' | while read -r VER; do
+                  ID=$(echo "$VER" | jq -r '.id')
+                  CREATED=$(echo "$VER" | jq -r '.created_at')
+                  CREATED_DATE=$(date -u -d "$CREATED" +'%Y%m%d' 2>/dev/null || echo "00000000")
+                  TAGS=$(echo "$VER" | jq -r '.metadata.container.tags[]?' | tr '\n' ' ')
+                  # If any tag starts with nightly- and the version is older than cutoff, delete
+                  if echo "$TAGS" | grep -qE '\bnightly-'; then
+                    if [[ "$CREATED_DATE" < "$CUTOFF" ]]; then
+                      echo "Deleting nightly version id=$ID (created=$CREATED, tags=$TAGS)"
+                      gh api -X DELETE /orgs/$OWNER/packages/container/$PKG/versions/$ID || true
+                    else
+                      echo "Keeping nightly version id=$ID (created=$CREATED)"
+                    fi
+                  fi
+                done
+          done
