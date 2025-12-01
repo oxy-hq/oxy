@@ -133,7 +133,7 @@ jobs:
     needs: [changesets, typos]
     if: needs.changesets.outputs.oxy == 'true'
     name: Format cargo, check & test (${{ matrix.task }}, ${{ matrix.db }})
-    runs-on: ${{ github.repository == 'oxy-hq/oxy-internal' && 'warp-ubuntu-latest-arm64-2x' || 'ubuntu-latest' }}
+    runs-on: ${{ github.repository == 'oxy-hq/oxy-internal' && (github.ref == 'refs/heads/main' && 'warp-ubuntu-latest-arm64-2x-spot' || 'warp-ubuntu-latest-arm64-2x') || 'ubuntu-latest' }}
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       BIGQUERY_SAMPLE_KEY: ${{ secrets.BIGQUERY_SAMPLE_KEY }}

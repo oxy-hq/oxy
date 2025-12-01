@@ -40,7 +40,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       github.event_name == 'push' ||
       (github.event_name == 'pull_request_review' && github.event.review.state == 'approved')
-    runs-on: ${{ github.repository == 'oxy-hq/oxy-internal' && 'warp-ubuntu-latest-arm64-2x' || 'ubuntu-latest' }}
+    runs-on: ${{ github.repository == 'oxy-hq/oxy-internal' && (github.ref == 'refs/heads/main' && 'warp-ubuntu-latest-arm64-2x-spot' || 'warp-ubuntu-latest-arm64-2x') || 'ubuntu-latest' }}
     timeout-minutes: 30
     env:
       OXY_STATE_DIR: ${{ github.workspace }}/examples
@@ -222,6 +222,44 @@ jobs:
           fi
 
       # Send Slack notification on main branch failure
+      - name: Find Slack user
+        if: failure() && github.ref == 'refs/heads/main' && github.repository == 'oxy-hq/oxy-internal'
+        id: find-slack-user
+        uses: scribd/find-slack-user-action@v1
+        continue-on-error: true
+        with:
+          slack-token: ${{ secrets.SLACK_BOT_TOKEN }}
+          # The action will automatically use the commit author's GitHub username
+
+      - name: Prepare Slack notification message
+        if: failure() && github.ref == 'refs/heads/main' && github.repository == 'oxy-hq/oxy-internal'
+        id: prepare-slack
+        run: |
+          GITHUB_USER="${{ github.event.head_commit.author.username || github.actor }}"
+          SLACK_MEMBER_ID="${{ steps.find-slack-user.outputs.member-id }}"
+
+          echo "GitHub user: $GITHUB_USER"
+          echo "Slack member ID: ${SLACK_MEMBER_ID:-not found}"
+
+          if [ -n "$SLACK_MEMBER_ID" ]; then
+            echo "✓ Found Slack user for $GITHUB_USER"
+            AUTHOR_TEXT="*Author:*\n<@${SLACK_MEMBER_ID}> (${{ github.event.head_commit.author.name }})"
+            MENTION_TEXT="<@${SLACK_MEMBER_ID}> - E2E tests failed on your commit"
+          else
+            echo "✗ No Slack user found for $GITHUB_USER"
+            AUTHOR_TEXT="*Author:*\n${{ github.event.head_commit.author.name }} (@${GITHUB_USER})"
+            MENTION_TEXT=""
+          fi
+
+          # Export for next step
+          echo "author_text<<EOF" >> $GITHUB_OUTPUT
+          echo "$AUTHOR_TEXT" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+          echo "mention_text<<EOF" >> $GITHUB_OUTPUT
+          echo "$MENTION_TEXT" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
       - name: Send Slack notification
         if: failure() && github.ref == 'refs/heads/main' && github.repository == 'oxy-hq/oxy-internal'
         uses: slackapi/slack-github-action@v2.0.0
@@ -231,7 +269,7 @@ jobs:
           payload: |
             {
               "channel": "eng-events-e2e",
-              "text": "🚨 E2E Tests Failed on Main Branch",
+              "text": "🚨 E2E Tests Failed on Main Branch - ${{ steps.prepare-slack.outputs.mention_text || github.event.head_commit.author.name }}",
               "blocks": [
                 {
                   "type": "header",
@@ -240,6 +278,7 @@ jobs:
                     "text": "🚨 E2E Tests Failed on Main Branch"
                   }
                 },
+                ${{ steps.prepare-slack.outputs.mention_text && '{"type": "section", "text": {"type": "mrkdwn", "text": "' || '' }}${{ steps.prepare-slack.outputs.mention_text }}${{ steps.prepare-slack.outputs.mention_text && '"}},' || '' }}
                 {
                   "type": "section",
                   "fields": [
@@ -257,7 +296,7 @@ jobs:
                     },
                     {
                       "type": "mrkdwn",
-                      "text": "*Author:*\n${{ github.event.head_commit.author.name }}"
+                      "text": "${{ steps.prepare-slack.outputs.author_text }}"
                     }
                   ]
                 },

@@ -1,8 +1,13 @@
-name: Public Nightly Build
+name: Public Nightly & Edge Build
 
 on:
   schedule:
     - cron: "0 8 * * *" # Runs every day at midnight Bay Area time (UTC-8)
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - "docs/**"
   workflow_dispatch:
 
 env:
@@ -19,18 +24,15 @@ permissions:
   packages: write
 
 jobs:
-  build-nightly:
-    # we dont build nightly release from internal repo
-    # but allowing adhoc build for cache purposes
+  build-channel:
+    # Only build in public repo; supports nightly (cron) and edge (main pushes)
     if: github.repository == 'oxy-hq/oxy'
-    name: Build Nightly CLI for ${{ matrix.job.target }}
+    name: Build ${{ github.event_name == 'schedule' && 'Nightly' || 'Edge' }} CLI for ${{ matrix.job.target }}
     runs-on: ${{ matrix.job.os }}
     strategy:
       fail-fast: false
       matrix:
         job:
-          - os: macos-13
-            target: x86_64-apple-darwin
           - os: macos-latest
             target: aarch64-apple-darwin
           - os: ubuntu-22.04
@@ -121,7 +123,42 @@ jobs:
         id: date
         run: echo "current_date=$(date -u +'%Y%m%d')" >> $GITHUB_OUTPUT
 
-      - name: Publish nightly release
+      - name: Determine channel and tags
+        id: channel
+        run: |
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          EVENT="$GITHUB_EVENT_NAME"
+          DATE="${{ steps.date.outputs.current_date }}"
+          if [ "$EVENT" = "schedule" ]; then
+            CHANNEL="nightly"
+            PRIMARY_TAG="nightly-${DATE}-${SHORT_SHA}"
+            DISPLAY_NAME="Nightly Build ${DATE}"
+          else
+            CHANNEL="edge"
+            PRIMARY_TAG="edge-${SHORT_SHA}"
+            DISPLAY_NAME="Edge Build ${SHORT_SHA}"
+          fi
+
+          # Transitional compatibility tag (to be deprecated later) only for push edge builds
+          if [ "$CHANNEL" = "edge" ]; then
+            COMPAT_TAG="nightly-main-${SHORT_SHA}"
+          else
+            COMPAT_TAG=""
+          fi
+
+          echo "short_sha=${SHORT_SHA}" >> $GITHUB_OUTPUT
+            echo "channel=${CHANNEL}" >> $GITHUB_OUTPUT
+          echo "primary_tag=${PRIMARY_TAG}" >> $GITHUB_OUTPUT
+          echo "compat_tag=${COMPAT_TAG}" >> $GITHUB_OUTPUT
+          echo "display_name=${DISPLAY_NAME}" >> $GITHUB_OUTPUT
+
+      - name: Create transitional compatibility tag (edge only)
+        if: ${{ steps.channel.outputs.compat_tag != '' }}
+        run: |
+          git tag ${{ steps.channel.outputs.compat_tag }} || true
+          git push origin ${{ steps.channel.outputs.compat_tag }} || true
+
+      - name: Publish channel release
         uses: softprops/action-gh-release@v2
         with:
           token: ${{ steps.app-token.outputs.token }}
@@ -129,19 +166,21 @@ jobs:
           repository: oxy-hq/oxy-nightly
           prerelease: false
           make_latest: true
-          tag_name: nightly-${{ github.sha }}
-          name: Nightly Build ${{ steps.date.outputs.current_date }}
+          tag_name: ${{ steps.channel.outputs.primary_tag }}
+          name: ${{ steps.channel.outputs.display_name }} (${{ steps.channel.outputs.primary_tag }})
           files: artifacts/**/*
           body: |
-            Nightly build triggered at ${{ steps.date.outputs.current_date }}. Please use with caution.
+            Channel: ${{ steps.channel.outputs.channel }}
+            Date: ${{ steps.date.outputs.current_date }}
             Commit: [${{ github.sha }}](https://github.com/${{ github.repository }}/commit/${{ github.sha }})
-            To install the latest release:
+            Primary Tag: ${{ steps.channel.outputs.primary_tag }}
+            Transitional Tag: ${{ steps.channel.outputs.compat_tag || 'n/a' }}
+            To install:
             `bash <(curl --proto '=https' --tlsv1.2 -LsSf https://nightly.oxy.tech)`
 
   build-and-publish-docker:
-    name: Build ${{ matrix.target.name }} nightly Docker image for ${{ matrix.arch }}
+    name: Build ${{ matrix.target.name }} ${{ github.event_name == 'schedule' && 'nightly' || 'edge' }} Docker image for ${{ matrix.arch }}
     if: github.repository == 'oxy-hq/oxy'
-    needs: [build-nightly]
     concurrency:
       group: docker-publish-nightly-${{ matrix.target.name }}-${{ matrix.arch }}
       cancel-in-progress: true
@@ -194,42 +233,73 @@ jobs:
         id: date
         run: echo "current_date=$(date -u +'%Y%m%d')" >> $GITHUB_OUTPUT
 
-      - name: Get short SHA
-        id: short_sha
-        run: echo "short_sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+      - name: Determine channel and tags
+        id: channel
+        run: |
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          DATE="${{ steps.date.outputs.current_date }}"
+          if [ "$GITHUB_EVENT_NAME" = "schedule" ]; then
+            CHANNEL="nightly"
+            DATE_TAG="nightly-${DATE}"
+            SHA_TAG="nightly-${SHORT_SHA}"
+            LATEST_TAG="nightly-latest"
+          else
+            CHANNEL="edge"
+            DATE_TAG="edge-${DATE}"
+            SHA_TAG="edge-${SHORT_SHA}"
+            LATEST_TAG="edge-latest"
+            # Transitional compatibility SHA tag
+            COMPAT_SHA_TAG="nightly-main-${SHORT_SHA}"
+          fi
+          echo "channel=${CHANNEL}" >> $GITHUB_OUTPUT
+          echo "date_tag=${DATE_TAG}" >> $GITHUB_OUTPUT
+          echo "sha_tag=${SHA_TAG}" >> $GITHUB_OUTPUT
+          echo "latest_tag=${LATEST_TAG}" >> $GITHUB_OUTPUT
+          echo "compat_sha_tag=${COMPAT_SHA_TAG}" >> $GITHUB_OUTPUT
 
       - name: Build and push ${{ matrix.target.name }} ${{ matrix.arch }} image
         run: |
-          DATE_TAG=${{ steps.date.outputs.current_date }}
-          SHA_TAG=${{ steps.short_sha.outputs.short_sha }}
           ARCH_TAG=$(echo "${{ matrix.arch }}" | awk -F'/' '{print $2}')
           TARGET_NAME="${{ matrix.target.name }}"
           IMAGE_NAME="${{ matrix.target.image }}"
           DOCKERFILE="${{ matrix.target.dockerfile }}"
           TARGET_STAGE="${{ matrix.target.target }}"
+          CHANNEL="${{ steps.channel.outputs.channel }}"
+          DATE_TAG="${{ steps.channel.outputs.date_tag }}"
+          SHA_TAG="${{ steps.channel.outputs.sha_tag }}"
+          LATEST_TAG="${{ steps.channel.outputs.latest_tag }}"
+          COMPAT_SHA_TAG="${{ steps.channel.outputs.compat_sha_tag }}"
 
-          echo "Building $TARGET_NAME nightly for ${{ matrix.arch }}..."
-
-          docker build -f $DOCKERFILE \
-            --target $TARGET_STAGE \
-            --platform ${{ matrix.arch }} \
-            -t ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:nightly-$DATE_TAG-$ARCH_TAG .
-          docker push ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:nightly-$DATE_TAG-$ARCH_TAG
-
-          docker build -f $DOCKERFILE \
-            --target $TARGET_STAGE \
-            --platform ${{ matrix.arch }} \
-            -t ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:nightly-$SHA_TAG-$ARCH_TAG .
-          docker push ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:nightly-$SHA_TAG-$ARCH_TAG
+          echo "Building $TARGET_NAME $CHANNEL for ${{ matrix.arch }}..."
 
           docker build -f $DOCKERFILE \
             --target $TARGET_STAGE \
             --platform ${{ matrix.arch }} \
-            -t ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:nightly-latest-$ARCH_TAG .
-          docker push ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:nightly-latest-$ARCH_TAG
+            -t ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:${DATE_TAG}-${ARCH_TAG} .
+          docker push ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:${DATE_TAG}-${ARCH_TAG}
 
-  create-and-push-nightly-manifest:
-    name: Create ${{ matrix.target.name }} nightly manifest
+          docker build -f $DOCKERFILE \
+            --target $TARGET_STAGE \
+            --platform ${{ matrix.arch }} \
+            -t ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:${SHA_TAG}-${ARCH_TAG} .
+          docker push ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:${SHA_TAG}-${ARCH_TAG}
+
+          docker build -f $DOCKERFILE \
+            --target $TARGET_STAGE \
+            --platform ${{ matrix.arch }} \
+            -t ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:${LATEST_TAG}-${ARCH_TAG} .
+          docker push ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:${LATEST_TAG}-${ARCH_TAG}
+
+          if [ -n "$COMPAT_SHA_TAG" ]; then
+            docker build -f $DOCKERFILE \
+              --target $TARGET_STAGE \
+              --platform ${{ matrix.arch }} \
+              -t ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:${COMPAT_SHA_TAG}-${ARCH_TAG} .
+            docker push ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:${COMPAT_SHA_TAG}-${ARCH_TAG}
+          fi
+
+  create-and-push-manifest:
+    name: Create ${{ matrix.target.name }} ${{ github.event_name == 'schedule' && 'nightly' || 'edge' }} manifest
     if: github.repository == 'oxy-hq/oxy'
     needs: build-and-publish-docker
     runs-on: ubuntu-24.04-arm
@@ -252,23 +322,41 @@ jobs:
         id: date
         run: echo "current_date=$(date -u +'%Y%m%d')" >> $GITHUB_OUTPUT
 
+      - name: Determine channel
+        id: channel
+        run: |
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          DATE="${{ steps.date.outputs.current_date }}"
+          if [ "$GITHUB_EVENT_NAME" = "schedule" ]; then
+            CHANNEL="nightly"
+            DATE_TAG="nightly-${DATE}"
+            LATEST_TAG="nightly-latest"
+          else
+            CHANNEL="edge"
+            DATE_TAG="edge-${DATE}"
+            LATEST_TAG="edge-latest"
+          fi
+          echo "channel=${CHANNEL}" >> $GITHUB_OUTPUT
+          echo "date_tag=${DATE_TAG}" >> $GITHUB_OUTPUT
+          echo "latest_tag=${LATEST_TAG}" >> $GITHUB_OUTPUT
+
       - name: Create and push multi-arch manifests for ${{ matrix.target.name }}
         run: |
-          DATE_TAG=${{ steps.date.outputs.current_date }}
           IMAGE_NAME="${{ matrix.target.image }}"
+          DATE_TAG="${{ steps.channel.outputs.date_tag }}"
+          LATEST_TAG="${{ steps.channel.outputs.latest_tag }}"
+          CHANNEL="${{ steps.channel.outputs.channel }}"
 
-          echo "Creating nightly manifests for $IMAGE_NAME..."
+          echo "Creating $CHANNEL manifests for $IMAGE_NAME..."
 
-          # Create and push date-tagged manifest
-          docker manifest create ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:nightly-$DATE_TAG \
-            ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:nightly-$DATE_TAG-amd64 \
-            ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:nightly-$DATE_TAG-arm64
-          docker manifest push ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:nightly-$DATE_TAG
+          docker manifest create ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:${DATE_TAG} \
+            ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:${DATE_TAG}-amd64 \
+            ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:${DATE_TAG}-arm64
+          docker manifest push ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:${DATE_TAG}
 
-          # Create and push latest manifest
-          docker manifest create ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:nightly-latest \
-            ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:nightly-latest-amd64 \
-            ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:nightly-latest-arm64
-          docker manifest push ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:nightly-latest
+          docker manifest create ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:${LATEST_TAG} \
+            ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:${LATEST_TAG}-amd64 \
+            ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:${LATEST_TAG}-arm64
+          docker manifest push ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:${LATEST_TAG}
 
-          echo "✅ Published nightly manifests for $IMAGE_NAME"
+          echo "✅ Published $CHANNEL manifests for $IMAGE_NAME"

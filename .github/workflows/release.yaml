@@ -15,9 +15,6 @@ on:
       - "[0-9]+.[0-9]+.[0-9]+"
     paths-ignore:
       - "docs/**"
-  schedule:
-    # This cron job is used to trigger the workflow every Tuesday at midnight UTC, to keep cache on main branch
-    - cron: "0 0 * * 2"
 
 env:
   CARGO_TERM_COLOR: always
@@ -32,144 +29,147 @@ permissions:
   actions: read
 
 jobs:
-  build-cli:
-    concurrency:
-      group: oxy-build-cli-${{ inputs.tag || github.ref_name }}-${{ matrix.job.os }}-${{ matrix.job.target }}
-      cancel-in-progress: true
-    name: Build CLI version ${{ inputs.tag || github.ref_name }} for target ${{ matrix.job.target }}
-    runs-on: ${{ matrix.job.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        job:
-          - os: warp-macos-15-arm64-6x
-            target: aarch64-apple-darwin
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-          ref: ${{ inputs.tag || github.ref_name }}
 
-      #-- Create common artifacts folder
-      - name: Create artifacts folder
-        run: mkdir -p artifacts
+  # NOTE: Disabled building CLI here, as we now build in public-release.yaml in the public repo and in oxy-hq/oxy-internal-build
 
-      # cleanup disk space
-      - name: Free Disk Space (Ubuntu)
-        if: ${{ startsWith(matrix.job.os, 'ubuntu') }}
-        uses: jlumbroso/free-disk-space@main
+  # build-cli:
+  #   concurrency:
+  #     group: oxy-build-cli-${{ inputs.tag || github.ref_name }}-${{ matrix.job.os }}-${{ matrix.job.target }}
+  #     cancel-in-progress: true
+  #   name: Build CLI version ${{ inputs.tag || github.ref_name }} for target ${{ matrix.job.target }}
+  #   runs-on: ${{ matrix.job.os }}
+  #   strategy:
+  #     fail-fast: false
+  #     matrix:
+  #       job:
+  #         - os: warp-macos-15-arm64-6x
+  #           target: aarch64-apple-darwin
+  #   steps:
+  #     - name: Checkout repository
+  #       uses: actions/checkout@v6
+  #       with:
+  #         fetch-depth: 0
+  #         ref: ${{ inputs.tag || github.ref_name }}
 
-      - uses: rui314/setup-mold@v1
-        if: runner.os == 'Linux'
-        with:
-          make-default: true
-      #-- Prep rust
-      - name: Prep Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: 1.90.0
-          targets: ${{ matrix.job.target }}
-      - name: Prep cargo cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: build-cli
-          cache-all-crates: "true"
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-      # protobuf is required by lance https://github.com/lancedb/lance/issues/3073
-      - name: Install Protoc
-        uses: arduino/setup-protoc@v3
-        with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
+  #     #-- Create common artifacts folder
+  #     - name: Create artifacts folder
+  #       run: mkdir -p artifacts
 
-      #-- Prep node
-      - uses: pnpm/action-setup@v4
-        with:
-          run_install: false
-      - name: Install Node.js
-        uses: actions/setup-node@v6
-        id: setup-node
-        with:
-          node-version: 24.x
-          cache: 'pnpm'
+  #     # cleanup disk space
+  #     - name: Free Disk Space (Ubuntu)
+  #       if: ${{ startsWith(matrix.job.os, 'ubuntu') }}
+  #       uses: jlumbroso/free-disk-space@main
 
-      - name: Install dependencies & Build web-app
-        env:
-          NODE_OPTIONS: "--max_old_space_size=4096"
-          SENTRY_AUTH_TOKEN: ${{ vars.SENTRY_AUTH_TOKEN }}
-          VITE_SENTRY_DSN: ${{ vars.VITE_SENTRY_DSN }}
-        run: |
-          pnpm install --prefer-frozen-lockfile
-          pnpm -C web-app build
+  #     - uses: rui314/setup-mold@v1
+  #       if: runner.os == 'Linux'
+  #       with:
+  #         make-default: true
+  #     #-- Prep rust
+  #     - name: Prep Rust
+  #       uses: dtolnay/rust-toolchain@stable
+  #       with:
+  #         toolchain: 1.90.0
+  #         targets: ${{ matrix.job.target }}
+  #     - name: Prep cargo cache
+  #       uses: Swatinem/rust-cache@v2
+  #       with:
+  #         shared-key: build-cli
+  #         cache-all-crates: "true"
+  #         save-if: ${{ github.ref == 'refs/heads/main' }}
+  #     # protobuf is required by lance https://github.com/lancedb/lance/issues/3073
+  #     - name: Install Protoc
+  #       uses: arduino/setup-protoc@v3
+  #       with:
+  #         repo-token: ${{ secrets.GITHUB_TOKEN }}
 
-      #-- Build oxy cli binary
-      - name: Build oxy cli
-        shell: bash
-        env:
-          SENTRY_DSN: ${{ vars.SENTRY_DSN }}
-        run: |
-          cargo build --release --target ${{ matrix.job.target }}
-          mv target/${{ matrix.job.target }}/release/oxy artifacts/oxy-${{ matrix.job.target }}
+  #     #-- Prep node
+  #     - uses: pnpm/action-setup@v4
+  #       with:
+  #         run_install: false
+  #     - name: Install Node.js
+  #       uses: actions/setup-node@v6
+  #       id: setup-node
+  #       with:
+  #         node-version: 24.x
+  #         cache: 'pnpm'
 
-      #-- Build json schema
-      - name: Generate config schema (once)
-        if: ${{ matrix.job.target == 'aarch64-apple-darwin' }}
-        run: |
-          cargo run --release --target ${{ matrix.job.target }} -- gen-config-schema
-          cp -a json-schemas/. artifacts/
-          cp Cargo.lock artifacts/
+  #     - name: Install dependencies & Build web-app
+  #       env:
+  #         NODE_OPTIONS: "--max_old_space_size=4096"
+  #         SENTRY_AUTH_TOKEN: ${{ vars.SENTRY_AUTH_TOKEN }}
+  #         VITE_SENTRY_DSN: ${{ vars.VITE_SENTRY_DSN }}
+  #       run: |
+  #         pnpm install --prefer-frozen-lockfile
+  #         pnpm -C web-app build
 
-      #-- Build checksum
-      - name: Create binary checksum
-        run: shasum --algorithm 256 --binary oxy-${{ matrix.job.target }} | tee SHA256SUM-oxy-${{ matrix.job.target }}.txt
-        working-directory: artifacts
+  #     #-- Build oxy cli binary
+  #     - name: Build oxy cli
+  #       shell: bash
+  #       env:
+  #         SENTRY_DSN: ${{ vars.SENTRY_DSN }}
+  #       run: |
+  #         cargo build --release --target ${{ matrix.job.target }}
+  #         mv target/${{ matrix.job.target }}/release/oxy artifacts/oxy-${{ matrix.job.target }}
 
-      #-- Build python lib
-      - name: Set up Python 3.11
-        id: setup-python
-        uses: actions/setup-python@v6
-        with:
-          python-version: 3.11
-          cache: "pip"
-      - name: Build wheels
-        uses: PyO3/maturin-action@v1
-        with:
-          command: build
-          target: ${{ matrix.job.target }}
-          args: --release --out dist
-          sccache: "true"
-          # manylinux: auto
-          container: off
-          working-directory: crates/py
-      - name: Move wheels
-        run: mv crates/py/dist/* artifacts/
+  #     #-- Build json schema
+  #     - name: Generate config schema (once)
+  #       if: ${{ matrix.job.target == 'aarch64-apple-darwin' }}
+  #       run: |
+  #         cargo run --release --target ${{ matrix.job.target }} -- gen-config-schema
+  #         cp -a json-schemas/. artifacts/
+  #         cp Cargo.lock artifacts/
 
-      - name: Upload release artifacts
-        uses: actions/upload-artifact@v5
-        if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
-        with:
-          name: cli-${{ matrix.job.target }}
-          path: |
-            artifacts/**/*
-          if-no-files-found: error
-          retention-days: 1
+  #     #-- Build checksum
+  #     - name: Create binary checksum
+  #       run: shasum --algorithm 256 --binary oxy-${{ matrix.job.target }} | tee SHA256SUM-oxy-${{ matrix.job.target }}.txt
+  #       working-directory: artifacts
+
+  #     #-- Build python lib
+  #     - name: Set up Python 3.11
+  #       id: setup-python
+  #       uses: actions/setup-python@v6
+  #       with:
+  #         python-version: 3.11
+  #         cache: "pip"
+  #     - name: Build wheels
+  #       uses: PyO3/maturin-action@v1
+  #       with:
+  #         command: build
+  #         target: ${{ matrix.job.target }}
+  #         args: --release --out dist
+  #         sccache: "true"
+  #         # manylinux: auto
+  #         container: off
+  #         working-directory: crates/py
+  #     - name: Move wheels
+  #       run: mv crates/py/dist/* artifacts/
+
+  #     - name: Upload release artifacts
+  #       uses: actions/upload-artifact@v5
+  #       if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
+  #       with:
+  #         name: cli-${{ matrix.job.target }}
+  #         path: |
+  #           artifacts/**/*
+  #         if-no-files-found: error
+  #         retention-days: 1
 
   release:
-    runs-on: warp-ubuntu-latest-x64-2x
+    runs-on: warp-ubuntu-latest-arm64-2x
     if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
-    needs: [build-cli]
+    # needs: [build-cli]
     steps:
-      - name: Download release assets from artifact
-        uses: actions/download-artifact@v6
-        with:
-          path: artifacts
-          merge-multiple: true
-      - name: List all artifacts
-        run: ls -R ./artifacts
-      - name: Combine checksums
-        run: cat artifacts/SHA256SUM-oxy-*.txt | tee artifacts/SHA256SUMS.txt
-      - name: Ensure binaries are executable
-        run: chmod +x artifacts/oxy-*
+      # - name: Download release assets from artifact
+      #   uses: actions/download-artifact@v6
+      #   with:
+      #     path: artifacts
+      #     merge-multiple: true
+      # - name: List all artifacts
+      #   run: ls -R ./artifacts
+      # - name: Combine checksums
+      #   run: cat artifacts/SHA256SUM-oxy-*.txt | tee artifacts/SHA256SUMS.txt
+      # - name: Ensure binaries are executable
+      #   run: chmod +x artifacts/oxy-*
       - name: Get current time
         id: time
         run: echo "current_time=$(date -u +'-%Y%m%d-%H%M%S')" >> $GITHUB_OUTPUT
@@ -179,5 +179,5 @@ jobs:
           draft: false
           prerelease: ${{ inputs.tag != '' }}
           tag_name: ${{ inputs.tag || github.ref_name }}${{ inputs.unique && steps.time.outputs.current_time || '' }}
-          files: |
-            artifacts/**/*
+          # files: |
+            # artifacts/**/*
