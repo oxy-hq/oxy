@@ -32,11 +32,7 @@ jobs:
   build-channel:
     # Only build in public repo; supports nightly (cron) and edge (main pushes)
     needs: [changesets]
-    if: github.repository == 'oxy-hq/oxy' && (
-      github.event_name == 'schedule' ||
-      github.event_name == 'workflow_dispatch' ||
-      needs.changesets.outputs.oxy == 'true' || needs.changesets.outputs.web-app == 'true'
-    )
+    if: "github.repository == 'oxy-hq/oxy' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || needs.changesets.outputs.oxy == 'true' || needs.changesets.outputs.web-app == 'true')"
     name: Build ${{ github.event_name == 'schedule' && 'Nightly' || 'Edge' }} CLI for ${{ matrix.job.target }}
     runs-on: ${{ matrix.job.os }}
     strategy:
