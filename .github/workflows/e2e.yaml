@@ -33,13 +33,21 @@ defaults:
     shell: bash
 
 jobs:
+  changesets:
+    name: Changesets
+    # Detect impacted areas to decide whether to run E2E
+    uses: ./.github/workflows/changesets.yaml
+
   e2e-tests:
     name: E2E Tests (Playwright)
     # Only run on approved PRs, main pushes, or manual trigger
+    needs: [changesets]
     if: |
       github.event_name == 'workflow_dispatch' ||
-      github.event_name == 'push' ||
-      (github.event_name == 'pull_request_review' && github.event.review.state == 'approved')
+      (
+        (github.event_name == 'push' || (github.event_name == 'pull_request_review' && github.event.review.state == 'approved')) &&
+        (needs.changesets.outputs.web-app == 'true' || needs.changesets.outputs.oxy == 'true')
+      )
     runs-on: ${{ github.repository == 'oxy-hq/oxy-internal' && (github.ref == 'refs/heads/main' && 'warp-ubuntu-latest-arm64-2x-spot' || 'warp-ubuntu-latest-arm64-2x') || 'ubuntu-latest' }}
     timeout-minutes: 30
     env:
