@@ -8,5 +8,6 @@ extend-ignore-re = [
 [files]
 extend-exclude = [
   "CHANGELOG.md",
-  "*/docker-entrypoints/*"
+  "*/docker-entrypoints/*",
+  "crates/core/demo_project/**"
 ]

@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/oxy-hq/oxy/refs/heads/main/json-schemas/config.json
+defaults:
+  database: local
+models:
+  - vendor: openai
+    name: openai-4.1
+    model_ref: gpt-4.1
+    key_var: OPENAI_API_KEY
+    api_url: https://api.openai.com/v1
+databases:
+  - name: local
+    dataset: .db/
+    type: duckdb
+builder_agent: builder.agent.yml

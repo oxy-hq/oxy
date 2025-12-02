@@ -1,0 +1,33 @@
+dimensions:
+- name: Holiday_Flag
+  targets:
+  - local.duckdb.oxymart.Holiday_Flag
+  - local.duckdb.oxymart.Holiday_Flag
+- name: Temperature
+  targets:
+  - local.duckdb.oxymart.Temperature
+  - local.duckdb.oxymart.Temperature
+- name: Weekly_Sales
+  targets:
+  - local.duckdb.oxymart.Weekly_Sales
+  - local.duckdb.oxymart.Weekly_Sales
+- name: Date
+  targets:
+  - local.duckdb.oxymart.Date
+  - local.duckdb.oxymart.Date
+- name: Fuel_Price
+  targets:
+  - local.duckdb.oxymart.Fuel_Price
+  - local.duckdb.oxymart.Fuel_Price
+- name: Store
+  targets:
+  - local.duckdb.oxymart.Store
+  - local.duckdb.oxymart.Store
+- name: CPI
+  targets:
+  - local.duckdb.oxymart.CPI
+  - local.duckdb.oxymart.CPI
+- name: Unemployment
+  targets:
+  - local.duckdb.oxymart.Unemployment
+  - local.duckdb.oxymart.Unemployment

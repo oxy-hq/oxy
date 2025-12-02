@@ -1,19 +1,30 @@
+use crate::adapters::secrets::SecretsManager;
 use crate::api::workspace::{ProjectInfo, WorkspaceResponse};
+use crate::config::ConfigBuilder;
 use crate::db::client::establish_connection;
 use crate::errors::OxyError;
 use crate::github::{GitHubClient, GitOperations};
-use crate::service::project::config_builder::ConfigBuilder;
+use crate::service::project::config_builder::ConfigBuilder as ProjectConfigBuilder;
 use crate::service::project::database_operations::DatabaseOperations;
 use crate::service::project::git_service::GitService;
 use crate::service::project::models::{AgentConfig, CreateWorkspaceRequest};
+use crate::service::retrieval::{ReindexInput, reindex};
+use crate::service::secret_manager::{CreateSecretParams, SecretManagerService};
+use crate::service::sync::sync_databases;
 use axum::{http::StatusCode, response::Json};
 use chrono::{DateTime, FixedOffset, Utc};
 use entity::{branches, projects, workspace_users, workspaces};
+use include_dir::{Dir, include_dir};
 use sea_orm::{ActiveModelTrait, Set, TransactionTrait};
 use std::fs;
 use std::path::PathBuf;
-use tracing::error;
+use tracing::{error, info};
 use uuid::Uuid;
+
+#[cfg(target_os = "windows")]
+static DEMO_DIST: Dir = include_dir!("D:\\a\\oxy\\oxy\\crates\\core\\demo_project");
+#[cfg(not(target_os = "windows"))]
+static DEMO_DIST: Dir = include_dir!("$CARGO_MANIFEST_DIR/demo_project");
 
 pub struct WorkspaceCreator;
 
@@ -52,6 +63,7 @@ impl WorkspaceCreator {
                 .await?
             }
             "new" => Self::create_new_project(&txn, workspace_id, user_id, &req, now).await?,
+            "demo" => Self::create_demo_project(&txn, workspace_id, user_id, &req, now).await?,
             _ => {
                 error!("Invalid workspace type: {}", req.workspace.r#type);
                 return Err(StatusCode::BAD_REQUEST);
@@ -142,7 +154,7 @@ impl WorkspaceCreator {
         let repo_path = Self::create_project_directory(project.id, branch.id)?;
 
         if let (Some(warehouses), Some(models)) = (&req.warehouses, &req.model) {
-            ConfigBuilder::create_project_config(
+            ProjectConfigBuilder::create_project_config(
                 project.id, user_id, warehouses, models, &repo_path, txn,
             )
             .await?;
@@ -159,6 +171,164 @@ impl WorkspaceCreator {
             created_at: project.created_at.to_string(),
             updated_at: project.updated_at.to_string(),
         }))
+    }
+
+    async fn create_demo_project(
+        txn: &sea_orm::DatabaseTransaction,
+        workspace_id: Uuid,
+        user_id: Uuid,
+        req: &CreateWorkspaceRequest,
+        now: DateTime<FixedOffset>,
+    ) -> std::result::Result<Option<ProjectInfo>, StatusCode> {
+        let project_name = format!(
+            "{}-project",
+            req.workspace.name.to_lowercase().replace(' ', "-")
+        );
+
+        let branch_id = Uuid::new_v4();
+        let project_id = Uuid::new_v4();
+
+        let project = Self::create_project_record(
+            txn,
+            project_id,
+            &project_name,
+            workspace_id,
+            branch_id,
+            now,
+        )
+        .await?;
+
+        let branch = Self::create_branch_record(txn, project.id, branch_id, now).await?;
+        let repo_path = Self::create_project_directory(project.id, branch.id)?;
+
+        Self::create_secret(
+            project_id,
+            user_id,
+            "OPENAI_API_KEY".to_string(),
+            req.openai_api_key
+                .clone()
+                .unwrap_or("sk-demo-key".to_string()),
+            txn,
+        )
+        .await
+        .map_err(|e| {
+            error!("Failed to create OpenAI API key secret: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+        info!(
+            "Successfully created OpenAI API key secret for project: {}",
+            project_id
+        );
+
+        Self::copy_demo_project_files(&repo_path).await?;
+
+        let repo_path_clone = repo_path.clone();
+        tokio::spawn(async move {
+            match Self::sync_and_reindex_demo_project(project_id, repo_path_clone).await {
+                Ok(()) => {
+                    info!(
+                        "Successfully synced and reindexed demo project: {}",
+                        project_id
+                    );
+                }
+                Err(e) => {
+                    error!(
+                        "Failed to sync and reindex demo project {}: {}",
+                        project_id, e
+                    );
+                }
+            }
+        });
+
+        Ok(Some(ProjectInfo {
+            id: project.id.to_string(),
+            name: project.name,
+            workspace_id: project.workspace_id.to_string(),
+            created_at: project.created_at.to_string(),
+            updated_at: project.updated_at.to_string(),
+        }))
+    }
+
+    async fn create_secret(
+        project_id: Uuid,
+        user_id: Uuid,
+        key: String,
+        value: String,
+        txn: &sea_orm::DatabaseTransaction,
+    ) -> Result<(), OxyError> {
+        let secret_manager = SecretManagerService::new(project_id);
+        let create_params = CreateSecretParams {
+            name: key,
+            value,
+            description: None,
+            created_by: user_id,
+        };
+
+        secret_manager.create_secret(txn, create_params).await?;
+        Ok(())
+    }
+
+    async fn copy_demo_project_files(
+        target_path: &std::path::Path,
+    ) -> std::result::Result<(), StatusCode> {
+        Self::copy_embedded_dir_recursive(&DEMO_DIST, target_path).await
+    }
+
+    async fn sync_and_reindex_demo_project(
+        project_id: Uuid,
+        repo_path: PathBuf,
+    ) -> Result<(), OxyError> {
+        let secret_manager = SecretsManager::from_database(SecretManagerService::new(project_id))?;
+
+        let config = ConfigBuilder::new()
+            .with_project_path(repo_path)?
+            .build_with_fallback_config()
+            .await?;
+
+        sync_databases(config.clone(), secret_manager.clone(), None, true).await?;
+
+        reindex(ReindexInput {
+            config,
+            secrets_manager: secret_manager,
+            drop_all_tables: true,
+        })
+        .await?;
+
+        Ok(())
+    }
+
+    async fn copy_embedded_dir_recursive(
+        src: &Dir<'static>,
+        dst: &std::path::Path,
+    ) -> std::result::Result<(), StatusCode> {
+        if !dst.exists() {
+            fs::create_dir_all(dst).map_err(|e| {
+                error!("Failed to create directory {:?}: {}", dst, e);
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
+        }
+
+        for entry in src.entries() {
+            let name = entry.path().file_name().ok_or_else(|| {
+                error!("Failed to get file name from path: {:?}", entry.path());
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
+
+            let dst_path = dst.join(name);
+
+            if let Some(file) = entry.as_file() {
+                let content = file.contents();
+                fs::write(&dst_path, content).map_err(|e| {
+                    error!("Failed to write file {:?}: {}", dst_path, e);
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?;
+            } else if let Some(dir) = entry.as_dir() {
+                Box::pin(Self::copy_embedded_dir_recursive(dir, &dst_path)).await?;
+            }
+        }
+
+        Ok(())
     }
 
     async fn create_project_record(

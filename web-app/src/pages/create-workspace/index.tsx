@@ -15,6 +15,7 @@ import { default as AgentStep } from "./steps/AgentStep/index";
 import { AgentConfig } from "./steps/AgentStep";
 import { default as GitHubImportStep } from "./steps/GitHubImportStep/index";
 import { GitHubData } from "./steps/GitHubImportStep/index";
+import OpenAIKeyStep from "./steps/OpenAIKeyStep/index";
 import { WorkspaceType } from "./steps/WorkspaceNameStep/WorkspaceTypeSelector";
 
 export interface CreateWorkspaceState {
@@ -23,6 +24,7 @@ export interface CreateWorkspaceState {
   model: ModelsFormData | null;
   agent: AgentConfig | null;
   github: GitHubData | null;
+  openai_api_key: string | null;
 }
 
 const newWorkspaceSteps: Step[] = [
@@ -35,6 +37,11 @@ const newWorkspaceSteps: Step[] = [
 const githubWorkspaceSteps: Step[] = [
   { id: "workspace", label: "Workspace" },
   { id: "github-import", label: "GitHub" },
+];
+
+const demoWorkspaceSteps: Step[] = [
+  { id: "workspace", label: "Workspace" },
+  { id: "openai-key", label: "OpenAI API Key" },
 ];
 
 export default function CreateWorkspacePage() {
@@ -57,15 +64,19 @@ export default function CreateWorkspacePage() {
     model: null,
     agent: null,
     github: null,
+    openai_api_key: null,
   });
 
   const { type: workspaceType } = workspaceState.workspace || {};
 
   const getSteps = (type?: WorkspaceType) => {
     const workspaceType = type || workspaceState.workspace?.type;
-    return workspaceType === "github"
-      ? githubWorkspaceSteps
-      : newWorkspaceSteps;
+    if (workspaceType === "github") {
+      return githubWorkspaceSteps;
+    } else if (workspaceType === "demo") {
+      return demoWorkspaceSteps;
+    }
+    return newWorkspaceSteps;
   };
 
   const updateWorkspaceState = (newState: Partial<CreateWorkspaceState>) => {
@@ -186,6 +197,29 @@ export default function CreateWorkspacePage() {
               };
 
               updateWorkspaceState({ github: data });
+
+              try {
+                await mutateAsync(updatedState);
+                window.location.href = "/";
+              } catch (err) {
+                console.error("Failed to create workspace:", err);
+              }
+            }}
+            onBack={handleBack}
+          />
+        )}
+
+        {workspaceType === "demo" && currentStep === "openai-key" && (
+          <OpenAIKeyStep
+            isCreating={isCreating}
+            initialData={workspaceState.openai_api_key || undefined}
+            onNext={async (data) => {
+              const updatedState = {
+                ...workspaceState,
+                openai_api_key: data,
+              };
+
+              updateWorkspaceState({ openai_api_key: data });
 
               try {
                 await mutateAsync(updatedState);

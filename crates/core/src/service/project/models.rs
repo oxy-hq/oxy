@@ -306,6 +306,7 @@ pub struct GitHubData {
 #[derive(Deserialize, ToSchema)]
 pub struct CreateWorkspaceRequest {
     pub workspace: WorkspaceFormData,
+    pub openai_api_key: Option<String>,
     pub warehouses: Option<WarehousesFormData>,
     pub model: Option<ModelsFormData>,
     pub agent: Option<AgentConfig>,

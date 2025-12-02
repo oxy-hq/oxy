@@ -1,0 +1,12 @@
+.DS_Store
+demo/
+oxy.log
+outputs/
+.checkpoint/
+.env
+.lancedb/
+generated/
+results/
+db.sqlite
+.databases/
+.oxy_state/
