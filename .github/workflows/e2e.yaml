@@ -37,6 +37,10 @@ jobs:
     name: Changesets
     # Detect impacted areas to decide whether to run E2E
     uses: ./.github/workflows/changesets.yaml
+    permissions:
+      contents: write
+      actions: read
+      pull-requests: read
 
   e2e-tests:
     name: E2E Tests (Playwright)
