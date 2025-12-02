@@ -46,7 +46,7 @@ jobs:
   typos:
     name: Typos
     if: github.event.pull_request.draft != true
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.repository == 'oxy-hq/oxy-internal' && 'ubuntu-slim' || 'ubuntu-latest' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -60,7 +60,7 @@ jobs:
       group: fmt-web-${{ github.event.pull_request.number || github.ref }}
       cancel-in-progress: true
     if: needs.changesets.outputs.web-app == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.repository == 'oxy-hq/oxy-internal' && 'ubuntu-slim' || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -73,7 +73,7 @@ jobs:
         id: setup-node
         with:
           node-version: 24.x
-          cache: 'pnpm'
+          cache: "pnpm"
       - name: Run pnpm install
         run: pnpm install --prefer-frozen-lockfile
       - name: Run lint-staged
@@ -92,7 +92,7 @@ jobs:
       group: build-web-${{ github.event.pull_request.number || github.ref }}
       cancel-in-progress: true
     if: needs.changesets.outputs.web-app == 'true'
-    runs-on: ubuntu-latest
+    runs-on: "ubuntu-latest"
     steps:
       - uses: actions/checkout@v6
         with:
@@ -105,7 +105,7 @@ jobs:
         id: setup-node
         with:
           node-version: 24.x
-          cache: 'pnpm'
+          cache: "pnpm"
       - name: Restore Vite pre-bundle cache
         uses: actions/cache@v4
         with:
