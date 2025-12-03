@@ -178,14 +178,13 @@ jobs:
         working-directory: examples
         run: |
           # Binary already built by consistency tests, this will reuse it
-          cargo run --profile ci -- sync -o
-          cargo run --profile ci -- build
           nohup cargo run --profile ci -- serve --http2-only > ../oxy-server.log 2>&1 &
           echo $! > /tmp/oxy-server.pid
           echo "Backend server started with PID: $(cat /tmp/oxy-server.pid)"
 
       # Wait for backend to be ready
       - name: Wait for backend server
+        id: wait-backend
         run: |
           echo "Waiting for backend server to be ready..."
           timeout 10 bash -c 'until curl -k -s https://localhost:3000/health > /dev/null 2>&1; do echo "Waiting for health endpoint..."; sleep 2; done'
@@ -196,6 +195,17 @@ jobs:
           sleep 10
 
           echo "Backend server should now be fully ready!"
+
+      - name: Show backend server logs if wait failed
+        if: steps.wait-backend.outcome == 'failure'
+        run: |
+          echo "=== Backend Server Logs (from wait failure) ==="
+          if [ -f oxy-server.log ]; then
+            tail -n 200 oxy-server.log || true
+          else
+            echo "No server logs found at oxy-server.log"
+            ls -la || true
+          fi
 
       # Run E2E tests
       - name: Run Playwright tests
