@@ -7,6 +7,7 @@ use crate::{
         control::{Memory, TransitionContext, TransitionContextDelegator, TriggerBuilder},
         query::{AutoSQL, Dataset, PrepareData, PrepareDataDelegator, config::Query},
         subflow::{ArtifactsState, CollectArtifact, CollectArtifactDelegator},
+        viz::{CollectViz, CollectVizDelegator, VizState},
     },
     config::constants::AGENT_START_TRANSITION,
     errors::OxyError,
@@ -20,6 +21,7 @@ use crate::{
 pub struct QAState {
     memory: Memory,
     data: Dataset,
+    viz: VizState,
     artifacts: ArtifactsState,
 }
 
@@ -44,6 +46,7 @@ impl QAState {
             ),
             data: Dataset::new(),
             artifacts: ArtifactsState::new(),
+            viz: VizState::new(),
         }
     }
 
@@ -69,6 +72,16 @@ impl PrepareDataDelegator for QAState {
 
     fn target_mut(&mut self) -> &mut dyn PrepareData {
         &mut self.data
+    }
+}
+
+impl CollectVizDelegator for QAState {
+    fn target(&self) -> &dyn CollectViz {
+        &self.viz
+    }
+
+    fn target_mut(&mut self) -> &mut dyn CollectViz {
+        &mut self.viz
     }
 }
 
@@ -105,6 +118,28 @@ impl TriggerBuilder for QAState {
             query_config.clone(),
             objective,
         )))
+    }
+
+    async fn build_viz_trigger(
+        &self,
+        execution_context: &ExecutionContext,
+        agentic_config: &AgenticConfig,
+        viz_config: &crate::agent::builders::fsm::viz::config::Visualize,
+        objective: String,
+    ) -> Result<Box<dyn Trigger<State = Self>>, OxyError>
+    where
+        Self: std::fmt::Debug,
+    {
+        let model_ref = viz_config.model.as_deref().unwrap_or(&agentic_config.model);
+        let openai_adapter =
+            OpenAIAdapter::from_config(execution_context.project.clone(), model_ref).await?;
+        Ok(Box::new(
+            crate::agent::builders::fsm::viz::GenerateViz::new(
+                objective,
+                openai_adapter,
+                viz_config.clone(),
+            ),
+        ))
     }
 }
 

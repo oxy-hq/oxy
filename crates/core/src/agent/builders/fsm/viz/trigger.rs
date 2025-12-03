@@ -9,7 +9,14 @@ use async_openai::types::{
 use crate::{
     adapters::openai::OpenAIAdapter,
     agent::builders::fsm::{
-        control::TransitionContext, query::PrepareData, viz::config::Visualize,
+        control::TransitionContext,
+        query::PrepareData,
+        viz::{
+            config::Visualize,
+            recommendations::{
+                ChartHeuristicsAnalyzerBuilder, ChartResponseParser, ChartSelectionSchema,
+            },
+        },
     },
     errors::OxyError,
     execute::{
@@ -81,14 +88,28 @@ where
     async fn request_viz_tool_call(
         &self,
         execution_context: &ExecutionContext,
+        current_state: &S,
         messages: Vec<ChatCompletionRequestMessage>,
     ) -> Result<ChatCompletionMessageToolCall, OxyError> {
+        // Use heuristic recommendations to guide the visualization tool call
+        let recommendations = ChartHeuristicsAnalyzerBuilder::default()
+            .with_all_defaults()
+            .build()
+            .top_recommendations(current_state.get_tables(), 10);
+        if recommendations.is_empty() {
+            return Err(OxyError::RuntimeError(
+                "No chart recommendations could be generated from the data. Please ensure the data is valid and try again.".to_string(),
+            ));
+        }
+        // Use the recommendations to build a function call
+        let tool_call = ChartSelectionSchema::build(recommendations.as_slice());
+
         let tool_calls = self
             .adapter
             .request_tool_call_with_usage(
                 execution_context,
                 messages,
-                vec![self.config.get_tool()],
+                vec![tool_call],
                 Some(ChatCompletionToolChoiceOption::Required),
                 None,
             )
@@ -103,8 +124,7 @@ where
         &self,
         tool_call: &ChatCompletionMessageToolCall,
     ) -> Result<VizParams, OxyError> {
-        let viz: VizParams = serde_json::from_str(&tool_call.function.arguments)?;
-        Ok(viz)
+        ChartResponseParser::parse(&tool_call.function.arguments).map(|c| c.into())
     }
 
     async fn run_with_retry(
@@ -123,6 +143,7 @@ where
             let tool_call = self
                 .request_viz_tool_call(
                     execution_context,
+                    current_state,
                     [instructions.clone(), failed_messages.clone()].concat(),
                 )
                 .await?;

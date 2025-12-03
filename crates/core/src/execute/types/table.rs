@@ -103,6 +103,16 @@ impl Table {
         })
     }
 
+    pub fn sample(&self) -> Result<&RecordBatch, OxyError> {
+        let table = self.get_inner()?;
+        if table.batches.is_empty() {
+            return Err(OxyError::RuntimeError(
+                "No record batches available for sampling.".to_string(),
+            ));
+        }
+        Ok(&table.batches[0])
+    }
+
     pub fn to_markdown(&self) -> String {
         match self.get_inner() {
             Ok(table) => match record_batches_to_markdown(&table.batches, &table.schema) {

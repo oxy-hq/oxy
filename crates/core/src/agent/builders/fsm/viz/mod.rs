@@ -1,4 +1,5 @@
 pub mod config;
+mod recommendations;
 mod state;
 mod trigger;
 

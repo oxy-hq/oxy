@@ -12,6 +12,7 @@ pub struct Memory {
     transition_name: String,
     user_query: String,
     instruction: String,
+    intent: String,
     synthesized_output: String,
     plan: Option<String>,
     messages: Vec<ChatCompletionRequestMessage>,
@@ -35,6 +36,7 @@ impl Memory {
             instruction,
             user_query,
             messages: [history, vec![user_message.into()]].concat(),
+            intent: String::new(),
             synthesized_output: String::new(),
             current_iteration: 0,
         }
@@ -130,5 +132,13 @@ impl TransitionContext for Memory {
 
     fn set_content(&mut self, content: String) {
         self.synthesized_output = content;
+    }
+
+    fn get_intent(&self) -> &str {
+        &self.intent
+    }
+
+    fn set_intent(&mut self, intent: String) {
+        self.intent = intent;
     }
 }

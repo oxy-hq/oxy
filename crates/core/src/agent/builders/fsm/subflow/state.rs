@@ -1,25 +1,31 @@
 use crate::{
     agent::builders::fsm::{
         control::TransitionContext,
+        query::PrepareData,
         states::{data_app::DataAppState, qa::QAState, query::QueryState},
         subflow::trigger::CollectArtifact,
     },
     config::model::AppConfig,
-    execute::types::Table,
+    execute::types::{Table, VizParams},
 };
 
 #[derive(Debug, Clone)]
 pub enum AgenticArtifactType {
-    Query {
-        content: String,
+    Viz {
+        description: String,
+        params: VizParams,
+    },
+    Dataset {
+        description: String,
         tables: Vec<Table>,
     },
-    QA {
-        content: String,
-    },
     App {
-        content: String,
+        description: String,
         app_config: AppConfig,
+    },
+    QA {
+        question: String,
+        response: String,
     },
 }
 
@@ -56,9 +62,9 @@ impl From<QueryState> for AgenticArtifact {
     fn from(state: QueryState) -> Self {
         AgenticArtifact {
             name: String::new(),
-            artifact_type: AgenticArtifactType::Query {
-                content: state.get_content().to_string(),
-                tables: state.get_tables().to_vec(),
+            artifact_type: AgenticArtifactType::Dataset {
+                description: state.get_intent().to_string(),
+                tables: state.get_tables().into_iter().cloned().collect(),
             },
         }
     }
@@ -69,7 +75,7 @@ impl From<DataAppState> for AgenticArtifact {
         AgenticArtifact {
             name: String::new(),
             artifact_type: AgenticArtifactType::App {
-                content: state.get_content().to_string(),
+                description: state.get_intent().to_string(),
                 app_config: state.get_app().cloned().unwrap_or_default(),
             },
         }
@@ -81,7 +87,8 @@ impl From<QAState> for AgenticArtifact {
         AgenticArtifact {
             name: String::new(),
             artifact_type: AgenticArtifactType::QA {
-                content: state.get_content().to_string(),
+                question: state.get_intent().to_string(),
+                response: state.get_content().to_string(),
             },
         }
     }

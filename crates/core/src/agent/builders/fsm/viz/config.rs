@@ -20,7 +20,9 @@ fn default_viz_name() -> String {
 }
 
 fn default_viz_description() -> String {
-    "Generates visualizations based on the provided data and instructions.".to_string()
+    "Generates visualizations based on the provided data and instructions.
+    Supported chart types include line charts, bar charts, and pie charts."
+        .to_string()
 }
 
 fn default_viz_instruction() -> String {

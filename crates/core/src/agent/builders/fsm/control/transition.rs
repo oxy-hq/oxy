@@ -44,6 +44,8 @@ pub trait TransitionContext {
     fn set_plan(&mut self, plan: String);
     fn get_content(&self) -> &str;
     fn set_content(&mut self, content: String);
+    fn get_intent(&self) -> &str;
+    fn set_intent(&mut self, intent: String);
     fn get_messages(&self) -> Vec<ChatCompletionRequestMessage>;
 }
 
@@ -104,6 +106,14 @@ where
 
     fn set_content(&mut self, content: String) {
         self.target_mut().set_content(content)
+    }
+
+    fn get_intent(&self) -> &str {
+        self.target().get_intent()
+    }
+
+    fn set_intent(&mut self, intent: String) {
+        self.target_mut().set_intent(intent)
     }
 
     fn get_messages(&self) -> Vec<ChatCompletionRequestMessage> {

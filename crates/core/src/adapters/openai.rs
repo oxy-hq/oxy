@@ -3,9 +3,10 @@ use async_openai::{
     Client,
     config::{AzureConfig, Config, OpenAIConfig},
     types::{
-        ChatCompletionMessageToolCall, ChatCompletionNamedToolChoice, ChatCompletionRequestMessage,
-        ChatCompletionTool, ChatCompletionToolArgs, ChatCompletionToolChoiceOption,
-        ChatCompletionToolType, CreateChatCompletionRequestArgs, CreateChatCompletionResponse,
+        ChatCompletionMessageToolCall, ChatCompletionMessageToolCallChunk,
+        ChatCompletionNamedToolChoice, ChatCompletionRequestMessage, ChatCompletionTool,
+        ChatCompletionToolArgs, ChatCompletionToolChoiceOption, ChatCompletionToolType,
+        CreateChatCompletionRequestArgs, CreateChatCompletionResponse,
         CreateChatCompletionStreamResponse, FunctionName, FunctionObject, FunctionObjectArgs,
         ReasoningEffort as OpenAIReasoningEffort,
         responses::ReasoningConfig as OpenAIReasoningConfig,
@@ -684,11 +685,13 @@ impl AsyncFunctionObject for ChatCompletionTool {
     }
 }
 
-pub trait RequestAdapter {
-    fn request_builder<M: Into<Vec<ChatCompletionRequestMessage>>>(
-        &self,
-        messages: M,
-    ) -> CreateChatCompletionRequestArgs;
+pub enum StreamChunk {
+    Text(String),
+    ToolCall {
+        id: String,
+        name: String,
+        args: String,
+    },
 }
 
 #[derive(Clone)]
@@ -799,6 +802,92 @@ impl OpenAIAdapter {
         Ok(stream)
     }
 
+    pub async fn stream_with_tool_calls<
+        M: Into<Vec<ChatCompletionRequestMessage>>,
+        C: Into<Vec<ChatCompletionTool>>,
+    >(
+        &self,
+        messages: M,
+        tools: C,
+        tool_choice: Option<ChatCompletionToolChoiceOption>,
+    ) -> Result<impl tokio_stream::Stream<Item = Result<StreamChunk, OxyError>>, OxyError> {
+        let mut request_builder = self.request_builder(messages);
+        request_builder.tools(tools);
+        if let Some(tool_choice) = tool_choice {
+            request_builder.tool_choice(tool_choice);
+        }
+        let request = request_builder
+            .stream(true)
+            .build()
+            .map_err(|e| OxyError::RuntimeError(format!("Failed to build request: {e}")))?;
+        let stream = self
+            .client
+            .chat()
+            .create_stream(request)
+            .await
+            .map_err(|e| OxyError::RuntimeError(format!("OpenAI API error: {e}")))?;
+
+        let mut tool_calls_buffer = HashMap::<u32, StreamChunk>::new();
+        // Aggregate tool call chunks by their index to form complete tool calls
+        let stream = stream.filter_map(move |result| match result {
+            Ok(response) => {
+                // Check if this chunk contains tool call data
+                let tool_call_chunks = self.extract_stream_tool_calls(&response);
+                if !tool_call_chunks.is_empty() {
+                    for tool_call_chunk in tool_call_chunks {
+                        if let Some(call_id) = &tool_call_chunk.id
+                            && let Some(tool_name) = tool_call_chunk
+                                .function
+                                .as_ref()
+                                .map(|f| f.name.as_ref())
+                                .flatten()
+                        {
+                            tool_calls_buffer.entry(tool_call_chunk.index).or_insert(
+                                StreamChunk::ToolCall {
+                                    id: call_id.to_string(),
+                                    name: tool_name.to_string(),
+                                    args: String::new(),
+                                },
+                            );
+                        } else if let Some(entry) =
+                            tool_calls_buffer.get_mut(&tool_call_chunk.index)
+                            && let StreamChunk::ToolCall { args, .. } = entry
+                            && let Some(arg_chunk) = tool_call_chunk
+                                .function
+                                .as_ref()
+                                .map(|f| f.arguments.as_ref())
+                                .flatten()
+                        {
+                            args.push_str(arg_chunk);
+                        }
+                    }
+                    // Return None since we are still accumulating tool call chunks
+                    None
+                } else {
+                    // Emit any completed tool calls from the buffer first
+                    for (_index, tool_call) in tool_calls_buffer.drain() {
+                        if let StreamChunk::ToolCall { id, name, args } = tool_call {
+                            return Some(Ok(StreamChunk::ToolCall {
+                                id: id.clone(),
+                                name: name.clone(),
+                                args: args.clone(),
+                            }));
+                        }
+                    }
+                    // Regular text content
+                    let stream_response = self.extract_stream(&response);
+                    if let Some(text) = stream_response {
+                        Some(Ok(StreamChunk::Text(text)))
+                    } else {
+                        None
+                    }
+                }
+            }
+            Err(_) => Some(Err(OxyError::RuntimeError("OpenAI API error".to_string()))),
+        });
+        Ok(stream)
+    }
+
     fn request_builder<M: Into<Vec<ChatCompletionRequestMessage>>>(
         &self,
         messages: M,
@@ -838,5 +927,16 @@ impl OpenAIAdapter {
             }
             None
         })
+    }
+
+    fn extract_stream_tool_calls(
+        &self,
+        stream_response: &CreateChatCompletionStreamResponse,
+    ) -> Vec<ChatCompletionMessageToolCallChunk> {
+        stream_response
+            .choices
+            .first()
+            .and_then(|choice| choice.delta.tool_calls.clone())
+            .unwrap_or_default()
     }
 }
