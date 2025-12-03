@@ -42,7 +42,7 @@ export default defineConfig({
     ignoreHTTPSErrors: true,
 
     /* Performance optimizations */
-    navigationTimeout: 15000, // Faster navigation timeout
+    navigationTimeout: 30000, // Increased from 15s to 30s to allow for backend initialization after database reset
     actionTimeout: 10000, // Faster action timeouts
   },
 

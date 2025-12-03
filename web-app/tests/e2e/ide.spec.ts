@@ -1,14 +1,14 @@
 import { test, expect } from "@playwright/test";
-import { resetProject, resetTestFile, resetTestAgentFile } from "./utils";
+import { resetTestFile, resetTestAgentFile } from "./utils";
 import { IDEPage } from "./pages/IDEPage";
 
 test.describe("IDE Functionality", () => {
   test.beforeEach(async ({ page }) => {
-    resetProject();
     // Create/reset test files before each test so they're available in the IDE
     await resetTestFile();
     await resetTestAgentFile();
     await page.goto("/ide");
+    await page.waitForLoadState("networkidle");
   });
 
   test("should display file browser with folders and files", async ({

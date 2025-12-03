@@ -1,10 +1,10 @@
 import { test, expect } from "@playwright/test";
-import { resetProject } from "./utils";
 
 test.describe("App Flow", () => {
   test.beforeEach(async ({ page }) => {
-    resetProject();
     await page.goto("/");
+    // Wait for network to be idle to ensure backend API calls have completed
+    await page.waitForLoadState("networkidle");
   });
 
   test("should be able to run an app and see the result", async ({ page }) => {

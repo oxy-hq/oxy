@@ -1,11 +1,11 @@
 import { test, expect } from "@playwright/test";
-import { resetProject } from "./utils";
 import { ChatPage } from "./pages/ChatPage";
 
 test.describe("Home Page Chat Box Test", () => {
   test.beforeEach(async ({ page }) => {
-    resetProject();
     await page.goto("/");
+    // Wait for network to be idle to ensure backend API calls have completed
+    await page.waitForLoadState("networkidle");
   });
 
   test("should be able to ask a question and get a response", async ({

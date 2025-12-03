@@ -1,10 +1,9 @@
 import { test, expect } from "@playwright/test";
-import { resetProject } from "./utils";
 
 test.describe("Workflow Execution", () => {
   test.beforeEach(async ({ page }) => {
-    resetProject();
     await page.goto("/");
+    await page.waitForLoadState("networkidle");
   });
 
   test("should be able to run a workflow and see the result", async ({

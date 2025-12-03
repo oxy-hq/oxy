@@ -6,6 +6,11 @@ import { existsSync } from "fs";
 const database_path = "~/.local/share/oxy";
 // (Global setup handles API seeding; no base URL or project ID needed here)
 
+/**
+ * Reset the project database.
+ * NOTE: This should only be called from global-setup.ts, not from individual tests.
+ * Tests should run against a single persistent database setup.
+ */
 export function resetProject() {
   // eslint-disable-next-line sonarjs/os-command
   execSync(`rm -rf ${database_path}`);

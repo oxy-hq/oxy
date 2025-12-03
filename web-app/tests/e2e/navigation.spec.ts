@@ -1,19 +1,9 @@
 import { test, expect } from "@playwright/test";
-import { resetProject } from "./utils";
 
 test.describe("Navigation", () => {
-  // Reset once for all navigation tests since they don't modify state
-  test.beforeAll(() => {
-    resetProject();
-  });
-
-  // Cleanup seeded/stateful data after all navigation tests
-  test.afterAll(() => {
-    resetProject();
-  });
-
   test.beforeEach(async ({ page }) => {
     await page.goto("/");
+    await page.waitForLoadState("networkidle");
   });
 
   test("should navigate to home page", async ({ page }) => {
