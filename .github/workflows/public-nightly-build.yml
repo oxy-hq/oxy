@@ -91,11 +91,6 @@ jobs:
         with:
           repo-token: ${{ steps.app-token.outputs.token }}
 
-      # cleanup disk space
-      - name: Free Disk Space (Ubuntu)
-        if: ${{ startsWith(matrix.job.os, 'ubuntu') }}
-        uses: jlumbroso/free-disk-space@main
-
       #-- Prep node
       - uses: pnpm/action-setup@v4
         with:
@@ -369,7 +364,7 @@ jobs:
           echo "✅ Published $CHANNEL manifests for $IMAGE_NAME"
 
   cleanup-old-nightly:
-    name: Cleanup nightly releases and Docker tags older than 60 days
+    name: Cleanup nightly releases and Docker tags older than 30 days
     if: github.repository == 'oxy-hq/oxy'
     needs: [create-and-push-manifest]
     runs-on: ubuntu-latest
@@ -380,8 +375,8 @@ jobs:
       - name: Calculate cutoff date
         id: cutoff
         run: |
-          # Cutoff is 60 days ago in UTC YYYYMMDD
-          CUTOFF=$(date -u -d '60 days ago' +'%Y%m%d')
+          # Cutoff is 30 days ago in UTC YYYYMMDD
+          CUTOFF=$(date -u -d '30 days ago' +'%Y%m%d')
           echo "cutoff=${CUTOFF}" >> $GITHUB_OUTPUT
           echo "Cutoff date (YYYYMMDD): ${CUTOFF}"
 
@@ -389,11 +384,6 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Requires GitHub CLI
-          sudo apt-get update -y && sudo apt-get install -y jq
-          curl -sL https://github.com/cli/cli/releases/download/v2.62.0/gh_2.62.0_linux_amd64.deb -o gh.deb
-          sudo dpkg -i gh.deb
-
           CUTOFF="${{ steps.cutoff.outputs.cutoff }}"
           echo "Fetching releases from oxy-hq/oxy-nightly..."
           gh api repos/oxy-hq/oxy-nightly/releases --paginate \
@@ -417,7 +407,6 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          sudo apt-get update -y && sudo apt-get install -y jq
           CUTOFF="${{ steps.cutoff.outputs.cutoff }}"
           OWNER="${{ github.repository_owner }}"
           for PKG in oxy oxy-semantic-engine; do

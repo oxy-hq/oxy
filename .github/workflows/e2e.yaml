@@ -142,6 +142,8 @@ jobs:
         working-directory: crates/core/demo_project
         run: |
           echo "Running consistency tests for default.agent.yml..."
+          cargo run --profile ci -- sync -o
+          cargo run --profile ci -- build
           cargo run --profile ci -- test default.agent.yml \
             --format json \
             --min-accuracy 0.85 \
@@ -195,12 +197,12 @@ jobs:
 
       # Run E2E tests
       - name: Run Playwright tests
+        id: run-playwright
         env:
           PLAYWRIGHT_WORKERS: 2
         run: |
           cd web-app
           pnpm test:e2e
-
 
       # Upload test results and traces
       - name: Upload Playwright report
@@ -269,7 +271,7 @@ jobs:
 
       # Send Slack notification on main branch failure
       - name: Find Slack user
-        if: failure() && github.ref == 'refs/heads/main' && github.repository == 'oxy-hq/oxy-internal'
+        if: failure() && steps.run-playwright.outcome == 'failure' && github.ref == 'refs/heads/main' && github.repository == 'oxy-hq/oxy-internal'
         id: find-slack-user
         uses: scribd/find-slack-user-action@v1
         continue-on-error: true
@@ -278,7 +280,7 @@ jobs:
           # The action will automatically use the commit author's GitHub username
 
       - name: Prepare Slack notification message
-        if: failure() && github.ref == 'refs/heads/main' && github.repository == 'oxy-hq/oxy-internal'
+        if: failure() && steps.run-playwright.outcome == 'failure' && github.ref == 'refs/heads/main' && github.repository == 'oxy-hq/oxy-internal'
         id: prepare-slack
         run: |
           GITHUB_USER="${{ github.event.head_commit.author.username || github.actor }}"
@@ -307,7 +309,7 @@ jobs:
           echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Send Slack notification
-        if: failure() && github.ref == 'refs/heads/main' && github.repository == 'oxy-hq/oxy-internal'
+        if: failure() && steps.run-playwright.outcome == 'failure' && github.ref == 'refs/heads/main' && github.repository == 'oxy-hq/oxy-internal'
         uses: slackapi/slack-github-action@v2.0.0
         with:
           method: chat.postMessage
@@ -345,13 +347,6 @@ jobs:
                       "text": "${{ steps.prepare-slack.outputs.author_text }}"
                     }
                   ]
-                },
-                {
-                  "type": "section",
-                  "text": {
-                    "type": "mrkdwn",
-                    "text": "*Commit Message:*\n${{ github.event.head_commit.message }}"
-                  }
                 },
                 {
                   "type": "actions",

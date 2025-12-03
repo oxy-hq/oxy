@@ -40,7 +40,7 @@ context:
   - name: queries
     type: file
     src:
-      - ./example_duckdb_query.sql
+      - example_sql/*.sql
 
 system_instructions: |
   ## PERSISTENCE
@@ -121,4 +121,4 @@ tests:
 
   - type: consistency
     n: 10
-    task_description: "What's the effect of temperature on store sales"
+    task_description: "What's the effect of temperature on store sales? Answer shortly and do not draw a chart"
