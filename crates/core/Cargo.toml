@@ -8,7 +8,28 @@ documentation.workspace = true
 publish.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-exclude.workspace = true
+# Override workspace exclude to prevent rebuilds from runtime-generated files
+exclude = [
+  "examples/",
+  "tests/",
+  # Runtime-generated directories that should not trigger rebuilds
+  "demo_project/.db/",
+  "demo_project/.databases/",
+  "demo_project/.lancedb/",
+  "demo_project/.checkpoint/",
+  "demo_project/.oxy_state/",
+  "demo_project/consistency-test-results.json",
+  ".db-*/",
+  ".databases/",
+  ".lancedb/",
+  ".checkpoint/",
+  ".oxy_state/",
+  ".fastembed_cache/",
+  "output/",
+  "*.log",
+  "*.sqlite",
+  "db.sqlite",
+]
 
 [dependencies]
 aes-gcm = "0.10.3"
