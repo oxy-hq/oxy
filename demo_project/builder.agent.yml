@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/oxy-hq/oxy/refs/heads/main/json-schemas/agent.json
 
-model: "openai-4.1"
+model: "openai-4o-mini"
 description: "An agent that can create data app/dashboard."
 system_instructions: |
   ## Instructions

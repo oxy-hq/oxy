@@ -75,16 +75,16 @@ tasks:
         AVG(Fuel_Price) AS value
       FROM 'oxymart.csv'
       GROUP BY month
-      
+
       UNION ALL
-      
+
       SELECT 
         strftime(Date, '%Y-%m') AS month,
         'Unemployment' AS indicator,
         AVG(Unemployment) AS value
       FROM 'oxymart.csv'
       GROUP BY month
-      
+
       ORDER BY month, indicator
     database: local
 

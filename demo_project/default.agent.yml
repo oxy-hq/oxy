@@ -1,4 +1,4 @@
-model: "openai-4.1"
+model: "openai-4o-mini"
 name: default
 
 description: |

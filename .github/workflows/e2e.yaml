@@ -137,11 +137,45 @@ jobs:
           touch examples/bigquery-sample.key
           echo "$BIGQUERY_SAMPLE_KEY" > examples/bigquery-sample.key
 
+      # Run consistency tests
+      - name: Run consistency tests
+        working-directory: crates/core/demo_project
+        run: |
+          echo "Running consistency tests for default.agent.yml..."
+          cargo run --profile ci -- test default.agent.yml \
+            --format json \
+            --min-accuracy 0.85 \
+            --threshold-mode average \
+            | tee consistency-test-results.json
+
+          echo "Consistency tests completed successfully!"
+
+      - name: Upload consistency test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: consistency-test-results
+          path: crates/core/demo_project/consistency-test-results.json
+          retention-days: 1
+
+      - name: Show consistency test summary
+        if: always()
+        run: |
+          if [ -f crates/core/demo_project/consistency-test-results.json ]; then
+            echo "=== Consistency Test Results ==="
+            echo ""
+            cat crates/core/demo_project/consistency-test-results.json
+            echo ""
+            echo "Full results available in artifacts: consistency-test-results"
+          else
+            echo "No consistency test results file found"
+          fi
+
       # Start backend server in background
       - name: Start Oxy backend server
         run: |
           cd examples
-          cargo build --profile ci
+          # Binary already built by consistency tests, this will reuse it
           nohup cargo run --profile ci -- serve --http2-only > ../oxy-server.log 2>&1 &
           echo $! > /tmp/oxy-server.pid
           echo "Backend server started with PID: $(cat /tmp/oxy-server.pid)"

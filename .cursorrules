@@ -144,8 +144,8 @@ web-app/
 
 ### Examples & Config
 ```
-examples/         # Example agents and workflows (YAML)
-sample_project/   # Sample project setup
+examples/        # Example agents and workflows (YAML)
+crates/core/demo_project/    # Demo project setup
 docs/            # Documentation
 ```
 
@@ -256,7 +256,7 @@ cargo run -p migration -- down   # Rollback
 
 ### Agent/Workflow System
 - YAML-based agent definitions
-- Examples in `examples/` and `sample_project/`
+- Examples in `examples/` and `demo_project/`
 - Declarative and deterministic execution
 
 ## Performance Considerations
