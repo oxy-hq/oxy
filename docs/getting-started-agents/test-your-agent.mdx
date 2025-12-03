@@ -40,5 +40,42 @@ that the LLM detects.
 
 <img height="300" class="rounded-md" src="/images/test-run.png" />
 
+## Advanced Testing Options
+
+### CI/CD Integration
+
+For automated testing in CI/CD pipelines, use the JSON output format:
+
+```bash
+oxy test my-agent.agent.yml --format json
+```
+
+This outputs machine-readable JSON like `{"accuracy": 0.855}` that can be parsed by your CI tools.
+
+### Quality Gates
+
+Enforce minimum accuracy thresholds to prevent regressions:
+
+```bash
+# Fail the build if accuracy drops below 80%
+oxy test my-agent.agent.yml --format json --min-accuracy 0.8
+```
+
+The command will exit with code 1 if the threshold isn't met, making it perfect for CI quality gates.
+
+### Multiple Test Management
+
+If you have multiple tests in your agent file, control how thresholds are evaluated:
+
+```bash
+# Average mode: average of all tests must meet threshold (default)
+oxy test my-agent.agent.yml --min-accuracy 0.8 --threshold-mode average
+
+# All mode: every individual test must meet threshold
+oxy test my-agent.agent.yml --min-accuracy 0.8 --threshold-mode all
+```
+
+For complete documentation on testing features, see the [Testing Guide](/learn-about-oxy/testing).
+
 At this point, you have a working agent as well as the ability to modify and
 test this agent. Congratulations!

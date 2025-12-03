@@ -113,4 +113,12 @@ tools:
 tests:
   - type: consistency
     n: 10
-    task_description: "What is the total weekly sales for all stores in 2011?"
+    task_description: "What is the total weekly sales for all stores"
+
+  - type: consistency
+    n: 10
+    task_description: "How many stores do I have"
+
+  - type: consistency
+    n: 10
+    task_description: "What's the effect of temperature on store sales"

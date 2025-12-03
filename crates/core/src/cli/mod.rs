@@ -367,6 +367,20 @@ pub struct RunArgs {
     dry_run: bool,
 }
 
+#[derive(clap::ValueEnum, Clone, Debug)]
+pub enum OutputFormat {
+    Pretty,
+    Json,
+}
+
+#[derive(clap::ValueEnum, Clone, Debug)]
+pub enum ThresholdMode {
+    /// Average of all test accuracies must meet threshold
+    Average,
+    /// All individual test accuracies must meet threshold
+    All,
+}
+
 #[derive(Parser, Debug)]
 pub struct TestArgs {
     /// Path to the workflow file to test
@@ -377,6 +391,15 @@ pub struct TestArgs {
     /// and display only essential test results and metrics.
     #[clap(long, short = 'q', default_value_t = false)]
     quiet: bool,
+    /// Output format (pretty or json)
+    #[clap(long, value_enum, default_value = "pretty")]
+    format: OutputFormat,
+    /// Minimum accuracy threshold (0.0-1.0). Exit with code 1 if accuracy is below this value
+    #[clap(long, value_name = "THRESHOLD")]
+    min_accuracy: Option<f32>,
+    /// Threshold mode: 'average' checks average of all tests, 'all' checks each test individually
+    #[clap(long, value_enum, default_value = "average")]
+    threshold_mode: ThresholdMode,
 }
 
 #[derive(Parser, Debug)]
@@ -1481,6 +1504,15 @@ pub async fn handle_test_command(test_args: TestArgs) -> Result<(), OxyError> {
         )));
     }
 
+    // Validate threshold if provided
+    if let Some(threshold) = test_args.min_accuracy {
+        if !(0.0..=1.0).contains(&threshold) {
+            return Err(OxyError::ConfigurationError(format!(
+                "min-accuracy must be between 0.0 and 1.0, got: {threshold}"
+            )));
+        }
+    }
+
     let project_path = resolve_local_project_path()?;
 
     let project_manager = ProjectBuilder::new()
@@ -1491,13 +1523,83 @@ pub async fn handle_test_command(test_args: TestArgs) -> Result<(), OxyError> {
         .await
         .map_err(|e| OxyError::from(anyhow::anyhow!("Failed to create project: {e}")))?;
 
-    run_eval(
+    // Run evaluation and capture results
+    let results = run_eval(
         project_manager,
         &file_path,
         None,
         EvalEventsHandler::new(test_args.quiet),
     )
     .await?;
+
+    // Select reporter based on format
+    use crate::eval::{JsonReporter, MetricKind, PrettyReporter, Reporter};
+
+    let reporter: Box<dyn Reporter> = match test_args.format {
+        OutputFormat::Pretty => Box::new(PrettyReporter {
+            quiet: test_args.quiet,
+        }),
+        OutputFormat::Json => Box::new(JsonReporter),
+    };
+
+    // Generate output
+    let mut stdout = std::io::stdout();
+    reporter.report(&results, &mut stdout)?;
+
+    // Check threshold if provided
+    if let Some(min_accuracy) = test_args.min_accuracy {
+        // Collect all accuracy scores from all results
+        let accuracies: Vec<f32> = results
+            .iter()
+            .flat_map(|r| &r.metrics)
+            .filter_map(|m| match m {
+                MetricKind::Similarity(s) => Some(s.score),
+                _ => None,
+            })
+            .collect();
+
+        if accuracies.is_empty() {
+            eprintln!("Warning: --min-accuracy specified but no accuracy metrics found");
+        } else {
+            match test_args.threshold_mode {
+                ThresholdMode::Average => {
+                    // Check if average accuracy meets threshold
+                    let avg_accuracy: f32 =
+                        accuracies.iter().sum::<f32>() / accuracies.len() as f32;
+                    if avg_accuracy < min_accuracy {
+                        return Err(OxyError::RuntimeError(format!(
+                            "Average accuracy {:.4} below threshold {:.4}",
+                            avg_accuracy, min_accuracy
+                        )));
+                    }
+                }
+                ThresholdMode::All => {
+                    // Check if all individual accuracies meet threshold
+                    let failing_tests: Vec<(usize, f32)> = accuracies
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, acc)| **acc < min_accuracy)
+                        .map(|(i, acc)| (i, *acc))
+                        .collect();
+
+                    if !failing_tests.is_empty() {
+                        let failure_msg = failing_tests
+                            .iter()
+                            .map(|(i, acc)| format!("Test {}: {:.4}", i + 1, acc))
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        return Err(OxyError::RuntimeError(format!(
+                            "{} test(s) below threshold {:.4}: {}",
+                            failing_tests.len(),
+                            min_accuracy,
+                            failure_msg
+                        )));
+                    }
+                }
+            }
+        }
+    }
+
     Ok(())
 }
 

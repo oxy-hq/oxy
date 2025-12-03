@@ -106,12 +106,13 @@ impl Verbose for Similarity {
         for record in &self.records {
             if record.score < 1.0 {
                 if !is_header_printed {
-                    writeln!(f, "{}\n", "FAILURES:".error())?;
-                    writeln!(f, "**********\n")?;
+                    writeln!(f)?;
+                    writeln!(f, "{}", "FAILURES:".error())?;
+                    writeln!(f, "**********")?;
                     is_header_printed = true;
                 }
                 write!(f, "{record}")?;
-                writeln!(f, "**********\n")?;
+                writeln!(f, "**********")?;
             }
         }
         Ok(())
@@ -153,12 +154,13 @@ impl Verbose for Recall {
         for record in &self.records {
             if !record.pass {
                 if !is_header_printed {
-                    writeln!(f, "{}\n", "RECALL FAILURES:".error())?;
-                    writeln!(f, "**********\n")?;
+                    writeln!(f)?;
+                    writeln!(f, "{}", "RECALL FAILURES:".error())?;
+                    writeln!(f, "**********")?;
                     is_header_printed = true;
                 }
                 write!(f, "{record}")?;
-                writeln!(f, "**********\n")?;
+                writeln!(f, "**********")?;
             }
         }
         Ok(())
@@ -175,6 +177,42 @@ impl std::fmt::Display for MetricKind {
                 writeln!(f, "Recall: {:.2}%", score * 100.0)
             }
         }
+    }
+}
+
+impl MetricKind {
+    pub fn verbose_write(&self, writer: &mut dyn std::io::Write) -> std::io::Result<()> {
+        match self {
+            MetricKind::Similarity(similarity) => {
+                let failing_records: Vec<_> = similarity
+                    .records
+                    .iter()
+                    .filter(|r| r.score < 1.0)
+                    .collect();
+                if !failing_records.is_empty() {
+                    writeln!(writer)?;
+                    writeln!(writer, "{}", "FAILURES:".error())?;
+                    writeln!(writer, "**********")?;
+                    for record in failing_records {
+                        write!(writer, "{}", record)?;
+                        writeln!(writer, "**********")?;
+                    }
+                }
+            }
+            MetricKind::Recall(recall) => {
+                let failing_records: Vec<_> = recall.records.iter().filter(|r| !r.pass).collect();
+                if !failing_records.is_empty() {
+                    writeln!(writer)?;
+                    writeln!(writer, "{}", "RECALL FAILURES:".error())?;
+                    writeln!(writer, "**********")?;
+                    for record in failing_records {
+                        write!(writer, "{}", record)?;
+                        writeln!(writer, "**********")?;
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 }
 
@@ -236,7 +274,7 @@ impl TryFrom<Output> for Record {
 
 #[derive(Serialize, Clone)]
 pub struct EvalResult {
-    errors: Vec<String>,
+    pub errors: Vec<String>,
     pub metrics: Vec<MetricKind>,
 }
 
@@ -249,15 +287,16 @@ impl EvalResult {
 impl std::fmt::Debug for EvalResult {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if !self.errors.is_empty() {
+            writeln!(f)?;
             writeln!(
                 f,
                 "{}",
-                format!("\nFailed to generate {} outputs:\n", self.errors.len()).warning()
+                format!("Failed to generate {} outputs:", self.errors.len()).warning()
             )?;
-            writeln!(f, "**********\n")?;
+            writeln!(f, "**********")?;
             for error in &self.errors {
                 writeln!(f, "{error}")?;
-                writeln!(f, "**********\n")?;
+                writeln!(f, "**********")?;
             }
             writeln!(f)?;
         }
