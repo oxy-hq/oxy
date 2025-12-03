@@ -1,4 +1,4 @@
-use async_openai::types::{
+use async_openai::types::chat::{
     ChatCompletionRequestMessage, ChatCompletionTool, ChatCompletionToolChoiceOption,
 };
 
@@ -10,7 +10,7 @@ use crate::{
     agent::{
         OpenAIExecutableResponse,
         builders::{
-            openai::{OpenAIExecutable, OpenAIOrOSSExecutable, build_openai_executable},
+            openai::{OpenAIOrOSSExecutable, build_openai_executable},
             tool::OpenAITool,
         },
     },
@@ -43,10 +43,10 @@ impl FallbackAgent {
                 OpenAIClient::with_config(model.into_openai_config(secrets_manager).await?),
                 model_name.to_string(),
                 vec![ChatCompletionTool::from_tool_async(&tool_config, config).await],
-                Some(ChatCompletionToolChoiceOption::Named(
+                Some(ChatCompletionToolChoiceOption::Function(
                     tool_config.clone().into(),
                 )),
-                reasoning_config.map(|rc| rc.into()),
+                reasoning_config,
                 true,
             ),
             tool_executable: OpenAITool::new(agent_name.to_string(), vec![tool_config], 1),

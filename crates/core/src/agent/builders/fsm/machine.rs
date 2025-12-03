@@ -1,8 +1,8 @@
 use std::path::Path;
 
-use async_openai::types::{
+use async_openai::types::chat::{
     ChatCompletionRequestMessage, ChatCompletionRequestUserMessage,
-    ChatCompletionRequestUserMessageContent, ChatCompletionToolChoiceOption,
+    ChatCompletionRequestUserMessageContent, ChatCompletionToolChoiceOption, ToolChoiceOptions,
 };
 use minijinja::context;
 
@@ -76,7 +76,9 @@ impl<S: TransitionContext + Send + Sync> Agent<S> {
                 execution_context,
                 messages,
                 tools,
-                Some(ChatCompletionToolChoiceOption::Required),
+                Some(ChatCompletionToolChoiceOption::Mode(
+                    ToolChoiceOptions::Required,
+                )),
                 None,
             )
             .await?;
@@ -119,7 +121,7 @@ impl<S: TransitionContext + Send + Sync> Agent<S> {
                 ]]
                 .concat(),
                 self.config.start.start.get_tools(),
-                Some(ChatCompletionToolChoiceOption::Required),
+                Some(ChatCompletionToolChoiceOption::Mode(ToolChoiceOptions::Required)),
                 None,
             )
             .await?;

@@ -1,0 +1,41 @@
+tasks:
+- name: monthly_revenue
+  type: execute_sql
+  database: local
+  sql_query: SELECT month, region, revenue FROM monthly_revenue_by_region.csv
+  variables: null
+  export: null
+  dry_run_limit: null
+  cache: null
+- name: monthly_users
+  type: execute_sql
+  database: local
+  sql_query: SELECT month, platform, users FROM monthly_active_user_by_platform.csv
+  variables: null
+  export: null
+  dry_run_limit: null
+  cache: null
+display:
+- type: markdown
+  content: |
+    # Monthly Metrics Dashboard
+
+    This dashboard provides visual insights into two key KPIs:
+    - **Revenue by Region**: Track revenue trends across different regions.
+    - **Monthly Active Users (MAU) by Platform**: Monitor active user growth per platform.
+- type: line_chart
+  x: month
+  y: revenue
+  x_axis_label: Month
+  y_axis_label: Revenue
+  data: monthly_revenue
+  series: region
+  title: Monthly Revenue by Region
+- type: line_chart
+  x: month
+  y: users
+  x_axis_label: Month
+  y_axis_label: Users
+  data: monthly_users
+  series: platform
+  title: Monthly Active Users by Platform

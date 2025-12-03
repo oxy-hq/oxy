@@ -705,3 +705,30 @@ dimensions:
 - name: state
   targets:
   - local.duckdb.shipping_addresses.state
+- name: return_date
+  targets:
+  - local.duckdb.order_returns.return_date
+- name: return_id
+  targets:
+  - local.duckdb.order_returns.return_id
+- name: reason
+  targets:
+  - local.duckdb.order_returns.reason
+- name: is_default
+  targets:
+  - local.duckdb.shipping_addresses.is_default
+- name: address_line_1
+  targets:
+  - local.duckdb.shipping_addresses.address_line_1
+- name: city
+  targets:
+  - local.duckdb.shipping_addresses.city
+- name: postal_code
+  targets:
+  - local.duckdb.shipping_addresses.postal_code
+- name: address_line_2
+  targets:
+  - local.duckdb.shipping_addresses.address_line_2
+- name: state
+  targets:
+  - local.duckdb.shipping_addresses.state

@@ -1,10 +1,7 @@
 use arrow::datatypes::DataType;
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    config::model::{BarChartDisplay, LineChartDisplay, PieChartDisplay},
-    execute::types::VizParams,
-};
+use crate::config::model::{BarChartDisplay, LineChartDisplay, PieChartDisplay};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -77,9 +74,11 @@ impl std::fmt::Display for ChartRecommendation {
 #[derive(Debug, Clone)]
 pub enum ColumnKind {
     Numeric {
+        #[allow(dead_code)]
         is_integer: bool,
         has_negatives: bool,
         min: Option<f64>,
+        #[allow(dead_code)]
         max: Option<f64>,
     },
     Temporal,
@@ -94,9 +93,12 @@ pub enum ColumnKind {
 #[derive(Debug, Clone)]
 pub struct ColumnInfo {
     pub name: String,
+    #[allow(dead_code)]
     pub arrow_type: DataType,
     pub kind: ColumnKind,
+    #[allow(dead_code)]
     pub null_count: usize,
+    #[allow(dead_code)]
     pub row_count: usize,
     pub unique_count: usize,
 }
@@ -169,5 +171,6 @@ pub struct ScoringContext {
     pub cardinality: Option<usize>,
     pub has_temporal: bool,
     pub has_grouping: bool,
+    #[allow(dead_code)]
     pub num_series: usize,
 }

@@ -18,7 +18,7 @@ use crate::{
     service::retrieval::EnumIndexManager,
 };
 
-use async_openai::types::{CreateEmbeddingRequestArgs, EmbeddingInput};
+use async_openai::types::embeddings::{CreateEmbeddingRequestArgs, EmbeddingInput};
 use std::{collections::HashMap, sync::Arc};
 
 use super::ingestion::IngestionManager;

@@ -1,4 +1,5 @@
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[allow(dead_code)]
 pub struct DataApp {
     #[serde(default = "default_data_app_name")]
     pub name: String,
@@ -6,10 +7,12 @@ pub struct DataApp {
     pub description: String,
 }
 
+#[allow(dead_code)]
 fn default_data_app_name() -> String {
     "data_app".to_string()
 }
 
+#[allow(dead_code)]
 fn default_data_app_description() -> String {
     "Collect viz and tables from the context to create data app".to_string()
 }

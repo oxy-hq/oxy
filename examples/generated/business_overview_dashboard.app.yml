@@ -1,0 +1,46 @@
+tasks:
+- name: revenue_by_region
+  type: execute_sql
+  database: local
+  sql_query: SELECT month, region, revenue FROM monthly_revenue_by_region.csv
+  variables: null
+  export: null
+  dry_run_limit: null
+  cache: null
+- name: users_by_platform
+  type: execute_sql
+  database: local
+  sql_query: SELECT month, platform, users FROM monthly_active_user_by_platform.csv
+  variables: null
+  export: null
+  dry_run_limit: null
+  cache: null
+display:
+- type: line_chart
+  x: month
+  y: revenue
+  x_axis_label: null
+  y_axis_label: null
+  data: revenue_by_region
+  series: region
+  title: Monthly Revenue by Region
+- type: line_chart
+  x: month
+  y: users
+  x_axis_label: null
+  y_axis_label: null
+  data: users_by_platform
+  series: platform
+  title: Monthly Active Users by Platform
+- type: bar_chart
+  x: region
+  y: revenue
+  title: Total Revenue by Region (Jan-Jun)
+  data: revenue_by_region
+  series: null
+- type: bar_chart
+  x: platform
+  y: users
+  title: Total Users by Platform (Jan-Mar)
+  data: users_by_platform
+  series: null

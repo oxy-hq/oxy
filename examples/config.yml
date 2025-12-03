@@ -72,9 +72,9 @@ models:
     vendor: openai
     model_ref: gpt-4o-mini
     key_var: OPENAI_API_KEY
-  - name: openai-o4-mini
+  - name: gpt-5-mini-2025-08-07
     vendor: openai
-    model_ref: o4-mini
+    model_ref: gpt-5-mini-2025-08-07
     key_var: OPENAI_API_KEY
   - name: openai-4o
     vendor: openai

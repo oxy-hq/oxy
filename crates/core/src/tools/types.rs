@@ -1,9 +1,8 @@
 use std::collections::HashMap;
 use std::hash::Hash;
 
-use async_openai::types::{
-    ChatCompletionMessageToolCall, ChatCompletionTool, ChatCompletionToolArgs, FunctionObject,
-    FunctionObjectArgs,
+use async_openai::types::chat::{
+    ChatCompletionMessageToolCall, ChatCompletionTool, FunctionObject, FunctionObjectArgs,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -138,9 +137,8 @@ impl From<&ToolSpec> for FunctionObject {
 
 impl From<&ToolSpec> for ChatCompletionTool {
     fn from(val: &ToolSpec) -> Self {
-        ChatCompletionToolArgs::default()
-            .function::<FunctionObject>(val.into())
-            .build()
-            .unwrap()
+        ChatCompletionTool {
+            function: FunctionObject::from(val),
+        }
     }
 }

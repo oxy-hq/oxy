@@ -1,9 +1,9 @@
-use async_openai::types::{
-    ChatCompletionMessageToolCall, ChatCompletionRequestAssistantMessage,
-    ChatCompletionRequestAssistantMessageContent, ChatCompletionRequestMessage,
-    ChatCompletionRequestSystemMessage, ChatCompletionRequestSystemMessageContent,
-    ChatCompletionRequestToolMessage, ChatCompletionRequestToolMessageContent,
-    ChatCompletionToolChoiceOption,
+use async_openai::types::chat::{
+    ChatCompletionMessageToolCall, ChatCompletionMessageToolCalls,
+    ChatCompletionRequestAssistantMessage, ChatCompletionRequestAssistantMessageContent,
+    ChatCompletionRequestMessage, ChatCompletionRequestSystemMessage,
+    ChatCompletionRequestSystemMessageContent, ChatCompletionRequestToolMessage,
+    ChatCompletionRequestToolMessageContent, ChatCompletionToolChoiceOption, ToolChoiceOptions,
 };
 
 use crate::{
@@ -112,7 +112,9 @@ impl<S> AutoSQL<S> {
                 execution_context,
                 messages,
                 vec![self.config.get_tool()],
-                Some(ChatCompletionToolChoiceOption::Required),
+                Some(ChatCompletionToolChoiceOption::Mode(
+                    ToolChoiceOptions::Required,
+                )),
                 None,
             )
             .await?;
@@ -174,7 +176,9 @@ impl<S> AutoSQL<S> {
                     }
                     failed_messages.push(
                         ChatCompletionRequestAssistantMessage {
-                            tool_calls: Some(vec![tool_call.clone()]),
+                            tool_calls: Some(vec![ChatCompletionMessageToolCalls::Function(
+                                tool_call.clone(),
+                            )]),
                             ..Default::default()
                         }
                         .into(),

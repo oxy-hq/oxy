@@ -1,4 +1,4 @@
-use async_openai::types::ChatCompletionRequestMessage;
+use async_openai::types::chat::ChatCompletionRequestMessage;
 
 use crate::{
     adapters::openai::OpenAIAdapter,

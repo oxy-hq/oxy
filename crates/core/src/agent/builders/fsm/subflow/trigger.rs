@@ -55,6 +55,7 @@ impl<S> SubflowRun<S>
 where
     S: TransitionContext + Send + Sync,
 {
+    #[allow(dead_code)]
     pub fn new(objective: String, src: String) -> Self {
         Self {
             objective,

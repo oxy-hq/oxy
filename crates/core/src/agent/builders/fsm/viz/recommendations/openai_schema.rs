@@ -1,4 +1,4 @@
-use async_openai::types::{ChatCompletionTool, ChatCompletionToolType, FunctionObject};
+use async_openai::types::chat::{ChatCompletionTool, FunctionObject};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
@@ -45,7 +45,6 @@ impl ChartSelectionSchema {
         });
 
         ChatCompletionTool {
-            r#type: ChatCompletionToolType::Function,
             function: FunctionObject {
                 name: name.to_string(),
                 description: Some(description.to_string()),

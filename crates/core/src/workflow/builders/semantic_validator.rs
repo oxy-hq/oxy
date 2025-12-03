@@ -344,7 +344,7 @@ fn validate_filters(
 
         // Validate operator and value type compatibility
         // Convert SemanticQueryFilter to SemanticFilter for validation
-        let filter_type = match filter.op.as_str() {
+        let _filter_type = match filter.op.as_str() {
             "eq" => SemanticFilterType::Eq(crate::config::model::ScalarFilter {
                 value: filter.value.clone(),
             }),
@@ -451,12 +451,13 @@ fn validate_orders(
 }
 
 /// Extracts the view name from a fully-qualified field (e.g., "orders.total" -> "orders")
+#[allow(dead_code)]
 fn extract_view_from_field(field: &str) -> Option<String> {
     field.split('.').next().map(|s| s.to_string())
 }
 
 /// Gets a human-readable name for a JSON value type
-fn get_value_type_name(value: &Value) -> String {
+fn _get_value_type_name(value: &Value) -> String {
     match value {
         Value::Null => "null".to_string(),
         Value::Bool(_) => "boolean".to_string(),

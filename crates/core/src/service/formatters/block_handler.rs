@@ -383,7 +383,7 @@ impl BlockHandler {
                         }
                         _ => {}
                     },
-                    ArtifactKind::OmniQuery { topic, integration } => {
+                    ArtifactKind::OmniQuery { topic, .. } => {
                         if let Output::Table(table) = &chunk.delta {
                             let (table_2d_array, is_truncated) = table.to_2d_array()?;
                             let query_params =

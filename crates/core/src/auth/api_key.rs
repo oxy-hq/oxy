@@ -5,7 +5,7 @@ use crate::errors::OxyError;
 use crate::service::api_key::{ApiKeyConfig, ApiKeyService};
 use axum::http::HeaderMap;
 use entity::prelude::Users;
-use sea_orm::{EntityTrait, ModelTrait};
+use sea_orm::EntityTrait;
 
 fn extract_api_key_from_headers(headers: &HeaderMap) -> Option<String> {
     tracing::debug!(

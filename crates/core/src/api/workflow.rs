@@ -939,7 +939,7 @@ pub async fn run_workflow_sync(
     })?;
 
     // Also create logger for backward compatibility
-    let (logger, mut log_receiver) = build_workflow_api_logger(&full_workflow_path, None).await;
+    let (_logger, mut log_receiver) = build_workflow_api_logger(&full_workflow_path, None).await;
 
     // Subscribe to broadcast to collect events
     let subscription = BROADCASTER.subscribe(&task_id).await.map_err(|e| {
@@ -1442,7 +1442,7 @@ pub async fn get_workflow_run(
     };
 
     // Parse events to determine status and extract data
-    let (status, error_message, success, completed, content) = parse_workflow_events(&events);
+    let (_status, error_message, success, completed, content) = parse_workflow_events(&events);
 
     // Convert EventKind to WorkflowEvent for API response
     // When wait_for_completion=true or from database, filter out intermediate ContentAdded events

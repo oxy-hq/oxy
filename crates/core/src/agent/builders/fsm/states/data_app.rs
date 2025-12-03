@@ -1,4 +1,4 @@
-use async_openai::types::ChatCompletionRequestMessage;
+use async_openai::types::chat::ChatCompletionRequestMessage;
 
 use crate::{
     adapters::openai::OpenAIAdapter,
@@ -26,6 +26,7 @@ pub struct DataAppState {
     memory: Memory,
     data: Dataset,
     viz: VizState,
+    #[allow(dead_code)]
     artifacts: ArtifactsState,
     app: Option<AppConfig>,
     insight: Insights,

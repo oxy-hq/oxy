@@ -1,4 +1,4 @@
-use async_openai::types::{ChatCompletionTool, ChatCompletionToolType, FunctionObject};
+use async_openai::types::chat::{ChatCompletionTool, FunctionObject};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -46,7 +46,6 @@ impl Start {
     fn revise_tool(&self) -> ChatCompletionTool {
         let schema = serde_json::json!(&schemars::schema_for!(TransitionObjective));
         ChatCompletionTool {
-            r#type: ChatCompletionToolType::Function,
             function: FunctionObject {
                 name: AGENT_REVISE_PLAN_TRANSITION.to_string(),
                 description: Some(
@@ -60,7 +59,6 @@ impl Start {
 
     fn continue_tool(&self) -> ChatCompletionTool {
         ChatCompletionTool {
-            r#type: ChatCompletionToolType::Function,
             function: FunctionObject {
                 name: AGENT_CONTINUE_PLAN_TRANSITION.to_string(),
                 description: Some("Continue with the current plan".to_string()),

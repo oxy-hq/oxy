@@ -2,10 +2,8 @@ use crate::{
     adapters::checkpoint::types::RetryStrategy,
     api::middlewares::project::ProjectManagerExtractor,
     dispatcher::run::Dispatcher,
-    execute::types::event::Step,
     service::{
         agent::{AgenticRunner, run_agentic_workflow},
-        chat,
         statics::BROADCASTER,
         types::run::RunInfo,
     },
@@ -274,9 +272,9 @@ pub struct AskAgenticResponse {
 }
 
 pub async fn ask_agentic(
-    Path((project_id, id)): Path<(Uuid, String)>,
+    Path((_project_id, id)): Path<(Uuid, String)>,
     ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
-    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
+    AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
     extract::Json(payload): extract::Json<AskAgenticRequest>,
 ) -> Result<extract::Json<AskAgenticResponse>, StatusCode> {
     let chat_service = ChatService::new().await?;

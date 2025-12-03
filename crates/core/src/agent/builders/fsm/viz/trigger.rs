@@ -1,9 +1,9 @@
-use async_openai::types::{
-    ChatCompletionMessageToolCall, ChatCompletionRequestAssistantMessage,
-    ChatCompletionRequestAssistantMessageContent, ChatCompletionRequestMessage,
-    ChatCompletionRequestSystemMessage, ChatCompletionRequestSystemMessageContent,
-    ChatCompletionRequestToolMessage, ChatCompletionRequestToolMessageContent,
-    ChatCompletionToolChoiceOption,
+use async_openai::types::chat::{
+    ChatCompletionMessageToolCall, ChatCompletionMessageToolCalls,
+    ChatCompletionRequestAssistantMessage, ChatCompletionRequestAssistantMessageContent,
+    ChatCompletionRequestMessage, ChatCompletionRequestSystemMessage,
+    ChatCompletionRequestSystemMessageContent, ChatCompletionRequestToolMessage,
+    ChatCompletionRequestToolMessageContent, ChatCompletionToolChoiceOption, ToolChoiceOptions,
 };
 
 use crate::{
@@ -110,7 +110,9 @@ where
                 execution_context,
                 messages,
                 vec![tool_call],
-                Some(ChatCompletionToolChoiceOption::Required),
+                Some(ChatCompletionToolChoiceOption::Mode(
+                    ToolChoiceOptions::Required,
+                )),
                 None,
             )
             .await?;
@@ -157,7 +159,9 @@ where
                     }
                     failed_messages.push(
                         ChatCompletionRequestAssistantMessage {
-                            tool_calls: Some(vec![tool_call.clone()]),
+                            tool_calls: Some(vec![ChatCompletionMessageToolCalls::Function(
+                                tool_call.clone(),
+                            )]),
                             ..Default::default()
                         }
                         .into(),

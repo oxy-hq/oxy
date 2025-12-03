@@ -75,9 +75,9 @@ impl ArtifactTracker {
                 })?;
 
             let content = match artifact {
-                ArtifactKind::Workflow { r#ref } => Self::create_workflow_artifact(children)?,
-                ArtifactKind::Agent { r#ref } => Self::create_agent_artifact(children)?,
-                ArtifactKind::ExecuteSQL { sql, database } => Self::create_sql_artifact(children)?,
+                ArtifactKind::Workflow { .. } => Self::create_workflow_artifact(children)?,
+                ArtifactKind::Agent { .. } => Self::create_agent_artifact(children)?,
+                ArtifactKind::ExecuteSQL { .. } => Self::create_sql_artifact(children)?,
                 ArtifactKind::SemanticQuery { .. } => {
                     Self::create_semantic_query_artifact_with_params(
                         children,
@@ -87,7 +87,6 @@ impl ArtifactTracker {
                 ArtifactKind::OmniQuery { topic, .. } => {
                     Self::create_omni_query_artifact(children, topic.clone())?
                 }
-                _ => None,
             };
 
             if let Some(content) = content {
@@ -164,12 +163,6 @@ impl ArtifactTracker {
         Ok(None)
     }
 
-    fn create_semantic_query_artifact(
-        children: &[Block],
-    ) -> Result<Option<ArtifactContent>, OxyError> {
-        Self::create_semantic_query_artifact_with_params(children, None)
-    }
-
     fn create_semantic_query_artifact_with_params(
         children: &[Block],
         query_params: Option<SemanticQueryParams>,
@@ -231,7 +224,7 @@ impl ArtifactTracker {
         children: &[Block],
         topic: String,
     ) -> Result<Option<ArtifactContent>, OxyError> {
-        let default_params = crate::tools::types::OmniQueryParams {
+        let _default_params = crate::tools::types::OmniQueryParams {
             fields: vec![],
             limit: None,
             sorts: None,
@@ -296,7 +289,7 @@ impl ArtifactTracker {
                 BlockValue::Content {
                     content: Content::Table(table),
                 } => {
-                    let (table_2d_array, is_truncated) = table.to_2d_array()?;
+                    let (table_2d_array, _is_truncated) = table.to_2d_array()?;
 
                     artifact_content.sql = table.get_sql_query().unwrap_or_default();
                     artifact_content.result = table_2d_array;

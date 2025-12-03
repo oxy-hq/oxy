@@ -940,7 +940,7 @@ impl GitOperations {
         // Remove existing authentication if present
         let clean_url = if current_url.contains("@github.com") {
             if let Some(at_pos) = current_url.find("@github.com") {
-                if let Some(protocol_end) = current_url.find("://") {
+                if let Some(_protocol_end) = current_url.find("://") {
                     format!("https://github.com{}", &current_url[at_pos + 11..])
                 } else {
                     current_url

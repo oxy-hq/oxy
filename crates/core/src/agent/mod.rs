@@ -17,7 +17,7 @@ use crate::{
     semantic::SemanticManager,
 };
 use builders::AgentExecutable;
-pub use builders::{OneShotInput, OpenAIExecutableResponse, build_openai_executable};
+pub use builders::{OneShotInput, OpenAIExecutableResponse};
 use minijinja::{Value, context};
 pub use references::AgentReferencesHandler;
 use types::AgentInput;

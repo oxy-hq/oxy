@@ -2,12 +2,13 @@ use std::{collections::HashMap, sync::Arc};
 
 use async_openai::{
     error::OpenAIError,
-    types::{
+    types::chat::{
         ChatCompletionMessageToolCall, ChatCompletionMessageToolCallChunk,
-        ChatCompletionRequestAssistantMessageArgs, ChatCompletionRequestMessage,
-        ChatCompletionRequestSystemMessageArgs, ChatCompletionRequestUserMessageArgs,
-        ChatCompletionStreamOptions, ChatCompletionTool, ChatCompletionToolChoiceOption,
-        ChatCompletionToolType, CreateChatCompletionRequestArgs, FunctionCall,
+        ChatCompletionMessageToolCalls, ChatCompletionRequestAssistantMessageArgs,
+        ChatCompletionRequestMessage, ChatCompletionRequestSystemMessageArgs,
+        ChatCompletionRequestUserMessageArgs, ChatCompletionStreamOptions, ChatCompletionTool,
+        ChatCompletionToolChoiceOption, ChatCompletionTools, CreateChatCompletionRequestArgs,
+        FunctionCall,
     },
 };
 use deser_incomplete::from_json_str;
@@ -178,7 +179,6 @@ impl OpenAIExecutable {
                 .entry(key)
                 .or_insert_with(|| ChatCompletionMessageToolCall {
                     id: tool_call_chunk.id.clone().unwrap_or_default(),
-                    r#type: ChatCompletionToolType::Function,
                     function: FunctionCall {
                         name: tool_call_chunk
                             .function
@@ -344,7 +344,8 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
                 .model(self.model.clone())
                 .messages(input.clone())
                 .stream_options(ChatCompletionStreamOptions {
-                    include_usage: true,
+                    include_usage: Some(true),
+                    include_obfuscation: Some(false),
                 })
                 .stream(true);
 
@@ -357,7 +358,13 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
             }
 
             if !self.tool_configs.is_empty() {
-                builder.tools(self.tool_configs.clone());
+                let tools_wrapped: Vec<ChatCompletionTools> = self
+                    .tool_configs
+                    .clone()
+                    .into_iter()
+                    .map(|t| ChatCompletionTools::Function(t))
+                    .collect();
+                builder.tools(tools_wrapped);
             }
 
             let request = builder.build().map_err(|err| {
@@ -549,7 +556,13 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OSSExecutable {
         }
 
         if !self.tool_configs.is_empty() {
-            builder.tools(self.tool_configs.clone());
+            let tools_wrapped: Vec<ChatCompletionTools> = self
+                .tool_configs
+                .clone()
+                .into_iter()
+                .map(|t| ChatCompletionTools::Function(t))
+                .collect();
+            builder.tools(tools_wrapped);
         }
 
         if let Some(ReasoningConfig { effort }) = &self.reasoning_config {
@@ -579,7 +592,17 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OSSExecutable {
             .ok_or_else(|| OxyError::RuntimeError("No choices returned from API".to_string()))?;
 
         let content = choice.message.content.as_deref().unwrap_or("");
-        let tool_calls = choice.message.tool_calls.clone().unwrap_or_default();
+        let tool_calls = choice
+            .message
+            .tool_calls
+            .clone()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|tc| match tc {
+                ChatCompletionMessageToolCalls::Function(func_call) => Some(func_call),
+                ChatCompletionMessageToolCalls::Custom(_) => None,
+            })
+            .collect();
 
         execution_context
             .write_kind(EventKind::Message {

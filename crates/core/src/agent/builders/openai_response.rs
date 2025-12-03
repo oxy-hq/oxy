@@ -8,25 +8,31 @@ use crate::{
     config::model::ReasoningConfig,
 };
 use async_openai::types::{
-    ChatCompletionNamedToolChoice, ChatCompletionRequestAssistantMessage,
-    ChatCompletionRequestAssistantMessageContent, ChatCompletionRequestAssistantMessageContentPart,
-    ChatCompletionRequestDeveloperMessage, ChatCompletionRequestDeveloperMessageContent,
-    ChatCompletionRequestSystemMessage, ChatCompletionRequestSystemMessageContent,
-    ChatCompletionRequestSystemMessageContentPart, ChatCompletionRequestToolMessage,
-    ChatCompletionRequestUserMessage, ChatCompletionRequestUserMessageContent,
-    ChatCompletionRequestUserMessageContentPart,
-    responses::{CreateResponse, OutputItem, ReasoningSummary, ResponseEvent},
+    chat::{
+        ChatCompletionMessageToolCall, ChatCompletionMessageToolCalls,
+        ChatCompletionNamedToolChoice, ChatCompletionRequestAssistantMessage,
+        ChatCompletionRequestAssistantMessageContent,
+        ChatCompletionRequestAssistantMessageContentPart, ChatCompletionRequestDeveloperMessage,
+        ChatCompletionRequestDeveloperMessageContent,
+        ChatCompletionRequestDeveloperMessageContentPart, ChatCompletionRequestMessage,
+        ChatCompletionRequestSystemMessage, ChatCompletionRequestSystemMessageContent,
+        ChatCompletionRequestSystemMessageContentPart, ChatCompletionRequestToolMessage,
+        ChatCompletionRequestToolMessageContent, ChatCompletionRequestToolMessageContentPart,
+        ChatCompletionRequestUserMessage, ChatCompletionRequestUserMessageContent,
+        ChatCompletionRequestUserMessageContentPart, ChatCompletionTool,
+        ChatCompletionToolChoiceOption, FunctionCall,
+    },
+    responses::{
+        EasyInputContent, FunctionCallOutput, FunctionCallOutputItemParam, FunctionToolCall,
+        InputItem, InputParam, Item, OutputItem, ResponseStreamEvent,
+    },
 };
 use async_openai::{
     error::OpenAIError,
-    types::{
-        ChatCompletionMessageToolCall, ChatCompletionRequestMessage, ChatCompletionTool,
-        ChatCompletionToolChoiceOption, ChatCompletionToolType, FunctionCall,
-        responses::{
-            ContentType, CreateResponseArgs, Function as ResponseFunction, Input, InputContent,
-            InputItem, InputMessage, InputText, ReasoningConfig as OpenAIReasoningConfig,
-            Role as ResponseRole, ToolChoice, ToolChoiceMode, ToolDefinition,
-        },
+    types::responses::{
+        CreateResponse, CreateResponseArgs, EasyInputMessage, FunctionTool, InputContent,
+        InputTextContent, Reasoning, ReasoningSummary, Role, Tool, ToolChoiceFunction,
+        ToolChoiceParam,
     },
 };
 use deser_incomplete::from_json_str;
@@ -49,7 +55,7 @@ use crate::execute::types::Usage;
 
 fn convert_messages_to_response_input(
     messages: Vec<ChatCompletionRequestMessage>,
-) -> Result<Input, OxyError> {
+) -> Result<InputParam, OxyError> {
     let mut input_items: Vec<InputItem> = Vec::new();
 
     for msg in messages {
@@ -75,55 +81,56 @@ fn convert_messages_to_response_input(
         }
     }
 
-    Ok(Input::Items(input_items))
+    Ok(InputParam::Items(input_items))
 }
 
 fn convert_system_message(sys_msg: ChatCompletionRequestSystemMessage) -> InputItem {
     let content = match sys_msg.content {
-        ChatCompletionRequestSystemMessageContent::Text(text) => InputContent::TextInput(text),
+        ChatCompletionRequestSystemMessageContent::Text(text) => EasyInputContent::Text(text),
         ChatCompletionRequestSystemMessageContent::Array(parts) => {
-            let content_parts: Vec<ContentType> = parts
+            let content_parts: Vec<InputContent> = parts
                 .into_iter()
                 .map(|part| match part {
                     ChatCompletionRequestSystemMessageContentPart::Text(text_part) => {
-                        ContentType::InputText(InputText {
+                        InputContent::InputText(InputTextContent {
                             text: text_part.text,
                         })
                     }
                 })
                 .collect();
-            InputContent::InputItemContentList(content_parts)
+            EasyInputContent::ContentList(content_parts)
         }
     };
-    InputItem::Message(InputMessage {
-        kind: Default::default(),
-        role: ResponseRole::System,
+    InputItem::EasyMessage(EasyInputMessage {
+        role: Role::System,
         content,
+        r#type: Default::default(),
     })
 }
 
 fn convert_user_message(user_msg: ChatCompletionRequestUserMessage) -> InputItem {
     let content = match user_msg.content {
-        ChatCompletionRequestUserMessageContent::Text(text) => InputContent::TextInput(text),
+        ChatCompletionRequestUserMessageContent::Text(text) => EasyInputContent::Text(text),
         ChatCompletionRequestUserMessageContent::Array(parts) => {
-            let content_parts: Vec<ContentType> = parts
+            let content_parts: Vec<InputContent> = parts
                 .into_iter()
                 .filter_map(|part| match part {
                     ChatCompletionRequestUserMessageContentPart::Text(text_part) => {
-                        Some(ContentType::InputText(InputText {
+                        Some(InputContent::InputText(InputTextContent {
                             text: text_part.text,
                         }))
                     }
                     ChatCompletionRequestUserMessageContentPart::ImageUrl(_img_part) => None,
                     ChatCompletionRequestUserMessageContentPart::InputAudio(_) => None,
+                    ChatCompletionRequestUserMessageContentPart::File(_) => None,
                 })
                 .collect();
-            InputContent::InputItemContentList(content_parts)
+            EasyInputContent::ContentList(content_parts)
         }
     };
-    InputItem::Message(InputMessage {
-        kind: Default::default(),
-        role: ResponseRole::User,
+    InputItem::EasyMessage(EasyInputMessage {
+        r#type: Default::default(),
+        role: Role::User,
         content,
     })
 }
@@ -133,45 +140,60 @@ fn convert_assistant_message(asst_msg: ChatCompletionRequestAssistantMessage) ->
 
     let content = match asst_msg.content {
         Some(ChatCompletionRequestAssistantMessageContent::Text(text)) => {
-            InputContent::TextInput(text)
+            EasyInputContent::Text(text)
         }
         Some(ChatCompletionRequestAssistantMessageContent::Array(parts)) => {
-            let content_parts: Vec<ContentType> = parts
+            let content_parts: Vec<InputContent> = parts
                 .into_iter()
                 .filter_map(|part| match part {
                     ChatCompletionRequestAssistantMessageContentPart::Text(text_part) => {
-                        Some(ContentType::InputText(InputText {
+                        Some(InputContent::InputText(InputTextContent {
                             text: text_part.text,
                         }))
                     }
                     ChatCompletionRequestAssistantMessageContentPart::Refusal(_) => None,
                 })
                 .collect();
-            InputContent::InputItemContentList(content_parts)
+            EasyInputContent::ContentList(content_parts)
         }
-        None => InputContent::TextInput(String::new()),
+        None => EasyInputContent::Text(String::new()),
     };
 
-    items.push(InputItem::Message(InputMessage {
-        kind: Default::default(),
-        role: ResponseRole::Assistant,
+    items.push(InputItem::EasyMessage(EasyInputMessage {
+        r#type: Default::default(),
+        role: Role::Assistant,
         content,
     }));
 
     if let Some(tool_calls) = asst_msg.tool_calls {
         for tool_call in tool_calls {
-            tracing::debug!(
-                "Converting assistant tool_call to function_call item: id={}, name={}",
-                tool_call.id,
-                tool_call.function.name
-            );
-            let function_call_item = serde_json::json!({
-                "type": "function_call",
-                "call_id": tool_call.id,
-                "name": tool_call.function.name,
-                "arguments": tool_call.function.arguments,
-            });
-            items.push(InputItem::Custom(function_call_item));
+            match tool_call {
+                ChatCompletionMessageToolCalls::Function(function_call) => {
+                    tracing::debug!(
+                        "Converting assistant tool_call to function_call item: id={}, name={}",
+                        function_call.id,
+                        function_call.function.name
+                    );
+                    let function_call_item = Item::FunctionCall(FunctionToolCall {
+                        id: None,
+                        call_id: function_call.id,
+                        name: function_call.function.name,
+                        arguments: function_call.function.arguments,
+                        status: None,
+                    });
+
+                    items.push(InputItem::Item(function_call_item));
+                    continue;
+                }
+                ChatCompletionMessageToolCalls::Custom(
+                    chat_completion_message_custom_tool_call,
+                ) => {
+                    tracing::debug!(
+                        "Skipping conversion of custom tool call with call_id: {}",
+                        chat_completion_message_custom_tool_call.id
+                    );
+                }
+            }
         }
     }
     items
@@ -179,22 +201,24 @@ fn convert_assistant_message(asst_msg: ChatCompletionRequestAssistantMessage) ->
 
 fn convert_developer_message(dev_msg: ChatCompletionRequestDeveloperMessage) -> InputItem {
     let content = match dev_msg.content {
-        ChatCompletionRequestDeveloperMessageContent::Text(text) => InputContent::TextInput(text),
+        ChatCompletionRequestDeveloperMessageContent::Text(text) => EasyInputContent::Text(text),
         ChatCompletionRequestDeveloperMessageContent::Array(parts) => {
-            let content_parts: Vec<ContentType> = parts
+            let content_parts: Vec<InputContent> = parts
                 .into_iter()
-                .map(|text_part| {
-                    ContentType::InputText(InputText {
-                        text: text_part.text,
-                    })
+                .filter_map(|part| match part {
+                    ChatCompletionRequestDeveloperMessageContentPart::Text(text_part) => {
+                        Some(InputContent::InputText(InputTextContent {
+                            text: text_part.text,
+                        }))
+                    }
                 })
                 .collect();
-            InputContent::InputItemContentList(content_parts)
+            EasyInputContent::ContentList(content_parts)
         }
     };
-    InputItem::Message(InputMessage {
-        kind: Default::default(),
-        role: ResponseRole::Developer,
+    InputItem::EasyMessage(EasyInputMessage {
+        r#type: Default::default(),
+        role: Role::Developer,
         content,
     })
 }
@@ -204,41 +228,71 @@ fn convert_tool_message(tool_msg: ChatCompletionRequestToolMessage) -> InputItem
         "Converting tool message with call_id: {}",
         tool_msg.tool_call_id
     );
-    let tool_response = serde_json::json!({
-        "type": "function_call_output",
-        "call_id": tool_msg.tool_call_id,
-        "output": tool_msg.content
-    });
-    InputItem::Custom(tool_response)
+
+    let output = match tool_msg.content {
+        ChatCompletionRequestToolMessageContent::Text(text) => FunctionCallOutput::Text(text),
+        ChatCompletionRequestToolMessageContent::Array(parts) => {
+            let content_parts: Vec<InputContent> = parts
+                .into_iter()
+                .filter_map(|part| match part {
+                    ChatCompletionRequestToolMessageContentPart::Text(text_part) => {
+                        Some(InputContent::InputText(InputTextContent {
+                            text: text_part.text,
+                        }))
+                    }
+                })
+                .collect();
+            FunctionCallOutput::Content(content_parts)
+        }
+    };
+
+    InputItem::Item(Item::FunctionCallOutput(FunctionCallOutputItemParam {
+        call_id: tool_msg.tool_call_id,
+        output,
+        id: None,
+        status: None,
+    }))
 }
 
 fn convert_tool_choice(
     chat_tool_choice: &ChatCompletionToolChoiceOption,
-) -> Result<ToolChoice, OxyError> {
+) -> Result<ToolChoiceParam, OxyError> {
+    use async_openai::types::chat::ToolChoiceOptions as ChatToolChoiceOptions;
+    use async_openai::types::responses::ToolChoiceOptions as ResponsesToolChoiceOptions;
+
     match chat_tool_choice {
-        ChatCompletionToolChoiceOption::None => Ok(ToolChoice::Mode(ToolChoiceMode::None)),
-        ChatCompletionToolChoiceOption::Auto => Ok(ToolChoice::Mode(ToolChoiceMode::Auto)),
-        ChatCompletionToolChoiceOption::Required => Ok(ToolChoice::Mode(ToolChoiceMode::Required)),
-        ChatCompletionToolChoiceOption::Named(ChatCompletionNamedToolChoice {
-            function, ..
-        }) => Ok(ToolChoice::Function {
-            name: function.name.clone(),
-        }),
+        ChatCompletionToolChoiceOption::Mode(mode) => {
+            let converted_mode = match mode {
+                ChatToolChoiceOptions::None => ResponsesToolChoiceOptions::None,
+                ChatToolChoiceOptions::Auto => ResponsesToolChoiceOptions::Auto,
+                ChatToolChoiceOptions::Required => ResponsesToolChoiceOptions::Required, // Map Required to Auto for responses API
+            };
+            Ok(ToolChoiceParam::Mode(converted_mode))
+        }
+        ChatCompletionToolChoiceOption::Function(ChatCompletionNamedToolChoice { function }) => {
+            Ok(ToolChoiceParam::Function(ToolChoiceFunction {
+                name: function.name.clone(),
+            }))
+        }
+        ChatCompletionToolChoiceOption::Custom(_custom) => {
+            // Custom tool choice not currently supported, default to None
+            Ok(ToolChoiceParam::Mode(ResponsesToolChoiceOptions::None))
+        }
+        ChatCompletionToolChoiceOption::AllowedTools(_allowed_tools) => {
+            // Allowed tools choice not currently supported, default to Auto
+            Ok(ToolChoiceParam::Mode(ResponsesToolChoiceOptions::Auto))
+        }
     }
 }
 
-fn convert_tools(chat_tools: &[ChatCompletionTool]) -> Result<Vec<ToolDefinition>, OxyError> {
+fn convert_tools(chat_tools: &[ChatCompletionTool]) -> Result<Vec<Tool>, OxyError> {
     chat_tools
         .iter()
         .map(|tool| {
-            Ok(ToolDefinition::Function(ResponseFunction {
+            Ok(Tool::Function(FunctionTool {
                 name: tool.function.name.clone(),
-                parameters: tool
-                    .function
-                    .parameters
-                    .clone()
-                    .unwrap_or(serde_json::json!({})),
-                strict: tool.function.strict.unwrap_or(false),
+                parameters: tool.function.parameters.clone(),
+                strict: tool.function.strict,
                 description: tool.function.description.clone(),
             }))
         })
@@ -418,7 +472,7 @@ impl OpenAIResponseExecutable {
         tracing::debug!("Building response for response_input: {:?}", response_input);
 
         if let Some(reasoning_config) = &self.reasoning_config {
-            builder.reasoning(OpenAIReasoningConfig {
+            builder.reasoning(Reasoning {
                 effort: Some(reasoning_config.effort.clone().into()),
                 summary: Some(ReasoningSummary::Auto),
             });
@@ -442,7 +496,7 @@ impl OpenAIResponseExecutable {
 
     async fn process_stream(
         &self,
-        mut event_stream: impl Stream<Item = Result<ResponseEvent, OpenAIError>> + Unpin + Send,
+        mut event_stream: impl Stream<Item = Result<ResponseStreamEvent, OpenAIError>> + Unpin + Send,
         execution_context: &ExecutionContext,
     ) -> Result<OpenAIExecutableResponse, backoff::Error<OxyError>> {
         let mut content = String::new();
@@ -462,7 +516,7 @@ impl OpenAIResponseExecutable {
         })? {
             tracing::trace!("Received response event: {:?}", event);
             match event {
-                ResponseEvent::ResponseOutputTextDelta(delta_event) => {
+                ResponseStreamEvent::ResponseOutputTextDelta(delta_event) => {
                     let message = &delta_event.delta;
                     self.process_content_chunk(
                         execution_context,
@@ -475,33 +529,33 @@ impl OpenAIResponseExecutable {
                     .await
                     .map_err(backoff::Error::Permanent)?;
                 }
-                ResponseEvent::ResponseOutputItemAdded(added_event) => {
+                ResponseStreamEvent::ResponseOutputItemAdded(added_event) => {
                     if let OutputItem::FunctionCall(ref func_call) = added_event.item {
-                        let item_id = func_call.id.clone();
-                        item_to_output_index.insert(item_id.clone(), added_event.output_index);
+                        if let Some(item_id) = func_call.id.clone() {
+                            item_to_output_index.insert(item_id.clone(), added_event.output_index);
 
-                        tracing::debug!(
-                            "Function call item added - call_id: {}, name: {}, item_id: {}, output_index: {}",
-                            func_call.call_id,
-                            func_call.name,
-                            item_id,
-                            added_event.output_index
-                        );
+                            tracing::debug!(
+                                "Function call item added - call_id: {}, name: {}, item_id: {}, output_index: {}",
+                                func_call.call_id,
+                                func_call.name,
+                                item_id,
+                                added_event.output_index
+                            );
 
-                        tool_calls.insert(
-                            item_id,
-                            ChatCompletionMessageToolCall {
-                                id: func_call.call_id.clone(),
-                                r#type: ChatCompletionToolType::Function,
-                                function: FunctionCall {
-                                    name: func_call.name.clone(),
-                                    arguments: String::new(),
+                            tool_calls.insert(
+                                item_id,
+                                ChatCompletionMessageToolCall {
+                                    id: func_call.call_id.clone(),
+                                    function: FunctionCall {
+                                        name: func_call.name.clone(),
+                                        arguments: String::new(),
+                                    },
                                 },
-                            },
-                        );
+                            );
+                        }
                     }
                 }
-                ResponseEvent::ResponseCompleted(completed) => {
+                ResponseStreamEvent::ResponseCompleted(completed) => {
                     if let Some(usage_data) = completed.response.usage {
                         execution_context
                             .write_usage(Usage::new(
@@ -513,7 +567,7 @@ impl OpenAIResponseExecutable {
                     }
                     break;
                 }
-                ResponseEvent::ResponseFunctionCallArgumentsDelta(func_delta) => {
+                ResponseStreamEvent::ResponseFunctionCallArgumentsDelta(func_delta) => {
                     let item_id = &func_delta.item_id;
 
                     tracing::debug!(
@@ -528,34 +582,36 @@ impl OpenAIResponseExecutable {
                         tracing::warn!("Received arguments delta for unknown item_id: {}", item_id);
                     }
                 }
-                ResponseEvent::ResponseOutputItemDone(done_event) => {
+                ResponseStreamEvent::ResponseOutputItemDone(done_event) => {
                     if let OutputItem::FunctionCall(func_call) = done_event.item {
                         let item_id = func_call.id.clone();
 
                         tracing::debug!(
-                            "Function call completed - item_id: {}, call_id: {}, name: {}, arguments length: {}",
+                            "Function call completed - item_id: {:?}, call_id: {}, name: {}, arguments length: {}",
                             item_id,
                             func_call.call_id,
                             func_call.name,
                             func_call.arguments.len()
                         );
 
-                        if let Some(tool_call) = tool_calls.get_mut(&item_id) {
-                            if tool_call.function.arguments.is_empty()
-                                || tool_call.function.arguments != func_call.arguments
-                            {
-                                tool_call.function.arguments = func_call.arguments;
+                        if let Some(ref id) = item_id {
+                            if let Some(tool_call) = tool_calls.get_mut(id) {
+                                if tool_call.function.arguments.is_empty()
+                                    || tool_call.function.arguments != func_call.arguments
+                                {
+                                    tool_call.function.arguments = func_call.arguments;
+                                }
                             }
                         }
                     }
                 }
-                ResponseEvent::ResponseError(error) => {
+                ResponseStreamEvent::ResponseError(error) => {
                     return Err(backoff::Error::Permanent(OxyError::RuntimeError(format!(
                         "Response API error: {}",
                         error.message
                     ))));
                 }
-                ResponseEvent::ResponseReasoningSummaryTextDelta(delta_event) => {
+                ResponseStreamEvent::ResponseReasoningSummaryTextDelta(delta_event) => {
                     let reasoning_delta = &delta_event.delta;
                     execution_context
                         .write_chunk(Chunk {
@@ -566,7 +622,7 @@ impl OpenAIResponseExecutable {
                         .await
                         .map_err(backoff::Error::Permanent)?;
                 }
-                ResponseEvent::ResponseReasoningSummaryTextDone(done_event) => {
+                ResponseStreamEvent::ResponseReasoningSummaryTextDone(done_event) => {
                     tracing::debug!(
                         "Reasoning summary complete - item_id: {}, summary_index: {}, total text length: {}",
                         done_event.item_id,
@@ -593,7 +649,7 @@ impl OpenAIResponseExecutable {
                             .map_err(backoff::Error::Permanent)?;
                     }
                 }
-                ResponseEvent::ResponseReasoningSummaryPartAdded(part_event) => {
+                ResponseStreamEvent::ResponseReasoningSummaryPartAdded(part_event) => {
                     tracing::debug!(
                         "Reasoning summary part added - item_id: {}, summary_index: {}",
                         part_event.item_id,
@@ -615,26 +671,11 @@ impl OpenAIResponseExecutable {
                             .map_err(backoff::Error::Permanent)?;
                     }
                 }
-                ResponseEvent::ResponseReasoningSummaryPartDone(part_event) => {
+                ResponseStreamEvent::ResponseReasoningSummaryPartDone(part_event) => {
                     tracing::debug!(
                         "Reasoning summary part done - item_id: {}, summary_index: {}",
                         part_event.item_id,
                         part_event.summary_index
-                    );
-                }
-                ResponseEvent::ResponseReasoningSummaryDelta(delta_event) => {
-                    tracing::debug!(
-                        "Reasoning summary delta - item_id: {}, summary_index: {}",
-                        delta_event.item_id,
-                        delta_event.summary_index
-                    );
-                }
-                ResponseEvent::ResponseReasoningSummaryDone(done_event) => {
-                    tracing::debug!(
-                        "Reasoning summary done - item_id: {}, summary_index: {}, text length: {}",
-                        done_event.item_id,
-                        done_event.summary_index,
-                        done_event.text.len()
                     );
                 }
                 _ => {

@@ -17,6 +17,7 @@ pub(super) struct FileStorage {
 }
 
 impl FileStorage {
+    #[allow(dead_code)]
     pub fn new<P: AsRef<Path>>(dir: P) -> Self {
         FileStorage {
             dir: dir.as_ref().to_path_buf(),
@@ -24,6 +25,7 @@ impl FileStorage {
         }
     }
 
+    #[allow(dead_code)]
     async fn get_root_path(&self, root_id: &str) -> Result<PathBuf, OxyError> {
         let root_path = self.dir.join(slugify::slugify(root_id, "", "_", None));
         create_dir_all(&root_path).await.map_err(|err| {

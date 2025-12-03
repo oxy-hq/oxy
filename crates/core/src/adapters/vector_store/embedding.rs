@@ -1,4 +1,4 @@
-use async_openai::types::{CreateEmbeddingRequestArgs, EmbeddingInput};
+use async_openai::types::embeddings::{CreateEmbeddingRequestArgs, EmbeddingInput};
 
 use crate::{
     adapters::{openai::OpenAIClient, vector_store::types::Embedding},

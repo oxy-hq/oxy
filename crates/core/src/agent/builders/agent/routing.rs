@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use async_openai::types::ChatCompletionTool;
+use async_openai::types::chat::ChatCompletionTool;
 use fallback::FallbackAgent;
 use oxy_semantic::Topic;
 
@@ -13,7 +13,7 @@ use crate::{
     agent::{
         OpenAIExecutableResponse,
         builders::{
-            openai::{OneShotInput, OpenAIExecutable, SimpleMapper, build_openai_executable},
+            openai::{OneShotInput, SimpleMapper, build_openai_executable},
             tool::OpenAITool,
         },
     },
@@ -48,6 +48,7 @@ pub(super) struct RoutingAgentInput {
     pub reasoning_config: Option<ReasoningConfig>,
 }
 
+#[allow(dead_code)]
 pub struct OmniRoute {
     pub integration_name: String,
     pub topic_pattern: Option<String>, // None means full wildcard
@@ -493,7 +494,7 @@ async fn build_react_loop(
         model.model_name().to_string(),
         deduplicated_tools,
         None,
-        reasoning_config.map(|rc| rc.into()),
+        reasoning_config,
         synthesize_results,
     )))
 }

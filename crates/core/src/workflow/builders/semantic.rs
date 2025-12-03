@@ -823,7 +823,7 @@ impl SemanticQueryExecutable {
     /// Resolve variables in SQL query using RuntimeVariableResolver
     fn resolve_variables_in_sql(
         &self,
-        execution_context: &ExecutionContext,
+        _execution_context: &ExecutionContext,
         sql_query: String,
         variables: HashMap<String, JsonValue>,
     ) -> Result<String, OxyError> {

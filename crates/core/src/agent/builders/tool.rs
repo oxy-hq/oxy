@@ -1,6 +1,7 @@
-use async_openai::types::{
-    ChatCompletionMessageToolCall, ChatCompletionRequestAssistantMessageArgs,
-    ChatCompletionRequestMessage, ChatCompletionRequestToolMessageArgs,
+use async_openai::types::chat::{
+    ChatCompletionMessageToolCall, ChatCompletionMessageToolCalls,
+    ChatCompletionRequestAssistantMessageArgs, ChatCompletionRequestMessage,
+    ChatCompletionRequestToolMessageArgs,
 };
 
 use crate::{
@@ -99,7 +100,13 @@ impl Executable<OpenAIExecutableResponse> for OpenAITool {
             .collect();
         let tool_rets = tool_rets?;
         let agent_message = ChatCompletionRequestAssistantMessageArgs::default()
-            .tool_calls(input.tool_calls)
+            .tool_calls(
+                input
+                    .tool_calls
+                    .into_iter()
+                    .map(|tc| ChatCompletionMessageToolCalls::Function(tc))
+                    .collect::<Vec<ChatCompletionMessageToolCalls>>(),
+            )
             .build()?;
         let mut result = vec![agent_message.into()];
         result.extend_from_slice(&tool_rets);

@@ -1,12 +1,15 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/oxy-hq/oxy/refs/heads/main/json-schemas/agent.json
 
-model: "openai-4o-mini"
+model: "gpt-5-mini-2025-08-07"
 description: "An agent that can answer business questions like users, website visit ."
 context:
   - name: queries
     type: file
     src:
       - 'data/*.sql'
+  
+reasoning:
+  effort: low
 
 system_instructions: |
   ## Instructions

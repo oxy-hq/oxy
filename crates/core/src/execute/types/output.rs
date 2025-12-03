@@ -73,7 +73,7 @@ impl Output {
             Output::Bool(b) => Ok(Data::Bool(*b)),
             Output::Prompt(prompt) => Ok(Data::Text(prompt.to_string())),
             Output::Documents(_) => Ok(Data::None),
-            Output::OmniQuery(omni_query_params) => {
+            Output::OmniQuery(_) => {
                 // this contains the params of omni query, not useful to return as data
                 Ok(Data::None)
             }

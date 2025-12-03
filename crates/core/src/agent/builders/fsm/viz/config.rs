@@ -1,4 +1,4 @@
-use async_openai::types::{ChatCompletionTool, ChatCompletionToolType, FunctionObject};
+use async_openai::types::chat::{ChatCompletionTool, FunctionObject};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -37,7 +37,6 @@ impl Visualize {
     pub fn get_tool(&self) -> ChatCompletionTool {
         let schema = serde_json::from_str(VIZ_SCHEMA).expect("Failed to parse VizParams schema");
         ChatCompletionTool {
-            r#type: ChatCompletionToolType::Function,
             function: FunctionObject {
                 name: self.name.clone(),
                 description: Some(self.description.clone()),

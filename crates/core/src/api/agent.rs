@@ -691,7 +691,7 @@ impl ChatHandler for AgentExecutor {
             .with_logs_persister(context.logs_persister.clone());
         let block_handler_reader = block_handler.get_reader();
 
-        let result = run_agent(
+        let result: Result<crate::execute::types::OutputContainer, OxyError> = run_agent(
             self.project_manager.clone(),
             &agent_path,
             context.user_question.clone(),

@@ -1,4 +1,4 @@
-use async_openai::types::{
+use async_openai::types::chat::{
     ChatCompletionRequestAssistantMessage, ChatCompletionRequestAssistantMessageContent,
     ChatCompletionRequestMessage, ChatCompletionRequestSystemMessage,
     ChatCompletionRequestSystemMessageContent,
@@ -30,6 +30,7 @@ use crate::{
 };
 
 pub struct BuildDataApp<S> {
+    #[allow(dead_code)]
     objective: String,
     _state: std::marker::PhantomData<S>,
 }

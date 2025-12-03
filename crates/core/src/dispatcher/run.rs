@@ -111,7 +111,7 @@ impl Dispatcher {
                         }
                     }
                     res = run_fut => {
-                        let output = match res {
+                        let _output = match res {
                             Ok(value) => {
                                 tracing::info!("Task {task_id} completed successfully");
                                 Some(value)

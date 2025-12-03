@@ -1,8 +1,9 @@
-use async_openai::types::{
-    ChatCompletionMessageToolCall, ChatCompletionRequestAssistantMessage,
-    ChatCompletionRequestAssistantMessageContent, ChatCompletionRequestMessage,
-    ChatCompletionRequestToolMessage, ChatCompletionRequestToolMessageContent,
-    ChatCompletionRequestUserMessage, ChatCompletionRequestUserMessageContent,
+use async_openai::types::chat::{
+    ChatCompletionMessageToolCall, ChatCompletionMessageToolCalls,
+    ChatCompletionRequestAssistantMessage, ChatCompletionRequestAssistantMessageContent,
+    ChatCompletionRequestMessage, ChatCompletionRequestToolMessage,
+    ChatCompletionRequestToolMessageContent, ChatCompletionRequestUserMessage,
+    ChatCompletionRequestUserMessageContent,
 };
 
 use crate::agent::builders::fsm::control::TransitionContext;
@@ -11,6 +12,7 @@ use crate::agent::builders::fsm::control::TransitionContext;
 pub struct Memory {
     transition_name: String,
     user_query: String,
+    #[allow(dead_code)]
     instruction: String,
     intent: String,
     synthesized_output: String,
@@ -85,7 +87,9 @@ impl TransitionContext for Memory {
                 content: Some(ChatCompletionRequestAssistantMessageContent::Text(
                     objective.to_string(),
                 )),
-                tool_calls: Some(vec![tool_call.clone()]),
+                tool_calls: Some(vec![ChatCompletionMessageToolCalls::Function(
+                    tool_call.clone(),
+                )]),
                 ..Default::default()
             }
             .into(),

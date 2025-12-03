@@ -10,10 +10,7 @@ use std::collections::HashMap;
 
 use serde_json::Value;
 
-use crate::{
-    adapters::session_filters::{FilterProcessor, SessionFilters},
-    config::ConfigManager,
-};
+use crate::{adapters::session_filters::SessionFilters, config::ConfigManager};
 
 /// Extracts and validates session filters from MCP meta parameter.
 ///
@@ -40,7 +37,7 @@ use crate::{
 /// - Required filters are missing
 pub fn extract_session_filters(
     meta: Option<&serde_json::Map<String, Value>>,
-    config_manager: &ConfigManager,
+    _config_manager: &ConfigManager,
 ) -> Result<Option<SessionFilters>, rmcp::ErrorData> {
     let filters_value = meta.and_then(|m| m.get("filters")).cloned();
 

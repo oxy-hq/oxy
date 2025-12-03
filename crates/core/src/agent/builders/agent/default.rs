@@ -1,6 +1,6 @@
 use crate::adapters::openai::{AsyncFunctionObject, IntoOpenAIConfig};
 use crate::agent::OpenAIExecutableResponse;
-use crate::agent::builders::openai::{OpenAIExecutable, build_openai_executable};
+use crate::agent::builders::openai::build_openai_executable;
 use crate::agent::builders::tool::OpenAITool;
 use crate::agent::contexts::Contexts;
 use crate::agent::databases::DatabasesContext;
@@ -23,7 +23,7 @@ use crate::{
         types::{Chunk, Prompt},
     },
 };
-use async_openai::types::{
+use async_openai::types::chat::{
     ChatCompletionRequestAssistantMessageArgs, ChatCompletionRequestMessage,
     ChatCompletionRequestSystemMessageArgs, ChatCompletionRequestUserMessageArgs,
     ChatCompletionTool,

@@ -67,7 +67,7 @@ pub async fn start_mcp_sse_server(
         .allow_origin(Any)
         .allow_methods(Any)
         .allow_headers(Any);
-    let (sseServer, mut sseRouter) = SseServer::new(SseServerConfig {
+    let (sse_server, mut sse_router) = SseServer::new(SseServerConfig {
         bind,
         sse_path: "/sse".to_string(),
         post_path: "/message".to_string(),
@@ -75,11 +75,11 @@ pub async fn start_mcp_sse_server(
         sse_keep_alive: None,
     });
 
-    sseRouter = sseRouter.layer(cors_layer);
-    let ct = sseServer.with_service(move || service.to_owned());
+    sse_router = sse_router.layer(cors_layer);
+    let ct = sse_server.with_service(move || service.to_owned());
     let serve_ct = ct.child_token();
     let listener = tokio::net::TcpListener::bind(bind).await?;
-    let server = axum::serve(listener, sseRouter).with_graceful_shutdown(async move {
+    let server = axum::serve(listener, sse_router).with_graceful_shutdown(async move {
         serve_ct.cancelled().await;
         tracing::info!("sse server cancelled");
     });

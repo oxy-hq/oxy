@@ -19,7 +19,7 @@ use crate::{
     theme::StyledText,
     utils::print_colored_sql,
 };
-use async_openai::types::{
+use async_openai::types::chat::{
     ChatCompletionRequestAssistantMessage, ChatCompletionRequestAssistantMessageContent,
     ChatCompletionRequestMessage, ChatCompletionRequestUserMessage,
     ChatCompletionRequestUserMessageContent,

@@ -2805,14 +2805,6 @@ fn default_semantic_query_tool_description() -> String {
     "Query the database via the semantic layer.".to_string()
 }
 
-fn default_cube_url() -> String {
-    "http://localhost:4000".to_string()
-}
-
-fn default_omni_tool_description() -> String {
-    "Execute query on the database. Construct from Omni semantic model.".to_string()
-}
-
 fn default_validate_sql_tool_description() -> String {
     "Validate the SQL query. If the query is invalid, fix it and run again.".to_string()
 }

@@ -1,7 +1,6 @@
 use crate::{
     agent::builders::fsm::{
         control::TransitionContext,
-        query::PrepareData,
         states::{data_app::DataAppState, qa::QAState, query::QueryState},
         subflow::trigger::CollectArtifact,
     },
@@ -11,27 +10,36 @@ use crate::{
 
 #[derive(Debug, Clone)]
 pub enum AgenticArtifactType {
+    #[allow(dead_code)]
     Viz {
         description: String,
         params: VizParams,
     },
     Dataset {
+        #[allow(dead_code)]
         description: String,
+        #[allow(dead_code)]
         tables: Vec<Table>,
     },
     App {
+        #[allow(dead_code)]
         description: String,
+        #[allow(dead_code)]
         app_config: AppConfig,
     },
     QA {
+        #[allow(dead_code)]
         question: String,
+        #[allow(dead_code)]
         response: String,
     },
 }
 
 #[derive(Debug, Clone)]
 pub struct AgenticArtifact {
+    #[allow(dead_code)]
     name: String,
+    #[allow(dead_code)]
     artifact_type: AgenticArtifactType,
 }
 
@@ -44,6 +52,7 @@ impl ArtifactsState {
         Self { artifacts: vec![] }
     }
 
+    #[allow(dead_code)]
     pub fn get_artifacts(&self) -> &[AgenticArtifact] {
         &self.artifacts
     }

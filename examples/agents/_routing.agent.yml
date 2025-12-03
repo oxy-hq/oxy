@@ -1,7 +1,8 @@
-model: "openai-o4-mini"
+model: "gpt-5-mini-2025-08-07"
 type: routing
 reasoning:
   effort: low
+
 # system_instructions: |
 #   You are a routing agent responsible for directing tasks to the appropriate tools. Follow the steps below to complete your task:
 #   1. Analyze the Task: Carefully assess the user's request to determine the most relevant tool for handling it.

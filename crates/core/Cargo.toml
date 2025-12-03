@@ -16,7 +16,7 @@ anyhow = "1.0.100"
 argon2 = "0.5"
 arrow = { version = "=54.2.1", default-features = false, features = ["json"] } # arrow version has to comply with duckdb version
 assert_cmd = "2.1.1"
-async-openai = {version = "0.30.1", features = ["byot"]}
+async-openai = { version = "0.31.1", features = ["byot", "chat-completion-types", "response-types", "_api", "responses", "chat-completion", "embedding-types", "embedding"] }
 async-stream = "0.3.6"
 async-trait = "0.1.89"
 axum = { version = "0.8.7", features = ["macros", "http2"] }

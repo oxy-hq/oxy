@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use async_openai::types::{
+use async_openai::types::chat::{
     ChatCompletionMessageToolCall, ChatCompletionRequestMessage,
     ChatCompletionRequestSystemMessage, ChatCompletionRequestSystemMessageContent,
     ChatCompletionRequestUserMessage, ChatCompletionRequestUserMessageContent,

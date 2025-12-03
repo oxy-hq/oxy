@@ -2,7 +2,7 @@ use axum::{
     body::Bytes,
     extract::{Json, Query},
     http::HeaderMap,
-    response::{Json as ResponseJson, Redirect},
+    response::Json as ResponseJson,
 };
 use chrono::{DateTime, Duration, Utc};
 use hmac::{Hmac, Mac};
@@ -13,12 +13,12 @@ use sha2::Sha256;
 use tracing::error;
 use uuid::Uuid;
 
+use crate::auth::extractor::AuthenticatedUserExtractor;
 use crate::db::client::establish_connection;
 use crate::github::app_auth::GitHubAppAuth;
 use crate::github::client::GitHubClient;
 use crate::github::types::{GitHubBranch, GitHubRepository};
 use crate::github::webhook;
-use crate::{api::user, auth::extractor::AuthenticatedUserExtractor};
 
 #[derive(Debug, Serialize)]
 pub struct GitHubNamespace {
@@ -71,7 +71,7 @@ pub struct GitHubCallbackQuery {
 pub async fn gen_install_app_url(
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
 ) -> Result<ResponseJson<String>, axum::http::StatusCode> {
-    let app_id = std::env::var("GITHUB_APP_ID").map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let _app_id = std::env::var("GITHUB_APP_ID").map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let timestamp = chrono::Utc::now().timestamp();
     let state_data = format!("{}:{}", user.id, timestamp);

@@ -274,18 +274,13 @@ struct SQLToolInput {
 struct SQLMapper;
 
 #[derive(Clone)]
-struct OmniMapper;
-
-#[derive(Clone)]
-struct OmniTopicInfoMapper;
-
-#[derive(Clone)]
 struct CreateDataAppMapper;
 
 #[derive(Clone)]
 struct SemanticQueryMapper;
 
 #[derive(Clone)]
+#[allow(dead_code)]
 struct OmniQueryMapper;
 
 #[async_trait::async_trait]

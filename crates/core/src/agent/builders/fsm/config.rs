@@ -11,9 +11,7 @@ use crate::{
     execute::{renderer::TemplateRegister, types::event::StepKind},
 };
 
-use async_openai::types::{
-    ChatCompletionRequestMessage, ChatCompletionTool, ChatCompletionToolType, FunctionObject,
-};
+use async_openai::types::chat::{ChatCompletionRequestMessage, ChatCompletionTool, FunctionObject};
 use itertools::Itertools;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -211,7 +209,6 @@ pub struct TransitionObjective {
 impl Transition {
     pub fn get_tool(&self) -> ChatCompletionTool {
         ChatCompletionTool {
-            r#type: ChatCompletionToolType::Function,
             function: FunctionObject {
                 name: self.trigger.get_name().to_string(),
                 description: Some(self.trigger.get_description().to_string()),

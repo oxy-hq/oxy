@@ -3,13 +3,15 @@ use async_openai::{
     Client,
     config::{AzureConfig, Config, OpenAIConfig},
     types::{
-        ChatCompletionMessageToolCall, ChatCompletionMessageToolCallChunk,
-        ChatCompletionNamedToolChoice, ChatCompletionRequestMessage, ChatCompletionTool,
-        ChatCompletionToolArgs, ChatCompletionToolChoiceOption, ChatCompletionToolType,
-        CreateChatCompletionRequestArgs, CreateChatCompletionResponse,
-        CreateChatCompletionStreamResponse, FunctionName, FunctionObject, FunctionObjectArgs,
-        ReasoningEffort as OpenAIReasoningEffort,
-        responses::ReasoningConfig as OpenAIReasoningConfig,
+        chat::{
+            ChatCompletionMessageToolCall, ChatCompletionMessageToolCallChunk,
+            ChatCompletionMessageToolCalls, ChatCompletionNamedToolChoice,
+            ChatCompletionRequestMessage, ChatCompletionTool, ChatCompletionToolChoiceOption,
+            ChatCompletionTools, CreateChatCompletionRequestArgs, CreateChatCompletionResponse,
+            CreateChatCompletionStreamResponse, FunctionName, FunctionObject, FunctionObjectArgs,
+            ReasoningEffort as OpenAIReasoningEffort,
+        },
+        responses::Reasoning,
     },
 };
 use axum::http::{HeaderMap, HeaderName, HeaderValue};
@@ -433,7 +435,6 @@ impl OpenAIToolConfig for &ToolType {
 impl From<ToolType> for ChatCompletionNamedToolChoice {
     fn from(val: ToolType) -> Self {
         ChatCompletionNamedToolChoice {
-            r#type: ChatCompletionToolType::Function,
             function: FunctionName {
                 name: (&val).handle(),
             },
@@ -451,9 +452,9 @@ impl From<ReasoningEffort> for OpenAIReasoningEffort {
     }
 }
 
-impl From<ReasoningConfig> for OpenAIReasoningConfig {
+impl From<ReasoningConfig> for Reasoning {
     fn from(reasoning_config: ReasoningConfig) -> Self {
-        OpenAIReasoningConfig {
+        Reasoning {
             effort: Some(reasoning_config.effort.into()),
             ..Default::default()
         }
@@ -678,10 +679,10 @@ impl AsyncFunctionObject for FunctionObject {
 
 impl AsyncFunctionObject for ChatCompletionTool {
     async fn from_tool_async(tool: &ToolType, config: &ConfigManager) -> Self {
-        ChatCompletionToolArgs::default()
-            .function::<FunctionObject>(FunctionObject::from_tool_async(tool, config).await)
-            .build()
-            .unwrap()
+        let function_obj = FunctionObject::from_tool_async(tool, config).await;
+        ChatCompletionTool {
+            function: function_obj,
+        }
     }
 }
 
@@ -742,7 +743,12 @@ impl OpenAIAdapter {
         parallel_tool_calls: Option<bool>,
     ) -> Result<Vec<ChatCompletionMessageToolCall>, OxyError> {
         let mut request_builder = self.request_builder(messages);
-        request_builder.tools(tools);
+        let tools_vec: Vec<ChatCompletionTool> = tools.into();
+        let tools_wrapped: Vec<ChatCompletionTools> = tools_vec
+            .into_iter()
+            .map(|t| ChatCompletionTools::Function(t))
+            .collect();
+        request_builder.tools(tools_wrapped);
 
         if let Some(tool_choice) = tool_choice {
             request_builder.tool_choice(tool_choice);
@@ -812,7 +818,13 @@ impl OpenAIAdapter {
         tool_choice: Option<ChatCompletionToolChoiceOption>,
     ) -> Result<impl tokio_stream::Stream<Item = Result<StreamChunk, OxyError>>, OxyError> {
         let mut request_builder = self.request_builder(messages);
-        request_builder.tools(tools);
+        let tools_vec: Vec<ChatCompletionTool> = tools.into();
+        let tools_wrapped: Vec<ChatCompletionTools> = tools_vec
+            .into_iter()
+            .map(|t| ChatCompletionTools::Function(t))
+            .collect();
+
+        request_builder.tools(tools_wrapped);
         if let Some(tool_choice) = tool_choice {
             request_builder.tool_choice(tool_choice);
         }
@@ -914,6 +926,15 @@ impl OpenAIAdapter {
             .choices
             .first()
             .and_then(|choice| choice.message.tool_calls.clone())
+            .map(|tool_calls| {
+                tool_calls
+                    .into_iter()
+                    .filter_map(|tc| match tc {
+                        ChatCompletionMessageToolCalls::Function(func_call) => Some(func_call),
+                        ChatCompletionMessageToolCalls::Custom(_) => None,
+                    })
+                    .collect()
+            })
             .unwrap_or_default()
     }
 

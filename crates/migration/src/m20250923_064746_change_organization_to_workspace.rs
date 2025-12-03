@@ -7,12 +7,14 @@ pub struct Migration;
 #[derive(Iden)]
 enum Organizations {
     Table,
+    #[allow(dead_code)]
     OrganizationId,
 }
 
 #[derive(Iden)]
 enum Workspaces {
     Table,
+    #[allow(dead_code)]
     WorkspaceId,
 }
 

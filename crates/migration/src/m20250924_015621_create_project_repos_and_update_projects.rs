@@ -99,7 +99,9 @@ enum ProjectRepos {
     Table,
     Id,
     RepoId,
+    #[allow(dead_code)]
     Token,
+    #[allow(dead_code)]
     Provider,
     CreatedAt,
     UpdatedAt,
