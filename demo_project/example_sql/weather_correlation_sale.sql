@@ -3,8 +3,8 @@
     database: local
     embed:
       - Is there a correlation between temperature and weekly sales
-      - Effect of temparature on sales
-      - Correlation between temparature and sales
+      - Effect of temperature on sales
+      - Correlation between temperature and sales
 */
 SELECT
     CASE
