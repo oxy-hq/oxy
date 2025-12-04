@@ -28,16 +28,29 @@ Once you have your terminal set up, follow the steps below:
   <Step title="Install oxy">
     Install oxy by running the following within your Mac/Linux/WSL terminal:
 
-    ```bash
-    bash <(curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/oxy-hq/oxy/refs/heads/main/install_oxy.sh)
-    ```
+    <Tabs>
+      <Tab title="Stable Release (Recommended)">
+        ```bash
+        bash <(curl --proto '=https' --tlsv1.2 -LsSf https://get.oxy.tech)
+        ```
+
+        This installs the latest stable release of Oxy.
+      </Tab>
+      <Tab title="Edge Build">
+        ```bash
+        bash <(curl --proto '=https' --tlsv1.2 -LsSf https://nightly.oxy.tech)
+        ```
+
+        This installs the latest edge build with the newest features and fixes from the main branch.
+      </Tab>
+    </Tabs>
 
     Upon successful installation, you should see the message "Oxy has been installed successfully."
 
     You may need to restart your terminal for the command to be recognized.
 
     <Info>
-      For transparency, you can review the [installation script's source code](https://github.com/oxy-hq/oxy/blob/main/install_oxy.sh).
+      For transparency, you can review the installation script source code: [stable release](https://github.com/oxy-hq/oxy/blob/main/install_oxy.sh) or [edge/nightly builds](https://github.com/oxy-hq/oxy-internal/blob/main/install_oxy_nightly.sh).
     </Info>
 
     <Accordion title="Verify Your Installation (Optional)">
@@ -47,6 +60,23 @@ Once you have your terminal set up, follow the steps below:
       oxy --version
       ```
 
+    </Accordion>
+
+    <Accordion title="More Installation Options">
+      **Install specific versions:**
+
+      ```bash
+      # Specific stable version
+      OXY_VERSION="0.1.0" bash <(curl --proto '=https' --tlsv1.2 -LsSf https://get.oxy.tech)
+
+      # Specific edge build
+      OXY_VERSION=edge-7cbf0a5 bash <(curl --proto '=https' --tlsv1.2 -LsSf https://nightly.oxy.tech)
+
+      # Nightly build (scheduled daily)
+      OXY_CHANNEL=nightly bash <(curl --proto '=https' --tlsv1.2 -LsSf https://nightly.oxy.tech)
+      ```
+
+      Browse all available edge and nightly releases at [oxy-hq/oxy-nightly](https://github.com/oxy-hq/oxy-nightly/releases).
     </Accordion>
   </Step>
 

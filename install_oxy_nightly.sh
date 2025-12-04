@@ -11,7 +11,10 @@ fi
 # Ensure the install directory exists
 mkdir -p "$INSTALL_DIR"
 
-# Get the version to install from the environment, default to the latest release tag if not provided
+# Get the channel (edge or nightly) and version from environment variables
+# Channel: 'edge' for latest main builds, 'nightly' for scheduled daily builds
+# Version: specific tag (e.g., 'edge-7cbf0a5', 'nightly-20251204-7cbf0a5') or 'latest'
+CHANNEL=${OXY_CHANNEL:-edge}
 VERSION=${OXY_VERSION:-latest}
 
 # Determine the OS and architecture
@@ -59,14 +62,29 @@ aarch64 | arm64)
 	;;
 esac
 
-# Download the release binary
+# Determine the tag to download
 if [ "$VERSION" == "latest" ]; then
-	BINARY_URL="https://github.com/$REPO/releases/latest/download/oxy-$TARGET"
+	# For 'latest', use the GitHub latest release (which is always the most recent edge or nightly)
+	TAG="latest"
+	echo "Installing latest $CHANNEL build of Oxy..."
 else
-	BINARY_URL="https://github.com/$REPO/releases/download/$VERSION/oxy-$TARGET"
+	# Use the specific version tag provided
+	TAG="$VERSION"
+	echo "Installing Oxy version $TAG..."
 fi
 
-curl -L $BINARY_URL -o oxy-$TARGET
+# Download the release binary
+if [ "$TAG" == "latest" ]; then
+	BINARY_URL="https://github.com/$REPO/releases/latest/download/oxy-$TARGET"
+else
+	BINARY_URL="https://github.com/$REPO/releases/download/$TAG/oxy-$TARGET"
+fi
+
+echo "Downloading from: $BINARY_URL"
+if ! curl -L "$BINARY_URL" -o oxy-$TARGET; then
+	echo "Error: Failed to download Oxy binary"
+	exit 1
+fi
 
 # Make the binary executable
 chmod +x oxy-$TARGET
@@ -74,4 +92,14 @@ chmod +x oxy-$TARGET
 # Move the binary to the install directory
 mv oxy-$TARGET $INSTALL_DIR/oxy
 
-echo "Oxy version $VERSION for $TARGET has been installed successfully!"
+echo ""
+echo "✅ Oxy has been installed successfully!"
+echo "   Location: $INSTALL_DIR/oxy"
+echo "   Target: $TARGET"
+if [ "$TAG" == "latest" ]; then
+	echo "   Channel: $CHANNEL (latest)"
+else
+	echo "   Version: $TAG"
+fi
+echo ""
+echo "Run 'oxy --version' to verify the installation."

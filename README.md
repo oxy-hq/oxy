@@ -40,6 +40,32 @@ brew install oxy-hq/oxy/oxy
 OXY_VERSION="0.1.0" bash <(curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/oxy-hq/oxy/refs/heads/main/install_oxy.sh)
 ```
 
+#### Installing Nightly/Edge Builds
+
+To install the latest edge build (built from main branch):
+
+```bash
+bash <(curl --proto '=https' --tlsv1.2 -LsSf https://nightly.oxy.tech)
+```
+
+To install the latest nightly build (scheduled daily):
+
+```bash
+OXY_CHANNEL=nightly bash <(curl --proto '=https' --tlsv1.2 -LsSf https://nightly.oxy.tech)
+```
+
+To install a specific edge or nightly version:
+
+```bash
+# Install specific edge build
+OXY_VERSION=edge-7cbf0a5 bash <(curl --proto '=https' --tlsv1.2 -LsSf https://nightly.oxy.tech)
+
+# Install specific nightly build
+OXY_VERSION=nightly-20251204-abc1234 bash <(curl --proto '=https' --tlsv1.2 -LsSf https://nightly.oxy.tech)
+```
+
+Browse all available nightly and edge releases at [oxy-hq/oxy-nightly](https://github.com/oxy-hq/oxy-nightly/releases).
+
 </details>
 
 To verify the installation, run:
