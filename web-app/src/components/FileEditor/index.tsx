@@ -66,7 +66,14 @@ const FileEditor = ({ readOnly = false, className }: Props) => {
           rapid resizes the Monaco canvas/scrollbar cannot visually spill
           outside of the editor bounds and overlap sibling panes.
         */}
-      <div className={cn("relative h-full w-full overflow-hidden", className)}>
+      <div
+        className={cn("relative h-full w-full overflow-hidden", className)}
+        onKeyDown={(e) => {
+          // Stop keyboard events from bubbling to parent ResizablePanelGroup
+          // which captures Space and other keys for panel resizing
+          e.stopPropagation();
+        }}
+      >
         <div className="absolute inset-0">
           {showDiff && originalContent ? (
             <DiffEditor
