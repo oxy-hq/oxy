@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.3.19](https://github.com/oxy-hq/oxy-internal/compare/0.3.18...0.3.19) (2025-12-04)
+
+
+### <!-- 0 -->🚀 Features
+
+* add customer demo project ([#1399](https://github.com/oxy-hq/oxy-internal/issues/1399)) ([d8df6fb](https://github.com/oxy-hq/oxy-internal/commit/d8df6fb23dae5c963824f62c94d0cbbdf0b48692))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* can not enter space in workflow IDE ([#1404](https://github.com/oxy-hq/oxy-internal/issues/1404)) ([06a2fc7](https://github.com/oxy-hq/oxy-internal/commit/06a2fc7ca57c47a4a3cb5ab76a192893baf46720))
+* update Playwright tests to wait for network idle state and increase navigation timeout ([f108bb7](https://github.com/oxy-hq/oxy-internal/commit/f108bb725d662e1849f5c18d4a7db9625b4af51f))
+
 ## [0.3.18](https://github.com/oxy-hq/oxy-internal/compare/0.3.17...0.3.18) (2025-11-27)
 
 

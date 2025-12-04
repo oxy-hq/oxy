@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.3.19](https://github.com/oxy-hq/oxy-internal/compare/0.3.18...0.3.19) (2025-12-04)
+
+
+### <!-- 0 -->🚀 Features
+
+* add customer demo project ([#1399](https://github.com/oxy-hq/oxy-internal/issues/1399)) ([d8df6fb](https://github.com/oxy-hq/oxy-internal/commit/d8df6fb23dae5c963824f62c94d0cbbdf0b48692))
+* enhance testing capabilities with JSON output and accuracy thresholds ([#1401](https://github.com/oxy-hq/oxy-internal/issues/1401)) ([c24f92c](https://github.com/oxy-hq/oxy-internal/commit/c24f92c0160fb012885053eede56de0c0fc7f74c))
+* heuristic chart render ([#1397](https://github.com/oxy-hq/oxy-internal/issues/1397)) ([395e37e](https://github.com/oxy-hq/oxy-internal/commit/395e37ed9062ba2175b6e01648cd62a3677bd9a8))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* tool choice error cause by async_openai ([#1395](https://github.com/oxy-hq/oxy-internal/issues/1395)) ([ace7888](https://github.com/oxy-hq/oxy-internal/commit/ace7888c5b490f12fe7daeefdd251692cbf13807))
+
 ## [0.3.18](https://github.com/oxy-hq/oxy-internal/compare/0.3.17...0.3.18) (2025-11-27)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.19](https://github.com/oxy-hq/oxy-internal/compare/0.3.18...0.3.19) (2025-12-04)
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* tool choice error cause by async_openai ([#1395](https://github.com/oxy-hq/oxy-internal/issues/1395)) ([ace7888](https://github.com/oxy-hq/oxy-internal/commit/ace7888c5b490f12fe7daeefdd251692cbf13807))
+
 ## [0.3.18](https://github.com/oxy-hq/oxy-internal/compare/0.3.17...0.3.18) (2025-11-27)
 
 ## [0.3.17](https://github.com/oxy-hq/oxy-internal/compare/0.3.16...0.3.17) (2025-11-20)

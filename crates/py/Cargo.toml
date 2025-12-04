@@ -1,6 +1,6 @@
 [package]
 name = "py"
-version = "0.3.18" # TODO: remove this when https://github.com/googleapis/release-please/issues number 2111 is fixed
+version = "0.3.19" # TODO: remove this when https://github.com/googleapis/release-please/issues number 2111 is fixed
 # version.workspace = true
 authors.workspace = true
 description.workspace = true
