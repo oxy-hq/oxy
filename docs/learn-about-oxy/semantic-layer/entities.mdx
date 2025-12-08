@@ -52,6 +52,33 @@ entities:
 
 *Note: Either `key` or `keys` must be provided, but not both.
 
+<Warning>
+**Important: Entity Keys Reference Dimension Names**
+
+The `key` and `keys` fields must reference **dimension names**, not database column names.
+
+For example, if your dimension is defined as:
+```yaml
+dimensions:
+  - name: customer_id        # lowercase with underscores
+    expr: CUSTOMER_ID         # database column (uppercase)
+    type: string
+```
+
+Your entity key should reference the dimension name:
+```yaml
+entities:
+  - name: customer
+    type: primary
+    key: customer_id          # ✅ Matches dimension name
+    # key: CUSTOMER_ID        # ❌ Wrong - this is the column name
+```
+
+This naming convention is critical because Oxy uses entity keys to:
+1. Mark dimensions as primary keys in the generated Cube.js schema
+2. Automatically generate join relationships between views
+</Warning>
+
 ## Simple Entity Keys
 
 Use the `key` property for entities with a single identifier:
