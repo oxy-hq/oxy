@@ -11,7 +11,7 @@ exclude.workspace = true
 
 [dependencies]
 # Core dependencies for HTTP client and async operations
-reqwest = { version = "0.12.24", features = ["json"] }
+reqwest = { version = "0.12.25", features = ["json"] }
 tokio = { workspace = true }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -19,10 +19,10 @@ serde_yaml = "0.9.34"
 
 # Error handling and validation
 thiserror = "2.0.17"
-garde = { version = "0.22.0", features = ["full"] }
+garde = { version = "0.22.1", features = ["full"] }
 
 # Logging and tracing
-tracing = "0.1.41"
+tracing = "0.1.43"
 
 # Utilities
 urlencoding = "2.1.3"
