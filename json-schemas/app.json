@@ -284,6 +284,13 @@
             "agent_ref": {
               "type": "string"
             },
+            "consistency_prompt": {
+              "description": "Custom consistency evaluation prompt for this specific task Overrides workflow-level consistency_prompt if specified",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
             "consistency_run": {
               "default": 1,
               "type": "integer",

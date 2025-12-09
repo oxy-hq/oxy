@@ -8,7 +8,8 @@
       "Bash(pkill:*)",
       "Bash(pnpm test:e2e:*)",
       "Bash(pnpm exec tsc:*)",
-      "Bash(pnpm exec playwright test:*)"
+      "Bash(pnpm exec playwright test:*)",
+      "Bash(oxy test:*)"
     ],
     "deny": [],
     "ask": []

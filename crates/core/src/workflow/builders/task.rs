@@ -54,6 +54,7 @@ pub(super) struct TaskInput {
     pub task: Task,
     pub value: Option<OutputContainer>,
     pub runtime_input: Option<RuntimeTaskInput>,
+    pub workflow_consistency_prompt: Option<String>,
 }
 
 impl Hash for TaskInput {
@@ -103,6 +104,7 @@ impl UpdateInput<OutputContainer> for TaskInput {
             task: self.task,
             value: Some(value.clone()),
             runtime_input: self.runtime_input,
+            workflow_consistency_prompt: self.workflow_consistency_prompt,
         }
     }
 }
@@ -128,6 +130,7 @@ impl Executable<TaskInput> for TaskExecutable {
             value,
             loop_idx: _,
             runtime_input,
+            workflow_consistency_prompt,
         } = input;
         let task_execution_context =
             execution_context.with_child_source(task_source_id.clone(), TASK_SOURCE.to_string());
@@ -173,11 +176,21 @@ impl Executable<TaskInput> for TaskExecutable {
 
                 match &agent_task.consistency_run {
                     consistency_run if *consistency_run > 1 => {
+                        // Resolve consistency prompt: task > workflow > constant
+                        let consistency_prompt = agent_task
+                            .consistency_prompt
+                            .clone()
+                            .or(workflow_consistency_prompt.clone())
+                            .unwrap_or_else(|| {
+                                crate::config::constants::CONSISTENCY_PROMPT.to_string()
+                            });
+
                         let mut executable = ExecutableBuilder::new()
                             .consistency(
                                 AgentPicker {
                                     task_description: prompt.clone(),
                                     agent_ref: agent_task.agent_ref.to_string(),
+                                    consistency_prompt,
                                 },
                                 *consistency_run,
                                 10,
@@ -368,7 +381,9 @@ impl Executable<TaskInput> for TaskExecutable {
 }
 
 #[derive(Clone)]
-pub struct TaskChainMapper;
+pub struct TaskChainMapper {
+    pub workflow_consistency_prompt: Option<String>,
+}
 
 #[async_trait::async_trait]
 impl ContextMapper<TaskInput, OutputContainer> for TaskChainMapper {
@@ -402,11 +417,21 @@ impl ParamMapper<(Option<usize>, Task), TaskInput> for TaskChainMapper {
         input: (Option<usize>, Task),
     ) -> Result<(TaskInput, Option<ExecutionContext>), OxyError> {
         let (loop_idx, input) = input;
+
+        // Try to get workflow consistency prompt from renderer context
+        let workflow_consistency_prompt = execution_context
+            .renderer
+            .eval_expression("__workflow_consistency_prompt__")
+            .ok()
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .or_else(|| self.workflow_consistency_prompt.clone());
+
         let mut task_input = TaskInput {
             task: input,
             runtime_input: None,
             loop_idx,
             value: None,
+            workflow_consistency_prompt,
         };
         let runtime_input = match task_input.task.task_type.clone() {
             TaskType::LoopSequential(loop_sequential_task) => {

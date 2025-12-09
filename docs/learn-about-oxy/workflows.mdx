@@ -26,6 +26,58 @@ Specific task types have additional property requirements.
 | --------- | --------------------------------------------------------------------------------- | -------------------------- |
 | agent\_ref | The agent to use within the `agents` directory, referenced by the agent's `name`. | required for `type: agent` |
 | prompt    | The input prompt passed to the agent for this task.                               | required for `type: agent` |
+| consistency\_run | Number of times to run the agent and select the most consistent output. Must be > 1 to enable. | optional (default: 1) |
+| consistency\_prompt | Custom evaluation prompt for consistency checking. Overrides workflow-level prompt. Supports Jinja templating with variables: `submission_1`, `submission_2`, `task_description`. | optional |
+
+### Agent Task Consistency Runs
+
+You can enable consistency checking on agent tasks by setting `consistency_run` to a value greater than 1. This runs the agent multiple times with the same prompt and selects the most consistent output:
+
+```yaml
+# Workflow-level consistency prompt (applies to all agent tasks)
+consistency_prompt: |
+  Your custom evaluation prompt here...
+  Use {{ submission_1 }}, {{ submission_2 }}, and {{ task_description }}
+
+tasks:
+  - name: calculate_revenue
+    type: agent
+    agent_ref: default
+    prompt: "What was our total revenue last quarter?"
+    consistency_run: 5  # Run 5 times and pick the most consistent result
+
+  - name: analyze_trends
+    type: agent
+    agent_ref: default
+    prompt: "What are the key sales trends?"
+    consistency_run: 3
+    # Task-level prompt overrides workflow-level prompt
+    consistency_prompt: |
+      Compare these trend analyses focusing on directional consistency:
+      Submission 1: {{ submission_1 }}
+      Submission 2: {{ submission_2 }}
+      Are they factually consistent? Answer A or B.
+```
+
+This is particularly useful for:
+- Critical calculations where consistency is important
+- Data analysis tasks that may have slight variations in output
+- Queries involving complex logic where you want to verify the agent's reasoning
+
+**Consistency Prompt Configuration:**
+
+- **Workflow-level**: Add `consistency_prompt` at the workflow root to apply to all agent tasks
+- **Task-level**: Add `consistency_prompt` to a specific task to override the workflow prompt
+- **Default**: If not specified, uses the built-in evaluation prompt optimized for data analysis (view the [default prompt source](https://github.com/oxy-hq/oxy-internal/blob/main/crates/core/src/config/constants.rs#L52-L199))
+
+**Available template variables:**
+- `{{ submission_1 }}` - First output
+- `{{ submission_2 }}` - Second output
+- `{{ task_description }}` - The task prompt
+
+**Note:** Custom prompts completely replace the default. To adapt the default for your domain, copy the [source](https://github.com/oxy-hq/oxy-internal/blob/main/crates/core/src/config/constants.rs#L52-L199) and modify the specific rules you need.
+
+See the [Testing](/learn-about-oxy/testing#consistency-runs-in-workflow-agent-tasks) documentation for more details on consistency checking.
 
 ## `type: execute_sql`
 

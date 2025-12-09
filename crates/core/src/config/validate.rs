@@ -231,3 +231,23 @@ pub fn validate_task_data_reference(data_ref: &String, ctx: &ValidationContext) 
     }
     Ok(())
 }
+
+pub fn validate_consistency_prompt(
+    prompt: &Option<String>,
+    _context: &ValidationContext,
+) -> garde::Result {
+    if let Some(prompt_str) = prompt {
+        // Validate minijinja template syntax
+        match minijinja::Environment::new()
+            .add_template_owned("test".to_string(), prompt_str.to_string())
+        {
+            Ok(_) => Ok(()),
+            Err(e) => Err(garde::Error::new(format!(
+                "Invalid consistency prompt template syntax: {}",
+                e
+            ))),
+        }
+    } else {
+        Ok(())
+    }
+}

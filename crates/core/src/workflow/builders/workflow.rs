@@ -25,6 +25,7 @@ pub(super) struct TasksGroupInput {
     pub tasks: Vec<Task>,
     pub value: OutputContainer,
     pub loop_idx: Option<usize>,
+    pub workflow_consistency_prompt: Option<String>,
 }
 
 impl IntoChain<(Option<usize>, Task), OutputContainer> for TasksGroupInput {
@@ -111,6 +112,7 @@ impl WorkflowMapper {
             variables,
             description: temp_workflow.description,
             retrieval: temp_workflow.retrieval,
+            consistency_prompt: temp_workflow.consistency_prompt,
         })
     }
 }
@@ -148,11 +150,20 @@ impl ParamMapper<(String, RunInfo), WorkflowRunInput> for WorkflowMapper {
         })?;
 
         // Create the OutputContainer and Renderer
-        let value: OutputContainer = variables
+        let mut value_map: HashMap<String, OutputContainer> = variables
             .into_iter()
             .map(|(k, v)| (k, OutputContainer::Variable(v)))
-            .collect::<HashMap<String, OutputContainer>>()
-            .into();
+            .collect();
+
+        // Add workflow consistency prompt as a special variable if it exists
+        if let Some(ref consistency_prompt) = workflow.consistency_prompt {
+            value_map.insert(
+                "__workflow_consistency_prompt__".to_string(),
+                OutputContainer::Variable(serde_json::Value::String(consistency_prompt.clone())),
+            );
+        }
+
+        let value: OutputContainer = value_map.into();
         let renderer = Renderer::from_template((&value).into(), &workflow)?;
         let execution_context: ExecutionContext = execution_context.wrap_renderer(renderer);
         Ok((
@@ -167,6 +178,7 @@ impl ParamMapper<(String, RunInfo), WorkflowRunInput> for WorkflowMapper {
                     tasks: workflow.tasks,
                     value,
                     loop_idx: None,
+                    workflow_consistency_prompt: workflow.consistency_prompt,
                 },
             },
             Some(execution_context),
@@ -179,7 +191,9 @@ pub(super) fn build_workflow_executable()
     ExecutableBuilder::new()
         .map(WorkflowMapper)
         .checkpoint_root()
-        .chain_map(TaskChainMapper)
+        .chain_map(TaskChainMapper {
+            workflow_consistency_prompt: None, // Will be read from renderer context
+        })
         .checkpoint()
         .executable(build_task_executable())
 }
@@ -187,7 +201,9 @@ pub(super) fn build_workflow_executable()
 pub(super) fn build_tasks_executable() -> impl Executable<Vec<Task>, Response = OutputContainer> {
     ExecutableBuilder::new()
         .map(TasksMapper)
-        .chain_map(TaskChainMapper)
+        .chain_map(TaskChainMapper {
+            workflow_consistency_prompt: None, // Will be read from renderer context
+        })
         .executable(build_task_executable())
 }
 
@@ -210,6 +226,7 @@ impl ParamMapper<Vec<Task>, TasksGroupInput> for TasksMapper {
                 tasks: input,
                 value,
                 loop_idx: None,
+                workflow_consistency_prompt: None, // Standalone tasks don't have workflow prompt
             },
             Some(execution_context),
         ))

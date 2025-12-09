@@ -9,7 +9,6 @@ use crate::{
         OneShotInput, OpenAIExecutableResponse,
         builders::{SimpleMapper, build_openai_executable},
     },
-    config::constants::CONSISTENCY_PROMPT,
     errors::OxyError,
     execute::{
         Executable, ExecutionContext,
@@ -26,6 +25,7 @@ use crate::{
 pub struct AgentPicker {
     pub task_description: String,
     pub agent_ref: String,
+    pub consistency_prompt: String,
 }
 
 #[derive(Clone)]
@@ -104,6 +104,7 @@ impl ConcurrencyControl<OpenAIExecutableResponse> for AgentScoreControl {
 #[derive(Clone)]
 struct AgentPromptMapper {
     task_description: String,
+    consistency_prompt: String,
 }
 
 #[async_trait::async_trait]
@@ -121,7 +122,7 @@ impl ParamMapper<(OutputContainer, OutputContainer), OneShotInput> for AgentProm
         };
         let system_instructions = execution_context
             .renderer
-            .render_once(CONSISTENCY_PROMPT, context)?;
+            .render_once(&self.consistency_prompt, context)?;
         Ok((
             OneShotInput {
                 system_instructions,
@@ -188,6 +189,7 @@ impl ConsistencyPicker<OutputContainer> for AgentPicker {
             )
             .map(AgentPromptMapper {
                 task_description: self.task_description.clone(),
+                consistency_prompt: self.consistency_prompt.clone(),
             })
             .map(SimpleMapper)
             .executable(agent);

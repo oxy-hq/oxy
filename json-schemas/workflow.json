@@ -6,6 +6,13 @@
     "tasks"
   ],
   "properties": {
+    "consistency_prompt": {
+      "description": "Global consistency evaluation prompt for all agent tasks in this workflow This can be overridden per-task via AgentTask.consistency_prompt",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "description": {
       "default": "",
       "type": "string"
@@ -731,6 +738,13 @@
           "properties": {
             "agent_ref": {
               "type": "string"
+            },
+            "consistency_prompt": {
+              "description": "Custom consistency evaluation prompt for this specific task Overrides workflow-level consistency_prompt if specified",
+              "type": [
+                "string",
+                "null"
+              ]
             },
             "consistency_run": {
               "default": 1,

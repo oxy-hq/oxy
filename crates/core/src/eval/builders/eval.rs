@@ -173,6 +173,7 @@ impl Executable<(usize, EvalConfig, EvalTarget)> for EvalExecutable {
                 message: "🔄Evaluating records".to_string(),
             })
             .await?;
+
         let mut solver_executable = ExecutableBuilder::new()
             .concurrency(eval.concurrency)
             .executable(SolverExecutable::new(eval.concurrency));

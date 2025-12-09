@@ -17,6 +17,7 @@ pub fn parse_workflow_config(workflow_name: &str, file_path: &str) -> Result<Wor
         variables: temp_workflow.variables,
         description: temp_workflow.description,
         retrieval: temp_workflow.retrieval,
+        consistency_prompt: temp_workflow.consistency_prompt,
     };
 
     Ok(workflow)

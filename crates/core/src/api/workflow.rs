@@ -1628,6 +1628,7 @@ fn reconstruct_events_from_run_details(
             variables: None,
             description: String::new(),
             retrieval: None,
+            consistency_prompt: None,
         },
     });
 

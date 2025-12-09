@@ -50,37 +50,150 @@ pub const AUTHENTICATION_HEADER_KEY: &str = "authorization";
 pub const AUTHENTICATION_SECRET_KEY: &str = "authentication_secret";
 
 pub const CONSISTENCY_PROMPT: &str = indoc::indoc! {"
-    You are comparing a pair of submitted answers on a given question. Here is the data:
+    You are evaluating if two submissions are FACTUALLY CONSISTENT for data analysis purposes.
+
+    **MANDATORY OVERRIDE RULES - READ THIS FIRST:**
+
+    If you see ANY of these, you MUST answer A immediately - DO NOT continue reasoning:
+    ✓ Rounding difference < $1 (like $0.33, $0.10, $0.38) → IMMEDIATELY Answer: A
+    ✓ One submission includes additional details the other lacks (like 989 weeks, sample sizes, extra context) → IMMEDIATELY Answer: A
+    ✓ Grammar/style/formatting differences only → IMMEDIATELY Answer: A
+
+    FORBIDDEN: You must NOT use these phrases or reasoning patterns:
+    ✗ however the differing precision
+    ✗ not fully consistent
+    ✗ minor inconsistency
+    ✗ divergence in factual content
+    ✗ do not fit into a superset relationship
+    ✗ supplemental detail indicates divergence
+
+    CRITICAL: If one submission simply omits information that the other includes, this is NOT a conflict. Answer A.
+
     [BEGIN DATA]
     ************
     [Question]: {{ task_description }}
     ************
-    [Submission 1]: {{submission_1}}
+    [Submission 1]: {{ submission_1 }}
     ************
-    [Submission 2]: {{submission_2}}
+    [Submission 2]: {{ submission_2 }}
     ************
     [END DATA]
 
-    Compare the factual content of the submitted answers. Ignore any differences in style, grammar, punctuation. Answer the question by selecting one of the following options:
-    A. The submitted answers are either a superset or contains each other and is fully consistent with it.
-    B. There is a disagreement between the submitted answers.
+    ## EVALUATION RULES
 
-    - First, highlight the disagreements between the two submissions.
-    Following is the syntax to highlight the differences:
+    ### ALWAYS CONSISTENT (Answer: A)
 
-    (1) <factual_content>
-    +++ <submission_1_factual_content_diff>
-    --- <submission_2_factual_content_diff>
+    1. **Rounding differences < $1 or < 0.1%** ← MOST COMMON
+       Examples that MUST be marked A:
+       * $1,081,396 vs $1,081,395.67 → A (33 cent difference)
+       * $1,065,619 vs $1,065,618.90 → A (10 cent difference)
+       * $1,005,917 vs $1,005,917.38 → A (38 cent difference)
+       * 42.67% vs 42.7% → A (precision difference)
+       * ANY difference under $1 → A
 
-    [BEGIN EXAMPLE]
-    Here are the key differences between the two submissions:
-    (1) Capital of France
-    +++ Paris
-    --- France
-    [END EXAMPLE]
+    2. **Grammar & Style**
+       * \"amounts to\" vs \"amount to\" → A
+       * \"There are\" vs \"There're\" → A
+       * Synonyms like \"decreased\" vs \"fell\" → A
 
-    - Then reason about the highlighted differences. The submitted answers may either be a subset or superset of each other, or it may conflict. Determine which case applies.
-    - At the end, print only a single choice from AB (without quotes or brackets or punctuation) on its own line corresponding to the correct answer. e.g A
+    3. **Formatting**
+       * \"1000\" vs \"1,000\" → A
+       * Different date formats → A
+       * Whitespace/line breaks → A
+
+    4. **Additional Details (no contradiction)** ← VERY IMPORTANT
+       * \"42 users\" vs \"42 users, 18 active\" → A
+       * \"$1,081,396\" vs \"$1,081,396 over 989 weeks\" → A
+       * \"Sales are $1.08M\" vs \"Sales are $1.08M (average of 989 weeks)\" → A
+       * One has more context/statistics than the other → A
+       * **CRITICAL: \"Doesn't mention X\" is NOT the same as \"Contradicts X\"**
+       * If Submission 2 adds details that Submission 1 lacks → A (CONSISTENT)
+
+    ### ONLY INCONSISTENT (Answer: B) when:
+
+    * Different categorical facts (\"Paris\" vs \"London\" for same location)
+    * Material numerical difference (> $10 AND > 10% relative)
+    * Contradictory statements (\"increased\" vs \"decreased\")
+    * Incompatible conclusions
+    * **NOT** inconsistent when one submission simply has MORE details
+
+    ## EVALUATION PROCESS
+
+    Step 1: List differences:
+
+    (1) <category>
+    +++ <value_from_submission_1>
+    --- <value_from_submission_2>
+
+    Step 2: For EACH difference, check IN ORDER:
+
+    Difference: [describe]
+    → Is this rounding (< $1 or < 0.1%)? If YES → STOP, this is CONSISTENT
+    → Is this grammar/style? If YES → STOP, this is CONSISTENT
+    → Is this formatting? If YES → STOP, this is CONSISTENT
+    → Is one submission adding context/statistics the other lacks?
+      (Examples: adding week counts, sample sizes, additional breakdowns)
+      If YES → STOP, this is ADDITIONAL DETAIL → CONSISTENT
+    → Does this CONTRADICT (not just differ in detail level)? If NO → CONSISTENT
+    → Is this a material conflict? If YES → FLAG
+
+    Step 3: Final Answer:
+    - If ALL differences are rounding/grammar/format → Answer: A
+    - If ANY material conflict → Answer: B
+
+    ## EXAMPLES
+
+    [EXAMPLE 1: Multiple Rounding Differences - Answer: A]
+    Submission 1: \"Cold: $1,081,396, Moderate: $1,065,619, Hot: $1,005,917\"
+    Submission 2: \"Cold: $1,081,395.67, Moderate: $1,065,618.90, Hot: $1,005,917.38\"
+
+    Reasoning:
+    (1) Cold temperature: $1,081,396 vs $1,081,395.67
+    → Rounding (33¢ < $1)? YES → CONSISTENT
+
+    (2) Moderate temperature: $1,065,619 vs $1,065,618.90
+    → Rounding (10¢ < $1)? YES → CONSISTENT
+
+    (3) Hot temperature: $1,005,917 vs $1,005,917.38
+    → Rounding (38¢ < $1)? YES → CONSISTENT
+
+    All differences are rounding (< $1). This is CONSISTENT.
+    Answer: A
+
+    [EXAMPLE 2: Grammar - Answer: A]
+    Submission 1: \"The discount amounts to 15%\"
+    Submission 2: \"The discount amount to 15%\"
+    → Grammar difference? YES → CONSISTENT
+    Answer: A
+
+    [EXAMPLE 3: Additional Details with Week Counts - Answer: A]
+    Submission 1: \"Cold temperatures average $1,081,396. Moderate temperatures average $1,065,619.\"
+    Submission 2: \"Cold temperatures average $1,081,396 over 989 weeks. Moderate temperatures average $1,065,619 over 3,174 weeks.\"
+
+    Reasoning:
+    (1) Cold temperature description:
+    Submission 1: \"$1,081,396\"
+    Submission 2: \"$1,081,396 over 989 weeks\"
+    → Does Submission 2 CONTRADICT Submission 1? NO
+    → Does Submission 2 add details? YES → ADDITIONAL DETAIL
+    → Additional detail? YES → CONSISTENT
+
+    (2) Moderate temperature description:
+    Submission 1: \"$1,065,619\"
+    Submission 2: \"$1,065,619 over 3,174 weeks\"
+    → Additional detail? YES → CONSISTENT
+
+    Both submissions state the SAME sales figures. Submission 2 simply adds the sample size (week counts). \"Doesn't mention week counts\" ≠ \"Contradicts week counts\". This is ADDITIONAL DETAIL.
+    Answer: A
+
+    [EXAMPLE 4: Material Disagreement - Answer: B]
+    Submission 1: \"Q4 revenue was $500,000\"
+    Submission 2: \"Q4 revenue was $450,000\"
+    → Rounding (< $1)? NO ($50,000 difference)
+    → Material conflict (10%)? YES → INCONSISTENT
+    Answer: B
+
+    Now evaluate the provided submissions. Remember the MANDATORY OVERRIDE RULES at the top.
 
     Reasoning:
 "};

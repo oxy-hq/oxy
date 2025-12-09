@@ -77,6 +77,7 @@ impl ParamMapper<((Vec<Task>, String), (usize, minijinja::Value)), TasksGroupInp
                 tasks,
                 value,
                 loop_idx: Some(loop_idx),
+                workflow_consistency_prompt: None, // Loops inherit from parent
             },
             Some(execution_context),
         ))
@@ -93,7 +94,9 @@ pub(super) fn build_loop_executable(
         .concurrency(concurrency)
         .state((tasks, name))
         .map(LoopItemMapper)
-        .chain_map(TaskChainMapper)
+        .chain_map(TaskChainMapper {
+            workflow_consistency_prompt: None, // Will be read from renderer context
+        })
         .checkpoint()
         .executable(build_task_executable())
 }

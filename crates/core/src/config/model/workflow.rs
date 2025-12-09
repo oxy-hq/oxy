@@ -15,4 +15,5 @@ pub struct WorkflowWithRawVariables {
     #[serde(default)]
     pub description: String,
     pub retrieval: Option<RouteRetrievalConfig>,
+    pub consistency_prompt: Option<String>,
 }

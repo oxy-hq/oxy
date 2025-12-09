@@ -258,6 +258,7 @@ pub async fn create_workflow_from_query(
         tests: vec![],
         variables: None,
         retrieval: Default::default(),
+        consistency_prompt: None,
     };
     // write workflow to file
     let workflow_dir = config_manager

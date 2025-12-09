@@ -18,8 +18,9 @@ use super::validate::{AgentValidationContext, validate_model, validate_task};
 use crate::adapters::secrets::SecretsManager;
 use crate::config::validate::validate_optional_private_key_path;
 use crate::config::validate::{
-    ValidationContext, validate_agent_exists, validate_database_exists, validate_env_var,
-    validate_omni_integration_exists, validate_task_data_reference,
+    ValidationContext, validate_agent_exists, validate_consistency_prompt,
+    validate_database_exists, validate_env_var, validate_omni_integration_exists,
+    validate_task_data_reference,
 };
 use crate::errors::OxyError;
 pub use semantics::{SemanticDimension, Semantics};
@@ -1377,6 +1378,11 @@ pub struct AgentTask {
     #[garde(skip)]
     pub variables: Option<HashMap<String, Value>>,
 
+    /// Custom consistency evaluation prompt for this specific task
+    /// Overrides workflow-level consistency_prompt if specified
+    #[garde(custom(validate_consistency_prompt))]
+    pub consistency_prompt: Option<String>,
+
     #[garde(dive)]
     pub export: Option<TaskExport>,
 }
@@ -1912,6 +1918,7 @@ pub struct TempWorkflow {
     pub description: String,
     #[serde(default)]
     pub retrieval: Option<RouteRetrievalConfig>,
+    pub consistency_prompt: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
@@ -2062,6 +2069,10 @@ pub struct Workflow {
     #[serde(default)]
     #[garde(dive)]
     pub retrieval: Option<RouteRetrievalConfig>,
+    /// Global consistency evaluation prompt for all agent tasks in this workflow
+    /// This can be overridden per-task via AgentTask.consistency_prompt
+    #[garde(custom(validate_consistency_prompt))]
+    pub consistency_prompt: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
@@ -2924,4 +2935,9 @@ fn default_loop_concurrency() -> usize {
 
 fn default_consistency_concurrency() -> usize {
     10
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
 }
