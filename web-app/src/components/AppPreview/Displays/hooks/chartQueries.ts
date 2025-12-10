@@ -1,5 +1,5 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
-import { getArrowValue } from "../utils";
+import { getArrowColumnValues } from "../utils";
 
 export const getXAxisData = async (
   connection: AsyncDuckDBConnection,
@@ -9,10 +9,7 @@ export const getXAxisData = async (
   const xData = await connection.query(
     `SELECT DISTINCT ${xField} as x FROM "${fileName}" ORDER BY ${xField}`,
   );
-  return xData.toArray().map((row) => getArrowValue(row.x)) as (
-    | string
-    | number
-  )[];
+  return getArrowColumnValues(xData, "x") as (string | number)[];
 };
 
 export const getSeriesData = async (
@@ -24,7 +21,7 @@ export const getSeriesData = async (
     `SELECT DISTINCT ${seriesField} as series FROM "${fileName}"`,
   );
   const series = await seriesStmt.query();
-  return series.toArray().map((row) => getArrowValue(row.series));
+  return getArrowColumnValues(series, "series");
 };
 
 export const getSeriesValues = async (
@@ -42,10 +39,7 @@ export const getSeriesValues = async (
      ORDER BY ${xField}`,
   );
   const yData = await seriesDataStatement.query(seriesValue);
-  return yData.toArray().map((row) => getArrowValue(row.y)) as (
-    | number
-    | string
-  )[];
+  return getArrowColumnValues(yData, "y") as (number | string)[];
 };
 
 export const getSimpleAggregatedData = async (
@@ -59,10 +53,7 @@ export const getSimpleAggregatedData = async (
      GROUP BY ${xField}
      ORDER BY ${xField}`,
   );
-  return yData.toArray().map((row) => getArrowValue(row.y)) as (
-    | string
-    | number
-  )[];
+  return getArrowColumnValues(yData, "y") as (string | number)[];
 };
 
 export const getPieChartData = async (
@@ -76,14 +67,10 @@ export const getPieChartData = async (
      FROM "${fileName}" 
      GROUP BY ${nameField}`,
   );
-  return pieData
-    .toArray()
-    .map((row) => ({
-      name: getArrowValue(row.name),
-      value: getArrowValue(row.value),
-    }))
-    .filter((row) => row.name && row.value) as {
-    name: string;
-    value: number;
-  }[];
+  const nameValues = getArrowColumnValues(pieData, "name");
+  const valueValues = getArrowColumnValues(pieData, "value");
+  return nameValues.map((name, index) => ({
+    name: name as string,
+    value: valueValues[index] as number,
+  }));
 };

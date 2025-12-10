@@ -206,6 +206,9 @@ importers:
       '@xyflow/react':
         specifier: ^12.9.3
         version: 12.9.3(@types/react@19.2.7)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
+      apache-arrow:
+        specifier: 17.0.0
+        version: 17.0.0
       axios:
         specifier: ^1.13.2
         version: 1.13.2

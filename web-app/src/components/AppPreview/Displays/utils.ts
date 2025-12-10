@@ -1,8 +1,10 @@
 import { DataContainer } from "@/types/app";
 import { apiClient } from "@/services/api/axios";
 import { getDuckDB } from "@/libs/duckdb";
+import { DataType, Schema, Table, Type } from "apache-arrow";
+import dayjs from "dayjs";
 
-export const getArrowValue = (value: unknown): number | string | unknown => {
+const getArrowValue = (value: unknown): number | string | unknown => {
   if (value instanceof Uint32Array) return formatNumber(value[0]);
   if (value instanceof Float32Array) return formatNumber(value[0]);
   if (value instanceof Float64Array) return formatNumber(value[0]);
@@ -15,6 +17,46 @@ export const getArrowValue = (value: unknown): number | string | unknown => {
   }
   return value;
 };
+
+export const getArrowColumnValues = (
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  table: Table<any>,
+  columnName: string,
+) => {
+  const fieldType = getArrowFieldType(columnName, table.schema);
+  return table.toArray().map((row) => {
+    const value = (row as Record<string, unknown>)[columnName];
+    return getArrowValueWithType(value, fieldType!);
+  });
+};
+
+export const getArrowValueWithType = (
+  value: unknown,
+  type: Type,
+): number | string | unknown => {
+  if (DataType.isDate(type)) {
+    return formatDate(value as number);
+  }
+  if (DataType.isTimestamp(type)) {
+    return formatDateTime(value as number);
+  }
+  if (DataType.isTime(type)) {
+    return formatTime(value as number);
+  }
+  return getArrowValue(value);
+};
+
+function formatDate(value: number | string): string {
+  return dayjs(value).format("YYYY-MM-DD");
+}
+
+function formatDateTime(value: number | string): string {
+  return dayjs(value).format("YYYY-MM-DD HH:mm");
+}
+
+function formatTime(value: number | string): string {
+  return dayjs(value).format("HH:mm:ss");
+}
 
 function formatNumber(num: number) {
   return num % 1 === 0 ? num.toString() : num.toFixed(2);
@@ -139,4 +181,9 @@ export const registerAuthenticatedFile = async (
   await db.registerFileBuffer(file_name, fileData);
 
   return file_name;
+};
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const getArrowFieldType = (fieldName: string, schema: Schema<any>) => {
+  return schema.fields.find((f) => f.name === fieldName)?.type;
 };
