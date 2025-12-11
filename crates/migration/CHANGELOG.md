@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.20](https://github.com/oxy-hq/oxy-internal/compare/0.3.19...0.3.20) (2025-12-11)
+
+
+### <!-- 0 -->🚀 Features
+
+* slack integration ([#1373](https://github.com/oxy-hq/oxy-internal/issues/1373)) ([ca9def9](https://github.com/oxy-hq/oxy-internal/commit/ca9def9d727054f557b8a5cef136bf008985ee70))
+
 ## [0.3.19](https://github.com/oxy-hq/oxy-internal/compare/0.3.18...0.3.19) (2025-12-04)
 
 

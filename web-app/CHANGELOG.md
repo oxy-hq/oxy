@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.20](https://github.com/oxy-hq/oxy-internal/compare/0.3.19...0.3.20) (2025-12-11)
+
+
+### <!-- 0 -->🚀 Features
+
+* data app chart date handling ([#1422](https://github.com/oxy-hq/oxy-internal/issues/1422))  ([b23e2de](https://github.com/oxy-hq/oxy-internal/commit/b23e2de4e5ed486d32c8969478269b29fafdb694))
+
 ## [0.3.19](https://github.com/oxy-hq/oxy-internal/compare/0.3.18...0.3.19) (2025-12-04)
 
 

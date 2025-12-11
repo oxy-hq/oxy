@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.20](https://github.com/oxy-hq/oxy-internal/compare/0.3.19...0.3.20) (2025-12-11)
+
+
+### <!-- 0 -->🚀 Features
+
+* enhance consistency checks with customizable prompts ([#1403](https://github.com/oxy-hq/oxy-internal/issues/1403)) ([4d15b91](https://github.com/oxy-hq/oxy-internal/commit/4d15b9165557861b64fca68b8e888ff5413385ec))
+* slack integration ([#1373](https://github.com/oxy-hq/oxy-internal/issues/1373)) ([ca9def9](https://github.com/oxy-hq/oxy-internal/commit/ca9def9d727054f557b8a5cef136bf008985ee70))
+
 ## [0.3.19](https://github.com/oxy-hq/oxy-internal/compare/0.3.18...0.3.19) (2025-12-04)
 
 
