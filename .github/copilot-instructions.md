@@ -19,7 +19,7 @@ fn load_config() -> Result<Config, OxyError> {
     let path = get_config_path()?;
     let content = std::fs::read_to_string(path)?;
     serde_json::from_str(&content)
-        .map_err(|e| OxyError::ConfigError(e.to_string()))
+        .map_err(|e| OxyError::ConfigurationError(e.to_string()))
 }
 
 // Use custom error types from crates/core/src/errors.rs
@@ -76,7 +76,7 @@ export function Button({ label, onClick, variant = 'primary' }: ButtonProps) {
 let user = User::find_by_id(id)
     .one(&db)
     .await
-    .map_err(|e| OxyError::DatabaseError(e.to_string()))?
+    .map_err(|e| OxyError::DBError(e.to_string()))?
     .ok_or(OxyError::UserNotFound(id))?;
 ```
 

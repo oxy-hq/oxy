@@ -64,7 +64,7 @@ fn fetch_user(id: UserId) -> Result<User, OxyError> {
     let user = User::find_by_id(id)
         .one(&conn)
         .await
-        .map_err(|e| OxyError::DatabaseError(e.to_string()))?
+        .map_err(|e| OxyError::DBError(e.to_string()))?
         .ok_or(OxyError::UserNotFound(id))?;
     Ok(user)
 }

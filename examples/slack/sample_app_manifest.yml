@@ -1,0 +1,47 @@
+display_information:
+  name: Oxy AI
+  description: Ask Oxy anything
+  background_color: "#383838"
+features:
+  app_home:
+    home_tab_enabled: true
+    messages_tab_enabled: true
+    messages_tab_read_only_enabled: false
+  bot_user:
+    display_name: Oxy
+    always_online: false
+  slash_commands:
+    - command: /oxy
+      url: "{{YOUR_OXY_BASE_URL}}/api/slack/commands"
+      description: Ask Oxy (dev)
+      should_escape: false
+  assistant_view:
+    assistant_description: Ask Oxy anything about your data
+    suggested_prompts: []
+oauth_config:
+  scopes:
+    bot:
+      - app_mentions:read
+      - assistant:write
+      - channels:history
+      - channels:read
+      - chat:write
+      - commands
+      - groups:history
+      - im:history
+      - im:write
+      - users:read
+      - users:read.email
+settings:
+  event_subscriptions:
+    request_url: "{{YOUR_OXY_BASE_URL}}/api/slack/events"
+    bot_events:
+      - app_mention
+      - assistant_thread_context_changed
+      - assistant_thread_started
+      - message.channels
+      - message.groups
+      - message.im
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  token_rotation_enabled: false

@@ -11,4 +11,5 @@ databases:
   - name: local
     dataset: .db/
     type: duckdb
+
 builder_agent: builder.agent.yml

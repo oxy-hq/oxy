@@ -40,6 +40,9 @@ mod m20250924_015621_create_project_repos_and_update_projects;
 mod m20250929_081920_create_git_namespaces_table;
 mod m20251009_020233_add_run_variables_and_output;
 mod m20251104_015138_add_blocks_to_message;
+mod m20251114_000002_create_slack_channel_bindings_table;
+mod m20251114_000003_create_slack_user_identities_table;
+mod m20251114_000004_create_slack_conversation_contexts_table;
 
 pub struct Migrator;
 
@@ -86,6 +89,9 @@ impl MigratorTrait for Migrator {
             Box::new(m20250929_081920_create_git_namespaces_table::Migration),
             Box::new(m20251009_020233_add_run_variables_and_output::Migration),
             Box::new(m20251104_015138_add_blocks_to_message::Migration),
+            Box::new(m20251114_000002_create_slack_channel_bindings_table::Migration),
+            Box::new(m20251114_000003_create_slack_user_identities_table::Migration),
+            Box::new(m20251114_000004_create_slack_conversation_contexts_table::Migration),
         ]
     }
 }

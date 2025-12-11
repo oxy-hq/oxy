@@ -394,6 +394,7 @@ fn create_config_file(config_path: &Path) -> Result<(), InitError> {
         project_path: PathBuf::new(),
         builder_agent: None,
         integrations: vec![],
+        slack: None,
         mcp: None,
     };
 

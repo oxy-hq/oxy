@@ -76,6 +76,10 @@ pub enum OxyError {
         param: String,
         msg: String,
     },
+    #[error("Slack signature verification failed")]
+    SlackSignatureInvalid,
+    #[error("Slack API error: {0}")]
+    SlackApiError(String),
 }
 
 impl OxyError {
@@ -107,6 +111,8 @@ impl OxyError {
             OxyError::LanceDBError(_) => "lancedb",
             OxyError::SerdeArrowError(_) => "serde_arrow",
             OxyError::ToolCallError { .. } => "tool_call",
+            OxyError::SlackSignatureInvalid => "slack_signature",
+            OxyError::SlackApiError(_) => "slack_api",
             OxyError::SemanticLayerError(semantic_layer_error) => match semantic_layer_error {
                 SemanticLayerError::VariableError(_) => "semantic_variable",
                 SemanticLayerError::ConfigurationError(_) => "semantic_configuration",
@@ -147,6 +153,8 @@ impl OxyError {
             OxyError::SerdeArrowError(_) => sentry::Level::Error,
             OxyError::ToolCallError { .. } => sentry::Level::Error,
             OxyError::SemanticLayerError(_semantic_layer_error) => sentry::Level::Warning,
+            OxyError::SlackSignatureInvalid => sentry::Level::Warning,
+            OxyError::SlackApiError(_) => sentry::Level::Error,
         }
     }
 
@@ -292,6 +300,8 @@ impl From<OxyError> for StatusCode {
             OxyError::SemanticLayerError(_semantic_layer_error) => {
                 StatusCode::INTERNAL_SERVER_ERROR
             }
+            OxyError::SlackSignatureInvalid => StatusCode::UNAUTHORIZED,
+            OxyError::SlackApiError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }

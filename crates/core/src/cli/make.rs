@@ -250,6 +250,7 @@ pub async fn handle_make_command(make_args: &MakeArgs) -> anyhow::Result<()> {
         project_path: PathBuf::from("."),
         builder_agent: None,
         integrations: vec![],
+        slack: None,
         mcp: None,
     };
     serde_yaml::to_writer(

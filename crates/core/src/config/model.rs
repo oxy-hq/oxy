@@ -52,6 +52,10 @@ pub struct Config {
     #[garde(skip)]
     pub integrations: Vec<Integration>,
 
+    #[serde(default)]
+    #[garde(dive)]
+    pub slack: Option<SlackSettings>,
+
     /// Optional MCP configuration for exposing resources as tools
     /// If not specified, all agents and workflows are exposed by default
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -95,6 +99,74 @@ pub struct OmniTopic {
     #[garde(length(min = 1))]
     pub model_id: String,
 }
+
+/// Slack integration settings for project-level configuration
+#[derive(Serialize, Deserialize, Debug, Clone, JsonSchema, Validate)]
+#[garde(context(ValidationContext))]
+pub struct SlackSettings {
+    /// Default agent to use for Slack DM conversations
+    /// This is used when users message the bot directly via Slack's AI/Agent interface
+    #[garde(skip)]
+    pub default_agent: String,
+
+    /// Base URL for the Oxy web app (for deep links back to app in Slack messages)
+    /// If not specified, "View in Oxy" links will not be included in responses
+    #[serde(default)]
+    #[garde(skip)]
+    pub oxy_app_url: Option<String>,
+
+    /// Bot token for Slack API calls (direct value, not recommended for production)
+    #[serde(default)]
+    #[garde(skip)]
+    #[schemars(skip)]
+    pub bot_token: Option<String>,
+
+    /// Environment variable containing the bot token
+    #[serde(default)]
+    #[garde(skip)]
+    pub bot_token_var: Option<String>,
+
+    /// Signing secret for verifying Slack requests (direct value, not recommended for production)
+    #[serde(default)]
+    #[garde(skip)]
+    #[schemars(skip)]
+    pub signing_secret: Option<String>,
+
+    /// Environment variable containing the signing secret
+    #[serde(default)]
+    #[garde(skip)]
+    pub signing_secret_var: Option<String>,
+}
+
+impl SlackSettings {
+    /// Get the bot token, resolving from environment variable if needed
+    pub async fn get_bot_token(&self, secret_manager: &SecretsManager) -> Result<String, OxyError> {
+        secret_manager
+            .resolve_config_value(
+                self.bot_token.as_deref(),
+                self.bot_token_var.as_deref(),
+                "Slack bot_token",
+                None,
+            )
+            .await
+    }
+
+    /// Get the signing secret, resolving from environment variable if needed
+    pub async fn get_signing_secret(
+        &self,
+        secret_manager: &SecretsManager,
+    ) -> Result<String, OxyError> {
+        secret_manager
+            .resolve_config_value(
+                self.signing_secret.as_deref(),
+                self.signing_secret_var.as_deref(),
+                "Slack signing_secret",
+                None,
+            )
+            .await
+    }
+}
+
 
 #[derive(Serialize, Deserialize, Debug, Clone, JsonSchema, Validate)]
 #[garde(context(ValidationContext))]
@@ -192,86 +264,58 @@ pub struct Postgres {
 
 impl Postgres {
     pub async fn get_password(&self, secret_manager: &SecretsManager) -> Result<String, OxyError> {
-        if let Some(password) = &self.password
-            && !password.is_empty()
-        {
-            return Ok(password.clone());
-        }
-        let value = secret_manager
-            .resolve_secret(self.password_var.as_deref().unwrap_or(""))
-            .await?;
-        match value {
-            Some(res) => Ok(res),
-            None => Err(OxyError::SecretNotFound(self.password_var.clone())),
-        }
+        secret_manager
+            .resolve_config_value(
+                self.password.as_deref(),
+                self.password_var.as_deref(),
+                "password",
+                None,
+            )
+            .await
     }
 
     pub async fn get_host(&self, secret_manager: &SecretsManager) -> Result<String, OxyError> {
-        if let Some(host) = &self.host
-            && !host.is_empty()
-        {
-            return Ok(host.clone());
-        }
-        if let Some(host_var) = &self.host_var {
-            let value = secret_manager.resolve_secret(host_var).await?;
-            match value {
-                Some(res) => Ok(res),
-                None => Err(OxyError::SecretNotFound(Some(host_var.clone()))),
-            }
-        } else {
-            Ok("localhost".to_string())
-        }
+        secret_manager
+            .resolve_config_value(
+                self.host.as_deref(),
+                self.host_var.as_deref(),
+                "host",
+                Some("localhost"),
+            )
+            .await
     }
 
     pub async fn get_port(&self, secret_manager: &SecretsManager) -> Result<String, OxyError> {
-        if let Some(port) = &self.port
-            && !port.is_empty()
-        {
-            return Ok(port.clone());
-        }
-        if let Some(port_var) = &self.port_var {
-            let value = secret_manager.resolve_secret(port_var).await?;
-            match value {
-                Some(res) => Ok(res),
-                None => Err(OxyError::SecretNotFound(Some(port_var.clone()))),
-            }
-        } else {
-            Ok("5432".to_string())
-        }
+        secret_manager
+            .resolve_config_value(
+                self.port.as_deref(),
+                self.port_var.as_deref(),
+                "port",
+                Some("5432"),
+            )
+            .await
     }
 
     pub async fn get_user(&self, secret_manager: &SecretsManager) -> Result<String, OxyError> {
-        if let Some(user) = &self.user
-            && !user.is_empty()
-        {
-            return Ok(user.clone());
-        }
-        if let Some(user_var) = &self.user_var {
-            let value = secret_manager.resolve_secret(user_var).await?;
-            match value {
-                Some(res) => Ok(res),
-                None => Err(OxyError::SecretNotFound(Some(user_var.clone()))),
-            }
-        } else {
-            Ok("postgres".to_string())
-        }
+        secret_manager
+            .resolve_config_value(
+                self.user.as_deref(),
+                self.user_var.as_deref(),
+                "user",
+                Some("postgres"),
+            )
+            .await
     }
 
     pub async fn get_database(&self, secret_manager: &SecretsManager) -> Result<String, OxyError> {
-        if let Some(database) = &self.database
-            && !database.is_empty()
-        {
-            return Ok(database.clone());
-        }
-        if let Some(database_var) = &self.database_var {
-            let value = secret_manager.resolve_secret(database_var).await?;
-            match value {
-                Some(res) => Ok(res),
-                None => Err(OxyError::SecretNotFound(Some(database_var.clone()))),
-            }
-        } else {
-            Ok("postgres".to_string())
-        }
+        secret_manager
+            .resolve_config_value(
+                self.database.as_deref(),
+                self.database_var.as_deref(),
+                "database",
+                Some("postgres"),
+            )
+            .await
     }
 }
 
@@ -313,86 +357,58 @@ pub struct Redshift {
 
 impl Redshift {
     pub async fn get_password(&self, secret_manager: &SecretsManager) -> Result<String, OxyError> {
-        if let Some(password) = &self.password
-            && !password.is_empty()
-        {
-            return Ok(password.clone());
-        }
-        let value = secret_manager
-            .resolve_secret(self.password_var.as_deref().unwrap_or(""))
-            .await?;
-        match value {
-            Some(res) => Ok(res),
-            None => Err(OxyError::SecretNotFound(self.password_var.clone())),
-        }
+        secret_manager
+            .resolve_config_value(
+                self.password.as_deref(),
+                self.password_var.as_deref(),
+                "password",
+                None,
+            )
+            .await
     }
 
     pub async fn get_host(&self, secret_manager: &SecretsManager) -> Result<String, OxyError> {
-        if let Some(host) = &self.host
-            && !host.is_empty()
-        {
-            return Ok(host.clone());
-        }
-        if let Some(host_var) = &self.host_var {
-            let value = secret_manager.resolve_secret(host_var).await?;
-            match value {
-                Some(res) => Ok(res),
-                None => Err(OxyError::SecretNotFound(Some(host_var.clone()))),
-            }
-        } else {
-            Ok("localhost".to_string())
-        }
+        secret_manager
+            .resolve_config_value(
+                self.host.as_deref(),
+                self.host_var.as_deref(),
+                "host",
+                Some("localhost"),
+            )
+            .await
     }
 
     pub async fn get_port(&self, secret_manager: &SecretsManager) -> Result<String, OxyError> {
-        if let Some(port) = &self.port
-            && !port.is_empty()
-        {
-            return Ok(port.clone());
-        }
-        if let Some(port_var) = &self.port_var {
-            let value = secret_manager.resolve_secret(port_var).await?;
-            match value {
-                Some(res) => Ok(res),
-                None => Err(OxyError::SecretNotFound(Some(port_var.clone()))),
-            }
-        } else {
-            Ok("5439".to_string())
-        }
+        secret_manager
+            .resolve_config_value(
+                self.port.as_deref(),
+                self.port_var.as_deref(),
+                "port",
+                Some("5439"),
+            )
+            .await
     }
 
     pub async fn get_user(&self, secret_manager: &SecretsManager) -> Result<String, OxyError> {
-        if let Some(user) = &self.user
-            && !user.is_empty()
-        {
-            return Ok(user.clone());
-        }
-        if let Some(user_var) = &self.user_var {
-            let value = secret_manager.resolve_secret(user_var).await?;
-            match value {
-                Some(res) => Ok(res),
-                None => Err(OxyError::SecretNotFound(Some(user_var.clone()))),
-            }
-        } else {
-            Ok("awsuser".to_string())
-        }
+        secret_manager
+            .resolve_config_value(
+                self.user.as_deref(),
+                self.user_var.as_deref(),
+                "user",
+                Some("awsuser"),
+            )
+            .await
     }
 
     pub async fn get_database(&self, secret_manager: &SecretsManager) -> Result<String, OxyError> {
-        if let Some(database) = &self.database
-            && !database.is_empty()
-        {
-            return Ok(database.clone());
-        }
-        if let Some(database_var) = &self.database_var {
-            let value = secret_manager.resolve_secret(database_var).await?;
-            match value {
-                Some(res) => Ok(res),
-                None => Err(OxyError::SecretNotFound(Some(database_var.clone()))),
-            }
-        } else {
-            Ok("dev".to_string())
-        }
+        secret_manager
+            .resolve_config_value(
+                self.database.as_deref(),
+                self.database_var.as_deref(),
+                "database",
+                Some("dev"),
+            )
+            .await
     }
 }
 
@@ -434,86 +450,58 @@ pub struct Mysql {
 
 impl Mysql {
     pub async fn get_password(&self, secret_manager: &SecretsManager) -> Result<String, OxyError> {
-        if let Some(password) = &self.password
-            && !password.is_empty()
-        {
-            return Ok(password.clone());
-        }
-        let value = secret_manager
-            .resolve_secret(self.password_var.as_deref().unwrap_or(""))
-            .await?;
-        match value {
-            Some(res) => Ok(res),
-            None => Err(OxyError::SecretNotFound(self.password_var.clone())),
-        }
+        secret_manager
+            .resolve_config_value(
+                self.password.as_deref(),
+                self.password_var.as_deref(),
+                "password",
+                None,
+            )
+            .await
     }
 
     pub async fn get_host(&self, secret_manager: &SecretsManager) -> Result<String, OxyError> {
-        if let Some(host) = &self.host
-            && !host.is_empty()
-        {
-            return Ok(host.clone());
-        }
-        if let Some(host_var) = &self.host_var {
-            let value = secret_manager.resolve_secret(host_var).await?;
-            match value {
-                Some(res) => Ok(res),
-                None => Err(OxyError::SecretNotFound(Some(host_var.clone()))),
-            }
-        } else {
-            Ok("localhost".to_string())
-        }
+        secret_manager
+            .resolve_config_value(
+                self.host.as_deref(),
+                self.host_var.as_deref(),
+                "host",
+                Some("localhost"),
+            )
+            .await
     }
 
     pub async fn get_port(&self, secret_manager: &SecretsManager) -> Result<String, OxyError> {
-        if let Some(port) = &self.port
-            && !port.is_empty()
-        {
-            return Ok(port.clone());
-        }
-        if let Some(port_var) = &self.port_var {
-            let value = secret_manager.resolve_secret(port_var).await?;
-            match value {
-                Some(res) => Ok(res),
-                None => Err(OxyError::SecretNotFound(Some(port_var.clone()))),
-            }
-        } else {
-            Ok("3306".to_string())
-        }
+        secret_manager
+            .resolve_config_value(
+                self.port.as_deref(),
+                self.port_var.as_deref(),
+                "port",
+                Some("3306"),
+            )
+            .await
     }
 
     pub async fn get_user(&self, secret_manager: &SecretsManager) -> Result<String, OxyError> {
-        if let Some(user) = &self.user
-            && !user.is_empty()
-        {
-            return Ok(user.clone());
-        }
-        if let Some(user_var) = &self.user_var {
-            let value = secret_manager.resolve_secret(user_var).await?;
-            match value {
-                Some(res) => Ok(res),
-                None => Err(OxyError::SecretNotFound(Some(user_var.clone()))),
-            }
-        } else {
-            Ok("root".to_string())
-        }
+        secret_manager
+            .resolve_config_value(
+                self.user.as_deref(),
+                self.user_var.as_deref(),
+                "user",
+                Some("root"),
+            )
+            .await
     }
 
     pub async fn get_database(&self, secret_manager: &SecretsManager) -> Result<String, OxyError> {
-        if let Some(database) = &self.database
-            && !database.is_empty()
-        {
-            return Ok(database.clone());
-        }
-        if let Some(database_var) = &self.database_var {
-            let value = secret_manager.resolve_secret(database_var).await?;
-            match value {
-                Some(res) => Ok(res),
-                None => Err(OxyError::SecretNotFound(Some(database_var.clone()))),
-            }
-        } else {
-            Ok("mysql".to_string())
-        }
+        secret_manager
+            .resolve_config_value(
+                self.database.as_deref(),
+                self.database_var.as_deref(),
+                "database",
+                Some("mysql"),
+            )
+            .await
     }
 }
 
@@ -561,75 +549,47 @@ pub struct ClickHouse {
 
 impl ClickHouse {
     pub async fn get_password(&self, secret_manager: &SecretsManager) -> Result<String, OxyError> {
-        if let Some(password) = &self.password
-            && !password.is_empty()
-        {
-            return Ok(password.clone());
-        }
-        let value = secret_manager
-            .resolve_secret(self.password_var.as_deref().unwrap_or(""))
-            .await?;
-        match value {
-            Some(res) => Ok(res),
-            None => Err(OxyError::SecretNotFound(self.password_var.clone())),
-        }
+        secret_manager
+            .resolve_config_value(
+                self.password.as_deref(),
+                self.password_var.as_deref(),
+                "password",
+                None,
+            )
+            .await
     }
 
     pub async fn get_host(&self, secret_manager: &SecretsManager) -> Result<String, OxyError> {
-        if let Some(host) = &self.host
-            && !host.is_empty()
-        {
-            return Ok(host.clone());
-        }
-        if let Some(host_var) = &self.host_var {
-            let value = secret_manager.resolve_secret(host_var).await?;
-            match value {
-                Some(res) => Ok(res),
-                None => Err(OxyError::SecretNotFound(Some(host_var.clone()))),
-            }
-        } else {
-            Err(OxyError::ConfigurationError(
-                "ClickHouse host or host_var must be specified".to_string(),
-            ))
-        }
+        secret_manager
+            .resolve_config_value(
+                self.host.as_deref(),
+                self.host_var.as_deref(),
+                "ClickHouse host",
+                None,
+            )
+            .await
     }
 
     pub async fn get_user(&self, secret_manager: &SecretsManager) -> Result<String, OxyError> {
-        if let Some(user) = &self.user
-            && !user.is_empty()
-        {
-            return Ok(user.clone());
-        }
-        if let Some(user_var) = &self.user_var {
-            let value = secret_manager.resolve_secret(user_var).await?;
-            match value {
-                Some(res) => Ok(res),
-                None => Err(OxyError::SecretNotFound(Some(user_var.clone()))),
-            }
-        } else {
-            Err(OxyError::ConfigurationError(
-                "ClickHouse user or user_var must be specified".to_string(),
-            ))
-        }
+        secret_manager
+            .resolve_config_value(
+                self.user.as_deref(),
+                self.user_var.as_deref(),
+                "ClickHouse user",
+                None,
+            )
+            .await
     }
 
     pub async fn get_database(&self, secret_manager: &SecretsManager) -> Result<String, OxyError> {
-        if let Some(database) = &self.database
-            && !database.is_empty()
-        {
-            return Ok(database.clone());
-        }
-        if let Some(database_var) = &self.database_var {
-            let value = secret_manager.resolve_secret(database_var).await?;
-            match value {
-                Some(res) => Ok(res),
-                None => Err(OxyError::SecretNotFound(Some(database_var.clone()))),
-            }
-        } else {
-            Err(OxyError::ConfigurationError(
-                "ClickHouse database or database_var must be specified".to_string(),
-            ))
-        }
+        secret_manager
+            .resolve_config_value(
+                self.database.as_deref(),
+                self.database_var.as_deref(),
+                "ClickHouse database",
+                None,
+            )
+            .await
     }
 }
 
@@ -659,11 +619,9 @@ pub struct MotherDuck {
 
 impl MotherDuck {
     pub async fn get_token(&self, secret_manager: &SecretsManager) -> Result<String, OxyError> {
-        let value = secret_manager.resolve_secret(&self.token_var).await?;
-        match value {
-            Some(res) => Ok(res),
-            None => Err(OxyError::SecretNotFound(Some(self.token_var.clone()))),
-        }
+        secret_manager
+            .resolve_config_value(None, Some(&self.token_var), "MotherDuck token", None)
+            .await
     }
 }
 
@@ -954,23 +912,14 @@ impl Snowflake {
         // First validate that we have proper auth configuration
         self.validate_auth()?;
 
-        if let Some(password) = &self.password
-            && !password.is_empty()
-        {
-            return Ok(password.clone());
-        }
-
-        if let Some(password_var) = &self.password_var {
-            let value = secret_manager.resolve_secret(password_var).await?;
-            match value {
-                Some(res) => Ok(res),
-                None => Err(OxyError::SecretNotFound(self.password_var.clone())),
-            }
-        } else {
-            Err(OxyError::ConfigurationError(
-                "No password or password_var configured for Snowflake".to_string(),
-            ))
-        }
+        secret_manager
+            .resolve_config_value(
+                self.password.as_deref(),
+                self.password_var.as_deref(),
+                "Snowflake password",
+                None,
+            )
+            .await
     }
 }
 

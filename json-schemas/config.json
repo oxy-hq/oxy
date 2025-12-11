@@ -52,6 +52,17 @@
       "items": {
         "$ref": "#/definitions/Model"
       }
+    },
+    "slack": {
+      "default": null,
+      "anyOf": [
+        {
+          "$ref": "#/definitions/SlackSettings"
+        },
+        {
+          "type": "null"
+        }
+      ]
     }
   },
   "definitions": {
@@ -1245,6 +1256,43 @@
           }
         }
       ]
+    },
+    "SlackSettings": {
+      "description": "Slack integration settings for project-level configuration",
+      "type": "object",
+      "required": [
+        "default_agent"
+      ],
+      "properties": {
+        "bot_token_var": {
+          "description": "Environment variable containing the bot token",
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "default_agent": {
+          "description": "Default agent to use for Slack DM conversations This is used when users message the bot directly via Slack's AI/Agent interface",
+          "type": "string"
+        },
+        "oxy_app_url": {
+          "description": "Base URL for the Oxy web app (for deep links back to app in Slack messages) If not specified, \"View in Oxy\" links will not be included in responses",
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "signing_secret_var": {
+          "description": "Environment variable containing the signing secret",
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
     }
   }
 }

@@ -180,6 +180,12 @@
                 ]
               }
             ]
+          },
+          {
+            "group": "Apps",
+            "pages": [
+              "integrations/apps/slack"
+            ]
           }
         ]
       },

@@ -16,6 +16,7 @@ pub mod readonly;
 pub mod semantic;
 pub mod sentry_config;
 pub mod service;
+pub mod slack;
 pub mod state_dir;
 pub mod theme;
 mod tools;

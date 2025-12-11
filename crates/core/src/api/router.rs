@@ -13,6 +13,7 @@ use crate::api::middlewares::timeout::timeout_middleware;
 use crate::api::project;
 use crate::api::run;
 use crate::api::secrets;
+use crate::api::slack;
 use crate::api::thread;
 use crate::api::user;
 use crate::api::workflow;
@@ -68,6 +69,19 @@ fn build_public_routes() -> Router<AppState> {
         .route("/auth/validate_email", post(auth::validate_email))
         .route("/user", get(user::get_current_user_public))
         .route("/webhooks/github", post(github::github_webhook))
+        .merge(build_slack_routes())
+}
+
+// TODO: Right now, all incoming Slack requests default to the empty UUID project_id,
+//       but we can bind a project to a Slack channel via `/oxy bind <project_id> <agent_id>`.
+//       In the future, to support Slack integration for cloud deployments, we may need to scope
+//       Slack routes to a specific workspace and/or project.
+fn build_slack_routes() -> Router<AppState> {
+    // Slack routes are always registered. Configuration (signing secret, bot token)
+    // is loaded from config.yml per-request in the handlers.
+    Router::new()
+        .route("/slack/events", post(slack::handle_events))
+        .route("/slack/commands", post(slack::handle_commands))
 }
 
 fn build_global_routes() -> Router<AppState> {
