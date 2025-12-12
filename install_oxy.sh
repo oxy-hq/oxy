@@ -40,11 +40,7 @@ fi
 # Map architecture to target
 case $ARCH in
 x86_64)
-	if [ "$OS" == "darwin" ]; then
-		TARGET="x86_64-apple-darwin"
-	else
-		TARGET="x86_64-unknown-linux-gnu"
-	fi
+	TARGET="x86_64-unknown-linux-gnu"
 	;;
 aarch64 | arm64)
 	if [ "$OS" == "darwin" ]; then
