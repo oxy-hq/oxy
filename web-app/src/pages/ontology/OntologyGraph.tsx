@@ -59,6 +59,16 @@ const OntologyNode = ({ data }: NodeProps) => {
     scale?: number;
   };
 
+  const typeLabels: Record<string, string> = {
+    agent: "agent",
+    workflow: "automation",
+    topic: "topic",
+    view: "view",
+    sql_query: "sql_query",
+    table: "table",
+    entity: "entity",
+  };
+
   const icons = {
     agent: <Bot className="w-4 h-4" />,
     workflow: <WorkflowIcon className="w-4 h-4" />,
@@ -162,7 +172,7 @@ const OntologyNode = ({ data }: NodeProps) => {
             color: "#000",
           }}
         >
-          {nodeData.type}
+          {typeLabels[nodeData.type] || nodeData.type}
         </span>
       </div>
     </div>
@@ -597,7 +607,7 @@ function OntologyGraphInner({ data }: OntologyGraphProps) {
 
   const typeLabels: Record<string, string> = {
     agent: "Agents",
-    workflow: "Workflows",
+    workflow: "Automations",
     topic: "Topics",
     view: "Views",
     sql_query: "SQL Queries",
@@ -718,7 +728,7 @@ function OntologyGraphInner({ data }: OntologyGraphProps) {
                 <SelectItem value="workflow" className="text-sm">
                   <div className="flex items-center gap-2">
                     <WorkflowIcon className="w-4 h-4" />
-                    <span>Workflows</span>
+                    <span>Automations</span>
                   </div>
                 </SelectItem>
                 <SelectItem value="topic" className="text-sm">

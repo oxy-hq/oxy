@@ -164,7 +164,7 @@ export const WorkflowForm: React.FC<WorkflowFormProps> = ({
                 <Label htmlFor="name">Name</Label>
                 <Input
                   id="name"
-                  placeholder="Describe what this workflow does..."
+                  placeholder="Describe what this automation does..."
                   {...register("name")}
                 />
                 {errors.name && (
@@ -175,7 +175,7 @@ export const WorkflowForm: React.FC<WorkflowFormProps> = ({
                 <Label htmlFor="description">Description</Label>
                 <Textarea
                   id="description"
-                  placeholder="Describe what this workflow does..."
+                  placeholder="Describe what this automation does..."
                   {...register("description")}
                   rows={4}
                 />

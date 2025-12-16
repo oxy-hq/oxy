@@ -227,7 +227,7 @@ struct AskArgs {
 enum SubCommand {
     /// Initialize a repository as an oxy project. Also creates a ~/.config/oxy/config.yaml file if it doesn't exist
     Init,
-    /// Execute workflow (.workflow.yml), agent (.agent.yml), or SQL (.sql) files
+    /// Execute workflow (.workflow.yml or .automation.yml), agent (.agent.yml), or SQL (.sql) files
     ///
     /// Run SQL queries against databases, execute workflows for data processing,
     /// or interact with AI agents for analysis and insights.
@@ -325,7 +325,7 @@ pub struct MakeArgs {
 
 #[derive(Parser, Debug)]
 pub struct RunArgs {
-    /// Path to the file to execute (.sql, .workflow.yml, or .agent.yml)
+    /// Path to the file to execute (.sql, .workflow.yml, .automation.yml, or .agent.yml)
     file: String,
 
     /// Database connection to use for SQL execution
@@ -1448,7 +1448,7 @@ pub async fn handle_run_command(run_args: RunArgs) -> Result<RunResult, OxyError
 
     match extension {
         Some("yml") => {
-            if file.ends_with(".workflow.yml") {
+            if file.ends_with(".workflow.yml") || file.ends_with(".automation.yml") {
                 handle_workflow_file(&file_path, run_args.retry, run_args.retry_from).await?;
                 Ok(RunResult::Workflow)
             } else if file.ends_with(".agent.yml") {
@@ -1459,7 +1459,7 @@ pub async fn handle_run_command(run_args: RunArgs) -> Result<RunResult, OxyError
                 Ok(RunResult::Agent)
             } else {
                 Err(OxyError::ArgumentError(
-                    "Invalid YAML file. Must be either *.workflow.yml or *.agent.yml".into(),
+                    "Invalid YAML file. Must be either *.workflow.yml, *.automation.yml, or *.agent.yml".into(),
                 ))
             }
         }
@@ -1488,7 +1488,8 @@ pub async fn handle_run_command(run_args: RunArgs) -> Result<RunResult, OxyError
             Ok(RunResult::Sql(sql_result))
         }
         _ => Err(OxyError::ArgumentError(
-            "Invalid file extension. Must be .workflow.yml, .agent.yml, or .sql".into(),
+            "Invalid file extension. Must be .workflow.yml, .automation.yml, .agent.yml, or .sql"
+                .into(),
         )),
     }
 }

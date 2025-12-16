@@ -44,11 +44,10 @@ pub async fn list_workflows(config_manager: ConfigManager) -> Result<Vec<Workflo
     let mut workflows = Vec::new();
 
     for path in workflow_paths {
-        if let Some(name) = path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .and_then(|s| s.strip_suffix(".workflow"))
-        {
+        if let Some(name) = path.file_stem().and_then(|s| s.to_str()).and_then(|s| {
+            s.strip_suffix(".workflow")
+                .or_else(|| s.strip_suffix(".automation"))
+        }) {
             let relative_path_str = path
                 .strip_prefix(project_path)
                 .unwrap_or(&path)

@@ -60,7 +60,7 @@ const WorkflowOutput: React.FC<WorkflowOutputProps> = ({
         <EmptyState
           className="mt-[150px] [&>img]:opacity-100"
           title="No logs yet"
-          description="Run the workflow to see the logs"
+          description="Run the automation to see the logs"
         />
       )}
 

@@ -305,7 +305,9 @@ impl ConfigStorage for LocalSource {
     }
 
     async fn list_workflows(&self) -> Result<Vec<PathBuf>, OxyError> {
-        Ok(self.list_by_sub_extension(None, "workflow"))
+        let mut workflows = self.list_by_sub_extension(None, "workflow");
+        workflows.extend(self.list_by_sub_extension(None, "automation"));
+        Ok(workflows)
     }
 
     async fn list_apps(&self) -> Result<Vec<PathBuf>, OxyError> {

@@ -18,6 +18,16 @@ export function NodeDetailPanel({ node, onClose }: NodeDetailPanelProps) {
   const { project, branchName } = useCurrentProjectBranch();
   const navigate = useNavigate();
 
+  const typeLabels: Record<string, string> = {
+    agent: "Agent",
+    workflow: "Automation",
+    topic: "Topic",
+    view: "View",
+    sql_query: "SQL Query",
+    table: "Table",
+    entity: "Entity",
+  };
+
   useEffect(() => {
     if (!node) {
       setContent(null);
@@ -77,8 +87,8 @@ export function NodeDetailPanel({ node, onClose }: NodeDetailPanelProps) {
       <div className="flex items-center justify-between p-4 border-b border-border">
         <div className="flex-1 min-w-0">
           <h2 className="text-lg font-semibold truncate">{node.label}</h2>
-          <p className="text-sm text-muted-foreground capitalize">
-            {node.type}
+          <p className="text-sm text-muted-foreground">
+            {typeLabels[node.type] || node.type}
           </p>
         </div>
         <div className="flex items-center gap-2">

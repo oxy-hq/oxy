@@ -134,7 +134,7 @@ export function Variables({ schema }: Props) {
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
-          <DialogTitle>Run Workflow With Variables</DialogTitle>
+          <DialogTitle>Run Automation With Variables</DialogTitle>
         </DialogHeader>
         <div className="flex h-full overflow-hidden">
           <div className="flex-1 overflow-auto customScrollbar scrollbar-gutter-auto">

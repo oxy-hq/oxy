@@ -81,7 +81,7 @@ pub struct ErrorResponse {
     security(
         ("ApiKey" = [])
     ),
-    tag = "Workflows"
+    tag = "Automations"
 )]
 pub async fn list(
     ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
@@ -116,7 +116,7 @@ pub async fn list(
     security(
         ("ApiKey" = [])
     ),
-    tag = "Workflows"
+    tag = "Automations"
 )]
 pub async fn get(
     Path((_project_id, pathb64)): Path<(Uuid, String)>,
@@ -181,7 +181,7 @@ pub struct GetLogsResponse {
     security(
         ("ApiKey" = [])
     ),
-    tag = "Workflows"
+    tag = "Automations"
 )]
 pub async fn get_logs(
     Path((_project_id, pathb64)): Path<(Uuid, String)>,
@@ -275,7 +275,7 @@ pub struct RunWorkflowRequest {
     security(
         ("ApiKey" = [])
     ),
-    tag = "Workflows"
+    tag = "Automations"
 )]
 pub async fn run_workflow(
     Path((_project_id, pathb64)): Path<(Uuid, String)>,
@@ -388,7 +388,7 @@ async fn ensure_workflow_thread_unlocked(
     security(
         ("ApiKey" = [])
     ),
-    tag = "Workflows"
+    tag = "Automations"
 )]
 pub async fn run_workflow_thread(
     Path((_project_id, id)): Path<(Uuid, String)>,
@@ -568,7 +568,7 @@ pub struct RunWorkflowThreadRequest {
     security(
         ("ApiKey" = [])
     ),
-    tag = "Workflows"
+    tag = "Automations"
 )]
 pub async fn run_workflow_thread_sync(
     Path((_project_id, id)): Path<(Uuid, String)>,
@@ -866,7 +866,7 @@ pub struct RunWorkflowSyncResponse {
     security(
         ("ApiKey" = [])
     ),
-    tag = "Workflows"
+    tag = "Automations"
 )]
 pub async fn run_workflow_sync(
     Path((_project_id, pathb64)): Path<(Uuid, String)>,
@@ -1184,7 +1184,7 @@ pub struct CreateFromQueryResponse {
     security(
         ("ApiKey" = [])
     ),
-    tag = "Workflows"
+    tag = "Automations"
 )]
 pub async fn create_from_query(
     ProjectManagerExtractor(project_manager): ProjectManagerExtractor,

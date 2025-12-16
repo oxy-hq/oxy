@@ -15,7 +15,12 @@ export interface FileTypeConfig {
 export const FILE_TYPE_CONFIGS: Record<FileType, FileTypeConfig> = {
   [FileType.WORKFLOW]: {
     type: FileType.WORKFLOW,
-    extensions: [".workflow.yml", ".workflow.yaml"],
+    extensions: [
+      ".workflow.yml",
+      ".workflow.yaml",
+      ".automation.yml",
+      ".automation.yaml",
+    ],
     editorComponent: "WorkflowEditor",
   },
   [FileType.AGENT]: {

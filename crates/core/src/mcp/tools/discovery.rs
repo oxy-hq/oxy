@@ -170,7 +170,11 @@ pub fn detect_resource_type(path: &Path) -> Option<ToolType> {
 
     if file_name.ends_with(".agent.yml") || file_name.ends_with(".agent.yaml") {
         Some(ToolType::Agent)
-    } else if file_name.ends_with(".workflow.yml") || file_name.ends_with(".workflow.yaml") {
+    } else if file_name.ends_with(".workflow.yml")
+        || file_name.ends_with(".workflow.yaml")
+        || file_name.ends_with(".automation.yml")
+        || file_name.ends_with(".automation.yaml")
+    {
         Some(ToolType::Workflow)
     } else if file_name.ends_with(".topic.yml") || file_name.ends_with(".topic.yaml") {
         Some(ToolType::SemanticTopic)

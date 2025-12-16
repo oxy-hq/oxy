@@ -15,7 +15,7 @@ export class NavigationPage {
     this.threadsLink = page.getByRole("link", { name: "Threads" });
     this.ontologyLink = page.getByRole("link", { name: "Ontology" });
     this.ideLink = page.getByRole("link", { name: "IDE" });
-    this.workflowsLink = page.getByRole("link", { name: "Workflows" });
+    this.workflowsLink = page.getByRole("link", { name: "Automations" });
     this.appsLink = page.getByRole("link", { name: "Apps" });
   }
 

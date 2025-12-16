@@ -28,7 +28,7 @@ export function Workflows() {
       <SidebarMenuButton asChild>
         <div>
           <Workflow />
-          <span>Workflows</span>
+          <span>Automations</span>
         </div>
       </SidebarMenuButton>
       <SidebarMenuSub>
@@ -45,7 +45,10 @@ export function Workflows() {
                   asChild
                   isActive={location.pathname === workflowUri}
                 >
-                  <Link to={workflowUri} data-testid={`workflow-link-${workflow.name}`}>
+                  <Link
+                    to={workflowUri}
+                    data-testid={`workflow-link-${workflow.name}`}
+                  >
                     <span>{workflow.name}</span>
                   </Link>
                 </SidebarMenuSubButton>
@@ -59,7 +62,9 @@ export function Workflows() {
             onClick={() => setShowAll(!showAll)}
             className="w-full text-sm text-muted-foreground hover:text-foreground py-1 text-left"
           >
-            {showAll ? "Show less" : `Show all (${workflows.length} workflows)`}
+            {showAll
+              ? "Show less"
+              : `Show all (${workflows.length} automations)`}
           </Button>
         )}
       </SidebarMenuSub>
