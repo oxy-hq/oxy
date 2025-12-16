@@ -118,7 +118,7 @@ pub async fn run_semantic_topic_tool(
         crate::mcp::variables::merge_variables(default_variables, meta_variables, arg_variables);
 
     let query_params = SemanticQueryParams {
-        topic: topic_name.clone(),
+        topic: Some(topic_name.clone()),
         measures: input.measures.unwrap_or_default(),
         dimensions: input.dimensions.unwrap_or_default(),
         filters: input.filters.unwrap_or_default(),

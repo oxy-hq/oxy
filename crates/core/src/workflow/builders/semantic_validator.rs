@@ -185,15 +185,55 @@ fn validate_task_against_metadata(
     let topics = semantic_layer.topics.as_ref().unwrap_or(&empty_topics);
     let available_topics: Vec<String> = topics.iter().map(|t| t.name.clone()).collect();
 
-    // Validate topic exists
-    let topic = topics
-        .iter()
-        .find(|t| t.name == task.query.topic)
-        .ok_or_else(|| SemanticQueryError::MissingTopic {
-            topic: task.query.topic.clone(),
-            available: available_topics,
-        })?
-        .clone();
+    // Validate topic exists or infer from views
+    let topic = if let Some(topic_name) = &task.query.topic {
+        topics
+            .iter()
+            .find(|t| t.name == *topic_name)
+            .ok_or_else(|| SemanticQueryError::MissingTopic {
+                topic: topic_name.clone(),
+                available: available_topics,
+            })?
+            .clone()
+    } else {
+        // Infer topic from views referenced in dimensions and measures
+        let mut view_names = HashSet::new();
+
+        for dim in &task.query.dimensions {
+            if let Some((view, _)) = dim.split_once('.') {
+                view_names.insert(view.to_string());
+            }
+        }
+
+        for measure in &task.query.measures {
+            if let Some((view, _)) = measure.split_once('.') {
+                view_names.insert(view.to_string());
+            }
+        }
+
+        if view_names.is_empty() {
+            return Err(SemanticQueryError::EmptySelection.into());
+        }
+
+        // Verify all referenced views exist in the semantic layer
+        for view_name in &view_names {
+            if !semantic_layer.views.iter().any(|v| v.name == *view_name) {
+                return Err(OxyError::ValidationError(format!(
+                    "View '{}' not found in semantic layer",
+                    view_name
+                )));
+            }
+        }
+
+        Topic {
+            name: "adhoc_query".to_string(),
+            description: "Ad-hoc query topic inferred from views".to_string(),
+            views: view_names.into_iter().collect(),
+            base_view: None,
+            retrieval: None,
+            default_filters: None,
+        }
+    };
 
     // Get all views referenced by this topic
     let topic_views: Vec<View> = semantic_layer
@@ -204,15 +244,16 @@ fn validate_task_against_metadata(
         .collect();
 
     if topic_views.is_empty() {
+        let topic_name = task.query.topic.as_deref().unwrap_or("adhoc_query");
         return Err(SemanticQueryError::ExecutionFailed {
-            details: format!("Topic '{}' references no valid views", task.query.topic),
+            details: format!("Topic '{}' references no valid views", topic_name),
         }
         .into());
     }
 
     tracing::debug!(
         "Validating semantic query task for topic '{}', found {} views",
-        task.query.topic,
+        topic.name,
         topic_views.len()
     );
 
@@ -231,16 +272,16 @@ fn validate_task_against_metadata(
     }
 
     // Validate field references
-    validate_field_references(task, &valid_dimensions, &valid_measures, &task.query.topic)?;
+    validate_field_references(task, &valid_dimensions, &valid_measures, &topic.name)?;
 
     // Check for duplicate fields and emit warnings
     check_duplicate_fields(task);
 
     // Validate filters
-    validate_filters(task, &valid_dimensions, &valid_measures, &task.query.topic)?;
+    validate_filters(task, &valid_dimensions, &valid_measures, &topic.name)?;
 
     // Validate orders
-    validate_orders(task, &valid_dimensions, &valid_measures, &task.query.topic)?;
+    validate_orders(task, &valid_dimensions, &valid_measures, &topic.name)?;
 
     Ok(ValidatedSemanticQuery {
         task: task.clone(),
@@ -613,7 +654,7 @@ mod tests {
     ) -> SemanticQueryTask {
         SemanticQueryTask {
             query: SemanticQueryParams {
-                topic: topic.to_string(),
+                topic: Some(topic.to_string()),
                 dimensions: dimensions.iter().map(|d| d.to_string()).collect(),
                 measures: measures.iter().map(|m| m.to_string()).collect(),
                 filters: vec![],

@@ -24,7 +24,11 @@ pub fn render_semantic_query(
     renderer: &Renderer,
     task: &SemanticQueryTask,
 ) -> Result<SemanticQueryTask, OxyError> {
-    let topic = render_string(renderer, &task.query.topic, "topic")?;
+    let topic = if let Some(t) = &task.query.topic {
+        Some(render_string(renderer, t, "topic")?)
+    } else {
+        None
+    };
     let dimensions = task
         .query
         .dimensions
@@ -190,7 +194,7 @@ pub fn render_semantic_query(
 }
 
 fn render_string(renderer: &Renderer, value: &str, ctx: &str) -> Result<String, OxyError> {
-    renderer.render(value).map_err(|e| {
+    renderer.render_str(value).map_err(|e| {
         OxyError::RuntimeError(format!(
             "Failed to render semantic query {ctx} template '{value}': {e}"
         ))
@@ -332,7 +336,6 @@ impl ParamMapper<SemanticQueryTask, ValidatedSemanticQuery> for SemanticQueryTas
     }
 }
 
-// SemanticQueryExecutable - implements Task 4.2
 #[derive(Clone)]
 pub struct SemanticQueryExecutable;
 
@@ -345,6 +348,30 @@ impl Default for SemanticQueryExecutable {
 impl SemanticQueryExecutable {
     pub fn new() -> Self {
         Self
+    }
+
+    pub async fn compile(
+        &mut self,
+        execution_context: &ExecutionContext,
+        input: ValidatedSemanticQuery,
+    ) -> Result<String, OxyError> {
+        let requested_views = self.extract_views_from_query(&input.task, &input.topic.name);
+
+        let cubejs_query = self.convert_to_cubejs_query(
+            &input.task,
+            &input.topic.name,
+            input.topic.base_view.as_ref(),
+            &requested_views,
+            input.topic.default_filters.as_ref(),
+        )?;
+
+        let mut sql_query = self.get_sql_from_cubejs(&cubejs_query).await?;
+
+        let variables = input.task.variables.clone().unwrap_or_default();
+
+        sql_query = self.resolve_variables_in_sql(execution_context, sql_query, variables)?;
+
+        Ok(sql_query)
     }
 }
 
@@ -359,17 +386,14 @@ impl Executable<ValidatedSemanticQuery> for SemanticQueryExecutable {
     ) -> Result<Self::Response, OxyError> {
         execution_context
             .write_kind(EventKind::Started {
-                name: format!("Semantic Query: {}", input.task.query.topic),
-                attributes: HashMap::from_iter([(
-                    "topic".to_string(),
-                    input.task.query.topic.clone(),
-                )]),
+                name: format!("Semantic Query: {}", input.topic.name),
+                attributes: HashMap::from_iter([("topic".to_string(), input.topic.name.clone())]),
             })
             .await?;
 
         tracing::info!(
             "Executing semantic query for topic '{}': {:?}",
-            input.task.query.topic,
+            input.topic.name,
             input.task.query
         );
 
@@ -387,7 +411,7 @@ impl Executable<ValidatedSemanticQuery> for SemanticQueryExecutable {
         )?;
         tracing::info!(
             "Generated CubeJS query for topic '{}': {cubejs_query:?}",
-            input.task.query.topic
+            input.topic.name
         );
 
         let mut sql_query = self.get_sql_from_cubejs(&cubejs_query).await?;
@@ -414,14 +438,14 @@ impl Executable<ValidatedSemanticQuery> for SemanticQueryExecutable {
             .execute_sql_and_save_results(
                 &sql_query,
                 &database,
-                &input.task.query.topic,
+                &input.topic.name,
                 execution_context,
             )
             .await
             .map_err(|e| {
                 OxyError::RuntimeError(format!(
                     "Failed to execute semantic query for topic '{}': {e}",
-                    input.task.query.topic
+                    input.topic.name
                 ))
             })?;
 
@@ -446,7 +470,7 @@ impl Executable<ValidatedSemanticQuery> for SemanticQueryExecutable {
             .write_kind(EventKind::Finished {
                 message: format!(
                     "Executed semantic query for topic '{}' - results written to {}",
-                    input.task.query.topic, file_path
+                    input.topic.name, file_path
                 ),
                 attributes: [].into(),
                 error: None,
@@ -540,7 +564,7 @@ impl SemanticQueryExecutable {
         // For now, we'll return an error indicating that datasource must be specified
         Err(OxyError::ValidationError(format!(
             "No datasource found for topic '{}'. At least one view in the topic must specify a datasource.",
-            input.task.query.topic
+            input.topic.name
         )))
     }
 

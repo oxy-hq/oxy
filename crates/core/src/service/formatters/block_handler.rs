@@ -312,7 +312,7 @@ impl BlockHandler {
                             let query_params =
                                 self.current_semantic_query.clone().unwrap_or_else(|| {
                                     crate::service::types::SemanticQueryParams {
-                                        topic: "".to_string(),
+                                        topic: None,
                                         dimensions: vec![],
                                         measures: vec![],
                                         filters: vec![],
@@ -349,7 +349,7 @@ impl BlockHandler {
                                 let query_params =
                                     self.current_semantic_query.clone().unwrap_or_else(|| {
                                         crate::service::types::SemanticQueryParams {
-                                            topic: "".to_string(),
+                                            topic: None,
                                             dimensions: vec![],
                                             measures: vec![],
                                             filters: vec![],

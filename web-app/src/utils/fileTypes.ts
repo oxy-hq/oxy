@@ -3,6 +3,8 @@ export enum FileType {
   AGENT = "agent",
   APP = "app",
   SQL = "sql",
+  VIEW = "view",
+  TOPIC = "topic",
   DEFAULT = "default",
 }
 
@@ -37,6 +39,16 @@ export const FILE_TYPE_CONFIGS: Record<FileType, FileTypeConfig> = {
     type: FileType.SQL,
     extensions: [".sql"],
     editorComponent: "SqlEditor",
+  },
+  [FileType.VIEW]: {
+    type: FileType.VIEW,
+    extensions: [".view.yml", ".view.yaml"],
+    editorComponent: "ViewEditor",
+  },
+  [FileType.TOPIC]: {
+    type: FileType.TOPIC,
+    extensions: [".topic.yml", ".topic.yaml"],
+    editorComponent: "TopicEditor",
   },
   [FileType.DEFAULT]: {
     type: FileType.DEFAULT,

@@ -15,6 +15,7 @@ pub mod project;
 pub mod router;
 pub mod run;
 pub mod secrets;
+pub mod semantic;
 pub mod slack;
 pub mod task;
 pub mod thread;

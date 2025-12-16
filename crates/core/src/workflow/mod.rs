@@ -3,6 +3,6 @@ pub mod loggers;
 
 pub use builders::{WorkflowInput, WorkflowLauncher, WorkflowLauncherExecutable};
 pub use builders::{
-    semantic::SemanticQueryExecutable,
+    semantic::{SemanticQueryExecutable, render_semantic_query},
     semantic_validator::{ValidatedSemanticQuery, validate_semantic_query_task},
 };

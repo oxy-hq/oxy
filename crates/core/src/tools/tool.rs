@@ -188,7 +188,7 @@ impl Executable<(String, Option<ToolType>, ToolRawInput)> for ToolExecutable {
                     let mut semantic_params =
                         serde_json::from_str::<SemanticQueryParams>(&input.param)?;
                     if let Some(tool_topic) = semantic_query_tool.topic.clone()
-                        && semantic_params.topic != tool_topic
+                        && semantic_params.topic.as_deref() != Some(tool_topic.as_str())
                     {
                         return Err(OxyError::ArgumentError(format!(
                             "Invalid topic: expected '{}'",

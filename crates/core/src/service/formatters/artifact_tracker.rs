@@ -168,7 +168,7 @@ impl ArtifactTracker {
         query_params: Option<SemanticQueryParams>,
     ) -> Result<Option<ArtifactContent>, OxyError> {
         let default_params = SemanticQueryParams {
-            topic: "".to_string(),
+            topic: None,
             dimensions: vec![],
             measures: vec![],
             filters: vec![],

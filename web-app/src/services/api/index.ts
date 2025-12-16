@@ -13,3 +13,4 @@ export { GitHubApiService } from "./github";
 export { ChartService, ArtifactService, BuilderService } from "./misc";
 export { RunService } from "./run";
 export { OntologyService } from "./ontology";
+export { SemanticService } from "./semantic";

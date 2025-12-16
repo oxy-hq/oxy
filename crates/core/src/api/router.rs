@@ -13,6 +13,7 @@ use crate::api::middlewares::timeout::timeout_middleware;
 use crate::api::project;
 use crate::api::run;
 use crate::api::secrets;
+use crate::api::semantic;
 use crate::api::slack;
 use crate::api::thread;
 use crate::api::user;
@@ -151,6 +152,16 @@ fn build_project_routes() -> Router<AppState> {
             get(agent::check_builder_availability),
         )
         .route("/sql/{pathb64}", post(data::execute_sql))
+        .route("/semantic", post(semantic::execute_semantic_query))
+        .route("/semantic/compile", post(semantic::compile_semantic_query))
+        .route(
+            "/semantic/topic/{topic_name}",
+            get(semantic::get_topic_details),
+        )
+        .route(
+            "/semantic/view/{view_name}",
+            get(semantic::get_view_details),
+        )
 }
 
 #[derive(Clone)]

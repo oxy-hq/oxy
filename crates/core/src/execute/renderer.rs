@@ -168,6 +168,14 @@ impl Renderer {
         self.render_sync_internal(template, ctx)
     }
 
+    pub fn render_str(&self, source: &str) -> Result<String, OxyError> {
+        let ctx = self.get_context();
+        let env = self.env.read()?;
+        env.render_str(source, ctx).map_err(|err| {
+            OxyError::RuntimeError(format!("Error rendering template string: {err:?}"))
+        })
+    }
+
     pub fn render_once(&self, template: &str, context: Value) -> Result<String, OxyError> {
         self.register_template(template)?;
         self.render_sync_internal(template, context)

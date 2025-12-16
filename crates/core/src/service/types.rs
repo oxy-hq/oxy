@@ -111,7 +111,8 @@ pub struct SemanticQueryExport {
 // Reusable set of semantic query parameters (mirrors task definition inputs)
 #[derive(Serialize, Deserialize, ToSchema, JsonSchema, Clone, Debug)]
 pub struct SemanticQueryParams {
-    pub topic: String,
+    #[serde(default)]
+    pub topic: Option<String>,
     #[schemars(
         description = "List of measures to include in the query. Format: <view_name>.<measure_name>"
     )]
@@ -167,7 +168,7 @@ pub struct SemanticQuery {
     pub sql_query: String,
     pub result: Vec<Vec<String>>,
     pub is_result_truncated: bool,
-    pub topic: String,
+    pub topic: Option<String>,
     pub dimensions: Vec<String>,
     pub measures: Vec<String>,
     pub filters: Vec<SemanticQueryFilter>,
@@ -221,7 +222,7 @@ pub enum ArtifactContent {
         sql_query: String,
         result: Vec<Vec<String>>,
         is_result_truncated: bool,
-        topic: String,
+        topic: Option<String>,
         dimensions: Vec<String>,
         measures: Vec<String>,
         filters: Vec<SemanticQueryFilter>,

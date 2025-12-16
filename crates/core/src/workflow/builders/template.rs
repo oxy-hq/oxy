@@ -32,7 +32,9 @@ impl TemplateRegister for &Task {
             TaskType::SemanticQuery(semantic) => {
                 // Register topic and any string fields that may contain templates.
                 // Database is determined from topic metadata during execution, so no need to register it here.
-                register.entry(&semantic.query.topic.as_str())?;
+                if let Some(topic) = &semantic.query.topic {
+                    register.entry(&topic.as_str())?;
+                }
                 // Dimensions & measures are plain strings (may be templated later)
                 for dim in &semantic.query.dimensions {
                     register.entry(&dim.as_str())?;

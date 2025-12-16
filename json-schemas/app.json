@@ -404,7 +404,6 @@
         {
           "type": "object",
           "required": [
-            "topic",
             "type"
           ],
           "properties": {
@@ -461,7 +460,11 @@
               }
             },
             "topic": {
-              "type": "string"
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
             },
             "type": {
               "type": "string",
