@@ -68,6 +68,7 @@ pub enum StepKind {
     Insight,
     Subflow,
     BuildApp,
+    Troubleshoot,
     End,
 }
 
@@ -81,6 +82,7 @@ impl std::fmt::Display for StepKind {
             StepKind::Insight => write!(f, "insight"),
             StepKind::Subflow => write!(f, "subflow"),
             StepKind::BuildApp => write!(f, "build_app"),
+            StepKind::Troubleshoot => write!(f, "troubleshoot"),
             StepKind::End => write!(f, "end"),
         }
     }

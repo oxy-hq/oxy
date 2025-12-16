@@ -236,6 +236,7 @@ pub async fn run_agentic_workflow<P: AsRef<Path>, H: EventHandler + Send + 'stat
         .launch_agentic_workflow(
             agent_ref.as_ref().to_string_lossy().as_ref(),
             AgenticInput {
+                context_id: uuid::Uuid::new_v4().to_string(),
                 prompt,
                 trace: memory.into_iter().map(|m| m.into()).collect(),
             },
@@ -273,13 +274,18 @@ impl From<Message> for ChatCompletionRequestMessage {
 }
 
 pub struct AgenticRunner {
+    context_id: String,
     prompt: String,
     memory: Vec<Message>,
 }
 
 impl AgenticRunner {
-    pub fn new(prompt: String, memory: Vec<Message>) -> Self {
-        Self { prompt, memory }
+    pub fn new(context_id: String, prompt: String, memory: Vec<Message>) -> Self {
+        Self {
+            prompt,
+            memory,
+            context_id,
+        }
     }
 }
 
@@ -298,6 +304,7 @@ impl Dispatch for AgenticRunner {
             .launch_agentic_workflow(
                 &source_id,
                 AgenticInput {
+                    context_id: self.context_id.clone(),
                     prompt: self.prompt.clone(),
                     trace: self.memory.iter().cloned().map(|m| m.into()).collect(),
                 },

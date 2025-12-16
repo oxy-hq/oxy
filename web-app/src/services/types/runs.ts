@@ -36,6 +36,7 @@ export type CreateRunPayload = {
 export type CreateAgenticRunPayload = {
   threadId: string;
   prompt: string;
+  agentRef: string;
 };
 
 export type CreateRunResponse = {

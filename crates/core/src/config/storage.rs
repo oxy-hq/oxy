@@ -10,6 +10,7 @@ use super::model::{AgentConfig, AppConfig, Config, Workflow, WorkflowWithRawVari
 const DEFAULT_CONFIG_PATH: &str = "config.yml";
 const WORKFLOW_EXTENSION: &str = ".workflow";
 const AGENT_EXTENSION: &str = ".agent";
+const AGENTIC_WORKFLOW_EXTENSION: &str = ".aw";
 
 #[enum_dispatch::enum_dispatch]
 pub(super) trait ConfigStorage {
@@ -35,6 +36,7 @@ pub(super) trait ConfigStorage {
     async fn resolve_state_dir(&self) -> Result<PathBuf, OxyError>;
     async fn glob<P: AsRef<Path>>(&self, path: P) -> Result<Vec<String>, OxyError>;
     async fn list_agents(&self) -> Result<Vec<PathBuf>, OxyError>;
+    async fn list_agentic_workflows(&self) -> Result<Vec<PathBuf>, OxyError>;
     async fn list_apps(&self) -> Result<Vec<PathBuf>, OxyError>;
     async fn list_workflows(&self) -> Result<Vec<PathBuf>, OxyError>;
     async fn load_app_config<P: AsRef<Path>>(&self, app_path: P) -> Result<AppConfig, OxyError>;
@@ -239,9 +241,13 @@ impl ConfigStorage for LocalSource {
         let agent_yml = fs::read_to_string(&resolved_path).await.map_err(|e| {
             OxyError::ConfigurationError(format!("Failed to read agent config from file: {e}"))
         })?;
-        let agent_config: AgenticConfig = serde_yaml::from_str(&agent_yml).map_err(|e| {
+        let mut agent_config: AgenticConfig = serde_yaml::from_str(&agent_yml).map_err(|e| {
             OxyError::ConfigurationError(format!("Failed to deserialize agent config: {e}"))
         })?;
+        if agent_config.name.is_empty() {
+            agent_config.name =
+                self.get_stem_by_extension(&resolved_path, AGENTIC_WORKFLOW_EXTENSION);
+        }
         Ok(agent_config)
     }
 
@@ -302,6 +308,10 @@ impl ConfigStorage for LocalSource {
 
     async fn list_agents(&self) -> Result<Vec<PathBuf>, OxyError> {
         Ok(self.list_by_sub_extension(None, "agent"))
+    }
+
+    async fn list_agentic_workflows(&self) -> Result<Vec<PathBuf>, OxyError> {
+        Ok(self.list_by_sub_extension(None, "aw"))
     }
 
     async fn list_workflows(&self) -> Result<Vec<PathBuf>, OxyError> {

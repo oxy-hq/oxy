@@ -27,8 +27,8 @@ where
     async fn run(
         &self,
         execution_context: &ExecutionContext,
-        state: Self::State,
-    ) -> Result<Self::State, OxyError> {
+        state: &mut Self::State,
+    ) -> Result<(), OxyError> {
         execution_context
             .write_step_started(self.step.clone())
             .await?;

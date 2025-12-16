@@ -120,7 +120,7 @@ impl ConfigManager {
 
     pub async fn list_agents(&self) -> Result<Vec<PathBuf>, OxyError> {
         let agents = self.storage.list_agents().await?;
-        tracing::debug!("Agents: {:?}", agents);
+        tracing::info!("Agents: {:?}", agents);
         tracing::debug!("Builder: {:?}", self.config.builder_agent);
         if let Some(ref builder_agent) = self.config.builder_agent {
             // hide the builder agent from the list
@@ -140,6 +140,9 @@ impl ConfigManager {
 
     pub async fn list_apps(&self) -> Result<Vec<PathBuf>, OxyError> {
         self.storage.list_apps().await
+    }
+    pub async fn list_agentic_workflows(&self) -> Result<Vec<PathBuf>, OxyError> {
+        self.storage.list_agentic_workflows().await
     }
     pub async fn list_workflows(&self) -> Result<Vec<PathBuf>, OxyError> {
         self.storage.list_workflows().await

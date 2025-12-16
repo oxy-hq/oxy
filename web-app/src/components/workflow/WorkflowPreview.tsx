@@ -59,7 +59,7 @@ export const WorkflowPreview = ({
   const run = useWorkflowRun();
   const cancelRun = useCancelWorkflowRun();
   const logs = useWorkflowLogs(path, runId || "");
-  const { stream, cancel } = useStreamEvents();
+  const { stream } = useStreamEvents();
   const setGroupBlocks = useBlockStore((state) => state.setGroupBlocks);
   const isProcessing = useIsProcessing(path, runId || "");
   const variablesSchema = useMemo(() => {
@@ -76,11 +76,13 @@ export const WorkflowPreview = ({
     !!runId && !isProcessing,
   ).data;
   useEffect(() => {
+    const abortRef = new AbortController();
     const streamCall = async (relativePath: string, runId: string) => {
       return stream
         .mutateAsync({
           sourceId: relativePath,
           runIndex: parseInt(runId, 10),
+          abortRef: abortRef.signal,
         })
         .catch((error) => {
           console.error("Error streaming events:", error);
@@ -90,7 +92,7 @@ export const WorkflowPreview = ({
     if (relativePath && runId) {
       streamCall(relativePath, runId);
       return () => {
-        cancel();
+        abortRef.abort();
       };
     }
   }, [runId, relativePath]);

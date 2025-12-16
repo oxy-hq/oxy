@@ -3,17 +3,13 @@ use async_openai::types::chat::{
     ChatCompletionRequestMessage, ChatCompletionRequestSystemMessage,
     ChatCompletionRequestSystemMessageContent,
 };
+use futures::StreamExt;
 use itertools::Itertools;
 use short_uuid::ShortUuid;
 
 use crate::{
     adapters::openai::OpenAIAdapter,
-    agent::builders::fsm::{
-        control::TransitionContext,
-        data_app::{CollectInsights, config::Insight},
-        query::PrepareData,
-        viz::CollectViz,
-    },
+    agent::builders::fsm::{data_app::config::Insight, state::MachineContext},
     config::model::{
         AppConfig, Display, ExecuteSQLTask, MarkdownDisplay, SQL, TableDisplay, Task, TaskType,
     },
@@ -21,13 +17,23 @@ use crate::{
     execute::{
         Executable, ExecutionContext,
         builders::fsm::Trigger,
-        types::{Chunk, Output},
+        types::{Chunk, Output, VizParams, VizParamsType},
     },
     tools::{
         create_data_app::{CreateDataAppExecutable, types::CreateDataAppParams},
         types::CreateDataAppInput,
     },
 };
+
+impl From<VizParams> for Display {
+    fn from(viz: VizParams) -> Self {
+        match viz.config {
+            VizParamsType::Bar(bar) => Display::BarChart(bar),
+            VizParamsType::Line(line) => Display::LineChart(line),
+            VizParamsType::Pie(pie) => Display::PieChart(pie),
+        }
+    }
+}
 
 pub struct BuildDataApp<S> {
     #[allow(dead_code)]
@@ -44,30 +50,125 @@ impl<S> BuildDataApp<S> {
     }
 }
 
+pub struct GenerateInsight<S> {
+    objective: String,
+    config: Insight,
+    adapter: OpenAIAdapter,
+    _state: std::marker::PhantomData<S>,
+}
+
+impl<S> GenerateInsight<S> {
+    pub fn new(adapter: OpenAIAdapter, objective: String, config: Insight) -> Self {
+        Self {
+            adapter,
+            objective,
+            config,
+            _state: std::marker::PhantomData,
+        }
+    }
+
+    async fn prepare_instructions(
+        &self,
+        execution_context: &ExecutionContext,
+        insight_context: String,
+    ) -> Result<Vec<ChatCompletionRequestMessage>, OxyError> {
+        let instruction = execution_context
+            .renderer
+            .render_async(&self.config.instruction)
+            .await?;
+        let messages = vec![
+            ChatCompletionRequestSystemMessage {
+                content: ChatCompletionRequestSystemMessageContent::Text(instruction),
+                ..Default::default()
+            }
+            .into(),
+            ChatCompletionRequestSystemMessage {
+                name: None,
+                content: ChatCompletionRequestSystemMessageContent::Text(insight_context),
+            }
+            .into(),
+            ChatCompletionRequestAssistantMessage {
+                content: Some(ChatCompletionRequestAssistantMessageContent::Text(
+                    self.objective.to_string(),
+                )),
+                ..Default::default()
+            }
+            .into(),
+        ];
+        Ok(messages)
+    }
+
+    async fn run_insight(
+        &self,
+        execution_context: &ExecutionContext,
+        insight_context: String,
+    ) -> Result<impl tokio_stream::Stream<Item = Result<Option<String>, OxyError>>, OxyError> {
+        let instructions = self
+            .prepare_instructions(execution_context, insight_context)
+            .await?;
+        self.adapter.stream_text(instructions).await
+    }
+}
+
 #[async_trait::async_trait]
-impl<S> Trigger for BuildDataApp<S>
-where
-    S: PrepareData + TransitionContext + CollectViz + CollectInsights + Send + Sync,
-{
-    type State = S;
+impl Trigger for GenerateInsight<MachineContext> {
+    type State = MachineContext;
 
     async fn run(
         &self,
         execution_context: &ExecutionContext,
-        mut current_state: Self::State,
-    ) -> Result<Self::State, OxyError> {
+        current_state: &mut Self::State,
+    ) -> Result<(), OxyError> {
+        let insight_context = execution_context
+            .with_child_source(uuid::Uuid::new_v4().to_string(), "insight".to_string());
+        let instruction_context = format!(
+            "You have access to the following artifacts:\n{}",
+            current_state.artifacts_context()
+        );
+        let mut stream = self
+            .run_insight(&insight_context, instruction_context)
+            .await?;
+        let mut content = String::new();
+        while let Some(chunk) = stream.next().await.transpose()?.flatten() {
+            content.push_str(&chunk);
+            insight_context
+                .write_chunk(Chunk {
+                    key: None,
+                    delta: Output::Text(chunk),
+                    finished: false,
+                })
+                .await?;
+        }
+        insight_context
+            .write_chunk(Chunk {
+                key: None,
+                delta: Output::Text("".to_string()),
+                finished: true,
+            })
+            .await?;
+        current_state.add_insight(content.clone());
+        Ok(())
+    }
+}
+
+#[async_trait::async_trait]
+impl Trigger for BuildDataApp<MachineContext> {
+    type State = MachineContext;
+
+    async fn run(
+        &self,
+        execution_context: &ExecutionContext,
+        current_state: &mut Self::State,
+    ) -> Result<(), OxyError> {
         let tasks = current_state
-            .get_tables()
+            .list_tables()
             .iter()
             .map(|t| {
                 let table_ref = t.reference.clone().ok_or(OxyError::RuntimeError(
                     "Table must have a reference to build data app.".to_string(),
                 ))?;
                 Result::<Task, OxyError>::Ok(Task {
-                    name: t
-                        .name
-                        .clone()
-                        .unwrap_or_else(|| format!("table_{}", ShortUuid::generate())),
+                    name: t.name.clone(),
                     cache: None,
                     task_type: TaskType::ExecuteSQL(ExecuteSQLTask {
                         database: table_ref.database_ref,
@@ -93,14 +194,14 @@ where
         let viz_displays = current_state
             .list_viz()
             .iter()
-            .map(|v| v.clone().into())
+            .map(|v| (*v).clone().into())
             .collect::<Vec<Display>>();
         let markdown_display = current_state
-            .get_insights()
+            .list_insights()
             .iter()
             .map(|insight| {
                 Display::Markdown(MarkdownDisplay {
-                    content: insight.clone(),
+                    content: insight.to_string(),
                 })
             })
             .collect::<Vec<_>>();
@@ -124,113 +225,6 @@ where
             )
             .await?;
         current_state.add_message(response.to_string());
-        Ok(current_state)
-    }
-}
-
-pub struct GenerateInsight<S> {
-    objective: String,
-    config: Insight,
-    adapter: OpenAIAdapter,
-    _state: std::marker::PhantomData<S>,
-}
-
-impl<S> GenerateInsight<S>
-where
-    S: PrepareData,
-{
-    pub fn new(adapter: OpenAIAdapter, objective: String, config: Insight) -> Self {
-        Self {
-            adapter,
-            objective,
-            config,
-            _state: std::marker::PhantomData,
-        }
-    }
-
-    async fn prepare_instructions(
-        &self,
-        execution_context: &ExecutionContext,
-        current_state: &S,
-    ) -> Result<Vec<ChatCompletionRequestMessage>, OxyError> {
-        let instruction = execution_context
-            .renderer
-            .render_async(&self.config.instruction)
-            .await?;
-        let tables = current_state.get_tables();
-        let messages = vec![
-            ChatCompletionRequestSystemMessage {
-                content: ChatCompletionRequestSystemMessageContent::Text(instruction),
-                ..Default::default()
-            }
-            .into(),
-            ChatCompletionRequestSystemMessage {
-                name: None,
-                content: ChatCompletionRequestSystemMessageContent::Text(format!(
-                    "You have access to the following tables:\n{}",
-                    tables
-                        .iter()
-                        .map(|t| t.to_string())
-                        .collect::<Vec<String>>()
-                        .join("\n")
-                )),
-            }
-            .into(),
-            ChatCompletionRequestAssistantMessage {
-                content: Some(ChatCompletionRequestAssistantMessageContent::Text(
-                    self.objective.to_string(),
-                )),
-                ..Default::default()
-            }
-            .into(),
-        ];
-        Ok(messages)
-    }
-
-    async fn request_insight(
-        &self,
-        messages: Vec<ChatCompletionRequestMessage>,
-    ) -> Result<String, OxyError> {
-        let response = self.adapter.generate_text(messages).await?;
-        Ok(response)
-    }
-
-    async fn run_insight(
-        &self,
-        execution_context: &ExecutionContext,
-        current_state: &S,
-    ) -> Result<String, OxyError> {
-        let instructions = self
-            .prepare_instructions(execution_context, current_state)
-            .await?;
-        let insight = self.request_insight(instructions).await?;
-        Ok(insight)
-    }
-}
-
-#[async_trait::async_trait]
-impl<S> Trigger for GenerateInsight<S>
-where
-    S: PrepareData + TransitionContext + CollectViz + CollectInsights + Send + Sync,
-{
-    type State = S;
-    async fn run(
-        &self,
-        execution_context: &ExecutionContext,
-        mut current_state: Self::State,
-    ) -> Result<Self::State, OxyError> {
-        let insight_context = execution_context
-            .with_child_source(uuid::Uuid::new_v4().to_string(), "insight".to_string());
-        let content = self.run_insight(&insight_context, &current_state).await?;
-        insight_context
-            .write_chunk(Chunk {
-                delta: Output::Text(content.clone()),
-                finished: true,
-                key: Some("insight".to_string()),
-            })
-            .await?;
-        current_state.collect_insight(content.clone());
-        current_state.add_message(content);
-        Ok(current_state)
+        Ok(())
     }
 }

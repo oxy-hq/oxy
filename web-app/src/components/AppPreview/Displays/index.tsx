@@ -8,7 +8,7 @@ import { DataTableBlock } from "./DataTableBlock";
 import { ErrorBoundary } from "react-error-boundary";
 import ErrorDisplayBlock from "./ErrorDisplayBlock";
 
-const DisplayBlock = ({
+export const DisplayBlock = ({
   display,
   data,
 }: {
@@ -21,12 +21,15 @@ const DisplayBlock = ({
     case "markdown":
       return <MarkdownDisplayBlock display={display} data={data} />;
     case "line_chart":
+    case "line":
       return <LineChart display={display} data={data} />;
     case "bar_chart":
+    case "bar":
       return <BarChart display={display} data={data} />;
     case "table":
       return <DataTableBlock display={display} data={data} />;
     case "pie_chart":
+    case "pie":
       return <PieChart display={display} data={data} />;
     default:
       return <pre>{JSON.stringify(display)}</pre>;

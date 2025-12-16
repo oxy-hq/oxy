@@ -7,7 +7,7 @@ import { GroupSlice } from "@/stores/slices/group";
 import useWorkflow, { TaskConfigWithId } from "@/stores/useWorkflow";
 import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
 import { PaginationState } from "@tanstack/react-table";
-import { useCallback, useMemo, useRef } from "react";
+import { useMemo } from "react";
 import { createSearchParams, useLocation, useNavigate } from "react-router-dom";
 
 const taskRunSelector = (
@@ -417,7 +417,6 @@ export const useCancelWorkflowRun = () => {
 
 export const useStreamEvents = () => {
   const { project, branchName } = useCurrentProjectBranch();
-  const abortControllerRef = useRef<AbortController | null>(null);
   const handleEvent = useBlockStore((state) => state.handleEvent);
   const cleanupGroupStacks = useBlockStore((state) => state.cleanupGroupStacks);
   const setGroupProcessing = useBlockStore((state) => state.setGroupProcessing);
@@ -425,15 +424,12 @@ export const useStreamEvents = () => {
     mutationFn: async ({
       sourceId,
       runIndex,
+      abortRef,
     }: {
       sourceId: string;
       runIndex: number;
+      abortRef?: AbortSignal;
     }) => {
-      if (abortControllerRef.current) {
-        console.warn("Already streaming events, ignoring new request.");
-        return;
-      }
-      abortControllerRef.current = new AbortController();
       return await RunService.streamEvents(
         project.id,
         branchName,
@@ -446,15 +442,13 @@ export const useStreamEvents = () => {
           cleanupGroupStacks("Cancelled");
           const groupId = getGroupId(sourceId, runIndex.toString());
           setGroupProcessing(groupId, false);
-          abortControllerRef.current = null;
         },
         (error) => {
           console.error("Stream error:", error);
           const groupId = getGroupId(sourceId, runIndex.toString());
           setGroupProcessing(groupId, false);
-          abortControllerRef.current = null;
         },
-        abortControllerRef.current?.signal,
+        abortRef,
       );
     },
     onMutate: ({ sourceId, runIndex }) => {
@@ -467,16 +461,7 @@ export const useStreamEvents = () => {
     },
   });
 
-  const cancel = useCallback(() => {
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-      abortControllerRef.current = null;
-      mutation.reset();
-    }
-  }, [mutation, abortControllerRef]);
-
   return {
-    cancel,
     stream: mutation,
   };
 };

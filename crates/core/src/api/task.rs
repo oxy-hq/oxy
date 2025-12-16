@@ -262,6 +262,7 @@ pub async fn ask_task(
 
 #[derive(Deserialize)]
 pub struct AskAgenticRequest {
+    pub agent_ref: String,
     pub question: String,
 }
 
@@ -286,11 +287,8 @@ pub async fn ask_agentic(
         .build_conversation_memory(thread_id.clone())
         .await?;
     let config_manager = project_manager.config_manager.clone();
-    let agent_ref = config_manager
-        .get_builder_agent_path()
-        .await
-        .map_err(|e| OxyError::RuntimeError(format!("Failed to get builder agent path: {e}")))?;
-    let source_id = agent_ref.to_string_lossy().to_string();
+    let agent_ref = &payload.agent_ref;
+    let source_id = agent_ref.to_string();
     let message_id = chat_service.new_agentic_message(thread_id).await?;
     let lookup_id = message_id.clone();
 
@@ -298,7 +296,7 @@ pub async fn ask_agentic(
         .dispatch(
             source_id.to_string(),
             RetryStrategy::NoRetry { variables: None },
-            AgenticRunner::new(payload.question.clone(), memory),
+            AgenticRunner::new(message_id.to_string(), payload.question.clone(), memory),
             Some(lookup_id),
         )
         .await

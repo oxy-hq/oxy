@@ -14,15 +14,15 @@ import {
   useAgenticStore,
   useAskAgentic,
   useIsThreadLoading,
+  useLastRunInfoGroupId,
   useLastStreamingMessage,
   useObserveAgenticMessages,
   useSelectedMessageReasoning,
   useStopAgenticRun,
-  useThreadDataApp,
 } from "@/stores/agentic";
 import { LoaderCircle } from "lucide-react";
-import EditorTab from "./EditorTab";
-import { RunInfo } from "@/services/types";
+import SidePanel from "./SidePanel";
+import { uniqBy } from "lodash";
 
 const AgenticThread = ({ thread }: { thread: ThreadItem }) => {
   const { project } = useCurrentProjectBranch();
@@ -30,11 +30,7 @@ const AgenticThread = ({ thread }: { thread: ThreadItem }) => {
   const { getTaskThread } = useTaskThreadStore();
   const taskThread = getTaskThread(thread.id);
   const bottomRef = useRef<HTMLDivElement>(null);
-  const { messages } = taskThread;
-  const [selectedTab, setSelectedTab] = useState<
-    "preview" | "reasoning" | "editor"
-  >("preview");
-
+  const messages = uniqBy(taskThread.messages, (m) => m.id);
   const { mutateAsync: sendMessage } = useAskAgentic();
 
   const [followUpQuestion, setFollowUpQuestion] = useState("");
@@ -43,22 +39,21 @@ const AgenticThread = ({ thread }: { thread: ThreadItem }) => {
 
   const isLoading = useIsThreadLoading(thread.id);
   const { mutateAsync: stopThread } = useStopAgenticRun(thread.id);
-  useObserveAgenticMessages(thread.id);
   const { refetch: refetchThreadMessages } = useAgenticStore(
     projectId,
     thread.id,
   );
-  const { reasoningSteps, toggleReasoning } = useSelectedMessageReasoning();
-  const toggleReasoningTab = (runInfo?: RunInfo) => {
-    const opened = toggleReasoning(runInfo, selectedTab === "reasoning");
-    if (opened) {
-      setSelectedTab("reasoning");
-    } else {
-      setSelectedTab("preview");
-    }
-  };
-  const dataApp = useThreadDataApp(thread.id);
+  useObserveAgenticMessages(thread.id, refetchThreadMessages);
+  const { setSelectedGroupId, selectReasoning, selectedGroupId } =
+    useSelectedMessageReasoning();
   const streamingContent = useLastStreamingMessage(thread.id);
+  const lastRunGroupId = useLastRunInfoGroupId(thread.id);
+
+  useEffect(() => {
+    if (lastRunGroupId) {
+      setSelectedGroupId(lastRunGroupId);
+    }
+  }, [lastRunGroupId]);
 
   useEffect(() => {
     const behavior = streamingContent ? "instant" : "smooth";
@@ -68,12 +63,12 @@ const AgenticThread = ({ thread }: { thread: ThreadItem }) => {
   const handleSendMessage = async () => {
     if (!followUpQuestion.trim() || isLoading) return;
 
-    const response = await sendMessage({
+    await sendMessage({
       prompt: followUpQuestion,
       threadId: thread.id,
+      agentRef: thread.source,
     });
     setFollowUpQuestion("");
-    toggleReasoningTab(response.run_info);
   };
 
   useEffect(() => {
@@ -82,8 +77,6 @@ const AgenticThread = ({ thread }: { thread: ThreadItem }) => {
         messagesContainerRef.current.scrollHeight;
     }
   }, [messages]);
-
-  const filePathB64 = dataApp ? btoa(dataApp) : undefined;
 
   const onStop = useCallback(() => {
     stopThread()
@@ -127,7 +120,7 @@ const AgenticThread = ({ thread }: { thread: ThreadItem }) => {
                         <BlockMessage
                           key={msg.id}
                           message={msg}
-                          toggleReasoning={toggleReasoningTab}
+                          toggleReasoning={selectReasoning}
                         />
                       )}
                     </div>
@@ -157,16 +150,8 @@ const AgenticThread = ({ thread }: { thread: ThreadItem }) => {
             </div>
           </div>
         </div>
-        <div className="border-l flex-1 h-full">
-          <EditorTab
-            selectedTab={selectedTab}
-            onSelectedTab={(tab) =>
-              setSelectedTab(tab as "preview" | "reasoning" | "editor")
-            }
-            pathb64={filePathB64}
-            reasoningSteps={reasoningSteps}
-          />
-        </div>
+
+        {!!selectedGroupId && <SidePanel />}
       </div>
     </div>
   );

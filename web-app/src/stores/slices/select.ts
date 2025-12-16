@@ -4,6 +4,10 @@ import { TaskConfigWithId } from "../useWorkflow";
 
 export interface SelectSlice {
   selectedIndexes: Record<string, number | undefined>;
+  selectedGroupId: string | null;
+  selectedBlockId: string | null;
+  setSelectedGroupId: (groupId: string | null) => void;
+  setSelectedBlockId: (blockId: string | null) => void;
   setSelectedLoopIndex: (task: TaskConfigWithId, index: number) => void;
   resetSelectedIndexes: () => void;
 }
@@ -15,6 +19,18 @@ export const createSelectSlice: StateCreator<
   SelectSlice
 > = (set) => ({
   selectedIndexes: {},
+  selectedGroupId: null,
+  selectedBlockId: null,
+  setSelectedGroupId: (groupId: string | null) => {
+    set(() => ({
+      selectedGroupId: groupId,
+    }));
+  },
+  setSelectedBlockId: (blockId: string | null) => {
+    set(() => ({
+      selectedBlockId: blockId,
+    }));
+  },
   setSelectedLoopIndex: (task: TaskConfigWithId, index: number) =>
     set((state) => {
       const groupId = task.runId

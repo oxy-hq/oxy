@@ -19,7 +19,7 @@ impl<M, S> FSM<M, S> {
 }
 
 #[async_trait::async_trait]
-pub trait State {
+pub trait State: Sized {
     type Machine;
 
     async fn first_trigger(
@@ -33,6 +33,13 @@ pub trait State {
         execution_context: &ExecutionContext,
         machine: &mut Self::Machine,
     ) -> Result<Option<Box<dyn Trigger<State = Self>>>, OxyError>;
+
+    async fn handle_error(
+        self,
+        execution_context: &ExecutionContext,
+        machine: &mut Self::Machine,
+        error: OxyError,
+    ) -> Result<Self, OxyError>;
 }
 
 #[async_trait::async_trait]
@@ -64,8 +71,8 @@ pub trait Trigger: Send + Sync {
     async fn run(
         &self,
         execution_context: &ExecutionContext,
-        current_state: Self::State,
-    ) -> Result<Self::State, OxyError>;
+        current_state: &mut Self::State,
+    ) -> Result<(), OxyError>;
 }
 
 #[async_trait::async_trait]
@@ -79,8 +86,8 @@ where
     async fn run(
         &self,
         execution_context: &ExecutionContext,
-        current_state: Self::State,
-    ) -> Result<Self::State, OxyError> {
+        current_state: &mut Self::State,
+    ) -> Result<(), OxyError> {
         (**self).run(execution_context, current_state).await
     }
 }
@@ -103,12 +110,17 @@ where
         let machine = &mut self.machine;
         let mut state = machine.start(&execution_context, input).await?;
         let init_trigger = state.first_trigger(&execution_context, machine).await?;
-        state = init_trigger.run(&execution_context, state).await?;
+        init_trigger.run(&execution_context, &mut state).await?;
 
         loop {
             let next = state.next_trigger(&execution_context, machine).await?;
             if let Some(trigger) = next {
-                state = trigger.run(&execution_context, state).await?;
+                match trigger.run(&execution_context, &mut state).await {
+                    Err(err) => {
+                        state = state.handle_error(&execution_context, machine, err).await?;
+                    }
+                    _ => {}
+                }
             } else {
                 break;
             };

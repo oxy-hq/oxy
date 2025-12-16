@@ -12,6 +12,7 @@ import { getAgentNameFromPath } from "@/libs/utils/string";
 
 export type Agent = {
   id: string;
+  isAgentic: boolean;
   name: string;
 };
 
@@ -34,6 +35,8 @@ const AgentsDropdown = ({
         ?.filter((agent) => agent.public)
         ?.map((agent) => ({
           id: agent.path,
+          isAgentic:
+            agent.path.endsWith(".aw.yaml") || agent.path.endsWith(".aw.yml"),
           name: agent.name ?? getAgentNameFromPath(agent.path),
         }))
         .sort((a, b) => a.name.localeCompare(b.name)) ?? [],

@@ -18,6 +18,10 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct AgenticConfig {
+    #[serde(skip)]
+    pub name: String,
+    #[serde(default = "default_public")]
+    pub public: bool,
     pub model: String,
     #[serde(default)]
     pub instruction: String,
@@ -28,6 +32,10 @@ pub struct AgenticConfig {
     pub transitions: Vec<Transition>,
     #[serde(default = "default_max_iterations")]
     pub max_iterations: usize,
+}
+
+fn default_public() -> bool {
+    true
 }
 
 fn default_auto_transition_prompt() -> String {
@@ -201,9 +209,60 @@ pub struct Transition {
 #[serde(deny_unknown_fields)]
 pub struct TransitionObjective {
     #[schemars(
-        description = "The objective to achieve with this action. Keep it short, concise and focused."
+        description = "Give a detailed explanation of why this action is being taken. Format as follows:
+        ## Query Examples:
+        - Get all customers from California who joined after 2023
+        - Count total orders per product category this quarter
+        - Find employees with salary above $75,000 in the engineering department
+        - List customer names with their total purchase amounts, only for customers who have made at least 3 orders
+        - Show top 10 best-selling products by revenue in the last 30 days
+        - Calculate month-over-month growth in user signups for 2024
+        ## Visualize Example:
+        - Show market share distribution by company as a pie chart
+        - Display percentage breakdown of expenses by category (rent, utilities, salaries, other)
+        - Plot monthly revenue trend for the past 12 months as a line chart
+        - Show daily active users over the last 30 days
+        - Compare total sales by region using a bar chart
+        - How top 5 products by units sold as a horizontal bar chart
+        ## Troubleshoot Example:
+        ### Viz Issue:
+        - Fix bar chart showing no data - empty result set from query. Error: \"No data available for the selected parameters.\"
+        - Resolve pie chart with incorrect percentages - data aggregation error. Error: \"Sum of values does not equal total.\"
+        ### Query Issue:
+        - Correct SQL syntax error in query - missing WHERE clause. Error: \"column reference 'id' is ambiguous\"
+        - Fix ambiguous column reference when joining users and orders tables. Error: \"column reference 'id' is ambiguous\"
+        "
     )]
     pub objective: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RevisePlan {
+    #[schemars(description = "Review your plan based on what just happened.
+
+Analyze:
+- What worked as expected vs what didn't?
+- What new information did you learn?
+- Are there missing steps or unnecessary ones?
+- Do any steps need reordering or clarification?
+
+Then output your revision in this format:
+
+CHANGES:
+- [Describe specific changes to the plan, e.g., 'Add step to validate data before visualization', 'Remove redundant analysis step', 'Reorder steps 3 and 4']
+
+If no changes are needed, respond with: 'No changes needed - plan is on track.'")]
+    pub revision: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ErrorTriage {
+    #[schemars(
+        description = "Give a detailed explanation of why this action is being taken based on the error encountered."
+    )]
+    pub error_triage: String,
 }
 
 impl Transition {
@@ -318,6 +377,7 @@ impl TriggerType {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgenticInput {
+    pub context_id: String,
     pub prompt: String,
     pub trace: Vec<ChatCompletionRequestMessage>,
 }

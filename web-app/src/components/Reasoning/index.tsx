@@ -1,4 +1,4 @@
-import { BlockBase, StepContent } from "@/services/types";
+import { Block, BlockBase, StepContent } from "@/services/types";
 import {
   Blocks,
   Bot,
@@ -10,22 +10,25 @@ import {
 } from "lucide-react";
 import { ReactNode, useState } from "react";
 import AnswerContent from "../AnswerContent";
-
-type ChildBlock = {
-  id: string;
-  content: ReactNode[];
-};
+import { BlockContent } from "../Messages/BlockMessage";
 
 export type Step = StepContent &
   BlockBase & {
-    childrenBlocks: ChildBlock[];
+    childrenBlocks: Block[];
   };
 
 type ReasoningProps = {
+  onFullscreen?: (blockId: string) => void;
   steps: Step[];
 };
 
-const ReasoningItem = ({ step }: { step: Step }) => {
+const ReasoningItem = ({
+  step,
+  onFullscreen,
+}: {
+  step: Step;
+  onFullscreen?: (blockId: string) => void;
+}) => {
   const [isExpanded, setIsExpanded] = useState(false);
   let icon: ReactNode;
   if (["idle", "plan", "end"].includes(step.step_type)) {
@@ -70,22 +73,39 @@ const ReasoningItem = ({ step }: { step: Step }) => {
       {isExpanded && (
         <div className="w-full min-w-[500px]" style={{ paddingLeft: 24 }}>
           {!!step.objective && <AnswerContent content={step.objective} />}
-          {step.childrenBlocks.map((child) => child.content)}
+          {!!step.error && <span className="text-red-800">{step.error}</span>}
+          {step.childrenBlocks.map((child) => {
+            return (
+              <BlockContent
+                key={child.id}
+                block={child}
+                onFullscreen={onFullscreen}
+              />
+            );
+          })}
         </div>
       )}
     </>
   );
 };
 
-const Reasoning = ({ steps }: ReasoningProps) => {
+const Reasoning = ({ steps, onFullscreen }: ReasoningProps) => {
   return (
     <div className="h-full w-full overflow-hidden relative">
       <div className="absolute customScrollbar flex flex-col h-full inset-0 overflow-auto p-4 w-full">
         <div className="flex justify-between items-center mb-2">
-          <h2 className="text-sm">Reasoning steps</h2>
+          {steps.length ? (
+            <h2 className="text-sm">Reasoning steps</h2>
+          ) : (
+            <h2 className="text-sm">Thinking...</h2>
+          )}
         </div>
         {steps.map((step) => (
-          <ReasoningItem key={step.id} step={step} />
+          <ReasoningItem
+            key={step.id}
+            step={step}
+            onFullscreen={onFullscreen}
+          />
         ))}
       </div>
     </div>

@@ -20,6 +20,7 @@ export interface GroupSlice {
     children?: string[],
     error?: string,
     metadata?: GroupKind,
+    force?: boolean,
   ) => void;
   addGroup: (groupId: string, groupData: Group) => void;
   removeGroup: (groupId: string, error?: string) => void;
@@ -78,6 +79,7 @@ export const createGroupSlice: StateCreator<
     children?: string[],
     error?: string,
     metadata?: GroupKind,
+    force?: boolean,
   ) =>
     set((state) => {
       const groupId = `${runInfo.source_id}::${runInfo.run_index}`;
@@ -95,17 +97,9 @@ export const createGroupSlice: StateCreator<
             error,
           };
 
-      if (state.groups[groupId]) {
-        return {
-          groups: {
-            ...state.groups,
-            [groupId]: groupData,
-          },
-          groupAliases: {
-            ...state.groupAliases,
-            ...(runInfo.lookup_id ? { [runInfo.lookup_id]: groupId } : {}),
-          },
-        };
+      if (state.processingGroups[groupId] && !force) {
+        // If the group is processing, do not overwrite its blocks
+        return {};
       }
 
       return {

@@ -1,9 +1,18 @@
 import { Message } from "@/types/chat";
 import MessageHeader from "./MessageHeader";
-import { LinkIcon, LoaderCircle } from "lucide-react";
+import { Fullscreen, LinkIcon, LoaderCircle } from "lucide-react";
 import { Button } from "../ui/shadcn/button";
-import { useMessageContent, useMessageStreaming } from "@/stores/agentic";
-import { RunInfo } from "@/services/types";
+import {
+  useMessageContent,
+  useMessageStreaming,
+  useSelectedMessageReasoning,
+} from "@/stores/agentic";
+import { Block, RunInfo } from "@/services/types";
+import Markdown from "../Markdown";
+import TableVirtualized from "../Markdown/components/TableVirtualized";
+import { DisplayBlock } from "../AppPreview/Displays";
+import { Display, TableDisplay } from "@/types/app";
+import AppPreview from "../AppPreview";
 
 interface BlockMessageProps {
   message: Message;
@@ -18,6 +27,7 @@ const BlockMessage = ({
   toggleReasoning,
 }: BlockMessageProps) => {
   const { run_info: runInfo } = message;
+  const { selectBlock } = useSelectedMessageReasoning();
   const content = useMessageContent(runInfo);
   const isStreaming = useMessageStreaming(runInfo);
   const error =
@@ -45,39 +55,115 @@ const BlockMessage = ({
         )}
         <div className="flex-1 w-full">
           <div className="p-4 w-full rounded-xl bg-base-card border border-base-border shadow-sm flex flex-col gap-2 overflow-x-auto">
-            {!error ? (
-              <>
-                <div>
-                  <Button
-                    // className="flex gap-2 items-start"
-                    variant={"outline"}
-                    onClick={() => toggleReasoning?.(runInfo)}
-                  >
-                    {isStreaming ? (
-                      <>
-                        <LoaderCircle className="w-2 h-2 animate-spin text-muted-foreground" />
-                        <div className="text-muted-foreground">
-                          Agent is thinking...
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <LinkIcon />
-                        <p className="text-muted-foreground">Show reasoning</p>
-                      </>
-                    )}
-                  </Button>
-                </div>
-                {content}
-              </>
-            ) : (
-              <span className="text-red-800">{error}</span>
-            )}
+            <>
+              <div>
+                <Button
+                  // className="flex gap-2 items-start"
+                  variant={"outline"}
+                  onClick={() => toggleReasoning?.(runInfo)}
+                >
+                  {isStreaming ? (
+                    <>
+                      <LoaderCircle className="w-2 h-2 animate-spin text-muted-foreground" />
+                      <div className="text-muted-foreground">
+                        Agent is thinking...
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <LinkIcon />
+                      <p className="text-muted-foreground">Show reasoning</p>
+                    </>
+                  )}
+                </Button>
+              </div>
+
+              {error ? (
+                <span className="text-red-800">{error}</span>
+              ) : (
+                !!content &&
+                content?.map((block) => (
+                  <BlockContent
+                    key={block.id}
+                    block={block}
+                    onFullscreen={(blockId) => selectBlock(blockId, runInfo)}
+                  />
+                ))
+              )}
+            </>
           </div>
         </div>
       </div>
     </div>
   );
+};
+
+export const BlockContent = ({
+  block,
+  onFullscreen,
+}: {
+  block: Block;
+  onFullscreen?: (blockId: string) => void;
+}) => {
+  return (
+    <div className="relative">
+      <BlockComponent block={block} />
+      {!!onFullscreen && isFullscreenableBlock(block) && (
+        <Button
+          variant="ghost"
+          size="icon"
+          className="absolute top-2 right-2 opacity-50 hover:opacity-100"
+          onClick={() => onFullscreen(block.id)}
+        >
+          <Fullscreen size={16} />
+        </Button>
+      )}
+    </div>
+  );
+};
+
+const isFullscreenableBlock = (block: Block) => {
+  return ["sql", "viz", "data_app"].includes(block.type);
+};
+
+const BlockComponent = ({ block }: { block: Block }) => {
+  switch (block.type) {
+    case "text":
+      return <Markdown>{block.content}</Markdown>;
+    case "sql":
+      return (
+        <>
+          <span className="text-bold text-sm">SQL Query</span>
+          <Markdown>{"```sql\n" + block.sql_query + "\n```"}</Markdown>
+          <span className="text-bold text-sm">Results</span>
+          <TableVirtualized table_id="0" tables={[block.result]} />
+        </>
+      );
+    case "viz":
+      return (
+        <>
+          <DisplayBlock
+            display={block.config as Display}
+            data={{
+              [(block.config as TableDisplay).data]: {
+                file_path: (block.config as TableDisplay).data,
+              },
+            }}
+          />
+          {/* <pre className="mt-2 text-sm text-muted-foreground">
+            {JSON.stringify(block.config)}
+          </pre> */}
+        </>
+      );
+    case "data_app":
+      return (
+        <div className="relative h-96">
+          <AppPreview appPath64={btoa(block.file_path)} />
+        </div>
+      );
+    default:
+      return <div>Unsupported block type: {block.type}</div>;
+  }
 };
 
 export default BlockMessage;

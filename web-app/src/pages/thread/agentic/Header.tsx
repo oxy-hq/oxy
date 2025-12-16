@@ -9,7 +9,7 @@ const Header = ({ thread }: { thread: ThreadItem }) => {
       <div className="p-2 flex items-center justify-center flex-1 h-full">
         <div className="flex gap-1 items-center text-muted-foreground">
           <FileCheck2 className="w-4 h-4 min-w-4 min-h-4" />
-          <p className="text-sm break-all">Builder</p>
+          <p className="text-sm break-all">Agentic workflow</p>
         </div>
         <div className="px-4 h-full flex items-stretch">
           <Separator orientation="vertical" />

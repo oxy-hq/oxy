@@ -9,37 +9,14 @@ use async_openai::types::chat::{
 use crate::{
     adapters::openai::OpenAIAdapter,
     agent::builders::fsm::{
-        control::TransitionContext,
         query::config::{Query, SQLParams},
+        state::MachineContext,
     },
     errors::OxyError,
     execute::{Executable, ExecutionContext, builders::fsm::Trigger, types::Table},
     semantic::SemanticManager,
     tools::{SQLExecutable, types::SQLInput},
 };
-
-pub trait PrepareData {
-    fn get_tables(&self) -> &[Table];
-    fn add_table(&mut self, table: Table);
-}
-
-pub trait PrepareDataDelegator {
-    fn target(&self) -> &dyn PrepareData;
-    fn target_mut(&mut self) -> &mut dyn PrepareData;
-}
-
-impl<T> PrepareData for T
-where
-    T: PrepareDataDelegator,
-{
-    fn add_table(&mut self, table: Table) {
-        self.target_mut().add_table(table)
-    }
-
-    fn get_tables(&self) -> &[Table] {
-        self.target().get_tables()
-    }
-}
 
 pub struct AutoSQL<S> {
     openai_adapter: OpenAIAdapter,
@@ -106,7 +83,7 @@ impl<S> AutoSQL<S> {
         execution_context: &ExecutionContext,
         messages: Vec<ChatCompletionRequestMessage>,
     ) -> Result<ChatCompletionMessageToolCall, OxyError> {
-        let tool_calls = self
+        let (_content, tool_calls) = self
             .openai_adapter
             .request_tool_call_with_usage(
                 execution_context,
@@ -140,7 +117,7 @@ impl<S> AutoSQL<S> {
                     sql: sql_params.sql.to_string(),
                     database: database.to_string(),
                     dry_run_limit: None,
-                    name: Some(sql_params.title.to_string()),
+                    name: Some(slugify::slugify(&sql_params.title, "", "_", None)),
                 },
             )
             .await?;
@@ -200,24 +177,20 @@ impl<S> AutoSQL<S> {
 }
 
 #[async_trait::async_trait]
-impl<S> Trigger for AutoSQL<S>
-where
-    S: PrepareData + TransitionContext + Send + Sync,
-{
-    type State = S;
+impl Trigger for AutoSQL<MachineContext> {
+    type State = MachineContext;
 
     async fn run(
         &self,
         execution_context: &ExecutionContext,
-        mut state: Self::State,
-    ) -> Result<Self::State, OxyError> {
+        state: &mut Self::State,
+    ) -> Result<(), OxyError> {
         let query_context = execution_context
             .with_child_source(uuid::Uuid::new_v4().to_string(), "query".to_string());
         tracing::info!("Running AutoSQL Trigger for objective: {}", self.objective);
         let (table, tool_call) = self.run_with_retry(&query_context).await?;
         tracing::info!("AutoSQL Tool Call: {:?}", tool_call);
-        state.add_tool_call(&self.objective, tool_call, table.to_string());
-        state.add_table(table);
-        Ok(state)
+        state.add_table(self.objective.clone(), tool_call.into(), table);
+        Ok(())
     }
 }

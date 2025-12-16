@@ -1,13 +1,13 @@
 use std::{
     fmt::{self, Debug, Display, Formatter},
     hash::{Hash, Hasher},
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::Arc,
 };
 
 use arrow::{
-    array::RecordBatch,
-    datatypes::Schema,
+    array::{Array, AsArray, RecordBatch},
+    datatypes::{DataType, Schema},
     json::{StructMode, WriterBuilder, writer::JsonArray},
 };
 use minijinja::{
@@ -19,8 +19,10 @@ use parquet::{arrow::ArrowWriter, basic::Compression, file::properties::WriterPr
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    adapters::connector::load_result, errors::OxyError,
-    execute::types::utils::record_batches_to_json, utils::truncate_datasets,
+    adapters::connector::load_result,
+    errors::OxyError,
+    execute::types::utils::record_batches_to_json,
+    utils::{create_parent_dirs, truncate_datasets},
 };
 
 use super::{
@@ -53,7 +55,7 @@ pub struct TableReference {
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Table {
-    pub name: Option<String>,
+    pub name: String,
     pub reference: Option<TableReference>,
     pub file_path: String,
     pub max_display_rows: Option<usize>,
@@ -70,12 +72,16 @@ impl Hash for Table {
 impl Table {
     pub fn new(file_path: String) -> Self {
         Table {
-            name: None,
+            name: file_path.clone(),
             reference: None,
             file_path,
             max_display_rows: None,
             inner: OnceCell::new(),
         }
+    }
+
+    pub fn slug(&self) -> String {
+        slugify::slugify(&self.name, "", "-", None)
     }
 
     pub fn with_reference(
@@ -85,7 +91,7 @@ impl Table {
         max_display_rows: Option<usize>,
     ) -> Self {
         Table {
-            name,
+            name: name.unwrap_or_else(|| file_path.clone()),
             reference: Some(reference),
             file_path,
             max_display_rows,
@@ -179,15 +185,23 @@ impl Table {
         relative_data_path: &PathBuf,
         base_path: &PathBuf,
     ) -> Result<TableData, OxyError> {
+        let file_name = format!("{}.parquet", uuid::Uuid::new_v4());
+        let relative_file_path = relative_data_path.join(file_name);
+        let full_file_path = base_path.join(&relative_file_path);
+        self.save_data(&full_file_path)?;
+        Ok(TableData {
+            file_path: relative_file_path,
+        })
+    }
+
+    pub fn save_data<P: AsRef<Path>>(&self, file_path: P) -> Result<String, OxyError> {
         let table = self.get_inner()?;
         let batches = &table.batches;
-        let file_name = format!("{}.parquet", uuid::Uuid::new_v4());
-        let data_path = base_path.join(relative_data_path);
-        let full_file_path: PathBuf = data_path.join(&file_name);
-        let file = std::fs::File::create(&full_file_path).map_err(|e| {
+        create_parent_dirs(file_path.as_ref())?;
+        let file = std::fs::File::create(&file_path).map_err(|e| {
             OxyError::RuntimeError(format!(
                 "Failed to create file {}: {}",
-                full_file_path.display(),
+                file_path.as_ref().display(),
                 e
             ))
         })?;
@@ -206,11 +220,9 @@ impl Table {
             .close()
             .map_err(|e| OxyError::RuntimeError(format!("Failed to close writer: {e}")))?;
 
-        tracing::debug!("Exported table to: {}", full_file_path.display());
+        tracing::debug!("Exported table to: {}", file_path.as_ref().display());
 
-        Ok(TableData {
-            file_path: relative_data_path.join(file_name).to_path_buf(),
-        })
+        Ok(file_path.as_ref().to_string_lossy().to_string())
     }
 
     pub fn to_export(&self) -> Option<(String, &Arc<Schema>, &Vec<RecordBatch>)> {
@@ -268,6 +280,256 @@ impl Table {
         );
         Ok(json_value)
     }
+
+    pub fn summary_yml(&self) -> String {
+        serde_json::from_str(&self.summary())
+            .map(|json_value: serde_json::Value| {
+                serde_yaml::to_string(&json_value)
+                    .unwrap_or_else(|e| format!("Failed to convert summary to YAML: {}", e))
+            })
+            .unwrap_or_else(|e| format!("Failed to generate summary YAML: {}", e))
+    }
+
+    pub fn summary(&self) -> String {
+        // Provide a statistical summary of the table in JSON format
+        let table = match self.get_inner() {
+            Ok(t) => t,
+            Err(e) => {
+                return serde_json::json!({
+                    "error": format!("Failed to get table data: {}", e)
+                })
+                .to_string();
+            }
+        };
+
+        let total_rows: usize = table.batches.iter().map(|b| b.num_rows()).sum();
+        let mut columns = Vec::new();
+
+        for (col_idx, field) in table.schema.fields().iter().enumerate() {
+            let stats = match field.data_type() {
+                DataType::Int8
+                | DataType::Int16
+                | DataType::Int32
+                | DataType::Int64
+                | DataType::UInt8
+                | DataType::UInt16
+                | DataType::UInt32
+                | DataType::UInt64
+                | DataType::Float32
+                | DataType::Float64 => self.compute_numeric_stats_json(col_idx, &table.batches),
+                _ => self.compute_categorical_stats_json(col_idx, &table.batches),
+            };
+
+            columns.push(serde_json::json!({
+                "name": field.name(),
+                "dtype": format!("{}", field.data_type()),
+                "stats": stats
+            }));
+        }
+
+        serde_json::json!({
+            "type": "table",
+            "name": self.name,
+            "total_rows": total_rows,
+            "total_columns": table.schema.fields().len(),
+            "columns": columns
+        })
+        .to_string()
+    }
+
+    fn compute_numeric_stats_json(
+        &self,
+        col_idx: usize,
+        batches: &[RecordBatch],
+    ) -> serde_json::Value {
+        let mut values: Vec<f64> = Vec::new();
+        let mut null_count = 0;
+
+        for batch in batches {
+            let column = batch.column(col_idx);
+            null_count += column.null_count();
+
+            match column.data_type() {
+                DataType::Int8 => {
+                    if let Some(arr) = column.as_primitive_opt::<arrow::datatypes::Int8Type>() {
+                        values.extend(arr.iter().filter_map(|v| v.map(|x| x as f64)));
+                    }
+                }
+                DataType::Int16 => {
+                    if let Some(arr) = column.as_primitive_opt::<arrow::datatypes::Int16Type>() {
+                        values.extend(arr.iter().filter_map(|v| v.map(|x| x as f64)));
+                    }
+                }
+                DataType::Int32 => {
+                    if let Some(arr) = column.as_primitive_opt::<arrow::datatypes::Int32Type>() {
+                        values.extend(arr.iter().filter_map(|v| v.map(|x| x as f64)));
+                    }
+                }
+                DataType::Int64 => {
+                    if let Some(arr) = column.as_primitive_opt::<arrow::datatypes::Int64Type>() {
+                        values.extend(arr.iter().filter_map(|v| v.map(|x| x as f64)));
+                    }
+                }
+                DataType::UInt8 => {
+                    if let Some(arr) = column.as_primitive_opt::<arrow::datatypes::UInt8Type>() {
+                        values.extend(arr.iter().filter_map(|v| v.map(|x| x as f64)));
+                    }
+                }
+                DataType::UInt16 => {
+                    if let Some(arr) = column.as_primitive_opt::<arrow::datatypes::UInt16Type>() {
+                        values.extend(arr.iter().filter_map(|v| v.map(|x| x as f64)));
+                    }
+                }
+                DataType::UInt32 => {
+                    if let Some(arr) = column.as_primitive_opt::<arrow::datatypes::UInt32Type>() {
+                        values.extend(arr.iter().filter_map(|v| v.map(|x| x as f64)));
+                    }
+                }
+                DataType::UInt64 => {
+                    if let Some(arr) = column.as_primitive_opt::<arrow::datatypes::UInt64Type>() {
+                        values.extend(arr.iter().filter_map(|v| v.map(|x| x as f64)));
+                    }
+                }
+                DataType::Float32 => {
+                    if let Some(arr) = column.as_primitive_opt::<arrow::datatypes::Float32Type>() {
+                        values.extend(arr.iter().filter_map(|v| v.map(|x| x as f64)));
+                    }
+                }
+                DataType::Float64 => {
+                    if let Some(arr) = column.as_primitive_opt::<arrow::datatypes::Float64Type>() {
+                        values.extend(arr.iter().filter_map(|v| v));
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        if values.is_empty() {
+            return serde_json::json!({
+                "count": values.len() + null_count,
+                "non_null_count": 0,
+                "null_count": null_count
+            });
+        }
+
+        let count = values.len();
+        let mean = values.iter().sum::<f64>() / count as f64;
+
+        // Calculate standard deviation
+        let variance = values.iter().map(|&x| (x - mean).powi(2)).sum::<f64>() / count as f64;
+        let std_dev = variance.sqrt();
+
+        // Sort for percentiles
+        values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        let min = values.first().copied().unwrap_or(0.0);
+        let max = values.last().copied().unwrap_or(0.0);
+        let median = if count % 2 == 0 {
+            (values[count / 2 - 1] + values[count / 2]) / 2.0
+        } else {
+            values[count / 2]
+        };
+        let q1 = values[count / 4];
+        let q3 = values[3 * count / 4];
+
+        serde_json::json!({
+            "count": count + null_count,
+            "non_null_count": count,
+            "null_count": null_count,
+            "mean": format!("{:.2}", mean),
+            "std_dev": format!("{:.2}", std_dev),
+            "min": format!("{:.2}", min),
+            "q1": format!("{:.2}", q1),
+            "median": format!("{:.2}", median),
+            "q3": format!("{:.2}", q3),
+            "max": format!("{:.2}", max)
+        })
+    }
+
+    fn compute_categorical_stats_json(
+        &self,
+        col_idx: usize,
+        batches: &[RecordBatch],
+    ) -> serde_json::Value {
+        use std::collections::HashMap;
+
+        let mut value_counts: HashMap<String, usize> = HashMap::new();
+        let mut null_count = 0;
+        let mut total_count = 0;
+
+        for batch in batches {
+            let column = batch.column(col_idx);
+            null_count += column.null_count();
+            total_count += column.len();
+
+            match column.data_type() {
+                DataType::Utf8 => {
+                    if let Some(arr) = column.as_string_opt::<i32>() {
+                        for value in arr.iter() {
+                            if let Some(v) = value {
+                                *value_counts.entry(v.to_string()).or_insert(0) += 1;
+                            }
+                        }
+                    }
+                }
+                DataType::LargeUtf8 => {
+                    if let Some(arr) = column.as_string_opt::<i64>() {
+                        for value in arr.iter() {
+                            if let Some(v) = value {
+                                *value_counts.entry(v.to_string()).or_insert(0) += 1;
+                            }
+                        }
+                    }
+                }
+                DataType::Boolean => {
+                    if let Some(arr) = column.as_boolean_opt() {
+                        for value in arr.iter() {
+                            if let Some(v) = value {
+                                *value_counts.entry(v.to_string()).or_insert(0) += 1;
+                            }
+                        }
+                    }
+                }
+                _ => {
+                    // For other types, convert to string representation
+                    for i in 0..column.len() {
+                        if !column.is_null(i) {
+                            let value = format!("{:?}", column.slice(i, 1));
+                            *value_counts.entry(value).or_insert(0) += 1;
+                        }
+                    }
+                }
+            }
+        }
+
+        let unique_count = value_counts.len();
+        let non_null_count = total_count - null_count;
+
+        let mut result = serde_json::json!({
+            "count": total_count,
+            "non_null_count": non_null_count,
+            "null_count": null_count,
+            "unique_values": unique_count
+        });
+
+        if !value_counts.is_empty() {
+            let mut sorted_values: Vec<_> = value_counts.iter().collect();
+            sorted_values.sort_by(|a, b| b.1.cmp(a.1));
+
+            if let Some((top_value, top_freq)) = sorted_values.first() {
+                let obj = result.as_object_mut().unwrap();
+                obj.insert(
+                    "most_frequent".to_string(),
+                    serde_json::json!({
+                        "value": top_value,
+                        "count": top_freq,
+                        "percentage": format!("{:.1}", (**top_freq as f64 / non_null_count as f64) * 100.0)
+                    }),
+                );
+            }
+        }
+
+        result
+    }
 }
 
 impl Debug for Table {
@@ -282,11 +544,7 @@ impl Display for Table {
             Ok(inner) => {
                 let (truncated_results, truncated) =
                     truncate_datasets(&inner.batches, self.max_display_rows);
-                let table_name = if let Some(name) = &self.name {
-                    format!("table_name: {name} \n  ")
-                } else {
-                    "".to_string()
-                };
+                let table_name = &self.name;
                 writeln!(f, "- {table_name}data:\n")?;
                 match record_batches_to_json(&truncated_results) {
                     Ok(json) => {

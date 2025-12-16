@@ -71,9 +71,9 @@ export const createBlockSlice = (
             ? {
                 [parentBlockId]: {
                   ...parentBlock,
-                  children: parentBlock.children.includes(blockId)
+                  children: (parentBlock.children || []).includes(blockId)
                     ? parentBlock.children
-                    : [...parentBlock.children, blockId],
+                    : [...(parentBlock.children || []), blockId],
                 },
               }
             : {}),

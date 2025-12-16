@@ -1,5 +1,5 @@
 export type LineChartDisplay = {
-  type: "line_chart";
+  type: "line_chart" | "line";
   x: string;
   y: string;
   xAxisTitle?: string;
@@ -10,7 +10,7 @@ export type LineChartDisplay = {
 };
 
 export type BarChartDisplay = {
-  type: "bar_chart";
+  type: "bar_chart" | "bar";
   data: string;
   x: string;
   y: string;
@@ -19,7 +19,7 @@ export type BarChartDisplay = {
 };
 
 export type PieChartDisplay = {
-  type: "pie_chart";
+  type: "pie_chart" | "pie";
   data: string;
   name: string;
   value: string;

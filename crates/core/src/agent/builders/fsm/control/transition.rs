@@ -1,125 +1,28 @@
 use std::marker::PhantomData;
 
 use async_openai::types::chat::{
-    ChatCompletionMessageToolCall, ChatCompletionRequestMessage,
-    ChatCompletionRequestSystemMessage, ChatCompletionRequestSystemMessageContent,
-    ChatCompletionRequestUserMessage, ChatCompletionRequestUserMessageContent,
+    ChatCompletionRequestMessage, ChatCompletionRequestSystemMessage,
+    ChatCompletionRequestSystemMessageContent, ChatCompletionRequestUserMessage,
+    ChatCompletionRequestUserMessageContent,
 };
 use tokio_stream::StreamExt;
 
 use crate::{
     adapters::openai::OpenAIAdapter,
     agent::builders::fsm::{
-        config::{AgenticConfig, Transition, TransitionMode, TriggerType},
-        control::config::{EndMode, OutputArtifact, StartMode},
+        config::{AgenticConfig, Transition},
         data_app::config::Insight,
-        machine::Agent,
         query::config::Query,
-        trigger::StepTrigger,
+        state::MachineContext,
         viz::config::Visualize,
     },
-    config::constants::AGENT_END_TRANSITION,
     errors::OxyError,
     execute::{
         ExecutionContext,
-        builders::fsm::{State, Trigger},
-        types::{Chunk, Output, event::Step},
+        builders::fsm::Trigger,
+        types::{Chunk, Output},
     },
 };
-
-pub trait TransitionContext {
-    fn increase_iteration(&mut self);
-    fn max_iterations_reached(&self, max_iteration: usize) -> bool;
-    fn user_query(&self) -> &str;
-    fn transition_name(&self) -> &str;
-    fn set_transition_name(&mut self, name: &str);
-    fn add_message(&mut self, message: String);
-    fn add_tool_call(
-        &mut self,
-        objective: &str,
-        tool_call: ChatCompletionMessageToolCall,
-        tool_ret: String,
-    );
-    fn get_plan(&self) -> Option<&String>;
-    fn set_plan(&mut self, plan: String);
-    fn get_content(&self) -> &str;
-    fn set_content(&mut self, content: String);
-    fn get_intent(&self) -> &str;
-    fn set_intent(&mut self, intent: String);
-    fn get_messages(&self) -> Vec<ChatCompletionRequestMessage>;
-}
-
-pub trait TransitionContextDelegator {
-    fn target(&self) -> &dyn TransitionContext;
-    fn target_mut(&mut self) -> &mut dyn TransitionContext;
-}
-
-impl<T> TransitionContext for T
-where
-    T: TransitionContextDelegator,
-{
-    fn increase_iteration(&mut self) {
-        self.target_mut().increase_iteration()
-    }
-
-    fn max_iterations_reached(&self, max_iteration: usize) -> bool {
-        self.target().max_iterations_reached(max_iteration)
-    }
-
-    fn user_query(&self) -> &str {
-        self.target().user_query()
-    }
-
-    fn transition_name(&self) -> &str {
-        self.target().transition_name()
-    }
-
-    fn set_transition_name(&mut self, name: &str) {
-        self.target_mut().set_transition_name(name)
-    }
-
-    fn add_message(&mut self, message: String) {
-        self.target_mut().add_message(message)
-    }
-
-    fn add_tool_call(
-        &mut self,
-        objective: &str,
-        tool_call: ChatCompletionMessageToolCall,
-        tool_ret: String,
-    ) {
-        self.target_mut()
-            .add_tool_call(objective, tool_call, tool_ret)
-    }
-
-    fn get_plan(&self) -> Option<&String> {
-        self.target().get_plan()
-    }
-
-    fn set_plan(&mut self, plan: String) {
-        self.target_mut().set_plan(plan)
-    }
-
-    fn get_content(&self) -> &str {
-        self.target().get_content()
-    }
-
-    fn set_content(&mut self, content: String) {
-        self.target_mut().set_content(content)
-    }
-
-    fn get_intent(&self) -> &str {
-        self.target().get_intent()
-    }
-
-    fn set_intent(&mut self, intent: String) {
-        self.target_mut().set_intent(intent)
-    }
-
-    fn get_messages(&self) -> Vec<ChatCompletionRequestMessage> {
-        self.target().get_messages()
-    }
-}
 
 #[async_trait::async_trait]
 pub trait TriggerBuilder {
@@ -202,212 +105,8 @@ pub trait TriggerBuilder {
         execution_context: &ExecutionContext,
         agentic_config: &AgenticConfig,
         transition: Transition,
-        objective: Option<String>,
-    ) -> Result<Box<dyn Trigger<State = Self>>, OxyError>
-    where
-        Self: std::fmt::Debug + Sized + Send + Sync + TransitionContext + 'static,
-    {
-        tracing::info!(
-            "Building trigger '{}' of type {:?}",
-            transition.trigger.get_name(),
-            transition.trigger
-        );
-        match &transition.trigger {
-            TriggerType::Start(start_config) => match &start_config.mode {
-                StartMode::Default => Ok(Box::new(Idle::new())),
-                StartMode::Plan {
-                    model,
-                    instruction,
-                    example,
-                } => {
-                    let openai_adapter = OpenAIAdapter::from_config(
-                        execution_context.project.clone(),
-                        model.as_deref().unwrap_or(&agentic_config.model),
-                    )
-                    .await?;
-                    let transitions = [
-                        transition.get_transition_names(),
-                        vec![AGENT_END_TRANSITION.to_string()],
-                    ]
-                    .concat();
-
-                    Ok(Box::new(Plan::new(
-                        openai_adapter,
-                        instruction.to_string(),
-                        example.to_string(),
-                        agentic_config.list_transitions(&transitions)?,
-                    )))
-                }
-            },
-            TriggerType::End(end_config) => {
-                let finalizer = match end_config.output_artifact {
-                    OutputArtifact::App => Some(
-                        self.build_data_app_trigger(
-                            execution_context,
-                            agentic_config,
-                            objective.unwrap_or(self.user_query().to_string()),
-                        )
-                        .await?,
-                    ),
-                    _ => None,
-                };
-                match &end_config.mode {
-                    EndMode::Default => match finalizer {
-                        Some(finalizer) => Ok(finalizer),
-                        None => Ok(Box::new(Idle::new())),
-                    },
-                    EndMode::Synthesize { model, instruction } => {
-                        let model_ref = model.as_deref().unwrap_or(&agentic_config.model);
-                        let openai_adapter = OpenAIAdapter::from_config(
-                            execution_context.project.clone(),
-                            model_ref,
-                        )
-                        .await?;
-                        Ok(Box::new(Synthesize::new(
-                            openai_adapter,
-                            instruction.to_string(),
-                            finalizer,
-                        )))
-                    }
-                }
-            }
-            TriggerType::Query(query_config) => {
-                tracing::info!("Building Query Trigger {query_config:?}");
-                self.build_query_trigger(
-                    execution_context,
-                    agentic_config,
-                    query_config,
-                    objective.unwrap_or(self.user_query().to_string()),
-                )
-                .await
-            }
-            TriggerType::Visualize(viz_config) => {
-                self.build_viz_trigger(
-                    execution_context,
-                    agentic_config,
-                    viz_config,
-                    objective.unwrap_or(self.user_query().to_string()),
-                )
-                .await
-            }
-            TriggerType::Insight(insight_config) => {
-                self.build_insight_trigger(
-                    execution_context,
-                    agentic_config,
-                    insight_config,
-                    objective.unwrap_or(self.user_query().to_string()),
-                )
-                .await
-            }
-            TriggerType::Subflow(subflow_config) => {
-                self.build_subflow_trigger(
-                    execution_context,
-                    agentic_config,
-                    subflow_config,
-                    objective.unwrap_or(self.user_query().to_string()),
-                )
-                .await
-            }
-        }
-    }
-}
-
-#[async_trait::async_trait]
-impl<T> State for T
-where
-    T: TransitionContext + TriggerBuilder + std::fmt::Debug + Send + Sync + 'static,
-{
-    type Machine = Agent<Self>;
-
-    async fn first_trigger(
-        &mut self,
-        execution_context: &ExecutionContext,
-        machine: &mut Self::Machine,
-    ) -> Result<Box<dyn Trigger<State = Self>>, OxyError> {
-        let start_transition = machine.config.start_transition();
-        self.set_transition_name(start_transition.trigger.get_name());
-        Ok(StepTrigger::boxed(
-            Step::new(
-                uuid::Uuid::new_v4().to_string(),
-                start_transition.trigger.get_step_kind(),
-                None,
-            ),
-            self.build(execution_context, &machine.config, start_transition, None)
-                .await?,
-        ))
-    }
-
-    async fn next_trigger(
-        &mut self,
-        execution_context: &ExecutionContext,
-        machine: &mut Self::Machine,
-    ) -> Result<Option<Box<dyn Trigger<State = Self>>>, OxyError> {
-        // Check if max iterations reached
-        if self.max_iterations_reached(machine.config.max_iterations) {
-            return Err(OxyError::RuntimeError(format!(
-                "Max iterations of {} reached",
-                machine.config.max_iterations
-            )));
-        }
-
-        let current_transition = machine.config.find_transition(self.transition_name())?;
-        if current_transition.trigger.is_end() {
-            return Ok(None);
-        }
-
-        let mut objective = None;
-        let mut get_transition = async || match &current_transition.next {
-            TransitionMode::Always(next) => machine.config.find_transition(next).map(Some),
-            TransitionMode::Auto(items) => {
-                if items.is_empty() {
-                    return Ok(None);
-                }
-
-                if items.len() == 1 {
-                    return machine.config.find_transition(&items[0]).map(Some);
-                }
-
-                let (transition, transition_objective) = machine
-                    .select_transition(execution_context, items, self.get_messages())
-                    .await?;
-                objective = Some(transition_objective);
-                Ok(Some(transition))
-            }
-            TransitionMode::Plan => match &self.get_plan().is_some() {
-                true => Ok(Some(machine.config.start_transition())),
-                false => Ok(None),
-            },
-        };
-        let transition = get_transition().await?;
-
-        match transition {
-            Some(t) => {
-                self.set_transition_name(t.trigger.get_name());
-
-                // If the next transition is a start transition, we need to check if we should revise the plan
-                if t.trigger.is_start() && self.get_plan().is_some() {
-                    let should_revise = machine
-                        .should_revise_plan(execution_context, self.get_messages())
-                        .await?;
-                    if !should_revise {
-                        return Ok(Some(Box::new(Idle::new())));
-                    }
-                }
-
-                self.increase_iteration();
-                Ok(Some(StepTrigger::boxed(
-                    Step::new(
-                        uuid::Uuid::new_v4().to_string(),
-                        t.trigger.get_step_kind(),
-                        objective.clone(),
-                    ),
-                    self.build(execution_context, &machine.config, t, objective)
-                        .await?,
-                )))
-            }
-            None => Ok(None),
-        }
-    }
+        objective: String,
+    ) -> Result<Box<dyn Trigger<State = Self>>, OxyError>;
 }
 
 pub struct Idle<S> {
@@ -429,9 +128,9 @@ impl<S: Send + Sync> Trigger for Idle<S> {
     async fn run(
         &self,
         _execution_context: &ExecutionContext,
-        state: Self::State,
-    ) -> Result<Self::State, OxyError> {
-        Ok(state)
+        _state: &mut Self::State,
+    ) -> Result<(), OxyError> {
+        Ok(())
     }
 }
 
@@ -468,7 +167,9 @@ impl<S> Plan<S> {
         let instruction = execution_context
             .renderer
             .render_async(&self.instruction)
-            .await?;
+            .await
+            .ok()
+            .unwrap_or(self.instruction.clone());
         let example = execution_context
             .renderer
             .render_async(&self.example)
@@ -485,51 +186,70 @@ impl<S> Plan<S> {
             })
             .collect::<Vec<_>>()
             .join("\n");
-        let mut messages = [vec![ChatCompletionRequestSystemMessage {
-                content: ChatCompletionRequestSystemMessageContent::Text(format!(
-                    "## Instruction \n{instruction}\n{example}### Available Actions:\n{available_actions}",
-                )),
-                ..Default::default()
-            }
-            .into()],
-            messages]
-        .concat();
+        let messages = [
+            vec![
+                ChatCompletionRequestSystemMessage {
+                    content: ChatCompletionRequestSystemMessageContent::Text(format!(
+                        "## Instruction
+{instruction}
 
-        if revise_plan {
-            messages.push(
-                ChatCompletionRequestUserMessage {
-                    content: ChatCompletionRequestUserMessageContent::Text(
-                        "Based on the previous execution, please revise the plan if necessary."
-                            .to_string(),
-                    ),
+{example}
+
+## Available Actions
+You have access to these specialized agents:
+{available_actions}
+
+## Planning Guidelines
+Create a clear, actionable plan by:
+1. Breaking down the goal into specific steps
+2. Sequencing steps logically (what must happen first?)
+3. Assigning each step to the appropriate action from the list above
+4. Being concrete - avoid vague steps like 'analyze data', instead specify what to analyze and why
+
+Your plan should be a numbered list where each item describes:
+- What specific task needs to be done
+- Why it's necessary for achieving the goal
+- Which action will handle it (if known)
+
+Think through dependencies and order carefully - this plan guides the multi-agent workflow.",
+                    )),
                     ..Default::default()
                 }
                 .into(),
-            );
-        }
+            ],
+            messages,
+        ]
+        .concat();
         Ok(messages)
     }
 }
 
 #[async_trait::async_trait]
-impl<S> Trigger for Plan<S>
-where
-    S: TransitionContext + Send + Sync,
-{
-    type State = S;
+impl Trigger for Plan<MachineContext> {
+    type State = MachineContext;
 
-    async fn run(&self, execution_context: &ExecutionContext, mut state: S) -> Result<S, OxyError> {
+    async fn run(
+        &self,
+        execution_context: &ExecutionContext,
+        state: &mut Self::State,
+    ) -> Result<(), OxyError> {
         let messages = self
             .prepare_messages(
                 execution_context,
-                state.get_messages(),
+                state
+                    .list_messages()
+                    .iter()
+                    .map(|m| m.clone().into())
+                    .collect(),
                 state.get_plan().is_some(),
             )
             .await?;
         let mut stream = self.adapter.stream_text(messages).await?;
         let mut content = String::new();
-        let streaming_context = execution_context
-            .with_child_source(uuid::Uuid::new_v4().to_string(), "text".to_string());
+        let streaming_context = execution_context.with_child_source(
+            format!("plan_{}", uuid::Uuid::new_v4().to_string()),
+            "text".to_string(),
+        );
         while let Some(chunk) = stream.next().await.transpose()?.flatten() {
             content.push_str(&chunk);
             streaming_context
@@ -547,8 +267,9 @@ where
                 finished: true,
             })
             .await?;
-        state.set_plan(content);
-        Ok(state)
+        state.plan(&content);
+        state.set_plan(Some(content));
+        Ok(())
     }
 }
 
@@ -575,19 +296,16 @@ impl<S> Synthesize<S> {
 }
 
 #[async_trait::async_trait]
-impl<S> Trigger for Synthesize<S>
-where
-    S: TransitionContext + Send + Sync,
-{
-    type State = S;
+impl Trigger for Synthesize<MachineContext> {
+    type State = MachineContext;
 
     async fn run(
         &self,
         execution_context: &ExecutionContext,
-        mut current_state: Self::State,
-    ) -> Result<Self::State, OxyError> {
+        current_state: &mut Self::State,
+    ) -> Result<(), OxyError> {
         if let Some(finalizer) = &self.finalizer {
-            current_state = finalizer.run(execution_context, current_state).await?;
+            finalizer.run(execution_context, current_state).await?;
         }
 
         let instruction = execution_context
@@ -601,7 +319,12 @@ where
             }
             .into(),
         ];
-        messages.extend(current_state.get_messages());
+        messages.extend(
+            current_state
+                .list_messages()
+                .iter()
+                .map(|m| m.clone().into()),
+        );
         let mut stream = self.adapter.stream_text(messages).await?;
         let mut content = String::new();
         let streaming_context = execution_context
@@ -616,7 +339,7 @@ where
                 })
                 .await?;
         }
-        current_state.set_content(content);
+        current_state.set_content(Some(content));
         streaming_context
             .write_chunk(Chunk {
                 key: None,
@@ -624,6 +347,6 @@ where
                 finished: true,
             })
             .await?;
-        Ok(current_state)
+        Ok(())
     }
 }

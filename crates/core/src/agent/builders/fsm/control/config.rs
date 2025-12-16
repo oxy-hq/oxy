@@ -3,10 +3,10 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    agent::builders::fsm::config::TransitionObjective,
+    agent::builders::fsm::config::{ErrorTriage, RevisePlan, TransitionObjective},
     config::constants::{
-        AGENT_CONTINUE_PLAN_TRANSITION, AGENT_END_TRANSITION, AGENT_REVISE_PLAN_TRANSITION,
-        AGENT_START_TRANSITION,
+        AGENT_CONTINUE_PLAN_TRANSITION, AGENT_END_TRANSITION, AGENT_FIX_ERROR_TRANSITION,
+        AGENT_REVISE_PLAN_TRANSITION, AGENT_START_TRANSITION,
     },
 };
 
@@ -44,7 +44,7 @@ fn default_start_description() -> String {
 
 impl Start {
     fn revise_tool(&self) -> ChatCompletionTool {
-        let schema = serde_json::json!(&schemars::schema_for!(TransitionObjective));
+        let schema = serde_json::json!(&schemars::schema_for!(RevisePlan));
         ChatCompletionTool {
             function: FunctionObject {
                 name: AGENT_REVISE_PLAN_TRANSITION.to_string(),
@@ -68,8 +68,20 @@ impl Start {
         }
     }
 
+    fn fix_tool(&self) -> ChatCompletionTool {
+        let schema = serde_json::json!(&schemars::schema_for!(ErrorTriage));
+        ChatCompletionTool {
+            function: FunctionObject {
+                name: AGENT_FIX_ERROR_TRANSITION.to_string(),
+                description: Some("Fix specific issues in the current execution".to_string()),
+                parameters: Some(schema),
+                strict: None,
+            },
+        }
+    }
+
     pub fn get_tools(&self) -> Vec<ChatCompletionTool> {
-        vec![self.revise_tool(), self.continue_tool()]
+        vec![self.revise_tool(), self.continue_tool(), self.fix_tool()]
     }
 }
 

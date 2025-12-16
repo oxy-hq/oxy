@@ -12,6 +12,12 @@ export interface AgentConfig {
   path: string;
 }
 
+export interface AgentInfo {
+  name: string;
+  path: string;
+  public: boolean;
+}
+
 type ToolType = ExecuteSQLTool | ValidateSQLTool | RetrievalConfig;
 
 interface ExecuteSQLTool {

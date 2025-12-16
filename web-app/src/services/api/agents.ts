@@ -1,5 +1,5 @@
 import { apiClient } from "./axios";
-import { AgentConfig } from "@/types/agent";
+import { AgentConfig, AgentInfo } from "@/types/agent";
 import { TestStreamMessage } from "@/types/eval";
 import { Answer } from "@/types/chat";
 import fetchSSE from "./fetchSSE";
@@ -9,7 +9,7 @@ export class AgentService {
   static async listAgents(
     projectId: string,
     branchName: string,
-  ): Promise<AgentConfig[]> {
+  ): Promise<AgentInfo[]> {
     const response = await apiClient.get(`/${projectId}/agents`, {
       params: { branch: branchName },
     });

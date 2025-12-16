@@ -130,6 +130,7 @@ export class RunService {
       `/${projectId}/threads/${payload.threadId}/agentic`,
       {
         question: payload.prompt,
+        agent_ref: payload.agentRef,
       },
       { params: { branch: branchName } },
     );

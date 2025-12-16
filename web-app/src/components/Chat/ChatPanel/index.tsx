@@ -59,6 +59,7 @@ const ChatPanel = () => {
         sendAgenticMessage({
           prompt: data.input,
           threadId: data.id,
+          agentRef: data.source,
         });
         break;
       case "workflow":
@@ -89,7 +90,7 @@ const ChatPanel = () => {
         createThread({
           title: title,
           source: agent.id,
-          source_type: "agent",
+          source_type: agent.isAgentic ? "agentic" : "agent",
           input: message,
         });
         break;

@@ -152,6 +152,11 @@ const getNextData = (
 };
 
 export const getData = (data: DataContainer, key: string) => {
+  if (isFilePath(key)) {
+    return {
+      file_path: key,
+    };
+  }
   const parts = getKeyParts(key);
   let currentData: DataContainer = data;
   for (const part of parts) {
@@ -161,6 +166,12 @@ export const getData = (data: DataContainer, key: string) => {
     }
   }
   return currentData;
+};
+
+const isFilePath = (key: string) => {
+  return (
+    key.endsWith(".parquet") || key.endsWith(".csv") || key.endsWith(".json")
+  );
 };
 
 export const registerAuthenticatedFile = async (

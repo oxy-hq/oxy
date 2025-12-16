@@ -11,6 +11,7 @@ pub const AGENT_SOURCE_CONTENT: &str = "content";
 pub const AGENT_START_TRANSITION: &str = "start";
 pub const AGENT_REVISE_PLAN_TRANSITION: &str = "update_plan";
 pub const AGENT_CONTINUE_PLAN_TRANSITION: &str = "follow_plan";
+pub const AGENT_FIX_ERROR_TRANSITION: &str = "fix_error";
 pub const AGENT_END_TRANSITION: &str = "end";
 pub const WORKFLOW_SOURCE: &str = "workflow";
 pub const TASK_SOURCE: &str = "task";

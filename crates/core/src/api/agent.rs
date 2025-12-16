@@ -2,6 +2,7 @@ use std::{path::PathBuf, pin::Pin};
 
 use crate::{
     adapters::{project::manager::ProjectManager, session_filters::SessionFilters},
+    agent::builders::fsm::config::AgenticConfig,
     api::middlewares::project::ProjectManagerExtractor,
     auth::extractor::AuthenticatedUserExtractor,
     config::model::{AgentConfig, ConnectionOverrides},
@@ -59,18 +60,22 @@ pub async fn check_builder_availability(
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct AgentConfigResponse {
-    #[serde(flatten)]
-    pub config: AgentConfig,
+    pub name: String,
+    pub public: bool,
     pub path: String,
 }
 
 impl AgentConfigResponse {
-    pub fn new(config: AgentConfig, path: String) -> Self {
-        Self { config, path }
+    pub fn new(name: String, path: String, public: bool) -> Self {
+        Self { name, path, public }
     }
 
     pub fn from_config(config: AgentConfig, path: &str) -> Self {
-        Self::new(config, path.to_string())
+        Self::new(config.name.to_string(), path.to_string(), config.public)
+    }
+
+    pub fn from_aw_config(config: AgenticConfig, path: &str) -> Self {
+        Self::new(config.name.to_string(), path.to_string(), config.public)
     }
 }
 
@@ -101,9 +106,14 @@ pub async fn get_agents(
         .list_agents()
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let agentic_paths = config_manager
+        .list_agentic_workflows()
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let agent_relative_paths: Vec<String> = agent_paths
         .iter()
+        .chain(agentic_paths.iter())
         .filter_map(|agent| {
             agent
                 .strip_prefix(project_path)
@@ -117,11 +127,18 @@ pub async fn get_agents(
         .map(|path| {
             let config = &config_manager;
             async move {
-                let agent_config = config.resolve_agent(&path).await?;
-                Ok::<AgentConfigResponse, anyhow::Error>(AgentConfigResponse::from_config(
-                    agent_config,
-                    &path,
-                ))
+                if path.ends_with(".aw.yaml") || path.ends_with(".aw.yml") {
+                    let aw_config = config.resolve_agentic_workflow(&path).await?;
+                    Ok::<AgentConfigResponse, anyhow::Error>(AgentConfigResponse::from_aw_config(
+                        aw_config, &path,
+                    ))
+                } else {
+                    let agent_config = config.resolve_agent(&path).await?;
+                    Ok::<AgentConfigResponse, anyhow::Error>(AgentConfigResponse::from_config(
+                        agent_config,
+                        &path,
+                    ))
+                }
             }
         })
         .collect::<Vec<_>>();

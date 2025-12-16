@@ -61,7 +61,7 @@ const Thread = () => {
       case "task":
         return <TaskThread thread={thread} refetchThread={refetchThread} />;
       case "agentic":
-        return <AgenticThread thread={thread} />;
+        return <AgenticThread key={thread.id} thread={thread} />;
       default:
         return <AgentThread thread={thread} refetchThread={refetchThread} />;
     }

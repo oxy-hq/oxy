@@ -9,8 +9,7 @@ use async_openai::types::chat::{
 use crate::{
     adapters::openai::OpenAIAdapter,
     agent::builders::fsm::{
-        control::TransitionContext,
-        query::PrepareData,
+        state::MachineContext,
         viz::{
             config::Visualize,
             recommendations::{
@@ -22,7 +21,7 @@ use crate::{
     execute::{
         ExecutionContext,
         builders::fsm::Trigger,
-        types::{EventKind, VizParams},
+        types::{EventKind, Table, VizParams},
     },
 };
 
@@ -33,10 +32,7 @@ pub struct GenerateViz<S> {
     _state: std::marker::PhantomData<S>,
 }
 
-impl<S> GenerateViz<S>
-where
-    S: PrepareData,
-{
+impl<S> GenerateViz<S> {
     pub fn new(objective: String, adapter: OpenAIAdapter, config: Visualize) -> Self {
         Self {
             objective,
@@ -49,29 +45,18 @@ where
     async fn prepare_instructions(
         &self,
         execution_context: &ExecutionContext,
-        current_state: &S,
     ) -> Result<Vec<ChatCompletionRequestMessage>, OxyError> {
         let instruction = execution_context
             .renderer
             .render_async(&self.config.instruction)
             .await?;
-        let tables = current_state.get_tables();
         let messages = vec![
             ChatCompletionRequestSystemMessage {
-                content: ChatCompletionRequestSystemMessageContent::Text(instruction),
-                ..Default::default()
-            }
-            .into(),
-            ChatCompletionRequestSystemMessage {
-                name: None,
                 content: ChatCompletionRequestSystemMessageContent::Text(format!(
-                    "You have access to the following tables:\n{}",
-                    tables
-                        .iter()
-                        .map(|t| t.to_string())
-                        .collect::<Vec<String>>()
-                        .join("\n")
+                    "##Instruction: {}\n",
+                    instruction
                 )),
+                ..Default::default()
             }
             .into(),
             ChatCompletionRequestAssistantMessage {
@@ -88,36 +73,47 @@ where
     async fn request_viz_tool_call(
         &self,
         execution_context: &ExecutionContext,
-        current_state: &S,
+        tables: &[&Table],
         messages: Vec<ChatCompletionRequestMessage>,
     ) -> Result<ChatCompletionMessageToolCall, OxyError> {
         // Use heuristic recommendations to guide the visualization tool call
         let recommendations = ChartHeuristicsAnalyzerBuilder::default()
             .with_all_defaults()
             .build()
-            .top_recommendations(current_state.get_tables(), 10);
+            .top_recommendations(tables, 50);
         if recommendations.is_empty() {
-            return Err(OxyError::RuntimeError(
-                "No chart recommendations could be generated from the data. Please ensure the data is valid and try again.".to_string(),
-            ));
+            return Err(OxyError::RuntimeError(format!(
+                "No chart recommendations could be generated from the following tables:\n\n
+{}
+\n\n
+Please pay attention to column types and data distributions when generating visualizations.",
+                tables
+                    .iter()
+                    .map(|t| t.summary_yml())
+                    .collect::<Vec<String>>()
+                    .join("\n---\n")
+            )));
         }
         // Use the recommendations to build a function call
         let tool_call = ChartSelectionSchema::build(recommendations.as_slice());
 
-        let tool_calls = self
+        let (content, tool_calls) = self
             .adapter
             .request_tool_call_with_usage(
                 execution_context,
                 messages,
                 vec![tool_call],
                 Some(ChatCompletionToolChoiceOption::Mode(
-                    ToolChoiceOptions::Required,
+                    ToolChoiceOptions::Auto,
                 )),
                 None,
             )
             .await?;
         let tool_call = tool_calls.first().ok_or_else(|| {
-            OxyError::RuntimeError("No tool call returned from OpenAI".to_string())
+            OxyError::RuntimeError(format!(
+                "No tool call returned from OpenAI. {}",
+                content.unwrap_or_default()
+            ))
         })?;
         Ok(tool_call.clone())
     }
@@ -132,11 +128,9 @@ where
     async fn run_with_retry(
         &self,
         execution_context: &ExecutionContext,
-        current_state: &S,
+        tables: &[&Table],
     ) -> Result<(VizParams, ChatCompletionMessageToolCall), OxyError> {
-        let instructions = self
-            .prepare_instructions(execution_context, current_state)
-            .await?;
+        let instructions = self.prepare_instructions(execution_context).await?;
         let config = &self.config;
         let max_retries = config.max_retries;
         let mut failed_messages = vec![];
@@ -145,7 +139,7 @@ where
             let tool_call = self
                 .request_viz_tool_call(
                     execution_context,
-                    current_state,
+                    tables,
                     [instructions.clone(), failed_messages.clone()].concat(),
                 )
                 .await?;
@@ -182,49 +176,28 @@ where
     }
 }
 
-pub trait CollectViz {
-    fn list_viz(&self) -> &[VizParams];
-    fn collect_viz(&mut self, viz: VizParams);
-}
-
-pub trait CollectVizDelegator {
-    fn target(&self) -> &dyn CollectViz;
-    fn target_mut(&mut self) -> &mut dyn CollectViz;
-}
-
-impl<T> CollectViz for T
-where
-    T: CollectVizDelegator,
-{
-    fn list_viz(&self) -> &[VizParams] {
-        self.target().list_viz()
-    }
-
-    fn collect_viz(&mut self, viz: VizParams) {
-        self.target_mut().collect_viz(viz)
-    }
-}
-
 #[async_trait::async_trait]
-impl<S> Trigger for GenerateViz<S>
-where
-    S: TransitionContext + PrepareData + CollectViz + Send + Sync,
-{
-    type State = S;
+impl Trigger for GenerateViz<MachineContext> {
+    type State = MachineContext;
 
     async fn run(
         &self,
         execution_context: &ExecutionContext,
-        mut current_state: Self::State,
-    ) -> Result<Self::State, OxyError> {
+        current_state: &mut Self::State,
+    ) -> Result<(), OxyError> {
         let viz_context = execution_context
             .with_child_source(uuid::Uuid::new_v4().to_string(), "visualize".to_string());
-        let (viz, tool_call) = self.run_with_retry(&viz_context, &current_state).await?;
-        viz_context
-            .write_kind(EventKind::VizGenerated { viz: viz.clone() })
+        let (viz, tool_call) = self
+            .run_with_retry(&viz_context, current_state.list_tables().as_slice())
             .await?;
-        current_state.add_tool_call(&self.objective, tool_call, viz.to_string());
-        current_state.collect_viz(viz);
-        Ok(current_state)
+        let persisted_viz_data =
+            current_state.add_viz(self.objective.clone(), tool_call.into(), viz)?;
+        viz_context
+            .write_kind(EventKind::VizGenerated {
+                viz: persisted_viz_data,
+            })
+            .await?;
+
+        Ok(())
     }
 }

@@ -741,7 +741,7 @@ impl OpenAIAdapter {
         tools: C,
         tool_choice: Option<ChatCompletionToolChoiceOption>,
         parallel_tool_calls: Option<bool>,
-    ) -> Result<Vec<ChatCompletionMessageToolCall>, OxyError> {
+    ) -> Result<(Option<String>, Vec<ChatCompletionMessageToolCall>), OxyError> {
         let mut request_builder = self.request_builder(messages);
         let tools_vec: Vec<ChatCompletionTool> = tools.into();
         let tools_wrapped: Vec<ChatCompletionTools> = tools_vec
@@ -779,7 +779,7 @@ impl OpenAIAdapter {
         }
 
         let result = self.extract_tool_calls(&response);
-        Ok(result)
+        Ok(result.unwrap_or((None, vec![])))
     }
 
     pub async fn stream_text<M: Into<Vec<ChatCompletionRequestMessage>>>(
@@ -921,21 +921,23 @@ impl OpenAIAdapter {
     fn extract_tool_calls(
         &self,
         response: &CreateChatCompletionResponse,
-    ) -> Vec<ChatCompletionMessageToolCall> {
-        response
-            .choices
-            .first()
-            .and_then(|choice| choice.message.tool_calls.clone())
-            .map(|tool_calls| {
-                tool_calls
+    ) -> Option<(Option<String>, Vec<ChatCompletionMessageToolCall>)> {
+        response.choices.first().map(|choice| {
+            (
+                choice.message.content.clone(),
+                choice
+                    .message
+                    .tool_calls
+                    .clone()
+                    .unwrap_or_default()
                     .into_iter()
                     .filter_map(|tc| match tc {
                         ChatCompletionMessageToolCalls::Function(func_call) => Some(func_call),
                         ChatCompletionMessageToolCalls::Custom(_) => None,
                     })
-                    .collect()
-            })
-            .unwrap_or_default()
+                    .collect(),
+            )
+        })
     }
 
     fn extract_stream(

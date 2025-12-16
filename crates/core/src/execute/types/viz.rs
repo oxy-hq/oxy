@@ -31,11 +31,56 @@ pub struct VizParams {
     pub config: VizParamsType,
 }
 
+impl VizParams {
+    pub fn new(name: String, title: String, config: VizParamsType) -> Self {
+        Self {
+            name,
+            title,
+            config,
+        }
+    }
+
+    pub fn with_data_path(self, data_path: &str) -> Self {
+        let config = match self.config {
+            VizParamsType::Line(mut l) => {
+                l.data = data_path.to_string();
+                VizParamsType::Line(l)
+            }
+            VizParamsType::Bar(mut b) => {
+                b.data = data_path.to_string();
+                VizParamsType::Bar(b)
+            }
+            VizParamsType::Pie(mut p) => {
+                p.data = data_path.to_string();
+                VizParamsType::Pie(p)
+            }
+        };
+        Self {
+            name: self.name,
+            title: self.title,
+            config,
+        }
+    }
+
+    pub fn data_slug(&self) -> String {
+        slugify::slugify(&self.data(), "", "-", None)
+    }
+
+    fn data(&self) -> &str {
+        match &self.config {
+            VizParamsType::Line(l) => &l.data,
+            VizParamsType::Bar(b) => &b.data,
+            VizParamsType::Pie(p) => &p.data,
+        }
+    }
+}
+
 impl std::fmt::Display for VizParams {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        tracing::info!("Formatting VizParams for display {:?}", self);
         write!(
             f,
-            "Visualization: {}\nTitle: {}\nType: {}",
+            "Visualization: {}\n=============\nTitle: {}\nConfig: {}",
             self.name, self.title, self.config
         )
     }

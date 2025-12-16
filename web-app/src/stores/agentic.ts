@@ -1,21 +1,12 @@
 import { useBlockStore } from "./block";
 import { RunService, ThreadService } from "@/services/api";
 import useTaskThreadStore from "./useTaskThread";
-import {
-  Fragment,
-  ReactNode,
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import { useStreamEvents } from "@/components/workflow/useWorkflowRun";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { MessageFactory } from "@/hooks/messaging/core/messageFactory";
 import { Block, RunInfo } from "@/services/types";
-import TableVirtualized from "@/components/Markdown/components/TableVirtualized";
-import Markdown from "@/components/Markdown";
 import { Message } from "@/types/chat";
 import queryKeys from "@/hooks/api/queryKey";
 
@@ -41,7 +32,7 @@ export const useAgenticStore = (projectId: string, threadId: string) => {
         }
       });
     }
-  }, [result.data]);
+  }, [result.data, threadId]);
 
   return result;
 };
@@ -53,59 +44,79 @@ export const useThreadMessages = (projectId: string, threadId: string) => {
   });
 };
 
-export const useObserveAgenticMessages = (threadId: string) => {
+export const useObserveAgenticMessages = (
+  threadId: string,
+  refetch?: () => Promise<unknown>,
+) => {
   const onGoingMessages = useMessages(threadId, usePendingPred());
-  const { stream, cancel } = useStreamEvents();
+  const setGroupBlocks = useBlockStore((state) => state.setGroupBlocks);
+  const { stream } = useStreamEvents();
 
   useEffect(() => {
+    const abortRef = new AbortController();
     const observeMessages = async () => {
-      for (const message of onGoingMessages) {
-        if (!message.run_info) return;
+      const message = onGoingMessages[onGoingMessages.length - 1];
+      if (!message || !message.run_info) return;
 
-        await stream
-          .mutateAsync({
-            sourceId: message.run_info.source_id,
-            runIndex: message.run_info.run_index,
-          })
-          .catch((error) => {
-            console.error("Failed to observe agentic message stream:", error);
-          });
-      }
+      setGroupBlocks(
+        message.run_info,
+        {},
+        [],
+        undefined,
+        message.run_info.metadata,
+        true,
+      );
+      await stream
+        .mutateAsync({
+          sourceId: message.run_info.source_id,
+          runIndex: message.run_info.run_index,
+          abortRef: abortRef.signal,
+        })
+        .catch((error) => {
+          console.error(
+            "Failed to observe agentic message stream:",
+            Object.keys(error),
+          );
+        })
+        .finally(() => {
+          refetch?.();
+        });
     };
     observeMessages();
-  }, [threadId, onGoingMessages]);
 
-  return cancel;
+    return () => {
+      abortRef.abort();
+    };
+  }, [threadId, onGoingMessages]);
 };
 
 export const useAskAgentic = () => {
   const { project, branchName } = useCurrentProjectBranch();
   const setGroupBlocks = useBlockStore((state) => state.setGroupBlocks);
-  const { setMessages, getTaskThread } = useTaskThreadStore();
+  const { mergeMessages } = useTaskThreadStore();
   return useMutation({
     mutationFn: async ({
       prompt,
       threadId,
+      agentRef,
     }: {
       prompt: string;
       threadId: string;
+      agentRef: string;
     }) => {
       return await RunService.createAgenticRun(project.id, branchName, {
         threadId,
         prompt,
+        agentRef,
       });
     },
     onMutate({ threadId, prompt }) {
-      const { messages } = getTaskThread(threadId);
-      setMessages(threadId, [
-        ...messages,
+      mergeMessages(threadId, [
         MessageFactory.createUserMessage(prompt, threadId),
       ]);
     },
     onSuccess({ message_id, run_info }, { threadId }) {
-      const { messages } = getTaskThread(threadId);
-      setMessages(threadId, [
-        ...messages,
+      mergeMessages(threadId, [
         MessageFactory.createAgenticMessage(message_id, threadId, run_info),
       ]);
       setGroupBlocks(run_info, {}, [], undefined, run_info.metadata);
@@ -114,19 +125,18 @@ export const useAskAgentic = () => {
 };
 
 export const useSelectedMessageReasoning = () => {
-  const [groupId, setGroupId] = useState<string | null>(null);
+  const selectedGroupId = useBlockStore((state) => state.selectedGroupId);
+  const setSelectedGroupId = useBlockStore((state) => state.setSelectedGroupId);
   const groupBlocks = useBlockStore((state) => state.groupBlocks);
-  const group = groupBlocks[groupId || ""];
+
+  const group = groupBlocks[selectedGroupId || ""];
   const blocks = group?.root.map((childId) => group.blocks[childId]) || [];
   const reasoningSteps = blocks
     .filter((block) => block.type === "step")
     .map((stepBlock) => {
-      const childBlocks = stepBlock.children.map((childId) => {
+      const childBlocks = stepBlock.children.flatMap((childId) => {
         const childBlock = group.blocks[childId];
-        return {
-          id: childBlock.id,
-          content: blockContentTraverse(childBlock, group.blocks),
-        };
+        return blockTraverse(childBlock, group.blocks, isRenderableBlock);
       });
       return {
         ...stepBlock,
@@ -134,36 +144,37 @@ export const useSelectedMessageReasoning = () => {
       };
     });
 
-  const openReasoning = useCallback((runInfo?: RunInfo) => {
-    if (!runInfo) return;
-    setGroupId(getGroupId(runInfo));
-  }, []);
+  const selectedBlockId = useBlockStore((state) => state.selectedBlockId);
+  const setSelectedBlockId = useBlockStore((state) => state.setSelectedBlockId);
+  const selectedBlock = group?.blocks[selectedBlockId || ""];
 
-  const closeReasoning = useCallback(() => {
-    setGroupId(null);
-  }, []);
-
-  const toggleReasoning = useCallback(
-    (runInfo?: RunInfo, isReasoningSelected?: boolean) => {
+  const selectReasoning = useCallback(
+    (runInfo?: RunInfo) => {
       if (!runInfo) return false;
       const id = getGroupId(runInfo);
-      if (groupId === id && isReasoningSelected) {
-        setGroupId(null);
-        return false;
-      } else {
-        setGroupId(id);
-        return true;
-      }
+      setSelectedGroupId(id);
     },
-    [groupId],
+    [setSelectedGroupId],
+  );
+
+  const selectBlock = useCallback(
+    (blockId: string, runInfo?: RunInfo) => {
+      if (!runInfo) return false;
+      const groupId = getGroupId(runInfo);
+      setSelectedGroupId(groupId);
+      setSelectedBlockId(blockId);
+    },
+    [setSelectedGroupId, setSelectedBlockId],
   );
 
   return {
-    groupId,
+    selectedBlock,
+    selectedGroupId,
     reasoningSteps,
-    openReasoning,
-    closeReasoning,
-    toggleReasoning,
+    selectReasoning,
+    selectBlock,
+    setSelectedGroupId,
+    setSelectedBlockId,
   };
 };
 
@@ -173,11 +184,30 @@ export const useThreadDataApp = (threadId: string) => {
   const { messages } = getTaskThread(threadId);
   const apps = messages.flatMap((message) => {
     if (message.run_info) {
-      return flattenMessageApps(groupBlocks, message.run_info);
+      return filterMapBlock(
+        message.run_info,
+        groupBlocks,
+        (block) => block.type === "data_app",
+        (block) => block.type === "data_app" && block.file_path,
+      );
     }
     return [];
   });
   return apps[apps.length - 1];
+};
+
+export const useThreadArtifacts = (threadId: string) => {
+  const { groupBlocks } = useBlockStore();
+  const { getTaskThread } = useTaskThreadStore();
+  const taskThread = getTaskThread(threadId);
+  const { messages } = taskThread;
+  const artifacts = messages.flatMap((message) => {
+    if (message.run_info) {
+      return filterMapBlock(message.run_info, groupBlocks, isArtifactBlock);
+    }
+    return [];
+  });
+  return artifacts;
 };
 
 export const useMessageContent = (runInfo?: RunInfo) => {
@@ -197,7 +227,7 @@ export const useMessageContent = (runInfo?: RunInfo) => {
       (block) =>
         block.type === "step" && ["end", "build_app"].includes(block.step_type),
     )
-    .flatMap((block) => blockContentTraverse(block, blocks));
+    .flatMap((block) => blockTraverse(block, blocks, isRenderableBlock));
 };
 
 export const useMessageStreaming = (runInfo?: RunInfo) => {
@@ -219,6 +249,11 @@ export const useLastStreamingMessage = (threadId: string) => {
   const messages = useMessages(threadId, useOnGoingPred());
   const lastRunInfo = messages[messages.length - 1]?.run_info;
   return useMessageContent(lastRunInfo); // Ensure content is loaded
+};
+
+export const useLastRunInfoGroupId = (threadId: string) => {
+  const messages = useMessages(threadId, useAllPred());
+  return getGroupId(messages[messages.length - 1]?.run_info);
 };
 
 export const useStopAgenticRun = (threadId: string) => {
@@ -266,6 +301,12 @@ const useOnGoingPred = () => {
   );
 };
 
+const useAllPred = () => {
+  return useCallback((message: Message) => {
+    return !!message.run_info;
+  }, []);
+};
+
 const usePendingPred = () => {
   return useCallback((message: Message) => {
     return (
@@ -275,88 +316,110 @@ const usePendingPred = () => {
   }, []);
 };
 
-const getGroupId = (runInfo: RunInfo) => {
+const isArtifactBlock = (block: Block) => {
+  return ["data_app", "sql", "viz"].includes(block.type);
+};
+
+const isRenderableBlock = (block: Block) => {
+  return isArtifactBlock(block) || block.type === "text";
+};
+
+const getGroupId = (runInfo?: RunInfo) => {
+  if (!runInfo) return "";
   return `${runInfo.source_id}::${runInfo.run_index}`;
 };
 
-const flattenMessageApps = (
+function filterMapBlock<T = Block>(
+  runInfo: RunInfo,
   groupBlocks: Record<
     string,
     { blocks: Record<string, Block>; root: string[] }
   >,
-  runInfo: RunInfo,
-) => {
-  const { blocks, root: children } = groupBlocks[getGroupId(runInfo)] || {};
-  if ((children && children.length == 0) || !blocks) {
+  predicate: (block: Block) => boolean,
+  map: (block: Block) => T = (b) => b as unknown as T,
+): T[] {
+  const groupId = getGroupId(runInfo);
+  const group = groupBlocks[groupId];
+  if (!group) {
     return [];
   }
-  return children
-    .map((childrenId) => blocks[childrenId])
-    .filter((block) => block.type === "step" && block.step_type === "build_app")
-    .flatMap((block) => dataAppBlockTraverse(block, blocks));
-};
 
-const dataAppBlockTraverse = (
+  let result: T[] = [];
+  for (const childId of group.root) {
+    const childBlock = group.blocks[childId];
+    if (childBlock) {
+      result = [
+        ...result,
+        ...blockTraverse(childBlock, group.blocks, predicate, map),
+      ];
+    }
+  }
+
+  return result;
+}
+
+function blockTraverse<T = Block>(
   block: Block,
   blocks: Record<string, Block>,
-): string[] => {
-  let content = [];
-  if (block.type === "data_app" && block.file_path) {
-    content.push(block.file_path);
+  predicate: (block: Block) => boolean,
+  map: (block: Block) => T = (b) => b as unknown as T,
+): T[] {
+  let result: T[] = [];
+  const circularBlocks = detectCircularBlock(blocks);
+  if (circularBlocks) {
+    return result;
+  }
+  if (predicate(block)) {
+    result.push(map(block));
   }
 
   if (block.children && block.children.length > 0) {
     for (const childId of block.children) {
       const childBlock = blocks[childId];
       if (childBlock) {
-        content = [...content, ...dataAppBlockTraverse(childBlock, blocks)];
+        result = [
+          ...result,
+          ...blockTraverse(childBlock, blocks, predicate, map),
+        ];
       }
     }
   }
-  return content;
-};
 
-const blockContentTraverse = (
-  block: Block,
-  blocks: Record<string, Block>,
-): ReactNode[] => {
-  let content = [];
-  if (block.type === "text") {
-    content.push(<BlockMarkdown key={block.id}>{block.content}</BlockMarkdown>);
-  }
+  return result;
+}
 
-  if (block.type === "sql") {
-    content.push(
-      <Fragment key={block.id}>
-        <span className="text-bold text-sm">SQL Query</span>
-        <BlockMarkdown>{"```sql\n" + block.sql_query + "\n```"}</BlockMarkdown>
-        <span className="text-bold text-sm">Results</span>
-        <TableVirtualized key={block.id} table_id="0" tables={[block.result]} />
-      </Fragment>,
-    );
-  }
+function detectCircularBlock(blocks: Record<string, Block>): Block[] | null {
+  const visited: Set<string> = new Set();
+  const recStack: Set<string> = new Set();
+  const circularBlocks: Block[] = [];
 
-  if (block.type === "viz") {
-    content.push(
-      <Fragment key={block.id}>
-        <BlockMarkdown>
-          {"```json\n" + JSON.stringify(block.config, null, 2) + "\n```"}
-        </BlockMarkdown>
-      </Fragment>,
-    );
-  }
+  const dfs = (blockId: string): boolean => {
+    if (!visited.has(blockId)) {
+      visited.add(blockId);
+      recStack.add(blockId);
 
-  if (block.children && block.children.length > 0) {
-    for (const childId of block.children) {
-      const childBlock = blocks[childId];
-      if (childBlock) {
-        content = [...content, ...blockContentTraverse(childBlock, blocks)];
+      const block = blocks[blockId];
+      if (block && block.children) {
+        for (const childId of block.children) {
+          if (
+            (!visited.has(childId) && dfs(childId)) ||
+            recStack.has(childId)
+          ) {
+            circularBlocks.push(block);
+            return true;
+          }
+        }
       }
     }
-  }
-  return content;
-};
+    recStack.delete(blockId);
+    return false;
+  };
 
-export const BlockMarkdown = ({ children }: { children: string }) => (
-  <Markdown>{children}</Markdown>
-);
+  for (const blockId in blocks) {
+    if (dfs(blockId)) {
+      return circularBlocks;
+    }
+  }
+
+  return null;
+}

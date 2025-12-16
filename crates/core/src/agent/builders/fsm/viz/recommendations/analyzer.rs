@@ -51,14 +51,13 @@ impl ChartHeuristicsAnalyzer {
     /// Get top N recommendations
     pub fn top_recommendations(
         &self,
-        tables: &[Table], // Batches from multiple tables
+        tables: &[&Table], // Batches from multiple tables
         n: usize,
     ) -> Vec<ChartRecommendation> {
         let mut all_recommendations = Vec::new();
         for table in tables.iter() {
-            if let Ok(batch) = table.sample()
-                && let Some(data_ref) = &table.name
-            {
+            if let Ok(batch) = table.sample() {
+                let data_ref = &table.name;
                 let mut recs = self
                     .generate_recommendations(batch, data_ref)
                     .into_iter()
@@ -67,6 +66,10 @@ impl ChartHeuristicsAnalyzer {
                 all_recommendations.append(&mut recs);
             }
         }
+        tracing::info!(
+            "Total recommendations before sorting: {}",
+            all_recommendations.len()
+        );
         all_recommendations.sort_by(|a, b| {
             b.score
                 .partial_cmp(&a.score)
