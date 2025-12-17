@@ -208,7 +208,7 @@ async fn build_react_loop(
             model,
             tools,
             None,
-            reasoning_config.map(|c| c),
+            reasoning_config,
             false,
         ))
 }

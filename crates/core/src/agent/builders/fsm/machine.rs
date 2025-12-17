@@ -73,7 +73,7 @@ impl Machine<AgenticInput> for Agent<MachineContext> {
             execution_context.project.clone(),
             input.context_id.to_string(),
             input.prompt.to_string(),
-            input.trace.into_iter().map(|m| m).collect(),
+            input.trace.into_iter().collect(),
             self.config.start.start.name.clone(),
         )
         .await?)
