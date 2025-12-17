@@ -5,7 +5,7 @@ You are an AI assistant helping develop Oxy, an open-source Rust-based framework
 ## Project Overview
 
 Oxy is a declarative, deterministic framework for agentic analytics:
-- **Core Language**: Rust (edition 2024, rust-version 1.90.0)
+- **Core Language**: Rust (edition 2024, rust-version 1.92.0)
 - **Frontend**: TypeScript/React with Vite
 - **Architecture**: Multi-crate Rust workspace + monorepo with pnpm
 - **Database**: SeaORM with SQLite/PostgreSQL support

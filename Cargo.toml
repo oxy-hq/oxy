@@ -29,7 +29,7 @@ indexmap = { version = "2.12.1", features = ["serde"] }
 # TODO: turn this on when https://github.com/googleapis/release-please/issues number 2111 is fixed
 # version = "0.1.32"
 edition = "2024"
-rust-version = "1.90.0"
+rust-version = "1.92.0"
 publish = false
 description = "Oxy"
 authors = ["oxy engineers"]

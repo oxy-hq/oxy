@@ -4,7 +4,7 @@
 # ---------------------------------------------------------------------------------
 
 # Base image for Rust and Cargo Chef
-FROM lukemathwalker/cargo-chef:latest-rust-1.90.0-bullseye AS chef
+FROM lukemathwalker/cargo-chef:latest-rust-1.92.0-trixie AS chef
 WORKDIR /app
 
 # Stage 1: Dependency planner
@@ -40,7 +40,7 @@ COPY --from=web-builder /app/web-app/dist /app/crates/core/dist
 RUN cargo build --release
 
 # Stage 4: Runtime image
-FROM debian:bullseye-slim AS runtime
+FROM debian:trixie-slim AS runtime
 WORKDIR /app
 
 RUN apt-get update && \
