@@ -44,6 +44,8 @@ type FocusType =
   | "auto"
   | "agent"
   | "workflow"
+  | "app"
+  | "automation"
   | "topic"
   | "view"
   | "sql_query"
@@ -72,6 +74,8 @@ const OntologyNode = ({ data }: NodeProps) => {
   const icons = {
     agent: <Bot className="w-4 h-4" />,
     workflow: <WorkflowIcon className="w-4 h-4" />,
+    app: <WorkflowIcon className="w-4 h-4" />,
+    automation: <WorkflowIcon className="w-4 h-4" />,
     topic: <BookOpen className="w-4 h-4" />,
     view: <Layout className="w-4 h-4" />,
     sql_query: <FileCode2 className="w-4 h-4" />,
@@ -82,6 +86,8 @@ const OntologyNode = ({ data }: NodeProps) => {
   const bgColors = {
     agent: "#fee2e2",
     workflow: "#ffedd5",
+    app: "#e0f2fe",
+    automation: "#f3e8ff",
     topic: "#f3e8ff",
     view: "#dcfce7",
     sql_query: "#fef3c7",
@@ -92,6 +98,8 @@ const OntologyNode = ({ data }: NodeProps) => {
   const borderColors = {
     agent: "#fca5a5",
     workflow: "#fdba74",
+    app: "#7dd3fc",
+    automation: "#d8b4fe",
     topic: "#d8b4fe",
     view: "#86efac",
     sql_query: "#fcd34d",
@@ -411,6 +419,8 @@ function OntologyGraphInner({ data }: OntologyGraphProps) {
     let types = [
       "agent",
       "workflow",
+      "app",
+      "automation",
       "topic",
       "view",
       "sql_query",
@@ -726,6 +736,18 @@ function OntologyGraphInner({ data }: OntologyGraphProps) {
                   </div>
                 </SelectItem>
                 <SelectItem value="workflow" className="text-sm">
+                  <div className="flex items-center gap-2">
+                    <WorkflowIcon className="w-4 h-4" />
+                    <span>Automations</span>
+                  </div>
+                </SelectItem>
+                <SelectItem value="app" className="text-sm">
+                  <div className="flex items-center gap-2">
+                    <WorkflowIcon className="w-4 h-4" />
+                    <span>Apps</span>
+                  </div>
+                </SelectItem>
+                <SelectItem value="automation" className="text-sm">
                   <div className="flex items-center gap-2">
                     <WorkflowIcon className="w-4 h-4" />
                     <span>Automations</span>

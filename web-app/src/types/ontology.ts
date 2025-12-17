@@ -5,6 +5,8 @@ export interface OntologyNode {
     | "view"
     | "topic"
     | "workflow"
+    | "app"
+    | "automation"
     | "sql_query"
     | "agent"
     | "entity";

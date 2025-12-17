@@ -5,7 +5,6 @@ import {
   View,
   Topic,
 } from "@/types/ontology";
-import { WorkflowService } from "./workflows";
 import { DatabaseService } from "./database";
 import { FileService } from "./files";
 import { FileTreeModel } from "@/types/file";
@@ -20,18 +19,14 @@ export class OntologyService {
     branchName: string,
   ): Promise<OntologyGraph> {
     // Fetch all necessary data in parallel
-    const [workflows, databases, fileTree] = await Promise.all([
-      WorkflowService.listWorkflows(projectId, branchName),
+    const [databases, fileTree] = await Promise.all([
       DatabaseService.listDatabases(projectId, branchName),
       FileService.getFileTree(projectId, branchName),
     ]);
 
-    // Parse semantic models, agents, and queries from file tree
-    const { views, topics, agents, sqlQueries } = await this.parseProjectFiles(
-      projectId,
-      branchName,
-      fileTree,
-    );
+    // Parse semantic models, agents, queries, workflows, and apps from file tree
+    const { views, topics, agents, sqlQueries, workflows } =
+      await this.parseProjectFiles(projectId, branchName, fileTree);
 
     // Build nodes
     const nodes: OntologyNode[] = [];
@@ -177,12 +172,28 @@ export class OntologyService {
       });
     });
 
-    // Add workflow nodes and link to their dependencies
+    // Add workflow, app, and automation nodes and link to their dependencies
     workflows.forEach((workflow) => {
-      const workflowId = `workflow:${workflow.path}`;
+      const isApp = workflow.path.endsWith(".app.yml");
+      const isAutomation = workflow.path.endsWith(".automation.yml");
+
+      let nodeId: string;
+      let nodeType: "workflow" | "app" | "automation";
+
+      if (isApp) {
+        nodeId = `app:${workflow.path}`;
+        nodeType = "app";
+      } else if (isAutomation) {
+        nodeId = `automation:${workflow.path}`;
+        nodeType = "automation";
+      } else {
+        nodeId = `workflow:${workflow.path}`;
+        nodeType = "workflow";
+      }
+
       nodes.push({
-        id: workflowId,
-        type: "workflow",
+        id: nodeId,
+        type: nodeType,
         label: workflow.name,
         data: {
           name: workflow.name,
@@ -194,13 +205,8 @@ export class OntologyService {
         },
       });
 
-      // Analyze workflow tasks to find dependencies
-      this.extractWorkflowDependencies(
-        workflow.tasks,
-        workflowId,
-        nodes,
-        edges,
-      );
+      // Analyze workflow/app tasks to find dependencies
+      this.extractWorkflowDependencies(workflow.tasks, nodeId, nodes, edges);
     });
 
     // Helper function to check if a path matches a pattern (with wildcards)
@@ -473,7 +479,7 @@ export class OntologyService {
   }
 
   /**
-   * Parses project files (views, topics, agents, SQL queries) from the file tree
+   * Parses project files (views, topics, agents, SQL queries, workflows, apps, automations) from the file tree
    */
   private static async parseProjectFiles(
     projectId: string,
@@ -503,6 +509,12 @@ export class OntologyService {
       name: string;
       path: string;
     }>;
+    workflows: Array<{
+      name: string;
+      path: string;
+      description?: string;
+      tasks: unknown[];
+    }>;
   }> {
     const views: View[] = [];
     const topics: Topic[] = [];
@@ -527,6 +539,12 @@ export class OntologyService {
       name: string;
       path: string;
     }> = [];
+    const workflows: Array<{
+      name: string;
+      path: string;
+      description?: string;
+      tasks: unknown[];
+    }> = [];
 
     // Find all relevant files
     const projectFiles = this.findProjectFiles(fileTree);
@@ -544,7 +562,10 @@ export class OntologyService {
           if (
             file.type === "view" ||
             file.type === "topic" ||
-            file.type === "agent"
+            file.type === "agent" ||
+            file.type === "workflow" ||
+            file.type === "app" ||
+            file.type === "automation"
           ) {
             const parsed = parse(content);
 
@@ -583,6 +604,24 @@ export class OntologyService {
                 route_fallback: parsed.route_fallback,
                 context: parsed.context,
               });
+            } else if (
+              file.type === "workflow" ||
+              file.type === "app" ||
+              file.type === "automation"
+            ) {
+              const workflowName =
+                parsed.name ||
+                file.path
+                  .split("/")
+                  .pop()
+                  ?.replace(/\.(workflow|app|automation)\.yml$/, "") ||
+                "unknown";
+              workflows.push({
+                name: workflowName,
+                path: file.path,
+                description: parsed.description,
+                tasks: parsed.tasks || [],
+              });
             }
           } else if (file.type === "sql") {
             const queryName =
@@ -598,11 +637,11 @@ export class OntologyService {
       }),
     );
 
-    return { views, topics, agents, sqlQueries };
+    return { views, topics, agents, sqlQueries, workflows };
   }
 
   /**
-   * Recursively finds all project files (views, topics, agents, SQL) in the file tree
+   * Recursively finds all project files (views, topics, agents, SQL, workflows, apps, automations) in the file tree
    */
   private static findProjectFiles(
     fileTree: FileTreeModel[],
@@ -633,6 +672,21 @@ export class OntologyService {
           files.push({ path: currentPath, type: "agent" });
         } else if (node.name.endsWith(".sql")) {
           files.push({ path: currentPath, type: "sql" });
+        } else if (
+          node.name.endsWith(".workflow.yml") ||
+          node.name.endsWith(".workflow.yaml")
+        ) {
+          files.push({ path: currentPath, type: "workflow" });
+        } else if (
+          node.name.endsWith(".app.yml") ||
+          node.name.endsWith(".app.yaml")
+        ) {
+          files.push({ path: currentPath, type: "app" });
+        } else if (
+          node.name.endsWith(".automation.yml") ||
+          node.name.endsWith(".automation.yaml")
+        ) {
+          files.push({ path: currentPath, type: "automation" });
         }
       }
     });
