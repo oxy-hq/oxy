@@ -134,10 +134,10 @@ pub fn markdown_to_mrkdwn(markdown: &str) -> String {
                 in_code_block = true;
                 output.push_str("```");
                 // Slack doesn't support language hints, but we can add them anyway
-                if let CodeBlockKind::Fenced(lang) = kind {
-                    if !lang.is_empty() {
-                        output.push_str(&lang);
-                    }
+                if let CodeBlockKind::Fenced(lang) = kind
+                    && !lang.is_empty()
+                {
+                    output.push_str(&lang);
                 }
                 output.push('\n');
             }

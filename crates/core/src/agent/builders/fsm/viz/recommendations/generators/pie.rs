@@ -44,7 +44,7 @@ impl ChartOptionsGenerator for PieChartGenerator {
         for cat_col in &categorical_cols {
             let cardinality = cat_col.cardinality().unwrap_or(0);
 
-            if cardinality < 2 || cardinality > 12 {
+            if !(2..=12).contains(&cardinality) {
                 continue;
             }
 

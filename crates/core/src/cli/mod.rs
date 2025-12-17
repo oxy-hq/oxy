@@ -1506,12 +1506,12 @@ pub async fn handle_test_command(test_args: TestArgs) -> Result<(), OxyError> {
     }
 
     // Validate threshold if provided
-    if let Some(threshold) = test_args.min_accuracy {
-        if !(0.0..=1.0).contains(&threshold) {
-            return Err(OxyError::ConfigurationError(format!(
-                "min-accuracy must be between 0.0 and 1.0, got: {threshold}"
-            )));
-        }
+    if let Some(threshold) = test_args.min_accuracy
+        && !(0.0..=1.0).contains(&threshold)
+    {
+        return Err(OxyError::ConfigurationError(format!(
+            "min-accuracy must be between 0.0 and 1.0, got: {threshold}"
+        )));
     }
 
     let project_path = resolve_local_project_path()?;

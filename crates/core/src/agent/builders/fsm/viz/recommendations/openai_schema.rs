@@ -110,12 +110,12 @@ pub struct ChartOutput {
     title: String,
 }
 
-impl Into<VizParams> for ChartOutput {
-    fn into(self) -> VizParams {
+impl From<ChartOutput> for VizParams {
+    fn from(val: ChartOutput) -> Self {
         VizParams {
-            name: self.config.description.clone(),
-            title: self.title.clone(),
-            config: match self.config.display {
+            name: val.config.description.clone(),
+            title: val.title.clone(),
+            config: match val.config.display {
                 ChartDisplay::Line(opts) => crate::execute::types::VizParamsType::Line(opts),
                 ChartDisplay::Bar(opts) => crate::execute::types::VizParamsType::Bar(opts),
                 ChartDisplay::Pie(opts) => crate::execute::types::VizParamsType::Pie(opts),

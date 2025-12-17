@@ -17,8 +17,8 @@ impl Trigger for SubflowRun<MachineContext> {
 
     async fn run(
         &self,
-        execution_context: &ExecutionContext,
-        current_state: &mut Self::State,
+        _execution_context: &ExecutionContext,
+        _current_state: &mut Self::State,
     ) -> Result<(), OxyError> {
         todo!("Implement SubflowRun trigger");
     }

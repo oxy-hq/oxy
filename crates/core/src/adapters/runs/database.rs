@@ -100,7 +100,7 @@ impl RunsStorage for RunsDatabaseStorage {
                 let source_id = source_id.clone();
                 let root_ref = root_ref.clone();
                 let variables = variables.clone();
-                let lookup_id_clone = lookup_id.clone();
+                let lookup_id_clone = lookup_id;
 
                 async move {
                     connection
@@ -137,7 +137,7 @@ impl RunsStorage for RunsDatabaseStorage {
                                     created_at: ActiveValue::Set(chrono::Utc::now().into()),
                                     updated_at: ActiveValue::Set(chrono::Utc::now().into()),
                                     variables: ActiveValue::Set(variables.clone().map(Variables)),
-                                    lookup_id: ActiveValue::Set(lookup_id_clone.clone()),
+                                    lookup_id: ActiveValue::Set(lookup_id_clone),
                                     ..Default::default()
                                 };
                                 match root_ref {

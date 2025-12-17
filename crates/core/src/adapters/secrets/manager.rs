@@ -53,21 +53,21 @@ impl SecretsManager {
         default: Option<&str>,
     ) -> Result<String, OxyError> {
         // Try direct value first
-        if let Some(value) = direct_value {
-            if !value.is_empty() {
-                return Ok(value.to_string());
-            }
+        if let Some(value) = direct_value
+            && !value.is_empty()
+        {
+            return Ok(value.to_string());
         }
 
         // Try resolving from environment variable
-        if let Some(var) = var_name {
-            if !var.is_empty() {
-                let resolved = self.resolve_secret(var).await?;
-                if let Some(res) = resolved {
-                    return Ok(res);
-                }
-                return Err(OxyError::SecretNotFound(Some(var.to_string())));
+        if let Some(var) = var_name
+            && !var.is_empty()
+        {
+            let resolved = self.resolve_secret(var).await?;
+            if let Some(res) = resolved {
+                return Ok(res);
             }
+            return Err(OxyError::SecretNotFound(Some(var.to_string())));
         }
 
         // Fall back to default if provided

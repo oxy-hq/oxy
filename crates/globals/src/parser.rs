@@ -154,13 +154,11 @@ impl GlobalParser {
             let path = entry.path();
             if path.is_file()
                 && let Some(extension) = path.extension()
+                && (extension == "yml" || extension == "yaml")
+                && let Some(file_stem) = path.file_stem()
+                && let Some(name) = file_stem.to_str()
             {
-                if (extension == "yml" || extension == "yaml")
-                    && let Some(file_stem) = path.file_stem()
-                    && let Some(name) = file_stem.to_str()
-                {
-                    files.push(name.to_string());
-                }
+                files.push(name.to_string());
             }
         }
 

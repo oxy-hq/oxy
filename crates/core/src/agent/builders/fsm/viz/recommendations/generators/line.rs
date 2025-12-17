@@ -134,7 +134,7 @@ impl ChartOptionsGenerator for LineChartGenerator {
         // Categorical X with Numeric Y (trend across categories)
         for cat_col in &categorical_cols {
             let cardinality = cat_col.cardinality().unwrap_or(0);
-            if cardinality >= 4 && cardinality <= 20 {
+            if (4..=20).contains(&cardinality) {
                 for num_col in &numeric_cols {
                     recommendations.push(ChartRecommendation {
                         chart_type: ChartType::Line,

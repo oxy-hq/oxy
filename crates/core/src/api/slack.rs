@@ -128,11 +128,11 @@ async fn dispatch_event(callback: EventCallback) -> Result<(), OxyError> {
             }
 
             // Ignore bot_message and message_changed subtypes
-            if let Some(st) = &subtype {
-                if st == "bot_message" || st == "message_changed" {
-                    tracing::debug!("Ignoring message with subtype: {}", st);
-                    return Ok(());
-                }
+            if let Some(st) = &subtype
+                && (st == "bot_message" || st == "message_changed")
+            {
+                tracing::debug!("Ignoring message with subtype: {}", st);
+                return Ok(());
             }
 
             let user = user.as_ref().unwrap();

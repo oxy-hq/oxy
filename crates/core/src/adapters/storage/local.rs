@@ -54,7 +54,7 @@ impl Storage for LocalStorage {
         Ok(())
     }
 
-    async fn glob(&self, pattern: &str) -> Result<Vec<String>, OxyError> {
+    async fn glob(&self, _pattern: &str) -> Result<Vec<String>, OxyError> {
         // Implement globbing logic here
         unimplemented!()
     }

@@ -17,7 +17,7 @@ pub async fn handle_bind_command(
 ) -> Result<String, OxyError> {
     // Parse arguments
     let parts: Vec<&str> = args.split_whitespace().collect();
-    if parts.len() < 1 || parts[0].is_empty() {
+    if parts.is_empty() || parts[0].is_empty() {
         return Ok(
             "❌ Usage: `/oxy bind <agent_id>`\n\nExample: `/oxy bind agents/sales.agent.yml`"
                 .to_string(),
@@ -25,11 +25,9 @@ pub async fn handle_bind_command(
     }
 
     if parts.len() > 1 {
-        return Ok(
-            "❌ Too many arguments. Usage: `/oxy bind <agent_id>`\n\n\
+        return Ok("❌ Too many arguments. Usage: `/oxy bind <agent_id>`\n\n\
             Note: Agent paths cannot contain spaces."
-                .to_string(),
-        );
+            .to_string());
     }
 
     let agent_id = parts[0];
@@ -40,9 +38,9 @@ pub async fn handle_bind_command(
     let project_id = Uuid::nil();
 
     // Validate that the agent exists in the project
-    let project_path = resolve_project_path(project_id).await.map_err(|e| {
-        OxyError::ValidationError(format!("Failed to load project: {}", e))
-    })?;
+    let project_path = resolve_project_path(project_id)
+        .await
+        .map_err(|e| OxyError::ValidationError(format!("Failed to load project: {}", e)))?;
 
     let project_manager = ProjectBuilder::new()
         .with_project_path_and_fallback_config(&project_path)

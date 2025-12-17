@@ -362,7 +362,7 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
                     .tool_configs
                     .clone()
                     .into_iter()
-                    .map(|t| ChatCompletionTools::Function(t))
+                    .map(ChatCompletionTools::Function)
                     .collect();
                 builder.tools(tools_wrapped);
             }
@@ -560,7 +560,7 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OSSExecutable {
                 .tool_configs
                 .clone()
                 .into_iter()
-                .map(|t| ChatCompletionTools::Function(t))
+                .map(ChatCompletionTools::Function)
                 .collect();
             builder.tools(tools_wrapped);
         }
@@ -697,7 +697,7 @@ pub fn build_openai_executable(
     reasoning_config: Option<ReasoningConfig>,
     synthesize_mode: bool,
 ) -> OpenAIOrOSSExecutable {
-    if let Some(_) = &reasoning_config {
+    if reasoning_config.is_some() {
         return OpenAIOrOSSExecutable::OpenAIResponse(OpenAIResponseExecutable::new(
             client,
             model,

@@ -294,7 +294,7 @@ pub async fn get_view_details(
         .find(|v| v.name == view_name)
     {
         Ok(extract::Json(ViewResponse {
-            view_name: view_name,
+            view_name,
             name: view.name,
             description: Some(view.description),
             datasource: view.datasource,

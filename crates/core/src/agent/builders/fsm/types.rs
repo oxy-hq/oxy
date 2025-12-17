@@ -32,13 +32,13 @@ impl ToolReq {
     }
 }
 
-impl Into<ChatCompletionMessageToolCall> for ToolReq {
-    fn into(self) -> ChatCompletionMessageToolCall {
+impl From<ToolReq> for ChatCompletionMessageToolCall {
+    fn from(val: ToolReq) -> Self {
         ChatCompletionMessageToolCall {
-            id: self.call_id,
+            id: val.call_id,
             function: FunctionCall {
-                name: self.tool_name,
-                arguments: self.args,
+                name: val.tool_name,
+                arguments: val.args,
             },
         }
     }
@@ -96,9 +96,9 @@ impl From<ChatCompletionRequestMessage> for Message {
     }
 }
 
-impl Into<ChatCompletionRequestMessage> for Message {
-    fn into(self) -> ChatCompletionRequestMessage {
-        match self {
+impl From<Message> for ChatCompletionRequestMessage {
+    fn from(val: Message) -> Self {
+        match val {
             Message::User { content } => {
                 ChatCompletionRequestMessage::User(ChatCompletionRequestUserMessage {
                     content: ChatCompletionRequestUserMessageContent::Text(content),
@@ -180,7 +180,7 @@ impl Artifact {
             Artifact::Table { table, .. } => table.summary(),
             Artifact::DataApp {
                 app_name,
-                description,
+                description: _,
                 app_config,
             } => serde_json::json!({
                 "type": "data_app",

@@ -2,8 +2,7 @@ use std::marker::PhantomData;
 
 use async_openai::types::chat::{
     ChatCompletionRequestMessage, ChatCompletionRequestSystemMessage,
-    ChatCompletionRequestSystemMessageContent, ChatCompletionRequestUserMessage,
-    ChatCompletionRequestUserMessageContent,
+    ChatCompletionRequestSystemMessageContent,
 };
 use tokio_stream::StreamExt;
 
@@ -162,7 +161,7 @@ impl<S> Plan<S> {
         &self,
         execution_context: &ExecutionContext,
         messages: Vec<ChatCompletionRequestMessage>,
-        revise_plan: bool,
+        _revise_plan: bool,
     ) -> Result<Vec<ChatCompletionRequestMessage>, OxyError> {
         let instruction = execution_context
             .renderer
@@ -246,10 +245,8 @@ impl Trigger for Plan<MachineContext> {
             .await?;
         let mut stream = self.adapter.stream_text(messages).await?;
         let mut content = String::new();
-        let streaming_context = execution_context.with_child_source(
-            format!("plan_{}", uuid::Uuid::new_v4().to_string()),
-            "text".to_string(),
-        );
+        let streaming_context = execution_context
+            .with_child_source(format!("plan_{}", uuid::Uuid::new_v4()), "text".to_string());
         while let Some(chunk) = stream.next().await.transpose()?.flatten() {
             content.push_str(&chunk);
             streaming_context

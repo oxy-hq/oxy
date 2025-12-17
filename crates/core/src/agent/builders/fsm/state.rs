@@ -2,8 +2,7 @@ use std::path::PathBuf;
 
 use async_openai::types::chat::{
     ChatCompletionRequestMessage, ChatCompletionRequestSystemMessage,
-    ChatCompletionRequestSystemMessageContent, ChatCompletionRequestUserMessage,
-    ChatCompletionRequestUserMessageContent, ChatCompletionToolChoiceOption, ToolChoiceOptions,
+    ChatCompletionRequestSystemMessageContent, ChatCompletionToolChoiceOption, ToolChoiceOptions,
 };
 use futures::StreamExt;
 
@@ -151,7 +150,7 @@ impl MachineContext {
         Ok(viz_params.with_data_path(&file_path))
     }
 
-    pub fn add_table(&mut self, objective: String, tool_req: ToolReq, table: Table) {
+    pub fn add_table(&mut self, _objective: String, tool_req: ToolReq, table: Table) {
         let table_artifact = Artifact::Table {
             table_name: table.name.clone(),
             description: table.summary(),
@@ -294,8 +293,7 @@ impl MachineContext {
             )
         };
 
-        let messages = vec![
-            vec![ChatCompletionRequestSystemMessage {
+        let messages = [vec![ChatCompletionRequestSystemMessage {
                 content: ChatCompletionRequestSystemMessageContent::Text(format!(
                     "You are the workflow orchestrator. Select the next action based on current context and progress.
 
@@ -332,8 +330,7 @@ Select the action that makes the most progress toward the goal while respecting 
                 ..Default::default()
             }
             .into(),],
-            messages
-        ].concat();
+            messages].concat();
         let (_content, tool_calls) = machine
             .adapter
             .request_tool_call_with_usage(
@@ -708,7 +705,7 @@ impl State for MachineContext {
                 let (transition, transition_objective) = self
                     .select_transition(
                         execution_context,
-                        &vec![next.clone()],
+                        &[next.clone()],
                         self.list_messages()
                             .iter()
                             .map(|m| m.clone().into())
@@ -768,7 +765,7 @@ impl State for MachineContext {
                             machine,
                         )
                         .await
-                        .map(|trg| Some(trg));
+                        .map(Some);
                 }
 
                 self.increase_iteration();

@@ -167,7 +167,6 @@ impl SlackSettings {
     }
 }
 
-
 #[derive(Serialize, Deserialize, Debug, Clone, JsonSchema, Validate)]
 #[garde(context(ValidationContext))]
 pub struct McpConfig {

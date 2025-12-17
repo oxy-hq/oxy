@@ -530,29 +530,29 @@ impl OpenAIResponseExecutable {
                     .map_err(backoff::Error::Permanent)?;
                 }
                 ResponseStreamEvent::ResponseOutputItemAdded(added_event) => {
-                    if let OutputItem::FunctionCall(ref func_call) = added_event.item {
-                        if let Some(item_id) = func_call.id.clone() {
-                            item_to_output_index.insert(item_id.clone(), added_event.output_index);
+                    if let OutputItem::FunctionCall(ref func_call) = added_event.item
+                        && let Some(item_id) = func_call.id.clone()
+                    {
+                        item_to_output_index.insert(item_id.clone(), added_event.output_index);
 
-                            tracing::debug!(
-                                "Function call item added - call_id: {}, name: {}, item_id: {}, output_index: {}",
-                                func_call.call_id,
-                                func_call.name,
-                                item_id,
-                                added_event.output_index
-                            );
+                        tracing::debug!(
+                            "Function call item added - call_id: {}, name: {}, item_id: {}, output_index: {}",
+                            func_call.call_id,
+                            func_call.name,
+                            item_id,
+                            added_event.output_index
+                        );
 
-                            tool_calls.insert(
-                                item_id,
-                                ChatCompletionMessageToolCall {
-                                    id: func_call.call_id.clone(),
-                                    function: FunctionCall {
-                                        name: func_call.name.clone(),
-                                        arguments: String::new(),
-                                    },
+                        tool_calls.insert(
+                            item_id,
+                            ChatCompletionMessageToolCall {
+                                id: func_call.call_id.clone(),
+                                function: FunctionCall {
+                                    name: func_call.name.clone(),
+                                    arguments: String::new(),
                                 },
-                            );
-                        }
+                            },
+                        );
                     }
                 }
                 ResponseStreamEvent::ResponseCompleted(completed) => {
@@ -594,14 +594,12 @@ impl OpenAIResponseExecutable {
                             func_call.arguments.len()
                         );
 
-                        if let Some(ref id) = item_id {
-                            if let Some(tool_call) = tool_calls.get_mut(id) {
-                                if tool_call.function.arguments.is_empty()
-                                    || tool_call.function.arguments != func_call.arguments
-                                {
-                                    tool_call.function.arguments = func_call.arguments;
-                                }
-                            }
+                        if let Some(ref id) = item_id
+                            && let Some(tool_call) = tool_calls.get_mut(id)
+                            && (tool_call.function.arguments.is_empty()
+                                || tool_call.function.arguments != func_call.arguments)
+                        {
+                            tool_call.function.arguments = func_call.arguments;
                         }
                     }
                 }
@@ -632,8 +630,7 @@ impl OpenAIResponseExecutable {
 
                     if reasoning_items_written.contains(&format!(
                         "{}-{}",
-                        done_event.item_id,
-                        done_event.summary_index.to_string()
+                        done_event.item_id, done_event.summary_index
                     )) {
                         tracing::debug!(
                             "Finalizing reasoning summary output for item_id: {}",
@@ -658,8 +655,7 @@ impl OpenAIResponseExecutable {
 
                     if reasoning_items_written.insert(format!(
                         "{}-{}",
-                        part_event.item_id,
-                        part_event.summary_index.to_string()
+                        part_event.item_id, part_event.summary_index
                     )) {
                         execution_context
                             .write_chunk(Chunk {

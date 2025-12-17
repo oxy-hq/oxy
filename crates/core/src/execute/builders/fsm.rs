@@ -115,11 +115,8 @@ where
         loop {
             let next = state.next_trigger(&execution_context, machine).await?;
             if let Some(trigger) = next {
-                match trigger.run(&execution_context, &mut state).await {
-                    Err(err) => {
-                        state = state.handle_error(&execution_context, machine, err).await?;
-                    }
-                    _ => {}
+                if let Err(err) = trigger.run(&execution_context, &mut state).await {
+                    state = state.handle_error(&execution_context, machine, err).await?;
                 }
             } else {
                 break;

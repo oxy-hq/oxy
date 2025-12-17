@@ -3,7 +3,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    agent::builders::fsm::config::{ErrorTriage, RevisePlan, TransitionObjective},
+    agent::builders::fsm::config::{ErrorTriage, RevisePlan},
     config::constants::{
         AGENT_CONTINUE_PLAN_TRANSITION, AGENT_END_TRANSITION, AGENT_FIX_ERROR_TRANSITION,
         AGENT_REVISE_PLAN_TRANSITION, AGENT_START_TRANSITION,

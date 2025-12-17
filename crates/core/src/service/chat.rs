@@ -592,7 +592,7 @@ impl ChatService {
         thread: &entity::threads::Model,
     ) -> Result<String, StatusCode> {
         let user_question = match payload.get_question() {
-            Some(question) => self.new_user_question(thread.id.clone(), &question).await?,
+            Some(question) => self.new_user_question(thread.id, &question).await?,
             None => {
                 // When no question is provided, use the thread's input
                 let messages = Messages::find()

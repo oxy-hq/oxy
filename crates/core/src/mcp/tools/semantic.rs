@@ -25,7 +25,7 @@ pub async fn resolve_semantic_tool(
 
     // Load the semantic layer to get view metadata
     let semantic_layer = parse_semantic_layer_from_dir(
-        &config_manager.semantics_path(),
+        config_manager.semantics_path(),
         config_manager.get_globals_registry(),
     )?
     .semantic_layer;

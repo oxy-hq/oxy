@@ -63,7 +63,7 @@ impl VizParams {
     }
 
     pub fn data_slug(&self) -> String {
-        slugify::slugify(&self.data(), "", "-", None)
+        slugify::slugify(self.data(), "", "-", None)
     }
 
     fn data(&self) -> &str {

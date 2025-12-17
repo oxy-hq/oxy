@@ -397,7 +397,7 @@ impl Table {
                 }
                 DataType::Float64 => {
                     if let Some(arr) = column.as_primitive_opt::<arrow::datatypes::Float64Type>() {
-                        values.extend(arr.iter().filter_map(|v| v));
+                        values.extend(arr.iter().flatten());
                     }
                 }
                 _ => {}
@@ -423,7 +423,7 @@ impl Table {
         values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
         let min = values.first().copied().unwrap_or(0.0);
         let max = values.last().copied().unwrap_or(0.0);
-        let median = if count % 2 == 0 {
+        let median = if count.is_multiple_of(2) {
             (values[count / 2 - 1] + values[count / 2]) / 2.0
         } else {
             values[count / 2]
@@ -464,28 +464,22 @@ impl Table {
             match column.data_type() {
                 DataType::Utf8 => {
                     if let Some(arr) = column.as_string_opt::<i32>() {
-                        for value in arr.iter() {
-                            if let Some(v) = value {
-                                *value_counts.entry(v.to_string()).or_insert(0) += 1;
-                            }
+                        for v in arr.iter().flatten() {
+                            *value_counts.entry(v.to_string()).or_insert(0) += 1;
                         }
                     }
                 }
                 DataType::LargeUtf8 => {
                     if let Some(arr) = column.as_string_opt::<i64>() {
-                        for value in arr.iter() {
-                            if let Some(v) = value {
-                                *value_counts.entry(v.to_string()).or_insert(0) += 1;
-                            }
+                        for v in arr.iter().flatten() {
+                            *value_counts.entry(v.to_string()).or_insert(0) += 1;
                         }
                     }
                 }
                 DataType::Boolean => {
                     if let Some(arr) = column.as_boolean_opt() {
-                        for value in arr.iter() {
-                            if let Some(v) = value {
-                                *value_counts.entry(v.to_string()).or_insert(0) += 1;
-                            }
+                        for v in arr.iter().flatten() {
+                            *value_counts.entry(v.to_string()).or_insert(0) += 1;
                         }
                     }
                 }

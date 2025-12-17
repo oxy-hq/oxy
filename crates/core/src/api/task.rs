@@ -281,16 +281,14 @@ pub async fn ask_agentic(
     let chat_service = ChatService::new().await?;
     let thread_id = chat_service.parse_thread_id(&id)?;
     chat_service
-        .new_user_question(thread_id.clone(), &payload.question)
+        .new_user_question(thread_id, &payload.question)
         .await?;
-    let memory = chat_service
-        .build_conversation_memory(thread_id.clone())
-        .await?;
-    let config_manager = project_manager.config_manager.clone();
+    let memory = chat_service.build_conversation_memory(thread_id).await?;
+    let _config_manager = project_manager.config_manager.clone();
     let agent_ref = &payload.agent_ref;
     let source_id = agent_ref.to_string();
     let message_id = chat_service.new_agentic_message(thread_id).await?;
-    let lookup_id = message_id.clone();
+    let lookup_id = message_id;
 
     let run_info = Dispatcher::new(project_manager)
         .dispatch(

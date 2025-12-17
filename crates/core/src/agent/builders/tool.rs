@@ -104,7 +104,7 @@ impl Executable<OpenAIExecutableResponse> for OpenAITool {
                 input
                     .tool_calls
                     .into_iter()
-                    .map(|tc| ChatCompletionMessageToolCalls::Function(tc))
+                    .map(ChatCompletionMessageToolCalls::Function)
                     .collect::<Vec<ChatCompletionMessageToolCalls>>(),
             )
             .build()?;

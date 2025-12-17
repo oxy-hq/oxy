@@ -64,8 +64,7 @@ impl BlockHandler {
             .block_stack
             .last()
             .cloned()
-            .map(|p| if p == block_id { None } else { Some(p) })
-            .flatten();
+            .and_then(|p| if p == block_id { None } else { Some(p) });
 
         match self.blocks.get_mut(&block_id) {
             Some(block) => {

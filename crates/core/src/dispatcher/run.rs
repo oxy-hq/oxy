@@ -44,7 +44,7 @@ impl Dispatcher {
         // Dispatch logic here
         let runs_manager = self.pm.runs_manager.clone().ok_or_else(|| {
             tracing::error!("Failed to initialize RunsManager");
-            OxyError::InitializationError(format!("Failed to initialize RunsManager"))
+            OxyError::InitializationError("Failed to initialize RunsManager".to_string())
         })?;
         let (source_run_info, root_run_info) = runs_manager
             .get_root_run(&source_id, &retry_strategy, lookup_id)
@@ -66,9 +66,9 @@ impl Dispatcher {
                 "Failed to create topic for task ID {task_id}: {err}"
             ))
         })?;
-        let run_index = run_info
-            .run_index
-            .ok_or(OxyError::ArgumentError(format!("Run index not available")))?;
+        let run_index = run_info.run_index.ok_or(OxyError::ArgumentError(
+            "Run index not available".to_string(),
+        ))?;
 
         let callback = async move || -> Result<(), OxyError> {
             if let Some(closed) = BROADCASTER.remove_topic(&topic_id).await {

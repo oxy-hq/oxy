@@ -132,7 +132,7 @@ impl ColumnInfo {
         match &self.kind {
             ColumnKind::Numeric {
                 has_negatives, min, ..
-            } => !has_negatives && min.map_or(true, |m| m >= 0.0),
+            } => !has_negatives && min.is_none_or(|m| m >= 0.0),
             _ => false,
         }
     }

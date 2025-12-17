@@ -746,7 +746,7 @@ impl OpenAIAdapter {
         let tools_vec: Vec<ChatCompletionTool> = tools.into();
         let tools_wrapped: Vec<ChatCompletionTools> = tools_vec
             .into_iter()
-            .map(|t| ChatCompletionTools::Function(t))
+            .map(ChatCompletionTools::Function)
             .collect();
         request_builder.tools(tools_wrapped);
 
@@ -821,7 +821,7 @@ impl OpenAIAdapter {
         let tools_vec: Vec<ChatCompletionTool> = tools.into();
         let tools_wrapped: Vec<ChatCompletionTools> = tools_vec
             .into_iter()
-            .map(|t| ChatCompletionTools::Function(t))
+            .map(ChatCompletionTools::Function)
             .collect();
 
         request_builder.tools(tools_wrapped);
@@ -851,8 +851,7 @@ impl OpenAIAdapter {
                             && let Some(tool_name) = tool_call_chunk
                                 .function
                                 .as_ref()
-                                .map(|f| f.name.as_ref())
-                                .flatten()
+                                .and_then(|f| f.name.as_ref())
                         {
                             tool_calls_buffer.entry(tool_call_chunk.index).or_insert(
                                 StreamChunk::ToolCall {
@@ -867,8 +866,7 @@ impl OpenAIAdapter {
                             && let Some(arg_chunk) = tool_call_chunk
                                 .function
                                 .as_ref()
-                                .map(|f| f.arguments.as_ref())
-                                .flatten()
+                                .and_then(|f| f.arguments.as_ref())
                         {
                             args.push_str(arg_chunk);
                         }
@@ -888,11 +886,7 @@ impl OpenAIAdapter {
                     }
                     // Regular text content
                     let stream_response = self.extract_stream(&response);
-                    if let Some(text) = stream_response {
-                        Some(Ok(StreamChunk::Text(text)))
-                    } else {
-                        None
-                    }
+                    stream_response.map(|text| Ok(StreamChunk::Text(text)))
                 }
             }
             Err(_) => Some(Err(OxyError::RuntimeError("OpenAI API error".to_string()))),
