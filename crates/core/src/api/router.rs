@@ -316,7 +316,8 @@ pub async fn api_router(cloud: bool) -> Result<Router, OxyError> {
 
     // Global timeout for ALL requests (60 seconds) - aligned with load balancer limits
     // Individual sync endpoints use their own configurable timeouts for workflow execution
-    let global_timeout = TimeoutLayer::new(Duration::from_secs(60));
+    let global_timeout =
+        TimeoutLayer::with_status_code(Duration::from_secs(60), StatusCode::REQUEST_TIMEOUT);
 
     Ok(app_routes
         .with_state(app_state.clone())
