@@ -117,9 +117,9 @@
     "@types/invariant": "^2.2.37",
     "@types/js-cookie": "^3.0.6",
     "@types/lodash": "^4.17.21",
-    "@types/node": "^25.0.2",
+    "@types/node": "^25.0.3",
     "@types/nunjucks": "3.2.6",
-    "@types/papaparse": "^5.5.1",
+    "@types/papaparse": "^5.5.2",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
     "@types/react-syntax-highlighter": "^15.5.13",
@@ -128,7 +128,7 @@
     "i": "^0.3.7",
     "rollup-plugin-visualizer": "^6.0.5",
     "typescript": "^5.9.3",
-    "vite": "^7.2.7",
+    "vite": "^7.3.0",
     "vite-plugin-node-polyfills": "^0.24.0"
   },
   "engines": {
