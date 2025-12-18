@@ -1,0 +1,883 @@
+---
+title: "SQLite to PostgreSQL Migration Guide"
+description: "Migrate your Oxy installation from SQLite to PostgreSQL using simple CLI commands"
+---
+
+Starting with version 0.4.0, Oxy uses PostgreSQL as its primary database. This guide will help you migrate your existing SQLite data to PostgreSQL using Oxy's built-in migration commands.
+
+# Why PostgreSQL?
+
+Oxy has migrated to PostgreSQL to provide:
+
+- **Better Concurrency**: Handle multiple simultaneous connections without locking issues
+- **Production-Ready Performance**: Scale to larger datasets and user bases
+- **Advanced Features**: Support for analytics workloads with better query optimization
+- **Unified Architecture**: Single database system for all deployments
+
+# Overview
+
+Oxy now offers three convenient CLI commands for database management:
+
+- **`oxy start`**: Automatically starts PostgreSQL in Docker and launches the Oxy server
+- **`oxy status`**: Shows the status of PostgreSQL, Docker, and database connectivity
+- **`oxy migrate-sqlite`**: Migrates your existing SQLite data to PostgreSQL
+
+# Quick Start
+
+For most users, migrating to PostgreSQL is a simple three-step process:
+
+```bash
+# Step 1: Start PostgreSQL with Docker
+oxy start
+
+# Step 2: Check that everything is running
+oxy status
+
+# Step 3: Migrate your existing SQLite data
+oxy migrate-sqlite --to postgresql://postgres:postgres@localhost:15432/oxy
+```
+
+That's it! Your data is now running on PostgreSQL.
+
+---
+
+# Detailed Migration Guide
+
+## Prerequisites
+
+Before starting the migration, ensure you have:
+
+1. **Docker installed and running** - `oxy start` uses Docker to run PostgreSQL
+2. **Oxy 0.4.0 or later** - Check with `oxy --version`
+3. **Existing SQLite database** - Usually at `~/.local/share/oxy/db.sqlite`
+
+### Verify Docker Installation
+
+```bash
+# Check if Docker is installed
+docker --version
+
+# Check if Docker daemon is running
+docker ps
+```
+
+If Docker isn't installed, download it from [docker.com](https://www.docker.com/get-started/).
+
+---
+
+## Step-by-Step Migration
+
+### Step 1: Backup Your SQLite Database
+
+Before migrating, create a backup of your existing SQLite database:
+
+```bash
+# Default SQLite location
+cp ~/.local/share/oxy/db.sqlite ~/oxy-backup-$(date +%Y%m%d).sqlite
+
+# Or if you've set OXY_STATE_DIR
+cp $OXY_STATE_DIR/db.sqlite ~/oxy-backup-$(date +%Y%m%d).sqlite
+```
+
+### Step 2: Start PostgreSQL with Docker
+
+The `oxy start` command automatically:
+- Checks Docker availability
+- Pulls the PostgreSQL Docker image (if needed)
+- Starts a PostgreSQL container named `oxy-postgres`
+- Waits for PostgreSQL to be ready
+- Starts the Oxy web server
+
+```bash
+oxy start
+```
+
+**What happens:**
+```
+✓ Docker is available
+✓ Starting PostgreSQL container...
+✓ PostgreSQL is ready
+✓ Server starting at http://localhost:3000
+```
+
+**PostgreSQL Configuration:**
+- **Container name**: `oxy-postgres`
+- **Port**: `15432` (host) → `5432` (container)
+- **Database**: `oxy`
+- **Username**: `postgres`
+- **Password**: `postgres`
+- **Connection**: `postgresql://postgres:postgres@localhost:15432/oxy`
+
+<Note>
+The container data is persisted in a Docker volume named `oxy-postgres-data`, so your data survives container restarts.
+</Note>
+
+### Step 3: Verify PostgreSQL is Running
+
+Use the `oxy status` command to check that everything is working:
+
+```bash
+oxy status
+```
+
+**Expected output:**
+```
+=== Oxy Status ===
+
+[Docker Daemon]
+✓ Running (version: 24.0.0)
+
+[PostgreSQL Container]
+✓ Container 'oxy-postgres' is running
+  Port: 15432 → 5432
+  Volume: oxy-postgres-data
+  Started: 2 minutes ago
+
+[Database Connection]
+✓ Connected to PostgreSQL
+  URL: postgresql://postgres:***@localhost:15432/oxy
+
+[Helpful Commands]
+  View logs:        docker logs oxy-postgres
+  Follow logs:      docker logs -f oxy-postgres
+  Access database:  docker exec -it oxy-postgres psql -U postgres -d oxy
+```
+
+If you see any errors, the status output will include troubleshooting steps.
+
+### Step 4: Test Migration (Dry Run)
+
+Before migrating your actual data, perform a dry run to verify everything will work:
+
+```bash
+oxy migrate-sqlite \
+  --to postgresql://postgres:postgres@localhost:15432/oxy \
+  --dry-run
+```
+
+**What this does:**
+- Connects to both SQLite and PostgreSQL
+- Validates database accessibility
+- Shows how many records would be migrated from each table
+- **Does NOT actually migrate any data**
+
+**Expected output:**
+```
+✓ Connected to SQLite: /Users/you/.local/share/oxy/db.sqlite
+✓ Connected to PostgreSQL: postgresql://postgres:***@localhost:15432/oxy
+✓ PostgreSQL schema is up to date
+
+[DRY RUN] Would migrate:
+  users: 5 records
+  workspaces: 2 records
+  projects: 10 records
+  threads: 45 records
+  messages: 230 records
+  runs: 180 records
+  artifacts: 95 records
+  ...
+
+Total: 567 records would be migrated
+```
+
+### Step 5: Run the Migration
+
+Once the dry run looks good, run the actual migration:
+
+```bash
+oxy migrate-sqlite --to postgresql://postgres:postgres@localhost:15432/oxy
+```
+
+**Migration process:**
+
+The command will migrate data in dependency order (respecting foreign key constraints):
+
+```
+✓ Connected to SQLite
+✓ Connected to PostgreSQL
+✓ Running PostgreSQL migrations...
+
+Migrating data in dependency order:
+
+[1/17] users: Found 5 records → Migrated 5 records ✓
+[2/17] workspaces: Found 2 records → Migrated 2 records ✓
+[3/17] git_namespaces: Found 1 records → Migrated 1 records ✓
+[4/17] workspace_users: Found 5 records → Migrated 5 records ✓
+[5/17] project_repos: Found 8 records → Migrated 8 records ✓
+[6/17] projects: Found 10 records → Migrated 10 records ✓
+[7/17] branches: Found 15 records → Migrated 15 records ✓
+[8/17] threads: Found 45 records → Migrated 45 records ✓
+[9/17] secrets: Found 3 records → Migrated 3 records ✓
+[10/17] api_keys: Found 2 records → Migrated 2 records ✓
+[11/17] messages: Found 230 records → Migrated 230 records ✓
+[12/17] artifacts: Found 95 records → Migrated 95 records ✓
+[13/17] logs: Found 120 records → Migrated 120 records ✓
+[14/17] runs: Found 180 records → Migrated 180 records ✓
+[15/17] checkpoints: Found 50 records → Migrated 50 records ✓
+[16/17] settings: Found 10 records → Migrated 10 records ✓
+[17/17] tasks: Found 0 records → Migrated 0 records ✓
+
+✓ Migration completed successfully!
+Total records migrated: 567
+```
+
+<Warning>
+The migration copies data from SQLite to PostgreSQL but does NOT delete your SQLite database. Your original data remains safe at `~/.local/share/oxy/db.sqlite`.
+</Warning>
+
+### Step 6: Verify the Migration
+
+After migration, verify your data in PostgreSQL:
+
+```bash
+# Access PostgreSQL directly
+docker exec -it oxy-postgres psql -U postgres -d oxy
+
+# Inside PostgreSQL, check record counts
+SELECT 'users' as table_name, COUNT(*) FROM users
+UNION ALL SELECT 'projects', COUNT(*) FROM projects
+UNION ALL SELECT 'threads', COUNT(*) FROM threads
+UNION ALL SELECT 'messages', COUNT(*) FROM messages;
+
+# Exit PostgreSQL
+\q
+```
+
+Compare these counts with your SQLite database:
+
+```bash
+sqlite3 ~/.local/share/oxy/db.sqlite "
+SELECT 'users' as table_name, COUNT(*) FROM users
+UNION ALL SELECT 'projects', COUNT(*) FROM projects
+UNION ALL SELECT 'threads', COUNT(*) FROM threads
+UNION ALL SELECT 'messages', COUNT(*) FROM messages;
+"
+```
+
+The counts should match exactly.
+
+### Step 7: Use Oxy with PostgreSQL
+
+Now that your data is migrated, `oxy start` will automatically use PostgreSQL:
+
+```bash
+oxy start
+```
+
+The server will connect to the PostgreSQL database and you can use Oxy normally.
+
+---
+
+# Command Reference
+
+## `oxy start`
+
+Start PostgreSQL in Docker and launch the Oxy server.
+
+**Usage:**
+```bash
+oxy start [OPTIONS]
+```
+
+**What it does:**
+1. Checks if Docker is available
+2. Starts/creates PostgreSQL container (`oxy-postgres`)
+3. Waits for PostgreSQL to be ready (up to 30 seconds)
+4. Sets environment variable for database connection
+5. Starts the Oxy web server
+
+**Options:**
+All options from `oxy serve` are supported (port, host, etc.)
+
+**Examples:**
+```bash
+# Start with defaults (port 3000)
+oxy start
+
+# Start on custom port
+oxy start --port 8080
+
+# Start with custom host
+oxy start --host 0.0.0.0
+```
+
+---
+
+## `oxy status`
+
+Display status of PostgreSQL, Docker, and database connectivity.
+
+**Usage:**
+```bash
+oxy status
+```
+
+**What it shows:**
+- Docker daemon status
+- PostgreSQL container status (running/stopped)
+- Database connectivity (can connect or not)
+- Helpful troubleshooting commands
+
+**Output sections:**
+
+1. **Docker Daemon**: Running/Not running with version info
+2. **PostgreSQL Container**: Status, ports, volume, uptime
+3. **Database Connection**: Connected/Failed with connection URL (password masked)
+4. **Helpful Commands**: Docker commands for logs, access, cleanup
+
+**Example output:**
+```
+=== Oxy Status ===
+
+[Docker Daemon]
+✓ Running (version: 24.0.0)
+
+[PostgreSQL Container]
+✓ Container 'oxy-postgres' is running
+  Port: 15432 → 5432
+  Volume: oxy-postgres-data
+  Started: 1 hour ago
+
+[Database Connection]
+✓ Connected to PostgreSQL
+  URL: postgresql://postgres:***@localhost:15432/oxy
+
+[Helpful Commands]
+  View logs:        docker logs oxy-postgres
+  Follow logs:      docker logs -f oxy-postgres
+  Access database:  docker exec -it oxy-postgres psql -U postgres -d oxy
+  Stop container:   docker stop oxy-postgres
+  Remove container: docker rm oxy-postgres
+  Remove volume:    docker volume rm oxy-postgres-data
+```
+
+---
+
+## `oxy migrate-sqlite`
+
+Migrate data from SQLite to PostgreSQL.
+
+**Usage:**
+```bash
+oxy migrate-sqlite --to <POSTGRES_URL> [OPTIONS]
+```
+
+**Required Arguments:**
+- `--to <POSTGRES_URL>`: PostgreSQL database connection URL
+
+**Optional Arguments:**
+- `--from <SQLITE_URL>`: SQLite database URL (default: `~/.local/share/oxy/db.sqlite`)
+- `--dry-run`: Preview migration without actually migrating data
+
+**Examples:**
+
+```bash
+# Migrate with defaults (from ~/.local/share/oxy/db.sqlite)
+oxy migrate-sqlite --to postgresql://postgres:postgres@localhost:15432/oxy
+
+# Migrate from custom SQLite location
+oxy migrate-sqlite \
+  --from sqlite:///path/to/custom.sqlite \
+  --to postgresql://postgres:postgres@localhost:15432/oxy
+
+# Dry run to preview migration
+oxy migrate-sqlite \
+  --to postgresql://postgres:postgres@localhost:15432/oxy \
+  --dry-run
+
+# Migrate to external PostgreSQL
+oxy migrate-sqlite \
+  --to postgresql://user:password@your-host:5432/oxy
+```
+
+**Migration Order:**
+
+Data is migrated in dependency order to respect foreign key constraints:
+
+1. Base entities: `users`, `workspaces`, `git_namespaces`
+2. First-level: `workspace_users`, `project_repos`
+3. Second-level: `projects`, `branches`, `threads`, `secrets`, `api_keys`
+4. Third-level: `messages`, `artifacts`, `logs`
+5. Fourth-level: `runs`
+6. Fifth-level: `checkpoints`
+7. Final: `settings`, `tasks`
+
+**Connection Retry:**
+- SQLite: 3 attempts with exponential backoff
+- PostgreSQL: 20 attempts (allows startup time)
+
+---
+
+# Advanced Scenarios
+
+## Using External PostgreSQL
+
+If you don't want to use Docker, you can connect to an external PostgreSQL instance:
+
+### Option 1: Local PostgreSQL Installation
+
+```bash
+# Install PostgreSQL (example for macOS)
+brew install postgresql@16
+brew services start postgresql@16
+
+# Create database and user
+createdb oxy
+createuser -s postgres
+
+# Migrate
+oxy migrate-sqlite --to postgresql://postgres@localhost:5432/oxy
+```
+
+### Option 2: Managed PostgreSQL Service
+
+**AWS RDS:**
+```bash
+oxy migrate-sqlite \
+  --to postgresql://oxy_user:password@oxy-db.xxxxx.us-east-1.rds.amazonaws.com:5432/oxy
+```
+
+**Supabase:**
+```bash
+oxy migrate-sqlite \
+  --to postgresql://postgres:password@db.xxxxx.supabase.co:5432/postgres
+```
+
+**DigitalOcean:**
+```bash
+oxy migrate-sqlite \
+  --to postgresql://oxy_user:password@oxy-db-do-user-xxxxx.db.ondigitalocean.com:25060/oxy?sslmode=require
+```
+
+### Option 3: Custom Docker PostgreSQL
+
+```bash
+# Start your own PostgreSQL container
+docker run --name my-postgres \
+  -e POSTGRES_PASSWORD=mypassword \
+  -e POSTGRES_DB=oxy \
+  -p 5433:5432 \
+  -v my-oxy-data:/var/lib/postgresql/data \
+  -d postgres:16
+
+# Migrate to it
+oxy migrate-sqlite \
+  --to postgresql://postgres:mypassword@localhost:5433/oxy
+```
+
+---
+
+## Production Deployment
+
+For production environments, use external PostgreSQL instead of Docker:
+
+### Step 1: Set Up PostgreSQL
+
+Create a dedicated database and user:
+
+```sql
+-- Connect as superuser
+psql -U postgres
+
+-- Create database and user
+CREATE DATABASE oxy;
+CREATE USER oxy_user WITH PASSWORD 'secure_password';
+GRANT ALL PRIVILEGES ON DATABASE oxy TO oxy_user;
+
+-- PostgreSQL 15+ requires additional permission
+\c oxy
+GRANT ALL ON SCHEMA public TO oxy_user;
+```
+
+### Step 2: Set Environment Variable
+
+Make PostgreSQL connection permanent:
+
+```bash
+export OXY_DATABASE_URL=postgresql://oxy_user:secure_password@your-host:5432/oxy
+```
+
+**Persist in environment:**
+
+**Docker Compose:**
+```yaml
+services:
+  oxy:
+    image: oxy:latest
+    environment:
+      - OXY_DATABASE_URL=postgresql://oxy_user:password@postgres:5432/oxy
+```
+
+**Kubernetes:**
+```yaml
+env:
+  - name: OXY_DATABASE_URL
+    valueFrom:
+      secretKeyRef:
+        name: oxy-secrets
+        key: database-url
+```
+
+**Systemd Service:**
+```ini
+[Service]
+Environment="OXY_DATABASE_URL=postgresql://oxy_user:password@localhost:5432/oxy"
+```
+
+### Step 3: Migrate and Start
+
+```bash
+# Migrate your data
+oxy migrate-sqlite --to $OXY_DATABASE_URL
+
+# Start Oxy (will use OXY_DATABASE_URL)
+oxy serve
+```
+
+---
+
+# Troubleshooting
+
+## Docker Issues
+
+### Docker Not Running
+
+**Error:**
+```
+✗ Docker is not available
+Error: Docker daemon is not running
+```
+
+**Solution:**
+```bash
+# Start Docker Desktop (macOS/Windows)
+# OR start Docker daemon (Linux)
+sudo systemctl start docker
+
+# Verify
+docker ps
+```
+
+### Docker Not Installed
+
+**Error:**
+```
+✗ Docker is not installed
+```
+
+**Solution:**
+Install Docker from [docker.com/get-started](https://www.docker.com/get-started/)
+
+### Port Already in Use
+
+**Error:**
+```
+Error: Port 15432 is already in use
+```
+
+**Solution:**
+```bash
+# Find what's using the port
+lsof -i :15432
+
+# Either stop that service or use a different port
+# (Note: oxy start doesn't currently support custom ports for PostgreSQL)
+
+# Alternative: Use external PostgreSQL on a different port
+```
+
+---
+
+## PostgreSQL Container Issues
+
+### Container Stopped
+
+Check status:
+```bash
+oxy status
+```
+
+If container is stopped, restart it:
+```bash
+docker start oxy-postgres
+
+# Or remove and recreate
+docker rm oxy-postgres
+oxy start
+```
+
+### Container Not Found
+
+```bash
+# Check if container exists
+docker ps -a | grep oxy-postgres
+
+# If not found, oxy start will create it
+oxy start
+```
+
+### View Container Logs
+
+```bash
+# View all logs
+docker logs oxy-postgres
+
+# Follow logs in real-time
+docker logs -f oxy-postgres
+
+# Last 100 lines
+docker logs --tail 100 oxy-postgres
+```
+
+---
+
+## Migration Issues
+
+### Cannot Connect to SQLite
+
+**Error:**
+```
+✗ Failed to connect to SQLite database
+Error: unable to open database file
+```
+
+**Solutions:**
+```bash
+# Check if file exists
+ls -la ~/.local/share/oxy/db.sqlite
+
+# Use absolute path
+oxy migrate-sqlite \
+  --from sqlite://$HOME/.local/share/oxy/db.sqlite \
+  --to postgresql://postgres:postgres@localhost:15432/oxy
+
+# Check file permissions
+chmod 644 ~/.local/share/oxy/db.sqlite
+```
+
+### Cannot Connect to PostgreSQL
+
+**Error:**
+```
+✗ Failed to connect to PostgreSQL database
+Error: connection refused
+```
+
+**Solutions:**
+```bash
+# Check PostgreSQL is running
+oxy status
+
+# Verify connection manually
+docker exec -it oxy-postgres psql -U postgres -d oxy
+
+# Check connection string format
+# Should be: postgresql://user:password@host:port/database
+```
+
+### Migration Fails Partway
+
+**Error:**
+```
+[10/17] messages: Found 230 records → Error: foreign key constraint violation
+```
+
+**Solution:**
+This shouldn't happen as the migration respects dependency order. If it does:
+
+1. Check for data corruption in SQLite
+2. Run dry-run to see what would be migrated
+3. Report the issue with full error details
+
+```bash
+# Clean up partial migration
+docker exec -it oxy-postgres psql -U postgres -d oxy -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
+
+# Try migration again
+oxy migrate-sqlite --to postgresql://postgres:postgres@localhost:15432/oxy
+```
+
+### Slow Migration
+
+For large databases:
+- Normal: ~1000 records/second
+- Large databases (>10k records): May take several minutes
+- Very large (>100k records): May take 10-30 minutes
+
+**Progress is shown in real-time:**
+```
+[11/17] messages: Found 50000 records → Migrating...
+```
+
+---
+
+## Database Connection Issues
+
+### Wrong Database URL Format
+
+**Incorrect:**
+```bash
+# Missing protocol
+postgres:postgres@localhost:15432/oxy
+
+# Wrong protocol
+postgres://postgres:postgres@localhost:15432/oxy
+
+# Missing port
+postgresql://postgres:postgres@localhost/oxy
+```
+
+**Correct:**
+```bash
+postgresql://postgres:postgres@localhost:15432/oxy
+```
+
+**Format:**
+```
+postgresql://[user[:password]@][host][:port][/database]
+```
+
+---
+
+# Best Practices
+
+## Backup Strategy
+
+Always keep backups of your data:
+
+```bash
+# Before migration
+cp ~/.local/share/oxy/db.sqlite ~/backups/oxy-backup-$(date +%Y%m%d).sqlite
+
+# After migration - backup PostgreSQL
+docker exec oxy-postgres pg_dump -U postgres oxy > ~/backups/oxy-postgres-$(date +%Y%m%d).sql
+
+# Automated daily backup (cron)
+0 2 * * * docker exec oxy-postgres pg_dump -U postgres oxy | gzip > ~/backups/oxy-$(date +\%Y\%m\%d).sql.gz
+```
+
+## Development vs Production
+
+**Development (Local):**
+```bash
+# Use Docker PostgreSQL - simple and isolated
+oxy start
+oxy migrate-sqlite --to postgresql://postgres:postgres@localhost:15432/oxy
+```
+
+**Production (Deployment):**
+```bash
+# Use external managed PostgreSQL for reliability
+export OXY_DATABASE_URL=postgresql://user:pass@managed-postgres:5432/oxy
+oxy migrate-sqlite --to $OXY_DATABASE_URL
+oxy serve  # Uses OXY_DATABASE_URL automatically
+```
+
+## Data Validation
+
+After migration, validate your data:
+
+```bash
+# Check critical tables
+docker exec -it oxy-postgres psql -U postgres -d oxy -c "
+SELECT
+  'users' as table, COUNT(*) as count FROM users
+UNION ALL SELECT 'projects', COUNT(*) FROM projects
+UNION ALL SELECT 'threads', COUNT(*) FROM threads
+UNION ALL SELECT 'messages', COUNT(*) FROM messages
+ORDER BY table;
+"
+
+# Compare with SQLite
+sqlite3 ~/.local/share/oxy/db.sqlite "
+SELECT
+  'users' as 'table', COUNT(*) as count FROM users
+UNION ALL SELECT 'projects', COUNT(*) FROM projects
+UNION ALL SELECT 'threads', COUNT(*) FROM threads
+UNION ALL SELECT 'messages', COUNT(*) FROM messages
+ORDER BY 'table';
+"
+```
+
+Counts should match exactly.
+
+## Cleaning Up SQLite
+
+After successful migration and verification:
+
+```bash
+# Keep backup for at least one release cycle
+mv ~/.local/share/oxy/db.sqlite ~/backups/oxy-sqlite-archived-$(date +%Y%m%d).sqlite
+
+# Or delete if you're confident
+# rm ~/.local/share/oxy/db.sqlite
+```
+
+---
+
+# FAQ
+
+**Q: Do I need to keep Docker running after migration?**
+
+A: If you use `oxy start`, yes - it uses the Docker PostgreSQL container. Alternatively, migrate to external PostgreSQL and use `oxy serve` instead.
+
+**Q: Can I switch back to SQLite?**
+
+A: No, Oxy 0.4.0+ only supports PostgreSQL. Your old SQLite file remains intact if you need to downgrade to an earlier version.
+
+**Q: What happens if I run `oxy migrate-sqlite` twice?**
+
+A: The second migration will fail due to duplicate key constraints. The command is not idempotent - run it only once.
+
+**Q: Can I migrate to PostgreSQL on a different machine?**
+
+A: Yes! Set `--to` to any accessible PostgreSQL URL (managed service, remote server, etc.)
+
+**Q: How much disk space does the Docker PostgreSQL use?**
+
+A: Initial size: ~50-100MB for PostgreSQL image + ~50MB for data. Grows with your data.
+
+**Q: Does `oxy start` work in CI/CD?**
+
+A: Yes, as long as Docker is available. Useful for automated testing against PostgreSQL.
+
+**Q: What PostgreSQL version is used?**
+
+A: `oxy start` uses PostgreSQL 18 (Alpine Linux). External PostgreSQL should be version 14+.
+
+**Q: Can I customize the Docker container settings?**
+
+A: Not currently through `oxy start`. For custom settings, use external PostgreSQL and `oxy serve`.
+
+---
+
+# Getting Help
+
+If you encounter issues:
+
+1. **Run `oxy status`** - Shows current state and helpful commands
+2. **Check Docker logs** - `docker logs oxy-postgres`
+3. **Try dry-run** - `oxy migrate-sqlite --to ... --dry-run`
+4. **Report issues** - [github.com/oxy-hq/oxy/issues](https://github.com/oxy-hq/oxy/issues)
+
+**Include in your report:**
+- Oxy version: `oxy --version`
+- Docker version: `docker --version`
+- OS: macOS/Linux/Windows
+- Full error message
+- Output from `oxy status`
+
+---
+
+# Summary
+
+Migrating to PostgreSQL with Oxy's CLI commands is straightforward:
+
+```bash
+# Quick migration (3 commands)
+oxy start      # Start PostgreSQL in Docker
+oxy status     # Verify it's running
+oxy migrate-sqlite --to postgresql://postgres:postgres@localhost:15432/oxy
+```
+
+You're now running on PostgreSQL with better performance and scalability for production use!

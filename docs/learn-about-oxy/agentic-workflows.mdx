@@ -1,0 +1,459 @@
+---
+title: "Agentic Workflows"
+description: "Autonomous agent-driven workflows with dynamic decision making"
+---
+
+An **agentic workflow** is an advanced automation system that implements a Finite State Machine (FSM) architecture, enabling agents to autonomously make decisions and navigate through complex multi-step processes. Unlike traditional workflows that follow a fixed sequence of tasks, agentic workflows allow agents to dynamically choose their next action based on context and reasoning.
+
+# What is an Agentic Workflow?
+
+Agentic workflows represent a higher-level, more sophisticated approach to agent orchestration. They combine:
+
+- **Finite State Machine (FSM)**: Structured state transitions with start, end, and intermediate states
+- **Autonomous Decision Making**: Agent selects which transition to execute based on context
+- **Multi-step Reasoning**: Iterative reasoning with plan revision and error recovery
+- **Dynamic Execution**: Non-linear flow based on agent intelligence rather than predefined sequences
+
+# Agentic Workflows vs. Regular Workflows
+
+| Aspect | Agentic Workflow | Regular Workflow |
+|--------|-----------------|-----------------|
+| **File Extension** | `.aw.yml` | `.workflow.yml` |
+| **Control Flow** | Agent decides next step autonomously | Fixed sequence of tasks |
+| **Architecture** | Finite State Machine (FSM) | Directed Acyclic Graph (DAG) |
+| **Flexibility** | Dynamic based on agent reasoning | Deterministic and predetermined |
+| **Iteration** | Iterative with feedback loops | One-pass execution |
+| **Use Case** | Interactive exploration, adaptive behavior | Batch processing, predictable pipelines |
+| **Decision Making** | Agent uses LLM reasoning to choose transitions | Follows predefined task sequence |
+
+# Core Components
+
+An agentic workflow is defined using three main sections:
+
+## 1. Start State
+
+The entry point with planning capabilities:
+
+```yaml
+start:
+  mode: plan  # Planning mode for initial instruction
+  instruction: |
+    ## Instructions
+    You are a Data Analyst expert...
+
+    Your goal is to help users analyze data interactively.
+  next: [query, visualize, insight]  # Available transitions
+```
+
+| Component | Description | Required |
+|-----------|-------------|----------|
+| `mode` | Execution mode (`plan` for planning) | Required |
+| `instruction` | System instructions for the agent | Required |
+| `next` | List of available transitions the agent can choose | Required |
+
+## 2. Transitions
+
+Available actions the agent can take:
+
+```yaml
+transitions:
+  - type: query
+    description: Execute SQL queries against the database
+
+  - type: visualize
+    description: Create data visualizations and charts
+
+  - type: insight
+    description: Generate analytical insights from data
+
+  - type: data_app
+    description: Build interactive data applications
+
+  - type: subflow
+    description: Execute a sub-workflow for complex tasks
+```
+
+### Available Transition Types
+
+| Type | Description | Use Case |
+|------|-------------|----------|
+| `query` | Execute SQL queries | Data retrieval and analysis |
+| `visualize` | Create visualizations | Chart and graph generation |
+| `insight` | Generate insights | Analytical observations |
+| `data_app` | Build data apps | Interactive dashboards |
+| `subflow` | Execute sub-workflow | Complex multi-step operations |
+
+## 3. End State
+
+The exit point with synthesis capabilities:
+
+```yaml
+end:
+  mode: synthesize  # Synthesize final output
+  output_artifact: app  # Type of artifact to produce
+```
+
+| Component | Description | Options |
+|-----------|-------------|---------|
+| `mode` | Execution mode for completion | `synthesize` |
+| `output_artifact` | Type of output to produce | `app`, `query`, `visualization`, `insight` |
+
+# How Agentic Workflows Work
+
+## Execution Flow
+
+```
+User Input
+  ↓
+Start Phase (Plan)
+  ↓
+Agent Selects Transition (query/visualize/insight/etc.)
+  ↓
+Execute Transition (LLM-guided execution)
+  ↓
+Update State & Artifacts
+  ↓
+Decision: Continue or End?
+  ├─ Continue → Loop to next Transition
+  └─ End → Synthesis Phase → Output Result
+```
+
+## Autonomous Decision Making
+
+The agent autonomously:
+
+1. **Analyzes Context**: Reviews conversation history and current state
+2. **Selects Transition**: Chooses the most appropriate action using LLM reasoning
+3. **Executes Action**: Performs the selected transition (query, visualize, etc.)
+4. **Evaluates Result**: Determines if the goal is achieved or more steps are needed
+5. **Iterates or Completes**: Either selects another transition or moves to end state
+
+## Multi-step Reasoning
+
+Agentic workflows implement sophisticated reasoning:
+
+- **Plan Revision**: Agent can revise its plan based on intermediate results
+- **Error Recovery**: Handles failures and adjusts strategy
+- **Continuation**: Resumes from previous state if interrupted
+- **Iteration Limits**: Configurable maximum iterations (default 15-30)
+
+# Example: Data Analysis Agentic Workflow
+
+```yaml build.aw.yml
+model: openai-4o-mini
+
+start:
+  mode: plan
+  instruction: |
+    ## Instructions
+    You are a Data Analyst expert who helps users analyze their data.
+
+    ## Available Actions
+    - query: Execute SQL queries to retrieve data
+    - visualize: Create charts and visualizations
+    - insight: Generate analytical insights
+    - data_app: Build interactive dashboards
+
+    ## Approach
+    1. Understand the user's question
+    2. Select the appropriate action(s) to answer it
+    3. Execute actions and review results
+    4. Provide clear, actionable insights
+
+  next: [query, visualize, insight, data_app]
+
+transitions:
+  - type: query
+  - type: visualize
+  - type: insight
+  - type: data_app
+
+end:
+  mode: synthesize
+  output_artifact: app
+```
+
+## Example Execution
+
+**User**: "Analyze our sales trends for Q4 and create a dashboard"
+
+**Start Phase**: Agent creates a plan:
+1. Query sales data for Q4
+2. Calculate trends
+3. Create visualizations
+4. Build interactive dashboard
+
+**Transition 1 - Query**: Agent executes SQL query to get Q4 sales data
+
+**Transition 2 - Query**: Agent calculates month-over-month trends
+
+**Transition 3 - Visualize**: Agent creates line chart showing trends
+
+**Transition 4 - Visualize**: Agent creates bar chart for product breakdown
+
+**Transition 5 - Data App**: Agent assembles dashboard with both visualizations
+
+**End Phase**: Agent synthesizes final dashboard and presents to user
+
+# Configuration
+
+## Basic Agentic Workflow
+
+```yaml my-analysis.aw.yml
+model: openai-4o-mini
+
+start:
+  mode: plan
+  instruction: |
+    You are a helpful data analyst. Use the available tools to help users.
+  next: [query, insight]
+
+transitions:
+  - type: query
+  - type: insight
+
+end:
+  mode: synthesize
+  output_artifact: insight
+```
+
+## Advanced Configuration
+
+```yaml advanced-workflow.aw.yml
+model: anthropic-claude-3-5-sonnet
+
+start:
+  mode: plan
+  instruction: |
+    ## Role
+    You are an expert data scientist specializing in predictive analytics.
+
+    ## Context
+    You have access to historical sales data and customer information.
+
+    ## Guidelines
+    - Always validate data quality before analysis
+    - Provide statistical confidence in your insights
+    - Create visualizations to support findings
+
+    ## Available Actions
+    - query: Retrieve and analyze data with SQL
+    - visualize: Create charts and graphs
+    - insight: Generate analytical observations
+    - data_app: Build interactive applications
+
+  next: [query, visualize, insight, data_app]
+
+transitions:
+  - type: query
+    description: Execute SQL queries for data retrieval
+
+  - type: visualize
+    description: Create data visualizations
+
+  - type: insight
+    description: Generate statistical insights
+
+  - type: data_app
+    description: Build predictive dashboards
+
+end:
+  mode: synthesize
+  output_artifact: app
+```
+
+# Use Cases
+
+## Interactive Data Exploration
+
+Perfect for scenarios where the analysis path isn't known upfront:
+
+- **Ad-hoc Analysis**: User asks exploratory questions, agent adapts
+- **Data Discovery**: Agent navigates through data to find patterns
+- **Iterative Refinement**: Agent refines queries based on initial results
+
+## Adaptive Dashboards
+
+Build dashboards that adapt to user needs:
+
+- **Custom Visualizations**: Agent selects appropriate chart types
+- **Dynamic Filters**: Agent adds filters based on data characteristics
+- **Progressive Enhancement**: Agent iteratively improves the dashboard
+
+## Multi-step Analytics
+
+Complex analytics requiring multiple sequential or parallel operations:
+
+- **Cohort Analysis**: Query → Segment → Visualize → Insight
+- **Trend Analysis**: Historical Query → Calculate Trends → Forecast → Visualize
+- **Comparative Analysis**: Multiple Queries → Join → Compare → Insight
+
+## Question Answering
+
+Natural language question answering over data:
+
+- **Simple Questions**: Direct query → answer
+- **Complex Questions**: Break down → multiple queries → synthesize answer
+- **Follow-up Questions**: Maintain context across conversation
+
+# Key Features
+
+## Tool/Action Binding
+
+The agent has access to predefined tools through LLM function calling:
+
+- **Query Tool**: Execute SQL queries
+- **Visualization Tool**: Create charts
+- **Insight Tool**: Generate observations
+- **Data App Tool**: Build applications
+
+The agent can call these tools in any order and multiple times as needed.
+
+## State Persistence
+
+Throughout execution, the agentic workflow maintains:
+
+- **Conversation History**: All user messages and agent responses
+- **Artifacts**: Generated queries, visualizations, insights, apps
+- **Context**: Current state and execution path
+- **Variables**: Accumulated data and intermediate results
+
+## Iteration Control
+
+Control the execution with:
+
+- **Max Iterations**: Prevent infinite loops (default 15-30)
+- **Early Exit**: Agent can decide to end early if goal achieved
+- **Timeout Handling**: Graceful handling of long-running operations
+
+# Implementation
+
+## Creating an Agentic Workflow
+
+1. Create a file with `.aw.yml` extension in your project
+2. Define the `model`, `start`, `transitions`, and `end` sections
+3. Write clear instructions for the agent
+4. Specify available transitions
+5. Configure the output artifact type
+
+## Running an Agentic Workflow
+
+Agentic workflows can be launched through:
+
+- **Oxy IDE**: Interactive execution with real-time updates
+- **API**: Programmatic execution via REST API
+- **CLI**: Command-line execution for automation
+
+## Monitoring Execution
+
+The Oxy IDE provides:
+
+- **Reasoning Blocks**: See agent's thought process at each step
+- **Transition History**: View which transitions were executed
+- **Artifact Preview**: See generated queries, visualizations, and apps
+- **State Visualization**: Understand current position in the FSM
+
+# Best Practices
+
+## Clear Instructions
+
+Provide detailed instructions in the start state:
+
+```yaml
+start:
+  mode: plan
+  instruction: |
+    ## Role
+    Clear description of the agent's role
+
+    ## Context
+    Relevant background information
+
+    ## Available Actions
+    List and explain each transition
+
+    ## Approach
+    Suggested methodology
+
+    ## Guidelines
+    Important constraints or preferences
+```
+
+## Meaningful Transitions
+
+Choose transitions that represent meaningful actions:
+
+- **Atomic**: Each transition should do one thing well
+- **Clear Purpose**: Name transitions descriptively
+- **Composable**: Transitions should work well together
+
+## Appropriate Models
+
+Select models based on complexity:
+
+- **Simple Workflows**: `openai-4o-mini`, `claude-3-5-haiku`
+- **Complex Reasoning**: `openai-4o`, `anthropic-claude-3-5-sonnet`
+- **Cost Optimization**: Use smaller models for straightforward tasks
+
+## Iteration Limits
+
+Set appropriate iteration limits:
+
+- **Exploratory**: Higher limits (20-30) for open-ended exploration
+- **Focused**: Lower limits (10-15) for specific tasks
+- **Safety**: Always set a limit to prevent runaway execution
+
+# Technical Architecture
+
+## FSM Implementation
+
+The agentic workflow system is implemented in:
+
+- **FSM Module**: `/crates/core/src/agent/builders/fsm/`
+  - `machine.rs`: Core FSM logic and state transitions
+  - `config.rs`: AgenticConfig structure
+  - `state.rs`: MachineContext for conversation and artifacts
+  - `control/`: Planning, synthesis, and idle states
+  - `query/`, `viz/`, `data_app/`: Transition implementations
+
+## Service Layer
+
+- **Agent Service**: `/crates/core/src/service/agent.rs`
+  - `launch_agentic_workflow()`: Main execution function
+  - State management and persistence
+
+## Frontend Integration
+
+- **Agentic Store**: `/web-app/src/stores/agentic.ts`
+  - Streaming updates
+  - Real-time message handling
+  - Reasoning block visualization
+
+# File Locations
+
+Agentic workflow implementation files:
+
+- **Core FSM**: `/crates/core/src/agent/builders/fsm/`
+- **Service**: `/crates/core/src/service/agent.rs`
+- **Frontend Store**: `/web-app/src/stores/agentic.ts`
+- **Example Workflows**: Search for `.aw.yml` files in your project
+
+# When to Use Agentic Workflows
+
+Use agentic workflows when:
+
+- The path to completion isn't known upfront
+- You need adaptive, intelligent decision making
+- The task requires iterative refinement
+- You want to handle complex, multi-step reasoning
+- User interaction guides the workflow direction
+
+Use regular workflows when:
+
+- The sequence of steps is well-defined
+- You need predictable, repeatable execution
+- The task is primarily deterministic
+- You want explicit control over the flow
+- Cost optimization is critical (fewer LLM calls)
+
+Agentic workflows represent the next evolution in agent-based automation, combining the structure of traditional workflows with the intelligence and adaptability of modern AI agents.

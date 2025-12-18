@@ -21,9 +21,9 @@ Before diving into the deployment, let's understand how Oxy's architecture trans
 ### Core Architecture Principles
 
 Oxy is a **Rust-based framework for agentic analytics** that follows these design principles:
-- **Stateful by design**: Requires persistent storage for agent state, databases, and git repositories
+- **Stateful by design**: Requires persistent storage for agent state and git repositories
 - **Single-tenant**: Each deployment serves one workspace/organization
-- **Database-backed**: Uses either SQLite (default) or external PostgreSQL for persistence
+- **Database-backed**: Uses PostgreSQL for data persistence
 - **Git-integrated**: Can sync with git repositories for configuration and workflows
 
 ### Kubernetes Component Mapping
@@ -31,8 +31,8 @@ Oxy is a **Rust-based framework for agentic analytics** that follows these desig
 | Oxy Component | Kubernetes Resource | Purpose |
 |---------------|-------------------|---------|
 | **Oxy Server** | StatefulSet | Main application server with persistent identity |
-| **State Storage** | PersistentVolumeClaim | Stores SQLite databases, agent state, git repos |
-| **External Database** | External Service/Secret | *Optional* PostgreSQL for production |
+| **State Storage** | PersistentVolumeClaim | Stores agent state and git repos |
+| **PostgreSQL Database** | External Service/Secret | PostgreSQL database connection |
 | **Configuration** | ConfigMap + Secret | *Optional* environment variables and sensitive data |
 | **Git Sync** | Init Container | *Optional* synchronizes git repositories on startup |
 | **Web Interface** | Service + Ingress | Exposes the web UI and API endpoints |
@@ -182,14 +182,15 @@ helm install oxy-app oxy/oxy-app \
 
 ### Database Configuration
 
-#### Option 1: SQLite (Default)
+#### PostgreSQL Database (Required)
 
-No additional configuration needed. Oxy will create SQLite databases in the persistent volume.
+Oxy requires a PostgreSQL database. You can use a managed PostgreSQL service or deploy PostgreSQL in your cluster.
 
 ```yaml
-# SQLite is used by default - no database config needed
-persistence:
-  enabled: true
+# Configure PostgreSQL connection
+env:
+  - name: OXY_DATABASE_URL
+    value: "postgresql://user:password@postgres-service:5432/oxy"
   size: "20Gi"
 ```
 

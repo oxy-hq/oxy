@@ -81,21 +81,26 @@ flowchart TD
 
 When deploying Oxy in production, it's important to understand how data is stored and persisted:
 
-- Oxy uses SQLite by default for its internal state management
-- Data is stored at the location specified by `OXY_STATE_DIR` environment variable
-- If `OXY_STATE_DIR` is not set, data defaults to `~/.local/share/oxy/`
-- This directory contains database files, semantic information, cached query results, and workflow history
+- Oxy uses **PostgreSQL** for its data storage
+- Connection is configured via the `OXY_DATABASE_URL` environment variable
+- For development: Use `oxy start` to automatically set up PostgreSQL in Docker
+- For production: Connect to an external managed PostgreSQL service
 
 ### Persistence Strategies
 
 For production deployments, ensure your data persistence strategy matches your reliability requirements:
 
-- **Docker deployments**: Mount a volume to `/data` and set `OXY_STATE_DIR=/data`
-- **Cloud VMs**: Use attached persistent disks (EBS volumes, Google Persistent Disks, etc.)
-- **Self-hosted**: Consider regular backups of the state directory
+- **Development**: Use `oxy start` which manages PostgreSQL in Docker automatically
+- **Docker deployments**: Include PostgreSQL in your docker-compose.yml with proper volume mounting
+- **Production deployments**: Use managed PostgreSQL services (AWS RDS, Cloud SQL, Supabase, etc.)
+- **Self-hosted**: Set up PostgreSQL with regular backups and replication
 
 <Warning>
-  Data loss can occur if proper persistence is not configured. Always ensure your Oxy state directory is backed by reliable storage and included in your backup strategy.
+  Data loss can occur if proper database configuration and backups are not in place. Always ensure your PostgreSQL instance is properly configured with:
+  - Regular automated backups
+  - Proper connection pooling
+  - Adequate storage and performance settings
+  - High availability setup for critical deployments
 </Warning>
 
 ## Deployment Steps

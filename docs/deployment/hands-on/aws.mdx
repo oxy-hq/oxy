@@ -204,7 +204,7 @@ Let's use the built-in `oxy init` command to initialize a new workspace with all
     mkdir -p ~/oxy-data
     ```
 
-    This directory will store all persistent data for Oxy, including the SQLite database files.
+    This directory will store workspace files and semantic information for Oxy.
   </Step>
 
   <Step title="Configure Environment Variables">
@@ -368,13 +368,19 @@ Everything up to this point completes the core setup of your Oxy deployment. The
 
 It's important to understand how Oxy handles data persistence:
 
-- Oxy uses SQLite for its internal database by default
-- All data is stored in the directory specified by `OXY_STATE_DIR` environment variable (we set it to ~/oxy-data)
-- If `OXY_STATE_DIR` is not set, Oxy uses `~/.local/share/oxy/` by default
-- This directory contains database files, semantic information, cached query results, and workflow history
+- Oxy uses **PostgreSQL** for its data storage
+- For production: Use Amazon RDS for PostgreSQL or a self-hosted PostgreSQL instance
+- For development: Use `oxy start` to automatically set up PostgreSQL in Docker
+- Configure the database connection via the `OXY_DATABASE_URL` environment variable
 
 <Note>
-  For production deployments, consider backing up the oxy-data directory regularly. You can set up automated backups to Amazon S3 or use an additional EBS volume for enhanced reliability.
+  For production deployments on AWS:
+  - Use Amazon RDS for PostgreSQL for managed database service
+  - Set up automated backups with RDS snapshots
+  - Enable Multi-AZ deployment for high availability
+  - Configure connection pooling for better performance
+
+  See our [Migration Guide](/migration/migration-guide) for detailed PostgreSQL setup instructions.
 </Note>
 
 ## Managing Your Deployment

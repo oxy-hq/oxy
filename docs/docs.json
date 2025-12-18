@@ -36,12 +36,14 @@
                 "group": "Core concepts",
                 "pages": [
                   "learn-about-oxy/agents",
+                  "learn-about-oxy/agentic-workflows",
                   "learn-about-oxy/cache",
                   "learn-about-oxy/config",
                   "learn-about-oxy/context",
                   "learn-about-oxy/data-apps",
                   "learn-about-oxy/debugging",
                   "learn-about-oxy/globals",
+                  "learn-about-oxy/ontology",
                   {
                     "group": "Semantic Layer",
                     "pages": [
@@ -68,6 +70,12 @@
             "group": "MCP Server",
             "pages": [
               "mcp-server/mcp-usage"
+            ]
+          },
+          {
+            "group": "Migration",
+            "pages": [
+              "migration/migration-guide"
             ]
           }
         ]
@@ -207,6 +215,7 @@
             "group": "Oxy commands",
             "pages": [
               "reference/oxy-commands",
+              "reference/oxy-start",
               "reference/database-sync"
             ]
           },

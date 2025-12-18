@@ -155,27 +155,42 @@ When running Oxy in Docker, you'll typically need to mount two types of director
 
 ## Data Persistence
 
-Oxy uses SQLite for data storage by default, which means proper volume mounting is essential for maintaining your data across container restarts or updates.
+Oxy uses PostgreSQL for data storage, which means proper database configuration is essential for maintaining your data across container restarts or updates.
 
 ### Storage Location
 
-- By default, Oxy stores its data in `~/.local/share/oxy/` on the host system
-- When using Docker, you should explicitly set the `OXY_STATE_DIR` environment variable (typically to `/data`) and mount a volume to that location
+- Oxy connects to PostgreSQL using the `OXY_DATABASE_URL` environment variable
+- For development: Use `oxy start` to automatically set up PostgreSQL in Docker
+- For production: Connect to an external PostgreSQL instance (AWS RDS, Supabase, etc.)
 
 ### What Data Is Stored
 
-Oxy stores several types of data that need to be persisted:
+Oxy stores several types of data in PostgreSQL:
 
-- SQLite database files containing state information
+- Application state and metadata
+- User information and authentication data
 - Semantic information from synchronized databases
 - Cached query results and intermediate data
 - Workflow execution history and checkpoints
 
-### Example Docker Setup with Proper Data Persistence
+### Example Docker Setup with PostgreSQL
 
 ```yaml
 version: '3'
 services:
+  postgres:
+    image: postgres:18-alpine
+    container_name: oxy-postgres
+    ports:
+      - "15432:5432"
+    volumes:
+      - oxy-postgres-data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=oxy
+    restart: unless-stopped
+
   oxy:
     image: ghcr.io/oxy-hq/oxy:0.2.3
     container_name: oxy-instance
@@ -184,24 +199,32 @@ services:
     working_dir: /workspace
     volumes:
       - ./workspace:/workspace
-      - ./oxy-data:/var/lib/oxy/data  # Essential for data persistence
     environment:
       - OPENAI_API_KEY=your-openai-api-key
-      - OXY_STATE_DIR=/var/lib/oxy/data  # Points to the mounted volume
+      - OXY_DATABASE_URL=postgresql://postgres:postgres@postgres:5432/oxy
+    depends_on:
+      - postgres
     restart: unless-stopped
     command: ["oxy", "serve", "--host", "0.0.0.0", "--port", "3000"]
+
+volumes:
+  oxy-postgres-data:
 ```
 
+<Tip>
+  Alternatively, use `oxy start` which automatically manages PostgreSQL in Docker. See the [oxy start reference](/reference/oxy-start) for details.
+</Tip>
+
 <Warning>
-  For production deployments, ensure your data volume is backed by reliable storage. In cloud environments, consider using:
-  - Amazon EBS volumes (AWS)
-  - Persistent Disks (Google Cloud)
-  - Azure Disk Storage
-  - Network-attached storage (NAS) for multi-node setups
+  For production deployments, consider using managed PostgreSQL services:
+  - Amazon RDS (AWS)
+  - Cloud SQL (Google Cloud)
+  - Azure Database for PostgreSQL
+  - Supabase, DigitalOcean, or other managed providers
 </Warning>
 
 <Note>
-  When using Docker Compose, your data will persist as long as you don't remove the volumes. Use `docker-compose down -v` with caution as it will delete the volumes.
+  When using Docker Compose, your database data persists in the `oxy-postgres-data` volume. Use `docker-compose down -v` with caution as it will delete all data.
 </Note>
 
 ## Environment Variables

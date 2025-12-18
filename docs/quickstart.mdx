@@ -109,6 +109,12 @@ oxy test sql-generator.agent.yml  # runs all defined tests against the sql-gener
 oxy run report-generator.workflow.yml  # execute the sample workflow
 oxy test report-generator.workflow.yml  # run all defined tests against the workflow
 
-oxy serve  # stands up a GUI against your agents and workflows
+oxy start  # starts PostgreSQL in Docker and launches the GUI (recommended)
+# OR
+oxy serve  # starts just the GUI (requires manual database setup)
 ```
+
+<Tip>
+  **New in 0.4.0:** Use `oxy start` to automatically set up PostgreSQL with Docker and launch the web interface. This is the recommended way to run Oxy for both development and production. See the [oxy start reference](/reference/oxy-start) for more details.
+</Tip>
 

@@ -1,0 +1,571 @@
+---
+title: "oxy start"
+description: "Start PostgreSQL with Docker and launch the Oxy server"
+---
+
+The `oxy start` command is the recommended way to run Oxy with a production-ready PostgreSQL database. It automatically manages a PostgreSQL container using Docker and starts the Oxy web server.
+
+## Overview
+
+`oxy start` simplifies database setup by:
+
+1. **Checking Docker availability**
+2. **Starting PostgreSQL in a Docker container** (or creating one if it doesn't exist)
+3. **Waiting for PostgreSQL to be ready**
+4. **Configuring the database connection** automatically
+5. **Starting the Oxy web server**
+
+This eliminates manual database setup and provides a consistent, production-ready environment for both development and deployment.
+
+## Usage
+
+```bash
+oxy start [OPTIONS]
+```
+
+## Quick Start
+
+The simplest way to start Oxy:
+
+```bash
+oxy start
+```
+
+This will:
+- Start PostgreSQL on port `15432`
+- Start Oxy web server on port `3000`
+- Make Oxy available at `http://localhost:3000`
+
+## PostgreSQL Configuration
+
+When you run `oxy start`, it automatically creates and manages a PostgreSQL container with the following configuration:
+
+| Setting | Value |
+|---------|-------|
+| **Container Name** | `oxy-postgres` |
+| **Docker Image** | `postgres:18-alpine` |
+| **Host Port** | `15432` |
+| **Container Port** | `5432` |
+| **Database Name** | `oxy` |
+| **Username** | `postgres` |
+| **Password** | `postgres` |
+| **Data Volume** | `oxy-postgres-data` |
+| **Connection URL** | `postgresql://postgres:postgres@localhost:15432/oxy` |
+
+<Note>
+The PostgreSQL container uses a named Docker volume (`oxy-postgres-data`) for persistent storage, so your data survives container restarts and system reboots.
+</Note>
+
+## Command Options
+
+All options from `oxy serve` are supported:
+
+```bash
+oxy start --port <PORT>       # Custom web server port (default: 3000)
+oxy start --host <HOST>       # Custom host binding (default: localhost)
+oxy start --workspace <PATH>  # Custom workspace directory
+```
+
+### Examples
+
+**Start on a custom port:**
+```bash
+oxy start --port 8080
+```
+
+**Bind to all interfaces (for remote access):**
+```bash
+oxy start --host 0.0.0.0
+```
+
+**Use a specific workspace:**
+```bash
+oxy start --workspace /path/to/my-workspace
+```
+
+## Docker Requirements
+
+### Prerequisites
+
+Docker must be installed and running before using `oxy start`:
+
+**Check Docker installation:**
+```bash
+docker --version
+```
+
+**Check Docker is running:**
+```bash
+docker ps
+```
+
+**If Docker isn't installed**, download it from [docker.com](https://www.docker.com/get-started/).
+
+### Docker Resources
+
+Recommended minimum Docker resources:
+- **Memory**: 2GB (4GB+ recommended)
+- **Disk**: 1GB free space
+- **CPU**: 1 core (2+ recommended)
+
+## How It Works
+
+### Startup Sequence
+
+When you run `oxy start`, the following happens:
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant OxyStart as oxy start
+    participant Docker
+    participant PostgreSQL
+    participant OxyServer as Oxy Server
+
+    User->>OxyStart: Run command
+    OxyStart->>Docker: Check availability
+    Docker-->>OxyStart: Docker OK
+    OxyStart->>Docker: Start/create oxy-postgres container
+    Docker->>PostgreSQL: Create container
+    PostgreSQL-->>Docker: Container started
+    OxyStart->>PostgreSQL: Wait for ready (up to 30s)
+    PostgreSQL-->>OxyStart: Ready to accept connections
+    OxyStart->>OxyStart: Set DATABASE_URL env var
+    OxyStart->>OxyServer: Start web server
+    OxyServer-->>User: Server ready at localhost:3000
+```
+
+### Container Management
+
+**First run:**
+- Pulls `postgres:18-alpine` image from Docker Hub (~50-100MB)
+- Creates `oxy-postgres` container
+- Creates `oxy-postgres-data` volume
+- Initializes PostgreSQL database
+
+**Subsequent runs:**
+- Reuses existing container and data
+- Starts stopped container if needed
+- Data persists across restarts
+
+## Monitoring and Management
+
+### Check Status
+
+Use `oxy status` to see the current state:
+
+```bash
+oxy status
+```
+
+This shows:
+- Docker daemon status
+- PostgreSQL container status
+- Database connectivity
+- Helpful troubleshooting commands
+
+### View Logs
+
+```bash
+# View all PostgreSQL logs
+docker logs oxy-postgres
+
+# Follow logs in real-time
+docker logs -f oxy-postgres
+
+# View last 100 lines
+docker logs --tail 100 oxy-postgres
+```
+
+### Access PostgreSQL Directly
+
+```bash
+# Connect to PostgreSQL shell
+docker exec -it oxy-postgres psql -U postgres -d oxy
+
+# Run a specific query
+docker exec -it oxy-postgres psql -U postgres -d oxy -c "SELECT COUNT(*) FROM users;"
+```
+
+### Stop Services
+
+**Stop Oxy server:**
+Press `Ctrl+C` in the terminal where `oxy start` is running.
+
+**Stop PostgreSQL container:**
+```bash
+docker stop oxy-postgres
+```
+
+**Remove PostgreSQL container:**
+```bash
+docker rm oxy-postgres
+```
+
+<Warning>
+Removing the container does not delete your data. Data is stored in the `oxy-postgres-data` volume.
+</Warning>
+
+**Remove data volume (deletes all data):**
+```bash
+docker volume rm oxy-postgres-data
+```
+
+## Data Persistence
+
+### Where Data is Stored
+
+All PostgreSQL data is stored in a Docker named volume:
+
+```bash
+# Inspect the volume
+docker volume inspect oxy-postgres-data
+
+# View volume location
+docker volume inspect oxy-postgres-data --format '{{ .Mountpoint }}'
+```
+
+### Backup Database
+
+```bash
+# Create a backup
+docker exec oxy-postgres pg_dump -U postgres oxy > oxy-backup-$(date +%Y%m%d).sql
+
+# Restore from backup
+docker exec -i oxy-postgres psql -U postgres oxy < oxy-backup-20250101.sql
+```
+
+### Automated Backups
+
+Add to crontab for daily backups:
+
+```bash
+# Edit crontab
+crontab -e
+
+# Add daily backup at 2 AM
+0 2 * * * docker exec oxy-postgres pg_dump -U postgres oxy | gzip > ~/backups/oxy-$(date +\%Y\%m\%d).sql.gz
+```
+
+## Troubleshooting
+
+### Docker Not Running
+
+**Error:**
+```
+✗ Docker is not available
+Error: Docker daemon is not running
+```
+
+**Solution:**
+Start Docker Desktop (macOS/Windows) or the Docker daemon (Linux):
+
+```bash
+# macOS/Windows: Open Docker Desktop
+
+# Linux:
+sudo systemctl start docker
+```
+
+### Port Already in Use
+
+**Error:**
+```
+Error: Port 15432 is already in use
+```
+
+**Solution:**
+Either stop the service using port 15432 or use [external PostgreSQL](#using-external-postgresql).
+
+```bash
+# Find what's using the port
+lsof -i :15432
+
+# Stop that service or use external PostgreSQL
+```
+
+### Container Won't Start
+
+**Check container status:**
+```bash
+oxy status
+```
+
+**View error logs:**
+```bash
+docker logs oxy-postgres
+```
+
+**Remove and recreate:**
+```bash
+docker stop oxy-postgres
+docker rm oxy-postgres
+oxy start  # Will create a fresh container
+```
+
+### Database Connection Fails
+
+**Symptoms:**
+```
+Error: Failed to connect to database
+```
+
+**Solutions:**
+
+1. **Check PostgreSQL is running:**
+   ```bash
+   oxy status
+   ```
+
+2. **Wait for startup:**
+   PostgreSQL takes 5-10 seconds to start. `oxy start` waits up to 30 seconds.
+
+3. **Check container health:**
+   ```bash
+   docker exec oxy-postgres pg_isready -U postgres
+   ```
+
+4. **View PostgreSQL logs:**
+   ```bash
+   docker logs oxy-postgres
+   ```
+
+## Using External PostgreSQL
+
+If you don't want to use Docker, you can use an external PostgreSQL instance instead of `oxy start`:
+
+### Option 1: Local PostgreSQL
+
+```bash
+# Install PostgreSQL (example for macOS)
+brew install postgresql@16
+brew services start postgresql@16
+
+# Create database
+createdb oxy
+
+# Set environment variable
+export OXY_DATABASE_URL=postgresql://postgres@localhost:5432/oxy
+
+# Start Oxy (will use OXY_DATABASE_URL)
+oxy serve
+```
+
+### Option 2: Managed PostgreSQL Service
+
+**AWS RDS:**
+```bash
+export OXY_DATABASE_URL=postgresql://user:password@oxy-db.xxxxx.us-east-1.rds.amazonaws.com:5432/oxy
+oxy serve
+```
+
+**Supabase:**
+```bash
+export OXY_DATABASE_URL=postgresql://postgres:password@db.xxxxx.supabase.co:5432/postgres
+oxy serve
+```
+
+**DigitalOcean:**
+```bash
+export OXY_DATABASE_URL=postgresql://user:password@db.xxxxx.ondigitalocean.com:25060/oxy?sslmode=require
+oxy serve
+```
+
+### Option 3: Custom Docker PostgreSQL
+
+```bash
+# Run your own PostgreSQL container
+docker run --name my-postgres \
+  -e POSTGRES_PASSWORD=mypassword \
+  -e POSTGRES_DB=oxy \
+  -p 5433:5432 \
+  -v my-oxy-data:/var/lib/postgresql/data \
+  -d postgres:16
+
+# Point Oxy to it
+export OXY_DATABASE_URL=postgresql://postgres:mypassword@localhost:5433/oxy
+oxy serve
+```
+
+## Comparison: oxy start vs oxy serve
+
+| Feature | `oxy start` | `oxy serve` |
+|---------|------------|-------------|
+| **Database** | PostgreSQL (Docker) | Uses `OXY_DATABASE_URL` or embedded PostgreSQL |
+| **Docker Required** | Yes | No (unless using Docker PostgreSQL) |
+| **Setup** | Automatic | Manual database configuration |
+| **Production Ready** | Yes | Depends on database setup |
+| **Best For** | Development & Production | Custom database setups |
+
+### When to Use `oxy start`
+
+Use `oxy start` when:
+- Starting a new Oxy project
+- You want zero-configuration database setup
+- Docker is available in your environment
+- You need a consistent development environment
+- You're deploying in containerized environments
+
+### When to Use `oxy serve`
+
+Use `oxy serve` when:
+- Using external managed PostgreSQL (AWS RDS, Supabase, etc.)
+- Docker is not available or desired
+- You have specific database configuration requirements
+- Using embedded PostgreSQL (development only)
+
+## Best Practices
+
+### Development
+
+```bash
+# Use oxy start for local development
+oxy start
+
+# Check status regularly
+oxy status
+
+# Backup before major changes
+docker exec oxy-postgres pg_dump -U postgres oxy > backup.sql
+```
+
+### Production
+
+**Option 1: Docker (Recommended for simple deployments)**
+```bash
+# Use oxy start with proper volume management
+oxy start --host 0.0.0.0 --port 3000
+
+# Set up automated backups
+# Add monitoring and health checks
+```
+
+**Option 2: External PostgreSQL (Recommended for scale)**
+```bash
+# Use managed PostgreSQL service
+export OXY_DATABASE_URL=postgresql://user:password@managed-db:5432/oxy
+
+# Use oxy serve instead
+oxy serve --host 0.0.0.0 --port 3000
+```
+
+### CI/CD Integration
+
+```yaml
+# GitHub Actions example
+- name: Start Oxy with PostgreSQL
+  run: |
+    # oxy start works in CI with Docker
+    oxy start &
+    sleep 10  # Wait for startup
+
+- name: Run tests
+  run: oxy test
+```
+
+## Migration from SQLite
+
+If you're migrating from an older Oxy version that used SQLite, see the [Migration Guide](/migration/migration-guide) for detailed instructions on migrating your data to PostgreSQL.
+
+Quick migration:
+
+```bash
+# Start PostgreSQL
+oxy start
+
+# Migrate existing SQLite data
+oxy migrate-sqlite --to postgresql://postgres:postgres@localhost:15432/oxy
+```
+
+## Advanced Configuration
+
+### Environment Variables
+
+You can customize the database connection by setting environment variables before running `oxy start`:
+
+```bash
+# Use custom database URL (overrides Docker PostgreSQL)
+export OXY_DATABASE_URL=postgresql://custom:url@host:port/db
+oxy start  # Will use custom database, skip Docker setup
+```
+
+### Docker Networking
+
+If you need to connect other containers to Oxy's PostgreSQL:
+
+```bash
+# Get the network
+docker network ls | grep oxy
+
+# Connect another container
+docker run --network bridge myapp
+```
+
+### Custom PostgreSQL Configuration
+
+To use custom PostgreSQL settings, create your own container:
+
+```bash
+# Create custom postgres.conf
+cat > postgres.conf <<EOF
+max_connections = 200
+shared_buffers = 512MB
+effective_cache_size = 2GB
+EOF
+
+# Run custom container
+docker run --name oxy-postgres-custom \
+  -e POSTGRES_PASSWORD=postgres \
+  -e POSTGRES_DB=oxy \
+  -v $PWD/postgres.conf:/etc/postgresql/postgresql.conf \
+  -v oxy-custom-data:/var/lib/postgresql/data \
+  -p 15432:5432 \
+  -d postgres:18-alpine \
+  -c 'config_file=/etc/postgresql/postgresql.conf'
+
+# Point Oxy to it
+export OXY_DATABASE_URL=postgresql://postgres:postgres@localhost:15432/oxy
+oxy serve
+```
+
+## FAQ
+
+**Q: Do I need to keep `oxy start` running?**
+
+A: Yes, `oxy start` starts both the PostgreSQL container and the Oxy web server. Stopping the command stops the web server (but not the PostgreSQL container).
+
+**Q: Can I use `oxy start` in production?**
+
+A: Yes! `oxy start` is production-ready for deployments where Docker is available. For large-scale production, consider using an external managed PostgreSQL service.
+
+**Q: What happens if I restart my computer?**
+
+A: The PostgreSQL container will stop but data persists in the Docker volume. Run `oxy start` again to restart everything.
+
+**Q: How do I upgrade PostgreSQL?**
+
+A: Backup your data, remove the container, and `oxy start` will create a new one with the latest image:
+```bash
+docker exec oxy-postgres pg_dump -U postgres oxy > backup.sql
+docker stop oxy-postgres && docker rm oxy-postgres
+oxy start
+```
+
+**Q: Can I access the PostgreSQL database from other tools?**
+
+A: Yes! Connect using: `postgresql://postgres:postgres@localhost:15432/oxy`
+
+**Q: Does `oxy start` work in Docker containers?**
+
+A: Yes, as long as Docker-in-Docker is configured properly. For production container deployments, use external PostgreSQL instead.
+
+**Q: How much disk space does this use?**
+
+A: ~50-100MB for PostgreSQL image, ~50-200MB for data (grows with usage).
+
+## Next Steps
+
+- Learn about [database migrations](/migration/migration-guide)
+- Configure [environment variables](/reference/environment-variables)
+- Set up [production deployment](/deployment/overview)
+- Monitor with [`oxy status`](/reference/oxy-commands#oxy-status)
