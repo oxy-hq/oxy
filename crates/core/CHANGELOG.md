@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.3.21](https://github.com/oxy-hq/oxy-internal/compare/0.3.20...0.3.21) (2025-12-18)
+
+
+### <!-- 0 -->🚀 Features
+
+* add semantic explorer to ide ([#1423](https://github.com/oxy-hq/oxy-internal/issues/1423)) ([27f9602](https://github.com/oxy-hq/oxy-internal/commit/27f9602a28ff284adab2f98923f9e16fd2a6c096))
+* closes [#1352](https://github.com/oxy-hq/oxy-internal/issues/1352) refactor the base agent into agentic workflows ([#1407](https://github.com/oxy-hq/oxy-internal/issues/1407)) ([5a512cd](https://github.com/oxy-hq/oxy-internal/commit/5a512cda1ba0839e6f20582d9e1c0c7d315a1a27))
+* migrate from SQLite to PostgreSQL with new command `oxy start` ([#1425](https://github.com/oxy-hq/oxy-internal/issues/1425)) ([260b6ab](https://github.com/oxy-hq/oxy-internal/commit/260b6abf2905c1bc3585fd4a53fd47dc049e8f83))
+* rename workflows to automations and support .automation.yml ext… ([#1435](https://github.com/oxy-hq/oxy-internal/issues/1435)) ([1489de3](https://github.com/oxy-hq/oxy-internal/commit/1489de360620fc85c2c7263adcfba50b9e734882))
+* rename workflows to automations and support .automation.yml extension ([1489de3](https://github.com/oxy-hq/oxy-internal/commit/1489de360620fc85c2c7263adcfba50b9e734882))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* arg TimeoutLayer::with_status_code ([c0a37d7](https://github.com/oxy-hq/oxy-internal/commit/c0a37d789bda2a39acbae1726d85d181497ea934))
+
 ## [0.3.20](https://github.com/oxy-hq/oxy-internal/compare/0.3.19...0.3.20) (2025-12-11)
 
 

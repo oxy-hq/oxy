@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.21](https://github.com/oxy-hq/oxy-internal/compare/0.3.20...0.3.21) (2025-12-18)
+
+
+### <!-- 0 -->🚀 Features
+
+* migrate from SQLite to PostgreSQL with new command `oxy start` ([#1425](https://github.com/oxy-hq/oxy-internal/issues/1425)) ([260b6ab](https://github.com/oxy-hq/oxy-internal/commit/260b6abf2905c1bc3585fd4a53fd47dc049e8f83))
+
 ## [0.3.20](https://github.com/oxy-hq/oxy-internal/compare/0.3.19...0.3.20) (2025-12-11)
 
 
