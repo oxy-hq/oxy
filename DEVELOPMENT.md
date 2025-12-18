@@ -142,9 +142,59 @@ cargo build --release
 
 Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code of conduct and the process for submitting pull requests.
 
-## Database Setup
+## Database
 
-Oxy uses SQLite by default for development. The database file will be created automatically when you first run the application.
-Location is `~/.local/share/oxy/db.sqlite`. The location can be changed by setting `OXY_STATE_DIR` environment variable.
+Oxy uses PostgreSQL for data storage.
 
-For production deployments, you can configure other database backends through environment variables. The variable is `OXY_DATABASE_URL`.
+### Development Environment
+
+For local development, Oxy automatically starts an **embedded PostgreSQL instance**. No manual setup required!
+
+The embedded PostgreSQL data is stored in: `~/.local/share/oxy/postgres_data/`
+
+The location can be changed by setting the `OXY_STATE_DIR` environment variable.
+
+### Production/Custom PostgreSQL
+
+To use an external PostgreSQL database, set the `OXY_DATABASE_URL` environment variable:
+
+```bash
+export OXY_DATABASE_URL=postgresql://user:password@localhost:5432/oxy
+```
+
+### Running Migrations
+
+Migrations are run automatically on startup. To run manually:
+
+```bash
+cargo run --bin migration
+```
+
+### Migrating from SQLite
+
+If you have existing SQLite data from a previous version, use the migration tool.
+
+**Simple migration** (uses default locations):
+
+```bash
+# Migrates from ~/.local/share/oxy/db.sqlite to embedded PostgreSQL
+cargo run -p migration --features migration-tool --bin sqlite_to_postgres
+
+# Dry run first to check:
+cargo run -p migration --features migration-tool --bin sqlite_to_postgres -- --dry-run
+```
+
+**Custom migration** (specify source and/or target):
+
+```bash
+# Custom SQLite source, embedded PostgreSQL target
+cargo run -p migration --features migration-tool --bin sqlite_to_postgres -- --from sqlite:///path/to/old/db.sqlite
+
+# Custom PostgreSQL target
+cargo run -p migration --features migration-tool --bin sqlite_to_postgres -- --to postgresql://user:password@localhost:5432/oxy
+
+# Fully custom
+cargo run -p migration --features migration-tool --bin sqlite_to_postgres -- \
+  --from sqlite:///path/to/old/db.sqlite \
+  --to postgresql://user:password@localhost:5432/oxy
+```

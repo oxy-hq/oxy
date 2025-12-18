@@ -3,8 +3,11 @@ mod init;
 mod make;
 mod mcp;
 mod migrate;
+mod migrate_sqlite;
 mod seed;
 mod serve;
+mod start;
+mod status;
 
 use crate::adapters::checkpoint::types::RetryStrategy;
 use crate::adapters::connector::Connector;
@@ -265,11 +268,29 @@ enum SubCommand {
     Mcp(McpArgs),
     /// Migrate the database schema to the latest version
     Migrate,
-    /// Start the web application server with API endpoints
+    /// Start with Docker PostgreSQL (recommended)
     ///
-    /// Launch the full Oxy web interface with authentication,
-    /// database connectivity, and interactive query capabilities.
+    /// Launch PostgreSQL in Docker and start the Oxy web server.
+    /// Uses postgres:18-alpine container for modern PostgreSQL features.
+    /// Data persists in Docker volume 'oxy-postgres-data'.
+    Start(ServeArgs),
+    /// Start with SQLite (backward compatible)
+    ///
+    /// Launch the Oxy server with SQLite database (default).
+    /// SQLite is used for backward compatibility with existing installations.
+    /// For new installations or PostgreSQL features, use 'oxy start' instead.
+    /// To use external PostgreSQL, set OXY_DATABASE_URL environment variable.
     Serve(ServeArgs),
+    /// Show status of Oxy services and Docker containers
+    ///
+    /// Display the current status of PostgreSQL, Docker, and database
+    /// connectivity along with helpful troubleshooting commands.
+    Status,
+    /// Migrate data from SQLite to PostgreSQL
+    ///
+    /// Transfer your existing SQLite database to PostgreSQL.
+    /// Start PostgreSQL first using 'oxy start'.
+    MigrateSqlite(migrate_sqlite::MigrateSqliteArgs),
     /// Test and preview terminal color theme support
     ///
     /// Display color samples and theme information to verify
@@ -547,7 +568,7 @@ pub struct ServeArgs {
     readonly: bool,
     /// Force HTTP/2 only mode (disable HTTP/1.1)
     ///
-    /// When enabled, the server will only accept HTTP/2 connections (h2c).
+    /// When enabled, the server will only accept HTTP/2 connections over TLS.
     /// HTTP/1.1 requests will be rejected. Default supports both protocols.
     #[clap(long, default_value_t = false)]
     http2_only: bool,
@@ -798,7 +819,10 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             SubCommand::Sync(_) => "sync",
             SubCommand::Validate => "validate",
             SubCommand::Migrate => "migrate",
+            SubCommand::Start(_) => "start",
             SubCommand::Serve(_) => "serve",
+            SubCommand::Status => "status",
+            SubCommand::MigrateSqlite(_) => "migrate-sqlite",
             SubCommand::Mcp(_) => "mcp",
             SubCommand::SelfUpdate => "self-update",
             SubCommand::TestTheme => "test-theme",
@@ -1034,9 +1058,27 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                 println!("{}", "Migration completed successfully".success());
             }
         }
+        Some(SubCommand::Start(serve_args)) => {
+            if let Err(e) = start::start_database_and_server(serve_args).await {
+                eprintln!("{}", format!("Failed to start: {e}").error());
+                exit(1);
+            }
+        }
         Some(SubCommand::Serve(serve_args)) => {
             if let Err(e) = start_server_and_web_app(serve_args).await {
                 eprintln!("{}", format!("Server failed: {e}").error());
+                exit(1);
+            }
+        }
+        Some(SubCommand::Status) => {
+            if let Err(e) = status::show_status().await {
+                eprintln!("{}", format!("Failed to get status: {e}").error());
+                exit(1);
+            }
+        }
+        Some(SubCommand::MigrateSqlite(args)) => {
+            if let Err(e) = migrate_sqlite::run_migration(args).await {
+                eprintln!("{}", format!("Migration failed: {e}").error());
                 exit(1);
             }
         }

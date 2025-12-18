@@ -5,31 +5,26 @@
 
 services:
   # NOTE: we recommend building the app outside of Docker for development purpose, as it is faster
-  # app:
+  # oxy:
   #   build:
   #     context: .
   #     dockerfile: Dockerfile
-  #   container_name: oxy-app
-  #   command: ["oxy", "serve", "--port", "3000", "--http2-only"]
+  #     target: runtime
   #   ports:
   #     - "3000:3000"
-  #   environment:
-  #     - OXY_DATABASE_URL=postgresql://admin:password@postgres:5432/default
+  #   volumes:
+  #     - oxy-data:/var/lib/oxy/data
+  #     # Mount the examples folder as the working directory
+  #     - ./examples:/app:rw
   #   env_file:
   #     - .env
+  #   environment:
+  #     - OXY_STATE_DIR=/var/lib/oxy/data
+  #     # - OXY_DATABASE_URL=postgresql://admin:password@postgres:5432/default
+  #   working_dir: /app
   #   depends_on:
-  #     clickhouse:
-  #       condition: service_started
   #     postgres:
   #       condition: service_healthy
-  #   healthcheck:
-  #     test: ["CMD-SHELL", "curl -s http://localhost:3000 | grep -q '200 OK'"]
-  #     interval: 10s
-  #     timeout: 5s
-  #     retries: 3
-  #   restart: unless-stopped
-  #   volumes:
-  #     - app-data:/var/lib/oxy/data
 
   # clickhouse:
   #   image: clickhouse/clickhouse-server
@@ -67,6 +62,6 @@ services:
     restart: unless-stopped
 
 volumes:
-  app-data:
-  clickhouse-data:
+  # oxy-data:
+  # clickhouse-data:
   postgres-data:

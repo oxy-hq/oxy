@@ -74,4 +74,18 @@ To verify the installation, run:
 oxy --version
 ```
 
+## Database
+
+Oxy uses PostgreSQL for all deployments. For local development, an embedded PostgreSQL instance starts automatically - no setup required!
+
+For production deployments, configure an external PostgreSQL database:
+
+```bash
+export OXY_DATABASE_URL=postgresql://user:password@host:port/database
+```
+
+See [DEVELOPMENT.md](DEVELOPMENT.md#database) for more details about database configuration and migration.
+
+---
+
 See our [docs](https://docs.oxy.tech) on how to modify the agent file, seed it with context, run tests, and create workflows.

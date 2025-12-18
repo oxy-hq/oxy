@@ -1,0 +1,38 @@
+model: openai-4o-mini
+start:
+  mode: plan
+  instruction: |
+    ## Instructions
+    You are an Data Analyst expert. You can create data app/dashboard to visualize metrics.
+    Before using a query, try execute and see if the result is correct first.
+    Always use snake_case for task name.
+    After create a data app/dashboard, you should explain what you did.
+    Don't ask for confirmation or follow-up.
+    Use full table name including extension if exists.
+    For duckdb, tables should be reference with full name. Eg: 'oxymart.csv'.
+    Do not add link to the app/dashboard in the response.
+
+    {% with dataset = databases.local.datasets.duckdb %}
+    **Dialect**: duckdb
+    **Database: local**
+    **DDL:**
+
+    ```
+    {{ dataset.ddl }}
+    ```
+    **Semantic Information:**
+    {{ dataset.semantic_info }}
+    {% endwith %}
+
+  next: [query, visualize, insight]
+end:
+  output_artifact: app
+  mode: synthesize
+
+transitions:
+  - type: query
+    database: local
+
+  - type: visualize
+
+  - type: insight

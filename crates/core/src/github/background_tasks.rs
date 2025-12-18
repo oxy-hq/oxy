@@ -1,10 +1,10 @@
+use crate::errors::OxyError;
 use crate::github::types::*;
-use crate::{errors::OxyError, state_dir::get_state_dir};
 use apalis::prelude::*;
-use apalis_sql::{postgres::PostgresStorage, sqlite::SqliteStorage};
+use apalis_sql::postgres::PostgresStorage;
 use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
-use sqlx::{PgPool, SqlitePool};
+use sqlx::PgPool;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::info;
@@ -16,67 +16,35 @@ pub struct CloneRepositoryJob {
     pub task_id: String,
 }
 
-/// Storage wrapper to support both PostgreSQL and SQLite
-#[derive(Clone)]
-pub enum TaskStorage {
-    Postgres(PostgresStorage<CloneRepositoryJob>),
-    Sqlite(SqliteStorage<CloneRepositoryJob>),
-}
-
-impl TaskStorage {
-    /// Push a job to the storage
-    pub async fn push(
-        &mut self,
-        job: CloneRepositoryJob,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        /// Helper macro to reduce code duplication for push operations
-        macro_rules! push_job {
-            ($storage:expr, $job:expr) => {
-                $storage
-                    .push($job)
-                    .await
-                    .map(|_| ())
-                    .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
-            };
-        }
-
-        match self {
-            TaskStorage::Postgres(storage) => push_job!(storage, job),
-            TaskStorage::Sqlite(storage) => push_job!(storage, job),
-        }
-    }
-}
-
-/// Background task manager using Apalis for handling repository operations
+/// Background task manager using Apalis for handling repository operations with PostgreSQL
 pub struct BackgroundTaskManager {
-    storage: TaskStorage,
+    storage: PostgresStorage<CloneRepositoryJob>,
 }
 
 impl BackgroundTaskManager {
     /// Create a new background task manager
     pub async fn new() -> Result<Self, OxyError> {
-        let db_url = std::env::var("OXY_DATABASE_URL").unwrap_or_else(|_| {
-            let state_dir = get_state_dir();
-            format!("sqlite://{}/db.sqlite", state_dir.to_str().unwrap())
-        });
+        info!("Initializing background task manager with PostgreSQL");
 
-        let storage = if db_url.starts_with("postgres://") || db_url.starts_with("postgresql://") {
-            // Use PostgreSQL storage
-            let pool = PgPool::connect(&db_url).await.map_err(|e| {
-                OxyError::InitializationError(format!("Failed to connect to PostgreSQL: {e}"))
-            })?;
+        // Get database connection URL from environment
+        let db_url = std::env::var("OXY_DATABASE_URL").map_err(|_| {
+            OxyError::InitializationError(
+                "Background tasks require PostgreSQL. Use 'oxy start' or set OXY_DATABASE_URL."
+                    .to_string(),
+            )
+        })?;
 
-            let _ = PostgresStorage::setup(&pool).await;
-            TaskStorage::Postgres(PostgresStorage::new(pool))
-        } else {
-            // Use SQLite storage (default)
-            let pool = SqlitePool::connect(&db_url).await.map_err(|e| {
-                OxyError::InitializationError(format!("Failed to connect to SQLite: {e}"))
-            })?;
+        let pool = PgPool::connect(&db_url).await.map_err(|e| {
+            OxyError::InitializationError(format!(
+                "Failed to connect to PostgreSQL for background tasks: {e}"
+            ))
+        })?;
 
-            let _ = SqliteStorage::setup(&pool).await;
-            TaskStorage::Sqlite(SqliteStorage::new(pool))
-        };
+        PostgresStorage::setup(&pool).await.map_err(|e| {
+            OxyError::InitializationError(format!("Failed to setup PostgreSQL storage: {e}"))
+        })?;
+
+        let storage = PostgresStorage::new(pool);
 
         Ok(Self { storage })
     }
@@ -96,13 +64,14 @@ impl BackgroundTaskManager {
         self.storage
             .push(job)
             .await
+            .map(|_| ())
             .map_err(|e| OxyError::JobError(format!("Failed to enqueue clone job: {e}")))?;
 
         Ok(task_id)
     }
 
     /// Get the storage for use with Apalis worker
-    pub fn get_storage(&self) -> &TaskStorage {
+    pub fn get_storage(&self) -> &PostgresStorage<CloneRepositoryJob> {
         &self.storage
     }
 }

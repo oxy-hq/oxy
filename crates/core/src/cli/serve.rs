@@ -1,6 +1,7 @@
 use crate::cli::ServeArgs;
 use crate::config::constants::DEFAULT_API_KEY_HEADER;
 use crate::db::client::establish_connection;
+use crate::db::docker;
 use crate::errors::OxyError;
 use crate::theme::StyledText;
 use axum::handler::Handler;
@@ -32,6 +33,18 @@ static DIST: Dir = include_dir!("$CARGO_MANIFEST_DIR/dist");
 const ASSETS_CACHE_CONTROL: &str = "public, max-age=31536000, immutable";
 
 pub async fn start_server_and_web_app(args: ServeArgs) -> Result<(), OxyError> {
+    // Show hint about database being used
+    if std::env::var("OXY_DATABASE_URL").is_err() {
+        println!(
+            "{}",
+            "ℹ️  Using SQLite database (backward compatible mode)".tertiary()
+        );
+        println!(
+            "{}",
+            "   For PostgreSQL, use 'oxy start' or set OXY_DATABASE_URL\n".tertiary()
+        );
+    }
+
     run_database_migrations().await?;
 
     let _available_port = find_available_port(args.host.clone(), args.port).await?;
@@ -198,7 +211,7 @@ async fn serve_application(app: Router, args: ServeArgs) -> Result<(), OxyError>
 
     let protocol = if args.http2_only { "https" } else { "http" };
     let protocol_info = if args.http2_only {
-        " (HTTP/2 ONLY)"
+        " (HTTP/2 only)"
     } else {
         " (HTTP/1.1+HTTP/2)"
     };
@@ -209,7 +222,7 @@ async fn serve_application(app: Router, args: ServeArgs) -> Result<(), OxyError>
         protocol_info
     );
 
-    let shutdown = create_shutdown_signal();
+    let _shutdown = create_shutdown_signal();
 
     if args.http2_only {
         // If TLS cert/key files exist, use HTTPS+HTTP/2
@@ -246,17 +259,30 @@ async fn serve_application(app: Router, args: ServeArgs) -> Result<(), OxyError>
                 }
             }
         };
-        let result = axum_server::bind_rustls(socket_addr, config)
+
+        // Create handle for graceful shutdown with axum_server
+        let handle = axum_server::Handle::new();
+
+        // Spawn shutdown signal handler
+        let shutdown_handle = handle.clone();
+        tokio::spawn(async move {
+            create_shutdown_signal().await;
+            tracing::info!("Shutdown signal received, stopping server...");
+            shutdown_handle.shutdown();
+        });
+
+        axum_server::bind_rustls(socket_addr, config)
+            .handle(handle)
             .serve(app.into_make_service())
-            .await;
-        match result {
-            Ok(_) => Ok(()),
-            Err(e) => Err(OxyError::RuntimeError(format!("Server error: {}", e))),
-        }
+            .await
+            .map_err(|e| OxyError::RuntimeError(format!("Server error: {}", e)))
     } else {
         let listener = tokio::net::TcpListener::bind(socket_addr)
             .await
             .map_err(|e| OxyError::RuntimeError(format!("Failed to bind to address: {}", e)))?;
+
+        let shutdown = create_shutdown_signal();
+
         axum::serve(listener, app)
             .with_graceful_shutdown(shutdown)
             .await
@@ -283,7 +309,16 @@ async fn create_shutdown_signal() {
     let terminate = std::future::pending::<()>();
 
     tokio::select! {
-        _ = ctrl_c => {},
-        _ = terminate => {},
+        _ = ctrl_c => {
+            tracing::info!("Received shutdown signal, cleaning up...");
+        },
+        _ = terminate => {
+            tracing::info!("Received termination signal, cleaning up...");
+        },
+    }
+
+    // Cleanup Docker PostgreSQL if it's running
+    if let Err(e) = docker::stop_postgres_container().await {
+        tracing::warn!("Failed to cleanly stop Docker PostgreSQL: {}", e);
     }
 }
