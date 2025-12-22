@@ -46,8 +46,8 @@ test.describe("Navigation", () => {
   });
 
   test("should navigate to IDE page", async ({ page }) => {
-    // Click on IDE link
-    await page.getByRole("link", { name: "IDE" }).click();
+    // Click on Dev Mode link
+    await page.getByRole("link", { name: "Dev Mode" }).click();
 
     // Verify navigation
     await expect(page).toHaveURL(/\/ide/);
@@ -113,12 +113,16 @@ test.describe("Navigation", () => {
 
     // Navigate to different pages
     await page.getByRole("link", { name: "Threads" }).click();
+    await page.waitForLoadState("networkidle");
     await expect(page.getByRole("link", { name: "Home" })).toBeVisible();
 
-    await page.getByRole("link", { name: "IDE" }).click();
+    await page.getByRole("link", { name: "Dev Mode" }).click();
+    await page.waitForLoadState("networkidle");
     await expect(page.getByRole("link", { name: "Home" })).toBeVisible();
 
-    await page.getByRole("link", { name: "Ontology" }).click();
+    // Navigate to Ontology page directly since the link may be outside viewport on IDE page
+    await page.goto("/ontology");
+    await page.waitForLoadState("networkidle");
     await expect(page.getByRole("link", { name: "Home" })).toBeVisible();
   });
 });

@@ -14,13 +14,14 @@ export class ChatPage {
   readonly agentMessageContainers: Locator;
   readonly userMessageContainer: Locator;
   readonly followUpInput: Locator;
-  readonly askModeRadio: Locator;
-  readonly buildModeRadio: Locator;
-  readonly workflowModeRadio: Locator;
+  readonly askModeButton: Locator;
+  readonly buildModeButton: Locator;
+  readonly workflowModeButton: Locator;
 
   constructor(page: Page) {
     this.page = page;
-    this.questionInput = page.getByRole("textbox", { name: "Ask anything" });
+    // The textarea's aria-label changes based on mode, so we use a flexible matcher
+    this.questionInput = page.locator("textarea[name='question']");
     this.agentSelectorButton = page.getByTestId("agent-selector-button");
     this.workflowSelectorButton = page.getByTestId("workflow-selector-button");
     this.submitButton = page.getByTestId("chat-panel-submit-button");
@@ -36,9 +37,10 @@ export class ChatPage {
     this.followUpInput = page.getByRole("textbox", {
       name: "Ask a follow-up question...",
     });
-    this.askModeRadio = page.getByRole("radio", { name: "Ask" });
-    this.buildModeRadio = page.getByRole("radio", { name: "Build" });
-    this.workflowModeRadio = page.getByRole("radio", { name: "Workflow" });
+    // ToggleGroup with type="single" renders as radio buttons
+    this.askModeButton = page.getByRole("radio", { name: "Ask" });
+    this.buildModeButton = page.getByRole("radio", { name: "Build" });
+    this.workflowModeButton = page.getByRole("radio", { name: "Workflow" });
   }
 
   async askQuestion(
@@ -48,14 +50,12 @@ export class ChatPage {
   ) {
     // Switch mode if specified
     if (options?.mode === "Build") {
-      await this.buildModeRadio.click();
+      await this.buildModeButton.click();
     } else if (options?.mode === "Workflow") {
-      await this.workflowModeRadio.click();
+      await this.workflowModeButton.click();
 
       // Fill workflow title
-      await this.page
-        .getByRole("textbox", { name: "Enter a title for this" })
-        .fill(question);
+      await this.questionInput.fill(question);
 
       // Select workflow
       if (options.workflowName) {
@@ -68,14 +68,22 @@ export class ChatPage {
       await this.submitButton.click();
       return;
     } else if (options?.mode === "Ask") {
-      await this.askModeRadio.click();
+      await this.askModeButton.click();
     }
 
     // Fill question
     await this.questionInput.fill(question);
 
+    // Wait for agent selector to have loaded (button text should not be empty)
+    await expect(this.agentSelectorButton).not.toHaveText("");
+    await expect(this.agentSelectorButton).not.toContainText("undefined");
+
     // Select agent
     await this.agentSelectorButton.click();
+
+    // Wait for dropdown menu to be visible
+    await this.page.waitForTimeout(500);
+
     await this.page.getByRole("menuitemcheckbox", { name: agentName }).click();
 
     // Submit
@@ -143,11 +151,11 @@ export class ChatPage {
 
   async switchMode(mode: "Ask" | "Build" | "Workflow") {
     if (mode === "Ask") {
-      await this.askModeRadio.click();
+      await this.askModeButton.click();
     } else if (mode === "Build") {
-      await this.buildModeRadio.click();
+      await this.buildModeButton.click();
     } else if (mode === "Workflow") {
-      await this.workflowModeRadio.click();
+      await this.workflowModeButton.click();
     }
   }
 

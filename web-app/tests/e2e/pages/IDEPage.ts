@@ -5,12 +5,17 @@ export class IDEPage {
   readonly editor: Locator;
   readonly saveButton: Locator;
   readonly breadcrumb: Locator;
+  readonly filesModeButton: Locator;
+  readonly objectsModeButton: Locator;
 
   constructor(page: Page) {
     this.page = page;
     this.editor = page.locator(".monaco-editor");
     this.saveButton = page.getByTestId("ide-save-button");
     this.breadcrumb = page.getByTestId("ide-breadcrumb");
+    // IDE sidebar mode toggles (tabs, not buttons)
+    this.filesModeButton = page.getByRole("tab", { name: "Files view" });
+    this.objectsModeButton = page.getByRole("tab", { name: "Objects view" });
   }
 
   async goto() {
@@ -18,9 +23,16 @@ export class IDEPage {
   }
 
   async openFile(fileName: string) {
-    await this.page.getByRole("link", { name: fileName }).click();
+    // Click the IDE file link (using locator that matches href pattern)
+    const fileLink = this.page
+      .locator(`a[href*="/ide/"]:has-text("${fileName}")`)
+      .first();
+
+    await fileLink.click();
     await this.page.waitForURL(/\/ide\/.+/);
     await expect(this.editor).toBeVisible({ timeout: 10000 });
+    // Wait for breadcrumb to update (small delay to let UI catch up)
+    await this.page.waitForTimeout(500);
   }
 
   async expandFolder(folderName: string, knownFile?: string) {
@@ -131,7 +143,12 @@ export class IDEPage {
   async verifyBreadcrumb(filePath: string) {
     // The breadcrumb contains separators (icons) between path parts,
     // so we need to check each part separately or use containsText
-    for (const part of filePath.split("/")) {
+    // Wait for breadcrumb to update by checking for the first part
+    const parts = filePath.split("/");
+    await expect(this.breadcrumb).toContainText(parts[0], { timeout: 10000 });
+
+    // Then verify all parts are present
+    for (const part of parts) {
       await expect(this.breadcrumb).toContainText(part);
     }
   }
@@ -190,5 +207,70 @@ export class IDEPage {
     await this.page.keyboard.type(searchText);
     await this.page.keyboard.press("Tab");
     await this.page.keyboard.type(replaceText);
+  }
+
+  // IDE sidebar mode switching
+  async switchToFilesMode() {
+    await this.filesModeButton.click();
+    // Wait for mode to switch
+    await this.page.waitForTimeout(300);
+  }
+
+  async switchToObjectsMode() {
+    await this.objectsModeButton.click();
+    // Wait for mode to switch
+    await this.page.waitForTimeout(300);
+  }
+
+  async verifyFilesMode() {
+    await expect(this.page.getByText("Files")).toBeVisible();
+
+    // Wait for file tree to load - check for at least one folder or file
+    await this.page.waitForTimeout(500);
+
+    const hasWorkflowsFolder = await this.page
+      .getByRole("button", { name: "workflows", exact: true })
+      .isVisible()
+      .catch(() => false);
+    const hasGeneratedFolder = await this.page
+      .getByRole("button", { name: "generated", exact: true })
+      .isVisible()
+      .catch(() => false);
+    const hasExampleSqlFolder = await this.page
+      .getByRole("button", { name: "example_sql", exact: true })
+      .isVisible()
+      .catch(() => false);
+    const hasConfigFile = await this.page
+      .getByRole("link", { name: "config.yml" })
+      .first()
+      .isVisible()
+      .catch(() => false);
+
+    // At least one folder or file should be visible
+    expect(
+      hasWorkflowsFolder ||
+        hasGeneratedFolder ||
+        hasExampleSqlFolder ||
+        hasConfigFile,
+    ).toBeTruthy();
+  }
+
+  async verifyObjectsMode() {
+    await expect(this.page.getByText("Objects")).toBeVisible();
+    // In Objects mode, we should see grouped sections
+    const semanticLayerHeading = this.page.locator("text=Semantic Layer");
+    const automationsHeading = this.page.locator("text=Automations");
+    const agentsHeading = this.page.locator("text=Agents");
+    const appsHeading = this.page.locator("text=Apps");
+
+    // At least one of these groups should be visible
+    const visibleCount = await Promise.all([
+      semanticLayerHeading.isVisible().catch(() => false),
+      automationsHeading.isVisible().catch(() => false),
+      agentsHeading.isVisible().catch(() => false),
+      appsHeading.isVisible().catch(() => false),
+    ]).then((results) => results.filter(Boolean).length);
+
+    expect(visibleCount).toBeGreaterThan(0);
   }
 }

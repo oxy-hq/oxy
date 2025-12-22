@@ -6,6 +6,11 @@ test.describe("Home Page Chat Box Test", () => {
     await page.goto("/");
     // Wait for network to be idle to ensure backend API calls have completed
     await page.waitForLoadState("networkidle");
+
+    // Wait for ChatPanel to be visible
+    await expect(page.locator("textarea[name='question']")).toBeVisible({
+      timeout: 10000,
+    });
   });
 
   test("should be able to ask a question and get a response", async ({
@@ -115,10 +120,17 @@ test.describe("Home Page Chat Box Test", () => {
   test("should be able to select different agents", async ({ page }) => {
     const chatPage = new ChatPage(page);
 
+    // Wait for agent selector to have loaded
+    await expect(chatPage.agentSelectorButton).not.toHaveText("");
+    await expect(chatPage.agentSelectorButton).not.toContainText("undefined");
+
     // Click on agent selector
     await chatPage.agentSelectorButton.click();
 
-    // Verify multiple agents are available
+    // Wait for dropdown to open
+    await page.waitForTimeout(500);
+
+    // Verify multiple agents are available (update with actual agent names in your environment)
     await expect(
       page.getByRole("menuitemcheckbox", { name: "duckdb" }),
     ).toBeVisible();
@@ -180,27 +192,35 @@ test.describe("Home Page Chat Box Test", () => {
   }) => {
     const chatPage = new ChatPage(page);
 
-    // Verify Ask is selected by default
-    await expect(chatPage.askModeRadio).toBeChecked();
+    // Wait for mode buttons to be visible
+    await expect(chatPage.askModeButton).toBeVisible({ timeout: 10000 });
+
+    // Verify Ask is selected by default (radio button is checked)
+    await expect(chatPage.askModeButton).toBeChecked();
 
     // Switch to Build mode
     await chatPage.switchMode("Build");
-    await expect(chatPage.buildModeRadio).toBeChecked();
-    await expect(
-      page.getByRole("textbox", { name: "Enter anything you want to build" }),
-    ).toBeVisible();
+    await expect(chatPage.buildModeButton).toBeChecked();
+    await expect(chatPage.questionInput).toHaveAttribute(
+      "placeholder",
+      "Enter anything you want to build",
+    );
 
     // Switch to Workflow mode
     await chatPage.switchMode("Workflow");
-    await expect(chatPage.workflowModeRadio).toBeChecked();
-    await expect(
-      page.getByRole("textbox", { name: "Enter a title for this" }),
-    ).toBeVisible();
+    await expect(chatPage.workflowModeButton).toBeChecked();
+    await expect(chatPage.questionInput).toHaveAttribute(
+      "placeholder",
+      "Enter a title for this workflow run",
+    );
     await expect(chatPage.workflowSelectorButton).toBeVisible();
 
     // Switch back to Ask
     await chatPage.switchMode("Ask");
-    await expect(chatPage.askModeRadio).toBeChecked();
-    await expect(chatPage.questionInput).toBeVisible();
+    await expect(chatPage.askModeButton).toBeChecked();
+    await expect(chatPage.questionInput).toHaveAttribute(
+      "placeholder",
+      "Ask anything",
+    );
   });
 });

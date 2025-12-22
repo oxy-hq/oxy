@@ -405,7 +405,7 @@ const Sidebar = ({
   const { isReadOnly, project } = useCurrentProjectBranch();
   const projectId = project.id;
   const [viewMode, setViewMode] = React.useState<SidebarViewMode>(
-    SidebarViewMode.OBJECTS,
+    SidebarViewMode.FILES,
   );
 
   const { data, refetch, isPending } = useFileTree();
@@ -506,17 +506,19 @@ const Sidebar = ({
               <TabsList className="h-8">
                 <TabsTrigger
                   value={SidebarViewMode.OBJECTS}
-                  className="h-6 px-2"
+                  className="h-6 px-2 gap-1.5"
                   aria-label="Objects view"
                 >
                   <Layers2 className="w-4 h-4" />
+                  <span className="text-xs">Objects</span>
                 </TabsTrigger>
                 <TabsTrigger
                   value={SidebarViewMode.FILES}
-                  className="h-6 px-2"
+                  className="h-6 px-2 gap-1.5"
                   aria-label="Files view"
                 >
                   <Folder className="w-4 h-4" />
+                  <span className="text-xs">Files</span>
                 </TabsTrigger>
               </TabsList>
             </Tabs>

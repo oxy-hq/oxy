@@ -9,7 +9,7 @@
       "Bash(pnpm install:*)",
       "Bash(pnpm test:e2e:*)",
       "Bash(pnpm exec tsc:*)",
-      "Bash(pnpm exec playwright test:*)",
+      "Bash(pnpm exec playwright:*)",
       "Bash(oxy test:*)",
       "Bash(cargo run:*)",
       "Bash(ls:*)"
