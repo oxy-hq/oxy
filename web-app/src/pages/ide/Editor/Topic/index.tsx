@@ -243,7 +243,7 @@ const TopicEditor = () => {
       pathb64={pathb64}
       readOnly={isReadOnly}
       git={gitEnabled}
-      defaultDirection="vertical"
+      defaultDirection="horizontal"
       preview={<TopicPreview />}
     />
   );

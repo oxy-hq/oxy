@@ -9,8 +9,22 @@ import {
   SidebarMenuButton,
 } from "@/components/ui/shadcn/sidebar";
 import { FileTreeModel } from "@/types/file";
-import { Pencil, Trash2, File } from "lucide-react";
+import {
+  Pencil,
+  Trash2,
+  File,
+  Workflow,
+  AppWindow,
+  Eye,
+  BookOpen,
+  Bot,
+  Network,
+  FileCode,
+  Braces,
+  Table,
+} from "lucide-react";
 import React from "react";
+import { detectFileType, FileType } from "@/utils/fileTypes";
 import { SIDEBAR_REVEAL_FILE } from "../events";
 import { useLocation, Link } from "react-router-dom";
 import AlertDeleteDialog from "../AlertDeleteDialog";
@@ -18,6 +32,37 @@ import RenameNode from "../RenameNode";
 import { cn } from "@/libs/shadcn/utils";
 import ROUTES from "@/libs/utils/routes";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+
+// Helper to get icon for file type
+const getFileIcon = (path: string) => {
+  const fileType = detectFileType(path);
+  switch (fileType) {
+    case FileType.WORKFLOW:
+    case FileType.AUTOMATION:
+      return Workflow;
+    case FileType.AGENT:
+      return Bot;
+    case FileType.AGENTIC_WORKFLOW:
+      return Network;
+    case FileType.APP:
+      return AppWindow;
+    case FileType.VIEW:
+      return Eye;
+    case FileType.TOPIC:
+      return BookOpen;
+    case FileType.SQL:
+      return FileCode;
+    default:
+      // Check for JSON and CSV files
+      if (path.toLowerCase().endsWith(".json")) {
+        return Braces;
+      }
+      if (path.toLowerCase().endsWith(".csv")) {
+        return Table;
+      }
+      return File;
+  }
+};
 
 const FileNode = ({
   fileTree,
@@ -30,6 +75,7 @@ const FileNode = ({
   const projectId = project.id;
 
   const { pathname } = useLocation();
+  const FileIcon = getFileIcon(fileTree.path);
   const isActive = activePath
     ? activePath === fileTree.path
     : pathname ===
@@ -113,7 +159,7 @@ const FileNode = ({
               asChild
               isActive={isActive}
               className={cn(
-                "overflow-visible",
+                "overflow-visible text-muted-foreground hover:text-sidebar-foreground transition-colors duration-150 ease-in h-6 py-0.5",
                 isContextMenuOpen ? "border border-border" : "",
               )}
             >
@@ -126,7 +172,7 @@ const FileNode = ({
                 />
               ) : (
                 <Link to={fileUri}>
-                  <File />
+                  <FileIcon />
                   <span>{fileTree.name}</span>
                 </Link>
               )}

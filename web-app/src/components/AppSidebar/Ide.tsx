@@ -19,7 +19,7 @@ const Ide = () => {
       <SidebarMenuButton asChild isActive={isIdePage}>
         <Link to={ideUri}>
           <SquareTerminal />
-          <span>IDE</span>
+          <span>Dev Mode</span>
         </Link>
       </SidebarMenuButton>
     </SidebarMenuItem>

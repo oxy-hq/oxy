@@ -1,19 +1,21 @@
 import { useState } from "react";
 import { Card } from "@/components/ui/shadcn/card";
 import { Button } from "@/components/ui/shadcn/button";
-import { Github } from "lucide-react";
+import { Github, Home } from "lucide-react";
 import { BranchInfo } from "./BranchInfo";
 import { BranchSettings } from "./BranchSettings";
-import { SidebarTrigger } from "@/components/ui/shadcn/sidebar";
-import useSidebar from "@/components/ui/shadcn/sidebar-context";
 import useCurrentProject from "@/stores/useCurrentProject";
 import { useAuth } from "@/contexts/AuthContext";
+import { useNavigate } from "react-router-dom";
+import ROUTES from "@/libs/utils/routes";
+import useSidebar from "@/components/ui/shadcn/sidebar-context";
 
 export const Header = () => {
   const { authConfig } = useAuth();
   const { project } = useCurrentProject();
+  const { setOpen } = useSidebar();
+  const navigate = useNavigate();
   const [isBranchSettingOpen, setIsBranchSettingOpen] = useState(false);
-  const { open } = useSidebar();
 
   const renderContent = () => {
     if (!authConfig.cloud) {
@@ -40,9 +42,23 @@ export const Header = () => {
     );
   };
 
+  const homeRoute = project?.id ? ROUTES.PROJECT(project.id).HOME : ROUTES.ROOT;
+
+  const handleHomeClick = () => {
+    setOpen(true);
+    navigate(homeRoute);
+  };
+
   return (
-    <Card className="flex gap-2 p-2 border-b bg-sidebar-background shadow-none rounded-none ">
-      {!open && <SidebarTrigger />}
+    <Card className="flex gap-2 p-1 border-b bg-sidebar-background shadow-none rounded-none ">
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={handleHomeClick}
+        tooltip="Back to Home"
+      >
+        <Home className="w-4 h-4" />
+      </Button>
       <div className="flex items-center justify-between flex-1">
         {renderContent()}
       </div>

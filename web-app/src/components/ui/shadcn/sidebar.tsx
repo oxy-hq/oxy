@@ -372,7 +372,7 @@ function SidebarGroup({ className, ...props }: React.ComponentProps<"div">) {
     <div
       data-slot="sidebar-group"
       data-sidebar="group"
-      className={cn("relative flex w-full min-w-0 flex-col p-2", className)}
+      className={cn("relative flex w-full min-w-0 flex-col p-0", className)}
       {...props}
     />
   );
@@ -390,7 +390,7 @@ function SidebarGroupLabel({
       data-slot="sidebar-group-label"
       data-sidebar="group-label"
       className={cn(
-        "text-sidebar-foreground/70 ring-sidebar-ring flex h-8 shrink-0 items-center rounded-md px-2 text-xs font-medium outline-hidden transition-[margin,opacity] duration-200 ease-linear focus-visible:ring-2 [&>svg]:size-4 [&>svg]:shrink-0",
+        "text-sidebar-foreground/70 ring-sidebar-ring flex h-7 shrink-0 items-center rounded-md px-2 text-xs font-medium outline-hidden transition-[margin,opacity] duration-200 ease-linear focus-visible:ring-2 [&>svg]:size-4 [&>svg]:shrink-0",
         "group-data-[collapsible=icon]:-mt-8 group-data-[collapsible=icon]:opacity-0",
         className,
       )}
@@ -597,10 +597,12 @@ function SidebarMenuSkeleton({
   showIcon?: boolean;
 }) {
   // Random width between 50 to 90%.
-  const width = React.useMemo(() => {
+  // Note: Math.random() is safe here as it's only used for UI skeleton width,
+  // not for security purposes
+  const [width] = React.useState(() => {
     // eslint-disable-next-line sonarjs/pseudo-random
     return `${Math.floor(Math.random() * 40) + 50}%`;
-  }, []);
+  });
 
   return (
     <div
@@ -634,7 +636,7 @@ function SidebarMenuSub({ className, ...props }: React.ComponentProps<"ul">) {
       data-slot="sidebar-menu-sub"
       data-sidebar="menu-sub"
       className={cn(
-        "border-sidebar-border mx-3.5 flex min-w-0 translate-x-px flex-col gap-1 border-l px-2.5 py-0.5",
+        "border-sidebar-border mx-0 flex min-w-0 translate-x-px flex-col gap-1 border-l px-2 py-0.5",
         "group-data-[collapsible=icon]:hidden",
         className,
       )}
@@ -677,7 +679,7 @@ function SidebarMenuSubButton({
       data-size={size}
       data-active={isActive}
       className={cn(
-        "text-sidebar-foreground ring-sidebar-ring hover:bg-sidebar-accent hover:text-sidebar-accent-foreground active:bg-sidebar-accent active:text-sidebar-accent-foreground [&>svg]:text-sidebar-accent-foreground flex h-7 min-w-0 -translate-x-px items-center gap-2 overflow-hidden rounded-md px-2 outline-hidden focus-visible:ring-2 disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 [&>span:last-child]:truncate [&>svg]:size-4 [&>svg]:shrink-0",
+        "text-sidebar-foreground ring-sidebar-ring hover:bg-sidebar-accent hover:text-sidebar-accent-foreground active:bg-sidebar-accent active:text-sidebar-accent-foreground [&>svg]:text-sidebar-accent-foreground flex h-7 min-w-0 -translate-x-px items-center gap-2 overflow-hidden rounded-md px-2 py-1 outline-hidden focus-visible:ring-2 disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 [&>span:last-child]:truncate [&>svg]:size-4 [&>svg]:shrink-0",
         "data-[active=true]:bg-sidebar-accent data-[active=true]:text-sidebar-accent-foreground",
         size === "sm" && "text-xs",
         size === "md" && "text-sm",

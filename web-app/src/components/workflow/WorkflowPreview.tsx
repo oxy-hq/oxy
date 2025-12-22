@@ -55,6 +55,14 @@ export const WorkflowPreview = ({
   const relativePath = path;
   const [showOutput, setShowOutput] = React.useState(!!runId);
 
+  // Show output panel when runId becomes available
+  useEffect(() => {
+    if (runId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setShowOutput(true);
+    }
+  }, [runId]);
+
   const { data: workflowConfig, error } = useWorkflowConfig(path);
   const run = useWorkflowRun();
   const cancelRun = useCancelWorkflowRun();

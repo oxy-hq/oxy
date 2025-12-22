@@ -1,31 +1,89 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import { debounce } from "lodash";
-import EditorPageWrapper from "../components/EditorPageWrapper";
 import {
   WorkflowForm,
   WorkflowFormData,
 } from "@/components/workflow/WorkflowForm";
-import { WorkflowPreview } from "@/components/workflow/WorkflowPreview";
 import { usePreviewRefresh } from "../usePreviewRefresh";
 import YAML from "yaml";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/shadcn/tabs";
-import { Code, FileText, AlertCircle } from "lucide-react";
 import { useFileEditorContext } from "@/components/FileEditor/useFileEditorContext";
 import { useEditorContext } from "../contexts/useEditorContext";
-import {
-  Tooltip,
-  TooltipTrigger,
-  TooltipContent,
-} from "@/components/ui/shadcn/tooltip";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, useNavigate, useLocation } from "react-router-dom";
+import { useListWorkflowRuns } from "@/components/workflow/useWorkflowRun";
+import WorkflowOutputView from "./components/WorkflowOutputView";
+import WorkflowEditorView from "./components/WorkflowEditorView";
+import { WorkflowViewMode } from "./components/types";
+import { WorkflowPreview } from "@/components/workflow/WorkflowPreview";
 
 const WorkflowEditor = () => {
   const { pathb64, isReadOnly, gitEnabled } = useEditorContext();
-  const { refreshPreview, previewKey } = usePreviewRefresh();
+  const { refreshPreview } = usePreviewRefresh();
   const [searchParams] = useSearchParams();
-  const runId = searchParams.get("run") || undefined;
-  const [viewMode, setViewMode] = useState<"editor" | "form">("editor");
+  const navigate = useNavigate();
+  const location = useLocation();
+  const runIdFromParams = searchParams.get("run") || undefined;
+  const [viewMode, setViewMode] = useState<WorkflowViewMode>(
+    WorkflowViewMode.Output,
+  );
   const [validationError, setValidationError] = useState<string | null>(null);
+  const hasNavigatedRef = useRef(false);
+
+  // Get the workflow path for fetching runs
+  const workflowPath = useMemo(() => atob(pathb64 ?? ""), [pathb64]);
+
+  // Reset navigation flag when workflow path changes
+  useEffect(() => {
+    hasNavigatedRef.current = false;
+  }, [workflowPath]);
+
+  // Fetch the most recent workflow run
+  const { data: runsData, isPending: isRunsLoading } = useListWorkflowRuns(
+    workflowPath,
+    {
+      pageIndex: 0,
+      pageSize: 1,
+    },
+  );
+
+  // Determine the run ID to use
+  const runId = useMemo(() => {
+    if (runIdFromParams) return runIdFromParams;
+    // Auto-load the most recent run if available
+    if (runsData?.items && runsData.items.length > 0) {
+      return runsData.items[0].run_index.toString();
+    }
+    return undefined;
+  }, [runIdFromParams, runsData]);
+
+  // Auto-navigate to the most recent run when in output mode and no run is specified
+  useEffect(() => {
+    if (
+      viewMode === WorkflowViewMode.Output &&
+      !runIdFromParams &&
+      runId &&
+      !isRunsLoading &&
+      !hasNavigatedRef.current
+    ) {
+      hasNavigatedRef.current = true;
+      const newSearchParams = new URLSearchParams(location.search);
+      newSearchParams.set("run", runId);
+      navigate(
+        {
+          pathname: location.pathname,
+          search: newSearchParams.toString(),
+        },
+        { replace: true },
+      );
+    }
+  }, [
+    viewMode,
+    runIdFromParams,
+    runId,
+    isRunsLoading,
+    navigate,
+    location.pathname,
+    location.search,
+  ]);
 
   const validateContent = (value: string) => {
     try {
@@ -38,58 +96,41 @@ const WorkflowEditor = () => {
     }
   };
 
+  // Render full-screen output mode
+  if (viewMode === WorkflowViewMode.Output) {
+    return (
+      <WorkflowOutputView
+        viewMode={viewMode}
+        onViewModeChange={setViewMode}
+        workflowPath={workflowPath}
+        pathb64={pathb64}
+        runId={runId}
+      />
+    );
+  }
+
+  // Render editor or form mode with EditorPageWrapper
   return (
-    <EditorPageWrapper
-      headerActions={
-        <>
-          {validationError ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <AlertCircle className="w-4 h-4 cursor-pointer text-destructive" />
-              </TooltipTrigger>
-              <TooltipContent className="max-w-md">
-                <p className="text-sm">{validationError}</p>
-              </TooltipContent>
-            </Tooltip>
-          ) : (
-            <Tabs
-              value={viewMode}
-              onValueChange={(value: string) => {
-                if (value === "form" || value === "editor") {
-                  setViewMode(value);
-                }
-              }}
-            >
-              <TabsList className="h-8">
-                <TabsTrigger value="editor" className="h-6 px-2">
-                  <Code className="w-4 h-4" />
-                </TabsTrigger>
-                <TabsTrigger value="form" className="h-6 px-2">
-                  <FileText className="w-4 h-4" />
-                </TabsTrigger>
-              </TabsList>
-            </Tabs>
-          )}
-        </>
-      }
+    <WorkflowEditorView
+      viewMode={viewMode}
+      onViewModeChange={setViewMode}
+      workflowPath={workflowPath}
+      validationError={validationError}
       pathb64={pathb64}
-      readOnly={isReadOnly}
+      isReadOnly={isReadOnly}
       onSaved={refreshPreview}
-      preview={
-        <WorkflowPreview
-          key={previewKey + runId}
-          pathb64={pathb64}
-          runId={runId}
-          direction="vertical"
-        />
+      customEditor={
+        viewMode === WorkflowViewMode.Form ? <WorkflowFormWrapper /> : undefined
       }
-      customEditor={viewMode === "form" ? <WorkflowFormWrapper /> : undefined}
-      git={gitEnabled}
+      gitEnabled={gitEnabled}
       onChanged={(value) => {
-        if (viewMode === "editor") {
+        if (viewMode === WorkflowViewMode.Editor) {
           validateContent(value);
         }
       }}
+      preview={
+        <WorkflowPreview pathb64={pathb64} runId={runId} direction="vertical" />
+      }
     />
   );
 };

@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/shadcn/button";
 import ROUTES from "@/libs/utils/routes";
 import Workspaces from "./Workspaces";
 import Ontology from "./Ontology";
+import Ide from "./Ide";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -67,6 +68,7 @@ export function Header() {
             </Link>
           </SidebarMenuButton>
         </SidebarMenuItem>
+        <Ide />
         <Ontology />
         {authConfig.cloud && <Workspaces />}
       </SidebarMenu>

@@ -1,11 +1,12 @@
 {
   "permissions": {
     "allow": [
-      "Bash(cargo build:*)",
-      "Bash(cargo check:*)",
+      "Bash(cargo:*)",
       "Bash(cat:*)",
       "Bash(lsof:*)",
       "Bash(pkill:*)",
+      "Bash(pnpm build:*)",
+      "Bash(pnpm install:*)",
       "Bash(pnpm test:e2e:*)",
       "Bash(pnpm exec tsc:*)",
       "Bash(pnpm exec playwright test:*)",

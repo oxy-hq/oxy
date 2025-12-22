@@ -136,7 +136,7 @@ const DirNode = ({
                 setIsOpen(!isOpen);
               }}
               className={cn(
-                "overflow-visible",
+                "overflow-visible text-muted-foreground hover:text-sidebar-foreground transition-colors duration-150 ease-in h-6 py-0.5",
                 isContextMenuOpen ? "border border-border" : "",
               )}
             >
@@ -172,7 +172,10 @@ const DirNode = ({
                 )}
                 {fileTree.children?.map((f) => (
                   <SidebarMenuSubItem key={f.path}>
-                    <SidebarMenuSubButton asChild className="translate-none">
+                    <SidebarMenuSubButton
+                      asChild
+                      className="translate-none h-6 py-0.5"
+                    >
                       <FileTreeNode fileTree={f} activePath={activePath} />
                     </SidebarMenuSubButton>
                   </SidebarMenuSubItem>
