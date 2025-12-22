@@ -34,7 +34,7 @@ impl Executable<CreateDataAppInput> for CreateDataAppExecutable {
 
         let config_manager = &execution_context.project.config_manager;
 
-        // Validate the app config
+        // Validate the app config and parameters
         let validation_context = ValidationContext {
             config: config_manager.get_config().clone(),
             metadata: Some(ValidationContextMetadata::DataApp(
@@ -43,6 +43,11 @@ impl Executable<CreateDataAppInput> for CreateDataAppExecutable {
                 },
             )),
         };
+
+        // Validate parameters to prevent path traversal attacks
+        param
+            .validate_with(&validation_context)
+            .map_err(|e| OxyError::AgentError(format!("Invalid parameters: {e}")))?;
 
         param
             .app_config
