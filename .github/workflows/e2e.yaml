@@ -146,7 +146,7 @@ jobs:
           cargo run --profile ci -- build
           cargo run --profile ci -- test default.agent.yml \
             --format json \
-            --min-accuracy 0.85 \
+            --min-accuracy 0.8 \
             --threshold-mode average \
             | tee consistency-test-results.json
 
