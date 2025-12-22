@@ -16,7 +16,7 @@ pub use variables::Variables;
 
 use super::validate::{AgentValidationContext, validate_model, validate_task};
 use crate::adapters::secrets::SecretsManager;
-use crate::config::validate::validate_optional_private_key_path;
+use crate::config::validate::validate_file_path;
 use crate::config::validate::{
     ValidationContext, validate_agent_exists, validate_consistency_prompt,
     validate_database_exists, validate_env_var, validate_omni_integration_exists,
@@ -863,15 +863,56 @@ pub struct DuckDB {
 
 #[derive(Serialize, Deserialize, Debug, Validate, Clone, JsonSchema)]
 #[garde(context(ValidationContext))]
+#[serde(untagged)] // Consider using tagged enum here if migrations are possible
+pub enum SnowflakeAuthType {
+    Password {
+        #[garde(length(min = 1))]
+        password: String,
+    },
+    PasswordVar {
+        #[garde(length(min = 1))]
+        password_var: String,
+    },
+    PrivateKey {
+        #[garde(custom(validate_file_path))]
+        private_key_path: PathBuf,
+    },
+    BrowserAuth {
+        #[serde(default = "default_snowflake_browser_timeout")]
+        #[garde(skip)]
+        browser_timeout_secs: u64, // in seconds
+        #[garde(skip)]
+        cache_dir: Option<PathBuf>,
+    },
+}
+
+pub fn default_snowflake_browser_timeout() -> u64 {
+    120
+}
+
+impl SnowflakeAuthType {
+    pub fn get_password(&self) -> Option<&String> {
+        match self {
+            SnowflakeAuthType::Password { password, .. } => Some(password),
+            _ => None,
+        }
+    }
+
+    pub fn get_password_var(&self) -> Option<&String> {
+        match self {
+            SnowflakeAuthType::PasswordVar { password_var, .. } => Some(password_var),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Validate, Clone, JsonSchema)]
+#[garde(context(ValidationContext))]
 pub struct Snowflake {
     #[garde(skip)]
     pub account: String,
     #[garde(skip)]
     pub username: String,
-    #[garde(skip)]
-    pub password: Option<String>,
-    #[garde(skip)]
-    pub password_var: Option<String>,
     #[garde(skip)]
     pub warehouse: String,
     #[garde(skip)]
@@ -880,9 +921,9 @@ pub struct Snowflake {
     pub schema: Option<String>,
     #[garde(skip)]
     pub role: Option<String>,
-    #[garde(custom(validate_optional_private_key_path))]
-    #[serde(default)]
-    pub private_key_path: Option<PathBuf>,
+    #[serde(flatten)]
+    #[garde(dive)]
+    pub auth_type: SnowflakeAuthType,
     #[garde(skip)]
     #[serde(default)]
     pub datasets: HashMap<String, Vec<String>>,
@@ -892,29 +933,11 @@ pub struct Snowflake {
 }
 
 impl Snowflake {
-    /// Validates that the Snowflake configuration has proper authentication configured
-    pub fn validate_auth(&self) -> Result<(), OxyError> {
-        let has_private_key = self.private_key_path.is_some();
-        let has_password_var = self.password_var.is_some();
-        let has_password = self.password.as_ref().is_some_and(|p| !p.is_empty());
-
-        if !has_private_key && !has_password_var && !has_password {
-            return Err(OxyError::ConfigurationError(
-                "Snowflake configuration must have either 'private_key_path' or 'password_var' (or 'password') configured".to_string()
-            ));
-        }
-
-        Ok(())
-    }
-
     pub async fn get_password(&self, secret_manager: &SecretsManager) -> Result<String, OxyError> {
-        // First validate that we have proper auth configuration
-        self.validate_auth()?;
-
         secret_manager
             .resolve_config_value(
-                self.password.as_deref(),
-                self.password_var.as_deref(),
+                self.auth_type.get_password().as_deref().map(|x| x.as_str()),
+                self.auth_type.get_password_var().map(|x| x.as_str()),
                 "Snowflake password",
                 None,
             )
@@ -1009,7 +1032,7 @@ impl Database {
             }
             DatabaseType::Snowflake(sf) => {
                 if sf.datasets.is_empty() {
-                    HashMap::from_iter([("CORE".to_string(), vec!["*".to_string()])]) // Default to CORE schema
+                    HashMap::from_iter([("".to_string(), vec!["*".to_string()])]) // Default to CORE schema
                 } else {
                     sf.datasets.clone()
                 }

@@ -1,3 +1,5 @@
+use uuid::Uuid;
+
 use crate::{
     adapters::secrets::{
         SecretsDatabaseStorage, SecretsStorage, environment::SecretsEnvironmentStorage,
@@ -28,6 +30,21 @@ impl SecretsManager {
 
     pub async fn resolve_secret(&self, secret_name: &str) -> Result<Option<String>, OxyError> {
         self.storage.resolve_secret(secret_name).await
+    }
+
+    pub async fn create_secret(
+        &self,
+        secret_name: &str,
+        secret_value: &str,
+        created_by: Uuid,
+    ) -> Result<(), OxyError> {
+        self.storage
+            .create_secret(secret_name, secret_value, created_by)
+            .await
+    }
+
+    pub async fn remove_secret(&self, secret_name: &str) -> Result<(), OxyError> {
+        self.storage.remove_secret(secret_name).await
     }
 
     /// Resolve a config value from either a direct value or an environment variable.

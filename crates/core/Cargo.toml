@@ -84,6 +84,7 @@ pulldown-cmark = "0.13"
 pyo3 = { version = "=0.26.0", features = ["experimental-async", "extension-module"] }
 rand = "0.8"
 schemars = { version = "0.8.22", features = ["derive", "impl_json_schema"] }
+scopeguard = "1.2.0"
 sea-orm = { workspace = true }
 serde = { version = "1.0", features = ["derive"] }
 serde_arrow = { version = "0.13.7", features = ["arrow-54"] }
@@ -109,7 +110,7 @@ reqwest = { version = "0.12.26" }
 secrecy = "0.10.3"
 fxhash = "0.2.1"
 deser-incomplete = "0.1.2"
-snowflake-api = "0.11.0"
+snowflake-api = { git = "https://github.com/oxy-hq/snowflake-rs.git", tag = "v0.11.3-browser-auth" }
 rmcp = {version = "0.8.5", features = ["server", "transport-sse-server", "transport-io"]}
 serde_with = "3.16.1"
 # we use chrono::DateTimeWithTimeZone, which is not currently supported by utoipa

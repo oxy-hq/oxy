@@ -5,9 +5,11 @@ use arrow::record_batch::RecordBatch;
 use itertools::Itertools;
 use snowflake_api::{QueryResult, SnowflakeApi};
 use std::sync::Arc;
+use tokio::sync::mpsc;
 
 use crate::adapters::secrets::SecretsManager;
 use crate::adapters::session_filters::{FilterProcessor, SessionFilters};
+use crate::config::model::{ConnectionOverride, SnowflakeAuthType};
 use crate::config::{
     ConfigManager,
     model::{ConnectionOverrides, Snowflake as SnowflakeConfig, SnowflakeConnectionOverride},
@@ -25,6 +27,7 @@ pub(super) struct Snowflake {
     pub config_manager: ConfigManager,
     pub filters: Option<SessionFilters>,
     pub overrides: Option<SnowflakeConnectionOverride>,
+    pub sso_url_sender: Option<mpsc::Sender<String>>,
 }
 
 impl Snowflake {
@@ -39,6 +42,7 @@ impl Snowflake {
             config_manager,
             filters: None,
             overrides: None,
+            sso_url_sender: None,
         }
     }
 
@@ -53,17 +57,11 @@ impl Snowflake {
     /// Returns an error if a ClickHouse override is provided for a Snowflake database.
     pub fn with_overrides(
         mut self,
-        database_ref: &str,
-        connections: Option<ConnectionOverrides>,
+        connections: Option<ConnectionOverride>,
     ) -> Result<Self, OxyError> {
-        if let Some(ovr) = connections
-            .as_ref()
-            .and_then(|c| c.get(database_ref))
-            .cloned()
-        {
+        if let Some(ovr) = connections {
             let sf: SnowflakeConnectionOverride = ovr.try_into()?;
             tracing::info!(
-                database = %database_ref,
                 has_database_override = sf.database.is_some(),
                 has_schema_override = sf.schema.is_some(),
                 has_warehouse_override = sf.warehouse.is_some(),
@@ -73,6 +71,12 @@ impl Snowflake {
             self.overrides = Some(sf);
         }
         Ok(self)
+    }
+
+    /// Set the SSO URL sender for browser authentication
+    pub fn with_sso_url_sender(mut self, sender: mpsc::Sender<String>) -> Self {
+        self.sso_url_sender = Some(sender);
+        self
     }
 
     /// Build SET statements for session variables from filters
@@ -147,16 +151,8 @@ impl Snowflake {
 
         Ok(statements)
     }
-}
 
-impl Engine for Snowflake {
-    async fn run_query_with_limit(
-        &self,
-        query: &str,
-        _dry_run_limit: Option<u64>,
-    ) -> Result<(Vec<RecordBatch>, SchemaRef), OxyError> {
-        tracing::debug!("🔍 Snowflake query: {}", query);
-
+    async fn get_connection(&self) -> Result<(SnowflakeApi, String, Vec<String>), OxyError> {
         // Determine warehouse, database, schema, account from config with potential overrides
         let warehouse = self
             .overrides
@@ -199,64 +195,181 @@ impl Engine for Snowflake {
         }
 
         let config = self.config.clone();
-        let api = if let Some(private_key_path) = &config.private_key_path {
-            tracing::debug!(
-                "🔐 Snowflake: Using private key authentication from: {}",
-                private_key_path.display()
-            );
-            let private_key_path = self
-                .config_manager
-                .resolve_file(private_key_path)
-                .await
-                .map_err(|err| {
-                    OxyError::ConfigurationError(format!(
-                        "Failed to resolve private key path: {}",
-                        err
-                    ))
-                })?;
-            // Use private key authentication
-            let private_key_content = std::fs::read_to_string(private_key_path).map_err(|err| {
-                OxyError::ConfigurationError(format!("Failed to read private key file: {}", err))
-            })?;
+        let api = match &config.auth_type {
+            SnowflakeAuthType::BrowserAuth {
+                browser_timeout_secs,
+                cache_dir,
+            } => {
+                tracing::info!("🔐 Snowflake: Using browser-based authentication");
 
-            SnowflakeApi::with_certificate_auth(
-                account,
-                Some(warehouse),
-                Some(database),
-                schema,
-                &config.username,
-                config.role.as_deref(),
-                &private_key_content,
-            )
-            .map_err(|err| {
-                tracing::error!(
-                    "❌ Snowflake: Failed to create connection with private key: {}",
-                    err
+                // Prepare the callback if we have a sender
+                let sso_sender = self.sso_url_sender.clone();
+                let callback = sso_sender.map(|sender| {
+                    Arc::new(move |url: String| {
+                        tracing::info!("📡 Snowflake: SSO URL generated: {}", url);
+                        // Use try_send which is non-blocking and synchronous
+                        if let Err(e) = sender.try_send(url) {
+                            tracing::error!("Failed to send SSO URL: {}", e);
+                        }
+                    }) as Arc<dyn Fn(String) + Send + Sync>
+                });
+
+                SnowflakeApi::with_externalbrowser_auth_full(
+                    account,
+                    Some(warehouse),
+                    Some(database),
+                    schema,
+                    &config.username,
+                    config.role.as_deref(),
+                    *browser_timeout_secs,
+                    true,
+                    cache_dir.clone(),
+                    callback,
+                )
+                .map_err(|err| {
+                    tracing::error!(
+                        "❌ Snowflake: Failed to create connection with browser auth: {}",
+                        err
+                    );
+                    connector_internal_error(CREATE_CONN, &err)
+                })?
+            }
+            SnowflakeAuthType::PrivateKey { private_key_path } => {
+                tracing::info!(
+                    "🔐 Snowflake: Using private key authentication from: {}",
+                    private_key_path.display()
                 );
-                connector_internal_error(CREATE_CONN, &err)
-            })?
-        } else {
-            tracing::debug!("🔑 Snowflake: Using password authentication");
-            // Use password authentication
-            SnowflakeApi::with_password_auth(
-                account,
-                Some(warehouse),
-                Some(database),
-                schema,
-                &config.username,
-                config.role.as_deref(),
-                &config.get_password(&self.secret_manager).await?,
-            )
-            .map_err(|err| {
-                tracing::error!(
-                    "❌ Snowflake: Failed to create connection with password: {}",
-                    err
-                );
-                connector_internal_error(CREATE_CONN, &err)
-            })?
+                let private_key_path = self
+                    .config_manager
+                    .resolve_file(private_key_path)
+                    .await
+                    .map_err(|err| {
+                        OxyError::ConfigurationError(format!(
+                            "Failed to resolve private key path: {}",
+                            err
+                        ))
+                    })?;
+                // Use private key authentication
+                let private_key_content =
+                    std::fs::read_to_string(private_key_path).map_err(|err| {
+                        OxyError::ConfigurationError(format!(
+                            "Failed to read private key file: {}",
+                            err
+                        ))
+                    })?;
+
+                SnowflakeApi::with_certificate_auth(
+                    account,
+                    Some(warehouse),
+                    Some(database),
+                    schema,
+                    &config.username,
+                    config.role.as_deref(),
+                    &private_key_content,
+                )
+                .map_err(|err| {
+                    tracing::error!(
+                        "❌ Snowflake: Failed to create connection with private key: {}",
+                        err
+                    );
+                    connector_internal_error(CREATE_CONN, &err)
+                })?
+            }
+            SnowflakeAuthType::Password { .. } | SnowflakeAuthType::PasswordVar { .. } => {
+                tracing::info!("🔑 Snowflake: Using password authentication");
+                // Use password authentication
+                SnowflakeApi::with_password_auth(
+                    account,
+                    Some(warehouse),
+                    Some(database),
+                    schema,
+                    &config.username,
+                    config.role.as_deref(),
+                    &config.get_password(&self.secret_manager).await?,
+                )
+                .map_err(|err| {
+                    tracing::error!(
+                        "❌ Snowflake: Failed to create connection with password: {}",
+                        err
+                    );
+                    connector_internal_error(CREATE_CONN, &err)
+                })?
+            }
         };
 
+        api.authenticate().await.map_err(|err| {
+            tracing::error!(
+                database = %database,
+                account = %account,
+                "❌ Snowflake: Authentication failed: {}",
+                err
+            );
+            connector_internal_error(CREATE_CONN, &err)
+        })?;
         tracing::debug!("✅ Snowflake: Connection established successfully");
+
+        // Explicitly set role, warehouse, and database for the session
+        // Even though these are passed during initialization, explicitly setting them
+        // ensures they're active for the current session, especially with browser auth
+        if let Some(role) = &config.role {
+            let use_role_stmt = format!("USE ROLE {}", role);
+            tracing::info!(
+                role = %role,
+                "⚡ Snowflake: Setting session role"
+            );
+            api.exec(&use_role_stmt).await.map_err(|err| {
+                tracing::error!(
+                    role = %role,
+                    error = %err,
+                    "❌ Snowflake: Failed to set role"
+                );
+                connector_internal_error(EXECUTE_QUERY, &err)
+            })?;
+        }
+
+        let use_warehouse_stmt = format!("USE WAREHOUSE {}", warehouse);
+        tracing::info!(
+            warehouse = %warehouse,
+            "⚡ Snowflake: Setting session warehouse"
+        );
+        api.exec(&use_warehouse_stmt).await.map_err(|err| {
+            tracing::error!(
+                warehouse = %warehouse,
+                error = %err,
+                "❌ Snowflake: Failed to set warehouse"
+            );
+            connector_internal_error(EXECUTE_QUERY, &err)
+        })?;
+
+        let use_database_stmt = format!("USE DATABASE {}", database);
+        tracing::info!(
+            database = %database,
+            "⚡ Snowflake: Setting session database"
+        );
+        api.exec(&use_database_stmt).await.map_err(|err| {
+            tracing::error!(
+                database = %database,
+                error = %err,
+                "❌ Snowflake: Failed to set database"
+            );
+            connector_internal_error(EXECUTE_QUERY, &err)
+        })?;
+
+        if let Some(schema_name) = schema {
+            let use_schema_stmt = format!("USE SCHEMA {}", schema_name);
+            tracing::info!(
+                schema = %schema_name,
+                "⚡ Snowflake: Setting session schema"
+            );
+            api.exec(&use_schema_stmt).await.map_err(|err| {
+                tracing::error!(
+                    schema = %schema_name,
+                    error = %err,
+                    "❌ Snowflake: Failed to set schema"
+                );
+                connector_internal_error(EXECUTE_QUERY, &err)
+            })?;
+        }
 
         // Build filter SET statements if filters are present
         let filter_statements = self.build_filter_statements(database)?;
@@ -292,6 +405,18 @@ impl Engine for Snowflake {
         } else {
             tracing::debug!("⚡ Snowflake: No filters to apply, executing query directly");
         }
+        Ok((api, database.to_string(), filter_statements))
+    }
+}
+
+impl Engine for Snowflake {
+    async fn run_query_with_limit(
+        &self,
+        query: &str,
+        _dry_run_limit: Option<u64>,
+    ) -> Result<(Vec<RecordBatch>, SchemaRef), OxyError> {
+        tracing::debug!("🔍 Snowflake query: {}", query);
+        let (api, database, filter_statements) = self.get_connection().await?;
 
         // Execute the actual query (session variables are already set)
         tracing::debug!("⚡ Snowflake: Executing main query...");

@@ -88,9 +88,10 @@ pub struct SnowflakeConfig {
     pub schema: Option<String>,
     pub role: Option<String>,
     pub private_key_path: Option<String>,
+    pub auth_mode: Option<String>, // "password", "browser", or "private_key"
 }
 
-#[derive(Deserialize, ToSchema)]
+#[derive(Deserialize, ToSchema, Debug)]
 pub struct WarehouseConfig {
     pub r#type: String,
     pub name: Option<String>,
@@ -177,6 +178,7 @@ impl WarehouseConfig {
                 schema: None,
                 role: None,
                 private_key_path: None,
+                auth_mode: None,
             }
         })
     }

@@ -1,16 +1,33 @@
+use crate::adapters::connector::Connector;
 use crate::api::middlewares::project::{ProjectManagerExtractor, ProjectPath};
+use crate::config::model::{DatabaseType, SnowflakeAuthType};
 use crate::{
     auth::extractor::AuthenticatedUserExtractor,
     cli::clean::{clean_all, clean_cache, clean_database_folder, clean_vectors},
-    service::sync::sync_databases,
+    db::client::establish_connection,
+    service::{
+        project::{
+            database_config::DatabaseConfigBuilder,
+            models::{WarehouseConfig, WarehousesFormData},
+        },
+        sync::sync_databases,
+    },
 };
 use axum::{
     extract::{Json, Path, Query},
     http::StatusCode,
+    response::{
+        IntoResponse, Response,
+        sse::{KeepAlive, Sse},
+    },
 };
+use scopeguard::{ScopeGuard, guard};
+use sea_orm::TransactionTrait;
 use serde::de::{self, Deserializer};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::collections::HashMap;
+use tokio::sync::mpsc;
 use utoipa::ToSchema;
 #[derive(Serialize, ToSchema)]
 pub struct DatabaseInfo {
@@ -223,4 +240,344 @@ pub async fn clean_data(
         tracing::error!("{}", error_message);
         Err(StatusCode::INTERNAL_SERVER_ERROR)
     }
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct CreateDatabaseConfigResponse {
+    pub success: bool,
+    pub message: String,
+    pub databases_added: Vec<String>,
+}
+
+/// Creates database configurations and updates the config.yml file
+#[utoipa::path(
+    post,
+    path = "/projects/{project_id}/databases",
+    request_body = WarehousesFormData,
+    params(
+        ("project_id" = Uuid, Path, description = "Project ID")
+    ),
+    responses(
+        (status = 201, description = "Database configurations created successfully", body = CreateDatabaseConfigResponse),
+        (status = 400, description = "Bad request - validation failed"),
+        (status = 409, description = "Conflict - database with same name already exists"),
+        (status = 500, description = "Internal server error")
+    ),
+    security(
+        ("ApiKey" = [])
+    ),
+    tag = "Databases"
+)]
+pub async fn create_database_config(
+    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    Path(ProjectPath { project_id }): Path<ProjectPath>,
+    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
+    Json(warehouses_form): Json<WarehousesFormData>,
+) -> Result<Response, StatusCode> {
+    // Get the project path from the config manager
+    let repo_path = project_manager.config_manager.project_path();
+
+    tracing::info!(
+        "Creating database configurations {:?}",
+        warehouses_form.warehouses
+    );
+    // Build database configurations
+    let databases = DatabaseConfigBuilder::build_configs(
+        &warehouses_form,
+        repo_path,
+        user.id,
+        &project_manager.secrets_manager,
+    )
+    .await?;
+
+    // Collect database names for response
+    let database_names: Vec<String> = databases.iter().map(|db| db.name.clone()).collect();
+
+    // Add databases to the config and write to config.yml
+    match project_manager
+        .config_manager
+        .add_databases(databases)
+        .await
+    {
+        Ok(_) => {
+            let response = CreateDatabaseConfigResponse {
+                success: true,
+                message: format!(
+                    "{} database configuration(s) created successfully",
+                    database_names.len()
+                ),
+                databases_added: database_names,
+            };
+            Ok((StatusCode::CREATED, Json(response)).into_response())
+        }
+        Err(e) => {
+            tracing::error!("Failed to add databases to config: {}", e);
+
+            // Check if it's a duplicate database error
+            if e.to_string().contains("already exists") {
+                Ok((
+                    StatusCode::CONFLICT,
+                    Json(json!({
+                        "success": false,
+                        "error": e.to_string()
+                    })),
+                )
+                    .into_response())
+            } else {
+                Ok((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({
+                        "success": false,
+                        "error": format!("Failed to update configuration: {}", e)
+                    })),
+                )
+                    .into_response())
+            }
+        }
+    }
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct TestDatabaseConnectionRequest {
+    pub warehouse: WarehouseConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct TestDatabaseConnectionResponse {
+    pub success: bool,
+    pub message: String,
+    pub connection_time_ms: Option<u64>,
+    pub error_details: Option<String>,
+}
+
+/// Connection test event types for SSE streaming
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ConnectionTestEvent {
+    Progress {
+        message: String,
+    },
+    BrowserAuthRequired {
+        sso_url: String,
+        message: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        timeout_secs: Option<u64>,
+    },
+    Complete {
+        result: TestDatabaseConnectionResponse,
+    },
+}
+
+/// Test a database connection with real-time progress via SSE
+#[utoipa::path(
+    post,
+    path = "/projects/{project_id}/databases/test-connection",
+    request_body = TestDatabaseConnectionRequest,
+    params(
+        ("project_id" = uuid::Uuid, Path, description = "Project ID")
+    ),
+    responses(
+        (status = 200, description = "Connection test stream", content_type = "text/event-stream"),
+    ),
+    security(
+        ("ApiKey" = [])
+    ),
+    tag = "Databases"
+)]
+pub async fn test_database_connection(
+    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    Path(ProjectPath { project_id }): Path<ProjectPath>,
+    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
+    Json(request): Json<TestDatabaseConnectionRequest>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let (tx, rx) = mpsc::channel::<ConnectionTestEvent>(100);
+    // Build temp database config
+    let temp_db_name = format!("test_conn_{}", uuid::Uuid::new_v4());
+    let repo_path = project_manager.config_manager.project_path();
+
+    let database_config = match DatabaseConfigBuilder::build_configs(
+        &WarehousesFormData {
+            warehouses: vec![WarehouseConfig {
+                r#type: request.warehouse.r#type.clone(),
+                name: Some(temp_db_name.clone()),
+                config: request.warehouse.config,
+            }],
+        },
+        repo_path,
+        user.id,
+        &project_manager.secrets_manager,
+    )
+    .await
+    {
+        Ok(config) => config,
+        Err(_) => {
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    };
+
+    if database_config.is_empty() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    tokio::spawn(async move {
+        let start_time = std::time::Instant::now();
+
+        // Progress: Start
+        let _ = tx
+            .send(ConnectionTestEvent::Progress {
+                message: "Initiating connection test...".to_string(),
+            })
+            .await;
+
+        // Set up scope guard to clean up secrets after testing
+        let secret_name = format!("{}_PASSWORD", temp_db_name.to_uppercase());
+        let secrets_manager = project_manager.secrets_manager.clone();
+        let _cleanup_guard = guard((), move |_| {
+            let secret_name = secret_name.clone();
+            let _ = tokio::task::block_in_place(|| {
+                tokio::runtime::Handle::current().block_on(async move {
+                    tracing::info!("Cleaning up temporary secret: {}", secret_name);
+                    // Delete the temporary secret
+                    secrets_manager
+                        .remove_secret(&secret_name)
+                        .await
+                        .unwrap_or_else(|e| {
+                            tracing::error!(
+                                "Failed to delete temporary secret {}: {}",
+                                secret_name,
+                                e
+                            );
+                        });
+                })
+            });
+        });
+
+        let db_config = &database_config[0];
+
+        let _ = tx
+            .send(ConnectionTestEvent::Progress {
+                message: "Creating connector...".to_string(),
+            })
+            .await;
+
+        // Create SSO URL channel
+        let (sso_tx, mut sso_rx) = mpsc::channel::<String>(1);
+
+        // Check if Snowflake browser auth
+        let is_snowflake_browser = matches!(
+            &db_config.database_type,
+            DatabaseType::Snowflake(sf) if matches!(sf.auth_type, SnowflakeAuthType::BrowserAuth { .. })
+        );
+
+        // Spawn task to listen for SSO URL
+        if is_snowflake_browser {
+            let tx_clone = tx.clone();
+            let db_config_clone = db_config.clone();
+            tokio::spawn(async move {
+                if let Some(sso_url) = sso_rx.recv().await {
+                    let timeout =
+                        if let DatabaseType::Snowflake(sf) = &db_config_clone.database_type {
+                            if let SnowflakeAuthType::BrowserAuth {
+                                browser_timeout_secs,
+                                ..
+                            } = &sf.auth_type
+                            {
+                                Some(*browser_timeout_secs)
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        };
+
+                    let _ = tx_clone
+                        .send(ConnectionTestEvent::BrowserAuthRequired {
+                            sso_url,
+                            message: "Please complete authentication in your browser".to_string(),
+                            timeout_secs: timeout,
+                        })
+                        .await;
+                }
+            });
+        }
+
+        // Create connector with SSO sender
+        let connector = match Connector::from_db(
+            db_config,
+            &project_manager.config_manager,
+            &project_manager.secrets_manager,
+            None,
+            None,
+            None,
+            if is_snowflake_browser {
+                Some(sso_tx)
+            } else {
+                None
+            },
+        )
+        .await
+        {
+            Ok(conn) => conn,
+            Err(e) => {
+                tracing::error!("Failed to create connector: {}", e);
+                let _ = tx
+                    .send(ConnectionTestEvent::Complete {
+                        result: TestDatabaseConnectionResponse {
+                            success: false,
+                            message: "Failed to create connector".to_string(),
+                            connection_time_ms: None,
+                            error_details: Some(e.to_string()),
+                        },
+                    })
+                    .await;
+                return;
+            }
+        };
+
+        if is_snowflake_browser {
+            let _ = tx
+                .send(ConnectionTestEvent::Progress {
+                    message: "Waiting for authentication...".to_string(),
+                })
+                .await;
+        }
+
+        let _ = tx
+            .send(ConnectionTestEvent::Progress {
+                message: "Testing connection...".to_string(),
+            })
+            .await;
+
+        // Run test query
+        match connector.run_query("SELECT 1").await {
+            Ok(_) => {
+                let elapsed = start_time.elapsed().as_millis() as u64;
+                let _ = tx
+                    .send(ConnectionTestEvent::Complete {
+                        result: TestDatabaseConnectionResponse {
+                            success: true,
+                            message: "Connection successful".to_string(),
+                            connection_time_ms: Some(elapsed),
+                            error_details: None,
+                        },
+                    })
+                    .await;
+            }
+            Err(e) => {
+                let elapsed = start_time.elapsed().as_millis() as u64;
+                let _ = tx
+                    .send(ConnectionTestEvent::Complete {
+                        result: TestDatabaseConnectionResponse {
+                            success: false,
+                            message: "Connection failed".to_string(),
+                            connection_time_ms: Some(elapsed),
+                            error_details: Some(e.to_string()),
+                        },
+                    })
+                    .await;
+            }
+        }
+    });
+
+    Ok(Sse::new(crate::utils::create_sse_stream(rx)))
 }

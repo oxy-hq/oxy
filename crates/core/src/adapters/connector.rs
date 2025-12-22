@@ -16,7 +16,7 @@ use crate::{
     },
     config::{
         ConfigManager,
-        model::{ConnectionOverrides, DatabaseType},
+        model::{ConnectionOverride, ConnectionOverrides, Database, DatabaseType},
     },
     errors::OxyError,
 };
@@ -59,6 +59,27 @@ impl Connector {
         connections: Option<ConnectionOverrides>,
     ) -> Result<Self, OxyError> {
         let database = config_manager.resolve_database(database_ref)?;
+        Self::from_db(
+            &database,
+            config_manager,
+            secrets_manager,
+            dry_run_limit,
+            filters,
+            connections.map(|c| c.get(database_ref).cloned()).flatten(),
+            None, // No SSO URL sender for regular operations
+        )
+        .await
+    }
+
+    pub async fn from_db(
+        database: &Database,
+        config_manager: &ConfigManager,
+        secrets_manager: &SecretsManager,
+        dry_run_limit: Option<u64>,
+        filters: Option<SessionFilters>,
+        connections: Option<ConnectionOverride>,
+        sso_url_sender: Option<tokio::sync::mpsc::Sender<String>>,
+    ) -> Result<Self, OxyError> {
         let engine = match &database.database_type {
             DatabaseType::Bigquery(bigquery) => {
                 let key_path_str = bigquery.get_key_path(secrets_manager).await?;
@@ -116,19 +137,17 @@ impl Connector {
                 EngineType::ConnectorX(ConnectorX::new(database.dialect(), db_path, None))
             }
             DatabaseType::ClickHouse(ch) => {
-                let validated_filters = Self::validate_filters(database_ref, &ch.filters, filters)?;
+                let validated_filters = Self::validate_filters(&ch.filters, filters)?;
 
                 let mut clickhouse_connector = ClickHouse::new(ch.clone(), secrets_manager.clone());
                 if let Some(filters) = validated_filters {
                     clickhouse_connector = clickhouse_connector.with_filters(filters);
                 }
-                clickhouse_connector =
-                    clickhouse_connector.with_overrides(database_ref, connections)?;
+                clickhouse_connector = clickhouse_connector.with_overrides(connections)?;
                 EngineType::ClickHouse(clickhouse_connector)
             }
             DatabaseType::Snowflake(snowflake) => {
-                let validated_filters =
-                    Self::validate_filters(database_ref, &snowflake.filters, filters)?;
+                let validated_filters = Self::validate_filters(&snowflake.filters, filters)?;
 
                 let mut snowflake_connector = Snowflake::new(
                     snowflake.clone(),
@@ -138,8 +157,13 @@ impl Connector {
                 if let Some(filters) = validated_filters {
                     snowflake_connector = snowflake_connector.with_filters(filters);
                 }
-                snowflake_connector =
-                    snowflake_connector.with_overrides(database_ref, connections)?;
+                snowflake_connector = snowflake_connector.with_overrides(connections)?;
+
+                // Set SSO URL sender if provided
+                if let Some(sender) = sso_url_sender {
+                    snowflake_connector = snowflake_connector.with_sso_url_sender(sender);
+                }
+
                 EngineType::Snowflake(snowflake_connector)
             }
             DatabaseType::DOMO(domo) => {
@@ -184,7 +208,6 @@ impl Connector {
 
     /// Validate api request filters against configured database filter schemas
     fn validate_filters(
-        database_ref: &str,
         schemas: &HashMap<String, schemars::schema::SchemaObject>,
         filters: Option<SessionFilters>,
     ) -> Result<Option<SessionFilters>, OxyError> {
@@ -192,7 +215,6 @@ impl Connector {
             // Log when no filters provided (may be required for some databases)
             if !schemas.is_empty() {
                 tracing::debug!(
-                    database = %database_ref,
                     configured_filters = ?schemas.keys().collect::<Vec<_>>(),
                     "No filters provided for database with filter schema"
                 );
@@ -203,7 +225,6 @@ impl Connector {
         if schemas.is_empty() {
             // Security event: filters provided but not configured
             tracing::warn!(
-                database = %database_ref,
                 provided_filters = ?filters.keys().collect::<Vec<_>>(),
                 "Filters provided for database but no filter schema configured - ignoring filters"
             );
@@ -212,7 +233,6 @@ impl Connector {
 
         // Log filter validation attempt for audit trail
         tracing::info!(
-            database = %database_ref,
             provided_filters = ?filters.keys().collect::<Vec<_>>(),
             configured_filters = ?schemas.keys().collect::<Vec<_>>(),
             "Validating filters for database query"
@@ -222,7 +242,6 @@ impl Connector {
         let validated = processor.process_filters(filters).map_err(|e| {
             // Log filter validation failure as security event
             tracing::error!(
-                database = %database_ref,
                 error = %e,
                 "Filter validation failed - rejecting request"
             );
@@ -231,7 +250,6 @@ impl Connector {
 
         // Log successful filter validation for audit trail
         tracing::info!(
-            database = %database_ref,
             validated_filters = ?validated.keys().collect::<Vec<_>>(),
             "Filter validation successful - applying filters to query"
         );

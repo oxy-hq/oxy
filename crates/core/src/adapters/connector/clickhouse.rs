@@ -12,7 +12,8 @@ use crate::{
         session_filters::{FilterProcessor, SessionFilters},
     },
     config::model::{
-        ClickHouse as ConfigClickHouse, ClickHouseConnectionOverride, ConnectionOverrides,
+        ClickHouse as ConfigClickHouse, ClickHouseConnectionOverride, ConnectionOverride,
+        ConnectionOverrides,
     },
     errors::OxyError,
 };
@@ -50,17 +51,11 @@ impl ClickHouse {
     /// Returns an error if a Snowflake override is provided for a ClickHouse database.
     pub fn with_overrides(
         mut self,
-        database_ref: &str,
-        connections: Option<ConnectionOverrides>,
+        connections: Option<ConnectionOverride>,
     ) -> Result<Self, OxyError> {
-        if let Some(ovr) = connections
-            .as_ref()
-            .and_then(|c| c.get(database_ref))
-            .cloned()
-        {
+        if let Some(ovr) = connections {
             let ch: ClickHouseConnectionOverride = ovr.try_into()?;
             tracing::info!(
-                database = %database_ref,
                 has_host_override = ch.host.is_some(),
                 has_database_override = ch.database.is_some(),
                 "Applying ClickHouse connection overrides"

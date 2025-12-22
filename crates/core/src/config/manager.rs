@@ -190,7 +190,7 @@ impl ConfigManager {
             crate::config::model::DatabaseType::Postgres(postgres) => postgres.password_var.clone(),
             crate::config::model::DatabaseType::Mysql(mysql) => mysql.password_var.clone(),
             crate::config::model::DatabaseType::Snowflake(snowflake) => {
-                snowflake.password_var.clone()
+                snowflake.auth_type.get_password_var().cloned()
             }
             crate::config::model::DatabaseType::ClickHouse(clickhouse) => {
                 clickhouse.password_var.clone()
@@ -246,5 +246,81 @@ impl ConfigManager {
             .integrations
             .iter()
             .find(|i| i.name == integration_name)
+    }
+
+    /// Updates the databases in the config and writes to config.yml
+    pub async fn update_databases(&self, new_databases: Vec<Database>) -> Result<(), OxyError> {
+        // Create a new config with updated databases
+        let mut updated_config = (*self.config).clone();
+        updated_config.databases = new_databases;
+
+        // Write the updated config
+        self.storage.write_config(&updated_config).await?;
+        Ok(())
+    }
+
+    /// Adds a database to the existing configuration
+    pub async fn add_database(&self, database: Database) -> Result<(), OxyError> {
+        let mut updated_config = (*self.config).clone();
+
+        // Check if database with same name exists
+        if updated_config
+            .databases
+            .iter()
+            .any(|db| db.name == database.name)
+        {
+            return Err(OxyError::ConfigurationError(format!(
+                "Database with name '{}' already exists",
+                database.name
+            )));
+        }
+
+        updated_config.databases.push(database);
+        self.storage.write_config(&updated_config).await?;
+        Ok(())
+    }
+
+    /// Adds multiple databases to the existing configuration
+    pub async fn add_databases(&self, databases: Vec<Database>) -> Result<(), OxyError> {
+        let mut updated_config = (*self.config).clone();
+
+        // Check for duplicates
+        for database in &databases {
+            if updated_config
+                .databases
+                .iter()
+                .any(|db| db.name == database.name)
+            {
+                return Err(OxyError::ConfigurationError(format!(
+                    "Database with name '{}' already exists",
+                    database.name
+                )));
+            }
+        }
+
+        updated_config.databases.extend(databases);
+        self.storage.write_config(&updated_config).await?;
+        Ok(())
+    }
+
+    /// Removes a database from the configuration by name
+    pub async fn remove_database(&self, database_name: &str) -> Result<(), OxyError> {
+        let mut updated_config = (*self.config).clone();
+
+        // Find and remove the database
+        let initial_len = updated_config.databases.len();
+        updated_config
+            .databases
+            .retain(|db| db.name != database_name);
+
+        if updated_config.databases.len() == initial_len {
+            return Err(OxyError::ConfigurationError(format!(
+                "Database with name '{}' not found",
+                database_name
+            )));
+        }
+
+        self.storage.write_config(&updated_config).await?;
+        Ok(())
     }
 }

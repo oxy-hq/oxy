@@ -256,6 +256,8 @@ fn build_file_routes() -> Router<AppState> {
 fn build_database_routes() -> Router<AppState> {
     Router::new()
         .route("/", get(database::list_databases))
+        .route("/", post(database::create_database_config))
+        .route("/test-connection", post(database::test_database_connection))
         .route("/sync", post(database::sync_database))
         .route("/build", post(data::build_embeddings))
         .route("/clean", post(database::clean_data))
@@ -379,6 +381,9 @@ pub async fn openapi_router() -> OpenApiRouter {
         .routes(routes!(workflow::run_workflow_thread_sync))
         .routes(routes!(workflow::create_from_query))
         .routes(routes!(workflow::get_workflow_run))
+        // Database routes
+        .routes(routes!(database::create_database_config))
+        .routes(routes!(database::test_database_connection))
         .layer(cors)
         .layer(ServiceBuilder::new().layer(NewSentryLayer::<Request<Body>>::new_from_top()))
 }

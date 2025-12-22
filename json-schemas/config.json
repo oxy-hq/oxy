@@ -141,6 +141,58 @@
         },
         {
           "type": "object",
+          "anyOf": [
+            {
+              "type": "object",
+              "required": [
+                "password"
+              ],
+              "properties": {
+                "password": {
+                  "type": "string"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": [
+                "password_var"
+              ],
+              "properties": {
+                "password_var": {
+                  "type": "string"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": [
+                "private_key_path"
+              ],
+              "properties": {
+                "private_key_path": {
+                  "type": "string"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "properties": {
+                "browser_timeout_secs": {
+                  "default": 120,
+                  "type": "integer",
+                  "format": "uint64",
+                  "minimum": 0.0
+                },
+                "cache_dir": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              }
+            }
+          ],
           "required": [
             "account",
             "database",
@@ -171,25 +223,6 @@
               "additionalProperties": {
                 "$ref": "#/definitions/SchemaObject"
               }
-            },
-            "password": {
-              "type": [
-                "string",
-                "null"
-              ]
-            },
-            "password_var": {
-              "type": [
-                "string",
-                "null"
-              ]
-            },
-            "private_key_path": {
-              "default": null,
-              "type": [
-                "string",
-                "null"
-              ]
             },
             "role": {
               "type": [

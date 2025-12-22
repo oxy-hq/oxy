@@ -1,9 +1,10 @@
 use crate::{
-    config::model::{Database, DatabaseType, Snowflake},
+    adapters::secrets::SecretsManager,
+    config::model::{Database, DatabaseType, Snowflake, default_snowflake_browser_timeout},
     errors::OxyError,
     service::{
         project::models::{WarehouseConfig, WarehousesFormData},
-        secret_manager::{CreateSecretParams, SecretManagerService},
+        secret_manager::SecretManagerService,
     },
 };
 use axum::http::StatusCode;
@@ -16,13 +17,30 @@ use uuid::Uuid;
 pub struct DatabaseConfigBuilder;
 
 impl DatabaseConfigBuilder {
+    /// Build database configs using DatabaseTransaction (backward compatibility)
     pub async fn build_database_configs(
         project_id: Uuid,
         user_id: Uuid,
         warehouses_form: &WarehousesFormData,
-        txn: &DatabaseTransaction,
+        _txn: &DatabaseTransaction,
         repo_path: &Path,
-    ) -> std::result::Result<Vec<Database>, StatusCode> {
+    ) -> Result<Vec<Database>, StatusCode> {
+        let secret_manager = SecretManagerService::new(project_id);
+        Self::build_configs(
+            warehouses_form,
+            repo_path,
+            user_id,
+            &SecretsManager::from_database(secret_manager)?,
+        )
+        .await
+    }
+
+    pub async fn build_configs(
+        warehouses_form: &WarehousesFormData,
+        repo_path: &Path,
+        user_id: Uuid,
+        secrets_manager: &SecretsManager,
+    ) -> Result<Vec<Database>, StatusCode> {
         let mut config_databases = Vec::new();
 
         for warehouse in &warehouses_form.warehouses {
@@ -33,24 +51,24 @@ impl DatabaseConfigBuilder {
 
             let database = match warehouse.r#type.as_str() {
                 "postgres" => {
-                    Self::build_postgres_config(project_id, user_id, db_name, warehouse, txn)
+                    Self::build_postgres_config(db_name, warehouse, user_id, secrets_manager)
                         .await?
                 }
                 "redshift" => {
-                    Self::build_redshift_config(project_id, user_id, db_name, warehouse, txn)
+                    Self::build_redshift_config(db_name, warehouse, user_id, secrets_manager)
                         .await?
                 }
                 "mysql" => {
-                    Self::build_mysql_config(project_id, user_id, db_name, warehouse, txn).await?
+                    Self::build_mysql_config(db_name, warehouse, user_id, secrets_manager).await?
                 }
                 "clickhouse" => {
-                    Self::build_clickhouse_config(project_id, user_id, db_name, warehouse, txn)
+                    Self::build_clickhouse_config(db_name, warehouse, user_id, secrets_manager)
                         .await?
                 }
                 "bigquery" => Self::build_bigquery_config(db_name, warehouse, repo_path).await?,
                 "duckdb" => Self::build_duckdb_config(db_name, warehouse),
                 "snowflake" => {
-                    Self::build_snowflake_config(project_id, user_id, db_name, warehouse, txn)
+                    Self::build_snowflake_config(db_name, warehouse, user_id, secrets_manager)
                         .await?
                 }
                 _ => {
@@ -65,11 +83,10 @@ impl DatabaseConfigBuilder {
     }
 
     async fn build_postgres_config(
-        project_id: Uuid,
-        user_id: Uuid,
         db_name: String,
         warehouse: &WarehouseConfig,
-        txn: &DatabaseTransaction,
+        created_by: Uuid,
+        secrets_manager: &SecretsManager,
     ) -> std::result::Result<Database, StatusCode> {
         let postgres_config = warehouse.get_postgres_config();
 
@@ -77,11 +94,10 @@ impl DatabaseConfigBuilder {
 
         if let Some(password) = &postgres_config.password {
             Self::create_secret(
-                project_id,
-                user_id,
                 db_var_name.clone(),
                 password.clone(),
-                txn,
+                created_by,
+                secrets_manager,
             )
             .await
             .map_err(|e| {
@@ -108,11 +124,10 @@ impl DatabaseConfigBuilder {
     }
 
     async fn build_redshift_config(
-        project_id: Uuid,
-        user_id: Uuid,
         db_name: String,
         warehouse: &WarehouseConfig,
-        txn: &DatabaseTransaction,
+        created_by: Uuid,
+        secrets_manager: &SecretsManager,
     ) -> std::result::Result<Database, StatusCode> {
         let redshift_config = warehouse.get_redshift_config();
 
@@ -120,11 +135,10 @@ impl DatabaseConfigBuilder {
 
         if let Some(password) = &redshift_config.password {
             Self::create_secret(
-                project_id,
-                user_id,
                 db_var_name.clone(),
                 password.clone(),
-                txn,
+                created_by,
+                secrets_manager,
             )
             .await
             .map_err(|e| {
@@ -151,11 +165,10 @@ impl DatabaseConfigBuilder {
     }
 
     async fn build_mysql_config(
-        project_id: Uuid,
-        user_id: Uuid,
         db_name: String,
         warehouse: &WarehouseConfig,
-        txn: &DatabaseTransaction,
+        created_by: Uuid,
+        secrets_manager: &SecretsManager,
     ) -> std::result::Result<Database, StatusCode> {
         let mysql_config = warehouse.get_mysql_config();
 
@@ -163,11 +176,10 @@ impl DatabaseConfigBuilder {
 
         if let Some(password) = &mysql_config.password {
             Self::create_secret(
-                project_id,
-                user_id,
                 db_var_name.clone(),
                 password.clone(),
-                txn,
+                created_by,
+                secrets_manager,
             )
             .await
             .map_err(|e| {
@@ -194,11 +206,10 @@ impl DatabaseConfigBuilder {
     }
 
     async fn build_clickhouse_config(
-        project_id: Uuid,
-        user_id: Uuid,
         db_name: String,
         warehouse: &WarehouseConfig,
-        txn: &DatabaseTransaction,
+        created_by: Uuid,
+        secrets_manager: &SecretsManager,
     ) -> std::result::Result<Database, StatusCode> {
         let clickhouse_config = warehouse.get_clickhouse_config();
 
@@ -206,11 +217,10 @@ impl DatabaseConfigBuilder {
 
         if let Some(password) = &clickhouse_config.password {
             Self::create_secret(
-                project_id,
-                user_id,
                 db_var_name.clone(),
                 password.clone(),
-                txn,
+                created_by,
+                secrets_manager,
             )
             .await
             .map_err(|e| {
@@ -302,70 +312,97 @@ impl DatabaseConfigBuilder {
     }
 
     async fn build_snowflake_config(
-        project_id: Uuid,
-        user_id: Uuid,
         db_name: String,
         warehouse: &WarehouseConfig,
-        txn: &DatabaseTransaction,
+        created_by: Uuid,
+        secrets_manager: &SecretsManager,
     ) -> std::result::Result<Database, StatusCode> {
         let snowflake_config = warehouse.get_snowflake_config();
 
-        let db_var_name = db_name.to_uppercase() + "_PASSWORD";
-
-        if let Some(password) = &snowflake_config.password {
-            Self::create_secret(
-                project_id,
-                user_id,
-                db_var_name.clone(),
-                password.clone(),
-                txn,
-            )
-            .await
-            .map_err(|e| {
-                error!("Failed to create Snowflake password secret: {}", e);
-                StatusCode::INTERNAL_SERVER_ERROR
-            })?;
-        }
-
-        let private_key_path = snowflake_config
-            .private_key_path
-            .as_ref()
-            .map(PathBuf::from);
+        // Determine auth type based on auth_mode field or fallback to legacy logic
+        let auth_type = match snowflake_config.auth_mode.as_deref() {
+            Some("browser") => {
+                // Explicit browser auth mode
+                crate::config::model::SnowflakeAuthType::BrowserAuth {
+                    browser_timeout_secs: default_snowflake_browser_timeout(),
+                    cache_dir: None,
+                }
+            }
+            Some("private_key") => {
+                // Explicit private key auth mode
+                if let Some(private_key_path) = &snowflake_config
+                    .private_key_path
+                    .as_ref()
+                    .map(PathBuf::from)
+                {
+                    crate::config::model::SnowflakeAuthType::PrivateKey {
+                        private_key_path: private_key_path.clone(),
+                    }
+                } else {
+                    error!("Private key auth mode selected but no private_key_path provided");
+                    return Err(StatusCode::BAD_REQUEST);
+                }
+            }
+            Some("password") | None => {
+                // Explicit password auth mode or legacy mode (no auth_mode specified)
+                if let Some(password) = &snowflake_config.password {
+                    let db_var_name = db_name.to_uppercase() + "_PASSWORD";
+                    Self::create_secret(
+                        db_var_name.clone(),
+                        password.clone(),
+                        created_by,
+                        secrets_manager,
+                    )
+                    .await
+                    .map_err(|e| {
+                        error!("Failed to create Snowflake password secret: {}", e);
+                        StatusCode::INTERNAL_SERVER_ERROR
+                    })?;
+                    crate::config::model::SnowflakeAuthType::PasswordVar {
+                        password_var: db_var_name.clone(),
+                    }
+                } else if snowflake_config.auth_mode.is_none() {
+                    // Legacy fallback: no password and no auth_mode -> browser auth
+                    crate::config::model::SnowflakeAuthType::BrowserAuth {
+                        browser_timeout_secs: default_snowflake_browser_timeout(),
+                        cache_dir: None,
+                    }
+                } else {
+                    error!("Password auth mode selected but no password provided");
+                    return Err(StatusCode::BAD_REQUEST);
+                }
+            }
+            Some(other) => {
+                error!("Invalid auth_mode: {}", other);
+                return Err(StatusCode::BAD_REQUEST);
+            }
+        };
 
         Ok(Database {
             name: db_name,
             database_type: DatabaseType::Snowflake(Snowflake {
                 account: snowflake_config.account.unwrap_or_default(),
                 username: snowflake_config.username.unwrap_or_default(),
-                password: None,
-                password_var: Some(db_var_name),
                 warehouse: snowflake_config.warehouse.unwrap_or_default(),
                 database: snowflake_config.database.unwrap_or_default(),
                 schema: snowflake_config.schema,
                 role: snowflake_config.role,
-                private_key_path,
                 datasets: HashMap::new(),
                 filters: HashMap::new(),
+                auth_type,
             }),
         })
     }
 
     async fn create_secret(
-        project_id: Uuid,
-        user_id: Uuid,
         key: String,
         value: String,
-        txn: &DatabaseTransaction,
+        created_by: Uuid,
+        secrets_manager: &SecretsManager,
     ) -> Result<(), OxyError> {
-        let secret_manager = SecretManagerService::new(project_id);
-        let create_params = CreateSecretParams {
-            name: key,
-            value,
-            description: None,
-            created_by: user_id,
-        };
-
-        secret_manager.create_secret(txn, create_params).await?;
+        secrets_manager
+            .create_secret(&key, &value, created_by)
+            .await?;
         Ok(())
     }
 }
