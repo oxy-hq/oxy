@@ -30,8 +30,8 @@ export function Header() {
   const isHome = location.pathname === homeUri;
 
   return (
-    <SidebarGroup className="gap-4">
-      <SidebarHeader className="pt-0 pb-0 pl-1-5 h-[32px] flex-row items-center justify-between">
+    <SidebarGroup className="gap-4 pb-6 pt-2 px-2">
+      <SidebarHeader className="pb-0 pl-1-5 h-[32px] flex-row items-center justify-between">
         <Link to={homeUri} className="flex gap-2 items-center min-w-0">
           <img
             src={theme === "dark" ? "/oxy-dark.svg" : "/oxy-light.svg"}

@@ -16,7 +16,7 @@ export function AppSidebar() {
       <Header />
 
       <div className="customScrollbar flex flex-col flex-1 overflow-auto min-h-0 scrollbar-gutter-auto">
-        <SidebarGroup>
+        <SidebarGroup className="pt-0 px-2">
           <SidebarGroupLabel>Workspace</SidebarGroupLabel>
           <SidebarMenu>
             <Threads />

@@ -26,7 +26,7 @@ export function Apps() {
           <span>Apps</span>
         </div>
       </SidebarMenuButton>
-      <SidebarMenuSub>
+      <SidebarMenuSub className="ml-4">
         {isPending && <ItemsSkeleton />}
 
         {!isPending &&

@@ -31,7 +31,7 @@ export function Workflows() {
           <span>Automations</span>
         </div>
       </SidebarMenuButton>
-      <SidebarMenuSub>
+      <SidebarMenuSub className="ml-4">
         {isPending && <ItemsSkeleton />}
 
         {!isPending &&

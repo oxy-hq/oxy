@@ -405,7 +405,7 @@ const Sidebar = ({
   const { isReadOnly, project } = useCurrentProjectBranch();
   const projectId = project.id;
   const [viewMode, setViewMode] = React.useState<SidebarViewMode>(
-    SidebarViewMode.FILES,
+    SidebarViewMode.OBJECTS,
   );
 
   const { data, refetch, isPending } = useFileTree();
@@ -491,7 +491,7 @@ const Sidebar = ({
     <div className="h-full w-full border-r border-l bg-sidebar-background">
       {sidebarOpen && (
         <div className="flex h-full flex-col overflow-hidden">
-          <SidebarGroupLabel className="h-auto flex items-center justify-between px-2 py-1 border-b border-sidebar-border">
+          <SidebarGroupLabel className="h-auto flex items-center justify-between px-2 py-1 border-b border-sidebar-border rounded-none">
             <Tabs
               value={viewMode}
               onValueChange={(value: string) => {
@@ -569,7 +569,7 @@ const Sidebar = ({
             </div>
           </SidebarGroupLabel>
           <SidebarContent className="customScrollbar h-full flex-1 overflow-y-auto">
-            <SidebarGroup>
+            <SidebarGroup className="pt-2">
               {isPending && (
                 <div className="flex items-center justify-center p-2">
                   <Loader2 className="animate-spin h-4 w-4" />
