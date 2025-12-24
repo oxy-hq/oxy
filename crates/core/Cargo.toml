@@ -39,7 +39,7 @@ assert_cmd = "2.1.1"
 async-openai = { version = "0.31.1", features = ["byot", "chat-completion-types", "response-types", "_api", "responses", "chat-completion", "embedding-types", "embedding"] }
 async-stream = "0.3.6"
 async-trait = "0.1.89"
-axum = { version = "0.8.7", features = ["macros", "http2"] }
+axum = { version = "0.8.8", features = ["macros", "http2"] }
 axum-server = { version = "0.7.3", features = ["tls-rustls"] }
 base64 = "0.22"
 bollard = "0.19.4"
@@ -107,7 +107,7 @@ tower-http = { version = "0.6.8", features = ["fs", "cors", "trace", "timeout", 
 tower-serve-static = "0.1.1"
 tqdm = "0.7.0"
 uuid = { version = "1.19.0", features = ["v4", "serde"] }
-reqwest = { version = "0.12.26" }
+reqwest = { version = "0.12.28" }
 secrecy = "0.10.3"
 fxhash = "0.2.1"
 deser-incomplete = "0.1.2"
@@ -134,10 +134,10 @@ sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "sqlit
 semver = "1.0"
 rustls = { version = "0.23.35", features = ["aws_lc_rs"] }
 parquet = "=54.2.1"  # needs to be the same with arrow version
-short-uuid = "0.2.0"
+short-uuid = "0.2.1"
 rapidfuzz = "0.5.0"
 indexmap = { workspace = true }
-tracing = "0.1.43"
+tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.22", features = ["env-filter", "fmt", "json"] }
 tracing-appender = "0.2.4"
 tracing-log = "0.2.0"
