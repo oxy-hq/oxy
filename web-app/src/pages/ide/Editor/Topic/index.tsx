@@ -9,7 +9,7 @@ import {
   useCompileSemanticQuery,
   useTopicDetails,
 } from "@/hooks/api/useSemanticQuery";
-import { SemanticQueryRequest } from "@/services/api/semantic";
+import { buildSemanticQuery } from "../utils/queryBuilder";
 import SemanticQueryPanel from "../components/SemanticQueryPanel";
 import { useSemanticQueryState } from "../hooks/useSemanticQueryState";
 import FieldsSelectionPanel from "./FieldsSelectionPanel";
@@ -90,25 +90,13 @@ const TopicPreview = () => {
   const handleExecuteQuery = () => {
     if (viewsWithData.length === 0 || !topicData) return;
 
-    const request: SemanticQueryRequest = {
-      query: {
-        topic: topicData.name,
-        dimensions: selectedDimensions,
-        measures: selectedMeasures,
-        filters: filters.map((f) => ({
-          field: f.field,
-          op: f.operator,
-          value: f.value,
-        })),
-        variables: variables.reduce(
-          (acc, v) => {
-            if (v.key) acc[v.key] = v.value;
-            return acc;
-          },
-          {} as Record<string, unknown>,
-        ),
-      },
-    };
+    const request = buildSemanticQuery({
+      topic: topicData.name,
+      dimensions: selectedDimensions,
+      measures: selectedMeasures,
+      filters,
+      variables,
+    });
 
     executeSemanticQuery(request, {
       onSuccess: (data) => {
@@ -141,25 +129,13 @@ const TopicPreview = () => {
   useEffect(() => {
     if (!topicData || !canExecuteQuery) return;
 
-    const request: SemanticQueryRequest = {
-      query: {
-        topic: topicData.name,
-        dimensions: selectedDimensions,
-        measures: selectedMeasures,
-        filters: filters.map((f) => ({
-          field: f.field,
-          op: f.operator,
-          value: f.value,
-        })),
-        variables: variables.reduce(
-          (acc, v) => {
-            if (v.key) acc[v.key] = v.value;
-            return acc;
-          },
-          {} as Record<string, unknown>,
-        ),
-      },
-    };
+    const request = buildSemanticQuery({
+      topic: topicData.name,
+      dimensions: selectedDimensions,
+      measures: selectedMeasures,
+      filters,
+      variables,
+    });
 
     compileSemanticQuery(request, {
       onSuccess: (data) => {
@@ -193,8 +169,8 @@ const TopicPreview = () => {
   }, [viewsWithData]);
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
-      <div className="flex-1 flex overflow-hidden">
+    <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex">
         {/* Left Sidebar - Tree Structure */}
         <FieldsSelectionPanel
           topicData={topicData}

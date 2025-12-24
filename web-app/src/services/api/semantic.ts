@@ -1,10 +1,25 @@
 import { apiClient } from "./axios";
 
-export interface SemanticQueryFilter {
+type FilterValue = string | number | boolean | null;
+
+interface BaseFilter {
   field: string;
-  op: string;
-  value: string | number | boolean | null;
 }
+
+export type SemanticQueryFilter =
+  | (BaseFilter & {
+      op: "eq" | "neq" | "gt" | "gte" | "lt" | "lte";
+      value: FilterValue;
+    })
+  | (BaseFilter & {
+      op: "in" | "not_in";
+      values: FilterValue[];
+    })
+  | (BaseFilter & {
+      op: "in_date_range" | "not_in_date_range";
+      from: Date;
+      to: Date;
+    });
 
 export interface SemanticQueryOrder {
   field: string;

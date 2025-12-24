@@ -42,11 +42,14 @@ impl TemplateRegister for &Task {
                 for meas in &semantic.query.measures {
                     register.entry(&meas.as_str())?;
                 }
-                // Filters: field and value (string values only)
+                // Filters: field and values
                 for filter in &semantic.query.filters {
                     register.entry(&filter.field.as_str())?;
-                    if let Some(s) = filter.value.as_str() {
-                        register.entry(&s)?;
+                    // Register all filter values that might contain templates
+                    for value in filter.filter_type.values() {
+                        if let Some(s) = value.as_str() {
+                            register.entry(&s)?;
+                        }
                     }
                 }
                 // Orders: field names

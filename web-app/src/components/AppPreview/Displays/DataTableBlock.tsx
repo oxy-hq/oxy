@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/shadcn/table";
 import { getDuckDB } from "@/libs/duckdb";
 import { DataContainer, TableData, TableDisplay } from "@/types/app";
-import { getData, registerAuthenticatedFile } from "./utils";
+import { getData, registerAuthenticatedFile, getArrowValueWithType, getArrowFieldType } from "./utils";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 
 const load_table = async (
@@ -87,11 +87,16 @@ export const DataTableBlock = ({
             <TableBody>
               {table.toArray().map((row, idx) => (
                 <TableRow key={idx} className="border">
-                  {table.schema.fields.map((field) => (
-                    <TableCell className="border" key={field.name}>
-                      {row[field.name]}
-                    </TableCell>
-                  ))}
+                  {table.schema.fields.map((field) => {
+                    const fieldType = getArrowFieldType(field.name, table.schema);
+                    const value = row[field.name];
+                    const formattedValue = fieldType ? getArrowValueWithType(value, fieldType) : value;
+                    return (
+                      <TableCell className="border" key={field.name}>
+                        {String(formattedValue)}
+                      </TableCell>
+                    );
+                  })}
                 </TableRow>
               ))}
             </TableBody>

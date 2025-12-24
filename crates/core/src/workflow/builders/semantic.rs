@@ -4,9 +4,12 @@ use std::collections::{HashMap, HashSet};
 
 use crate::{
     adapters::connector::Connector,
-    config::model::{
-        SemanticFilter, SemanticFilterType, SemanticOrder, SemanticOrderDirection,
-        SemanticQueryTask,
+    config::{
+        self,
+        model::{
+            SemanticFilter, SemanticFilterType, SemanticOrder, SemanticOrderDirection,
+            SemanticQueryTask,
+        },
     },
     errors::OxyError,
     execute::{
@@ -65,104 +68,7 @@ pub fn render_semantic_query(
         })
         .transpose()?;
 
-    let filters = task
-        .query
-        .filters
-        .iter()
-        .map(|f| {
-            // Convert SemanticQueryFilter to SemanticFilter for rendering
-            let filter_type = match f.op.as_str() {
-                "eq" => SemanticFilterType::Eq(crate::config::model::ScalarFilter {
-                    value: f.value.clone(),
-                }),
-                "neq" => SemanticFilterType::Neq(crate::config::model::ScalarFilter {
-                    value: f.value.clone(),
-                }),
-                "gt" => SemanticFilterType::Gt(crate::config::model::ScalarFilter {
-                    value: f.value.clone(),
-                }),
-                "gte" => SemanticFilterType::Gte(crate::config::model::ScalarFilter {
-                    value: f.value.clone(),
-                }),
-                "lt" => SemanticFilterType::Lt(crate::config::model::ScalarFilter {
-                    value: f.value.clone(),
-                }),
-                "lte" => SemanticFilterType::Lte(crate::config::model::ScalarFilter {
-                    value: f.value.clone(),
-                }),
-                "in" => {
-                    let values = if let JsonValue::Array(arr) = &f.value {
-                        arr.clone()
-                    } else {
-                        vec![f.value.clone()]
-                    };
-                    SemanticFilterType::In(crate::config::model::ArrayFilter { values })
-                }
-                "not_in" => {
-                    let values = if let JsonValue::Array(arr) = &f.value {
-                        arr.clone()
-                    } else {
-                        vec![f.value.clone()]
-                    };
-                    SemanticFilterType::NotIn(crate::config::model::ArrayFilter { values })
-                }
-                "in_date_range" => {
-                    let values = if let JsonValue::Array(arr) = &f.value {
-                        arr.clone()
-                    } else {
-                        vec![f.value.clone()]
-                    };
-                    let from = values.first().cloned().unwrap_or(JsonValue::Null);
-                    let to = values.get(1).cloned().unwrap_or(JsonValue::Null);
-                    SemanticFilterType::InDateRange(crate::config::model::DateRangeFilter {
-                        from,
-                        to,
-                    })
-                }
-                "not_in_date_range" => {
-                    let values = if let JsonValue::Array(arr) = &f.value {
-                        arr.clone()
-                    } else {
-                        vec![f.value.clone()]
-                    };
-                    let from = values.first().cloned().unwrap_or(JsonValue::Null);
-                    let to = values.get(1).cloned().unwrap_or(JsonValue::Null);
-                    SemanticFilterType::NotInDateRange(crate::config::model::DateRangeFilter {
-                        from,
-                        to,
-                    })
-                }
-                _ => SemanticFilterType::Eq(crate::config::model::ScalarFilter {
-                    value: f.value.clone(),
-                }), // Default fallback
-            };
-            let filter = SemanticFilter {
-                field: f.field.clone(),
-                filter_type,
-            };
-            let rendered_filter = render_filter(renderer, &filter)?;
-            // Convert back to SemanticQueryFilter - get first value or array
-            let value = match &rendered_filter.filter_type {
-                SemanticFilterType::Eq(f)
-                | SemanticFilterType::Neq(f)
-                | SemanticFilterType::Gt(f)
-                | SemanticFilterType::Gte(f)
-                | SemanticFilterType::Lt(f)
-                | SemanticFilterType::Lte(f) => f.value.clone(),
-                SemanticFilterType::In(f) | SemanticFilterType::NotIn(f) => {
-                    JsonValue::Array(f.values.clone())
-                }
-                SemanticFilterType::InDateRange(f) | SemanticFilterType::NotInDateRange(f) => {
-                    JsonValue::Array(vec![f.from.clone(), f.to.clone()])
-                }
-            };
-            Ok(crate::service::types::SemanticQueryFilter {
-                field: rendered_filter.field,
-                op: f.op.clone(), // Keep original string representation
-                value,
-            })
-        })
-        .collect::<Result<Vec<_>, OxyError>>()?;
+    let filters = task.query.filters.clone();
 
     let orders = task
         .query
@@ -199,118 +105,6 @@ fn render_string(renderer: &Renderer, value: &str, ctx: &str) -> Result<String, 
             "Failed to render semantic query {ctx} template '{value}': {e}"
         ))
     })
-}
-
-fn render_filter(renderer: &Renderer, filter: &SemanticFilter) -> Result<SemanticFilter, OxyError> {
-    let field = render_string(renderer, &filter.field, "filter.field")?;
-    let filter_type = match &filter.filter_type {
-        SemanticFilterType::Eq(f) => SemanticFilterType::Eq(crate::config::model::ScalarFilter {
-            value: render_filter_value(renderer, &f.value, &field)?,
-        }),
-        SemanticFilterType::Neq(f) => SemanticFilterType::Neq(crate::config::model::ScalarFilter {
-            value: render_filter_value(renderer, &f.value, &field)?,
-        }),
-        SemanticFilterType::Gt(f) => SemanticFilterType::Gt(crate::config::model::ScalarFilter {
-            value: render_filter_value(renderer, &f.value, &field)?,
-        }),
-        SemanticFilterType::Gte(f) => SemanticFilterType::Gte(crate::config::model::ScalarFilter {
-            value: render_filter_value(renderer, &f.value, &field)?,
-        }),
-        SemanticFilterType::Lt(f) => SemanticFilterType::Lt(crate::config::model::ScalarFilter {
-            value: render_filter_value(renderer, &f.value, &field)?,
-        }),
-        SemanticFilterType::Lte(f) => SemanticFilterType::Lte(crate::config::model::ScalarFilter {
-            value: render_filter_value(renderer, &f.value, &field)?,
-        }),
-        SemanticFilterType::In(f) => {
-            let rendered_values = f
-                .values
-                .iter()
-                .enumerate()
-                .map(|(idx, v)| render_filter_value(renderer, v, &format!("{field}[{idx}]")))
-                .collect::<Result<Vec<_>, _>>()?;
-            SemanticFilterType::In(crate::config::model::ArrayFilter {
-                values: rendered_values,
-            })
-        }
-        SemanticFilterType::NotIn(f) => {
-            let rendered_values = f
-                .values
-                .iter()
-                .enumerate()
-                .map(|(idx, v)| render_filter_value(renderer, v, &format!("{field}[{idx}]")))
-                .collect::<Result<Vec<_>, _>>()?;
-            SemanticFilterType::NotIn(crate::config::model::ArrayFilter {
-                values: rendered_values,
-            })
-        }
-        SemanticFilterType::InDateRange(f) => {
-            let from = render_filter_value(renderer, &f.from, &format!("{field}.from"))?;
-            let to = render_filter_value(renderer, &f.to, &format!("{field}.to"))?;
-            SemanticFilterType::InDateRange(crate::config::model::DateRangeFilter { from, to })
-        }
-        SemanticFilterType::NotInDateRange(f) => {
-            let from = render_filter_value(renderer, &f.from, &format!("{field}.from"))?;
-            let to = render_filter_value(renderer, &f.to, &format!("{field}.to"))?;
-            SemanticFilterType::NotInDateRange(crate::config::model::DateRangeFilter { from, to })
-        }
-    };
-    Ok(SemanticFilter { field, filter_type })
-}
-
-fn render_filter_value(
-    renderer: &Renderer,
-    value: &JsonValue,
-    field_ctx: &str,
-) -> Result<JsonValue, OxyError> {
-    match value {
-        JsonValue::String(s) => render_filter_string(renderer, s, field_ctx),
-        JsonValue::Array(arr) => {
-            let mut new_arr = Vec::with_capacity(arr.len());
-            for (idx, item) in arr.iter().enumerate() {
-                match item {
-                    JsonValue::String(s) => {
-                        // Support expression templating in array elements
-                        new_arr.push(render_filter_string(
-                            renderer,
-                            s,
-                            &format!("{field_ctx}[{idx}]"),
-                        )?);
-                    }
-                    other => new_arr.push(other.clone()),
-                }
-            }
-            Ok(JsonValue::Array(new_arr))
-        }
-        _ => Ok(value.clone()),
-    }
-}
-
-fn render_filter_string(
-    renderer: &Renderer,
-    template: &str,
-    ctx: &str,
-) -> Result<JsonValue, OxyError> {
-    let trimmed = template.trim();
-    let is_expression = trimmed.starts_with("{{") && trimmed.ends_with("}}");
-    if is_expression {
-        match renderer.eval_expression(trimmed) {
-            Ok(val) => {
-                // Convert minijinja::Value to serde_json::Value; fall back to original string if null
-                let json_value = serde_json::to_value(&val).unwrap_or(JsonValue::Null);
-                if json_value.is_null() {
-                    Ok(JsonValue::String(template.to_string()))
-                } else {
-                    Ok(json_value)
-                }
-            }
-            Err(e) => Err(OxyError::RuntimeError(format!(
-                "Failed to evaluate semantic query filter value expression for {ctx}: {template}: {e}"
-            ))),
-        }
-    } else {
-        render_string(renderer, template, &format!("filter.value {ctx}")).map(JsonValue::String)
-    }
 }
 
 /// ParamMapper for semantic query tasks that handles templating and validation
@@ -678,82 +472,11 @@ impl SemanticQueryExecutable {
 
         // Add user-provided filters
         if !task.query.filters.is_empty() {
-            let user_filters = task
+            let user_filters: Vec<JsonValue> = task
                 .query
                 .filters
                 .iter()
-                .map(|filter| {
-                    // Convert SemanticQueryFilter to SemanticFilter for CubeJS conversion
-                    let filter_type = match filter.op.as_str() {
-                        "eq" => SemanticFilterType::Eq(crate::config::model::ScalarFilter {
-                            value: filter.value.clone(),
-                        }),
-                        "neq" => SemanticFilterType::Neq(crate::config::model::ScalarFilter {
-                            value: filter.value.clone(),
-                        }),
-                        "gt" => SemanticFilterType::Gt(crate::config::model::ScalarFilter {
-                            value: filter.value.clone(),
-                        }),
-                        "gte" => SemanticFilterType::Gte(crate::config::model::ScalarFilter {
-                            value: filter.value.clone(),
-                        }),
-                        "lt" => SemanticFilterType::Lt(crate::config::model::ScalarFilter {
-                            value: filter.value.clone(),
-                        }),
-                        "lte" => SemanticFilterType::Lte(crate::config::model::ScalarFilter {
-                            value: filter.value.clone(),
-                        }),
-                        "in" => {
-                            let values = if let JsonValue::Array(arr) = &filter.value {
-                                arr.clone()
-                            } else {
-                                vec![filter.value.clone()]
-                            };
-                            SemanticFilterType::In(crate::config::model::ArrayFilter { values })
-                        }
-                        "not_in" => {
-                            let values = if let JsonValue::Array(arr) = &filter.value {
-                                arr.clone()
-                            } else {
-                                vec![filter.value.clone()]
-                            };
-                            SemanticFilterType::NotIn(crate::config::model::ArrayFilter { values })
-                        }
-                        "in_date_range" => {
-                            let values = if let JsonValue::Array(arr) = &filter.value {
-                                arr.clone()
-                            } else {
-                                vec![filter.value.clone()]
-                            };
-                            let from = values.first().cloned().unwrap_or(JsonValue::Null);
-                            let to = values.get(1).cloned().unwrap_or(JsonValue::Null);
-                            SemanticFilterType::InDateRange(crate::config::model::DateRangeFilter {
-                                from,
-                                to,
-                            })
-                        }
-                        "not_in_date_range" => {
-                            let values = if let JsonValue::Array(arr) = &filter.value {
-                                arr.clone()
-                            } else {
-                                vec![filter.value.clone()]
-                            };
-                            let from = values.first().cloned().unwrap_or(JsonValue::Null);
-                            let to = values.get(1).cloned().unwrap_or(JsonValue::Null);
-                            SemanticFilterType::NotInDateRange(
-                                crate::config::model::DateRangeFilter { from, to },
-                            )
-                        }
-                        _ => SemanticFilterType::Eq(crate::config::model::ScalarFilter {
-                            value: filter.value.clone(),
-                        }), // Default fallback
-                    };
-                    let semantic_filter = SemanticFilter {
-                        field: filter.field.clone(),
-                        filter_type,
-                    };
-                    self.convert_filter_to_cubejs(&semantic_filter, topic_name)
-                })
+                .map(|f| self.convert_filter_to_cubejs(f, topic_name))
                 .collect::<Result<Vec<_>, _>>()?;
             all_filters.extend(user_filters);
         }

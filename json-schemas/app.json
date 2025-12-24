@@ -238,21 +238,298 @@
         "desc"
       ]
     },
-    "SemanticQueryFilter": {
+    "SemanticFilter": {
+      "description": "Enum representing different filter types with their appropriate value types",
       "type": "object",
+      "oneOf": [
+        {
+          "description": "Scalar comparison filter (eq, neq, gt, gte, lt, lte)",
+          "type": "object",
+          "required": [
+            "op",
+            "value"
+          ],
+          "properties": {
+            "op": {
+              "type": "string",
+              "enum": [
+                "eq"
+              ]
+            },
+            "value": {
+              "description": "The value to compare. Can be a string, number, boolean, or null.",
+              "type": [
+                "string",
+                "number",
+                "boolean",
+                "null"
+              ]
+            }
+          }
+        },
+        {
+          "description": "Scalar comparison filter (eq, neq, gt, gte, lt, lte)",
+          "type": "object",
+          "required": [
+            "op",
+            "value"
+          ],
+          "properties": {
+            "op": {
+              "type": "string",
+              "enum": [
+                "neq"
+              ]
+            },
+            "value": {
+              "description": "The value to compare. Can be a string, number, boolean, or null.",
+              "type": [
+                "string",
+                "number",
+                "boolean",
+                "null"
+              ]
+            }
+          }
+        },
+        {
+          "description": "Scalar comparison filter (eq, neq, gt, gte, lt, lte)",
+          "type": "object",
+          "required": [
+            "op",
+            "value"
+          ],
+          "properties": {
+            "op": {
+              "type": "string",
+              "enum": [
+                "gt"
+              ]
+            },
+            "value": {
+              "description": "The value to compare. Can be a string, number, boolean, or null.",
+              "type": [
+                "string",
+                "number",
+                "boolean",
+                "null"
+              ]
+            }
+          }
+        },
+        {
+          "description": "Scalar comparison filter (eq, neq, gt, gte, lt, lte)",
+          "type": "object",
+          "required": [
+            "op",
+            "value"
+          ],
+          "properties": {
+            "op": {
+              "type": "string",
+              "enum": [
+                "gte"
+              ]
+            },
+            "value": {
+              "description": "The value to compare. Can be a string, number, boolean, or null.",
+              "type": [
+                "string",
+                "number",
+                "boolean",
+                "null"
+              ]
+            }
+          }
+        },
+        {
+          "description": "Scalar comparison filter (eq, neq, gt, gte, lt, lte)",
+          "type": "object",
+          "required": [
+            "op",
+            "value"
+          ],
+          "properties": {
+            "op": {
+              "type": "string",
+              "enum": [
+                "lt"
+              ]
+            },
+            "value": {
+              "description": "The value to compare. Can be a string, number, boolean, or null.",
+              "type": [
+                "string",
+                "number",
+                "boolean",
+                "null"
+              ]
+            }
+          }
+        },
+        {
+          "description": "Scalar comparison filter (eq, neq, gt, gte, lt, lte)",
+          "type": "object",
+          "required": [
+            "op",
+            "value"
+          ],
+          "properties": {
+            "op": {
+              "type": "string",
+              "enum": [
+                "lte"
+              ]
+            },
+            "value": {
+              "description": "The value to compare. Can be a string, number, boolean, or null.",
+              "type": [
+                "string",
+                "number",
+                "boolean",
+                "null"
+              ]
+            }
+          }
+        },
+        {
+          "description": "Array-based filter (in, not_in)",
+          "type": "object",
+          "required": [
+            "op",
+            "values"
+          ],
+          "properties": {
+            "op": {
+              "type": "string",
+              "enum": [
+                "in"
+              ]
+            },
+            "values": {
+              "description": "Array of values to filter by. Each value can be a string, number, boolean, or null.",
+              "type": [
+                "array"
+              ],
+              "items": {
+                "type": [
+                  "string",
+                  "number",
+                  "boolean",
+                  "null"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "description": "Array-based filter (in, not_in)",
+          "type": "object",
+          "required": [
+            "op",
+            "values"
+          ],
+          "properties": {
+            "op": {
+              "type": "string",
+              "enum": [
+                "not_in"
+              ]
+            },
+            "values": {
+              "description": "Array of values to filter by. Each value can be a string, number, boolean, or null.",
+              "type": [
+                "array"
+              ],
+              "items": {
+                "type": [
+                  "string",
+                  "number",
+                  "boolean",
+                  "null"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "description": "Date range filter (in_date_range, not_in_date_range)",
+          "type": "object",
+          "required": [
+            "from",
+            "op",
+            "to"
+          ],
+          "properties": {
+            "from": {
+              "description": "Start of the date range. Can be a string (ISO date or relative like 'today', '7 days ago'), number (timestamp), or null.",
+              "type": [
+                "string",
+                "number",
+                "boolean",
+                "null"
+              ]
+            },
+            "op": {
+              "type": "string",
+              "enum": [
+                "in_date_range"
+              ]
+            },
+            "to": {
+              "description": "End of the date range. Can be a string (ISO date or relative like 'today', '7 days ago'), number (timestamp), or null.",
+              "type": [
+                "string",
+                "number",
+                "boolean",
+                "null"
+              ]
+            }
+          }
+        },
+        {
+          "description": "Date range filter (in_date_range, not_in_date_range)",
+          "type": "object",
+          "required": [
+            "from",
+            "op",
+            "to"
+          ],
+          "properties": {
+            "from": {
+              "description": "Start of the date range. Can be a string (ISO date or relative like 'today', '7 days ago'), number (timestamp), or null.",
+              "type": [
+                "string",
+                "number",
+                "boolean",
+                "null"
+              ]
+            },
+            "op": {
+              "type": "string",
+              "enum": [
+                "not_in_date_range"
+              ]
+            },
+            "to": {
+              "description": "End of the date range. Can be a string (ISO date or relative like 'today', '7 days ago'), number (timestamp), or null.",
+              "type": [
+                "string",
+                "number",
+                "boolean",
+                "null"
+              ]
+            }
+          }
+        }
+      ],
       "required": [
-        "field",
-        "op",
-        "value"
+        "field"
       ],
       "properties": {
         "field": {
           "type": "string"
-        },
-        "op": {
-          "type": "string"
-        },
-        "value": true
+        }
       }
     },
     "SemanticQueryOrder": {
@@ -427,7 +704,7 @@
             "filters": {
               "type": "array",
               "items": {
-                "$ref": "#/definitions/SemanticQueryFilter"
+                "$ref": "#/definitions/SemanticFilter"
               }
             },
             "limit": {

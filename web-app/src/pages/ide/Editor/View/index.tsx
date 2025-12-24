@@ -6,7 +6,7 @@ import {
   useCompileSemanticQuery,
   useViewDetails,
 } from "@/hooks/api/useSemanticQuery";
-import { SemanticQueryRequest } from "@/services/api/semantic";
+import { buildSemanticQuery } from "../utils/queryBuilder";
 import EditorPageWrapper from "../components/EditorPageWrapper";
 import { useEditorContext } from "../contexts/useEditorContext";
 import { useFileEditorContext } from "@/components/FileEditor/useFileEditorContext";
@@ -97,29 +97,13 @@ const ViewPreview = () => {
   const handleExecuteQuery = () => {
     if (!viewData) return;
 
-    const request: SemanticQueryRequest = {
-      query: {
-        // Don't set topic for view queries - just use view-prefixed dimensions/measures
-        dimensions: selectedDimensions.map((d) => {
-          return `${viewData.name}.${d}`;
-        }),
-        measures: selectedMeasures.map((m) => {
-          return `${viewData.name}.${m}`;
-        }),
-        filters: filters.map((f) => ({
-          field: getFullFieldName(f.field),
-          op: f.operator,
-          value: f.value,
-        })),
-        variables: variables.reduce(
-          (acc, v) => {
-            if (v.key) acc[v.key] = v.value;
-            return acc;
-          },
-          {} as Record<string, unknown>,
-        ),
-      },
-    };
+    const request = buildSemanticQuery({
+      dimensions: selectedDimensions,
+      measures: selectedMeasures,
+      filters,
+      variables,
+      getFullFieldName,
+    });
 
     executeSemanticQuery(request, {
       onSuccess: (data) => {
@@ -136,28 +120,13 @@ const ViewPreview = () => {
   useEffect(() => {
     if (!viewData || !canExecuteQuery) return;
 
-    const request: SemanticQueryRequest = {
-      query: {
-        dimensions: selectedDimensions.map((d) => {
-          return `${viewData.name}.${d}`;
-        }),
-        measures: selectedMeasures.map((m) => {
-          return `${viewData.name}.${m}`;
-        }),
-        filters: filters.map((f) => ({
-          field: getFullFieldName(f.field),
-          op: f.operator,
-          value: f.value,
-        })),
-        variables: variables.reduce(
-          (acc, v) => {
-            if (v.key) acc[v.key] = v.value;
-            return acc;
-          },
-          {} as Record<string, unknown>,
-        ),
-      },
-    };
+    const request = buildSemanticQuery({
+      dimensions: selectedDimensions,
+      measures: selectedMeasures,
+      filters,
+      variables,
+      getFullFieldName,
+    });
 
     compileSemanticQuery(request, {
       onSuccess: (data) => {
@@ -196,8 +165,8 @@ const ViewPreview = () => {
   }, [viewData]);
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
-      <div className="flex-1 flex gap-4 overflow-hidden">
+    <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex gap-4">
         {/* Left Sidebar - Tree Structure */}
         <FieldsSelectionPanel
           viewData={viewData}

@@ -167,7 +167,9 @@ fn main() {
     let args: Vec<String> = env::args().collect();
 
     // Log to stdout if `oxy serve` or `oxy a2a`
-    let log_to_stdout = args.iter().any(|a| a == "serve" || a == "a2a")
+    let log_to_stdout = args
+        .iter()
+        .any(|a| a == "serve" || a == "start" || a == "a2a")
         || env::var("OXY_DEBUG")
             .as_deref()
             .unwrap_or("false")

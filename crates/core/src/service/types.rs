@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use utoipa::ToSchema;
 
 use crate::{
+    config::model::SemanticFilter,
     execute::types::{
         ReferenceKind, Table, Usage,
         event::{ArtifactKind, Step},
@@ -13,7 +14,6 @@ use crate::{
     utils::get_file_stem,
     workflow::loggers::types::LogItem,
 };
-use serde_json::Value as JsonValue;
 
 pub mod block;
 pub mod content;
@@ -74,28 +74,6 @@ pub struct ExecuteSQL {
     pub is_result_truncated: bool,
 }
 
-// SemanticQuery result mirrors ExecuteSQL but carries semantic layer context
-// (topic, measures, dimensions) alongside the generated SQL and tabular data.
-// This enables downstream consumers to understand both the logical and
-// physical lineage of the result.
-#[derive(Serialize, Deserialize, ToSchema, JsonSchema, Clone, Debug)]
-pub struct SemanticQueryFilter {
-    pub field: String,
-    pub op: String,
-    pub value: JsonValue,
-}
-
-impl std::hash::Hash for SemanticQueryFilter {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.field.hash(state);
-        self.op.hash(state);
-        // Hash the JSON value as a string for consistency
-        if let Ok(s) = serde_json::to_string(&self.value) {
-            s.hash(state);
-        }
-    }
-}
-
 #[derive(Serialize, Deserialize, ToSchema, JsonSchema, Clone, Debug, Hash)]
 pub struct SemanticQueryOrder {
     pub field: String,
@@ -124,7 +102,7 @@ pub struct SemanticQueryParams {
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub dimensions: Vec<String>,
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
-    pub filters: Vec<SemanticQueryFilter>,
+    pub filters: Vec<SemanticFilter>,
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub orders: Vec<SemanticQueryOrder>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -171,7 +149,7 @@ pub struct SemanticQuery {
     pub topic: Option<String>,
     pub dimensions: Vec<String>,
     pub measures: Vec<String>,
-    pub filters: Vec<SemanticQueryFilter>,
+    pub filters: Vec<SemanticFilter>,
     pub orders: Vec<SemanticQueryOrder>,
     pub limit: Option<u64>,
     pub offset: Option<u64>,
@@ -225,7 +203,7 @@ pub enum ArtifactContent {
         topic: Option<String>,
         dimensions: Vec<String>,
         measures: Vec<String>,
-        filters: Vec<SemanticQueryFilter>,
+        filters: Vec<SemanticFilter>,
         orders: Vec<SemanticQueryOrder>,
         limit: Option<u64>,
         offset: Option<u64>,

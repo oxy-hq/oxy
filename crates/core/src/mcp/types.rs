@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 // Internal crate imports
-use crate::{adapters::project::manager::ProjectManager, service::types::SemanticQueryFilter};
+use crate::{adapters::project::manager::ProjectManager, config::model::SemanticFilter};
 
 use super::executor::ToolExecutor;
 
@@ -99,7 +99,7 @@ pub struct SemanticTopicToolInput {
 
     /// Filters to apply to the query
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub filters: Option<Vec<SemanticQueryFilter>>,
+    pub filters: Option<Vec<SemanticFilter>>,
 
     /// Maximum number of rows to return
     #[serde(skip_serializing_if = "Option::is_none")]

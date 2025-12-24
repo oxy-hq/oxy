@@ -1499,29 +1499,89 @@ pub enum SemanticOrderDirection {
     Desc,
 }
 
+// Custom schema functions for JSON values to ensure OpenAI compatibility
+fn json_value_schema(_gen: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+    use schemars::schema::{InstanceType, Schema, SchemaObject};
+    Schema::Object(SchemaObject {
+        instance_type: Some(
+            vec![
+                InstanceType::String,
+                InstanceType::Number,
+                InstanceType::Boolean,
+                InstanceType::Null,
+            ]
+            .into(),
+        ),
+        ..Default::default()
+    })
+}
+
+fn json_value_array_schema(
+    _gen: &mut schemars::r#gen::SchemaGenerator,
+) -> schemars::schema::Schema {
+    use schemars::schema::{ArrayValidation, InstanceType, Schema, SchemaObject, SingleOrVec};
+    Schema::Object(SchemaObject {
+        instance_type: Some(vec![InstanceType::Array].into()),
+        array: Some(Box::new(ArrayValidation {
+            items: Some(SingleOrVec::Single(Box::new(Schema::Object(
+                SchemaObject {
+                    instance_type: Some(
+                        vec![
+                            InstanceType::String,
+                            InstanceType::Number,
+                            InstanceType::Boolean,
+                            InstanceType::Null,
+                        ]
+                        .into(),
+                    ),
+                    ..Default::default()
+                },
+            )))),
+            ..Default::default()
+        })),
+        ..Default::default()
+    })
+}
+
 /// Scalar comparison filter (eq, neq, gt, gte, lt, lte)
-#[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema, ToSchema)]
 #[garde(context(ValidationContext))]
 pub struct ScalarFilter {
     #[garde(skip)]
+    #[schemars(
+        schema_with = "json_value_schema",
+        description = "The value to compare. Can be a string, number, boolean, or null."
+    )]
     pub value: Value,
 }
 
 /// Array-based filter (in, not_in)
-#[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema, ToSchema)]
 #[garde(context(ValidationContext))]
 pub struct ArrayFilter {
     #[garde(skip)]
+    #[schemars(
+        schema_with = "json_value_array_schema",
+        description = "Array of values to filter by. Each value can be a string, number, boolean, or null."
+    )]
     pub values: Vec<Value>,
 }
 
 /// Date range filter (in_date_range, not_in_date_range)
-#[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema, ToSchema)]
 #[garde(context(ValidationContext))]
 pub struct DateRangeFilter {
     #[garde(skip)]
+    #[schemars(
+        schema_with = "json_value_schema",
+        description = "Start of the date range. Can be a string (ISO date or relative like 'today', '7 days ago'), number (timestamp), or null."
+    )]
     pub from: Value,
     #[garde(skip)]
+    #[schemars(
+        schema_with = "json_value_schema",
+        description = "End of the date range. Can be a string (ISO date or relative like 'today', '7 days ago'), number (timestamp), or null."
+    )]
     pub to: Value,
 }
 
@@ -1562,9 +1622,9 @@ impl DateRangeFilter {
 }
 
 /// Enum representing different filter types with their appropriate value types
-#[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema, ToSchema)]
 #[garde(context(ValidationContext))]
-#[serde(tag = "op", content = "value")]
+#[serde(tag = "op")]
 pub enum SemanticFilterType {
     #[serde(rename = "eq")]
     Eq(#[garde(dive)] ScalarFilter),
@@ -1698,7 +1758,7 @@ impl SemanticFilterType {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema, ToSchema)]
 #[garde(context(ValidationContext))]
 pub struct SemanticFilter {
     #[garde(length(min = 1))]
@@ -2915,4 +2975,33 @@ fn default_consistency_concurrency() -> usize {
 }
 
 #[cfg(test)]
-mod tests {}
+mod tests {
+    use super::*;
+    use schemars::schema_for;
+
+    #[test]
+    fn test_semantic_query_params_schema() {
+        use crate::service::types::SemanticQueryParams;
+        let schema = schema_for!(SemanticQueryParams);
+        let json = serde_json::to_string_pretty(&schema).unwrap();
+        println!("\n{}\n", json);
+
+        // Verify that the schema doesn't have "items": true or "value": true
+        assert!(
+            !json.contains(r#""items": true"#),
+            "Schema should not contain 'items': true"
+        );
+        assert!(
+            !json.contains(r#""value": true"#),
+            "Schema should not contain 'value': true"
+        );
+        assert!(
+            !json.contains(r#""from": true"#),
+            "Schema should not contain 'from': true"
+        );
+        assert!(
+            !json.contains(r#""to": true"#),
+            "Schema should not contain 'to': true"
+        );
+    }
+}

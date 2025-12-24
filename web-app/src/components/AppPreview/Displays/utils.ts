@@ -43,6 +43,11 @@ export const getArrowValueWithType = (
   if (DataType.isTime(type)) {
     return formatTime(value as number);
   }
+  if (DataType.isDecimal(type)) {
+    const scale = (type as { scale: number }).scale;
+    const numValue = Number(value) / Math.pow(10, scale);
+    return formatNumber(numValue);
+  }
   return getArrowValue(value);
 };
 

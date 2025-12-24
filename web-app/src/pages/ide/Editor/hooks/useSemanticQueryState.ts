@@ -1,11 +1,12 @@
 import { useState } from "react";
-import { Filter, Variable } from "../components/SemanticQueryPanel";
+import { SemanticQueryFilter } from "@/services/api/semantic";
+import { Variable } from "../components/SemanticQueryPanel";
 
 export const useSemanticQueryState = () => {
   const [result, setResult] = useState<string[][]>([]);
   const [selectedDimensions, setSelectedDimensions] = useState<string[]>([]);
   const [selectedMeasures, setSelectedMeasures] = useState<string[]>([]);
-  const [filters, setFilters] = useState<Filter[]>([]);
+  const [filters, setFilters] = useState<SemanticQueryFilter[]>([]);
   const [variables, setVariables] = useState<Variable[]>([]);
   const [showSql, setShowSql] = useState(false);
   const [generatedSql, setGeneratedSql] = useState("");
@@ -17,15 +18,15 @@ export const useSemanticQueryState = () => {
       ...filters,
       {
         field: initialField,
-        operator: "=",
+        op: "eq",
         value: "",
-      },
+      } as SemanticQueryFilter,
     ]);
   };
 
-  const updateFilter = (index: number, updates: Partial<Filter>) => {
+  const updateFilter = (index: number, updates: SemanticQueryFilter) => {
     const newFilters = [...filters];
-    newFilters[index] = { ...newFilters[index], ...updates };
+    newFilters[index] = updates;
     setFilters(newFilters);
   };
 
