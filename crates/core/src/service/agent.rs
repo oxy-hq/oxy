@@ -217,6 +217,9 @@ pub async fn run_agent<P: AsRef<Path>, H: EventHandler + Send + 'static>(
                 prompt,
                 memory,
                 variables,
+                a2a_task_id: None,
+                a2a_thread_id: None,
+                a2a_context_id: None,
             },
             event_handler,
         )

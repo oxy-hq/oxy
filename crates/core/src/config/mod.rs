@@ -29,12 +29,18 @@ impl Config {
             config: self.clone(),
             metadata: None,
         };
-        match self.validate_with(&context) {
-            Ok(_) => Ok(()),
-            Err(e) => anyhow::bail!(OxyError::ConfigurationError(format!(
+        if let Err(e) = self.validate_with(&context) {
+            anyhow::bail!(OxyError::ConfigurationError(format!(
                 "Invalid configuration: {e}"
-            ))),
+            )));
         }
+
+        // Validate A2A configuration with additional checks
+        if let Some(a2a_config) = &self.a2a {
+            a2a_config.validate_config(Some(&self.project_path))?;
+        }
+
+        Ok(())
     }
 
     pub fn validate_workflow(&self, workflow: &Workflow) -> anyhow::Result<()> {

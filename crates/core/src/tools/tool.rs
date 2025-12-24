@@ -550,6 +550,9 @@ impl ParamMapper<AgentToolInput, AgentInput> for AgentMapper {
                 prompt: params.prompt.to_string(),
                 memory: vec![],
                 variables: params.variables.clone(),
+                a2a_task_id: None,
+                a2a_thread_id: None,
+                a2a_context_id: None,
             },
             None,
         ))

@@ -396,6 +396,7 @@ fn create_config_file(config_path: &Path) -> Result<(), InitError> {
         integrations: vec![],
         slack: None,
         mcp: None,
+        a2a: None,
     };
 
     let yaml =

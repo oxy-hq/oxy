@@ -1,3 +1,4 @@
+mod a2a;
 pub mod clean;
 mod init;
 mod make;
@@ -336,6 +337,11 @@ enum SubCommand {
     /// Useful for deploying to containerized environments or when running
     /// Cube.js separately from the Oxy CLI.
     PrepareSemanticEngine(PrepareSemanticEngineArgs),
+    /// Start A2A (Agent-to-Agent) protocol server
+    ///
+    /// Launch an A2A server that exposes configured Oxy agents for
+    /// external agent communication using JSON-RPC or HTTP+JSON protocols.
+    A2a(A2aArgs),
 }
 
 #[derive(Parser, Debug)]
@@ -539,6 +545,29 @@ struct SyncArgs {
         help = "Overwrite existing files during sync"
     )]
     overwrite: bool,
+}
+
+#[derive(Parser, Debug)]
+pub struct A2aArgs {
+    /// Port number for the A2A server
+    ///
+    /// Specify which port to bind the A2A protocol server.
+    /// Default is 8080 if not specified in configuration.
+    #[clap(long)]
+    pub port: Option<u16>,
+    /// Host address to bind the A2A server
+    ///
+    /// Specify which host address to bind the A2A server.
+    /// Default is 0.0.0.0 to listen on all interfaces.
+    #[clap(long)]
+    pub host: Option<String>,
+    /// Base URL for constructing agent card endpoint URLs
+    ///
+    /// The base URL that external agents will use to reach this server.
+    /// Used in agent cards to construct endpoint URLs.
+    /// Example: https://api.example.com
+    #[clap(long)]
+    pub base_url: Option<String>,
 }
 
 #[derive(Parser, Debug)]
@@ -833,6 +862,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             SubCommand::Clean(_) => "clean",
             SubCommand::SemanticEngine(_) => "semantic-engine",
             SubCommand::PrepareSemanticEngine(_) => "prepare-semantic-engine",
+            SubCommand::A2a(_) => "a2a",
         };
 
         sentry_config::add_breadcrumb(
@@ -1056,6 +1086,11 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                 exit(1);
             } else {
                 println!("{}", "Migration completed successfully".success());
+            }
+        }
+        Some(SubCommand::A2a(a2a_args)) => {
+            if let Err(e) = a2a::start_a2a_server(a2a_args).await {
+                eprintln!("{}", format!("A2A server failed: {e}").error());
             }
         }
         Some(SubCommand::Start(serve_args)) => {

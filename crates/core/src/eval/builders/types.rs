@@ -70,6 +70,9 @@ impl EvalRecord {
                 prompt: self.query.clone(),
                 memory: vec![],
                 variables: None,
+                a2a_task_id: agent_input.a2a_task_id.clone(),
+                a2a_thread_id: agent_input.a2a_thread_id.clone(),
+                a2a_context_id: agent_input.a2a_context_id.clone(),
             }),
         }
     }

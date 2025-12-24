@@ -36,6 +36,9 @@ impl Executable<AgentInput> for AgentExecutable {
             prompt,
             memory,
             variables: runtime_variables,
+            a2a_task_id: _,
+            a2a_thread_id: _,
+            a2a_context_id: _,
         } = input;
         let config_manager = &execution_context.project.config_manager;
         let agent_config = config_manager

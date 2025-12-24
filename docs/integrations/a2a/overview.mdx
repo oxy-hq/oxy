@@ -1,0 +1,104 @@
+---
+title: 'A2A Protocol Integration'
+description: 'Enable agent-to-agent communication using the A2A protocol'
+---
+
+# A2A Protocol Integration
+
+Oxy supports the [Agent-to-Agent (A2A) protocol](https://a2a-protocol.org/), enabling standardized communication between Oxy agents and external agents or applications.
+
+## Quick Start
+
+### 1. Configure A2A Agents
+
+Add agents to your `config.yml`:
+
+```yaml
+a2a:
+  agents:
+    - ref: agents/sales-assistant.agent.yml
+      name: sales-assistant
+    - ref: agents/data-analyst.agent.yml
+      name: data-analyst
+```
+
+### 2. Start the A2A Server
+
+```bash
+oxy a2a --host 0.0.0.0 --port 8080
+```
+
+## Authentication
+
+Secure your A2A endpoints with API key authentication:
+
+```python
+headers = {
+    "X-Api-Key": "your-api-key"
+}
+```
+
+## Documentation
+
+### Getting Started
+
+- [Integration Guide](/docs/integrations/a2a/integration-guide) - Step-by-step setup and usage guide
+- [API Reference](/docs/integrations/a2a/api-reference) - Complete API endpoint documentation
+
+### Advanced Topics
+
+- [Artifact Mapping](/docs/integrations/a2a/artifact-mapping) - How Oxy outputs map to A2A artifacts
+- [A2A Protocol Specification](/.spec/a2a-protocol-specification.md) - Full protocol specification
+
+## Configuration
+
+### Basic Configuration
+
+```yaml
+a2a:
+  agents:
+    - ref: agents/local.agent.yml
+      name: local
+```
+
+### Multiple Agents
+
+```yaml
+a2a:
+  agents:
+    - ref: agents/sales-assistant.agent.yml
+      name: sales-assistant
+    - ref: agents/data-analyst.agent.yml
+      name: data-analyst
+    - ref: agents/support.agent.yml
+      name: support
+```
+
+### Configuration Options
+
+- `ref` - Path to Oxy agent configuration file
+- `name` - URL-safe identifier for A2A endpoints
+
+## CLI Commands
+
+### Start A2A Server
+
+```bash
+# Default (localhost:3000)
+oxy a2a
+
+# Custom host and port
+oxy a2a --host 0.0.0.0 --port 8080
+```
+
+### Options
+
+- `--host` - Host to bind (default: 127.0.0.1)
+- `--port` - Port to bind (default: 3000)
+
+## Related Resources
+
+- [A2A Protocol Website](https://a2a-protocol.org/)
+- [A2A GitHub Repository](https://github.com/a2aproject/A2A)
+- [A2A Protocol Specification](/.spec/a2a-protocol-specification.md)
+- [Oxy Agent Configuration](/docs/basics/agents)

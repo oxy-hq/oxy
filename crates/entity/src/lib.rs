@@ -2,6 +2,10 @@
 
 pub mod prelude;
 
+pub mod a2a_artifacts;
+pub mod a2a_messages;
+pub mod a2a_task_status;
+pub mod a2a_tasks;
 pub mod apalis_jobs;
 pub mod api_keys;
 pub mod artifacts;

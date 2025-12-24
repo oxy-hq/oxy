@@ -209,6 +209,7 @@ impl ConfigStorage for LocalSource {
             integrations: vec![],
             slack: None,
             mcp: None,
+            a2a: None,
         });
         config.project_path = self.project_path.clone();
         config

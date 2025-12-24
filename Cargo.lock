@@ -3,6 +3,24 @@
 version = 4
 
 [[package]]
+name = "a2a"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "axum",
+ "chrono",
+ "futures",
+ "http 1.4.0",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.17",
+ "tokio",
+ "tower 0.5.2",
+ "url",
+ "uuid",
+]
+
+[[package]]
 name = "actix-codec"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6414,6 +6432,7 @@ dependencies = [
 name = "oxy"
 version = "0.4.0"
 dependencies = [
+ "a2a",
  "aes-gcm",
  "aho-corasick",
  "anyhow",

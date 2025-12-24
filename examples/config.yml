@@ -142,3 +142,11 @@ mcp:
     - data/*.sql
     - agents/*.agent.yml
     - workflows/*.workflow.yml
+  
+a2a:
+  base_url: "http://localhost:3030"
+  agents:
+    - ref: agents/local.agent.yml
+      name: local
+    - ref: agents/semantic.agent.yml
+      name: semantic

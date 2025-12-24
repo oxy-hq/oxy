@@ -43,6 +43,12 @@ pub struct AgentLauncher {
     filters: Option<SessionFilters>,
     connections: Option<ConnectionOverrides>,
     globals: Option<indexmap::IndexMap<String, serde_json::Value>>,
+    /// A2A task ID for tracking (optional, only used in A2A context)
+    a2a_task_id: Option<String>,
+    /// A2A thread ID for conversation continuity (optional, only used in A2A context)
+    a2a_thread_id: Option<String>,
+    /// A2A context ID for grouping related tasks (optional, only used in A2A context)
+    a2a_context_id: Option<String>,
 }
 
 impl AgentLauncher {
@@ -53,6 +59,9 @@ impl AgentLauncher {
             filters: None,
             connections: None,
             globals: None,
+            a2a_task_id: None,
+            a2a_thread_id: None,
+            a2a_context_id: None,
         }
     }
 
@@ -71,6 +80,24 @@ impl AgentLauncher {
         globals: impl Into<Option<indexmap::IndexMap<String, serde_json::Value>>>,
     ) -> Self {
         self.globals = globals.into();
+        self
+    }
+
+    /// Set the A2A task ID for tracking (used in A2A execution context)
+    pub fn with_a2a_task_id(mut self, task_id: impl Into<Option<String>>) -> Self {
+        self.a2a_task_id = task_id.into();
+        self
+    }
+
+    /// Set the A2A thread ID for conversation continuity (used in A2A execution context)
+    pub fn with_a2a_thread_id(mut self, thread_id: impl Into<Option<String>>) -> Self {
+        self.a2a_thread_id = thread_id.into();
+        self
+    }
+
+    /// Set the A2A context ID for grouping related tasks (used in A2A execution context)
+    pub fn with_a2a_context_id(mut self, context_id: impl Into<Option<String>>) -> Self {
+        self.a2a_context_id = context_id.into();
         self
     }
 
@@ -154,9 +181,20 @@ impl AgentLauncher {
 
     pub async fn launch<H: EventHandler + Send + 'static>(
         self,
-        agent_input: AgentInput,
+        mut agent_input: AgentInput,
         event_handler: H,
     ) -> Result<OutputContainer, OxyError> {
+        // Pass A2A context from launcher to agent input if not already set
+        if agent_input.a2a_task_id.is_none() {
+            agent_input.a2a_task_id = self.a2a_task_id.clone();
+        }
+        if agent_input.a2a_thread_id.is_none() {
+            agent_input.a2a_thread_id = self.a2a_thread_id.clone();
+        }
+        if agent_input.a2a_context_id.is_none() {
+            agent_input.a2a_context_id = self.a2a_context_id.clone();
+        }
+
         let execution_context = self
             .execution_context
             .ok_or(OxyError::RuntimeError(

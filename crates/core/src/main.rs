@@ -53,8 +53,6 @@ fn init_tracing_logging(log_to_stdout: bool) {
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
         EnvFilter::new(log_level)
             // Core Oxy components
-            .add_directive("oxy=info".parse().unwrap())
-            .add_directive("oxy_semantic=info".parse().unwrap())
             .add_directive("tower_http=info".parse().unwrap())
             // Only enable trace-level HTTP logging in debug builds or when explicitly requested
             .add_directive(if cfg!(debug_assertions) {
@@ -165,9 +163,11 @@ fn main() {
         );
     }
 
-    // Log to stdout if `oxy serve`
+    // Parse args early to check for log level override
     let args: Vec<String> = env::args().collect();
-    let log_to_stdout = args.iter().any(|a| a == "serve")
+
+    // Log to stdout if `oxy serve` or `oxy a2a`
+    let log_to_stdout = args.iter().any(|a| a == "serve" || a == "a2a")
         || env::var("OXY_DEBUG")
             .as_deref()
             .unwrap_or("false")

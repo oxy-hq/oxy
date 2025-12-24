@@ -61,6 +61,12 @@ pub struct Config {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[garde(dive)]
     pub mcp: Option<McpConfig>,
+
+    /// Optional A2A configuration for exposing agents via A2A protocol
+    /// If not specified or empty, no agents are exposed via A2A
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    #[garde(dive)]
+    pub a2a: Option<crate::a2a::config::A2aConfig>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, JsonSchema, Validate)]
@@ -2909,6 +2915,4 @@ fn default_consistency_concurrency() -> usize {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-}
+mod tests {}

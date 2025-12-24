@@ -122,6 +122,9 @@ impl ParamMapper<EvalInput, Vec<(usize, EvalConfig, EvalTarget)>> for EvalMapper
                                 },
                                 memory: vec![],
                                 variables: None,
+                                a2a_task_id: None,
+                                a2a_thread_id: None,
+                                a2a_context_id: None,
                             }),
                         ))
                     })

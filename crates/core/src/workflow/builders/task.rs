@@ -204,6 +204,9 @@ impl Executable<TaskInput> for TaskExecutable {
                                     prompt,
                                     memory: vec![],
                                     variables: rendered_variables.clone(),
+                                    a2a_task_id: None,
+                                    a2a_thread_id: None,
+                                    a2a_context_id: None,
                                 },
                             )
                             .await
@@ -222,6 +225,9 @@ impl Executable<TaskInput> for TaskExecutable {
                                     prompt,
                                     memory: vec![],
                                     variables: rendered_variables,
+                                    a2a_task_id: None,
+                                    a2a_thread_id: None,
+                                    a2a_context_id: None,
                                 },
                             )
                             .await

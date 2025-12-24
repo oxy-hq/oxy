@@ -59,6 +59,7 @@ entity = { path = "../entity" }
 omni = { path = "../omni" }
 oxy-semantic = { path = "../semantic" }
 oxy_globals = { path = "../globals" }
+a2a = { path = "../a2a" }
 enum_dispatch = "0.3.13"
 futures = "0.3.31"
 garde = { version = "0.22.1", features = ["full"] }
@@ -102,7 +103,7 @@ tokio = { workspace = true }
 tokio-stream = "0.1.17"
 tokio-util = "0.7.17"
 tower = "0.5.2"
-tower-http = { version = "0.6.8", features = ["fs", "cors", "trace", "timeout"] }
+tower-http = { version = "0.6.8", features = ["fs", "cors", "trace", "timeout", "compression-gzip"] }
 tower-serve-static = "0.1.1"
 tqdm = "0.7.0"
 uuid = { version = "1.19.0", features = ["v4", "serde"] }

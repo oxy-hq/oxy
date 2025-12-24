@@ -38,6 +38,7 @@ impl ConfigBuilder {
             integrations: Vec::new(),
             slack: None,
             mcp: None,
+            a2a: None,
         };
 
         Self::write_config_file(&config, repo_path)
