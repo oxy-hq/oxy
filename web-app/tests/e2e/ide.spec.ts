@@ -14,6 +14,10 @@ test.describe("IDE Functionality", () => {
     await expect(page.getByRole("tab", { name: "Files view" })).toBeVisible({
       timeout: 10000,
     });
+
+    // Switch to Files view mode (default is Objects mode)
+    await page.getByRole("tab", { name: "Files view" }).click();
+    await page.waitForTimeout(500);
   });
 
   test("should display file browser with folders and files in Files mode", async ({
@@ -21,7 +25,7 @@ test.describe("IDE Functionality", () => {
   }) => {
     const idePage = new IDEPage(page);
 
-    // Ensure we're in Files mode (default)
+    // Verify we're in Files mode (switched in beforeEach)
     await idePage.verifyFilesMode();
 
     // Verify at least some folders are visible (folders that actually exist in test env)
@@ -92,7 +96,7 @@ test.describe("IDE Functionality", () => {
   test("should switch between Files and Objects modes", async ({ page }) => {
     const idePage = new IDEPage(page);
 
-    // Verify default mode is Files
+    // Verify we're in Files mode (switched in beforeEach)
     await idePage.verifyFilesMode();
 
     // Switch to Objects mode
