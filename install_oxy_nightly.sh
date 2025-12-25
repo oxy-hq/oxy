@@ -77,16 +77,40 @@ else
 fi
 
 echo "Downloading from: $BINARY_URL"
-if ! curl -L "$BINARY_URL" -o oxy-$TARGET; then
-	echo "Error: Failed to download Oxy binary"
+
+# Download to a temporary file first
+TEMP_FILE=$(mktemp)
+if ! curl -fSL "$BINARY_URL" -o "$TEMP_FILE"; then
+	echo "Error: Failed to download Oxy binary from GitHub"
+	rm -f "$TEMP_FILE"
+	exit 1
+fi
+
+# Verify the downloaded file is valid (not an HTML error page)
+# Check if file starts with ELF (Linux) or Mach-O (macOS) magic bytes
+FILE_TYPE=$(file "$TEMP_FILE")
+if [[ "$FILE_TYPE" != *"executable"* ]] && [[ "$FILE_TYPE" != *"Mach-O"* ]] && [[ "$FILE_TYPE" != *"ELF"* ]]; then
+	echo "Error: Downloaded file is not a valid binary executable"
+	echo "File type detected: $FILE_TYPE"
+	echo "This usually means the release is missing files on GitHub"
+	rm -f "$TEMP_FILE"
+	exit 1
+fi
+
+# Check if file size is reasonable (at least 1MB for a Rust binary)
+FILE_SIZE=$(stat -f%z "$TEMP_FILE" 2>/dev/null || stat -c%s "$TEMP_FILE" 2>/dev/null)
+if [ "$FILE_SIZE" -lt 1048576 ]; then
+	echo "Error: Downloaded file is too small ($FILE_SIZE bytes)"
+	echo "This usually means the release is missing files on GitHub"
+	rm -f "$TEMP_FILE"
 	exit 1
 fi
 
 # Make the binary executable
-chmod +x oxy-$TARGET
+chmod +x "$TEMP_FILE"
 
-# Move the binary to the install directory
-mv oxy-$TARGET $INSTALL_DIR/oxy
+# Move the binary to the install directory (this will replace the old file only if all checks passed)
+mv "$TEMP_FILE" "$INSTALL_DIR/oxy"
 
 echo ""
 echo "✅ Oxy has been installed successfully!"

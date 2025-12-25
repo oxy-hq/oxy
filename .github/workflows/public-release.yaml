@@ -175,11 +175,18 @@ jobs:
       - name: Ensure binaries are executable
         run: chmod +x artifacts/oxy-*
 
-      - name: Upload files to GitHub release
+      - name: Create release
         uses: softprops/action-gh-release@v2
         with:
           draft: false
           prerelease: true
           tag_name: ${{ inputs.tag || github.ref_name }}
           body_path: artifacts/CHANGELOG.md
-          files: artifacts/**/*
+          files: |
+            artifacts/oxy-*
+            artifacts/SHA256SUM-*.txt
+            artifacts/SHA256SUMS.txt
+            artifacts/*.json
+            artifacts/*.md
+            artifacts/*.whl
+          fail_on_unmatched_files: false
