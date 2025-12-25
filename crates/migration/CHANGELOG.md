@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/oxy-hq/oxy-internal/compare/0.4.0...0.4.1) (2025-12-25)
+
+
+### <!-- 0 -->🚀 Features
+
+* a2a support ([#1426](https://github.com/oxy-hq/oxy-internal/issues/1426)) ([bc7d7a0](https://github.com/oxy-hq/oxy-internal/commit/bc7d7a0f7fe110269a7d378763a7fd792648ecab))
+
 ## [0.4.0](https://github.com/oxy-hq/oxy-internal/compare/0.3.21...0.4.0) (2025-12-18)
 
 

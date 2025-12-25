@@ -1,6 +1,6 @@
 [package]
 name = "a2a"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 authors = ["Oxy Team"]
 description = "A2A (Agent-to-Agent) Protocol Implementation - Standalone crate for A2A protocol types and utilities"

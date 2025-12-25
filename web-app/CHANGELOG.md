@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.4.1](https://github.com/oxy-hq/oxy-internal/compare/0.4.0...0.4.1) (2025-12-25)
+
+
+### <!-- 0 -->🚀 Features
+
+* integrate browserauth config ([#1439](https://github.com/oxy-hq/oxy-internal/issues/1439)) ([13e32e8](https://github.com/oxy-hq/oxy-internal/commit/13e32e8eea5b83910c9c8b9a92de645c08cf967b))
+* kestra like ide ([#1437](https://github.com/oxy-hq/oxy-internal/issues/1437)) ([d3790c2](https://github.com/oxy-hq/oxy-internal/commit/d3790c2eda6006342aea6ff12e3a5fe6ec0f7e48))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* bugs with filters in semantic panel and decimal not displayed correctly ([#1458](https://github.com/oxy-hq/oxy-internal/issues/1458)) ([3bf1c37](https://github.com/oxy-hq/oxy-internal/commit/3bf1c37be0fb552ec21bacb66c8025f43a93c20c))
+* improve left sidebar spacing and alignment ([#1456](https://github.com/oxy-hq/oxy-internal/issues/1456)) ([3f6b5f1](https://github.com/oxy-hq/oxy-internal/commit/3f6b5f140afbf4cba01a670272872652ccf7fa8a))
+
 ## [0.4.0](https://github.com/oxy-hq/oxy-internal/compare/0.3.21...0.4.0) (2025-12-18)
 
 

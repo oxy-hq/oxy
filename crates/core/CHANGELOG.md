@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.4.1](https://github.com/oxy-hq/oxy-internal/compare/0.4.0...0.4.1) (2025-12-25)
+
+
+### <!-- 0 -->🚀 Features
+
+* a2a support ([#1426](https://github.com/oxy-hq/oxy-internal/issues/1426)) ([bc7d7a0](https://github.com/oxy-hq/oxy-internal/commit/bc7d7a0f7fe110269a7d378763a7fd792648ecab))
+* integrate browserauth config ([#1439](https://github.com/oxy-hq/oxy-internal/issues/1439)) ([13e32e8](https://github.com/oxy-hq/oxy-internal/commit/13e32e8eea5b83910c9c8b9a92de645c08cf967b))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* bugs with filters in semantic panel and decimal not displayed correctly ([#1458](https://github.com/oxy-hq/oxy-internal/issues/1458)) ([3bf1c37](https://github.com/oxy-hq/oxy-internal/commit/3bf1c37be0fb552ec21bacb66c8025f43a93c20c))
+* prevent path traversal attack ([#1446](https://github.com/oxy-hq/oxy-internal/issues/1446)) ([0e47c92](https://github.com/oxy-hq/oxy-internal/commit/0e47c92b4e213076c558404b047b79fc050c4535))
+
 ## [0.4.0](https://github.com/oxy-hq/oxy-internal/compare/0.3.21...0.4.0) (2025-12-18)
 
 
