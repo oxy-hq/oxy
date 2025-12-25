@@ -111,13 +111,13 @@ jobs:
       - name: Build oxy cli
         shell: bash
         run: |
-          cargo build --release --target ${{ matrix.job.target }}
-          mv target/${{ matrix.job.target }}/release/oxy artifacts/oxy-${{ matrix.job.target }}
+          cargo build --target ${{ matrix.job.target }}
+          mv target/${{ matrix.job.target }}/debug/oxy artifacts/oxy-${{ matrix.job.target }}
 
       - name: Generate config schema (once)
         if: ${{ matrix.job.target == 'aarch64-apple-darwin' }}
         run: |
-          cargo run --release --target ${{ matrix.job.target }} -- gen-config-schema
+          cargo run --target ${{ matrix.job.target }} -- gen-config-schema
           cp -a json-schemas/. artifacts/
           cp Cargo.lock artifacts/
 
