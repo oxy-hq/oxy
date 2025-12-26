@@ -868,7 +868,7 @@ async fn migrate_runs(
                 error: Set(record.error.clone()),
                 project_id: Set(record.project_id),
                 branch_id: Set(record.branch_id),
-                lookup_id: Set(record.lookup_id.clone()),
+                lookup_id: Set(record.lookup_id),
                 created_at: Set(record.created_at),
                 updated_at: Set(record.updated_at),
             };

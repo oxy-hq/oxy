@@ -12,7 +12,7 @@ use crate::adapters::session_filters::{FilterProcessor, SessionFilters};
 use crate::config::model::{ConnectionOverride, SnowflakeAuthType};
 use crate::config::{
     ConfigManager,
-    model::{ConnectionOverrides, Snowflake as SnowflakeConfig, SnowflakeConnectionOverride},
+    model::{Snowflake as SnowflakeConfig, SnowflakeConnectionOverride},
 };
 use crate::errors::OxyError;
 

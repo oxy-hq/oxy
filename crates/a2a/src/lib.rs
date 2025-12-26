@@ -88,7 +88,7 @@ pub mod validation;
 
 // Re-export commonly used types for convenience
 pub use error::{A2aError, A2aResult, JsonRpcError};
-pub use server::{create_http_router, create_jsonrpc_router, A2aContext, A2aHandler, SseStream};
+pub use server::{A2aContext, A2aHandler, SseStream, create_http_router, create_jsonrpc_router};
 pub use storage::{InMemoryTaskStorage, TaskFilters, TaskStorage};
 pub use types::{
     AgentCapabilities, AgentCard, AgentSkill, Artifact, Message, MessageRole, Part, Task,
@@ -111,7 +111,7 @@ pub mod prelude {
         TaskQueryParams,
     };
     pub use crate::server::{
-        create_http_router, create_jsonrpc_router, A2aContext, A2aHandler, SseStream,
+        A2aContext, A2aHandler, SseStream, create_http_router, create_jsonrpc_router,
     };
     pub use crate::storage::{InMemoryTaskStorage, TaskFilters, TaskStorage};
     pub use crate::streaming::{SseEvent, SseEventType, SseStreamBuilder};

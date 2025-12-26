@@ -1,4 +1,3 @@
-use crate::adapters::project::builder::ProjectBuilder;
 use crate::config::model::Config;
 use crate::service::project::database_config::DatabaseConfigBuilder;
 use crate::service::project::model_config::ModelConfigBuilder;

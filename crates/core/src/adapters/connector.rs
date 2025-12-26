@@ -60,12 +60,12 @@ impl Connector {
     ) -> Result<Self, OxyError> {
         let database = config_manager.resolve_database(database_ref)?;
         Self::from_db(
-            &database,
+            database,
             config_manager,
             secrets_manager,
             dry_run_limit,
             filters,
-            connections.map(|c| c.get(database_ref).cloned()).flatten(),
+            connections.and_then(|c| c.get(database_ref).cloned()),
             None, // No SSO URL sender for regular operations
         )
         .await

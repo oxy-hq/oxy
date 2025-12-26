@@ -141,8 +141,8 @@ impl A2aContext {
     ///
     /// Panics if the header name or value are invalid.
     pub fn with_header(mut self, key: impl AsRef<str>, value: impl AsRef<str>) -> Self {
-        use http::header::HeaderName;
         use http::HeaderValue;
+        use http::header::HeaderName;
 
         let name = HeaderName::from_bytes(key.as_ref().as_bytes()).expect("invalid header name");
         let val = HeaderValue::from_str(value.as_ref()).expect("invalid header value");
@@ -188,15 +188,15 @@ fn add_www_authenticate_header_for_status(
     response: &mut axum::response::Response,
     status: HttpStatus,
 ) {
-    if matches!(status, HttpStatus::Unauthorized | HttpStatus::Forbidden) {
-        if let Ok(value) = http::HeaderValue::from_str(&format!(
+    if matches!(status, HttpStatus::Unauthorized | HttpStatus::Forbidden)
+        && let Ok(value) = http::HeaderValue::from_str(&format!(
             "ApiKey realm=\"a2a\", header=\"{}\"",
             DEFAULT_AUTH_HEADER
-        )) {
-            response
-                .headers_mut()
-                .insert(http::header::WWW_AUTHENTICATE, value);
-        }
+        ))
+    {
+        response
+            .headers_mut()
+            .insert(http::header::WWW_AUTHENTICATE, value);
     }
 }
 
@@ -564,8 +564,8 @@ async fn jsonrpc_handler<H>(
 where
     H: A2aHandler,
 {
-    use crate::http::error_to_http_status;
     use crate::http::HttpStatus;
+    use crate::http::error_to_http_status;
     use crate::jsonrpc::JsonRpcResponse;
     use axum::response::sse::{Event, KeepAlive, Sse};
     use futures::stream::StreamExt;
@@ -740,7 +740,7 @@ where
         None => {
             return Err(A2aError::InvalidParams(
                 "message/send requires params".to_string(),
-            ))
+            ));
         }
     };
 
@@ -779,7 +779,7 @@ where
         None => {
             return Err(A2aError::InvalidTask(
                 "tasks/get requires params".to_string(),
-            ))
+            ));
         }
     };
 
@@ -808,7 +808,7 @@ where
         None => {
             return Err(A2aError::InvalidTask(
                 "tasks/cancel requires params".to_string(),
-            ))
+            ));
         }
     };
 
@@ -920,7 +920,7 @@ async fn http_send_message<H>(
 where
     H: A2aHandler,
 {
-    use crate::http::{error_to_http_status, HttpErrorResponse, SendMessageResponse};
+    use crate::http::{HttpErrorResponse, SendMessageResponse, error_to_http_status};
 
     // Build context from request
     let ctx = build_context_from_headers(headers);
@@ -968,7 +968,7 @@ async fn http_send_streaming_message<H>(
 where
     H: A2aHandler,
 {
-    use crate::http::{error_to_http_status, HttpErrorResponse};
+    use crate::http::{HttpErrorResponse, error_to_http_status};
     use axum::response::sse::{Event, KeepAlive, Sse};
     use futures::stream::StreamExt;
 
@@ -1042,7 +1042,7 @@ async fn http_get_task<H>(
 where
     H: A2aHandler,
 {
-    use crate::http::{error_to_http_status, GetTaskResponse, HttpErrorResponse};
+    use crate::http::{GetTaskResponse, HttpErrorResponse, error_to_http_status};
 
     let ctx = build_context_from_headers(headers);
     if let Err(e) = handler.authenticate_request(&ctx).await {
@@ -1100,7 +1100,7 @@ async fn http_delete_task<H>(
 where
     H: A2aHandler,
 {
-    use crate::http::{error_to_http_status, HttpErrorResponse};
+    use crate::http::{HttpErrorResponse, error_to_http_status};
 
     let ctx = build_context_from_headers(headers);
     if let Err(e) = handler.authenticate_request(&ctx).await {
@@ -1145,7 +1145,7 @@ async fn http_get_agent_card<H>(
 where
     H: A2aHandler,
 {
-    use crate::http::{error_to_http_status, GetAgentCardResponse, HttpErrorResponse};
+    use crate::http::{GetAgentCardResponse, HttpErrorResponse, error_to_http_status};
 
     // Build context from request
     let ctx = build_context_from_headers(headers);

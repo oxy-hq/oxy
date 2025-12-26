@@ -4,7 +4,6 @@ use crate::config::model::{DatabaseType, SnowflakeAuthType};
 use crate::{
     auth::extractor::AuthenticatedUserExtractor,
     cli::clean::{clean_all, clean_cache, clean_database_folder, clean_vectors},
-    db::client::establish_connection,
     service::{
         project::{
             database_config::DatabaseConfigBuilder,
@@ -16,13 +15,9 @@ use crate::{
 use axum::{
     extract::{Json, Path, Query},
     http::StatusCode,
-    response::{
-        IntoResponse, Response,
-        sse::{KeepAlive, Sse},
-    },
+    response::{IntoResponse, Response, sse::Sse},
 };
-use scopeguard::{ScopeGuard, guard};
-use sea_orm::TransactionTrait;
+use scopeguard::guard;
 use serde::de::{self, Deserializer};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -270,7 +265,7 @@ pub struct CreateDatabaseConfigResponse {
 )]
 pub async fn create_database_config(
     ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
-    Path(ProjectPath { project_id }): Path<ProjectPath>,
+    Path(ProjectPath { project_id: _ }): Path<ProjectPath>,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     Json(warehouses_form): Json<WarehousesFormData>,
 ) -> Result<Response, StatusCode> {
@@ -386,7 +381,7 @@ pub enum ConnectionTestEvent {
 )]
 pub async fn test_database_connection(
     ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
-    Path(ProjectPath { project_id }): Path<ProjectPath>,
+    Path(ProjectPath { project_id: _ }): Path<ProjectPath>,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     Json(request): Json<TestDatabaseConnectionRequest>,
 ) -> Result<impl IntoResponse, StatusCode> {
@@ -434,7 +429,7 @@ pub async fn test_database_connection(
         let secrets_manager = project_manager.secrets_manager.clone();
         let _cleanup_guard = guard((), move |_| {
             let secret_name = secret_name.clone();
-            let _ = tokio::task::block_in_place(|| {
+            tokio::task::block_in_place(|| {
                 tokio::runtime::Handle::current().block_on(async move {
                     tracing::info!("Cleaning up temporary secret: {}", secret_name);
                     // Delete the temporary secret

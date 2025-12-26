@@ -13,7 +13,6 @@ use crate::{
     },
     config::model::{
         ClickHouse as ConfigClickHouse, ClickHouseConnectionOverride, ConnectionOverride,
-        ConnectionOverrides,
     },
     errors::OxyError,
 };

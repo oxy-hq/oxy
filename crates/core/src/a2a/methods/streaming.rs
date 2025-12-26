@@ -180,7 +180,7 @@ pub async fn handle_send_streaming_message(
     let context_id_clone = context_id.clone();
     let storage_clone = storage.clone();
     let state_clone = shared_state.clone();
-    let inbound_message_clone = inbound_message.clone();
+    let _inbound_message_clone = inbound_message.clone();
 
     tokio::spawn(async move {
         // Determine agent type and execute accordingly

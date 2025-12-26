@@ -293,7 +293,7 @@ pub fn oxy_response_to_artifacts(output: &OutputContainer) -> Result<Vec<Artifac
 pub fn oxy_output_to_parts(output: &Output) -> Result<Vec<Part>, A2aError> {
     match output {
         Output::Text(text) => Ok(vec![Part::Text(TextPart::new(text.clone()))]),
-        Output::Prompt(prompt) => Ok(vec![]),
+        Output::Prompt(_prompt) => Ok(vec![]),
         Output::SQL(sql) => Ok(vec![Part::Text(TextPart::new(format!(
             "```sql\n{}\n```",
             sql.0

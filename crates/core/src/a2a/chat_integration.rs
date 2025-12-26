@@ -12,21 +12,13 @@
 
 use a2a::{
     error::A2aError,
-    types::{
-        Artifact, ArtifactUpdateKind, Message, Part, Task, TaskArtifactUpdateEvent, TaskState,
-        TaskStatus, TextPart,
-    },
+    types::{Artifact, Message, Part, Task, TaskState, TaskStatus, TextPart},
 };
 use std::collections::HashMap;
 
 use crate::{
-    adapters::session_filters::SessionFilters,
-    api::agent::AskAgentResponse,
-    config::model::ConnectionOverrides,
-    service::{
-        chat::ChatExecutionRequest,
-        types::{AnswerContent, AnswerStream},
-    },
+    adapters::session_filters::SessionFilters, api::agent::AskAgentResponse,
+    config::model::ConnectionOverrides, service::chat::ChatExecutionRequest,
 };
 
 /// Request wrapper that adapts an A2A message to ChatExecutionRequest interface.
@@ -174,15 +166,15 @@ pub fn chat_response_to_task(
         },
         metadata: Some({
             let mut map = HashMap::new();
-            if let Some(usage) = &response.usage {
-                if let Ok(usage_value) = serde_json::to_value(usage) {
-                    map.insert("usage".to_string(), usage_value);
-                }
+            if let Some(usage) = &response.usage
+                && let Ok(usage_value) = serde_json::to_value(usage)
+            {
+                map.insert("usage".to_string(), usage_value);
             }
-            if !response.references.is_empty() {
-                if let Ok(refs_value) = serde_json::to_value(&response.references) {
-                    map.insert("references".to_string(), refs_value);
-                }
+            if !response.references.is_empty()
+                && let Ok(refs_value) = serde_json::to_value(&response.references)
+            {
+                map.insert("references".to_string(), refs_value);
             }
             map
         }),

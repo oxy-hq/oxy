@@ -268,8 +268,7 @@ impl AgentCardService {
                 // Convert tool name to kebab-case for ID
                 let id = name
                     .to_lowercase()
-                    .replace(' ', "-")
-                    .replace('_', "-")
+                    .replace([' ', '_'], "-")
                     .chars()
                     .filter(|c| c.is_alphanumeric() || *c == '-')
                     .collect::<String>();

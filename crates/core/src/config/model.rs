@@ -942,7 +942,7 @@ impl Snowflake {
     pub async fn get_password(&self, secret_manager: &SecretsManager) -> Result<String, OxyError> {
         secret_manager
             .resolve_config_value(
-                self.auth_type.get_password().as_deref().map(|x| x.as_str()),
+                self.auth_type.get_password().map(|x| x.as_str()),
                 self.auth_type.get_password_var().map(|x| x.as_str()),
                 "Snowflake password",
                 None,

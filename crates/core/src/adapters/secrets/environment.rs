@@ -71,12 +71,12 @@ impl SecretsStorage for SecretsEnvironmentStorage {
         // Check if the secret already exists and update it, or add new
         let mut found = false;
         for line in lines.iter_mut() {
-            if let Some((key, _)) = Self::parse_env_line(line) {
-                if key == secret_name {
-                    *line = format!("{}={}", secret_name, secret_value);
-                    found = true;
-                    break;
-                }
+            if let Some((key, _)) = Self::parse_env_line(line)
+                && key == secret_name
+            {
+                *line = format!("{}={}", secret_name, secret_value);
+                found = true;
+                break;
             }
         }
 

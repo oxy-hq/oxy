@@ -4,12 +4,9 @@ use std::collections::{HashMap, HashSet};
 
 use crate::{
     adapters::connector::Connector,
-    config::{
-        self,
-        model::{
-            SemanticFilter, SemanticFilterType, SemanticOrder, SemanticOrderDirection,
-            SemanticQueryTask,
-        },
+    config::model::{
+        SemanticFilter, SemanticFilterType, SemanticOrder, SemanticOrderDirection,
+        SemanticQueryTask,
     },
     errors::OxyError,
     execute::{

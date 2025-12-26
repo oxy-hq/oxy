@@ -1,5 +1,9 @@
 {
   "packages": {
+    "crates/a2a": {
+      "release-type": "rust",
+      "component": "a2a"
+    },
     "crates/core": {
       "release-type": "rust",
       "component": "core"
@@ -44,7 +48,7 @@
     {
       "type": "linked-versions",
       "groupName": "oxy",
-      "components": ["core", "py", "migration", "entity", "web-app", "omni"]
+      "components": ["a2a", "core", "globals", "py", "migration", "entity", "web-app", "omni"]
     }
   ],
   "changelog-sections": [

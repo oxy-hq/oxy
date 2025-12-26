@@ -10,7 +10,7 @@ use a2a::{
 };
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use uuid::{Uuid, uuid};
+use uuid::Uuid;
 
 use crate::{
     adapters::project::manager::ProjectManager,

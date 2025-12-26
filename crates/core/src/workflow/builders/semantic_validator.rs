@@ -1,8 +1,4 @@
-use crate::{
-    config::ConfigManager,
-    config::model::{SemanticFilterType, SemanticQueryTask},
-    errors::OxyError,
-};
+use crate::{config::ConfigManager, config::model::SemanticQueryTask, errors::OxyError};
 use oxy_semantic::{SemanticLayer, Topic, View, parse_semantic_layer_from_dir};
 use serde_json::Value;
 use std::collections::HashSet;

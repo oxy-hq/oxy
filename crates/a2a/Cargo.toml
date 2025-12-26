@@ -1,24 +1,26 @@
 [package]
 name = "a2a"
-version = "0.1.1"
-edition = "2021"
-authors = ["Oxy Team"]
-description = "A2A (Agent-to-Agent) Protocol Implementation - Standalone crate for A2A protocol types and utilities"
-license = "MIT OR Apache-2.0"
+version = "0.4.1"
+authors.workspace = true
+description.workspace = true
+documentation.workspace = true
+publish.workspace = true
+edition.workspace = true
+rust-version.workspace = true
 
 [dependencies]
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-thiserror = "2.0"
-chrono = { version = "0.4", features = ["serde"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+chrono = { workspace = true, features = ["serde"] }
 url = { version = "2.5", features = ["serde"] }
 uuid = { version = "1.19", features = ["serde", "v4"] }
 async-trait = "0.1"
 futures = "0.3"
 http = "1.4"
 axum = { version = "0.8.8", features = ["json"] }
-tokio = { version = "1.48", features = ["rt"] }
+tokio = { workspace = true, features = ["rt"] }
 tower = "0.5"
 
 [dev-dependencies]
-tokio = { version = "1.48", features = ["macros", "rt-multi-thread"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

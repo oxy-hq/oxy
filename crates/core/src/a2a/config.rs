@@ -40,6 +40,7 @@ use crate::errors::OxyError;
 /// If this section is absent or empty, no agents are exposed.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Validate)]
 #[garde(context(ValidationContext))]
+#[derive(Default)]
 pub struct A2aConfig {
     /// List of agents to expose via A2A protocol
     #[garde(dive)]
@@ -50,6 +51,7 @@ pub struct A2aConfig {
 /// Configuration for a single A2A-exposed agent
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Validate)]
 #[garde(context(ValidationContext))]
+#[derive(Default)]
 pub struct A2aAgentConfig {
     /// Path to the Oxy agent configuration file (relative to project root)
     ///
@@ -69,12 +71,6 @@ pub struct A2aAgentConfig {
     #[garde(length(min = 1, max = 128))]
     #[garde(pattern(r"^[a-zA-Z0-9_-]+$"))]
     pub name: String,
-}
-
-impl Default for A2aConfig {
-    fn default() -> Self {
-        Self { agents: Vec::new() }
-    }
 }
 
 impl A2aConfig {
@@ -158,15 +154,6 @@ impl A2aConfig {
         }
 
         Ok(())
-    }
-}
-
-impl Default for A2aAgentConfig {
-    fn default() -> Self {
-        Self {
-            r#ref: String::new(),
-            name: String::new(),
-        }
     }
 }
 

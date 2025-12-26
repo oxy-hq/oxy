@@ -73,7 +73,7 @@ pub async fn is_postgres_container_running() -> Result<bool, OxyError> {
     Ok(containers.iter().any(|c| {
         c.state
             .as_ref()
-            .map_or(false, |s| *s == ContainerSummaryStateEnum::RUNNING)
+            .is_some_and(|s| *s == ContainerSummaryStateEnum::RUNNING)
     }))
 }
 
@@ -143,10 +143,10 @@ pub async fn start_postgres_container() -> Result<String, OxyError> {
         while let Some(result) = pull_stream.next().await {
             match result {
                 Ok(info) => {
-                    if let Some(status) = info.status {
-                        if status.contains("Downloaded") || status.contains("Pulling") {
-                            tracing::debug!("{}", status);
-                        }
+                    if let Some(status) = info.status
+                        && (status.contains("Downloaded") || status.contains("Pulling"))
+                    {
+                        tracing::debug!("{}", status);
                     }
                 }
                 Err(e) => {
@@ -252,13 +252,13 @@ pub async fn wait_for_postgres_ready(timeout_secs: u64) -> Result<(), OxyError> 
         match inspect_result {
             Ok(container) => {
                 // Check if container is running
-                if let Some(state) = container.state {
-                    if state.status != Some(ContainerStateStatusEnum::RUNNING) {
-                        return Err(OxyError::InitializationError(format!(
-                            "PostgreSQL container is not running (status: {:?})",
-                            state.status
-                        )));
-                    }
+                if let Some(state) = container.state
+                    && state.status != Some(ContainerStateStatusEnum::RUNNING)
+                {
+                    return Err(OxyError::InitializationError(format!(
+                        "PostgreSQL container is not running (status: {:?})",
+                        state.status
+                    )));
                 }
 
                 // Try pg_isready command
@@ -279,21 +279,20 @@ pub async fn wait_for_postgres_ready(timeout_secs: u64) -> Result<(), OxyError> 
                     .create_exec(POSTGRES_CONTAINER_NAME, exec_config)
                     .await;
 
-                if let Ok(exec_response) = exec_result {
-                    if let Ok(StartExecResults::Attached { mut output, .. }) =
+                if let Ok(exec_response) = exec_result
+                    && let Ok(StartExecResults::Attached { mut output, .. }) =
                         docker.start_exec(&exec_response.id, None).await
-                    {
-                        // Read output to check exit code
-                        let mut stdout = Vec::new();
-                        while let Some(Ok(msg)) = output.next().await {
-                            stdout.extend_from_slice(&msg.into_bytes());
-                        }
+                {
+                    // Read output to check exit code
+                    let mut stdout = Vec::new();
+                    while let Some(Ok(msg)) = output.next().await {
+                        stdout.extend_from_slice(&msg.into_bytes());
+                    }
 
-                        // If we got here, pg_isready executed successfully
-                        if String::from_utf8_lossy(&stdout).contains("accepting connections") {
-                            info!("PostgreSQL is ready!");
-                            return Ok(());
-                        }
+                    // If we got here, pg_isready executed successfully
+                    if String::from_utf8_lossy(&stdout).contains("accepting connections") {
+                        info!("PostgreSQL is ready!");
+                        return Ok(());
                     }
                 }
             }

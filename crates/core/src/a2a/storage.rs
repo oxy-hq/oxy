@@ -373,26 +373,24 @@ impl TaskStorage for OxyTaskStorage {
                             A2aError::StorageError(format!("Failed to query status message: {}", e))
                         })?;
 
-                    msg_model
-                        .map(|m| {
-                            let role = string_to_message_role(&m.role);
-                            let parts = json_to_parts(&m.parts).ok()?;
-                            Some(Message {
-                                kind: MessageKind::Message,
-                                role,
-                                parts,
-                                metadata: m.metadata.as_ref().and_then(json_to_metadata),
-                                extensions: None,
-                                reference_task_ids: None,
-                                message_id: m.id.to_string(),
-                                task_id: m.task_id.map(|id| id.to_string()),
-                                context_id: m
-                                    .context_id
-                                    .clone()
-                                    .or_else(|| task_model.context_id.clone()),
-                            })
+                    msg_model.and_then(|m| {
+                        let role = string_to_message_role(&m.role);
+                        let parts = json_to_parts(&m.parts).ok()?;
+                        Some(Message {
+                            kind: MessageKind::Message,
+                            role,
+                            parts,
+                            metadata: m.metadata.as_ref().and_then(json_to_metadata),
+                            extensions: None,
+                            reference_task_ids: None,
+                            message_id: m.id.to_string(),
+                            task_id: m.task_id.map(|id| id.to_string()),
+                            context_id: m
+                                .context_id
+                                .clone()
+                                .or_else(|| task_model.context_id.clone()),
                         })
-                        .flatten()
+                    })
                 } else {
                     None
                 };

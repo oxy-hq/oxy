@@ -13,20 +13,20 @@ exclude.workspace = true
 # Core dependencies for HTTP client and async operations
 reqwest = { version = "0.12.28", features = ["json"] }
 tokio = { workspace = true }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-serde_yaml = "0.9.34"
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
 
 # Error handling and validation
-thiserror = "2.0.17"
+thiserror = { workspace = true }
 garde = { version = "0.22.1", features = ["full"] }
 
 # Logging and tracing
-tracing = "0.1.44"
+tracing = { workspace = true }
 
 # Utilities
 urlencoding = "2.1.3"
 rand = "0.8"
 
 [dev-dependencies]
-tempfile = "3.24"
+tempfile = { workspace = true }

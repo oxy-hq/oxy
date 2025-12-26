@@ -16,7 +16,7 @@ sea-orm-migration = { workspace = true }
 entity = { path = "../entity" }
 anyhow = "1.0"
 clap = { version = "4.5", features = ["derive", "env"] }
-tracing = "0.1"
+tracing = { workspace = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tokio = { workspace = true }
 # Override workspace sea-orm to include both SQLite and PostgreSQL for migration tool

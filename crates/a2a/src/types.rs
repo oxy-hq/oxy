@@ -59,15 +59,11 @@ pub enum MessageRole {
 /// Message kind discriminator
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum MessageKind {
     /// Message
+    #[default]
     Message,
-}
-
-impl Default for MessageKind {
-    fn default() -> Self {
-        Self::Message
-    }
 }
 
 /// Base properties common to all message or artifact parts
@@ -94,15 +90,11 @@ pub struct TextPart {
 /// Text kind discriminator
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum TextKind {
     /// Plain text
+    #[default]
     Text,
-}
-
-impl Default for TextKind {
-    fn default() -> Self {
-        Self::Text
-    }
 }
 
 impl TextPart {
@@ -174,15 +166,11 @@ pub struct FilePart {
 /// File kind discriminator
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum FileKind {
     /// File content
+    #[default]
     File,
-}
-
-impl Default for FileKind {
-    fn default() -> Self {
-        Self::File
-    }
 }
 
 /// A structured data segment (e.g., JSON) within a message or artifact
@@ -201,15 +189,11 @@ pub struct DataPart {
 /// Data kind discriminator
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum DataKind {
     /// Structured data
+    #[default]
     Data,
-}
-
-impl Default for DataKind {
-    fn default() -> Self {
-        Self::Data
-    }
 }
 
 impl DataPart {
@@ -420,15 +404,11 @@ pub struct Task {
 /// Task kind discriminator
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum TaskKind {
     /// Standard task
+    #[default]
     Task,
-}
-
-impl Default for TaskKind {
-    fn default() -> Self {
-        Self::Task
-    }
 }
 
 impl Task {
@@ -483,15 +463,11 @@ pub struct TaskStatusUpdateEvent {
 /// Status update kind discriminator
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
+#[derive(Default)]
 pub enum StatusUpdateKind {
     /// Task status update
+    #[default]
     StatusUpdate,
-}
-
-impl Default for StatusUpdateKind {
-    fn default() -> Self {
-        Self::StatusUpdate
-    }
 }
 
 /// An event sent by the agent to notify the client that an artifact has been generated or updated
@@ -522,15 +498,11 @@ pub struct TaskArtifactUpdateEvent {
 /// Artifact update kind discriminator
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
+#[derive(Default)]
 pub enum ArtifactUpdateKind {
     /// Task artifact update
+    #[default]
     ArtifactUpdate,
-}
-
-impl Default for ArtifactUpdateKind {
-    fn default() -> Self {
-        Self::ArtifactUpdate
-    }
 }
 
 /// Defines authentication details for a push notification endpoint
