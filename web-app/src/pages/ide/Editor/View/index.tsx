@@ -165,8 +165,8 @@ const ViewPreview = () => {
   }, [viewData]);
 
   return (
-    <div className="flex-1 flex flex-col">
-      <div className="flex-1 flex gap-4">
+    <div className="flex-1 flex flex-col min-h-0">
+      <div className="flex-1 flex gap-4 min-h-0">
         {/* Left Sidebar - Tree Structure */}
         <FieldsSelectionPanel
           viewData={viewData}

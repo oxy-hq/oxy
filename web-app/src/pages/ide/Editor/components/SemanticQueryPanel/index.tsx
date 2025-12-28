@@ -73,7 +73,7 @@ const SemanticQueryPanel = ({
     <Tabs
       value={showSql ? "sql" : "results"}
       onValueChange={(value) => setShowSql(value === "sql")}
-      className="flex-1 flex flex-col overflow-hidden"
+      className="flex-1 flex flex-col min-h-0 overflow-hidden"
     >
       <TabsHeader
         showSql={showSql}
@@ -103,7 +103,7 @@ const SemanticQueryPanel = ({
         onRemoveVariable={onRemoveVariable}
       />
 
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 min-h-0 overflow-hidden">
         <TabsContent value="sql" className="h-full mt-0">
           <SqlView generatedSql={generatedSql} sqlError={sqlError} />
         </TabsContent>

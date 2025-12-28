@@ -16,7 +16,11 @@ const ResultsView = ({ result, executionError }: ResultsViewProps) => {
     );
   }
 
-  return <Results result={result} />;
+  return (
+    <div className="h-full min-h-0">
+      <Results result={result} />
+    </div>
+  );
 };
 
 export default ResultsView;
