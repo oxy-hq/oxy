@@ -31,15 +31,20 @@ export const getSeriesValues = async (
   yField: string,
   seriesField: string,
   seriesValue: unknown,
-): Promise<(number | string)[]> => {
+): Promise<{ x: number | string; y: number | string }[]> => {
   const seriesDataStatement = await connection.prepare(
     `SELECT ${xField} as x, SUM(${yField}) as y FROM "${fileName}" 
      WHERE ${seriesField} = ? 
      GROUP BY ${xField}, ${seriesField}
      ORDER BY ${xField}`,
   );
-  const yData = await seriesDataStatement.query(seriesValue);
-  return getArrowColumnValues(yData, "y") as (number | string)[];
+  const result = await seriesDataStatement.query(seriesValue);
+  const xValues = getArrowColumnValues(result, "x");
+  const yValues = getArrowColumnValues(result, "y");
+  return xValues.map((x, index) => ({
+    x: x as number | string,
+    y: yValues[index] as number | string,
+  }));
 };
 
 export const getSimpleAggregatedData = async (

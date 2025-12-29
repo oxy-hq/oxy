@@ -31,6 +31,14 @@ export const LineChart = ({
       const xData = await getXAxisData(connection, fileName, display.x);
       const xyAxisOptions = createXYAxisOptions(xData, isDarkMode);
 
+      // Configure tooltip to show values on hover
+      const tooltipOptions = {
+        trigger: "axis" as const,
+        axisPointer: {
+          type: "line" as const,
+        },
+      };
+
       let series: LineSeriesOption[];
 
       if (display.series) {
@@ -49,10 +57,15 @@ export const LineChart = ({
               display.series!,
               seriesName,
             );
+            // Create a map of x -> y for this series
+            const valueMap = new Map(values.map((v) => [v.x, v.y]));
+            // Align data with xData axis, using null for missing values
+            const alignedData = xData.map((x) => valueMap.get(x) ?? null);
             return {
               name: JSON.stringify(seriesName),
               type: "line",
-              data: values,
+              data: alignedData,
+              showSymbol: false,
             };
           }),
         );
@@ -68,6 +81,7 @@ export const LineChart = ({
             name: display.y,
             type: "line",
             data: values,
+            showSymbol: false,
           },
         ];
       }
@@ -75,6 +89,7 @@ export const LineChart = ({
       return {
         ...baseOptions,
         ...xyAxisOptions,
+        tooltip: tooltipOptions,
         series,
       };
     },

@@ -49,11 +49,15 @@ export const BarChart = ({
               display.series!,
               seriesName,
             );
+            // Create a map of x -> y for this series
+            const valueMap = new Map(values.map((v) => [v.x, v.y]));
+            // Align data with xData axis, using null for missing values
+            const alignedData = xData.map((x) => valueMap.get(x) ?? null);
             return {
               name: String(seriesName),
               type: "bar",
               stack: "total",
-              data: values,
+              data: alignedData,
             };
           }),
         );
