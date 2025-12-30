@@ -1,4 +1,4 @@
-<p align="center"><img src="docs/readme-banner.png"/></p>
+<p align="center"><img src="assets/readme-banner.png"/></p>
 
 <p align="center">
 <a href="#license"><img src="https://img.shields.io/badge/License-Apache--2.0-blue" alt="License"></a>
