@@ -3,6 +3,7 @@ use tokio::fs;
 
 use crate::{
     agent::builders::fsm::config::AgenticConfig, constants::UNPUBLISH_APP_DIR, errors::OxyError,
+    state_dir::resolve_state_dir_with_fallback,
 };
 
 use super::model::{AgentConfig, AppConfig, Config, Workflow, WorkflowWithRawVariables};
@@ -304,8 +305,8 @@ impl ConfigStorage for LocalSource {
     }
 
     async fn resolve_state_dir(&self) -> Result<PathBuf, OxyError> {
-        let path = PathBuf::from(&self.project_path).join(".oxy_state");
-        self.ensure_dir_exists(&path);
+        let fallback = PathBuf::from(&self.project_path).join(".oxy_state");
+        let path = resolve_state_dir_with_fallback(Some(fallback));
         Ok(path)
     }
 
