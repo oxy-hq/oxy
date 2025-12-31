@@ -326,7 +326,7 @@ export async function fetchAgentConfig(agentId: string): Promise<AgentConfig> {
 
 ## Resources
 
-- **Documentation**: https://docs.oxy.tech
+- **Documentation**: https://oxy.tech/docs
 - **DeepWiki**: https://deepwiki.com/oxy-hq/oxy
 - **Repository**: https://github.com/oxy-hq/oxy
 - **Issues**: https://github.com/oxy-hq/oxy/issues

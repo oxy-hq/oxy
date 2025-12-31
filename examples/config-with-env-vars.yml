@@ -3,7 +3,7 @@
 # This example demonstrates how to use environment variables for database connection configurations.
 # All connection parameters can now be read from environment variables using the `_var` suffix.
 #
-# For complete documentation, see: https://docs.oxy.tech/reference/environment-variables
+# For complete documentation, see: https://oxy.tech/docs/reference/environment-variables
 
 databases:
   # ClickHouse with full environment variable support

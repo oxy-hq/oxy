@@ -27,7 +27,7 @@ Demonstrates the new environment variable support for database connections. This
 - Keeping sensitive data out of version control
 - Multi-environment setups (dev/staging/prod)
 
-See the [Environment Variables Reference](https://docs.oxy.tech/reference/environment-variables) for detailed documentation on using environment variables.
+See the [Environment Variables Reference](https://oxy.tech/docs/reference/environment-variables) for detailed documentation on using environment variables.
 
 ## Environment Variable Support
 
@@ -51,4 +51,4 @@ Supported databases:
 - ✅ Redshift (host, port, user, password, database)
 - ✅ BigQuery (key_path)
 
-For more details, see the [Environment Variables Reference](https://docs.oxy.tech/reference/environment-variables)
+For more details, see the [Environment Variables Reference](https://oxy.tech/docs/reference/environment-variables)

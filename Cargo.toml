@@ -39,7 +39,7 @@ rust-version = "1.92.0"
 publish = false
 description = "Oxy"
 authors = ["oxy engineers"]
-documentation = "https://docs.oxy.tech"
+documentation = "https://oxy.tech/docs"
 exclude = ["examples/", "tests/"]
 
 

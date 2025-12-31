@@ -90,7 +90,7 @@ export function AgentCard({ agentId, onExecute }: Props) {
 
 ## Project Resources
 
-- **Docs**: https://docs.oxy.tech
+- **Docs**: https://oxy.tech/docs
 - **DeepWiki**: https://deepwiki.com/oxy-hq/oxy
 - **GitHub**: https://github.com/oxy-hq/oxy
 

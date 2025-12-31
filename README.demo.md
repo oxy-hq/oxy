@@ -88,7 +88,7 @@ docker exec -it oxy-demo oxy version
 ## Notes
 
 - This setup is for **demo/evaluation purposes only**
-- For production deployments, see the [official documentation](https://docs.oxy.tech)
+- For production deployments, see the [official documentation](https://oxy.tech/docs)
 - The examples directory contains sample workflows and configurations you can explore
 - Data persists in Docker volumes between restarts
 

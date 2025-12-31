@@ -5,7 +5,7 @@
 </p>
 
 <div align="center">
-<a href="https://docs.oxy.tech" title="Go to project documentation"><img src="https://img.shields.io/badge/view-Documentation-blue?style=for-the-badge" alt="view - Documentation"></a>
+<a href="https://oxy.tech/docs" title="Go to project documentation"><img src="https://img.shields.io/badge/view-Documentation-blue?style=for-the-badge" alt="view - Documentation"></a>
 </div>
 
 > 📖 **Looking for up-to-date code documentation?**  
@@ -15,7 +15,7 @@
 
 Oxy is an open-source framework for building comprehensive agentic analytics systems grounded in deterministic execution principles. Written in Rust and declarative by design, Oxy provides the foundational components needed to transform AI-driven data analysis into reliable, production-ready systems through structured primitives, semantic understanding, and predictable execution.
 
-To learn more, read our [docs](https://docs.oxy.tech).
+To learn more, read our [docs](https://oxy.tech/docs).
 
 ### Quickstart
 
@@ -88,4 +88,4 @@ See [DEVELOPMENT.md](DEVELOPMENT.md#database) for more details about database co
 
 ---
 
-See our [docs](https://docs.oxy.tech) on how to modify the agent file, seed it with context, run tests, and create workflows.
+See our [docs](https://oxy.tech/docs) on how to modify the agent file, seed it with context, run tests, and create workflows.
