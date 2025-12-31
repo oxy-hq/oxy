@@ -1,13 +1,13 @@
 use crate::errors::OxyError;
 use bollard::Docker;
-use bollard::container::{
-    Config, CreateContainerOptions, InspectContainerOptions, ListContainersOptions,
-    RemoveContainerOptions, StartContainerOptions, StopContainerOptions,
-};
 use bollard::exec::{CreateExecOptions, StartExecResults};
-use bollard::image::CreateImageOptions;
 use bollard::models::{
-    ContainerStateStatusEnum, ContainerSummaryStateEnum, HostConfig, PortBinding,
+    ContainerCreateBody, ContainerStateStatusEnum, ContainerSummaryStateEnum, HostConfig,
+    PortBinding,
+};
+use bollard::query_parameters::{
+    CreateContainerOptions, CreateImageOptions, InspectContainerOptions, ListContainersOptions,
+    RemoveContainerOptions, StartContainerOptions, StopContainerOptions,
 };
 use futures::StreamExt;
 use std::collections::HashMap;
@@ -60,7 +60,7 @@ pub async fn is_postgres_container_running() -> Result<bool, OxyError> {
     );
 
     let options = ListContainersOptions {
-        filters,
+        filters: Some(filters),
         ..Default::default()
     };
 
@@ -89,7 +89,7 @@ async fn is_postgres_container_exists() -> Result<bool, OxyError> {
 
     let options = ListContainersOptions {
         all: true, // Include stopped containers
-        filters,
+        filters: Some(filters),
         ..Default::default()
     };
 
@@ -116,10 +116,7 @@ pub async fn start_postgres_container() -> Result<String, OxyError> {
         } else {
             info!("Starting existing PostgreSQL container...");
             docker
-                .start_container(
-                    POSTGRES_CONTAINER_NAME,
-                    None::<StartContainerOptions<String>>,
-                )
+                .start_container(POSTGRES_CONTAINER_NAME, None::<StartContainerOptions>)
                 .await
                 .map_err(|e| {
                     OxyError::InitializationError(format!(
@@ -135,7 +132,7 @@ pub async fn start_postgres_container() -> Result<String, OxyError> {
         // Pull the image first (if not already present)
         info!("Pulling PostgreSQL image (if not already present)...");
         let create_image_options = CreateImageOptions {
-            from_image: POSTGRES_IMAGE,
+            from_image: Some(POSTGRES_IMAGE.to_string()),
             ..Default::default()
         };
 
@@ -182,7 +179,7 @@ pub async fn start_postgres_container() -> Result<String, OxyError> {
         ];
 
         // Create container configuration
-        let config = Config {
+        let config = ContainerCreateBody {
             image: Some(POSTGRES_IMAGE.to_string()),
             env: Some(env),
             host_config: Some(host_config),
@@ -190,7 +187,7 @@ pub async fn start_postgres_container() -> Result<String, OxyError> {
         };
 
         let options = CreateContainerOptions {
-            name: POSTGRES_CONTAINER_NAME,
+            name: Some(POSTGRES_CONTAINER_NAME.to_string()),
             ..Default::default()
         };
 
@@ -203,10 +200,7 @@ pub async fn start_postgres_container() -> Result<String, OxyError> {
             })?;
 
         docker
-            .start_container(
-                POSTGRES_CONTAINER_NAME,
-                None::<StartContainerOptions<String>>,
-            )
+            .start_container(POSTGRES_CONTAINER_NAME, None::<StartContainerOptions>)
             .await
             .map_err(|e| {
                 OxyError::InitializationError(format!("Failed to start container: {}", e))
@@ -329,7 +323,10 @@ pub async fn stop_postgres_container() -> Result<(), OxyError> {
     let docker = get_docker_client().await?;
 
     // Stop the container with a grace period of 10 seconds
-    let options = StopContainerOptions { t: 10 };
+    let options = StopContainerOptions {
+        t: Some(10),
+        signal: None,
+    };
 
     docker
         .stop_container(POSTGRES_CONTAINER_NAME, Some(options))
