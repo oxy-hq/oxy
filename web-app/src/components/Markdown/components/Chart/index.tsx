@@ -6,15 +6,22 @@ import { EChartsOption } from "echarts";
 import ChartError from "./Error";
 import ChartLoading from "./Loading";
 import { useAutoAnimate } from "@formkit/auto-animate/react";
+import { ErrorBoundary } from "react-error-boundary";
+
+type ChartProps = {
+  data: string | undefined;
+  isPending: boolean;
+  error: Error | null;
+  refetch: () => void;
+};
 
 type Props = {
   chart_src: string;
 };
 
-const Chart = (props: Props) => {
+const Chart = (props: ChartProps) => {
   const { theme } = useTheme();
-  const encodedPath = encodeURIComponent(props.chart_src);
-  const { data, isPending, error, refetch } = useChart(encodedPath);
+  const { data, isPending, error, refetch } = props;
 
   if (isPending) {
     return <ChartLoading />;
@@ -86,7 +93,7 @@ const Chart = (props: Props) => {
       type: s.type,
       data:
         s.data?.map((d) =>
-          typeof d === "object" && "value" in d
+          d && typeof d === "object" && "value" in d
             ? { name: d.name, value: d.value }
             : d,
         ) || [],
@@ -102,10 +109,27 @@ const ChartContainer = (props: Props) => {
   const [parent] = useAutoAnimate({
     duration: 300,
   });
+  const encodedPath = encodeURIComponent(props.chart_src);
+  const { data, isPending, error, refetch } = useChart(encodedPath);
 
   return (
     <div ref={parent}>
-      <Chart {...props} />
+      <ErrorBoundary
+        fallback={
+          <ChartError
+            title="Chart error"
+            description="An unexpected error occurred while rendering the chart."
+            refetch={refetch}
+          />
+        }
+      >
+        <Chart
+          data={data}
+          isPending={isPending}
+          error={error}
+          refetch={refetch}
+        />
+      </ErrorBoundary>
     </div>
   );
 };
