@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.4.2](https://github.com/oxy-hq/oxy-internal/compare/0.4.1...0.4.2) (2026-01-01)
+
+
+### <!-- 0 -->🚀 Features
+
+* implement delete workflow run ([#1476](https://github.com/oxy-hq/oxy-internal/issues/1476)) ([f886a0a](https://github.com/oxy-hq/oxy-internal/commit/f886a0a47de11a814f48b02cd7ba11323ef50b7a))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* state dir should be inferred from env ([#1474](https://github.com/oxy-hq/oxy-internal/issues/1474)) ([f5b3fb4](https://github.com/oxy-hq/oxy-internal/commit/f5b3fb46774efe6ffe989086532271bb5148c5a6))
+* upgrade docker options for bollard ([c9c1358](https://github.com/oxy-hq/oxy-internal/commit/c9c13582de01a0c574986dc1c055af540ed9f274))
+
 ## [0.4.1](https://github.com/oxy-hq/oxy-internal/compare/0.4.0...0.4.1) (2025-12-25)
 
 

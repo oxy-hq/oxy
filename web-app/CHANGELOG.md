@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.4.2](https://github.com/oxy-hq/oxy-internal/compare/0.4.1...0.4.2) (2026-01-01)
+
+
+### <!-- 0 -->🚀 Features
+
+* implement delete workflow run ([#1476](https://github.com/oxy-hq/oxy-internal/issues/1476)) ([f886a0a](https://github.com/oxy-hq/oxy-internal/commit/f886a0a47de11a814f48b02cd7ba11323ef50b7a))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* chart crashing app ([#1475](https://github.com/oxy-hq/oxy-internal/issues/1475)) ([f254d78](https://github.com/oxy-hq/oxy-internal/commit/f254d78604b70380d76f159d7a5ff9392fd9081b))
+* line chart ([#1464](https://github.com/oxy-hq/oxy-internal/issues/1464)) ([e902d64](https://github.com/oxy-hq/oxy-internal/commit/e902d647edbf253b436f175285f6ef5dd6e85494))
+* semantic layer sidebar scroll ([#1477](https://github.com/oxy-hq/oxy-internal/issues/1477)) ([84f89cc](https://github.com/oxy-hq/oxy-internal/commit/84f89cc057e1ec04d6863af4c6fc1f3054c6bf85))
+
 ## [0.4.1](https://github.com/oxy-hq/oxy-internal/compare/0.4.0...0.4.1) (2025-12-25)
 
 
