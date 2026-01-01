@@ -660,7 +660,7 @@ impl RunsStorage for RunsDatabaseStorage {
             .map_err(|err| OxyError::DBError(format!("Failed to delete run: {err}")))?;
 
         if result.rows_affected == 0 {
-            return Err(OxyError::NotFound(format!(
+            return Err(OxyError::DBError(format!(
                 "No run found for source_id: {} with run_index: {}",
                 source_id, run_index
             )));
