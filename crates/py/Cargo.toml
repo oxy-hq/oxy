@@ -15,7 +15,7 @@ oxy = { path = "../core" }
 tokio = { workspace = true }
 
 [dependencies.pyo3]
-version = "=0.27.2"
+version = "=0.26.0"
 features = ["experimental-async"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -24,4 +24,4 @@ name = "oxy_py"
 crate-type = ["cdylib"]
 
 [build-dependencies]
-pyo3-build-config = "=0.27.2"
+pyo3-build-config = "=0.26.0"

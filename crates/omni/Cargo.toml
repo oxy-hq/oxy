@@ -26,7 +26,7 @@ tracing = { workspace = true }
 
 # Utilities
 urlencoding = "2.1.3"
-rand = "0.9"
+rand = "0.8"
 
 [dev-dependencies]
 tempfile = { workspace = true }
