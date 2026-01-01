@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "a2a"
-version = "0.4.3"
+version = "0.4.4"
 dependencies = [
  "async-trait",
  "axum",
@@ -3313,7 +3313,7 @@ dependencies = [
 
 [[package]]
 name = "entity"
-version = "0.4.0"
+version = "0.4.4"
 dependencies = [
  "chrono",
  "indexmap 2.12.1",
@@ -5732,7 +5732,7 @@ dependencies = [
 
 [[package]]
 name = "migration"
-version = "0.4.0"
+version = "0.4.4"
 dependencies = [
  "anyhow",
  "async-std",
@@ -6223,7 +6223,7 @@ dependencies = [
 
 [[package]]
 name = "omni"
-version = "0.4.0"
+version = "0.4.4"
 dependencies = [
  "garde",
  "rand 0.8.5",
@@ -6430,7 +6430,7 @@ dependencies = [
 
 [[package]]
 name = "oxy"
-version = "0.4.0"
+version = "0.4.4"
 dependencies = [
  "a2a",
  "aes-gcm",
@@ -6557,7 +6557,7 @@ dependencies = [
 
 [[package]]
 name = "oxy-semantic"
-version = "0.4.0"
+version = "0.4.4"
 dependencies = [
  "indexmap 2.12.1",
  "minijinja",
@@ -6574,7 +6574,7 @@ dependencies = [
 
 [[package]]
 name = "oxy_globals"
-version = "0.4.0"
+version = "0.4.4"
 dependencies = [
  "indexmap 2.12.1",
  "minijinja",
@@ -7271,7 +7271,7 @@ dependencies = [
 
 [[package]]
 name = "py"
-version = "0.4.0"
+version = "0.4.4"
 dependencies = [
  "oxy",
  "pyo3",
