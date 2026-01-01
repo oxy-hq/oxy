@@ -12,7 +12,10 @@
       "Bash(pnpm exec playwright:*)",
       "Bash(oxy test:*)",
       "Bash(cargo run:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(pnpm --filter oxy-web test:e2e:*)",
+      "Bash(find:*)",
+      "Bash(grep:*)"
     ],
     "deny": [],
     "ask": []

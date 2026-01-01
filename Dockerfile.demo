@@ -1,0 +1,29 @@
+# ---------------------------------------------------------------------------------
+# Dockerfile.demo - Lightweight demo deployment using pre-built image
+# This pulls the latest Oxy image and adds the demo_project for quick deployments
+# Build time: ~30 seconds (vs 20+ minutes building from source)
+# ---------------------------------------------------------------------------------
+
+# Pull the pre-built Oxy image from GitHub Container Registry
+FROM ghcr.io/oxy-hq/oxy:latest
+
+# Set working directory
+WORKDIR /app
+
+# Copy demo_project with all data and configurations
+COPY demo_project/ /app/demo_project/
+
+# Set environment variables for demo project
+ENV OXY_WORK_DIR=/app/demo_project
+ENV OXY_STATE_DIR=/var/lib/oxy/data
+
+# Ensure proper permissions
+RUN mkdir -p ${OXY_STATE_DIR} && \
+    chown -R root:root /app/demo_project ${OXY_STATE_DIR}
+
+# Volume is already defined in base image
+# Entrypoint (tini) is already defined in base image
+# Port 3000 is already exposed in base image
+
+# Start Oxy server from demo_project directory
+CMD ["sh", "-c", "cd ${OXY_WORK_DIR} && oxy serve --host 0.0.0.0 --port ${PORT:-3000}"]

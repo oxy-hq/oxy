@@ -74,6 +74,57 @@ To verify the installation, run:
 oxy --version
 ```
 
+## Quick Deploy
+
+Deploy the complete Oxy demo application with one click:
+
+This deployment includes:
+
+- ✅ Complete Oxy application (Rust backend + React frontend)
+- ✅ Demo retail analytics project with Oxymart dataset
+- ✅ Pre-configured workflows and data apps
+- ✅ Persistent storage for databases
+- ✅ Free tier available
+
+### Deployment Steps
+
+1. **Prerequisites**: Install the [Fly CLI](https://fly.io/docs/hands-on/install-flyctl/)
+
+   ```bash
+   curl -L https://fly.io/install.sh | sh
+   ```
+
+2. **Login to Fly.io**:
+
+   ```bash
+   fly auth login
+   ```
+
+3. **Deploy**:
+
+   ```bash
+   fly launch
+   ```
+
+   Follow the prompts to:
+   - Choose your app name and region
+   - Create a persistent volume for data storage
+   - The deployment will automatically use `Dockerfile.demo` with the demo_project included
+
+4. **Set your API key** (required for AI features):
+
+   ```bash
+   fly secrets set OPENAI_API_KEY=sk-your-key-here
+   ```
+
+5. **Access your app**:
+
+   ```bash
+   fly open
+   ```
+
+Your Oxy instance will be live at `https://your-app-name.fly.dev` with the complete demo project ready to explore!
+
 ## Database
 
 Oxy uses PostgreSQL for all deployments. For local development, an embedded PostgreSQL instance starts automatically - no setup required!
