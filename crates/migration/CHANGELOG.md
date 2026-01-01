@@ -1,5 +1,53 @@
 # Changelog
 
+## [0.4.0](https://github.com/oxy-hq/oxy-internal/compare/0.4.2...0.4.0) (2026-01-01)
+
+
+### ⚠ BREAKING CHANGES
+
+* implementation of cloudification ([#1116](https://github.com/oxy-hq/oxy-internal/issues/1116))
+
+### <!-- 0 -->🚀 Features
+
+* a2a support ([#1426](https://github.com/oxy-hq/oxy-internal/issues/1426)) ([bc7d7a0](https://github.com/oxy-hq/oxy-internal/commit/bc7d7a0f7fe110269a7d378763a7fd792648ecab))
+* add user role to db and entity ([#922](https://github.com/oxy-hq/oxy-internal/issues/922)) ([c903c12](https://github.com/oxy-hq/oxy-internal/commit/c903c12818b93e24d2bd78c1466f45b803e05346))
+* api keys support ([#888](https://github.com/oxy-hq/oxy-internal/issues/888)) ([08d748e](https://github.com/oxy-hq/oxy-internal/commit/08d748e698a8aeb0f989616667a93d911a456934))
+* apply workspace concept ([#1141](https://github.com/oxy-hq/oxy-internal/issues/1141)) ([ef1ccce](https://github.com/oxy-hq/oxy-internal/commit/ef1ccceb9d0c337628d9ff9ed9af87f57c81b10b))
+* closes [#883](https://github.com/oxy-hq/oxy-internal/issues/883) end user authentication ([#884](https://github.com/oxy-hq/oxy-internal/issues/884)) ([7262c59](https://github.com/oxy-hq/oxy-internal/commit/7262c597f9257b6edfa85a70998c343bbf95d0e6))
+* closes [#951](https://github.com/oxy-hq/oxy-internal/issues/951) observability panel ([#952](https://github.com/oxy-hq/oxy-internal/issues/952)) ([09c272c](https://github.com/oxy-hq/oxy-internal/commit/09c272cf9e26168a14c3af101718536744ff5bde))
+* deep research ([#1367](https://github.com/oxy-hq/oxy-internal/issues/1367)) ([e498b05](https://github.com/oxy-hq/oxy-internal/commit/e498b0508c3a7e6ade929d78ca3a3666504b9c97))
+* enable HTTPS and HTTP/2 support for local development ([#1033](https://github.com/oxy-hq/oxy-internal/issues/1033)) ([85d8120](https://github.com/oxy-hq/oxy-internal/commit/85d812071fe3f6f7e433b3fbc2a328ba80c8d05c))
+* git integration/readonly mode ([#915](https://github.com/oxy-hq/oxy-internal/issues/915)) ([da2bd58](https://github.com/oxy-hq/oxy-internal/commit/da2bd582226c55d7c70ab67166361f954cea8889))
+* implement artifact events handler ([#877](https://github.com/oxy-hq/oxy-internal/issues/877)) ([5a4f232](https://github.com/oxy-hq/oxy-internal/commit/5a4f2324ae47dcd09a476fc0e25f6c755b160876))
+* implementation of cloudification ([#1116](https://github.com/oxy-hq/oxy-internal/issues/1116)) ([4e3d3f1](https://github.com/oxy-hq/oxy-internal/commit/4e3d3f10cd1930c49d93539c1b6a810d031f3221))
+* migrate from SQLite to PostgreSQL with new command `oxy start` ([#1425](https://github.com/oxy-hq/oxy-internal/issues/1425)) ([260b6ab](https://github.com/oxy-hq/oxy-internal/commit/260b6abf2905c1bc3585fd4a53fd47dc049e8f83))
+* semantic engine api for workflow and routing agent ([#1032](https://github.com/oxy-hq/oxy-internal/issues/1032)) ([18ec06d](https://github.com/oxy-hq/oxy-internal/commit/18ec06dc1b64c9a32afd2c24d6624e44571eed2d))
+* slack integration ([#1373](https://github.com/oxy-hq/oxy-internal/issues/1373)) ([ca9def9](https://github.com/oxy-hq/oxy-internal/commit/ca9def9d727054f557b8a5cef136bf008985ee70))
+* token counter ([#885](https://github.com/oxy-hq/oxy-internal/issues/885)) ([0b8f76e](https://github.com/oxy-hq/oxy-internal/commit/0b8f76ebb5491d71adbf3ec0d47f0413153acd61))
+* workflow replay ([#984](https://github.com/oxy-hq/oxy-internal/issues/984)) ([7eff206](https://github.com/oxy-hq/oxy-internal/commit/7eff20625dddbf5d1cf84b1533b962ac73676d72))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* add back altifacts ([#948](https://github.com/oxy-hq/oxy-internal/issues/948)) ([4a29c26](https://github.com/oxy-hq/oxy-internal/commit/4a29c26acae34cc4883e2d4fca9ae26d64fa25b6))
+* support type conversion so postgres can work ([#1024](https://github.com/oxy-hq/oxy-internal/issues/1024)) ([5df5086](https://github.com/oxy-hq/oxy-internal/commit/5df50864acb733a3722e7a0bc66a45ef98bdcca1))
+* tool choice error cause by async_openai ([#1395](https://github.com/oxy-hq/oxy-internal/issues/1395)) ([ace7888](https://github.com/oxy-hq/oxy-internal/commit/ace7888c5b490f12fe7daeefdd251692cbf13807))
+
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+* release 0.2.15 ([8be36f1](https://github.com/oxy-hq/oxy-internal/commit/8be36f1eaa8e4bbaadf94dbbd342e95bc9ac5d3c))
+* release 0.2.19 ([19aacec](https://github.com/oxy-hq/oxy-internal/commit/19aacecb342f1f1998f305d3cd67c804081235cf))
+* release 0.2.20 ([80717fb](https://github.com/oxy-hq/oxy-internal/commit/80717fbd854f10e2288e94bcc5b9fd308a05cb84))
+* release 0.2.29 ([a708c66](https://github.com/oxy-hq/oxy-internal/commit/a708c660950837dcb30a2049e279d5be416b0034))
+* release 0.2.5 ([b4fd4bc](https://github.com/oxy-hq/oxy-internal/commit/b4fd4bcd104278da7412bf92047ba6b8253f1abf))
+* release 0.2.8 ([06325a5](https://github.com/oxy-hq/oxy-internal/commit/06325a57694af22db09742e3b5ac4505d6eed078))
+* release 0.2.9 ([4f777d4](https://github.com/oxy-hq/oxy-internal/commit/4f777d4f2cbd620250d5925149b27324352c1f15))
+* release 0.3.0 ([8083d51](https://github.com/oxy-hq/oxy-internal/commit/8083d51f29becc300f4ad82defcde821d738549e))
+* release 0.3.10 ([8ff7034](https://github.com/oxy-hq/oxy-internal/commit/8ff70340680bc8fae87b6100595b810f60ac6dd8))
+* release 0.3.13 ([d5a5c69](https://github.com/oxy-hq/oxy-internal/commit/d5a5c696e0e0cac1eb041e0e732ab16be6e817ba))
+* release 0.4.0 ([c725dde](https://github.com/oxy-hq/oxy-internal/commit/c725dde59ec1762946206829ef84357e7abe0176))
+
 ## [0.4.2](https://github.com/oxy-hq/oxy-internal/compare/0.4.1...0.4.2) (2026-01-01)
 
 ## [0.4.1](https://github.com/oxy-hq/oxy-internal/compare/0.4.0...0.4.1) (2025-12-25)
