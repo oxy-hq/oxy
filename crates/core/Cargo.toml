@@ -107,7 +107,7 @@ tower-http = { version = "0.6.8", features = ["fs", "cors", "trace", "timeout", 
 tower-serve-static = "0.1.1"
 tqdm = "0.8.0"
 uuid = { version = "1.19.0", features = ["v4", "serde"] }
-reqwest = { version = "0.12.28" }
+reqwest = { version = "0.13.1" }
 secrecy = "0.10.3"
 fxhash = "0.2.1"
 deser-incomplete = "0.1.2"
@@ -124,7 +124,7 @@ regex = { workspace = true }
 url = "2.5.7"
 gcp-bigquery-client = "0.27.0"
 fehler = "1.0.0"
-sqlparser = "0.54.0"
+sqlparser = "0.60.0"
 backoff = { version = "0.4.0", features = ["tokio"] }
 rustc_version_runtime = "0.3.0"
 apalis = "0.7.4"
