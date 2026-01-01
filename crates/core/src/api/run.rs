@@ -754,3 +754,134 @@ pub async fn get_blocks(
         }
     }
 }
+
+/// Delete a workflow run from the database
+///
+/// Permanently removes a workflow run record from the database. This operation cannot be undone.
+/// The run is identified by the workflow path (base64 encoded) and run index.
+#[utoipa::path(
+    delete,
+    path = "/{project_id}/workflows/{pathb64}/runs/{run_id}",
+    params(
+        ("project_id" = Uuid, Path, description = "Project UUID"),
+        ("pathb64" = String, Path, description = "Base64 encoded path to the workflow"),
+        ("run_id" = i32, Path, description = "Run index to delete")
+    ),
+    responses(
+        (status = 200, description = "Successfully deleted the workflow run"),
+        (status = 404, description = "Workflow run not found"),
+        (status = 401, description = "Unauthorized"),
+        (status = 500, description = "Internal server error")
+    ),
+    security(
+        ("ApiKey" = [])
+    ),
+    tag = "Runs"
+)]
+pub async fn delete_workflow_run(
+    Path((_project_id, pathb64, run_id)): Path<(Uuid, String, i32)>,
+    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+) -> Result<impl axum::response::IntoResponse, StatusCode> {
+    let decoded_path = BASE64_STANDARD.decode(pathb64).map_err(|e| {
+        tracing::error!("Failed to decode path: {:?}", e);
+        StatusCode::BAD_REQUEST
+    })?;
+    let path: PathBuf = PathBuf::from(String::from_utf8(decoded_path).map_err(|e| {
+        tracing::error!("Failed to convert path to UTF-8: {:?}", e);
+        StatusCode::BAD_REQUEST
+    })?);
+
+    let runs_manager = project_manager.runs_manager.ok_or_else(|| {
+        tracing::error!("Failed to initialize RunsManager");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    let source_id = file_path_to_source_id(&path);
+    runs_manager
+        .delete_run(&source_id, run_id)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to delete run: {:?}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+    tracing::info!(
+        "Successfully deleted run for source_id: {}, run_index: {}",
+        source_id,
+        run_id
+    );
+    Ok(())
+}
+
+#[derive(serde::Deserialize, ToSchema, Debug)]
+pub struct BulkDeleteRunsRequest {
+    pub runs: Vec<RunIdentifier>,
+}
+
+#[derive(serde::Deserialize, ToSchema, Debug)]
+pub struct RunIdentifier {
+    pub pathb64: String,
+    pub run_index: i32,
+}
+
+#[derive(serde::Serialize, ToSchema, Debug)]
+pub struct BulkDeleteRunsResponse {
+    pub deleted_count: u64,
+}
+
+/// Bulk delete multiple workflow runs from the database
+///
+/// Permanently removes multiple workflow run records from the database in a single operation.
+/// This operation cannot be undone. Each run is identified by its workflow path (base64 encoded)
+/// and run index.
+#[utoipa::path(
+    post,
+    path = "/{project_id}/workflows/runs/bulk-delete",
+    params(
+        ("project_id" = Uuid, Path, description = "Project UUID"),
+    ),
+    request_body = BulkDeleteRunsRequest,
+    responses(
+        (status = 200, description = "Successfully deleted workflow runs", body = BulkDeleteRunsResponse),
+        (status = 401, description = "Unauthorized"),
+        (status = 500, description = "Internal server error")
+    ),
+    security(
+        ("ApiKey" = [])
+    ),
+    tag = "Runs"
+)]
+pub async fn bulk_delete_workflow_runs(
+    Path(_project_id): Path<Uuid>,
+    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    extract::Json(payload): extract::Json<BulkDeleteRunsRequest>,
+) -> Result<extract::Json<BulkDeleteRunsResponse>, StatusCode> {
+    let runs_manager = project_manager.runs_manager.ok_or_else(|| {
+        tracing::error!("Failed to initialize RunsManager");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    let mut run_ids = Vec::new();
+    for run_identifier in payload.runs {
+        let decoded_path = BASE64_STANDARD
+            .decode(&run_identifier.pathb64)
+            .map_err(|e| {
+                tracing::error!("Failed to decode path: {:?}", e);
+                StatusCode::BAD_REQUEST
+            })?;
+        let path: PathBuf = PathBuf::from(String::from_utf8(decoded_path).map_err(|e| {
+            tracing::error!("Failed to convert path to UTF-8: {:?}", e);
+            StatusCode::BAD_REQUEST
+        })?);
+        let source_id = file_path_to_source_id(&path);
+        run_ids.push((source_id, run_identifier.run_index));
+    }
+
+    let deleted_count = runs_manager.bulk_delete_runs(run_ids).await.map_err(|e| {
+        tracing::error!("Failed to bulk delete runs: {:?}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    tracing::info!("Successfully deleted {} runs", deleted_count);
+    Ok(extract::Json(BulkDeleteRunsResponse { deleted_count }))
+}

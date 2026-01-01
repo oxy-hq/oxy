@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use entity::runs::Variables;
 use indexmap::IndexMap;
 use sea_orm::{
-    ActiveValue, QueryOrder, QuerySelect, TransactionError, TransactionTrait, prelude::*,
+    ActiveValue, Condition, QueryOrder, QuerySelect, TransactionError, TransactionTrait, prelude::*,
 };
 
 use crate::{
@@ -644,5 +644,62 @@ impl RunsStorage for RunsDatabaseStorage {
                 num_pages: Some(num_pages as usize),
             },
         })
+    }
+
+    async fn delete_run(&self, source_id: &str, run_index: i32) -> Result<(), OxyError> {
+        let result = entity::runs::Entity::delete_many()
+            .filter(
+                entity::runs::Column::SourceId
+                    .eq(source_id)
+                    .and(entity::runs::Column::RunIndex.eq(Some(run_index)))
+                    .and(entity::runs::Column::ProjectId.eq(self.project_id))
+                    .and(entity::runs::Column::BranchId.eq(self.branch_id)),
+            )
+            .exec(&self.connection)
+            .await
+            .map_err(|err| OxyError::DBError(format!("Failed to delete run: {err}")))?;
+
+        if result.rows_affected == 0 {
+            return Err(OxyError::NotFound(format!(
+                "No run found for source_id: {} with run_index: {}",
+                source_id, run_index
+            )));
+        }
+
+        tracing::info!(
+            "Deleted run for source_id: {}, run_index: {}",
+            source_id,
+            run_index
+        );
+        Ok(())
+    }
+
+    async fn bulk_delete_runs(&self, run_ids: Vec<(String, i32)>) -> Result<u64, OxyError> {
+        if run_ids.is_empty() {
+            return Ok(0);
+        }
+
+        // Build the condition for bulk deletion
+        let mut condition = Condition::any();
+        for (source_id, run_index) in run_ids {
+            let run_condition = Condition::all()
+                .add(entity::runs::Column::SourceId.eq(source_id))
+                .add(entity::runs::Column::RunIndex.eq(Some(run_index)));
+            condition = condition.add(run_condition);
+        }
+
+        let final_condition = Condition::all()
+            .add(condition)
+            .add(entity::runs::Column::ProjectId.eq(self.project_id))
+            .add(entity::runs::Column::BranchId.eq(self.branch_id));
+
+        let result = entity::runs::Entity::delete_many()
+            .filter(final_condition)
+            .exec(&self.connection)
+            .await
+            .map_err(|err| OxyError::DBError(format!("Failed to bulk delete runs: {err}")))?;
+
+        tracing::info!("Bulk deleted {} runs", result.rows_affected);
+        Ok(result.rows_affected)
     }
 }

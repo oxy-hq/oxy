@@ -192,13 +192,17 @@ fn build_workflow_routes() -> Router<AppState> {
     Router::new()
         .route("/", get(workflow::list))
         .route("/from-query", post(workflow::create_from_query))
+        .route("/runs/bulk-delete", post(run::bulk_delete_workflow_runs))
         .route("/{pathb64}", get(workflow::get))
         .route("/{pathb64}/run", post(workflow::run_workflow))
         .route("/{pathb64}/run-sync", post(workflow::run_workflow_sync))
         .route("/{pathb64}/logs", get(workflow::get_logs))
         .route("/{pathb64}/runs", get(run::get_workflow_runs))
         .route("/{pathb64}/runs", post(run::create_workflow_run))
-        .route("/{pathb64}/runs/{run_id}", get(workflow::get_workflow_run))
+        .route(
+            "/{pathb64}/runs/{run_id}",
+            get(workflow::get_workflow_run).delete(run::delete_workflow_run),
+        )
 }
 
 fn build_thread_routes() -> Router<AppState> {
@@ -359,6 +363,8 @@ pub async fn openapi_router() -> OpenApiRouter {
         .routes(routes!(run::get_workflow_runs))
         .routes(routes!(run::create_workflow_run))
         .routes(routes!(run::cancel_workflow_run))
+        .routes(routes!(run::delete_workflow_run))
+        .routes(routes!(run::bulk_delete_workflow_runs))
         .routes(routes!(run::workflow_events))
         .routes(routes!(run::workflow_events_sync))
         .routes(routes!(run::get_blocks))

@@ -415,6 +415,26 @@ export const useCancelWorkflowRun = () => {
   });
 };
 
+export const useDeleteWorkflowRun = () => {
+  const { project, branchName } = useCurrentProjectBranch();
+  return useMutation({
+    mutationFn: async ({
+      workflowId,
+      runIndex,
+    }: {
+      workflowId: string;
+      runIndex: number;
+    }) => {
+      return await RunService.deleteRun(
+        project.id,
+        branchName,
+        workflowId,
+        runIndex,
+      );
+    },
+  });
+};
+
 export const useStreamEvents = () => {
   const { project, branchName } = useCurrentProjectBranch();
   const handleEvent = useBlockStore((state) => state.handleEvent);

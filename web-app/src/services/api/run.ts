@@ -121,6 +121,18 @@ export class RunService {
     return response.data;
   }
 
+  static async deleteRun(
+    projectId: string,
+    branchName: string,
+    workflowId: string,
+    runIndex: number,
+  ): Promise<void> {
+    await apiClient.delete(
+      `/${projectId}/workflows/${btoa(workflowId)}/runs/${runIndex}`,
+      { params: { branch: branchName } },
+    );
+  }
+
   static async createAgenticRun(
     projectId: string,
     branchName: string,

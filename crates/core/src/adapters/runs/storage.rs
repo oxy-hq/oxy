@@ -51,6 +51,8 @@ pub trait RunsStorage {
         pagination: &Pagination,
     ) -> Result<Paginated<RunInfo>, OxyError>;
     async fn lookup(&self, lookup_id: &str) -> Result<Option<RunDetails>, OxyError>;
+    async fn delete_run(&self, source_id: &str, run_index: i32) -> Result<(), OxyError>;
+    async fn bulk_delete_runs(&self, run_ids: Vec<(String, i32)>) -> Result<u64, OxyError>;
 }
 
 #[enum_dispatch::enum_dispatch(RunsStorage)]

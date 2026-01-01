@@ -185,4 +185,12 @@ impl RunsManager {
             Ok((run_info, None))
         }
     }
+
+    pub async fn delete_run(&self, source_id: &str, run_index: i32) -> Result<(), OxyError> {
+        self.storage.delete_run(source_id, run_index).await
+    }
+
+    pub async fn bulk_delete_runs(&self, run_ids: Vec<(String, i32)>) -> Result<u64, OxyError> {
+        self.storage.bulk_delete_runs(run_ids).await
+    }
 }
