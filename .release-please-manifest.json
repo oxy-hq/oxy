@@ -1,4 +1,5 @@
 {
+  "crates/a2a": "0.4.2",
   "crates/globals": "0.4.2",
   "crates/core": "0.4.2",
   "crates/py": "0.4.2",
@@ -6,6 +7,5 @@
   "crates/entity": "0.4.2",
   "crates/semantic": "0.4.2",
   "crates/omni": "0.4.2",
-  "web-app": "0.4.2",
-  "crates/a2a": "0.4.0"
+  "web-app": "0.4.2"
 }

@@ -139,7 +139,7 @@ const RunSelection: React.FC<Props> = ({ workflowId, runId }) => {
                   <Button
                     size="sm"
                     variant="ghost"
-                    onClick={(e) => {
+                    onPointerDown={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
                       handleDeleteClick(run.run_index);
