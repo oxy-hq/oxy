@@ -24,7 +24,7 @@ export const getArrowColumnValues = (
   columnName: string,
 ) => {
   const fieldType = getArrowFieldType(columnName, table.schema);
-  return table.toArray().map((row) => {
+  return table.toArray().map((row: unknown) => {
     const value = (row as Record<string, unknown>)[columnName];
     return getArrowValueWithType(value, fieldType!);
   });
@@ -201,5 +201,6 @@ export const registerAuthenticatedFile = async (
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const getArrowFieldType = (fieldName: string, schema: Schema<any>) => {
-  return schema.fields.find((f) => f.name === fieldName)?.type;
+  return schema.fields.find((f: { name: string }) => f.name === fieldName)
+    ?.type;
 };

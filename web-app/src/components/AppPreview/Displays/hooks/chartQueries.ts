@@ -41,7 +41,7 @@ export const getSeriesValues = async (
   const result = await seriesDataStatement.query(seriesValue);
   const xValues = getArrowColumnValues(result, "x");
   const yValues = getArrowColumnValues(result, "y");
-  return xValues.map((x, index) => ({
+  return xValues.map((x: unknown, index: number) => ({
     x: x as number | string,
     y: yValues[index] as number | string,
   }));
@@ -74,7 +74,7 @@ export const getPieChartData = async (
   );
   const nameValues = getArrowColumnValues(pieData, "name");
   const valueValues = getArrowColumnValues(pieData, "value");
-  return nameValues.map((name, index) => ({
+  return nameValues.map((name: unknown, index: number) => ({
     name: name as string,
     value: valueValues[index] as number,
   }));

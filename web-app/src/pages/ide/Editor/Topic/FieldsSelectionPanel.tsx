@@ -23,22 +23,25 @@ const FieldsSelectionPanel = ({
   toggleDimension,
   toggleMeasure,
 }: FieldsSelectionPanelProps) => {
-  const [expandedViews, setExpandedViews] = useState<Set<string>>(new Set());
+  // null means "not yet initialized" - will auto-expand all views
+  const [expandedViews, setExpandedViews] = useState<Set<string> | null>(null);
 
-  // Auto-expand all views on load
   const viewNames = useMemo(
     () => viewsWithData.map((v) => v.viewName),
     [viewsWithData],
   );
 
-  // Initialize expanded views when view names change
-  if (viewNames.length > 0 && expandedViews.size === 0) {
-    setExpandedViews(new Set(viewNames));
-  }
+  // Compute effective expanded views - if null (not initialized), expand all
+  const effectiveExpandedViews = useMemo(
+    () => expandedViews ?? new Set(viewNames),
+    [expandedViews, viewNames],
+  );
 
   const toggleViewExpanded = (viewName: string) => {
     setExpandedViews((prev) => {
-      const next = new Set(prev);
+      // If null (not initialized), start from all views expanded
+      const current = prev ?? new Set(viewNames);
+      const next = new Set(current);
       if (next.has(viewName)) {
         next.delete(viewName);
       } else {
@@ -81,7 +84,7 @@ const FieldsSelectionPanel = ({
                 </div>
               )}
               {viewsWithData.map((view) => {
-                const isExpanded = expandedViews.has(view.viewName);
+                const isExpanded = effectiveExpandedViews.has(view.viewName);
                 const isBaseView = view.viewName === topicData.base_view;
 
                 return (
