@@ -74,7 +74,6 @@ jobs:
   #       uses: Swatinem/rust-cache@v2
   #       with:
   #         shared-key: build-cli
-  #         cache-all-crates: "true"
   #         save-if: ${{ github.ref == 'refs/heads/main' }}
   #     # protobuf is required by lance https://github.com/lancedb/lance/issues/3073
   #     - name: Install Protoc

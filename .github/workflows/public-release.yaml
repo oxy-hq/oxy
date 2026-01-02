@@ -70,7 +70,6 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: build-cli-${{ matrix.job.os }}-${{ matrix.job.target }}
-          cache-all-crates: "true"
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Install Protoc
