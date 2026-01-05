@@ -337,7 +337,7 @@ pub struct CancelRunRequest {
 )]
 pub async fn cancel_workflow_run(
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    ProjectManagerExtractor(_project_manager): ProjectManagerExtractor,
     payload: Path<CancelRunRequest>,
 ) -> Result<impl axum::response::IntoResponse, StatusCode> {
     let decoded_path = BASE64_STANDARD.decode(&payload.source_id).map_err(|e| {
