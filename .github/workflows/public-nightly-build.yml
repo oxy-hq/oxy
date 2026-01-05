@@ -42,10 +42,8 @@ jobs:
         job:
           - os: macos-latest
             target: aarch64-apple-darwin
-          # TODO: Github runner keeps failing on x86_64 linux debug builds, so we temporarily disable it for now
-          # For edge and nightly build, we can skip this
-          # - os: ubuntu-22.04
-          #   target: x86_64-unknown-linux-gnu
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
           - os: ubuntu-22.04-arm
             target: aarch64-unknown-linux-gnu
     steps:
@@ -112,13 +110,13 @@ jobs:
       - name: Build oxy cli
         shell: bash
         run: |
-          cargo build --target ${{ matrix.job.target }}
+          cargo build --profile release --target ${{ matrix.job.target }}
           mv target/${{ matrix.job.target }}/debug/oxy artifacts/oxy-${{ matrix.job.target }}
 
       - name: Generate config schema (once)
         if: ${{ matrix.job.target == 'aarch64-apple-darwin' }}
         run: |
-          cargo run --target ${{ matrix.job.target }} -- gen-config-schema
+          cargo run --profile release --target ${{ matrix.job.target }} -- gen-config-schema
           cp -a json-schemas/. artifacts/
           cp Cargo.lock artifacts/
 
