@@ -84,7 +84,7 @@ where
         let response = {
             let checkpoint_context = match &execution_context.checkpoint {
                 Some(checkpoint) => checkpoint.nested(run_info.clone()),
-                None => manager.new_context(run_info.clone()),
+                None => manager.new_context(run_info.clone(), execution_context.user_id),
             };
             let new_context = execution_context.with_checkpoint(checkpoint_context);
 

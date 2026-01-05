@@ -7,6 +7,7 @@ use sea_orm::FromQueryResult;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use utoipa::ToSchema;
+use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Debug, Clone, ToSchema)]
 #[serde(rename_all = "snake_case")]
@@ -40,6 +41,7 @@ pub struct RunInfo {
     pub source_id: String,
     pub run_index: Option<i32>,
     pub lookup_id: Option<String>,
+    pub user_id: Option<Uuid>,
     pub status: RunStatus,
     #[schema(value_type = Object)]
     pub variables: Option<IndexMap<String, serde_json::Value>>,

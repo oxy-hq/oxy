@@ -67,6 +67,7 @@ export type RunInfo = {
   created_at: string;
   updated_at: string;
   lookup_id?: string;
+  user_id?: string | null;
   metadata?: GroupKind;
 };
 

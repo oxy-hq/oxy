@@ -49,6 +49,8 @@ pub struct ExecutionContext {
     /// Connection overrides to apply to database connections in this execution context
     /// Set by API request, transparent to workflows/agents
     pub connections: Option<ConnectionOverrides>,
+    /// User ID for the execution context (for run isolation)
+    pub user_id: uuid::Uuid,
 }
 
 impl ExecutionContext {
@@ -58,6 +60,7 @@ impl ExecutionContext {
         project: ProjectManager,
         writer: Sender<Event>,
         checkpoint: Option<CheckpointContext>,
+        user_id: uuid::Uuid,
     ) -> Self {
         ExecutionContext {
             source,
@@ -67,6 +70,7 @@ impl ExecutionContext {
             checkpoint,
             filters: None,
             connections: None,
+            user_id,
         }
     }
 
@@ -83,6 +87,7 @@ impl ExecutionContext {
             checkpoint: self.checkpoint.clone(),
             filters: self.filters.clone(),
             connections: self.connections.clone(),
+            user_id: self.user_id,
         }
     }
 
@@ -95,6 +100,7 @@ impl ExecutionContext {
             checkpoint: Some(checkpoint),
             filters: self.filters.clone(),
             connections: self.connections.clone(),
+            user_id: self.user_id,
         }
     }
 
@@ -108,6 +114,7 @@ impl ExecutionContext {
                 checkpoint: Some(checkpoint_context.with_current_ref(child_ref)),
                 filters: self.filters.clone(),
                 connections: self.connections.clone(),
+                user_id: self.user_id,
             }
         } else {
             ExecutionContext {
@@ -118,6 +125,7 @@ impl ExecutionContext {
                 checkpoint: None,
                 filters: self.filters.clone(),
                 connections: self.connections.clone(),
+                user_id: self.user_id,
             }
         }
     }
@@ -131,6 +139,7 @@ impl ExecutionContext {
             checkpoint: self.checkpoint.clone(),
             filters: self.filters.clone(),
             connections: self.connections.clone(),
+            user_id: self.user_id,
         }
     }
 
@@ -143,6 +152,7 @@ impl ExecutionContext {
             checkpoint: self.checkpoint.clone(),
             filters: self.filters.clone(),
             connections: self.connections.clone(),
+            user_id: self.user_id,
         }
     }
 
@@ -157,6 +167,7 @@ impl ExecutionContext {
             checkpoint: self.checkpoint.clone(),
             filters: self.filters.clone(),
             connections: self.connections.clone(),
+            user_id: self.user_id,
         }
     }
 
@@ -169,6 +180,20 @@ impl ExecutionContext {
             checkpoint: self.checkpoint.clone(),
             filters: self.filters.clone(),
             connections: self.connections.clone(),
+            user_id: self.user_id,
+        }
+    }
+
+    pub fn with_user_id(&self, user_id: uuid::Uuid) -> Self {
+        ExecutionContext {
+            source: self.source.clone(),
+            writer: self.writer.clone(),
+            renderer: self.renderer.clone(),
+            project: self.project.clone(),
+            checkpoint: self.checkpoint.clone(),
+            filters: self.filters.clone(),
+            connections: self.connections.clone(),
+            user_id,
         }
     }
 
@@ -268,6 +293,7 @@ pub struct ExecutionContextBuilder {
     checkpoint: Option<CheckpointContext>,
     filters: Option<SessionFilters>,
     connections: Option<ConnectionOverrides>,
+    user_id: Option<uuid::Uuid>,
 }
 
 impl Default for ExecutionContextBuilder {
@@ -286,6 +312,7 @@ impl ExecutionContextBuilder {
             checkpoint: None,
             filters: None,
             connections: None,
+            user_id: None,
         }
     }
 
@@ -333,6 +360,11 @@ impl ExecutionContextBuilder {
         self
     }
 
+    pub fn with_user_id(mut self, user_id: uuid::Uuid) -> Self {
+        self.user_id = Some(user_id);
+        self
+    }
+
     pub fn build(self) -> Result<ExecutionContext, OxyError> {
         let source = self
             .source
@@ -346,6 +378,7 @@ impl ExecutionContextBuilder {
         let project: ProjectManager = self.project.ok_or(OxyError::RuntimeError(
             "ProjectManager is required".to_string(),
         ))?;
+        let user_id = self.user_id.unwrap_or(uuid::Uuid::nil());
 
         Ok(ExecutionContext {
             source,
@@ -355,6 +388,7 @@ impl ExecutionContextBuilder {
             checkpoint: self.checkpoint,
             filters: self.filters,
             connections: self.connections,
+            user_id,
         })
     }
 }

@@ -25,7 +25,21 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/shadcn/select";
+import {
+  Avatar,
+  AvatarFallback,
+  AvatarImage,
+} from "@/components/ui/shadcn/avatar";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/shadcn/tooltip";
 import { toast } from "sonner";
+import { UserService } from "@/services/api/users";
+import { UserInfo } from "@/types/auth";
+import { useQuery } from "@tanstack/react-query";
 
 interface Props {
   workflowId: string;
@@ -35,8 +49,43 @@ interface Props {
 const RunSelection: React.FC<Props> = ({ workflowId, runId }) => {
   const location = useLocation();
   const navigate = useNavigate();
+
+  const { data, isPending } = useListWorkflowRuns(workflowId, {
+    pageIndex: 0,
+    pageSize: 10000,
+  });
+
+  const items = get(data, "items", []);
+
+  // Extract unique user_ids from runs
+  const userIds = React.useMemo(() => {
+    const ids = items
+      .map((run: RunInfo) => run.user_id)
+      .filter((id): id is string => id != null);
+    return Array.from(new Set(ids));
+  }, [items]);
+
+  // Fetch users by IDs
+  const { data: usersData } = useQuery({
+    queryKey: ["users", "batch", userIds],
+    queryFn: () => UserService.batchGetUsers(userIds),
+    enabled: userIds.length > 0,
+    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+  });
+
+  // Create a map of user_id to user info for quick lookup
+  const usersMap = React.useMemo(() => {
+    const map = new Map<string, UserInfo>();
+    if (usersData?.users) {
+      usersData.users.forEach((user) => {
+        map.set(user.id, user);
+      });
+    }
+    return map;
+  }, [usersData]);
+
   const queryClient = useQueryClient();
-  const { project, branchName } = useCurrentProjectBranch();
+  const { project: projectBranch, branchName } = useCurrentProjectBranch();
   const [runToDelete, setRunToDelete] = React.useState<number | null>(null);
   const [showDeleteDialog, setShowDeleteDialog] = React.useState(false);
 
@@ -50,13 +99,6 @@ const RunSelection: React.FC<Props> = ({ workflowId, runId }) => {
       }).toString(),
     });
   };
-
-  const { data, isPending } = useListWorkflowRuns(workflowId, {
-    pageIndex: 0,
-    pageSize: 10000,
-  });
-
-  const items = get(data, "items", []);
 
   const handleDeleteClick = (runIndex: number) => {
     setRunToDelete(runIndex);
@@ -76,7 +118,7 @@ const RunSelection: React.FC<Props> = ({ workflowId, runId }) => {
       // Invalidate the runs list query to refetch
       queryClient.invalidateQueries({
         queryKey: queryKeys.workflow.getRuns(
-          project.id,
+          projectBranch.id,
           branchName,
           workflowId,
           { pageIndex: 0, pageSize: 10000 },
@@ -105,76 +147,85 @@ const RunSelection: React.FC<Props> = ({ workflowId, runId }) => {
 
   return (
     <>
-      <div className="flex items-center gap-2">
-        <Select value={runId} onValueChange={onRunIdChange}>
-          <SelectTrigger className="w-[280px]">
-            <SelectValue placeholder="Select the run" />
-          </SelectTrigger>
-          <SelectContent>
-            {isPending && <div className="p-4">Loading...</div>}
-            {!isPending && items.length === 0 && (
-              <div className="p-4 text-sm text-muted-foreground">
-                No runs available
-              </div>
-            )}
-            {items.map((run: RunInfo) => (
-              <SelectItem
-                key={run.run_index}
-                value={run.run_index.toString()}
-                className="group"
-              >
+      <Select value={runId} onValueChange={onRunIdChange}>
+        <SelectTrigger>
+          <SelectValue placeholder="Select the run" />
+        </SelectTrigger>
+        <SelectContent>
+          {isPending && <div className="p-4">Loading...</div>}
+          {items.map((run: RunInfo) => {
+            const user = run.user_id ? usersMap.get(run.user_id) : null;
+
+            // Show user email if available, otherwise show truncated user_id
+            const displayName =
+              user?.email ||
+              (run.user_id ? `User ${run.user_id.slice(0, 8)}...` : "Unknown");
+            const avatarFallback =
+              user?.name?.charAt(0).toUpperCase() ||
+              user?.email?.charAt(0).toUpperCase() ||
+              (run.user_id ? run.user_id.charAt(0).toUpperCase() : "?");
+
+            return (
+              <SelectItem key={run.run_index} value={run.run_index.toString()}>
                 <div className="flex items-center justify-between w-full gap-2">
-                  <div className="flex items-center gap-3 flex-1 min-w-0">
-                    <p className="text-sm font-medium whitespace-nowrap">
-                      Run {run.run_index}
-                    </p>
-                    <p className="text-xs text-muted-foreground whitespace-nowrap overflow-hidden text-ellipsis">
-                      {new Date(run.updated_at).toLocaleDateString()}{" "}
-                      {new Date(run.updated_at).toLocaleTimeString([], {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
-                    </p>
-                  </div>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                          <Avatar className="h-5 w-5 flex-shrink-0">
+                            <AvatarImage
+                              src={user?.picture}
+                              alt={displayName}
+                            />
+                            <AvatarFallback className="text-xs">
+                              {avatarFallback}
+                            </AvatarFallback>
+                          </Avatar>
+                          <span className="text-sm font-medium flex-shrink-0">
+                            Run {run.run_index}
+                          </span>
+                          <span className="text-xs text-muted-foreground flex-shrink-0">
+                            {new Date(run.updated_at).toLocaleTimeString()}
+                          </span>
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>{displayName}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
                   <Button
-                    size="sm"
                     variant="ghost"
-                    onPointerDown={(e) => {
-                      e.preventDefault();
+                    size="icon"
+                    className="h-5 w-5 hover:bg-destructive/10 hover:text-destructive flex-shrink-0"
+                    onClick={(e) => {
                       e.stopPropagation();
                       handleDeleteClick(run.run_index);
                     }}
-                    className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
                   >
-                    <Trash2 className="w-3.5 h-3.5 text-destructive" />
+                    <Trash2 className="h-3 w-3" />
                   </Button>
                 </div>
               </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+            );
+          })}
+        </SelectContent>
+      </Select>
 
       <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete workflow run?</AlertDialogTitle>
+            <AlertDialogTitle>Delete Workflow Run</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete run {runToDelete}. This action cannot
-              be undone.
+              Are you sure you want to delete this workflow run? This action
+              cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel
-              onClick={() => {
-                setRunToDelete(null);
-              }}
-            >
-              Cancel
-            </AlertDialogCancel>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDelete}
-              className="bg-destructive text-white hover:bg-destructive/90"
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               Delete
             </AlertDialogAction>

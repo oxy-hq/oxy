@@ -871,6 +871,7 @@ async fn migrate_runs(
                 lookup_id: Set(record.lookup_id),
                 created_at: Set(record.created_at),
                 updated_at: Set(record.updated_at),
+                user_id: Set(None), // Migrated runs have no user association
             };
             runs::Entity::insert(active_model)
                 .exec(postgres)

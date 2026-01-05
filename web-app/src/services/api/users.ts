@@ -7,6 +7,18 @@ export class UserService {
     return response.data;
   }
 
+  static async getAllUsers(): Promise<UserListResponse> {
+    const response = await apiClient.get("/users");
+    return response.data;
+  }
+
+  static async batchGetUsers(userIds: string[]): Promise<UserListResponse> {
+    const response = await apiClient.post("/users/batch", {
+      user_ids: userIds,
+    });
+    return response.data;
+  }
+
   static async getCurrentUser(): Promise<UserInfo> {
     const response = await apiClient.get("/user");
     return response.data;

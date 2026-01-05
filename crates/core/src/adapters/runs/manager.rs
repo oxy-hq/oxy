@@ -42,8 +42,8 @@ impl RunsManager {
     ) -> Result<Paginated<RunInfo>, OxyError> {
         self.storage.list_runs(source_id, pagination).await
     }
-    pub async fn upsert_run(&self, group: Group) -> Result<(), OxyError> {
-        self.storage.upsert_run(group).await
+    pub async fn upsert_run(&self, group: Group, user_id: Option<Uuid>) -> Result<(), OxyError> {
+        self.storage.upsert_run(group, user_id).await
     }
     pub async fn find_run_details(
         &self,
@@ -95,9 +95,10 @@ impl RunsManager {
         source_id: &str,
         variables: Option<IndexMap<String, serde_json::Value>>,
         lookup_id: Option<Uuid>,
+        user_id: Option<Uuid>,
     ) -> Result<RunInfo, OxyError> {
         self.storage
-            .new_run(source_id, None, variables, lookup_id)
+            .new_run(source_id, None, variables, lookup_id, user_id)
             .await
     }
     pub async fn nested_run(
@@ -105,9 +106,10 @@ impl RunsManager {
         source_id: &str,
         root_ref: RootReference,
         variables: Option<IndexMap<String, serde_json::Value>>,
+        user_id: Option<Uuid>,
     ) -> Result<RunInfo, OxyError> {
         self.storage
-            .new_run(source_id, Some(root_ref), variables, None)
+            .new_run(source_id, Some(root_ref), variables, None, user_id)
             .await
     }
     pub async fn get_run_info(
@@ -115,6 +117,7 @@ impl RunsManager {
         source_id: &str,
         retry_strategy: &RetryStrategy,
         lookup_id: Option<Uuid>,
+        user_id: Option<Uuid>,
     ) -> Result<RunInfo, OxyError> {
         match retry_strategy {
             RetryStrategy::Retry {
@@ -156,7 +159,8 @@ impl RunsManager {
                 )))
             }
             RetryStrategy::NoRetry { variables } => {
-                self.new_run(source_id, variables.clone(), lookup_id).await
+                self.new_run(source_id, variables.clone(), lookup_id, user_id)
+                    .await
             }
             RetryStrategy::Preview => {
                 todo!("Preview mode is not implemented yet")
@@ -169,9 +173,10 @@ impl RunsManager {
         source_id: &str,
         retry_strategy: &RetryStrategy,
         lookup_id: Option<Uuid>,
+        user_id: Option<Uuid>,
     ) -> Result<(RunInfo, Option<RunInfo>), OxyError> {
         let run_info = self
-            .get_run_info(source_id, retry_strategy, lookup_id)
+            .get_run_info(source_id, retry_strategy, lookup_id, user_id)
             .await?;
         if let Some(root_ref) = &run_info.root_ref {
             let root_run_info = self.find_run(source_id, root_ref.run_index).await?;

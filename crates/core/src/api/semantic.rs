@@ -61,6 +61,7 @@ pub async fn execute_semantic_query(
         checkpoint: None,
         filters: payload.session_filters,
         connections: payload.connections,
+        user_id: Uuid::nil(),
     };
 
     // Construct SemanticQueryTask
@@ -174,6 +175,7 @@ pub async fn compile_semantic_query(
         checkpoint: None,
         filters: payload.session_filters,
         connections: payload.connections,
+        user_id: Uuid::nil(),
     };
 
     // Construct SemanticQueryTask

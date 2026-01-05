@@ -315,6 +315,7 @@ pub struct AgenticEventsRequest {
 
 pub async fn agentic_events(
     ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
     Query(request): Query<AgenticEventsRequest>,
 ) -> Result<impl axum::response::IntoResponse, StatusCode> {
     let runs_manager = project_manager.runs_manager.as_ref().ok_or_else(|| {

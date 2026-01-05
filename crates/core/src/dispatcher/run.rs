@@ -47,7 +47,7 @@ impl Dispatcher {
             OxyError::InitializationError("Failed to initialize RunsManager".to_string())
         })?;
         let (source_run_info, root_run_info) = runs_manager
-            .get_root_run(&source_id, &retry_strategy, lookup_id)
+            .get_root_run(&source_id, &retry_strategy, lookup_id, None) // TODO: Add proper user authentication to dispatcher
             .await
             .map_err(|e| {
                 tracing::error!("Failed to get run info: {:?}", e);
@@ -79,7 +79,7 @@ impl Dispatcher {
                 let groups = group_handler.collect();
                 for group in groups {
                     tracing::info!("Saving group: {:?}", group.id());
-                    runs_manager.upsert_run(group).await?;
+                    runs_manager.upsert_run(group, None).await?; // TODO: Add proper user authentication to dispatcher
                 }
                 drop(closed.sender); // Drop the sender to close the channel
             }

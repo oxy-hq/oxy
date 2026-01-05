@@ -11,6 +11,7 @@ use uuid::Uuid;
 
 use crate::adapters::checkpoint::types::RetryStrategy;
 use crate::api::middlewares::project::ProjectManagerExtractor;
+use crate::auth::extractor::AuthenticatedUserExtractor;
 use crate::errors::OxyError;
 use crate::execute::types::OutputContainer;
 use crate::execute::writer::Handler;
@@ -57,6 +58,7 @@ pub struct PaginationQuery {
 pub async fn get_workflow_runs(
     Path((_project_id, pathb64)): Path<(Uuid, String)>,
     ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
     Query(pagination): Query<PaginationQuery>,
 ) -> Result<extract::Json<Paginated<RunInfo>>, StatusCode> {
     let decoded_path = BASE64_STANDARD.decode(pathb64).map_err(|e| {
@@ -151,6 +153,7 @@ pub struct CreateRunResponse {
 pub async fn create_workflow_run(
     Path((_project_id, pathb64)): Path<(Uuid, String)>,
     ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     extract::Json(payload): extract::Json<CreateRunRequest>,
 ) -> Result<extract::Json<CreateRunResponse>, StatusCode> {
     let decoded_path = BASE64_STANDARD.decode(pathb64).map_err(|e| {
@@ -180,6 +183,7 @@ pub async fn create_workflow_run(
             &file_path_to_source_id(&path),
             &payload.retry_strategy,
             None,
+            Some(user.id),
         )
         .await
         .map_err(|e| {
@@ -198,6 +202,7 @@ pub async fn create_workflow_run(
     let run_index = run_info.run_index.ok_or(StatusCode::BAD_REQUEST)?;
     let topic_id = task_id.clone();
     let cb_source_id = run_info.source_id.clone();
+    let cb_user_id = user.id; // Clone user.id for the callback
     let callback_fn = async move |output: Option<OutputContainer>| -> Result<(), OxyError> {
         // Handle the completion of the run and broadcast events
         if let Some(closed) = BROADCASTER.remove_topic(&topic_id).await {
@@ -233,9 +238,14 @@ pub async fn create_workflow_run(
             let groups = group_handler.collect();
             for group in groups {
                 tracing::info!("Saving group: {:?}", group.id());
-                runs_manager.upsert_run(group).await?;
+                runs_manager.upsert_run(group, Some(cb_user_id)).await?;
             }
             drop(closed.sender); // Drop the sender to close the channel
+        } else {
+            tracing::warn!(
+                "Failed to remove topic: {} - topic does not exist or was already removed",
+                topic_id
+            );
         }
         Ok(())
     };
@@ -259,6 +269,7 @@ pub async fn create_workflow_run(
                     None,
                     None,
                     None, // No globals for retry
+                    user.id,
                 )
             };
             tokio::select! {
@@ -266,6 +277,8 @@ pub async fn create_workflow_run(
                     tracing::info!("Task {task_id} was cancelled");
                     if let Err(err) = callback_fn(None).await {
                         tracing::error!("Failed to handle callback for task {task_id}: {err}");
+                    } else {
+                        tracing::info!("Callback completed successfully for cancelled task {task_id}");
                     }
                 }
                 res = run_fut => {
@@ -279,9 +292,10 @@ pub async fn create_workflow_run(
                             None
                         },
                     };
-
                     if let Err(err) = callback_fn(output).await {
                         tracing::error!("Failed to handle callback for task {task_id}: {err}");
+                    } else {
+                        tracing::info!("Callback completed successfully for task {task_id}");
                     }
                 }
 
@@ -322,6 +336,8 @@ pub struct CancelRunRequest {
     tag = "Runs"
 )]
 pub async fn cancel_workflow_run(
+    AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
+    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
     payload: Path<CancelRunRequest>,
 ) -> Result<impl axum::response::IntoResponse, StatusCode> {
     let decoded_path = BASE64_STANDARD.decode(&payload.source_id).map_err(|e| {
@@ -332,6 +348,7 @@ pub async fn cancel_workflow_run(
         tracing::info!("{:?}", e);
         StatusCode::BAD_REQUEST
     })?;
+
     let task_id = format!("{}::{}", source_id, &payload.run_index);
     TASK_MANAGER
         .cancel_task(task_id.clone())
@@ -383,6 +400,7 @@ impl From<WorkflowEventsRequest> for RunInfo {
 )]
 pub async fn workflow_events(
     ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
     Query(request): Query<WorkflowEventsRequest>,
 ) -> Result<impl axum::response::IntoResponse, StatusCode> {
     let run_info: RunInfo = request.into();
@@ -475,6 +493,7 @@ pub struct WorkflowEventsResponse {
 )]
 pub async fn workflow_events_sync(
     ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
     Query(request): Query<WorkflowEventsRequest>,
 ) -> Result<axum::extract::Json<WorkflowEventsResponse>, StatusCode> {
     let source_id = if let Ok(decoded_bytes) = BASE64_STANDARD.decode(&request.source_id) {
@@ -687,6 +706,7 @@ pub struct BlocksRequest {
 )]
 pub async fn get_blocks(
     ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
     Query(block_request): Query<BlocksRequest>,
 ) -> Result<extract::Json<RunDetails>, StatusCode> {
     let runs_manager = project_manager.runs_manager.as_ref().ok_or_else(|| {

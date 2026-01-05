@@ -66,6 +66,7 @@ impl RunsStorage for RunsDatabaseStorage {
             run_index: run.run_index,
             status,
             lookup_id: run.lookup_id.map(|id| id.to_string()),
+            user_id: run.user_id,
             variables: run.variables.map(|v| v.to_inner()),
             created_at: run.created_at.into(),
             updated_at: run.updated_at.into(),
@@ -78,6 +79,7 @@ impl RunsStorage for RunsDatabaseStorage {
         root_ref: Option<RootReference>,
         variables: Option<IndexMap<String, serde_json::Value>>,
         lookup_id: Option<Uuid>,
+        user_id: Option<Uuid>,
     ) -> Result<RunInfo, OxyError> {
         let connection = self.connection.clone();
         let project_id = self.project_id;
@@ -134,6 +136,7 @@ impl RunsStorage for RunsDatabaseStorage {
                                     error: ActiveValue::Set(None),
                                     project_id: ActiveValue::Set(project_id),
                                     branch_id: ActiveValue::Set(branch_id),
+                                    user_id: ActiveValue::Set(user_id),
                                     created_at: ActiveValue::Set(chrono::Utc::now().into()),
                                     updated_at: ActiveValue::Set(chrono::Utc::now().into()),
                                     variables: ActiveValue::Set(variables.clone().map(Variables)),
@@ -165,6 +168,7 @@ impl RunsStorage for RunsDatabaseStorage {
                                     source_id: source_id.to_string(),
                                     run_index,
                                     lookup_id: lookup_id_clone.map(|id| id.to_string()),
+                                    user_id,
                                     variables,
                                     status: RunStatus::Pending,
                                     created_at: chrono::Utc::now(),
@@ -225,7 +229,7 @@ impl RunsStorage for RunsDatabaseStorage {
         .await
     }
 
-    async fn upsert_run(&self, group: Group) -> Result<(), OxyError> {
+    async fn upsert_run(&self, group: Group, user_id: Option<Uuid>) -> Result<(), OxyError> {
         let metadata_json = serde_json::to_value(&group.group_kind).map_err(|err| {
             OxyError::SerializerError(format!("Failed to serialize metadata: {err}"))
         })?;
@@ -272,6 +276,7 @@ impl RunsStorage for RunsDatabaseStorage {
             .map_err(|err| OxyError::DBError(format!("Failed to check existing run: {err}")))?;
 
         if let Some(run) = existing_run {
+            let should_set_user_id = run.user_id.is_none() && user_id.is_some();
             // Update existing run
             let mut active_model: entity::runs::ActiveModel = run.into();
             active_model.metadata = ActiveValue::Set(Some(metadata_json));
@@ -279,6 +284,9 @@ impl RunsStorage for RunsDatabaseStorage {
             active_model.children = ActiveValue::Set(Some(children_json));
             active_model.updated_at = ActiveValue::Set(chrono::Utc::now().into());
             active_model.error = ActiveValue::Set(group.error);
+            if should_set_user_id {
+                active_model.user_id = ActiveValue::Set(user_id);
+            }
             active_model
                 .update(&self.connection)
                 .await
@@ -297,6 +305,7 @@ impl RunsStorage for RunsDatabaseStorage {
                 updated_at: ActiveValue::Set(chrono::Utc::now().into()),
                 project_id: ActiveValue::Set(self.project_id),
                 branch_id: ActiveValue::Set(self.branch_id),
+                user_id: ActiveValue::Set(user_id),
                 ..Default::default()
             };
             new_run
@@ -427,6 +436,7 @@ impl RunsStorage for RunsDatabaseStorage {
                 source_id: run.source_id,
                 run_index: run.run_index,
                 lookup_id: run.lookup_id.map(|id| id.to_string()),
+                user_id: run.user_id,
                 status: match (run.blocks, run.error) {
                     (_, Some(_)) => RunStatus::Failed,
                     (Some(_), None) => RunStatus::Completed,
@@ -500,6 +510,7 @@ impl RunsStorage for RunsDatabaseStorage {
                 source_id: run.source_id,
                 run_index: run.run_index,
                 lookup_id: run.lookup_id.map(|id| id.to_string()),
+                user_id: run.user_id,
                 status,
                 created_at: run.created_at.into(),
                 updated_at: run.updated_at.into(),
@@ -570,6 +581,7 @@ impl RunsStorage for RunsDatabaseStorage {
                 source_id: run.source_id,
                 run_index: run.run_index,
                 lookup_id: run.lookup_id.map(|id| id.to_string()),
+                user_id: run.user_id,
                 status,
                 created_at: run.created_at.into(),
                 updated_at: run.updated_at.into(),
@@ -626,6 +638,7 @@ impl RunsStorage for RunsDatabaseStorage {
                 source_id: run.source_id,
                 run_index: run.run_index,
                 lookup_id: run.lookup_id.map(|id| id.to_string()),
+                user_id: run.user_id,
                 status: match (run.blocks, run.error) {
                     (_, Some(_)) => RunStatus::Failed,
                     (Some(_), None) => RunStatus::Completed,

@@ -166,6 +166,7 @@ pub async fn run_workflow<P: AsRef<Path>, L: WorkflowLogger + 'static>(
     filters: Option<SessionFilters>,
     connections: Option<crate::config::model::ConnectionOverrides>,
     globals: Option<indexmap::IndexMap<String, serde_json::Value>>,
+    user_id: uuid::Uuid,
 ) -> Result<OutputContainer, OxyError> {
     WorkflowLauncher::new()
         .with_filters(filters)
@@ -179,6 +180,7 @@ pub async fn run_workflow<P: AsRef<Path>, L: WorkflowLogger + 'static>(
                 retry: retry_strategy,
             },
             WorkflowEventHandler::new(logger),
+            user_id,
         )
         .await
 }
@@ -191,6 +193,7 @@ pub async fn run_workflow_v2<P: AsRef<Path>, H: EventHandler + Send + Sync + 'st
     filters: Option<SessionFilters>,
     connections: Option<crate::config::model::ConnectionOverrides>,
     globals: Option<indexmap::IndexMap<String, serde_json::Value>>,
+    user_id: uuid::Uuid,
 ) -> Result<OutputContainer, OxyError> {
     WorkflowLauncher::new()
         .with_filters(filters)
@@ -204,6 +207,7 @@ pub async fn run_workflow_v2<P: AsRef<Path>, H: EventHandler + Send + Sync + 'st
                 retry: retry_strategy,
             },
             handler,
+            user_id,
         )
         .await
 }

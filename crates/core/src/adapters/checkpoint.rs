@@ -58,8 +58,13 @@ impl CheckpointManager {
         self.storage.write_success_marker(run_info).await
     }
 
-    pub fn new_context(&self, run_info: RunInfo) -> CheckpointContext {
-        CheckpointContext::new(run_info, self.storage.clone(), self.run_storage.clone())
+    pub fn new_context(&self, run_info: RunInfo, user_id: uuid::Uuid) -> CheckpointContext {
+        CheckpointContext::new(
+            run_info,
+            self.storage.clone(),
+            self.run_storage.clone(),
+            user_id,
+        )
     }
 }
 
@@ -70,16 +75,23 @@ pub struct CheckpointContext {
     current_ref: Vec<String>,
     storage: CheckpointStorageImpl,
     run_storage: RunsManager,
+    user_id: uuid::Uuid,
 }
 
 impl CheckpointContext {
-    fn new(run_info: RunInfo, storage: CheckpointStorageImpl, run_storage: RunsManager) -> Self {
+    fn new(
+        run_info: RunInfo,
+        storage: CheckpointStorageImpl,
+        run_storage: RunsManager,
+        user_id: uuid::Uuid,
+    ) -> Self {
         CheckpointContext {
             root_ref: None,
             run_info,
             storage,
             current_ref: vec![],
             run_storage,
+            user_id,
         }
     }
 
@@ -91,6 +103,7 @@ impl CheckpointContext {
             storage: self.storage.clone(),
             current_ref: vec![],
             run_storage: self.run_storage.clone(),
+            user_id: self.user_id,
         }
     }
 
@@ -104,6 +117,7 @@ impl CheckpointContext {
             current_ref,
             storage: self.storage.clone(),
             run_storage: self.run_storage.clone(),
+            user_id: self.user_id,
         }
     }
 
@@ -151,6 +165,11 @@ impl CheckpointContext {
         source_id: &str,
         variables: Option<IndexMap<String, serde_json::Value>>,
     ) -> Result<RunInfo, OxyError> {
+        let run_user_id = if self.user_id.is_nil() {
+            None
+        } else {
+            Some(self.user_id)
+        };
         let checkpoint_data = self
             .storage
             .read_checkpoint::<serde_json::Value>(&self.run_info, &self.get_full_ref(replay_id))
@@ -171,13 +190,13 @@ impl CheckpointContext {
                     .try_into()?,
                 None => self
                     .run_storage
-                    .nested_run(source_id, root_ref, variables)
+                    .nested_run(source_id, root_ref, variables, run_user_id)
                     .await?
                     .try_into()?,
             },
             None => self
                 .run_storage
-                .nested_run(source_id, root_ref, variables)
+                .nested_run(source_id, root_ref, variables, run_user_id)
                 .await?
                 .try_into()?,
         };

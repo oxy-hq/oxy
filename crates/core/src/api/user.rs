@@ -45,6 +45,11 @@ pub struct UpdateUserRequest {
     pub role: Option<String>,
 }
 
+#[derive(Deserialize)]
+pub struct BatchUsersRequest {
+    pub user_ids: Vec<String>,
+}
+
 impl From<AuthenticatedUser> for UserInfo {
     fn from(user: AuthenticatedUser) -> Self {
         Self {
@@ -67,6 +72,53 @@ pub async fn list_users(
     })?;
 
     let user_infos: Vec<UserInfo> = users.into_iter().map(|user| user.into()).collect();
+    let total = user_infos.len();
+
+    Ok(Json(UserListResponse {
+        users: user_infos,
+        total,
+    }))
+}
+
+pub async fn batch_get_users(
+    _user: AuthenticatedUserExtractor,
+    JsonExtractor(payload): JsonExtractor<BatchUsersRequest>,
+) -> Result<Json<UserListResponse>, StatusCode> {
+    use entity::prelude::Users;
+    use sea_orm::ColumnTrait;
+    use sea_orm::EntityTrait;
+    use sea_orm::QueryFilter;
+
+    let connection = crate::db::client::establish_connection()
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    // Parse UUIDs from strings
+    let user_uuids: Result<Vec<Uuid>, _> = payload
+        .user_ids
+        .iter()
+        .map(|id| Uuid::parse_str(id))
+        .collect();
+
+    let user_uuids = user_uuids.map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    let users = Users::find()
+        .filter(entity::users::Column::Id.is_in(user_uuids))
+        .all(&connection)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to query users: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+    let user_infos: Vec<UserInfo> = users
+        .into_iter()
+        .map(|user| {
+            let auth_user: AuthenticatedUser = user.into();
+            auth_user.into()
+        })
+        .collect();
+
     let total = user_infos.len();
 
     Ok(Json(UserListResponse {

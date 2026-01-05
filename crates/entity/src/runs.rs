@@ -39,6 +39,7 @@ pub struct Model {
     pub project_id: Uuid,
     pub branch_id: Uuid,
     pub lookup_id: Option<Uuid>,
+    pub user_id: Option<Uuid>,
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
 }
@@ -61,6 +62,14 @@ pub enum Relation {
         on_delete = "SetNull"
     )]
     Messages,
+    #[sea_orm(
+        belongs_to = "super::users::Entity",
+        from = "Column::UserId",
+        to = "super::users::Column::Id",
+        on_update = "NoAction",
+        on_delete = "Cascade"
+    )]
+    Users,
 }
 
 impl Related<super::projects::Entity> for Entity {
@@ -72,6 +81,12 @@ impl Related<super::projects::Entity> for Entity {
 impl Related<super::messages::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Messages.def()
+    }
+}
+
+impl Related<super::users::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Users.def()
     }
 }
 

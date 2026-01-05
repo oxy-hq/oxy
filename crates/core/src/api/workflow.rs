@@ -18,6 +18,7 @@ use std::{
 use crate::{
     adapters::{checkpoint::types::RetryStrategy, session_filters::SessionFilters},
     api::middlewares::{project::ProjectManagerExtractor, timeout::TimeoutConfig},
+    auth::extractor::AuthenticatedUserExtractor,
     config::model::{ConnectionOverrides, Workflow},
     db::client::establish_connection,
     service::{
@@ -318,6 +319,7 @@ pub async fn run_workflow(
             filters,
             connections,
             globals,
+            uuid::Uuid::nil(), // No authenticated user for this endpoint
         )
         .await;
         match rs {
@@ -465,6 +467,7 @@ pub async fn run_workflow_thread(
 
     let connection_clone = connection.clone();
     let thread_clone = thread.clone();
+    let thread_user_id = thread.user_id.unwrap_or(Uuid::nil());
 
     let _ = tokio::spawn(async move {
         let result = service::run_workflow(
@@ -475,6 +478,7 @@ pub async fn run_workflow_thread(
             None,
             None,
             None, // No globals for thread execution (not in request)
+            thread_user_id,
         )
         .await;
 
@@ -655,6 +659,7 @@ pub async fn run_workflow_thread_sync(
     let workflow_ref_clone = workflow_ref.clone();
     let filters = request.filters;
     let connections = request.connections;
+    let thread_user_id = thread.user_id.unwrap_or(Uuid::nil());
 
     let mut workflow_task = tokio::spawn(async move {
         let result = service::run_workflow(
@@ -665,6 +670,7 @@ pub async fn run_workflow_thread_sync(
             filters,
             connections,
             None, // No globals for thread sync execution (not in request)
+            thread_user_id,
         )
         .await;
 
@@ -871,6 +877,7 @@ pub struct RunWorkflowSyncResponse {
 pub async fn run_workflow_sync(
     Path((_project_id, pathb64)): Path<(Uuid, String)>,
     ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     timeout_config: TimeoutConfig,
     extract::Json(request): extract::Json<RunWorkflowRequest>,
 ) -> Result<extract::Json<RunWorkflowSyncResponse>, StatusCode> {
@@ -917,7 +924,7 @@ pub async fn run_workflow_sync(
     })?;
 
     let run_info = runs_manager
-        .new_run(&source_id, request.variables.clone(), None)
+        .new_run(&source_id, request.variables.clone(), None, Some(user.id))
         .await
         .map_err(|e| {
             tracing::error!("Failed to create new run: {:?}", e);
@@ -968,6 +975,7 @@ pub async fn run_workflow_sync(
                 filters,
                 connections,
                 globals,
+                user.id,
             )
             .await;
 
@@ -1357,6 +1365,7 @@ pub struct WorkflowRunResponse {
 pub async fn get_workflow_run(
     Path((_project_id, pathb64, run_id)): Path<(Uuid, String, i32)>,
     ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
     extract::Query(params): extract::Query<std::collections::HashMap<String, String>>,
 ) -> Result<extract::Json<WorkflowRunResponse>, StatusCode> {
     let wait_for_completion = params

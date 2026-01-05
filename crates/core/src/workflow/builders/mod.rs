@@ -148,6 +148,7 @@ impl WorkflowLauncher {
             })
             .with_filters(self.filters.clone())
             .with_connections(self.connections.clone())
+            .with_user_id(uuid::Uuid::nil()) // Temporary placeholder, will be updated in launch()
             .build()?;
 
         let config_manager = execution_context.project.config_manager.clone();
@@ -165,8 +166,14 @@ impl WorkflowLauncher {
         workflow_ref: &str,
         retry: &RetryStrategy,
         runs_manager: &RunsManager,
+        user_id: uuid::Uuid,
     ) -> Result<RunInfo, OxyError> {
         let source_id = file_path_to_source_id(workflow_ref);
+        let run_user_id = if user_id.is_nil() {
+            None
+        } else {
+            Some(user_id)
+        };
         match retry {
             RetryStrategy::Retry {
                 replay_id,
@@ -223,7 +230,7 @@ impl WorkflowLauncher {
                 }
             }
             RetryStrategy::NoRetry { variables } => runs_manager
-                .new_run(&source_id, variables.clone(), None)
+                .new_run(&source_id, variables.clone(), None, run_user_id)
                 .await
                 .map(|run| run.try_into())?,
             RetryStrategy::Preview => {
@@ -236,16 +243,17 @@ impl WorkflowLauncher {
         self,
         workflow_input: WorkflowInput,
         event_handler: H,
+        user_id: uuid::Uuid,
     ) -> Result<OutputContainer, OxyError> {
-        let execution_context = self
-            .execution_context
-            .ok_or(OxyError::RuntimeError(
-                "ExecutionContext is required".to_string(),
-            ))?
-            .with_child_source(
-                workflow_input.workflow_ref.to_string(),
-                WORKFLOW_SOURCE.to_string(),
-            );
+        let mut execution_context = self.execution_context.ok_or(OxyError::RuntimeError(
+            "ExecutionContext is required".to_string(),
+        ))?;
+
+        // Update user_id with the actual value and create child source in one step
+        execution_context = execution_context.with_user_id(user_id).with_child_source(
+            workflow_input.workflow_ref.to_string(),
+            WORKFLOW_SOURCE.to_string(),
+        );
 
         let runs_manager =
             execution_context
@@ -271,6 +279,7 @@ impl WorkflowLauncher {
             &workflow_input.workflow_ref,
             &workflow_input.retry,
             &runs_manager,
+            user_id,
         )
         .await?;
         let workflow_config = execution_context
@@ -372,7 +381,11 @@ impl Executable<WorkflowInput> for WorkflowLauncherExecutable {
         WorkflowLauncher::new()
             .with_external_context(execution_context)
             .await?
-            .launch(input, execution_context.writer.clone())
+            .launch(
+                input,
+                execution_context.writer.clone(),
+                execution_context.user_id,
+            )
             .await
     }
 }
