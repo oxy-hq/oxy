@@ -1,6 +1,7 @@
 import {
   SemanticQueryRequest,
   SemanticQueryFilter,
+  SemanticQueryOrder,
 } from "@/services/api/semantic";
 import { Variable } from "../components/SemanticQueryPanel";
 
@@ -9,6 +10,7 @@ interface BuildSemanticQueryOptions {
   dimensions: string[];
   measures: string[];
   filters: SemanticQueryFilter[];
+  orders: SemanticQueryOrder[];
   variables: Variable[];
   getFullFieldName?: (field: string) => string;
 }
@@ -22,6 +24,7 @@ export function buildSemanticQuery({
   dimensions,
   measures,
   filters,
+  orders,
   variables,
   getFullFieldName,
 }: BuildSemanticQueryOptions): SemanticQueryRequest {
@@ -52,6 +55,11 @@ export function buildSemanticQuery({
     {} as Record<string, unknown>,
   );
 
+  const processedOrders = orders.map((order) => ({
+    field: getFullFieldName ? getFullFieldName(order.field) : order.field,
+    direction: order.direction,
+  }));
+
   return {
     query: {
       ...(topic && { topic }),
@@ -62,6 +70,7 @@ export function buildSemanticQuery({
         getFullFieldName ? getFullFieldName(m) : m,
       ),
       filters: processedFilters,
+      orders: processedOrders,
       variables: processedVariables,
     },
   };

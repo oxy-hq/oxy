@@ -1,8 +1,12 @@
 import { useEffect } from "react";
 import { Tabs, TabsContent } from "@/components/ui/shadcn/tabs";
-import { SemanticQueryFilter } from "@/services/api/semantic";
+import {
+  SemanticQueryFilter,
+  SemanticQueryOrder,
+} from "@/services/api/semantic";
 import TabsHeader from "./components/TabsHeader";
 import FiltersSection from "./components/FiltersSection";
+import SortsSection from "./components/SortsSection";
 import VariablesSection from "./components/VariablesSection";
 import SqlView from "./components/SqlView";
 import ResultsView from "./components/ResultsView";
@@ -20,10 +24,14 @@ interface SemanticQueryPanelProps {
   sqlError: string | null;
   executionError: string | null;
   filters: SemanticQueryFilter[];
+  orders: SemanticQueryOrder[];
   variables: Variable[];
   onAddFilter: () => void;
   onUpdateFilter: (index: number, updates: SemanticQueryFilter) => void;
   onRemoveFilter: (index: number) => void;
+  onAddOrder: () => void;
+  onUpdateOrder: (index: number, updates: SemanticQueryOrder) => void;
+  onRemoveOrder: (index: number) => void;
   onAddVariable: () => void;
   onUpdateVariable: (index: number, updates: Partial<Variable>) => void;
   onRemoveVariable: (index: number) => void;
@@ -32,6 +40,7 @@ interface SemanticQueryPanelProps {
   canExecuteQuery: boolean;
   disabledMessage?: string;
   availableDimensions: { label: string; value: string }[];
+  selectedFields: { label: string; value: string }[];
   hasData: boolean;
 }
 
@@ -43,10 +52,14 @@ const SemanticQueryPanel = ({
   sqlError,
   executionError,
   filters,
+  orders,
   variables,
   onAddFilter,
   onUpdateFilter,
   onRemoveFilter,
+  onAddOrder,
+  onUpdateOrder,
+  onRemoveOrder,
   onAddVariable,
   onUpdateVariable,
   onRemoveVariable,
@@ -55,6 +68,7 @@ const SemanticQueryPanel = ({
   canExecuteQuery,
   disabledMessage,
   availableDimensions,
+  selectedFields,
   hasData,
 }: SemanticQueryPanelProps) => {
   useEffect(() => {
@@ -81,11 +95,13 @@ const SemanticQueryPanel = ({
         result={result}
         hasData={hasData}
         onAddFilter={onAddFilter}
+        onAddOrder={onAddOrder}
         onAddVariable={onAddVariable}
         onExecuteQuery={onExecuteQuery}
         loading={loading}
         canExecuteQuery={canExecuteQuery}
         disabledMessage={disabledMessage}
+        hasSelectedFields={selectedFields.length > 0}
       />
 
       {hasData && (
@@ -94,6 +110,15 @@ const SemanticQueryPanel = ({
           availableDimensions={availableDimensions}
           onUpdateFilter={onUpdateFilter}
           onRemoveFilter={onRemoveFilter}
+        />
+      )}
+
+      {hasData && (
+        <SortsSection
+          orders={orders}
+          availableFields={selectedFields}
+          onUpdateOrder={onUpdateOrder}
+          onRemoveOrder={onRemoveOrder}
         />
       )}
 

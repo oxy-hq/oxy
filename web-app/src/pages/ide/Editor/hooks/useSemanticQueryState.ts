@@ -1,5 +1,8 @@
 import { useState } from "react";
-import { SemanticQueryFilter } from "@/services/api/semantic";
+import {
+  SemanticQueryFilter,
+  SemanticQueryOrder,
+} from "@/services/api/semantic";
 import { Variable } from "../components/SemanticQueryPanel";
 
 export const useSemanticQueryState = () => {
@@ -7,6 +10,7 @@ export const useSemanticQueryState = () => {
   const [selectedDimensions, setSelectedDimensions] = useState<string[]>([]);
   const [selectedMeasures, setSelectedMeasures] = useState<string[]>([]);
   const [filters, setFilters] = useState<SemanticQueryFilter[]>([]);
+  const [orders, setOrders] = useState<SemanticQueryOrder[]>([]);
   const [variables, setVariables] = useState<Variable[]>([]);
   const [showSql, setShowSql] = useState(false);
   const [generatedSql, setGeneratedSql] = useState("");
@@ -34,6 +38,26 @@ export const useSemanticQueryState = () => {
     setFilters(filters.filter((_, i) => i !== index));
   };
 
+  const addOrder = (initialField: string) => {
+    setOrders([
+      ...orders,
+      {
+        field: initialField,
+        direction: "asc",
+      },
+    ]);
+  };
+
+  const updateOrder = (index: number, updates: SemanticQueryOrder) => {
+    const newOrders = [...orders];
+    newOrders[index] = updates;
+    setOrders(newOrders);
+  };
+
+  const removeOrder = (index: number) => {
+    setOrders(orders.filter((_, i) => i !== index));
+  };
+
   const addVariable = () => {
     setVariables([...variables, { key: "", value: "" }]);
   };
@@ -48,20 +72,30 @@ export const useSemanticQueryState = () => {
     setVariables(variables.filter((_, i) => i !== index));
   };
 
-  const toggleDimension = (fullName: string) => {
-    setSelectedDimensions((prev) =>
-      prev.includes(fullName)
-        ? prev.filter((d) => d !== fullName)
-        : [...prev, fullName],
+  const removeOrdersForField = (fieldName: string) => {
+    setOrders((prevOrders) =>
+      prevOrders.filter((order) => order.field !== fieldName),
     );
   };
 
+  const toggleDimension = (fullName: string) => {
+    const isRemoving = selectedDimensions.includes(fullName);
+    if (isRemoving) {
+      removeOrdersForField(fullName);
+      setSelectedDimensions((prev) => prev.filter((d) => d !== fullName));
+    } else {
+      setSelectedDimensions((prev) => [...prev, fullName]);
+    }
+  };
+
   const toggleMeasure = (fullName: string) => {
-    setSelectedMeasures((prev) =>
-      prev.includes(fullName)
-        ? prev.filter((m) => m !== fullName)
-        : [...prev, fullName],
-    );
+    const isRemoving = selectedMeasures.includes(fullName);
+    if (isRemoving) {
+      removeOrdersForField(fullName);
+      setSelectedMeasures((prev) => prev.filter((m) => m !== fullName));
+    } else {
+      setSelectedMeasures((prev) => [...prev, fullName]);
+    }
   };
 
   return {
@@ -73,6 +107,8 @@ export const useSemanticQueryState = () => {
     setSelectedMeasures,
     filters,
     setFilters,
+    orders,
+    setOrders,
     variables,
     setVariables,
     showSql,
@@ -86,6 +122,9 @@ export const useSemanticQueryState = () => {
     addFilter,
     updateFilter,
     removeFilter,
+    addOrder,
+    updateOrder,
+    removeOrder,
     addVariable,
     updateVariable,
     removeVariable,

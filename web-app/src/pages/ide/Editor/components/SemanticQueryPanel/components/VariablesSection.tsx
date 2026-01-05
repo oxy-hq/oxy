@@ -16,6 +16,7 @@ const VariablesSection = ({
 
   return (
     <div className="border-b p-3 space-y-2">
+      <div>Variables</div>
       {variables.map((variable, index) => (
         <VariableRow
           key={index}

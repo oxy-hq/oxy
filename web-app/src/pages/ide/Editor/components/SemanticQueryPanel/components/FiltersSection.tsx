@@ -18,6 +18,7 @@ const FiltersSection = ({
 
   return (
     <div className="border-b p-3 space-y-2">
+      <div>Filters</div>
       {filters.map((filter, index) => (
         <FilterRow
           key={index}

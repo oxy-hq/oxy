@@ -483,28 +483,27 @@ impl SemanticQueryExecutable {
             query["filters"] = JsonValue::Array(all_filters);
         }
 
-        // Add order if present
-        if !task.query.orders.is_empty() {
-            let orders = task
-                .query
-                .orders
-                .iter()
-                .map(|order| {
-                    // Convert SemanticQueryOrder to SemanticOrder for CubeJS conversion
-                    let direction = match order.direction.to_lowercase().as_str() {
-                        "asc" => SemanticOrderDirection::Asc,
-                        "desc" => SemanticOrderDirection::Desc,
-                        _ => SemanticOrderDirection::Asc, // Default fallback
-                    };
-                    let semantic_order = SemanticOrder {
-                        field: order.field.clone(),
-                        direction,
-                    };
-                    self.convert_order_to_cubejs(&semantic_order, topic_name)
-                })
-                .collect::<Vec<_>>();
-            query["order"] = JsonValue::Array(orders);
-        }
+        // Add order - always include the order field, even if empty
+        // This prevents Cube from adding a default ORDER BY
+        let orders = task
+            .query
+            .orders
+            .iter()
+            .map(|order| {
+                // Convert SemanticQueryOrder to SemanticOrder for CubeJS conversion
+                let direction = match order.direction.to_lowercase().as_str() {
+                    "asc" => SemanticOrderDirection::Asc,
+                    "desc" => SemanticOrderDirection::Desc,
+                    _ => SemanticOrderDirection::Asc, // Default fallback
+                };
+                let semantic_order = SemanticOrder {
+                    field: order.field.clone(),
+                    direction,
+                };
+                self.convert_order_to_cubejs(&semantic_order, topic_name)
+            })
+            .collect::<Vec<_>>();
+        query["order"] = JsonValue::Array(orders);
 
         // Add limit and offset if present
         if let Some(limit) = task.query.limit {

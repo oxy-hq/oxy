@@ -16,9 +16,8 @@ const VariableRow = ({ variable, onUpdate, onRemove }: VariableRowProps) => {
         value={variable.key}
         onChange={(e) => onUpdate({ key: e.target.value })}
         placeholder="Variable Name"
-        className="text-xs border rounded px-2 py-1 bg-background"
+        className="text-xs w-32 border rounded px-2 py-1 bg-background"
       />
-      <span className="text-xs text-muted-foreground">=</span>
       <input
         type="text"
         value={variable.value}

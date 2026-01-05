@@ -16,11 +16,13 @@ interface TabsHeaderProps {
   result: string[][];
   hasData: boolean;
   onAddFilter: () => void;
+  onAddOrder: () => void;
   onAddVariable: () => void;
   onExecuteQuery: () => void;
   loading: boolean;
   canExecuteQuery: boolean;
   disabledMessage?: string;
+  hasSelectedFields: boolean;
 }
 
 const TabsHeader = ({
@@ -29,11 +31,13 @@ const TabsHeader = ({
   result,
   hasData,
   onAddFilter,
+  onAddOrder,
   onAddVariable,
   onExecuteQuery,
   loading,
   canExecuteQuery,
   disabledMessage,
+  hasSelectedFields,
 }: TabsHeaderProps) => {
   const handleDownloadCsv = () => {
     const csvContent = Papa.unparse(result, {
@@ -79,6 +83,16 @@ const TabsHeader = ({
             >
               <Plus className="w-3 h-3 mr-1" />
               Add Filter
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={onAddOrder}
+              className="h-7"
+              disabled={!hasSelectedFields}
+            >
+              <Plus className="w-3 h-3 mr-1" />
+              Add Sort
             </Button>
             <Button
               size="sm"

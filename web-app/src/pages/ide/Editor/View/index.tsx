@@ -24,6 +24,7 @@ const ViewPreview = () => {
     selectedDimensions,
     selectedMeasures,
     filters,
+    orders,
     variables,
     showSql,
     setShowSql,
@@ -36,6 +37,9 @@ const ViewPreview = () => {
     addFilter: addFilterState,
     updateFilter,
     removeFilter,
+    addOrder: addOrderState,
+    updateOrder,
+    removeOrder,
     addVariable,
     updateVariable,
     removeVariable,
@@ -101,6 +105,7 @@ const ViewPreview = () => {
       dimensions: selectedDimensions,
       measures: selectedMeasures,
       filters,
+      orders,
       variables,
       getFullFieldName,
     });
@@ -124,6 +129,7 @@ const ViewPreview = () => {
       dimensions: selectedDimensions,
       measures: selectedMeasures,
       filters,
+      orders,
       variables,
       getFullFieldName,
     });
@@ -143,6 +149,7 @@ const ViewPreview = () => {
     selectedDimensions,
     selectedMeasures,
     filters,
+    orders,
     variables,
     canExecuteQuery,
     compileSemanticQuery,
@@ -156,6 +163,15 @@ const ViewPreview = () => {
     addFilterState(viewData.dimensions[0].name);
   };
 
+  const addOrder = () => {
+    // Try to use first selected dimension, then first selected measure
+    if (selectedDimensions.length > 0) {
+      addOrderState(selectedDimensions[0]);
+    } else if (selectedMeasures.length > 0) {
+      addOrderState(selectedMeasures[0]);
+    }
+  };
+
   const availableDimensions = useMemo(() => {
     if (!viewData) return [];
     return viewData.dimensions.map((d) => ({
@@ -163,6 +179,19 @@ const ViewPreview = () => {
       value: d.name,
     }));
   }, [viewData]);
+
+  const selectedFields = useMemo(() => {
+    return [
+      ...selectedDimensions.map((field) => ({
+        label: field,
+        value: field,
+      })),
+      ...selectedMeasures.map((field) => ({
+        label: field,
+        value: field,
+      })),
+    ];
+  }, [selectedDimensions, selectedMeasures]);
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
@@ -185,10 +214,14 @@ const ViewPreview = () => {
           sqlError={sqlError}
           executionError={executionError}
           filters={filters}
+          orders={orders}
           variables={variables}
           onAddFilter={addFilter}
           onUpdateFilter={updateFilter}
           onRemoveFilter={removeFilter}
+          onAddOrder={addOrder}
+          onUpdateOrder={updateOrder}
+          onRemoveOrder={removeOrder}
           onAddVariable={addVariable}
           onUpdateVariable={updateVariable}
           onRemoveVariable={removeVariable}
@@ -196,6 +229,7 @@ const ViewPreview = () => {
           loading={loading}
           canExecuteQuery={canExecuteQuery}
           availableDimensions={availableDimensions}
+          selectedFields={selectedFields}
           hasData={!!viewData}
         />
       </div>

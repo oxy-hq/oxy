@@ -22,6 +22,7 @@ const TopicPreview = () => {
     selectedDimensions,
     selectedMeasures,
     filters,
+    orders,
     variables,
     showSql,
     setShowSql,
@@ -34,6 +35,9 @@ const TopicPreview = () => {
     addFilter: addFilterState,
     updateFilter,
     removeFilter,
+    addOrder: addOrderState,
+    updateOrder,
+    removeOrder,
     addVariable,
     updateVariable,
     removeVariable,
@@ -95,6 +99,7 @@ const TopicPreview = () => {
       dimensions: selectedDimensions,
       measures: selectedMeasures,
       filters,
+      orders,
       variables,
     });
 
@@ -117,6 +122,15 @@ const TopicPreview = () => {
     addFilterState(`${firstView.viewName}.${firstView.dimensions[0].name}`);
   };
 
+  const addOrder = () => {
+    // Try to use first selected dimension, then first selected measure
+    if (selectedDimensions.length > 0) {
+      addOrderState(selectedDimensions[0]);
+    } else if (selectedMeasures.length > 0) {
+      addOrderState(selectedMeasures[0]);
+    }
+  };
+
   // Check if we can execute a query - need at least one dimension/measure from primary view
   const canExecuteQuery = useMemo(() => {
     if (viewsWithData.length === 0) return false;
@@ -134,6 +148,7 @@ const TopicPreview = () => {
       dimensions: selectedDimensions,
       measures: selectedMeasures,
       filters,
+      orders,
       variables,
     });
 
@@ -152,6 +167,7 @@ const TopicPreview = () => {
     selectedDimensions,
     selectedMeasures,
     filters,
+    orders,
     variables,
     canExecuteQuery,
     compileSemanticQuery,
@@ -167,6 +183,19 @@ const TopicPreview = () => {
       })),
     );
   }, [viewsWithData]);
+
+  const selectedFields = useMemo(() => {
+    return [
+      ...selectedDimensions.map((field) => ({
+        label: field,
+        value: field,
+      })),
+      ...selectedMeasures.map((field) => ({
+        label: field,
+        value: field,
+      })),
+    ];
+  }, [selectedDimensions, selectedMeasures]);
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
@@ -192,10 +221,14 @@ const TopicPreview = () => {
           sqlError={sqlError}
           executionError={executionError}
           filters={filters}
+          orders={orders}
           variables={variables}
           onAddFilter={addFilter}
           onUpdateFilter={updateFilter}
           onRemoveFilter={removeFilter}
+          onAddOrder={addOrder}
+          onUpdateOrder={updateOrder}
+          onRemoveOrder={removeOrder}
           onAddVariable={addVariable}
           onUpdateVariable={updateVariable}
           onRemoveVariable={removeVariable}
@@ -204,6 +237,7 @@ const TopicPreview = () => {
           canExecuteQuery={canExecuteQuery}
           disabledMessage="Select at least one dimension or measure from the base view"
           availableDimensions={availableDimensions}
+          selectedFields={selectedFields}
           hasData={viewsWithData.length > 0}
         />
       </div>
