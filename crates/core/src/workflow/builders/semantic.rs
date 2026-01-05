@@ -741,16 +741,52 @@ impl SemanticQueryExecutable {
         Ok(result)
     }
 
-    /// Convert a JSON value to a SQL literal string
+    /// Convert a JSON value to a SQL literal string for parameter substitution.
+    ///
+    /// ## CubeJS Boolean Parameter Handling
+    ///
+    /// CubeJS converts boolean filter values to strings "true"/"false" in its parameter
+    /// arrays. This causes issues with computed boolean expressions in ClickHouse:
+    ///
+    /// - Direct column: `deleted = 'true'` works (ClickHouse casts string to Bool)
+    /// - Computed expr: `(deleted = true) = 'true'` fails (UInt8 result can't cast from string)
+    ///
+    /// We detect string "true"/"false" and output them as unquoted boolean literals.
+    ///
+    /// ## Edge Case: String columns with literal "true"/"false" values
+    ///
+    /// If you have a string column containing literal "true"/"false" values and need
+    /// to filter on them as strings, use the `in` filter instead of `eq`:
+    ///
+    /// ```yaml
+    /// # This will be treated as boolean (unquoted):
+    /// default_filters:
+    ///   - field: "string_column"
+    ///     eq:
+    ///       value: "true"
+    ///
+    /// # Use this for string comparison:
+    /// default_filters:
+    ///   - field: "string_column"
+    ///     in:
+    ///       values: ["true"]
+    /// ```
     fn json_value_to_sql_literal(&self, value: &JsonValue) -> Result<String, OxyError> {
         match value {
             JsonValue::Null => Ok("NULL".to_string()),
             JsonValue::Bool(b) => Ok(b.to_string()),
             JsonValue::Number(n) => Ok(n.to_string()),
             JsonValue::String(s) => {
-                // Escape single quotes and wrap in quotes
-                let escaped = s.replace('\'', "''");
-                Ok(format!("'{}'", escaped))
+                // CubeJS converts boolean filter values to strings "true"/"false".
+                // Output as unquoted boolean literals for SQL compatibility with
+                // computed boolean expressions (see docstring for details).
+                if s == "true" || s == "false" {
+                    Ok(s.clone())
+                } else {
+                    // Escape single quotes and wrap in quotes
+                    let escaped = s.replace('\'', "''");
+                    Ok(format!("'{}'", escaped))
+                }
             }
             JsonValue::Array(arr) => {
                 // Convert array to SQL array literal
