@@ -111,7 +111,7 @@ jobs:
         shell: bash
         run: |
           cargo build --profile release --target ${{ matrix.job.target }}
-          mv target/${{ matrix.job.target }}/debug/oxy artifacts/oxy-${{ matrix.job.target }}
+          mv target/${{ matrix.job.target }}/release/oxy artifacts/oxy-${{ matrix.job.target }}
 
       - name: Generate config schema (once)
         if: ${{ matrix.job.target == 'aarch64-apple-darwin' }}
