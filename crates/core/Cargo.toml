@@ -46,7 +46,7 @@ bollard = "0.19.4"
 bcrypt = "0.17.1"
 chrono = { workspace = true }
 chrono-english = "0.1.8"
-clap = { version = "4.5.53", features = ["derive"] }
+clap = { version = "4.5.54", features = ["derive"] }
 clickhouse = { version = "0.13.3", features = ["rustls-tls"] }
 colored = "3.0.0"
 connectorx = { version = "0.4.4", features = ["dst_arrow", "src_bigquery", "src_postgres", "src_mysql"] }
@@ -100,8 +100,8 @@ terminal-light = "1.8.0"
 terminal_size = "0.4.3"
 thiserror = { workspace = true }
 tokio = { workspace = true }
-tokio-stream = "0.1.17"
-tokio-util = "0.7.17"
+tokio-stream = "0.1.18"
+tokio-util = "0.7.18"
 tower = "0.5.2"
 tower-http = { version = "0.6.8", features = ["fs", "cors", "trace", "timeout", "compression-gzip"] }
 tower-serve-static = "0.1.1"
@@ -121,7 +121,7 @@ utoipa-axum = {git="https://github.com/haitrr/utoipa.git",rev="776f86e" }
 utoipa-swagger-ui={git="https://github.com/haitrr/utoipa.git",rev="776f86e", features = ["axum"] }
 strip-ansi-escapes = "=0.2.1"
 regex = { workspace = true }
-url = "2.5.7"
+url = "2.5.8"
 gcp-bigquery-client = "0.25.1"
 fehler = "1.0.0"
 sqlparser = "0.37.0"
@@ -132,7 +132,7 @@ apalis-core = "0.7.4"
 apalis-sql = { version = "0.7.4", features = ["postgres", "tokio"] }
 sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "sqlite"] }
 semver = "1.0"
-rustls = { version = "0.23.35", features = ["aws_lc_rs"] }
+rustls = { version = "0.23.36", features = ["aws_lc_rs"] }
 parquet = "=54.2.1"  # needs to be the same with arrow version
 short-uuid = "0.2.1"
 rapidfuzz = "0.5.0"
