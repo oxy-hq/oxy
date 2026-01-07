@@ -7,12 +7,6 @@ name = "rust"
   msrv = "stable"
 
 [[analyzers]]
-name = "python"
-
-  [analyzers.meta]
-  runtime_version = "3.x.x"
-
-[[analyzers]]
 name = "shell"
 
 [[analyzers]]

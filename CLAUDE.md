@@ -1,6 +1,8 @@
 # Claude Code Assistant Guidelines
 
-This file contains important guidelines and preferences for working on this project.
+This file contains Claude-specific guidelines and preferences for working on this project.
+
+> **Note**: For comprehensive development guidelines that apply to all AI assistants, see [`agents.md`](./agents.md).
 
 ## Build Guidelines
 
@@ -23,3 +25,8 @@ cargo build -p oxy
 # Test using the debug binary
 ./target/debug/oxy <command>
 ```
+
+## Additional Resources
+
+- **General AI Agent Guidelines**: [`agents.md`](./agents.md) - Comprehensive development guidelines
+- **GitHub Copilot Instructions**: [`.github/copilot-instructions.md`](./.github/copilot-instructions.md) - Copilot-specific patterns

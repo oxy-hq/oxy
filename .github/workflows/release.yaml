@@ -123,26 +123,6 @@ jobs:
   #       run: shasum --algorithm 256 --binary oxy-${{ matrix.job.target }} | tee SHA256SUM-oxy-${{ matrix.job.target }}.txt
   #       working-directory: artifacts
 
-  #     #-- Build python lib
-  #     - name: Set up Python 3.11
-  #       id: setup-python
-  #       uses: actions/setup-python@v6
-  #       with:
-  #         python-version: 3.11
-  #         cache: "pip"
-  #     - name: Build wheels
-  #       uses: PyO3/maturin-action@v1
-  #       with:
-  #         command: build
-  #         target: ${{ matrix.job.target }}
-  #         args: --release --out dist
-  #         sccache: "true"
-  #         # manylinux: auto
-  #         container: off
-  #         working-directory: crates/py
-  #     - name: Move wheels
-  #       run: mv crates/py/dist/* artifacts/
-
   #     - name: Upload release artifacts
   #       uses: actions/upload-artifact@v5
   #       if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'

@@ -1,6 +1,6 @@
 [workspace]
 # TODO: switch back to default-members = ["crates/*"] once we migrated from release-please
-members = ["crates/a2a", "crates/core", "crates/entity", "crates/migration", "crates/py", "crates/semantic", "crates/omni", "crates/globals"]
+members = ["crates/a2a", "crates/core", "crates/entity", "crates/migration", "crates/semantic", "crates/omni", "crates/globals"]
 
 default-members = ["crates/core"]
 resolver = "2"

@@ -110,25 +110,6 @@ jobs:
         run: shasum --algorithm 256 --binary oxy-${{ matrix.job.target }} | tee SHA256SUM-oxy-${{ matrix.job.target }}.txt
         working-directory: artifacts
 
-      - name: Setup Python 3.11
-        uses: actions/setup-python@v6
-        with:
-          python-version: 3.11
-          cache: "pip"
-
-      - name: Build wheels
-        uses: PyO3/maturin-action@v1
-        with:
-          command: build
-          target: ${{ matrix.job.target }}
-          args: --release --out dist
-          sccache: "true"
-          container: off
-          working-directory: crates/py
-
-      - name: Move wheels to artifacts
-        run: mv crates/py/dist/* artifacts/
-
       - name: Copy backend changelog (once)
         if: ${{ matrix.job.target == 'aarch64-apple-darwin' }}
         run: cp crates/core/CHANGELOG.md artifacts/backend-CHANGELOG.md

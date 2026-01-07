@@ -82,7 +82,6 @@ minijinja = { workspace = true, features = ["loader"] }
 once_cell = "1.21.3"
 predicates = "3.1.3"
 pulldown-cmark = "0.13"
-pyo3 = { version = "=0.26.0", features = ["experimental-async", "extension-module"] }
 rand = "0.8"
 schemars = { version = "0.8.22", features = ["derive", "impl_json_schema"] }
 scopeguard = "1.2.0"

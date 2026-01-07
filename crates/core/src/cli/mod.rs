@@ -45,13 +45,6 @@ use model::{Config, Semantics, Workflow};
 use oxy_globals::GlobalRegistry;
 use oxy_semantic::cube::models::DatabaseDetails;
 use oxy_semantic::cube::translator::process_semantic_layer_to_cube;
-use pyo3::Bound;
-use pyo3::FromPyObject;
-use pyo3::IntoPyObject;
-use pyo3::PyAny;
-use pyo3::PyErr;
-use pyo3::Python;
-use pyo3::types::PyAnyMethods;
 use serve::start_server_and_web_app;
 use std::backtrace;
 use std::collections::BTreeMap;
@@ -446,39 +439,6 @@ pub struct RunOptions {
     question: Option<String>,
     retry: bool,
     dry_run: bool,
-}
-
-impl<'py> FromPyObject<'py> for RunOptions {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> pyo3::PyResult<Self> {
-        let database = ob
-            .get_item("database")
-            .map(|v| v.extract::<Option<String>>().unwrap_or(None))
-            .unwrap_or(None);
-        let variables = ob
-            .get_item("variables")
-            .map(|v| v.extract::<Option<Vec<(String, String)>>>().unwrap_or(None))
-            .unwrap_or(None);
-        let question = ob
-            .get_item("question")
-            .map(|v| v.extract::<Option<String>>().unwrap_or(None))
-            .unwrap_or(None);
-        let retry = ob
-            .get_item("retry")
-            .map(|v| v.extract::<bool>().unwrap_or(false))
-            .unwrap_or(false);
-        let dry_run = ob
-            .get_item("dry_run")
-            .map(|v| v.extract::<bool>().unwrap_or(false))
-            .unwrap_or(false);
-
-        Ok(RunOptions {
-            database,
-            variables,
-            question,
-            retry,
-            dry_run,
-        })
-    }
 }
 
 impl RunArgs {
@@ -1494,22 +1454,6 @@ pub enum RunResult {
     Workflow,
     Agent,
     Sql(String),
-}
-
-impl<'py> IntoPyObject<'py> for RunResult {
-    type Target = PyAny;
-
-    type Output = Bound<'py, Self::Target>;
-
-    type Error = PyErr;
-
-    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
-        match self {
-            RunResult::Workflow => Ok(None::<usize>.into_pyobject(py)?.into_any()),
-            RunResult::Agent => Ok(None::<usize>.into_pyobject(py)?.into_any()),
-            RunResult::Sql(result) => Ok(result.into_pyobject(py)?.into_any()),
-        }
-    }
 }
 
 pub async fn handle_run_command(run_args: RunArgs) -> Result<RunResult, OxyError> {
