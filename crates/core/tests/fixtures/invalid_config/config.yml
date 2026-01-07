@@ -14,7 +14,7 @@ models:
 retrievals:
   - name: default
     embed_model: "bge-small-en-v1.5"
-    rerank_model: "jina-reranker-v2-base-multiligual"
+    rerank_model: "jina-reranker-v2-base-multilingual"
     top_k: 10
     factor: 5
 defaults:
