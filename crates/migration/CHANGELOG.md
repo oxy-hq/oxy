@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.4.5](https://github.com/oxy-hq/oxy-internal/compare/0.4.4...0.4.5) (2026-01-08)
+
+
+### <!-- 0 -->🚀 Features
+
+* recording user triggering automation run ([#1460](https://github.com/oxy-hq/oxy-internal/issues/1460)) ([160ca90](https://github.com/oxy-hq/oxy-internal/commit/160ca90364499ca6f5941ade2b07bf1f4c52c050))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* semantic query artifact ([#1494](https://github.com/oxy-hq/oxy-internal/issues/1494)) ([1793843](https://github.com/oxy-hq/oxy-internal/commit/17938432af053250acf8e8007a9b37a3566a19ef))
+* sqlite migration causing foreign key constraint issue  ([#1498](https://github.com/oxy-hq/oxy-internal/issues/1498)) ([f3c5226](https://github.com/oxy-hq/oxy-internal/commit/f3c522685d545fc0456461aa9e197406ee1a0794))
+
 ## [0.4.4](https://github.com/oxy-hq/oxy-internal/compare/0.4.3...0.4.4) (2026-01-01)
 
 
