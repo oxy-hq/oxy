@@ -269,7 +269,7 @@ pub async fn create_workflow_run(
                     None,
                     None,
                     None, // No globals for retry
-                    user.id,
+                    Some(user.id),
                 )
             };
             tokio::select! {

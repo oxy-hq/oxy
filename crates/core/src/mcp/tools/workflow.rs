@@ -161,8 +161,8 @@ pub async fn run_workflow_tool(
         project_manager.clone(),
         filters,
         connections,
-        None,              // No globals override from MCP
-        uuid::Uuid::nil(), // No authenticated user in MCP context
+        None, // No globals override from MCP
+        None, // No authenticated user in MCP context
     )
     .await
     .map_err(|e| rmcp::ErrorData::internal_error(format!("Failed to run workflow: {e}"), None))?;

@@ -184,14 +184,8 @@ fn create_execution_context(
     };
 
     let renderer = Renderer::new(minijinja::context! {});
-    let execution_context = ExecutionContext::new(
-        source,
-        renderer,
-        project_manager.clone(),
-        tx,
-        None,
-        uuid::Uuid::nil(),
-    );
+    let execution_context =
+        ExecutionContext::new(source, renderer, project_manager.clone(), tx, None, None);
 
     (execution_context, rx)
 }

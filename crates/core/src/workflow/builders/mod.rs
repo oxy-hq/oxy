@@ -148,7 +148,6 @@ impl WorkflowLauncher {
             })
             .with_filters(self.filters.clone())
             .with_connections(self.connections.clone())
-            .with_user_id(uuid::Uuid::nil()) // Temporary placeholder, will be updated in launch()
             .build()?;
 
         let config_manager = execution_context.project.config_manager.clone();
@@ -166,14 +165,9 @@ impl WorkflowLauncher {
         workflow_ref: &str,
         retry: &RetryStrategy,
         runs_manager: &RunsManager,
-        user_id: uuid::Uuid,
+        user_id: Option<uuid::Uuid>,
     ) -> Result<RunInfo, OxyError> {
         let source_id = file_path_to_source_id(workflow_ref);
-        let run_user_id = if user_id.is_nil() {
-            None
-        } else {
-            Some(user_id)
-        };
         match retry {
             RetryStrategy::Retry {
                 replay_id,
@@ -230,7 +224,7 @@ impl WorkflowLauncher {
                 }
             }
             RetryStrategy::NoRetry { variables } => runs_manager
-                .new_run(&source_id, variables.clone(), None, run_user_id)
+                .new_run(&source_id, variables.clone(), None, user_id)
                 .await
                 .map(|run| run.try_into())?,
             RetryStrategy::Preview => {
@@ -243,14 +237,19 @@ impl WorkflowLauncher {
         self,
         workflow_input: WorkflowInput,
         event_handler: H,
-        user_id: uuid::Uuid,
+        user_id: Option<uuid::Uuid>,
     ) -> Result<OutputContainer, OxyError> {
         let mut execution_context = self.execution_context.ok_or(OxyError::RuntimeError(
             "ExecutionContext is required".to_string(),
         ))?;
 
-        // Update user_id with the actual value and create child source in one step
-        execution_context = execution_context.with_user_id(user_id).with_child_source(
+        // Update user_id if provided and create child source
+        execution_context = if let Some(uid) = user_id {
+            execution_context.with_user_id(Some(uid))
+        } else {
+            execution_context
+        };
+        execution_context = execution_context.with_child_source(
             workflow_input.workflow_ref.to_string(),
             WORKFLOW_SOURCE.to_string(),
         );

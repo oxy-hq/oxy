@@ -50,7 +50,7 @@ pub struct ExecutionContext {
     /// Set by API request, transparent to workflows/agents
     pub connections: Option<ConnectionOverrides>,
     /// User ID for the execution context (for run isolation)
-    pub user_id: uuid::Uuid,
+    pub user_id: Option<uuid::Uuid>,
 }
 
 impl ExecutionContext {
@@ -60,7 +60,7 @@ impl ExecutionContext {
         project: ProjectManager,
         writer: Sender<Event>,
         checkpoint: Option<CheckpointContext>,
-        user_id: uuid::Uuid,
+        user_id: Option<uuid::Uuid>,
     ) -> Self {
         ExecutionContext {
             source,
@@ -184,7 +184,7 @@ impl ExecutionContext {
         }
     }
 
-    pub fn with_user_id(&self, user_id: uuid::Uuid) -> Self {
+    pub fn with_user_id(&self, user_id: Option<uuid::Uuid>) -> Self {
         ExecutionContext {
             source: self.source.clone(),
             writer: self.writer.clone(),
@@ -360,8 +360,8 @@ impl ExecutionContextBuilder {
         self
     }
 
-    pub fn with_user_id(mut self, user_id: uuid::Uuid) -> Self {
-        self.user_id = Some(user_id);
+    pub fn with_user_id(mut self, user_id: Option<uuid::Uuid>) -> Self {
+        self.user_id = user_id;
         self
     }
 
@@ -378,7 +378,6 @@ impl ExecutionContextBuilder {
         let project: ProjectManager = self.project.ok_or(OxyError::RuntimeError(
             "ProjectManager is required".to_string(),
         ))?;
-        let user_id = self.user_id.unwrap_or(uuid::Uuid::nil());
 
         Ok(ExecutionContext {
             source,
@@ -388,7 +387,7 @@ impl ExecutionContextBuilder {
             checkpoint: self.checkpoint,
             filters: self.filters,
             connections: self.connections,
-            user_id,
+            user_id: self.user_id,
         })
     }
 }

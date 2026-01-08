@@ -58,7 +58,47 @@ CREATE TABLE "runs" (
     ON UPDATE NO ACTION
 );
 
-INSERT INTO runs SELECT *, NULL FROM _runs_old;
+INSERT INTO runs
+    (
+        id,
+        source_id,
+        run_index,
+        root_source_id,
+        root_run_index,
+        root_replay_ref,
+        metadata,
+        children,
+        blocks,
+        variables,
+        output,
+        error,
+        project_id,
+        branch_id,
+        lookup_id,
+        created_at,
+        updated_at,
+        user_id
+    )
+    SELECT
+        id,
+        source_id,
+        run_index,
+        root_source_id,
+        root_run_index,
+        root_replay_ref,
+        metadata,
+        children,
+        blocks,
+        variables,
+        output,
+        error,
+        project_id,
+        branch_id,
+        lookup_id,
+        created_at,
+        updated_at,
+        NULL
+    FROM _runs_old;
 
 DROP TABLE _runs_old;
 

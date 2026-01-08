@@ -58,7 +58,7 @@ impl CheckpointManager {
         self.storage.write_success_marker(run_info).await
     }
 
-    pub fn new_context(&self, run_info: RunInfo, user_id: uuid::Uuid) -> CheckpointContext {
+    pub fn new_context(&self, run_info: RunInfo, user_id: Option<uuid::Uuid>) -> CheckpointContext {
         CheckpointContext::new(
             run_info,
             self.storage.clone(),
@@ -75,7 +75,7 @@ pub struct CheckpointContext {
     current_ref: Vec<String>,
     storage: CheckpointStorageImpl,
     run_storage: RunsManager,
-    user_id: uuid::Uuid,
+    user_id: Option<uuid::Uuid>,
 }
 
 impl CheckpointContext {
@@ -83,7 +83,7 @@ impl CheckpointContext {
         run_info: RunInfo,
         storage: CheckpointStorageImpl,
         run_storage: RunsManager,
-        user_id: uuid::Uuid,
+        user_id: Option<uuid::Uuid>,
     ) -> Self {
         CheckpointContext {
             root_ref: None,
@@ -165,11 +165,6 @@ impl CheckpointContext {
         source_id: &str,
         variables: Option<IndexMap<String, serde_json::Value>>,
     ) -> Result<RunInfo, OxyError> {
-        let run_user_id = if self.user_id.is_nil() {
-            None
-        } else {
-            Some(self.user_id)
-        };
         let checkpoint_data = self
             .storage
             .read_checkpoint::<serde_json::Value>(&self.run_info, &self.get_full_ref(replay_id))
@@ -190,13 +185,13 @@ impl CheckpointContext {
                     .try_into()?,
                 None => self
                     .run_storage
-                    .nested_run(source_id, root_ref, variables, run_user_id)
+                    .nested_run(source_id, root_ref, variables, self.user_id)
                     .await?
                     .try_into()?,
             },
             None => self
                 .run_storage
-                .nested_run(source_id, root_ref, variables, run_user_id)
+                .nested_run(source_id, root_ref, variables, self.user_id)
                 .await?
                 .try_into()?,
         };

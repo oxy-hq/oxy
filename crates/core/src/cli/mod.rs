@@ -746,8 +746,8 @@ async fn handle_workflow_file(
             project,
             None,
             None,
-            None,              // No globals override from CLI
-            uuid::Uuid::nil(), // No authenticated user in CLI context
+            None, // No globals override from CLI
+            None, // No authenticated user in CLI context
         )
         .await?;
     } else if retry {
@@ -760,8 +760,8 @@ async fn handle_workflow_file(
             project,
             None,
             None,
-            None,              // No globals override from CLI
-            uuid::Uuid::nil(), // No authenticated user in CLI context
+            None, // No globals override from CLI
+            None, // No authenticated user in CLI context
         )
         .await?;
     } else {
@@ -774,8 +774,8 @@ async fn handle_workflow_file(
             project,
             None,
             None,
-            None,              // No globals override from CLI
-            uuid::Uuid::nil(), // No authenticated user in CLI context
+            None, // No globals override from CLI
+            None, // No authenticated user in CLI context
         )
         .await?;
     }

@@ -319,7 +319,7 @@ pub async fn run_workflow(
             filters,
             connections,
             globals,
-            uuid::Uuid::nil(), // No authenticated user for this endpoint
+            None, // No authenticated user for this endpoint
         )
         .await;
         match rs {
@@ -467,7 +467,7 @@ pub async fn run_workflow_thread(
 
     let connection_clone = connection.clone();
     let thread_clone = thread.clone();
-    let thread_user_id = thread.user_id.unwrap_or(Uuid::nil());
+    let thread_user_id = thread.user_id;
 
     let _ = tokio::spawn(async move {
         let result = service::run_workflow(
@@ -659,7 +659,7 @@ pub async fn run_workflow_thread_sync(
     let workflow_ref_clone = workflow_ref.clone();
     let filters = request.filters;
     let connections = request.connections;
-    let thread_user_id = thread.user_id.unwrap_or(Uuid::nil());
+    let thread_user_id = thread.user_id;
 
     let mut workflow_task = tokio::spawn(async move {
         let result = service::run_workflow(
@@ -975,7 +975,7 @@ pub async fn run_workflow_sync(
                 filters,
                 connections,
                 globals,
-                user.id,
+                Some(user.id),
             )
             .await;
 
