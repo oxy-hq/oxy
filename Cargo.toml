@@ -17,6 +17,7 @@ sea-orm = { version = "1.1.19", features = [
 ] }
 sea-orm-migration = { version = "1.1.19", features = [
   "sqlx-postgres",
+  "sqlx-sqlite",
   "runtime-tokio-rustls",
   "with-uuid",
 ] }
