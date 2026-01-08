@@ -140,11 +140,14 @@ impl std::hash::Hash for SemanticQueryParams {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, ToSchema, Debug)]
+#[derive(Serialize, Deserialize, Clone, ToSchema, Debug, Hash)]
 pub struct SemanticQuery {
     pub database: String,
     pub sql_query: String,
     pub result: Vec<Vec<String>>,
+    pub error: Option<String>,
+    pub validation_error: Option<String>,
+    pub sql_generation_error: Option<String>,
     pub is_result_truncated: bool,
     pub topic: Option<String>,
     pub dimensions: Vec<String>,
@@ -195,19 +198,7 @@ pub enum ArtifactContent {
         is_result_truncated: bool,
     },
     #[serde(rename = "semantic_query")]
-    SemanticQuery {
-        database: String,
-        sql_query: String,
-        result: Vec<Vec<String>>,
-        is_result_truncated: bool,
-        topic: Option<String>,
-        dimensions: Vec<String>,
-        measures: Vec<String>,
-        filters: Vec<SemanticFilter>,
-        orders: Vec<SemanticQueryOrder>,
-        limit: Option<u64>,
-        offset: Option<u64>,
-    },
+    SemanticQuery(SemanticQuery),
     #[serde(rename = "omni_query")]
     OmniQuery(OmniArtifactContent),
 }
@@ -276,6 +267,7 @@ pub enum Content {
     SQL(String),
     Table(Table),
     OmniQuery(OmniQueryParams),
+    SemanticQuery(SemanticQuery),
 }
 
 impl Content {
@@ -289,6 +281,7 @@ impl Content {
                     .unwrap_or_else(|_| "Failed to serialize OmniQueryParams".to_string());
                 format!("\n```json\n{json}\n```\n")
             }
+            Content::SemanticQuery(_) => "".to_string(),
         }
     }
 }
@@ -441,6 +434,13 @@ impl Block {
                         .unwrap_or_else(|_| "Failed to serialize OmniQueryParams".to_string());
                     log_items.push(LogItem::info(format!(
                         "Omni Query:\n```json\n{json}\n```\n"
+                    )));
+                }
+                Content::SemanticQuery(semantic_query) => {
+                    let json = serde_json::to_string_pretty(semantic_query)
+                        .unwrap_or_else(|_| "Failed to serialize SemanticQuery".to_string());
+                    log_items.push(LogItem::info(format!(
+                        "Semantic Query:\n```json\n{json}\n```\n"
                     )));
                 }
             },

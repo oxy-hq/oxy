@@ -1,6 +1,10 @@
+use arrow::{array::RecordBatch, datatypes::Schema};
 use oxy_semantic::variables::RuntimeVariableResolver;
 use serde_json::Value as JsonValue;
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use crate::{
     adapters::connector::Connector,
@@ -13,12 +17,15 @@ use crate::{
         Executable, ExecutionContext,
         builders::{ExecutableBuilder, map::ParamMapper},
         renderer::Renderer,
-        types::{Chunk, EventKind, Output, TableReference},
+        types::{Chunk, EventKind, Output, TableReference, utils::record_batches_to_2d_array},
     },
-    service::types::SemanticQueryParams,
+    service::types::{SemanticQuery, SemanticQueryParams},
+    utils::truncate_datasets,
 };
 
-use super::semantic_validator::{ValidatedSemanticQuery, validate_semantic_query_task};
+use super::semantic_validator::{
+    SemanticQueryValidation, ValidatedSemanticQuery, validate_semantic_query_task,
+};
 
 pub fn render_semantic_query(
     renderer: &Renderer,
@@ -167,6 +174,69 @@ impl SemanticQueryExecutable {
 }
 
 #[async_trait::async_trait]
+impl Executable<SemanticQueryValidation> for SemanticQueryExecutable {
+    type Response = Output;
+
+    async fn execute(
+        &mut self,
+        execution_context: &ExecutionContext,
+        validation_result: SemanticQueryValidation,
+    ) -> Result<Self::Response, OxyError> {
+        // Handle validation errors first
+        match validation_result {
+            SemanticQueryValidation::Invalid { task, error } => {
+                let topic_name = task.query.topic.as_deref().unwrap_or("unknown").to_string();
+
+                execution_context
+                    .write_kind(EventKind::Started {
+                        name: format!("Semantic Query: {}", topic_name),
+                        attributes: HashMap::from_iter([("topic".to_string(), topic_name.clone())]),
+                    })
+                    .await?;
+
+                let artifact_value = SemanticQuery {
+                    database: String::new(),
+                    sql_query: String::new(),
+                    result: vec![],
+                    error: None,
+                    validation_error: Some(error.clone()),
+                    sql_generation_error: None,
+                    is_result_truncated: false,
+                    topic: task.query.topic.clone(),
+                    dimensions: task.query.dimensions.clone(),
+                    measures: task.query.measures.clone(),
+                    filters: task.query.filters.clone(),
+                    orders: task.query.orders.clone(),
+                    limit: task.query.limit,
+                    offset: task.query.offset,
+                };
+
+                execution_context
+                    .write_chunk(Chunk {
+                        key: None,
+                        delta: Output::SemanticQuery(artifact_value.clone()),
+                        finished: true,
+                    })
+                    .await?;
+
+                execution_context
+                    .write_kind(EventKind::Finished {
+                        message: format!("Semantic query validation failed: {}", error),
+                        attributes: [].into(),
+                        error: Some(error.clone()),
+                    })
+                    .await?;
+
+                return Err(OxyError::ValidationError(error));
+            }
+            SemanticQueryValidation::Valid(input) => {
+                self.execute_validated(execution_context, input).await
+            }
+        }
+    }
+}
+
+#[async_trait::async_trait]
 impl Executable<ValidatedSemanticQuery> for SemanticQueryExecutable {
     type Response = Output;
 
@@ -175,7 +245,24 @@ impl Executable<ValidatedSemanticQuery> for SemanticQueryExecutable {
         execution_context: &ExecutionContext,
         input: ValidatedSemanticQuery,
     ) -> Result<Self::Response, OxyError> {
-        execution_context
+        self.execute_validated(execution_context, input).await
+    }
+}
+
+impl SemanticQueryExecutable {
+    async fn execute_validated(
+        &mut self,
+        execution_context: &ExecutionContext,
+        input: ValidatedSemanticQuery,
+    ) -> Result<Output, OxyError> {
+        // Create a child context for the semantic query task execution
+        // This prevents the task's Finished event from closing the artifact block
+        let task_context = execution_context.with_child_source(
+            format!("semantic-query-{}", input.topic.name),
+            "semantic_query_task".to_string(),
+        );
+
+        task_context
             .write_kind(EventKind::Started {
                 name: format!("Semantic Query: {}", input.topic.name),
                 attributes: HashMap::from_iter([("topic".to_string(), input.topic.name.clone())]),
@@ -188,24 +275,84 @@ impl Executable<ValidatedSemanticQuery> for SemanticQueryExecutable {
             input.task.query
         );
 
+        let mut artifact_value = SemanticQuery {
+            database: String::new(),
+            sql_query: String::new(),
+            result: vec![],
+            error: None,
+            validation_error: None,
+            sql_generation_error: None,
+            is_result_truncated: false,
+            topic: Some(input.topic.name.clone()),
+            dimensions: input.task.query.dimensions.clone(),
+            measures: input.task.query.measures.clone(),
+            filters: input.task.query.filters.clone(),
+            orders: input.task.query.orders.clone(),
+            limit: input.task.query.limit,
+            offset: input.task.query.offset,
+        };
+
+        task_context
+            .write_chunk(Chunk {
+                key: None,
+                delta: Output::SemanticQuery(artifact_value.clone()),
+                finished: true,
+            })
+            .await?;
+
         // Step 1: Extract unique views from requested fields to determine join hints
         let requested_views = self.extract_views_from_query(&input.task, &input.topic.name);
 
         // Step 2: Convert to CubeJS query and get SQL with base_view enforcement and default filters
         // Default filters from the topic will be automatically merged with user-provided filters
-        let cubejs_query = self.convert_to_cubejs_query(
+        let cubejs_query = match self.convert_to_cubejs_query(
             &input.task,
             &input.topic.name,
             input.topic.base_view.as_ref(),
             &requested_views,
             input.topic.default_filters.as_ref(),
-        )?;
+        ) {
+            Ok(query) => query,
+            Err(e) => {
+                tracing::error!(
+                    "Failed to convert semantic query to CubeJS format for topic '{}': {e}",
+                    input.topic.name
+                );
+                artifact_value.sql_generation_error =
+                    Some(format!("Failed to process semantic query"));
+                task_context
+                    .write_chunk(Chunk {
+                        key: None,
+                        delta: Output::SemanticQuery(artifact_value.clone()),
+                        finished: true,
+                    })
+                    .await?;
+                return Err(e);
+            }
+        };
         tracing::info!(
             "Generated CubeJS query for topic '{}': {cubejs_query:?}",
             input.topic.name
         );
 
-        let mut sql_query = self.get_sql_from_cubejs(&cubejs_query).await?;
+        let mut sql_query = match self.get_sql_from_cubejs(&cubejs_query).await {
+            Ok(sql) => sql,
+            Err(e) => {
+                tracing::error!(
+                    "Failed to generate SQL from CubeJS query for topic '{}': {e}",
+                    input.topic.name
+                );
+                artifact_value.sql_generation_error = Some(format!("Failed to generate SQL"));
+                task_context
+                    .write_chunk(Chunk {
+                        key: None,
+                        delta: Output::SemanticQuery(artifact_value.clone()),
+                        finished: true,
+                    })
+                    .await?;
+                return Err(e);
+            }
+        };
 
         let variables = input.task.variables.clone().unwrap_or_default();
 
@@ -215,30 +362,61 @@ impl Executable<ValidatedSemanticQuery> for SemanticQueryExecutable {
 
         // Determine database from topic's views
         let database = self.determine_database_from_topic(&input)?;
+        artifact_value.database = database.clone();
+        artifact_value.sql_query = sql_query.clone();
 
-        // Emit an event showing the generated SQL
-        execution_context
-            .write_kind(EventKind::SemanticQueryGenerated {
-                query: input.task.query.clone(),
-                is_verified: true,
+        // Emit semantic query params as a chunk
+        task_context
+            .write_chunk(Chunk {
+                key: None,
+                delta: Output::SemanticQuery(artifact_value.clone()),
+                finished: true,
             })
             .await?;
 
         // Step 2: Execute SQL directly using database connector and save results
-        let file_path = self
-            .execute_sql_and_save_results(
+        let (file_path, record_batches, schema_ref) = match self
+            .execute_sql_and_get_results(
                 &sql_query,
                 &database,
                 &input.topic.name,
                 execution_context,
             )
             .await
-            .map_err(|e| {
-                OxyError::RuntimeError(format!(
+        {
+            Ok(result) => result,
+            Err(e) => {
+                // Emit artifact value with error
+                artifact_value.error = Some(format!(
                     "Failed to execute semantic query for topic '{}': {e}",
                     input.topic.name
-                ))
+                ));
+                task_context
+                    .write_chunk(Chunk {
+                        key: None,
+                        delta: Output::SemanticQuery(artifact_value.clone()),
+                        finished: true,
+                    })
+                    .await?;
+                return Err(OxyError::RuntimeError(format!(
+                    "Failed to execute semantic query for topic '{}': {e}",
+                    input.topic.name
+                )));
+            }
+        };
+
+        // Truncate results for artifact display (not for file output)
+        let (truncated_batches, is_truncated) = truncate_datasets(&record_batches, None);
+
+        // Convert record batches to 2D array for artifact result
+        let result_2d =
+            record_batches_to_2d_array(&truncated_batches, &schema_ref).map_err(|e| {
+                OxyError::RuntimeError(format!("Failed to convert results to 2D array: {e}"))
             })?;
+
+        // Populate artifact_value with results
+        artifact_value.result = result_2d;
+        artifact_value.is_result_truncated = is_truncated;
 
         // Build table output (leveraging existing table/reference system) and emit as chunk
         let table_output = Output::table_with_reference(
@@ -249,15 +427,16 @@ impl Executable<ValidatedSemanticQuery> for SemanticQueryExecutable {
             },
             None,
         );
-        execution_context
+
+        task_context
             .write_chunk(Chunk {
                 key: None,
-                delta: table_output.clone(),
+                delta: Output::SemanticQuery(artifact_value.clone()),
                 finished: true,
             })
             .await?;
 
-        execution_context
+        task_context
             .write_kind(EventKind::Finished {
                 message: format!(
                     "Executed semantic query for topic '{}' - results written to {}",
@@ -271,9 +450,7 @@ impl Executable<ValidatedSemanticQuery> for SemanticQueryExecutable {
         // Return Table output with semantic query reference
         Ok(table_output)
     }
-}
 
-impl SemanticQueryExecutable {
     /// Extract unique view names from the query fields (dimensions, measures, filters, orders)
     fn extract_views_from_query(&self, task: &SemanticQueryTask, topic_name: &str) -> Vec<String> {
         let mut views = HashSet::new();
@@ -809,13 +986,14 @@ impl SemanticQueryExecutable {
     }
 
     /// Execute SQL query directly using database connector and save results to file
-    async fn execute_sql_and_save_results(
+    /// Returns the file path, record batches, and schema
+    async fn execute_sql_and_get_results(
         &self,
         sql: &str,
         database_ref: &str,
         _topic: &str,
         execution_context: &ExecutionContext,
-    ) -> Result<String, OxyError> {
+    ) -> Result<(String, Vec<RecordBatch>, Arc<Schema>), OxyError> {
         use crate::adapters::connector::write_to_ipc;
         use uuid::Uuid;
 
@@ -845,7 +1023,7 @@ impl SemanticQueryExecutable {
             .map_err(|e| OxyError::RuntimeError(format!("Failed to write results to file: {e}")))?;
 
         tracing::info!("Saved semantic query results to: {}", file_path);
-        Ok(file_path)
+        Ok((file_path, record_batches, schema_ref))
     }
 }
 

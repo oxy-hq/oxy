@@ -14,6 +14,9 @@ const getCleanSemanticObject = (
   /* eslint-disable @typescript-eslint/no-unused-vars */
   /* eslint-disable sonarjs/no-unused-vars */
   const {
+    error: _error,
+    sql_generation_error: _sql_generation_error,
+    validation_error: _validation_error,
     result: _,
     sql_query: _sql_query,
     is_result_truncated: _is_result_truncated,
@@ -26,6 +29,53 @@ const getCleanSemanticObject = (
 };
 
 const SemanticQueryArtifactPanel = ({ artifact }: Props) => {
+  const renderError = () => {
+    if (artifact.content.value.validation_error) {
+      return (
+        <div className="p-4 bg-red-900/20 border border-red-500/50 rounded-md m-4">
+          <h4 className="font-medium text-sm text-red-400 mb-2">
+            Validation Error
+          </h4>
+          <pre className="text-sm text-red-300 whitespace-pre-wrap">
+            {artifact.content.value.validation_error}
+          </pre>
+        </div>
+      );
+    }
+
+    if (artifact.content.value.sql_generation_error) {
+      return (
+        <div className="p-4 bg-red-900/20 border border-red-500/50 rounded-md m-4">
+          <h4 className="font-medium text-sm text-red-400 mb-2">
+            SQL Generation Error
+          </h4>
+          <pre className="text-sm text-red-300 whitespace-pre-wrap">
+            {artifact.content.value.sql_generation_error}
+          </pre>
+        </div>
+      );
+    }
+
+    if (artifact.content.value.error) {
+      return (
+        <div className="p-4 bg-red-900/20 border border-red-500/50 rounded-md m-4">
+          <h4 className="font-medium text-sm text-red-400 mb-2">
+            Execution Error
+          </h4>
+          <pre className="text-sm text-red-300 whitespace-pre-wrap">
+            {artifact.content.value.error}
+          </pre>
+        </div>
+      );
+    }
+
+    if (artifact.content.value.result) {
+      return <Results result={artifact.content.value.result} />;
+    }
+
+    return null;
+  };
+
   return (
     <div className="flex flex-col h-full">
       {/* Semantic Query JSON Section */}
@@ -85,11 +135,7 @@ const SemanticQueryArtifactPanel = ({ artifact }: Props) => {
       </div>
 
       {/* Results Section */}
-      <div className="flex-1 overflow-auto">
-        {!!artifact.content.value.result && (
-          <Results result={artifact.content.value.result} />
-        )}
-      </div>
+      <div className="flex-1 overflow-auto">{renderError()}</div>
     </div>
   );
 };

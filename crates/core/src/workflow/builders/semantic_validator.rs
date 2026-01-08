@@ -171,6 +171,16 @@ pub struct ValidatedSemanticQuery {
     pub views: Vec<View>,
 }
 
+/// Result type that can contain either a validated query or a validation error
+#[derive(Debug, Clone)]
+pub enum SemanticQueryValidation {
+    Valid(ValidatedSemanticQuery),
+    Invalid {
+        task: SemanticQueryTask,
+        error: String,
+    },
+}
+
 /// Validates a semantic query task against loaded semantic layer metadata
 fn validate_task_against_metadata(
     task: &SemanticQueryTask,

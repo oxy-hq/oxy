@@ -25,6 +25,9 @@ impl ContentProcessor {
             Output::OmniQuery(omni_query_params) => {
                 Some(Content::OmniQuery(omni_query_params.clone()))
             }
+            Output::SemanticQuery(semantic_query) => {
+                Some(Content::SemanticQuery(semantic_query.clone()))
+            }
             _ => None,
         }
     }
@@ -34,6 +37,7 @@ impl ContentProcessor {
             Output::Text(text) => Some(text.to_string()),
             Output::SQL(sql) => Some(format!("Query:\n```sql\n{sql}\n```\n")),
             Output::Table(table) => Some(format!("Result:\n{}\n", table.to_markdown())),
+            Output::SemanticQuery(_) => Some("".to_string()),
             _ => None,
         }
     }

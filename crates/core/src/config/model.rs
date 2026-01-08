@@ -1758,7 +1758,7 @@ impl SemanticFilterType {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, Validate, ToSchema)]
 #[garde(context(ValidationContext))]
 pub struct SemanticFilter {
     #[garde(length(min = 1))]
@@ -1766,6 +1766,83 @@ pub struct SemanticFilter {
     #[serde(flatten)]
     #[garde(dive)]
     pub filter_type: SemanticFilterType,
+}
+
+// Custom JSON schema implementation to flatten filter_type variants
+// That produce JSON schema compatible with OpenAI
+impl JsonSchema for SemanticFilter {
+    fn schema_name() -> String {
+        "SemanticFilter".to_string()
+    }
+
+    fn json_schema(r#gen: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+        use schemars::schema::{InstanceType, Metadata, Schema, SchemaObject, SubschemaValidation};
+
+        // Generate the full schema for SemanticFilterType first
+        // This will add it to the definitions and return a reference
+        let _filter_ref = r#gen.subschema_for::<SemanticFilterType>();
+
+        // Get the actual schema from the definitions
+        let definitions = r#gen.definitions();
+        let filter_type_schema = definitions.get("SemanticFilterType").cloned();
+
+        // Use anyOf to combine the field with filter_type variants
+        // Since filter_type is flattened, we need to merge it at the top level
+        let mut subschemas = Vec::new();
+
+        // Extract the oneOf variants from SemanticFilterType and convert to anyOf
+        if let Some(Schema::Object(filter_obj)) = filter_type_schema {
+            if let Some(subschema_validation) = &filter_obj.subschemas {
+                if let Some(one_of) = &subschema_validation.one_of {
+                    // For each variant in oneOf, create an anyOf schema that includes the field property
+                    for variant in one_of {
+                        let mut combined = SchemaObject::default();
+                        combined.instance_type = Some(InstanceType::Object.into());
+
+                        // Add field property to each variant
+                        let mut field_schema_clone = SchemaObject::default();
+                        field_schema_clone.instance_type = Some(InstanceType::String.into());
+                        field_schema_clone.metadata = Some(Box::new(Metadata {
+                            description: Some("The measure/dimension to apply the filter on. Must by full name: <view_name>.<field_name>".to_string()),
+                            ..Default::default()
+                        }));
+
+                        combined
+                            .object()
+                            .properties
+                            .insert("field".to_string(), Schema::Object(field_schema_clone));
+                        combined.object().required.insert("field".to_string());
+
+                        // Merge the filter_type variant properties
+                        if let Schema::Object(variant_obj) = variant {
+                            if let Some(props) = &variant_obj.object {
+                                for (key, value) in &props.properties {
+                                    combined
+                                        .object()
+                                        .properties
+                                        .insert(key.clone(), value.clone());
+                                }
+                                for req in &props.required {
+                                    combined.object().required.insert(req.clone());
+                                }
+                            }
+                        }
+
+                        subschemas.push(Schema::Object(combined));
+                    }
+                }
+            }
+        }
+
+        // Return a schema with anyOf at the top level
+        let mut schema = SchemaObject::default();
+        schema.subschemas = Some(Box::new(SubschemaValidation {
+            any_of: Some(subschemas),
+            ..Default::default()
+        }));
+
+        Schema::Object(schema)
+    }
 }
 
 impl Hash for SemanticFilter {

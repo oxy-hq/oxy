@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use serde_json::Value;
+
 use super::{
     create_data_app::CreateDataAppExecutable,
     retrieval::RetrievalExecutable,
@@ -20,9 +22,9 @@ use crate::{
     execute::{
         Executable, ExecutionContext,
         builders::{ExecutableBuilder, map::ParamMapper},
-        types::{EventKind, Output, OutputContainer, Table},
+        types::{Chunk, EventKind, Output, OutputContainer, Table},
     },
-    service::types::SemanticQueryParams,
+    service::types::{SemanticQuery, SemanticQueryParams},
     tools::{
         create_data_app::types::CreateDataAppParams,
         omni::{
@@ -31,7 +33,7 @@ use crate::{
         visualize::{types::VisualizeParams, visualize::VisualizeExecutable},
         workflow::WorkflowExecutable,
     },
-    workflow::{SemanticQueryExecutable, ValidatedSemanticQuery, validate_semantic_query_task},
+    workflow::{SemanticQueryExecutable, SemanticQueryValidation, validate_semantic_query_task},
 };
 
 const TOOL_NOT_FOUND_ERR: &str = "Tool not found";
@@ -65,6 +67,7 @@ impl Executable<(String, Option<ToolType>, ToolRawInput)> for ToolExecutable {
 
             let artifact = tool_type.artifact();
             if let Some((title, kind)) = &artifact {
+                tracing::info!("Starting artifact: {} of kind {}", title, kind);
                 artifact_context
                     .write_kind(EventKind::ArtifactStarted {
                         kind: kind.clone(),
@@ -185,46 +188,77 @@ impl Executable<(String, Option<ToolType>, ToolRawInput)> for ToolExecutable {
                     .await
                     .map(|output| output.into()),
                 ToolType::SemanticQuery(semantic_query_tool) => {
-                    let mut semantic_params =
-                        serde_json::from_str::<SemanticQueryParams>(&input.param)?;
-                    if let Some(tool_topic) = semantic_query_tool.topic.clone()
-                        && semantic_params.topic.as_deref() != Some(tool_topic.as_str())
-                    {
-                        return Err(OxyError::ArgumentError(format!(
-                            "Invalid topic: expected '{}'",
-                            tool_topic
-                        )));
-                    }
+                    let param_obj = serde_json::from_str::<Value>(&input.param).unwrap_or_default();
+                    let mut artifact_value = create_semantic_query_artifact(&param_obj);
 
-                    // Merge tool-level variables with query-level variables
-                    // Tool variables take precedence over query variables
-                    if let Some(tool_variables) = &semantic_query_tool.variables {
-                        let merged_variables = match semantic_params.variables.as_mut() {
-                            Some(query_vars) => {
-                                // Start with query variables, then override with tool variables
-                                for (key, value) in tool_variables {
-                                    query_vars.insert(key.clone(), value.clone());
-                                }
-                                Some(query_vars.clone())
+                    let _ = artifact_context
+                        .write_chunk(Chunk {
+                            key: None,
+                            delta: Output::SemanticQuery(artifact_value.clone()),
+                            finished: true,
+                        })
+                        .await;
+
+                    tracing::debug!(
+                        "Executing SemanticQuery tool with config: {:?}",
+                        semantic_query_tool,
+                    );
+
+                    let semantic_params = serde_json::from_str::<SemanticQueryParams>(&input.param);
+
+                    match semantic_params {
+                        Ok(mut params) => {
+                            tracing::debug!("Initial SemanticQueryParams from input: {:?}", params);
+
+                            if let Err(e) =
+                                validate_and_apply_topic(&mut params, &semantic_query_tool.topic)
+                            {
+                                return Err(e);
                             }
-                            None => Some(tool_variables.clone()),
-                        };
-                        semantic_params.variables = merged_variables;
-                    }
 
-                    build_semantic_query_executable()
-                        .execute(
-                            execution_context,
-                            SemanticQueryToolInput {
-                                param: semantic_params,
-                                topic: semantic_query_tool.topic.clone(),
-                            },
-                        )
-                        .await
-                        .map(|output| output.into())
+                            tracing::debug!(
+                                "SemanticQueryParams after applying tool topic: {:?}",
+                                params
+                            );
+
+                            merge_tool_variables(&mut params, &semantic_query_tool.variables);
+
+                            tracing::debug!(
+                                "Final SemanticQueryParams before execution: {:?}",
+                                params
+                            );
+
+                            build_semantic_query_executable()
+                                .execute(
+                                    &artifact_context,
+                                    SemanticQueryToolInput {
+                                        param: params.clone(),
+                                        topic: semantic_query_tool.topic.clone(),
+                                    },
+                                )
+                                .await
+                                .map(|output| output.into())
+                        }
+                        Err(ref e) => {
+                            tracing::error!("Failed to parse SemanticQueryParams: {}", e);
+                            artifact_value.validation_error = Some(format!("{}", e));
+                            let _ = artifact_context
+                                .write_chunk(Chunk {
+                                    key: None,
+                                    delta: Output::SemanticQuery(artifact_value.clone()),
+                                    finished: true,
+                                })
+                                .await;
+                            Err(OxyError::ArgumentError(format!(
+                                "Invalid SemanticQueryParams: {}",
+                                e
+                            )))
+                        }
+                    }
                 }
             };
 
+            tracing::info!("Tool execution completed: {:?}", tool_ret);
             // Write ArtifactFinished event after execution with error if present
             if artifact.is_some() {
                 let error = tool_ret.as_ref().err().map(|e| e.to_string());
@@ -367,12 +401,16 @@ fn build_omni_query_tool_executable() -> impl Executable<OmniQueryToolInput, Res
 }
 
 #[async_trait::async_trait]
-impl ParamMapper<SemanticQueryToolInput, ValidatedSemanticQuery> for SemanticQueryMapper {
+impl ParamMapper<SemanticQueryToolInput, SemanticQueryValidation> for SemanticQueryMapper {
     async fn map(
         &self,
         execution_context: &ExecutionContext,
         input: SemanticQueryToolInput,
-    ) -> Result<(ValidatedSemanticQuery, Option<ExecutionContext>), OxyError> {
+    ) -> Result<(SemanticQueryValidation, Option<ExecutionContext>), OxyError> {
+        tracing::debug!(
+            "Mapping SemanticQueryToolInput with param: {:?}",
+            input.param
+        );
         let SemanticQueryToolInput {
             param: semantic_params,
             topic: _topic,
@@ -389,11 +427,23 @@ impl ParamMapper<SemanticQueryToolInput, ValidatedSemanticQuery> for SemanticQue
             variables: semantic_params.variables, // Pass variables from tool input
         };
 
-        // Validate the semantic query task
-        let validated =
-            validate_semantic_query_task(&execution_context.project.config_manager, &task).await?;
+        // Validate the semantic query task - capture error instead of failing
+        let validation_result =
+            match validate_semantic_query_task(&execution_context.project.config_manager, &task)
+                .await
+            {
+                Ok(validated) => SemanticQueryValidation::Valid(validated),
+                Err(e) => {
+                    tracing::error!("Semantic query validation error: {}", e);
+                    SemanticQueryValidation::Invalid {
+                        task: task.clone(),
+                        error: e.to_string(),
+                    }
+                }
+            };
 
-        Ok((validated, None))
+        tracing::debug!("SemanticQueryValidation result: {:?}", validation_result);
+        Ok((validation_result, None))
     }
 }
 
@@ -563,4 +613,86 @@ fn build_agent_executable() -> impl Executable<AgentToolInput, Response = Output
     ExecutableBuilder::new()
         .map(AgentMapper)
         .executable(AgentLauncherExecutable)
+}
+
+fn create_semantic_query_artifact(param_obj: &Value) -> SemanticQuery {
+    let extract_string_array = |key: &str| {
+        param_obj
+            .get(key)
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|val| val.as_str().map(|s| s.to_string()))
+            .collect()
+    };
+
+    SemanticQuery {
+        database: "".to_string(),
+        sql_query: "".to_string(),
+        result: vec![],
+        error: None,
+        validation_error: None,
+        sql_generation_error: None,
+        is_result_truncated: false,
+        topic: param_obj
+            .get("topic")
+            .and_then(|v| v.as_str().map(|s| s.to_string())),
+        dimensions: extract_string_array("dimensions"),
+        measures: extract_string_array("measures"),
+        filters: param_obj
+            .get("filters")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|val| serde_json::from_value(val).ok())
+            .collect(),
+        orders: param_obj
+            .get("orders")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|val| serde_json::from_value(val).ok())
+            .collect(),
+        limit: param_obj.get("limit").and_then(|v| v.as_u64()),
+        offset: param_obj.get("offset").and_then(|v| v.as_u64()),
+    }
+}
+
+fn validate_and_apply_topic(
+    params: &mut SemanticQueryParams,
+    tool_topic: &Option<String>,
+) -> Result<(), OxyError> {
+    if let Some(topic) = tool_topic {
+        if params.topic.is_none() {
+            params.topic = Some(topic.clone());
+        } else if params.topic.as_deref() != Some(topic.as_str()) {
+            return Err(OxyError::ArgumentError(format!(
+                "Invalid topic: expected '{}', got '{}'",
+                topic,
+                params.topic.as_deref().unwrap_or("none")
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn merge_tool_variables(
+    params: &mut SemanticQueryParams,
+    tool_variables: &Option<HashMap<String, serde_json::Value>>,
+) {
+    if let Some(tool_vars) = tool_variables {
+        let merged_variables = match params.variables.as_mut() {
+            Some(query_vars) => {
+                for (key, value) in tool_vars {
+                    query_vars.insert(key.clone(), value.clone());
+                }
+                Some(query_vars.clone())
+            }
+            None => Some(tool_vars.clone()),
+        };
+        params.variables = merged_variables;
+    }
 }

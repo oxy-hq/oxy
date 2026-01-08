@@ -24,6 +24,9 @@ export type SemanticQueryArtifact = {
   content: {
     type: "semantic_query";
     value: {
+      error?: string;
+      validation_error?: string;
+      sql_generation_error?: string;
       database: string;
       sql_query: string;
       result: string[][];

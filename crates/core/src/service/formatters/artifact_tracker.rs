@@ -10,15 +10,13 @@ use crate::{
     execute::types::event::ArtifactKind,
     service::types::{
         ArtifactContent, Block, BlockValue, ContainerKind, Content, OmniArtifactContent,
-        SemanticQueryParams,
+        SemanticQuery,
     },
 };
 
 pub struct ArtifactTracker {
     artifacts: Arc<Mutex<Vec<entity::artifacts::ActiveModel>>>,
     artifact_queue: Vec<(String, ArtifactKind)>,
-    // TODO: remove this, refactor the code similar to OmniQuery
-    current_semantic_query: Option<SemanticQueryParams>,
 }
 
 impl ArtifactTracker {
@@ -26,7 +24,6 @@ impl ArtifactTracker {
         Self {
             artifacts: Arc::new(Mutex::new(Vec::new())),
             artifact_queue: Vec::new(),
-            current_semantic_query: None,
         }
     }
 
@@ -48,10 +45,6 @@ impl ArtifactTracker {
 
     pub fn get_active_artifact(&self) -> Option<&(String, ArtifactKind)> {
         self.artifact_queue.last()
-    }
-
-    pub fn set_semantic_query(&mut self, query: SemanticQueryParams) {
-        self.current_semantic_query = Some(query);
     }
 
     pub async fn store_artifact(&mut self, block: &Block) -> Result<(), OxyError> {
@@ -79,10 +72,7 @@ impl ArtifactTracker {
                 ArtifactKind::Agent { .. } => Self::create_agent_artifact(children)?,
                 ArtifactKind::ExecuteSQL { .. } => Self::create_sql_artifact(children)?,
                 ArtifactKind::SemanticQuery { .. } => {
-                    Self::create_semantic_query_artifact_with_params(
-                        children,
-                        self.current_semantic_query.clone(),
-                    )?
+                    Self::create_semantic_query_artifact(children)?
                 }
                 ArtifactKind::OmniQuery { topic, .. } => {
                     Self::create_omni_query_artifact(children, topic.clone())?
@@ -163,57 +153,29 @@ impl ArtifactTracker {
         Ok(None)
     }
 
-    fn create_semantic_query_artifact_with_params(
+    fn create_semantic_query_artifact(
         children: &[Block],
-        query_params: Option<SemanticQueryParams>,
     ) -> Result<Option<ArtifactContent>, OxyError> {
-        let default_params = SemanticQueryParams {
-            topic: None,
-            dimensions: vec![],
-            measures: vec![],
-            filters: vec![],
-            orders: vec![],
-            limit: None,
-            offset: None,
-            variables: None,
-        };
-        let query = query_params.unwrap_or(default_params);
-
         if let Some(Block { id: _, value }) = children.last() {
             return match &**value {
                 BlockValue::Content {
-                    content: Content::Table(table),
-                } => {
-                    let (table_2d_array, is_truncated) = table.to_2d_array()?;
-                    Ok(Some(ArtifactContent::SemanticQuery {
-                        database: table.get_database_ref().unwrap_or_default(),
-                        sql_query: table.get_sql_query().unwrap_or_default(),
-                        result: table_2d_array,
-                        is_result_truncated: is_truncated,
-                        topic: query.topic,
-                        dimensions: query.dimensions,
-                        measures: query.measures,
-                        filters: query.filters,
-                        orders: query.orders,
-                        limit: query.limit,
-                        offset: query.offset,
-                    }))
-                }
-                BlockValue::Content {
-                    content: Content::SQL(sql),
-                } => Ok(Some(ArtifactContent::SemanticQuery {
-                    database: "".to_string(),
-                    sql_query: sql.to_string(),
-                    result: vec![],
-                    is_result_truncated: false,
-                    topic: query.topic,
-                    dimensions: query.dimensions,
-                    measures: query.measures,
-                    filters: query.filters,
-                    orders: query.orders,
-                    limit: query.limit,
-                    offset: query.offset,
-                })),
+                    content: Content::SemanticQuery(semantic_query),
+                } => Ok(Some(ArtifactContent::SemanticQuery(SemanticQuery {
+                    database: semantic_query.database.clone(),
+                    sql_query: semantic_query.sql_query.clone(),
+                    result: semantic_query.result.clone(),
+                    is_result_truncated: semantic_query.is_result_truncated,
+                    topic: semantic_query.topic.clone(),
+                    dimensions: semantic_query.dimensions.clone(),
+                    measures: semantic_query.measures.clone(),
+                    filters: semantic_query.filters.clone(),
+                    orders: semantic_query.orders.clone(),
+                    limit: semantic_query.limit,
+                    offset: semantic_query.offset,
+                    error: semantic_query.error.clone(),
+                    validation_error: semantic_query.validation_error.clone(),
+                    sql_generation_error: semantic_query.sql_generation_error.clone(),
+                }))),
                 _ => Ok(None),
             };
         }

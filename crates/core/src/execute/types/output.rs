@@ -6,7 +6,7 @@ use minijinja::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::{errors::OxyError, tools::types::OmniQueryParams};
+use crate::{errors::OxyError, service::types::SemanticQuery, tools::types::OmniQueryParams};
 
 use super::{Document, Prompt, SQL, Table, output_container::Data, table::TableReference};
 
@@ -19,6 +19,7 @@ pub enum Output {
     Prompt(Prompt),
     Documents(Vec<Document>),
     OmniQuery(OmniQueryParams),
+    SemanticQuery(SemanticQuery),
 }
 
 impl Default for Output {
@@ -77,6 +78,10 @@ impl Output {
                 // this contains the params of omni query, not useful to return as data
                 Ok(Data::None)
             }
+            Output::SemanticQuery(_) => {
+                // this contains the params of semantic query, not useful to return as data
+                Ok(Data::None)
+            }
         }
     }
 
@@ -96,6 +101,9 @@ impl Output {
             }
             Output::OmniQuery(omni_query_params) => {
                 serde_json::to_string_pretty(omni_query_params).unwrap_or_default()
+            }
+            Output::SemanticQuery(semantic_query_params) => {
+                serde_json::to_string_pretty(semantic_query_params).unwrap_or_default()
             }
         }
     }
@@ -159,6 +167,11 @@ impl std::fmt::Display for Output {
                     serde_json::to_string_pretty(omni_query_params).map_err(|_| std::fmt::Error)?;
                 write!(f, "{json}")
             }
+            Output::SemanticQuery(semantic_query_params) => {
+                let json = serde_json::to_string_pretty(semantic_query_params)
+                    .map_err(|_| std::fmt::Error)?;
+                write!(f, "{json}")
+            }
         }
     }
 }
@@ -208,6 +221,11 @@ impl Object for Output {
             Output::OmniQuery(omni_query_params) => {
                 let json =
                     serde_json::to_string_pretty(omni_query_params).map_err(|_| std::fmt::Error)?;
+                write!(f, "{json}")
+            }
+            Output::SemanticQuery(semantic_query_params) => {
+                let json = serde_json::to_string_pretty(semantic_query_params)
+                    .map_err(|_| std::fmt::Error)?;
                 write!(f, "{json}")
             }
         }

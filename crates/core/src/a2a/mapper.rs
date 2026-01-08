@@ -290,6 +290,7 @@ pub fn oxy_response_to_artifacts(output: &OutputContainer) -> Result<Vec<Artifac
 /// - **Table**: Converted to DataPart with JSON representation
 /// - **Documents**: Converted to TextPart with document content
 /// - **OmniQuery**: Converted to DataPart with query parameters
+/// - **SemanticQuery**: Converted to DataPart with query parameters
 pub fn oxy_output_to_parts(output: &Output) -> Result<Vec<Part>, A2aError> {
     match output {
         Output::Text(text) => Ok(vec![Part::Text(TextPart::new(text.clone()))]),
@@ -326,6 +327,13 @@ pub fn oxy_output_to_parts(output: &Output) -> Result<Vec<Part>, A2aError> {
             // Convert OmniQuery to JSON DataPart
             let json_value = serde_json::to_value(query).map_err(|e| {
                 A2aError::ServerError(format!("Failed to serialize OmniQuery: {}", e))
+            })?;
+            Ok(vec![Part::Data(DataPart::new(json_value))])
+        }
+        Output::SemanticQuery(query) => {
+            // Convert SemanticQuery to JSON DataPart
+            let json_value = serde_json::to_value(query).map_err(|e| {
+                A2aError::ServerError(format!("Failed to serialize SemanticQuery: {}", e))
             })?;
             Ok(vec![Part::Data(DataPart::new(json_value))])
         }
