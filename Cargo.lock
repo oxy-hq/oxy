@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "a2a"
-version = "0.4.5"
+version = "0.4.6"
 dependencies = [
  "async-trait",
  "axum",
@@ -3313,7 +3313,7 @@ dependencies = [
 
 [[package]]
 name = "entity"
-version = "0.4.5"
+version = "0.4.6"
 dependencies = [
  "chrono",
  "indexmap 2.12.1",
@@ -5723,7 +5723,7 @@ checksum = "38d1115007560874e373613744c6fba374c17688327a71c1476d1a5954cc857b"
 
 [[package]]
 name = "migration"
-version = "0.4.5"
+version = "0.4.6"
 dependencies = [
  "anyhow",
  "async-std",
@@ -6242,7 +6242,7 @@ dependencies = [
 
 [[package]]
 name = "omni"
-version = "0.4.5"
+version = "0.4.6"
 dependencies = [
  "garde",
  "rand 0.8.5",
@@ -6449,7 +6449,7 @@ dependencies = [
 
 [[package]]
 name = "oxy"
-version = "0.4.5"
+version = "0.4.6"
 dependencies = [
  "a2a",
  "aes-gcm",
@@ -6575,7 +6575,7 @@ dependencies = [
 
 [[package]]
 name = "oxy-semantic"
-version = "0.4.5"
+version = "0.4.6"
 dependencies = [
  "indexmap 2.12.1",
  "minijinja",
@@ -6592,7 +6592,7 @@ dependencies = [
 
 [[package]]
 name = "oxy_globals"
-version = "0.4.5"
+version = "0.4.6"
 dependencies = [
  "indexmap 2.12.1",
  "minijinja",
