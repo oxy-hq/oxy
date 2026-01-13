@@ -64,12 +64,12 @@
   "devDependencies": {
     "@duckdb/duckdb-wasm": "^1.29.0",
     "@types/node": "^20.11.0",
-    "@types/react": "^19.0.0",
+    "@types/react": "^19.2.8",
     "@typescript-eslint/eslint-plugin": "^6.19.0",
     "@typescript-eslint/parser": "^6.19.0",
     "eslint": "^8.56.0",
     "react": "^19.0.0",
-    "tsdown": "^0.19.0-beta.2",
+    "tsdown": "^0.20.0-beta.1",
     "typescript": "^5.3.3",
     "vitest": "^1.2.0"
   },
