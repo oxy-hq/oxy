@@ -7,6 +7,7 @@ import { Variable } from "../components/SemanticQueryPanel";
 
 export const useSemanticQueryState = () => {
   const [result, setResult] = useState<string[][]>([]);
+  const [resultFile, setResultFile] = useState<string | undefined>(undefined);
   const [selectedDimensions, setSelectedDimensions] = useState<string[]>([]);
   const [selectedMeasures, setSelectedMeasures] = useState<string[]>([]);
   const [filters, setFilters] = useState<SemanticQueryFilter[]>([]);
@@ -101,6 +102,8 @@ export const useSemanticQueryState = () => {
   return {
     result,
     setResult,
+    resultFile,
+    setResultFile,
     selectedDimensions,
     setSelectedDimensions,
     selectedMeasures,

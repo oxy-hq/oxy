@@ -95,6 +95,16 @@ pub struct OmniIntegration {
     pub base_url: String,
     #[garde(dive)]
     pub topics: Vec<OmniTopic>,
+    /// Row count threshold for switching to Arrow format (file path response)
+    /// If query result exceeds this threshold, return file_path instead of row arrays
+    /// Default: 1000 rows
+    #[serde(default = "default_arrow_threshold_rows")]
+    #[garde(skip)]
+    pub arrow_threshold_rows: usize,
+}
+
+fn default_arrow_threshold_rows() -> usize {
+    1000
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, JsonSchema, Validate)]

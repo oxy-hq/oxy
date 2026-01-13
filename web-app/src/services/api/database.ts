@@ -9,6 +9,11 @@ import {
   ConnectionTestEvent,
 } from "@/types/database";
 
+// Response can be either:
+// - string[][] (default JSON format) - the result array directly
+// - { file_name: string } (Parquet format) - when result_format is "parquet"
+export type ExecuteSqlResponse = string[][] | { file_name: string };
+
 export class DatabaseService {
   static async listDatabases(
     projectId: string,
@@ -26,12 +31,13 @@ export class DatabaseService {
     pathb64: string,
     sql: string,
     database: string,
-  ): Promise<string[][]> {
+  ): Promise<ExecuteSqlResponse> {
     const response = await apiClient.post(
       `/${projectId}/sql/${pathb64}`,
       {
         sql,
         database,
+        result_format: "parquet",
       },
       { params: { branch: branchName } },
     );

@@ -43,6 +43,7 @@ pub(super) trait ConfigStorage {
     async fn list_workflows(&self) -> Result<Vec<PathBuf>, OxyError>;
     async fn load_app_config<P: AsRef<Path>>(&self, app_path: P) -> Result<AppConfig, OxyError>;
     async fn get_charts_dir(&self) -> Result<PathBuf, OxyError>;
+    async fn get_results_dir(&self) -> Result<PathBuf, OxyError>;
 }
 
 #[derive(Debug)]
@@ -370,5 +371,11 @@ impl ConfigStorage for LocalSource {
         let charts_dir = self.resolve_state_dir().await?.join("charts");
         self.ensure_dir_exists(&charts_dir);
         Ok(charts_dir)
+    }
+
+    async fn get_results_dir(&self) -> Result<PathBuf, OxyError> {
+        let results_dir = self.resolve_state_dir().await?.join("results");
+        self.ensure_dir_exists(&results_dir);
+        Ok(results_dir)
     }
 }

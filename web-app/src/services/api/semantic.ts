@@ -40,6 +40,7 @@ export interface SemanticQueryRequest {
   query: SemanticQueryParams;
   session_filters?: Record<string, unknown>;
   connections?: Record<string, unknown>;
+  result_format?: "json" | "parquet";
 }
 
 export interface SemanticQueryCompileResponse {
@@ -82,11 +83,15 @@ export interface TopicDetailsResponse {
   views: ViewResponse[];
 }
 
+export type ExecuteSemanticQueryResponse =
+  | string[][] // JSON format - returns array directly
+  | { file_name: string }; // Parquet format - returns object with file_name
+
 export class SemanticService {
   static async executeSemanticQuery(
     projectId: string,
     request: SemanticQueryRequest,
-  ): Promise<string[][]> {
+  ): Promise<ExecuteSemanticQueryResponse> {
     const { query, ...rest } = request;
     try {
       const response = await apiClient.post(`/${projectId}/semantic`, {

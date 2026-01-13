@@ -18,6 +18,7 @@ export interface Variable {
 
 interface SemanticQueryPanelProps {
   result: string[][];
+  resultFile?: string;
   showSql: boolean;
   setShowSql: (show: boolean) => void;
   generatedSql: string;
@@ -46,6 +47,7 @@ interface SemanticQueryPanelProps {
 
 const SemanticQueryPanel = ({
   result,
+  resultFile,
   showSql,
   setShowSql,
   generatedSql,
@@ -78,10 +80,10 @@ const SemanticQueryPanel = ({
   }, [generatedSql, setShowSql, sqlError]);
 
   useEffect(() => {
-    if (result || executionError) {
+    if (result.length > 0 || resultFile || executionError) {
       setShowSql(false);
     }
-  }, [result, setShowSql, executionError]);
+  }, [result, resultFile, setShowSql, executionError]);
 
   return (
     <Tabs
@@ -133,7 +135,11 @@ const SemanticQueryPanel = ({
           <SqlView generatedSql={generatedSql} sqlError={sqlError} />
         </TabsContent>
         <TabsContent value="results" className="h-full mt-0">
-          <ResultsView result={result} executionError={executionError} />
+          <ResultsView
+            result={result}
+            resultFile={resultFile}
+            executionError={executionError}
+          />
         </TabsContent>
       </div>
     </Tabs>

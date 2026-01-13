@@ -1,8 +1,10 @@
 import { useState, useEffect, memo, useMemo } from "react";
 import EmptyState from "@/components/ui/EmptyState";
+import { VirtualizedTable } from "@/components/ui/VirtualizedTable";
 
 interface ResultsProps {
-  result: string[][];
+  result?: string[][];
+  resultFile?: string;
   hideDownload?: boolean;
 }
 
@@ -35,7 +37,7 @@ const DataCell = memo(
 
 DataCell.displayName = "DataCell";
 
-const Results = ({ result }: ResultsProps) => {
+const ArrayBasedTable = ({ result }: { result: string[][] }) => {
   const [selectedCell, setSelectedCell] = useState<{
     row: number;
     col: number;
@@ -220,6 +222,27 @@ const Results = ({ result }: ResultsProps) => {
         </div>
       </div>
     </div>
+  );
+};
+
+const Results = ({ result, resultFile }: ResultsProps) => {
+  // If we have a result file, use the VirtualizedTable component
+  if (resultFile) {
+    return <VirtualizedTable filePath={resultFile} />;
+  }
+
+  // If we have array results, use the array-based table
+  if (result && result.length > 0) {
+    return <ArrayBasedTable result={result} />;
+  }
+
+  // No results to display
+  return (
+    <EmptyState
+      className="h-full"
+      title="No results to display"
+      description="Run the query to see the results"
+    />
   );
 };
 

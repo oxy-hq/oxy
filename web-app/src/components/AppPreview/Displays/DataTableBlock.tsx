@@ -9,8 +9,14 @@ import {
 } from "@/components/ui/shadcn/table";
 import { getDuckDB } from "@/libs/duckdb";
 import { DataContainer, TableData, TableDisplay } from "@/types/app";
-import { getData, registerAuthenticatedFile, getArrowValueWithType, getArrowFieldType } from "./utils";
+import {
+  getData,
+  registerAuthenticatedFile,
+  getArrowValueWithType,
+  getArrowFieldType,
+} from "./utils";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import { VirtualizedTable } from "@/components/ui/VirtualizedTable";
 
 const load_table = async (
   filePath: string,
@@ -28,6 +34,9 @@ const load_table = async (
   return rs;
 };
 
+// Threshold for using virtualization
+const VIRTUALIZATION_THRESHOLD = 1000;
+
 export const DataTableBlock = ({
   display,
   data,
@@ -40,6 +49,8 @@ export const DataTableBlock = ({
   const [table, setTable] = useState<Awaited<
     ReturnType<typeof load_table>
   > | null>(null);
+  const [useVirtualization, setUseVirtualization] = useState(true);
+  const [filePath, setFilePath] = useState<string | null>(null);
 
   const dataAvailable = data && display.data;
 
@@ -51,6 +62,31 @@ export const DataTableBlock = ({
         return;
       }
       const value = getData(data, display.data) as TableData;
+      setFilePath(value.file_path);
+
+      // Check table size first
+      const db = await getDuckDB();
+      const conn = await db.connect();
+      const file_name = await registerAuthenticatedFile(
+        value.file_path,
+        project.id,
+        branchName,
+      );
+
+      // Get row count
+      const countResult = await conn.query(
+        `SELECT COUNT(*) as count FROM "${file_name}"`,
+      );
+      const rowCount = Number(countResult.toArray()[0].count);
+
+      // Use virtualization for large datasets
+      if (rowCount > VIRTUALIZATION_THRESHOLD) {
+        setUseVirtualization(true);
+        setIsLoading(false);
+        return;
+      }
+
+      // Load all data for small datasets
       const table = await load_table(value.file_path, project.id, branchName);
       setTable(table);
       setIsLoading(false);
@@ -70,39 +106,56 @@ export const DataTableBlock = ({
       data-testid="app-data-table-block"
     >
       <h2 className="text-xl font-bold text-foreground">{display.title}</h2>
-      <DataTable className="border">
-        {!table ? (
-          <div className="text-center text-gray-500 p-2">No data found</div>
-        ) : (
-          <>
-            <TableHeader>
-              <TableRow>
-                {table.schema.fields.map((field) => (
-                  <TableHead className="text-gray-500 border" key={field.name}>
-                    {field.name}
-                  </TableHead>
-                ))}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {table.toArray().map((row, idx) => (
-                <TableRow key={idx} className="border">
-                  {table.schema.fields.map((field) => {
-                    const fieldType = getArrowFieldType(field.name, table.schema);
-                    const value = row[field.name];
-                    const formattedValue = fieldType ? getArrowValueWithType(value, fieldType) : value;
-                    return (
-                      <TableCell className="border" key={field.name}>
-                        {String(formattedValue)}
-                      </TableCell>
-                    );
-                  })}
+
+      {useVirtualization && filePath ? (
+        <VirtualizedTable
+          filePath={filePath}
+          pageSize={100}
+          maxHeight="40rem"
+        />
+      ) : (
+        <DataTable className="border">
+          {!table ? (
+            <div className="text-center text-gray-500 p-2">No data found</div>
+          ) : (
+            <>
+              <TableHeader>
+                <TableRow>
+                  {table.schema.fields.map((field) => (
+                    <TableHead
+                      className="text-gray-500 border"
+                      key={field.name}
+                    >
+                      {field.name}
+                    </TableHead>
+                  ))}
                 </TableRow>
-              ))}
-            </TableBody>
-          </>
-        )}
-      </DataTable>
+              </TableHeader>
+              <TableBody>
+                {table.toArray().map((row, idx) => (
+                  <TableRow key={idx} className="border">
+                    {table.schema.fields.map((field) => {
+                      const fieldType = getArrowFieldType(
+                        field.name,
+                        table.schema,
+                      );
+                      const value = row[field.name];
+                      const formattedValue = fieldType
+                        ? getArrowValueWithType(value, fieldType)
+                        : value;
+                      return (
+                        <TableCell className="border" key={field.name}>
+                          {String(formattedValue)}
+                        </TableCell>
+                      );
+                    })}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </>
+          )}
+        </DataTable>
+      )}
     </div>
   );
 };

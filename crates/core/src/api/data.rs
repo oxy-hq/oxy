@@ -4,6 +4,8 @@ use crate::adapters::{
     session_filters::SessionFilters,
 };
 use crate::api::middlewares::project::{ProjectManagerExtractor, ProjectPath};
+use crate::api::result_files::store_result_file;
+use crate::api::semantic::{ResultFormat, SemanticQueryResponse};
 use crate::config::model::ConnectionOverrides;
 use crate::errors::OxyError;
 use crate::execute::types::utils::record_batches_to_2d_array;
@@ -25,6 +27,9 @@ pub struct SQLParams {
     #[serde(default)]
     #[schema(value_type = Object)]
     pub connections: Option<ConnectionOverrides>,
+
+    #[serde(default)]
+    pub result_format: Option<ResultFormat>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -39,7 +44,7 @@ pub async fn execute_sql(
         project_id: _project_id,
     }): Path<ProjectPath>,
     extract::Json(payload): extract::Json<SQLParams>,
-) -> Result<extract::Json<Vec<Vec<String>>>, StatusCode> {
+) -> Result<extract::Json<SemanticQueryResponse>, StatusCode> {
     let config_manager = project_manager.config_manager.clone();
     let secrets_manager = project_manager.secrets_manager.clone();
     let connector = Connector::from_database(
@@ -53,12 +58,31 @@ pub async fn execute_sql(
     .await?;
     let file_path = connector.run_query(&payload.sql).await?;
 
-    let (batches, schema) =
-        load_result(&file_path).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let result_format = payload
+        .result_format
+        .as_ref()
+        .unwrap_or(&ResultFormat::Json);
 
-    let data = record_batches_to_2d_array(&batches, &schema)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    Ok(extract::Json(data))
+    match result_format {
+        ResultFormat::Parquet => {
+            let file_name = store_result_file(&project_manager, &file_path)
+                .await
+                .map_err(|e| {
+                    tracing::error!("{}", e);
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?;
+
+            Ok(extract::Json(SemanticQueryResponse::Parquet { file_name }))
+        }
+        ResultFormat::Json => {
+            let (batches, schema) =
+                load_result(&file_path).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+            let data = record_batches_to_2d_array(&batches, &schema)
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+            Ok(extract::Json(SemanticQueryResponse::Json(data)))
+        }
+    }
 }
 
 // TODO: may want to rename this and the `reindex()` function below as we're doing more

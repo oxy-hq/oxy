@@ -10,13 +10,38 @@ import {
 import { Button } from "../ui/shadcn/button";
 import Papa from "papaparse";
 import { Table as TableIcon } from "lucide-react";
+import { VirtualizedTable } from "../ui/VirtualizedTable";
 
 type ResultTableProps = {
-  result: string[][];
+  result?: string[][];
+  resultFile?: string;
   isTruncated: boolean;
 };
 
-export const QueryResultTable = ({ result, isTruncated }: ResultTableProps) => {
+export const QueryResultTable = ({ result, resultFile, isTruncated }: ResultTableProps) => {
+  // If we have a result file, use the virtualized table
+  if (resultFile) {
+    return (
+      <div className="flex flex-col gap-4">
+        <VirtualizedTable filePath={resultFile} pageSize={100} maxHeight="32rem" />
+        {isTruncated && (
+          <p className="text-sm text-muted-foreground text-center">
+            Large result set loaded via Arrow format
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  // Fallback to array-based rendering for backward compatibility
+  if (!result || result.length === 0) {
+    return (
+      <div className="p-4 text-muted-foreground text-center">
+        No results to display
+      </div>
+    );
+  }
+
   const handleDownloadCsv = () => {
     const csvContent = Papa.unparse(result, {
       delimiter: ",",

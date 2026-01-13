@@ -11,6 +11,7 @@ use crate::api::healthcheck;
 use crate::api::middlewares::project::project_middleware;
 use crate::api::middlewares::timeout::timeout_middleware;
 use crate::api::project;
+use crate::api::result_files;
 use crate::api::run;
 use crate::api::secrets;
 use crate::api::semantic;
@@ -162,6 +163,14 @@ fn build_project_routes() -> Router<AppState> {
         .route(
             "/semantic/view/{view_name}",
             get(semantic::get_view_details),
+        )
+        .route(
+            "/results/files/{file_id}",
+            get(result_files::get_result_file),
+        )
+        .route(
+            "/results/files/{file_id}",
+            delete(result_files::delete_result_file),
         )
 }
 

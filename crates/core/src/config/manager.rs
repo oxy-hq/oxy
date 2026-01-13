@@ -208,6 +208,10 @@ impl ConfigManager {
         self.storage.get_charts_dir().await
     }
 
+    pub async fn get_results_dir(&self) -> Result<PathBuf, OxyError> {
+        self.storage.get_results_dir().await
+    }
+
     /// Gets the project path from the configuration
     pub fn project_path(&self) -> &std::path::Path {
         &self.config.project_path

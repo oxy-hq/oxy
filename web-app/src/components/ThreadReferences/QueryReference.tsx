@@ -117,6 +117,7 @@ export const QueryReference = ({ reference, prompt }: QueryReferenceProps) => {
               </div>
               <QueryResultTable
                 result={metadata.result}
+                resultFile={metadata.result_file}
                 isTruncated={metadata.is_result_truncated}
               />
             </div>

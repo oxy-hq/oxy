@@ -40,6 +40,9 @@ system_instructions: |
   ## Retrieval:
   {{ tools.retrieval }}
 
+  #  dimensions:
+  {{dimensions.executions_non_creator}}
+
   ### Begin
 
 tools:

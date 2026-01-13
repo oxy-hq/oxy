@@ -10,7 +10,8 @@ export type SqlArtifact = {
     value: {
       database: string;
       sql_query: string;
-      result: string[][];
+      result?: string[][];
+      result_file?: string;
       is_result_truncated: boolean;
     };
   };
@@ -29,7 +30,8 @@ export type SemanticQueryArtifact = {
       sql_generation_error?: string;
       database: string;
       sql_query: string;
-      result: string[][];
+      result?: string[][];
+      result_file?: string;
       is_result_truncated: boolean;
       topic: string;
       dimensions: string[];
@@ -59,7 +61,8 @@ export type OmniQueryArtifact = {
     value: {
       database: string;
       sql: string;
-      result: string[][];
+      result?: string[][];
+      result_file?: string;
       is_result_truncated: boolean;
       fields: string[];
       limit?: number;

@@ -67,7 +67,8 @@ export interface ExecuteSQLArtifactValue {
   value: {
     database: string;
     sql_query: string;
-    result: string[][];
+    result?: string[][];
+    result_file?: string;
     is_result_truncated: boolean;
   };
 }
@@ -77,7 +78,8 @@ export interface SemanticQueryArtifactValue {
   value: {
     database: string;
     sql_query: string;
-    result: string[][];
+    result?: string[][];
+    result_file?: string;
     is_result_truncated: boolean;
     topic: string;
     dimensions: string[];
@@ -154,7 +156,8 @@ export type SqlQueryReference = {
   type: ReferenceType.SQLQuery;
   database: string;
   sql_query: string;
-  result: string[][];
+  result?: string[][];
+  result_file?: string;
   is_result_truncated: boolean;
 };
 

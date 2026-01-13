@@ -1,11 +1,12 @@
 import Results from "../../../Sql/Results";
 
 interface ResultsViewProps {
-  result: string[][];
+  result?: string[][];
+  resultFile?: string;
   executionError: string | null;
 }
 
-const ResultsView = ({ result, executionError }: ResultsViewProps) => {
+const ResultsView = ({ result, resultFile, executionError }: ResultsViewProps) => {
   if (executionError) {
     return (
       <div className="h-full overflow-auto customScrollbar p-4">
@@ -18,7 +19,7 @@ const ResultsView = ({ result, executionError }: ResultsViewProps) => {
 
   return (
     <div className="h-full min-h-0">
-      <Results result={result} />
+      <Results result={result} resultFile={resultFile} />
     </div>
   );
 };

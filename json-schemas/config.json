@@ -749,6 +749,13 @@
             "api_key_var": {
               "type": "string"
             },
+            "arrow_threshold_rows": {
+              "description": "Row count threshold for switching to Arrow format (file path response) If query result exceeds this threshold, return file_path instead of row arrays Default: 1000 rows",
+              "default": 1000,
+              "type": "integer",
+              "format": "uint",
+              "minimum": 0.0
+            },
             "base_url": {
               "type": "string"
             },

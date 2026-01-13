@@ -70,3 +70,71 @@ export const getDuckDB = async () => {
   }
   return duckDB;
 };
+
+/**
+ * Register a Parquet file from the API endpoint with authentication
+ * @param filePath - The file path to register (e.g., result file path from API)
+ * @param projectId - The project ID for authentication
+ * @param branchName - The branch name for the request
+ * @returns The registered table name in DuckDB
+ */
+export const registerAuthenticatedParquetFile = async (
+  filePath: string,
+  projectId: string,
+  branchName: string,
+): Promise<string> => {
+  const db = await getDuckDB();
+
+  // Base64 encode the file path to create a valid table name
+  const tableName = btoa(filePath).replace(/[^a-zA-Z0-9]/g, "_");
+
+  // Fetch the Parquet file from the API
+  const { apiClient } = await import("@/services/api/axios");
+
+  const response = await apiClient.get(
+    `/${projectId}/results/files/${filePath}`,
+    {
+      responseType: "arraybuffer",
+      params: { branch: branchName },
+    },
+  );
+
+  const fileData = new Uint8Array(response.data);
+
+  const conn = await db.connect();
+
+  // Drop table if it exists to ensure fresh data
+  try {
+    await conn.query(`DROP TABLE IF EXISTS "${tableName}"`);
+    console.log(`Dropped existing table "${tableName}" if it existed`);
+  } catch (e) {
+    console.warn("Error dropping table:", e);
+  }
+
+  // Insert Parquet data directly into DuckDB
+  try {
+    // Register the Parquet data as a file in DuckDB's virtual filesystem
+    await db.registerFileBuffer(`${tableName}.parquet`, fileData);
+
+    // Create a table from the Parquet file
+    await conn.query(
+      `CREATE TABLE "${tableName}" AS SELECT * FROM parquet_scan('${tableName}.parquet')`,
+    );
+
+    // Verify the table was created
+    const verifyResult = await conn.query(
+      `SELECT COUNT(*) as cnt FROM "${tableName}"`,
+    );
+    const count = verifyResult.toArray()[0].cnt;
+    console.log(
+      `Successfully loaded Parquet data into table "${tableName}" with ${count} rows`,
+    );
+  } catch (e) {
+    console.error("Error loading Parquet data:", e);
+    await conn.close();
+    throw e;
+  }
+
+  await conn.close();
+  return tableName;
+};

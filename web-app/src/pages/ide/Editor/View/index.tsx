@@ -21,6 +21,8 @@ const ViewPreview = () => {
   const {
     result,
     setResult,
+    resultFile,
+    setResultFile,
     selectedDimensions,
     selectedMeasures,
     filters,
@@ -112,11 +114,21 @@ const ViewPreview = () => {
 
     executeSemanticQuery(request, {
       onSuccess: (data) => {
-        setResult(data);
+        // Handle untagged union response
+        if (Array.isArray(data)) {
+          // JSON format - data is string[][]
+          setResult(data);
+          setResultFile(undefined);
+        } else if (typeof data === "object" && "file_name" in data) {
+          // Arrow format - data is { file_name: string }
+          setResultFile((data as { file_name: string }).file_name);
+          setResult([]);
+        }
         setExecutionError(null);
       },
       onError: (error) => {
         setResult([]);
+        setResultFile(undefined);
         setExecutionError(error.message);
       },
     });
@@ -208,6 +220,7 @@ const ViewPreview = () => {
         {/* Right Side - Results and SQL */}
         <SemanticQueryPanel
           result={result}
+          resultFile={resultFile}
           showSql={showSql}
           setShowSql={setShowSql}
           generatedSql={generatedSql}

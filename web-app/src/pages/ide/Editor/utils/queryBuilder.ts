@@ -73,5 +73,6 @@ export function buildSemanticQuery({
       orders: processedOrders,
       variables: processedVariables,
     },
+    result_format: "parquet",
   };
 }

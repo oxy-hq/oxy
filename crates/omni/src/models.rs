@@ -361,6 +361,7 @@ pub struct QueryResponse {
 
     // Result data (base64 encoded Apache Arrow or specified format)
     pub result: Option<String>,
+    pub file_path: Option<String>,
     pub stream_stats: Option<std::collections::HashMap<String, serde_json::Value>>,
 
     // Timeout handling
@@ -1018,6 +1019,7 @@ impl QueryResponse {
             cache_metadata: None,
             query: None,
             result: None,
+            file_path: None,
             stream_stats: None,
             remaining_job_ids: None,
             timed_out: None,

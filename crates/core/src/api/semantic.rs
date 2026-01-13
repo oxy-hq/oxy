@@ -1,5 +1,6 @@
 use crate::adapters::{connector::load_result, session_filters::SessionFilters};
 use crate::api::middlewares::project::{ProjectManagerExtractor, ProjectPath};
+use crate::api::result_files::store_result_file;
 use crate::config::model::{ConnectionOverrides, SemanticQueryTask};
 use crate::execute::{
     Executable, ExecutionContext,
@@ -20,6 +21,19 @@ use tokio::sync::mpsc;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
+#[derive(Serialize, Deserialize, Clone, Debug, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum ResultFormat {
+    Parquet,
+    Json,
+}
+
+impl Default for ResultFormat {
+    fn default() -> Self {
+        ResultFormat::Json
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, ToSchema)]
 pub struct SemanticQueryRequest {
     #[serde(flatten)]
@@ -31,6 +45,16 @@ pub struct SemanticQueryRequest {
     #[serde(default)]
     #[schema(value_type = Object)]
     pub connections: Option<ConnectionOverrides>,
+
+    #[serde(default)]
+    pub result_format: Option<ResultFormat>,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(untagged)]
+pub enum SemanticQueryResponse {
+    Json(Vec<Vec<String>>),
+    Parquet { file_name: String },
 }
 
 #[derive(Serialize, ToSchema)]
@@ -44,7 +68,7 @@ pub async fn execute_semantic_query(
         project_id: _project_id,
     }): Path<ProjectPath>,
     extract::Json(payload): extract::Json<SemanticQueryRequest>,
-) -> Result<extract::Json<Vec<Vec<String>>>, (StatusCode, extract::Json<ErrorResponse>)> {
+) -> Result<extract::Json<SemanticQueryResponse>, (StatusCode, extract::Json<ErrorResponse>)> {
     // Create a dummy execution context
     let (tx, _rx) = mpsc::channel(100);
     let renderer = Renderer::new(minijinja::Value::default());
@@ -113,26 +137,47 @@ pub async fn execute_semantic_query(
 
     match output {
         Output::Table(table) => {
-            let (batches, schema) = load_result(&table.file_path).map_err(|e| {
-                tracing::error!("Failed to load result: {}", e);
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    extract::Json(ErrorResponse {
-                        message: e.to_string(),
-                    }),
-                )
-            })?;
+            let result_format = payload
+                .result_format
+                .as_ref()
+                .unwrap_or(&ResultFormat::Json);
 
-            let data = record_batches_to_2d_array(&batches, &schema).map_err(|e| {
-                tracing::error!("Failed to convert batches to 2d array: {}", e);
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    extract::Json(ErrorResponse {
-                        message: e.to_string(),
-                    }),
-                )
-            })?;
-            Ok(extract::Json(data))
+            match result_format {
+                ResultFormat::Parquet => {
+                    let file_name = store_result_file(&project_manager, &table.file_path)
+                        .await
+                        .map_err(|e| {
+                            (
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                extract::Json(ErrorResponse { message: e }),
+                            )
+                        })?;
+
+                    Ok(extract::Json(SemanticQueryResponse::Parquet { file_name }))
+                }
+                ResultFormat::Json => {
+                    let (batches, schema) = load_result(&table.file_path).map_err(|e| {
+                        tracing::error!("Failed to load result: {}", e);
+                        (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            extract::Json(ErrorResponse {
+                                message: e.to_string(),
+                            }),
+                        )
+                    })?;
+
+                    let data = record_batches_to_2d_array(&batches, &schema).map_err(|e| {
+                        tracing::error!("Failed to convert batches to 2d array: {}", e);
+                        (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            extract::Json(ErrorResponse {
+                                message: e.to_string(),
+                            }),
+                        )
+                    })?;
+                    Ok(extract::Json(SemanticQueryResponse::Json(data)))
+                }
+            }
         }
         _ => {
             tracing::error!("Semantic query execution returned unexpected output type");

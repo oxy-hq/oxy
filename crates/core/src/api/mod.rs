@@ -12,6 +12,7 @@ pub mod healthcheck;
 pub mod message;
 pub mod middlewares;
 pub mod project;
+pub mod result_files;
 pub mod router;
 pub mod run;
 pub mod secrets;
