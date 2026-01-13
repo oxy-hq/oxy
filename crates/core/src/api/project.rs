@@ -406,15 +406,16 @@ pub async fn get_project_status(
 ) -> Result<axum::response::Json<ProjectStatus>, StatusCode> {
     let project_path = project_manager.config_manager.project_path();
 
-    let (is_config_valid, required_secrets, error) =
-        match ProjectBuilder::new().with_project_path(&project_path).await {
-            Ok(builder) => {
-                if !app_state.cloud {
-                    (true, Some(Vec::new()), None)
-                } else {
-                    let secrets_manager = match SecretsManager::from_database(
-                        SecretManagerService::new(project_id),
-                    ) {
+    let (is_config_valid, required_secrets, error) = match ProjectBuilder::new(project_id.clone())
+        .with_project_path(&project_path)
+        .await
+    {
+        Ok(builder) => {
+            if !app_state.cloud {
+                (true, Some(Vec::new()), None)
+            } else {
+                let secrets_manager =
+                    match SecretsManager::from_database(SecretManagerService::new(project_id)) {
                         Ok(sm) => sm,
                         Err(e) => {
                             error!("Failed to create secrets manager: {}", e);
@@ -422,29 +423,29 @@ pub async fn get_project_status(
                         }
                     };
 
-                    match builder.with_secrets_manager(secrets_manager).build().await {
-                        Ok(config) => {
-                            let secrets = match config.get_required_secrets().await {
-                                Ok(secrets) => secrets,
-                                Err(e) => {
-                                    error!("Failed to get required secrets: {}", e);
-                                    None
-                                }
-                            };
-                            (true, secrets, None)
-                        }
-                        Err(e) => {
-                            error!("Failed to build config: {}", e);
-                            (false, None, Some(e.to_string()))
-                        }
+                match builder.with_secrets_manager(secrets_manager).build().await {
+                    Ok(config) => {
+                        let secrets = match config.get_required_secrets().await {
+                            Ok(secrets) => secrets,
+                            Err(e) => {
+                                error!("Failed to get required secrets: {}", e);
+                                None
+                            }
+                        };
+                        (true, secrets, None)
+                    }
+                    Err(e) => {
+                        error!("Failed to build config: {}", e);
+                        (false, None, Some(e.to_string()))
                     }
                 }
             }
-            Err(e) => {
-                error!("Failed to create project builder: {}", e);
-                (false, None, Some(e.to_string()))
-            }
-        };
+        }
+        Err(e) => {
+            error!("Failed to create project builder: {}", e);
+            (false, None, Some(e.to_string()))
+        }
+    };
 
     let status = ProjectStatus {
         required_secrets,

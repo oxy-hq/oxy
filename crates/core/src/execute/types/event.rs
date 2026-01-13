@@ -10,6 +10,29 @@ use crate::execute::types::{Usage, VizParams};
 
 use super::{Chunk, ProgressType, ReferenceKind};
 
+/// Represents the type of sandbox application
+#[derive(Debug, Serialize, Deserialize, Clone, ToSchema, PartialEq, Eq)]
+#[serde(tag = "type", content = "metadata")]
+pub enum SandboxAppKind {
+    V0 { chat_id: String },
+}
+
+impl std::fmt::Display for SandboxAppKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SandboxAppKind::V0 { .. } => write!(f, "v0"),
+        }
+    }
+}
+
+/// Contains sandbox reference information
+#[derive(Debug, Serialize, Deserialize, Clone, ToSchema, PartialEq, Eq)]
+pub struct SandboxInfo {
+    #[serde(flatten)]
+    pub kind: SandboxAppKind,
+    pub preview_url: String,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
 pub struct DataApp {
     #[schema(schema_with = any_schema)]
@@ -32,6 +55,11 @@ pub enum ArtifactKind {
     SemanticQuery {},
     #[serde(rename = "omni_query")]
     OmniQuery { topic: String, integration: String },
+    #[serde(rename = "sandbox_app")]
+    SandboxApp {
+        #[serde(flatten)]
+        kind: SandboxAppKind,
+    },
 }
 
 impl std::fmt::Display for ArtifactKind {
@@ -50,6 +78,9 @@ impl std::fmt::Display for ArtifactKind {
             }
             ArtifactKind::OmniQuery { .. } => {
                 write!(f, "omni_query")
+            }
+            ArtifactKind::SandboxApp { .. } => {
+                write!(f, "sandbox_app")
             }
         }
     }
@@ -118,6 +149,11 @@ pub enum EventKind {
     },
     DataAppCreated {
         data_app: DataApp,
+    },
+    SandboxAppCreated {
+        #[serde(flatten)]
+        kind: SandboxAppKind,
+        preview_url: String,
     },
     Finished {
         attributes: HashMap<String, String>,

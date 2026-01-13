@@ -147,6 +147,7 @@ pub async fn run_sql_file_tool(
                 database: input.database.clone().unwrap_or_default(),
                 dry_run_limit: None,
                 name: None,
+                persist: false,
             },
         )
         .await;

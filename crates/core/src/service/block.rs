@@ -192,6 +192,9 @@ impl Handler for BlockHandler {
                             is_result_truncated,
                         },
                         ContentType::DataApp(data_app) => BlockKind::DataApp(data_app),
+                        ContentType::SandboxApp { kind, preview_url } => {
+                            BlockKind::SandboxApp { kind, preview_url }
+                        }
                         ContentType::Viz(viz) => BlockKind::Viz(viz),
                     },
                 );
@@ -213,6 +216,9 @@ impl Handler for BlockHandler {
                             is_result_truncated,
                         },
                         ContentType::DataApp(data_app) => BlockKind::DataApp(data_app),
+                        ContentType::SandboxApp { kind, preview_url } => {
+                            BlockKind::SandboxApp { kind, preview_url }
+                        }
                         ContentType::Viz(viz) => BlockKind::Viz(viz),
                     },
                 );

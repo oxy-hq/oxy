@@ -556,6 +556,7 @@ async fn migrate_threads(
                 user_id: Set(record.user_id),
                 project_id: Set(record.project_id),
                 is_processing: Set(record.is_processing),
+                sandbox_info: Set(None),
             };
             threads::Entity::insert(active_model)
                 .exec(postgres)

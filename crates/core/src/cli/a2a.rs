@@ -30,6 +30,7 @@ use std::time::{Duration, SystemTime};
 use tokio::signal;
 use tower_http::{compression::CompressionLayer, timeout::TimeoutLayer, trace::TraceLayer};
 use tracing::{error, info};
+use uuid::Uuid;
 
 /// Start the A2A protocol server
 ///
@@ -58,7 +59,7 @@ pub async fn start_a2a_server(args: A2aArgs) -> Result<(), OxyError> {
 
     // Build project manager (which includes config manager)
     let project_manager = Arc::new(
-        ProjectBuilder::new()
+        ProjectBuilder::new(Uuid::nil())
             .with_project_path(&project_path)
             .await?
             .with_secrets_manager(crate::adapters::secrets::SecretsManager::from_environment()?)

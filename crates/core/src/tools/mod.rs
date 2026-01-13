@@ -6,6 +6,7 @@ mod retrieval;
 mod sql;
 mod tool;
 pub mod types;
+pub mod v0;
 pub mod visualize;
 mod workflow;
 

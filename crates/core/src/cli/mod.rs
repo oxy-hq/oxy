@@ -695,7 +695,7 @@ async fn handle_workflow_file(
     retry_from: Option<String>,
 ) -> Result<(), OxyError> {
     let project_path = resolve_local_project_path()?;
-    let project = ProjectBuilder::new()
+    let project = ProjectBuilder::new(Uuid::nil())
         .with_project_path(&project_path)
         .await?
         .with_runs_manager(RunsManager::default(Uuid::nil(), Uuid::nil()).await?)
@@ -1129,7 +1129,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
 
         Some(SubCommand::Ask(ask_args)) => {
             let project_path = resolve_local_project_path()?;
-            let project = ProjectBuilder::new()
+            let project = ProjectBuilder::new(Uuid::nil())
                 .with_project_path(&project_path)
                 .await?
                 .with_runs_manager(RunsManager::default(Uuid::nil(), Uuid::nil()).await?)
@@ -1147,6 +1147,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                 None,
                 None, // No globals from CLI
                 None, // No variables from CLI (yet)
+                None,
             )
             .await?;
         }
@@ -1182,7 +1183,7 @@ async fn handle_omni_sync() -> Result<(), OxyError> {
     // Load configuration to get Omni integration settings
     let project_path = resolve_local_project_path()?;
 
-    let project = ProjectBuilder::new()
+    let project = ProjectBuilder::new(Uuid::nil())
         .with_project_path(&project_path)
         .await?
         .with_runs_manager(RunsManager::default(Uuid::nil(), Uuid::nil()).await?)
@@ -1335,7 +1336,7 @@ async fn handle_agent_file(file_path: &PathBuf, question: Option<String>) -> Res
     })?;
     let project_path = resolve_local_project_path()?;
 
-    let project_manager = ProjectBuilder::new()
+    let project_manager = ProjectBuilder::new(Uuid::nil())
         .with_project_path(&project_path)
         .await?
         .with_runs_manager(RunsManager::default(Uuid::nil(), Uuid::nil()).await?)
@@ -1353,6 +1354,7 @@ async fn handle_agent_file(file_path: &PathBuf, question: Option<String>) -> Res
         None,
         None, // No globals from CLI
         None, // No variables from CLI (yet)
+        None,
     )
     .await?;
     Ok(())
@@ -1373,7 +1375,7 @@ async fn handle_agentic_workflow_file(
     })?;
     let project_path = resolve_local_project_path()?;
 
-    let project_manager = ProjectBuilder::new()
+    let project_manager = ProjectBuilder::new(Uuid::nil())
         .with_project_path(&project_path)
         .await?
         .with_runs_manager(RunsManager::default(Uuid::nil(), Uuid::nil()).await?)
@@ -1540,7 +1542,7 @@ pub async fn handle_test_command(test_args: TestArgs) -> Result<(), OxyError> {
 
     let project_path = resolve_local_project_path()?;
 
-    let project_manager = ProjectBuilder::new()
+    let project_manager = ProjectBuilder::new(Uuid::nil())
         .with_project_path(&project_path)
         .await?
         .with_runs_manager(RunsManager::default(Uuid::nil(), Uuid::nil()).await?)

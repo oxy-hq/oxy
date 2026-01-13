@@ -29,7 +29,7 @@ use axum::{
 };
 use base64::{Engine, prelude::BASE64_STANDARD};
 use futures::Stream;
-use sea_orm::{ActiveModelTrait, ActiveValue};
+use sea_orm::{ActiveModelTrait, ActiveValue, IntoActiveModel};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 use utoipa::ToSchema;
@@ -256,6 +256,10 @@ pub struct AskAgentRequest {
     #[serde(default)]
     #[schema(value_type = Object)]
     pub variables: Option<std::collections::HashMap<String, serde_json::Value>>,
+
+    #[serde(default)]
+    #[schema(value_type = Object)]
+    pub sandbox_info: Option<crate::execute::types::event::SandboxInfo>,
 }
 
 /// Ask a question to an agent and stream the response
@@ -348,6 +352,7 @@ pub async fn ask_agent_preview(
             connections,
             globals,
             variables,
+            payload.sandbox_info,
         )
         .await;
 
@@ -355,7 +360,7 @@ pub async fn ask_agent_preview(
             tracing::error!("Error running agent: {}", err);
 
             let error_message = match block_handler_reader.into_active_models().await {
-                Ok((answer_message, _artifacts)) => {
+                Ok((answer_message, _artifacts, _sandbox_info)) => {
                     let existing_content = match &answer_message.content {
                         ActiveValue::Set(val) => val.clone(),
                         _ => String::new(),
@@ -532,6 +537,7 @@ pub async fn ask_agent_sync(
             connections,
             globals,
             variables,
+            None,
         )
         .await;
 
@@ -539,7 +545,7 @@ pub async fn ask_agent_sync(
             tracing::error!("Error running agent: {}", err);
 
             let error_message = match block_handler_reader.into_active_models().await {
-                Ok((answer_message, _artifacts)) => {
+                Ok((answer_message, _artifacts, _sandbox_info)) => {
                     let existing_content = match &answer_message.content {
                         ActiveValue::Set(val) => val.clone(),
                         _ => String::new(),
@@ -718,12 +724,31 @@ impl ChatHandler for AgentExecutor {
             context.connections.clone(),
             context.globals.clone(),
             None, // TODO: Support variables from thread context
+            context.sandbox_info()?,
         )
         .await;
 
         match result {
             Ok(_output_container) => {
-                let (answer_message, artifacts) = block_handler_reader.into_active_models().await?;
+                let (answer_message, artifacts, sandbox_info) =
+                    block_handler_reader.into_active_models().await?;
+
+                if let Some(sandbox_info) = sandbox_info {
+                    tracing::info!(
+                        "Setting sandbox info for thread {}: {:?}",
+                        thread.id,
+                        sandbox_info
+                    );
+                    // set thread sandbox info
+                    let mut thread = context.thread.clone().into_active_model();
+                    let sandbox_info_json = serde_json::to_value(sandbox_info).map_err(|e| {
+                        OxyError::RuntimeError(format!("Failed to serialize sandbox info: {e}"))
+                    })?;
+                    thread.sandbox_info = ActiveValue::Set(Some(sandbox_info_json));
+                    thread.update(connection).await.map_err(|e| {
+                        OxyError::DBError(format!("Failed to update sandbox info: {e}"))
+                    })?;
+                }
 
                 let content = answer_message.content.clone().take().unwrap_or_default();
                 let input_tokens = answer_message

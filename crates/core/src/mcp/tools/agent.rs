@@ -159,6 +159,7 @@ pub async fn run_agent_tool(
                 connections,
                 None, // No globals
                 Some(merged_variables),
+                None,
             )
             .await
             .map_err(|e| {

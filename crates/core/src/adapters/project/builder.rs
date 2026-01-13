@@ -7,6 +7,7 @@ use crate::{
 };
 
 pub struct ProjectBuilder {
+    project_id: Option<uuid::Uuid>,
     config_manager: Option<ConfigManager>,
     secrets_manager: Option<SecretsManager>,
     runs_manager: Option<RunsManager>,
@@ -14,13 +15,19 @@ pub struct ProjectBuilder {
 
 impl Default for ProjectBuilder {
     fn default() -> Self {
-        Self::new()
+        Self {
+            project_id: None,
+            config_manager: None,
+            secrets_manager: None,
+            runs_manager: None,
+        }
     }
 }
 
 impl ProjectBuilder {
-    pub fn new() -> Self {
+    pub fn new(project_id: uuid::Uuid) -> Self {
         Self {
+            project_id: Some(project_id),
             config_manager: None,
             secrets_manager: None,
             runs_manager: None,
@@ -71,7 +78,13 @@ impl ProjectBuilder {
         let secret_manager = self
             .secrets_manager
             .unwrap_or(SecretsManager::from_environment().unwrap());
+
+        let project_id = self
+            .project_id
+            .ok_or(OxyError::RuntimeError("Project ID is required".to_string()))?;
+
         Ok(ProjectManager::new(
+            project_id,
             config_manager,
             secret_manager,
             self.runs_manager,

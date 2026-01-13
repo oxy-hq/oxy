@@ -1039,6 +1039,47 @@
         {
           "type": "object",
           "required": [
+            "name",
+            "type"
+          ],
+          "properties": {
+            "description": {
+              "default": "Use this when user wants to build interactive UIs, dashboards, or data visualizations. The app will be deployed and can query Oxy tables via SDK. Make sure to persist the execute sql in order to use it with Oxy SDK.",
+              "type": "string"
+            },
+            "github_repo": {
+              "default": "https://github.com/oxy-hq/data-app-template",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "name": {
+              "type": "string"
+            },
+            "oxy_api_key_var": {
+              "default": "OXY_API_KEY",
+              "type": "string"
+            },
+            "system_instruction": {
+              "default": "\n# Oxy SDK Usage Instructions\n\nYou are building a data application using the @oxy-hq/sdk to query Parquet data files.\n\n## Installation\n\n```bash\nnpm install @oxy-hq/sdk @duckdb/duckdb-wasm\n```\n\n## Key SDK Methods\n\n### Load Data\n- `await sdk.loadAppData(appPath)` - Load all tables from an app (recommended)\n- `await sdk.loadFile(filePath, tableName)` - Load a single Parquet file\n- `await sdk.loadFiles([{filePath, tableName}, ...])` - Load multiple files\n\n### Query Data\n- `await sdk.query(sql)` - Execute SQL query (supports JOINs across multiple tables)\n- `await sdk.getAll(tableName, limit)` - Get all rows from a table\n- `await sdk.getSchema(tableName)` - Get table schema\n- `await sdk.count(tableName)` - Get row count\n\n## PostMessage Authentication (Iframe). Common Pattern: Load Once, Query Multiple Times\n\nFor iframe scenarios (like v0 preview), enable async mode:\n\n```tsx\n<OxyProvider\n  useAsync={true}\n>\n  <App />\n</OxyProvider>\n```\n\nThe SDK will automatically request authentication from the parent window.\n\n## Important Notes\n\n1. **Always check SDK availability**: Check `isLoading` and `sdk` before using\n2. **Load before query**: Always call `loadAppData()` or `loadFile()` before querying\n3. **Table names**: Use the keys from the data container as table names in SQL queries\n4. **SQL support**: Full SQL support including JOINs, WHERE, GROUP BY, ORDER BY, etc.\n5. **Cleanup**: OxyProvider handles cleanup automatically when unmounted\n\n## Complete Example\n\n```tsx\nimport { OxyProvider, useOxy, createConfig } from '@oxy-hq/sdk';\nimport { useEffect, useState } from 'react';\n\nexport default function App() {\n  return (\n    <OxyProvider useAsync>\n      <SalesDashboard />\n    </OxyProvider>\n  );\n}\n\nfunction SalesDashboard() {\n  const { sdk, isLoading, error } = useOxy();\n  const [metrics, setMetrics] = useState(null);\n  const [topProducts, setTopProducts] = useState(null);\n\n  useEffect(() => {\n    if (!sdk) return;\n\n    async function loadDashboard() {\n      // Load files or app data\n      await sdk.loadFiles([\n        { tableName: 'sales', filePath: 'data/sales.parquet' },\n        { tableName: 'customers', filePath: 'data/customers.parquet' },\n      ]);\n\n      // Query metrics\n      const metricsResult = await sdk.query(`\n        SELECT\n          COUNT(*) as total_sales,\n          SUM(amount) as total_revenue,\n          AVG(amount) as avg_sale\n        FROM sales\n      `);\n      setMetrics(metricsResult.rows[0]);\n\n      // Query top products\n      const productsResult = await sdk.query(`\n        SELECT\n          product,\n          COUNT(*) as sales_count,\n          SUM(amount) as revenue\n        FROM sales\n        GROUP BY product\n        ORDER BY revenue DESC\n        LIMIT 5\n      `);\n      setTopProducts(productsResult);\n    }\n\n    loadDashboard();\n  }, [sdk]);\n\n  if (isLoading) return <div>Loading...</div>;\n  if (error) return <div>Error: {error.message}</div>;\n  if (!metrics) return <div>Loading data...</div>;\n\n  return (\n    <div>\n      <h1>Sales Dashboard</h1>\n\n      <div className=\"grid grid-cols-3 gap-4\">\n        <div>Total Sales: {metrics[0]}</div>\n        <div>Revenue: ${metrics[1]}</div>\n        <div>Avg Sale: ${Number(metrics[2]).toFixed(2)}</div>\n      </div>\n\n      {topProducts && (\n        <table>\n          <thead>\n            <tr>\n              {topProducts.columns.map(col => <th key={col}>{col}</th>)}\n            </tr>\n          </thead>\n          <tbody>\n            {topProducts.rows.map((row, i) => (\n              <tr key={i}>\n                {row.map((cell, j) => <td key={j}>{String(cell)}</td>)}\n              </tr>\n            ))}\n          </tbody>\n        </table>\n      )}\n    </div>\n  );\n}\n```\n\nFor more examples and detailed documentation, visit: https://www.npmjs.com/package/@oxy-hq/sdk\n",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "create_v0_app"
+              ]
+            },
+            "v0_api_key_var": {
+              "default": "V0_API_KEY",
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
             "integration",
             "name",
             "topic",

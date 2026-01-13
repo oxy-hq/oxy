@@ -117,6 +117,7 @@ async fn execute_via_chat_service(
             chat_request.connections,
             chat_request.globals,
             None,
+            None,
         )
         .await
     };

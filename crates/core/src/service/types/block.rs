@@ -11,7 +11,7 @@ use crate::{
     config::model::Workflow,
     execute::types::{
         VizParams,
-        event::{ArtifactKind, DataApp, Step},
+        event::{ArtifactKind, DataApp, SandboxAppKind, Step},
     },
     service::types::task::TaskMetadata,
 };
@@ -35,6 +35,11 @@ pub enum BlockKind {
         is_result_truncated: bool,
     },
     DataApp(DataApp),
+    SandboxApp {
+        #[serde(flatten)]
+        kind: SandboxAppKind,
+        preview_url: String,
+    },
     Viz(VizParams),
     Group {
         group_id: String,

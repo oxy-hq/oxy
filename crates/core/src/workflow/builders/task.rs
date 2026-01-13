@@ -207,6 +207,7 @@ impl Executable<TaskInput> for TaskExecutable {
                                     a2a_task_id: None,
                                     a2a_thread_id: None,
                                     a2a_context_id: None,
+                                    sandbox_info: None,
                                 },
                             )
                             .await
@@ -228,6 +229,7 @@ impl Executable<TaskInput> for TaskExecutable {
                                     a2a_task_id: None,
                                     a2a_thread_id: None,
                                     a2a_context_id: None,
+                                    sandbox_info: None,
                                 },
                             )
                             .await

@@ -1,0 +1,27 @@
+# Source files
+src/
+examples/
+*.test.ts
+*.spec.ts
+
+# Build config
+tsconfig.json
+tsup.config.ts
+.eslintrc.json
+vitest.config.ts
+
+# Development
+node_modules/
+.git/
+.vscode/
+.idea/
+
+# Testing
+coverage/
+.nyc_output/
+
+# Misc
+*.log
+.DS_Store
+.env
+.env.local

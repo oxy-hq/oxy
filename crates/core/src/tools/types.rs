@@ -87,6 +87,7 @@ pub struct SQLInput {
     pub database: String,
     pub sql: String,
     pub dry_run_limit: Option<u64>,
+    pub persist: bool,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -94,6 +95,16 @@ pub struct AgentParams {
     #[schemars(description = "Chat with your prompt")]
     pub prompt: String,
     pub variables: Option<HashMap<String, serde_json::Value>>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct CreateV0AppParams {
+    #[schemars(description = "Use to set the app name when create the v0 app.")]
+    pub name: Option<String>,
+    #[schemars(
+        description = "Prompt to create or update the v0 app. Include tables when needed by include their file_path values (e.g., 'Use sales table at file_path: tables/0.parquet') so v0 can query them via Oxy SDK."
+    )]
+    pub prompt: String,
 }
 
 pub struct VisualizeInput {
@@ -113,6 +124,10 @@ pub struct CreateDataAppInput {
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct SQLParams {
     pub sql: String,
+    #[schemars(
+        description = "Enable when needed to build data apps or charts based on the query result."
+    )]
+    pub persist: bool,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]

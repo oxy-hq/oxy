@@ -99,9 +99,27 @@ export type WorkflowArtifact = {
   };
 };
 
+export type SandboxAppArtifact = {
+  id: string;
+  name: string;
+  kind: "sandbox_app";
+  is_streaming?: boolean;
+  content: {
+    type: "sandbox_info";
+    value: {
+      preview_url: string;
+      type: "v0";
+      metadata: {
+        chat_id: string;
+      };
+    };
+  };
+};
+
 export type Artifact =
   | SqlArtifact
   | SemanticQueryArtifact
   | OmniQueryArtifact
   | AgentArtifact
-  | WorkflowArtifact;
+  | WorkflowArtifact
+  | SandboxAppArtifact;

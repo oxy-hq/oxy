@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use secrecy::SecretString;
 use serde_json::Value;
 
 use super::{
@@ -7,9 +8,10 @@ use super::{
     retrieval::RetrievalExecutable,
     sql::{SQLExecutable, ValidateSQLExecutable},
     types::{
-        AgentParams, CreateDataAppInput, RetrievalInput, RetrievalParams, SQLInput, SQLParams,
-        ToolRawInput, VisualizeInput, WorkflowInput,
+        AgentParams, CreateDataAppInput, CreateV0AppParams, RetrievalInput, RetrievalParams,
+        SQLInput, SQLParams, ToolRawInput, VisualizeInput, WorkflowInput,
     },
+    v0::{CreateV0App, CreateV0AppInput},
 };
 use crate::{
     adapters::openai::OpenAIToolConfig,
@@ -81,11 +83,14 @@ impl Executable<(String, Option<ToolType>, ToolRawInput)> for ToolExecutable {
                 ToolType::ExecuteSQL(sql_config) => {
                     let (param, sql_query) = match sql_config.sql {
                         Some(ref sql) => (
-                            serde_json::to_string(&SQLParams { sql: sql.clone() })?,
+                            serde_json::to_string(&SQLParams {
+                                sql: sql.clone(),
+                                persist: false,
+                            })?,
                             sql.clone(),
                         ),
                         None => {
-                            let SQLParams { sql } =
+                            let SQLParams { sql, persist } =
                                 serde_json::from_str::<SQLParams>(&input.param)?;
                             (input.param.clone(), sql)
                         }
@@ -183,6 +188,19 @@ impl Executable<(String, Option<ToolType>, ToolRawInput)> for ToolExecutable {
                             param: input.param.clone(),
                             topic: omni_query_tool.topic.clone(),
                             integration: omni_query_tool.integration.clone(),
+                        },
+                    )
+                    .await
+                    .map(|output| output.into()),
+                ToolType::CreateV0App(create_v0_app_tool) => build_create_v0_app_executable()
+                    .execute(
+                        execution_context,
+                        CreateV0AppToolInput {
+                            param: input.param.clone(),
+                            system_instruction: create_v0_app_tool.system_instruction.clone(),
+                            github_repo: create_v0_app_tool.github_repo.clone(),
+                            oxy_api_key_var: create_v0_app_tool.oxy_api_key_var.clone(),
+                            v0_api_key_var: create_v0_app_tool.v0_api_key_var.clone(),
                         },
                     )
                     .await
@@ -311,6 +329,9 @@ struct SQLMapper;
 struct CreateDataAppMapper;
 
 #[derive(Clone)]
+struct CreateV0AppMapper;
+
+#[derive(Clone)]
 struct SemanticQueryMapper;
 
 #[derive(Clone)]
@@ -329,13 +350,14 @@ impl ParamMapper<SQLToolInput, SQLInput> for SQLMapper {
             database,
             dry_run_limit,
         } = input;
-        let SQLParams { sql } = serde_json::from_str::<SQLParams>(&param)?;
+        let SQLParams { sql, persist } = serde_json::from_str::<SQLParams>(&param)?;
         Ok((
             SQLInput {
                 sql,
                 database,
                 dry_run_limit,
                 name: None,
+                persist,
             },
             None,
         ))
@@ -353,6 +375,45 @@ impl ParamMapper<CreateDataAppToolInput, CreateDataAppInput> for CreateDataAppMa
         tracing::debug!("CreateDataAppToolInput param: {}", &param);
         let params = serde_json::from_str::<CreateDataAppParams>(&param)?;
         Ok((CreateDataAppInput { param: params }, None))
+    }
+}
+
+#[async_trait::async_trait]
+impl ParamMapper<CreateV0AppToolInput, CreateV0AppInput> for CreateV0AppMapper {
+    async fn map(
+        &self,
+        _execution_context: &ExecutionContext,
+        input: CreateV0AppToolInput,
+    ) -> Result<(CreateV0AppInput, Option<ExecutionContext>), OxyError> {
+        let CreateV0AppToolInput {
+            param,
+            github_repo,
+            system_instruction,
+            oxy_api_key_var,
+            v0_api_key_var,
+        } = input;
+        tracing::debug!("CreateV0AppToolInput param: {}", &param);
+        let params = serde_json::from_str::<CreateV0AppParams>(&param)?;
+        let oxy_api_key = std::env::var(&oxy_api_key_var)
+            .ok()
+            .map(|key| SecretString::from(key));
+        let v0_api_key = std::env::var(&v0_api_key_var).map_err(|e| {
+            OxyError::ArgumentError(format!(
+                "V0 API key not found in environment variable {}: {}",
+                v0_api_key_var, e
+            ))
+        })?;
+        Ok((
+            CreateV0AppInput {
+                name: params.name,
+                prompt: params.prompt,
+                system_instruction,
+                github_repo,
+                oxy_api_key,
+                v0_api_key: SecretString::from(v0_api_key),
+            },
+            None,
+        ))
     }
 }
 
@@ -463,6 +524,15 @@ struct CreateDataAppToolInput {
 }
 
 #[derive(Clone)]
+struct CreateV0AppToolInput {
+    param: String,
+    system_instruction: String,
+    github_repo: Option<String>,
+    oxy_api_key_var: String,
+    v0_api_key_var: String,
+}
+
+#[derive(Clone)]
 struct SemanticQueryToolInput {
     param: SemanticQueryParams,
     topic: Option<String>,
@@ -482,6 +552,12 @@ fn build_create_data_app_executable() -> impl Executable<CreateDataAppToolInput,
     ExecutableBuilder::new()
         .map(CreateDataAppMapper)
         .executable(CreateDataAppExecutable {})
+}
+
+fn build_create_v0_app_executable() -> impl Executable<CreateV0AppToolInput, Response = Output> {
+    ExecutableBuilder::new()
+        .map(CreateV0AppMapper)
+        .executable(CreateV0App)
 }
 
 #[derive(Clone)]
@@ -586,7 +662,7 @@ pub struct AgentMapper;
 impl ParamMapper<AgentToolInput, AgentInput> for AgentMapper {
     async fn map(
         &self,
-        _execution_context: &ExecutionContext,
+        execution_context: &ExecutionContext,
         input: AgentToolInput,
     ) -> Result<(AgentInput, Option<ExecutionContext>), OxyError> {
         let AgentToolInput {
@@ -594,6 +670,7 @@ impl ParamMapper<AgentToolInput, AgentInput> for AgentMapper {
             agent_config,
         } = input;
         let params = serde_json::from_str::<AgentParams>(&param)?;
+
         Ok((
             AgentInput {
                 agent_ref: agent_config.agent_ref.to_string(),
@@ -603,6 +680,7 @@ impl ParamMapper<AgentToolInput, AgentInput> for AgentMapper {
                 a2a_task_id: None,
                 a2a_thread_id: None,
                 a2a_context_id: None,
+                sandbox_info: execution_context.sandbox_info.clone(),
             },
             None,
         ))

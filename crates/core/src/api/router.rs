@@ -54,6 +54,7 @@ pub struct AppState {
 fn build_cors_layer() -> CorsLayer {
     CorsLayer::new()
         .allow_origin(Any)
+        .allow_private_network(true)
         .allow_methods(tower_http::cors::Any)
         .allow_headers(tower_http::cors::Any)
 }

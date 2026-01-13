@@ -73,6 +73,7 @@ impl EvalRecord {
                 a2a_task_id: agent_input.a2a_task_id.clone(),
                 a2a_thread_id: agent_input.a2a_thread_id.clone(),
                 a2a_context_id: agent_input.a2a_context_id.clone(),
+                sandbox_info: agent_input.sandbox_info.clone(),
             }),
         }
     }

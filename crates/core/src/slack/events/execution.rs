@@ -386,8 +386,8 @@ async fn execute_agent(
     project_id: Uuid,
     agent_path: &str,
 ) -> Result<(String, BlockHandlerReader), OxyError> {
-    let repo_path = resolve_project_path(project_id).await?;
-    let project_manager = ProjectBuilder::new()
+    let repo_path = resolve_project_path(project_id.clone()).await?;
+    let project_manager = ProjectBuilder::new(project_id)
         .with_project_path_and_fallback_config(&repo_path)
         .await?
         .build()
@@ -404,6 +404,7 @@ async fn execute_agent(
         question.to_string(),
         block_handler,
         memory,
+        None,
         None,
         None,
         None,
@@ -463,6 +464,7 @@ async fn create_oxy_thread(
         references: ActiveValue::Set("[]".to_string()),
         is_processing: ActiveValue::Set(true),
         project_id: ActiveValue::Set(project_id),
+        sandbox_info: ActiveValue::Set(None),
     };
 
     let thread = new_thread
@@ -513,7 +515,8 @@ async fn persist_agent_output_from_blocks(
 ) -> Result<(Uuid, String, usize), OxyError> {
     let conn = establish_connection().await?;
 
-    let (mut message_model, artifacts) = block_handler_reader.into_active_models().await?;
+    let (mut message_model, artifacts, _sandbox_info) =
+        block_handler_reader.into_active_models().await?;
     message_model.thread_id = ActiveValue::Set(thread_id);
     message_model.is_human = ActiveValue::Set(false);
 

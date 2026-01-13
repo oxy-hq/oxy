@@ -1,4 +1,5 @@
 packages:
   - web-app
+  - sdk/typescript
 ignoredBuiltDependencies:
   - '@tailwindcss/oxide'

@@ -98,11 +98,19 @@ export interface SemanticQueryArtifactValue {
   };
 }
 
+export interface SandboxAppArtifactValue {
+  type: "sandbox_info";
+  value: {
+    preview_url: string;
+  };
+}
+
 export type ArtifactValue =
   | WorkflowArtifactValue
   | AgentArtifactValue
   | ExecuteSQLArtifactValue
-  | SemanticQueryArtifactValue;
+  | SemanticQueryArtifactValue
+  | SandboxAppArtifactValue;
 
 export interface ArtifactValueContent {
   type: "artifact_value";
@@ -176,6 +184,7 @@ export type ThreadItem = {
   created_at: string;
   references: Reference[];
   is_processing: boolean;
+  sandbox_info?: Record<string, unknown>;
 };
 
 export type ThreadCreateRequest = {

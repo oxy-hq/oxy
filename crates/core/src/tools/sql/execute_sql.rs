@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, path::PathBuf};
 
 use crate::{
     adapters::connector::Connector,
@@ -46,7 +46,7 @@ impl Executable<SQLInput> for SQLExecutable {
             .await?;
         let config_manager = &execution_context.project.config_manager;
         let secrets_manager = &execution_context.project.secrets_manager;
-        let result: Result<Table, OxyError> = {
+        let mut result: Result<Table, OxyError> = {
             let connector = Connector::from_database(
                 &input.database,
                 config_manager,
@@ -68,8 +68,24 @@ impl Executable<SQLInput> for SQLExecutable {
             );
             Ok(table)
         };
-        match result.as_ref() {
+        match result.as_mut() {
             Ok(table) => {
+                if input.persist {
+                    let file_name = PathBuf::from(&table.name)
+                        .file_stem()
+                        .map(|s| s.to_string_lossy().to_string())
+                        .unwrap_or_else(|| table.name.to_string());
+                    let file_path = PathBuf::from("contexts")
+                        .join("tables")
+                        .join(format!("{}.parquet", file_name));
+                    let state_dir = execution_context
+                        .project
+                        .config_manager
+                        .resolve_state_dir()
+                        .await?;
+                    table.save_data(state_dir.join(&file_path))?;
+                    table.relative_path = Some(file_path.to_string_lossy().to_string());
+                }
                 execution_context
                     .write_chunk(Chunk {
                         key: None,

@@ -10,11 +10,13 @@ use crate::config::constants::{
 };
 use crate::errors::OxyError;
 use crate::execute::formatters::{FormatterResult, SourceHandler};
-use crate::execute::types::event::ArtifactKind;
+use crate::execute::types::event::{ArtifactKind, SandboxInfo};
 use crate::execute::types::{EventKind, Output, Source, Usage};
 use crate::service::formatters::logs_persister::LogsPersister;
 use crate::service::formatters::streaming_message_persister::StreamingMessagePersister;
-use crate::service::types::{AnswerStream, ArtifactValue, ContainerKind, ExecuteSQL, OmniQuery};
+use crate::service::types::{
+    AnswerStream, ArtifactValue, ContainerKind, Content, ExecuteSQL, OmniQuery,
+};
 use crate::workflow::loggers::types::LogItem;
 use tokio::sync::Mutex;
 use tokio::sync::mpsc::Sender;
@@ -59,6 +61,7 @@ impl BlockHandler {
             self.block_manager.get_blocks_clone(),
             self.artifact_tracker.get_artifacts_clone(),
             self.usage.clone(),
+            self.artifact_tracker.get_sandbox_info_clone(),
         )
     }
 
@@ -385,6 +388,10 @@ impl BlockHandler {
                                 .await?;
                         }
                     }
+                    ArtifactKind::SandboxApp { .. } => {
+                        // Sandbox apps don't have streaming content
+                        // The preview_url is known upfront when the artifact is created
+                    }
                 }
             }
         }
@@ -485,6 +492,36 @@ impl SourceHandler for BlockHandler {
                 }
             }
 
+            EventKind::SandboxAppCreated { preview_url, kind } => {
+                // Store the sandbox preview URL for later use in artifact creation
+                self.artifact_tracker
+                    .set_sandbox_info(kind.clone(), preview_url.clone())
+                    .await;
+                self.block_manager
+                    .add_content(
+                        source,
+                        Content::SandboxInfo(SandboxInfo {
+                            preview_url: preview_url.clone(),
+                            kind: kind.clone(),
+                        }),
+                    )
+                    .await?;
+                if let Some((artifact_id, artifact_kind)) =
+                    self.artifact_tracker.get_active_artifact()
+                    && let ArtifactKind::SandboxApp { .. } = artifact_kind
+                {
+                    self.stream_dispatcher
+                        .send_artifact_value(
+                            artifact_id,
+                            ArtifactValue::SandboxInfo(SandboxInfo {
+                                preview_url: preview_url.clone(),
+                                kind: kind.clone(),
+                            }),
+                            &source.kind,
+                        )
+                        .await?;
+                }
+            }
             _ => {}
         }
 

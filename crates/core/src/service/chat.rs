@@ -18,7 +18,7 @@ use crate::{
     config::model::ConnectionOverrides,
     db::client::establish_connection,
     errors::OxyError,
-    execute::types::Usage,
+    execute::types::{Usage, event::SandboxInfo},
     service::{
         agent::Message,
         formatters::{
@@ -76,6 +76,18 @@ impl ChatExecutionContext {
             connections: None,
             globals: None,
         }
+    }
+
+    pub fn sandbox_info(&self) -> Result<Option<SandboxInfo>, OxyError> {
+        let sandbox_info = self.thread.sandbox_info.as_ref().map(|json_value| {
+            serde_json::from_value::<SandboxInfo>(json_value.clone()).map_err(|e| {
+                OxyError::RuntimeError(format!(
+                    "Failed to deserialize sandbox_info for thread {}: {}",
+                    self.thread.id, e
+                ))
+            })
+        });
+        sandbox_info.transpose()
     }
 
     pub fn with_filters(mut self, filters: impl Into<Option<SessionFilters>>) -> Self {

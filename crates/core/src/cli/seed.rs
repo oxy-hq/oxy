@@ -219,6 +219,7 @@ pub async fn create_sample_threads_for_users() -> Result<(), OxyError> {
                         .parse::<Uuid>()
                         .unwrap(),
                 ),
+                sandbox_info: ActiveValue::Set(None),
             };
 
             let _thread = new_thread

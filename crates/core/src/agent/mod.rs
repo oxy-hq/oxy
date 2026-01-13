@@ -22,6 +22,8 @@ use minijinja::{Value, context};
 pub use references::AgentReferencesHandler;
 use types::AgentInput;
 
+use crate::execute::types::event::SandboxInfo;
+
 pub mod builders;
 mod contexts;
 mod databases;
@@ -49,6 +51,8 @@ pub struct AgentLauncher {
     a2a_thread_id: Option<String>,
     /// A2A context ID for grouping related tasks (optional, only used in A2A context)
     a2a_context_id: Option<String>,
+    /// Sandbox information from thread (e.g., v0 chat_id and preview_url)
+    sandbox_info: Option<SandboxInfo>,
 }
 
 impl AgentLauncher {
@@ -62,6 +66,7 @@ impl AgentLauncher {
             a2a_task_id: None,
             a2a_thread_id: None,
             a2a_context_id: None,
+            sandbox_info: None,
         }
     }
 
@@ -98,6 +103,12 @@ impl AgentLauncher {
     /// Set the A2A context ID for grouping related tasks (used in A2A execution context)
     pub fn with_a2a_context_id(mut self, context_id: impl Into<Option<String>>) -> Self {
         self.a2a_context_id = context_id.into();
+        self
+    }
+
+    /// Set the sandbox information from thread (e.g., v0 chat_id and preview_url)
+    pub fn with_sandbox_info(mut self, sandbox_info: impl Into<Option<SandboxInfo>>) -> Self {
+        self.sandbox_info = sandbox_info.into();
         self
     }
 
@@ -155,6 +166,7 @@ impl AgentLauncher {
 
     pub async fn with_project(mut self, project_manager: ProjectManager) -> Result<Self, OxyError> {
         let tx = self.buf_writer.create_writer(None)?;
+
         let mut execution_context = ExecutionContextBuilder::new()
             .with_project_manager(project_manager)
             .with_global_context(Value::UNDEFINED)
@@ -166,6 +178,7 @@ impl AgentLauncher {
             })
             .with_filters(self.filters.clone())
             .with_connections(self.connections.clone())
+            .with_sandbox_info(self.sandbox_info.clone())
             .build()?;
 
         let config_manager = execution_context.project.config_manager.clone();

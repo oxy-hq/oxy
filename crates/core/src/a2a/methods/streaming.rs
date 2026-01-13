@@ -210,6 +210,7 @@ pub async fn handle_send_streaming_message(
                 None,
                 None,
                 None,
+                None,
             )
             .await
         };

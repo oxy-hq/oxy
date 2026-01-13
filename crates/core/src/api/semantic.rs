@@ -85,6 +85,7 @@ pub async fn execute_semantic_query(
         checkpoint: None,
         filters: payload.session_filters,
         connections: payload.connections,
+        sandbox_info: None,
         user_id: None,
     };
 
@@ -220,6 +221,7 @@ pub async fn compile_semantic_query(
         checkpoint: None,
         filters: payload.session_filters,
         connections: payload.connections,
+        sandbox_info: None,
         user_id: None,
     };
 

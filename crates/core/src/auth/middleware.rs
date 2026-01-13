@@ -1,6 +1,6 @@
 use axum::{
     extract::State,
-    http::{Request, StatusCode},
+    http::{Method, Request, StatusCode},
     middleware::Next,
     response::Response,
 };
@@ -38,6 +38,11 @@ pub async fn auth_middleware<T: Authenticator>(
     mut request: Request<axum::body::Body>,
     next: Next,
 ) -> Result<Response, StatusCode> {
+    // Allow OPTIONS requests (CORS preflight) to pass through without authentication
+    if request.method() == Method::OPTIONS {
+        return Ok(next.run(request).await);
+    }
+
     let headers = request.headers();
 
     // Authenticate using the configured authenticator

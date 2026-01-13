@@ -67,6 +67,7 @@ pub async fn ask_adhoc(
         None,
         None, // No globals
         None, // No variables
+        None, // No sandbox_info
     )
     .await
     {
@@ -204,11 +205,13 @@ pub async fn run_agent<P: AsRef<Path>, H: EventHandler + Send + 'static>(
     connections: Option<ConnectionOverrides>,
     globals: Option<indexmap::IndexMap<String, serde_json::Value>>,
     variables: Option<std::collections::HashMap<String, serde_json::Value>>,
+    sandbox_info: Option<crate::execute::types::event::SandboxInfo>,
 ) -> Result<OutputContainer, OxyError> {
     AgentLauncher::new()
         .with_filters(filters)
         .with_connections(connections)
         .with_globals(globals)
+        .with_sandbox_info(sandbox_info.clone())
         .with_project(project)
         .await?
         .launch(
@@ -220,6 +223,7 @@ pub async fn run_agent<P: AsRef<Path>, H: EventHandler + Send + 'static>(
                 a2a_task_id: None,
                 a2a_thread_id: None,
                 a2a_context_id: None,
+                sandbox_info,
             },
             event_handler,
         )

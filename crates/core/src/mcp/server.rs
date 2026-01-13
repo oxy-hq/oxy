@@ -10,6 +10,7 @@ use rmcp::{
     },
     service::RequestContext,
 };
+use uuid::Uuid;
 
 // Internal crate imports
 use crate::{
@@ -101,7 +102,7 @@ impl ServerHandler for OxyMcpServer {
 impl OxyMcpServer {
     /// Creates a new OxyMcpServer instance
     pub async fn new(project_path: PathBuf) -> Result<Self, OxyError> {
-        let project_manager = ProjectBuilder::new()
+        let project_manager = ProjectBuilder::new(Uuid::nil())
             .with_project_path(&project_path)
             .await
             .map_err(|e| OxyError::from(anyhow::anyhow!("Failed to create config manager: {e}")))?

@@ -59,6 +59,7 @@ pub struct Table {
     pub reference: Option<TableReference>,
     pub file_path: String,
     pub max_display_rows: Option<usize>,
+    pub relative_path: Option<String>,
     #[serde(skip)]
     inner: OnceCell<ArrowTable>,
 }
@@ -77,6 +78,7 @@ impl Table {
             file_path,
             max_display_rows: None,
             inner: OnceCell::new(),
+            relative_path: None,
         }
     }
 
@@ -96,6 +98,7 @@ impl Table {
             file_path,
             max_display_rows,
             inner: OnceCell::new(),
+            relative_path: None,
         }
     }
 
@@ -332,9 +335,41 @@ impl Table {
             "name": self.name,
             "total_rows": total_rows,
             "total_columns": table.schema.fields().len(),
-            "columns": columns
+            "columns": columns,
+            "preview": self.preview(),
         })
         .to_string()
+    }
+
+    fn preview(&self) -> Vec<serde_json::Value> {
+        match self.get_inner() {
+            Ok(table) => {
+                let (truncated_results, _truncated) = truncate_datasets(&table.batches, Some(5));
+                let mut preview = Vec::new();
+                for batch in truncated_results {
+                    let result: Result<Vec<serde_json::Value>, serde_arrow::Error> =
+                        serde_arrow::from_record_batch(&batch);
+                    match result {
+                        Ok(json_value) => {
+                            preview.extend(json_value);
+                        }
+                        Err(e) => {
+                            tracing::error!("Failed to convert record batch to JSON: {}", e);
+                            return vec![serde_json::json!({
+                                "error": format!("Failed to generate preview: {}", e)
+                            })];
+                        }
+                    }
+                }
+                preview
+            }
+            Err(e) => {
+                tracing::error!("Failed to get inner table: {}", e);
+                vec![serde_json::json!({
+                    "error": format!("Failed to generate preview: {}", e)
+                })]
+            }
+        }
     }
 
     fn compute_numeric_stats_json(
@@ -534,25 +569,35 @@ impl Debug for Table {
 
 impl Display for Table {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let table_name = &self.name;
+        writeln!(f, "---")?;
+        writeln!(f, "Table: {table_name}")?;
+        if let Some(relative_path) = &self.relative_path {
+            writeln!(f, "File Path: {relative_path}")?;
+        }
+        writeln!(f, "Data:")?;
         match self.get_inner() {
             Ok(inner) => {
                 let (truncated_results, truncated) =
                     truncate_datasets(&inner.batches, self.max_display_rows);
-                let table_name = &self.name;
-                writeln!(f, "- {table_name}data:\n")?;
                 match record_batches_to_json(&truncated_results) {
                     Ok(json) => {
                         writeln!(f, "{:2}{json}", "")?;
                         if truncated {
-                            writeln!(f, "{:2}Table results has been truncated.", "")?;
+                            writeln!(f, "{:2}Table results have been truncated.", "")?;
                         }
-                        Ok(())
                     }
-                    Err(e) => writeln!(f, "{:2}Table({}): {}", "", &self.file_path, e),
+                    Err(e) => {
+                        writeln!(f, "{:2}{}", "", e)?;
+                    }
                 }
             }
-            Err(e) => writeln!(f, "{:2}Table({}): {}", "", &self.file_path, e),
+            Err(e) => {
+                writeln!(f, "{:2}{}", "", e)?;
+            }
         }
+        writeln!(f, "---")?;
+        Ok(())
     }
 }
 

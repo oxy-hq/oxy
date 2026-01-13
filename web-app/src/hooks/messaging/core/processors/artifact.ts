@@ -40,6 +40,10 @@ export const extractUpdatedValue = (
       updatedValue = artifact_value.value.value;
       break;
     }
+    case "sandbox_info": {
+      updatedValue = artifact_value.value.value;
+      break;
+    }
     default: {
       break;
     }

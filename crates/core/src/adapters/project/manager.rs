@@ -1,5 +1,7 @@
 use std::collections::HashSet;
 
+use uuid::Uuid;
+
 use crate::{
     adapters::{runs::RunsManager, secrets::SecretsManager},
     config::ConfigManager,
@@ -8,6 +10,7 @@ use crate::{
 
 #[derive(Debug, Clone)]
 pub struct ProjectManager {
+    pub project_id: Uuid,
     pub config_manager: ConfigManager,
     pub secrets_manager: SecretsManager,
     pub runs_manager: Option<RunsManager>,
@@ -15,11 +18,13 @@ pub struct ProjectManager {
 
 impl ProjectManager {
     pub(super) fn new(
+        project_id: Uuid,
         config_manager: ConfigManager,
         secrets_manager: SecretsManager,
         runs_manager: Option<RunsManager>,
     ) -> Self {
         Self {
+            project_id,
             config_manager,
             secrets_manager,
             runs_manager,

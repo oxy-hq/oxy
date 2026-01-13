@@ -1,5 +1,6 @@
 use crate::api::middlewares::project::ProjectManagerExtractor;
 use crate::api::router::ProjectExtractor;
+use crate::execute::types::event::SandboxInfo;
 use crate::{
     auth::extractor::AuthenticatedUserExtractor, db::client::establish_connection,
     execute::types::ReferenceKind, service::task_manager::TASK_MANAGER,
@@ -30,6 +31,7 @@ pub struct ThreadItem {
     pub source: String,
     pub created_at: DateTimeWithTimeZone,
     pub references: Vec<ReferenceKind>,
+    pub sandbox_info: Option<SandboxInfo>,
     pub is_processing: bool,
 }
 
@@ -142,6 +144,10 @@ pub async fn get_threads(
             source_type: t.source_type.clone(),
             created_at: t.created_at,
             references: serde_json::from_str(&t.references).unwrap_or_default(),
+            sandbox_info: t
+                .sandbox_info
+                .as_ref()
+                .and_then(|info| serde_json::from_value(info.clone()).ok()),
             is_processing: t.is_processing,
         })
         .collect();
@@ -208,6 +214,10 @@ pub async fn get_thread(
         source: thread.source,
         created_at: thread.created_at,
         references: serde_json::from_str(&thread.references).unwrap_or_default(),
+        sandbox_info: thread
+            .sandbox_info
+            .as_ref()
+            .and_then(|info| serde_json::from_value(info.clone()).ok()),
         is_processing: thread.is_processing,
     };
     Ok(extract::Json(thread_item))
@@ -254,6 +264,7 @@ pub async fn create_thread(
         references: ActiveValue::Set("[]".to_string()),
         is_processing: ActiveValue::Set(false),
         project_id: ActiveValue::Set(project.id),
+        sandbox_info: ActiveValue::Set(None),
     };
     let thread = new_thread
         .insert(&connection)
@@ -269,6 +280,10 @@ pub async fn create_thread(
         source: thread.source,
         created_at: thread.created_at,
         references: serde_json::from_str(&thread.references).unwrap_or_default(),
+        sandbox_info: thread
+            .sandbox_info
+            .as_ref()
+            .and_then(|info| serde_json::from_value(info.clone()).ok()),
         is_processing: thread.is_processing,
     };
     Ok(extract::Json(thread_item))

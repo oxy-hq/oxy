@@ -5,14 +5,18 @@ use tokio::sync::Mutex;
 use uuid::Uuid;
 
 use crate::{
-    config::constants::MARKDOWN_MAX_FENCES, errors::OxyError, execute::types::Usage,
-    service::types::Block, utils::try_unwrap_arc_tokio_mutex,
+    config::constants::MARKDOWN_MAX_FENCES,
+    errors::OxyError,
+    execute::types::{Usage, event::SandboxInfo},
+    service::types::Block,
+    utils::try_unwrap_arc_tokio_mutex,
 };
 
 pub struct BlockHandlerReader {
     blocks: Arc<Mutex<Vec<Block>>>,
     artifacts: Arc<Mutex<Vec<entity::artifacts::ActiveModel>>>,
     usage: Arc<Mutex<Usage>>,
+    sandbox_info: Arc<Mutex<Option<SandboxInfo>>>,
 }
 
 impl BlockHandlerReader {
@@ -20,11 +24,13 @@ impl BlockHandlerReader {
         blocks: Arc<Mutex<Vec<Block>>>,
         artifacts: Arc<Mutex<Vec<entity::artifacts::ActiveModel>>>,
         usage: Arc<Mutex<Usage>>,
+        sandbox_info: Arc<Mutex<Option<SandboxInfo>>>,
     ) -> Self {
         BlockHandlerReader {
             blocks,
             artifacts,
             usage,
+            sandbox_info,
         }
     }
 
@@ -39,6 +45,7 @@ impl BlockHandlerReader {
         (
             entity::messages::ActiveModel,
             Vec<entity::artifacts::ActiveModel>,
+            Option<SandboxInfo>,
         ),
         OxyError,
     > {
@@ -66,6 +73,7 @@ impl BlockHandlerReader {
             ..Default::default()
         };
         let artifacts = try_unwrap_arc_tokio_mutex(self.artifacts).await?;
-        Ok((message, artifacts))
+        let sandbox_info = try_unwrap_arc_tokio_mutex(self.sandbox_info).await?;
+        Ok((message, artifacts, sandbox_info))
     }
 }

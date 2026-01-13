@@ -7,7 +7,7 @@ use uuid::Uuid;
 use crate::{
     config::constants::MARKDOWN_MAX_FENCES,
     errors::OxyError,
-    execute::types::event::ArtifactKind,
+    execute::types::event::{ArtifactKind, SandboxAppKind, SandboxInfo},
     service::types::{
         ArtifactContent, Block, BlockValue, ContainerKind, Content, OmniArtifactContent,
         SemanticQuery,
@@ -17,6 +17,7 @@ use crate::{
 pub struct ArtifactTracker {
     artifacts: Arc<Mutex<Vec<entity::artifacts::ActiveModel>>>,
     artifact_queue: Vec<(String, ArtifactKind)>,
+    sandbox_info: Arc<Mutex<Option<SandboxInfo>>>,
 }
 
 impl ArtifactTracker {
@@ -24,11 +25,16 @@ impl ArtifactTracker {
         Self {
             artifacts: Arc::new(Mutex::new(Vec::new())),
             artifact_queue: Vec::new(),
+            sandbox_info: Arc::new(Mutex::new(None)),
         }
     }
 
     pub fn get_artifacts_clone(&self) -> Arc<Mutex<Vec<entity::artifacts::ActiveModel>>> {
         Arc::clone(&self.artifacts)
+    }
+
+    pub fn get_sandbox_info_clone(&self) -> Arc<Mutex<Option<SandboxInfo>>> {
+        Arc::clone(&self.sandbox_info)
     }
 
     pub fn start_artifact(&mut self, id: String, kind: ArtifactKind) {
@@ -45,6 +51,11 @@ impl ArtifactTracker {
 
     pub fn get_active_artifact(&self) -> Option<&(String, ArtifactKind)> {
         self.artifact_queue.last()
+    }
+
+    pub async fn set_sandbox_info(&mut self, kind: SandboxAppKind, preview_url: String) {
+        let mut sandbox_info = self.sandbox_info.lock().await;
+        *sandbox_info = Some(SandboxInfo { kind, preview_url });
     }
 
     pub async fn store_artifact(&mut self, block: &Block) -> Result<(), OxyError> {
@@ -77,6 +88,7 @@ impl ArtifactTracker {
                 ArtifactKind::OmniQuery { topic, .. } => {
                     Self::create_omni_query_artifact(children, topic.clone())?
                 }
+                ArtifactKind::SandboxApp { .. } => Self::create_sandbox_app_artifact(children)?,
             };
 
             if let Some(content) = content {
@@ -260,6 +272,24 @@ impl ArtifactTracker {
                 }
                 _ => Ok(None),
             };
+        }
+        Ok(None)
+    }
+
+    fn create_sandbox_app_artifact(
+        children: &[Block],
+    ) -> Result<Option<ArtifactContent>, OxyError> {
+        // Look for SandboxApp content in children blocks
+        for child in children.iter().rev() {
+            if let BlockValue::Content {
+                content: Content::SandboxInfo(SandboxInfo { preview_url, kind }),
+            } = &*child.value
+            {
+                return Ok(Some(ArtifactContent::SandboxInfo(SandboxInfo {
+                    kind: kind.clone(),
+                    preview_url: preview_url.clone(),
+                })));
+            }
         }
         Ok(None)
     }

@@ -314,6 +314,12 @@ impl TryFrom<Event> for EventKind {
                     content_id: event.source.id.to_string(),
                     item: ContentType::DataApp(data_app),
                 }),
+                ExecuteEventKind::SandboxAppCreated { kind, preview_url } => {
+                    Ok(EventKind::ContentDone {
+                        content_id: event.source.id.to_string(),
+                        item: ContentType::SandboxApp { kind, preview_url },
+                    })
+                }
                 ExecuteEventKind::VizGenerated { viz } => Ok(EventKind::ContentDone {
                     content_id: event.source.id.to_string(),
                     item: ContentType::Viz(viz),

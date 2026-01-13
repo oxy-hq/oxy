@@ -89,7 +89,7 @@ pub async fn project_middleware(
 
         match resolve_local_project_path() {
             Ok(project_path) => {
-                match ProjectBuilder::new()
+                match ProjectBuilder::new(project_id)
                     .with_project_path_and_fallback_config(&project_path)
                     .await
                 {
@@ -248,7 +248,7 @@ pub async fn project_middleware(
     }
 
     match GitOperations::get_repository_path(project_id, branch_id) {
-        Ok(project_path) => match ProjectBuilder::new()
+        Ok(project_path) => match ProjectBuilder::new(project_id)
             .with_project_path_and_fallback_config(&project_path)
             .await
         {

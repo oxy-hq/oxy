@@ -118,6 +118,7 @@ impl<S> AutoSQL<S> {
                     database: database.to_string(),
                     dry_run_limit: None,
                     name: Some(slugify::slugify(&sql_params.title, "", "_", None)),
+                    persist: false,
                 },
             )
             .await?;

@@ -39,6 +39,7 @@ impl Executable<AgentInput> for AgentExecutable {
             a2a_task_id: _,
             a2a_thread_id: _,
             a2a_context_id: _,
+            sandbox_info: _,
         } = input;
         let config_manager = &execution_context.project.config_manager;
         let agent_config = config_manager

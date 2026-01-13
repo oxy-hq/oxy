@@ -8,7 +8,7 @@ use crate::{
     config::model::SemanticFilter,
     execute::types::{
         ReferenceKind, Table, Usage,
-        event::{ArtifactKind, Step},
+        event::{ArtifactKind, SandboxInfo, Step},
     },
     tools::types::OmniQueryParams,
     utils::get_file_stem,
@@ -181,6 +181,8 @@ pub enum ArtifactValue {
     SemanticQuery(SemanticQuery),
     #[serde(rename = "omni_query")]
     OmniQuery(OmniQuery),
+    #[serde(rename = "sandbox_info")]
+    SandboxInfo(SandboxInfo),
 }
 
 #[derive(Serialize, Deserialize, ToSchema, Debug)]
@@ -201,6 +203,8 @@ pub enum ArtifactContent {
     SemanticQuery(SemanticQuery),
     #[serde(rename = "omni_query")]
     OmniQuery(OmniArtifactContent),
+    #[serde(rename = "sandbox_info")]
+    SandboxInfo(SandboxInfo),
 }
 
 #[derive(Serialize, Deserialize, ToSchema, Debug)]
@@ -267,6 +271,7 @@ pub enum Content {
     SQL(String),
     Table(Table),
     OmniQuery(OmniQueryParams),
+    SandboxInfo(SandboxInfo),
     SemanticQuery(SemanticQuery),
 }
 
@@ -280,6 +285,12 @@ impl Content {
                 let json = serde_json::to_string_pretty(omni_query_params)
                     .unwrap_or_else(|_| "Failed to serialize OmniQueryParams".to_string());
                 format!("\n```json\n{json}\n```\n")
+            }
+            Content::SandboxInfo(sandbox_info) => {
+                format!(
+                    "[{} App Preview]({})",
+                    sandbox_info.kind, sandbox_info.preview_url
+                )
             }
             Content::SemanticQuery(_) => "".to_string(),
         }
@@ -435,6 +446,9 @@ impl Block {
                     log_items.push(LogItem::info(format!(
                         "Omni Query:\n```json\n{json}\n```\n"
                     )));
+                }
+                Content::SandboxInfo(SandboxInfo { preview_url, kind }) => {
+                    log_items.push(LogItem::info(format!("[{}]({})", kind, preview_url)));
                 }
                 Content::SemanticQuery(semantic_query) => {
                     let json = serde_json::to_string_pretty(semantic_query)

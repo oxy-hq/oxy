@@ -1,3 +1,4 @@
+use crate::constants::OXY_SDK_SYSTEM_PROMPT;
 use crate::service::types::SemanticQueryParams;
 use garde::Validate;
 use indoc::indoc;
@@ -2332,6 +2333,21 @@ pub struct CreateDataAppTool {
 }
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
+pub struct CreateV0AppTool {
+    pub name: String,
+    #[serde(default = "default_create_v0_app_tool_description")]
+    pub description: String,
+    #[serde(default = "default_create_v0_app_tool_system_instruction")]
+    pub system_instruction: String,
+    #[serde(default = "default_github_repo")]
+    pub github_repo: Option<String>,
+    #[serde(default = "default_oxy_api_key_var")]
+    pub oxy_api_key_var: String,
+    #[serde(default = "default_v0_api_key_var")]
+    pub v0_api_key_var: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
 pub struct OmniQueryTool {
     pub name: String,
     #[serde(default = "default_omni_query_tool_description")]
@@ -2454,6 +2470,8 @@ pub enum ToolType {
     Agent(AgentTool),
     #[serde(rename = "create_data_app")]
     CreateDataApp(CreateDataAppTool),
+    #[serde(rename = "create_v0_app")]
+    CreateV0App(CreateV0AppTool),
     #[serde(rename = "omni_query")]
     OmniQuery(OmniQueryTool),
     #[serde(rename = "semantic_query")]
@@ -2762,6 +2780,29 @@ impl ToolType {
                     description: rendered_description,
                 })
             }
+            ToolType::CreateV0App(tool) => {
+                // Register and render description
+                renderer.register_template(&tool.description)?;
+                let rendered_description =
+                    renderer
+                        .render_async(&tool.description)
+                        .await
+                        .map_err(|e| {
+                            OxyError::RuntimeError(format!(
+                                "Failed to render CreateV0AppTool description: {}",
+                                e
+                            ))
+                        })?;
+
+                ToolType::CreateV0App(CreateV0AppTool {
+                    name: tool.name.clone(),
+                    description: rendered_description,
+                    system_instruction: tool.system_instruction.clone(),
+                    github_repo: tool.github_repo.clone(),
+                    oxy_api_key_var: tool.oxy_api_key_var.clone(),
+                    v0_api_key_var: tool.v0_api_key_var.clone(),
+                })
+            }
         })
     }
 
@@ -2947,6 +2988,25 @@ fn default_validate_sql_tool_description() -> String {
 fn default_create_data_app_tool_description() -> String {
     "Create a data app/dashboard to visualize metrics.".to_string()
 }
+fn default_create_v0_app_tool_system_instruction() -> String {
+    OXY_SDK_SYSTEM_PROMPT.to_string()
+}
+
+fn default_create_v0_app_tool_description() -> String {
+    "Use this when user wants to build interactive UIs, dashboards, or data visualizations. The app will be deployed and can query Oxy tables via SDK. Make sure to persist the execute sql in order to use it with Oxy SDK.".to_string()
+}
+
+fn default_github_repo() -> Option<String> {
+    Some("https://github.com/oxy-hq/data-app-template".to_string())
+}
+
+fn default_oxy_api_key_var() -> String {
+    "OXY_API_KEY".to_string()
+}
+
+fn default_v0_api_key_var() -> String {
+    "V0_API_KEY".to_string()
+}
 
 fn default_omni_query_tool_description() -> String {
     "Query data through Omni's semantic layer API. Use this tool to execute queries against topics, dimensions, and measures defined in the Omni semantic model.".to_string()
@@ -3059,6 +3119,14 @@ fn default_loop_concurrency() -> usize {
 
 fn default_consistency_concurrency() -> usize {
     10
+}
+
+fn default_v0_api_url() -> String {
+    "https://api.v0.dev".to_string()
+}
+
+fn default_v0_key_var() -> String {
+    "V0_API_KEY".to_string()
 }
 
 #[cfg(test)]

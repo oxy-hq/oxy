@@ -3,6 +3,7 @@ use std::fmt::Debug;
 use minijinja::Value;
 use serde::{Serialize, de::DeserializeOwned};
 use tokio::sync::mpsc::Sender;
+use uuid::Uuid;
 
 use crate::{
     adapters::{
@@ -15,7 +16,10 @@ use crate::{
     execute::{
         builders::checkpoint::CheckpointId,
         renderer::Renderer,
-        types::{Usage, event::Step},
+        types::{
+            Usage,
+            event::{SandboxAppKind, SandboxInfo, Step},
+        },
     },
 };
 
@@ -49,6 +53,9 @@ pub struct ExecutionContext {
     /// Connection overrides to apply to database connections in this execution context
     /// Set by API request, transparent to workflows/agents
     pub connections: Option<ConnectionOverrides>,
+    /// Sandbox information from thread (e.g., v0 chat_id and preview_url)
+    /// Passed from thread to tools for continuity
+    pub sandbox_info: Option<SandboxInfo>,
     /// User ID for the execution context (for run isolation)
     pub user_id: Option<uuid::Uuid>,
 }
@@ -70,6 +77,7 @@ impl ExecutionContext {
             checkpoint,
             filters: None,
             connections: None,
+            sandbox_info: None,
             user_id,
         }
     }
@@ -87,6 +95,7 @@ impl ExecutionContext {
             checkpoint: self.checkpoint.clone(),
             filters: self.filters.clone(),
             connections: self.connections.clone(),
+            sandbox_info: self.sandbox_info.clone(),
             user_id: self.user_id,
         }
     }
@@ -100,6 +109,7 @@ impl ExecutionContext {
             checkpoint: Some(checkpoint),
             filters: self.filters.clone(),
             connections: self.connections.clone(),
+            sandbox_info: self.sandbox_info.clone(),
             user_id: self.user_id,
         }
     }
@@ -114,6 +124,7 @@ impl ExecutionContext {
                 checkpoint: Some(checkpoint_context.with_current_ref(child_ref)),
                 filters: self.filters.clone(),
                 connections: self.connections.clone(),
+                sandbox_info: self.sandbox_info.clone(),
                 user_id: self.user_id,
             }
         } else {
@@ -125,6 +136,7 @@ impl ExecutionContext {
                 checkpoint: None,
                 filters: self.filters.clone(),
                 connections: self.connections.clone(),
+                sandbox_info: self.sandbox_info.clone(),
                 user_id: self.user_id,
             }
         }
@@ -139,6 +151,7 @@ impl ExecutionContext {
             checkpoint: self.checkpoint.clone(),
             filters: self.filters.clone(),
             connections: self.connections.clone(),
+            sandbox_info: self.sandbox_info.clone(),
             user_id: self.user_id,
         }
     }
@@ -152,6 +165,7 @@ impl ExecutionContext {
             checkpoint: self.checkpoint.clone(),
             filters: self.filters.clone(),
             connections: self.connections.clone(),
+            sandbox_info: self.sandbox_info.clone(),
             user_id: self.user_id,
         }
     }
@@ -167,6 +181,7 @@ impl ExecutionContext {
             checkpoint: self.checkpoint.clone(),
             filters: self.filters.clone(),
             connections: self.connections.clone(),
+            sandbox_info: self.sandbox_info.clone(),
             user_id: self.user_id,
         }
     }
@@ -180,6 +195,7 @@ impl ExecutionContext {
             checkpoint: self.checkpoint.clone(),
             filters: self.filters.clone(),
             connections: self.connections.clone(),
+            sandbox_info: self.sandbox_info.clone(),
             user_id: self.user_id,
         }
     }
@@ -193,6 +209,7 @@ impl ExecutionContext {
             checkpoint: self.checkpoint.clone(),
             filters: self.filters.clone(),
             connections: self.connections.clone(),
+            sandbox_info: self.sandbox_info.clone(),
             user_id,
         }
     }
@@ -220,6 +237,18 @@ impl ExecutionContext {
     ) -> Result<(), OxyError> {
         self.write_kind(EventKind::StepFinished { step_id, error })
             .await
+    }
+
+    pub async fn write_create_sandbox_app(
+        &self,
+        kind: SandboxAppKind,
+        preview_url: String,
+    ) -> Result<(), OxyError> {
+        self.write_kind(EventKind::SandboxAppCreated {
+            kind: kind.clone(),
+            preview_url: preview_url.clone(),
+        })
+        .await
     }
 
     pub async fn write_data_app(
@@ -293,6 +322,7 @@ pub struct ExecutionContextBuilder {
     checkpoint: Option<CheckpointContext>,
     filters: Option<SessionFilters>,
     connections: Option<ConnectionOverrides>,
+    sandbox_info: Option<SandboxInfo>,
     user_id: Option<uuid::Uuid>,
 }
 
@@ -312,6 +342,7 @@ impl ExecutionContextBuilder {
             checkpoint: None,
             filters: None,
             connections: None,
+            sandbox_info: None,
             user_id: None,
         }
     }
@@ -360,6 +391,11 @@ impl ExecutionContextBuilder {
         self
     }
 
+    pub fn with_sandbox_info(mut self, sandbox_info: impl Into<Option<SandboxInfo>>) -> Self {
+        self.sandbox_info = sandbox_info.into();
+        self
+    }
+
     pub fn with_user_id(mut self, user_id: Option<uuid::Uuid>) -> Self {
         self.user_id = user_id;
         self
@@ -387,6 +423,7 @@ impl ExecutionContextBuilder {
             checkpoint: self.checkpoint,
             filters: self.filters,
             connections: self.connections,
+            sandbox_info: self.sandbox_info,
             user_id: self.user_id,
         })
     }

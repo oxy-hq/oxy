@@ -3,6 +3,7 @@ import SemanticQueryArtifactPanel from "./ArtifactsContent/semantic-query";
 import OmniQueryArtifactPanel from "./ArtifactsContent/omni-query";
 import AgentArtifactPanel from "./ArtifactsContent/agent";
 import WorkflowArtifactPanel from "./ArtifactsContent/workflow";
+import SandboxArtifactPanel from "./ArtifactsContent/sandbox-app";
 import { useQueries } from "@tanstack/react-query";
 import { ArtifactService } from "@/services/api";
 import Header from "./Header";
@@ -145,6 +146,10 @@ const ArtifactPanel = ({
           artifact={currentArtifact}
         />
       );
+    }
+
+    if (currentArtifact.kind === "sandbox_app") {
+      return <SandboxArtifactPanel artifact={currentArtifact} />;
     }
 
     return <div className="artifact-unknown">Unsupported artifact type</div>;

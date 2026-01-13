@@ -49,6 +49,7 @@ mod m20251204_000003_create_a2a_task_status_table;
 mod m20251204_000004_create_a2a_artifacts_table;
 mod m20251219_000001_add_user_id_to_runs;
 mod m20260108_000001_drop_fk_runs_project_id;
+mod m20260109_000001_add_sandbox_fields_to_threads;
 
 pub struct Migrator;
 
@@ -104,6 +105,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20251114_000004_create_slack_conversation_contexts_table::Migration),
             Box::new(m20251219_000001_add_user_id_to_runs::Migration),
             Box::new(m20260108_000001_drop_fk_runs_project_id::Migration),
+            Box::new(m20260109_000001_add_sandbox_fields_to_threads::Migration),
         ]
     }
 }

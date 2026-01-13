@@ -1,7 +1,10 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use crate::execute::types::{VizParams, event::DataApp};
+use crate::execute::types::{
+    VizParams,
+    event::{DataApp, SandboxAppKind},
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case", tag = "type")]
@@ -17,5 +20,10 @@ pub enum ContentType {
         is_result_truncated: bool,
     },
     DataApp(DataApp),
+    SandboxApp {
+        #[serde(flatten)]
+        kind: SandboxAppKind,
+        preview_url: String,
+    },
     Viz(VizParams),
 }
