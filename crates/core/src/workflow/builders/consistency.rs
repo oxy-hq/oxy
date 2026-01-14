@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use itertools::Itertools;
 use tokio::task::JoinHandle;
+use tracing::Instrument;
 
 use crate::{
     adapters::openai::{IntoOpenAIConfig, OpenAIClient},
@@ -48,8 +49,13 @@ impl ConcurrencyControl<OpenAIExecutableResponse> for AgentScoreControl {
     ) -> Result<Self::Response, OxyError> {
         let results = {
             let sender = execution_context.writer.clone();
-            let events_handle =
-                tokio::spawn(async move { ordered_writer.write_sender(sender).await });
+
+            // Capture the current span to propagate trace context to the spawned task
+            let current_span = tracing::Span::current();
+
+            let events_handle = tokio::spawn(
+                async move { ordered_writer.write_sender(sender).await }.instrument(current_span),
+            );
             let results = results_handle.await??;
             events_handle.await??;
             results

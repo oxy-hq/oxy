@@ -50,6 +50,7 @@ export interface AuthConfigResponse {
   };
   basic?: boolean;
   cloud?: boolean;
+  enterprise?: boolean;
 }
 
 export interface UserListResponse {

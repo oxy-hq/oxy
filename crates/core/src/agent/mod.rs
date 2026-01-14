@@ -1,6 +1,9 @@
+use tracing::Instrument;
+
 use crate::{
-    adapters::secrets::SecretsManager,
-    adapters::{project::manager::ProjectManager, session_filters::SessionFilters},
+    adapters::{
+        project::manager::ProjectManager, secrets::SecretsManager, session_filters::SessionFilters,
+    },
     agent::builders::fsm::{config::AgenticInput, machine::launch_agentic_workflow},
     config::{
         ConfigManager,
@@ -14,6 +17,7 @@ use crate::{
         types::{EventKind, OutputContainer, Source},
         writer::{BufWriter, EventHandler},
     },
+    observability::events,
     semantic::SemanticManager,
 };
 use builders::AgentExecutable;
@@ -112,11 +116,16 @@ impl AgentLauncher {
         self
     }
 
+    #[tracing::instrument(skip_all, err, fields(
+        otel.name = events::agent::get_global_context::NAME,
+        oxy.span_type = events::agent::get_global_context::TYPE,
+    ))]
     async fn get_global_context(
         &self,
         config: ConfigManager,
         secrets_manager: SecretsManager,
     ) -> Result<Value, OxyError> {
+        events::agent::get_global_context::input(config.get_config());
         let mut semantic_manager =
             SemanticManager::from_config(config, secrets_manager, false).await?;
 
@@ -127,6 +136,7 @@ impl AgentLauncher {
 
         let semantic_variables_contexts =
             semantic_manager.get_semantic_variables_contexts().await?;
+
         let semantic_dimensions_contexts = semantic_manager
             .get_semantic_dimensions_contexts(&semantic_variables_contexts)
             .await?;
@@ -142,6 +152,8 @@ impl AgentLauncher {
             dimensions => Value::from_object(semantic_dimensions_contexts),
             globals => globals,
         };
+
+        events::agent::get_global_context::output(&global_context);
 
         Ok(global_context)
     }
@@ -164,6 +176,10 @@ impl AgentLauncher {
         Ok(self)
     }
 
+    #[tracing::instrument(skip_all, err, fields(
+        otel.name = "agent.launcher.with_project",
+        oxy.span_type = "agent",
+    ))]
     pub async fn with_project(mut self, project_manager: ProjectManager) -> Result<Self, OxyError> {
         let tx = self.buf_writer.create_writer(None)?;
 
@@ -192,6 +208,11 @@ impl AgentLauncher {
         Ok(self)
     }
 
+    #[tracing::instrument(skip_all, err, fields(
+        otel.name = "agent.launcher.launch",
+        oxy.span_type = "agent",
+        oxy.agent.ref = %agent_input.agent_ref,
+    ))]
     pub async fn launch<H: EventHandler + Send + 'static>(
         self,
         mut agent_input: AgentInput,
@@ -214,25 +235,34 @@ impl AgentLauncher {
                 "ExecutionContext is required".to_string(),
             ))?
             .with_child_source(agent_input.agent_ref.to_string(), AGENT_SOURCE.to_string());
-        let handle = tokio::spawn(async move {
-            execution_context
-                .write_kind(EventKind::Started {
-                    name: agent_input.agent_ref.to_string(),
-                    attributes: Default::default(),
-                })
-                .await?;
-            let response = AgentExecutable
-                .execute(&execution_context, agent_input)
-                .await;
-            execution_context
-                .write_kind(EventKind::Finished {
-                    attributes: Default::default(),
-                    message: Default::default(),
-                    error: response.as_ref().err().map(|e| e.to_string()),
-                })
-                .await?;
-            response
-        });
+
+        // Capture the current span to propagate trace context to the spawned task
+        let current_span = tracing::Span::current();
+
+        let handle = tokio::spawn(
+            async move {
+                execution_context
+                    .write_kind(EventKind::Started {
+                        name: agent_input.agent_ref.to_string(),
+                        attributes: Default::default(),
+                    })
+                    .await?;
+
+                let response = AgentExecutable
+                    .execute(&execution_context, agent_input)
+                    .await;
+
+                execution_context
+                    .write_kind(EventKind::Finished {
+                        attributes: Default::default(),
+                        message: Default::default(),
+                        error: response.as_ref().err().map(|e| e.to_string()),
+                    })
+                    .await?;
+                response
+            }
+            .instrument(current_span),
+        );
 
         let buf_writer = self.buf_writer;
         let event_handle =
@@ -242,6 +272,11 @@ impl AgentLauncher {
         response
     }
 
+    #[tracing::instrument(skip_all, err, fields(
+        otel.name = "agent.launcher.launch_agentic_workflow",
+        oxy.span_type = "agent",
+        oxy.agent.ref = %agent_ref,
+    ))]
     pub async fn launch_agentic_workflow<H: EventHandler + Send + 'static>(
         self,
         agent_ref: &str,
@@ -261,6 +296,7 @@ impl AgentLauncher {
             .config_manager
             .resolve_agentic_workflow(&agent_ref)
             .await?;
+
         let handle = tokio::spawn(async move {
             execution_context
                 .write_kind(EventKind::AgenticStarted {

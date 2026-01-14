@@ -7,6 +7,7 @@ use crate::{
         Executable, ExecutionContext,
         types::{Chunk, EventKind, SQL, Table, TableReference},
     },
+    observability::events::workflow as workflow_events,
     tools::types::SQLInput,
 };
 
@@ -23,11 +24,27 @@ impl SQLExecutable {
 impl Executable<SQLInput> for SQLExecutable {
     type Response = Table;
 
+    #[tracing::instrument(skip_all, err, fields(
+        otel.name = workflow_events::task::execute_sql::NAME_EXECUTE,
+        oxy.span_type = workflow_events::task::execute_sql::TYPE,
+        oxy.database.ref = %input.database,
+        oxy.sql.dry_run_limit = tracing::field::Empty,
+    ))]
     async fn execute(
         &mut self,
         execution_context: &ExecutionContext,
         input: SQLInput,
     ) -> Result<Self::Response, OxyError> {
+        workflow_events::task::execute_sql::execute_input(
+            &input.database,
+            &input.sql,
+            input.dry_run_limit.map(|l| l as usize),
+        );
+
+        let span = tracing::Span::current();
+        if let Some(limit) = input.dry_run_limit {
+            span.record("oxy.sql.dry_run_limit", limit);
+        }
         execution_context
             .write_kind(EventKind::Started {
                 name: input.sql.to_string(),
@@ -100,6 +117,7 @@ impl Executable<SQLInput> for SQLExecutable {
                         error: None,
                     })
                     .await?;
+                workflow_events::task::execute_sql::execute_output(&table.file_path, None);
             }
             Err(e) => {
                 execution_context

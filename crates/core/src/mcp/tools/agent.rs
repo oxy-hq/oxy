@@ -159,6 +159,9 @@ pub async fn run_agent_tool(
                 connections,
                 None, // No globals
                 Some(merged_variables),
+                Some(crate::service::agent::ExecutionSource::Mcp {
+                    session_id: None, // MCP doesn't have session tracking yet
+                }),
                 None,
             )
             .await

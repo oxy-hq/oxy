@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::sync::Arc;
 
 use uuid::Uuid;
 
@@ -6,6 +7,7 @@ use crate::{
     adapters::{runs::RunsManager, secrets::SecretsManager},
     config::ConfigManager,
     errors::OxyError,
+    intent::IntentClassifier,
 };
 
 #[derive(Debug, Clone)]
@@ -14,6 +16,7 @@ pub struct ProjectManager {
     pub config_manager: ConfigManager,
     pub secrets_manager: SecretsManager,
     pub runs_manager: Option<RunsManager>,
+    pub intent_classifier: Option<Arc<IntentClassifier>>,
 }
 
 impl ProjectManager {
@@ -22,12 +25,14 @@ impl ProjectManager {
         config_manager: ConfigManager,
         secrets_manager: SecretsManager,
         runs_manager: Option<RunsManager>,
+        intent_classifier: Option<Arc<IntentClassifier>>,
     ) -> Self {
         Self {
             project_id,
             config_manager,
             secrets_manager,
             runs_manager,
+            intent_classifier,
         }
     }
 

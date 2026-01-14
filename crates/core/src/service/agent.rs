@@ -15,6 +15,7 @@ use crate::{
         types::{Event, EventKind, Output, OutputContainer, ProgressType},
         writer::{EventHandler, NoopHandler},
     },
+    observability::events,
     service::types::event::EventKind as DispatchEventKind,
     theme::StyledText,
     utils::print_colored_sql,
@@ -33,6 +34,30 @@ use std::{
 use utoipa::ToSchema;
 
 use super::eval::PBarsHandler;
+
+/// Represents the source/origin of an agent execution for observability tracing
+#[derive(Debug, Clone, serde::Serialize)]
+pub enum ExecutionSource {
+    /// Executed from CLI (oxy command)
+    Cli,
+    /// Executed from Web API/Chat interface
+    WebApi { thread_id: String, user_id: String },
+    /// Executed from Slack integration
+    Slack {
+        thread_id: String,
+        channel_id: Option<String>,
+    },
+    /// Executed from A2A (Agent-to-Agent) protocol
+    A2a {
+        task_id: String,
+        context_id: String,
+        thread_id: String,
+    },
+    /// Executed from MCP (Model Context Protocol)
+    Mcp { session_id: Option<String> },
+    /// Internal/programmatic execution (tests, etc)
+    Internal,
+}
 
 #[derive(Deserialize, ToSchema)]
 pub struct Memory {
@@ -65,9 +90,10 @@ pub async fn ask_adhoc(
         vec![],
         None,
         None,
-        None, // No globals
-        None, // No variables
-        None, // No sandbox_info
+        None,                            // No globals
+        None,                            // No variables
+        Some(ExecutionSource::Internal), // Internal/programmatic call
+        None,                            // No sandbox_info
     )
     .await
     {
@@ -195,6 +221,16 @@ impl EventHandler for AgentCLIHandler {
     }
 }
 
+#[tracing::instrument(skip_all, err, fields(
+        otel.name = events::agent::run_agent::NAME,
+        oxy.span_type = events::agent::run_agent::TYPE,
+        oxy.agent.ref = %agent_ref.as_ref().to_string_lossy().to_string(),
+        oxy.execution.source = tracing::field::Empty,
+        oxy.user.id = tracing::field::Empty,
+        oxy.thread.id = tracing::field::Empty,
+        oxy.task.id = tracing::field::Empty,
+        oxy.context.id = tracing::field::Empty,
+    ))]
 pub async fn run_agent<P: AsRef<Path>, H: EventHandler + Send + 'static>(
     project: ProjectManager,
     agent_ref: P,
@@ -205,9 +241,62 @@ pub async fn run_agent<P: AsRef<Path>, H: EventHandler + Send + 'static>(
     connections: Option<ConnectionOverrides>,
     globals: Option<indexmap::IndexMap<String, serde_json::Value>>,
     variables: Option<std::collections::HashMap<String, serde_json::Value>>,
+    source: Option<ExecutionSource>,
     sandbox_info: Option<crate::execute::types::event::SandboxInfo>,
 ) -> Result<OutputContainer, OxyError> {
-    AgentLauncher::new()
+    let agent_ref_str = agent_ref.as_ref().to_string_lossy().to_string();
+    let project_path_str = project.config_manager.project_path().display().to_string();
+
+    // Record execution source context in the trace span
+    let span = tracing::Span::current();
+    if let Some(ref exec_source) = source {
+        match exec_source {
+            ExecutionSource::WebApi { thread_id, user_id } => {
+                span.record("oxy.execution.source", "web_api");
+                span.record("oxy.user.id", user_id.as_str());
+                span.record("oxy.thread.id", thread_id.as_str());
+            }
+            ExecutionSource::Slack {
+                thread_id,
+                channel_id,
+            } => {
+                span.record("oxy.execution.source", "slack");
+                span.record("oxy.thread.id", thread_id.as_str());
+                if let Some(cid) = channel_id {
+                    span.record("oxy.context.id", cid.as_str());
+                }
+            }
+            ExecutionSource::A2a {
+                task_id,
+                context_id,
+                thread_id,
+            } => {
+                span.record("oxy.execution.source", "a2a");
+                span.record("oxy.task.id", task_id.as_str());
+                span.record("oxy.context.id", context_id.as_str());
+                span.record("oxy.thread.id", thread_id.as_str());
+            }
+            ExecutionSource::Mcp { session_id } => {
+                span.record("oxy.execution.source", "mcp");
+                if let Some(sid) = session_id {
+                    span.record("oxy.context.id", sid.as_str());
+                }
+            }
+            _ => {}
+        }
+    }
+
+    events::agent::run_agent::input(
+        &project,
+        &agent_ref_str,
+        &project_path_str,
+        &prompt,
+        &memory,
+        &variables,
+        &source,
+    );
+
+    let output = AgentLauncher::new()
         .with_filters(filters)
         .with_connections(connections)
         .with_globals(globals)
@@ -227,7 +316,11 @@ pub async fn run_agent<P: AsRef<Path>, H: EventHandler + Send + 'static>(
             },
             event_handler,
         )
-        .await
+        .await?;
+
+    events::agent::run_agent::output(&output);
+
+    Ok(output)
 }
 
 pub async fn run_agentic_workflow<P: AsRef<Path>, H: EventHandler + Send + 'static>(
@@ -253,7 +346,7 @@ pub async fn run_agentic_workflow<P: AsRef<Path>, H: EventHandler + Send + 'stat
         .await
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct Message {
     pub content: String,
     pub is_human: bool,

@@ -1,5 +1,5 @@
-mod default;
-mod routing;
+pub mod default;
+pub mod routing;
 
 use std::{collections::HashMap, sync::Arc};
 
@@ -17,6 +17,7 @@ use crate::{
         Executable, ExecutionContext, execute_with_handler,
         types::{Metadata, OutputContainer},
     },
+    observability::events,
 };
 
 #[derive(Debug, Clone)]
@@ -26,11 +27,18 @@ pub struct AgentExecutable;
 impl Executable<AgentInput> for AgentExecutable {
     type Response = OutputContainer;
 
+    #[tracing::instrument(skip_all, err, fields(
+        otel.name = events::agent::agent::NAME,
+        oxy.span_type = events::agent::agent::TYPE,
+        oxy.agent.ref = %input.agent_ref,
+    ))]
     async fn execute(
         &mut self,
         execution_context: &ExecutionContext,
         input: AgentInput,
     ) -> Result<Self::Response, OxyError> {
+        events::agent::agent::input(input.clone());
+
         let AgentInput {
             agent_ref,
             prompt,
@@ -42,6 +50,7 @@ impl Executable<AgentInput> for AgentExecutable {
             sandbox_info: _,
         } = input;
         let config_manager = &execution_context.project.config_manager;
+
         let agent_config = config_manager
             .resolve_agent(&agent_ref)
             .await
@@ -50,6 +59,7 @@ impl Executable<AgentInput> for AgentExecutable {
             })?;
 
         // Resolve variables by merging runtime params with defaults
+        // Variables are added to the renderer context alongside globals
         let resolved_variables = if let Some(variables_config) = &agent_config.variables {
             variables_config.resolve_params(runtime_variables)?
         } else if runtime_variables.is_some() {
@@ -62,8 +72,9 @@ impl Executable<AgentInput> for AgentExecutable {
             HashMap::new()
         };
 
+        events::agent::agent::variables(resolved_variables.clone());
+
         // Build template context with variables
-        // Variables are added to the renderer context alongside globals
         let routing_context = if !resolved_variables.is_empty() {
             let variables_value = minijinja::Value::from_serialize(&resolved_variables);
             tracing::info!(
@@ -89,8 +100,13 @@ impl Executable<AgentInput> for AgentExecutable {
             ),
             (AGENT_SOURCE_PROMPT.to_string(), prompt.to_string()),
         ]);
+        events::agent::agent::metadata(metadata.clone());
+
         let routing_context =
             routing_context.with_child_source(source_id.to_string(), AGENT_SOURCE.to_string());
+
+        events::agent::agent::agent_type(agent_config.r#type.clone());
+
         let output_container = match agent_config.r#type {
             AgentType::Default(default_agent) => {
                 tracing::debug!("Executing default agent: {:?}", &default_agent);
@@ -133,12 +149,15 @@ impl Executable<AgentInput> for AgentExecutable {
         let references = Arc::try_unwrap(references)
             .map_err(|_| OxyError::RuntimeError("Failed to unwrap agent references".to_string()))?
             .into_inner()?;
-        Ok(OutputContainer::Metadata {
+        let output: OutputContainer = OutputContainer::Metadata {
             value: Metadata {
                 output: Box::new(output_container),
                 references,
                 metadata,
             },
-        })
+        };
+
+        events::agent::agent::output(output.clone());
+        Ok(output)
     }
 }

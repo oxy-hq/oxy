@@ -17,6 +17,26 @@ const threadKeys = {
   messages: (projectId: string, threadId: string) =>
     [...threadKeys.all, "messages", projectId, threadId] as const,
 };
+
+const traceKeys = {
+  all: ["trace"] as const,
+  list: (
+    projectId: string,
+    limit?: number,
+    offset?: number,
+    status?: string,
+    duration?: string,
+  ) =>
+    [
+      ...traceKeys.all,
+      "list",
+      projectId,
+      { limit, offset, status, duration },
+    ] as const,
+  item: (projectId: string, traceId: string) =>
+    [...traceKeys.all, projectId, { traceId }] as const,
+};
+
 const workflowKeys = {
   all: ["workflow"] as const,
   run: (projectId: string, branchName: string) =>
@@ -209,6 +229,7 @@ const queryKeys = {
   config: configKeys,
   artifact: artifactKeys,
   ontology: ontologyKeys,
+  trace: traceKeys,
 };
 
 export default queryKeys;

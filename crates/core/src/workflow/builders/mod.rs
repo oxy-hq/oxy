@@ -1,3 +1,5 @@
+use tracing::Instrument;
+
 use crate::{
     adapters::{
         checkpoint::{RunInfo, types::RetryStrategy},
@@ -14,6 +16,7 @@ use crate::{
         types::{EventKind, OutputContainer, Source},
         writer::{BufWriter, EventHandler},
     },
+    observability::events::workflow as workflow_events,
     semantic::SemanticManager,
     theme::StyledText,
     utils::file_path_to_source_id,
@@ -83,11 +86,17 @@ impl WorkflowLauncher {
         self
     }
 
+    #[tracing::instrument(skip_all, err, fields(
+        otel.name = workflow_events::launcher::get_global_context::NAME,
+        oxy.span_type = workflow_events::launcher::get_global_context::TYPE,
+    ))]
     async fn get_global_context(
         &self,
         config: ConfigManager,
         secrets_manager: SecretsManager,
     ) -> Result<minijinja::Value, OxyError> {
+        workflow_events::launcher::get_global_context::input();
+
         let mut semantic_manager =
             SemanticManager::from_config(config, secrets_manager, false).await?;
 
@@ -109,10 +118,16 @@ impl WorkflowLauncher {
         let globals = minijinja::Value::from_serialize(&globals_value);
 
         let global_context = context! {
-            models => minijinja::Value::from_object(semantic_variables_contexts),
-            dimensions => minijinja::Value::from_object(semantic_dimensions_contexts),
+            models => minijinja::Value::from_object(semantic_variables_contexts.clone()),
+            dimensions => minijinja::Value::from_object(semantic_dimensions_contexts.clone()),
             globals => globals,
         };
+
+        workflow_events::launcher::get_global_context::output(
+            true, // models context is always created
+            !semantic_dimensions_contexts.dimensions.is_empty(),
+            !globals_value.is_null(),
+        );
 
         Ok(global_context)
     }
@@ -135,7 +150,19 @@ impl WorkflowLauncher {
         Ok(self)
     }
 
+    #[tracing::instrument(skip_all, err, fields(
+        otel.name = workflow_events::launcher::with_project::NAME,
+        oxy.span_type = workflow_events::launcher::with_project::TYPE,
+    ))]
     pub async fn with_project(mut self, project_manager: ProjectManager) -> Result<Self, OxyError> {
+        workflow_events::launcher::with_project::input(
+            project_manager
+                .config_manager
+                .project_path()
+                .to_str()
+                .unwrap_or("unknown"),
+        );
+
         let tx = self.buf_writer.create_writer(None)?;
         let mut execution_context = ExecutionContextBuilder::new()
             .with_project_manager(project_manager)
@@ -158,6 +185,8 @@ impl WorkflowLauncher {
             .await?;
         execution_context = execution_context.wrap_global_context(global_context);
         self.execution_context = Some(execution_context);
+
+        workflow_events::launcher::with_project::output();
         Ok(self)
     }
 
@@ -233,12 +262,22 @@ impl WorkflowLauncher {
         }
     }
 
+    #[tracing::instrument(skip_all, err, fields(
+        otel.name = workflow_events::launcher::launch::NAME,
+        oxy.span_type = workflow_events::launcher::launch::TYPE,
+        oxy.workflow.ref = %workflow_input.workflow_ref,
+    ))]
     pub async fn launch<H: EventHandler + Send + 'static>(
         self,
         workflow_input: WorkflowInput,
         event_handler: H,
         user_id: Option<uuid::Uuid>,
     ) -> Result<OutputContainer, OxyError> {
+        workflow_events::launcher::launch::input(
+            &workflow_input.workflow_ref,
+            &format!("{:?}", workflow_input.retry),
+        );
+
         let mut execution_context = self.execution_context.ok_or(OxyError::RuntimeError(
             "ExecutionContext is required".to_string(),
         ))?;
@@ -324,6 +363,12 @@ impl WorkflowLauncher {
             response
         };
         event_handle.await??;
+
+        match &response {
+            Ok(output) => workflow_events::launcher::launch::output(output),
+            Err(e) => workflow_events::launcher::launch::error(&e.to_string()),
+        }
+
         response
     }
 
@@ -344,18 +389,25 @@ impl WorkflowLauncher {
                 attributes: Default::default(),
             })
             .await?;
-        let handle = tokio::spawn(async move {
-            let mut executable = build_tasks_executable();
-            let response = executable.execute(&execution_context, tasks).await;
-            execution_context
-                .write_kind(EventKind::Finished {
-                    attributes: Default::default(),
-                    message: "\n✅Workflow executed successfully".success().to_string(),
-                    error: response.as_ref().err().map(|e| e.to_string()),
-                })
-                .await?;
-            response
-        });
+
+        // Capture the current span to propagate trace context to the spawned task
+        let current_span = tracing::Span::current();
+
+        let handle = tokio::spawn(
+            async move {
+                let mut executable = build_tasks_executable();
+                let response = executable.execute(&execution_context, tasks).await;
+                execution_context
+                    .write_kind(EventKind::Finished {
+                        attributes: Default::default(),
+                        message: "\n✅Workflow executed successfully".success().to_string(),
+                        error: response.as_ref().err().map(|e| e.to_string()),
+                    })
+                    .await?;
+                response
+            }
+            .instrument(current_span),
+        );
         let buf_writer = self.buf_writer;
         let event_handle =
             tokio::spawn(async move { buf_writer.write_to_handler(event_handler).await });

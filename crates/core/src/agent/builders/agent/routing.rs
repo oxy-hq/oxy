@@ -31,6 +31,7 @@ use crate::{
         builders::ExecutableBuilder,
         types::{Document, Event, OutputContainer},
     },
+    observability::events,
     service::agent::Message,
     tools::{RetrievalExecutable, types::RetrievalInput},
     utils::to_openai_function_name,
@@ -39,7 +40,7 @@ use crate::{
 mod fallback;
 
 #[derive(Debug, Clone)]
-pub(super) struct RoutingAgentInput {
+pub struct RoutingAgentInput {
     pub agent_name: String,
     pub model: String,
     pub routing_agent: RoutingAgent,
@@ -377,11 +378,18 @@ impl RoutingAgentExecutable {
 impl Executable<RoutingAgentInput> for RoutingAgentExecutable {
     type Response = OutputContainer;
 
+    #[tracing::instrument(skip_all, err, fields(
+        otel.name = events::agent::routing_agent::NAME,
+        oxy.span_type = events::agent::routing_agent::TYPE,
+        oxy.agent.name = %input.agent_name,
+    ))]
     async fn execute(
         &mut self,
         execution_context: &ExecutionContext,
         input: RoutingAgentInput,
     ) -> Result<Self::Response, OxyError> {
+        events::agent::routing_agent::input(&input);
+
         let RoutingAgentInput {
             agent_name,
             model,
@@ -390,18 +398,26 @@ impl Executable<RoutingAgentInput> for RoutingAgentExecutable {
             memory,
             reasoning_config,
         } = input;
+
         let config_manager = &execution_context.project.config_manager;
         let secrets_manager = &execution_context.project.secrets_manager;
-        let model = config_manager.resolve_model(&model)?;
+        let model_config = config_manager.resolve_model(&model)?;
+
+        events::agent::routing_agent::model_config(model_config);
+
+        events::agent::routing_agent::system_instructions(&routing_agent.system_instructions);
+
         let tool_configs = self
             .resolve_routes(
                 execution_context,
                 &agent_name,
-                model,
+                model_config,
                 &routing_agent,
                 &prompt,
             )
             .await?;
+
+        events::agent::routing_agent::resolved_routes(tool_configs.len(), &tool_configs);
 
         // Render all tool configurations with variables
         let mut rendered_tools = Vec::new();
@@ -410,9 +426,11 @@ impl Executable<RoutingAgentInput> for RoutingAgentExecutable {
             rendered_tools.push(rendered_tool);
         }
 
+        events::agent::routing_agent::tools(&rendered_tools);
+
         let mut react_loop_executable = build_react_loop(
             agent_name.clone(),
-            model,
+            model_config,
             rendered_tools,
             routing_agent.synthesize_results,
             config_manager,
@@ -426,16 +444,18 @@ impl Executable<RoutingAgentInput> for RoutingAgentExecutable {
             memory,
         };
         let outputs = match routing_agent.route_fallback {
-            Some(fallback) => {
+            Some(ref fallback) => {
+                events::agent::routing_agent::fallback_configured(fallback);
+
                 let fallback_tool = self
-                    .resolve_tool(execution_context, &fallback, None, false)
+                    .resolve_tool(execution_context, fallback, None, false)
                     .await?;
 
                 let config_manager = &execution_context.project.config_manager;
                 let secrets_manager = &execution_context.project.secrets_manager;
                 let fallback_route = FallbackAgent::new(
                     &agent_name,
-                    model,
+                    model_config,
                     fallback_tool,
                     config_manager,
                     secrets_manager,
@@ -454,9 +474,12 @@ impl Executable<RoutingAgentInput> for RoutingAgentExecutable {
             }
         }?;
 
-        Ok(OutputContainer::List(
-            outputs.into_iter().map(|o| o.content.into()).collect(),
-        ))
+        let output_container =
+            OutputContainer::List(outputs.into_iter().map(|o| o.content.into()).collect());
+
+        events::agent::routing_agent::output(&output_container);
+
+        Ok(output_container)
     }
 }
 

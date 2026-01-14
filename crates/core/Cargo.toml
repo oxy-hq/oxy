@@ -140,8 +140,14 @@ tracing = { workspace = true }
 tracing-subscriber = { version = "0.3.22", features = ["env-filter", "fmt", "json"] }
 tracing-appender = "0.2.4"
 tracing-log = "0.2.0"
+opentelemetry = { version = "0.27", features = ["trace"] }
+opentelemetry-otlp = { version = "0.27", features = ["trace", "grpc-tonic"] }
+opentelemetry_sdk = { version = "0.27", features = ["trace", "rt-tokio"] }
+tracing-opentelemetry = "0.28"
 jsonschema = "0.33.0"
 ndarray = { version = "0.16.1" }
+linfa = "0.8.1"
+linfa-reduction = "0.8.1"
 hmac = "0.12.1"
 sha2 = "0.10.9"
 hex = "0.4.3"

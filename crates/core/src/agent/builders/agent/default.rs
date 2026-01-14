@@ -10,6 +10,7 @@ use crate::config::model::{AgentContext, AgentToolsConfig, DefaultAgent, Reasoni
 use crate::execute::builders::map::ParamMapper;
 use crate::execute::renderer::Renderer;
 use crate::execute::types::{Output, OutputContainer};
+use crate::observability::events;
 use crate::semantic::SemanticManager;
 use crate::service::agent::Message;
 use crate::tools::ToolsContext;
@@ -48,11 +49,18 @@ pub struct DefaultAgentInput {
 impl Executable<DefaultAgentInput> for DefaultAgentExecutable {
     type Response = OutputContainer;
 
+    #[tracing::instrument(skip_all, err, fields(
+        otel.name = events::agent::default_agent::NAME,
+        oxy.span_type = events::agent::default_agent::TYPE,
+        oxy.agent.name = %input.agent_name,
+    ))]
     async fn execute(
         &mut self,
         execution_context: &ExecutionContext,
         input: DefaultAgentInput,
     ) -> Result<Self::Response, OxyError> {
+        events::agent::default_agent::input(input.clone());
+
         let DefaultAgentInput {
             agent_name,
             model,
@@ -72,6 +80,7 @@ impl Executable<DefaultAgentInput> for DefaultAgentExecutable {
             reasoning_config,
         } = input;
         tracing::debug!("Default agent input: {:?}", &memory);
+
         let model_config = execution_context
             .project
             .config_manager
@@ -79,6 +88,9 @@ impl Executable<DefaultAgentInput> for DefaultAgentExecutable {
             .map_err(|e| {
                 OxyError::ConfigurationError(format!("Failed to resolve model config: {e}"))
             })?;
+
+        events::agent::default_agent::model_config(model_config.clone());
+
         let system_instructions = execution_context
             .renderer
             .render_async(&system_instructions)
@@ -86,6 +98,9 @@ impl Executable<DefaultAgentInput> for DefaultAgentExecutable {
             .map_err(|e| {
                 OxyError::RuntimeError(format!("Failed to render system instructions: {e}"))
             })?;
+
+        events::agent::default_agent::system_instructions(system_instructions.clone());
+
         tracing::info!(
             "Executing default agent: {} with model: {}",
             agent_name,
@@ -100,11 +115,14 @@ impl Executable<DefaultAgentInput> for DefaultAgentExecutable {
             rendered_tools.push(rendered_tool);
         }
 
-        let client = OpenAIClient::with_config(
-            model_config
-                .into_openai_config(&execution_context.project.secrets_manager)
-                .await?,
-        );
+        events::agent::default_agent::tools(rendered_tools.clone());
+
+        let config = model_config
+            .into_openai_config(&execution_context.project.secrets_manager)
+            .await?;
+
+        let client = OpenAIClient::with_config(config);
+
         let messages: Result<Vec<ChatCompletionRequestMessage>, OxyError> = memory
             .into_iter()
             .map(
@@ -149,6 +167,9 @@ impl Executable<DefaultAgentInput> for DefaultAgentExecutable {
                 .map_err(|e| OxyError::RuntimeError(format!("Failed to build user message: {e}")))?
                 .into(),
         ]);
+
+        events::agent::default_agent::messages(messages.clone());
+
         execution_context
             .write_chunk(Chunk {
                 key: Some(AGENT_SOURCE_PROMPT.to_string()),
@@ -156,6 +177,8 @@ impl Executable<DefaultAgentInput> for DefaultAgentExecutable {
                 finished: true,
             })
             .await?;
+
+        // Build the ReAct loop executable
         let config = execution_context.project.config_manager.clone();
         let mut react_executable = build_react_loop(
             agent_name,
@@ -175,7 +198,11 @@ impl Executable<DefaultAgentInput> for DefaultAgentExecutable {
         let output = outputs
             .into_iter()
             .fold(Output::default(), |m, o| m.merge(&o.content));
-        Ok(output.into())
+        let output_container: OutputContainer = output.into();
+
+        events::agent::default_agent::output(&output_container);
+
+        Ok(output_container)
     }
 }
 
@@ -261,6 +288,7 @@ pub async fn build_global_context(
 ) -> Result<Value, OxyError> {
     let config = execution_context.project.config_manager.clone();
     let secrets_manager = execution_context.project.secrets_manager.clone();
+
     let contexts = Contexts::new(contexts, config.clone());
     let databases = DatabasesContext::new(config.clone(), secrets_manager.clone());
     let tools = ToolsContext::from_execution_context(
@@ -269,6 +297,7 @@ pub async fn build_global_context(
         default_agent.tools_config.tools.clone(),
         prompt.to_string(),
     );
+
     let semantic_manager = SemanticManager::from_config(config, secrets_manager, false).await?;
     let semantic_contexts = semantic_manager.get_semantic_variables_contexts().await?;
     let semantic_dimensions_contexts = semantic_manager

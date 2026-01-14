@@ -152,8 +152,8 @@ pub struct CreateRunResponse {
 )]
 pub async fn create_workflow_run(
     Path((_project_id, pathb64)): Path<(Uuid, String)>,
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
+    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
     extract::Json(payload): extract::Json<CreateRunRequest>,
 ) -> Result<extract::Json<CreateRunResponse>, StatusCode> {
     let decoded_path = BASE64_STANDARD.decode(pathb64).map_err(|e| {
@@ -250,6 +250,7 @@ pub async fn create_workflow_run(
         Ok(())
     };
     let source_id = run_info.source_id.clone();
+    let user_id = user.id.to_string();
 
     TASK_MANAGER
         .spawn(task_id.clone(), async move |cancellation_token| {
@@ -269,6 +270,10 @@ pub async fn create_workflow_run(
                     None,
                     None,
                     None, // No globals for retry
+                    Some(crate::service::agent::ExecutionSource::WebApi {
+                        thread_id: task_id.clone(),
+                        user_id,
+                    }),
                     Some(user.id),
                 )
             };

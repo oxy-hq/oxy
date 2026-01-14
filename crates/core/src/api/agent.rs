@@ -289,7 +289,7 @@ pub struct AskAgentRequest {
 )]
 pub async fn ask_agent_preview(
     Path((_project_id, pathb64)): Path<(Uuid, String)>,
-    AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
+    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
     extract::Json(payload): extract::Json<AskAgentRequest>,
 ) -> Result<impl IntoResponse, StatusCode> {
@@ -337,6 +337,7 @@ pub async fn ask_agent_preview(
     let connections = payload.connections;
     let globals = payload.globals;
     let variables = payload.variables;
+    let user_id = user.id.to_string();
 
     let _ = tokio::spawn(async move {
         let tx_clone = tx.clone();
@@ -352,6 +353,10 @@ pub async fn ask_agent_preview(
             connections,
             globals,
             variables,
+            Some(crate::service::agent::ExecutionSource::WebApi {
+                thread_id: "preview".to_string(), // Preview endpoint doesn't have thread_id
+                user_id,
+            }),
             payload.sandbox_info,
         )
         .await;
@@ -470,7 +475,7 @@ impl ChatExecutionRequest for AskAgentNonStreamingRequest {
 )]
 pub async fn ask_agent_sync(
     Path((_project_id, pathb64)): Path<(Uuid, String)>,
-    AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
+    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
     extract::Json(payload): extract::Json<AskAgentNonStreamingRequest>,
 ) -> Result<impl IntoResponse, StatusCode> {
@@ -522,6 +527,7 @@ pub async fn ask_agent_sync(
     let connections = payload.connections;
     let globals = payload.globals;
     let variables = payload.variables;
+    let user_id = user.id.to_string();
 
     let _ = tokio::spawn(async move {
         let tx_clone = tx.clone();
@@ -537,6 +543,10 @@ pub async fn ask_agent_sync(
             connections,
             globals,
             variables,
+            Some(crate::service::agent::ExecutionSource::WebApi {
+                thread_id: "sync".to_string(), // Sync endpoint doesn't have thread_id
+                user_id,
+            }),
             None,
         )
         .await;
@@ -724,6 +734,13 @@ impl ChatHandler for AgentExecutor {
             context.connections.clone(),
             context.globals.clone(),
             None, // TODO: Support variables from thread context
+            Some(crate::service::agent::ExecutionSource::WebApi {
+                thread_id: thread.id.to_string(),
+                user_id: thread
+                    .user_id
+                    .map(|u| u.to_string())
+                    .unwrap_or_else(|| "unknown".to_string()),
+            }),
             context.sandbox_info()?,
         )
         .await;

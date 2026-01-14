@@ -17,6 +17,7 @@ use crate::api::secrets;
 use crate::api::semantic;
 use crate::api::slack;
 use crate::api::thread;
+use crate::api::traces;
 use crate::api::user;
 use crate::api::workflow;
 use crate::api::workspace;
@@ -49,6 +50,7 @@ use super::task;
 #[derive(Clone)]
 pub struct AppState {
     pub cloud: bool,
+    pub enterprise: bool,
 }
 
 fn build_cors_layer() -> CorsLayer {
@@ -139,6 +141,7 @@ fn build_project_routes() -> Router<AppState> {
         .nest("/databases", build_database_routes())
         .nest("/secrets", build_secret_routes())
         .nest("/app", build_app_routes())
+        .nest("/traces", traces::traces_routes())
         .route("/artifacts/{id}", get(artifacts::get_artifact))
         .route("/charts/{file_path}", get(chart::get_chart))
         .route("/logs", get(thread::get_logs))
@@ -323,8 +326,8 @@ fn apply_middleware(
 
     Ok(protected_regular_routes)
 }
-pub async fn api_router(cloud: bool) -> Result<Router, OxyError> {
-    let app_state = AppState { cloud };
+pub async fn api_router(cloud: bool, enterprise: bool) -> Result<Router, OxyError> {
+    let app_state = AppState { cloud, enterprise };
     let public_routes = build_public_routes();
     let protected_routes = build_protected_routes(app_state.clone());
     let protected_routes = apply_middleware(protected_routes, cloud)?;

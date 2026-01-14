@@ -1,5 +1,6 @@
 use crate::errors::OxyError;
 
+#[allow(dead_code)]
 pub trait Storage {
     async fn list(&self, key: &str) -> Result<Vec<String>, OxyError>;
     async fn load(&self, key: &str) -> Result<Vec<u8>, OxyError>;

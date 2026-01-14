@@ -10,6 +10,7 @@ use crate::{
         builders::{ExecutableBuilder, map::ParamMapper},
         types::Table,
     },
+    observability::events::workflow as workflow_events,
     tools::{SQLExecutable, types::SQLInput},
 };
 
@@ -18,11 +19,18 @@ struct SQLTaskMapper;
 
 #[async_trait::async_trait]
 impl ParamMapper<ExecuteSQLTask, SQLInput> for SQLTaskMapper {
+    #[tracing::instrument(skip_all, err, fields(
+        otel.name = workflow_events::task::execute_sql::NAME_MAP,
+        oxy.span_type = workflow_events::task::execute_sql::TYPE,
+        oxy.database.ref = %input.database,
+    ))]
     async fn map(
         &self,
         execution_context: &ExecutionContext,
         input: ExecuteSQLTask,
     ) -> Result<(SQLInput, Option<ExecutionContext>), OxyError> {
+        workflow_events::task::execute_sql::map_input(&input);
+
         let mut variables = HashMap::new();
         if let Some(vars) = &input.variables {
             for (key, value) in vars {
@@ -67,6 +75,8 @@ impl ParamMapper<ExecuteSQLTask, SQLInput> for SQLTaskMapper {
                 }
             }
         };
+
+        workflow_events::task::execute_sql::map_output(&sql, &input.database);
 
         Ok((
             SQLInput {

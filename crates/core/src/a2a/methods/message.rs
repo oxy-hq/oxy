@@ -66,7 +66,14 @@ pub async fn handle_send_message(
     let chat_request = chat_integration::A2aMessageRequest::from_a2a_message(&message)?;
 
     // Execute via ChatService (synchronous execution)
-    let response = execute_via_chat_service(chat_request, agent_ref, project_manager).await?;
+    let response = execute_via_chat_service(
+        chat_request,
+        agent_ref,
+        project_manager,
+        task_id.clone(),
+        context_id.clone(),
+    )
+    .await?;
 
     // Convert ChatService response to A2A Task
     let task = chat_integration::chat_response_to_task(response, &task_id, &context_id, &message)?;
@@ -82,6 +89,8 @@ async fn execute_via_chat_service(
     chat_request: chat_integration::A2aMessageRequest,
     agent_ref: String,
     project_manager: &ProjectManager,
+    task_id: String,
+    context_id: String,
 ) -> Result<crate::api::agent::AskAgentResponse, A2aError> {
     // Build execution state for collecting streamed output
     let state = Arc::new(Mutex::new(AggregationState::default()));
@@ -117,6 +126,11 @@ async fn execute_via_chat_service(
             chat_request.connections,
             chat_request.globals,
             None,
+            Some(crate::service::agent::ExecutionSource::A2a {
+                task_id: task_id.clone(),
+                context_id: context_id.clone(),
+                thread_id: context_id.clone(),
+            }),
             None,
         )
         .await

@@ -1,3 +1,4 @@
+use crate::observability::events;
 use crate::{
     config::model::IntegrationType, execute::types::event::SandboxAppKind,
     tools::types::CreateV0AppParams,
@@ -736,6 +737,15 @@ impl OpenAIAdapter {
         Self { client, model_name }
     }
 
+    #[tracing::instrument(
+        skip_all,
+        fields(
+            otel.name = events::llm::LLM_OPENAI_CALL,
+            oxy.span_type = events::llm::LLM_CALL_TYPE,
+            gen_ai.request.model = %self.model_name,
+            gen_ai.system = events::llm::OPENAI
+        )
+    )]
     pub async fn generate_text<M: Into<Vec<ChatCompletionRequestMessage>>>(
         &self,
         messages: M,
@@ -745,12 +755,26 @@ impl OpenAIAdapter {
             .build()
             .map_err(|e| OxyError::RuntimeError(format!("Failed to build request: {e}")))?;
         let response = self.client.chat().create(request).await?;
+
+        if let Some(usage) = &response.usage {
+            events::llm::usage(usage.prompt_tokens as i64, usage.completion_tokens as i64);
+        }
+
         let result = self
             .extract_response(&response)
             .ok_or_else(|| OxyError::RuntimeError("No response from OpenAI".to_string()))?;
         Ok(result)
     }
 
+    #[tracing::instrument(
+        skip_all,
+        fields(
+            otel.name = events::llm::LLM_TOOL_CALL,
+            oxy.span_type = events::llm::LLM_CALL_TYPE,
+            gen_ai.request.model = %self.model_name,
+            gen_ai.system = events::llm::OPENAI
+        )
+    )]
     pub async fn request_tool_call_with_usage<
         M: Into<Vec<ChatCompletionRequestMessage>>,
         C: Into<Vec<ChatCompletionTool>>,
@@ -788,8 +812,11 @@ impl OpenAIAdapter {
             .await
             .map_err(|e| OxyError::RuntimeError(format!("OpenAI API error: {e}")))?;
 
-        // Write usage data if available
         if let Some(usage_data) = &response.usage {
+            events::llm::usage(
+                usage_data.prompt_tokens as i64,
+                usage_data.completion_tokens as i64,
+            );
             execution_context
                 .write_usage(crate::execute::types::Usage::new(
                     usage_data.prompt_tokens as i32,
@@ -837,6 +864,7 @@ impl OpenAIAdapter {
         tools: C,
         tool_choice: Option<ChatCompletionToolChoiceOption>,
     ) -> Result<impl tokio_stream::Stream<Item = Result<StreamChunk, OxyError>>, OxyError> {
+        tracing::debug!("Starting LLM stream with tool calls");
         let mut request_builder = self.request_builder(messages);
         let tools_vec: Vec<ChatCompletionTool> = tools.into();
         let tools_wrapped: Vec<ChatCompletionTools> = tools_vec

@@ -26,21 +26,40 @@ services:
   #     postgres:
   #       condition: service_healthy
 
-  # clickhouse:
-  #   image: clickhouse/clickhouse-server
-  #   user: "101:101"
-  #   container_name: clickhouse
-  #   hostname: clickhouse
-  #   environment:
-  #     CLICKHOUSE_USER: default
-  #     CLICKHOUSE_PASSWORD: password
-  #     CLICKHOUSE_DB: default
-  #   volumes:
-  #     - clickhouse-data:/var/lib/clickhouse
-  #   ports:
-  #     - "8123:8123"
-  #     - "9000:9000"
-  #   restart: unless-stopped
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    container_name: oxy-clickhouse
+    hostname: clickhouse
+    ports:
+      - "8123:8123"  # HTTP interface
+      - "9000:9000"  # Native client
+    environment:
+      CLICKHOUSE_DB: otel
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: "default"
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    container_name: oxy-otel-collector
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml
+    ports:
+      - "4317:4317"   # OTLP gRPC receiver
+      - "4318:4318"   # OTLP HTTP receiver
+      - "8888:8888"   # Prometheus metrics
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+    restart: unless-stopped
 
   postgres:
     image: postgres:18-alpine
@@ -63,5 +82,5 @@ services:
 
 volumes:
   # oxy-data:
-  # clickhouse-data:
+  clickhouse-data:
   postgres-data:

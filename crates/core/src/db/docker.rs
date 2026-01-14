@@ -1,3 +1,5 @@
+#![allow(deprecated)] // bollard container/image options are deprecated but still functional
+
 use crate::errors::OxyError;
 use bollard::Docker;
 use bollard::exec::{CreateExecOptions, StartExecResults};

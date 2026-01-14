@@ -120,34 +120,50 @@ where
 
         loop {
             match self.strategy.should_break(iterations) {
-                Decision::Continue => {}
+                Decision::Continue => {
+                    tracing::debug!(react.iteration = iterations, "Continuing iteration");
+                }
                 Decision::Break => {
-                    tracing::debug!("Breaking after {} iterations", iterations);
+                    tracing::debug!(react.iteration = iterations, "Breaking ReAct loop");
                     break;
                 }
                 Decision::BreakInNextReasoning => {
-                    tracing::debug!("Breaking with reason after {} iterations", iterations);
+                    tracing::debug!(react.iteration = iterations, "Final reasoning before break");
                     let response = self.inner.execute(execution_context, current_input).await?;
                     final_response.push(response.clone());
                     break;
                 }
                 Decision::Error(e) => {
-                    tracing::error!("Breaking React loop with Error: {}", e);
+                    tracing::error!(react.iteration = iterations, error = %e, "ReAct loop error");
                     return Err(e);
                 }
             }
 
+            tracing::debug!(react.iteration = iterations, "Executing reasoning step");
             let response = self.inner.execute(execution_context, current_input).await?;
             final_response.push(response.clone());
 
+            tracing::debug!(react.iteration = iterations, "Executing action step");
             match self.act.execute(execution_context, response).await? {
                 Some(new_input) => {
+                    tracing::debug!(
+                        react.iteration = iterations,
+                        "Action produced new input, continuing loop"
+                    );
                     current_input = new_input;
                 }
-                None => break,
+                None => {
+                    tracing::info!(
+                        react.iteration = iterations,
+                        "Action completed, ending loop"
+                    );
+                    break;
+                }
             }
             iterations += 1;
         }
+
+        tracing::info!(react.total_iterations = iterations, "ReAct loop completed");
         Ok(final_response)
     }
 }

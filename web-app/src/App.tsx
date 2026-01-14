@@ -17,6 +17,9 @@ import { SidebarProvider } from "@/components/ui/shadcn/sidebar";
 import Threads from "@/pages/threads";
 import ThreadPage from "@/pages/thread";
 import WorkflowPage from "@/pages/workflow";
+import TracesPage from "@/pages/ide/observability/traces";
+import TraceDetailPage from "@/pages/ide/observability/trace";
+import ClusterMapPage from "@/pages/ide/observability/clusters";
 import "@xyflow/react/dist/style.css";
 import React from "react";
 import IdePage from "./pages/ide";
@@ -149,6 +152,19 @@ const MainLayout = React.memo(function MainLayout() {
         />
         <Route path="/ide" element={<IdePage />}>
           <Route path=":pathb64" element={<EditorPage />} />
+          {authConfig.enterprise && (
+            <>
+              <Route path="observability/traces" element={<TracesPage />} />
+              <Route
+                path="observability/clusters"
+                element={<ClusterMapPage />}
+              />
+              <Route
+                path="observability/traces/:traceId"
+                element={<TraceDetailPage />}
+              />
+            </>
+          )}
         </Route>
         <Route
           path="/ontology"

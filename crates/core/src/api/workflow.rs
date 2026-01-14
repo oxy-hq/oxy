@@ -280,6 +280,7 @@ pub struct RunWorkflowRequest {
 )]
 pub async fn run_workflow(
     Path((_project_id, pathb64)): Path<(Uuid, String)>,
+    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
     extract::Json(request): extract::Json<RunWorkflowRequest>,
 ) -> Result<impl IntoResponse, StatusCode> {
@@ -309,6 +310,7 @@ pub async fn run_workflow(
     let connections = request.connections;
     let globals = request.globals;
 
+    let user_id = user.id.to_string();
     let _ = tokio::spawn(async move {
         tracing::info!("Workflow run started");
         let rs = run_workflow_service(
@@ -319,6 +321,10 @@ pub async fn run_workflow(
             filters,
             connections,
             globals,
+            Some(crate::service::agent::ExecutionSource::WebApi {
+                thread_id: "workflow".to_string(),
+                user_id,
+            }),
             None, // No authenticated user for this endpoint
         )
         .await;
@@ -478,6 +484,13 @@ pub async fn run_workflow_thread(
             None,
             None,
             None, // No globals for thread execution (not in request)
+            Some(crate::service::agent::ExecutionSource::WebApi {
+                thread_id: thread_clone.id.to_string(),
+                user_id: thread_clone
+                    .user_id
+                    .map(|u| u.to_string())
+                    .unwrap_or_else(|| "unknown".to_string()),
+            }),
             thread_user_id,
         )
         .await;
@@ -670,6 +683,13 @@ pub async fn run_workflow_thread_sync(
             filters,
             connections,
             None, // No globals for thread sync execution (not in request)
+            Some(crate::service::agent::ExecutionSource::WebApi {
+                thread_id: thread_clone.id.to_string(),
+                user_id: thread_clone
+                    .user_id
+                    .map(|u| u.to_string())
+                    .unwrap_or_else(|| "unknown".to_string()),
+            }),
             thread_user_id,
         )
         .await;
@@ -876,8 +896,8 @@ pub struct RunWorkflowSyncResponse {
 )]
 pub async fn run_workflow_sync(
     Path((_project_id, pathb64)): Path<(Uuid, String)>,
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
+    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
     timeout_config: TimeoutConfig,
     extract::Json(request): extract::Json<RunWorkflowRequest>,
 ) -> Result<extract::Json<RunWorkflowSyncResponse>, StatusCode> {
@@ -960,6 +980,7 @@ pub async fn run_workflow_sync(
     let filters = request.filters;
     let connections = request.connections;
     let globals = request.globals;
+    let user_id = user.id.to_string();
 
     let mut workflow_task = tokio::spawn({
         let project_manager = project_manager.clone();
@@ -975,6 +996,10 @@ pub async fn run_workflow_sync(
                 filters,
                 connections,
                 globals,
+                Some(crate::service::agent::ExecutionSource::WebApi {
+                    thread_id: task_id_clone.clone(),
+                    user_id,
+                }),
                 Some(user.id),
             )
             .await;

@@ -390,6 +390,8 @@ async fn execute_agent(
     let project_manager = ProjectBuilder::new(project_id)
         .with_project_path_and_fallback_config(&repo_path)
         .await?
+        .try_with_intent_classifier()
+        .await
         .build()
         .await?;
     let memory = load_conversation_memory(thread_id).await?;
@@ -408,6 +410,10 @@ async fn execute_agent(
         None,
         None,
         None,
+        Some(crate::service::agent::ExecutionSource::Slack {
+            thread_id: thread_id.to_string(),
+            channel_id: None, // Could be extracted from delivery if needed
+        }),
         None,
     )
     .await?;

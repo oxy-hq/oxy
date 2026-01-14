@@ -20,10 +20,12 @@ use crate::{
     },
     errors::OxyError,
     execute::{Executable, ExecutionContext},
+    observability::events,
 };
 
 #[derive(Debug, Clone)]
 pub struct FallbackAgent {
+    agent_name: String,
     agent: OpenAIOrOSSExecutable,
     tool_executable: OpenAITool,
 }
@@ -39,6 +41,7 @@ impl FallbackAgent {
     ) -> Result<Self, OxyError> {
         let model_name = model.model_name();
         Ok(Self {
+            agent_name: agent_name.to_string(),
             agent: build_openai_executable(
                 OpenAIClient::with_config(model.into_openai_config(secrets_manager).await?),
                 model_name.to_string(),
@@ -58,24 +61,38 @@ impl FallbackAgent {
 impl Executable<Vec<ChatCompletionRequestMessage>> for FallbackAgent {
     type Response = Vec<OpenAIExecutableResponse>;
 
+    #[tracing::instrument(skip_all, err, fields(
+        otel.name = events::agent::fallback_agent::FALLBACK_NAME,
+        oxy.span_type = events::agent::fallback_agent::FALLBACK_TYPE,
+        oxy.agent.name = %self.agent_name,
+    ))]
     async fn execute(
         &mut self,
         execution_context: &ExecutionContext,
         input: Vec<ChatCompletionRequestMessage>,
     ) -> Result<Self::Response, OxyError> {
+        events::agent::fallback_agent::input(&input);
+
+        events::agent::fallback_agent::agent(&self.agent);
+
         let mut memo = input.clone();
         let response = self.agent.execute(execution_context, input).await?;
         let tool_rets = self
             .tool_executable
             .execute(execution_context, response.clone())
             .await?;
-        match tool_rets {
+
+        let result = match tool_rets {
             Some(tool_calls) => {
                 memo.extend(tool_calls);
                 let fallback_response = self.agent.execute(execution_context, memo).await?;
-                Ok(vec![response, fallback_response])
+                vec![response, fallback_response]
             }
-            None => Ok(vec![response]),
-        }
+            None => vec![response],
+        };
+
+        events::agent::fallback_agent::output(&result);
+
+        Ok(result)
     }
 }

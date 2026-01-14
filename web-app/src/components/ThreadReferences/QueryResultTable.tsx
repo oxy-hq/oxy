@@ -18,12 +18,20 @@ type ResultTableProps = {
   isTruncated: boolean;
 };
 
-export const QueryResultTable = ({ result, resultFile, isTruncated }: ResultTableProps) => {
+export const QueryResultTable = ({
+  result,
+  resultFile,
+  isTruncated,
+}: ResultTableProps) => {
   // If we have a result file, use the virtualized table
   if (resultFile) {
     return (
       <div className="flex flex-col gap-4">
-        <VirtualizedTable filePath={resultFile} pageSize={100} maxHeight="32rem" />
+        <VirtualizedTable
+          filePath={resultFile}
+          pageSize={100}
+          maxHeight="32rem"
+        />
         {isTruncated && (
           <p className="text-sm text-muted-foreground text-center">
             Large result set loaded via Arrow format

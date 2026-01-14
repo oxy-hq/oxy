@@ -174,7 +174,9 @@ fn main() {
             .as_deref()
             .unwrap_or("false")
             .eq_ignore_ascii_case("true");
-    init_tracing_logging(log_to_stdout);
+
+    // Check if --enterprise flag is present (enables observability)
+    let enterprise_enabled = args.iter().any(|a| a == "--enterprise");
 
     rustls::crypto::aws_lc_rs::default_provider()
         .install_default()
@@ -187,6 +189,18 @@ fn main() {
         .build()
         .unwrap()
         .block_on(async {
+            // Initialize tracing inside the Tokio runtime (OTLP exporter requires it)
+            if enterprise_enabled {
+                if let Err(e) = oxy::observability::init_telemetry() {
+                    eprintln!(
+                        "Failed to initialize OpenTelemetry: {e}. Falling back to local logging."
+                    );
+                    init_tracing_logging(log_to_stdout);
+                }
+            } else {
+                init_tracing_logging(log_to_stdout);
+            }
+
             match cli().await {
                 Ok(_) => {}
                 Err(e) => {

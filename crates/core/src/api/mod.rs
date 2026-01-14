@@ -20,6 +20,7 @@ pub mod semantic;
 pub mod slack;
 pub mod task;
 pub mod thread;
+pub mod traces;
 pub mod user;
 pub mod workflow;
 pub mod workspace;

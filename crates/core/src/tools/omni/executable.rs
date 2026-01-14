@@ -5,6 +5,7 @@ use crate::{
         Executable, ExecutionContext,
         types::{Chunk, EventKind, Output},
     },
+    observability::events::workflow as workflow_events,
     tools::{omni::types::OmniQueryInput, types::OmniQueryParams},
 };
 use arrow::ipc::reader::StreamReader;
@@ -20,18 +21,38 @@ pub struct OmniQueryExecutable {}
 impl Executable<OmniQueryInput> for OmniQueryExecutable {
     type Response = Output;
 
+    #[tracing::instrument(skip_all, err, fields(
+        otel.name = workflow_events::task::omni_query::NAME_EXECUTE,
+        oxy.span_type = workflow_events::task::omni_query::TYPE,
+        oxy.omni_query.integration = %input.integration,
+        oxy.omni_query.topic = %input.topic,
+        oxy.omni_query.fields_count = input.params.fields.len(),
+    ))]
     async fn execute(
         &mut self,
         execution_context: &ExecutionContext,
         input: OmniQueryInput,
     ) -> Result<Output, OxyError> {
-        self.execute_query(
-            execution_context,
-            &input.params,
+        workflow_events::task::omni_query::execute_input(
             &input.integration,
             &input.topic,
-        )
-        .await
+            &input.params,
+        );
+
+        let result = self
+            .execute_query(
+                execution_context,
+                &input.params,
+                &input.integration,
+                &input.topic,
+            )
+            .await;
+
+        if let Ok(ref output) = result {
+            workflow_events::task::omni_query::execute_output(output);
+        }
+
+        result
     }
 }
 
@@ -41,6 +62,13 @@ impl OmniQueryExecutable {
     }
 
     /// Core execution logic shared between tool and task implementations
+    #[tracing::instrument(skip_all, err, fields(
+        otel.name = workflow_events::task::omni_query::NAME_EXECUTE_QUERY,
+        oxy.span_type = workflow_events::task::omni_query::TYPE,
+        oxy.omni_query.integration = integration,
+        oxy.omni_query.topic = topic,
+        oxy.omni_query.fields_count = params.fields.len(),
+    ))]
     pub async fn execute_query(
         &self,
         execution_context: &ExecutionContext,

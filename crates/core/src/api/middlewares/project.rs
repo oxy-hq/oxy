@@ -114,6 +114,7 @@ pub async fn project_middleware(
                                 );
                             }
                         }
+                        builder = builder.try_with_intent_classifier().await;
                         match builder.build().await {
                             Ok(project_manager) => {
                                 match EnumIndexManager::init_from_config(
@@ -275,6 +276,7 @@ pub async fn project_middleware(
                         );
                     }
                 }
+                builder = builder.try_with_intent_classifier().await;
                 match builder.build().await {
                     Ok(project_manager) => {
                         match EnumIndexManager::init_from_config(

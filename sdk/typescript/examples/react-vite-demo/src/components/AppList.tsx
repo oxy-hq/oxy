@@ -9,7 +9,11 @@ interface AppListProps {
   onSelectApp: (app: AppItem) => void;
 }
 
-export default function AppList({ apps, selectedApp, onSelectApp }: AppListProps) {
+export default function AppList({
+  apps,
+  selectedApp,
+  onSelectApp,
+}: AppListProps) {
   if (apps.length === 0) {
     return (
       <div className="empty-state">
@@ -23,7 +27,7 @@ export default function AppList({ apps, selectedApp, onSelectApp }: AppListProps
       {apps.map((app) => (
         <div
           key={app.path}
-          className={`app-item ${selectedApp?.path === app.path ? 'selected' : ''}`}
+          className={`app-item ${selectedApp?.path === app.path ? "selected" : ""}`}
           onClick={() => onSelectApp(app)}
         >
           <div className="app-name">{app.name}</div>

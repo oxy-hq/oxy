@@ -162,6 +162,9 @@ pub async fn run_workflow_tool(
         filters,
         connections,
         None, // No globals override from MCP
+        Some(crate::service::agent::ExecutionSource::Mcp {
+            session_id: None, // MCP doesn't have session tracking yet
+        }),
         None, // No authenticated user in MCP context
     )
     .await

@@ -6,6 +6,7 @@ pub mod types;
 pub mod writer;
 
 pub use context::{Executable, ExecutionContext, ExecutionContextBuilder};
+use tracing::Instrument;
 use writer::{BufWriter, EventHandler};
 
 use crate::errors::OxyError;
@@ -21,7 +22,13 @@ pub async fn execute_with_handler<I, R>(
     let writer = buf_writer
         .create_writer(None)
         .map_err(|e| OxyError::RuntimeError(format!("Failed to create writer: {e}")))?;
-    let event_handle = tokio::spawn(async move { buf_writer.write_to_handler(handler).await });
+
+    // Capture the current span to propagate trace context to the spawned task
+    let current_span = tracing::Span::current();
+
+    let event_handle = tokio::spawn(
+        async move { buf_writer.write_to_handler(handler).await }.instrument(current_span.clone()),
+    );
     let output = {
         let execution_context: ExecutionContext = execution_context.wrap_writer(writer);
         executable.execute(&execution_context, input).await

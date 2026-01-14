@@ -12,7 +12,9 @@ const AppEditor = () => {
   const { pathb64, isReadOnly, gitEnabled } = useEditorContext();
   const { previewKey, refreshPreview } = usePreviewRefresh();
   const { invalidateAppQueries } = useEditorQueryInvalidation();
-  const [viewMode, setViewMode] = useState<AppViewMode>(AppViewMode.Visualization);
+  const [viewMode, setViewMode] = useState<AppViewMode>(
+    AppViewMode.Visualization,
+  );
   const [validationError, setValidationError] = useState<string | null>(null);
 
   const appPath = useMemo(() => atob(pathb64 ?? ""), [pathb64]);

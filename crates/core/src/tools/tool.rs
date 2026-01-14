@@ -26,6 +26,7 @@ use crate::{
         builders::{ExecutableBuilder, map::ParamMapper},
         types::{Chunk, EventKind, Output, OutputContainer, Table},
     },
+    observability::events,
     service::types::{SemanticQuery, SemanticQueryParams},
     tools::{
         create_data_app::types::CreateDataAppParams,
@@ -47,11 +48,16 @@ pub struct ToolExecutable;
 impl Executable<(String, Option<ToolType>, ToolRawInput)> for ToolExecutable {
     type Response = OutputContainer;
 
+    #[tracing::instrument(skip_all, err, fields(
+        otel.name = events::tool::TOOL_CALL_EXECUTE,
+        oxy.span_type = events::tool::TOOL_CALL_TYPE,
+    ))]
     async fn execute(
         &mut self,
         execution_context: &ExecutionContext,
         input: (String, Option<ToolType>, ToolRawInput),
     ) -> Result<Self::Response, OxyError> {
+        events::tool::tool_call_input(&input);
         let (agent_name, tool_type, input) = input;
         tracing::info!("Executing tool: {:?}", input);
         let artifact_id = uuid::Uuid::new_v4().to_string();
@@ -66,6 +72,7 @@ impl Executable<(String, Option<ToolType>, ToolRawInput)> for ToolExecutable {
                 ToolType::OmniQuery(_omni_query_tool) => true,
                 _ => false,
             };
+            events::tool::tool_call_is_verified(is_verified);
 
             let artifact = tool_type.artifact();
             if let Some((title, kind)) = &artifact {
@@ -90,7 +97,7 @@ impl Executable<(String, Option<ToolType>, ToolRawInput)> for ToolExecutable {
                             sql.clone(),
                         ),
                         None => {
-                            let SQLParams { sql, persist } =
+                            let SQLParams { sql, persist: _ } =
                                 serde_json::from_str::<SQLParams>(&input.param)?;
                             (input.param.clone(), sql)
                         }
@@ -285,6 +292,12 @@ impl Executable<(String, Option<ToolType>, ToolRawInput)> for ToolExecutable {
                     .await?;
             }
 
+            // Log tool call output or error
+            match &tool_ret {
+                Ok(output) => events::tool::tool_call_output(output),
+                Err(e) => events::tool::tool_call_error(&e.to_string()),
+            }
+
             let ToolRawInput {
                 call_id,
                 handle,
@@ -305,6 +318,7 @@ impl Executable<(String, Option<ToolType>, ToolRawInput)> for ToolExecutable {
                 handle,
                 param,
             } = input;
+            events::tool::tool_call_error(TOOL_NOT_FOUND_ERR);
             return Err(OxyError::ToolCallError {
                 call_id,
                 msg: TOOL_NOT_FOUND_ERR.to_string(),

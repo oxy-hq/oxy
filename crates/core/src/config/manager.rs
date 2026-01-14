@@ -7,6 +7,7 @@ use crate::{
     agent::builders::fsm::config::AgenticConfig,
     config::constants::{DATABASE_SEMANTIC_PATH, GLOBAL_SEMANTIC_PATH},
     errors::OxyError,
+    observability::events,
 };
 
 use super::{
@@ -100,11 +101,19 @@ impl ConfigManager {
             .await
     }
 
+    #[tracing::instrument(skip_all, err, fields(
+        otel.name = events::agent::load_agent_config::NAME,
+        oxy.span_type = events::agent::load_agent_config::TYPE,
+    ))]
     pub async fn resolve_agent<P: AsRef<Path>>(
         &self,
         agent_name: P,
     ) -> Result<AgentConfig, OxyError> {
-        self.storage.load_agent_config(agent_name).await
+        let agent_name_str = agent_name.as_ref().display().to_string();
+        events::agent::load_agent_config::input(&agent_name_str);
+        let output = self.storage.load_agent_config(agent_name).await?;
+        events::agent::load_agent_config::output(&output);
+        Ok(output)
     }
 
     pub async fn resolve_agentic_workflow<P: AsRef<Path>>(

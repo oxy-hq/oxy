@@ -7,7 +7,7 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use tokio_util::sync::CancellationToken;
 use tower_http::cors::{Any, CorsLayer};
-use tracing::{Instrument, error};
+use tracing::error;
 
 pub async fn start_mcp_stdio(project_path: PathBuf) -> anyhow::Result<()> {
     let service = OxyMcpServer::new(project_path)
@@ -94,13 +94,10 @@ pub async fn start_mcp_sse_server(
         format!("MCP server running at http://{display_host}:{port}").secondary()
     );
 
-    tokio::spawn(
-        async move {
-            if let Err(e) = server.await {
-                tracing::error!(error = %e, "sse server shutdown with error");
-            }
+    tokio::spawn(async move {
+        if let Err(e) = server.await {
+            tracing::error!(error = %e, "sse server shutdown with error");
         }
-        .instrument(tracing::info_span!("sse-server", bind_address = %bind)),
-    );
+    });
     anyhow::Ok(ct)
 }

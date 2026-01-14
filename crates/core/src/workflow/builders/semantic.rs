@@ -19,6 +19,7 @@ use crate::{
         renderer::Renderer,
         types::{Chunk, EventKind, Output, TableReference, utils::record_batches_to_2d_array},
     },
+    observability::events::workflow as workflow_events,
     service::types::{SemanticQuery, SemanticQueryParams},
     utils::truncate_datasets,
 };
@@ -27,10 +28,24 @@ use super::semantic_validator::{
     SemanticQueryValidation, ValidatedSemanticQuery, validate_semantic_query_task,
 };
 
+#[tracing::instrument(skip_all, err, fields(
+    otel.name = workflow_events::task::semantic_query::NAME_RENDER,
+    oxy.span_type = workflow_events::task::semantic_query::TYPE,
+    oxy.semantic_query.topic = tracing::field::Empty,
+    oxy.semantic_query.dimensions_count = task.query.dimensions.len(),
+    oxy.semantic_query.measures_count = task.query.measures.len(),
+    oxy.semantic_query.filters_count = task.query.filters.len(),
+))]
 pub fn render_semantic_query(
     renderer: &Renderer,
     task: &SemanticQueryTask,
 ) -> Result<SemanticQueryTask, OxyError> {
+    workflow_events::task::semantic_query::render_input(task);
+
+    let span = tracing::Span::current();
+    if let Some(ref topic) = task.query.topic {
+        span.record("oxy.semantic_query.topic", topic.as_str());
+    }
     let topic = if let Some(t) = &task.query.topic {
         Some(render_string(renderer, t, "topic")?)
     } else {
@@ -87,7 +102,7 @@ pub fn render_semantic_query(
         })
         .collect::<Result<Vec<_>, OxyError>>()?;
 
-    Ok(SemanticQueryTask {
+    let result = SemanticQueryTask {
         query: SemanticQueryParams {
             topic,
             dimensions,
@@ -100,7 +115,11 @@ pub fn render_semantic_query(
         },
         export: task.export.clone(),
         variables,
-    })
+    };
+
+    workflow_events::task::semantic_query::render_output(&result);
+
+    Ok(result)
 }
 
 fn render_string(renderer: &Renderer, value: &str, ctx: &str) -> Result<String, OxyError> {
@@ -117,11 +136,17 @@ struct SemanticQueryTaskMapper;
 
 #[async_trait::async_trait]
 impl ParamMapper<SemanticQueryTask, ValidatedSemanticQuery> for SemanticQueryTaskMapper {
+    #[tracing::instrument(skip_all, err, fields(
+        otel.name = workflow_events::task::semantic_query::NAME_MAP,
+        oxy.span_type = workflow_events::task::semantic_query::TYPE,
+    ))]
     async fn map(
         &self,
         execution_context: &ExecutionContext,
         input: SemanticQueryTask,
     ) -> Result<(ValidatedSemanticQuery, Option<ExecutionContext>), OxyError> {
+        workflow_events::task::semantic_query::map_input(&input);
+
         // Task 3.1: Pre-Execution Templating
         let rendered_task = render_semantic_query(&execution_context.renderer, &input)?;
 
@@ -129,6 +154,12 @@ impl ParamMapper<SemanticQueryTask, ValidatedSemanticQuery> for SemanticQueryTas
         let validated_query =
             validate_semantic_query_task(&execution_context.project.config_manager, &rendered_task)
                 .await?;
+
+        workflow_events::task::semantic_query::map_output(
+            &validated_query.topic.name,
+            validated_query.task.query.dimensions.len(),
+            validated_query.task.query.measures.len(),
+        );
 
         Ok((validated_query, None))
     }
@@ -148,11 +179,18 @@ impl SemanticQueryExecutable {
         Self
     }
 
+    #[tracing::instrument(skip_all, err, fields(
+        otel.name = workflow_events::task::semantic_query::NAME_COMPILE,
+        oxy.span_type = workflow_events::task::semantic_query::TYPE,
+        oxy.semantic_query.topic = %input.topic.name,
+    ))]
     pub async fn compile(
         &mut self,
         execution_context: &ExecutionContext,
         input: ValidatedSemanticQuery,
     ) -> Result<String, OxyError> {
+        workflow_events::task::semantic_query::compile_input(&input.topic.name, &input.task.query);
+
         let requested_views = self.extract_views_from_query(&input.task, &input.topic.name);
 
         let cubejs_query = self.convert_to_cubejs_query(
@@ -168,6 +206,8 @@ impl SemanticQueryExecutable {
         let variables = input.task.variables.clone().unwrap_or_default();
 
         sql_query = self.resolve_variables_in_sql(execution_context, sql_query, variables)?;
+
+        workflow_events::task::semantic_query::compile_output(&sql_query);
 
         Ok(sql_query)
     }
@@ -240,6 +280,14 @@ impl Executable<SemanticQueryValidation> for SemanticQueryExecutable {
 impl Executable<ValidatedSemanticQuery> for SemanticQueryExecutable {
     type Response = Output;
 
+    #[tracing::instrument(skip_all, err, fields(
+        otel.name = workflow_events::task::semantic_query::NAME_EXECUTE,
+        oxy.span_type = workflow_events::task::semantic_query::TYPE,
+        oxy.semantic_query.topic = %input.topic.name,
+        oxy.semantic_query.dimensions_count = input.task.query.dimensions.len(),
+        oxy.semantic_query.measures_count = input.task.query.measures.len(),
+        oxy.semantic_query.filters_count = input.task.query.filters.len(),
+    ))]
     async fn execute(
         &mut self,
         execution_context: &ExecutionContext,
@@ -255,6 +303,12 @@ impl SemanticQueryExecutable {
         execution_context: &ExecutionContext,
         input: ValidatedSemanticQuery,
     ) -> Result<Output, OxyError> {
+        workflow_events::task::semantic_query::execute_input(
+            &input.topic.name,
+            &input.task.query.dimensions,
+            &input.task.query.measures,
+        );
+
         // Create a child context for the semantic query task execution
         // This prevents the task's Finished event from closing the artifact block
         let task_context = execution_context.with_child_source(
@@ -376,7 +430,7 @@ impl SemanticQueryExecutable {
 
         // Step 2: Execute SQL directly using database connector and save results
         let (file_path, record_batches, schema_ref) = match self
-            .execute_sql_and_get_results(
+            .execute_sql_and_save_results(
                 &sql_query,
                 &database,
                 &input.topic.name,
@@ -446,6 +500,8 @@ impl SemanticQueryExecutable {
                 error: None,
             })
             .await?;
+
+        workflow_events::task::semantic_query::execute_output(&table_output);
 
         // Return Table output with semantic query reference
         Ok(table_output)
@@ -781,7 +837,13 @@ impl SemanticQueryExecutable {
     }
 
     /// Get SQL query from CubeJS /sql endpoint and handle parameters
+    #[tracing::instrument(skip_all, err, fields(
+        otel.name = workflow_events::task::semantic_query::NAME_GET_SQL_FROM_CUBEJS,
+        oxy.span_type = workflow_events::task::semantic_query::TYPE,
+    ))]
     async fn get_sql_from_cubejs(&self, query: &JsonValue) -> Result<String, OxyError> {
+        workflow_events::task::semantic_query::get_sql_input(query);
+
         // Default CubeJS URL
         let cubejs_url =
             std::env::var("CUBEJS_API_URL").unwrap_or_else(|_| "http://localhost:4000".to_string());
@@ -887,6 +949,8 @@ impl SemanticQueryExecutable {
         tracing::debug!("Original SQL template: {}", sql_template);
         tracing::debug!("Parameters: {:?}", parameters);
 
+        workflow_events::task::semantic_query::get_sql_output(&final_sql);
+
         Ok(final_sql)
     }
 
@@ -986,14 +1050,19 @@ impl SemanticQueryExecutable {
     }
 
     /// Execute SQL query directly using database connector and save results to file
-    /// Returns the file path, record batches, and schema
-    async fn execute_sql_and_get_results(
+    #[tracing::instrument(skip_all, err, fields(
+        otel.name = workflow_events::task::semantic_query::NAME_EXECUTE_SQL,
+        oxy.span_type = workflow_events::task::semantic_query::TYPE,
+        oxy.database.ref = database_ref,
+    ))]
+    async fn execute_sql_and_save_results(
         &self,
         sql: &str,
         database_ref: &str,
         _topic: &str,
         execution_context: &ExecutionContext,
     ) -> Result<(String, Vec<RecordBatch>, Arc<Schema>), OxyError> {
+        workflow_events::task::semantic_query::execute_sql_input(database_ref, sql);
         use crate::adapters::connector::write_to_ipc;
         use uuid::Uuid;
 
@@ -1023,6 +1092,9 @@ impl SemanticQueryExecutable {
             .map_err(|e| OxyError::RuntimeError(format!("Failed to write results to file: {e}")))?;
 
         tracing::info!("Saved semantic query results to: {}", file_path);
+
+        workflow_events::task::semantic_query::execute_sql_output(&file_path);
+
         Ok((file_path, record_batches, schema_ref))
     }
 }

@@ -85,6 +85,7 @@ pub struct AuthConfigResponse {
     pub okta: Option<OktaConfig>,
     pub basic: Option<bool>,
     pub cloud: bool,
+    pub enterprise: bool,
 }
 
 #[derive(Serialize)]
@@ -128,6 +129,7 @@ pub async fn get_config(
             okta: None,
             basic: None,
             cloud: app_state.cloud,
+            enterprise: app_state.enterprise,
         }));
     }
 
@@ -150,6 +152,7 @@ pub async fn get_config(
         okta: okta_config,
         basic: Some(has_basic),
         cloud: app_state.cloud,
+        enterprise: app_state.enterprise,
     };
 
     tracing::info!(

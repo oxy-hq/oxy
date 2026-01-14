@@ -1,4 +1,4 @@
-import { Outlet, useParams } from "react-router-dom";
+import { Outlet, useParams, useLocation } from "react-router-dom";
 import {
   ResizableHandle,
   ResizablePanel,
@@ -21,10 +21,14 @@ export const useIDE = () => {
 
 const Ide = () => {
   const { pathb64 } = useParams();
+  const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const { open, setOpen } = useSidebar();
 
   const hasClosedSidebar = useRef(false);
+
+  const isObservabilityRoute = location.pathname.includes("/ide/observability");
+  const hasContent = pathb64 || isObservabilityRoute;
 
   useEffect(() => {
     if (open && !hasClosedSidebar.current) {
@@ -56,7 +60,7 @@ const Ide = () => {
               minSize={20}
               className={cn(!sidebarOpen && "flex-1!", "relative")}
             >
-              {!pathb64 ? (
+              {!hasContent ? (
                 <EmptyState
                   title="No file is open"
                   description="Select a file from the sidebar to start editing"

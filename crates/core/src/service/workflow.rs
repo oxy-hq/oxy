@@ -21,6 +21,7 @@ use crate::{
         types::{Event, EventKind, Output, OutputContainer, ProgressType},
         writer::EventHandler,
     },
+    observability::events::workflow as workflow_events,
     workflow::{
         WorkflowInput, WorkflowLauncher,
         loggers::types::{LogItem, WorkflowLogger},
@@ -158,6 +159,16 @@ where
     }
 }
 
+#[tracing::instrument(skip_all, err, fields(
+    otel.name = workflow_events::run_workflow::NAME,
+    oxy.span_type = workflow_events::run_workflow::TYPE,
+    oxy.workflow.ref = %path.as_ref().to_string_lossy().to_string(),
+    oxy.execution.source = tracing::field::Empty,
+    oxy.user.id = tracing::field::Empty,
+    oxy.thread.id = tracing::field::Empty,
+    oxy.task.id = tracing::field::Empty,
+    oxy.context.id = tracing::field::Empty,
+))]
 pub async fn run_workflow<P: AsRef<Path>, L: WorkflowLogger + 'static>(
     path: P,
     logger: L,
@@ -166,9 +177,54 @@ pub async fn run_workflow<P: AsRef<Path>, L: WorkflowLogger + 'static>(
     filters: Option<SessionFilters>,
     connections: Option<crate::config::model::ConnectionOverrides>,
     globals: Option<indexmap::IndexMap<String, serde_json::Value>>,
+    source: Option<crate::service::agent::ExecutionSource>,
     user_id: Option<uuid::Uuid>,
 ) -> Result<OutputContainer, OxyError> {
-    WorkflowLauncher::new()
+    workflow_events::run_workflow::input(
+        &path.as_ref().to_string_lossy(),
+        &format!("{:?}", retry_strategy),
+    );
+
+    // Record execution source in tracing span
+    if let Some(ref exec_source) = source {
+        let span = tracing::Span::current();
+        span.record(
+            "oxy.execution.source",
+            format!("{:?}", exec_source).as_str(),
+        );
+
+        match exec_source {
+            crate::service::agent::ExecutionSource::WebApi { thread_id, user_id } => {
+                span.record("oxy.user.id", user_id.as_str());
+                span.record("oxy.thread.id", thread_id.as_str());
+            }
+            crate::service::agent::ExecutionSource::Slack {
+                thread_id,
+                channel_id,
+            } => {
+                span.record("oxy.thread.id", thread_id.as_str());
+                if let Some(cid) = channel_id {
+                    span.record("oxy.context.id", cid.as_str());
+                }
+            }
+            crate::service::agent::ExecutionSource::A2a {
+                task_id,
+                context_id,
+                thread_id,
+            } => {
+                span.record("oxy.task.id", task_id.as_str());
+                span.record("oxy.context.id", context_id.as_str());
+                span.record("oxy.thread.id", thread_id.as_str());
+            }
+            crate::service::agent::ExecutionSource::Mcp { session_id } => {
+                if let Some(sid) = session_id {
+                    span.record("oxy.context.id", sid.as_str());
+                }
+            }
+            _ => {}
+        }
+    }
+    let result = WorkflowLauncher::new()
         .with_filters(filters)
         .with_connections(connections)
         .with_globals(globals)
@@ -182,9 +238,26 @@ pub async fn run_workflow<P: AsRef<Path>, L: WorkflowLogger + 'static>(
             WorkflowEventHandler::new(logger),
             user_id,
         )
-        .await
+        .await;
+
+    match &result {
+        Ok(output) => workflow_events::run_workflow::output(output),
+        Err(e) => workflow_events::run_workflow::error(&e.to_string()),
+    }
+
+    result
 }
 
+#[tracing::instrument(skip_all, err, fields(
+    otel.name = workflow_events::run_workflow::NAME,
+    oxy.span_type = workflow_events::run_workflow::TYPE,
+    oxy.workflow.ref = %path.as_ref().to_string_lossy().to_string(),
+    oxy.execution.source = tracing::field::Empty,
+    oxy.user.id = tracing::field::Empty,
+    oxy.thread.id = tracing::field::Empty,
+    oxy.task.id = tracing::field::Empty,
+    oxy.context.id = tracing::field::Empty,
+))]
 pub async fn run_workflow_v2<P: AsRef<Path>, H: EventHandler + Send + Sync + 'static>(
     project_manager: ProjectManager,
     path: P,
@@ -193,9 +266,54 @@ pub async fn run_workflow_v2<P: AsRef<Path>, H: EventHandler + Send + Sync + 'st
     filters: Option<SessionFilters>,
     connections: Option<crate::config::model::ConnectionOverrides>,
     globals: Option<indexmap::IndexMap<String, serde_json::Value>>,
+    source: Option<crate::service::agent::ExecutionSource>,
     user_id: Option<uuid::Uuid>,
 ) -> Result<OutputContainer, OxyError> {
-    WorkflowLauncher::new()
+    workflow_events::run_workflow::input(
+        &path.as_ref().to_string_lossy(),
+        &format!("{:?}", retry_strategy),
+    );
+
+    // Record execution source in tracing span
+    if let Some(ref exec_source) = source {
+        let span = tracing::Span::current();
+        span.record(
+            "oxy.execution.source",
+            format!("{:?}", exec_source).as_str(),
+        );
+
+        match exec_source {
+            crate::service::agent::ExecutionSource::WebApi { thread_id, user_id } => {
+                span.record("oxy.user.id", user_id.as_str());
+                span.record("oxy.thread.id", thread_id.as_str());
+            }
+            crate::service::agent::ExecutionSource::Slack {
+                thread_id,
+                channel_id,
+            } => {
+                span.record("oxy.thread.id", thread_id.as_str());
+                if let Some(cid) = channel_id {
+                    span.record("oxy.context.id", cid.as_str());
+                }
+            }
+            crate::service::agent::ExecutionSource::A2a {
+                task_id,
+                context_id,
+                thread_id,
+            } => {
+                span.record("oxy.task.id", task_id.as_str());
+                span.record("oxy.context.id", context_id.as_str());
+                span.record("oxy.thread.id", thread_id.as_str());
+            }
+            crate::service::agent::ExecutionSource::Mcp { session_id } => {
+                if let Some(sid) = session_id {
+                    span.record("oxy.context.id", sid.as_str());
+                }
+            }
+            _ => {}
+        }
+    }
+    let result = WorkflowLauncher::new()
         .with_filters(filters)
         .with_connections(connections)
         .with_globals(globals)
@@ -209,7 +327,14 @@ pub async fn run_workflow_v2<P: AsRef<Path>, H: EventHandler + Send + Sync + 'st
             handler,
             user_id,
         )
-        .await
+        .await;
+
+    match &result {
+        Ok(output) => workflow_events::run_workflow::output(output),
+        Err(e) => workflow_events::run_workflow::error(&e.to_string()),
+    }
+
+    result
 }
 
 pub async fn get_workflow_logs(

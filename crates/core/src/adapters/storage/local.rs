@@ -4,10 +4,12 @@ use crate::{config::ConfigManager, errors::OxyError};
 
 use super::Storage;
 
+#[allow(dead_code)]
 pub struct LocalStorage {
     base_path: String,
 }
 
+#[allow(dead_code)]
 impl LocalStorage {
     pub async fn from_config<P: AsRef<Path>>(
         config: &ConfigManager,

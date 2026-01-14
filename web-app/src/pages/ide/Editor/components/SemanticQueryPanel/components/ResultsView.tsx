@@ -6,7 +6,11 @@ interface ResultsViewProps {
   executionError: string | null;
 }
 
-const ResultsView = ({ result, resultFile, executionError }: ResultsViewProps) => {
+const ResultsView = ({
+  result,
+  resultFile,
+  executionError,
+}: ResultsViewProps) => {
   if (executionError) {
     return (
       <div className="h-full overflow-auto customScrollbar p-4">

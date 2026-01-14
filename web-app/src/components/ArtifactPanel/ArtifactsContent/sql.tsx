@@ -32,7 +32,8 @@ const SqlArtifactPanel = ({ artifact }: Props) => {
       </div>
 
       <div className="flex-1 overflow-auto">
-        {(artifact.content.value.result || artifact.content.value.result_file) && (
+        {(artifact.content.value.result ||
+          artifact.content.value.result_file) && (
           <Results
             result={artifact.content.value.result}
             resultFile={artifact.content.value.result_file}

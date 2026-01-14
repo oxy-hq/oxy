@@ -1,4 +1,5 @@
 use minijinja::Value;
+use tracing::Instrument;
 
 use crate::{
     adapters::{openai::OpenAIToolConfig, project::manager::ProjectManager},
@@ -72,8 +73,14 @@ impl ToolLauncher {
             "ExecutionContext is required".to_string(),
         ))?;
         let mut executable = build_tool_executable();
-        let handle =
-            tokio::spawn(async move { executable.execute(&execution_context, tool_input).await });
+
+        // Capture the current span to propagate trace context to the spawned task
+        let current_span = tracing::Span::current();
+
+        let handle = tokio::spawn(
+            async move { executable.execute(&execution_context, tool_input).await }
+                .instrument(current_span),
+        );
         let buf_writer = self.buf_writer;
         let event_handle =
             tokio::spawn(async move { buf_writer.write_to_handler(event_handler).await });

@@ -1,4 +1,5 @@
 use minijinja::Value;
+use tracing::Instrument;
 
 use crate::{
     adapters::project::manager::ProjectManager,
@@ -57,11 +58,18 @@ impl EvalLauncher {
             "ExecutionContext is required".to_string(),
         ))?;
         let mut eval_executable = build_eval_executable();
-        let handle = tokio::spawn(async move {
-            eval_executable
-                .execute(&execution_context, eval_input)
-                .await
-        });
+
+        // Capture the current span to propagate trace context to the spawned task
+        let current_span = tracing::Span::current();
+
+        let handle = tokio::spawn(
+            async move {
+                eval_executable
+                    .execute(&execution_context, eval_input)
+                    .await
+            }
+            .instrument(current_span),
+        );
         let buf_writer = self.buf_writer;
         let event_handle =
             tokio::spawn(async move { buf_writer.write_to_handler(event_handler).await });

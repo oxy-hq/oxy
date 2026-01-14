@@ -1,3 +1,5 @@
+use tracing::Instrument;
+
 use crate::{
     errors::OxyError,
     execute::{
@@ -5,6 +7,7 @@ use crate::{
         types::Event,
         writer::{BufWriter, Writer},
     },
+    observability::events,
 };
 
 use super::wrap::Wrap;
@@ -86,10 +89,14 @@ where
         let event_predict = self.event_predict.clone();
         let original_writer = execution_context.writer.clone();
         let writer = buf_writer.create_writer(None)?;
-        let event_handle =
-            tokio::spawn(
-                async move { buf_writer.write_when(original_writer, event_predict).await },
-            );
+
+        // Capture the current span to propagate trace context to the spawned task
+        let current_span = tracing::Span::current();
+
+        let event_handle = tokio::spawn(
+            async move { buf_writer.write_when(original_writer, event_predict).await }
+                .instrument(current_span),
+        );
         let response = {
             let fallback_context = execution_context.wrap_writer(writer);
             self.inner.execute(&fallback_context, input.clone()).await
@@ -105,6 +112,8 @@ where
             }
             Ok(response)
         } else {
+            // Emit fallback triggered event
+            events::agent::routing_agent::fallback_triggered();
             self.fallback.execute(execution_context, input).await
         }
     }

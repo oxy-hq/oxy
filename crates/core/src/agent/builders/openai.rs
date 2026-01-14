@@ -14,7 +14,7 @@ use async_openai::{
 use deser_incomplete::from_json_str;
 use futures::StreamExt;
 use schemars::JsonSchema;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     adapters::openai::OpenAIClient,
@@ -28,6 +28,7 @@ use crate::{
         builders::map::ParamMapper,
         types::{Chunk, EventKind, Output},
     },
+    observability::events,
     service::agent::Message,
     theme::StyledText,
     utils::variant_eq,
@@ -54,7 +55,7 @@ pub struct AgentResponse {
     pub data: AgentResponseData,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct OpenAIExecutableResponse {
     pub content: Output,
     pub tool_calls: Vec<ChatCompletionMessageToolCall>,
@@ -106,7 +107,7 @@ fn is_oss_model(model: &str) -> bool {
 
 use crate::agent::builders::openai_response::OpenAIResponseExecutable;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub enum OpenAIOrOSSExecutable {
     OpenAI(OpenAIExecutable),
     OSS(OSSExecutable),
@@ -132,8 +133,9 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIOrOSSExecutable {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct OpenAIExecutable {
+    #[serde(skip)]
     client: Arc<OpenAIClient>,
     model: String,
     tool_configs: Vec<ChatCompletionTool>,
@@ -329,12 +331,17 @@ impl OpenAIExecutable {
 impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
     type Response = OpenAIExecutableResponse;
 
+    #[tracing::instrument(skip_all,err, fields(
+        otel.name = events::llm::LLM_OPENAI_CALL,
+        oxy.span_type = events::llm::LLM_CALL_TYPE,
+        gen_ai.request.model = %self.model,
+    ))]
     async fn execute(
         &mut self,
         execution_context: &ExecutionContext,
         input: Vec<ChatCompletionRequestMessage>,
     ) -> Result<Self::Response, OxyError> {
-        tracing::debug!("Starting OpenAI execution with model: {}", self.model);
+        events::llm::input(&input);
 
         let chat = self.client.chat();
 
@@ -395,6 +402,10 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
                 }
             })? {
                 if let Some(usage_data) = response.usage {
+                    events::llm::usage(
+                        usage_data.prompt_tokens as i64,
+                        usage_data.completion_tokens as i64,
+                    );
                     execution_context
                         .write_usage(Usage::new(
                             usage_data.prompt_tokens as i32,
@@ -422,6 +433,14 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
             }
 
             let parsed_content = self.finalize_response(&content);
+            let tool_call_count = tool_calls.len();
+            if tool_call_count > 0 {
+                tracing::info!(
+                    llm.tool_calls_count = tool_call_count,
+                    "LLM returned tool calls"
+                );
+            }
+
             let delta: Output = if has_written {
                 let mut output = Into::<Output>::into(parsed_content.data.clone());
                 output.replace("".to_string());
@@ -438,10 +457,22 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
                 })
                 .await?;
 
-            Ok(OpenAIExecutableResponse {
+            tracing::info!(
+                llm.response_content_length = content.len(),
+                llm.tool_calls_returned = tool_calls.len(),
+                "OpenAI LLM call completed"
+            );
+
+            let tool_calls_vec: Vec<_> = tool_calls.into_values().collect();
+
+            let response = OpenAIExecutableResponse {
                 content: parsed_content.into(),
-                tool_calls: tool_calls.into_values().collect(),
-            })
+                tool_calls: tool_calls_vec,
+            };
+
+            events::llm::output(&response);
+
+            Ok(response)
         };
 
         let result = self.execute_with_retry(func, execution_context).await;
@@ -498,8 +529,9 @@ impl OpenAIExecutable {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct OSSExecutable {
+    #[serde(skip)]
     client: Arc<OpenAIClient>,
     model: String,
     tool_configs: Vec<ChatCompletionTool>,
@@ -537,11 +569,18 @@ impl OSSExecutable {
 impl Executable<Vec<ChatCompletionRequestMessage>> for OSSExecutable {
     type Response = OpenAIExecutableResponse;
 
+    #[tracing::instrument(skip_all, err, fields(
+        otel.name = events::llm::LLM_OSS_CALL,
+        oxy.span_type = events::llm::LLM_CALL_TYPE,
+        gen_ai.request.model = %self.model,
+    ))]
     async fn execute(
         &mut self,
         execution_context: &ExecutionContext,
         input: Vec<ChatCompletionRequestMessage>,
     ) -> Result<Self::Response, OxyError> {
+        events::llm::input(&input);
+
         tracing::debug!("Starting OSS model execution with model: {}", self.model);
 
         let chat = self.client.chat();
@@ -578,6 +617,10 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OSSExecutable {
         })?;
 
         if let Some(usage_data) = response.usage {
+            events::llm::usage(
+                usage_data.prompt_tokens as i64,
+                usage_data.completion_tokens as i64,
+            );
             execution_context
                 .write_usage(Usage::new(
                     usage_data.prompt_tokens as i32,
@@ -592,7 +635,7 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OSSExecutable {
             .ok_or_else(|| OxyError::RuntimeError("No choices returned from API".to_string()))?;
 
         let content = choice.message.content.as_deref().unwrap_or("");
-        let tool_calls = choice
+        let tool_calls: Vec<ChatCompletionMessageToolCall> = choice
             .message
             .tool_calls
             .clone()
@@ -620,10 +663,14 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OSSExecutable {
             })
             .await?;
 
-        Ok(OpenAIExecutableResponse {
+        let response = OpenAIExecutableResponse {
             content: parsed_content.into(),
-            tool_calls,
-        })
+            tool_calls: tool_calls.clone(),
+        };
+
+        events::llm::output(&response);
+
+        Ok(response)
     }
 }
 

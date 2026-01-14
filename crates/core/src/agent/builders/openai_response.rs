@@ -3,6 +3,8 @@ use std::{
     sync::Arc,
 };
 
+use serde::Serialize;
+
 use crate::{
     agent::builders::openai::{AgentResponse, AgentResponseData},
     config::model::ReasoningConfig,
@@ -47,6 +49,7 @@ use crate::{
         Executable, ExecutionContext,
         types::{Chunk, EventKind, Output},
     },
+    observability::events,
     theme::StyledText,
     utils::variant_eq,
 };
@@ -299,8 +302,9 @@ fn convert_tools(chat_tools: &[ChatCompletionTool]) -> Result<Vec<Tool>, OxyErro
         .collect()
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct OpenAIResponseExecutable {
+    #[serde(skip)]
     client: Arc<OpenAIClient>,
     model: String,
     tool_configs: Vec<ChatCompletionTool>,
@@ -557,6 +561,10 @@ impl OpenAIResponseExecutable {
                 }
                 ResponseStreamEvent::ResponseCompleted(completed) => {
                     if let Some(usage_data) = completed.response.usage {
+                        events::llm::usage(
+                            usage_data.input_tokens as i64,
+                            usage_data.output_tokens as i64,
+                        );
                         execution_context
                             .write_usage(Usage::new(
                                 usage_data.input_tokens as i32,
@@ -713,11 +721,18 @@ impl OpenAIResponseExecutable {
 impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIResponseExecutable {
     type Response = OpenAIExecutableResponse;
 
+    #[tracing::instrument(skip_all,err, fields(
+        otel.name = events::llm::LLM_OPENAI_RESPONSE_CALL,
+        oxy.span_type = events::llm::LLM_CALL_TYPE,
+        gen_ai.request.model = %self.model,
+    ))]
     async fn execute(
         &mut self,
         execution_context: &ExecutionContext,
         input: Vec<ChatCompletionRequestMessage>,
     ) -> Result<Self::Response, OxyError> {
+        events::llm::input(&input);
+
         tracing::debug!("Starting OpenAI execution with model: {}", self.model);
 
         let responses = self.client.responses();
@@ -741,6 +756,10 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIResponseExecutable 
         };
 
         let result = self.execute_with_retry(func, execution_context).await;
+
+        if let Ok(ref response) = result {
+            events::llm::output(response);
+        }
 
         if self.synthesize_mode {
             self.clear_tools();

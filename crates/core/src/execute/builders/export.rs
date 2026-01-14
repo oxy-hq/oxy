@@ -1,4 +1,5 @@
 use tokio::task::JoinHandle;
+use tracing::Instrument;
 
 use crate::{
     errors::OxyError,
@@ -88,8 +89,12 @@ where
         let export_context = execution_context.wrap_writer(writer);
         let mut executable = self.inner.clone();
         let input_clone = input.clone();
-        let output_handle =
-            tokio::spawn(async move { executable.execute(&export_context, input_clone).await });
+        // Capture the current span to propagate trace context to the spawned task
+        let current_span = tracing::Span::current();
+        let output_handle = tokio::spawn(
+            async move { executable.execute(&export_context, input_clone).await }
+                .instrument(current_span),
+        );
         self.exporter
             .export(execution_context, buf_writer, input, output_handle)
             .await

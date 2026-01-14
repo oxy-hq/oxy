@@ -3,7 +3,6 @@ use std::fmt::Debug;
 use minijinja::Value;
 use serde::{Serialize, de::DeserializeOwned};
 use tokio::sync::mpsc::Sender;
-use uuid::Uuid;
 
 use crate::{
     adapters::{

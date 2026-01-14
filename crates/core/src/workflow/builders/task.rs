@@ -23,6 +23,7 @@ use crate::{
         },
         types::{Chunk, EventKind, Output, OutputContainer},
     },
+    observability::events::workflow as workflow_events,
     theme::StyledText,
     utils::file_path_to_source_id,
     workflow::builders::{RetryStrategy, omni::build_omni_query_task_executable},
@@ -113,11 +114,18 @@ impl UpdateInput<OutputContainer> for TaskInput {
 impl Executable<TaskInput> for TaskExecutable {
     type Response = OutputContainer;
 
+    #[tracing::instrument(skip_all, err, fields(
+        otel.name = workflow_events::task::execute::NAME,
+        oxy.span_type = workflow_events::task::execute::TYPE,
+        oxy.task.name = %input.task.name,
+    ))]
     async fn execute(
         &mut self,
         execution_context: &ExecutionContext,
         input: TaskInput,
     ) -> Result<Self::Response, OxyError> {
+        workflow_events::task::execute::input(&input.task.name, &input.task.kind());
+
         let task_source_id = match &execution_context.checkpoint {
             Some(checkpoint) => {
                 tracing::info!("Executing task: {}", checkpoint.current_ref_str(),);
@@ -131,7 +139,8 @@ impl Executable<TaskInput> for TaskExecutable {
             loop_idx: _,
             runtime_input,
             workflow_consistency_prompt,
-        } = input;
+        } = input.clone();
+        let task_name = task.name.clone();
         let task_execution_context =
             execution_context.with_child_source(task_source_id.clone(), TASK_SOURCE.to_string());
         task_execution_context
@@ -147,6 +156,12 @@ impl Executable<TaskInput> for TaskExecutable {
 
         let new_value = match task.task_type {
             TaskType::Agent(agent_task) => {
+                let agent_span = workflow_events::task_agent_execute_span(
+                    &agent_task.agent_ref,
+                    agent_task.consistency_run,
+                );
+                let _guard = agent_span.enter();
+
                 let prompt = execution_context.renderer.render(&agent_task.prompt)?;
 
                 // Render agent task variables with workflow context
@@ -277,6 +292,9 @@ impl Executable<TaskInput> for TaskExecutable {
                     })?
             }
             TaskType::Formatter(formatter_task) => {
+                let formatter_span = workflow_events::task_formatter_execute_span();
+                let _guard = formatter_span.enter();
+
                 let value: Result<OutputContainer, OxyError> = execution_context
                     .renderer
                     .render(&formatter_task.template)
@@ -301,6 +319,11 @@ impl Executable<TaskInput> for TaskExecutable {
                 value
             }
             TaskType::Workflow(workflow_task) => {
+                let workflow_span = workflow_events::task_sub_workflow_execute_span(
+                    &workflow_task.src.to_string_lossy(),
+                );
+                let _guard = workflow_span.enter();
+
                 let (run_info, variables) = match runtime_input {
                     Some(RuntimeTaskInput::ChildRunInfo {
                         variables,
@@ -383,6 +406,11 @@ impl Executable<TaskInput> for TaskExecutable {
                 error: new_value.as_ref().err().map(|e| e.to_string()),
             })
             .await?;
+
+        match &new_value {
+            Ok(output) => workflow_events::task::execute::output(&task_name, output),
+            Err(e) => workflow_events::task::execute::error(&task_name, &e.to_string()),
+        }
 
         new_value
     }

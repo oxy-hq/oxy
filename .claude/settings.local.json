@@ -13,6 +13,7 @@
       "Bash(oxy test:*)",
       "Bash(cargo run:*)",
       "Bash(ls:*)",
+      "Bash(npx tsc:*)",
       "Bash(pnpm --filter oxy-web test:e2e:*)",
       "Bash(find:*)",
       "Bash(grep:*)",

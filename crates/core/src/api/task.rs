@@ -208,6 +208,13 @@ impl ChatHandler for TaskExecutor {
                     context.connections.clone(),
                     None, // No globals from task
                     None, // TODO: Support variables from task context
+                    Some(crate::service::agent::ExecutionSource::WebApi {
+                        thread_id: thread.id.to_string(),
+                        user_id: thread
+                            .user_id
+                            .map(|u| u.to_string())
+                            .unwrap_or_else(|| "unknown".to_string()),
+                    }),
                     context.sandbox_info()?,
                 )
                 .await

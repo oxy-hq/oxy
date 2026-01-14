@@ -64,11 +64,6 @@ pub mod run {
 
     #[test]
     fn run_example_workflow_ok() {
-        // First run migration to ensure database tables exist
-        let mut migrate_cmd = Command::cargo_bin("oxy").unwrap();
-        migrate_cmd.current_dir("examples").arg("migrate");
-        migrate_cmd.assert().success();
-
         let mut cmd = setup_command();
         let result = cmd
             .arg("workflows/table_values.workflow.yml")
@@ -128,6 +123,17 @@ pub mod run {
             .assert()
             .success();
         let output = String::from_utf8(result.get_output().stdout.clone()).unwrap();
-        assert!(output.contains("2873"));
+
+        // The agent queries dim_users table in BigQuery which has ~2873 users
+        // Accept the number with or without comma formatting since LLM responses vary
+        // Examples: "2873", "2,873", "2 873"
+        let has_count =
+            output.contains("2873") || output.contains("2,873") || output.contains("2 873");
+
+        assert!(
+            has_count,
+            "Expected output to contain user count '2873' (with or without formatting), but got:\n{}",
+            output
+        );
     }
 }

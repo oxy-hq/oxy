@@ -3,6 +3,7 @@ use crate::config::constants::DEFAULT_API_KEY_HEADER;
 use crate::db::client::establish_connection;
 use crate::db::docker;
 use crate::errors::OxyError;
+use crate::storage::{ClickHouseConfig, ClickHouseStorage};
 use crate::theme::StyledText;
 use axum::handler::Handler;
 use axum::http::HeaderValue;
@@ -45,22 +46,51 @@ pub async fn start_server_and_web_app(args: ServeArgs) -> Result<(), OxyError> {
         );
     }
 
-    run_database_migrations().await?;
+    run_database_migrations(args.enterprise).await?;
 
     let _available_port = find_available_port(args.host.clone(), args.port).await?;
-    let app = create_web_application(args.cloud).await?;
+    let app = create_web_application(args.cloud, args.enterprise).await?;
 
     serve_application(app, args).await
 }
 
-async fn run_database_migrations() -> Result<(), OxyError> {
+async fn run_database_migrations(enterprise: bool) -> Result<(), OxyError> {
     let db = establish_connection()
         .await
         .map_err(|e| OxyError::RuntimeError(format!("Failed to connect to database: {}", e)))?;
 
+    // Run SeaORM migrations for PostgreSQL/SQLite
     Migrator::up(&db, None)
         .await
-        .map_err(|e| OxyError::RuntimeError(format!("Failed to run database migrations: {}", e)))
+        .map_err(|e| OxyError::RuntimeError(format!("Failed to run database migrations: {}", e)))?;
+
+    // Run ClickHouse migrations if enterprise mode and ClickHouse is configured
+    if enterprise {
+        run_clickhouse_migrations().await?;
+    }
+
+    Ok(())
+}
+
+async fn run_clickhouse_migrations() -> Result<(), OxyError> {
+    // Check if ClickHouse environment variables are set
+    if ClickHouseConfig::is_configured() {
+        tracing::info!("ClickHouse configuration detected, running ClickHouse migrations...");
+
+        let storage = ClickHouseStorage::from_env();
+
+        // Run ClickHouse migrations
+        storage
+            .run_migrations()
+            .await
+            .map_err(|e| OxyError::RuntimeError(format!("ClickHouse migrations failed: {e}")))?;
+
+        tracing::info!("ClickHouse migrations completed successfully");
+    } else {
+        tracing::debug!("No ClickHouse configuration found, skipping ClickHouse migrations");
+    }
+
+    Ok(())
 }
 
 async fn find_available_port(host: String, port: u16) -> Result<u16, OxyError> {
@@ -108,8 +138,8 @@ async fn find_available_port(host: String, port: u16) -> Result<u16, OxyError> {
     Ok(chosen_port)
 }
 
-async fn create_web_application(cloud: bool) -> Result<Router, OxyError> {
-    let api_router = crate::api::router::api_router(cloud)
+async fn create_web_application(cloud: bool, enterprise: bool) -> Result<Router, OxyError> {
+    let api_router = crate::api::router::api_router(cloud, enterprise)
         .await
         .map(|router| router.layer(create_trace_layer()))
         .map_err(|e| OxyError::RuntimeError(format!("Failed to create API router: {}", e)))?;

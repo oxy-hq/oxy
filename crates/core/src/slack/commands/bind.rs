@@ -46,6 +46,8 @@ pub async fn handle_bind_command(
         .with_project_path_and_fallback_config(&project_path)
         .await
         .map_err(|e| OxyError::ValidationError(format!("Failed to load project config: {}", e)))?
+        .try_with_intent_classifier()
+        .await
         .build()
         .await
         .map_err(|e| OxyError::ValidationError(format!("Failed to build project: {}", e)))?;

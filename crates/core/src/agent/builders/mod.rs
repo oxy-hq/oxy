@@ -1,6 +1,6 @@
-mod agent;
+pub mod agent;
 pub mod fsm;
-mod openai;
+pub(crate) mod openai;
 mod openai_response;
 mod tool;
 

@@ -3,6 +3,7 @@ use std::marker::PhantomData;
 use async_stream::stream;
 use futures::StreamExt;
 use tokio::task::JoinHandle;
+use tracing::Instrument;
 
 use crate::{
     errors::OxyError,
@@ -94,7 +95,13 @@ where
         ordered_writer: OrderedWriter,
     ) -> Result<Self::Response, OxyError> {
         let sender = execution_context.writer.clone();
-        let events_handle = tokio::spawn(async move { ordered_writer.write_sender(sender).await });
+
+        // Capture the current span to propagate trace context to the spawned task
+        let current_span = tracing::Span::current();
+
+        let events_handle = tokio::spawn(
+            async move { ordered_writer.write_sender(sender).await }.instrument(current_span),
+        );
         let results = results_handle.await??;
         events_handle.await??;
         Ok(results)
@@ -137,6 +144,10 @@ where
                 )
             })
             .collect::<Vec<_>>();
+
+        // Capture the current span to propagate trace context to concurrent tasks
+        let current_span = tracing::Span::current();
+
         let stream = stream! {
             for (param, mut executable, concurrency_context, entry_context) in pairs.into_iter() {
                 yield async move {
@@ -147,14 +158,17 @@ where
             }
         };
         let finish_context = execution_context.clone();
-        let results_handle = tokio::spawn(async move {
-            let result = stream.buffered(buffered).collect::<Vec<_>>().await;
-            finish_context
-                .write_progress(ProgressType::Finished)
-                .await?;
-            tracing::debug!("Concurrency sending back results");
-            Ok(result)
-        });
+        let results_handle = tokio::spawn(
+            async move {
+                let result = stream.buffered(buffered).collect::<Vec<_>>().await;
+                finish_context
+                    .write_progress(ProgressType::Finished)
+                    .await?;
+                tracing::debug!("Concurrency sending back results");
+                Ok(result)
+            }
+            .instrument(current_span),
+        );
         let results = self
             .concurrency_control
             .handle(execution_context, results_handle, ordered_writer)

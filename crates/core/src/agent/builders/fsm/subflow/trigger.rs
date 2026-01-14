@@ -4,6 +4,7 @@ use crate::{
     execute::{ExecutionContext, builders::fsm::Trigger},
 };
 
+#[allow(dead_code)]
 pub struct SubflowRun<S> {
     pub context_id: String,
     pub objective: String,

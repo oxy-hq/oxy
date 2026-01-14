@@ -1,6 +1,7 @@
 mod a2a;
 pub mod clean;
 mod init;
+mod intent;
 mod make;
 mod mcp;
 mod migrate;
@@ -330,6 +331,12 @@ enum SubCommand {
     /// Useful for deploying to containerized environments or when running
     /// Cube.js separately from the Oxy CLI.
     PrepareSemanticEngine(PrepareSemanticEngineArgs),
+    /// Intent classification for agent questions
+    ///
+    /// Discover and classify user question intents using unsupervised
+    /// clustering. Run the clustering pipeline, classify questions,
+    /// or view analytics.
+    Intent(intent::IntentArgs),
     /// Start A2A (Agent-to-Agent) protocol server
     ///
     /// Launch an A2A server that exposes configured Oxy agents for
@@ -570,6 +577,14 @@ pub struct ServeArgs {
 
     #[clap(long, default_value_t = false)]
     cloud: bool,
+
+    /// Enable enterprise features including observability (OpenTelemetry)
+    ///
+    /// When enabled, activates enterprise features such as OpenTelemetry
+    /// tracing and metrics collection. Observability is disabled by default
+    /// and only enabled when this flag is set.
+    #[clap(long, default_value_t = false)]
+    pub enterprise: bool,
 }
 
 #[derive(Parser, Debug)]
@@ -699,6 +714,8 @@ async fn handle_workflow_file(
         .with_project_path(&project_path)
         .await?
         .with_runs_manager(RunsManager::default(Uuid::nil(), Uuid::nil()).await?)
+        .try_with_intent_classifier()
+        .await
         .build()
         .await
         .map_err(|e| OxyError::from(anyhow::anyhow!("Failed to create project: {e}")))?;
@@ -747,6 +764,7 @@ async fn handle_workflow_file(
             None,
             None,
             None, // No globals override from CLI
+            Some(crate::service::agent::ExecutionSource::Cli),
             None, // No authenticated user in CLI context
         )
         .await?;
@@ -761,6 +779,7 @@ async fn handle_workflow_file(
             None,
             None,
             None, // No globals override from CLI
+            Some(crate::service::agent::ExecutionSource::Cli),
             None, // No authenticated user in CLI context
         )
         .await?;
@@ -775,6 +794,7 @@ async fn handle_workflow_file(
             None,
             None,
             None, // No globals override from CLI
+            Some(crate::service::agent::ExecutionSource::Cli),
             None, // No authenticated user in CLI context
         )
         .await?;
@@ -825,6 +845,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             SubCommand::Clean(_) => "clean",
             SubCommand::SemanticEngine(_) => "semantic-engine",
             SubCommand::PrepareSemanticEngine(_) => "prepare-semantic-engine",
+            SubCommand::Intent(_) => "intent",
             SubCommand::A2a(_) => "a2a",
         };
 
@@ -1133,6 +1154,8 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                 .with_project_path(&project_path)
                 .await?
                 .with_runs_manager(RunsManager::default(Uuid::nil(), Uuid::nil()).await?)
+                .try_with_intent_classifier()
+                .await
                 .build()
                 .await
                 .map_err(|e| OxyError::from(anyhow::anyhow!("Failed to create project: {e}")))?;
@@ -1147,6 +1170,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                 None,
                 None, // No globals from CLI
                 None, // No variables from CLI (yet)
+                Some(crate::service::agent::ExecutionSource::Cli),
                 None,
             )
             .await?;
@@ -1168,6 +1192,10 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             handle_prepare_semantic_engine_command(prepare_args).await?;
         }
 
+        Some(SubCommand::Intent(intent_args)) => {
+            intent::handle_intent_command(intent_args).await?;
+        }
+
         None => {
             Args::command().print_help().unwrap();
         }
@@ -1187,6 +1215,8 @@ async fn handle_omni_sync() -> Result<(), OxyError> {
         .with_project_path(&project_path)
         .await?
         .with_runs_manager(RunsManager::default(Uuid::nil(), Uuid::nil()).await?)
+        .try_with_intent_classifier()
+        .await
         .build()
         .await
         .map_err(|e| OxyError::from(anyhow::anyhow!("Failed to create project: {e}")))?;
@@ -1340,6 +1370,8 @@ async fn handle_agent_file(file_path: &PathBuf, question: Option<String>) -> Res
         .with_project_path(&project_path)
         .await?
         .with_runs_manager(RunsManager::default(Uuid::nil(), Uuid::nil()).await?)
+        .try_with_intent_classifier()
+        .await
         .build()
         .await
         .map_err(|e| OxyError::from(anyhow::anyhow!("Failed to create project: {e}")))?;
@@ -1354,6 +1386,7 @@ async fn handle_agent_file(file_path: &PathBuf, question: Option<String>) -> Res
         None,
         None, // No globals from CLI
         None, // No variables from CLI (yet)
+        Some(crate::service::agent::ExecutionSource::Cli),
         None,
     )
     .await?;
@@ -1379,6 +1412,8 @@ async fn handle_agentic_workflow_file(
         .with_project_path(&project_path)
         .await?
         .with_runs_manager(RunsManager::default(Uuid::nil(), Uuid::nil()).await?)
+        .try_with_intent_classifier()
+        .await
         .build()
         .await
         .map_err(|e| OxyError::from(anyhow::anyhow!("Failed to create project: {e}")))?;
@@ -1546,6 +1581,8 @@ pub async fn handle_test_command(test_args: TestArgs) -> Result<(), OxyError> {
         .with_project_path(&project_path)
         .await?
         .with_runs_manager(RunsManager::default(Uuid::nil(), Uuid::nil()).await?)
+        .try_with_intent_classifier()
+        .await
         .build()
         .await
         .map_err(|e| OxyError::from(anyhow::anyhow!("Failed to create project: {e}")))?;

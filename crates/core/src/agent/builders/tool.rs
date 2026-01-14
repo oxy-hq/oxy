@@ -12,6 +12,7 @@ use crate::{
         builders::{ExecutableBuilder, map::ParamMapper},
         types::{EventKind, OutputContainer},
     },
+    observability::events,
     tools::{ToolInput, ToolLauncherExecutable},
 };
 
@@ -42,14 +43,22 @@ impl OpenAITool {
 impl Executable<OpenAIExecutableResponse> for OpenAITool {
     type Response = Option<Vec<ChatCompletionRequestMessage>>;
 
+    #[tracing::instrument(skip_all, err, fields(
+        otel.name = events::tool::TOOL_EXECUTE,
+        oxy.span_type = events::tool::TOOL_TYPE,
+        oxy.agent.name = %self.agent_name,
+    ))]
     async fn execute(
         &mut self,
         execution_context: &ExecutionContext,
         input: OpenAIExecutableResponse,
     ) -> Result<Self::Response, OxyError> {
         if input.tool_calls.is_empty() {
+            tracing::debug!("No tool calls to execute");
             return Ok(None);
         }
+
+        events::tool::input(&input);
 
         let response = build_tool_executable(
             self.agent_name.to_string(),
@@ -59,8 +68,18 @@ impl Executable<OpenAIExecutableResponse> for OpenAITool {
         .execute(execution_context, input.tool_calls.clone())
         .await?;
 
+        let success_count = response.iter().filter(|r| r.is_ok()).count();
+        let error_count = response.iter().filter(|r| r.is_err()).count();
+
+        tracing::info!(
+            tool.success_count = success_count,
+            tool.error_count = error_count,
+            "Tool execution completed"
+        );
+
         for tool_ret in response.iter() {
             if let Err(e) = tool_ret {
+                tracing::error!(tool.error = %e, "Tool execution failed");
                 execution_context
                     .write_kind(EventKind::Error {
                         message: e.to_string(),
@@ -110,6 +129,8 @@ impl Executable<OpenAIExecutableResponse> for OpenAITool {
             .build()?;
         let mut result = vec![agent_message.into()];
         result.extend_from_slice(&tool_rets);
+
+        events::tool::output(&result);
 
         Ok(Some(result))
     }

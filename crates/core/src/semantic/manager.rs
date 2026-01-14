@@ -97,12 +97,12 @@ impl SemanticManager {
                 yield async move {
                     let semantic_table_ref = SemanticTableRef::from_str(&target)
                         .map_err(|err| {
-                            tracing::error!("Failed to parse semantic table reference {}: {:?}", target, err);
+                            tracing::warn!("Failed to parse semantic table reference {}: {:?}", target, err);
                             err
                         })?;
 
                     self.storage.load_model(&semantic_table_ref).await.map_err(|err| {
-                        tracing::error!("Failed to load model for entity {}: {:?}", target, err);
+                        tracing::warn!("Failed to load model for entity {}: {:?}", target, err);
                         err
                     }).map(|model| {
                         (

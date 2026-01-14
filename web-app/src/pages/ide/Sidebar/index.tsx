@@ -35,13 +35,18 @@ import {
   FileCode,
   Braces,
   Table,
+  Activity,
+  Zap,
+  Server,
 } from "lucide-react";
 import { Button } from "@/components/ui/shadcn/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/shadcn/tabs";
+import { cn } from "@/libs/shadcn/utils";
 import React from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import NewNode, { CreationType } from "./NewNode";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import { useAuth } from "@/contexts/AuthContext";
 import { SIDEBAR_REVEAL_FILE } from "./events";
 import { detectFileType, FileType } from "@/utils/fileTypes";
 import { FileTreeModel } from "@/types/file";
@@ -55,7 +60,13 @@ const NAME_COLLATOR = new Intl.Collator(undefined, {
 
 enum SidebarViewMode {
   FILES = "files",
+  OBSERVABILITY = "observability",
+}
+
+// Sub-view mode for Files section
+enum FilesSubViewMode {
   OBJECTS = "objects",
+  FILES = "files",
 }
 
 const ignoreFilesRegex = [/^docker-entrypoints/, /^output/, /^\./];
@@ -395,6 +406,46 @@ const GroupedObjectsView = ({
   );
 };
 
+// Observability section component for IDE sidebar
+const ObservabilitySection = ({ projectId }: { projectId: string }) => {
+  const location = useLocation();
+
+  return (
+    <>
+      <SidebarMenuItem>
+        <SidebarMenuSubButton
+          asChild
+          isActive={
+            location.pathname ===
+            ROUTES.PROJECT(projectId).IDE.OBSERVABILITY.TRACES
+          }
+          className="text-muted-foreground hover:text-sidebar-foreground transition-colors duration-150 ease-in"
+        >
+          <Link to={ROUTES.PROJECT(projectId).IDE.OBSERVABILITY.TRACES}>
+            <Zap />
+            <span>Traces</span>
+          </Link>
+        </SidebarMenuSubButton>
+      </SidebarMenuItem>
+      <SidebarMenuItem>
+        <SidebarMenuSubButton
+          asChild
+          isActive={
+            location.pathname ===
+            ROUTES.PROJECT(projectId).IDE.OBSERVABILITY.CLUSTERS
+          }
+          className="text-muted-foreground hover:text-sidebar-foreground transition-colors duration-150 ease-in"
+        >
+          <Link to={ROUTES.PROJECT(projectId).IDE.OBSERVABILITY.CLUSTERS}>
+            <Server />
+            <span>Clusters</span>
+          </Link>
+        </SidebarMenuSubButton>
+      </SidebarMenuItem>
+    </>
+  );
+};
+
 const Sidebar = ({
   sidebarOpen,
   setSidebarOpen,
@@ -402,11 +453,14 @@ const Sidebar = ({
   sidebarOpen: boolean;
   setSidebarOpen: (open: boolean) => void;
 }) => {
+  const { authConfig } = useAuth();
   const { isReadOnly, project } = useCurrentProjectBranch();
   const projectId = project.id;
   const [viewMode, setViewMode] = React.useState<SidebarViewMode>(
-    SidebarViewMode.OBJECTS,
+    SidebarViewMode.FILES,
   );
+  const [filesSubViewMode, setFilesSubViewMode] =
+    React.useState<FilesSubViewMode>(FilesSubViewMode.OBJECTS);
 
   const { data, refetch, isPending } = useFileTree();
 
@@ -418,7 +472,7 @@ const Sidebar = ({
     if (!filtered) return undefined;
 
     // In objects mode, filter to show only objects and directories that contain objects
-    if (viewMode === SidebarViewMode.OBJECTS) {
+    if (filesSubViewMode === FilesSubViewMode.OBJECTS) {
       // Pre-compute which directories contain objects for O(n) lookup
       const directoriesWithObjects = buildDirectoriesWithObjects(filtered);
 
@@ -445,7 +499,7 @@ const Sidebar = ({
       // Locale-aware, case-insensitive, numeric-aware compare using a shared collator
       return NAME_COLLATOR.compare(a.name, b.name);
     });
-  }, [data, viewMode]);
+  }, [data, filesSubViewMode]);
 
   const [isCreating, setIsCreating] = React.useState(false);
   const [creationType, setCreationType] = React.useState<CreationType>("file");
@@ -488,129 +542,197 @@ const Sidebar = ({
   }, []);
 
   return (
-    <div className="h-full w-full border-r border-l bg-sidebar-background">
+    <div className="h-full w-full border-r bg-sidebar-background flex">
+      {/* Vertical Icon Bar */}
+      <div className="flex flex-col items-center py-2 px-1 border-r border-sidebar-border bg-sidebar-background gap-1">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => setViewMode(SidebarViewMode.FILES)}
+          tooltip="Files"
+          className={cn(
+            "h-8 w-8",
+            viewMode === SidebarViewMode.FILES &&
+              "bg-sidebar-accent text-sidebar-accent-foreground",
+          )}
+        >
+          <Folder className="h-4 w-4" />
+        </Button>
+        {authConfig.enterprise && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setViewMode(SidebarViewMode.OBSERVABILITY)}
+            tooltip="Observability"
+            className={cn(
+              "h-8 w-8",
+              viewMode === SidebarViewMode.OBSERVABILITY &&
+                "bg-sidebar-accent text-sidebar-accent-foreground",
+            )}
+          >
+            <Activity className="h-4 w-4" />
+          </Button>
+        )}
+      </div>
+
+      {/* Main Content Area */}
       {sidebarOpen && (
-        <div className="flex h-full flex-col overflow-hidden">
-          <SidebarGroupLabel className="h-auto flex items-center justify-between px-2 py-1 border-b border-sidebar-border rounded-none">
-            <Tabs
-              value={viewMode}
-              onValueChange={(value: string) => {
-                if (
-                  value === SidebarViewMode.FILES ||
-                  value === SidebarViewMode.OBJECTS
-                ) {
-                  setViewMode(value as SidebarViewMode);
-                }
-              }}
-            >
-              <TabsList className="h-8">
-                <TabsTrigger
-                  value={SidebarViewMode.OBJECTS}
-                  className="h-6 px-2 gap-1.5"
-                  aria-label="Objects view"
+        <div className="flex h-full flex-1 flex-col overflow-hidden">
+          {/* Files View */}
+          {viewMode === SidebarViewMode.FILES && (
+            <>
+              <SidebarGroupLabel className="h-auto flex items-center justify-between px-2 py-1 border-b border-sidebar-border rounded-none">
+                <Tabs
+                  value={filesSubViewMode}
+                  onValueChange={(value: string) => {
+                    if (
+                      value === FilesSubViewMode.FILES ||
+                      value === FilesSubViewMode.OBJECTS
+                    ) {
+                      setFilesSubViewMode(value as FilesSubViewMode);
+                    }
+                  }}
                 >
-                  <Layers2 className="w-4 h-4" />
-                  <span className="text-xs">Objects</span>
-                </TabsTrigger>
-                <TabsTrigger
-                  value={SidebarViewMode.FILES}
-                  className="h-6 px-2 gap-1.5"
-                  aria-label="Files view"
-                >
-                  <Folder className="w-4 h-4" />
-                  <span className="text-xs">Files</span>
-                </TabsTrigger>
-              </TabsList>
-            </Tabs>
+                  <TabsList className="h-8">
+                    <TabsTrigger
+                      value={FilesSubViewMode.OBJECTS}
+                      className="h-6 px-2 gap-1.5"
+                      aria-label="Objects view"
+                    >
+                      <Layers2 className="w-4 h-4" />
+                      <span className="text-xs">Objects</span>
+                    </TabsTrigger>
+                    <TabsTrigger
+                      value={FilesSubViewMode.FILES}
+                      className="h-6 px-2 gap-1.5"
+                      aria-label="Files view"
+                    >
+                      <Folder className="w-4 h-4" />
+                      <span className="text-xs">Files</span>
+                    </TabsTrigger>
+                  </TabsList>
+                </Tabs>
 
-            <div className="flex items-center gap-0.5">
-              {viewMode === SidebarViewMode.FILES && (
-                <>
+                <div className="flex items-center gap-0.5">
+                  {filesSubViewMode === FilesSubViewMode.FILES && (
+                    <>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleCreateFile}
+                        disabled={!!isReadOnly}
+                        tooltip={isReadOnly ? "Read-only mode" : "New File"}
+                      >
+                        <FilePlus />
+                      </Button>
+
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleCreateFolder}
+                        disabled={!!isReadOnly}
+                        tooltip={isReadOnly ? "Read-only mode" : "New Folder"}
+                      >
+                        <FolderPlus />
+                      </Button>
+                    </>
+                  )}
+
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={handleCreateFile}
-                    disabled={!!isReadOnly}
-                    tooltip={isReadOnly ? "Read-only mode" : "New File"}
+                    onClick={() => refetch()}
+                    tooltip="Refresh"
                   >
-                    <FilePlus />
+                    <RotateCw />
                   </Button>
 
                   <Button
+                    className="md:hidden"
                     variant="ghost"
-                    size="sm"
-                    onClick={handleCreateFolder}
-                    disabled={!!isReadOnly}
-                    tooltip={isReadOnly ? "Read-only mode" : "New Folder"}
+                    size="icon"
+                    onClick={() => setSidebarOpen(!sidebarOpen)}
+                    tooltip="Collapse Sidebar"
                   >
-                    <FolderPlus />
+                    <ChevronsLeft />
                   </Button>
-                </>
-              )}
-
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => refetch()}
-                tooltip="Refresh"
-              >
-                <RotateCw />
-              </Button>
-
-              <Button
-                className="md:hidden"
-                variant="ghost"
-                size="icon"
-                onClick={() => setSidebarOpen(!sidebarOpen)}
-                tooltip="Collapse Sidebar"
-              >
-                <ChevronsLeft />
-              </Button>
-            </div>
-          </SidebarGroupLabel>
-          <SidebarContent className="customScrollbar h-full flex-1 overflow-y-auto">
-            <SidebarGroup className="pt-2">
-              {isPending && (
-                <div className="flex items-center justify-center p-2">
-                  <Loader2 className="animate-spin h-4 w-4" />
                 </div>
-              )}
-
-              {!isPending && viewMode === SidebarViewMode.OBJECTS && data && (
-                <GroupedObjectsView
-                  files={getAllObjectFiles(
-                    data.filter(
-                      (f) => !ignoreFilesRegex.some((r) => f.name.match(r)),
-                    ),
+              </SidebarGroupLabel>
+              <SidebarContent className="customScrollbar h-full flex-1 overflow-y-auto">
+                <SidebarGroup className="pt-2">
+                  {isPending && (
+                    <div className="flex items-center justify-center p-2">
+                      <Loader2 className="animate-spin h-4 w-4" />
+                    </div>
                   )}
-                  activePath={activePath}
-                  projectId={projectId}
-                />
-              )}
 
-              {!isPending && viewMode === SidebarViewMode.FILES && (
-                <SidebarMenu>
-                  {isCreating && !isReadOnly && (
-                    <NewNode
-                      creationType={creationType}
-                      onCreated={() => {
-                        setIsCreating(false);
-                        refetch();
-                      }}
-                      onCancel={() => setIsCreating(false)}
-                    />
-                  )}
-                  {fileTree?.map((item) => (
-                    <FileTreeNode
-                      key={item.path}
-                      fileTree={item}
-                      activePath={activePath}
-                    />
-                  ))}
-                </SidebarMenu>
-              )}
-            </SidebarGroup>
-          </SidebarContent>
+                  {!isPending &&
+                    filesSubViewMode === FilesSubViewMode.OBJECTS &&
+                    data && (
+                      <GroupedObjectsView
+                        files={getAllObjectFiles(
+                          data.filter(
+                            (f) =>
+                              !ignoreFilesRegex.some((r) => f.name.match(r)),
+                          ),
+                        )}
+                        activePath={activePath}
+                        projectId={projectId}
+                      />
+                    )}
+
+                  {!isPending &&
+                    filesSubViewMode === FilesSubViewMode.FILES && (
+                      <SidebarMenu>
+                        {isCreating && !isReadOnly && (
+                          <NewNode
+                            creationType={creationType}
+                            onCreated={() => {
+                              setIsCreating(false);
+                              refetch();
+                            }}
+                            onCancel={() => setIsCreating(false)}
+                          />
+                        )}
+                        {fileTree?.map((item) => (
+                          <FileTreeNode
+                            key={item.path}
+                            fileTree={item}
+                            activePath={activePath}
+                          />
+                        ))}
+                      </SidebarMenu>
+                    )}
+                </SidebarGroup>
+              </SidebarContent>
+            </>
+          )}
+
+          {/* Observability View - Only visible in enterprise mode */}
+          {authConfig.enterprise &&
+            viewMode === SidebarViewMode.OBSERVABILITY && (
+              <>
+                <SidebarGroupLabel className="h-auto flex items-center justify-between px-2 py-1 border-b border-sidebar-border rounded-none">
+                  <span className="text-sm font-semibold">Observability</span>
+                  <Button
+                    className="md:hidden"
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setSidebarOpen(!sidebarOpen)}
+                    tooltip="Collapse Sidebar"
+                  >
+                    <ChevronsLeft />
+                  </Button>
+                </SidebarGroupLabel>
+                <SidebarContent className="customScrollbar h-full flex-1 overflow-y-auto">
+                  <SidebarGroup className="pt-2">
+                    <SidebarMenu>
+                      <ObservabilitySection projectId={projectId} />
+                    </SidebarMenu>
+                  </SidebarGroup>
+                </SidebarContent>
+              </>
+            )}
         </div>
       )}
       {!sidebarOpen && (

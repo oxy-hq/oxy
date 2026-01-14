@@ -59,7 +59,9 @@ export const EditorFormMode = ({
           onSaved={handleSaved}
           readOnly={isReadOnly}
           git={gitEnabled}
-          customEditor={viewMode === AppViewMode.Form ? <AppFormWrapper /> : undefined}
+          customEditor={
+            viewMode === AppViewMode.Form ? <AppFormWrapper /> : undefined
+          }
           onChanged={(value) => {
             if (viewMode === AppViewMode.Editor) {
               validateContent(value);

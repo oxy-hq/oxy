@@ -12,7 +12,7 @@ use crate::config::model::{EmbeddingConfig, VectorDBConfig, WorkflowTool};
 use super::create_data_app::types::CreateDataAppParams;
 use super::visualize::types::VisualizeParams;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ToolRawInput {
     pub call_id: String,
     pub handle: String,

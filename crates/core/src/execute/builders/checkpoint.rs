@@ -1,6 +1,7 @@
 use std::fmt::Debug;
 
 use serde::{Serialize, de::DeserializeOwned};
+use tracing::Instrument;
 
 use crate::{
     adapters::checkpoint::{CheckpointBuilder, CheckpointData, RunInfo},
@@ -182,7 +183,13 @@ where
         let mut buf_writer = BufWriter::new();
         let writer = buf_writer.create_writer(None)?;
         let tx = execution_context.writer.clone();
-        let handle = tokio::spawn(async move { buf_writer.write_and_copy(tx).await });
+
+        // Capture the current span to propagate trace context to the spawned task
+        let current_span = tracing::Span::current();
+
+        let handle = tokio::spawn(
+            async move { buf_writer.write_and_copy(tx).await }.instrument(current_span),
+        );
         let response = {
             let new_context = &execution_context.wrap_writer(writer);
             self.inner.execute(new_context, input).await
