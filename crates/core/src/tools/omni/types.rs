@@ -1,14 +1,7 @@
-use crate::tools::types::OmniQueryParams;
+use crate::types::tool_params::OmniQueryParams;
 
 pub struct OmniQueryInput {
     pub params: OmniQueryParams,
-    pub topic: String,
-    pub integration: String,
-}
-
-#[derive(Clone)]
-pub struct OmniQueryToolInput {
-    pub param: String,
     pub topic: String,
     pub integration: String,
 }

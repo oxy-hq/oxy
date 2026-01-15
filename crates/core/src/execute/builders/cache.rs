@@ -2,10 +2,10 @@ use serde::{Serialize, de::DeserializeOwned};
 
 use crate::{
     config::constants::CACHE_SOURCE,
-    errors::OxyError,
     execute::{Executable, ExecutionContext, types::EventKind},
     theme::StyledText,
 };
+use oxy_shared::errors::OxyError;
 
 use super::wrap::Wrap;
 

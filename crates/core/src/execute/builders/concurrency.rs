@@ -5,10 +5,8 @@ use futures::StreamExt;
 use tokio::task::JoinHandle;
 use tracing::Instrument;
 
-use crate::{
-    errors::OxyError,
-    execute::{Executable, ExecutionContext, types::ProgressType, writer::OrderedWriter},
-};
+use crate::execute::{Executable, ExecutionContext, types::ProgressType, writer::OrderedWriter};
+use oxy_shared::errors::OxyError;
 
 use super::wrap::Wrap;
 

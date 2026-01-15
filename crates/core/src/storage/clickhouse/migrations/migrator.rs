@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use clickhouse::Client;
 use std::collections::HashMap;
 
-use crate::errors::OxyError;
+use oxy_shared::errors::OxyError;
 
 pub type Result<T> = std::result::Result<T, OxyError>;
 

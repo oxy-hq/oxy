@@ -1,5 +1,5 @@
-use crate::utils::{decrypt_value, get_encryption_key};
-use crate::{errors::OxyError, utils::encrypt_value};
+use crate::utils::{decrypt_value, encrypt_value, get_encryption_key};
+use oxy_shared::errors::OxyError;
 
 /// Secure encryption/decryption for GitHub tokens using AES-GCM
 /// This provides authenticated encryption suitable for production use

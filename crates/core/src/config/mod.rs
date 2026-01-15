@@ -1,4 +1,6 @@
 use std::path::PathBuf;
+pub mod a2a_config;
+pub mod agent_config;
 pub mod auth;
 pub mod model;
 mod parser;
@@ -18,7 +20,7 @@ use parser::{parse_agent_config, parse_semantic_model_config, parse_workflow_con
 use std::{fs, io};
 use validate::{AgentValidationContext, ValidationContext};
 
-use crate::errors::OxyError;
+use oxy_shared::errors::OxyError;
 
 pub use builder::ConfigBuilder;
 pub use manager::ConfigManager;

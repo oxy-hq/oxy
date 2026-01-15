@@ -1,9 +1,9 @@
 use crate::{
     adapters::vector_store::{build_index_key, types::RetrievalItem},
     config::constants::RETRIEVAL_EMBEDDINGS_COLUMN,
-    errors::OxyError,
 };
 use arrow::array::{Array, FixedSizeListArray, Float32Array, RecordBatch, StringArray};
+use oxy_shared::errors::OxyError;
 use std::sync::Arc;
 
 pub(super) struct SerializationUtils;

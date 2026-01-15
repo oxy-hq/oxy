@@ -1,4 +1,3 @@
-#[cfg(test)]
 pub mod prepare_semantic_engine {
     use assert_cmd::Command;
     use std::fs;

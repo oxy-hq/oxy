@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use crate::config::model::Dimension;
 use crate::state_dir::get_state_dir;
-use crate::{constants::OXY_ENCRYPTION_KEY_VAR, errors::OxyError, theme::*};
+use crate::{constants::OXY_ENCRYPTION_KEY_VAR, theme::*};
 use aes_gcm::aead::Aead;
 use aes_gcm::{AeadCore, Aes256Gcm, Key, KeyInit, Nonce};
 use arrow::array::RecordBatch;
@@ -13,6 +13,7 @@ use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use csv::StringRecord;
 use duckdb::Connection;
 use futures::Stream;
+use oxy_shared::errors::OxyError;
 use rand::rngs::OsRng;
 use serde::Serialize;
 use slugify::slugify;
@@ -231,9 +232,9 @@ where
 
 pub fn extract_csv_dimensions(
     path: &std::path::Path,
-) -> Result<Vec<Dimension>, crate::errors::OxyError> {
+) -> Result<Vec<Dimension>, oxy_shared::errors::OxyError> {
     let conn = Connection::open_in_memory().map_err(|e| {
-        crate::errors::OxyError::RuntimeError(format!("Failed to open in-memory DuckDB: {e}"))
+        oxy_shared::errors::OxyError::RuntimeError(format!("Failed to open in-memory DuckDB: {e}"))
     })?;
 
     let sql = format!(
@@ -241,7 +242,7 @@ pub fn extract_csv_dimensions(
         path.display()
     );
     conn.execute(&sql, []).map_err(|e| {
-        crate::errors::OxyError::RuntimeError(format!(
+        oxy_shared::errors::OxyError::RuntimeError(format!(
             "DuckDB failed to read CSV {}: {}",
             path.display(),
             e
@@ -251,23 +252,23 @@ pub fn extract_csv_dimensions(
     let mut stmt = conn
         .prepare("PRAGMA table_info('auto_csv');")
         .map_err(|e| {
-            crate::errors::OxyError::RuntimeError(format!(
+            oxy_shared::errors::OxyError::RuntimeError(format!(
                 "DuckDB failed to prepare schema query: {e}"
             ))
         })?;
     let mut rows = stmt.query([]).map_err(|e| {
-        crate::errors::OxyError::RuntimeError(format!("DuckDB failed to query schema: {e}"))
+        oxy_shared::errors::OxyError::RuntimeError(format!("DuckDB failed to query schema: {e}"))
     })?;
 
     let mut columns = Vec::new();
     while let Some(row) = rows.next().map_err(|e| {
-        crate::errors::OxyError::RuntimeError(format!("DuckDB failed to read schema row: {e}"))
+        oxy_shared::errors::OxyError::RuntimeError(format!("DuckDB failed to read schema row: {e}"))
     })? {
         let name: String = row.get(1).map_err(|e| {
-            crate::errors::OxyError::RuntimeError(format!("DuckDB schema row: {e}"))
+            oxy_shared::errors::OxyError::RuntimeError(format!("DuckDB schema row: {e}"))
         })?;
         let dtype: String = row.get(2).map_err(|e| {
-            crate::errors::OxyError::RuntimeError(format!("DuckDB schema row: {e}"))
+            oxy_shared::errors::OxyError::RuntimeError(format!("DuckDB schema row: {e}"))
         })?;
         columns.push((name, dtype));
     }

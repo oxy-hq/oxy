@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::hash::Hash;
 
 use async_openai::types::chat::{
     ChatCompletionMessageToolCall, ChatCompletionTool, FunctionObject, FunctionObjectArgs,
@@ -7,10 +6,9 @@ use async_openai::types::chat::{
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::config::model::{EmbeddingConfig, VectorDBConfig, WorkflowTool};
-
-use super::create_data_app::types::CreateDataAppParams;
-use super::visualize::types::VisualizeParams;
+// Types moved to create_data_app and visualize modules
+// pub struct VisualizeInput and pub struct CreateDataAppInput
+// have been removed as those modules don't exist in the refactored structure
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ToolRawInput {
@@ -35,12 +33,12 @@ impl From<ChatCompletionMessageToolCall> for ToolRawInput {
     }
 }
 
-pub struct RetrievalInput<C> {
+/// Retrieval input for vector search
+#[derive(Debug, Clone)]
+pub struct RetrievalInput {
     pub query: String,
-    pub db_config: VectorDBConfig,
-    pub db_name: String,
-    pub openai_config: C,
-    pub embedding_config: EmbeddingConfig,
+    pub agent_name: String,
+    pub retrieval_config: crate::config::model::RetrievalConfig,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -48,38 +46,7 @@ pub struct RetrievalParams {
     pub query: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, JsonSchema, Clone, Hash)]
-pub enum OrderType {
-    #[serde(rename = "asc")]
-    Ascending,
-    #[serde(rename = "desc")]
-    Descending,
-}
-
-#[derive(Debug, Serialize, Deserialize, JsonSchema, Clone)]
-pub struct OmniQueryParams {
-    #[schemars(
-        description = "Fields to select. Field name must be full name format {view}.{field_name}. No aggregation or any other syntax."
-    )]
-    pub fields: Vec<String>,
-    #[schemars(description = "Maximum number of rows to return.")]
-    pub limit: Option<u64>,
-    #[schemars(description = "Fields to sort by with direction (asc/desc).")]
-    pub sorts: Option<HashMap<String, OrderType>>,
-}
-
-impl Hash for OmniQueryParams {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.fields.hash(state);
-        self.limit.hash(state);
-        if let Some(sorts) = &self.sorts {
-            for (k, v) in sorts {
-                k.hash(state);
-                v.hash(state);
-            }
-        }
-    }
-}
+// OmniQueryParams and OrderType moved to crate::types::tool_params
 
 #[derive(Debug)]
 pub struct SQLInput {
@@ -107,23 +74,13 @@ pub struct CreateV0AppParams {
     pub prompt: String,
 }
 
-pub struct VisualizeInput {
-    pub param: VisualizeParams,
-}
-
-pub struct WorkflowInput {
-    pub workflow_config: WorkflowTool,
-    pub variables: Option<HashMap<String, serde_json::Value>>,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct CreateDataAppInput {
-    pub param: CreateDataAppParams,
-}
+// VisualizeInput and CreateDataAppInput removed - modules don't exist
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct SQLParams {
+    #[serde(alias = "query")]
     pub sql: String,
+    #[serde(default)]
     #[schemars(
         description = "Enable when needed to build data apps or charts based on the query result."
     )]

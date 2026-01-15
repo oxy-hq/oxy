@@ -1,5 +1,5 @@
-use crate::errors::OxyError;
 use entity::messages;
+use oxy_shared::errors::OxyError;
 use sea_orm::{ActiveModelTrait, ActiveValue, DatabaseConnection};
 use std::sync::Arc;
 use tokio::sync::Mutex;

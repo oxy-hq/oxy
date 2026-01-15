@@ -9,13 +9,13 @@ use sea_orm::{
 use crate::{
     adapters::runs::storage::RunsStorage,
     config::constants::AGENT_RETRY_MAX_ELAPSED_TIME,
-    errors::OxyError,
-    service::types::{
+    types::{
         block::{Block, Group, GroupId, GroupKind},
         pagination::{Paginated, Pagination},
         run::{RootReference, RunDetails, RunInfo, RunStatus},
     },
 };
+use oxy_shared::errors::OxyError;
 
 #[derive(Debug, Clone)]
 pub struct RunsDatabaseStorage {

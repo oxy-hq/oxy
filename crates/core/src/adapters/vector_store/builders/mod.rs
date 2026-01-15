@@ -7,12 +7,12 @@ use crate::{
         ConfigManager,
         model::{AgentConfig, AgentType, RouteRetrievalConfig, RoutingAgent, ToolType, Workflow},
     },
-    errors::OxyError,
     theme::StyledText,
 };
 use futures::StreamExt;
 use indoc::formatdoc;
 use oxy_semantic::Topic;
+use oxy_shared::errors::OxyError;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 

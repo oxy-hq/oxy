@@ -1,7 +1,8 @@
 use indoc::formatdoc;
 use std::collections::{HashMap, HashSet};
 
-use crate::{adapters::vector_store::RetrievalObject, errors::OxyError, theme::StyledText};
+use crate::{adapters::vector_store::RetrievalObject, theme::StyledText};
+use oxy_shared::errors::OxyError;
 
 use super::types::{
     EnumRoutingBlob, LexEntry, PlaceholderSpan, SemanticEnum, TemplateSpec, TemplateVar,

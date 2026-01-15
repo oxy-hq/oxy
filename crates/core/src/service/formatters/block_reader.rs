@@ -6,11 +6,11 @@ use uuid::Uuid;
 
 use crate::{
     config::constants::MARKDOWN_MAX_FENCES,
-    errors::OxyError,
     execute::types::{Usage, event::SandboxInfo},
     service::types::Block,
     utils::try_unwrap_arc_tokio_mutex,
 };
+use oxy_shared::errors::OxyError;
 
 pub struct BlockHandlerReader {
     blocks: Arc<Mutex<Vec<Block>>>,

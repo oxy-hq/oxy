@@ -8,9 +8,10 @@ mod table;
 use lancedb::Connection;
 
 use crate::{
-    adapters::openai::OpenAIClient, config::model::EmbeddingConfig, errors::OxyError,
-    service::retrieval::EnumIndexManager,
+    adapters::openai::OpenAIClient, config::model::EmbeddingConfig,
+    service::retrieval::enum_index::EnumIndexManager,
 };
+use oxy_shared::errors::OxyError;
 
 use super::{engine::VectorEngine, types::RetrievalObject};
 

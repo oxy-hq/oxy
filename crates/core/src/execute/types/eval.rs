@@ -1,4 +1,5 @@
-use crate::{config::constants::AGENT_SOURCE_PROMPT, errors::OxyError};
+use crate::config::constants::AGENT_SOURCE_PROMPT;
+use oxy_shared::errors::OxyError;
 
 use super::{Document, Metadata, OutputContainer, ReferenceKind};
 

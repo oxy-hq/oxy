@@ -1,11 +1,11 @@
 use crate::{
     adapters::v0::{V0Client, V0EnvVar},
-    errors::OxyError,
     execute::{
         Executable, ExecutionContext,
         types::{Output, event::SandboxAppKind},
     },
 };
+use oxy_shared::errors::OxyError;
 use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
 

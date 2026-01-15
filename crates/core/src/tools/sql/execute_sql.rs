@@ -1,8 +1,7 @@
 use std::{collections::HashMap, path::PathBuf};
 
 use crate::{
-    adapters::connector::Connector,
-    errors::OxyError,
+    connector::Connector,
     execute::{
         Executable, ExecutionContext,
         types::{Chunk, EventKind, SQL, Table, TableReference},
@@ -10,6 +9,7 @@ use crate::{
     observability::events::workflow as workflow_events,
     tools::types::SQLInput,
 };
+use oxy_shared::errors::OxyError;
 
 #[derive(Debug, Clone)]
 pub struct SQLExecutable;

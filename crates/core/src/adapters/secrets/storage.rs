@@ -1,9 +1,7 @@
 use uuid::Uuid;
 
-use crate::{
-    adapters::secrets::{SecretsDatabaseStorage, environment::SecretsEnvironmentStorage},
-    errors::OxyError,
-};
+use crate::adapters::secrets::{SecretsDatabaseStorage, environment::SecretsEnvironmentStorage};
+use oxy_shared::errors::OxyError;
 
 #[enum_dispatch::enum_dispatch]
 pub trait SecretsStorage {

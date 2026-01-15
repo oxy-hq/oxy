@@ -1,6 +1,6 @@
-use crate::errors::OxyError;
 use crate::github::background_tasks;
 use apalis::prelude::*;
+use oxy_shared::errors::OxyError;
 use tokio::time::sleep;
 use tracing::info;
 

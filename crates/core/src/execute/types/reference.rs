@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use crate::errors::OxyError;
+use oxy_shared::errors::OxyError;
 
 use super::{Document, Output};
 

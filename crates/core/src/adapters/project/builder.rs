@@ -4,9 +4,9 @@ use std::sync::Arc;
 use crate::{
     adapters::{project::manager::ProjectManager, runs::RunsManager, secrets::SecretsManager},
     config::{ConfigBuilder, ConfigManager},
-    errors::OxyError,
     intent::{IntentClassifier, IntentConfig},
 };
+use oxy_shared::errors::OxyError;
 
 pub struct ProjectBuilder {
     project_id: Option<uuid::Uuid>,

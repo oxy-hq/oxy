@@ -1,5 +1,6 @@
 use crate::adapters::project::manager::ProjectManager;
-use crate::agent::types::AgentInput;
+// Note: Agent types are not imported here to avoid circular dependencies
+// Functions use generic serialization via serde::Serialize trait
 use opentelemetry::trace::TraceContextExt as _;
 use tracing::{Level, event, warn};
 use tracing_opentelemetry::OpenTelemetrySpanExt as _;
@@ -19,9 +20,9 @@ pub mod run_agent {
         agent_ref_str: &str,
         project_path: &str,
         prompt: &str,
-        memory: &Vec<crate::service::agent::Message>,
+        memory: &impl serde::Serialize,
         variables: &Option<std::collections::HashMap<String, serde_json::Value>>,
-        source: &Option<crate::service::agent::ExecutionSource>,
+        source: &impl serde::Serialize,
     ) {
         println!("Logging agent input event...");
         // Get trace_id from current OpenTelemetry span context
@@ -84,8 +85,8 @@ pub mod agent {
     pub static AGENT_TYPE: &str = "agent.agent_type";
     pub static DEFAULT_AGENT: &str = "agent.default_agent";
 
-    pub fn input(input: AgentInput) {
-        event!(Level::INFO, name = INPUT, is_visible = true, agent_ref = %input.agent_ref, prompt = %input.prompt, memory = %serde_json::to_string(&input.memory).unwrap_or_default(), variables = %serde_json::to_string(&input.variables).unwrap_or_default());
+    pub fn input(input: impl serde::Serialize) {
+        event!(Level::INFO, name = INPUT, is_visible = true, input = %serde_json::to_string(&input).unwrap_or_default());
     }
 
     pub fn output(output: OutputContainer) {
@@ -138,7 +139,6 @@ pub mod default_agent {
     use async_openai::types::chat::ChatCompletionRequestMessage;
 
     use crate::{
-        agent::builders::agent::default::DefaultAgentInput,
         config::model::{Model, ToolType},
         execute::types::OutputContainer,
     };
@@ -154,18 +154,12 @@ pub mod default_agent {
     pub static TOOLS: &str = "agent.default_agent.tools";
     pub static MESSAGES: &str = "agent.default_agent.messages";
 
-    pub fn input(input: DefaultAgentInput) {
+    pub fn input(input: impl serde::Serialize) {
         event!(
             Level::INFO,
             name = INPUT,
             is_visible = true,
-            agent_name = %input.agent_name,
-            model = %input.model,
-            prompt = %input.prompt,
-            memory = %serde_json::to_string(&input.memory).unwrap_or_default(),
-            contexts = %serde_json::to_string(&input.contexts).unwrap_or_default(),
-            reasoning_config = %serde_json::to_string(&input.reasoning_config).unwrap_or_default(),
-            default_agent = %serde_json::to_string(&input.default_agent).unwrap_or_default()
+            input = %serde_json::to_string(&input).unwrap_or_default()
         );
     }
 
@@ -262,7 +256,6 @@ pub mod get_global_context {
 
 pub mod routing_agent {
     use crate::{
-        agent::builders::agent::routing::RoutingAgentInput,
         config::model::{Model, ToolType},
         execute::types::OutputContainer,
     };
@@ -280,19 +273,12 @@ pub mod routing_agent {
     pub static FALLBACK_CONFIGURED: &str = "routing_agent.fallback_configured";
     pub static FALLBACK_TRIGGERED: &str = "routing_agent.fallback_triggered";
 
-    pub fn input(input: &RoutingAgentInput) {
+    pub fn input(input: &impl serde::Serialize) {
         event!(
             Level::INFO,
             name = INPUT,
             is_visible = true,
-            agent_name = %input.agent_name,
-            model = %input.model,
-            prompt = %input.prompt,
-            memory = %serde_json::to_string(&input.memory).unwrap_or_default(),
-            has_fallback = %input.routing_agent.route_fallback.is_some(),
-            fallback_route = %input.routing_agent.route_fallback.as_deref().unwrap_or("none"),
-            reasoning_config = %serde_json::to_string(&input.reasoning_config).unwrap_or_default(),
-            routing_agent = %serde_json::to_string(&input.routing_agent).unwrap_or_default()
+            input = %serde_json::to_string(&input).unwrap_or_default()
         );
     }
 
@@ -367,7 +353,8 @@ pub mod routing_agent {
 pub mod fallback_agent {
     use async_openai::types::chat::ChatCompletionRequestMessage;
 
-    use crate::agent::{OpenAIExecutableResponse, builders::openai::OpenAIOrOSSExecutable};
+    // Note: Agent types removed to avoid circular dependencies
+    // Functions use generic serde::Serialize instead
 
     use super::*;
 
@@ -377,7 +364,7 @@ pub mod fallback_agent {
     pub static OUTPUT: &str = "fallback_agent.output";
     pub static AGENT: &str = "fallback_agent.agent";
 
-    pub fn agent(agent: &OpenAIOrOSSExecutable) {
+    pub fn agent(agent: &impl serde::Serialize) {
         event!(
             Level::INFO,
             name = AGENT,
@@ -395,7 +382,7 @@ pub mod fallback_agent {
         );
     }
 
-    pub fn output(output: &[OpenAIExecutableResponse]) {
+    pub fn output(output: &impl serde::Serialize) {
         event!(
             Level::INFO,
             name = OUTPUT,

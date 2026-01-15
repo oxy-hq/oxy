@@ -1,0 +1,56 @@
+[package]
+name = "oxy-project"
+version = "0.4.4"
+authors.workspace = true
+description = "Project and workspace management for Oxy"
+documentation.workspace = true
+publish.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+# Async runtime
+tokio = { workspace = true }
+async-trait = "0.1.89"
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+anyhow = "1.0"
+
+# Logging
+tracing = { workspace = true }
+log = { workspace = true }
+
+# Git operations
+git2 = "0.20.3"
+
+# File system
+glob = "0.3.3"
+dirs = "6.0.0"
+include_dir = "0.7"
+
+# Web framework
+axum = { workspace = true }
+utoipa = {git="https://github.com/haitrr/utoipa.git", rev="776f86e", features = ["uuid", "chrono", "axum_extras"] }
+
+# Utilities
+uuid = { version = "1.19", features = ["v4", "serde"] }
+chrono = { workspace = true }
+
+# Database
+sea-orm = { workspace = true }
+entity = { path = "../entity" }
+
+# Shared infrastructure
+oxy-shared = { path = "../shared" }
+# oxy-config = { path = "../config" }  # Access via oxy::config instead
+oxy = { path = "../core" }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
+tempfile = { workspace = true }

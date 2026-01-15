@@ -1,0 +1,59 @@
+[package]
+name = "oxy-agent"
+version = "0.4.4"
+authors.workspace = true
+description = "Agent execution engine for Oxy"
+documentation.workspace = true
+publish.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+# Async runtime
+tokio = { workspace = true }
+async-trait = "0.1.89"
+futures = "0.3.31"
+async-stream = "0.3.6"
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+deser-incomplete = "0.1.2"
+
+# Error handling
+thiserror = { workspace = true }
+anyhow = "1.0"
+
+# Logging
+tracing = { workspace = true }
+log = { workspace = true }
+
+# LLM integration
+async-openai = { version = "0.31.1", features = ["byot", "chat-completion-types", "response-types"] }
+
+# Utilities
+chrono = { workspace = true }
+indexmap = { workspace = true }
+itertools = "0.14.0"
+arrow = { version = "=54.2.1", default-features = false, features = ["json"] }
+backoff = { version = "0.4", features = ["tokio"] }
+uuid = { version = "1.19.0", features = ["v4", "serde"] }
+schemars = { version = "0.8.22", features = ["derive", "impl_json_schema"] }
+minijinja = { workspace = true, features = ["loader"] }
+tokio-stream = "0.1.18"
+slugify = "0.1.0"
+short-uuid = "0.2.1"
+
+# Database
+sea-orm = { workspace = true }
+entity = { path = "../entity" }
+
+# Shared infrastructure
+oxy-shared = { path = "../shared" }
+oxy-semantic = { path = "../semantic" }
+oxy = { path = "../core" }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
+tempfile = { workspace = true }

@@ -35,11 +35,13 @@ use crate::{
         constants::{ANTHROPIC_API_URL, GEMINI_API_URL},
         model::{Model, ReasoningConfig, ReasoningEffort, RetrievalConfig, ToolType},
     },
-    errors::OxyError,
     execute::types::event::ArtifactKind,
-    service::types::SemanticQueryParams,
-    tools::types::{AgentParams, EmptySQLParams, OmniQueryParams, RetrievalParams, SQLParams},
+    types::SemanticQueryParams,
+    types::tool_params::{
+        AgentParams, EmptySQLParams, OmniQueryParams, RetrievalParams, SQLParams,
+    },
 };
+use oxy_shared::errors::OxyError;
 
 #[derive(Debug, Clone)]
 pub struct CustomOpenAIConfig {

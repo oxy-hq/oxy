@@ -1,9 +1,9 @@
 use crate::{
-    adapters::connector::Connector,
-    errors::OxyError,
+    connector::Connector,
     execute::{Executable, ExecutionContext, types::Output},
     tools::types::SQLInput,
 };
+use oxy_shared::errors::OxyError;
 
 #[derive(Debug, Clone)]
 pub struct ValidateSQLExecutable;

@@ -1,10 +1,8 @@
-use crate::{
-    errors::OxyError,
-    execute::{
-        types::{Event, EventKind, Source},
-        writer::EventHandler,
-    },
+use crate::execute::{
+    types::{Event, EventKind, Source},
+    writer::EventHandler,
 };
+use oxy_shared::errors::OxyError;
 
 pub type FormatterResult = Result<(), OxyError>;
 

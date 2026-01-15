@@ -1,9 +1,7 @@
-use crate::{
-    errors::OxyError,
-    execute::types::{EventKind, Source},
-};
+use crate::execute::types::{EventKind, Source};
 use chrono;
 use entity::logs;
+use oxy_shared::errors::OxyError;
 use sea_orm::{ActiveModelTrait, ActiveValue, DatabaseConnection};
 use serde_json::{Value, json};
 use std::sync::Arc;

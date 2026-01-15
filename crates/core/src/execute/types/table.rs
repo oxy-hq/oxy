@@ -19,11 +19,11 @@ use parquet::{arrow::ArrowWriter, basic::Compression, file::properties::WriterPr
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    adapters::connector::load_result,
-    errors::OxyError,
+    connector::load_result,
     execute::types::utils::record_batches_to_json,
     utils::{create_parent_dirs, truncate_datasets},
 };
+use oxy_shared::errors::OxyError;
 
 use super::{
     ReferenceKind,

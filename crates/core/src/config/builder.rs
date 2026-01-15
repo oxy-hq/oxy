@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::errors::OxyError;
+use oxy_shared::errors::OxyError;
 
 use super::{
     manager::ConfigManager,

@@ -2,10 +2,10 @@ use std::{collections::HashMap, sync::Arc};
 use tokio::sync::RwLock;
 
 use crate::{
-    errors::OxyError,
     execute::{types::Event, writer::EventHandler},
-    service::types::event::EventKind,
+    types::event::EventKind,
 };
+use oxy_shared::errors::OxyError;
 
 pub trait Mergeable {
     fn merge(&mut self, other: Self) -> bool;

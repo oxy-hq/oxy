@@ -1,10 +1,8 @@
 use tokio::task::JoinHandle;
 use tracing::Instrument;
 
-use crate::{
-    errors::OxyError,
-    execute::{Executable, ExecutionContext, writer::BufWriter},
-};
+use crate::execute::{Executable, ExecutionContext, writer::BufWriter};
+use oxy_shared::errors::OxyError;
 
 use super::wrap::Wrap;
 

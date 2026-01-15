@@ -3,13 +3,13 @@ use uuid::Uuid;
 
 use crate::{
     adapters::runs::database::RunsDatabaseStorage,
-    errors::OxyError,
-    service::types::{
+    types::{
         block::Group,
         pagination::{Paginated, Pagination},
         run::{RootReference, RunDetails, RunInfo},
     },
 };
+use oxy_shared::errors::OxyError;
 
 #[enum_dispatch::enum_dispatch]
 pub trait RunsStorage {

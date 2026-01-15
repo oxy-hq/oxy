@@ -1,16 +1,22 @@
 use crate::{
-    adapters::{openai::IntoOpenAIConfig, vector_store::VectorStore},
-    errors::OxyError,
+    adapters::vector_store::VectorStore,
     execute::{
         Executable, ExecutionContext,
         types::{Chunk, Document, Output, Prompt},
     },
 };
+use oxy_shared::errors::OxyError;
 
 use super::types::RetrievalInput;
 
 #[derive(Debug, Clone)]
 pub struct RetrievalExecutable;
+
+impl Default for RetrievalExecutable {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl RetrievalExecutable {
     pub fn new() -> Self {
@@ -19,16 +25,13 @@ impl RetrievalExecutable {
 }
 
 #[async_trait::async_trait]
-impl<C> Executable<RetrievalInput<C>> for RetrievalExecutable
-where
-    C: IntoOpenAIConfig + Send + Sync + 'static,
-{
+impl Executable<RetrievalInput> for RetrievalExecutable {
     type Response = Output;
 
     async fn execute(
         &mut self,
         execution_context: &ExecutionContext,
-        input: RetrievalInput<C>,
+        input: RetrievalInput,
     ) -> Result<Self::Response, OxyError> {
         execution_context
             .write_chunk(Chunk {
@@ -37,25 +40,16 @@ where
                 finished: true,
             })
             .await?;
-        let RetrievalInput {
-            query,
-            db_config,
-            db_name,
-            openai_config,
-            embedding_config,
-        } = input;
         let config_manager = &execution_context.project.config_manager;
         let secrets_manager = &execution_context.project.secrets_manager;
-        let store = VectorStore::new(
+        let store = VectorStore::from_retrieval(
             config_manager,
             secrets_manager,
-            &db_config,
-            &db_name,
-            openai_config,
-            embedding_config,
+            &input.agent_name,
+            &input.retrieval_config,
         )
         .await?;
-        let results = store.search(&query).await?;
+        let results = store.search(&input.query).await?;
         let output = Output::Documents(
             results
                 .iter()

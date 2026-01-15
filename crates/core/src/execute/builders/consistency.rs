@@ -2,9 +2,9 @@ use tokio::task::JoinHandle;
 
 use crate::{
     config::constants::{CONSISTENCY_SOURCE, CONSISTENCY_THRESHOLD},
-    errors::OxyError,
     execute::{Executable, ExecutionContext, types::EventKind, writer::OrderedWriter},
 };
+use oxy_shared::errors::OxyError;
 
 use super::{
     concurrency::{Concurrency, ConcurrencyControl},

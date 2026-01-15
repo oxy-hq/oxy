@@ -1,9 +1,7 @@
 use std::collections::HashMap;
 
-use crate::{
-    adapters::vector_store::types::RetrievalObject, errors::OxyError,
-    service::retrieval::EnumIndexManager,
-};
+use crate::{adapters::vector_store::types::RetrievalObject, service::retrieval::EnumIndexManager};
+use oxy_shared::errors::OxyError;
 
 /// Build retrieval objects from parameterized templates based on a query.
 /// Group by source and return one RetrievalObject per source_identifier.

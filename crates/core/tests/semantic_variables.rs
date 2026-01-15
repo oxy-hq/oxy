@@ -1,4 +1,3 @@
-#[cfg(test)]
 pub mod semantic_variables {
     use assert_cmd::Command;
 

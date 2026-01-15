@@ -1,19 +1,12 @@
-pub mod agent;
-pub mod api_key;
-pub mod app;
 pub mod block;
-pub mod chat;
-pub mod eval;
 pub mod formatters;
 pub mod message;
 pub mod omni_sync;
-pub mod project;
 pub mod retrieval;
 pub mod secret_manager;
 pub mod statics;
 pub mod sync;
 pub mod task_manager;
-pub mod test;
-pub mod thread;
-pub mod types;
-pub mod workflow;
+
+// Re-export types module for backward compat with service::types::
+pub use crate::types;

@@ -1,6 +1,6 @@
 use std::fs;
 
-use crate::errors::OxyError;
+use oxy_shared::errors::OxyError;
 
 use super::model::{AgentConfig, SemanticModels, TempWorkflow, Workflow};
 

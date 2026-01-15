@@ -17,7 +17,7 @@ pub mod migrations;
 
 use clickhouse::Client;
 
-use crate::errors::OxyError;
+use oxy_shared::errors::OxyError;
 
 // Environment variable names for observability ClickHouse
 const ENV_CLICKHOUSE_URL: &str = "OXY_CLICKHOUSE_URL";

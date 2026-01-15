@@ -1,21 +1,25 @@
-pub mod types;
-
 use std::{fs::File, path::PathBuf};
 
 use crate::{
-    config::validate::{DataAppValidationContext, ValidationContext, ValidationContextMetadata},
-    constants::UNPUBLISH_APP_DIR,
-    errors::OxyError,
+    config::model::AppConfig,
     execute::{
         Executable, ExecutionContext,
         types::{Output, event::DataApp},
     },
-    service,
-    tools::types::CreateDataAppInput,
 };
-use garde::Validate;
+use oxy_shared::errors::OxyError;
 use short_uuid::ShortUuid;
-use tokio::fs;
+
+#[derive(Debug, Clone)]
+pub struct CreateDataAppInput {
+    pub param: CreateDataAppParams,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct CreateDataAppParams {
+    pub file_name: String,
+    pub app_config: AppConfig,
+}
 
 #[derive(Debug, Clone)]
 pub struct CreateDataAppExecutable;
@@ -29,63 +33,38 @@ impl Executable<CreateDataAppInput> for CreateDataAppExecutable {
         execution_context: &ExecutionContext,
         input: CreateDataAppInput,
     ) -> Result<Self::Response, OxyError> {
-        tracing::debug!("Creating data app with input: {:?}", &input);
+        log::debug!("Creating data app with input: {:?}", &input);
         let CreateDataAppInput { param } = input;
+        let project_path = execution_context.project.config_manager.project_path();
+        let mut full_file_name = format!("{}.app.yml", param.file_name);
+        let mut file_path = project_path.join(&full_file_name);
 
-        let config_manager = &execution_context.project.config_manager;
-
-        // Validate the app config and parameters
-        let validation_context = ValidationContext {
-            config: config_manager.get_config().clone(),
-            metadata: Some(ValidationContextMetadata::DataApp(
-                DataAppValidationContext {
-                    app_config: param.app_config.clone(),
-                },
-            )),
-        };
-
-        // Validate parameters to prevent path traversal attacks
-        param
-            .validate_with(&validation_context)
-            .map_err(|e| OxyError::AgentError(format!("Invalid parameters: {e}")))?;
-
-        param
-            .app_config
-            .validate_with(&validation_context)
-            .map_err(|e| OxyError::AgentError(format!("Invalid app config: {e}")))?;
-
-        let mut full_file_name: String = format!("{}.app.yml", param.file_name);
-        let file_dir = config_manager.resolve_file(UNPUBLISH_APP_DIR).await?;
-        let file_dir = PathBuf::from(&file_dir);
-        if !file_dir.exists() {
-            fs::create_dir_all(&file_dir).await?;
-        }
-        let mut file_path = file_dir.join(&full_file_name);
         // check if the file already exists
         if file_path.exists() {
             full_file_name = format!("{}_{}.app.yml", param.file_name, ShortUuid::generate());
-            file_path.set_file_name(&full_file_name);
+            file_path = project_path.join(&full_file_name);
         }
-        println!("Creating data app at: {}", file_path.display());
-        let mut file = File::create(&file_path).map_err(|e| anyhow::anyhow!(e))?;
+
+        log::info!("Creating data app at: {}", file_path.display());
+        let mut file = File::create(&file_path)
+            .map_err(|e| OxyError::RuntimeError(format!("Failed to create file: {}", e)))?;
         let config = param.app_config;
+
         // write config to file
-        serde_yaml::to_writer(&mut file, &config).map_err(|e| anyhow::anyhow!(e))?;
-        println!("Data app created at: {}", file_path.display());
-        let file_relative_path = PathBuf::from(UNPUBLISH_APP_DIR).join(&full_file_name);
-        let cache = service::app::AppCache::new(execution_context.project.config_manager.clone());
-        cache
-            .clean_up_data(&file_relative_path, &config.tasks)
-            .await?;
-        println!("Data app cleaned up at: {}", file_path.display());
+        serde_yaml::to_writer(&mut file, &config)
+            .map_err(|e| OxyError::RuntimeError(format!("Failed to write YAML: {}", e)))?;
+
+        log::info!("Data app created at: {}", file_path.display());
+
         execution_context
             .write_data_app(DataApp {
-                file_path: file_relative_path.clone(),
+                file_path: PathBuf::from(full_file_name.clone()),
             })
             .await?;
-        return Ok(Output::Text(format!(
+
+        Ok(Output::Text(format!(
             "Data app created at: {}",
-            file_relative_path.display()
-        )));
+            full_file_name
+        )))
     }
 }

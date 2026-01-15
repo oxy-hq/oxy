@@ -4,11 +4,13 @@ use std::{
 };
 
 use crate::{
-    agent::builders::fsm::config::AgenticConfig,
-    config::constants::{DATABASE_SEMANTIC_PATH, GLOBAL_SEMANTIC_PATH},
-    errors::OxyError,
+    config::{
+        agent_config::AgenticConfig,
+        constants::{DATABASE_SEMANTIC_PATH, GLOBAL_SEMANTIC_PATH},
+    },
     observability::events,
 };
+use oxy_shared::errors::OxyError;
 
 use super::{
     model::{AgentConfig, AppConfig, Config, Database, Model, Workflow, WorkflowWithRawVariables},

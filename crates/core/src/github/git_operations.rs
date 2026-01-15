@@ -1,5 +1,5 @@
-use crate::errors::OxyError;
 use crate::state_dir::get_state_dir;
+use oxy_shared::errors::OxyError;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};

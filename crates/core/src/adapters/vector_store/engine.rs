@@ -1,6 +1,6 @@
 use super::types::{RetrievalObject, SearchRecord};
-use crate::errors::OxyError;
 use enum_dispatch::enum_dispatch;
+use oxy_shared::errors::OxyError;
 
 #[enum_dispatch]
 pub(super) trait VectorEngine {

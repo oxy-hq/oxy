@@ -1,17 +1,17 @@
 use std::path::Path;
 use std::{collections::HashMap, fs, sync::Arc};
 
-use crate::adapters::connector::DOMO;
 use crate::adapters::secrets::SecretsManager;
+use crate::connector::DOMO;
 use crate::{
-    adapters::connector::Connector,
     config::{
         ConfigManager,
         model::{Database, DatabaseType, Dimension, SemanticModels},
     },
-    errors::OxyError,
+    connector::Connector,
     utils::extract_csv_dimensions,
 };
+use oxy_shared::errors::OxyError;
 
 use futures::StreamExt;
 use itertools::Itertools;

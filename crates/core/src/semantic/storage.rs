@@ -10,9 +10,9 @@ use crate::{
         constants::SEMANTIC_MODEL_PATH,
         model::{SemanticModels, Semantics},
     },
-    errors::OxyError,
     utils::get_file_stem,
 };
+use oxy_shared::errors::OxyError;
 
 use super::types::{
     DatasetInfo, SemanticKey, SemanticTableRef, SyncDimension, SyncOperationResult,

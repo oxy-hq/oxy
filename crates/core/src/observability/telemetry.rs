@@ -64,7 +64,8 @@ pub fn init_otlp(endpoint: &str) -> Result<(), opentelemetry::trace::TraceError>
 
     let env_filter = EnvFilter::try_from_default_env()
         .or_else(|_| EnvFilter::try_new("info"))
-        .unwrap();
+        .unwrap()
+        .add_directive("deser_incomplete=off".parse().unwrap()); // Completely mute deser_incomplete logging
 
     tracing_subscriber::registry()
         .with(env_filter)
@@ -89,7 +90,8 @@ pub fn init_telemetry() -> Result<(), opentelemetry::trace::TraceError> {
 pub fn init_stdout() {
     let env_filter = EnvFilter::try_from_default_env()
         .or_else(|_| EnvFilter::try_new("info"))
-        .unwrap();
+        .unwrap()
+        .add_directive("deser_incomplete=off".parse().unwrap()); // Completely mute deser_incomplete logging
 
     tracing_subscriber::registry()
         .with(env_filter)

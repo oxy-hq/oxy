@@ -2,7 +2,6 @@ use std::iter::once;
 
 use super::schema::SchemaUtils;
 use crate::config::constants::{RETRIEVAL_INCLUSIONS_TABLE, VECTOR_INDEX_MIN_ROWS};
-use crate::errors::OxyError;
 use arrow::array::{RecordBatch, RecordBatchIterator};
 use lancedb::{
     Connection, Table,
@@ -10,6 +9,7 @@ use lancedb::{
     index::{Index, vector::IvfHnswPqIndexBuilder},
     table::OptimizeAction,
 };
+use oxy_shared::errors::OxyError;
 
 pub(super) struct TableManager {
     connection: Connection,

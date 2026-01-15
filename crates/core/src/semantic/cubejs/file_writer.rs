@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::errors::OxyError;
+use oxy_shared::errors::OxyError;
 
 use super::data_sources::generate_cube_config;
 use super::models::{CubeCube, CubeSemanticLayerWithDataSources, CubeView};

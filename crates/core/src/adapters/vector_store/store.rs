@@ -14,11 +14,11 @@ use crate::{
         ConfigManager,
         model::{EmbeddingConfig, RetrievalConfig, RoutingAgent, VectorDBConfig},
     },
-    errors::OxyError,
     service::retrieval::EnumIndexManager,
 };
 use enum_dispatch::enum_dispatch;
 use lancedb::{Connection, connect};
+use oxy_shared::errors::OxyError;
 
 #[enum_dispatch(VectorEngine)]
 enum VectorStoreImpl {

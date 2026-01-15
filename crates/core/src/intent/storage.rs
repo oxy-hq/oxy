@@ -3,8 +3,8 @@
 use clickhouse::Row;
 use serde::{Deserialize, Serialize};
 
-use crate::errors::OxyError;
 use crate::storage::{ClickHouseConfig, ClickHouseStorage};
+use oxy_shared::errors::OxyError;
 
 use super::types::{IntentAnalytics, IntentClassification, IntentCluster, IntentConfig};
 

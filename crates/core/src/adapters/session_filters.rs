@@ -1,5 +1,5 @@
 use crate::config::schema_type_converter;
-use crate::errors::OxyError;
+use oxy_shared::errors::OxyError;
 use schemars::schema::SchemaObject;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

@@ -5,9 +5,9 @@ use crate::{
         SecretsDatabaseStorage, SecretsStorage, environment::SecretsEnvironmentStorage,
         storage::SecretsStorageImpl,
     },
-    errors::OxyError,
     service::secret_manager::SecretManagerService,
 };
+use oxy_shared::errors::OxyError;
 
 #[derive(Debug, Clone)]
 pub struct SecretsManager {

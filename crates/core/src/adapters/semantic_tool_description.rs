@@ -1,5 +1,6 @@
-use crate::{config, errors::OxyError};
+use crate::config;
 use oxy_semantic::{self, SemanticLayer, Topic, View, parse_semantic_layer_from_dir};
+use oxy_shared::errors::OxyError;
 
 /// Get enhanced description for semantic query tool with semantic layer metadata
 pub fn get_semantic_query_description(

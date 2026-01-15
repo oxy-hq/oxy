@@ -3,10 +3,10 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use crate::{
-    errors::OxyError,
     execute::types::{Output, Source},
     service::types::{Block, BlockValue, ContainerKind, Content},
 };
+use oxy_shared::errors::OxyError;
 
 pub struct BlockManager {
     blocks: Arc<Mutex<Vec<Block>>>,

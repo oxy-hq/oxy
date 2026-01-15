@@ -1,6 +1,6 @@
-use crate::errors::OxyError;
+use oxy_shared::errors::OxyError;
 use reqwest::{
-    Client,
+    Client, Response,
     header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue},
 };
 use serde::{Deserialize, Serialize};
@@ -120,7 +120,7 @@ impl V0Client {
 
         let request_body = CreateChatRequest { message };
 
-        let response = self
+        let response: Response = self
             .client
             .post(&url)
             .headers(headers)
@@ -131,7 +131,10 @@ impl V0Client {
 
         if !response.status().is_success() {
             let status = response.status();
-            let error_text = response.text().await.unwrap_or_default();
+            let error_text: String = match response.text().await {
+                Ok(text) => text,
+                Err(_) => String::new(),
+            };
             return Err(OxyError::RuntimeError(format!(
                 "v0 API error: {} - {}",
                 status, error_text
@@ -139,10 +142,14 @@ impl V0Client {
         }
 
         // Debug: print response body
-        let response_text = response
-            .text()
-            .await
-            .map_err(|e| OxyError::RuntimeError(format!("Failed to read response: {e}")))?;
+        let response_text: String = match response.text().await {
+            Ok(text) => text,
+            Err(e) => {
+                return Err(OxyError::RuntimeError(format!(
+                    "Failed to read response: {e}"
+                )));
+            }
+        };
         println!("v0 API Response: {}", response_text);
 
         // Parse the text into JSON
@@ -168,7 +175,7 @@ impl V0Client {
             name,
         };
 
-        let response = self
+        let response: Response = self
             .client
             .post(&url)
             .headers(headers)
@@ -181,7 +188,10 @@ impl V0Client {
 
         if !response.status().is_success() {
             let status = response.status();
-            let error_text = response.text().await.unwrap_or_default();
+            let error_text: String = match response.text().await {
+                Ok(text) => text,
+                Err(_) => String::new(),
+            };
             return Err(OxyError::RuntimeError(format!(
                 "v0 API error: {} - {}",
                 status, error_text
@@ -189,10 +199,14 @@ impl V0Client {
         }
 
         // Debug: print response body
-        let response_text = response
-            .text()
-            .await
-            .map_err(|e| OxyError::RuntimeError(format!("Failed to read response: {e}")))?;
+        let response_text: String = match response.text().await {
+            Ok(text) => text,
+            Err(e) => {
+                return Err(OxyError::RuntimeError(format!(
+                    "Failed to read response: {e}"
+                )));
+            }
+        };
         println!("v0 API Init Response: {}", response_text);
 
         // Parse the text into JSON
@@ -223,7 +237,10 @@ impl V0Client {
             })?;
         if !response.status().is_success() {
             let status = response.status();
-            let error_text = response.text().await.unwrap_or_default();
+            let error_text: String = match response.text().await {
+                Ok(text) => text,
+                Err(_) => String::new(),
+            };
             return Err(OxyError::RuntimeError(format!(
                 "v0 API error: {} - {}",
                 status, error_text
@@ -243,7 +260,7 @@ impl V0Client {
 
         let request_body = SendMessageRequest { message, system };
 
-        let response = self
+        let response: Response = self
             .client
             .post(&url)
             .headers(headers)
@@ -254,16 +271,17 @@ impl V0Client {
 
         if !response.status().is_success() {
             let status = response.status();
-            let error_text = response.text().await.unwrap_or_default();
+            let error_text: String = match response.text().await {
+                Ok(text) => text,
+                Err(_) => String::new(),
+            };
             return Err(OxyError::RuntimeError(format!(
                 "v0 API error: {} - {}",
                 status, error_text
             )));
         }
 
-        response
-            .json::<CreateChatResponse>()
-            .await
-            .map_err(|e| OxyError::RuntimeError(format!("Failed to parse v0 response: {e}")))
+        let result: Result<CreateChatResponse, _> = response.json().await;
+        result.map_err(|e| OxyError::RuntimeError(format!("Failed to parse v0 response: {e}")))
     }
 }

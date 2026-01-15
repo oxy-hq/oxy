@@ -2,21 +2,19 @@ use indexmap::IndexMap;
 use uuid::Uuid;
 
 use crate::{
-    adapters::{
-        checkpoint::types::RetryStrategy,
-        runs::{
-            database::RunsDatabaseStorage,
-            storage::{RunsStorage, RunsStorageImpl},
-        },
+    adapters::runs::{
+        database::RunsDatabaseStorage,
+        storage::{RunsStorage, RunsStorageImpl},
     },
-    db::client::establish_connection,
-    errors::OxyError,
-    service::types::{
+    checkpoint::types::RetryStrategy,
+    database::client::establish_connection,
+    types::{
         block::Group,
         pagination::{Paginated, Pagination},
         run::{RootReference, RunDetails, RunInfo},
     },
 };
+use oxy_shared::errors::OxyError;
 
 #[derive(Debug, Clone)]
 pub struct RunsManager {

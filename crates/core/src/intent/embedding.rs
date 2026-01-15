@@ -6,7 +6,7 @@ use async_openai::{
     types::embeddings::{CreateEmbeddingRequestArgs, EmbeddingInput},
 };
 
-use crate::errors::OxyError;
+use oxy_shared::errors::OxyError;
 
 use super::types::IntentConfig;
 

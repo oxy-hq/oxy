@@ -1,14 +1,12 @@
 use tracing::Instrument;
 
-use crate::{
-    errors::OxyError,
-    execute::{
-        Executable, ExecutionContext,
-        types::Event,
-        writer::{BufWriter, Writer},
-    },
-    observability::events,
+use crate::execute::{
+    Executable, ExecutionContext,
+    types::Event,
+    writer::{BufWriter, Writer},
 };
+use crate::observability::events;
+use oxy_shared::errors::OxyError;
 
 use super::wrap::Wrap;
 

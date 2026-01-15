@@ -1,9 +1,9 @@
 use crate::{
     adapters::secrets::SecretsManager,
     config::ConfigManager,
-    errors::OxyError,
     semantic::{SemanticManager, types::SyncMetrics},
 };
+use oxy_shared::errors::OxyError;
 
 pub async fn sync_databases(
     config: ConfigManager,

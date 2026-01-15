@@ -6,9 +6,9 @@ use uuid::Uuid;
 use crate::{
     adapters::{runs::RunsManager, secrets::SecretsManager},
     config::ConfigManager,
-    errors::OxyError,
     intent::IntentClassifier,
 };
+use oxy_shared::errors::OxyError;
 
 #[derive(Debug, Clone)]
 pub struct ProjectManager {

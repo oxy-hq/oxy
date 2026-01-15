@@ -1,6 +1,8 @@
 use async_trait::async_trait;
 use clickhouse::Client;
 
+use oxy_shared::errors::OxyError;
+
 use super::migrator::{ClickHouseMigration, Result};
 
 pub struct CreateIntentTables;
@@ -36,9 +38,7 @@ impl ClickHouseMigration for CreateIntentTables {
             .execute()
             .await
             .map_err(|e| {
-                crate::errors::OxyError::RuntimeError(format!(
-                    "Failed to create intent_clusters: {e}"
-                ))
+                OxyError::RuntimeError(format!("Failed to create intent_clusters: {e}"))
             })?;
 
         // Create intent_classifications table
@@ -60,9 +60,7 @@ impl ClickHouseMigration for CreateIntentTables {
             .execute()
             .await
             .map_err(|e| {
-                crate::errors::OxyError::RuntimeError(format!(
-                    "Failed to create intent_classifications: {e}"
-                ))
+                OxyError::RuntimeError(format!("Failed to create intent_classifications: {e}"))
             })?;
 
         Ok(())
@@ -74,20 +72,14 @@ impl ClickHouseMigration for CreateIntentTables {
             .execute()
             .await
             .map_err(|e| {
-                crate::errors::OxyError::RuntimeError(format!(
-                    "Failed to drop intent_classifications: {e}"
-                ))
+                OxyError::RuntimeError(format!("Failed to drop intent_classifications: {e}"))
             })?;
 
         client
             .query("DROP TABLE IF EXISTS intent_clusters")
             .execute()
             .await
-            .map_err(|e| {
-                crate::errors::OxyError::RuntimeError(format!(
-                    "Failed to drop intent_clusters: {e}"
-                ))
-            })?;
+            .map_err(|e| OxyError::RuntimeError(format!("Failed to drop intent_clusters: {e}")))?;
 
         Ok(())
     }

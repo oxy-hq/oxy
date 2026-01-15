@@ -1,43 +1,31 @@
-use std::collections::HashMap;
-
 use secrecy::SecretString;
-use serde_json::Value;
 
 use super::{
-    create_data_app::CreateDataAppExecutable,
+    create_data_app::{CreateDataAppExecutable, CreateDataAppInput, CreateDataAppParams},
+    registry::global_registry,
     retrieval::RetrievalExecutable,
     sql::{SQLExecutable, ValidateSQLExecutable},
     types::{
-        AgentParams, CreateDataAppInput, CreateV0AppParams, RetrievalInput, RetrievalParams,
-        SQLInput, SQLParams, ToolRawInput, VisualizeInput, WorkflowInput,
+        CreateV0AppParams, RetrievalInput, RetrievalParams, SQLInput, SQLParams, ToolRawInput,
     },
     v0::{CreateV0App, CreateV0AppInput},
+    visualize::{VisualizeExecutable, VisualizeParams},
 };
 use crate::{
     adapters::openai::OpenAIToolConfig,
-    agent::{AgentLauncherExecutable, types::AgentInput},
     config::{
         constants::ARTIFACT_SOURCE,
-        model::{AgentTool, RetrievalConfig, SemanticQueryTask, ToolType, WorkflowTool},
+        model::{RetrievalConfig, ToolType},
     },
-    errors::OxyError,
     execute::{
         Executable, ExecutionContext,
         builders::{ExecutableBuilder, map::ParamMapper},
         types::{Chunk, EventKind, Output, OutputContainer, Table},
     },
     observability::events,
-    service::types::{SemanticQuery, SemanticQueryParams},
-    tools::{
-        create_data_app::types::CreateDataAppParams,
-        omni::{
-            executable::OmniQueryExecutable, mapper::OmniQueryToolMapper, types::OmniQueryToolInput,
-        },
-        visualize::{types::VisualizeParams, visualize::VisualizeExecutable},
-        workflow::WorkflowExecutable,
-    },
-    workflow::{SemanticQueryExecutable, SemanticQueryValidation, validate_semantic_query_task},
+    tools::omni::{executable::OmniQueryExecutable, types::OmniQueryInput},
 };
+use oxy_shared::errors::OxyError;
 
 const TOOL_NOT_FOUND_ERR: &str = "Tool not found";
 
@@ -97,6 +85,10 @@ impl Executable<(String, Option<ToolType>, ToolRawInput)> for ToolExecutable {
                             sql.clone(),
                         ),
                         None => {
+                            tracing::debug!(
+                                "Attempting to deserialize SQL params from: {}",
+                                &input.param
+                            );
                             let SQLParams { sql, persist: _ } =
                                 serde_json::from_str::<SQLParams>(&input.param)?;
                             (input.param.clone(), sql)
@@ -123,12 +115,15 @@ impl Executable<(String, Option<ToolType>, ToolRawInput)> for ToolExecutable {
                         .map(|output| output.into())
                 }
                 ToolType::ValidateSQL(sql_config) => {
+                    // ValidateSQL expects the SQL query in the param field
+                    let param = input.param.clone();
+
                     build_validate_sql_executable(ValidateSQLExecutable::new())
                         .execute(
                             execution_context,
                             SQLToolInput {
                                 database: sql_config.database.clone(),
-                                param: input.param.clone(),
+                                param,
                                 dry_run_limit: None,
                             },
                         )
@@ -146,37 +141,45 @@ impl Executable<(String, Option<ToolType>, ToolRawInput)> for ToolExecutable {
                     )
                     .await
                     .map(|output| output.into()),
-                ToolType::Workflow(workflow_config) => {
-                    build_workflow_executable()
-                        .execute(
-                            execution_context,
-                            WorkflowToolInput {
-                                workflow_config: workflow_config.clone(),
-                                param: input.param.clone(),
-                            },
-                        )
-                        .await
+                ToolType::Workflow(_workflow_config) => {
+                    // Try to use registered executor from higher layers
+                    if let Some(result) = global_registry()
+                        .execute(execution_context, tool_type, &input)
+                        .await?
+                    {
+                        Ok(result)
+                    } else {
+                        // No executor registered - return helpful error
+                        Err(OxyError::RuntimeError(
+                            "Workflow execution not available: No executor registered. \
+                            Register a WorkflowExecutor at the application level."
+                                .to_string(),
+                        ))
+                    }
                 }
-                ToolType::Agent(agent_config) => {
-                    build_agent_executable()
-                        .execute(
-                            execution_context,
-                            AgentToolInput {
-                                agent_config: agent_config.clone(),
-                                param: input.param.clone(),
-                            },
-                        )
-                        .await
+                ToolType::Agent(_agent_config) => {
+                    // Try to use registered executor from higher layers
+                    if let Some(result) = global_registry()
+                        .execute(execution_context, tool_type, &input)
+                        .await?
+                    {
+                        Ok(result)
+                    } else {
+                        // No executor registered - return helpful error
+                        Err(OxyError::RuntimeError(
+                            "Agent execution not available: No executor registered. \
+                            Register an AgentExecutor at the application level."
+                                .to_string(),
+                        ))
+                    }
                 }
-                ToolType::Visualize(_visualize_config) => build_visualize_executable()
-                    .execute(
-                        execution_context,
-                        VisualizeToolInput {
-                            param: input.param.clone(),
-                        },
-                    )
-                    .await
-                    .map(|output| output.into()),
+                ToolType::Visualize(_visualize_config) => {
+                    let params = serde_json::from_str::<VisualizeParams>(&input.param)?;
+                    build_visualize_executable()
+                        .execute(execution_context, params)
+                        .await
+                        .map(|output| output.into())
+                }
                 ToolType::CreateDataApp(_create_data_app_tool) => {
                     build_create_data_app_executable()
                         .execute(
@@ -188,17 +191,26 @@ impl Executable<(String, Option<ToolType>, ToolRawInput)> for ToolExecutable {
                         .await
                         .map(|output| output.into())
                 }
-                ToolType::OmniQuery(omni_query_tool) => build_omni_query_tool_executable()
-                    .execute(
-                        execution_context,
-                        OmniQueryToolInput {
-                            param: input.param.clone(),
-                            topic: omni_query_tool.topic.clone(),
-                            integration: omni_query_tool.integration.clone(),
-                        },
-                    )
-                    .await
-                    .map(|output| output.into()),
+                ToolType::OmniQuery(omni_query_tool) => {
+                    let params = serde_json::from_str(&input.param).unwrap_or_else(|_| {
+                        crate::types::tool_params::OmniQueryParams {
+                            fields: vec![],
+                            limit: None,
+                            sorts: None,
+                        }
+                    });
+                    build_omni_query_tool_executable()
+                        .execute(
+                            execution_context,
+                            OmniQueryInput {
+                                params,
+                                topic: omni_query_tool.topic.clone(),
+                                integration: omni_query_tool.integration.clone(),
+                            },
+                        )
+                        .await
+                        .map(|output| output.into())
+                }
                 ToolType::CreateV0App(create_v0_app_tool) => build_create_v0_app_executable()
                     .execute(
                         execution_context,
@@ -212,90 +224,83 @@ impl Executable<(String, Option<ToolType>, ToolRawInput)> for ToolExecutable {
                     )
                     .await
                     .map(|output| output.into()),
-                ToolType::SemanticQuery(semantic_query_tool) => {
-                    let param_obj = serde_json::from_str::<Value>(&input.param).unwrap_or_default();
-                    let mut artifact_value = create_semantic_query_artifact(&param_obj);
-
-                    let _ = artifact_context
-                        .write_chunk(Chunk {
-                            key: None,
-                            delta: Output::SemanticQuery(artifact_value.clone()),
-                            finished: true,
-                        })
-                        .await;
-
-                    tracing::debug!(
-                        "Executing SemanticQuery tool with config: {:?}",
-                        semantic_query_tool,
-                    );
-
-                    let semantic_params = serde_json::from_str::<SemanticQueryParams>(&input.param);
-
-                    match semantic_params {
-                        Ok(mut params) => {
-                            tracing::debug!("Initial SemanticQueryParams from input: {:?}", params);
-
-                            if let Err(e) =
-                                validate_and_apply_topic(&mut params, &semantic_query_tool.topic)
-                            {
-                                return Err(e);
-                            }
-
-                            tracing::debug!(
-                                "SemanticQueryParams after applying tool topic: {:?}",
-                                params
-                            );
-
-                            merge_tool_variables(&mut params, &semantic_query_tool.variables);
-
-                            tracing::debug!(
-                                "Final SemanticQueryParams before execution: {:?}",
-                                params
-                            );
-
-                            build_semantic_query_executable()
-                                .execute(
-                                    &artifact_context,
-                                    SemanticQueryToolInput {
-                                        param: params.clone(),
-                                        topic: semantic_query_tool.topic.clone(),
-                                    },
-                                )
-                                .await
-                                .map(|output| output.into())
-                        }
-                        Err(ref e) => {
-                            tracing::error!("Failed to parse SemanticQueryParams: {}", e);
-                            artifact_value.validation_error = Some(format!("{}", e));
-                            let _ = artifact_context
-                                .write_chunk(Chunk {
-                                    key: None,
-                                    delta: Output::SemanticQuery(artifact_value.clone()),
-                                    finished: true,
-                                })
-                                .await;
-                            Err(OxyError::ArgumentError(format!(
-                                "Invalid SemanticQueryParams: {}",
-                                e
-                            )))
-                        }
+                ToolType::SemanticQuery(_semantic_query_tool) => {
+                    // Try to use registered executor from higher layers
+                    if let Some(result) = global_registry()
+                        .execute(execution_context, tool_type, &input)
+                        .await?
+                    {
+                        Ok(result)
+                    } else {
+                        // No executor registered - return helpful error
+                        Err(OxyError::RuntimeError(
+                            "SemanticQuery execution not available: No executor registered. \
+                            Register a SemanticQueryExecutor at the application level."
+                                .to_string(),
+                        ))
                     }
                 }
             };
 
             tracing::info!("Tool execution completed: {:?}", tool_ret);
-            // Write ArtifactFinished event after execution with error if present
+
+            // Write output to artifact_context if artifact exists
             if artifact.is_some() {
+                match &tool_ret {
+                    Ok(output_container) => {
+                        // Extract the Output from OutputContainer and write as a chunk
+                        let output_data: Output = match output_container {
+                            OutputContainer::Single(output) => output.clone(),
+                            OutputContainer::List(list) => {
+                                // If it's a list, try to get the first item if it's a Single
+                                if let Some(OutputContainer::Single(output)) = list.first() {
+                                    output.clone()
+                                } else {
+                                    Output::Text(format!("{} items", list.len()))
+                                }
+                            }
+                            OutputContainer::Map(_) => Output::Text("Map output".to_string()),
+                            OutputContainer::Variable(json) => Output::Text(json.to_string()),
+                            OutputContainer::Consistency { value, .. } => {
+                                if let OutputContainer::Single(output) = value.output.as_ref() {
+                                    output.clone()
+                                } else {
+                                    Output::Text("Consistency result".to_string())
+                                }
+                            }
+                            OutputContainer::Metadata { value } => {
+                                if let OutputContainer::Single(output) = value.output.as_ref() {
+                                    output.clone()
+                                } else {
+                                    Output::Text("Metadata result".to_string())
+                                }
+                            }
+                        };
+                        artifact_context
+                            .write_chunk(Chunk {
+                                key: None,
+                                delta: output_data,
+                                finished: true,
+                            })
+                            .await?;
+                        events::tool::tool_call_output(output_container);
+                    }
+                    Err(e) => {
+                        events::tool::tool_call_error(&e.to_string());
+                    }
+                }
+
+                // Write ArtifactFinished event after execution with error if present
                 let error = tool_ret.as_ref().err().map(|e| e.to_string());
                 artifact_context
                     .write_kind(EventKind::ArtifactFinished { error })
                     .await?;
-            }
-
-            // Log tool call output or error
-            match &tool_ret {
-                Ok(output) => events::tool::tool_call_output(output),
-                Err(e) => events::tool::tool_call_error(&e.to_string()),
+            } else {
+                // Log tool call output or error even when no artifact
+                match &tool_ret {
+                    Ok(output) => events::tool::tool_call_output(output),
+                    Err(e) => events::tool::tool_call_error(&e.to_string()),
+                }
             }
 
             let ToolRawInput {
@@ -344,9 +349,6 @@ struct CreateDataAppMapper;
 
 #[derive(Clone)]
 struct CreateV0AppMapper;
-
-#[derive(Clone)]
-struct SemanticQueryMapper;
 
 #[derive(Clone)]
 #[allow(dead_code)]
@@ -431,24 +433,6 @@ impl ParamMapper<CreateV0AppToolInput, CreateV0AppInput> for CreateV0AppMapper {
     }
 }
 
-#[async_trait::async_trait]
-impl ParamMapper<VisualizeToolInput, VisualizeInput> for VisualizeMapper {
-    async fn map(
-        &self,
-        _execution_context: &ExecutionContext,
-        input: VisualizeToolInput,
-    ) -> Result<(VisualizeInput, Option<ExecutionContext>), OxyError> {
-        let VisualizeToolInput { param, .. } = input;
-        let visualize_params = serde_json::from_str::<VisualizeParams>(&param)?;
-        Ok((
-            VisualizeInput {
-                param: visualize_params,
-            },
-            None,
-        ))
-    }
-}
-
 fn build_sql_executable<E>(executable: E) -> impl Executable<SQLToolInput, Response = Table>
 where
     E: Executable<SQLInput, Response = Table> + Send,
@@ -457,7 +441,6 @@ where
         .map(SQLMapper)
         .executable(executable)
 }
-
 fn build_validate_sql_executable<E>(
     executable: E,
 ) -> impl Executable<SQLToolInput, Response = Output>
@@ -468,70 +451,17 @@ where
         .map(SQLMapper)
         .executable(executable)
 }
-
-fn build_omni_query_tool_executable() -> impl Executable<OmniQueryToolInput, Response = Output> {
-    ExecutableBuilder::new()
-        .map(OmniQueryToolMapper)
-        .executable(OmniQueryExecutable::new())
+fn build_omni_query_tool_executable() -> impl Executable<OmniQueryInput, Response = Output> {
+    // OmniQuery doesn't need a mapper - just use executable directly
+    OmniQueryExecutable::new()
 }
 
-#[async_trait::async_trait]
-impl ParamMapper<SemanticQueryToolInput, SemanticQueryValidation> for SemanticQueryMapper {
-    async fn map(
-        &self,
-        execution_context: &ExecutionContext,
-        input: SemanticQueryToolInput,
-    ) -> Result<(SemanticQueryValidation, Option<ExecutionContext>), OxyError> {
-        tracing::debug!(
-            "Mapping SemanticQueryToolInput with param: {:?}",
-            input.param
-        );
-        let SemanticQueryToolInput {
-            param: semantic_params,
-            topic: _topic,
-        } = input;
-
-        // For now, semantic query tools don't support export directly
-        // Export functionality is handled at the task level
-        let export = None;
-
-        // Create a SemanticQueryTask from the parameters
-        let task = SemanticQueryTask {
-            query: semantic_params.clone(),
-            export,
-            variables: semantic_params.variables, // Pass variables from tool input
-        };
-
-        // Validate the semantic query task - capture error instead of failing
-        let validation_result =
-            match validate_semantic_query_task(&execution_context.project.config_manager, &task)
-                .await
-            {
-                Ok(validated) => SemanticQueryValidation::Valid(validated),
-                Err(e) => {
-                    tracing::error!("Semantic query validation error: {}", e);
-                    SemanticQueryValidation::Invalid {
-                        task: task.clone(),
-                        error: e.to_string(),
-                    }
-                }
-            };
-
-        tracing::debug!("SemanticQueryValidation result: {:?}", validation_result);
-        Ok((validation_result, None))
-    }
+fn build_visualize_executable() -> impl Executable<VisualizeParams, Response = Output> {
+    // Visualize doesn't need a mapper - just use executable directly
+    VisualizeExecutable::new()
 }
 
-fn build_semantic_query_executable() -> impl Executable<SemanticQueryToolInput, Response = Output> {
-    ExecutableBuilder::new()
-        .map(SemanticQueryMapper)
-        .executable(SemanticQueryExecutable::new())
-}
-
-#[derive(Clone)]
-struct VisualizeToolInput {
-    param: String,
-}
+// Removed: SemanticQueryMapper - requires workflow crate types
 
 struct CreateDataAppToolInput {
     param: String,
@@ -546,20 +476,7 @@ struct CreateV0AppToolInput {
     v0_api_key_var: String,
 }
 
-#[derive(Clone)]
-struct SemanticQueryToolInput {
-    param: SemanticQueryParams,
-    topic: Option<String>,
-}
-
-#[derive(Clone)]
-struct VisualizeMapper;
-
-fn build_visualize_executable() -> impl Executable<VisualizeToolInput, Response = Output> {
-    ExecutableBuilder::new()
-        .map(VisualizeMapper)
-        .executable(VisualizeExecutable::new())
-}
+// Removed: SemanticQueryToolInput, VisualizeToolInput, VisualizeMapper - tools removed in refactor
 
 fn build_create_data_app_executable() -> impl Executable<CreateDataAppToolInput, Response = Output>
 {
@@ -585,12 +502,12 @@ struct RetrievalToolInput {
 struct RetrievalMapper;
 
 #[async_trait::async_trait]
-impl ParamMapper<RetrievalToolInput, RetrievalInput<RetrievalConfig>> for RetrievalMapper {
+impl ParamMapper<RetrievalToolInput, RetrievalInput> for RetrievalMapper {
     async fn map(
         &self,
         _execution_context: &ExecutionContext,
         input: RetrievalToolInput,
-    ) -> Result<(RetrievalInput<RetrievalConfig>, Option<ExecutionContext>), OxyError> {
+    ) -> Result<(RetrievalInput, Option<ExecutionContext>), OxyError> {
         let RetrievalToolInput {
             agent_name,
             param,
@@ -600,14 +517,11 @@ impl ParamMapper<RetrievalToolInput, RetrievalInput<RetrievalConfig>> for Retrie
             Ok(RetrievalParams { query }) => query,
             Err(_) => param,
         };
-        let embedding_config = retrieval_config.embedding_config.clone();
         Ok((
             RetrievalInput {
                 query,
-                db_config: retrieval_config.db_config.clone(),
-                db_name: format!("{}-{}", agent_name, retrieval_config.name),
-                openai_config: retrieval_config,
-                embedding_config,
+                agent_name,
+                retrieval_config,
             },
             None,
         ))
@@ -620,171 +534,6 @@ fn build_retrieval_executable() -> impl Executable<RetrievalToolInput, Response 
         .executable(RetrievalExecutable::new())
 }
 
-#[derive(Clone)]
-struct WorkflowToolInput {
-    workflow_config: WorkflowTool,
-    param: String,
-}
-
-#[derive(Clone)]
-struct WorkflowMapper;
-
-#[async_trait::async_trait]
-impl ParamMapper<WorkflowToolInput, WorkflowInput> for WorkflowMapper {
-    async fn map(
-        &self,
-        _execution_context: &ExecutionContext,
-        input: WorkflowToolInput,
-    ) -> Result<(WorkflowInput, Option<ExecutionContext>), OxyError> {
-        let WorkflowToolInput { param, .. } = input;
-        if param.is_empty() {
-            return Ok((
-                WorkflowInput {
-                    workflow_config: input.workflow_config,
-                    variables: None,
-                },
-                None,
-            ));
-        }
-        let params = serde_json::from_str::<HashMap<String, serde_json::Value>>(&param)?;
-        Ok((
-            WorkflowInput {
-                workflow_config: input.workflow_config,
-                variables: Some(params),
-            },
-            None,
-        ))
-    }
-}
-
-fn build_workflow_executable() -> impl Executable<WorkflowToolInput, Response = OutputContainer> {
-    ExecutableBuilder::new()
-        .map(WorkflowMapper)
-        .executable(WorkflowExecutable::new())
-}
-
-#[derive(Clone)]
-pub struct AgentToolInput {
-    pub agent_config: AgentTool,
-    pub param: String,
-}
-
-#[derive(Clone)]
-pub struct AgentMapper;
-
-#[async_trait::async_trait]
-impl ParamMapper<AgentToolInput, AgentInput> for AgentMapper {
-    async fn map(
-        &self,
-        execution_context: &ExecutionContext,
-        input: AgentToolInput,
-    ) -> Result<(AgentInput, Option<ExecutionContext>), OxyError> {
-        let AgentToolInput {
-            param,
-            agent_config,
-        } = input;
-        let params = serde_json::from_str::<AgentParams>(&param)?;
-
-        Ok((
-            AgentInput {
-                agent_ref: agent_config.agent_ref.to_string(),
-                prompt: params.prompt.to_string(),
-                memory: vec![],
-                variables: params.variables.clone(),
-                a2a_task_id: None,
-                a2a_thread_id: None,
-                a2a_context_id: None,
-                sandbox_info: execution_context.sandbox_info.clone(),
-            },
-            None,
-        ))
-    }
-}
-
-fn build_agent_executable() -> impl Executable<AgentToolInput, Response = OutputContainer> {
-    ExecutableBuilder::new()
-        .map(AgentMapper)
-        .executable(AgentLauncherExecutable)
-}
-
-fn create_semantic_query_artifact(param_obj: &Value) -> SemanticQuery {
-    let extract_string_array = |key: &str| {
-        param_obj
-            .get(key)
-            .and_then(|v| v.as_array())
-            .cloned()
-            .unwrap_or_default()
-            .into_iter()
-            .filter_map(|val| val.as_str().map(|s| s.to_string()))
-            .collect()
-    };
-
-    SemanticQuery {
-        database: "".to_string(),
-        sql_query: "".to_string(),
-        result: vec![],
-        error: None,
-        validation_error: None,
-        sql_generation_error: None,
-        is_result_truncated: false,
-        topic: param_obj
-            .get("topic")
-            .and_then(|v| v.as_str().map(|s| s.to_string())),
-        dimensions: extract_string_array("dimensions"),
-        measures: extract_string_array("measures"),
-        filters: param_obj
-            .get("filters")
-            .and_then(|v| v.as_array())
-            .cloned()
-            .unwrap_or_default()
-            .into_iter()
-            .filter_map(|val| serde_json::from_value(val).ok())
-            .collect(),
-        orders: param_obj
-            .get("orders")
-            .and_then(|v| v.as_array())
-            .cloned()
-            .unwrap_or_default()
-            .into_iter()
-            .filter_map(|val| serde_json::from_value(val).ok())
-            .collect(),
-        limit: param_obj.get("limit").and_then(|v| v.as_u64()),
-        offset: param_obj.get("offset").and_then(|v| v.as_u64()),
-    }
-}
-
-fn validate_and_apply_topic(
-    params: &mut SemanticQueryParams,
-    tool_topic: &Option<String>,
-) -> Result<(), OxyError> {
-    if let Some(topic) = tool_topic {
-        if params.topic.is_none() {
-            params.topic = Some(topic.clone());
-        } else if params.topic.as_deref() != Some(topic.as_str()) {
-            return Err(OxyError::ArgumentError(format!(
-                "Invalid topic: expected '{}', got '{}'",
-                topic,
-                params.topic.as_deref().unwrap_or("none")
-            )));
-        }
-    }
-    Ok(())
-}
-
-fn merge_tool_variables(
-    params: &mut SemanticQueryParams,
-    tool_variables: &Option<HashMap<String, serde_json::Value>>,
-) {
-    if let Some(tool_vars) = tool_variables {
-        let merged_variables = match params.variables.as_mut() {
-            Some(query_vars) => {
-                for (key, value) in tool_vars {
-                    query_vars.insert(key.clone(), value.clone());
-                }
-                Some(query_vars.clone())
-            }
-            None => Some(tool_vars.clone()),
-        };
-        params.variables = merged_variables;
-    }
-}
+// Note: Workflow, Agent, and SemanticQuery tool executors are registered
+// at the application level via the ToolRegistry to avoid circular dependencies.
+// See crates/core/src/tools/registry.rs for the registration interface.

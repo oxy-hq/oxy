@@ -1,10 +1,10 @@
 use tokio::sync::mpsc::Sender;
 
 use crate::{
-    errors::OxyError,
     execute::types::{Usage, event::ArtifactKind},
     service::types::{AnswerContent, AnswerStream, ArtifactValue},
 };
+use oxy_shared::errors::OxyError;
 
 pub struct StreamDispatcher {
     sender: Sender<AnswerStream>,

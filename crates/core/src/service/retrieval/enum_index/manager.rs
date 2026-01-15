@@ -10,9 +10,9 @@ use crate::{
         ConfigManager,
         constants::{ENUM_ROUTING_PATH, RETRIEVAL_CACHE_PATH},
     },
-    errors::OxyError,
     semantic::{SemanticManager, SemanticVariablesContexts},
 };
+use oxy_shared::errors::OxyError;
 
 use super::{
     builder, renderer,

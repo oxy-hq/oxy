@@ -7,9 +7,9 @@ use sea_orm::EntityTrait;
 use uuid::Uuid;
 
 use crate::config::resolve_local_project_path;
-use crate::db::client::establish_connection;
-use crate::errors::OxyError;
+use crate::database::client::establish_connection;
 use crate::github::GitOperations;
+use oxy_shared::errors::OxyError;
 
 /// Resolve the project path for a given project ID.
 ///

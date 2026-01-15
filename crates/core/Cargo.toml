@@ -11,7 +11,6 @@ rust-version.workspace = true
 # Override workspace exclude to prevent rebuilds from runtime-generated files
 exclude = [
   "examples/",
-  "tests/",
   # Runtime-generated directories that should not trigger rebuilds
   "demo_project/.db/",
   "demo_project/.databases/",
@@ -57,8 +56,13 @@ duckdb = { version = "=1.2.2", features = ["bundled"] }
 email_address = "0.2.9"
 entity = { path = "../entity" }
 omni = { path = "../omni" }
+# oxy-config moved back into core/src/config to avoid circular dependency
 oxy-semantic = { path = "../semantic" }
+oxy-shared = { path = "../shared" }
 oxy_globals = { path = "../globals" }
+# Cannot add oxy-agent, oxy-workflow, etc. here due to circular dependency
+# They depend on oxy, so oxy cannot depend on them
+# Use them via CLI crate instead
 a2a = { path = "../a2a" }
 enum_dispatch = "0.3.13"
 futures = "0.3.31"
@@ -146,8 +150,6 @@ opentelemetry_sdk = { version = "0.27", features = ["trace", "rt-tokio"] }
 tracing-opentelemetry = "0.28"
 jsonschema = "0.33.0"
 ndarray = { version = "0.16.1" }
-linfa = "0.8.1"
-linfa-reduction = "0.8.1"
 hmac = "0.12.1"
 sha2 = "0.10.9"
 hex = "0.4.3"

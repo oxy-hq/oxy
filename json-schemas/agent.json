@@ -27,6 +27,12 @@
       "default": "",
       "type": "string"
     },
+    "max_iterations": {
+      "default": 15,
+      "type": "integer",
+      "format": "uint",
+      "minimum": 0.0
+    },
     "model": {
       "type": "string"
     },

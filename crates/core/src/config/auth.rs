@@ -46,7 +46,7 @@ pub struct OktaAuth {
 }
 
 impl Authentication {
-    pub fn from_env() -> Result<Self, crate::errors::OxyError> {
+    pub fn from_env() -> Result<Self, oxy_shared::errors::OxyError> {
         let smtp_user = env::var("SMTP_USER").ok();
         let smtp_password = env::var("SMTP_PASSWORD").ok();
         let smtp_server = env::var("SMTP_SERVER").ok();

@@ -5,10 +5,8 @@ use minijinja::value::Object;
 use schemars::schema::{Metadata, SchemaObject};
 use serde::Serialize;
 
-use crate::{
-    config::model::{Dimension, SemanticDimension, SemanticModels, Variables},
-    errors::OxyError,
-};
+use crate::config::model::{Dimension, SemanticDimension, SemanticModels, Variables};
+use oxy_shared::errors::OxyError;
 
 use super::types::SemanticTableRef;
 

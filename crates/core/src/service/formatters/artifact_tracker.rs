@@ -6,13 +6,13 @@ use uuid::Uuid;
 
 use crate::{
     config::constants::MARKDOWN_MAX_FENCES,
-    errors::OxyError,
     execute::types::event::{ArtifactKind, SandboxAppKind, SandboxInfo},
     service::types::{
         ArtifactContent, Block, BlockValue, ContainerKind, Content, OmniArtifactContent,
         SemanticQuery,
     },
 };
+use oxy_shared::errors::OxyError;
 
 pub struct ArtifactTracker {
     artifacts: Arc<Mutex<Vec<entity::artifacts::ActiveModel>>>,
@@ -198,7 +198,7 @@ impl ArtifactTracker {
         children: &[Block],
         topic: String,
     ) -> Result<Option<ArtifactContent>, OxyError> {
-        let _default_params = crate::tools::types::OmniQueryParams {
+        let _default_params = crate::types::tool_params::OmniQueryParams {
             fields: vec![],
             limit: None,
             sorts: None,
@@ -250,8 +250,8 @@ impl ArtifactTracker {
                     (
                         k.clone(),
                         match v {
-                            crate::tools::types::OrderType::Ascending => "asc".to_string(),
-                            crate::tools::types::OrderType::Descending => "desc".to_string(),
+                            crate::types::tool_params::OrderType::Ascending => "asc".to_string(),
+                            crate::types::tool_params::OrderType::Descending => "desc".to_string(),
                         },
                     )
                 })

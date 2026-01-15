@@ -4,8 +4,8 @@ use crate::{
         ConfigManager,
         model::{AgentType, ToolType},
     },
-    errors::OxyError,
 };
+use oxy_shared::errors::OxyError;
 
 use super::{VectorStore, types::SearchRecord};
 

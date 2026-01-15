@@ -1,8 +1,23 @@
 [workspace]
 # TODO: switch back to default-members = ["crates/*"] once we migrated from release-please
-members = ["crates/a2a", "crates/core", "crates/entity", "crates/migration", "crates/semantic", "crates/omni", "crates/globals"]
+members = [
+    "crates/a2a",
+    "crates/agent",
+    "crates/app",
+    "crates/auth",
+    "crates/core",
+    "crates/entity",
+    "crates/globals",
+    "crates/migration",
+    "crates/omni",
+    "crates/project",
+    "crates/semantic",
+    "crates/shared",
+    "crates/thread",
+    "crates/workflow",
+]
 
-default-members = ["crates/core"]
+default-members = ["crates/app"]
 resolver = "2"
 
 [workspace.dependencies]
@@ -23,14 +38,16 @@ sea-orm-migration = { version = "1.1.19", features = [
 ] }
 log = { version = "0.4" }
 serde = { version = "1.0", features = ["derive"] }
-serde_json = { version = "1.0.148" }
+serde_json = { version = "1.0.149" }
 serde_yaml = { version = "0.9.34" }
-indexmap = { version = "2.12.1", features = ["serde"] }
+indexmap = { version = "2.13.0", features = ["serde"] }
 thiserror = { version = "2.0.17" }
 regex = { version = "1.12.2" }
 minijinja = { version = "2.14.0" }
 tracing = { version = "0.1.44" }
 tempfile = { version = "3.24.0" }
+axum = { version = "0.8.8", features = ["macros", "http2"] }
+async-openai = { version = "0.31.1" }
 
 [workspace.package]
 # TODO: turn this on when https://github.com/googleapis/release-please/issues number 2111 is fixed
@@ -41,7 +58,7 @@ publish = false
 description = "Oxy"
 authors = ["oxy engineers"]
 documentation = "https://oxy.tech/docs"
-exclude = ["examples/", "tests/"]
+exclude = ["examples/"]
 
 
 [profile.ci]

@@ -1,0 +1,158 @@
+[package]
+name = "oxy-app"
+version = "0.4.4"
+authors.workspace = true
+description = "Oxy Application - CLI and HTTP server"
+documentation.workspace = true
+publish.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "oxy"
+path = "src/main.rs"
+
+[dependencies]
+bcrypt = "0.17.1"
+
+# Core functionality
+oxy = { path = "../core" }
+oxy-shared = { path = "../shared" }
+oxy-agent = { path = "../agent" }
+oxy-auth = { path = "../auth" }
+oxy-project = { path = "../project" }
+oxy-thread = { path = "../thread" }
+oxy-workflow = { path = "../workflow" }
+oxy-semantic = { path = "../semantic" }
+oxy_globals = { path = "../globals" }
+a2a = { path = "../a2a" }
+entity = { path = "../entity" }
+
+# Async runtime
+tokio = { workspace = true }
+async-trait = "0.1.89"
+futures = "0.3.31"
+async-stream = "0.3.6"
+async-openai = { version = "0.31.1", features = ["byot", "chat-completion-types", "response-types", "_api", "responses", "chat-completion", "embedding-types", "embedding"] }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+
+# Validation
+garde = { version = "0.22.1", features = ["full"] }
+schemars = { version = "0.8.22", features = ["derive", "impl_json_schema"] }
+
+# Error handling
+thiserror = { workspace = true }
+anyhow = "1.0"
+
+# Logging/Tracing
+tracing = { workspace = true }
+tracing-subscriber = { version = "0.3.22", features = ["env-filter", "fmt", "json"] }
+log = { workspace = true }
+
+# Web framework
+axum = { workspace = true }
+axum-server = { version = "0.7.3", features = ["tls-rustls"] }
+tower = "0.5"
+tower-http = { version = "0.6.8", features = ["cors", "trace", "timeout"] }
+utoipa = {git="https://github.com/haitrr/utoipa.git", rev="776f86e", features = ["uuid", "chrono", "axum_extras"] }
+utoipa-axum = {git="https://github.com/haitrr/utoipa.git",rev="776f86e" }
+utoipa-swagger-ui={git="https://github.com/haitrr/utoipa.git",rev="776f86e", features = ["axum"] }
+
+# HTTP client
+reqwest = { version = "0.12.28" }
+
+# Code utilities
+enum_dispatch = "0.3.13"
+rapidfuzz = "0.5.0"
+
+# CLI
+clap = { version = "4.5.54", features = ["derive"] }
+colored = "3.0.0"
+tqdm = "0.7.0"
+
+# Database
+sea-orm = { workspace = true }
+clickhouse = { version = "0.13.3", features = ["rustls-tls"] }
+
+# Machine learning (for traces analytics)
+linfa = "0.8.1"
+linfa-reduction = "0.8.1"
+ndarray = { version = "0.16", features = ["rayon"] }
+
+# Data processing
+arrow = { version = "=54.2.1", default-features = false, features = ["json"] }
+parquet = "=54.2.1"
+
+# Utilities
+uuid = { version = "1.19.0", features = ["v4", "serde"] }
+chrono = { workspace = true }
+minijinja = { workspace = true, features = ["loader"] }
+once_cell = "1.21.3"
+pulldown-cmark = "0.13"
+scopeguard = "1.2.0"
+tokio-util = "0.7.18"
+tokio-stream = "0.1.18"
+include_dir = "0.7"
+tower-serve-static = "0.1.1"
+xxhash-rust = { version = "0.8", features = ["xxh3"] }
+constant_time_eq = "0.4.2"
+hmac = "0.12.1"
+sha2 = "0.10.9"
+hex = "0.4.3"
+base64 = "0.22"
+regex = { workspace = true }
+indexmap = { workspace = true }
+itertools = "0.14.0"
+glob = "0.3.3"
+wildcard = "0.3.0"
+home = "0.5"
+human-panic = "2.0.6"
+humantime = "2.3.0"
+indoc = "2.0.7"
+jsonwebtoken = { version = "10", features = ["aws_lc_rs"] }
+lazy_static = "1.5.0"
+email_address = "0.2.9"
+lettre = "0.11.19"
+serde_urlencoded = "0.7"
+self_update = "0.42.0"
+slugify = "0.1.0"
+syntect = "5.3"
+tabled = "0.20.0"
+terminal-light = "1.8.0"
+terminal_size = "0.4.3"
+secrecy = "0.10.3"
+serde_with = "3.16.1"
+strip-ansi-escapes = "=0.2.1"
+url = "2.5.8"
+urlencoding="2.1.3"
+rustls = { version = "0.23.36", features = ["aws_lc_rs"] }
+tracing-appender = "0.2.4"
+tracing-log = "0.2.0"
+apalis = "0.7.4"
+apalis-core = "0.7.4"
+apalis-sql = { version = "0.7.4", features = ["postgres", "tokio"] }
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "sqlite"] }
+semver = "1.0"
+backoff = { version = "0.4.0", features = ["tokio"] }
+rustc_version_runtime = "0.3.0"
+sentry = { version = "0.45.0", features = ["tower-axum-matched-path", "rustls", "tracing"] }
+omni = { path = "../omni" }
+
+# Database migration
+migration = { path = "../migration" }
+
+# MCP
+rmcp = {version = "0.8.5", features = ["server", "transport-sse-server", "transport-io"]}
+
+# Other dependencies from core that might be needed
+dotenv = "0.15.0"
+dirs = "6.0.0"
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
+tempfile = { workspace = true }
+assert_cmd = "2.1.1"

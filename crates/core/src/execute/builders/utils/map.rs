@@ -1,7 +1,5 @@
-use crate::{
-    errors::OxyError,
-    execute::{ExecutionContext, builders::map::ParamMapper},
-};
+use crate::execute::{ExecutionContext, builders::map::ParamMapper};
+use oxy_shared::errors::OxyError;
 
 #[derive(Clone)]
 pub struct ConsistencyMapper {

@@ -1,0 +1,71 @@
+//! CLI argument types for Oxy commands
+
+use clap::Parser;
+
+#[derive(Parser, Debug)]
+pub struct A2aArgs {
+    /// Port number for the A2A server
+    ///
+    /// Specify which port to bind the A2A protocol server.
+    /// Default is 8080 if not specified in configuration.
+    #[clap(long)]
+    pub port: Option<u16>,
+    /// Host address to bind the A2A server
+    ///
+    /// Specify which host address to bind the A2A server.
+    /// Default is 0.0.0.0 to listen on all interfaces.
+    #[clap(long)]
+    pub host: Option<String>,
+    /// Base URL for constructing agent card endpoint URLs
+    ///
+    /// The base URL that external agents will use to reach this server.
+    /// Used in agent cards to construct endpoint URLs.
+    /// Example: https://api.example.com
+    #[clap(long)]
+    pub base_url: Option<String>,
+}
+
+#[derive(Parser, Debug)]
+pub struct ServeArgs {
+    /// Port number for the web application server
+    ///
+    /// Specify which port to bind the Oxy web interface.
+    /// Default is 3000 if not specified.
+    #[clap(long, default_value_t = 3000)]
+    pub port: u16,
+    /// Host address to bind the web application server
+    ///
+    /// Specify which host address to bind the Oxy web interface.
+    /// Default is 0.0.0.0 to listen on all interfaces.
+    #[clap(long, default_value = "0.0.0.0")]
+    pub host: String,
+    /// Enable git-based project detection and onboarding
+    ///
+    /// When enabled, allows starting the server outside of an Oxy project
+    /// directory and provides git-based onboarding functionality.
+    #[clap(long, default_value_t = false)]
+    pub readonly: bool,
+    /// Force HTTP/2 only mode (disable HTTP/1.1)
+    ///
+    /// When enabled, the server will only accept HTTP/2 connections over TLS.
+    /// HTTP/1.1 requests will be rejected. Default supports both protocols.
+    #[clap(long, default_value_t = false)]
+    pub http2_only: bool,
+    /// TLS certificate file for HTTPS (local development)
+    #[clap(long, default_value = "localhost+2.pem")]
+    pub tls_cert: String,
+    /// TLS private key file for HTTPS (local development)
+    #[clap(long, default_value = "localhost+2-key.pem")]
+    pub tls_key: String,
+
+    #[clap(long, default_value_t = false)]
+    pub cloud: bool,
+
+    /// Enable enterprise features including observability (OpenTelemetry)
+    ///
+    /// When enabled, activates enterprise features such as OpenTelemetry
+    /// tracing and metrics collection. Observability is disabled by default
+    /// and only enabled when this flag is set.
+    #[clap(long, default_value_t = false)]
+    pub enterprise: bool,
+}

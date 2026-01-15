@@ -1,6 +1,7 @@
 use tokio::sync::mpsc::{Receiver, Sender, channel};
 
-use crate::{errors::OxyError, execute::types::Event};
+use crate::execute::types::Event;
+use oxy_shared::errors::OxyError;
 
 use super::EventHandler;
 

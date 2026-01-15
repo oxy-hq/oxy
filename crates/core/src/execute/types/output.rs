@@ -6,7 +6,8 @@ use minijinja::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::{errors::OxyError, service::types::SemanticQuery, tools::types::OmniQueryParams};
+use crate::types::{SemanticQuery, tool_params::OmniQueryParams};
+use oxy_shared::errors::OxyError;
 
 use super::{Document, Prompt, SQL, Table, output_container::Data, table::TableReference};
 

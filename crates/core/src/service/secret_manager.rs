@@ -9,8 +9,10 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
-use crate::{db::client::establish_connection, errors::OxyError, utils::get_encryption_key};
 use entity::secrets::{self, ActiveModel as SecretActiveModel, Entity as Secret};
+use oxy_shared::errors::OxyError;
+
+use crate::{database::client::establish_connection, utils::get_encryption_key};
 
 #[derive(Debug, Clone)]
 pub struct SecretManagerService {

@@ -1,7 +1,5 @@
-use crate::{
-    errors::OxyError,
-    execute::{Executable, ExecutionContext},
-};
+use crate::execute::{Executable, ExecutionContext};
+use oxy_shared::errors::OxyError;
 
 #[derive(Debug, Clone)]
 pub struct FSM<M, S> {

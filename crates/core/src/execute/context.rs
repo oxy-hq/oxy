@@ -5,13 +5,9 @@ use serde::{Serialize, de::DeserializeOwned};
 use tokio::sync::mpsc::Sender;
 
 use crate::{
-    adapters::{
-        checkpoint::{CheckpointContext, CheckpointData},
-        project::manager::ProjectManager,
-        session_filters::SessionFilters,
-    },
+    adapters::{project::manager::ProjectManager, session_filters::SessionFilters},
+    checkpoint::{CheckpointContext, CheckpointData},
     config::model::ConnectionOverrides,
-    errors::OxyError,
     execute::{
         builders::checkpoint::CheckpointId,
         renderer::Renderer,
@@ -21,6 +17,7 @@ use crate::{
         },
     },
 };
+use oxy_shared::errors::OxyError;
 
 use super::{
     renderer::TemplateRegister,

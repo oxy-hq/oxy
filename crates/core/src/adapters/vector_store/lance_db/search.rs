@@ -14,9 +14,9 @@ use crate::{
         constants::{RETRIEVAL_EMBEDDINGS_COLUMN, RETRIEVAL_INCLUSIONS_TABLE},
         model::EmbeddingConfig,
     },
-    errors::OxyError,
     service::retrieval::EnumIndexManager,
 };
+use oxy_shared::errors::OxyError;
 
 use async_openai::types::embeddings::{CreateEmbeddingRequestArgs, EmbeddingInput};
 use std::{collections::HashMap, sync::Arc};

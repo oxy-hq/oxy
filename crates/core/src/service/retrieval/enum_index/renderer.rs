@@ -4,7 +4,8 @@ use aho_corasick::AhoCorasick;
 use minijinja::{Value, context};
 
 use super::types::{EnumRoutingBlob, Match, TemplateSpec};
-use crate::{errors::OxyError, execute::renderer::Renderer};
+use crate::execute::renderer::Renderer;
+use oxy_shared::errors::OxyError;
 
 pub(crate) fn find_enum_matches(ac: &AhoCorasick, query: &str) -> Vec<Match> {
     ac.find_iter(query)

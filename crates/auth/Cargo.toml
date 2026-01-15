@@ -1,0 +1,51 @@
+[package]
+name = "oxy-auth"
+version = "0.4.4"
+authors.workspace = true
+description = "Authentication and authorization for Oxy"
+documentation.workspace = true
+publish.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+# Async runtime
+tokio = { workspace = true }
+async-trait = "0.1.89"
+
+# Web framework
+axum = { version = "0.8.8", features = ["macros"] }
+
+# Database
+sea-orm = { workspace = true }
+entity = { path = "../entity" }
+
+# Cryptography
+argon2 = "0.5"
+bcrypt = "0.17.1"
+jsonwebtoken = { version = "10", features = ["aws_lc_rs"] }
+base64 = "0.22"
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+anyhow = "1.0"
+
+# Logging
+tracing = { workspace = true }
+log = { workspace = true }
+
+# Utilities
+chrono = { workspace = true }
+uuid = { version = "1.19", features = ["v4", "serde"] }
+
+# Shared infrastructure
+oxy-shared = { path = "../shared" }
+# oxy-config = { path = "../config" }  # Access via oxy::config instead
+oxy = { path = "../core" }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }

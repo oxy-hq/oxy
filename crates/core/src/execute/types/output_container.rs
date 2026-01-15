@@ -7,10 +7,8 @@ use rmcp::model::Content;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
-use crate::{
-    errors::OxyError,
-    execute::types::{Output, Table},
-};
+use crate::execute::types::{Output, Table};
+use oxy_shared::errors::OxyError;
 
 use super::reference::ReferenceKind;
 

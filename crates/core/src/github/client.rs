@@ -1,5 +1,5 @@
-use crate::errors::OxyError;
 use crate::github::{auth::GitHubEnv, types::*};
+use oxy_shared::errors::OxyError;
 use reqwest::{
     Client,
     header::{AUTHORIZATION, HeaderMap, HeaderValue, USER_AGENT},

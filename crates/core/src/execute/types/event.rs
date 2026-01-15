@@ -6,7 +6,10 @@ use utoipa::{
     openapi::{RefOr, Schema},
 };
 
-use crate::execute::types::{Usage, VizParams};
+use crate::{
+    execute::types::{Usage, VizParams},
+    types::SemanticQueryParams,
+};
 
 use super::{Chunk, ProgressType, ReferenceKind};
 
@@ -174,8 +177,12 @@ pub enum EventKind {
         source: String,
         is_verified: bool,
     },
+    SemanticQueryGenerated {
+        query: SemanticQueryParams,
+        is_verified: bool,
+    },
     OmniQueryGenerated {
-        query: crate::tools::types::OmniQueryParams,
+        query: crate::types::tool_params::OmniQueryParams,
         is_verified: bool,
     },
     ArtifactFinished {

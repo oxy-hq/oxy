@@ -3,7 +3,8 @@ use std::{collections::HashMap, str::FromStr};
 use itertools::Itertools;
 use serde::{Serialize, ser::SerializeStruct};
 
-use crate::{config::model::Dimension, errors::OxyError, theme::StyledText};
+use crate::{config::model::Dimension, theme::StyledText};
+use oxy_shared::errors::OxyError;
 
 pub struct SemanticKey {
     pub database: String,

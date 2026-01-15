@@ -1,7 +1,5 @@
-use crate::{
-    errors::OxyError,
-    execute::context::{Executable, ExecutionContext},
-};
+use crate::execute::context::{Executable, ExecutionContext};
+use oxy_shared::errors::OxyError;
 
 use super::wrap::Wrap;
 

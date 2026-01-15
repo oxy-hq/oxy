@@ -6,8 +6,8 @@ use serde::Deserialize;
 use sha2::Sha256;
 use tracing::{error, info};
 
-use crate::db::client::establish_connection;
-use crate::errors::OxyError;
+use crate::database::client::establish_connection;
+use oxy_shared::errors::OxyError;
 
 #[derive(Debug, Deserialize)]
 pub struct WebhookPayload {

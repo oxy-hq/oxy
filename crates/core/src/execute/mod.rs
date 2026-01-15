@@ -3,13 +3,14 @@ mod context;
 pub mod formatters;
 pub mod renderer;
 pub mod types;
+mod workflow_templates;
 pub mod writer;
 
 pub use context::{Executable, ExecutionContext, ExecutionContextBuilder};
 use tracing::Instrument;
 use writer::{BufWriter, EventHandler};
 
-use crate::errors::OxyError;
+use oxy_shared::errors::OxyError;
 
 pub async fn execute_with_handler<I, R>(
     executable: impl Executable<I, Response = R>,

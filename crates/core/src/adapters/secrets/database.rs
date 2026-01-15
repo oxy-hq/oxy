@@ -1,9 +1,9 @@
 use crate::{
     adapters::secrets::SecretsStorage,
-    db::client::establish_connection,
-    errors::OxyError,
+    database::client::establish_connection,
     service::secret_manager::{CreateSecretParams, SecretManagerService},
 };
+use oxy_shared::errors::OxyError;
 use uuid::Uuid;
 
 #[derive(Debug, Clone)]

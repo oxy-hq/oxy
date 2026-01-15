@@ -2,18 +2,17 @@ use minijinja::Value;
 use tracing::Instrument;
 
 use crate::{
-    adapters::{openai::OpenAIToolConfig, project::manager::ProjectManager},
+    adapters::project::manager::ProjectManager,
     config::{constants::TOOL_SOURCE, model::ToolType},
-    errors::OxyError,
     execute::{
         Executable, ExecutionContext, ExecutionContextBuilder,
-        builders::{ExecutableBuilder, map::ParamMapper},
         types::{OutputContainer, Source},
         writer::{BufWriter, EventHandler},
     },
 };
+use oxy_shared::errors::OxyError;
 
-use super::{ToolExecutable, types::ToolRawInput};
+use super::types::ToolRawInput;
 
 pub struct ToolInput {
     pub agent_name: String,
@@ -77,9 +76,38 @@ impl ToolLauncher {
         // Capture the current span to propagate trace context to the spawned task
         let current_span = tracing::Span::current();
 
+        // Find the matching tool type from the tools list
+        let tool_name = &tool_input.raw.handle;
+        let tool_type = tool_input
+            .tools
+            .iter()
+            .find(|t| {
+                let name = match t {
+                    ToolType::ExecuteSQL(t) => &t.name,
+                    ToolType::ValidateSQL(t) => &t.name,
+                    ToolType::Retrieval(t) => &t.name,
+                    ToolType::Workflow(t) => &t.name,
+                    ToolType::Agent(t) => &t.name,
+                    ToolType::Visualize(t) => &t.name,
+                    ToolType::CreateDataApp(t) => &t.name,
+                    ToolType::CreateV0App(t) => &t.name,
+                    ToolType::OmniQuery(t) => &t.name,
+                    ToolType::SemanticQuery(t) => &t.name,
+                };
+                name == tool_name
+            })
+            .cloned();
+
+        let agent_name = tool_input.agent_name.clone();
+        let raw_input = tool_input.raw;
+
         let handle = tokio::spawn(
-            async move { executable.execute(&execution_context, tool_input).await }
-                .instrument(current_span),
+            async move {
+                executable
+                    .execute(&execution_context, (agent_name, tool_type, raw_input))
+                    .await
+            }
+            .instrument(current_span),
         );
         let buf_writer = self.buf_writer;
         let event_handle =
@@ -109,45 +137,7 @@ impl Executable<ToolInput> for ToolLauncherExecutable {
     }
 }
 
-#[derive(Clone, Debug)]
-struct ToolMapper;
-
-#[async_trait::async_trait]
-impl ParamMapper<ToolInput, (String, Option<ToolType>, ToolRawInput)> for ToolMapper {
-    async fn map(
-        &self,
-        execution_context: &ExecutionContext,
-        input: ToolInput,
-    ) -> Result<
-        (
-            (String, Option<ToolType>, ToolRawInput),
-            Option<ExecutionContext>,
-        ),
-        OxyError,
-    > {
-        let ToolInput {
-            agent_name,
-            raw,
-            tools,
-        } = input;
-        let tool = tools
-            .into_iter()
-            .find(|tool| tool.handle() == raw.handle.as_str());
-        let tool_kind = match &tool {
-            Some(tool) => tool.tool_kind(),
-            None => "unknown".to_string(),
-        };
-        let source_id = match &tool {
-            Some(tool) => tool.handle(),
-            None => "unknown".to_string(),
-        };
-        let execution_context = execution_context.with_child_source(source_id, tool_kind);
-        Ok(((agent_name, tool, raw), Some(execution_context)))
-    }
-}
-
-fn build_tool_executable() -> impl Executable<ToolInput, Response = OutputContainer> {
-    ExecutableBuilder::new()
-        .map(ToolMapper)
-        .executable(ToolExecutable)
+fn build_tool_executable()
+-> impl Executable<(String, Option<ToolType>, ToolRawInput), Response = OutputContainer> {
+    super::tool::ToolExecutable
 }

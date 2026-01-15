@@ -1,8 +1,8 @@
-use crate::errors::OxyError;
 use crate::github::types::*;
 use apalis::prelude::*;
 use apalis_sql::postgres::PostgresStorage;
 use once_cell::sync::OnceCell;
+use oxy_shared::errors::OxyError;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use std::sync::Arc;

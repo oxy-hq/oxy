@@ -1,19 +1,19 @@
 use std::{fs::File, io::Write};
 
-use crate::{
-    errors::OxyError,
-    execute::{
-        Executable, ExecutionContext,
-        types::{Chunk, Output, Prompt},
-    },
-    tools::types::VisualizeInput,
+use crate::execute::{
+    Executable, ExecutionContext,
+    types::{Chunk, Output, Prompt},
 };
+use oxy_shared::errors::OxyError;
 
 use serde_json::json;
 use uuid::Uuid;
 
+use super::types::VisualizeParams;
+
 #[derive(Debug, Clone)]
 pub struct VisualizeExecutable;
+
 impl VisualizeExecutable {
     pub fn new() -> Self {
         Self
@@ -21,15 +21,14 @@ impl VisualizeExecutable {
 }
 
 #[async_trait::async_trait]
-impl Executable<VisualizeInput> for VisualizeExecutable {
+impl Executable<VisualizeParams> for VisualizeExecutable {
     type Response = Output;
 
     async fn execute(
         &mut self,
         execution_context: &ExecutionContext,
-        input: VisualizeInput,
+        param: VisualizeParams,
     ) -> Result<Self::Response, OxyError> {
-        let VisualizeInput { param } = input;
         execution_context
             .write_chunk(Chunk {
                 key: None,
@@ -53,9 +52,10 @@ impl Executable<VisualizeInput> for VisualizeExecutable {
         let file_name = format!("{}.json", Uuid::new_v4());
         let file_path = tmp_chart_dir.join(&file_name);
 
-        let mut file = File::create(&file_path).map_err(|e| anyhow::anyhow!(e))?;
+        let mut file =
+            File::create(&file_path).map_err(|e| OxyError::RuntimeError(e.to_string()))?;
         file.write_all(chart_config.to_string().as_bytes())
-            .map_err(|e| anyhow::anyhow!(e))?;
+            .map_err(|e| OxyError::RuntimeError(e.to_string()))?;
 
         Ok(Output::Text(format!(
             "Use this markdown directive to render the chart \":chart{{chart_src={}}}\" directly in the final answer.",

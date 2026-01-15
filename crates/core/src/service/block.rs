@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 
 use crate::{
-    errors::OxyError,
     execute::writer::Handler,
     service::types::{
         block::{Block, BlockKind, Group, GroupKind},
@@ -9,6 +8,7 @@ use crate::{
         event::EventKind,
     },
 };
+use oxy_shared::errors::OxyError;
 
 pub struct BlockHandler {
     block_stack: Vec<String>,

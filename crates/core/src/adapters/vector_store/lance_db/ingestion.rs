@@ -17,9 +17,9 @@ use crate::{
         },
         model::EmbeddingConfig,
     },
-    errors::OxyError,
     service::retrieval::EnumIndexManager,
 };
+use oxy_shared::errors::OxyError;
 
 use super::{math::MathUtils, serialization::SerializationUtils, table::TableManager};
 

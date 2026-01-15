@@ -6,8 +6,8 @@ use crate::{
         },
     },
     config::ConfigManager,
-    errors::OxyError,
 };
+use oxy_shared::errors::OxyError;
 
 pub mod enum_index;
 pub use enum_index::{EnumIndexConfig, EnumIndexManager};

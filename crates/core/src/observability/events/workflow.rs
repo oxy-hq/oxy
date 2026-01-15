@@ -458,7 +458,7 @@ pub mod task {
         pub fn execute_input(
             integration: &str,
             topic: &str,
-            params: &crate::tools::types::OmniQueryParams,
+            params: &crate::types::tool_params::OmniQueryParams,
         ) {
             event!(
                 Level::INFO,
@@ -825,57 +825,13 @@ pub fn task_sub_workflow_execute_span(workflow_ref: &str) -> Span {
 }
 
 /// Helper to record execution source in the current span
-pub fn record_execution_source(
-    span: &Span,
-    source: &Option<crate::service::agent::ExecutionSource>,
-) {
-    if let Some(exec_source) = source {
-        span.record(
-            "oxy.execution.source",
-            format!("{:?}", exec_source).as_str(),
-        );
-
-        use crate::service::agent::ExecutionSource;
-        match exec_source {
-            ExecutionSource::Cli => {
-                span.record("oxy.execution.context", "cli");
-            }
-            ExecutionSource::WebApi { thread_id, user_id } => {
-                span.record("oxy.execution.context", "web_api");
-                span.record("oxy.user.id", user_id.as_str());
-                span.record("oxy.thread.id", thread_id.as_str());
-            }
-            ExecutionSource::Slack {
-                thread_id,
-                channel_id,
-            } => {
-                span.record("oxy.execution.context", "slack");
-                span.record("oxy.thread.id", thread_id.as_str());
-                if let Some(channel) = channel_id {
-                    span.record("oxy.slack.channel_id", channel.as_str());
-                }
-            }
-            ExecutionSource::A2a {
-                task_id,
-                context_id,
-                thread_id,
-            } => {
-                span.record("oxy.execution.context", "a2a");
-                span.record("oxy.a2a.task_id", task_id.as_str());
-                span.record("oxy.a2a.context_id", context_id.as_str());
-                span.record("oxy.a2a.thread_id", thread_id.as_str());
-            }
-            ExecutionSource::Mcp { session_id } => {
-                span.record("oxy.execution.context", "mcp");
-                if let Some(session) = session_id {
-                    span.record("oxy.mcp.session_id", session.as_str());
-                }
-            }
-            ExecutionSource::Internal => {
-                span.record("oxy.execution.context", "internal");
-            }
-        }
-    }
+/// Generic version to avoid circular dependencies
+pub fn record_execution_source(span: &Span, source: &impl serde::Serialize) {
+    // Record as JSON string since we can't import the ExecutionSource type
+    span.record(
+        "oxy.execution.source",
+        serde_json::to_string(source).unwrap_or_default().as_str(),
+    );
 }
 
 /// Logs a workflow event at info level

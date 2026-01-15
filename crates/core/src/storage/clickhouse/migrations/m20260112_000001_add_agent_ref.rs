@@ -1,6 +1,8 @@
 use async_trait::async_trait;
 use clickhouse::Client;
 
+use oxy_shared::errors::OxyError;
+
 use super::migrator::{ClickHouseMigration, Result};
 
 pub struct AddSourceFieldsToIntentClassifications;
@@ -27,7 +29,7 @@ impl ClickHouseMigration for AddSourceFieldsToIntentClassifications {
             .execute()
             .await
             .map_err(|e| {
-                crate::errors::OxyError::RuntimeError(format!(
+                oxy_shared::errors::OxyError::RuntimeError(format!(
                     "Failed to add SourceType column: {e}"
                 ))
             })?;
@@ -42,9 +44,7 @@ impl ClickHouseMigration for AddSourceFieldsToIntentClassifications {
             )
             .execute()
             .await
-            .map_err(|e| {
-                crate::errors::OxyError::RuntimeError(format!("Failed to add Source column: {e}"))
-            })?;
+            .map_err(|e| OxyError::RuntimeError(format!("Failed to add Source column: {e}")))?;
 
         Ok(())
     }
@@ -60,9 +60,7 @@ impl ClickHouseMigration for AddSourceFieldsToIntentClassifications {
             )
             .execute()
             .await
-            .map_err(|e| {
-                crate::errors::OxyError::RuntimeError(format!("Failed to drop Source column: {e}"))
-            })?;
+            .map_err(|e| OxyError::RuntimeError(format!("Failed to drop Source column: {e}")))?;
 
         // Remove SourceType column
         client
@@ -75,9 +73,7 @@ impl ClickHouseMigration for AddSourceFieldsToIntentClassifications {
             .execute()
             .await
             .map_err(|e| {
-                crate::errors::OxyError::RuntimeError(format!(
-                    "Failed to drop SourceType column: {e}"
-                ))
+                OxyError::RuntimeError(format!("Failed to drop SourceType column: {e}"))
             })?;
 
         Ok(())

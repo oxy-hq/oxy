@@ -1,5 +1,5 @@
 use crate::constants::OXY_SDK_SYSTEM_PROMPT;
-use crate::service::types::SemanticQueryParams;
+use crate::types::SemanticQueryParams;
 use garde::Validate;
 use indoc::indoc;
 use itertools::Itertools;
@@ -23,7 +23,7 @@ use crate::config::validate::{
     validate_database_exists, validate_env_var, validate_omni_integration_exists,
     validate_task_data_reference,
 };
-use crate::errors::OxyError;
+use oxy_shared::errors::OxyError;
 pub use semantics::{SemanticDimension, Semantics};
 pub use variables::Variable;
 pub use workflow::WorkflowWithRawVariables;
@@ -67,7 +67,7 @@ pub struct Config {
     /// If not specified or empty, no agents are exposed via A2A
     #[serde(skip_serializing_if = "Option::is_none", default)]
     #[garde(dive)]
-    pub a2a: Option<crate::a2a::config::A2aConfig>,
+    pub a2a: Option<crate::config::a2a_config::A2aConfig>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, JsonSchema, Validate)]
@@ -688,6 +688,9 @@ pub struct AgentConfig {
     #[serde(default)]
     #[garde(skip)]
     pub tests: Vec<EvalConfig>,
+    #[serde(default = "default_agent_max_iterations")]
+    #[garde(skip)]
+    pub max_iterations: usize,
 
     #[garde(skip)]
     #[serde(default)]
@@ -1154,10 +1157,10 @@ pub enum ConnectionOverride {
 }
 
 impl TryFrom<ConnectionOverride> for ClickHouseConnectionOverride {
-    type Error = crate::errors::OxyError;
+    type Error = oxy_shared::errors::OxyError;
     fn try_from(ovr: ConnectionOverride) -> Result<Self, Self::Error> {
         let ConnectionOverride::ClickHouse(ch) = ovr else {
-            return Err(crate::errors::OxyError::ConfigurationError(
+            return Err(oxy_shared::errors::OxyError::ConfigurationError(
                 "Invalid override type for ClickHouse".into(),
             ));
         };
@@ -1166,10 +1169,10 @@ impl TryFrom<ConnectionOverride> for ClickHouseConnectionOverride {
 }
 
 impl TryFrom<ConnectionOverride> for SnowflakeConnectionOverride {
-    type Error = crate::errors::OxyError;
+    type Error = oxy_shared::errors::OxyError;
     fn try_from(ovr: ConnectionOverride) -> Result<Self, Self::Error> {
         let ConnectionOverride::Snowflake(sf) = ovr else {
-            return Err(crate::errors::OxyError::ConfigurationError(
+            return Err(oxy_shared::errors::OxyError::ConfigurationError(
                 "Invalid override type for Snowflake".into(),
             ));
         };
@@ -1600,14 +1603,14 @@ impl DateRangeFilter {
     /// Convert relative date expressions to ISO datetime strings
     /// Supports natural language expressions like "now", "today", "7 days ago", "last week", etc.
     /// Uses chrono-english for robust natural language parsing.
-    pub fn resolve_relative_dates(&self) -> Result<Self, crate::errors::OxyError> {
+    pub fn resolve_relative_dates(&self) -> Result<Self, oxy_shared::errors::OxyError> {
         Ok(Self {
             from: Self::resolve_date_value(&self.from)?,
             to: Self::resolve_date_value(&self.to)?,
         })
     }
 
-    fn resolve_date_value(value: &Value) -> Result<Value, crate::errors::OxyError> {
+    fn resolve_date_value(value: &Value) -> Result<Value, oxy_shared::errors::OxyError> {
         match value {
             Value::String(s) => {
                 let resolved = Self::parse_relative_date(s)?;
@@ -1617,7 +1620,7 @@ impl DateRangeFilter {
         }
     }
 
-    fn parse_relative_date(expr: &str) -> Result<String, crate::errors::OxyError> {
+    fn parse_relative_date(expr: &str) -> Result<String, oxy_shared::errors::OxyError> {
         use chrono::Utc;
 
         // Try parsing with chrono-english for natural language dates
@@ -1802,46 +1805,45 @@ impl JsonSchema for SemanticFilter {
         let mut subschemas = Vec::new();
 
         // Extract the oneOf variants from SemanticFilterType and convert to anyOf
-        if let Some(Schema::Object(filter_obj)) = filter_type_schema {
-            if let Some(subschema_validation) = &filter_obj.subschemas {
-                if let Some(one_of) = &subschema_validation.one_of {
-                    // For each variant in oneOf, create an anyOf schema that includes the field property
-                    for variant in one_of {
-                        let mut combined = SchemaObject::default();
-                        combined.instance_type = Some(InstanceType::Object.into());
+        if let Some(Schema::Object(filter_obj)) = filter_type_schema
+            && let Some(subschema_validation) = &filter_obj.subschemas
+            && let Some(one_of) = &subschema_validation.one_of
+        {
+            // For each variant in oneOf, create an anyOf schema that includes the field property
+            for variant in one_of {
+                let mut combined = SchemaObject::default();
+                combined.instance_type = Some(InstanceType::Object.into());
 
-                        // Add field property to each variant
-                        let mut field_schema_clone = SchemaObject::default();
-                        field_schema_clone.instance_type = Some(InstanceType::String.into());
-                        field_schema_clone.metadata = Some(Box::new(Metadata {
+                // Add field property to each variant
+                let mut field_schema_clone = SchemaObject::default();
+                field_schema_clone.instance_type = Some(InstanceType::String.into());
+                field_schema_clone.metadata = Some(Box::new(Metadata {
                             description: Some("The measure/dimension to apply the filter on. Must by full name: <view_name>.<field_name>".to_string()),
                             ..Default::default()
                         }));
 
+                combined
+                    .object()
+                    .properties
+                    .insert("field".to_string(), Schema::Object(field_schema_clone));
+                combined.object().required.insert("field".to_string());
+
+                // Merge the filter_type variant properties
+                if let Schema::Object(variant_obj) = variant
+                    && let Some(props) = &variant_obj.object
+                {
+                    for (key, value) in &props.properties {
                         combined
                             .object()
                             .properties
-                            .insert("field".to_string(), Schema::Object(field_schema_clone));
-                        combined.object().required.insert("field".to_string());
-
-                        // Merge the filter_type variant properties
-                        if let Schema::Object(variant_obj) = variant {
-                            if let Some(props) = &variant_obj.object {
-                                for (key, value) in &props.properties {
-                                    combined
-                                        .object()
-                                        .properties
-                                        .insert(key.clone(), value.clone());
-                                }
-                                for req in &props.required {
-                                    combined.object().required.insert(req.clone());
-                                }
-                            }
-                        }
-
-                        subschemas.push(Schema::Object(combined));
+                            .insert(key.clone(), value.clone());
+                    }
+                    for req in &props.required {
+                        combined.object().required.insert(req.clone());
                     }
                 }
+
+                subschemas.push(Schema::Object(combined));
             }
         }
 
@@ -1931,7 +1933,7 @@ pub struct OmniQueryTask {
     pub topic: String,
     #[serde(flatten)]
     #[garde(skip)]
-    pub query: crate::tools::types::OmniQueryParams,
+    pub query: crate::types::tool_params::OmniQueryParams,
     #[garde(dive)]
     pub export: Option<TaskExport>,
 }
@@ -2511,8 +2513,8 @@ impl ToolType {
     pub async fn render(
         &self,
         renderer: &crate::execute::renderer::Renderer,
-    ) -> Result<Self, crate::errors::OxyError> {
-        use crate::errors::OxyError;
+    ) -> Result<Self, oxy_shared::errors::OxyError> {
+        use oxy_shared::errors::OxyError;
 
         Ok(match self {
             ToolType::ExecuteSQL(tool) => {
@@ -2810,8 +2812,8 @@ impl ToolType {
     async fn render_variables(
         variables: &Option<HashMap<String, Value>>,
         renderer: &crate::execute::renderer::Renderer,
-    ) -> Result<Option<HashMap<String, Value>>, crate::errors::OxyError> {
-        use crate::errors::OxyError;
+    ) -> Result<Option<HashMap<String, Value>>, oxy_shared::errors::OxyError> {
+        use oxy_shared::errors::OxyError;
 
         if let Some(vars) = variables {
             let mut rendered_vars = HashMap::new();
@@ -2828,8 +2830,7 @@ impl ToolType {
                     })?
                 };
 
-                // Register template before rendering
-                renderer.register_template(&value_str)?;
+                // Render inline template expression
                 let rendered = renderer.render_async(&value_str).await.map_err(|e| {
                     OxyError::RuntimeError(format!("Failed to render variable {}: {}", key, e))
                 })?;
@@ -2850,8 +2851,8 @@ impl ToolType {
     async fn render_variables_schema(
         variables: &Option<Variables>,
         renderer: &crate::execute::renderer::Renderer,
-    ) -> Result<Option<Variables>, crate::errors::OxyError> {
-        use crate::errors::OxyError;
+    ) -> Result<Option<Variables>, oxy_shared::errors::OxyError> {
+        use oxy_shared::errors::OxyError;
 
         if let Some(vars) = variables {
             // Variables contains SchemaObject with default values, not runtime values
@@ -2876,8 +2877,7 @@ impl ToolType {
                         })?
                     };
 
-                    // Register template before rendering
-                    renderer.register_template(&value_str)?;
+                    // Render inline template expression
                     let rendered = renderer.render_async(&value_str).await.map_err(|e| {
                         OxyError::RuntimeError(format!("Failed to render variable {}: {}", key, e))
                     })?;
@@ -3071,6 +3071,10 @@ fn default_agent_name() -> String {
     "".to_string()
 }
 
+fn default_agent_max_iterations() -> usize {
+    15
+}
+
 fn default_consistency_prompt() -> String {
     indoc! {"
     You are comparing a pair of submitted answers on a given question. Here is the data:
@@ -3131,7 +3135,6 @@ fn default_v0_key_var() -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use schemars::schema_for;
 
     #[test]

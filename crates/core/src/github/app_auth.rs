@@ -1,6 +1,6 @@
-use crate::errors::OxyError;
 use chrono::{Duration, Utc};
 use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
+use oxy_shared::errors::OxyError;
 use reqwest::{
     Client,
     header::{ACCEPT, AUTHORIZATION, HeaderMap, HeaderValue, USER_AGENT},

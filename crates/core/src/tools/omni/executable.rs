@@ -1,16 +1,17 @@
 use crate::{
     config::model::OmniIntegration,
-    errors::OxyError,
     execute::{
         Executable, ExecutionContext,
         types::{Chunk, EventKind, Output},
     },
     observability::events::workflow as workflow_events,
-    tools::{omni::types::OmniQueryInput, types::OmniQueryParams},
+    tools::omni::types::OmniQueryInput,
+    types::tool_params::OmniQueryParams,
 };
 use arrow::ipc::reader::StreamReader;
 use base64::{Engine as _, engine::general_purpose};
 use omni::{OmniApiClient, QueryRequest, QueryStructure, SortField};
+use oxy_shared::errors::OxyError;
 use std::io::Cursor;
 
 /// Shared executor for Omni queries that can be used by both tools and workflow tasks
@@ -251,8 +252,8 @@ impl OmniQueryExecutable {
                 .map(|(field, order)| SortField {
                     field: field.clone(),
                     sort_descending: match order {
-                        crate::tools::types::OrderType::Ascending => false,
-                        crate::tools::types::OrderType::Descending => true,
+                        crate::types::tool_params::OrderType::Ascending => false,
+                        crate::types::tool_params::OrderType::Descending => true,
                     },
                 })
                 .collect();
@@ -345,7 +346,7 @@ impl OmniQueryExecutable {
 
     /// Save base64 encoded Arrow data to a file and return the file path
     fn save_arrow_data_to_file(&self, base64_data: &str) -> Result<String, String> {
-        use crate::adapters::connector::write_to_ipc;
+        use crate::connector::write_to_ipc;
 
         // Decode base64
         let arrow_bytes = general_purpose::STANDARD

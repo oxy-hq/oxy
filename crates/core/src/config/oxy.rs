@@ -4,7 +4,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::sync::OnceLock;
 
-use crate::errors::OxyError;
+use oxy_shared::errors::OxyError;
 
 static OXY_CONFIG: OnceLock<Result<OxyConfig, OxyError>> = OnceLock::new();
 

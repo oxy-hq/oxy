@@ -4,13 +4,13 @@ use serde::{Serialize, de::DeserializeOwned};
 use tracing::Instrument;
 
 use crate::{
-    adapters::checkpoint::{CheckpointBuilder, CheckpointData, RunInfo},
-    errors::OxyError,
+    checkpoint::{CheckpointBuilder, CheckpointData, RunInfo},
     execute::{
         Executable, ExecutionContext,
         writer::{BufWriter, Writer},
     },
 };
+use oxy_shared::errors::OxyError;
 
 use super::wrap::Wrap;
 
@@ -85,7 +85,7 @@ where
         let response = {
             let checkpoint_context = match &execution_context.checkpoint {
                 Some(checkpoint) => checkpoint.nested(run_info.clone()),
-                None => manager.new_context(run_info.clone(), execution_context.user_id.clone()),
+                None => manager.new_context(run_info.clone(), execution_context.user_id),
             };
             let new_context = execution_context.with_checkpoint(checkpoint_context);
 

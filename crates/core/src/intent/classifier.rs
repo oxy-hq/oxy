@@ -11,7 +11,7 @@ use async_openai::{
 };
 use tracing::{debug, info};
 
-use crate::errors::OxyError;
+use oxy_shared::errors::OxyError;
 
 use super::{
     clustering::{cluster_embeddings, extract_clusters},

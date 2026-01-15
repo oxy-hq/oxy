@@ -15,9 +15,9 @@ use crate::{
         ConfigManager,
         model::{Database, SemanticDimension, SemanticModels},
     },
-    errors::OxyError,
     semantic::{loader::SchemaLoader, types::SemanticKey},
 };
+use oxy_shared::errors::OxyError;
 
 use super::{
     SemanticVariablesContexts,

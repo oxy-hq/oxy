@@ -1,6 +1,7 @@
 use uuid::Uuid;
 
-use crate::{adapters::secrets::SecretsStorage, errors::OxyError};
+use crate::adapters::secrets::SecretsStorage;
+use oxy_shared::errors::OxyError;
 use std::env;
 use std::fs;
 use std::path::PathBuf;

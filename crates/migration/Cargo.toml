@@ -42,3 +42,8 @@ migration-tool = ["home", "semver"]
 [lib]
 name = "migration"
 path = "src/lib.rs"
+
+[[bin]]
+name = "sqlite_to_postgres"
+path = "src/bin/sqlite_to_postgres.rs"
+required-features = ["migration-tool"]

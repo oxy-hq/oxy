@@ -8,7 +8,7 @@ use futures::TryFutureExt;
 use minijinja::{Environment, Value, context, value::Enumerator};
 use tokio::task::spawn_blocking;
 
-use crate::errors::OxyError;
+use oxy_shared::errors::OxyError;
 
 /// Helper function to add the now() global function to a minijinja Environment.
 ///

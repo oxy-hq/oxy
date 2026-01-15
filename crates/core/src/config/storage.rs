@@ -1,11 +1,11 @@
 use std::path::{Path, PathBuf};
 use tokio::fs;
 
-use crate::{
-    agent::builders::fsm::config::AgenticConfig, constants::UNPUBLISH_APP_DIR, errors::OxyError,
-    state_dir::resolve_state_dir_with_fallback,
-};
+use crate::constants::UNPUBLISH_APP_DIR;
+use crate::state_dir::resolve_state_dir_with_fallback;
+use oxy_shared::errors::OxyError;
 
+use super::agent_config::AgenticConfig;
 use super::model::{AgentConfig, AppConfig, Config, Workflow, WorkflowWithRawVariables};
 
 const DEFAULT_CONFIG_PATH: &str = "config.yml";

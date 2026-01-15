@@ -3,8 +3,8 @@ use async_openai::types::embeddings::{CreateEmbeddingRequestArgs, EmbeddingInput
 use crate::{
     adapters::{openai::OpenAIClient, vector_store::types::Embedding},
     config::{constants::RETRIEVAL_EMBEDDINGS_BATCH_SIZE, model::EmbeddingConfig},
-    errors::OxyError,
 };
+use oxy_shared::errors::OxyError;
 
 /// Create embeddings for the provided contents in fixed-size batches.
 /// Batches are processed sequentially rather than in parallel to avoid Send/lifetime issues in async closures.

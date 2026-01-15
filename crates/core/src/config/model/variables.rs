@@ -11,7 +11,7 @@ use serde::{
 use serde_json::Value;
 
 use crate::config::schema_type_converter;
-use crate::errors::OxyError;
+use oxy_shared::errors::OxyError;
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default)]
 pub struct Variables {
