@@ -138,7 +138,7 @@ jobs:
 
       # Run consistency tests
       - name: Run consistency tests
-        working-directory: crates/core/demo_project
+        working-directory: crates/app/demo_project
         run: |
           echo "Running consistency tests for default.agent.yml..."
           cargo run --profile ci -- sync -o
@@ -156,16 +156,16 @@ jobs:
         if: always()
         with:
           name: consistency-test-results
-          path: crates/core/demo_project/consistency-test-results.json
+          path: crates/app/demo_project/consistency-test-results.json
           retention-days: 1
 
       - name: Show consistency test summary
         if: always()
         run: |
-          if [ -f crates/core/demo_project/consistency-test-results.json ]; then
+          if [ -f crates/app/demo_project/consistency-test-results.json ]; then
             echo "=== Consistency Test Results ==="
             echo ""
-            cat crates/core/demo_project/consistency-test-results.json
+            cat crates/app/demo_project/consistency-test-results.json
             echo ""
             echo "Full results available in artifacts: consistency-test-results"
           else

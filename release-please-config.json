@@ -4,29 +4,57 @@
       "release-type": "rust",
       "component": "a2a"
     },
+    "crates/agent": {
+      "release-type": "rust",
+      "component": "agent"
+    },
+    "crates/app": {
+      "release-type": "rust",
+      "component": "app"
+    },
+    "crates/auth": {
+      "release-type": "rust",
+      "component": "auth"
+    },
     "crates/core": {
       "release-type": "rust",
       "component": "core"
-    },
-    "crates/migration": {
-      "release-type": "rust",
-      "component": "migration"
-    },
-    "crates/semantic": {
-      "release-type": "rust",
-      "component": "semantic"
     },
     "crates/entity": {
       "release-type": "rust",
       "component": "entity"
     },
+    "crates/globals": {
+      "release-type": "rust",
+      "component": "globals"
+    },
+    "crates/migration": {
+      "release-type": "rust",
+      "component": "migration"
+    },
     "crates/omni": {
       "release-type": "rust",
       "component": "omni"
     },
-    "crates/globals": {
+    "crates/project": {
       "release-type": "rust",
-      "component": "globals"
+      "component": "project"
+    },
+    "crates/semantic": {
+      "release-type": "rust",
+      "component": "semantic"
+    },
+    "crates/shared": {
+      "release-type": "rust",
+      "component": "shared"
+    },
+    "crates/thread": {
+      "release-type": "rust",
+      "component": "thread"
+    },
+    "crates/workflow": {
+      "release-type": "rust",
+      "component": "workflow"
     },
     "web-app": {
       "release-type": "node",
@@ -44,7 +72,7 @@
     {
       "type": "linked-versions",
       "groupName": "oxy",
-      "components": ["a2a", "core", "globals", "migration", "entity", "web-app", "omni"]
+      "components": ["a2a", "agent", "app", "auth", "core", "entity", "globals", "migration", "omni", "project", "semantic", "shared", "thread", "workflow", "web-app"]
     }
   ],
   "changelog-sections": [

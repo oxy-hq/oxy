@@ -1,10 +1,17 @@
 {
   "crates/a2a": "0.4.6",
-  "crates/globals": "0.4.6",
+  "crates/agent": "0.4.6",
+  "crates/app": "0.4.6",
+  "crates/auth": "0.4.6",
   "crates/core": "0.4.6",
-  "crates/migration": "0.4.6",
   "crates/entity": "0.4.6",
-  "crates/semantic": "0.4.6",
+  "crates/globals": "0.4.6",
+  "crates/migration": "0.4.6",
   "crates/omni": "0.4.6",
+  "crates/project": "0.4.6",
+  "crates/semantic": "0.4.6",
+  "crates/shared": "0.4.6",
+  "crates/thread": "0.4.6",
+  "crates/workflow": "0.4.6",
   "web-app": "0.4.6"
 }

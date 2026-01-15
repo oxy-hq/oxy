@@ -36,7 +36,7 @@ COPY --from=planner /app/recipe.json recipe.json
 RUN cargo chef cook --release --recipe-path recipe.json
 
 COPY . .
-COPY --from=web-builder /app/web-app/dist /app/crates/core/dist
+COPY --from=web-builder /app/web-app/dist /app/crates/app/dist
 RUN cargo build --release
 
 # Stage 4: Runtime image

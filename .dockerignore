@@ -45,7 +45,9 @@ db.sqlite
 
 
 # tests
+crates/app/tests/
 crates/core/tests/
+crates/semantic/tests/
 
 # markdowns
 docs/

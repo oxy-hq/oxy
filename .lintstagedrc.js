@@ -1,6 +1,6 @@
 export default {
   "**/*.{js,ts,tsx}": [
-    "eslint --fix --ignore-pattern '**/crates/core/demo_project/**'",
+    "eslint --fix --ignore-pattern '**/crates/app/demo_project/**'",
     "prettier --write",
   ],
   "**/*.{ts,tsx}": ["bash -c 'pnpm turbo lint:ts'"],

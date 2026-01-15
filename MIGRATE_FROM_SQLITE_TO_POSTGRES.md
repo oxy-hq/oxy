@@ -1,15 +1,66 @@
-# Migration Guide: PostgreSQL Embedded to Docker
+# Migration Guide: SQLite to PostgreSQL
 
-This guide covers the migration from `postgresql_embedded` to Docker-based PostgreSQL in Oxy.
+This guide covers the migration from SQLite (default) to PostgreSQL in Oxy.
 
 ## What Changed?
 
-Starting from version 0.4.0, Oxy uses Docker to run PostgreSQL instead of the embedded PostgreSQL library. This change provides:
+Starting from version 0.4.0, Oxy supports both SQLite and PostgreSQL databases:
 
-- **Better Production Parity**: Same PostgreSQL in development and production
-- **Simpler Dependencies**: No platform-specific runtime requirements
-- **Easier Troubleshooting**: Standard Docker tools for logs, inspection, and debugging
-- **Data Portability**: Docker volumes can be easily backed up and restored
+- **SQLite (Default)**: Used for backward compatibility and simple local development
+- **PostgreSQL**: Recommended for production and advanced use cases
+
+## Why PostgreSQL?
+
+PostgreSQL provides:
+
+- **Better Performance**: Superior query optimization and concurrent access
+- **Production Ready**: Industry-standard database for production workloads
+- **Richer Features**: Advanced data types, full-text search, and JSONB support
+- **Scalability**: Better handling of large datasets and high concurrency
+- **Data Integrity**: Stronger consistency guarantees and transaction support
+
+## Database Options
+
+Oxy supports two database backends:
+
+### SQLite (Default)
+
+**When to use:**
+
+- Local development and testing
+- Single-user scenarios
+- Simple deployments without Docker
+- Getting started quickly
+
+**How to use:**
+
+```bash
+# Just run the server - SQLite is the default
+oxy serve
+
+# Data is stored at ~/.local/share/oxy/db.sqlite
+```
+
+### PostgreSQL (Recommended for Production)
+
+**When to use:**
+
+- Production deployments
+- Multi-user scenarios
+- High concurrency workloads
+- Large datasets
+- When you need advanced PostgreSQL features
+
+**How to use:**
+
+```bash
+# Option 1: Use Docker PostgreSQL (for local development)
+oxy start
+
+# Option 2: Use external PostgreSQL (for production)
+export OXY_DATABASE_URL="postgresql://user:password@host:5432/database"
+oxy serve
+```
 
 ## Prerequisites
 
@@ -22,6 +73,7 @@ You must have Docker installed and running on your system:
 - **Linux**: [Docker Engine](https://docs.docker.com/engine/install/)
 
 **Docker Alternatives**: Oxy also works with Docker-compatible tools:
+
 - [OrbStack](https://orbstack.dev/) (macOS, faster than Docker Desktop)
 - [Rancher Desktop](https://rancherdesktop.io/)
 - [Podman](https://podman.io/) (Linux)
@@ -40,90 +92,52 @@ If either command fails, Docker is not properly installed or running.
 
 Choose the migration path that best fits your situation:
 
-### Path 1: Fresh Start (Recommended for Development)
+### Path 1: Start Using PostgreSQL (Without Migrating SQLite Data)
 
-This is the simplest approach if you don't have critical data to preserve.
+This approach sets up PostgreSQL without migrating existing SQLite data. Good for starting fresh or if you don't need to preserve existing data.
 
-1. **Backup your data** (optional, for peace of mind):
-   ```bash
-   # If you have important workflows or configurations, back them up
-   cp -r ~/.local/share/oxy ~/oxy-backup
-   ```
-
-2. **Update to the latest version**:
-   ```bash
-   oxy self-update
-   # Or install from source
-   ```
-
-3. **Start Oxy with Docker**:
+1. **Start PostgreSQL with Docker**:
    ```bash
    oxy start
    ```
+   
+   This will:
+   - Start a Docker PostgreSQL container
+   - Run database migrations
+   - Start the Oxy server
 
-4. **Verify everything works**:
+2. **Verify everything works**:
    ```bash
    oxy status
    ```
 
-That's it! You now have a fresh Oxy installation with Docker PostgreSQL.
+That's it! Oxy is now using PostgreSQL. Your old SQLite database remains at `~/.local/share/oxy/db.sqlite` if you need it later.
 
-### Path 2: Data Migration (For Production/Important Data)
+### Path 2: Data Migration (Migrate SQLite Data to PostgreSQL)
 
-If you have existing data from the embedded PostgreSQL that you want to keep:
+If you have existing data in SQLite that you want to migrate to PostgreSQL:
 
-#### Step 1: Export Data from Embedded PostgreSQL
+#### Step 1: Start PostgreSQL
 
-First, ensure you're running the old version with embedded PostgreSQL:
-
-```bash
-# Start embedded PostgreSQL (old version)
-oxy serve
-```
-
-In another terminal, export your data:
+First, start the PostgreSQL database:
 
 ```bash
-# Export the entire database
-pg_dump postgresql://postgres:postgres@localhost:15432/oxy > oxy-backup.sql
-
-# Or export specific tables
-pg_dump postgresql://postgres:postgres@localhost:15432/oxy \
-  --table=users --table=workspaces --table=projects > oxy-backup.sql
-```
-
-Stop the old version (Ctrl+C).
-
-#### Step 2: Update Oxy
-
-```bash
-oxy self-update
-```
-
-#### Step 3: Start Docker PostgreSQL
-
-```bash
-# Start the new Docker-based PostgreSQL
 oxy start
 ```
 
-In another terminal, verify the database is running:
+This creates and starts the Docker PostgreSQL container.
+
+#### Step 2: Migrate Your Data
+
+In another terminal, run the migration tool:
 
 ```bash
-oxy status
+oxy migrate-sqlite --to postgresql://postgres:postgres@localhost:15432/oxy
 ```
 
-#### Step 4: Import Your Data
+The tool will automatically migrate all your data from SQLite to PostgreSQL.
 
-```bash
-# Import your backed-up data
-psql postgresql://postgres:postgres@localhost:15432/oxy < oxy-backup.sql
-
-# Or use Docker directly
-docker exec -i oxy-postgres psql -U postgres -d oxy < oxy-backup.sql
-```
-
-#### Step 5: Verify Migration
+#### Step 3: Verify Migration
 
 Check that your data is present:
 
@@ -179,6 +193,7 @@ Options:
 ```
 
 **What it does**:
+
 1. Checks Docker availability
 2. Creates/starts `oxy-postgres` container
 3. Waits for PostgreSQL to be ready
@@ -186,6 +201,7 @@ Options:
 5. Starts the Oxy web server
 
 **On exit** (Ctrl+C):
+
 - Stops the Oxy server
 - Stops the PostgreSQL container
 - Data is preserved in the `oxy-postgres-data` volume
@@ -199,6 +215,7 @@ oxy status
 ```
 
 **Shows**:
+
 - Docker daemon status
 - PostgreSQL container status (running/stopped/not created)
 - Database connectivity
@@ -213,8 +230,10 @@ oxy serve [OPTIONS]
 ```
 
 **Use cases**:
+
 - When PostgreSQL is already running
 - When using external PostgreSQL (`OXY_DATABASE_URL` is set)
+- When using SQLite (default, no `OXY_DATABASE_URL` set)
 - For production deployments
 
 ## Docker Management
@@ -231,6 +250,7 @@ oxy serve [OPTIONS]
 ### Useful Docker Commands
 
 #### View Logs
+
 ```bash
 # View recent logs
 docker logs oxy-postgres
@@ -243,6 +263,7 @@ docker logs --tail 50 oxy-postgres
 ```
 
 #### Access PostgreSQL Shell
+
 ```bash
 # Interactive psql
 docker exec -it oxy-postgres psql -U postgres -d oxy
@@ -252,6 +273,7 @@ docker exec -it oxy-postgres psql -U postgres -d oxy -c "SELECT COUNT(*) FROM us
 ```
 
 #### Container Management
+
 ```bash
 # Start stopped container
 docker start oxy-postgres
@@ -270,6 +292,7 @@ docker ps -a -f name=oxy-postgres
 ```
 
 #### Volume Management
+
 ```bash
 # List volumes
 docker volume ls | grep oxy
@@ -600,13 +623,13 @@ volumes:
 
 ## FAQ
 
-### Q: Can I still use the embedded PostgreSQL?
+### Q: Can I still use SQLite?
 
-**A**: No, the `postgresql_embedded` library has been removed. Use Docker or external PostgreSQL.
+**A**: Yes! SQLite is still the default database. Oxy will use SQLite unless you set `OXY_DATABASE_URL` or use `oxy start` to run with PostgreSQL.
 
-### Q: What happens to my old data?
+### Q: What happens to my SQLite data?
 
-**A**: Data from `postgresql_embedded` (stored in `~/.local/share/oxy/postgres_data`) is not automatically migrated. Follow the migration paths above.
+**A**: Your SQLite database (stored at `~/.local/share/oxy/db.sqlite`) is not automatically migrated when you switch to PostgreSQL. Use the `oxy migrate-sqlite` command to transfer your data, or keep using SQLite if you prefer.
 
 ### Q: Can I use Podman instead of Docker?
 
@@ -661,17 +684,17 @@ If you encounter issues not covered in this guide:
 3. **Search issues**: [GitHub Issues](https://github.com/oxy-hq/oxy/issues)
 4. **Ask for help**: [Discussions](https://github.com/oxy-hq/oxy/discussions)
 
-## Rollback
+## Switching Back to SQLite
 
-If you need to rollback to the old version with embedded PostgreSQL:
+If you want to switch back to SQLite from PostgreSQL:
 
 ```bash
-# Downgrade to the last version with embedded PostgreSQL
-oxy self-update --version 0.3.20
+# Simply stop using `oxy start` and use `oxy serve` instead
+# Make sure OXY_DATABASE_URL is not set
+unset OXY_DATABASE_URL
 
-# Or install from source at that version
-git checkout v0.3.20
-cargo install --path crates/core
+# Start with SQLite (default)
+oxy serve
 ```
 
-Note: This should only be temporary. The embedded PostgreSQL version is no longer maintained.
+Your SQLite database at `~/.local/share/oxy/db.sqlite` will be used automatically.

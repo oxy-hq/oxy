@@ -77,7 +77,7 @@ tools:
     type: create_v0_app
 ```
 
-You can see a complete example in [crates/core/demo_project/v0.agent.yml](../../../crates/core/demo_project/v0.agent.yml).
+You can see a complete example in [crates/app/demo_project/v0.agent.yml](../../../crates/app/demo_project/v0.agent.yml).
 
 ## Running Oxy with v0 Integration
 
@@ -98,7 +98,7 @@ export OXY_API_URL="http://127.0.0.1:3000/api"
 2. Navigate to a project with v0-enabled agent configuration:
 
 ```bash
-cd crates/core/demo_project
+cd crates/app/demo_project
 ```
 
 3. Run the agent:
@@ -225,7 +225,7 @@ echo $V0_API_KEY
 
 ### v0 app not using Oxy SDK
 
-**Solution**: Ensure your agent's system instructions include guidance to prompt v0 with SDK usage instructions. See the example in [crates/core/demo_project/v0.agent.yml:108](../../../crates/core/demo_project/v0.agent.yml#L108).
+**Solution**: Ensure your agent's system instructions include guidance to prompt v0 with SDK usage instructions. See the example in [crates/app/demo_project/v0.agent.yml:108](../../../crates/app/demo_project/v0.agent.yml#L108).
 
 ### Data not loading in the app
 
@@ -292,7 +292,7 @@ system_instructions: |
 
 ## Next Steps
 
-- Explore the [complete v0 agent example](../../../crates/core/demo_project/v0.agent.yml)
+- Explore the [complete v0 agent example](../../../crates/app/demo_project/v0.agent.yml)
 - Learn about [SQL execution and persistence](../sql-tools.md)
 - Read about [agent configuration](../../agents/configuration.md)
 
