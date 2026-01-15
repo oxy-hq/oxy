@@ -40,10 +40,8 @@ impl Executable<CreateV0AppInput> for CreateV0App {
         let chat_id = execution_context
             .sandbox_info
             .as_ref()
-            .and_then(|info| match &info.kind {
-                crate::execute::types::event::SandboxAppKind::V0 { chat_id } => {
-                    Some(chat_id.clone())
-                }
+            .map(|info| match &info.kind {
+                crate::execute::types::event::SandboxAppKind::V0 { chat_id } => chat_id.clone(),
             });
 
         // Either continue existing chat or create new one

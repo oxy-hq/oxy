@@ -1,5 +1,8 @@
 {
   "kiroAgent.configureMCP": "Disabled",
   "npm.packageManager": "pnpm",
-  "cSpell.words": ["utoipa"]
+  "cSpell.words": ["utoipa"],
+  "search.exclude": {
+    "examples/.db/large.csv": true
+  }
 }

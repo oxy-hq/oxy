@@ -52,11 +52,11 @@ serde_arrow = { version = "0.13.7", features = ["arrow-54"] }
 oxy-semantic = { path = "../semantic" }
 
 # Docker support
-bollard = "0.19.4"
 futures = "0.3"
 
 # Sentry error tracking
-sentry = { version = "0.45.0", features = ["tower-axum-matched-path", "rustls", "tracing"] }
+sentry = { workspace = true }
+
 
 [dev-dependencies]
 tempfile = { workspace = true }

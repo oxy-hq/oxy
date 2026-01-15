@@ -415,18 +415,17 @@ impl IntentClassifier {
             // Check if this cluster should merge with an existing one
             if let Some((existing_idx, similarity)) =
                 Self::find_similar_cluster(&clusters, &cluster.centroid)
+                && similarity >= self.config.cluster_merge_threshold
             {
-                if similarity >= self.config.cluster_merge_threshold {
-                    // Merge into existing cluster
-                    info!(
-                        "Merging new cluster into existing cluster {} (similarity: {:.2})",
-                        clusters[existing_idx].cluster_id, similarity
-                    );
-                    self.merge_into_cluster(&mut clusters[existing_idx], &cluster)
-                        .await?;
-                    merged_count += cluster.questions.len();
-                    continue;
-                }
+                // Merge into existing cluster
+                info!(
+                    "Merging new cluster into existing cluster {} (similarity: {:.2})",
+                    clusters[existing_idx].cluster_id, similarity
+                );
+                self.merge_into_cluster(&mut clusters[existing_idx], &cluster)
+                    .await?;
+                merged_count += cluster.questions.len();
+                continue;
             }
 
             // Create a new cluster

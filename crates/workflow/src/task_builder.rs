@@ -126,7 +126,7 @@ impl Executable<TaskInput> for TaskExecutable {
         execution_context: &ExecutionContext,
         input: TaskInput,
     ) -> Result<Self::Response, OxyError> {
-        workflow_events::task::execute::input(&input.task.name, &input.task.kind());
+        workflow_events::task::execute::input(&input.task.name, input.task.kind());
 
         let task_source_id = match &execution_context.checkpoint {
             Some(checkpoint) => {

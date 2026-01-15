@@ -410,9 +410,7 @@ impl ParamMapper<CreateV0AppToolInput, CreateV0AppInput> for CreateV0AppMapper {
         } = input;
         tracing::debug!("CreateV0AppToolInput param: {}", &param);
         let params = serde_json::from_str::<CreateV0AppParams>(&param)?;
-        let oxy_api_key = std::env::var(&oxy_api_key_var)
-            .ok()
-            .map(|key| SecretString::from(key));
+        let oxy_api_key = std::env::var(&oxy_api_key_var).ok().map(SecretString::from);
         let v0_api_key = std::env::var(&v0_api_key_var).map_err(|e| {
             OxyError::ArgumentError(format!(
                 "V0 API key not found in environment variable {}: {}",

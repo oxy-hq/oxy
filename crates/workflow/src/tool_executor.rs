@@ -29,7 +29,7 @@ impl ToolExecutor for WorkflowToolExecutor {
         &self,
         execution_context: &ExecutionContext,
         tool_type: &ToolType,
-        input: &ToolRawInput,
+        _input: &ToolRawInput,
     ) -> Result<OutputContainer, OxyError> {
         match tool_type {
             ToolType::Workflow(workflow_config) => {
@@ -41,7 +41,6 @@ impl ToolExecutor for WorkflowToolExecutor {
                 WorkflowLauncherExecutable
                     .execute(execution_context, workflow_input)
                     .await
-                    .map(|output| output.into())
             }
             _ => Err(OxyError::RuntimeError(
                 "WorkflowToolExecutor can only handle Workflow tools".to_string(),

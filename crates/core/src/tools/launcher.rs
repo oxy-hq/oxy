@@ -25,6 +25,12 @@ pub struct ToolLauncher {
     buf_writer: BufWriter,
 }
 
+impl Default for ToolLauncher {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ToolLauncher {
     pub fn new() -> Self {
         ToolLauncher {

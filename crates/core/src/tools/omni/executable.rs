@@ -57,6 +57,12 @@ impl Executable<OmniQueryInput> for OmniQueryExecutable {
     }
 }
 
+impl Default for OmniQueryExecutable {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl OmniQueryExecutable {
     pub fn new() -> Self {
         Self {}

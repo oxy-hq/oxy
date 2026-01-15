@@ -42,7 +42,7 @@ pub async fn handle_bind_command(
         .await
         .map_err(|e| OxyError::ValidationError(format!("Failed to load project: {}", e)))?;
 
-    let project_manager = ProjectBuilder::new(project_id.clone())
+    let project_manager = ProjectBuilder::new(project_id)
         .with_project_path_and_fallback_config(&project_path)
         .await
         .map_err(|e| OxyError::ValidationError(format!("Failed to load project config: {}", e)))?

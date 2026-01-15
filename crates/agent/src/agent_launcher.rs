@@ -39,6 +39,12 @@ pub struct AgentLauncher {
     sandbox_info: Option<SandboxInfo>,
 }
 
+impl Default for AgentLauncher {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AgentLauncher {
     pub fn new() -> Self {
         Self {

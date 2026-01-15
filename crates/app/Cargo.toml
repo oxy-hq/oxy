@@ -55,7 +55,7 @@ log = { workspace = true }
 
 # Web framework
 axum = { workspace = true }
-axum-server = { version = "0.7.3", features = ["tls-rustls"] }
+axum-server = { workspace = true }
 tower = "0.5"
 tower-http = { version = "0.6.8", features = ["cors", "trace", "timeout"] }
 utoipa = {git="https://github.com/haitrr/utoipa.git", rev="776f86e", features = ["uuid", "chrono", "axum_extras"] }
@@ -139,7 +139,7 @@ sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "sqlit
 semver = "1.0"
 backoff = { version = "0.4.0", features = ["tokio"] }
 rustc_version_runtime = "0.3.0"
-sentry = { version = "0.45.0", features = ["tower-axum-matched-path", "rustls", "tracing"] }
+sentry = { workspace = true }
 omni = { path = "../omni" }
 
 # Database migration

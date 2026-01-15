@@ -8,6 +8,12 @@ use oxy_shared::errors::OxyError;
 #[derive(Debug, Clone)]
 pub struct ValidateSQLExecutable;
 
+impl Default for ValidateSQLExecutable {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ValidateSQLExecutable {
     pub fn new() -> Self {
         Self

@@ -387,7 +387,7 @@ async fn execute_agent(
     project_id: Uuid,
     agent_path: &str,
 ) -> Result<(String, BlockHandlerReader), OxyError> {
-    let repo_path = resolve_project_path(project_id.clone()).await?;
+    let repo_path = resolve_project_path(project_id).await?;
     let project_manager = ProjectBuilder::new(project_id)
         .with_project_path_and_fallback_config(&repo_path)
         .await?

@@ -382,7 +382,7 @@ pub async fn get_project_status(
 ) -> Result<axum::response::Json<ProjectStatus>, StatusCode> {
     let project_path = project_manager.config_manager.project_path();
 
-    let (is_config_valid, required_secrets, error) = match ProjectBuilder::new(project_id.clone())
+    let (is_config_valid, required_secrets, error) = match ProjectBuilder::new(project_id)
         .with_project_path(&project_path)
         .await
     {

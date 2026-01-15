@@ -14,6 +14,12 @@ use oxy_shared::errors::OxyError;
 #[derive(Debug, Clone)]
 pub struct SQLExecutable;
 
+impl Default for SQLExecutable {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SQLExecutable {
     pub fn new() -> Self {
         Self

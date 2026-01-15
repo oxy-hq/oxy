@@ -23,15 +23,11 @@ use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Clone, Debug, ToSchema)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum ResultFormat {
     Parquet,
+    #[default]
     Json,
-}
-
-impl Default for ResultFormat {
-    fn default() -> Self {
-        ResultFormat::Json
-    }
 }
 
 #[derive(Serialize, Deserialize, Clone, ToSchema)]

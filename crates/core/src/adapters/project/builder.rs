@@ -8,24 +8,13 @@ use crate::{
 };
 use oxy_shared::errors::OxyError;
 
+#[derive(Default)]
 pub struct ProjectBuilder {
     project_id: Option<uuid::Uuid>,
     config_manager: Option<ConfigManager>,
     secrets_manager: Option<SecretsManager>,
     runs_manager: Option<RunsManager>,
     intent_classifier: Option<Arc<IntentClassifier>>,
-}
-
-impl Default for ProjectBuilder {
-    fn default() -> Self {
-        Self {
-            project_id: None,
-            config_manager: None,
-            secrets_manager: None,
-            runs_manager: None,
-            intent_classifier: None,
-        }
-    }
 }
 
 impl ProjectBuilder {

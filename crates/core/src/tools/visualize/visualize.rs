@@ -14,6 +14,12 @@ use super::types::VisualizeParams;
 #[derive(Debug, Clone)]
 pub struct VisualizeExecutable;
 
+impl Default for VisualizeExecutable {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl VisualizeExecutable {
     pub fn new() -> Self {
         Self

@@ -335,7 +335,7 @@ impl RoutingAgentExecutable {
         &self,
         execution_context: &ExecutionContext,
         agent_name: &str,
-        model: &Model,
+        _model: &Model,
         routing_agent: &RoutingAgent,
         query: &str,
     ) -> Result<Vec<ToolType>, OxyError> {
