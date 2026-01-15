@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.7](https://github.com/oxy-hq/oxy-internal/compare/0.4.6...0.4.7) (2026-01-15)
+
+
+### <!-- 0 -->🚀 Features
+
+* optimize query result table for large database ([#1501](https://github.com/oxy-hq/oxy-internal/issues/1501)) ([55b2548](https://github.com/oxy-hq/oxy-internal/commit/55b2548d1eec57ab4221d88b72352b62e5393f7a))
+
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+* release 0.4.7 ([8862039](https://github.com/oxy-hq/oxy-internal/commit/886203914912d87f852873a3a7e608993993761a))
+
 ## [0.4.6](https://github.com/oxy-hq/oxy-internal/compare/0.4.5...0.4.6) (2026-01-12)
 
 

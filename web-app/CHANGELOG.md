@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.4.7](https://github.com/oxy-hq/oxy-internal/compare/0.4.6...0.4.7) (2026-01-15)
+
+
+### <!-- 0 -->🚀 Features
+
+* closes [#1409](https://github.com/oxy-hq/oxy-internal/issues/1409) research spike ide vibe coding ([#1499](https://github.com/oxy-hq/oxy-internal/issues/1499)) ([2a91533](https://github.com/oxy-hq/oxy-internal/commit/2a91533b56d8afc1a1e780bd8b7d15930a103faf))
+* implement observability ([#1424](https://github.com/oxy-hq/oxy-internal/issues/1424)) ([6e779bf](https://github.com/oxy-hq/oxy-internal/commit/6e779bf96d86bc83f1b93fe9eed5f132d4b4cbb9))
+* optimize query result table for large database ([#1501](https://github.com/oxy-hq/oxy-internal/issues/1501)) ([55b2548](https://github.com/oxy-hq/oxy-internal/commit/55b2548d1eec57ab4221d88b72352b62e5393f7a))
+
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+* release 0.4.7 ([8862039](https://github.com/oxy-hq/oxy-internal/commit/886203914912d87f852873a3a7e608993993761a))
+
 ## [0.4.6](https://github.com/oxy-hq/oxy-internal/compare/0.4.5...0.4.6) (2026-01-12)
 
 
