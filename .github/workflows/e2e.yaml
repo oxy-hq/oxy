@@ -53,7 +53,6 @@ jobs:
         (needs.changesets.outputs.web-app == 'true' || needs.changesets.outputs.oxy == 'true')
       )
     runs-on: ${{ github.repository == 'oxy-hq/oxy-internal' && (github.ref == 'refs/heads/main' && 'warp-ubuntu-latest-arm64-2x-spot' || 'warp-ubuntu-latest-arm64-2x') || 'ubuntu-latest' }}
-    timeout-minutes: 30
     env:
       OXY_STATE_DIR: ${{ github.workspace }}/examples
       OXY_DATABASE_URL: postgresql://admin:password@localhost:5432/default
@@ -210,6 +209,7 @@ jobs:
       # Run E2E tests
       - name: Run Playwright tests
         id: run-playwright
+        timeout-minutes: 20
         env:
           PLAYWRIGHT_WORKERS: 2
         run: |
