@@ -32,11 +32,11 @@ chrono = { workspace = true }
 csv = "1.4.0"
 fxhash = "0.2.1"
 indexmap = { workspace = true }
-jsonschema = "0.33.0"
+jsonschema = "0.38.1"
 itertools = "0.14.0"
 minijinja = { workspace = true, features = ["loader"] }
 regex = { workspace = true }
-reqwest = { version = "0.12.28" }
+reqwest = { version = "0.13.1" }
 schemars = { version = "0.8.22", features = ["derive", "impl_json_schema"] }
 slugify = "0.1.0"
 sqlformat = { git = "https://github.com/shssoichiro/sqlformat-rs.git", rev = "80255c7" }

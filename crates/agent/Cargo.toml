@@ -30,7 +30,7 @@ tracing = { workspace = true }
 log = { workspace = true }
 
 # LLM integration
-async-openai = { version = "0.31.1", features = ["byot", "chat-completion-types", "response-types"] }
+async-openai = { version = "0.32.3", features = ["byot", "chat-completion-types", "response-types"] }
 
 # Utilities
 chrono = { workspace = true }
