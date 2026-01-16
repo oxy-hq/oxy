@@ -50,7 +50,7 @@ const MOCK_THREADS: MockThreadItem[] = Array.from({ length: 10 }).map(
 );
 
 const PROJECT_ID = "00000000-0000-0000-0000-000000000000";
-const API_BASE = "https://localhost:3000/api";
+const API_BASE = "http://localhost:3000/api";
 
 // Minimal messages payload simulating answered thread
 const MOCK_MESSAGES = [

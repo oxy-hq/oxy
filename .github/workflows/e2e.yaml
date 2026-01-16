@@ -177,7 +177,7 @@ jobs:
         working-directory: examples
         run: |
           # Binary already built by consistency tests, this will reuse it
-          nohup cargo run --profile ci -- serve --http2-only > ../oxy-server.log 2>&1 &
+          nohup cargo run --profile ci -- serve > ../oxy-server.log 2>&1 &
           echo $! > /tmp/oxy-server.pid
           echo "Backend server started with PID: $(cat /tmp/oxy-server.pid)"
 
@@ -186,7 +186,7 @@ jobs:
         id: wait-backend
         run: |
           echo "Waiting for backend server to be ready..."
-          timeout 10 bash -c 'until curl -k -s https://localhost:3000/health > /dev/null 2>&1; do echo "Waiting for health endpoint..."; sleep 2; done'
+          timeout 10 bash -c 'until curl -k -s http://localhost:3000/health > /dev/null 2>&1; do echo "Waiting for health endpoint..."; sleep 2; done'
           echo "Backend health endpoint is responding!"
 
           # Give the backend additional time to scan and load apps from the examples directory

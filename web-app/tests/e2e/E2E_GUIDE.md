@@ -8,7 +8,7 @@
 docker-compose up -d # start postgres
 cd examples
 export OXY_DATABASE_URL=postgresql://admin:password@localhost:5432/default
-cargo run -- serve --http2-only
+cargo run -- serve --enterprise
 
 # in another terminal, start the end to end tests
 cd web-app

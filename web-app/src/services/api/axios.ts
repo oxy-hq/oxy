@@ -44,5 +44,5 @@ apiClient.interceptors.response.use(
 );
 
 export const vibeCodingClient = axios.create({
-  baseURL: "https://localhost:8000",
+  baseURL: "http://localhost:8000",
 });
