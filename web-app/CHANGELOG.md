@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.8](https://github.com/oxy-hq/oxy-internal/compare/0.4.7...0.4.8) (2026-01-16)
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* data app not rendering ([#1524](https://github.com/oxy-hq/oxy-internal/issues/1524)) ([9b970f3](https://github.com/oxy-hq/oxy-internal/commit/9b970f353d308cfe70fc370731e0a11651d5b503))
+
 ## [0.4.7](https://github.com/oxy-hq/oxy-internal/compare/0.4.6...0.4.7) (2026-01-15)
 
 

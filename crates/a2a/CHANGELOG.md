@@ -1,5 +1,7 @@
 # Changelog
 
+## [0.4.8](https://github.com/oxy-hq/oxy-internal/compare/0.4.7...0.4.8) (2026-01-16)
+
 ## [0.4.7](https://github.com/oxy-hq/oxy-internal/compare/0.4.6...0.4.7) (2026-01-15)
 
 
