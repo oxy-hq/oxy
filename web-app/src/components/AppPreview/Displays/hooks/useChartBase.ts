@@ -37,7 +37,12 @@ export const useChartBase = <T extends BaseChartDisplay>({
       }
 
       try {
-        const tableData = getData(data, display.data) as TableData;
+        const tableData = getData(data, display.data) as TableData | null;
+        if (!tableData) {
+          setChartOptions(createNoDataOptions(display.title, isDarkMode));
+          setIsLoading(false);
+          return;
+        }
         const db = await getDuckDB();
         const fileName = await registerAuthenticatedFile(
           tableData.file_path,

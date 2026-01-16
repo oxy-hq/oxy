@@ -1,3 +1,4 @@
+use indexmap::IndexMap;
 use minijinja::context;
 use std::{collections::HashMap, path::PathBuf};
 use tracing::Instrument;
@@ -401,13 +402,16 @@ impl WorkflowLauncher {
                 let mut task_executable = crate::task_builder::TaskExecutable;
 
                 // Execute all tasks
-                let mut results = Vec::new();
+                let mut results = IndexMap::new();
                 for task_input in task_inputs {
+                    let task_name = task_input.task.name.clone();
                     match task_executable
                         .execute(&execution_context, task_input)
                         .await
                     {
-                        Ok(result) => results.push(result),
+                        Ok(result) => {
+                            results.insert(task_name, result);
+                        }
                         Err(e) => {
                             execution_context
                                 .write_kind(EventKind::Finished {
@@ -430,7 +434,7 @@ impl WorkflowLauncher {
                     .await?;
 
                 // Return the last result or a default OutputContainer
-                Ok(results.into_iter().last().unwrap_or_default())
+                Ok(OutputContainer::Map(results))
             }
             .instrument(current_span),
         );
