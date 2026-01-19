@@ -60,18 +60,17 @@
       "optional": true
     }
   },
-  "dependencies": {},
   "devDependencies": {
-    "@duckdb/duckdb-wasm": "^1.29.0",
-    "@types/node": "^20.11.0",
-    "@types/react": "^19.0.0",
-    "@typescript-eslint/eslint-plugin": "^6.19.0",
-    "@typescript-eslint/parser": "^6.19.0",
-    "eslint": "^8.56.0",
-    "react": "^19.0.0",
-    "tsdown": "^0.19.0-beta.2",
-    "typescript": "^5.3.3",
-    "vitest": "^1.2.0"
+    "@duckdb/duckdb-wasm": "^1.32.0",
+    "@types/node": "^20.19.30",
+    "@types/react": "^19.2.8",
+    "@typescript-eslint/eslint-plugin": "^6.21.0",
+    "@typescript-eslint/parser": "^6.21.0",
+    "eslint": "^8.57.1",
+    "react": "^19.2.3",
+    "tsdown": "^0.19.0",
+    "typescript": "^5.9.3",
+    "vitest": "^1.6.1"
   },
   "engines": {
     "node": ">=18.0.0"

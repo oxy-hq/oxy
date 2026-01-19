@@ -47,8 +47,8 @@ chrono = { workspace = true }
 chrono-english = "0.1.8"
 clap = { version = "4.5.54", features = ["derive"] }
 clickhouse = { version = "0.13.3", features = ["rustls-tls"] }
-colored = "3.0.0"
-connectorx = { version = "0.4.4", features = ["dst_arrow", "src_bigquery", "src_postgres", "src_mysql"] }
+colored = "3.1.1"
+connectorx = { version = "0.4.5", features = ["dst_arrow", "src_bigquery", "src_postgres", "src_mysql"] }
 csv = "1.4.0"
 dirs = "6.0.0"
 dotenv = "0.15.0"
