@@ -119,7 +119,7 @@ export async function mockThreadsEndpoints(page: Page) {
 
   // Individual thread endpoint
   await page.route(
-    /https:\/\/localhost:3000\/api\/00000000-0000-0000-0000-000000000000\/threads\/00000000-0000-0000-0000-00000000000\d/,
+    /http:\/\/localhost:3000\/api\/00000000-0000-0000-0000-000000000000\/threads\/00000000-0000-0000-0000-00000000000\d/,
     async (route) => {
       const url = route.request().url();
       const id = url.split("/").pop()!;
@@ -138,7 +138,7 @@ export async function mockThreadsEndpoints(page: Page) {
 
   // Messages endpoint (returns 2 messages referencing the thread)
   await page.route(
-    /https:\/\/localhost:3000\/api\/00000000-0000-0000-0000-000000000000\/threads\/00000000-0000-0000-0000-00000000000\d\/messages/,
+    /http:\/\/localhost:3000\/api\/00000000-0000-0000-0000-000000000000\/threads\/00000000-0000-0000-0000-00000000000\d\/messages/,
     async (route) => {
       const parts = route.request().url().split("/");
       const threadId = parts[parts.length - 2];

@@ -50,9 +50,12 @@ test.describe("Threads Listing Page", () => {
 
     // Verify navigation to thread detail page
     await expect(page).toHaveURL(/\/threads\/.+/);
+
+    // Wait for the thread page to load - the page shows a skeleton first, then loads data
+    // Give it more time to complete the loading and render the message input
     await expect(
       page.getByRole("textbox", { name: "Ask a follow-up question..." }),
-    ).toBeVisible();
+    ).toBeVisible({ timeout: 3000 });
   });
 
   test("should display pagination controls", async ({ page }) => {

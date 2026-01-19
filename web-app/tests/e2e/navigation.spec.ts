@@ -1,7 +1,9 @@
 import { test, expect } from "@playwright/test";
+import { mockThreadsEndpoints } from "./mocks/threads";
 
 test.describe("Navigation", () => {
   test.beforeEach(async ({ page }) => {
+    await mockThreadsEndpoints(page);
     await page.goto("/");
     await page.waitForLoadState("networkidle");
   });
@@ -39,7 +41,12 @@ test.describe("Navigation", () => {
     // Verify navigation
     await expect(page).toHaveURL(/\/ontology/);
 
-    // Wait for ontology graph to load
+    // Wait for ontology graph to load - use data-testid instead of text that may appear later
+    await expect(page.getByTestId("ontology-graph-container")).toBeVisible({
+      timeout: 10000,
+    });
+
+    // Verify the graph has actually loaded by checking for the overview text
     await expect(page.getByText("Ontology Overview")).toBeVisible({
       timeout: 10000,
     });
