@@ -1,6 +1,6 @@
 [package]
 name = "oxy-project"
-version = "0.4.8"
+version = "0.4.9"
 authors.workspace = true
 description = "Project and workspace management for Oxy"
 documentation.workspace = true

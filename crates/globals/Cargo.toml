@@ -1,6 +1,6 @@
 [package]
 name = "oxy_globals"
-version = "0.4.8"
+version = "0.4.9"
 authors.workspace = true
 description = "Global semantics registry and inheritance support for Oxy."
 documentation.workspace = true

@@ -1,6 +1,6 @@
 [package]
 name = "oxy-shared"
-version = "0.4.8"
+version = "0.4.9"
 authors.workspace = true
 description = "Shared infrastructure and types for Oxy"
 documentation.workspace = true
