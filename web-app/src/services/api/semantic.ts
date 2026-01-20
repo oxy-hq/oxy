@@ -1,4 +1,5 @@
 import { apiClient } from "./axios";
+import { AxiosError } from "axios";
 
 type FilterValue = string | number | boolean | null;
 
@@ -100,9 +101,8 @@ export class SemanticService {
       });
       return response.data;
     } catch (error) {
-      const e = error as { response?: { data?: { message?: string } } };
-      if (e.response?.data?.message) {
-        throw new Error(e.response.data.message);
+      if (error instanceof AxiosError && error.response?.data?.message) {
+        throw new Error(error.response.data.message);
       }
       throw error;
     }
@@ -120,9 +120,8 @@ export class SemanticService {
       });
       return response.data;
     } catch (error) {
-      const e = error as { response?: { data?: { message?: string } } };
-      if (e.response?.data?.message) {
-        throw new Error(e.response.data.message);
+      if (error instanceof AxiosError && error.response?.data?.message) {
+        throw new Error(error.response.data.message);
       }
       throw error;
     }
@@ -130,21 +129,35 @@ export class SemanticService {
 
   static async getTopicDetails(
     projectId: string,
-    topicName: string,
+    filePathB64: string,
   ): Promise<TopicDetailsResponse> {
-    const response = await apiClient.get(
-      `/${projectId}/semantic/topic/${topicName}`,
-    );
-    return response.data;
+    try {
+      const response = await apiClient.get(
+        `/${projectId}/semantic/topic/${filePathB64}`,
+      );
+      return response.data;
+    } catch (error) {
+      if (error instanceof AxiosError && error.response?.data?.message) {
+        throw new Error(error.response.data.message);
+      }
+      throw error;
+    }
   }
 
   static async getViewDetails(
     projectId: string,
-    viewName: string,
+    filePathB64: string,
   ): Promise<ViewResponse> {
-    const response = await apiClient.get(
-      `/${projectId}/semantic/view/${viewName}`,
-    );
-    return response.data;
+    try {
+      const response = await apiClient.get(
+        `/${projectId}/semantic/view/${filePathB64}`,
+      );
+      return response.data;
+    } catch (error) {
+      if (error instanceof AxiosError && error.response?.data?.message) {
+        throw new Error(error.response.data.message);
+      }
+      throw error;
+    }
   }
 }

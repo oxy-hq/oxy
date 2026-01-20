@@ -5,6 +5,8 @@ use axum::{
     extract::{self, Path},
     http::StatusCode,
 };
+use base64::Engine;
+use base64::prelude::BASE64_STANDARD;
 use oxy::adapters::session_filters::SessionFilters;
 use oxy::config::model::{ConnectionOverrides, SemanticQueryTask};
 use oxy::connector::load_result;
@@ -274,13 +276,13 @@ pub async fn compile_semantic_query(
 #[derive(Deserialize)]
 pub struct ViewPath {
     pub project_id: Uuid,
-    pub view_name: String,
+    pub file_path_b64: String,
 }
 
 #[derive(Deserialize)]
 pub struct TopicPath {
     pub project_id: Uuid,
-    pub topic_name: String,
+    pub file_path_b64: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, ToSchema)]
@@ -314,99 +316,177 @@ pub async fn get_view_details(
     ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
     Path(ViewPath {
         project_id: _project_id,
-        view_name,
+        file_path_b64,
     }): Path<ViewPath>,
 ) -> Result<extract::Json<ViewResponse>, (StatusCode, extract::Json<ErrorResponse>)> {
+    use oxy_semantic::parser::ParserConfig;
+    use oxy_semantic::parser::SemanticLayerParser;
+
     let global_registry = project_manager.config_manager.get_globals_registry();
 
-    let parse_result = parse_semantic_layer_from_dir(
-        project_manager.config_manager.semantics_path(),
-        global_registry,
-    )
-    .map_err(|e| {
+    // Decode base64 file path
+    let decoded_path = BASE64_STANDARD.decode(&file_path_b64).map_err(|e| {
         (
-            StatusCode::INTERNAL_SERVER_ERROR,
+            StatusCode::BAD_REQUEST,
             extract::Json(ErrorResponse {
-                message: format!("Failed to parse semantic layer: {}", e),
+                message: format!("Invalid base64 file path: {}", e),
             }),
         )
     })?;
 
-    if let Some(view) = parse_result
-        .semantic_layer
-        .views
-        .into_iter()
-        .find(|v| v.name == view_name)
-    {
-        Ok(extract::Json(ViewResponse {
-            view_name,
-            name: view.name,
-            description: Some(view.description),
-            datasource: view.datasource,
-            table: view.table,
-            dimensions: serde_json::to_value(view.dimensions)
-                .unwrap_or(serde_json::Value::Array(vec![]))
-                .as_array()
-                .unwrap()
-                .clone(),
-            measures: view
-                .measures
-                .map(|m| {
-                    serde_json::to_value(m)
-                        .unwrap_or(serde_json::Value::Array(vec![]))
-                        .as_array()
-                        .unwrap()
-                        .clone()
-                })
-                .unwrap_or_default(),
-        }))
-    } else {
-        Err((
+    let file_path_str = String::from_utf8(decoded_path).map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            extract::Json(ErrorResponse {
+                message: format!("Invalid UTF-8 in file path: {}", e),
+            }),
+        )
+    })?;
+
+    // Resolve the file path using the config manager
+    let full_path_str = project_manager
+        .config_manager
+        .resolve_file(&file_path_str)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                extract::Json(ErrorResponse {
+                    message: format!("Failed to resolve file path: {}", e),
+                }),
+            )
+        })?;
+
+    let full_path = std::path::PathBuf::from(full_path_str);
+
+    // Verify file exists
+    if !full_path.exists() {
+        return Err((
             StatusCode::NOT_FOUND,
             extract::Json(ErrorResponse {
-                message: format!("View {} not found", view_name),
+                message: format!("View file {} not found", file_path_str),
             }),
-        ))
+        ));
     }
+
+    // Parse the specific view file
+    let parser_config = ParserConfig::new(project_manager.config_manager.semantics_path());
+    let parser = SemanticLayerParser::new(parser_config, global_registry);
+
+    let view = parser.parse_view_file(&full_path).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            extract::Json(ErrorResponse {
+                message: format!("Failed to parse view file: {}", e),
+            }),
+        )
+    })?;
+
+    Ok(extract::Json(ViewResponse {
+        view_name: view.name.clone(),
+        name: view.name,
+        description: Some(view.description),
+        datasource: view.datasource,
+        table: view.table,
+        dimensions: serde_json::to_value(view.dimensions)
+            .unwrap_or(serde_json::Value::Array(vec![]))
+            .as_array()
+            .unwrap()
+            .clone(),
+        measures: view
+            .measures
+            .map(|m| {
+                serde_json::to_value(m)
+                    .unwrap_or(serde_json::Value::Array(vec![]))
+                    .as_array()
+                    .unwrap()
+                    .clone()
+            })
+            .unwrap_or_default(),
+    }))
 }
 
 pub async fn get_topic_details(
     ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
     Path(TopicPath {
         project_id: _project_id,
-        topic_name,
+        file_path_b64,
     }): Path<TopicPath>,
 ) -> Result<extract::Json<TopicDetailsResponse>, (StatusCode, extract::Json<ErrorResponse>)> {
-    let global_registry = project_manager.config_manager.get_globals_registry();
+    use oxy_semantic::parser::ParserConfig;
+    use oxy_semantic::parser::SemanticLayerParser;
 
-    let parse_result = parse_semantic_layer_from_dir(
-        project_manager.config_manager.semantics_path(),
-        global_registry,
-    )
-    .map_err(|e| {
+    let global_registry = project_manager.config_manager.get_globals_registry();
+    let semantics_path = project_manager.config_manager.semantics_path();
+
+    // Decode base64 file path
+    let decoded_path = BASE64_STANDARD.decode(&file_path_b64).map_err(|e| {
         (
-            StatusCode::INTERNAL_SERVER_ERROR,
+            StatusCode::BAD_REQUEST,
             extract::Json(ErrorResponse {
-                message: format!("Failed to parse semantic layer: {}", e),
+                message: format!("Invalid base64 file path: {}", e),
             }),
         )
     })?;
 
-    let topic = if let Some(topic) = parse_result
-        .semantic_layer
-        .topics
-        .as_ref()
-        .and_then(|topics| topics.iter().find(|t| t.name == topic_name).cloned())
-    {
-        topic
-    } else {
+    let file_path_str = String::from_utf8(decoded_path).map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            extract::Json(ErrorResponse {
+                message: format!("Invalid UTF-8 in file path: {}", e),
+            }),
+        )
+    })?;
+
+    // Resolve the file path using the config manager
+    let full_path_str = project_manager
+        .config_manager
+        .resolve_file(&file_path_str)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                extract::Json(ErrorResponse {
+                    message: format!("Failed to resolve file path: {}", e),
+                }),
+            )
+        })?;
+
+    let full_path = std::path::PathBuf::from(full_path_str);
+
+    // Verify file exists
+    if !full_path.exists() {
         return Err((
             StatusCode::NOT_FOUND,
             extract::Json(ErrorResponse {
-                message: format!("Topic {} not found", topic_name),
+                message: format!("Topic file {} not found", file_path_str),
             }),
         ));
-    };
+    }
+
+    // Parse the specific topic file
+    let parser_config = ParserConfig::new(&semantics_path);
+    let parser = SemanticLayerParser::new(parser_config, global_registry.clone());
+
+    let topic = parser.parse_topic_file(&full_path).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            extract::Json(ErrorResponse {
+                message: format!("Failed to parse topic file: {}", e),
+            }),
+        )
+    })?;
+
+    // Parse the semantic layer to get all views for lookups
+    let parse_result =
+        parse_semantic_layer_from_dir(&semantics_path, global_registry).map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                extract::Json(ErrorResponse {
+                    message: format!("Failed to parse semantic layer: {}", e),
+                }),
+            )
+        })?;
 
     let mut views_with_data = Vec::new();
 
@@ -442,8 +522,6 @@ pub async fn get_topic_details(
             });
         } else {
             tracing::warn!("Could not find view {} in semantic layer", view_name);
-            // We don't fail here, just skip or maybe we should return error?
-            // Previous implementation returned error.
             return Err((
                 StatusCode::BAD_REQUEST,
                 extract::Json(ErrorResponse {

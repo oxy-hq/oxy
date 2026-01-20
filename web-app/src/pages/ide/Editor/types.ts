@@ -1,3 +1,5 @@
+import { SemanticQueryFilter } from "@/services/api/semantic";
+
 export interface Dimension {
   name: string;
   type: string;
@@ -31,3 +33,15 @@ export interface TopicData {
 export interface ViewWithData extends ViewData {
   viewName: string;
 }
+
+export type Field = {
+  name: string;
+  fullName: string;
+};
+
+export type Order = {
+  field: string;
+  direction: "asc" | "desc";
+};
+
+export type Filter = SemanticQueryFilter;

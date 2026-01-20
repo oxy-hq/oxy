@@ -1,6 +1,7 @@
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/shadcn/button";
 import { SemanticQueryFilter } from "@/services/api/semantic";
+import { Filter } from "../../../types";
 
 const FILTER_OPERATORS = [
   { label: "=", value: "eq" },
@@ -16,9 +17,9 @@ const FILTER_OPERATORS = [
 ];
 
 interface FilterRowProps {
-  filter: SemanticQueryFilter;
-  availableDimensions: { label: string; value: string }[];
-  onUpdate: (updates: SemanticQueryFilter) => void;
+  filter: Filter;
+  availableDimensions: { name: string; fullName: string }[];
+  onUpdate: (updates: Filter) => void;
   onRemove: () => void;
 }
 
@@ -64,8 +65,8 @@ const FilterRow = ({
         className="text-xs border rounded px-2 py-1 bg-background"
       >
         {availableDimensions.map((dim) => (
-          <option key={dim.value} value={dim.value}>
-            {dim.label}
+          <option key={dim.fullName} value={dim.fullName}>
+            {dim.name}
           </option>
         ))}
       </select>

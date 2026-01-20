@@ -1,17 +1,14 @@
 import { useState } from "react";
-import {
-  SemanticQueryFilter,
-  SemanticQueryOrder,
-} from "@/services/api/semantic";
 import { Variable } from "../components/SemanticQueryPanel";
+import { Filter, Order } from "../types";
 
 export const useSemanticQueryState = () => {
   const [result, setResult] = useState<string[][]>([]);
   const [resultFile, setResultFile] = useState<string | undefined>(undefined);
   const [selectedDimensions, setSelectedDimensions] = useState<string[]>([]);
   const [selectedMeasures, setSelectedMeasures] = useState<string[]>([]);
-  const [filters, setFilters] = useState<SemanticQueryFilter[]>([]);
-  const [orders, setOrders] = useState<SemanticQueryOrder[]>([]);
+  const [filters, setFilters] = useState<Filter[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
   const [variables, setVariables] = useState<Variable[]>([]);
   const [showSql, setShowSql] = useState(false);
   const [generatedSql, setGeneratedSql] = useState("");
@@ -25,11 +22,11 @@ export const useSemanticQueryState = () => {
         field: initialField,
         op: "eq",
         value: "",
-      } as SemanticQueryFilter,
+      },
     ]);
   };
 
-  const updateFilter = (index: number, updates: SemanticQueryFilter) => {
+  const updateFilter = (index: number, updates: Filter) => {
     const newFilters = [...filters];
     newFilters[index] = updates;
     setFilters(newFilters);
@@ -49,7 +46,7 @@ export const useSemanticQueryState = () => {
     ]);
   };
 
-  const updateOrder = (index: number, updates: SemanticQueryOrder) => {
+  const updateOrder = (index: number, updates: Order) => {
     const newOrders = [...orders];
     newOrders[index] = updates;
     setOrders(newOrders);

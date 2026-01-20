@@ -1,10 +1,10 @@
-import { SemanticQueryOrder } from "@/services/api/semantic";
 import SortRow from "./SortRow";
+import { Field, Order } from "../../../types";
 
 interface SortsSectionProps {
-  orders: SemanticQueryOrder[];
-  availableFields: { label: string; value: string }[];
-  onUpdateOrder: (index: number, updates: SemanticQueryOrder) => void;
+  orders: Order[];
+  availableFields: Field[];
+  onUpdateOrder: (index: number, updates: Order) => void;
   onRemoveOrder: (index: number) => void;
 }
 

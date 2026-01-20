@@ -1,213 +1,46 @@
-import { useMemo, useEffect } from "react";
-import { parse as parseYAML } from "yaml";
+import { useMemo, useState } from "react";
 
 import EditorPageWrapper from "../components/EditorPageWrapper";
 import { useEditorContext } from "../contexts/useEditorContext";
-import { useFileEditorContext } from "@/components/FileEditor/useFileEditorContext";
-import {
-  useExecuteSemanticQuery,
-  useCompileSemanticQuery,
-  useTopicDetails,
-} from "@/hooks/api/useSemanticQuery";
-import { buildSemanticQuery } from "../utils/queryBuilder";
+import ModeSwitcher from "../View/components/ModeSwitcher";
+import { ViewMode } from "../View/components/types";
 import SemanticQueryPanel from "../components/SemanticQueryPanel";
-import { useSemanticQueryState } from "../hooks/useSemanticQueryState";
 import FieldsSelectionPanel from "./FieldsSelectionPanel";
+import {
+  TopicExplorerProvider,
+  useTopicExplorerContext,
+} from "./contexts/TopicExplorerContext";
 
-const TopicPreview = () => {
-  const { state } = useFileEditorContext();
+const TopicExplorer = () => {
   const {
-    result,
-    setResult,
-    resultFile,
-    setResultFile,
+    topicData,
+    viewsWithData,
     selectedDimensions,
+    loadingTopicError,
     selectedMeasures,
-    filters,
-    orders,
-    variables,
-    showSql,
-    setShowSql,
-    generatedSql,
-    setGeneratedSql,
-    sqlError,
-    setSqlError,
-    executionError,
-    setExecutionError,
-    addFilter: addFilterState,
-    updateFilter,
-    removeFilter,
-    addOrder: addOrderState,
-    updateOrder,
-    removeOrder,
-    addVariable,
-    updateVariable,
-    removeVariable,
+    topicLoading,
     toggleDimension,
     toggleMeasure,
-  } = useSemanticQueryState();
+  } = useTopicExplorerContext();
 
-  const { mutate: executeSemanticQuery, isPending: isExecuting } =
-    useExecuteSemanticQuery();
-  const { mutate: compileSemanticQuery, isPending: isCompiling } =
-    useCompileSemanticQuery();
-  const loading = isExecuting || isCompiling;
-
-  const topicName = useMemo(() => {
-    try {
-      if (!state.content) return null;
-      const parsed = parseYAML(state.content);
-      return parsed.name;
-    } catch (error) {
-      console.error("Failed to parse topic file:", error);
-      return null;
-    }
-  }, [state.content]);
-
-  const {
-    data: topicDetails,
-    isLoading: isLoadingTopicDetails,
-    isError: isTopicDetailsError,
-  } = useTopicDetails(topicName);
-
-  const topicData = useMemo(() => {
-    if (!topicDetails?.topic) return null;
-    return {
-      name: topicDetails.topic.name,
-      description: topicDetails.topic.description,
-      views: topicDetails.topic.views || [],
-      base_view: topicDetails.topic.base_view,
-    };
-  }, [topicDetails]);
-
-  const viewsWithData = useMemo(() => {
-    if (!topicDetails?.views) return [];
-    return topicDetails.views.map((view) => ({
-      viewName: view.view_name,
-      name: view.name,
-      description: view.description,
-      datasource: view.datasource || "",
-      table: view.table || "",
-      dimensions: view.dimensions || [],
-      measures: view.measures || [],
-    }));
-  }, [topicDetails]);
-
-  const handleExecuteQuery = () => {
-    if (viewsWithData.length === 0 || !topicData) return;
-
-    const request = buildSemanticQuery({
-      topic: topicData.name,
-      dimensions: selectedDimensions,
-      measures: selectedMeasures,
-      filters,
-      orders,
-      variables,
-    });
-
-    executeSemanticQuery(request, {
-      onSuccess: (data) => {
-        // Handle untagged union response
-        if (Array.isArray(data)) {
-          // JSON format - data is string[][]
-          setResult(data);
-          setResultFile(undefined);
-        } else if (typeof data === "object" && "file_name" in data) {
-          // Arrow format - data is { file_name: string }
-          setResultFile((data as { file_name: string }).file_name);
-          setResult([]);
-        }
-        setExecutionError(null);
-      },
-      onError: (error) => {
-        setResult([]);
-        setResultFile(undefined);
-        setExecutionError(error.message);
-      },
-    });
-  };
-
-  const addFilter = () => {
-    if (viewsWithData.length === 0) return;
-    const firstView = viewsWithData[0];
-    if (firstView.dimensions.length === 0) return;
-    addFilterState(`${firstView.viewName}.${firstView.dimensions[0].name}`);
-  };
-
-  const addOrder = () => {
-    // Try to use first selected dimension, then first selected measure
-    if (selectedDimensions.length > 0) {
-      addOrderState(selectedDimensions[0]);
-    } else if (selectedMeasures.length > 0) {
-      addOrderState(selectedMeasures[0]);
-    }
-  };
-
-  // Check if we can execute a query - need at least one dimension/measure from primary view
-  const canExecuteQuery = useMemo(() => {
-    if (viewsWithData.length === 0) return false;
-    if (selectedDimensions.length === 0 && selectedMeasures.length === 0)
-      return false;
-
-    return true;
-  }, [viewsWithData, selectedDimensions, selectedMeasures]);
-
-  useEffect(() => {
-    if (!topicData || !canExecuteQuery) return;
-
-    const request = buildSemanticQuery({
-      topic: topicData.name,
-      dimensions: selectedDimensions,
-      measures: selectedMeasures,
-      filters,
-      orders,
-      variables,
-    });
-
-    compileSemanticQuery(request, {
-      onSuccess: (data) => {
-        setGeneratedSql(data.sql);
-        setSqlError(null);
-      },
-      onError: (error) => {
-        setGeneratedSql("");
-        setSqlError(error.message);
-      },
-    });
-  }, [
-    topicData,
-    selectedDimensions,
-    selectedMeasures,
-    filters,
-    orders,
-    variables,
-    canExecuteQuery,
-    compileSemanticQuery,
-    setGeneratedSql,
-    setSqlError,
-  ]);
-
-  const availableDimensions = useMemo(() => {
-    return viewsWithData.flatMap((view) =>
-      view.dimensions.map((dim) => ({
-        label: `${view.viewName}.${dim.name}`,
-        value: `${view.viewName}.${dim.name}`,
-      })),
+  if (loadingTopicError) {
+    return (
+      <div className="flex flex-1 flex-col h-full items-center justify-center p-4">
+        <div className="text-destructive text-center max-w-2xl">
+          <div className="font-semibold mb-2">Error loading topic</div>
+          <div className="text-sm">{loadingTopicError}</div>
+        </div>
+      </div>
     );
-  }, [viewsWithData]);
+  }
 
-  const selectedFields = useMemo(() => {
-    return [
-      ...selectedDimensions.map((field) => ({
-        label: field,
-        value: field,
-      })),
-      ...selectedMeasures.map((field) => ({
-        label: field,
-        value: field,
-      })),
-    ];
-  }, [selectedDimensions, selectedMeasures]);
+  if (topicLoading || !topicData) {
+    return (
+      <div className="flex flex-1 flex-col h-full items-center justify-center">
+        <div className="text-muted-foreground">Loading topic data...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
@@ -216,8 +49,7 @@ const TopicPreview = () => {
         <FieldsSelectionPanel
           topicData={topicData}
           viewsWithData={viewsWithData}
-          isLoading={isLoadingTopicDetails}
-          isError={isTopicDetailsError}
+          isLoading={topicLoading}
           selectedDimensions={selectedDimensions}
           selectedMeasures={selectedMeasures}
           toggleDimension={toggleDimension}
@@ -225,35 +57,40 @@ const TopicPreview = () => {
         />
 
         {/* Right Side - Results and SQL */}
-        <SemanticQueryPanel
-          result={result}
-          resultFile={resultFile}
-          showSql={showSql}
-          setShowSql={setShowSql}
-          generatedSql={generatedSql}
-          sqlError={sqlError}
-          executionError={executionError}
-          filters={filters}
-          orders={orders}
-          variables={variables}
-          onAddFilter={addFilter}
-          onUpdateFilter={updateFilter}
-          onRemoveFilter={removeFilter}
-          onAddOrder={addOrder}
-          onUpdateOrder={updateOrder}
-          onRemoveOrder={removeOrder}
-          onAddVariable={addVariable}
-          onUpdateVariable={updateVariable}
-          onRemoveVariable={removeVariable}
-          onExecuteQuery={handleExecuteQuery}
-          loading={loading}
-          canExecuteQuery={canExecuteQuery}
-          disabledMessage="Select at least one dimension or measure from the base view"
-          availableDimensions={availableDimensions}
-          selectedFields={selectedFields}
-          hasData={viewsWithData.length > 0}
-        />
+        <SemanticQueryPanel />
       </div>
+    </div>
+  );
+};
+
+type TopicPreviewProps = {
+  pathb64: string;
+  isReadOnly: boolean;
+  gitEnabled: boolean;
+};
+
+const TopicPreview = (props: TopicPreviewProps) => {
+  const { pathb64, isReadOnly } = props;
+  const path = useMemo(() => atob(pathb64 || ""), [pathb64]);
+
+  const [viewMode, setViewMode] = useState<ViewMode>(ViewMode.Explorer);
+
+  return (
+    <div className="flex flex-1 flex-col h-full">
+      <div className="flex items-center justify-start p-1 border-b border-b-border gap-1">
+        <ModeSwitcher viewMode={viewMode} onViewModeChange={setViewMode} />
+        <div className="text-sm font-medium text-muted-foreground">{path}</div>
+      </div>
+      {viewMode === ViewMode.Explorer ? (
+        <TopicExplorer />
+      ) : (
+        <EditorPageWrapper
+          pathb64={pathb64}
+          readOnly={isReadOnly}
+          defaultDirection="horizontal"
+          preview={<TopicExplorer />}
+        />
+      )}
     </div>
   );
 };
@@ -262,13 +99,13 @@ const TopicEditor = () => {
   const { pathb64, isReadOnly, gitEnabled } = useEditorContext();
 
   return (
-    <EditorPageWrapper
-      pathb64={pathb64}
-      readOnly={isReadOnly}
-      git={gitEnabled}
-      defaultDirection="horizontal"
-      preview={<TopicPreview />}
-    />
+    <TopicExplorerProvider>
+      <TopicPreview
+        pathb64={pathb64}
+        isReadOnly={isReadOnly}
+        gitEnabled={gitEnabled}
+      />
+    </TopicExplorerProvider>
   );
 };
 

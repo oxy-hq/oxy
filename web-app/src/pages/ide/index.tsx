@@ -12,7 +12,22 @@ import EmptyState from "@/components/ui/EmptyState";
 import Header from "./Header";
 import ProjectStatus from "@/components/ProjectStatus";
 
-const IDEContext = createContext<{ insideIDE: boolean }>({ insideIDE: false });
+// Sub-view mode for Files section
+export enum FilesSubViewMode {
+  OBJECTS = "objects",
+  FILES = "files",
+}
+
+
+const IDEContext = createContext<{
+  insideIDE: boolean;
+  filesSubViewMode: FilesSubViewMode;
+  setFilesSubViewMode: (mode: FilesSubViewMode) => void;
+}>({
+  insideIDE: false,
+  filesSubViewMode: FilesSubViewMode.OBJECTS,
+  setFilesSubViewMode: () => {},
+});
 
 // eslint-disable-next-line react-refresh/only-export-components
 export const useIDE = () => {
@@ -23,6 +38,9 @@ const Ide = () => {
   const { pathb64 } = useParams();
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [filesSubViewMode, setFilesSubViewMode] = useState<FilesSubViewMode>(
+    FilesSubViewMode.OBJECTS,
+  );
   const { open, setOpen } = useSidebar();
 
   const hasClosedSidebar = useRef(false);
@@ -38,7 +56,9 @@ const Ide = () => {
   }, [open, setOpen]);
 
   return (
-    <IDEContext.Provider value={{ insideIDE: true }}>
+    <IDEContext.Provider
+      value={{ insideIDE: true, filesSubViewMode, setFilesSubViewMode }}
+    >
       <div className="flex h-full flex-1 overflow-hidden flex-col">
         <ProjectStatus />
         <Header />
@@ -52,6 +72,8 @@ const Ide = () => {
               <Sidebar
                 sidebarOpen={sidebarOpen}
                 setSidebarOpen={setSidebarOpen}
+                filesSubViewMode={filesSubViewMode}
+                setFilesSubViewMode={setFilesSubViewMode}
               />
             </ResizablePanel>
             <ResizableHandle />

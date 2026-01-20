@@ -14,7 +14,6 @@ interface TabsHeaderProps {
   showSql: boolean;
   hasResults: boolean;
   result: string[][];
-  hasData: boolean;
   onAddFilter: () => void;
   onAddOrder: () => void;
   onAddVariable: () => void;
@@ -29,7 +28,6 @@ const TabsHeader = ({
   showSql,
   hasResults,
   result,
-  hasData,
   onAddFilter,
   onAddOrder,
   onAddVariable,
@@ -73,44 +71,42 @@ const TabsHeader = ({
             <TooltipContent>Download results as CSV</TooltipContent>
           </Tooltip>
         )}
-        {hasData && (
-          <>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={onAddFilter}
-              className="h-7"
-            >
-              <Plus className="w-3 h-3 mr-1" />
-              Add Filter
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={onAddOrder}
-              className="h-7"
-              disabled={!hasSelectedFields}
-            >
-              <Plus className="w-3 h-3 mr-1" />
-              Add Sort
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={onAddVariable}
-              className="h-7"
-            >
-              <Plus className="w-3 h-3 mr-1" />
-              Add Variable
-            </Button>
-            <HeaderActions
-              onExecuteQuery={onExecuteQuery}
-              loading={loading}
-              disabled={!canExecuteQuery}
-              disabledMessage={disabledMessage}
-            />
-          </>
-        )}
+        <>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={onAddFilter}
+            className="h-7"
+          >
+            <Plus className="w-3 h-3 mr-1" />
+            Add Filter
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={onAddOrder}
+            className="h-7"
+            disabled={!hasSelectedFields}
+          >
+            <Plus className="w-3 h-3 mr-1" />
+            Add Sort
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={onAddVariable}
+            className="h-7"
+          >
+            <Plus className="w-3 h-3 mr-1" />
+            Add Variable
+          </Button>
+          <HeaderActions
+            onExecuteQuery={onExecuteQuery}
+            loading={loading}
+            disabled={!canExecuteQuery}
+            disabledMessage={disabledMessage}
+          />
+        </>
       </div>
     </div>
   );

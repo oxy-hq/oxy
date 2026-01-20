@@ -59,7 +59,7 @@ pub struct ParseResult {
 /// Parser for semantic layer configurations
 pub struct SemanticLayerParser {
     config: ParserConfig,
-    global_registry: GlobalRegistry,
+    pub global_registry: GlobalRegistry,
 }
 
 impl SemanticLayerParser {
@@ -232,7 +232,7 @@ impl SemanticLayerParser {
     }
 
     /// Parses a single view file
-    fn parse_view_file(&self, path: &Path) -> Result<View, SemanticLayerError> {
+    pub fn parse_view_file(&self, path: &Path) -> Result<View, SemanticLayerError> {
         // Read raw YAML content as a string (before parsing)
         let content = fs::read_to_string(path).map_err(|e| {
             SemanticLayerError::IOError(format!("Failed to read file {}: {}", path.display(), e))
@@ -291,7 +291,7 @@ impl SemanticLayerParser {
     }
 
     /// Parses a single topic file
-    fn parse_topic_file(&self, path: &Path) -> Result<Topic, SemanticLayerError> {
+    pub fn parse_topic_file(&self, path: &Path) -> Result<Topic, SemanticLayerError> {
         let content = fs::read_to_string(path).map_err(|e| {
             SemanticLayerError::IOError(format!("Failed to read file {}: {}", path.display(), e))
         })?;

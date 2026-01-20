@@ -1,78 +1,71 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { Tabs, TabsContent } from "@/components/ui/shadcn/tabs";
-import {
-  SemanticQueryFilter,
-  SemanticQueryOrder,
-} from "@/services/api/semantic";
 import TabsHeader from "./components/TabsHeader";
 import FiltersSection from "./components/FiltersSection";
 import SortsSection from "./components/SortsSection";
 import VariablesSection from "./components/VariablesSection";
 import SqlView from "./components/SqlView";
 import ResultsView from "./components/ResultsView";
+import { useSemanticExplorerContext } from "../../contexts/SemanticExplorerContext";
 
 export interface Variable {
   key: string;
   value: string;
 }
 
-interface SemanticQueryPanelProps {
-  result: string[][];
-  resultFile?: string;
-  showSql: boolean;
-  setShowSql: (show: boolean) => void;
-  generatedSql: string;
-  sqlError: string | null;
-  executionError: string | null;
-  filters: SemanticQueryFilter[];
-  orders: SemanticQueryOrder[];
-  variables: Variable[];
-  onAddFilter: () => void;
-  onUpdateFilter: (index: number, updates: SemanticQueryFilter) => void;
-  onRemoveFilter: (index: number) => void;
-  onAddOrder: () => void;
-  onUpdateOrder: (index: number, updates: SemanticQueryOrder) => void;
-  onRemoveOrder: (index: number) => void;
-  onAddVariable: () => void;
-  onUpdateVariable: (index: number, updates: Partial<Variable>) => void;
-  onRemoveVariable: (index: number) => void;
-  onExecuteQuery: () => void;
-  loading: boolean;
-  canExecuteQuery: boolean;
-  disabledMessage?: string;
-  availableDimensions: { label: string; value: string }[];
-  selectedFields: { label: string; value: string }[];
-  hasData: boolean;
-}
+const SemanticQueryPanel = () => {
+  const {
+    result,
+    showSql,
+    setShowSql,
+    generatedSql,
+    sqlError,
+    executionError,
+    filters,
+    orders,
+    variables,
+    onAddFilter,
+    onUpdateFilter,
+    onRemoveFilter,
+    onAddOrder,
+    onUpdateOrder,
+    onRemoveOrder,
+    onAddVariable,
+    onUpdateVariable,
+    onRemoveVariable,
+    resultFile,
+    onExecuteQuery,
+    loading,
+    availableDimensions,
+    availableMeasures,
+    selectedDimensions,
+    selectedMeasures,
+  } = useSemanticExplorerContext();
+  const availableFields = useMemo(() => {
+    return [...availableDimensions, ...availableMeasures];
+  }, [availableDimensions, availableMeasures]);
 
-const SemanticQueryPanel = ({
-  result,
-  resultFile,
-  showSql,
-  setShowSql,
-  generatedSql,
-  sqlError,
-  executionError,
-  filters,
-  orders,
-  variables,
-  onAddFilter,
-  onUpdateFilter,
-  onRemoveFilter,
-  onAddOrder,
-  onUpdateOrder,
-  onRemoveOrder,
-  onAddVariable,
-  onUpdateVariable,
-  onRemoveVariable,
-  onExecuteQuery,
-  loading,
-  canExecuteQuery,
-  disabledMessage,
-  availableDimensions,
-  selectedFields,
-  hasData,
-}: SemanticQueryPanelProps) => {
+  const selectedFields = useMemo(() => {
+    const selectedDimensionFields = selectedDimensions
+      .map((dim) => availableFields.find((f) => f.fullName === dim))
+      .filter(
+        (field): field is (typeof availableFields)[number] =>
+          field !== undefined,
+      );
+
+    const selectedMeasureFields = selectedMeasures
+      .map((mes) => availableFields.find((f) => f.fullName === mes))
+      .filter(
+        (field): field is (typeof availableFields)[number] =>
+          field !== undefined,
+      );
+
+    return [...selectedDimensionFields, ...selectedMeasureFields];
+  }, [selectedDimensions, selectedMeasures, availableFields]);
+
+  const canExecuteQuery =
+    selectedDimensions.length > 0 || selectedMeasures.length > 0;
+
   useEffect(() => {
     if (generatedSql || sqlError) {
       setShowSql(true);
@@ -95,34 +88,29 @@ const SemanticQueryPanel = ({
         showSql={showSql}
         hasResults={result.length > 0}
         result={result}
-        hasData={hasData}
         onAddFilter={onAddFilter}
         onAddOrder={onAddOrder}
         onAddVariable={onAddVariable}
         onExecuteQuery={onExecuteQuery}
         loading={loading}
         canExecuteQuery={canExecuteQuery}
-        disabledMessage={disabledMessage}
+        disabledMessage=""
         hasSelectedFields={selectedFields.length > 0}
       />
 
-      {hasData && (
-        <FiltersSection
-          filters={filters}
-          availableDimensions={availableDimensions}
-          onUpdateFilter={onUpdateFilter}
-          onRemoveFilter={onRemoveFilter}
-        />
-      )}
+      <FiltersSection
+        filters={filters}
+        availableDimensions={availableDimensions}
+        onUpdateFilter={onUpdateFilter}
+        onRemoveFilter={onRemoveFilter}
+      />
 
-      {hasData && (
-        <SortsSection
-          orders={orders}
-          availableFields={selectedFields}
-          onUpdateOrder={onUpdateOrder}
-          onRemoveOrder={onRemoveOrder}
-        />
-      )}
+      <SortsSection
+        orders={orders}
+        availableFields={selectedFields}
+        onUpdateOrder={onUpdateOrder}
+        onRemoveOrder={onRemoveOrder}
+      />
 
       <VariablesSection
         variables={variables}

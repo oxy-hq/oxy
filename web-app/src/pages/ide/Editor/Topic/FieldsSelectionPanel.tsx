@@ -6,7 +6,6 @@ interface FieldsSelectionPanelProps {
   topicData: TopicData | null;
   viewsWithData: ViewWithData[];
   isLoading: boolean;
-  isError: boolean;
   selectedDimensions: string[];
   selectedMeasures: string[];
   toggleDimension: (name: string) => void;
@@ -17,7 +16,6 @@ const FieldsSelectionPanel = ({
   topicData,
   viewsWithData,
   isLoading,
-  isError,
   selectedDimensions,
   selectedMeasures,
   toggleDimension,
@@ -65,13 +63,6 @@ const FieldsSelectionPanel = ({
             {isLoading && (
               <div className="px-3 py-2 text-xs text-muted-foreground">
                 Loading views...
-              </div>
-            )}
-
-            {/* Error state */}
-            {isError && (
-              <div className="px-3 py-2 text-xs text-destructive">
-                Error loading some views. Check console for details.
               </div>
             )}
 

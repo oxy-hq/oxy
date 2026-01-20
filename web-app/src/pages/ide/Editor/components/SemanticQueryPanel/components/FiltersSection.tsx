@@ -1,10 +1,10 @@
-import { SemanticQueryFilter } from "@/services/api/semantic";
 import FilterRow from "./FilterRow";
+import { Filter } from "../../../types";
 
 interface FiltersSectionProps {
-  filters: SemanticQueryFilter[];
-  availableDimensions: { label: string; value: string }[];
-  onUpdateFilter: (index: number, updates: SemanticQueryFilter) => void;
+  filters: Filter[];
+  availableDimensions: { name: string; fullName: string }[];
+  onUpdateFilter: (index: number, updates: Filter) => void;
   onRemoveFilter: (index: number) => void;
 }
 

@@ -159,11 +159,11 @@ fn build_project_routes() -> Router<AppState> {
         .route("/semantic", post(semantic::execute_semantic_query))
         .route("/semantic/compile", post(semantic::compile_semantic_query))
         .route(
-            "/semantic/topic/{topic_name}",
+            "/semantic/topic/{file_path_b64}",
             get(semantic::get_topic_details),
         )
         .route(
-            "/semantic/view/{view_name}",
+            "/semantic/view/{file_path_b64}",
             get(semantic::get_view_details),
         )
         .route(

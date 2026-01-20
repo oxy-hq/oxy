@@ -1,11 +1,11 @@
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/shadcn/button";
-import { SemanticQueryOrder } from "@/services/api/semantic";
+import { Field, Order } from "../../../types";
 
 interface SortRowProps {
-  order: SemanticQueryOrder;
-  availableFields: { label: string; value: string }[];
-  onUpdate: (updates: SemanticQueryOrder) => void;
+  order: Order;
+  availableFields: Field[];
+  onUpdate: (updates: Order) => void;
   onRemove: () => void;
 }
 
@@ -28,8 +28,8 @@ const SortRow = ({
         className="text-xs border rounded px-2 py-1 bg-background"
       >
         {availableFields.map((field) => (
-          <option key={field.value} value={field.value}>
-            {field.label}
+          <option key={field.fullName} value={field.fullName}>
+            {field.name}
           </option>
         ))}
       </select>

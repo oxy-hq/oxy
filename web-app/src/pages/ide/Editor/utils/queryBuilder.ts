@@ -12,7 +12,6 @@ interface BuildSemanticQueryOptions {
   filters: SemanticQueryFilter[];
   orders: SemanticQueryOrder[];
   variables: Variable[];
-  getFullFieldName?: (field: string) => string;
 }
 
 /**
@@ -26,7 +25,6 @@ export function buildSemanticQuery({
   filters,
   orders,
   variables,
-  getFullFieldName,
 }: BuildSemanticQueryOptions): SemanticQueryRequest {
   const processedFilters = filters
     .filter((f) => {
@@ -36,7 +34,7 @@ export function buildSemanticQuery({
       return false;
     })
     .map((f) => {
-      const field = getFullFieldName ? getFullFieldName(f.field) : f.field;
+      const field = f.field;
 
       if ("values" in f) {
         return { field, op: f.op, values: f.values };
@@ -56,19 +54,15 @@ export function buildSemanticQuery({
   );
 
   const processedOrders = orders.map((order) => ({
-    field: getFullFieldName ? getFullFieldName(order.field) : order.field,
+    field: order.field,
     direction: order.direction,
   }));
 
   return {
     query: {
       ...(topic && { topic }),
-      dimensions: dimensions.map((d) =>
-        getFullFieldName ? getFullFieldName(d) : d,
-      ),
-      measures: measures.map((m) =>
-        getFullFieldName ? getFullFieldName(m) : m,
-      ),
+      dimensions: dimensions,
+      measures: measures,
       filters: processedFilters,
       orders: processedOrders,
       variables: processedVariables,

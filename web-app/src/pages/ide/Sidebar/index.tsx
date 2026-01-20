@@ -51,6 +51,7 @@ import { SIDEBAR_REVEAL_FILE } from "./events";
 import { detectFileType, FileType } from "@/utils/fileTypes";
 import { FileTreeModel } from "@/types/file";
 import ROUTES from "@/libs/utils/routes";
+import { FilesSubViewMode } from "..";
 
 // Reuse a single collator for faster, locale-aware, case-insensitive comparisons
 const NAME_COLLATOR = new Intl.Collator(undefined, {
@@ -61,12 +62,6 @@ const NAME_COLLATOR = new Intl.Collator(undefined, {
 enum SidebarViewMode {
   FILES = "files",
   OBSERVABILITY = "observability",
-}
-
-// Sub-view mode for Files section
-enum FilesSubViewMode {
-  OBJECTS = "objects",
-  FILES = "files",
 }
 
 const ignoreFilesRegex = [/^docker-entrypoints/, /^output/, /^\./];
@@ -449,9 +444,13 @@ const ObservabilitySection = ({ projectId }: { projectId: string }) => {
 const Sidebar = ({
   sidebarOpen,
   setSidebarOpen,
+  filesSubViewMode,
+  setFilesSubViewMode,
 }: {
   sidebarOpen: boolean;
   setSidebarOpen: (open: boolean) => void;
+  filesSubViewMode: FilesSubViewMode;
+  setFilesSubViewMode: (mode: FilesSubViewMode) => void;
 }) => {
   const { authConfig } = useAuth();
   const { isReadOnly, project } = useCurrentProjectBranch();
@@ -459,8 +458,6 @@ const Sidebar = ({
   const [viewMode, setViewMode] = React.useState<SidebarViewMode>(
     SidebarViewMode.FILES,
   );
-  const [filesSubViewMode, setFilesSubViewMode] =
-    React.useState<FilesSubViewMode>(FilesSubViewMode.OBJECTS);
 
   const { data, refetch, isPending } = useFileTree();
 

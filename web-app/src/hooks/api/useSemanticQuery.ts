@@ -22,30 +22,32 @@ export function useCompileSemanticQuery() {
   });
 }
 
-export function useTopicDetails(topicName: string | undefined) {
+export function useTopicDetails(filePathB64: string | undefined) {
   const { project } = useCurrentProjectBranch();
   const projectId = project.id;
 
   return useQuery({
-    queryKey: ["topicDetails", projectId, topicName],
+    queryKey: ["topicDetails", projectId, filePathB64],
     queryFn: () => {
-      if (!topicName) throw new Error("Topic name is required");
-      return SemanticService.getTopicDetails(projectId, topicName);
+      if (!filePathB64) throw new Error("Topic file path is required");
+      return SemanticService.getTopicDetails(projectId, filePathB64);
     },
-    enabled: !!topicName,
+    enabled: !!filePathB64,
+    retry: false,
   });
 }
 
-export function useViewDetails(viewName: string | undefined) {
+export function useViewDetails(filePathB64: string | undefined) {
   const { project } = useCurrentProjectBranch();
   const projectId = project.id;
 
   return useQuery({
-    queryKey: ["viewDetails", projectId, viewName],
+    queryKey: ["viewDetails", projectId, filePathB64],
     queryFn: () => {
-      if (!viewName) throw new Error("View name is required");
-      return SemanticService.getViewDetails(projectId, viewName);
+      if (!filePathB64) throw new Error("View file path is required");
+      return SemanticService.getViewDetails(projectId, filePathB64);
     },
-    enabled: !!viewName,
+    enabled: !!filePathB64,
+    retry: false,
   });
 }
