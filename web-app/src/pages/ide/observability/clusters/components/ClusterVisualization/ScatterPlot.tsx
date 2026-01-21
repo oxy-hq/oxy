@@ -275,3 +275,5 @@ function formatTooltip(
     </div>
   `;
 }
+
+export default ScatterPlot;

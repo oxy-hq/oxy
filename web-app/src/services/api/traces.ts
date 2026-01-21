@@ -149,8 +149,8 @@ export interface ClusterMapPoint {
   intentName: string;
   confidence: number;
   timestamp: string;
-  output?: string;
   durationMs?: number;
+  status?: "ok" | "error" | "unset";
 }
 
 export interface ClusterSummary {

@@ -2202,6 +2202,10 @@ pub struct Workflow {
     pub consistency_prompt: Option<String>,
 }
 
+fn default_is_verified() -> bool {
+    true
+}
+
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
 pub struct VisualizeTool {
     pub name: String,
@@ -2216,7 +2220,7 @@ pub struct WorkflowTool {
     pub workflow_ref: String,
     pub variables: Option<Variables>,
     pub output_task_ref: Option<String>,
-    #[serde(skip)]
+    #[serde(skip_serializing, default = "default_is_verified")]
     #[schemars(skip)]
     pub is_verified: bool,
 }

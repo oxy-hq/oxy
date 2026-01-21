@@ -54,6 +54,11 @@ const ROUTES = {
           TRACE: (traceId: string) =>
             `${base}/ide/observability/traces/${traceId}`,
           CLUSTERS: `${base}/ide/observability/clusters`,
+          CLUSTERS_V2: `${base}/ide/observability/clusters-v2`,
+          METRICS: `${base}/ide/observability/metrics`,
+          METRIC: (metricName: string) =>
+            `${base}/ide/observability/metrics/${encodeURIComponent(metricName)}`,
+          EXECUTION_ANALYTICS: `${base}/ide/observability/execution-analytics`,
         },
       },
 

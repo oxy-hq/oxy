@@ -1,8 +1,11 @@
 use std::{fs::File, io::Write};
 
-use crate::execute::{
-    Executable, ExecutionContext,
-    types::{Chunk, Output, Prompt},
+use crate::{
+    execute::{
+        Executable, ExecutionContext,
+        types::{Chunk, Output, Prompt},
+    },
+    observability::events,
 };
 use oxy_shared::errors::OxyError;
 
@@ -30,11 +33,16 @@ impl VisualizeExecutable {
 impl Executable<VisualizeParams> for VisualizeExecutable {
     type Response = Output;
 
+    #[tracing::instrument(skip_all, err, fields(
+        otel.name = events::tool::VISUALIZE_EXECUTE,
+        oxy.span_type = events::tool::TOOL_CALL_TYPE,
+    ))]
     async fn execute(
         &mut self,
         execution_context: &ExecutionContext,
         param: VisualizeParams,
     ) -> Result<Self::Response, OxyError> {
+        events::tool::tool_call_input(&param);
         execution_context
             .write_chunk(Chunk {
                 key: None,
@@ -63,9 +71,12 @@ impl Executable<VisualizeParams> for VisualizeExecutable {
         file.write_all(chart_config.to_string().as_bytes())
             .map_err(|e| OxyError::RuntimeError(e.to_string()))?;
 
-        Ok(Output::Text(format!(
+        let output = Output::Text(format!(
             "Use this markdown directive to render the chart \":chart{{chart_src={}}}\" directly in the final answer.",
             file_name
-        )))
+        ));
+
+        events::tool::tool_call_output(&output);
+        Ok(output)
     }
 }

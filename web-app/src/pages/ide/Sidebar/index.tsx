@@ -38,6 +38,8 @@ import {
   Activity,
   Zap,
   Server,
+  BarChart3,
+  LucideActivity,
 } from "lucide-react";
 import { Button } from "@/components/ui/shadcn/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/shadcn/tabs";
@@ -434,6 +436,38 @@ const ObservabilitySection = ({ projectId }: { projectId: string }) => {
           <Link to={ROUTES.PROJECT(projectId).IDE.OBSERVABILITY.CLUSTERS}>
             <Server />
             <span>Clusters</span>
+          </Link>
+        </SidebarMenuSubButton>
+      </SidebarMenuItem>
+      <SidebarMenuItem>
+        <SidebarMenuSubButton
+          asChild
+          isActive={
+            location.pathname ===
+            ROUTES.PROJECT(projectId).IDE.OBSERVABILITY.METRICS
+          }
+          className="text-muted-foreground hover:text-sidebar-foreground transition-colors duration-150 ease-in"
+        >
+          <Link to={ROUTES.PROJECT(projectId).IDE.OBSERVABILITY.METRICS}>
+            <BarChart3 />
+            <span>Metrics</span>
+          </Link>
+        </SidebarMenuSubButton>
+      </SidebarMenuItem>
+      <SidebarMenuItem>
+        <SidebarMenuSubButton
+          asChild
+          isActive={
+            location.pathname ===
+            ROUTES.PROJECT(projectId).IDE.OBSERVABILITY.EXECUTION_ANALYTICS
+          }
+          className="text-muted-foreground hover:text-sidebar-foreground transition-colors duration-150 ease-in"
+        >
+          <Link
+            to={ROUTES.PROJECT(projectId).IDE.OBSERVABILITY.EXECUTION_ANALYTICS}
+          >
+            <LucideActivity />
+            <span>Execution Analytics</span>
           </Link>
         </SidebarMenuSubButton>
       </SidebarMenuItem>

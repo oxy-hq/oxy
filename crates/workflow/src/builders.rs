@@ -21,6 +21,7 @@ use oxy::{
         types::{EventKind, OutputContainer, Source},
         writer::{BufWriter, EventHandler},
     },
+    metrics::{MetricContext, SourceType},
     observability::events::workflow as workflow_events,
     semantic::SemanticManager,
     theme::StyledText,
@@ -269,20 +270,42 @@ impl WorkflowLauncher {
             &format!("{:?}", workflow_input.retry),
         );
 
-        let mut execution_context = self.execution_context.ok_or(OxyError::RuntimeError(
-            "ExecutionContext is required".to_string(),
-        ))?;
+        // Create execution context with metric context for this workflow execution
+        // Note: We must not keep base_context alive after creating execution_context,
+        // because it holds a clone of the writer channel sender. If base_context stays
+        // alive, event_handle.await will hang forever waiting for all senders to drop.
+        let execution_context = {
+            let base_context = self.execution_context.ok_or(OxyError::RuntimeError(
+                "ExecutionContext is required".to_string(),
+            ))?;
 
-        // Update user_id if provided and create child source
-        execution_context = if let Some(uid) = user_id {
-            execution_context.with_user_id(Some(uid))
-        } else {
-            execution_context
+            // Update user_id if provided
+            let ctx = if let Some(uid) = user_id {
+                base_context.with_user_id(Some(uid))
+            } else {
+                base_context
+            };
+
+            // Create metric context for this workflow execution
+            // If parent has metric context, create child; otherwise create new root
+            if ctx.metric_context.is_some() {
+                ctx.with_child_source(
+                    workflow_input.workflow_ref.to_string(),
+                    WORKFLOW_SOURCE.to_string(),
+                )
+                .with_child_metric_context(SourceType::Workflow, &workflow_input.workflow_ref)
+            } else {
+                let metric_ctx =
+                    MetricContext::new(SourceType::Workflow, workflow_input.workflow_ref.clone())
+                        .shared();
+                ctx.with_child_source(
+                    workflow_input.workflow_ref.to_string(),
+                    WORKFLOW_SOURCE.to_string(),
+                )
+                .with_metric_context(metric_ctx)
+            }
+            // base_context and ctx are dropped here at end of block
         };
-        execution_context = execution_context.with_child_source(
-            workflow_input.workflow_ref.to_string(),
-            WORKFLOW_SOURCE.to_string(),
-        );
 
         let runs_manager =
             execution_context
@@ -343,6 +366,17 @@ impl WorkflowLauncher {
                     .execute(&execution_context, (workflow_ref, run_info))
                     .await
             };
+
+            // Record output/error via observability events (handles metrics finalization)
+            match &response {
+                Ok(output) => {
+                    workflow_events::launcher::launch::output(&execution_context, output);
+                }
+                Err(e) => {
+                    workflow_events::launcher::launch::error(&execution_context, &e.to_string());
+                }
+            }
+
             execution_context
                 .write_kind(EventKind::Finished {
                     attributes,
@@ -354,11 +388,6 @@ impl WorkflowLauncher {
             response
         };
         event_handle.await??;
-
-        match &response {
-            Ok(output) => workflow_events::launcher::launch::output(output),
-            Err(e) => workflow_events::launcher::launch::error(&e.to_string()),
-        }
 
         response
     }

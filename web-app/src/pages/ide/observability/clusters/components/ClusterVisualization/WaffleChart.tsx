@@ -12,22 +12,6 @@ interface WaffleChartProps {
 interface ClusterGroup {
   cluster: ClusterSummary;
   points: ClusterMapPoint[];
-  answeredCount: number;
-  failedCount: number;
-  noDataCount: number;
-}
-
-type PointStatus = "answered" | "failed" | "no-data";
-
-function getPointStatus(point: ClusterMapPoint): PointStatus {
-  // Determine status based on output and duration
-  if (point.output && point.output.trim().length > 0) {
-    return "answered";
-  }
-  if (point.durationMs && point.durationMs > 0 && !point.output) {
-    return "failed";
-  }
-  return "no-data";
 }
 
 export function WaffleChart({
@@ -63,23 +47,9 @@ export function WaffleChart({
       const cluster = clusters.find((c) => c.clusterId === clusterId);
       if (!cluster) return;
 
-      let answeredCount = 0;
-      let failedCount = 0;
-      let noDataCount = 0;
-
-      clusterPoints.forEach((point) => {
-        const status = getPointStatus(point);
-        if (status === "answered") answeredCount++;
-        else if (status === "failed") failedCount++;
-        else noDataCount++;
-      });
-
       groups.push({
         cluster,
         points: clusterPoints,
-        answeredCount,
-        failedCount,
-        noDataCount,
       });
     });
 
@@ -100,18 +70,6 @@ export function WaffleChart({
           ))}
         </div>
       </div>
-
-      {/* Legend */}
-      <div className="flex items-center justify-end gap-6 px-4 py-3 border-t border-border text-xs text-muted-foreground">
-        <div className="flex items-center gap-2">
-          <div className="w-3 h-3 rounded-sm bg-blue-500" />
-          <span>answered</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="w-3 h-3 rounded-sm bg-pink-400" />
-          <span>failed to answer</span>
-        </div>
-      </div>
     </div>
   );
 }
@@ -123,7 +81,7 @@ interface ClusterBoxProps {
 }
 
 function ClusterBox({ group, onPointClick, selectedPoint }: ClusterBoxProps) {
-  const { cluster, points, failedCount } = group;
+  const { cluster, points } = group;
 
   // Calculate grid dimensions - aim for roughly square grid
   const totalPoints = points.length;
@@ -140,10 +98,7 @@ function ClusterBox({ group, onPointClick, selectedPoint }: ClusterBoxProps) {
         >
           {cluster.intentName}
         </span>
-        <span className="text-blue-500">{points.length}</span>
-        {failedCount > 0 && (
-          <span className="text-pink-400">{failedCount}</span>
-        )}
+        <span className="text-muted-foreground">{points.length}</span>
       </div>
 
       {/* Waffle grid */}
@@ -181,19 +136,6 @@ function WaffleCell({
   isSelected,
   onClick,
 }: WaffleCellProps) {
-  const status = getPointStatus(point);
-
-  const getBackgroundColor = () => {
-    switch (status) {
-      case "answered":
-        return clusterColor;
-      case "failed":
-        return "#f472b6"; // pink-400
-      case "no-data":
-        return clusterColor; // default to cluster color when no data
-    }
-  };
-
   return (
     <button
       className={cn(
@@ -201,9 +143,11 @@ function WaffleCell({
         "hover:scale-125 hover:z-10 hover:ring-2 hover:ring-white hover:ring-offset-1",
         isSelected && "ring-2 ring-white ring-offset-1 scale-125 z-10",
       )}
-      style={{ backgroundColor: getBackgroundColor() }}
+      style={{ backgroundColor: clusterColor }}
       onClick={onClick}
       title={point.question}
     />
   );
 }
+
+export default WaffleChart;

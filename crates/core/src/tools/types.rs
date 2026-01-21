@@ -34,7 +34,7 @@ impl From<ChatCompletionMessageToolCall> for ToolRawInput {
 }
 
 /// Retrieval input for vector search
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct RetrievalInput {
     pub query: String,
     pub agent_name: String,
@@ -48,7 +48,7 @@ pub struct RetrievalParams {
 
 // OmniQueryParams and OrderType moved to crate::types::tool_params
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct SQLInput {
     pub name: Option<String>,
     pub database: String,

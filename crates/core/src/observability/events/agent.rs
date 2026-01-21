@@ -5,6 +5,7 @@ use opentelemetry::trace::TraceContextExt as _;
 use tracing::{Level, event, warn};
 use tracing_opentelemetry::OpenTelemetrySpanExt as _;
 
+/// Service-level events (no access to ExecutionContext - just tracing)
 pub mod run_agent {
     use crate::execute::types::OutputContainer;
 
@@ -15,6 +16,7 @@ pub mod run_agent {
     pub static INPUT: &str = "run_agent.input";
     pub static OUTPUT: &str = "run_agent.output";
 
+    /// Record agent input event (service layer - no metrics, just tracing and intent classification)
     pub fn input(
         project: &ProjectManager,
         agent_ref_str: &str,
@@ -24,7 +26,6 @@ pub mod run_agent {
         variables: &Option<std::collections::HashMap<String, serde_json::Value>>,
         source: &impl serde::Serialize,
     ) {
-        println!("Logging agent input event...");
         // Get trace_id from current OpenTelemetry span context
         let trace_id = tracing::Span::current()
             .context()
@@ -53,8 +54,54 @@ pub mod run_agent {
         event!(Level::INFO, is_visible = true, name = INPUT, agent_ref = %agent_ref_str, prompt = %prompt, memory = %serde_json::to_string(&memory).unwrap_or_default(), variables = %serde_json::to_string(&variables).unwrap_or_default(), project_path = %project_path, source = %serde_json::to_string(&source).unwrap_or_default());
     }
 
+    /// Record agent output event (service layer - no metrics, just tracing)
     pub fn output(output: &OutputContainer) {
         let output_json = serde_json::to_string(output).unwrap_or_default();
+
+        event!(
+            Level::INFO,
+            name = OUTPUT,
+            is_visible = true,
+            status = "success",
+            output = %output_json
+        );
+    }
+}
+
+/// Launcher-level events (has access to ExecutionContext for metrics)
+pub mod launcher {
+    use crate::execute::{ExecutionContext, types::OutputContainer};
+
+    use super::*;
+
+    pub static NAME: &str = "agent.launcher";
+    pub static TYPE: &str = "agent";
+    pub static INPUT: &str = "agent.launcher.input";
+    pub static OUTPUT: &str = "agent.launcher.output";
+
+    /// Record agent input event and track question in metrics
+    pub fn input(execution_context: &ExecutionContext, prompt: &str) {
+        // Record question in metric context
+        execution_context.record_question(prompt);
+
+        event!(
+            Level::INFO,
+            name = INPUT,
+            is_visible = true,
+            prompt = %prompt
+        );
+    }
+
+    /// Record agent output event, track response in metrics, and finalize
+    pub fn output(execution_context: &ExecutionContext, output: &OutputContainer) {
+        // Record response in metric context
+        execution_context.record_response(&output.to_string());
+
+        // Finalize metrics (triggers async storage)
+        execution_context.finalize_metrics();
+
+        let output_json = serde_json::to_string(output).unwrap_or_default();
+
         event!(
             Level::INFO,
             name = OUTPUT,

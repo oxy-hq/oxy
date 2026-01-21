@@ -18,7 +18,7 @@ use oxy::{
         renderer::Renderer,
         types::{Chunk, EventKind, Output, TableReference, utils::record_batches_to_2d_array},
     },
-    observability::events::workflow as workflow_events,
+    observability::events::{tool as tool_events, workflow as workflow_events},
     service::types::SemanticQueryParams,
     types::SemanticQuery,
     utils::truncate_datasets,
@@ -182,8 +182,8 @@ impl SemanticQueryExecutable {
     }
 
     #[tracing::instrument(skip_all, err, fields(
-        otel.name = workflow_events::task::semantic_query::NAME_COMPILE,
-        oxy.span_type = workflow_events::task::semantic_query::TYPE,
+        otel.name = tool_events::SEMANTIC_QUERY_COMPILE,
+        oxy.span_type = tool_events::SEMANTIC_QUERY_COMPILE_TYPE,
         oxy.semantic_query.topic = %input.topic.name,
     ))]
     pub async fn compile(
@@ -191,7 +191,8 @@ impl SemanticQueryExecutable {
         execution_context: &ExecutionContext,
         input: ValidatedSemanticQuery,
     ) -> Result<String, OxyError> {
-        workflow_events::task::semantic_query::compile_input(&input.topic.name, &input.task.query);
+        // Record explicit metrics and emit tracing event
+        tool_events::semantic_query_compile_input(&input.topic.name, &input.task.query);
 
         let requested_views = self.extract_views_from_query(&input.task, &input.topic.name);
 
@@ -209,7 +210,7 @@ impl SemanticQueryExecutable {
 
         sql_query = self.resolve_variables_in_sql(execution_context, sql_query, variables)?;
 
-        workflow_events::task::semantic_query::compile_output(&sql_query);
+        tool_events::semantic_query_compile_output(&sql_query);
 
         Ok(sql_query)
     }

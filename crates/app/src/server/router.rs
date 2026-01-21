@@ -5,9 +5,11 @@ use crate::api::auth;
 use crate::api::chart;
 use crate::api::data;
 use crate::api::database;
+use crate::api::execution_analytics;
 use crate::api::file;
 use crate::api::github;
 use crate::api::healthcheck;
+use crate::api::metrics;
 use crate::api::middlewares::project::project_middleware;
 use crate::api::middlewares::timeout::timeout_middleware;
 use crate::api::project;
@@ -140,6 +142,11 @@ fn build_project_routes() -> Router<AppState> {
         .nest("/secrets", build_secret_routes())
         .nest("/app", build_app_routes())
         .nest("/traces", traces::traces_routes())
+        .nest("/metrics", metrics::metrics_routes())
+        .nest(
+            "/execution-analytics",
+            execution_analytics::execution_analytics_routes(),
+        )
         .route("/artifacts/{id}", get(artifacts::get_artifact))
         .route("/charts/{file_path}", get(chart::get_chart))
         .route("/logs", get(thread::get_logs))

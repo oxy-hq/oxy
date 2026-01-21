@@ -16,7 +16,9 @@
       "Bash(pnpm --filter oxy-web test:e2e:*)",
       "Bash(find:*)",
       "Bash(grep:*)",
-      "Bash(xargs:*)"
+      "Bash(xargs:*)",
+      "Bash(cut:*)",
+      "Bash(npx tsc:*)"
     ],
     "deny": [],
     "ask": []

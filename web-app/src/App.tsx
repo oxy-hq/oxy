@@ -20,6 +20,8 @@ import WorkflowPage from "@/pages/workflow";
 import TracesPage from "@/pages/ide/observability/traces";
 import TraceDetailPage from "@/pages/ide/observability/trace";
 import ClusterMapPage from "@/pages/ide/observability/clusters";
+import MetricsPage from "@/pages/ide/observability/metrics/MetricsListPage";
+import MetricDetailPage from "@/pages/ide/observability/metrics/MetricsDetailPage";
 import "@xyflow/react/dist/style.css";
 import React from "react";
 import IdePage from "./pages/ide";
@@ -45,6 +47,7 @@ import useCurrentProject from "./stores/useCurrentProject";
 import { useProject } from "./hooks/api/projects/useProjects";
 import ProjectStatus from "./components/ProjectStatus";
 import { ErrorBoundary } from "@/sentry";
+import ExecutionAnalytics from "./pages/ide/observability/execution-analytics";
 
 const MainPageWrapper = ({ children }: { children: React.ReactNode }) => {
   return (
@@ -162,6 +165,15 @@ const MainLayout = React.memo(function MainLayout() {
               <Route
                 path="observability/traces/:traceId"
                 element={<TraceDetailPage />}
+              />
+              <Route path="observability/metrics" element={<MetricsPage />} />
+              <Route
+                path="observability/metrics/:metricName"
+                element={<MetricDetailPage />}
+              />
+              <Route
+                path="observability/execution-analytics"
+                element={<ExecutionAnalytics />}
               />
             </>
           )}

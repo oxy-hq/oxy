@@ -9,6 +9,7 @@ use std::sync::Arc;
 use oxy::{
     config::model::ToolType,
     execute::{Executable, ExecutionContext, types::OutputContainer},
+    observability::events,
     tools::{ToolExecutor, types::ToolRawInput},
 };
 use oxy_shared::errors::OxyError;
@@ -25,22 +26,45 @@ pub struct WorkflowToolExecutor;
 
 #[async_trait]
 impl ToolExecutor for WorkflowToolExecutor {
+    #[tracing::instrument(skip_all, err, fields(
+        otel.name = events::tool::WORKFLOW_EXECUTE,
+        oxy.span_type = events::tool::TOOL_CALL_TYPE,
+        oxy.execution_type = events::tool::EXECUTION_TYPE_WORKFLOW,
+        oxy.is_verified = tracing::field::Empty,
+        oxy.workflow_ref = tracing::field::Empty,
+        oxy.tool_input = tracing::field::Empty,
+    ))]
     async fn execute(
         &self,
         execution_context: &ExecutionContext,
         tool_type: &ToolType,
-        _input: &ToolRawInput,
+        input: &ToolRawInput,
     ) -> Result<OutputContainer, OxyError> {
+        events::tool::tool_call_input(input);
         match tool_type {
             ToolType::Workflow(workflow_config) => {
+                // Record execution analytics fields
+                let span = tracing::Span::current();
+                span.record("oxy.is_verified", workflow_config.is_verified);
+                span.record("oxy.workflow_ref", &workflow_config.workflow_ref);
+                span.record("oxy.tool_input", &input.param);
+
                 let workflow_input = WorkflowInput {
                     workflow_ref: workflow_config.name.clone(),
                     retry: oxy::checkpoint::types::RetryStrategy::NoRetry { variables: None },
                 };
 
-                WorkflowLauncherExecutable
+                let result = WorkflowLauncherExecutable
                     .execute(execution_context, workflow_input)
                     .await
+                    .map(|output| output.into());
+
+                match &result {
+                    Ok(output) => events::tool::tool_call_output(output),
+                    Err(e) => events::tool::tool_call_error(&e.to_string()),
+                }
+
+                result
             }
             _ => Err(OxyError::RuntimeError(
                 "WorkflowToolExecutor can only handle Workflow tools".to_string(),
@@ -64,12 +88,22 @@ pub struct SemanticQueryToolExecutor;
 
 #[async_trait]
 impl ToolExecutor for SemanticQueryToolExecutor {
+    #[tracing::instrument(skip_all, err, fields(
+        otel.name = events::tool::SEMANTIC_QUERY_EXECUTE,
+        oxy.span_type = events::tool::TOOL_CALL_TYPE,
+        oxy.execution_type = events::tool::EXECUTION_TYPE_SEMANTIC_QUERY,
+        oxy.is_verified = true,
+        oxy.topic = tracing::field::Empty,
+        oxy.semantic_query_params = tracing::field::Empty,
+        oxy.generated_sql = tracing::field::Empty,
+    ))]
     async fn execute(
         &self,
         execution_context: &ExecutionContext,
         tool_type: &ToolType,
         input: &ToolRawInput,
     ) -> Result<OutputContainer, OxyError> {
+        events::tool::tool_call_input(input);
         match tool_type {
             ToolType::SemanticQuery(semantic_config) => {
                 // Parse the params from the input as SemanticQueryParams
@@ -86,17 +120,45 @@ impl ToolExecutor for SemanticQueryToolExecutor {
                     query.variables = Some(vars.clone());
                 }
 
+                // Record execution analytics fields
+                let span = tracing::Span::current();
+                span.record("oxy.topic", query.topic.as_deref().unwrap_or("unknown"));
+                span.record(
+                    "oxy.semantic_query_params",
+                    &serde_json::to_string(&query).unwrap_or_default(),
+                );
+
+                events::tool::record_semantic_tool_call_metric(
+                    execution_context,
+                    query.topic.as_deref().unwrap_or("unknown"),
+                    &query,
+                );
+
                 let task = oxy::config::model::SemanticQueryTask {
                     query,
                     export: None,
                     variables: semantic_config.variables.clone(),
                 };
 
-                let output = build_semantic_query_executable()
+                let result = build_semantic_query_executable()
                     .execute(execution_context, task)
-                    .await?;
+                    .await;
 
-                Ok(OutputContainer::Single(output))
+                match &result {
+                    Ok(output) => {
+                        // Record generated SQL for tracing
+                        if let oxy::execute::types::Output::Table(table) = output {
+                            if let Some(ref reference) = table.reference {
+                                println!("generated sql: {}", reference.sql);
+                                span.record("oxy.generated_sql", &reference.sql);
+                            }
+                        }
+                        events::tool::tool_call_output(output);
+                    }
+                    Err(e) => events::tool::tool_call_error(&e.to_string()),
+                }
+
+                result.map(OutputContainer::Single)
             }
             _ => Err(OxyError::RuntimeError(
                 "SemanticQueryToolExecutor can only handle SemanticQuery tools".to_string(),

@@ -1,31 +1,3 @@
-import type { WaterfallSpan } from "@/services/api/traces";
-import {
-  Workflow,
-  Bot,
-  Folder,
-  Globe,
-  Rocket,
-  ClipboardList,
-  Play,
-  CheckCircle,
-  Target,
-  Search,
-  Database,
-  Plug,
-  RotateCw,
-  FileText,
-  BarChart3,
-  Zap,
-  GitBranch,
-  RefreshCw,
-  Settings,
-  Download,
-  Hash,
-  Activity,
-  Wrench,
-  type LucideIcon,
-} from "lucide-react";
-
 /**
  * Formats a span name into a user-friendly label
  */
@@ -80,6 +52,15 @@ export function formatSpanLabel(spanName: string): string {
 
     // Tool operations
     "tool_call.execute": "Execute Tool Call",
+    "sql.execute": "Execute SQL",
+    "validate_sql.execute": "Validate SQL",
+    "workflow.execute": "Execute Workflow",
+    "retrieval.execute": "Retrieve Data",
+    "omni_query.execute": "Execute Omni Query",
+    "visualize.execute": "Visualize Data",
+    "create_data_app.execute": "Create Data App",
+    "tool_launcher.execute": "Launch Tool",
+    "semantic_query.execute": "Execute Semantic Query",
 
     // Data operations
     load: "Load Data",
@@ -103,108 +84,4 @@ export function formatSpanLabel(spanName: string): string {
         .join(" ");
     })
     .join(" › ");
-}
-
-/**
- * Gets the Lucide icon component for a span
- */
-// eslint-disable-next-line sonarjs/cognitive-complexity
-export function getSpanIcon(spanName: string): LucideIcon {
-  // LLM calls
-  if (spanName.startsWith("llm.")) return Bot;
-
-  // Tool execution
-  if (spanName === "tool_call.execute") return Zap;
-  if (spanName.startsWith("tool.")) return Wrench;
-
-  // Workflow launcher operations
-  if (spanName === "workflow.launcher.with_project") return Folder;
-  if (spanName === "workflow.launcher.get_global_context") return Globe;
-  if (spanName === "workflow.launcher.launch") return Rocket;
-  if (spanName.startsWith("workflow.launcher.")) return ClipboardList;
-
-  // Workflow run
-  if (spanName === "workflow.run_workflow") return Play;
-
-  // Workflow task types
-  if (spanName === "workflow.task.execute") return CheckCircle;
-  if (spanName.startsWith("workflow.task.agent.")) return Target;
-  if (spanName.startsWith("workflow.task.semantic_query.")) return Search;
-  if (spanName.startsWith("workflow.task.execute_sql.")) return Database;
-  if (spanName.startsWith("workflow.task.omni_query.")) return Plug;
-  if (spanName.startsWith("workflow.task.loop.")) return RotateCw;
-  if (spanName.startsWith("workflow.task.formatter.")) return FileText;
-  if (spanName.startsWith("workflow.task.sub_workflow.")) return BarChart3;
-  if (spanName.startsWith("workflow.task.")) return ClipboardList;
-
-  // General workflow operations
-  if (spanName.startsWith("workflow.")) return Workflow;
-
-  // Agent operations - specific agents first
-  if (spanName.includes("routing_agent")) return GitBranch;
-  if (spanName.includes("fallback_agent")) return RefreshCw;
-  if (spanName.includes("default_agent")) return Target;
-  if (spanName === "agent.run_agent") return Rocket;
-  if (spanName === "agent.get_global_context") return Globe;
-  if (spanName === "agent.load_config") return Settings;
-  if (spanName === "agent.execute") return Play;
-  if (spanName.startsWith("agent.")) return Bot;
-
-  // Data operations
-  if (spanName === "load") return Download;
-  if (spanName === "count_rows") return Hash;
-
-  return Activity;
-}
-
-// eslint-disable-next-line sonarjs/cognitive-complexity
-export function getSpanColor(span: WaterfallSpan): string {
-  if (span.statusCode === "ERROR") return "bg-destructive";
-  const spanName = span.spanName;
-
-  // LLM calls - purple
-  if (spanName.startsWith("llm.")) return "bg-purple-500";
-
-  // Tool execution - amber/orange
-  if (spanName === "tool_call.execute") return "bg-orange-500";
-  if (spanName.startsWith("tool.")) return "bg-amber-500";
-
-  // Workflow launcher - emerald/green shades
-  if (spanName === "workflow.launcher.with_project") return "bg-emerald-600";
-  if (spanName === "workflow.launcher.get_global_context")
-    return "bg-emerald-500";
-  if (spanName === "workflow.launcher.launch") return "bg-emerald-700";
-  if (spanName.startsWith("workflow.launcher.")) return "bg-emerald-500";
-
-  // Workflow run - vibrant green
-  if (spanName === "workflow.run_workflow") return "bg-green-600";
-
-  // Workflow task types - various greens and teals
-  if (spanName === "workflow.task.execute") return "bg-green-500";
-  if (spanName.startsWith("workflow.task.agent.")) return "bg-teal-600";
-  if (spanName.startsWith("workflow.task.semantic_query."))
-    return "bg-cyan-600";
-  if (spanName.startsWith("workflow.task.execute_sql.")) return "bg-sky-600";
-  if (spanName.startsWith("workflow.task.omni_query.")) return "bg-blue-600";
-  if (spanName.startsWith("workflow.task.loop.")) return "bg-violet-600";
-  if (spanName.startsWith("workflow.task.formatter.")) return "bg-fuchsia-600";
-  if (spanName.startsWith("workflow.task.sub_workflow.")) return "bg-lime-600";
-  if (spanName.startsWith("workflow.task.")) return "bg-green-500";
-
-  // General workflow operations - default green
-  if (spanName.startsWith("workflow.")) return "bg-green-500";
-
-  // Agent operations - various blues
-  if (spanName.includes("routing_agent")) return "bg-cyan-500";
-  if (spanName.includes("fallback_agent")) return "bg-slate-500";
-  if (spanName.includes("default_agent")) return "bg-blue-500";
-  if (spanName === "agent.run_agent") return "bg-indigo-600";
-  if (spanName === "agent.get_global_context") return "bg-green-500";
-  if (spanName === "agent.load_config") return "bg-blue-400";
-  if (spanName.startsWith("agent.")) return "bg-blue-500";
-
-  // Data operations - teal
-  if (spanName === "load" || spanName === "count_rows") return "bg-teal-500";
-
-  return "bg-primary";
 }

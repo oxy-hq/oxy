@@ -54,12 +54,12 @@ impl IntentConfig {
     /// Create config from environment variables
     pub fn from_env() -> Self {
         Self {
-            clickhouse_url: std::env::var("CLICKHOUSE_URL")
+            clickhouse_url: std::env::var("OXY_CLICKHOUSE_URL")
                 .unwrap_or_else(|_| "http://localhost:8123".to_string()),
-            clickhouse_user: std::env::var("CLICKHOUSE_USER")
+            clickhouse_user: std::env::var("OXY_CLICKHOUSE_USER")
                 .unwrap_or_else(|_| "default".to_string()),
-            clickhouse_password: std::env::var("CLICKHOUSE_PASSWORD").unwrap_or_default(),
-            clickhouse_database: std::env::var("CLICKHOUSE_DATABASE")
+            clickhouse_password: std::env::var("OXY_CLICKHOUSE_PASSWORD").unwrap_or_default(),
+            clickhouse_database: std::env::var("OXY_CLICKHOUSE_DATABASE")
                 .unwrap_or_else(|_| "otel".to_string()),
             openai_api_key: std::env::var("OPENAI_API_KEY").unwrap_or_default(),
             embed_model: std::env::var("INTENT_EMBED_MODEL")

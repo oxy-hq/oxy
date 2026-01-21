@@ -4,7 +4,7 @@ use crate::{
         Executable, ExecutionContext,
         types::{Chunk, EventKind, Output},
     },
-    observability::events::workflow as workflow_events,
+    observability::events,
     tools::omni::types::OmniQueryInput,
     types::tool_params::OmniQueryParams,
 };
@@ -23,22 +23,29 @@ impl Executable<OmniQueryInput> for OmniQueryExecutable {
     type Response = Output;
 
     #[tracing::instrument(skip_all, err, fields(
-        otel.name = workflow_events::task::omni_query::NAME_EXECUTE,
-        oxy.span_type = workflow_events::task::omni_query::TYPE,
-        oxy.omni_query.integration = %input.integration,
-        oxy.omni_query.topic = %input.topic,
-        oxy.omni_query.fields_count = input.params.fields.len(),
+        otel.name = events::tool::OMNI_QUERY_EXECUTE,
+        oxy.span_type = events::tool::TOOL_CALL_TYPE,
+        oxy.execution_type = events::tool::EXECUTION_TYPE_OMNI_QUERY,
+        oxy.is_verified = true,
+        oxy.integration = tracing::field::Empty,
+        oxy.endpoint = tracing::field::Empty,
+        oxy.tool_input = tracing::field::Empty,
     ))]
     async fn execute(
         &mut self,
         execution_context: &ExecutionContext,
         input: OmniQueryInput,
     ) -> Result<Output, OxyError> {
-        workflow_events::task::omni_query::execute_input(
-            &input.integration,
-            &input.topic,
-            &input.params,
+        // Record execution analytics fields
+        let span = tracing::Span::current();
+        span.record("oxy.integration", &input.integration);
+        span.record("oxy.endpoint", &input.topic);
+        span.record(
+            "oxy.tool_input",
+            &serde_json::to_string(&input.params).unwrap_or_default(),
         );
+
+        events::tool::tool_call_input(&input);
 
         let result = self
             .execute_query(
@@ -49,8 +56,9 @@ impl Executable<OmniQueryInput> for OmniQueryExecutable {
             )
             .await;
 
-        if let Ok(ref output) = result {
-            workflow_events::task::omni_query::execute_output(output);
+        match &result {
+            Ok(output) => events::tool::tool_call_output(output),
+            Err(e) => events::tool::tool_call_error(&e.to_string()),
         }
 
         result
@@ -69,13 +77,6 @@ impl OmniQueryExecutable {
     }
 
     /// Core execution logic shared between tool and task implementations
-    #[tracing::instrument(skip_all, err, fields(
-        otel.name = workflow_events::task::omni_query::NAME_EXECUTE_QUERY,
-        oxy.span_type = workflow_events::task::omni_query::TYPE,
-        oxy.omni_query.integration = integration,
-        oxy.omni_query.topic = topic,
-        oxy.omni_query.fields_count = params.fields.len(),
-    ))]
     pub async fn execute_query(
         &self,
         execution_context: &ExecutionContext,

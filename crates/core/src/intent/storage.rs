@@ -136,7 +136,7 @@ impl IntentStorage {
                 SpanAttributes['agent.prompt'] as Question,
                 SpanAttributes['agent.ref'] as Source
             FROM otel_traces
-            WHERE SpanName = 'run_agent'
+            WHERE SpanName = 'agent.run_agent'
               AND SpanAttributes['agent.prompt'] != ''
               AND TraceId NOT IN (SELECT TraceId FROM intent_classifications)
             LIMIT {}

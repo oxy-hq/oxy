@@ -9,6 +9,7 @@ use crate::{
         types::{OutputContainer, Source},
         writer::{BufWriter, EventHandler},
     },
+    observability::events,
 };
 use oxy_shared::errors::OxyError;
 
@@ -131,15 +132,25 @@ pub struct ToolLauncherExecutable;
 impl Executable<ToolInput> for ToolLauncherExecutable {
     type Response = OutputContainer;
 
+    #[tracing::instrument(skip_all, err, fields(
+        otel.name = events::tool::TOOL_LAUNCHER_EXECUTE,
+        oxy.span_type = events::tool::TOOL_CALL_TYPE,
+    ))]
     async fn execute(
         &mut self,
         execution_context: &ExecutionContext,
         input: ToolInput,
     ) -> Result<Self::Response, OxyError> {
-        ToolLauncher::new()
+        let result = ToolLauncher::new()
             .with_external_context(execution_context)?
             .launch(input, execution_context.writer.clone())
-            .await
+            .await;
+
+        match &result {
+            Ok(output) => events::tool::tool_call_output(output),
+            Err(e) => events::tool::tool_call_error(&e.to_string()),
+        }
+        result
     }
 }
 

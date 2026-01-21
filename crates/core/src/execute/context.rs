@@ -16,6 +16,7 @@ use crate::{
             event::{SandboxAppKind, SandboxInfo, Step},
         },
     },
+    metrics::{MetricContext, SharedMetricCtx, SourceType},
 };
 use oxy_shared::errors::OxyError;
 
@@ -54,6 +55,9 @@ pub struct ExecutionContext {
     pub sandbox_info: Option<SandboxInfo>,
     /// User ID for the execution context (for run isolation)
     pub user_id: Option<uuid::Uuid>,
+    /// Metric collection context for tracking usage data
+    /// Flows through nested agent/workflow executions via tokio::spawn
+    pub metric_context: Option<SharedMetricCtx>,
 }
 
 impl ExecutionContext {
@@ -75,6 +79,7 @@ impl ExecutionContext {
             connections: None,
             sandbox_info: None,
             user_id,
+            metric_context: None,
         }
     }
 
@@ -93,6 +98,7 @@ impl ExecutionContext {
             connections: self.connections.clone(),
             sandbox_info: self.sandbox_info.clone(),
             user_id: self.user_id,
+            metric_context: self.metric_context.clone(),
         }
     }
 
@@ -107,6 +113,7 @@ impl ExecutionContext {
             connections: self.connections.clone(),
             sandbox_info: self.sandbox_info.clone(),
             user_id: self.user_id,
+            metric_context: self.metric_context.clone(),
         }
     }
 
@@ -122,6 +129,7 @@ impl ExecutionContext {
                 connections: self.connections.clone(),
                 sandbox_info: self.sandbox_info.clone(),
                 user_id: self.user_id,
+                metric_context: self.metric_context.clone(),
             }
         } else {
             ExecutionContext {
@@ -134,6 +142,7 @@ impl ExecutionContext {
                 connections: self.connections.clone(),
                 sandbox_info: self.sandbox_info.clone(),
                 user_id: self.user_id,
+                metric_context: self.metric_context.clone(),
             }
         }
     }
@@ -149,6 +158,7 @@ impl ExecutionContext {
             connections: self.connections.clone(),
             sandbox_info: self.sandbox_info.clone(),
             user_id: self.user_id,
+            metric_context: self.metric_context.clone(),
         }
     }
 
@@ -163,6 +173,7 @@ impl ExecutionContext {
             connections: self.connections.clone(),
             sandbox_info: self.sandbox_info.clone(),
             user_id: self.user_id,
+            metric_context: self.metric_context.clone(),
         }
     }
 
@@ -179,6 +190,7 @@ impl ExecutionContext {
             connections: self.connections.clone(),
             sandbox_info: self.sandbox_info.clone(),
             user_id: self.user_id,
+            metric_context: self.metric_context.clone(),
         }
     }
 
@@ -193,6 +205,7 @@ impl ExecutionContext {
             connections: self.connections.clone(),
             sandbox_info: self.sandbox_info.clone(),
             user_id: self.user_id,
+            metric_context: self.metric_context.clone(),
         }
     }
 
@@ -207,6 +220,111 @@ impl ExecutionContext {
             connections: self.connections.clone(),
             sandbox_info: self.sandbox_info.clone(),
             user_id,
+            metric_context: self.metric_context.clone(),
+        }
+    }
+
+    /// Set the metric context for this execution
+    pub fn with_metric_context(&self, metric_context: SharedMetricCtx) -> Self {
+        ExecutionContext {
+            source: self.source.clone(),
+            writer: self.writer.clone(),
+            renderer: self.renderer.clone(),
+            project: self.project.clone(),
+            checkpoint: self.checkpoint.clone(),
+            filters: self.filters.clone(),
+            connections: self.connections.clone(),
+            sandbox_info: self.sandbox_info.clone(),
+            user_id: self.user_id,
+            metric_context: Some(metric_context),
+        }
+    }
+
+    /// Create a child metric context for nested execution
+    ///
+    /// This creates a new MetricContext linked to the parent's trace_id.
+    /// Use this when spawning nested agents/workflows.
+    pub fn with_child_metric_context(&self, source_type: SourceType, source_ref: &str) -> Self {
+        let child_ctx = if let Some(parent_ctx) = &self.metric_context {
+            if let Ok(guard) = parent_ctx.read() {
+                Some(guard.child(source_type, source_ref).shared())
+            } else {
+                Some(MetricContext::new(source_type, source_ref).shared())
+            }
+        } else {
+            Some(MetricContext::new(source_type, source_ref).shared())
+        };
+
+        ExecutionContext {
+            source: self.source.clone(),
+            writer: self.writer.clone(),
+            renderer: self.renderer.clone(),
+            project: self.project.clone(),
+            checkpoint: self.checkpoint.clone(),
+            filters: self.filters.clone(),
+            connections: self.connections.clone(),
+            sandbox_info: self.sandbox_info.clone(),
+            user_id: self.user_id,
+            metric_context: child_ctx,
+        }
+    }
+
+    // =========================================================================
+    // Metric recording helpers
+    // =========================================================================
+
+    /// Record a SQL query in the metric context
+    pub fn record_sql(&self, sql: &str) {
+        if let Some(ctx) = &self.metric_context {
+            if let Ok(mut guard) = ctx.write() {
+                guard.add_sql(sql);
+            }
+        }
+    }
+
+    /// Record explicit metrics from semantic query parameters
+    pub fn record_explicit_metrics(
+        &self,
+        measures: &[String],
+        dimensions: &[String],
+        topic: Option<&str>,
+    ) {
+        if let Some(ctx) = &self.metric_context {
+            if let Ok(mut guard) = ctx.write() {
+                guard.add_explicit_metrics(measures, dimensions, topic);
+            }
+        }
+    }
+
+    /// Set the question/prompt in the metric context
+    pub fn record_question(&self, question: &str) {
+        if let Some(ctx) = &self.metric_context {
+            if let Ok(mut guard) = ctx.write() {
+                guard.set_question(question);
+            }
+        }
+    }
+
+    /// Set the response in the metric context
+    pub fn record_response(&self, response: &str) {
+        if let Some(ctx) = &self.metric_context {
+            if let Ok(mut guard) = ctx.write() {
+                guard.set_response(response);
+            }
+        }
+    }
+
+    /// Finalize and store the metric context
+    ///
+    /// This consumes the metric context from this execution context
+    /// and triggers async storage of collected metrics.
+    pub fn finalize_metrics(&self) {
+        if let Some(ctx) = &self.metric_context {
+            if let Ok(guard) = ctx.read() {
+                let context = guard.clone();
+                drop(guard);
+                context.finalize();
+            }
         }
     }
 
@@ -320,6 +438,7 @@ pub struct ExecutionContextBuilder {
     connections: Option<ConnectionOverrides>,
     sandbox_info: Option<SandboxInfo>,
     user_id: Option<uuid::Uuid>,
+    metric_context: Option<SharedMetricCtx>,
 }
 
 impl Default for ExecutionContextBuilder {
@@ -340,6 +459,7 @@ impl ExecutionContextBuilder {
             connections: None,
             sandbox_info: None,
             user_id: None,
+            metric_context: None,
         }
     }
 
@@ -397,6 +517,11 @@ impl ExecutionContextBuilder {
         self
     }
 
+    pub fn with_metric_context(mut self, metric_context: SharedMetricCtx) -> Self {
+        self.metric_context = Some(metric_context);
+        self
+    }
+
     pub fn build(self) -> Result<ExecutionContext, OxyError> {
         let source = self
             .source
@@ -421,6 +546,7 @@ impl ExecutionContextBuilder {
             connections: self.connections,
             sandbox_info: self.sandbox_info,
             user_id: self.user_id,
+            metric_context: self.metric_context,
         })
     }
 }

@@ -51,6 +51,7 @@ tools:
     workflow_ref: workflows/fruit_sales_report.workflow.yml
     description: This tool generates a fruit sales report. Fruits are apple, banana, cherry, orange, kiwi.
     output_task_ref: report
+    
 
   - name: execute_sql
     type: execute_sql

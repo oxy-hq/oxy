@@ -6,16 +6,17 @@ use crate::{
         Executable, ExecutionContext,
         types::{Output, event::DataApp},
     },
+    observability::events,
 };
 use oxy_shared::errors::OxyError;
 use short_uuid::ShortUuid;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct CreateDataAppInput {
     pub param: CreateDataAppParams,
 }
 
-#[derive(Debug, Clone, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct CreateDataAppParams {
     pub file_name: String,
     pub app_config: AppConfig,
@@ -28,11 +29,16 @@ pub struct CreateDataAppExecutable;
 impl Executable<CreateDataAppInput> for CreateDataAppExecutable {
     type Response = Output;
 
+    #[tracing::instrument(skip_all, err, fields(
+        otel.name = events::tool::CREATE_DATA_APP_EXECUTE,
+        oxy.span_type = events::tool::TOOL_CALL_TYPE,
+    ))]
     async fn execute(
         &mut self,
         execution_context: &ExecutionContext,
         input: CreateDataAppInput,
     ) -> Result<Self::Response, OxyError> {
+        events::tool::tool_call_input(&input);
         log::debug!("Creating data app with input: {:?}", &input);
         let CreateDataAppInput { param } = input;
         let project_path = execution_context.project.config_manager.project_path();
@@ -62,9 +68,9 @@ impl Executable<CreateDataAppInput> for CreateDataAppExecutable {
             })
             .await?;
 
-        Ok(Output::Text(format!(
-            "Data app created at: {}",
-            full_file_name
-        )))
+        let output = Output::Text(format!("Data app created at: {}", full_file_name));
+
+        events::tool::tool_call_output(&output);
+        Ok(output)
     }
 }

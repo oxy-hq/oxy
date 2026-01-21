@@ -5,7 +5,8 @@
 
 use tracing::{Level, Span, event};
 
-/// Constants and logging functions for workflow service entry points (run_workflow, run_workflow_v2)
+/// Service-level events for workflow entry points (run_workflow, run_workflow_v2)
+/// Note: No metrics recording here - that happens in launcher::launch
 pub mod run_workflow {
     use super::*;
 
@@ -24,6 +25,7 @@ pub mod run_workflow {
         );
     }
 
+    /// Record workflow output event (service layer - no metrics, just tracing)
     pub fn output(output: &crate::execute::types::OutputContainer) {
         event!(
             Level::INFO,
@@ -34,6 +36,7 @@ pub mod run_workflow {
         );
     }
 
+    /// Record workflow error event (service layer - no metrics, just tracing)
     pub fn error(error: &str) {
         event!(
             Level::ERROR,
@@ -102,6 +105,8 @@ pub mod launcher {
     }
 
     pub mod launch {
+        use crate::execute::ExecutionContext;
+
         use super::*;
 
         pub static NAME: &str = "workflow.launcher.launch";
@@ -119,7 +124,17 @@ pub mod launcher {
             );
         }
 
-        pub fn output(output: &crate::execute::types::OutputContainer) {
+        /// Record workflow output event, track response in metrics, and finalize
+        pub fn output(
+            execution_context: &ExecutionContext,
+            output: &crate::execute::types::OutputContainer,
+        ) {
+            // Record response in metric context
+            execution_context.record_response(&output.to_string());
+
+            // Finalize metrics (triggers async storage)
+            execution_context.finalize_metrics();
+
             event!(
                 Level::INFO,
                 name = OUTPUT,
@@ -129,7 +144,8 @@ pub mod launcher {
             );
         }
 
-        pub fn error(error: &str) {
+        /// Record workflow error event and finalize metrics
+        pub fn error(_execution_context: &ExecutionContext, error: &str) {
             event!(
                 Level::ERROR,
                 name = OUTPUT,
@@ -372,8 +388,6 @@ pub mod task {
 
         pub static INPUT_MAP: &str = "workflow.task.execute_sql.map.input";
         pub static OUTPUT_MAP: &str = "workflow.task.execute_sql.map.output";
-        pub static INPUT_EXECUTE: &str = "workflow.task.execute_sql.execute.input";
-        pub static OUTPUT_EXECUTE: &str = "workflow.task.execute_sql.execute.output";
 
         pub fn map_input(task: &crate::config::model::ExecuteSQLTask) {
             event!(
@@ -395,28 +409,6 @@ pub mod task {
                 database = %database
             );
         }
-
-        pub fn execute_input(database: &str, sql: &str, dry_run_limit: Option<usize>) {
-            event!(
-                Level::INFO,
-                name = INPUT_EXECUTE,
-                is_visible = true,
-                database = %database,
-                sql = %sql,
-                dry_run_limit = ?dry_run_limit
-            );
-        }
-
-        pub fn execute_output(file_path: &str, row_count: Option<usize>) {
-            event!(
-                Level::INFO,
-                name = OUTPUT_EXECUTE,
-                is_visible = true,
-                status = "success",
-                file_path = %file_path,
-                row_count = ?row_count
-            );
-        }
     }
 
     pub mod omni_query {
@@ -429,8 +421,6 @@ pub mod task {
 
         pub static INPUT_MAP: &str = "workflow.task.omni_query.map.input";
         pub static OUTPUT_MAP: &str = "workflow.task.omni_query.map.output";
-        pub static INPUT_EXECUTE: &str = "workflow.task.omni_query.execute.input";
-        pub static OUTPUT_EXECUTE: &str = "workflow.task.omni_query.execute.output";
 
         pub fn map_input(task: &crate::config::model::OmniQueryTask) {
             event!(
@@ -452,31 +442,6 @@ pub mod task {
                 integration = %integration,
                 topic = %topic,
                 fields_count = fields_count
-            );
-        }
-
-        pub fn execute_input(
-            integration: &str,
-            topic: &str,
-            params: &crate::types::tool_params::OmniQueryParams,
-        ) {
-            event!(
-                Level::INFO,
-                name = INPUT_EXECUTE,
-                is_visible = true,
-                integration = %integration,
-                topic = %topic,
-                params = %serde_json::to_string(params).unwrap_or_default()
-            );
-        }
-
-        pub fn execute_output(output: &crate::execute::types::Output) {
-            event!(
-                Level::INFO,
-                name = OUTPUT_EXECUTE,
-                is_visible = true,
-                status = "success",
-                output = %serde_json::to_string(output).unwrap_or_default()
             );
         }
     }
@@ -593,44 +558,6 @@ pub mod task {
     }
 }
 
-/// Creates a span for workflow launcher initialization
-pub fn workflow_launcher_with_project_span() -> Span {
-    tracing::info_span!(
-        "workflow.launcher.with_project",
-        otel.name = launcher::with_project::NAME,
-        oxy.span_type = launcher::with_project::TYPE,
-    )
-}
-
-/// Creates a span for workflow global context retrieval
-pub fn workflow_launcher_get_global_context_span() -> Span {
-    tracing::info_span!(
-        "workflow.launcher.get_global_context",
-        otel.name = launcher::get_global_context::NAME,
-        oxy.span_type = launcher::get_global_context::TYPE,
-    )
-}
-
-/// Creates a span for workflow launch
-pub fn workflow_launcher_launch_span(workflow_ref: &str) -> Span {
-    tracing::info_span!(
-        "workflow.launcher.launch",
-        otel.name = launcher::launch::NAME,
-        oxy.span_type = launcher::launch::TYPE,
-        oxy.workflow.ref = %workflow_ref,
-    )
-}
-
-/// Creates a span for task execution
-pub fn task_execute_span(task_name: &str) -> Span {
-    tracing::info_span!(
-        "workflow.task.execute",
-        otel.name = task::execute::NAME,
-        oxy.span_type = task::execute::TYPE,
-        oxy.task.name = %task_name,
-    )
-}
-
 /// Creates a span for agent task execution within a workflow
 pub fn task_agent_execute_span(agent_ref: &str, consistency_run: usize) -> Span {
     tracing::info_span!(
@@ -639,169 +566,6 @@ pub fn task_agent_execute_span(agent_ref: &str, consistency_run: usize) -> Span 
         oxy.span_type = task::agent::TYPE,
         oxy.agent.ref = %agent_ref,
         oxy.agent.consistency_run = consistency_run,
-    )
-}
-
-/// Creates a span for semantic query task rendering
-pub fn task_semantic_query_render_span(
-    topic: Option<&str>,
-    dimensions_count: usize,
-    measures_count: usize,
-    filters_count: usize,
-) -> Span {
-    let span = tracing::info_span!(
-        "workflow.task.semantic_query.render",
-        otel.name = task::semantic_query::NAME_RENDER,
-        oxy.span_type = task::semantic_query::TYPE,
-        oxy.semantic_query.topic = tracing::field::Empty,
-        oxy.semantic_query.dimensions_count = dimensions_count,
-        oxy.semantic_query.measures_count = measures_count,
-        oxy.semantic_query.filters_count = filters_count,
-    );
-    if let Some(topic) = topic {
-        span.record("oxy.semantic_query.topic", topic);
-    }
-    span
-}
-
-/// Creates a span for semantic query task mapping
-pub fn task_semantic_query_map_span() -> Span {
-    tracing::info_span!(
-        "workflow.task.semantic_query.map",
-        otel.name = task::semantic_query::NAME_MAP,
-        oxy.span_type = task::semantic_query::TYPE,
-    )
-}
-
-/// Creates a span for semantic query compilation
-pub fn task_semantic_query_compile_span(topic: &str) -> Span {
-    tracing::info_span!(
-        "workflow.task.semantic_query.compile",
-        otel.name = task::semantic_query::NAME_COMPILE,
-        oxy.span_type = task::semantic_query::TYPE,
-        oxy.semantic_query.topic = %topic,
-    )
-}
-
-/// Creates a span for semantic query execution
-pub fn task_semantic_query_execute_span(
-    topic: &str,
-    dimensions_count: usize,
-    measures_count: usize,
-    filters_count: usize,
-) -> Span {
-    tracing::info_span!(
-        "workflow.task.semantic_query.execute",
-        otel.name = task::semantic_query::NAME_EXECUTE,
-        oxy.span_type = task::semantic_query::TYPE,
-        oxy.semantic_query.topic = %topic,
-        oxy.semantic_query.dimensions_count = dimensions_count,
-        oxy.semantic_query.measures_count = measures_count,
-        oxy.semantic_query.filters_count = filters_count,
-    )
-}
-
-/// Creates a span for CubeJS SQL generation
-pub fn task_semantic_query_get_sql_from_cubejs_span() -> Span {
-    tracing::info_span!(
-        "workflow.task.semantic_query.get_sql_from_cubejs",
-        otel.name = task::semantic_query::NAME_GET_SQL_FROM_CUBEJS,
-        oxy.span_type = task::semantic_query::TYPE,
-    )
-}
-
-/// Creates a span for semantic query SQL execution
-pub fn task_semantic_query_execute_sql_span(database_ref: &str) -> Span {
-    tracing::info_span!(
-        "workflow.task.semantic_query.execute_sql",
-        otel.name = task::semantic_query::NAME_EXECUTE_SQL,
-        oxy.span_type = task::semantic_query::TYPE,
-        oxy.database.ref = database_ref,
-    )
-}
-
-/// Creates a span for SQL task mapping
-pub fn task_execute_sql_map_span(database_ref: &str) -> Span {
-    tracing::info_span!(
-        "workflow.task.execute_sql.map",
-        otel.name = task::execute_sql::NAME_MAP,
-        oxy.span_type = task::execute_sql::TYPE,
-        oxy.database.ref = %database_ref,
-    )
-}
-
-/// Creates a span for SQL task execution
-pub fn task_execute_sql_execute_span(database_ref: &str, dry_run_limit: Option<usize>) -> Span {
-    let span = tracing::info_span!(
-        "workflow.task.execute_sql.execute",
-        otel.name = task::execute_sql::NAME_EXECUTE,
-        oxy.span_type = task::execute_sql::TYPE,
-        oxy.database.ref = %database_ref,
-        oxy.sql.dry_run_limit = tracing::field::Empty,
-    );
-    if let Some(limit) = dry_run_limit {
-        span.record("oxy.sql.dry_run_limit", limit);
-    }
-    span
-}
-
-/// Creates a span for OmniQuery task mapping
-pub fn task_omni_query_map_span(integration: &str, topic: &str) -> Span {
-    tracing::info_span!(
-        "workflow.task.omni_query.map",
-        otel.name = task::omni_query::NAME_MAP,
-        oxy.span_type = task::omni_query::TYPE,
-        oxy.omni_query.integration = %integration,
-        oxy.omni_query.topic = %topic,
-    )
-}
-
-/// Creates a span for OmniQuery task execution
-pub fn task_omni_query_execute_span(integration: &str, topic: &str, fields_count: usize) -> Span {
-    tracing::info_span!(
-        "workflow.task.omni_query.execute",
-        otel.name = task::omni_query::NAME_EXECUTE,
-        oxy.span_type = task::omni_query::TYPE,
-        oxy.omni_query.integration = %integration,
-        oxy.omni_query.topic = %topic,
-        oxy.omni_query.fields_count = fields_count,
-    )
-}
-
-/// Creates a span for OmniQuery execution logic
-pub fn task_omni_query_execute_query_span(
-    integration: &str,
-    topic: &str,
-    fields_count: usize,
-) -> Span {
-    tracing::info_span!(
-        "workflow.task.omni_query.execute_query",
-        otel.name = task::omni_query::NAME_EXECUTE_QUERY,
-        oxy.span_type = task::omni_query::TYPE,
-        oxy.omni_query.integration = integration,
-        oxy.omni_query.topic = topic,
-        oxy.omni_query.fields_count = fields_count,
-    )
-}
-
-/// Creates a span for loop task mapping
-pub fn task_loop_map_span(iterations_count: usize) -> Span {
-    tracing::info_span!(
-        "workflow.task.loop.map",
-        otel.name = task::loop_task::NAME_MAP,
-        oxy.span_type = task::loop_task::TYPE,
-        oxy.loop.iterations_count = iterations_count,
-    )
-}
-
-/// Creates a span for loop item mapping
-pub fn task_loop_item_map_span(iteration_index: usize, task_name: &str) -> Span {
-    tracing::info_span!(
-        "workflow.task.loop.item_map",
-        otel.name = task::loop_task::NAME_ITEM_MAP,
-        oxy.span_type = task::loop_task::TYPE,
-        oxy.loop.iteration_index = iteration_index,
-        oxy.loop.task_name = task_name,
     )
 }
 
@@ -822,33 +586,4 @@ pub fn task_sub_workflow_execute_span(workflow_ref: &str) -> Span {
         oxy.span_type = task::sub_workflow::TYPE,
         oxy.workflow.ref = %workflow_ref,
     )
-}
-
-/// Helper to record execution source in the current span
-/// Generic version to avoid circular dependencies
-pub fn record_execution_source(span: &Span, source: &impl serde::Serialize) {
-    // Record as JSON string since we can't import the ExecutionSource type
-    span.record(
-        "oxy.execution.source",
-        serde_json::to_string(source).unwrap_or_default().as_str(),
-    );
-}
-
-/// Logs a workflow event at info level
-pub fn log_workflow_event(event_name: &str, message: &str) {
-    tracing::event!(
-        Level::INFO,
-        name = event_name,
-        message = %message,
-    );
-}
-
-/// Logs a task event at info level
-pub fn log_task_event(task_name: &str, event_name: &str, message: &str) {
-    tracing::event!(
-        Level::INFO,
-        name = event_name,
-        task_name = %task_name,
-        message = %message,
-    );
 }

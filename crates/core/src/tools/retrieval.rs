@@ -4,6 +4,7 @@ use crate::{
         Executable, ExecutionContext,
         types::{Chunk, Document, Output, Prompt},
     },
+    observability::events,
 };
 use oxy_shared::errors::OxyError;
 
@@ -28,11 +29,16 @@ impl RetrievalExecutable {
 impl Executable<RetrievalInput> for RetrievalExecutable {
     type Response = Output;
 
+    #[tracing::instrument(skip_all, err, fields(
+        otel.name = events::tool::RETRIEVAL_EXECUTE,
+        oxy.span_type = events::tool::TOOL_CALL_TYPE,
+    ))]
     async fn execute(
         &mut self,
         execution_context: &ExecutionContext,
         input: RetrievalInput,
     ) -> Result<Self::Response, OxyError> {
+        events::tool::tool_call_input(&input);
         execution_context
             .write_chunk(Chunk {
                 key: None,
@@ -69,6 +75,8 @@ impl Executable<RetrievalInput> for RetrievalExecutable {
                 })
                 .await?;
         }
+
+        events::tool::tool_call_output(&output);
         Ok(output)
     }
 }

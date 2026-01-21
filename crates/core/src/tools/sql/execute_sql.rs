@@ -6,7 +6,7 @@ use crate::{
         Executable, ExecutionContext,
         types::{Chunk, EventKind, SQL, Table, TableReference},
     },
-    observability::events::workflow as workflow_events,
+    observability::events,
     tools::types::SQLInput,
 };
 use oxy_shared::errors::OxyError;
@@ -31,26 +31,28 @@ impl Executable<SQLInput> for SQLExecutable {
     type Response = Table;
 
     #[tracing::instrument(skip_all, err, fields(
-        otel.name = workflow_events::task::execute_sql::NAME_EXECUTE,
-        oxy.span_type = workflow_events::task::execute_sql::TYPE,
-        oxy.database.ref = %input.database,
-        oxy.sql.dry_run_limit = tracing::field::Empty,
+        otel.name = events::tool::SQL_EXECUTE,
+        oxy.span_type = events::tool::TOOL_CALL_TYPE,
+        oxy.execution_type = tracing::field::Empty,
+        oxy.is_verified = tracing::field::Empty,
+        oxy.database = tracing::field::Empty,
+        oxy.sql = tracing::field::Empty,
+        oxy.sql_ref = tracing::field::Empty,
     ))]
     async fn execute(
         &mut self,
         execution_context: &ExecutionContext,
         input: SQLInput,
     ) -> Result<Self::Response, OxyError> {
-        workflow_events::task::execute_sql::execute_input(
-            &input.database,
-            &input.sql,
-            input.dry_run_limit.map(|l| l as usize),
-        );
-
+        // Record execution analytics fields
         let span = tracing::Span::current();
-        if let Some(limit) = input.dry_run_limit {
-            span.record("oxy.sql.dry_run_limit", limit);
-        }
+        let execution_type = events::tool::EXECUTION_TYPE_SQL_GENERATED;
+        span.record("oxy.execution_type", execution_type);
+        span.record("oxy.is_verified", &false);
+        span.record("oxy.database", &input.database);
+        span.record("oxy.sql", &input.sql);
+
+        events::tool::tool_call_input(&input);
         execution_context
             .write_kind(EventKind::Started {
                 name: input.sql.to_string(),
@@ -69,7 +71,7 @@ impl Executable<SQLInput> for SQLExecutable {
             .await?;
         let config_manager = &execution_context.project.config_manager;
         let secrets_manager = &execution_context.project.secrets_manager;
-        let mut result: Result<Table, OxyError> = {
+        let mut result: Result<Table, OxyError> = async {
             let connector = Connector::from_database(
                 &input.database,
                 config_manager,
@@ -90,7 +92,11 @@ impl Executable<SQLInput> for SQLExecutable {
                 None,
             );
             Ok(table)
-        };
+        }
+        .await;
+        // Record SQL for metrics and emit tracing event
+        events::tool::add_sql(execution_context, &input.sql);
+
         match result.as_mut() {
             Ok(table) => {
                 if input.persist {
@@ -123,9 +129,10 @@ impl Executable<SQLInput> for SQLExecutable {
                         error: None,
                     })
                     .await?;
-                workflow_events::task::execute_sql::execute_output(&table.file_path, None);
+                events::tool::tool_call_output(table);
             }
             Err(e) => {
+                events::tool::tool_call_error(&e.to_string());
                 execution_context
                     .write_kind(EventKind::Finished {
                         message: "".to_string(),

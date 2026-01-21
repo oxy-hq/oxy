@@ -16,6 +16,7 @@ use oxy::{
         types::{EventKind, OutputContainer, Source, event::SandboxInfo},
         writer::{BufWriter, EventHandler},
     },
+    metrics::{MetricContext, SourceType},
     observability::events,
     semantic::SemanticManager,
 };
@@ -215,12 +216,30 @@ impl AgentLauncher {
             agent_input.a2a_context_id = self.a2a_context_id.clone();
         }
 
-        let execution_context = self
-            .execution_context
-            .ok_or(OxyError::RuntimeError(
+        // Create execution context with metric context for this agent execution
+        // Note: We must not keep base_context alive after creating execution_context,
+        // because it holds a clone of the writer channel sender. If base_context stays
+        // alive, event_handle.await will hang forever waiting for all senders to drop.
+        let execution_context = {
+            let base_context = self.execution_context.ok_or(OxyError::RuntimeError(
                 "ExecutionContext is required".to_string(),
-            ))?
-            .with_child_source(agent_input.agent_ref.to_string(), AGENT_SOURCE.to_string());
+            ))?;
+
+            // Create metric context for this agent execution
+            // If parent has metric context, create child; otherwise create new root
+            if base_context.metric_context.is_some() {
+                base_context
+                    .with_child_source(agent_input.agent_ref.to_string(), AGENT_SOURCE.to_string())
+                    .with_child_metric_context(SourceType::Agent, &agent_input.agent_ref)
+            } else {
+                let metric_ctx =
+                    MetricContext::new(SourceType::Agent, agent_input.agent_ref.clone()).shared();
+                base_context
+                    .with_child_source(agent_input.agent_ref.to_string(), AGENT_SOURCE.to_string())
+                    .with_metric_context(metric_ctx)
+            }
+            // base_context is dropped here at end of block
+        };
 
         // Capture the current span to propagate trace context to the spawned task
         let current_span = tracing::Span::current();
@@ -234,9 +253,23 @@ impl AgentLauncher {
                     })
                     .await?;
 
+                // Record input event with question (triggers metric recording)
+                events::agent::launcher::input(&execution_context, &agent_input.prompt);
+
                 let response = AgentExecutable
                     .execute(&execution_context, agent_input)
                     .await;
+
+                // Record output event with response (triggers metric recording and finalization)
+                match &response {
+                    Ok(output) => {
+                        events::agent::launcher::output(&execution_context, output);
+                    }
+                    Err(_) => {
+                        // Still finalize metrics on error
+                        execution_context.finalize_metrics();
+                    }
+                }
 
                 execution_context
                     .write_kind(EventKind::Finished {
@@ -270,12 +303,30 @@ impl AgentLauncher {
         event_handler: H,
         run_id: Option<String>,
     ) -> Result<OutputContainer, OxyError> {
-        let execution_context = self
-            .execution_context
-            .ok_or(OxyError::RuntimeError(
+        // Create execution context with metric context for this workflow execution
+        // Note: We must not keep base_context alive after creating execution_context,
+        // because it holds a clone of the writer channel sender. If base_context stays
+        // alive, event_handle.await will hang forever waiting for all senders to drop.
+        let execution_context = {
+            let base_context = self.execution_context.ok_or(OxyError::RuntimeError(
                 "ExecutionContext is required".to_string(),
-            ))?
-            .with_child_source(agent_ref.to_string(), AGENT_SOURCE.to_string());
+            ))?;
+
+            // Create metric context for this workflow execution
+            // If parent has metric context, create child; otherwise create new root
+            if base_context.metric_context.is_some() {
+                base_context
+                    .with_child_source(agent_ref.to_string(), AGENT_SOURCE.to_string())
+                    .with_child_metric_context(SourceType::Agent, agent_ref)
+            } else {
+                let metric_ctx =
+                    MetricContext::new(SourceType::Agent, agent_ref.to_string()).shared();
+                base_context
+                    .with_child_source(agent_ref.to_string(), AGENT_SOURCE.to_string())
+                    .with_metric_context(metric_ctx)
+            }
+            // base_context is dropped here at end of block
+        };
         let agent_ref = agent_ref.to_string();
         let agent_config = execution_context
             .project

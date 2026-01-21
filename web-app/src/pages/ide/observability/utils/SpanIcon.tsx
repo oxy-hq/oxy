@@ -40,6 +40,33 @@ export function SpanIcon({ spanName, className = "h-4 w-4" }: SpanIconProps) {
   }
 
   // Tool execution
+  if (spanName === "sql.execute") {
+    return <Database className={className} />;
+  }
+  if (spanName === "validate_sql.execute") {
+    return <CheckCircle className={className} />;
+  }
+  if (spanName === "workflow.execute") {
+    return <Workflow className={className} />;
+  }
+  if (spanName === "retrieval.execute") {
+    return <Search className={className} />;
+  }
+  if (spanName === "omni_query.execute") {
+    return <Plug className={className} />;
+  }
+  if (spanName === "visualize.execute") {
+    return <BarChart3 className={className} />;
+  }
+  if (spanName === "create_data_app.execute") {
+    return <FileText className={className} />;
+  }
+  if (spanName === "tool_launcher.execute") {
+    return <Rocket className={className} />;
+  }
+  if (spanName === "semantic_query.execute") {
+    return <Search className={className} />;
+  }
   if (spanName === "tool_call.execute") {
     return <Zap className={className} />;
   }

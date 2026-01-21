@@ -90,6 +90,17 @@ impl std::fmt::Debug for ClickHouseStorage {
 impl ClickHouseStorage {
     /// Create a new ClickHouse storage client
     pub fn new(config: ClickHouseConfig) -> Self {
+        tracing::debug!(
+            "➡️  Initializing ClickHouse client for database '{}' at {}, user '{}', password '{}'",
+            config.database,
+            config.url,
+            config.user,
+            if config.password.is_empty() {
+                "<empty>"
+            } else {
+                "<redacted>"
+            }
+        );
         let client = Client::default()
             .with_url(&config.url)
             .with_user(&config.user)

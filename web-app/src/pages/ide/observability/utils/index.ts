@@ -1,3 +1,3 @@
-export { formatDuration, formatTimeAgo, formatAttributeKey } from "./format";
-export { getSpanIcon, getSpanColor, formatSpanLabel } from "./spans";
+export { formatDuration, formatTimeAgo } from "./format";
+export { formatSpanLabel } from "./spans";
 export { SpanIcon } from "./SpanIcon";

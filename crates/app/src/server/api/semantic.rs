@@ -85,6 +85,7 @@ pub async fn execute_semantic_query(
         connections: payload.connections,
         sandbox_info: None,
         user_id: None,
+        metric_context: None,
     };
 
     // Construct SemanticQueryTask
@@ -221,6 +222,7 @@ pub async fn compile_semantic_query(
         connections: payload.connections,
         sandbox_info: None,
         user_id: None,
+        metric_context: None,
     };
 
     // Construct SemanticQueryTask
