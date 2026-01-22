@@ -397,7 +397,7 @@ impl IntentStorage {
             .storage
             .client()
             .query(
-                "SELECT TraceId, Question, ClusterId, IntentName, Confidence, Embedding, Source FROM intent_classifications WHERE IntentName = 'unknown'",
+                "SELECT TraceId, Question, ClusterId, IntentName, Confidence, Embedding, SourceType, Source FROM intent_classifications WHERE IntentName = 'unknown'",
             )
             .fetch_all()
             .await

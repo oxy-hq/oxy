@@ -1,6 +1,7 @@
 mod a2a;
 pub mod clean;
 mod init;
+mod intent;
 mod make;
 mod mcp;
 mod migrate;
@@ -335,6 +336,11 @@ enum SubCommand {
     /// Launch an A2A server that exposes configured Oxy agents for
     /// external agent communication using JSON-RPC or HTTP+JSON protocols.
     A2a(A2aArgs),
+    /// Intent classification and clustering
+    ///
+    /// Discover and classify user intents from agent questions using
+    /// unsupervised clustering techniques (HDBSCAN) and LLM labeling.
+    Intent(intent::IntentArgs),
 }
 
 #[derive(Parser, Debug)]
@@ -768,6 +774,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             SubCommand::SemanticEngine(_) => "semantic-engine",
             SubCommand::PrepareSemanticEngine(_) => "prepare-semantic-engine",
             SubCommand::A2a(_) => "a2a",
+            SubCommand::Intent(_) => "intent",
         };
 
         sentry_config::add_breadcrumb(
@@ -1109,6 +1116,10 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
 
         Some(SubCommand::PrepareSemanticEngine(prepare_args)) => {
             handle_prepare_semantic_engine_command(prepare_args).await?;
+        }
+
+        Some(SubCommand::Intent(intent_args)) => {
+            intent::handle_intent_command(intent_args).await?;
         }
 
         None => {

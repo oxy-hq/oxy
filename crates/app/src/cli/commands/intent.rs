@@ -81,6 +81,9 @@ pub enum IntentAction {
         /// Run the learn pipeline after adding test data
         #[clap(long, default_value_t = false)]
         run_learn: bool,
+        /// Path to a text file containing test questions (one per line)
+        #[clap(long)]
+        file: Option<String>,
     },
 }
 
@@ -124,8 +127,12 @@ pub async fn handle_intent_command(intent_args: IntentArgs) -> Result<(), OxyErr
         IntentAction::Learn => {
             handle_learn(&mut classifier).await?;
         }
-        IntentAction::Test { count, run_learn } => {
-            handle_test(&mut classifier, count, run_learn).await?;
+        IntentAction::Test {
+            count,
+            run_learn,
+            file,
+        } => {
+            handle_test(&mut classifier, count, run_learn, file).await?;
         }
     }
 
@@ -414,6 +421,7 @@ async fn handle_test(
     classifier: &mut IntentClassifier,
     count: usize,
     run_learn: bool,
+    file: Option<String>,
 ) -> Result<(), OxyError> {
     println!(
         "{}",
@@ -424,17 +432,17 @@ async fn handle_test(
         .text()
     );
 
-    let test_questions = get_test_questions();
+    let test_questions = get_test_questions(file.as_deref())?;
 
     // Generate the requested number of questions (cycling through if needed)
     let mut questions_to_add = Vec::with_capacity(count);
     for i in 0..count {
-        let base_question = test_questions[i % test_questions.len()];
+        let base_question = &test_questions[i % test_questions.len()];
         // Add slight variations for larger counts
         let question = if i >= test_questions.len() {
             format!("{} (variation {})", base_question, i / test_questions.len())
         } else {
-            base_question.to_string()
+            base_question.clone()
         };
         questions_to_add.push(question);
     }
@@ -515,8 +523,30 @@ async fn handle_test(
 }
 
 /// Get sample analytics questions for testing
-fn get_test_questions() -> Vec<&'static str> {
-    vec![
+/// If a file path is provided, reads questions from the file (one per line).
+/// Otherwise, returns a default set of hardcoded questions.
+fn get_test_questions(file_path: Option<&str>) -> Result<Vec<String>, OxyError> {
+    if let Some(path) = file_path {
+        println!("Reading test questions from file: {}", path);
+        let content = std::fs::read_to_string(path).map_err(|e| {
+            OxyError::RuntimeError(format!("Failed to read questions file '{}': {}", path, e))
+        })?;
+        let questions: Vec<String> = content
+            .lines()
+            .map(|line| line.trim())
+            .filter(|line| !line.is_empty() && !line.starts_with('#'))
+            .map(|line| line.to_string())
+            .collect();
+        if questions.is_empty() {
+            return Err(OxyError::RuntimeError(format!(
+                "No valid questions found in file '{}'",
+                path
+            )));
+        }
+        return Ok(questions);
+    }
+
+    Ok(vec![
         // User metrics questions
         "how many users signed up last week?",
         "what is our total user count?",
@@ -625,4 +655,7 @@ fn get_test_questions() -> Vec<&'static str> {
         "what are projected expenses?",
         "show me budget vs actual",
     ]
+    .into_iter()
+    .map(|s| s.to_string())
+    .collect())
 }
