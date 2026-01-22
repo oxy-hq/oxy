@@ -14,6 +14,7 @@ import WorkflowOutputView from "./components/WorkflowOutputView";
 import WorkflowEditorView from "./components/WorkflowEditorView";
 import { WorkflowViewMode } from "./components/types";
 import { WorkflowPreview } from "@/components/workflow/WorkflowPreview";
+import { FilesSubViewMode, useIDE } from "../..";
 
 const WorkflowEditor = () => {
   const { pathb64, isReadOnly, gitEnabled } = useEditorContext();
@@ -22,9 +23,16 @@ const WorkflowEditor = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const runIdFromParams = searchParams.get("run") || undefined;
-  const [viewMode, setViewMode] = useState<WorkflowViewMode>(
-    WorkflowViewMode.Output,
-  );
+  const { filesSubViewMode } = useIDE();
+
+  // Default to Form for object mode (GUI editor), Output for file mode
+  const defaultViewMode =
+    filesSubViewMode === FilesSubViewMode.OBJECTS
+      ? WorkflowViewMode.Form
+      : WorkflowViewMode.Output;
+
+  const [viewMode, setViewMode] = useState<WorkflowViewMode>(defaultViewMode);
+
   const [validationError, setValidationError] = useState<string | null>(null);
   const hasNavigatedRef = useRef(false);
 

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 
 import EditorPageWrapper from "../components/EditorPageWrapper";
 import { useEditorContext } from "../contexts/useEditorContext";
@@ -10,6 +10,7 @@ import {
   TopicExplorerProvider,
   useTopicExplorerContext,
 } from "./contexts/TopicExplorerContext";
+import { FilesSubViewMode, useIDE } from "../..";
 
 const TopicExplorer = () => {
   const {
@@ -72,8 +73,20 @@ type TopicPreviewProps = {
 const TopicPreview = (props: TopicPreviewProps) => {
   const { pathb64, isReadOnly } = props;
   const path = useMemo(() => atob(pathb64 || ""), [pathb64]);
+  const { filesSubViewMode } = useIDE();
 
-  const [viewMode, setViewMode] = useState<ViewMode>(ViewMode.Explorer);
+  // Default to Explorer for object mode, Editor for file mode
+  const defaultViewMode =
+    filesSubViewMode === FilesSubViewMode.OBJECTS
+      ? ViewMode.Explorer
+      : ViewMode.Editor;
+
+  const [viewMode, setViewMode] = useState<ViewMode>(defaultViewMode);
+
+  // Update view mode when sidebar mode changes
+  useEffect(() => {
+    setViewMode(defaultViewMode);
+  }, [defaultViewMode]);
 
   return (
     <div className="flex flex-1 flex-col h-full">

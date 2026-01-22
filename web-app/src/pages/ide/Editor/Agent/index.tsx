@@ -10,11 +10,21 @@ import YAML from "yaml";
 import PreviewSection from "./PreviewSection";
 import ViewModeToggle from "./components/ViewModeToggle";
 import { AgentViewMode } from "./types";
+import { FilesSubViewMode, useIDE } from "../..";
 
 const AgentEditor = () => {
   const { pathb64, isReadOnly, gitEnabled } = useEditorContext();
   const { previewKey, refreshPreview } = usePreviewRefresh();
-  const [viewMode, setViewMode] = useState<AgentViewMode>(AgentViewMode.Editor);
+  const { filesSubViewMode } = useIDE();
+
+  // Default to Form for object mode (GUI editor), Editor for file mode
+  const defaultViewMode =
+    filesSubViewMode === FilesSubViewMode.OBJECTS
+      ? AgentViewMode.Form
+      : AgentViewMode.Editor;
+
+  const [viewMode, setViewMode] = useState<AgentViewMode>(defaultViewMode);
+
   const [validationError, setValidationError] = useState<string | null>(null);
   const { invalidateAgentQueries } = useEditorQueryInvalidation();
 

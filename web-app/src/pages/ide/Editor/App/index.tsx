@@ -7,14 +7,22 @@ import { AppViewMode } from "./types";
 import { ModeSwitcher } from "./components/ModeSwitcher";
 import { VisualizationMode } from "./components/VisualizationMode";
 import { EditorFormMode } from "./components/EditorFormMode";
+import { FilesSubViewMode, useIDE } from "../..";
 
 const AppEditor = () => {
   const { pathb64, isReadOnly, gitEnabled } = useEditorContext();
   const { previewKey, refreshPreview } = usePreviewRefresh();
   const { invalidateAppQueries } = useEditorQueryInvalidation();
-  const [viewMode, setViewMode] = useState<AppViewMode>(
-    AppViewMode.Visualization,
-  );
+  const { filesSubViewMode } = useIDE();
+
+  // Default to Form for object mode (GUI editor), Visualization for file mode
+  const defaultViewMode =
+    filesSubViewMode === FilesSubViewMode.OBJECTS
+      ? AppViewMode.Form
+      : AppViewMode.Visualization;
+
+  const [viewMode, setViewMode] = useState<AppViewMode>(defaultViewMode);
+
   const [validationError, setValidationError] = useState<string | null>(null);
 
   const appPath = useMemo(() => atob(pathb64 ?? ""), [pathb64]);

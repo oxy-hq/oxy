@@ -15,6 +15,7 @@ import {
   CollapsibleContent,
 } from "@/components/ui/shadcn/collapsible";
 import FileTreeNode from "./FileTreeNode";
+import NewObjectButton from "./NewObjectButton";
 import {
   ChevronsLeft,
   ChevronsRight,
@@ -645,6 +646,10 @@ const Sidebar = ({
                 </Tabs>
 
                 <div className="flex items-center gap-0.5">
+                  {filesSubViewMode === FilesSubViewMode.OBJECTS && (
+                    <NewObjectButton disabled={!!isReadOnly} />
+                  )}
+
                   {filesSubViewMode === FilesSubViewMode.FILES && (
                     <>
                       <Button
