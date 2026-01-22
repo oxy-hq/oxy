@@ -73,7 +73,11 @@ impl Hash for Table {
 impl Table {
     pub fn new(file_path: String) -> Self {
         Table {
-            name: file_path.clone(),
+            name: PathBuf::from(&file_path)
+                .file_prefix()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string(),
             reference: None,
             file_path,
             max_display_rows: None,
@@ -572,9 +576,14 @@ impl Display for Table {
         let table_name = &self.name;
         writeln!(f, "---")?;
         writeln!(f, "Table: {table_name}")?;
-        if let Some(relative_path) = &self.relative_path {
-            writeln!(f, "File Path: {relative_path}")?;
-        }
+        let file_path = self
+            .relative_path
+            .as_ref()
+            .map(|p| p.to_string())
+            .unwrap_or(
+                "Run execute_sql with persist flag to get the file path if required.".to_string(),
+            );
+        writeln!(f, "File Path: {file_path}")?;
         writeln!(f, "Data:")?;
         match self.get_inner() {
             Ok(inner) => {

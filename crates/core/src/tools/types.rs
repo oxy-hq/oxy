@@ -68,9 +68,10 @@ pub struct AgentParams {
 pub struct CreateV0AppParams {
     #[schemars(description = "Use to set the app name when create the v0 app.")]
     pub name: Option<String>,
-    #[schemars(
-        description = "Prompt to create or update the v0 app. Include tables when needed by include their file_path values (e.g., 'Use sales table at file_path: tables/0.parquet') so v0 can query them via Oxy SDK."
-    )]
+    #[schemars(description = "
+Prompt to create or update the v0 app.
+Include tables when needed by include their file_path values (e.g., 'Use sales table at file_path: tables/0.parquet') so v0 can query them via Oxy SDK.
+DO NOT use the csv path directly (e.g., 'Use sales table at /tmp/xyz/sales.csv') as it won't work.")]
     pub prompt: String,
 }
 

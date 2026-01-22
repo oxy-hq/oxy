@@ -2,7 +2,7 @@ use crate::{
     adapters::v0::{V0Client, V0EnvVar},
     execute::{
         Executable, ExecutionContext,
-        types::{Output, event::SandboxAppKind},
+        types::{EventKind, Output, event::SandboxAppKind},
     },
 };
 use oxy_shared::errors::OxyError;
@@ -47,11 +47,21 @@ impl Executable<CreateV0AppInput> for CreateV0App {
         // Either continue existing chat or create new one
         let chat_response = if let Some(ref chat_id_ref) = chat_id {
             tracing::info!("Continuing existing v0 chat with ID: {}", chat_id_ref);
+            execution_context
+                .write_kind(EventKind::Message {
+                    message: "Updating v0 app...".to_string(),
+                })
+                .await?;
             v0_client
                 .send_message(chat_id_ref, input.prompt, None)
                 .await?
         } else if let Some(ref github_repo) = input.github_repo {
             tracing::info!("Initializing new v0 chat from GitHub repo: {}", github_repo);
+            execution_context
+                .write_kind(EventKind::Message {
+                    message: "Initializing v0 app from GitHub repository...".to_string(),
+                })
+                .await?;
             let init_response = v0_client
                 .init_chat(github_repo.clone(), input.name.clone())
                 .await?;
@@ -72,6 +82,11 @@ impl Executable<CreateV0AppInput> for CreateV0App {
             }
             if let Some(project_id) = init_response.project_id {
                 tracing::info!("Initialized v0 chat linked to project ID: {}", project_id);
+                execution_context
+                    .write_kind(EventKind::Message {
+                        message: "Configuring v0 app environment...".to_string(),
+                    })
+                    .await?;
                 let oxy_url = std::env::var("OXY_API_URL")
                     .unwrap_or_else(|_| "http://127.0.0.1:3000/api".to_string());
                 let mut env_vars = vec![
@@ -90,6 +105,11 @@ impl Executable<CreateV0AppInput> for CreateV0App {
                 v0_client.create_environment(&project_id, env_vars).await?;
             }
             // After initializing from repo, send the prompt as a follow-up message
+            execution_context
+                .write_kind(EventKind::Message {
+                    message: "Generating v0 app with your prompt...".to_string(),
+                })
+                .await?;
             v0_client
                 .send_message(
                     &init_response.id,
@@ -99,6 +119,11 @@ impl Executable<CreateV0AppInput> for CreateV0App {
                 .await?
         } else {
             tracing::info!("Creating new v0 chat");
+            execution_context
+                .write_kind(EventKind::Message {
+                    message: "Creating new v0 app...".to_string(),
+                })
+                .await?;
             v0_client.create_chat(input.prompt).await?
         };
         let mut context = chat_response

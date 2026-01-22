@@ -8,16 +8,21 @@ use super::stream::StreamDispatcher;
 use crate::server::service::formatters::logs_persister::LogsPersister;
 use crate::server::service::formatters::streaming_message_persister::StreamingMessagePersister;
 use crate::server::service::types::{
-    AnswerStream, ArtifactValue, ContainerKind, ExecuteSQL, OmniQuery, SemanticQuery,
+    AnswerStream, ArtifactValue, ContainerKind, Content, ExecuteSQL, OmniQuery, SemanticQuery,
     SemanticQueryParams,
 };
+use oxy::execute::types::event::SandboxInfo;
+use oxy::types::Content;
 use oxy::{
     config::constants::{
         AGENT_SOURCE, CONCURRENCY_SOURCE, CONSISTENCY_SOURCE, TASK_SOURCE, WORKFLOW_SOURCE,
     },
     execute::{
         formatters::{FormatterResult, SourceHandler},
-        types::{EventKind, Output, Source, Usage, event::ArtifactKind},
+        types::{
+            EventKind, Output, Source, Usage,
+            event::{ArtifactKind, SandboxInfo},
+        },
     },
     types::agent::LogItem,
 };
@@ -548,6 +553,32 @@ impl SourceHandler for BlockHandler {
                 // Store the semantic query parameters for later use in artifact creation
                 self.current_semantic_query = Some(query.clone());
                 self.artifact_tracker.set_semantic_query(query.clone());
+            }
+
+            EventKind::SandboxAppCreated { preview_url, kind } => {
+                // Store the sandbox preview URL for later use in artifact creation
+                let sandbox_info = SandboxInfo {
+                    preview_url: preview_url.clone(),
+                    kind: kind.clone(),
+                };
+                self.artifact_tracker
+                    .set_sandbox_info(sandbox_info.clone())
+                    .await;
+                self.block_manager
+                    .add_content(source, Content::SandboxInfo(sandbox_info.clone()))
+                    .await?;
+                if let Some((artifact_id, artifact_kind)) =
+                    self.artifact_tracker.get_active_artifact()
+                    && let ArtifactKind::SandboxApp { .. } = artifact_kind
+                {
+                    self.stream_dispatcher
+                        .send_artifact_value(
+                            artifact_id,
+                            ArtifactValue::SandboxInfo(sandbox_info),
+                            &source.kind,
+                        )
+                        .await?;
+                }
             }
 
             _ => {}

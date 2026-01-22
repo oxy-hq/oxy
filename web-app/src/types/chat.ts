@@ -39,11 +39,31 @@ export interface SemanticQueryArtifactKind {
   };
 }
 
+export interface OmniQueryArtifactKind {
+  type: "omni_query";
+  value: {
+    topic: string;
+    integration: string;
+  };
+}
+
+export interface SandboxAppArtifactKind {
+  type: "sandbox_app";
+  value: {
+    type: "v0";
+    metadata: {
+      chat_id: string;
+    };
+  };
+}
+
 export type ArtifactKind =
   | WorkflowArtifactKind
   | AgentArtifactKind
   | ExecuteSQLArtifactKind
-  | SemanticQueryArtifactKind;
+  | SemanticQueryArtifactKind
+  | OmniQueryArtifactKind
+  | SandboxAppArtifactKind;
 
 export interface ArtifactStartedContent {
   type: "artifact_started";

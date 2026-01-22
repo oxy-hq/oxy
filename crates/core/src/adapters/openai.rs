@@ -390,11 +390,13 @@ impl OpenAIToolConfig for &ToolType {
                     integration: om.integration.clone(),
                 },
             )),
-            ToolType::CreateV0App(_app) => Some((
+            ToolType::CreateV0App(_) => Some((
                 self.handle(),
                 ArtifactKind::SandboxApp {
                     kind: SandboxAppKind::V0 {
-                        chat_id: _app.name.clone(),
+                        // chat_id is not known at artifact start time - it's obtained from v0 API response
+                        // The actual chat_id will be emitted via SandboxAppCreated event
+                        chat_id: String::new(),
                     },
                 },
             )),
