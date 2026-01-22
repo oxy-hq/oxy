@@ -56,6 +56,26 @@
       "release-type": "rust",
       "component": "workflow"
     },
+    "crates/infrastructure/llm/anthropic": {
+      "release-type": "rust",
+      "component": "anthropic"
+    },
+    "crates/infrastructure/llm/gemini": {
+      "release-type": "rust",
+      "component": "gemini"
+    },
+    "crates/infrastructure/llm/ollama": {
+      "release-type": "rust",
+      "component": "ollama"
+    },
+    "crates/infrastructure/llm/openai": {
+      "release-type": "rust",
+      "component": "openai"
+    },
+    "crates/infrastructure/llm/oxy-llm": {
+      "release-type": "rust",
+      "component": "oxy-llm"
+    },
     "web-app": {
       "release-type": "node",
       "component": "web-app"
@@ -72,7 +92,7 @@
     {
       "type": "linked-versions",
       "groupName": "oxy",
-      "components": ["a2a", "agent", "app", "auth", "core", "entity", "globals", "migration", "omni", "project", "semantic", "shared", "thread", "workflow", "web-app"]
+      "components": ["a2a", "agent", "app", "auth", "core", "entity", "globals", "migration", "omni", "project", "semantic", "shared", "thread", "workflow", "anthropic", "gemini", "ollama", "openai", "oxy-llm", "web-app"]
     }
   ],
   "changelog-sections": [

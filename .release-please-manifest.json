@@ -13,5 +13,10 @@
   "crates/shared": "0.4.9",
   "crates/thread": "0.4.9",
   "crates/workflow": "0.4.9",
+  "crates/infrastructure/llm/anthropic": "0.4.9",
+  "crates/infrastructure/llm/gemini": "0.4.9",
+  "crates/infrastructure/llm/ollama": "0.4.9",
+  "crates/infrastructure/llm/openai": "0.4.9",
+  "crates/infrastructure/llm/oxy-llm": "0.4.9",
   "web-app": "0.4.9"
 }
