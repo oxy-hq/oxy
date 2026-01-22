@@ -3,7 +3,10 @@ use crate::models::{
     OllamaModelConfig, OpenAIModelConfig,
 };
 use axum::http::StatusCode;
-use oxy::config::model::Model;
+use oxy::config::model::{
+    AnthropicModelConfig as LlmAnthropicConfig, GeminiModelConfig as LlmGeminiConfig, Model,
+    OllamaModelConfig as LlmOllamaConfig, OpenAIModelConfig as LlmOpenAIConfig,
+};
 use oxy::service::secret_manager::{CreateSecretParams, SecretManagerService};
 use oxy_shared::errors::OxyError;
 use sea_orm::DatabaseTransaction;
@@ -74,12 +77,14 @@ impl ModelConfigBuilder {
         })?;
 
         Ok(Model::OpenAI {
-            name,
-            model_ref,
-            key_var,
-            api_url: openai_config.api_url.filter(|url| !url.is_empty()),
-            azure: None,
-            headers: None,
+            config: LlmOpenAIConfig {
+                name,
+                model_ref,
+                key_var,
+                api_url: openai_config.api_url.filter(|url| !url.is_empty()),
+                azure: None,
+                headers: None,
+            },
         })
     }
 
@@ -116,10 +121,12 @@ impl ModelConfigBuilder {
         })?;
 
         Ok(Model::Anthropic {
-            name,
-            model_ref,
-            key_var,
-            api_url: anthropic_config.api_url.filter(|url| !url.is_empty()),
+            config: LlmAnthropicConfig {
+                name,
+                model_ref,
+                key_var,
+                api_url: anthropic_config.api_url.filter(|url| !url.is_empty()),
+            },
         })
     }
 
@@ -156,9 +163,11 @@ impl ModelConfigBuilder {
         })?;
 
         Ok(Model::Google {
-            name,
-            model_ref,
-            key_var,
+            config: LlmGeminiConfig {
+                name,
+                model_ref,
+                key_var,
+            },
         })
     }
 
@@ -180,10 +189,12 @@ impl ModelConfigBuilder {
             .unwrap_or_else(|| "api_key".to_string());
 
         Model::Ollama {
-            name,
-            model_ref,
-            api_key,
-            api_url,
+            config: LlmOllamaConfig {
+                name,
+                model_ref,
+                api_key,
+                api_url,
+            },
         }
     }
 

@@ -177,23 +177,13 @@ impl Config {
     }
 
     pub fn default_model(&self) -> Option<String> {
-        self.models.first().map(|m| match m {
-            Model::OpenAI { name, .. } => name.clone(),
-            Model::Ollama { name, .. } => name.clone(),
-            Model::Google { name, .. } => name.clone(),
-            Model::Anthropic { name, .. } => name.clone(),
-        })
+        self.models.first().map(|m| m.name().to_string())
     }
 
     pub fn find_model(&self, model_name: &str) -> anyhow::Result<Model> {
         self.models
             .iter()
-            .find(|m| match m {
-                Model::OpenAI { name, .. } => name,
-                Model::Ollama { name, .. } => name,
-                Model::Google { name, .. } => name,
-                Model::Anthropic { name, .. } => name,
-            } == model_name)
+            .find(|m| m.name() == model_name)
             .cloned()
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "Model not found").into())
     }

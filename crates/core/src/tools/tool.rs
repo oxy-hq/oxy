@@ -4,12 +4,12 @@ use super::{
     create_data_app::{CreateDataAppExecutable, CreateDataAppInput, CreateDataAppParams},
     registry::global_registry,
     retrieval::RetrievalExecutable,
-    sql::{SQLExecutable, ValidateSQLExecutable},
+    sql::SQLExecutable,
     types::{
         CreateV0AppParams, RetrievalInput, RetrievalParams, SQLInput, SQLParams, ToolRawInput,
     },
     v0::{CreateV0App, CreateV0AppInput},
-    visualize::{VisualizeExecutable, VisualizeParams},
+    visualize::VisualizeExecutable,
 };
 use crate::{
     adapters::openai::OpenAIToolConfig,
@@ -23,7 +23,11 @@ use crate::{
         types::{Chunk, EventKind, Output, OutputContainer, Table},
     },
     observability::events,
-    tools::omni::{executable::OmniQueryExecutable, types::OmniQueryInput},
+    tools::{
+        omni::{executable::OmniQueryExecutable, types::OmniQueryInput},
+        sql::validate_sql::ValidateSQLExecutable,
+        visualize::VisualizeParams,
+    },
 };
 use oxy_shared::errors::OxyError;
 

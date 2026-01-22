@@ -57,6 +57,11 @@ email_address = "0.2.9"
 entity = { path = "../entity" }
 omni = { path = "../omni" }
 # oxy-config moved back into core/src/config to avoid circular dependency
+oxy-anthropic = { path = "../infrastructure/llm/anthropic" }
+oxy-gemini = { path = "../infrastructure/llm/gemini" }
+oxy-llm = { path = "../infrastructure/llm/oxy-llm" }
+oxy-ollama = { path = "../infrastructure/llm/ollama" }
+oxy-openai = { path = "../infrastructure/llm/openai" }
 oxy-semantic = { path = "../semantic" }
 oxy-shared = { path = "../shared" }
 oxy_globals = { path = "../globals" }

@@ -7050,6 +7050,11 @@ dependencies = [
  "opentelemetry",
  "opentelemetry-otlp",
  "opentelemetry_sdk",
+ "oxy-anthropic",
+ "oxy-gemini",
+ "oxy-llm",
+ "oxy-ollama",
+ "oxy-openai",
  "oxy-semantic",
  "oxy-shared",
  "oxy_globals",
@@ -7132,6 +7137,7 @@ dependencies = [
  "log",
  "minijinja",
  "oxy",
+ "oxy-openai",
  "oxy-semantic",
  "oxy-shared",
  "schemars 0.8.22",
@@ -7147,6 +7153,17 @@ dependencies = [
  "tokio-stream",
  "tracing",
  "uuid",
+]
+
+[[package]]
+name = "oxy-anthropic"
+version = "0.4.6"
+dependencies = [
+ "async-openai",
+ "oxy-shared",
+ "schemars 0.8.22",
+ "serde",
+ "serde_with",
 ]
 
 [[package]]
@@ -7287,6 +7304,54 @@ dependencies = [
 ]
 
 [[package]]
+name = "oxy-gemini"
+version = "0.4.6"
+dependencies = [
+ "async-openai",
+ "oxy-shared",
+ "schemars 0.8.22",
+ "serde",
+]
+
+[[package]]
+name = "oxy-llm"
+version = "0.4.6"
+dependencies = [
+ "oxy-anthropic",
+ "oxy-gemini",
+ "oxy-ollama",
+ "oxy-openai",
+ "oxy-shared",
+ "schemars 0.8.22",
+ "serde",
+ "serde_with",
+]
+
+[[package]]
+name = "oxy-ollama"
+version = "0.4.6"
+dependencies = [
+ "async-openai",
+ "oxy-shared",
+ "schemars 0.8.22",
+ "serde",
+]
+
+[[package]]
+name = "oxy-openai"
+version = "0.4.6"
+dependencies = [
+ "async-openai",
+ "axum 0.8.8",
+ "oxy-shared",
+ "schemars 0.8.22",
+ "secrecy",
+ "serde",
+ "serde_with",
+ "tracing",
+]
+
+[[package]]
 name = "oxy-project"
 version = "0.4.9"
 dependencies = [
@@ -7350,6 +7415,7 @@ dependencies = [
  "oxy-semantic",
  "schemars 0.8.22",
  "sea-orm",
+ "secrecy",
  "sentry",
  "serde",
  "serde_arrow",

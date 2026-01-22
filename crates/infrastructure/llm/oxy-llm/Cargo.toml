@@ -1,0 +1,19 @@
+[package]
+name = "oxy-llm"
+version = "0.4.6"
+authors.workspace = true
+description.workspace = true
+documentation.workspace = true
+publish.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+schemars = { version = "0.8.22", features = ["derive"] }
+serde_with = "3.16.1"
+oxy-shared = { path = "../../../shared" }
+oxy-anthropic = { path = "../anthropic" }
+oxy-openai = { path = "../openai" }
+oxy-gemini = { path = "../gemini" }
+oxy-ollama = { path = "../ollama" }

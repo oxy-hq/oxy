@@ -12,7 +12,9 @@
 pub mod domain;
 pub mod errors;
 pub mod infrastructure;
+pub mod openai_config;
 pub mod utils;
 
 // Re-export commonly used items
 pub use errors::OxyError;
+pub use openai_config::{AzureModel, ConfigType, CustomOpenAIConfig};

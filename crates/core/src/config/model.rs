@@ -6,7 +6,6 @@ use itertools::Itertools;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use serde_with::skip_serializing_none;
 use std::cmp::PartialEq;
 use std::collections::HashMap;
 use std::hash::Hash;
@@ -23,6 +22,10 @@ use crate::config::validate::{
     validate_database_exists, validate_env_var, validate_omni_integration_exists,
     validate_task_data_reference,
 };
+pub use oxy_llm::{
+    AnthropicModelConfig, GeminiModelConfig, HeaderValue, Model, OllamaModelConfig,
+    OpenAIModelConfig, default_openai_api_url,
+};
 use oxy_shared::errors::OxyError;
 pub use semantics::{SemanticDimension, Semantics};
 pub use variables::Variable;
@@ -37,7 +40,7 @@ mod workflow;
 pub struct Config {
     #[garde(dive)]
     pub defaults: Option<Defaults>,
-    #[garde(dive)]
+    #[garde(custom(validate_models))]
     pub models: Vec<Model>,
     #[garde(dive)]
     pub databases: Vec<Database>,
@@ -1190,127 +1193,87 @@ impl TryFrom<ConnectionOverride> for SnowflakeConnectionOverride {
 /// deserialize to the correct variant based on the database configuration.
 pub type ConnectionOverrides = HashMap<String, ConnectionOverride>;
 
-#[derive(Deserialize, Debug, Clone, Serialize, JsonSchema)]
-pub struct AzureModel {
-    pub azure_deployment_id: String,
-    pub azure_api_version: String,
-}
-
-#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
-#[serde(untagged)]
-pub enum HeaderValue {
-    /// Direct header value
-    Direct(String),
-    /// Header value from environment variable
-    EnvVar {
-        /// Environment variable name containing the header value
-        #[serde(rename = "env_var")]
-        env_var: String,
-    },
-}
-
-impl HeaderValue {
-    /// Resolve the header value, either directly or from environment variable
-    pub async fn resolve(&self, secrets_manager: &SecretsManager) -> Result<String, OxyError> {
-        match self {
-            HeaderValue::Direct(value) => Ok(value.clone()),
-            HeaderValue::EnvVar { env_var } => {
-                let result = secrets_manager.resolve_secret(env_var).await?;
-                match result {
-                    Some(res) => Ok(res),
-                    None => Err(OxyError::SecretNotFound(Some(env_var.clone()))),
+/// Validate a list of models
+fn validate_models(models: &Vec<Model>, ctx: &ValidationContext) -> garde::Result {
+    for (i, model) in models.iter().enumerate() {
+        match model {
+            Model::OpenAI { config } => {
+                if config.name.is_empty() {
+                    return Err(garde::Error::new(format!(
+                        "models[{}].name: length is lower than 1",
+                        i
+                    )));
                 }
+                if config.model_ref.is_empty() {
+                    return Err(garde::Error::new(format!(
+                        "models[{}].model_ref: length is lower than 1",
+                        i
+                    )));
+                }
+                validate_env_var(&config.key_var, ctx)
+                    .map_err(|e| garde::Error::new(format!("models[{}].key_var: {}", i, e)))?;
+            }
+            Model::Google { config } => {
+                if config.name.is_empty() {
+                    return Err(garde::Error::new(format!(
+                        "models[{}].name: length is lower than 1",
+                        i
+                    )));
+                }
+                if config.model_ref.is_empty() {
+                    return Err(garde::Error::new(format!(
+                        "models[{}].model_ref: length is lower than 1",
+                        i
+                    )));
+                }
+                validate_env_var(&config.key_var, ctx)
+                    .map_err(|e| garde::Error::new(format!("models[{}].key_var: {}", i, e)))?;
+            }
+            Model::Ollama { config } => {
+                if config.name.is_empty() {
+                    return Err(garde::Error::new(format!(
+                        "models[{}].name: length is lower than 1",
+                        i
+                    )));
+                }
+                if config.model_ref.is_empty() {
+                    return Err(garde::Error::new(format!(
+                        "models[{}].model_ref: length is lower than 1",
+                        i
+                    )));
+                }
+                if config.api_key.is_empty() {
+                    return Err(garde::Error::new(format!(
+                        "models[{}].api_key: length is lower than 1",
+                        i
+                    )));
+                }
+                if config.api_url.is_empty() {
+                    return Err(garde::Error::new(format!(
+                        "models[{}].api_url: length is lower than 1",
+                        i
+                    )));
+                }
+            }
+            Model::Anthropic { config } => {
+                if config.name.is_empty() {
+                    return Err(garde::Error::new(format!(
+                        "models[{}].name: length is lower than 1",
+                        i
+                    )));
+                }
+                if config.model_ref.is_empty() {
+                    return Err(garde::Error::new(format!(
+                        "models[{}].model_ref: length is lower than 1",
+                        i
+                    )));
+                }
+                validate_env_var(&config.key_var, ctx)
+                    .map_err(|e| garde::Error::new(format!("models[{}].key_var: {}", i, e)))?;
             }
         }
     }
-}
-
-#[skip_serializing_none]
-#[derive(Deserialize, Debug, Clone, Validate, Serialize, JsonSchema)]
-#[garde(context(ValidationContext))]
-#[serde(tag = "vendor")]
-pub enum Model {
-    #[serde(rename = "openai")]
-    OpenAI {
-        #[garde(length(min = 1))]
-        name: String,
-        #[garde(length(min = 1))]
-        model_ref: String,
-        #[garde(custom(validate_env_var))]
-        key_var: String,
-        #[serde(default = "default_openai_api_url")]
-        #[garde(skip)]
-        api_url: Option<String>,
-        #[serde(flatten)]
-        #[garde(skip)]
-        azure: Option<AzureModel>,
-        #[serde(default)]
-        #[garde(skip)]
-        headers: Option<HashMap<String, HeaderValue>>,
-    },
-    #[serde(rename = "google")]
-    Google {
-        #[garde(length(min = 1))]
-        name: String,
-        #[garde(length(min = 1))]
-        model_ref: String,
-        #[garde(custom(validate_env_var))]
-        key_var: String,
-    },
-    #[serde(rename = "ollama")]
-    Ollama {
-        #[garde(length(min = 1))]
-        name: String,
-        #[garde(length(min = 1))]
-        model_ref: String,
-        #[garde(length(min = 1))]
-        api_key: String,
-        #[garde(length(min = 1))]
-        api_url: String,
-    },
-    #[serde(rename = "anthropic")]
-    Anthropic {
-        #[garde(length(min = 1))]
-        name: String,
-        #[garde(length(min = 1))]
-        model_ref: String,
-        #[garde(custom(validate_env_var))]
-        key_var: String,
-        #[serde(default = "default_anthropic_api_url")]
-        #[garde(skip)]
-        api_url: Option<String>,
-    },
-}
-
-impl Model {
-    pub fn model_name(&self) -> &str {
-        match self {
-            Model::OpenAI { model_ref, .. } => model_ref,
-            Model::Ollama { model_ref, .. } => model_ref,
-            Model::Google { model_ref, .. } => model_ref,
-            Model::Anthropic { model_ref, .. } => model_ref,
-        }
-    }
-
-    /// Resolve headers for OpenAI models, returning a HashMap with resolved values
-    pub async fn resolve_headers(
-        &self,
-        secrets_manager: &SecretsManager,
-    ) -> Result<HashMap<String, String>, OxyError> {
-        match self {
-            Model::OpenAI { headers, .. } => {
-                let mut resolved_headers = HashMap::new();
-                if let Some(headers_map) = headers {
-                    for (key, header_value) in headers_map {
-                        let resolved_value = header_value.resolve(secrets_manager).await?;
-                        resolved_headers.insert(key.clone(), resolved_value);
-                    }
-                }
-                Ok(resolved_headers)
-            }
-            _ => Ok(HashMap::new()), // Other models don't support custom headers yet
-        }
-    }
+    Ok(())
 }
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
@@ -2906,14 +2869,6 @@ impl ToolType {
             Ok(None)
         }
     }
-}
-
-fn default_openai_api_url() -> Option<String> {
-    Some("https://api.openai.com/v1".to_string())
-}
-
-fn default_anthropic_api_url() -> Option<String> {
-    Some("https://api.anthropic.com/v1".to_string())
 }
 
 fn default_anonymizer_replacement() -> String {

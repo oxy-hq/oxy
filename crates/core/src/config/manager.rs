@@ -36,25 +36,15 @@ impl ConfigManager {
             .config
             .models
             .iter()
-            .find(|m| match m {
-                Model::OpenAI { name, .. } => name,
-                Model::Ollama { name, .. } => name,
-                Model::Google { name, .. } => name,
-                Model::Anthropic { name, .. } => name,
-            } == model_name)
+            .find(|m| m.name() == model_name)
             .ok_or_else(|| {
                 OxyError::ConfigurationError(format!("Model '{model_name}' not found in config"))
             })?;
         Ok(model)
     }
 
-    pub fn default_model(&self) -> Option<&String> {
-        self.config.models.first().map(|m| match m {
-            Model::OpenAI { name, .. } => name,
-            Model::Ollama { name, .. } => name,
-            Model::Google { name, .. } => name,
-            Model::Anthropic { name, .. } => name,
-        })
+    pub fn default_model(&self) -> Option<&str> {
+        self.config.models.first().map(|m| m.name())
     }
 
     pub fn resolve_database(&self, database_name: &str) -> Result<&Database, OxyError> {
@@ -188,12 +178,7 @@ impl ConfigManager {
     }
 
     pub fn get_model_key_var(&self, model: &Model) -> Option<String> {
-        match model {
-            Model::OpenAI { key_var, .. } => Some(key_var.clone()),
-            Model::Google { key_var, .. } => Some(key_var.clone()),
-            Model::Anthropic { key_var, .. } => Some(key_var.clone()),
-            Model::Ollama { .. } => None, // Ollama doesn't use key_var
-        }
+        model.key_var().map(|s| s.to_string())
     }
 
     pub fn get_database_password_var(&self, database: &Database) -> Option<String> {

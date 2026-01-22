@@ -1,0 +1,15 @@
+[package]
+name = "oxy-ollama"
+version = "0.4.6"
+authors.workspace = true
+description.workspace = true
+documentation.workspace = true
+publish.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+async-openai = { version = "0.31.1", features = ["byot", "chat-completion-types", "_api"] }
+serde = { workspace = true }
+schemars = { version = "0.8.22", features = ["derive"] }
+oxy-shared = { path = "../../../shared" }

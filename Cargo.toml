@@ -15,6 +15,11 @@ members = [
     "crates/shared",
     "crates/thread",
     "crates/workflow",
+    "crates/infrastructure/llm/anthropic",
+    "crates/infrastructure/llm/ollama",
+    "crates/infrastructure/llm/gemini",
+    "crates/infrastructure/llm/openai",
+    "crates/infrastructure/llm/oxy-llm",
 ]
 
 default-members = ["crates/app"]
@@ -47,8 +52,8 @@ minijinja = { version = "2.14.0" }
 tracing = { version = "0.1.44" }
 tempfile = { version = "3.24.0" }
 axum = { version = "0.8.8", features = ["macros", "http2"] }
-axum-server = { version = "0.8.0", features = ["tls-rustls"] }
 async-openai = { version = "0.31.1" }
+axum-server = { version = "0.8.0", features = ["tls-rustls"] }
 sentry = { version = "0.46.1", features = ["tower-axum-matched-path", "rustls", "tracing"] }
 
 [workspace.package]

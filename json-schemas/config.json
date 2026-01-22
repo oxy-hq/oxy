@@ -701,6 +701,7 @@
       }
     },
     "HeaderValue": {
+      "description": "Header value that can be either a direct string or an environment variable reference",
       "anyOf": [
         {
           "description": "Direct header value",
@@ -797,8 +798,10 @@
       }
     },
     "Model": {
+      "description": "LLM model configuration supporting multiple vendors",
       "oneOf": [
         {
+          "description": "OpenAI model configuration",
           "type": "object",
           "required": [
             "key_var",
@@ -847,6 +850,7 @@
           }
         },
         {
+          "description": "Google Gemini model configuration",
           "type": "object",
           "required": [
             "key_var",
@@ -873,6 +877,7 @@
           }
         },
         {
+          "description": "Ollama model configuration",
           "type": "object",
           "required": [
             "api_key",
@@ -903,6 +908,7 @@
           }
         },
         {
+          "description": "Anthropic model configuration",
           "type": "object",
           "required": [
             "key_var",

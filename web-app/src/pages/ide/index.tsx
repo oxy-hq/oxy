@@ -18,7 +18,6 @@ export enum FilesSubViewMode {
   FILES = "files",
 }
 
-
 const IDEContext = createContext<{
   insideIDE: boolean;
   filesSubViewMode: FilesSubViewMode;

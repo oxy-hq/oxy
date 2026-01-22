@@ -13,6 +13,7 @@ use ::oxy::config::model::Model;
 use ::oxy::config::model::SemanticModelContext;
 use ::oxy::config::model::SemanticModels;
 use ::oxy::config::model::ToolType;
+use ::oxy::config::model::{AnthropicModelConfig, GeminiModelConfig, OpenAIModelConfig};
 use ::oxy::config::*;
 use ::oxy::theme::*;
 use ::oxy::utils::extract_csv_dimensions;
@@ -80,9 +81,11 @@ fn determine_model() -> (String, Model) {
         (
             name.clone(),
             Model::Google {
-                name,
-                model_ref: "gemini-1.5-pro".to_string(),
-                key_var: GEMINI_API_KEY_VAR.to_string(),
+                config: GeminiModelConfig {
+                    name,
+                    model_ref: "gemini-1.5-pro".to_string(),
+                    key_var: GEMINI_API_KEY_VAR.to_string(),
+                },
             },
         )
     } else if std::env::var(ANTHROPIC_API_KEY_VAR).is_ok() {
@@ -90,10 +93,12 @@ fn determine_model() -> (String, Model) {
         (
             name.clone(),
             Model::Anthropic {
-                name,
-                model_ref: "claude-3-7-sonnet-20250219".to_string(),
-                key_var: ANTHROPIC_API_KEY_VAR.to_string(),
-                api_url: None,
+                config: AnthropicModelConfig {
+                    name,
+                    model_ref: "claude-3-7-sonnet-20250219".to_string(),
+                    key_var: ANTHROPIC_API_KEY_VAR.to_string(),
+                    api_url: None,
+                },
             },
         )
     } else if std::env::var(OPENAI_API_KEY_VAR).is_ok() {
@@ -101,12 +106,14 @@ fn determine_model() -> (String, Model) {
         (
             name.clone(),
             Model::OpenAI {
-                name,
-                model_ref: "gpt-4.1".to_string(),
-                key_var: OPENAI_API_KEY_VAR.to_string(),
-                api_url: None,
-                azure: None,
-                headers: None,
+                config: OpenAIModelConfig {
+                    name,
+                    model_ref: "gpt-4.1".to_string(),
+                    key_var: OPENAI_API_KEY_VAR.to_string(),
+                    api_url: None,
+                    azure: None,
+                    headers: None,
+                },
             },
         )
     } else {
@@ -114,12 +121,14 @@ fn determine_model() -> (String, Model) {
         (
             name.clone(),
             Model::OpenAI {
-                name,
-                model_ref: "gpt-4.1".to_string(),
-                key_var: OPENAI_API_KEY_VAR.to_string(),
-                api_url: None,
-                azure: None,
-                headers: None,
+                config: OpenAIModelConfig {
+                    name,
+                    model_ref: "gpt-4.1".to_string(),
+                    key_var: OPENAI_API_KEY_VAR.to_string(),
+                    api_url: None,
+                    azure: None,
+                    headers: None,
+                },
             },
         )
     }

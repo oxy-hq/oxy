@@ -1,13 +1,14 @@
 use include_dir::{Dir, include_dir};
 use oxy::config::model::{
-    AzureModel, BigQuery, ClickHouse, Config, DatabaseType, DuckDB, Mysql, Postgres, Redshift,
+    BigQuery, ClickHouse, Config, DatabaseType, DuckDB, Mysql, Postgres, Redshift,
 };
 use oxy::config::resolve_local_project_path;
+use oxy_shared::AzureModel;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::{fmt, fs};
 
-use super::model::{Database, Defaults, Model};
+use super::model::{Database, Defaults, Model, OllamaModelConfig, OpenAIModelConfig};
 use oxy::theme::StyledText;
 
 #[derive(Debug)]
@@ -269,33 +270,39 @@ fn collect_models() -> Result<Vec<Model>, InitError> {
                     None
                 };
                 Model::OpenAI {
-                    name: prompt_with_default("Name", "openai-4.1", None)?,
-                    model_ref: prompt_with_default("Model reference", "gpt-4.1", None)?,
-                    key_var: prompt_with_default("Key variable", "OPENAI_API_KEY", None)?,
-                    api_url: Some(api_url),
-                    azure,
-                    headers: None,
+                    config: OpenAIModelConfig {
+                        name: prompt_with_default("Name", "openai-4.1", None)?,
+                        model_ref: prompt_with_default("Model reference", "gpt-4.1", None)?,
+                        key_var: prompt_with_default("Key variable", "OPENAI_API_KEY", None)?,
+                        api_url: Some(api_url),
+                        azure,
+                        headers: None,
+                    },
                 }
             }
             "2" => Model::Ollama {
-                name: prompt_with_default("Name", "llama3.2", None)?,
-                model_ref: prompt_with_default("Model reference", "llama3.2:latest", None)?,
-                api_key: prompt_with_default("API Key", "secret", None)?,
-                api_url: prompt_with_default("API URL", "http://localhost:11434/v1", None)?,
+                config: OllamaModelConfig {
+                    name: prompt_with_default("Name", "llama3.2", None)?,
+                    model_ref: prompt_with_default("Model reference", "llama3.2:latest", None)?,
+                    api_key: prompt_with_default("API Key", "secret", None)?,
+                    api_url: prompt_with_default("API URL", "http://localhost:11434/v1", None)?,
+                },
             },
             _ => {
                 println!("Invalid model type selected. Using OpenAI as default.");
                 Model::OpenAI {
-                    name: prompt_with_default("Name", "openai-4.1", None)?,
-                    model_ref: prompt_with_default("Model reference", "gpt-4.1", None)?,
-                    key_var: prompt_with_default("Key variable", "OPENAI_API_KEY", None)?,
-                    api_url: Some(prompt_with_default(
-                        "API URL",
-                        "https://api.openai.com/v1",
-                        None,
-                    )?),
-                    azure: None,
-                    headers: None,
+                    config: OpenAIModelConfig {
+                        name: prompt_with_default("Name", "openai-4.1", None)?,
+                        model_ref: prompt_with_default("Model reference", "gpt-4.1", None)?,
+                        key_var: prompt_with_default("Key variable", "OPENAI_API_KEY", None)?,
+                        api_url: Some(prompt_with_default(
+                            "API URL",
+                            "https://api.openai.com/v1",
+                            None,
+                        )?),
+                        azure: None,
+                        headers: None,
+                    },
                 }
             }
         };

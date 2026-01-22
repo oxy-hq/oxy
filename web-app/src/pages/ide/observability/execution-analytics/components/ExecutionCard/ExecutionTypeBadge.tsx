@@ -1,4 +1,10 @@
-import { Layers, Database, LucideWorkflow, Plug, LucideBot } from "lucide-react";
+import {
+  Layers,
+  Database,
+  LucideWorkflow,
+  Plug,
+  LucideBot,
+} from "lucide-react";
 import { cn } from "@/libs/shadcn/utils";
 import { ExecutionDetail, EXECUTION_TYPES } from "../../types";
 

@@ -5,7 +5,7 @@ use crate::{
 };
 use async_openai::{
     Client,
-    config::{AzureConfig, Config, OpenAIConfig},
+    config::OpenAIConfig,
     types::{
         chat::{
             ChatCompletionMessageToolCall, ChatCompletionMessageToolCallChunk,
@@ -17,11 +17,11 @@ use async_openai::{
         responses::Reasoning,
     },
 };
-use axum::http::{HeaderMap, HeaderName, HeaderValue};
 use omni::MetadataStorage;
+// Re-export types from oxy-openai for use elsewhere in core
+pub use oxy_openai::{ConfigType, CustomOpenAIConfig, OpenAIClient, StreamChunk};
 use schemars::schema::RootSchema;
-use secrecy::SecretString;
-use std::{collections::HashMap, str::FromStr};
+use std::collections::HashMap;
 use tokio_stream::StreamExt;
 
 use crate::{
@@ -31,8 +31,7 @@ use crate::{
     },
     config::{
         ConfigManager,
-        constants::{ANTHROPIC_API_URL, GEMINI_API_URL},
-        model::{Model, ReasoningConfig, ReasoningEffort, RetrievalConfig, ToolType},
+        model::{HeaderValue, Model, ReasoningConfig, ReasoningEffort, RetrievalConfig, ToolType},
     },
     execute::types::event::ArtifactKind,
     types::SemanticQueryParams,
@@ -42,117 +41,63 @@ use crate::{
 };
 use oxy_shared::errors::OxyError;
 
-#[derive(Debug, Clone)]
-pub struct CustomOpenAIConfig {
-    base_config: OpenAIConfig,
-    custom_headers: HeaderMap,
-}
-
-impl CustomOpenAIConfig {
-    pub fn new(base_config: OpenAIConfig, custom_headers: HashMap<String, String>) -> Self {
-        let mut header_map = HeaderMap::new();
-
-        for (key, value) in custom_headers {
-            if let (Ok(header_name), Ok(header_value)) =
-                (HeaderName::from_str(&key), HeaderValue::from_str(&value))
-            {
-                header_map.insert(header_name, header_value);
-            } else {
-                tracing::warn!("Invalid header: {} = {}", key, value);
-            }
-        }
-
-        Self {
-            base_config,
-            custom_headers: header_map,
-        }
-    }
-}
-
-impl Config for CustomOpenAIConfig {
-    fn headers(&self) -> HeaderMap {
-        let mut headers = self.base_config.headers();
-
-        // Add custom headers
-        for (key, value) in &self.custom_headers {
-            headers.insert(key.clone(), value.clone());
-        }
-
-        headers
-    }
-
-    fn url(&self, path: &str) -> String {
-        self.base_config.url(path)
-    }
-
-    fn query(&self) -> Vec<(&str, &str)> {
-        self.base_config.query()
-    }
-
-    fn api_base(&self) -> &str {
-        self.base_config.api_base()
-    }
-
-    fn api_key(&self) -> &SecretString {
-        self.base_config.api_key()
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum ConfigType {
-    Default(OpenAIConfig),
-    Azure(AzureConfig),
-    WithHeaders(CustomOpenAIConfig),
-}
-
-/// This is a wrapper around OpenAIConfig and AzureConfig
-/// to allow for dynamic configuration of the client
-/// based on the model configuration
-impl Config for ConfigType {
-    fn headers(&self) -> HeaderMap {
-        match &self {
-            ConfigType::Default(config) => config.headers(),
-            ConfigType::Azure(config) => config.headers(),
-            ConfigType::WithHeaders(config) => config.headers(),
-        }
-    }
-    fn url(&self, path: &str) -> String {
-        match &self {
-            ConfigType::Default(config) => config.url(path),
-            ConfigType::Azure(config) => config.url(path),
-            ConfigType::WithHeaders(config) => config.url(path),
-        }
-    }
-    fn query(&self) -> Vec<(&str, &str)> {
-        match &self {
-            ConfigType::Default(config) => config.query(),
-            ConfigType::Azure(config) => config.query(),
-            ConfigType::WithHeaders(config) => config.query(),
-        }
-    }
-
-    fn api_base(&self) -> &str {
-        match &self {
-            ConfigType::Default(config) => config.api_base(),
-            ConfigType::Azure(config) => config.api_base(),
-            ConfigType::WithHeaders(config) => config.api_base(),
-        }
-    }
-
-    fn api_key(&self) -> &SecretString {
-        match &self {
-            ConfigType::Default(config) => config.api_key(),
-            ConfigType::Azure(config) => config.api_key(),
-            ConfigType::WithHeaders(config) => config.api_key(),
-        }
-    }
-}
-
 pub trait IntoOpenAIConfig {
     fn into_openai_config(
         &self,
         secrets_manager: &SecretsManager,
     ) -> impl std::future::Future<Output = Result<ConfigType, OxyError>> + std::marker::Send;
+}
+
+/// Extension trait for resolving secrets in HeaderValue
+pub trait HeaderValueExt {
+    fn resolve(
+        &self,
+        secrets_manager: &SecretsManager,
+    ) -> impl std::future::Future<Output = Result<String, OxyError>> + std::marker::Send;
+}
+
+impl HeaderValueExt for HeaderValue {
+    async fn resolve(&self, secrets_manager: &SecretsManager) -> Result<String, OxyError> {
+        match self {
+            HeaderValue::Direct(value) => Ok(value.clone()),
+            HeaderValue::EnvVar { env_var } => {
+                let result = secrets_manager.resolve_secret(env_var).await?;
+                match result {
+                    Some(res) => Ok(res),
+                    None => Err(OxyError::SecretNotFound(Some(env_var.clone()))),
+                }
+            }
+        }
+    }
+}
+
+/// Extension trait for resolving headers in Model
+pub trait ModelHeadersExt {
+    fn resolve_headers(
+        &self,
+        secrets_manager: &SecretsManager,
+    ) -> impl std::future::Future<Output = Result<HashMap<String, String>, OxyError>> + std::marker::Send;
+}
+
+impl ModelHeadersExt for Model {
+    async fn resolve_headers(
+        &self,
+        secrets_manager: &SecretsManager,
+    ) -> Result<HashMap<String, String>, OxyError> {
+        match self {
+            Model::OpenAI { config } => {
+                let mut resolved_headers = HashMap::new();
+                if let Some(headers_map) = &config.headers {
+                    for (key, header_value) in headers_map {
+                        let resolved_value = header_value.resolve(secrets_manager).await?;
+                        resolved_headers.insert(key.clone(), resolved_value);
+                    }
+                }
+                Ok(resolved_headers)
+            }
+            _ => Ok(HashMap::new()), // Other models don't support custom headers yet
+        }
+    }
 }
 
 impl IntoOpenAIConfig for Model {
@@ -161,117 +106,71 @@ impl IntoOpenAIConfig for Model {
         secrets_manager: &SecretsManager,
     ) -> Result<ConfigType, OxyError> {
         match self {
-            Model::OpenAI {
-                name: _,
-                model_ref: _,
-                api_url,
-                azure,
-                key_var,
-                headers: custom_headers,
-            } => {
-                let api_key = secrets_manager.resolve_secret(key_var).await.map_err(|_| {
-                    OxyError::ConfigurationError("OpenAI key not found".to_string())
-                })?;
-                let api_key = match api_key {
-                    Some(secret) => secret,
-                    None => {
-                        return Err(OxyError::ConfigurationError(
-                            "OpenAI key not found".to_string(),
-                        ));
-                    }
+            Model::OpenAI { config } => {
+                // Resolve API key from secrets
+                let api_key = secrets_manager
+                    .resolve_secret(&config.key_var)
+                    .await
+                    .map_err(|_| OxyError::ConfigurationError("OpenAI key not found".to_string()))?
+                    .ok_or_else(|| {
+                        OxyError::ConfigurationError("OpenAI key not found".to_string())
+                    })?;
+
+                // Resolve custom headers if present
+                let resolved_headers = if config.headers.is_some() {
+                    Some(self.resolve_headers(secrets_manager).await?)
+                } else {
+                    None
                 };
 
-                match azure {
-                    Some(azure) => {
-                        let mut config = AzureConfig::new()
-                            .with_api_version(&azure.azure_api_version)
-                            .with_deployment_id(&azure.azure_deployment_id)
-                            .with_api_key(api_key);
-                        if let Some(api_url) = api_url {
-                            config = config.with_api_base(api_url);
-                        }
-                        Ok(ConfigType::Azure(config))
-                    }
-                    None => {
-                        let mut config = OpenAIConfig::new().with_api_key(api_key);
-                        if let Some(api_url) = api_url {
-                            tracing::debug!("Setting API URL: {}", api_url);
-                            config = config.with_api_base(api_url);
-                        }
-
-                        if let Some(custom_headers) = custom_headers
-                            && !custom_headers.is_empty()
-                        {
-                            let resolved_headers = self.resolve_headers(secrets_manager).await?;
-                            let config_with_headers =
-                                CustomOpenAIConfig::new(config, resolved_headers);
-                            return Ok(ConfigType::WithHeaders(config_with_headers));
-                        }
-
-                        tracing::debug!("Creating default OpenAI config without custom headers");
-                        Ok(ConfigType::Default(config))
-                    }
-                }
+                // Delegate to oxy-openai for config creation
+                let openai_config = oxy_openai::create_config_from_model(
+                    api_key,
+                    config.api_url.clone(),
+                    config.azure.clone(),
+                    resolved_headers,
+                );
+                Ok(openai_config)
             }
-            Model::Ollama {
-                name: _,
-                model_ref: _,
-                api_key,
-                api_url,
-            } => {
-                let config = OpenAIConfig::new()
-                    .with_api_base(api_url)
-                    .with_api_key(api_key);
-                Ok(ConfigType::Default(config))
+            Model::Ollama { config } => {
+                // Delegate to oxy-ollama for config creation
+                Ok(oxy_ollama::create_openai_config(
+                    &config.api_key,
+                    &config.api_url,
+                ))
             }
-            Model::Google {
-                name: _,
-                model_ref: _,
-                key_var,
-            } => {
+            Model::Google { config } => {
+                // Resolve API key from secrets
                 let api_key = secrets_manager
-                    .resolve_secret(key_var)
+                    .resolve_secret(&config.key_var)
                     .await
                     .map_err(|_e| {
                         OxyError::ConfigurationError("Gemini API key not found".to_string())
+                    })?
+                    .ok_or_else(|| {
+                        OxyError::ConfigurationError("Gemini API key not found".to_string())
                     })?;
-                let api_key = match api_key {
-                    Some(secret) => secret,
-                    None => {
-                        return Err(OxyError::ConfigurationError(
-                            "Gemini API key not found".to_string(),
-                        ));
-                    }
-                };
-                let config = OpenAIConfig::new()
-                    .with_api_base(GEMINI_API_URL)
-                    .with_api_key(api_key);
-                Ok(ConfigType::Default(config))
+
+                // Delegate to oxy-gemini for config creation
+                Ok(oxy_gemini::create_openai_config(api_key))
             }
-            Model::Anthropic {
-                name: _,
-                model_ref: _,
-                key_var,
-                api_url,
-            } => {
+            Model::Anthropic { config } => {
+                // Resolve API key from secrets
                 let api_key = secrets_manager
-                    .resolve_secret(key_var)
+                    .resolve_secret(&config.key_var)
                     .await
                     .map_err(|_e| {
                         OxyError::ConfigurationError("Anthropic API key not found".to_string())
+                    })?
+                    .ok_or_else(|| {
+                        OxyError::ConfigurationError("Anthropic API key not found".to_string())
                     })?;
-                let api_key = match api_key {
-                    Some(secret) => secret,
-                    None => {
-                        return Err(OxyError::ConfigurationError(
-                            "Anthropic API key not found".to_string(),
-                        ));
-                    }
-                };
-                let config = OpenAIConfig::new()
-                    .with_api_base(api_url.clone().unwrap_or(ANTHROPIC_API_URL.to_string()))
-                    .with_api_key(api_key);
-                Ok(ConfigType::Default(config))
+
+                // Delegate to oxy-anthropic for config creation
+                Ok(oxy_anthropic::create_openai_config(
+                    api_key,
+                    config.api_url.clone(),
+                ))
             }
         }
     }
@@ -305,8 +204,6 @@ impl IntoOpenAIConfig for RetrievalConfig {
         ))
     }
 }
-
-pub type OpenAIClient = Client<ConfigType>;
 
 pub trait OpenAIToolConfig {
     async fn description(&self, config: &ConfigManager) -> String;
@@ -708,15 +605,6 @@ impl AsyncFunctionObject for ChatCompletionTool {
             function: function_obj,
         }
     }
-}
-
-pub enum StreamChunk {
-    Text(String),
-    ToolCall {
-        id: String,
-        name: String,
-        args: String,
-    },
 }
 
 #[derive(Clone)]

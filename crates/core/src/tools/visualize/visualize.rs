@@ -6,13 +6,12 @@ use crate::{
         types::{Chunk, Output, Prompt},
     },
     observability::events,
+    tools::visualize::VisualizeParams,
 };
 use oxy_shared::errors::OxyError;
 
 use serde_json::json;
 use uuid::Uuid;
-
-use super::types::VisualizeParams;
 
 #[derive(Debug, Clone)]
 pub struct VisualizeExecutable;

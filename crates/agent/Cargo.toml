@@ -52,6 +52,8 @@ entity = { path = "../entity" }
 # Shared infrastructure
 oxy-shared = { path = "../shared" }
 oxy-semantic = { path = "../semantic" }
+oxy-openai = { path = "../infrastructure/llm/openai" }
+# oxy-config = { path = "../config" }  # Access via oxy::config instead
 oxy = { path = "../core" }
 
 [dev-dependencies]
