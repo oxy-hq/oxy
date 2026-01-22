@@ -120,7 +120,7 @@
     "@types/node": "^25.0.10",
     "@types/nunjucks": "3.2.6",
     "@types/papaparse": "^5.5.2",
-    "@types/react": "^19.2.8",
+    "@types/react": "^19.2.9",
     "@types/react-dom": "^19.2.3",
     "@types/react-syntax-highlighter": "^15.5.13",
     "@types/react-window": "^2.0.0",
