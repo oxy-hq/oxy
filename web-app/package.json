@@ -117,7 +117,7 @@
     "@types/invariant": "^2.2.37",
     "@types/js-cookie": "^3.0.6",
     "@types/lodash": "^4.17.23",
-    "@types/node": "^25.0.9",
+    "@types/node": "^25.0.10",
     "@types/nunjucks": "3.2.6",
     "@types/papaparse": "^5.5.2",
     "@types/react": "^19.2.8",
