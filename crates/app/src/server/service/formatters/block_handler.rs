@@ -12,17 +12,13 @@ use crate::server::service::types::{
     SemanticQueryParams,
 };
 use oxy::execute::types::event::SandboxInfo;
-use oxy::types::Content;
 use oxy::{
     config::constants::{
         AGENT_SOURCE, CONCURRENCY_SOURCE, CONSISTENCY_SOURCE, TASK_SOURCE, WORKFLOW_SOURCE,
     },
     execute::{
         formatters::{FormatterResult, SourceHandler},
-        types::{
-            EventKind, Output, Source, Usage,
-            event::{ArtifactKind, SandboxInfo},
-        },
+        types::{EventKind, Output, Source, Usage, event::ArtifactKind},
     },
     types::agent::LogItem,
 };

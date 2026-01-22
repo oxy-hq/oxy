@@ -57,7 +57,7 @@ impl ToolExecutor for WorkflowToolExecutor {
                 let result = WorkflowLauncherExecutable
                     .execute(execution_context, workflow_input)
                     .await
-                    .map(|output| output.into());
+                    .map(|output| output);
 
                 match &result {
                     Ok(output) => events::tool::tool_call_output(output),
@@ -125,7 +125,7 @@ impl ToolExecutor for SemanticQueryToolExecutor {
                 span.record("oxy.topic", query.topic.as_deref().unwrap_or("unknown"));
                 span.record(
                     "oxy.semantic_query_params",
-                    &serde_json::to_string(&query).unwrap_or_default(),
+                    serde_json::to_string(&query).unwrap_or_default(),
                 );
 
                 events::tool::record_semantic_tool_call_metric(
@@ -147,11 +147,11 @@ impl ToolExecutor for SemanticQueryToolExecutor {
                 match &result {
                     Ok(output) => {
                         // Record generated SQL for tracing
-                        if let oxy::execute::types::Output::Table(table) = output {
-                            if let Some(ref reference) = table.reference {
-                                println!("generated sql: {}", reference.sql);
-                                span.record("oxy.generated_sql", &reference.sql);
-                            }
+                        if let oxy::execute::types::Output::Table(table) = output
+                            && let Some(ref reference) = table.reference
+                        {
+                            println!("generated sql: {}", reference.sql);
+                            span.record("oxy.generated_sql", &reference.sql);
                         }
                         events::tool::tool_call_output(output);
                     }

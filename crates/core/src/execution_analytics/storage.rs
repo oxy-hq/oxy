@@ -345,7 +345,7 @@ impl ExecutionAnalyticsStorage {
             ));
         }
 
-        if let Some(ref source) = source_ref {
+        if let Some(source) = source_ref {
             conditions.push(format!(
                 "agent.SpanAttributes['oxy.agent.ref'] = '{}'",
                 source.replace('\'', "''")

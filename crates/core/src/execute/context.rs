@@ -275,10 +275,10 @@ impl ExecutionContext {
 
     /// Record a SQL query in the metric context
     pub fn record_sql(&self, sql: &str) {
-        if let Some(ctx) = &self.metric_context {
-            if let Ok(mut guard) = ctx.write() {
-                guard.add_sql(sql);
-            }
+        if let Some(ctx) = &self.metric_context
+            && let Ok(mut guard) = ctx.write()
+        {
+            guard.add_sql(sql);
         }
     }
 
@@ -289,28 +289,28 @@ impl ExecutionContext {
         dimensions: &[String],
         topic: Option<&str>,
     ) {
-        if let Some(ctx) = &self.metric_context {
-            if let Ok(mut guard) = ctx.write() {
-                guard.add_explicit_metrics(measures, dimensions, topic);
-            }
+        if let Some(ctx) = &self.metric_context
+            && let Ok(mut guard) = ctx.write()
+        {
+            guard.add_explicit_metrics(measures, dimensions, topic);
         }
     }
 
     /// Set the question/prompt in the metric context
     pub fn record_question(&self, question: &str) {
-        if let Some(ctx) = &self.metric_context {
-            if let Ok(mut guard) = ctx.write() {
-                guard.set_question(question);
-            }
+        if let Some(ctx) = &self.metric_context
+            && let Ok(mut guard) = ctx.write()
+        {
+            guard.set_question(question);
         }
     }
 
     /// Set the response in the metric context
     pub fn record_response(&self, response: &str) {
-        if let Some(ctx) = &self.metric_context {
-            if let Ok(mut guard) = ctx.write() {
-                guard.set_response(response);
-            }
+        if let Some(ctx) = &self.metric_context
+            && let Ok(mut guard) = ctx.write()
+        {
+            guard.set_response(response);
         }
     }
 
@@ -319,12 +319,12 @@ impl ExecutionContext {
     /// This consumes the metric context from this execution context
     /// and triggers async storage of collected metrics.
     pub fn finalize_metrics(&self) {
-        if let Some(ctx) = &self.metric_context {
-            if let Ok(guard) = ctx.read() {
-                let context = guard.clone();
-                drop(guard);
-                context.finalize();
-            }
+        if let Some(ctx) = &self.metric_context
+            && let Ok(guard) = ctx.read()
+        {
+            let context = guard.clone();
+            drop(guard);
+            context.finalize();
         }
     }
 

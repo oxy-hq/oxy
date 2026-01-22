@@ -42,7 +42,7 @@ impl Executable<OmniQueryInput> for OmniQueryExecutable {
         span.record("oxy.endpoint", &input.topic);
         span.record(
             "oxy.tool_input",
-            &serde_json::to_string(&input.params).unwrap_or_default(),
+            serde_json::to_string(&input.params).unwrap_or_default(),
         );
 
         events::tool::tool_call_input(&input);

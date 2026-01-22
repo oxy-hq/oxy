@@ -48,7 +48,7 @@ impl Executable<SQLInput> for SQLExecutable {
         let span = tracing::Span::current();
         let execution_type = events::tool::EXECUTION_TYPE_SQL_GENERATED;
         span.record("oxy.execution_type", execution_type);
-        span.record("oxy.is_verified", &false);
+        span.record("oxy.is_verified", false);
         span.record("oxy.database", &input.database);
         span.record("oxy.sql", &input.sql);
 

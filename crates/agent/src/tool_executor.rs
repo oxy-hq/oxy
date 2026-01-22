@@ -43,7 +43,7 @@ impl ToolExecutor for AgentToolExecutor {
                 // Record execution analytics fields
                 let span = tracing::Span::current();
                 span.record("oxy.tool_input", &input.param);
-                span.record("oxy.agent_ref", &agent_config.agent_ref.as_str());
+                span.record("oxy.agent_ref", agent_config.agent_ref.as_str());
                 // Create agent input from the tool configuration and parameters
                 let agent_input = AgentInput {
                     agent_ref: agent_config.agent_ref.clone(),
