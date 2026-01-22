@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.10](https://github.com/oxy-hq/oxy-internal/compare/0.4.9...0.4.10) (2026-01-22)
+
+
+### <!-- 0 -->🚀 Features
+
+* implement observability metrics ([#1521](https://github.com/oxy-hq/oxy-internal/issues/1521)) ([04854a5](https://github.com/oxy-hq/oxy-internal/commit/04854a553cd0211fd73e1ca2758d4d24a719eaeb))
+
 ## [0.4.9](https://github.com/oxy-hq/oxy-internal/compare/0.4.8...0.4.9) (2026-01-19)
 
 ## [0.4.8](https://github.com/oxy-hq/oxy-internal/compare/0.4.7...0.4.8) (2026-01-16)

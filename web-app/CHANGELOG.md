@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.4.10](https://github.com/oxy-hq/oxy-internal/compare/0.4.9...0.4.10) (2026-01-22)
+
+
+### <!-- 0 -->🚀 Features
+
+* [#1537](https://github.com/oxy-hq/oxy-internal/issues/1537) make various fields in the GUI dropdowns / search filters ([#1543](https://github.com/oxy-hq/oxy-internal/issues/1543)) ([08bdc4e](https://github.com/oxy-hq/oxy-internal/commit/08bdc4ead61b762a30069b3952ce0a550c76040a))
+* create an add file button in object view in dev portal ([#1541](https://github.com/oxy-hq/oxy-internal/issues/1541)) ([8d77554](https://github.com/oxy-hq/oxy-internal/commit/8d77554ce13b763b71dd61560ecbb53a26f4f941))
+* implement observability metrics ([#1521](https://github.com/oxy-hq/oxy-internal/issues/1521)) ([04854a5](https://github.com/oxy-hq/oxy-internal/commit/04854a553cd0211fd73e1ca2758d4d24a719eaeb))
+* llm infra slice ([#1526](https://github.com/oxy-hq/oxy-internal/issues/1526)) ([6b1e592](https://github.com/oxy-hq/oxy-internal/commit/6b1e5922b6e9f184e063f40270292553380ea16a))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* v0 merge conflicts ([#1548](https://github.com/oxy-hq/oxy-internal/issues/1548)) ([58c9359](https://github.com/oxy-hq/oxy-internal/commit/58c93598f8112ea8abbe626617ab99f57ca00c95))
+
 ## [0.4.9](https://github.com/oxy-hq/oxy-internal/compare/0.4.8...0.4.9) (2026-01-19)
 
 
