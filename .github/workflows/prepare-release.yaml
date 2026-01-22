@@ -21,7 +21,7 @@ jobs:
     runs-on: ${{ github.repository == 'oxy-hq/oxy-internal' && 'ubuntu-slim' || 'ubuntu-latest' }}
     outputs:
       release_created: ${{ steps.release-please.outputs.releases_created }}
-      release_version: ${{ steps.release-please.outputs['crates--core--version'] }}
+      release_version: ${{ steps.release-please.outputs['crates/a2a--version'] || steps.release-please.outputs.version || format('{0}.{1}.{2}', steps.release-please.outputs['crates/a2a--major'], steps.release-please.outputs['crates/a2a--minor'], steps.release-please.outputs['crates/a2a--patch']) }}
     steps:
       - uses: actions/create-github-app-token@v2
         name: Create GitHub App Token
