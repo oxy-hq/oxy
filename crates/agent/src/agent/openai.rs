@@ -4,11 +4,10 @@ use async_openai::{
     error::OpenAIError,
     types::chat::{
         ChatCompletionMessageToolCall, ChatCompletionMessageToolCallChunk,
-        ChatCompletionMessageToolCalls, ChatCompletionRequestAssistantMessageArgs,
-        ChatCompletionRequestMessage, ChatCompletionRequestSystemMessageArgs,
-        ChatCompletionRequestUserMessageArgs, ChatCompletionStreamOptions, ChatCompletionTool,
-        ChatCompletionToolChoiceOption, ChatCompletionTools, CreateChatCompletionRequestArgs,
-        FunctionCall,
+        ChatCompletionRequestAssistantMessageArgs, ChatCompletionRequestMessage,
+        ChatCompletionRequestSystemMessageArgs, ChatCompletionRequestUserMessageArgs,
+        ChatCompletionStreamOptions, ChatCompletionTool, ChatCompletionToolChoiceOption,
+        ChatCompletionTools, CreateChatCompletionRequestArgs, FunctionCall,
     },
 };
 use deser_incomplete::from_json_str;
@@ -20,7 +19,7 @@ use super::openai_response::OpenAIResponseExecutable;
 use crate::types::Message;
 
 use oxy::{
-    adapters::openai::OpenAIClient,
+    adapters::{lenient_types::LenientChatCompletionResponse, openai::OpenAIClient},
     config::{
         constants::{AGENT_RETRY_MAX_ELAPSED_TIME, AGENT_SOURCE_CONTENT},
         model::ReasoningConfig,
@@ -609,11 +608,13 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OSSExecutable {
             OxyError::RuntimeError(format!("Error in building completion request: {err:?}"))
         })?;
 
-        let response = chat.create(request).await.map_err(|err| {
-            OxyError::RuntimeError(format!("Error in completion request: {err:?}"))
-        })?;
+        // Use lenient types for better compatibility with OpenAI-compatible APIs (Groq, Mistral, etc.)
+        let response: LenientChatCompletionResponse =
+            chat.create_byot(request).await.map_err(|err| {
+                OxyError::RuntimeError(format!("Error in completion request: {err:?}"))
+            })?;
 
-        if let Some(usage_data) = response.usage {
+        if let Some(usage_data) = &response.usage {
             events::llm::usage(
                 usage_data.prompt_tokens as i64,
                 usage_data.completion_tokens as i64,
@@ -638,10 +639,7 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OSSExecutable {
             .clone()
             .unwrap_or_default()
             .into_iter()
-            .filter_map(|tc| match tc {
-                ChatCompletionMessageToolCalls::Function(func_call) => Some(func_call),
-                ChatCompletionMessageToolCalls::Custom(_) => None,
-            })
+            .map(Into::into)
             .collect();
 
         execution_context

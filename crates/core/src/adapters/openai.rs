@@ -9,9 +9,8 @@ use async_openai::{
     types::{
         chat::{
             ChatCompletionMessageToolCall, ChatCompletionMessageToolCallChunk,
-            ChatCompletionMessageToolCalls, ChatCompletionNamedToolChoice,
-            ChatCompletionRequestMessage, ChatCompletionTool, ChatCompletionToolChoiceOption,
-            ChatCompletionTools, CreateChatCompletionRequestArgs, CreateChatCompletionResponse,
+            ChatCompletionNamedToolChoice, ChatCompletionRequestMessage, ChatCompletionTool,
+            ChatCompletionToolChoiceOption, ChatCompletionTools, CreateChatCompletionRequestArgs,
             CreateChatCompletionStreamResponse, FunctionName, FunctionObject, FunctionObjectArgs,
             ReasoningEffort as OpenAIReasoningEffort,
         },
@@ -756,14 +755,17 @@ impl OpenAIAdapter {
             .request_builder(messages)
             .build()
             .map_err(|e| OxyError::RuntimeError(format!("Failed to build request: {e}")))?;
-        let response = self.client.chat().create(request).await?;
+
+        // Use lenient types for better compatibility with OpenAI-compatible APIs (Groq, Mistral, etc.)
+        let response: super::lenient_types::LenientChatCompletionResponse =
+            self.client.chat().create_byot(request).await?;
 
         if let Some(usage) = &response.usage {
             events::llm::usage(usage.prompt_tokens as i64, usage.completion_tokens as i64);
         }
 
-        let result = self
-            .extract_response(&response)
+        let result = response
+            .extract_content()
             .ok_or_else(|| OxyError::RuntimeError("No response from OpenAI".to_string()))?;
         Ok(result)
     }
@@ -807,10 +809,12 @@ impl OpenAIAdapter {
         let request = request_builder
             .build()
             .map_err(|e| OxyError::RuntimeError(format!("Failed to build request: {e}")))?;
-        let response = self
+
+        // Use lenient types for better compatibility with OpenAI-compatible APIs (Groq, Mistral, etc.)
+        let response: super::lenient_types::LenientChatCompletionResponse = self
             .client
             .chat()
-            .create(request)
+            .create_byot(request)
             .await
             .map_err(|e| OxyError::RuntimeError(format!("OpenAI API error: {e}")))?;
 
@@ -827,7 +831,7 @@ impl OpenAIAdapter {
                 .await?;
         }
 
-        let result = self.extract_tool_calls(&response);
+        let result = response.extract_tool_calls();
         Ok(result.unwrap_or((None, vec![])))
     }
 
@@ -951,37 +955,6 @@ impl OpenAIAdapter {
         let mut builder = CreateChatCompletionRequestArgs::default();
         builder.model(&self.model_name).messages(messages);
         builder
-    }
-
-    fn extract_response(&self, response: &CreateChatCompletionResponse) -> Option<String> {
-        response.choices.first().and_then(|choice| {
-            if let Some(content) = &choice.message.content {
-                return Some(content.clone());
-            }
-            None
-        })
-    }
-
-    fn extract_tool_calls(
-        &self,
-        response: &CreateChatCompletionResponse,
-    ) -> Option<(Option<String>, Vec<ChatCompletionMessageToolCall>)> {
-        response.choices.first().map(|choice| {
-            (
-                choice.message.content.clone(),
-                choice
-                    .message
-                    .tool_calls
-                    .clone()
-                    .unwrap_or_default()
-                    .into_iter()
-                    .filter_map(|tc| match tc {
-                        ChatCompletionMessageToolCalls::Function(func_call) => Some(func_call),
-                        ChatCompletionMessageToolCalls::Custom(_) => None,
-                    })
-                    .collect(),
-            )
-        })
     }
 
     fn extract_stream(
