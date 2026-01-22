@@ -1,8 +1,9 @@
 import React from "react";
-import { useFormContext } from "react-hook-form";
+import { useFormContext, Controller } from "react-hook-form";
 import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
 import { AppFormData } from "../index";
+import { TaskRefSelect, TaskColumnSelect } from "./components";
 
 interface BarChartDisplayFieldsProps {
   index: number;
@@ -11,18 +12,24 @@ interface BarChartDisplayFieldsProps {
 export const BarChartDisplayFields: React.FC<BarChartDisplayFieldsProps> = ({
   index,
 }) => {
-  const { register } = useFormContext<AppFormData>();
+  const { register, watch, control } = useFormContext<AppFormData>();
+  const dataSource = watch(`display.${index}.data`) as string | undefined;
 
   return (
     <div className="space-y-4">
       <div className="space-y-2">
         <Label htmlFor={`display.${index}.data`}>Data Source *</Label>
-        <Input
-          id={`display.${index}.data`}
-          placeholder="Task name (e.g., task_1)"
-          {...register(`display.${index}.data`, {
-            required: "Data source is required",
-          })}
+        <Controller
+          control={control}
+          name={`display.${index}.data`}
+          rules={{ required: "Data source is required" }}
+          render={({ field }) => (
+            <TaskRefSelect
+              value={field.value as string | undefined}
+              onChange={field.onChange}
+              placeholder="Select task..."
+            />
+          )}
         />
         <p className="text-sm text-muted-foreground">
           Reference output from a task by task name
@@ -39,22 +46,34 @@ export const BarChartDisplayFields: React.FC<BarChartDisplayFieldsProps> = ({
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label htmlFor={`display.${index}.x`}>X Axis *</Label>
-          <Input
-            id={`display.${index}.x`}
-            placeholder="Column name"
-            {...register(`display.${index}.x`, {
-              required: "X axis is required",
-            })}
+          <Controller
+            control={control}
+            name={`display.${index}.x`}
+            rules={{ required: "X axis is required" }}
+            render={({ field }) => (
+              <TaskColumnSelect
+                taskName={dataSource}
+                value={field.value as string | undefined}
+                onChange={field.onChange}
+                placeholder="Column name"
+              />
+            )}
           />
         </div>
         <div className="space-y-2">
           <Label htmlFor={`display.${index}.y`}>Y Axis *</Label>
-          <Input
-            id={`display.${index}.y`}
-            placeholder="Column name"
-            {...register(`display.${index}.y`, {
-              required: "Y axis is required",
-            })}
+          <Controller
+            control={control}
+            name={`display.${index}.y`}
+            rules={{ required: "Y axis is required" }}
+            render={({ field }) => (
+              <TaskColumnSelect
+                taskName={dataSource}
+                value={field.value as string | undefined}
+                onChange={field.onChange}
+                placeholder="Column name"
+              />
+            )}
           />
         </div>
       </div>
@@ -78,10 +97,17 @@ export const BarChartDisplayFields: React.FC<BarChartDisplayFieldsProps> = ({
       </div>
       <div className="space-y-2">
         <Label htmlFor={`display.${index}.series`}>Series</Label>
-        <Input
-          id={`display.${index}.series`}
-          placeholder="Optional series column"
-          {...register(`display.${index}.series`)}
+        <Controller
+          control={control}
+          name={`display.${index}.series`}
+          render={({ field }) => (
+            <TaskColumnSelect
+              taskName={dataSource}
+              value={field.value as string | undefined}
+              onChange={field.onChange}
+              placeholder="Optional series column"
+            />
+          )}
         />
       </div>
     </div>

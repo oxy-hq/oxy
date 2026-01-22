@@ -1,8 +1,9 @@
 import React from "react";
-import { useFormContext } from "react-hook-form";
+import { useFormContext, Controller } from "react-hook-form";
 import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
 import { AppFormData } from "../index";
+import { TaskRefSelect, TaskColumnSelect } from "./components";
 
 interface PieChartDisplayFieldsProps {
   index: number;
@@ -11,18 +12,24 @@ interface PieChartDisplayFieldsProps {
 export const PieChartDisplayFields: React.FC<PieChartDisplayFieldsProps> = ({
   index,
 }) => {
-  const { register } = useFormContext<AppFormData>();
+  const { register, watch, control } = useFormContext<AppFormData>();
+  const dataSource = watch(`display.${index}.data`) as string | undefined;
 
   return (
     <div className="space-y-4">
       <div className="space-y-2">
         <Label htmlFor={`display.${index}.data`}>Data Source *</Label>
-        <Input
-          id={`display.${index}.data`}
-          placeholder="Task name (e.g., task_1)"
-          {...register(`display.${index}.data`, {
-            required: "Data source is required",
-          })}
+        <Controller
+          control={control}
+          name={`display.${index}.data`}
+          rules={{ required: "Data source is required" }}
+          render={({ field }) => (
+            <TaskRefSelect
+              value={field.value as string | undefined}
+              onChange={field.onChange}
+              placeholder="Select task..."
+            />
+          )}
         />
         <p className="text-sm text-muted-foreground">
           Reference output from a task by task name
@@ -39,22 +46,34 @@ export const PieChartDisplayFields: React.FC<PieChartDisplayFieldsProps> = ({
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label htmlFor={`display.${index}.name`}>Name Column *</Label>
-          <Input
-            id={`display.${index}.name`}
-            placeholder="Column for labels"
-            {...register(`display.${index}.name`, {
-              required: "Name column is required",
-            })}
+          <Controller
+            control={control}
+            name={`display.${index}.name`}
+            rules={{ required: "Name column is required" }}
+            render={({ field }) => (
+              <TaskColumnSelect
+                taskName={dataSource}
+                value={field.value as string | undefined}
+                onChange={field.onChange}
+                placeholder="Column for labels"
+              />
+            )}
           />
         </div>
         <div className="space-y-2">
           <Label htmlFor={`display.${index}.value`}>Value Column *</Label>
-          <Input
-            id={`display.${index}.value`}
-            placeholder="Column for values"
-            {...register(`display.${index}.value`, {
-              required: "Value column is required",
-            })}
+          <Controller
+            control={control}
+            name={`display.${index}.value`}
+            rules={{ required: "Value column is required" }}
+            render={({ field }) => (
+              <TaskColumnSelect
+                taskName={dataSource}
+                value={field.value as string | undefined}
+                onChange={field.onChange}
+                placeholder="Column for values"
+              />
+            )}
           />
         </div>
       </div>

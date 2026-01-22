@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useRef } from "react";
 import { useFormContext, useFieldArray, Controller } from "react-hook-form";
 import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
@@ -10,8 +10,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/shadcn/select";
-import { Plus, X } from "lucide-react";
+import { Combobox } from "@/components/ui/shadcn/combobox";
+import { Plus, X, Loader2 } from "lucide-react";
 import { WorkflowFormData } from "../..";
+import useTopicFiles from "@/hooks/api/useTopicFiles";
+import useTopicFieldOptions from "@/hooks/api/useTopicFieldOptions";
 
 interface SemanticQueryTaskFieldsProps {
   index: number;
@@ -40,6 +43,7 @@ export const SemanticQueryTaskFields: React.FC<
   const {
     register,
     control,
+    watch,
     formState: { errors },
   } = useFormContext<WorkflowFormData>();
 
@@ -47,11 +51,34 @@ export const SemanticQueryTaskFields: React.FC<
   // @ts-expect-error - Dynamic path for nested tasks
   const taskErrors = errors[basePath]?.[index];
 
+  // Watch the topic value
+  // @ts-expect-error - dynamic field path
+  const topicValue = watch(`${taskPath}.topic`) as string | undefined;
+
+  // Track previous topic to detect changes
+  const prevTopicRef = useRef<string | undefined>(topicValue);
+
+  // Fetch available topics
+  const {
+    topicFiles,
+    isLoading: topicsLoading,
+    error: topicsError,
+  } = useTopicFiles();
+
+  // Fetch field options based on selected topic
+  const {
+    dimensions: dimensionOptions,
+    measures: measureOptions,
+    allFields: allFieldOptions,
+    isLoading: fieldsLoading,
+  } = useTopicFieldOptions(topicValue);
+
   // Use useFieldArray for dynamic arrays
   const {
     fields: dimensionFields,
     append: appendDimension,
     remove: removeDimension,
+    replace: replaceDimensions,
   } = useFieldArray({
     control,
     // @ts-expect-error - dynamic field path
@@ -62,6 +89,7 @@ export const SemanticQueryTaskFields: React.FC<
     fields: measureFields,
     append: appendMeasure,
     remove: removeMeasure,
+    replace: replaceMeasures,
   } = useFieldArray({
     control,
     // @ts-expect-error - dynamic field path
@@ -72,6 +100,7 @@ export const SemanticQueryTaskFields: React.FC<
     fields: filterFields,
     append: appendFilter,
     remove: removeFilter,
+    replace: replaceFilters,
   } = useFieldArray({
     control,
     // @ts-expect-error - dynamic field path
@@ -82,24 +111,106 @@ export const SemanticQueryTaskFields: React.FC<
     fields: orderFields,
     append: appendOrder,
     remove: removeOrder,
+    replace: replaceOrders,
   } = useFieldArray({
     control,
     // @ts-expect-error - dynamic field path
     name: `${taskPath}.orders`,
   });
 
-  return (
-    <div className="space-y-4">
-      <div className="space-y-2">
-        <Label htmlFor={`${taskPath}.topic`}>Topic</Label>
+  // Clear fields when topic changes
+  useEffect(() => {
+    if (
+      prevTopicRef.current !== undefined &&
+      topicValue !== prevTopicRef.current
+    ) {
+      replaceDimensions([]);
+      replaceMeasures([]);
+      replaceFilters([]);
+      replaceOrders([]);
+    }
+    prevTopicRef.current = topicValue;
+  }, [
+    topicValue,
+    replaceDimensions,
+    replaceMeasures,
+    replaceFilters,
+    replaceOrders,
+  ]);
+
+  const topicItems = topicFiles.map((t) => ({
+    value: t.value,
+    label: t.label,
+    searchText: t.searchText,
+  }));
+
+  const dimensionItems = dimensionOptions.map((d) => ({
+    value: d.value,
+    label: d.label,
+    searchText: d.searchText,
+  }));
+
+  const measureItems = measureOptions.map((m) => ({
+    value: m.value,
+    label: m.label,
+    searchText: m.searchText,
+  }));
+
+  const allFieldItems = allFieldOptions.map((f) => ({
+    value: f.value,
+    label: f.label,
+    searchText: f.searchText,
+  }));
+
+  const renderTopicField = () => {
+    if (topicsLoading) {
+      return (
+        <div className="flex items-center gap-2 h-10 px-3 border rounded-md bg-muted">
+          <Loader2 className="w-4 h-4 animate-spin" />
+          <span className="text-sm text-muted-foreground">
+            Loading topics...
+          </span>
+        </div>
+      );
+    }
+
+    if (topicsError) {
+      return (
         <Input
           id={`${taskPath}.topic`}
-          placeholder="Enter topic"
+          placeholder="Enter topic path"
           // @ts-expect-error - dynamic field path
           {...register(`${taskPath}.topic`, {
             required: "Topic is required",
           })}
         />
+      );
+    }
+
+    return (
+      <Controller
+        control={control}
+        // @ts-expect-error - dynamic field path
+        name={`${taskPath}.topic`}
+        rules={{ required: "Topic is required" }}
+        render={({ field }) => (
+          <Combobox
+            items={topicItems}
+            value={(field.value as string) ?? ""}
+            onValueChange={field.onChange}
+            placeholder="Select topic..."
+            searchPlaceholder="Search topics..."
+          />
+        )}
+      />
+    );
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="space-y-2">
+        <Label htmlFor={`${taskPath}.topic`}>Topic</Label>
+        {renderTopicField()}
         {taskErrors?.topic && (
           <p className="text-sm text-red-500">{taskErrors.topic.message}</p>
         )}
@@ -113,21 +224,40 @@ export const SemanticQueryTaskFields: React.FC<
             onClick={() => appendDimension("" as never)}
             variant="outline"
             size="sm"
+            disabled={!topicValue}
           >
             <Plus className="w-4 h-4 mr-1" />
             Add Dimension
           </Button>
         </div>
-        {dimensionFields.length > 0 && (
+        {!topicValue && (
+          <p className="text-sm text-muted-foreground">
+            Select a topic first to see available dimensions
+          </p>
+        )}
+        {topicValue && fieldsLoading && (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            Loading dimensions...
+          </div>
+        )}
+        {topicValue && !fieldsLoading && dimensionFields.length > 0 && (
           <div className="space-y-2">
             {dimensionFields.map((field, dimIndex) => (
               <div key={field.id} className="flex gap-2 items-start">
                 <div className="flex-1">
-                  <Input
-                    placeholder="view_name.dimension_name"
-                    {...register(
-                      // @ts-expect-error - dynamic field path
-                      `${taskPath}.dimensions.${dimIndex}`,
+                  <Controller
+                    control={control}
+                    // @ts-expect-error - dynamic field path
+                    name={`${taskPath}.dimensions.${dimIndex}`}
+                    render={({ field: controllerField }) => (
+                      <Combobox
+                        items={dimensionItems}
+                        value={controllerField.value as string}
+                        onValueChange={controllerField.onChange}
+                        placeholder="Select dimension..."
+                        searchPlaceholder="Search dimensions..."
+                      />
                     )}
                   />
                 </div>
@@ -143,10 +273,11 @@ export const SemanticQueryTaskFields: React.FC<
             ))}
           </div>
         )}
-        <p className="text-sm text-muted-foreground">
-          Add dimensions to include in the query (e.g., users.country,
-          orders.status)
-        </p>
+        {topicValue && !fieldsLoading && dimensionFields.length === 0 && (
+          <p className="text-sm text-muted-foreground">
+            Click "Add Dimension" to include dimensions in the query
+          </p>
+        )}
       </div>
 
       <div className="space-y-2">
@@ -157,21 +288,40 @@ export const SemanticQueryTaskFields: React.FC<
             onClick={() => appendMeasure("" as never)}
             variant="outline"
             size="sm"
+            disabled={!topicValue}
           >
             <Plus className="w-4 h-4 mr-1" />
             Add Measure
           </Button>
         </div>
-        {measureFields.length > 0 && (
+        {!topicValue && (
+          <p className="text-sm text-muted-foreground">
+            Select a topic first to see available measures
+          </p>
+        )}
+        {topicValue && fieldsLoading && (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            Loading measures...
+          </div>
+        )}
+        {topicValue && !fieldsLoading && measureFields.length > 0 && (
           <div className="space-y-2">
             {measureFields.map((field, measureIndex) => (
               <div key={field.id} className="flex gap-2 items-start">
                 <div className="flex-1">
-                  <Input
-                    placeholder="view_name.measure_name"
-                    {...register(
-                      // @ts-expect-error - dynamic field path
-                      `${taskPath}.measures.${measureIndex}`,
+                  <Controller
+                    control={control}
+                    // @ts-expect-error - dynamic field path
+                    name={`${taskPath}.measures.${measureIndex}`}
+                    render={({ field: controllerField }) => (
+                      <Combobox
+                        items={measureItems}
+                        value={controllerField.value as string}
+                        onValueChange={controllerField.onChange}
+                        placeholder="Select measure..."
+                        searchPlaceholder="Search measures..."
+                      />
                     )}
                   />
                 </div>
@@ -187,10 +337,11 @@ export const SemanticQueryTaskFields: React.FC<
             ))}
           </div>
         )}
-        <p className="text-sm text-muted-foreground">
-          Add measures to aggregate in the query (e.g., orders.total_revenue,
-          users.count)
-        </p>
+        {topicValue && !fieldsLoading && measureFields.length === 0 && (
+          <p className="text-sm text-muted-foreground">
+            Click "Add Measure" to include measures in the query
+          </p>
+        )}
       </div>
 
       <div className="space-y-2">
@@ -203,6 +354,7 @@ export const SemanticQueryTaskFields: React.FC<
             }
             variant="outline"
             size="sm"
+            disabled={!topicValue}
           >
             <Plus className="w-4 h-4 mr-1" />
             Add Filter
@@ -213,11 +365,19 @@ export const SemanticQueryTaskFields: React.FC<
             {filterFields.map((field, filterIndex) => (
               <div key={field.id} className="flex gap-2 items-center">
                 <div className="flex-1">
-                  <Input
-                    placeholder="Field (e.g., view.dimension)"
-                    {...register(
-                      // @ts-expect-error - dynamic field path
-                      `${taskPath}.filters.${filterIndex}.field`,
+                  <Controller
+                    control={control}
+                    // @ts-expect-error - dynamic field path
+                    name={`${taskPath}.filters.${filterIndex}.field`}
+                    render={({ field: controllerField }) => (
+                      <Combobox
+                        items={allFieldItems}
+                        value={controllerField.value as string}
+                        onValueChange={controllerField.onChange}
+                        placeholder="Select field..."
+                        searchPlaceholder="Search fields..."
+                        disabled={!topicValue || fieldsLoading}
+                      />
                     )}
                   />
                 </div>
@@ -281,6 +441,7 @@ export const SemanticQueryTaskFields: React.FC<
             }
             variant="outline"
             size="sm"
+            disabled={!topicValue}
           >
             <Plus className="w-4 h-4 mr-1" />
             Add Order
@@ -291,11 +452,19 @@ export const SemanticQueryTaskFields: React.FC<
             {orderFields.map((field, orderIndex) => (
               <div key={field.id} className="flex gap-2 items-center">
                 <div className="flex-1">
-                  <Input
-                    placeholder="Field (e.g., view.dimension)"
-                    {...register(
-                      // @ts-expect-error - dynamic field path
-                      `${taskPath}.orders.${orderIndex}.field`,
+                  <Controller
+                    control={control}
+                    // @ts-expect-error - dynamic field path
+                    name={`${taskPath}.orders.${orderIndex}.field`}
+                    render={({ field: controllerField }) => (
+                      <Combobox
+                        items={allFieldItems}
+                        value={controllerField.value as string}
+                        onValueChange={controllerField.onChange}
+                        placeholder="Select field..."
+                        searchPlaceholder="Search fields..."
+                        disabled={!topicValue || fieldsLoading}
+                      />
                     )}
                   />
                 </div>
