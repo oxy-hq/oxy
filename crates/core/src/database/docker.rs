@@ -26,6 +26,32 @@ const POSTGRES_DATABASE: &str = "oxy";
 const POSTGRES_VOLUME: &str = "oxy-postgres-data";
 pub const POSTGRES_READY_TIMEOUT_SECS: u64 = 30;
 
+/// Docker ClickHouse configuration constants
+const CLICKHOUSE_CONTAINER_NAME: &str = "oxy-clickhouse";
+const CLICKHOUSE_IMAGE: &str = "clickhouse/clickhouse-server:latest";
+const CLICKHOUSE_HTTP_PORT: u16 = 8123;
+const CLICKHOUSE_NATIVE_PORT: u16 = 9000;
+const CLICKHOUSE_USER: &str = "default";
+const CLICKHOUSE_PASSWORD: &str = "default";
+const CLICKHOUSE_DATABASE: &str = "otel";
+const CLICKHOUSE_VOLUME: &str = "oxy-clickhouse-data";
+pub const CLICKHOUSE_READY_TIMEOUT_SECS: u64 = 30;
+
+/// Docker OTel Collector configuration constants
+const OTEL_CONTAINER_NAME: &str = "oxy-otel-collector";
+const OTEL_IMAGE: &str = "otel/opentelemetry-collector-contrib:latest";
+const OTEL_GRPC_PORT: u16 = 4317;
+const OTEL_HTTP_PORT: u16 = 4318;
+
+/// Docker network for enterprise services
+const ENTERPRISE_NETWORK: &str = "oxy-enterprise";
+
+/// Embedded OTel Collector configuration (fallback if file not found in cwd)
+const OTEL_COLLECTOR_CONFIG: &str = include_str!("../../../../otel-collector-config.yaml");
+
+/// OTel Collector config file name
+const OTEL_CONFIG_FILENAME: &str = "otel-collector-config.yaml";
+
 /// Get Docker client connection
 async fn get_docker_client() -> Result<Docker, OxyError> {
     Docker::connect_with_local_defaults().map_err(|e| {
@@ -366,6 +392,447 @@ pub async fn remove_postgres_container() -> Result<(), OxyError> {
         .map_err(|e| OxyError::InitializationError(format!("Failed to remove container: {}", e)))?;
 
     info!("PostgreSQL container removed successfully");
+    Ok(())
+}
+
+// === Enterprise Docker Services (ClickHouse + OTel Collector) ===
+
+/// Ensure the enterprise Docker network exists
+async fn ensure_enterprise_network() -> Result<(), OxyError> {
+    let docker = get_docker_client().await?;
+
+    // Check if network already exists
+    let networks = docker
+        .list_networks(None::<bollard::query_parameters::ListNetworksOptions>)
+        .await
+        .map_err(|e| OxyError::InitializationError(format!("Failed to list networks: {}", e)))?;
+
+    let exists = networks
+        .iter()
+        .any(|n| n.name.as_deref() == Some(ENTERPRISE_NETWORK));
+
+    if !exists {
+        info!("Creating Docker network '{}'...", ENTERPRISE_NETWORK);
+        let config = bollard::models::NetworkCreateRequest {
+            name: ENTERPRISE_NETWORK.to_string(),
+            driver: Some("bridge".to_string()),
+            ..Default::default()
+        };
+        docker.create_network(config).await.map_err(|e| {
+            OxyError::InitializationError(format!("Failed to create network: {}", e))
+        })?;
+    }
+
+    Ok(())
+}
+
+/// Check if a container exists (running or stopped)
+async fn is_container_exists(container_name: &str) -> Result<bool, OxyError> {
+    let docker = get_docker_client().await?;
+
+    let mut filters = HashMap::new();
+    filters.insert("name".to_string(), vec![container_name.to_string()]);
+
+    let options = ListContainersOptions {
+        all: true,
+        filters: Some(filters),
+        ..Default::default()
+    };
+
+    let containers = docker
+        .list_containers(Some(options))
+        .await
+        .map_err(|e| OxyError::InitializationError(format!("Failed to list containers: {}", e)))?;
+
+    Ok(!containers.is_empty())
+}
+
+/// Check if a container is running
+async fn is_container_running(container_name: &str) -> Result<bool, OxyError> {
+    let docker = get_docker_client().await?;
+
+    let mut filters = HashMap::new();
+    filters.insert("name".to_string(), vec![container_name.to_string()]);
+
+    let options = ListContainersOptions {
+        filters: Some(filters),
+        ..Default::default()
+    };
+
+    let containers = docker
+        .list_containers(Some(options))
+        .await
+        .map_err(|e| OxyError::InitializationError(format!("Failed to list containers: {}", e)))?;
+
+    Ok(containers.iter().any(|c| {
+        c.state
+            .as_ref()
+            .is_some_and(|s| *s == ContainerSummaryStateEnum::RUNNING)
+    }))
+}
+
+/// Start the ClickHouse container
+pub async fn start_clickhouse_container() -> Result<(), OxyError> {
+    info!("Starting Docker ClickHouse container...");
+    let docker = get_docker_client().await?;
+
+    ensure_enterprise_network().await?;
+
+    if is_container_exists(CLICKHOUSE_CONTAINER_NAME).await? {
+        if is_container_running(CLICKHOUSE_CONTAINER_NAME).await? {
+            info!("ClickHouse container is already running");
+            return Ok(());
+        }
+        info!("Starting existing ClickHouse container...");
+        docker
+            .start_container(CLICKHOUSE_CONTAINER_NAME, None::<StartContainerOptions>)
+            .await
+            .map_err(|e| {
+                OxyError::InitializationError(format!(
+                    "Failed to start existing ClickHouse container: {}",
+                    e
+                ))
+            })?;
+        return Ok(());
+    }
+
+    // Pull the image
+    info!("Pulling ClickHouse image...");
+    let create_image_options = CreateImageOptions {
+        from_image: Some(CLICKHOUSE_IMAGE.to_string()),
+        ..Default::default()
+    };
+
+    let mut pull_stream = docker.create_image(Some(create_image_options), None, None);
+    while let Some(result) = pull_stream.next().await {
+        match result {
+            Ok(info) => {
+                if let Some(status) = info.status
+                    && (status.contains("Downloaded") || status.contains("Pulling"))
+                {
+                    tracing::debug!("{}", status);
+                }
+            }
+            Err(e) => {
+                warn!("Image pull warning: {}", e);
+            }
+        }
+    }
+
+    // Configure port bindings
+    let mut port_bindings = HashMap::new();
+    port_bindings.insert(
+        "8123/tcp".to_string(),
+        Some(vec![PortBinding {
+            host_ip: Some("0.0.0.0".to_string()),
+            host_port: Some(CLICKHOUSE_HTTP_PORT.to_string()),
+        }]),
+    );
+    port_bindings.insert(
+        "9000/tcp".to_string(),
+        Some(vec![PortBinding {
+            host_ip: Some("0.0.0.0".to_string()),
+            host_port: Some(CLICKHOUSE_NATIVE_PORT.to_string()),
+        }]),
+    );
+
+    let binds = vec![format!("{}:/var/lib/clickhouse", CLICKHOUSE_VOLUME)];
+
+    let host_config = HostConfig {
+        port_bindings: Some(port_bindings),
+        binds: Some(binds),
+        network_mode: Some(ENTERPRISE_NETWORK.to_string()),
+        ..Default::default()
+    };
+
+    let env: Vec<String> = vec![
+        format!("CLICKHOUSE_DB={}", CLICKHOUSE_DATABASE),
+        format!("CLICKHOUSE_USER={}", CLICKHOUSE_USER),
+        format!("CLICKHOUSE_PASSWORD={}", CLICKHOUSE_PASSWORD),
+    ];
+
+    let config = ContainerCreateBody {
+        image: Some(CLICKHOUSE_IMAGE.to_string()),
+        env: Some(env),
+        hostname: Some("clickhouse".to_string()),
+        host_config: Some(host_config),
+        ..Default::default()
+    };
+
+    let options = CreateContainerOptions {
+        name: Some(CLICKHOUSE_CONTAINER_NAME.to_string()),
+        ..Default::default()
+    };
+
+    docker
+        .create_container(Some(options), config)
+        .await
+        .map_err(|e| {
+            OxyError::InitializationError(format!("Failed to create ClickHouse container: {}", e))
+        })?;
+
+    docker
+        .start_container(CLICKHOUSE_CONTAINER_NAME, None::<StartContainerOptions>)
+        .await
+        .map_err(|e| {
+            OxyError::InitializationError(format!("Failed to start ClickHouse container: {}", e))
+        })?;
+
+    info!("ClickHouse container created and started successfully");
+    Ok(())
+}
+
+/// Wait for ClickHouse to be ready to accept connections
+pub async fn wait_for_clickhouse_ready(timeout_secs: u64) -> Result<(), OxyError> {
+    info!(
+        "Waiting for ClickHouse to be ready (max {} seconds)...",
+        timeout_secs
+    );
+
+    let docker = get_docker_client().await?;
+    let start = std::time::Instant::now();
+    let mut retry_count = 0u32;
+
+    loop {
+        if start.elapsed().as_secs() >= timeout_secs {
+            return Err(OxyError::InitializationError(format!(
+                "ClickHouse did not become ready within {} seconds",
+                timeout_secs
+            )));
+        }
+
+        let exec_config = CreateExecOptions {
+            cmd: Some(vec!["clickhouse-client", "--query", "SELECT 1"]),
+            attach_stdout: Some(true),
+            attach_stderr: Some(true),
+            ..Default::default()
+        };
+
+        let exec_result = docker
+            .create_exec(CLICKHOUSE_CONTAINER_NAME, exec_config)
+            .await;
+
+        if let Ok(exec_response) = exec_result
+            && let Ok(StartExecResults::Attached { mut output, .. }) =
+                docker.start_exec(&exec_response.id, None).await
+        {
+            let mut stdout = Vec::new();
+            while let Some(Ok(msg)) = output.next().await {
+                stdout.extend_from_slice(&msg.into_bytes());
+            }
+
+            if String::from_utf8_lossy(&stdout).trim() == "1" {
+                info!("ClickHouse is ready!");
+                return Ok(());
+            }
+        }
+
+        retry_count += 1;
+        if retry_count == 1 || retry_count % 5 == 0 {
+            info!(
+                "ClickHouse not ready yet, retrying... ({} seconds elapsed)",
+                start.elapsed().as_secs()
+            );
+        }
+
+        let wait_ms = std::cmp::min(100 * 2u64.pow(retry_count.min(4)), 2000);
+        tokio::time::sleep(tokio::time::Duration::from_millis(wait_ms)).await;
+    }
+}
+
+/// Start the OpenTelemetry Collector container
+pub async fn start_otel_collector_container() -> Result<(), OxyError> {
+    info!("Starting Docker OTel Collector container...");
+    let docker = get_docker_client().await?;
+
+    ensure_enterprise_network().await?;
+
+    if is_container_exists(OTEL_CONTAINER_NAME).await? {
+        if is_container_running(OTEL_CONTAINER_NAME).await? {
+            info!("OTel Collector container is already running");
+            return Ok(());
+        }
+        info!("Starting existing OTel Collector container...");
+        docker
+            .start_container(OTEL_CONTAINER_NAME, None::<StartContainerOptions>)
+            .await
+            .map_err(|e| {
+                OxyError::InitializationError(format!(
+                    "Failed to start existing OTel Collector container: {}",
+                    e
+                ))
+            })?;
+        return Ok(());
+    }
+
+    // Pull the image
+    info!("Pulling OTel Collector image...");
+    let create_image_options = CreateImageOptions {
+        from_image: Some(OTEL_IMAGE.to_string()),
+        ..Default::default()
+    };
+
+    let mut pull_stream = docker.create_image(Some(create_image_options), None, None);
+    while let Some(result) = pull_stream.next().await {
+        match result {
+            Ok(info) => {
+                if let Some(status) = info.status
+                    && (status.contains("Downloaded") || status.contains("Pulling"))
+                {
+                    tracing::debug!("{}", status);
+                }
+            }
+            Err(e) => {
+                warn!("Image pull warning: {}", e);
+            }
+        }
+    }
+
+    // Use otel-collector-config.yaml from the working directory if available,
+    // otherwise fall back to the embedded default written to a temp file.
+    let local_config = std::env::current_dir()
+        .ok()
+        .map(|d| d.join(OTEL_CONFIG_FILENAME))
+        .filter(|p| p.exists());
+
+    let config_path = if let Some(path) = local_config {
+        info!("Using OTel config from: {}", path.display());
+        path
+    } else {
+        let tmp = std::env::temp_dir().join("oxy-otel-collector-config.yaml");
+        std::fs::write(&tmp, OTEL_COLLECTOR_CONFIG).map_err(|e| {
+            OxyError::InitializationError(format!("Failed to write OTel config file: {}", e))
+        })?;
+        info!("Using embedded OTel config (written to {})", tmp.display());
+        tmp
+    };
+
+    // Configure port bindings
+    let mut port_bindings = HashMap::new();
+    port_bindings.insert(
+        "4317/tcp".to_string(),
+        Some(vec![PortBinding {
+            host_ip: Some("0.0.0.0".to_string()),
+            host_port: Some(OTEL_GRPC_PORT.to_string()),
+        }]),
+    );
+    port_bindings.insert(
+        "4318/tcp".to_string(),
+        Some(vec![PortBinding {
+            host_ip: Some("0.0.0.0".to_string()),
+            host_port: Some(OTEL_HTTP_PORT.to_string()),
+        }]),
+    );
+
+    let binds = vec![format!(
+        "{}:/etc/otel-collector-config.yaml",
+        config_path.display()
+    )];
+
+    let host_config = HostConfig {
+        port_bindings: Some(port_bindings),
+        binds: Some(binds),
+        network_mode: Some(ENTERPRISE_NETWORK.to_string()),
+        ..Default::default()
+    };
+
+    let config = ContainerCreateBody {
+        image: Some(OTEL_IMAGE.to_string()),
+        cmd: Some(vec!["--config=/etc/otel-collector-config.yaml".to_string()]),
+        host_config: Some(host_config),
+        ..Default::default()
+    };
+
+    let options = CreateContainerOptions {
+        name: Some(OTEL_CONTAINER_NAME.to_string()),
+        ..Default::default()
+    };
+
+    docker
+        .create_container(Some(options), config)
+        .await
+        .map_err(|e| {
+            OxyError::InitializationError(format!(
+                "Failed to create OTel Collector container: {}",
+                e
+            ))
+        })?;
+
+    docker
+        .start_container(OTEL_CONTAINER_NAME, None::<StartContainerOptions>)
+        .await
+        .map_err(|e| {
+            OxyError::InitializationError(format!(
+                "Failed to start OTel Collector container: {}",
+                e
+            ))
+        })?;
+
+    info!("OTel Collector container created and started successfully");
+    Ok(())
+}
+
+/// Stop the ClickHouse container
+pub async fn stop_clickhouse_container() -> Result<(), OxyError> {
+    if !is_container_running(CLICKHOUSE_CONTAINER_NAME).await? {
+        info!("ClickHouse container is not running, nothing to stop");
+        return Ok(());
+    }
+
+    info!("Stopping ClickHouse container...");
+    let docker = get_docker_client().await?;
+
+    let options = StopContainerOptions {
+        t: Some(10),
+        signal: None,
+    };
+
+    docker
+        .stop_container(CLICKHOUSE_CONTAINER_NAME, Some(options))
+        .await
+        .map_err(|e| {
+            OxyError::InitializationError(format!("Failed to stop ClickHouse container: {}", e))
+        })?;
+
+    info!("ClickHouse container stopped successfully");
+    Ok(())
+}
+
+/// Stop the OTel Collector container
+pub async fn stop_otel_collector_container() -> Result<(), OxyError> {
+    if !is_container_running(OTEL_CONTAINER_NAME).await? {
+        info!("OTel Collector container is not running, nothing to stop");
+        return Ok(());
+    }
+
+    info!("Stopping OTel Collector container...");
+    let docker = get_docker_client().await?;
+
+    let options = StopContainerOptions {
+        t: Some(5),
+        signal: None,
+    };
+
+    docker
+        .stop_container(OTEL_CONTAINER_NAME, Some(options))
+        .await
+        .map_err(|e| {
+            OxyError::InitializationError(format!("Failed to stop OTel Collector container: {}", e))
+        })?;
+
+    info!("OTel Collector container stopped successfully");
+    Ok(())
+}
+
+/// Stop all enterprise containers (ClickHouse + OTel Collector)
+pub async fn stop_enterprise_containers() -> Result<(), OxyError> {
+    // Stop OTel first since it depends on ClickHouse
+    if let Err(e) = stop_otel_collector_container().await {
+        warn!("Failed to stop OTel Collector container: {}", e);
+    }
+    if let Err(e) = stop_clickhouse_container().await {
+        warn!("Failed to stop ClickHouse container: {}", e);
+    }
     Ok(())
 }
 

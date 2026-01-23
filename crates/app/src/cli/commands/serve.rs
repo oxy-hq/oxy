@@ -352,4 +352,9 @@ async fn create_shutdown_signal() {
     if let Err(e) = docker::stop_postgres_container().await {
         tracing::warn!("Failed to cleanly stop Docker PostgreSQL: {}", e);
     }
+
+    // Cleanup enterprise containers (ClickHouse + OTel Collector) if running
+    if let Err(e) = docker::stop_enterprise_containers().await {
+        tracing::warn!("Failed to cleanly stop enterprise containers: {}", e);
+    }
 }
