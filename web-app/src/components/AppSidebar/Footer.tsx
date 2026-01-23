@@ -74,13 +74,16 @@ export function Footer() {
               </div>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">
-              <DropdownMenuItem
-                className="cursor-pointer"
-                onClick={() => setIsSettingsOpen(true)}
-              >
-                <Settings className="w-4 h-4 mr-2" />
-                <span>Settings</span>
-              </DropdownMenuItem>
+              {authConfig.cloud && (
+                <DropdownMenuItem
+                  className="cursor-pointer"
+                  onClick={() => setIsSettingsOpen(true)}
+                >
+                  <Settings className="w-4 h-4 mr-2" />
+                  <span>Settings</span>
+                </DropdownMenuItem>
+              )}
+
               {!user.isGuest && (
                 <>
                   <DropdownMenuSeparator />

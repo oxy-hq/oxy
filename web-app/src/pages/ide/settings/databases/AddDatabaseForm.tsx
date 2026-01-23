@@ -195,11 +195,6 @@ export function AddDatabaseForm({ onSuccess, onCancel }: AddDatabaseFormProps) {
 
   return (
     <div className="space-y-6">
-      <div className="text-sm text-muted-foreground">
-        Configure your database connection details and test the connection
-        before creating.
-      </div>
-
       <FormProvider {...methods}>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
           <div className="space-y-4">

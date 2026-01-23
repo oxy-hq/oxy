@@ -9,6 +9,7 @@ import {
 import { Network } from "lucide-react";
 import { TIME_RANGE_OPTIONS, LIMIT_OPTIONS, type TimeRange } from "../../types";
 import SourceFilter from "./SourceFilter";
+import PageHeader from "@/pages/ide/components/PageHeader";
 
 interface ClustersHeaderProps {
   timeRange: TimeRange;
@@ -27,55 +28,51 @@ export default function ClustersHeader({
   onLimitChange,
   onSourceChange,
 }: ClustersHeaderProps) {
-  return (
-    <div className="flex justify-between items-center p-4 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="flex items-center gap-3">
-        <div className="p-2 rounded-lg bg-primary/10">
-          <Network className="h-5 w-5 text-primary" />
-        </div>
-        <div>
-          <h1 className="text-xl font-semibold">Semantic Cluster Map</h1>
-          <p className="text-sm text-muted-foreground">
-            Analyze user queries by semantic similarity
-          </p>
-        </div>
-      </div>
-      <div className="flex items-center gap-3">
-        {/* Agent Filter */}
-        <SourceFilter onSelect={onSourceChange} selectedSource={source} />
+  const actions = (
+    <>
+      {/* Agent Filter */}
+      <SourceFilter onSelect={onSourceChange} selectedSource={source} />
 
-        {/* Limit Selector */}
-        <Select
-          value={limit.toString()}
-          onValueChange={(v) => onLimitChange(parseInt(v))}
-        >
-          <SelectTrigger className="w-28">
-            <SelectValue placeholder="Points" />
-          </SelectTrigger>
-          <SelectContent>
-            {LIMIT_OPTIONS.map((option) => (
-              <SelectItem key={option.value} value={option.value.toString()}>
-                {option.label} points
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        {/* Time Filter */}
-        <div className="flex gap-1 border rounded-lg p-1 bg-muted/30">
-          {TIME_RANGE_OPTIONS.map((option) => (
-            <Button
-              key={option.value}
-              variant={timeRange === option.value ? "default" : "ghost"}
-              size="sm"
-              className="h-7 px-3"
-              onClick={() => onTimeRangeChange(option.value)}
-            >
-              {option.label}
-            </Button>
+      {/* Limit Selector */}
+      <Select
+        value={limit.toString()}
+        onValueChange={(v) => onLimitChange(parseInt(v))}
+      >
+        <SelectTrigger className="w-28">
+          <SelectValue placeholder="Points" />
+        </SelectTrigger>
+        <SelectContent>
+          {LIMIT_OPTIONS.map((option) => (
+            <SelectItem key={option.value} value={option.value.toString()}>
+              {option.label} points
+            </SelectItem>
           ))}
-        </div>
+        </SelectContent>
+      </Select>
+
+      {/* Time Filter */}
+      <div className="flex gap-1 border rounded-lg p-1 bg-muted/30">
+        {TIME_RANGE_OPTIONS.map((option) => (
+          <Button
+            key={option.value}
+            variant={timeRange === option.value ? "default" : "ghost"}
+            size="sm"
+            className="h-7 px-3"
+            onClick={() => onTimeRangeChange(option.value)}
+          >
+            {option.label}
+          </Button>
+        ))}
       </div>
-    </div>
+    </>
+  );
+
+  return (
+    <PageHeader
+      icon={Network}
+      title="Semantic Cluster Map"
+      description="Analyze user queries by semantic similarity"
+      actions={actions}
+    />
   );
 }

@@ -41,6 +41,9 @@ import {
   Server,
   BarChart3,
   LucideActivity,
+  Database,
+  FileText,
+  Settings,
 } from "lucide-react";
 import { Button } from "@/components/ui/shadcn/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/shadcn/tabs";
@@ -65,6 +68,7 @@ const NAME_COLLATOR = new Intl.Collator(undefined, {
 enum SidebarViewMode {
   FILES = "files",
   OBSERVABILITY = "observability",
+  SETTINGS = "settings",
 }
 
 const ignoreFilesRegex = [/^docker-entrypoints/, /^output/, /^\./];
@@ -476,6 +480,44 @@ const ObservabilitySection = ({ projectId }: { projectId: string }) => {
   );
 };
 
+// Settings section component for IDE sidebar (Databases and Activity Logs)
+const SettingsSection = ({ projectId }: { projectId: string }) => {
+  const location = useLocation();
+
+  return (
+    <>
+      <SidebarMenuItem>
+        <SidebarMenuSubButton
+          asChild
+          isActive={
+            location.pathname === ROUTES.PROJECT(projectId).IDE.DATABASES
+          }
+          className="text-muted-foreground hover:text-sidebar-foreground transition-colors duration-150 ease-in"
+        >
+          <Link to={ROUTES.PROJECT(projectId).IDE.DATABASES}>
+            <Database />
+            <span>Databases</span>
+          </Link>
+        </SidebarMenuSubButton>
+      </SidebarMenuItem>
+      <SidebarMenuItem>
+        <SidebarMenuSubButton
+          asChild
+          isActive={
+            location.pathname === ROUTES.PROJECT(projectId).IDE.ACTIVITY_LOGS
+          }
+          className="text-muted-foreground hover:text-sidebar-foreground transition-colors duration-150 ease-in"
+        >
+          <Link to={ROUTES.PROJECT(projectId).IDE.ACTIVITY_LOGS}>
+            <FileText />
+            <span>Activity Logs</span>
+          </Link>
+        </SidebarMenuSubButton>
+      </SidebarMenuItem>
+    </>
+  );
+};
+
 const Sidebar = ({
   sidebarOpen,
   setSidebarOpen,
@@ -581,7 +623,7 @@ const Sidebar = ({
           variant="ghost"
           size="icon"
           onClick={() => setViewMode(SidebarViewMode.FILES)}
-          tooltip="Files"
+          tooltip={{ content: "Files", side: "right" }}
           className={cn(
             "h-8 w-8",
             viewMode === SidebarViewMode.FILES &&
@@ -590,12 +632,13 @@ const Sidebar = ({
         >
           <Folder className="h-4 w-4" />
         </Button>
+
         {authConfig.enterprise && (
           <Button
             variant="ghost"
             size="icon"
             onClick={() => setViewMode(SidebarViewMode.OBSERVABILITY)}
-            tooltip="Observability"
+            tooltip={{ content: "Observability", side: "right" }}
             className={cn(
               "h-8 w-8",
               viewMode === SidebarViewMode.OBSERVABILITY &&
@@ -605,6 +648,20 @@ const Sidebar = ({
             <Activity className="h-4 w-4" />
           </Button>
         )}
+
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => setViewMode(SidebarViewMode.SETTINGS)}
+          tooltip={{ content: "Settings", side: "right" }}
+          className={cn(
+            "h-8 w-8",
+            viewMode === SidebarViewMode.SETTINGS &&
+              "bg-sidebar-accent text-sidebar-accent-foreground",
+          )}
+        >
+          <Settings className="h-4 w-4" />
+        </Button>
       </div>
 
       {/* Main Content Area */}
@@ -769,6 +826,31 @@ const Sidebar = ({
                 </SidebarContent>
               </>
             )}
+
+          {/* Settings View - Databases and Activity Logs */}
+          {viewMode === SidebarViewMode.SETTINGS && (
+            <>
+              <SidebarGroupLabel className="h-auto flex items-center justify-between px-2 py-1 border-b border-sidebar-border rounded-none">
+                <span className="text-sm font-semibold">Settings</span>
+                <Button
+                  className="md:hidden"
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setSidebarOpen(!sidebarOpen)}
+                  tooltip="Collapse Sidebar"
+                >
+                  <ChevronsLeft />
+                </Button>
+              </SidebarGroupLabel>
+              <SidebarContent className="customScrollbar h-full flex-1 overflow-y-auto">
+                <SidebarGroup className="pt-2">
+                  <SidebarMenu>
+                    <SettingsSection projectId={projectId} />
+                  </SidebarMenu>
+                </SidebarGroup>
+              </SidebarContent>
+            </>
+          )}
         </div>
       )}
       {!sidebarOpen && (

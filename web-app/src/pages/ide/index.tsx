@@ -45,7 +45,10 @@ const Ide = () => {
   const hasClosedSidebar = useRef(false);
 
   const isObservabilityRoute = location.pathname.includes("/ide/observability");
-  const hasContent = pathb64 || isObservabilityRoute;
+  const isDatabasesRoute = location.pathname.includes("/ide/databases");
+  const isActivityLogsRoute = location.pathname.includes("/ide/activity-logs");
+  const hasContent =
+    pathb64 || isObservabilityRoute || isDatabasesRoute || isActivityLogsRoute;
 
   useEffect(() => {
     if (open && !hasClosedSidebar.current) {

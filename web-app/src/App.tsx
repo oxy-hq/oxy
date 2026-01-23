@@ -48,6 +48,8 @@ import { useProject } from "./hooks/api/projects/useProjects";
 import ProjectStatus from "./components/ProjectStatus";
 import { ErrorBoundary } from "@/sentry";
 import ExecutionAnalytics from "./pages/ide/observability/execution-analytics";
+import DatabasesPage from "./pages/ide/settings/databases";
+import ActivityLogsPage from "./pages/ide/settings/activity-logs";
 
 const MainPageWrapper = ({ children }: { children: React.ReactNode }) => {
   return (
@@ -155,6 +157,8 @@ const MainLayout = React.memo(function MainLayout() {
         />
         <Route path="/ide" element={<IdePage />}>
           <Route path=":pathb64" element={<EditorPage />} />
+          <Route path="databases" element={<DatabasesPage />} />
+          <Route path="activity-logs" element={<ActivityLogsPage />} />
           {authConfig.enterprise && (
             <>
               <Route path="observability/traces" element={<TracesPage />} />

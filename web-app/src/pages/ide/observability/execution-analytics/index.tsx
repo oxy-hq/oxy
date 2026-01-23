@@ -4,6 +4,7 @@ import { Activity } from "lucide-react";
 import useCurrentProject from "@/stores/useCurrentProject";
 import { timeRangeToDays } from "@/services/api/executionAnalytics";
 import { useExecutionSummary } from "@/hooks/api/useExecutionAnalytics";
+import PageHeader from "@/pages/ide/components/PageHeader";
 
 import SummaryCards from "./components/SummaryCards";
 import DistributionChart from "./components/DistributionChart";
@@ -61,34 +62,30 @@ export default function ExecutionAnalytics() {
     );
   }
 
+  const timeRangeActions = (
+    <div className="flex gap-1 border rounded-lg p-1 bg-muted/30">
+      {TIME_RANGE_OPTIONS.map((option) => (
+        <Button
+          key={option.value}
+          variant={timeRange === option.value ? "default" : "ghost"}
+          size="sm"
+          className="h-7 px-3"
+          onClick={() => setTimeRange(option.value)}
+        >
+          {option.label}
+        </Button>
+      ))}
+    </div>
+  );
+
   return (
     <div className="flex flex-col h-full overflow-auto">
-      <div className="flex justify-between items-center p-4 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-primary/10">
-            <Activity className="h-5 w-5 text-primary" />
-          </div>
-          <div>
-            <h1 className="text-xl font-semibold">Execution Analytics</h1>
-            <p className="text-sm text-muted-foreground">
-              Track verified vs generated executions
-            </p>
-          </div>
-        </div>
-        <div className="flex gap-1 border rounded-lg p-1 bg-muted/30">
-          {TIME_RANGE_OPTIONS.map((option) => (
-            <Button
-              key={option.value}
-              variant={timeRange === option.value ? "default" : "ghost"}
-              size="sm"
-              className="h-7 px-3"
-              onClick={() => setTimeRange(option.value)}
-            >
-              {option.label}
-            </Button>
-          ))}
-        </div>
-      </div>
+      <PageHeader
+        icon={Activity}
+        title="Execution Analytics"
+        description="Track verified vs generated executions"
+        actions={timeRangeActions}
+      />
 
       <div className="p-6 flex-1 overflow-auto min-h-0 customScrollbar">
         {error ? (

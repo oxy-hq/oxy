@@ -4,14 +4,12 @@ import { TableCell, TableRow } from "@/components/ui/shadcn/table";
 import { formatDate } from "@/libs/utils/date";
 import { LogItem } from "@/types/logs";
 import LogInfo from "./LogInfo";
-import useSettingsPage from "@/stores/useSettingsPage";
 
 interface Props {
   log: LogItem;
 }
 
 const LogRow: React.FC<Props> = ({ log }) => {
-  const { setIsOpen: setIsSettingsOpen } = useSettingsPage();
   const [open, setOpen] = React.useState(false);
   const getFirstQuery = () => {
     if (!log.log?.queries || log.log.queries.length === 0) {
@@ -33,7 +31,6 @@ const LogRow: React.FC<Props> = ({ log }) => {
             to={`/threads/${log.thread_id}`}
             onClick={(e) => {
               e.stopPropagation();
-              setIsSettingsOpen(false);
             }}
             className="text-blue-600 dark:text-blue-400 hover:underline"
           >

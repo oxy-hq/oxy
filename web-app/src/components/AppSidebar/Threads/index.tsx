@@ -73,7 +73,7 @@ const Threads = () => {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        <SidebarMenuSub>
+        <SidebarMenuSub className="ml-4">
           {isLoading && <ItemsSkeleton />}
 
           {!isLoading &&

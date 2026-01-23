@@ -8,6 +8,7 @@ import useCurrentProject from "@/stores/useCurrentProject";
 import TablePagination from "@/components/ui/TablePagination";
 import { Button } from "@/components/ui/shadcn/button";
 import { Activity } from "lucide-react";
+import PageHeader from "@/pages/ide/components/PageHeader";
 
 const DURATION_OPTIONS = [
   { value: "7d", label: "7d" },
@@ -58,35 +59,31 @@ export default function TracesPage() {
     setCurrentPage(1);
   };
 
+  const durationActions = (
+    <div className="flex gap-1 border rounded-lg p-1 bg-muted/30">
+      {DURATION_OPTIONS.map((option) => (
+        <Button
+          key={option.value}
+          variant={durationFilter === option.value ? "default" : "ghost"}
+          size="sm"
+          className="h-7 px-3"
+          onClick={() => handleDurationChange(option.value)}
+        >
+          {option.label}
+        </Button>
+      ))}
+    </div>
+  );
+
   return (
     <div className="flex flex-col h-full">
       <div className="flex-1 flex flex-col min-h-0">
-        <div className="flex justify-between items-center p-4 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-primary/10">
-              <Activity className="h-5 w-5 text-primary" />
-            </div>
-            <div>
-              <h1 className="text-xl font-semibold">Traces</h1>
-              <p className="text-sm text-muted-foreground">
-                View and analyze execution traces
-              </p>
-            </div>
-          </div>
-          <div className="flex gap-1 border rounded-lg p-1 bg-muted/30">
-            {DURATION_OPTIONS.map((option) => (
-              <Button
-                key={option.value}
-                variant={durationFilter === option.value ? "default" : "ghost"}
-                size="sm"
-                className="h-7 px-3"
-                onClick={() => handleDurationChange(option.value)}
-              >
-                {option.label}
-              </Button>
-            ))}
-          </div>
-        </div>
+        <PageHeader
+          icon={Activity}
+          title="Traces"
+          description="View and analyze execution traces"
+          actions={durationActions}
+        />
 
         {/* Charts Section */}
 

@@ -48,6 +48,8 @@ const ROUTES = {
       IDE: {
         ROOT: `${base}/ide`,
         FILE: (pathb64: string) => `${base}/ide/${pathb64}`,
+        DATABASES: `${base}/ide/databases`,
+        ACTIVITY_LOGS: `${base}/ide/activity-logs`,
         OBSERVABILITY: {
           ROOT: `${base}/ide/observability`,
           TRACES: `${base}/ide/observability/traces`,

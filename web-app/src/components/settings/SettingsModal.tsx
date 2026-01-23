@@ -1,20 +1,10 @@
-import {
-  Database,
-  Shield,
-  Users,
-  Key,
-  FileText,
-  X,
-  Github,
-} from "lucide-react";
+import { Shield, Users, Key, X, Github } from "lucide-react";
 import { useState } from "react";
 import { Dialog, DialogContent } from "../ui/shadcn/dialog";
 import GithubSettings from "./github";
 import SecretManagement from "./secrets";
-import DatabaseManagement from "./databases";
 import UserManagement from "./users";
 import ApiKeyManagement from "./api-keys";
-import LogsManagement from "./activity-logs";
 import { Button } from "../ui/shadcn/button";
 import useSettingsPage from "@/stores/useSettingsPage";
 import { useAuth } from "@/contexts/AuthContext";
@@ -51,14 +41,6 @@ export function SettingsModal() {
       page: <SecretManagement />,
     },
     {
-      id: "databases",
-      title: "Databases",
-      description: "Database connections",
-      icon: <Database className="w-4 h-4" />,
-      show: true,
-      page: <DatabaseManagement />,
-    },
-    {
       id: "users",
       title: "Users",
       description: "User management",
@@ -73,14 +55,6 @@ export function SettingsModal() {
       icon: <Key className="w-4 h-4" />,
       show: authConfig.cloud,
       page: <ApiKeyManagement />,
-    },
-    {
-      id: "logs",
-      title: "Activity Logs",
-      description: "System audit logs",
-      icon: <FileText className="w-4 h-4" />,
-      show: true,
-      page: <LogsManagement />,
     },
   ];
 

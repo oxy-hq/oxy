@@ -55,7 +55,7 @@ export const Header = () => {
         variant="ghost"
         size="sm"
         onClick={handleHomeClick}
-        tooltip="Back to Home"
+        tooltip={{ content: "Back to Home", side: "right" }}
       >
         <Home className="w-4 h-4" />
       </Button>

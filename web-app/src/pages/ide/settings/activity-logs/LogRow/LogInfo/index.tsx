@@ -9,7 +9,6 @@ import {
 import { Link } from "react-router-dom";
 import Query from "./Query";
 import { formatDate } from "@/libs/utils/date";
-import useSettingsPage from "@/stores/useSettingsPage";
 import { Label } from "@/components/ui/shadcn/label";
 
 interface Props {
@@ -19,7 +18,6 @@ interface Props {
 }
 
 const LogInfo = ({ log, open, onOpenChange }: Props) => {
-  const { setIsOpen: setIsSettingsOpen } = useSettingsPage();
   const queries = log.log?.queries || [];
 
   return (
@@ -32,7 +30,6 @@ const LogInfo = ({ log, open, onOpenChange }: Props) => {
               onClick={(e) => {
                 e.stopPropagation();
                 onOpenChange(false);
-                setIsSettingsOpen(false);
               }}
               className="text-blue-600 dark:text-blue-400 hover:underline"
             >
