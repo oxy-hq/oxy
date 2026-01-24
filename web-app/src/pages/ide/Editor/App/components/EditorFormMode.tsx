@@ -62,6 +62,7 @@ export const EditorFormMode = ({
           customEditor={
             viewMode === AppViewMode.Form ? <AppFormWrapper /> : undefined
           }
+          previewOnly={viewMode === AppViewMode.Visualization}
           onChanged={(value) => {
             if (viewMode === AppViewMode.Editor) {
               validateContent(value);

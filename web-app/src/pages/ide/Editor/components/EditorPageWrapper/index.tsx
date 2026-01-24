@@ -8,6 +8,9 @@ import {
   ResizableHandle,
 } from "@/components/ui/shadcn/resizable";
 import { FileEditorProvider } from "@/components/FileEditor/FileEditorContext";
+import { useNavigationBlock } from "@/components/FileEditor/hooks/useNavigationBlock";
+import UnsavedChangesDialog from "@/components/FileEditor/UnsavedChangesDialog";
+import { useFileEditorContext } from "@/components/FileEditor/useFileEditorContext";
 
 const MIN_PANE_SIZE_PERCENT = 10;
 const NARROW_VIEWPORT_BREAKPOINT = 800;
@@ -29,6 +32,7 @@ export interface EditorPageWrapperProps {
   git?: boolean;
   defaultDirection?: "horizontal" | "vertical";
   customEditor?: JSX.Element;
+  previewOnly?: boolean;
 }
 
 const useViewportDetection = (
@@ -64,6 +68,7 @@ const EditorPageWrapper = ({
   onChanged,
   defaultDirection = "horizontal",
   customEditor,
+  previewOnly = false,
 }: EditorPageWrapperProps) => {
   const filePath = atob(pathb64 ?? "");
 
@@ -116,28 +121,92 @@ const EditorPageWrapper = ({
       onSaved={onSaved}
       onChanged={onChanged}
     >
+      <EditorPageWrapperContent
+        className={className}
+        hasPreview={hasPreview}
+        previewOnly={previewOnly}
+        storageKey={storageKey}
+        layoutDirection={layoutDirection}
+        renderEditor={renderEditor}
+        renderPreview={renderPreview}
+      />
+    </FileEditorProvider>
+  );
+};
+
+interface EditorPageWrapperContentProps {
+  className?: string;
+  hasPreview: boolean;
+  previewOnly?: boolean;
+  storageKey: string;
+  layoutDirection: "horizontal" | "vertical";
+  renderEditor: () => JSX.Element;
+  renderPreview: () => JSX.Element | null;
+}
+
+const EditorPageWrapperContent = ({
+  className,
+  hasPreview,
+  previewOnly = false,
+  storageKey,
+  layoutDirection,
+  renderEditor,
+  renderPreview,
+}: EditorPageWrapperContentProps) => {
+  const {
+    state: { fileState },
+    actions,
+  } = useFileEditorContext();
+
+  const { unsavedChangesDialogOpen, setUnsavedChangesDialogOpen, blocker } =
+    useNavigationBlock(fileState);
+
+  const handleSaveAndNavigate = () => {
+    actions.save(() => blocker.proceed?.());
+  };
+
+  const renderContent = () => {
+    if (previewOnly) {
+      return renderPreview();
+    }
+    if (hasPreview) {
+      return (
+        <ResizablePanelGroup
+          autoSaveId={storageKey}
+          direction={layoutDirection}
+          className="h-full flex-1 flex overflow-hidden"
+        >
+          <ResizablePanel minSize={MIN_PANE_SIZE_PERCENT} defaultSize={50}>
+            {renderEditor()}
+          </ResizablePanel>
+
+          <ResizableHandle withHandle />
+
+          <ResizablePanel>{renderPreview()}</ResizablePanel>
+        </ResizablePanelGroup>
+      );
+    }
+    return renderEditor();
+  };
+
+  return (
+    <>
       <div className={cn("flex h-full flex-col", className)}>
         <div className={cn("flex-1 flex overflow-hidden")}>
-          {hasPreview ? (
-            <ResizablePanelGroup
-              autoSaveId={storageKey}
-              direction={layoutDirection}
-              className="h-full flex-1 flex overflow-hidden"
-            >
-              <ResizablePanel minSize={MIN_PANE_SIZE_PERCENT} defaultSize={50}>
-                {renderEditor()}
-              </ResizablePanel>
-
-              <ResizableHandle withHandle />
-
-              <ResizablePanel>{renderPreview()}</ResizablePanel>
-            </ResizablePanelGroup>
-          ) : (
-            renderEditor()
-          )}
+          {renderContent()}
         </div>
       </div>
-    </FileEditorProvider>
+
+      <UnsavedChangesDialog
+        open={unsavedChangesDialogOpen}
+        onOpenChange={setUnsavedChangesDialogOpen}
+        onDiscard={() => {
+          setUnsavedChangesDialogOpen(false);
+          blocker.proceed?.();
+        }}
+        onSave={handleSaveAndNavigate}
+      />
+    </>
   );
 };
 

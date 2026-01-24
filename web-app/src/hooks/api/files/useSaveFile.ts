@@ -11,9 +11,13 @@ export default function useSaveFile() {
     mutationFn: (data: { pathb64: string; data: string }) =>
       FileService.saveFile(project.id, data.pathb64, data.data, branchName),
     onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({
+      queryClient.removeQueries({
         queryKey: queryKeys.file.get(project.id, variables.pathb64, branchName),
       });
+      queryClient.setQueryData(
+        queryKeys.file.get(project.id, branchName, variables.pathb64),
+        variables.data,
+      );
     },
   });
 }

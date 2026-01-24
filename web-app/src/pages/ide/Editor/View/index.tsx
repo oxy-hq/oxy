@@ -42,16 +42,13 @@ const ViewPreview = (props: ViewPreviewProps) => {
         <ModeSwitcher viewMode={viewMode} onViewModeChange={setViewMode} />
         <div className="text-sm font-medium text-muted-foreground">{path}</div>
       </div>
-      {viewMode === ViewMode.Explorer ? (
-        <ViewExplorer />
-      ) : (
-        <EditorPageWrapper
-          pathb64={pathb64}
-          readOnly={isReadOnly}
-          defaultDirection="horizontal"
-          preview={<ViewExplorer />}
-        />
-      )}
+      <EditorPageWrapper
+        pathb64={pathb64}
+        readOnly={isReadOnly}
+        defaultDirection="horizontal"
+        preview={<ViewExplorer />}
+        previewOnly={viewMode === ViewMode.Explorer}
+      />
     </div>
   );
 };

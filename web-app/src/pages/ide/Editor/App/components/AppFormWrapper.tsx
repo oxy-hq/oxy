@@ -30,14 +30,24 @@ export const AppFormWrapper = () => {
     }
   }, [content]);
 
+  console.log("Rendering AppFormWrapper with data:", data);
+
   const onChange = useMemo(
     () =>
       debounce((formData: AppFormData) => {
         try {
-          const mergedData = {
-            ...originalContent,
-            ...formData,
-          };
+          // Merge formData into originalContent:
+          // - Keys defined in AppFormData take precedence from formData (even if null/undefined)
+          // - Keys only in originalContent are preserved
+          const mergedData = { ...originalContent };
+          const appFormDataKeys: (keyof AppFormData)[] = ["tasks", "display"];
+          for (const key of appFormDataKeys) {
+            if (key in formData) {
+              mergedData[key] = formData[key];
+            } else {
+              delete mergedData[key];
+            }
+          }
           const yamlContent = YAML.stringify(mergedData, {
             indent: 2,
             lineWidth: 0,

@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { useFormContext } from "react-hook-form";
 import { Combobox } from "@/components/ui/shadcn/combobox";
 import { AppFormData } from "../../index";
@@ -15,15 +15,27 @@ export const TaskRefSelect: React.FC<TaskRefSelectProps> = ({
   placeholder = "Select task...",
 }) => {
   const { watch } = useFormContext<AppFormData>();
-  const tasks = watch("tasks") || [];
+  const tasks = watch("tasks");
 
-  const taskItems = tasks
-    .filter((task) => task?.name)
-    .map((task) => ({
-      value: task.name!,
-      label: task.name!,
-      searchText: `${task.name} ${task.type || ""}`.toLowerCase(),
-    }));
+  const taskItems = useMemo(() => {
+    const items = (tasks || [])
+      .filter((task) => task?.name)
+      .map((task) => ({
+        value: task.name!,
+        label: task.name!,
+        searchText: `${task.name} ${task.type || ""}`.toLowerCase(),
+      }));
+
+    if (value && !items.some((item) => item.value === value)) {
+      items.unshift({
+        value,
+        label: value,
+        searchText: value.toLowerCase(),
+      });
+    }
+
+    return items;
+  }, [tasks, value]);
 
   if (taskItems.length === 0) {
     return (

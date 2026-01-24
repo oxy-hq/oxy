@@ -76,16 +76,6 @@ const AgentFormWrapper = () => {
 
   const content = state.content;
 
-  const originalContent = useMemo(() => {
-    try {
-      if (!content) return undefined;
-      return YAML.parse(content);
-    } catch (error) {
-      console.error("Failed to parse original YAML content:", error);
-      return undefined;
-    }
-  }, [content]);
-
   const data = useMemo(() => {
     try {
       if (!content) return undefined;
@@ -101,11 +91,7 @@ const AgentFormWrapper = () => {
     () =>
       debounce((formData: AgentFormData) => {
         try {
-          const mergedData = {
-            ...originalContent,
-            ...formData,
-          };
-          const yamlContent = YAML.stringify(mergedData, {
+          const yamlContent = YAML.stringify(formData, {
             indent: 2,
             lineWidth: 0,
           });
@@ -114,7 +100,7 @@ const AgentFormWrapper = () => {
           console.error("Failed to serialize form data to YAML:", error);
         }
       }, 500),
-    [actions, originalContent],
+    [actions],
   );
 
   if (!data) return null;

@@ -94,16 +94,13 @@ const TopicPreview = (props: TopicPreviewProps) => {
         <ModeSwitcher viewMode={viewMode} onViewModeChange={setViewMode} />
         <div className="text-sm font-medium text-muted-foreground">{path}</div>
       </div>
-      {viewMode === ViewMode.Explorer ? (
-        <TopicExplorer />
-      ) : (
-        <EditorPageWrapper
-          pathb64={pathb64}
-          readOnly={isReadOnly}
-          defaultDirection="horizontal"
-          preview={<TopicExplorer />}
-        />
-      )}
+      <EditorPageWrapper
+        pathb64={pathb64}
+        readOnly={isReadOnly}
+        defaultDirection="horizontal"
+        preview={<TopicExplorer />}
+        previewOnly={viewMode === ViewMode.Explorer}
+      />
     </div>
   );
 };

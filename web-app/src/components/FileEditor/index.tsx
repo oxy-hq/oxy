@@ -1,8 +1,6 @@
 import Editor, { DiffEditor } from "@monaco-editor/react";
 import { useMemo } from "react";
 import { Loader2 } from "lucide-react";
-import UnsavedChangesDialog from "./UnsavedChangesDialog";
-import { useNavigationBlock } from "./hooks/useNavigationBlock";
 import { getLanguageFromFileName } from "./constants";
 import useMonacoEditor from "./hooks/useMonacoEditor";
 import { cn } from "@/libs/shadcn/utils";
@@ -23,14 +21,7 @@ interface Props {
 
 const FileEditor = ({ readOnly = false, className }: Props) => {
   const {
-    state: {
-      fileName,
-      content,
-      originalContent,
-      showDiff,
-      isLoading,
-      fileState,
-    },
+    state: { fileName, content, originalContent, showDiff, isLoading },
     actions,
   } = useFileEditorContext();
 
@@ -38,14 +29,7 @@ const FileEditor = ({ readOnly = false, className }: Props) => {
     saveFile: actions.save,
   });
 
-  const { unsavedChangesDialogOpen, setUnsavedChangesDialogOpen, blocker } =
-    useNavigationBlock(fileState);
-
   const language = useMemo(() => getLanguageFromFileName(fileName), [fileName]);
-
-  const handleSaveAndNavigate = () => {
-    actions.save(() => blocker.proceed?.());
-  };
 
   if (isLoading) {
     return (
@@ -121,16 +105,6 @@ const FileEditor = ({ readOnly = false, className }: Props) => {
           )}
         </div>
       </div>
-
-      <UnsavedChangesDialog
-        open={unsavedChangesDialogOpen}
-        onOpenChange={setUnsavedChangesDialogOpen}
-        onDiscard={() => {
-          setUnsavedChangesDialogOpen(false);
-          blocker.proceed?.();
-        }}
-        onSave={handleSaveAndNavigate}
-      />
     </>
   );
 };

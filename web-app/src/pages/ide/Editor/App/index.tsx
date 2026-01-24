@@ -5,7 +5,6 @@ import { useEditorQueryInvalidation } from "../useEditorQueryInvalidation";
 import YAML from "yaml";
 import { AppViewMode } from "./types";
 import { ModeSwitcher } from "./components/ModeSwitcher";
-import { VisualizationMode } from "./components/VisualizationMode";
 import { EditorFormMode } from "./components/EditorFormMode";
 import { FilesSubViewMode, useIDE } from "../..";
 
@@ -46,18 +45,6 @@ const AppEditor = () => {
   const modeSwitcher = (
     <ModeSwitcher viewMode={viewMode} setViewMode={setViewMode} />
   );
-
-  // Render full-screen visualization mode
-  if (viewMode === AppViewMode.Visualization) {
-    return (
-      <VisualizationMode
-        modeSwitcher={modeSwitcher}
-        appPath={appPath}
-        previewKey={previewKey}
-        pathb64={pathb64}
-      />
-    );
-  }
 
   // Render editor or form mode with EditorPageWrapper
   return (

@@ -252,7 +252,7 @@ const GroupedObjectsView = ({
   };
 
   return (
-    <SidebarMenu>
+    <SidebarMenu className="pb-20">
       {grouped.semanticObjects.length > 0 && (
         <Collapsible
           open={openGroups.semanticObjects}
@@ -776,7 +776,7 @@ const Sidebar = ({
 
                   {!isPending &&
                     filesSubViewMode === FilesSubViewMode.FILES && (
-                      <SidebarMenu>
+                      <SidebarMenu className="pb-20">
                         {isCreating && !isReadOnly && (
                           <NewNode
                             creationType={creationType}

@@ -10,9 +10,12 @@ export default function useDeleteFile() {
   return useMutation<void, Error, string>({
     mutationFn: (pathb64: string) =>
       FileService.deleteFile(project.id, pathb64, branchName),
-    onSuccess: () => {
+    onSuccess: (_, pathb64) => {
       queryClient.invalidateQueries({
         queryKey: queryKeys.file.tree(project.id, branchName),
+      });
+      queryClient.removeQueries({
+        queryKey: queryKeys.file.get(project.id, branchName, pathb64),
       });
     },
   });
