@@ -13,7 +13,7 @@ name = "oxy"
 path = "src/main.rs"
 
 [dependencies]
-bcrypt = "0.17.1"
+bcrypt = "0.18.0"
 
 # Core functionality
 oxy = { path = "../core" }
@@ -33,7 +33,7 @@ tokio = { workspace = true }
 async-trait = "0.1.89"
 futures = "0.3.31"
 async-stream = "0.3.6"
-async-openai = { version = "0.31.1", features = ["byot", "chat-completion-types", "response-types", "_api", "responses", "chat-completion", "embedding-types", "embedding"] }
+async-openai = { version = "0.32.4", features = ["byot", "chat-completion-types", "response-types", "_api", "responses", "chat-completion", "embedding-types", "embedding"] }
 
 # Serialization
 serde = { workspace = true }
@@ -63,7 +63,7 @@ utoipa-axum = {git="https://github.com/haitrr/utoipa.git",rev="776f86e" }
 utoipa-swagger-ui={git="https://github.com/haitrr/utoipa.git",rev="776f86e", features = ["axum"] }
 
 # HTTP client
-reqwest = { version = "0.12.28" }
+reqwest = { version = "0.13.1" }
 
 # Code utilities
 enum_dispatch = "0.3.13"
@@ -72,16 +72,16 @@ rapidfuzz = "0.5.0"
 # CLI
 clap = { version = "4.5.54", features = ["derive"] }
 colored = "3.1.1"
-tqdm = "0.7.0"
+tqdm = "0.8.0"
 
 # Database
 sea-orm = { workspace = true }
-clickhouse = { version = "0.13.3", features = ["rustls-tls"] }
+clickhouse = { version = "0.14.2", features = ["rustls-tls"] }
 
 # Machine learning (for traces analytics)
 linfa = "0.8.1"
 linfa-reduction = "0.8.1"
-ndarray = { version = "0.16", features = ["rayon"] }
+ndarray = { version = "0.17", features = ["rayon"] }
 
 # Data processing
 arrow = { version = "=54.2.1", default-features = false, features = ["json"] }
@@ -146,7 +146,7 @@ omni = { path = "../omni" }
 migration = { path = "../migration" }
 
 # MCP
-rmcp = {version = "0.8.5", features = ["server", "transport-sse-server", "transport-io"]}
+rmcp = {version = "0.10.0", features = ["server", "transport-sse-server", "transport-io"]}
 
 # Other dependencies from core that might be needed
 dotenv = "0.15.0"
