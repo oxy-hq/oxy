@@ -113,14 +113,14 @@
     "zustand": "^5.0.10"
   },
   "devDependencies": {
-    "@playwright/test": "^1.57.0",
+    "@playwright/test": "^1.58.0",
     "@types/invariant": "^2.2.37",
     "@types/js-cookie": "^3.0.6",
     "@types/lodash": "^4.17.23",
     "@types/node": "^25.0.10",
     "@types/nunjucks": "3.2.6",
     "@types/papaparse": "^5.5.2",
-    "@types/react": "^19.2.8",
+    "@types/react": "^19.2.9",
     "@types/react-dom": "^19.2.3",
     "@types/react-syntax-highlighter": "^15.5.13",
     "@types/react-window": "^2.0.0",
