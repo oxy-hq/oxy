@@ -3,9 +3,6 @@ title: "Data Apps"
 description: "Configuration-based dashboards for visualizing SQL data"
 ---
 
-import { Tabs, TabItem } from "@components/tabs";
-import { Callout } from "@components/callout";
-
 # Data Apps
 
 A data app is a configuration-based visualization tool that allows you to create interactive dashboards from SQL queries without writing complex frontend code.
@@ -14,12 +11,9 @@ A data app is a configuration-based visualization tool that allows you to create
 
 Data apps in Oxy are defined using YAML configuration files (`.app.yml`) that specify both the data processing tasks and how to visualize the results.
 
-<Callout type="info">
-  Data apps are designed to make it simple to transform SQL query results into
-  meaningful visualizations with minimal effort. The `.app.yml` files abstract
-  away the complexity of building dashboards, allowing you to focus on the data
-  and insights rather than visualization code.
-</Callout>
+> **ℹ️ Info**
+> 
+> Data apps are designed to make it simple to transform SQL query results into meaningful visualizations with minimal effort. The `.app.yml` files abstract away the complexity of building dashboards, allowing you to focus on the data and insights rather than visualization code.
 
 ## Data App Components
 
@@ -47,17 +41,16 @@ The `tasks` section defines SQL queries that will extract and transform data fro
 | cache     | Cache configuration for query results                     | Optional                           |
 | export    | Configuration for exporting query results                 | Optional                           |
 
-<Callout type="warning">
-  Make sure your tasks are named uniquely as these names are referenced in the
-  display section.
-</Callout>
+> **⚠️ Warning**
+> 
+> Make sure your tasks are named uniquely as these names are referenced in the display section.
 
 ### Display
 
 The `display` section defines how to visualize the data produced by your tasks. Several visualization types are supported:
 
-<Tabs />
-<TabItem value="markdown" label="Markdown" />
+#### Markdown
+
 Markdown blocks can be used to add formatted text, headers, and documentation:
 
 ```yaml
