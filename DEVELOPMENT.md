@@ -169,32 +169,3 @@ Migrations are run automatically on startup. To run manually:
 ```bash
 cargo run --bin migration
 ```
-
-### Migrating from SQLite
-
-If you have existing SQLite data from a previous version, use the migration tool.
-
-**Simple migration** (uses default locations):
-
-```bash
-# Migrates from ~/.local/share/oxy/db.sqlite to embedded PostgreSQL
-cargo run -p migration --features migration-tool --bin sqlite_to_postgres
-
-# Dry run first to check:
-cargo run -p migration --features migration-tool --bin sqlite_to_postgres -- --dry-run
-```
-
-**Custom migration** (specify source and/or target):
-
-```bash
-# Custom SQLite source, embedded PostgreSQL target
-cargo run -p migration --features migration-tool --bin sqlite_to_postgres -- --from sqlite:///path/to/old/db.sqlite
-
-# Custom PostgreSQL target
-cargo run -p migration --features migration-tool --bin sqlite_to_postgres -- --to postgresql://user:password@localhost:5432/oxy
-
-# Fully custom
-cargo run -p migration --features migration-tool --bin sqlite_to_postgres -- \
-  --from sqlite:///path/to/old/db.sqlite \
-  --to postgresql://user:password@localhost:5432/oxy
-```

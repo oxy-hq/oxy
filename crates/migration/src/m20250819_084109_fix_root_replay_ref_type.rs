@@ -1,4 +1,3 @@
-use sea_orm::DatabaseBackend;
 use sea_orm_migration::prelude::*;
 
 #[derive(DeriveMigrationName)]
@@ -17,17 +16,7 @@ impl MigrationTrait for Migration {
             .await?;
 
         let db = manager.get_connection();
-        let copy_sql = match manager.get_database_backend() {
-            DatabaseBackend::Postgres => {
-                "UPDATE runs SET root_replay_ref_new = CAST(root_replay_ref AS TEXT) WHERE root_replay_ref IS NOT NULL"
-            }
-            DatabaseBackend::Sqlite => {
-                "UPDATE runs SET root_replay_ref_new = CAST(root_replay_ref AS TEXT) WHERE root_replay_ref IS NOT NULL"
-            }
-            _ => {
-                "UPDATE runs SET root_replay_ref_new = CAST(root_replay_ref AS CHAR) WHERE root_replay_ref IS NOT NULL"
-            }
-        };
+        let copy_sql = "UPDATE runs SET root_replay_ref_new = CAST(root_replay_ref AS TEXT) WHERE root_replay_ref IS NOT NULL";
 
         // Execute the copy operation, ignore if it fails (in case table is empty)
         let _ = db.execute_unprepared(copy_sql).await;
@@ -43,17 +32,7 @@ impl MigrationTrait for Migration {
             .await?;
 
         // Step 4: Rename new column to original name
-        let rename_sql = match manager.get_database_backend() {
-            DatabaseBackend::Postgres => {
-                "ALTER TABLE runs RENAME COLUMN root_replay_ref_new TO root_replay_ref"
-            }
-            DatabaseBackend::Sqlite => {
-                // SQLite doesn't support column rename directly, so we'll use ALTER TABLE
-                "ALTER TABLE runs RENAME COLUMN root_replay_ref_new TO root_replay_ref"
-            }
-            _ => "ALTER TABLE runs RENAME COLUMN root_replay_ref_new TO root_replay_ref",
-        };
-
+        let rename_sql = "ALTER TABLE runs RENAME COLUMN root_replay_ref_new TO root_replay_ref";
         db.execute_unprepared(rename_sql).await?;
 
         Ok(())
@@ -75,17 +54,7 @@ impl MigrationTrait for Migration {
 
         // Step 2: Copy data (try to convert string to integer)
         let db = manager.get_connection();
-        let copy_sql = match manager.get_database_backend() {
-            DatabaseBackend::Postgres => {
-                "UPDATE runs SET root_replay_ref_old = CASE WHEN root_replay_ref ~ '^[0-9]+$' THEN CAST(root_replay_ref AS INTEGER) ELSE NULL END WHERE root_replay_ref IS NOT NULL"
-            }
-            DatabaseBackend::Sqlite => {
-                "UPDATE runs SET root_replay_ref_old = CASE WHEN root_replay_ref GLOB '[0-9]*' THEN CAST(root_replay_ref AS INTEGER) ELSE NULL END WHERE root_replay_ref IS NOT NULL"
-            }
-            _ => {
-                "UPDATE runs SET root_replay_ref_old = CASE WHEN root_replay_ref REGEXP '^[0-9]+$' THEN CAST(root_replay_ref AS UNSIGNED) ELSE NULL END WHERE root_replay_ref IS NOT NULL"
-            }
-        };
+        let copy_sql = "UPDATE runs SET root_replay_ref_old = CASE WHEN root_replay_ref ~ '^[0-9]+$' THEN CAST(root_replay_ref AS INTEGER) ELSE NULL END WHERE root_replay_ref IS NOT NULL";
 
         let _ = db.execute_unprepared(copy_sql).await;
 
@@ -100,16 +69,7 @@ impl MigrationTrait for Migration {
             .await?;
 
         // Step 4: Rename back
-        let rename_sql = match manager.get_database_backend() {
-            DatabaseBackend::Postgres => {
-                "ALTER TABLE runs RENAME COLUMN root_replay_ref_old TO root_replay_ref"
-            }
-            DatabaseBackend::Sqlite => {
-                "ALTER TABLE runs RENAME COLUMN root_replay_ref_old TO root_replay_ref"
-            }
-            _ => "ALTER TABLE runs RENAME COLUMN root_replay_ref_old TO root_replay_ref",
-        };
-
+        let rename_sql = "ALTER TABLE runs RENAME COLUMN root_replay_ref_old TO root_replay_ref";
         db.execute_unprepared(rename_sql).await?;
 
         Ok(())

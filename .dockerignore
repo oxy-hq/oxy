@@ -41,7 +41,6 @@ examples/
 # unnecessary files & folders
 json-schemas/
 .github/
-db.sqlite
 
 
 # tests

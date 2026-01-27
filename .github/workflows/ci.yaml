@@ -128,11 +128,11 @@ jobs:
 
   cargo-check-and-test:
     concurrency:
-      group: cargo-check-and-test-${{ matrix.task }}-${{ matrix.db }}-${{ github.event.pull_request.number || github.ref }}
+      group: cargo-check-and-test-${{ matrix.task }}-${{ github.event.pull_request.number || github.ref }}
       cancel-in-progress: true
     needs: [changesets, typos]
     if: needs.changesets.outputs.oxy == 'true'
-    name: Format cargo, check & test (${{ matrix.task }}, ${{ matrix.db }})
+    name: Format cargo, check & test (${{ matrix.task }})
     runs-on: ${{ github.repository == 'oxy-hq/oxy-internal' && (github.ref == 'refs/heads/main' && 'warp-ubuntu-latest-arm64-2x-spot' || 'warp-ubuntu-latest-arm64-2x') || 'ubuntu-latest' }}
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -143,11 +143,6 @@ jobs:
       fail-fast: true
       matrix:
         task: [check, test]
-        db: [sqlite, postgres]
-        exclude:
-          # Only run check once (with sqlite)
-          - task: check
-            db: postgres
     services:
       postgres:
         image: postgres:18-alpine
@@ -191,12 +186,10 @@ jobs:
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install PostgreSQL client
-        if: matrix.db == 'postgres'
         run: |
           sudo apt-get update
           sudo apt-get install -y postgresql-client
       - name: Wait for Postgres
-        if: matrix.db == 'postgres'
         run: |
           until pg_isready -h localhost -p 5432 -U admin; do
             echo "Waiting for Postgres..."
@@ -206,6 +199,8 @@ jobs:
         env:
           PGPASSWORD: password
       - name: Run task
+        env:
+          OXY_DATABASE_URL: "postgresql://admin:password@localhost:5432/default"
         run: |
           if [[ "${{ matrix.task }}" == "check" ]]; then
             cargo clippy --profile ci --verbose --workspace --fix
@@ -213,19 +208,9 @@ jobs:
             touch examples/bigquery-sample.key
             echo $BIGQUERY_SAMPLE_KEY > examples/bigquery-sample.key
 
-            # Set database URL based on matrix
-            if [[ "${{ matrix.db }}" == "postgres" ]]; then
-              export OXY_DATABASE_URL="postgresql://admin:password@localhost:5432/default"
-              echo "Using Postgres database: $OXY_DATABASE_URL"
-              # Run migrations using the migration crate
-              cargo run --profile ci -- migrate
-            else
-              # Default to SQLite (no URL needed or use file-based SQLite)
-              unset OXY_DATABASE_URL
-              echo "Using SQLite database (default)"
-              # Run migrations for SQLite
-              cargo run --profile ci -- migrate
-            fi
+            echo "Using PostgreSQL database: $OXY_DATABASE_URL"
+            # Run migrations
+            cargo run --profile ci -- migrate
 
             cargo test --profile ci --verbose --no-fail-fast -- --nocapture
             cargo run --profile ci -- gen-config-schema --check

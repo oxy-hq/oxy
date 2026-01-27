@@ -1,36 +1,32 @@
-use crate::state_dir::get_state_dir;
 use oxy_shared::errors::OxyError;
 use sea_orm::{Database, DatabaseConnection};
 
 pub async fn establish_connection() -> Result<DatabaseConnection, OxyError> {
-    // If OXY_DATABASE_URL is set, use PostgreSQL (external or Docker-managed)
-    if let Ok(url) = std::env::var("OXY_DATABASE_URL") {
-        tracing::info!("Using PostgreSQL from OXY_DATABASE_URL");
-        // Validate that the URL is a PostgreSQL connection string
-        if !url.starts_with("postgres://") && !url.starts_with("postgresql://") {
-            tracing::error!(
-                "OXY_DATABASE_URL must be a PostgreSQL connection string (starting with 'postgres://' or 'postgresql://'). Got: {}",
-                url
-            );
-            return Err(OxyError::Database(
-                "OXY_DATABASE_URL must be a PostgreSQL connection string (starting with 'postgres://' or 'postgresql://')".to_string()
-            ));
-        }
-        return Database::connect(url).await.map_err(|e| {
-            tracing::error!("Failed to connect to PostgreSQL database: {}", e);
-            OxyError::Database(e.to_string())
-        });
+    // OXY_DATABASE_URL is required - PostgreSQL only
+    let url = std::env::var("OXY_DATABASE_URL").map_err(|_| {
+        OxyError::Database(
+            "OXY_DATABASE_URL environment variable is required. \
+            Use 'oxy start' to automatically start PostgreSQL with Docker, \
+            or set OXY_DATABASE_URL to your PostgreSQL connection string."
+                .to_string(),
+        )
+    })?;
+
+    tracing::info!("Connecting to PostgreSQL from OXY_DATABASE_URL");
+
+    // Validate that the URL is a PostgreSQL connection string
+    if !url.starts_with("postgres://") && !url.starts_with("postgresql://") {
+        tracing::error!(
+            "OXY_DATABASE_URL must be a PostgreSQL connection string (starting with 'postgres://' or 'postgresql://'). Got: {}",
+            url
+        );
+        return Err(OxyError::Database(
+            "OXY_DATABASE_URL must be a PostgreSQL connection string (starting with 'postgres://' or 'postgresql://')".to_string()
+        ));
     }
 
-    // Otherwise, default to SQLite for backward compatibility
-    tracing::info!("Using SQLite database (default for backward compatibility)");
-    let state_dir = get_state_dir();
-    let db_path = state_dir.join("db.sqlite");
-    let connection_string = format!("sqlite://{}?mode=rwc", db_path.display());
-
-    tracing::info!("Connecting to SQLite at {}", db_path.display());
-    Database::connect(connection_string).await.map_err(|e| {
-        tracing::error!("Failed to connect to SQLite database: {}", e);
+    Database::connect(url).await.map_err(|e| {
+        tracing::error!("Failed to connect to PostgreSQL database: {}", e);
         OxyError::Database(e.to_string())
     })
 }

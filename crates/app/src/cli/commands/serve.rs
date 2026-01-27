@@ -35,16 +35,16 @@ static DIST: Dir = include_dir!("$CARGO_MANIFEST_DIR/dist");
 const ASSETS_CACHE_CONTROL: &str = "public, max-age=31536000, immutable";
 
 pub async fn start_server_and_web_app(args: ServeArgs) -> Result<(), OxyError> {
-    // Show hint about database being used
+    // Require OXY_DATABASE_URL to be set
     if std::env::var("OXY_DATABASE_URL").is_err() {
-        println!(
-            "{}",
-            "ℹ️  Using SQLite database (backward compatible mode)".tertiary()
-        );
-        println!(
-            "{}",
-            "   For PostgreSQL, use 'oxy start' or set OXY_DATABASE_URL\n".tertiary()
-        );
+        return Err(OxyError::RuntimeError(
+            "OXY_DATABASE_URL environment variable is required.\n\n\
+            Options:\n\
+            1. Use 'oxy start' to automatically start PostgreSQL with Docker\n\
+            2. Set OXY_DATABASE_URL to your PostgreSQL connection string:\n\
+               export OXY_DATABASE_URL=postgresql://user:password@localhost:5432/oxy"
+                .to_string(),
+        ));
     }
 
     run_database_migrations(args.enterprise).await?;
@@ -60,7 +60,7 @@ async fn run_database_migrations(enterprise: bool) -> Result<(), OxyError> {
         .await
         .map_err(|e| OxyError::RuntimeError(format!("Failed to connect to database: {}", e)))?;
 
-    // Run SeaORM migrations for PostgreSQL/SQLite
+    // Run SeaORM migrations for PostgreSQL
     Migrator::up(&db, None)
         .await
         .map_err(|e| OxyError::RuntimeError(format!("Failed to run database migrations: {}", e)))?;

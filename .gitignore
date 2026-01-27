@@ -97,7 +97,6 @@ artifacts/
 examples/omni
 examples/omni_bigquery.json
 examples/.oxy_state/
-**/db.sqlite
 .copilot-codeGeneration-instructions.md
 .playwright-mcp/before-submit.png
 .playwright-mcp/chat-complete.png

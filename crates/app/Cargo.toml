@@ -135,7 +135,7 @@ tracing-log = "0.2.0"
 apalis = "0.7.4"
 apalis-core = "0.7.4"
 apalis-sql = { version = "0.7.4", features = ["postgres", "tokio"] }
-sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "sqlite"] }
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres"] }
 semver = "1.0"
 backoff = { version = "0.4.0", features = ["tokio"] }
 rustc_version_runtime = "0.3.0"

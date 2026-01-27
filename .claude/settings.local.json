@@ -20,7 +20,8 @@
       "Bash(cut:*)",
       "Bash(npx tsc:*)",
       "Bash(npx eslint:*)",
-      "Bash(npm run lint:ts:*)"
+      "Bash(npm run lint:ts:*)",
+      "Bash(pgrep:*)"
     ],
     "deny": [],
     "ask": []

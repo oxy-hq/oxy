@@ -138,7 +138,7 @@ rustc_version_runtime = "0.3.0"
 apalis = "0.7.4"
 apalis-core = "0.7.4"
 apalis-sql = { version = "0.7.4", features = ["postgres", "tokio"] }
-sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "sqlite"] }
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres"] }
 semver = "1.0"
 rustls = { version = "0.23.36", features = ["aws_lc_rs"] }
 parquet = "=54.2.1"  # needs to be the same with arrow version

@@ -7,6 +7,5 @@ outputs/
 .lancedb/
 generated/
 results/
-db.sqlite
 .databases/
 .oxy_state/

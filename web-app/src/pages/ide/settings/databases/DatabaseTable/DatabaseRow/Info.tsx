@@ -2,7 +2,6 @@ import React from "react";
 import {
   Database as LucideDatabase,
   Cloud,
-  Server,
   HardDrive,
   Snowflake,
   Zap,
@@ -26,8 +25,6 @@ const getDatabaseIcon = (dialect: string) => {
     case "clickhouse":
       return <Zap className={iconProps} />;
     case "duckdb":
-    case "sqlite":
-      return <Server className={iconProps} />;
     default:
       return <LucideDatabase className={iconProps} />;
   }
