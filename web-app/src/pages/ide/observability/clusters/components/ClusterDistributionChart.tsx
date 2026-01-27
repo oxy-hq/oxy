@@ -150,7 +150,7 @@ export default function ClusterDistributionChart({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <PieChartIcon className="h-5 w-5 text-primary" />
-            <CardTitle>Cluster Distribution</CardTitle>
+            <CardTitle>Semantic distribution</CardTitle>
             {isLoading && (
               <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
             )}

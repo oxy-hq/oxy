@@ -45,7 +45,7 @@ function StatsCard({
     <Card className="overflow-hidden">
       <CardContent className="p-4">
         <div className="flex items-start justify-between">
-          <div className="space-y-1">
+          <div className="space-y-1 min-w-0">
             <div className="flex items-center gap-2">
               <p className="text-xs font-medium text-muted-foreground">
                 {title}
@@ -54,7 +54,9 @@ function StatsCard({
                 <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
               )}
             </div>
-            <p className="text-2xl font-bold tracking-tight">{value}</p>
+            <p className="text-2xl font-bold tracking-tight truncate">
+              {value}
+            </p>
             <p className="text-xs text-muted-foreground">{subtitle}</p>
           </div>
           <div className="p-2 rounded-lg bg-primary/10 text-primary">

@@ -162,7 +162,7 @@ export const VariablesForm: React.FC = () => {
           <Editor
             height="300px"
             width="100%"
-            theme="github-dark"
+            theme="vs-dark"
             language="json"
             value={variableStr || ""}
             loading={

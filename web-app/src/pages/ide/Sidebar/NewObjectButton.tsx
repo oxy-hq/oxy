@@ -63,7 +63,7 @@ tools: []
   },
   {
     type: "workflow",
-    label: "Workflow",
+    label: "Automation",
     icon: Workflow,
     extension: ".workflow.yml",
     defaultContent: `name: ""
