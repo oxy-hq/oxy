@@ -1,0 +1,57 @@
+---
+title: "Global config"
+description: How to configure your `config.yml` file
+---
+
+The `config.yml` file at the root of your repository is the configuration file
+you'll use to define three entities, specified as the following top-level keys:
+
+1. `databases`: database connections
+2. `models`: foundation model connections
+
+A sample `config.yml` file is shown below:
+
+```yaml
+databases:
+  - name: primary-database
+    type: bigquery
+    key_path: /path/to/keyfile
+    dataset: dataset-name
+  - name: local
+    type: duckdb
+    key_path: None
+    dataset: /path/to/local/files
+
+models:
+  - name: openai-4.1-mini
+    vendor: openai
+    model_ref: gpt-4.1-mini
+    key_var: OPENAI_API_KEY
+  - name: llama3.2
+    vendor: ollama
+    model_ref: llama3.2:latest
+    api_url: http://localhost:11434/v1
+    api_key: secret
+```
+
+## Environment Variables
+
+You can use environment variables for database connection parameters instead of hardcoding values. This is recommended for production deployments and keeping sensitive data out of version control.
+
+For example:
+
+```yaml
+databases:
+  - name: postgres_prod
+    type: postgres
+    host_var: POSTGRES_HOST
+    user_var: POSTGRES_USER
+    password_var: POSTGRES_PASSWORD
+    database_var: POSTGRES_DATABASE
+```
+
+See the [Environment Variables Reference](/reference/environment-variables) for complete documentation.
+
+## Additional Resources
+
+To get more information about connecting to databases or models, you can reference our [integrations](/integrations/overview) section.

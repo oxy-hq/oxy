@@ -1,0 +1,60 @@
+---
+title: ClickHouse
+---
+
+This guide explains how to connect to ClickHouse with Oxy. ClickHouse is an open-source column-oriented DBMS for real-time analytics.
+
+## Configuration Options
+
+Add your ClickHouse configuration to `config.yml`. Here are all available parameters:
+
+```yaml
+databases:
+  - name: my_clickhouse_db # Unique identifier for this connection
+    type: clickhouse
+    host: "http://clickhouse.local:8123" # ClickHouse server url with protocol://hostname:port
+    user: "default" # Username for authentication
+    password: <password> # Direct password (not recommended)
+    password_var: "CH_PWD" # Environment variable containing password (recommended)
+    database: "default" # Database name to connect to
+```
+
+## Example Configurations
+
+<Steps>
+<Step title="Prepare password environment variable">
+Export the environment variable:
+
+```sh
+export CH_PWD=<your password>
+```
+
+Or put it in `.env` file:
+
+```sh
+echo CH_PWD=<your password> >> .env
+```
+
+</Step>
+
+<Step title="Add ClickHouse configuration">
+
+```yaml
+databases:
+  - name: local_ch
+    type: clickhouse
+    host: "http://clickhouse.local:8123"
+    user: "default"
+    password_var: "CH_PWD"
+    database: "analytics"
+```
+
+</Step>
+</Steps>
+
+## Troubleshooting
+
+- Verify server status: `clickhouse-client --query "SELECT 1"`
+- Check system logs: `/var/log/clickhouse-server/`
+- Common ports: 8123 (HTTP), 9000 (TCP), 9009 (replication)
+- Monitor server metrics: `system.metrics` table

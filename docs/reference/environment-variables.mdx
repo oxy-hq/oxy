@@ -1,0 +1,274 @@
+---
+title: "Environment Variable Configuration"
+description: "Use environment variables for database connection configurations"
+---
+
+This guide explains how to use environment variables for database connection configurations in Oxy.
+
+## Overview
+
+All database connection parameters can be read from environment variables. This is particularly useful for:
+
+- **Security**: Keep sensitive connection details out of version control
+- **Flexibility**: Use different configurations for development, staging, and production
+- **Container/Cloud deployments**: Easily configure databases using platform environment variables (Kubernetes secrets, Docker env vars, etc.)
+
+## Supported Databases
+
+Environment variable support is available for:
+
+- ClickHouse
+- PostgreSQL
+- MySQL
+- Redshift
+- BigQuery
+
+## How It Works
+
+For any database connection parameter, you can use the `_var` suffix to reference an environment variable instead of hardcoding the value.
+
+### Example: ClickHouse
+
+**Before** (hardcoded):
+
+```yaml
+databases:
+  - name: clickhouse
+    type: clickhouse
+    host: http://clickhouse.clickhouse:8123
+    user: default
+    password_var: CLICKHOUSE_PASSWORD
+    database: restaurant_analytics
+```
+
+**After** (using environment variables):
+
+```yaml
+databases:
+  - name: clickhouse
+    type: clickhouse
+    host_var: CLICKHOUSE_HOST
+    user_var: CLICKHOUSE_USER
+    password_var: CLICKHOUSE_PASSWORD
+    database_var: CLICKHOUSE_DATABASE
+```
+
+Then set the environment variables:
+
+```bash
+export CLICKHOUSE_HOST=http://clickhouse.clickhouse:8123
+export CLICKHOUSE_USER=default
+export CLICKHOUSE_PASSWORD=your_secure_password
+export CLICKHOUSE_DATABASE=restaurant_analytics
+```
+
+## Supported Fields by Database Type
+
+### ClickHouse
+
+- `host` / `host_var` - Connection URL
+- `user` / `user_var` - Username
+- `password` / `password_var` - Password
+- `database` / `database_var` - Database name
+
+### PostgreSQL
+
+- `host` / `host_var` - Hostname (default: `localhost`)
+- `port` / `port_var` - Port number (default: `5432`)
+- `user` / `user_var` - Username (default: `postgres`)
+- `password` / `password_var` - Password
+- `database` / `database_var` - Database name (default: `postgres`)
+
+### MySQL
+
+- `host` / `host_var` - Hostname (default: `localhost`)
+- `port` / `port_var` - Port number (default: `3306`)
+- `user` / `user_var` - Username (default: `root`)
+- `password` / `password_var` - Password
+- `database` / `database_var` - Database name (default: `mysql`)
+
+### Redshift
+
+- `host` / `host_var` - Hostname (default: `localhost`)
+- `port` / `port_var` - Port number (default: `5439`)
+- `user` / `user_var` - Username (default: `awsuser`)
+- `password` / `password_var` - Password
+- `database` / `database_var` - Database name (default: `dev`)
+
+### BigQuery
+
+- `key_path` / `key_path_var` - Path to service account key file
+
+## Configuration Patterns
+
+### 1. Full Environment Variable Configuration
+
+All connection details from environment:
+
+```yaml
+databases:
+  - name: postgres_prod
+    type: postgres
+    host_var: DB_HOST
+    port_var: DB_PORT
+    user_var: DB_USER
+    password_var: DB_PASSWORD
+    database_var: DB_NAME
+```
+
+### 2. Mixed Configuration
+
+Combine hardcoded and environment variables:
+
+```yaml
+databases:
+  - name: postgres_dev
+    type: postgres
+    host: localhost # Hardcoded for local development
+    port: "5432" # Hardcoded
+    user_var: DB_USER # From environment
+    password_var: DB_PASS # From environment
+    database: myapp_dev # Hardcoded
+```
+
+### 3. Minimal Configuration with Defaults
+
+Only specify what differs from defaults:
+
+```yaml
+databases:
+  - name: postgres_local
+    type: postgres
+    password_var: POSTGRES_PASSWORD # Everything else uses defaults
+    database: myapp # Override default database name
+```
+
+This will use:
+
+- host: `localhost` (default)
+- port: `5432` (default)
+- user: `postgres` (default)
+- password: from `POSTGRES_PASSWORD` env var
+- database: `myapp` (specified)
+
+## Usage with Docker Compose
+
+```yaml
+version: "3.8"
+services:
+  oxy:
+    image: oxy:latest
+    environment:
+      - CLICKHOUSE_HOST=http://clickhouse:8123
+      - CLICKHOUSE_USER=default
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
+      - CLICKHOUSE_DATABASE=analytics
+    volumes:
+      - ./config.yml:/app/config.yml
+```
+
+## Usage with Kubernetes
+
+Create a Secret:
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: database-credentials
+type: Opaque
+data:
+  clickhouse-host: aHR0cDovL2NsaWNraG91c2U6ODEyMw== # base64 encoded
+  clickhouse-user: ZGVmYXVsdA==
+  clickhouse-password: eW91cl9wYXNzd29yZA==
+  clickhouse-database: YW5hbHl0aWNz
+```
+
+Reference in your Pod:
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: oxy
+spec:
+  containers:
+    - name: oxy
+      image: oxy:latest
+      env:
+        - name: CLICKHOUSE_HOST
+          valueFrom:
+            secretKeyRef:
+              name: database-credentials
+              key: clickhouse-host
+        - name: CLICKHOUSE_USER
+          valueFrom:
+            secretKeyRef:
+              name: database-credentials
+              key: clickhouse-user
+        - name: CLICKHOUSE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: database-credentials
+              key: clickhouse-password
+        - name: CLICKHOUSE_DATABASE
+          valueFrom:
+            secretKeyRef:
+              name: database-credentials
+              key: clickhouse-database
+```
+
+## Best Practices
+
+1. **Never commit passwords**: Use `password_var` for all password fields
+2. **Use `.env` files locally**: Keep a `.env.example` in your repo with dummy values
+3. **Separate configs per environment**: Use different config files for dev/staging/prod
+4. **Document required env vars**: List all required environment variables in your README
+5. **Provide defaults**: Use the default values feature for common settings like `localhost`
+
+## Migration from Hardcoded Values
+
+To migrate existing configurations:
+
+1. Identify sensitive values (passwords, hosts, etc.)
+2. Replace hardcoded values with `_var` references
+3. Set up environment variables in your deployment
+4. Test the configuration before deploying to production
+
+## Example .env File
+
+```bash
+# ClickHouse
+CLICKHOUSE_HOST=http://clickhouse.example.com:8123
+CLICKHOUSE_USER=default
+CLICKHOUSE_PASSWORD=secure_password_here
+CLICKHOUSE_DATABASE=restaurant_analytics
+
+# PostgreSQL
+POSTGRES_HOST=postgres.example.com
+POSTGRES_PORT=5432
+POSTGRES_USER=app_user
+POSTGRES_PASSWORD=secure_password_here
+POSTGRES_DATABASE=production_db
+
+# MySQL
+MYSQL_HOST=mysql.example.com
+MYSQL_PORT=3306
+MYSQL_USER=app_user
+MYSQL_PASSWORD=secure_password_here
+MYSQL_DATABASE=production_db
+
+# BigQuery
+BIGQUERY_KEY_PATH=/secrets/bigquery-key.json
+
+# Models
+OPENAI_API_KEY=sk-...
+```
+
+## Backward Compatibility
+
+All existing configurations continue to work without changes. The environment variable support is optional and can be adopted incrementally.
+
+## Complete Example
+
+For a complete working example, see [config-with-env-vars.yml](https://github.com/oxy-hq/oxy/blob/main/examples/config-with-env-vars.yml) in the examples directory.

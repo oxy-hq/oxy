@@ -1,0 +1,275 @@
+---
+title: "Overview"
+description: "Build a comprehensive semantic layer to power AI-driven analytics"
+---
+
+## Overview
+
+The semantic layer in Oxy is a powerful abstraction that transforms raw database schemas into business-friendly concepts. It provides a declarative way to define business logic, metrics, and relationships that AI agents can understand and use to answer analytical questions accurately.
+
+Think of it as a translation layer between your technical data infrastructure and business questions. Instead of requiring users or AI agents to understand complex database schemas and SQL, they can work with intuitive business concepts like "total revenue," "customer segments," or "monthly active users."
+
+<Note>
+  Oxy also supports a simpler semantic model format (`.schema.yml`) for
+  straightforward use cases. See [Semantic
+  Model](/learn-about-oxy/semantic-model) for a lighter-weight alternative.
+</Note>
+
+## Key Benefits
+
+- **AI-Optimized**: Provides rich context for AI agents to understand your data and generate accurate queries
+- **Declarative**: Define business logic once in YAML, use it everywhere
+- **Consistent**: Ensures everyone in your organization uses the same metric definitions
+- **Governed**: Centralize data access, security, and quality rules
+- **Portable**: Works across different BI tools and query engines
+
+## Core Concepts
+
+The semantic layer consists of four main building blocks:
+
+### Views
+
+**Views** represent logical data models that define how to access and interpret data. They encapsulate the business logic needed to transform raw tables into meaningful business concepts.
+
+A view defines:
+
+- How to access data (table or custom SQL)
+- What entities exist in the data
+- Available dimensions (attributes)
+- Available measures (metrics and aggregations)
+
+[Learn more about Views →](/learn-about-oxy/semantic-layer/views)
+
+### Entities
+
+**Entities** represent distinct objects or concepts in your data model (like customers, orders, or products). They enable automatic relationship discovery and intelligent joins between views.
+
+[Learn more about Entities →](/learn-about-oxy/semantic-layer/entities)
+
+### Dimensions
+
+**Dimensions** are attributes that describe your entities. They're used for grouping, filtering, and segmenting data (like order status, customer name, or product category).
+
+[Learn more about Dimensions →](/learn-about-oxy/semantic-layer/dimensions)
+
+### Measures
+
+**Measures** are quantitative calculations and aggregations that provide business insights (like total revenue, average order value, or customer count).
+
+[Learn more about Measures →](/learn-about-oxy/semantic-layer/measures)
+
+### Topics
+
+**Topics** are collections of related views organized by business domain. They help users discover and explore related data concepts together.
+
+[Learn more about Topics →](/learn-about-oxy/semantic-layer/topics)
+
+## Project Structure
+
+Organize your semantic layer files in a clear directory structure:
+
+```
+your-project/
+├── config.yml
+├── semantics/
+│   ├── topics/
+│   │   ├── sales.topic.yml
+│   │   ├── marketing.topic.yml
+│   │   └── finance.topic.yml
+│   └── views/
+│       ├── orders.view.yml
+│       ├── customers.view.yml
+│       ├── products.view.yml
+│       └── campaigns.view.yml
+```
+
+## Quick Start
+
+Here's a simple example to get you started:
+
+```yaml semantics/views/orders.view.yml
+name: orders
+description: "Order transactions and related data"
+datasource: "local"
+table: "orders.csv"
+
+entities:
+  - name: order
+    type: primary
+    key: order_id
+
+dimensions:
+  - name: order_date
+    type: date
+    expr: order_date
+
+  - name: order_status
+    type: string
+    expr: status
+    samples: ["pending", "shipped", "delivered"]
+
+measures:
+  - name: total_orders
+    type: count
+
+  - name: total_revenue
+    type: sum
+    expr: total_amount
+```
+
+Build your semantic layer:
+
+```bash
+oxy build
+```
+
+Then use it in an agent:
+
+```yaml agents/analyst.agent.yml
+model: "openai-4o-mini"
+tools:
+  - name: semantic_query
+    type: semantic_query
+    topic: sales
+```
+
+## Detailed Guides
+
+Explore each component of the semantic layer in detail:
+
+<CardGroup cols={2}>
+  <Card
+    title="Views"
+    icon="database"
+    href="/learn-about-oxy/semantic-layer/views"
+  >
+    Create and manage views that represent your data models
+  </Card>
+  <Card
+    title="Entities"
+    icon="link"
+    href="/learn-about-oxy/semantic-layer/entities"
+  >
+    Define entities and relationships for automatic joins
+  </Card>
+  <Card
+    title="Dimensions"
+    icon="grid"
+    href="/learn-about-oxy/semantic-layer/dimensions"
+  >
+    Add dimensions for filtering and grouping
+  </Card>
+  <Card
+    title="Measures"
+    icon="chart-line"
+    href="/learn-about-oxy/semantic-layer/measures"
+  >
+    Define measures and metrics for analysis
+  </Card>
+  <Card
+    title="Topics"
+    icon="folder"
+    href="/learn-about-oxy/semantic-layer/topics"
+  >
+    Organize views into business domain topics
+  </Card>
+  <Card
+    title="Usage"
+    icon="rocket"
+    href="/learn-about-oxy/semantic-layer/usage"
+  >
+    Use the semantic layer in agents, workflows, and routing
+  </Card>
+</CardGroup>
+
+## Examples
+
+### Performance
+
+- Use table references when possible instead of complex SQL
+- Pre-aggregate data in SQL-based views when appropriate
+- Index the key columns referenced in entity definitions
+
+## Next Steps
+
+Now that you understand the semantic layer, dive deeper into specific components:
+
+<Steps>
+  <Step title="Create Views">
+    Start by creating views that represent your data models. [Learn about Views
+    →](/learn-about-oxy/semantic-layer/views)
+  </Step>
+  <Step title="Define Entities">
+    Add entities to enable automatic joins between views. [Learn about Entities
+    →](/learn-about-oxy/semantic-layer/entities)
+  </Step>
+  <Step title="Add Dimensions & Measures">
+    Define the dimensions and measures that users will query. [Dimensions
+    →](/learn-about-oxy/semantic-layer/dimensions) | [Measures
+    →](/learn-about-oxy/semantic-layer/measures)
+  </Step>
+  <Step title="Organize with Topics">
+    Group related views into business domain topics. [Learn about Topics
+    →](/learn-about-oxy/semantic-layer/topics)
+  </Step>
+  <Step title="Use in Agents & Workflows">
+    Put your semantic layer to work in agents and workflows. [Learn about Usage
+    →](/learn-about-oxy/semantic-layer/usage)
+  </Step>
+</Steps>
+
+## Related Documentation
+
+<CardGroup cols={2}>
+  <Card
+    title="Quick Reference"
+    icon="book"
+    href="/reference/semantic-layer-reference"
+  >
+    Semantic layer syntax reference
+  </Card>
+  <Card
+    title="Semantic Model"
+    icon="file-code"
+    href="/learn-about-oxy/semantic-model"
+  >
+    Simpler semantic model format
+  </Card>
+  <Card title="Context" icon="database" href="/learn-about-oxy/context">
+    Providing context to agents
+  </Card>
+  <Card title="Data Sources" icon="plug" href="/integrations/overview">
+    Configure data sources
+  </Card>
+</CardGroup>
+
+## Related Documentation
+
+<CardGroup cols={2}>
+  <Card
+    title="Quick Reference"
+    icon="book"
+    href="/reference/semantic-layer-reference"
+  >
+    Semantic layer syntax reference
+  </Card>
+  <Card
+    title="Semantic Model"
+    icon="file-code"
+    href="/learn-about-oxy/semantic-model"
+  >
+    Simpler semantic model format
+  </Card>
+  <Card title="Agents" icon="robot" href="/learn-about-oxy/agents">
+    Learn how agents use the semantic layer
+  </Card>
+  <Card title="Context" icon="database" href="/learn-about-oxy/context">
+    Providing context to agents
+  </Card>
+  <Card title="Data Sources" icon="plug" href="/integrations/overview">
+    Configure data sources
+  </Card>
+  <Card title="Testing" icon="flask" href="/learn-about-oxy/testing">
+    Test your semantic layer definitions
+  </Card>
+</CardGroup>

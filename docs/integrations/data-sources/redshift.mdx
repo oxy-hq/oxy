@@ -1,0 +1,65 @@
+---
+title: Redshift
+---
+
+This guide explains how to connect to Amazon Redshift with Oxy. Redshift is a fully managed, petabyte-scale data warehouse service in the cloud.
+
+## Configuration Options
+
+Add your Redshift configuration to `config.yml`. Here are all available parameters:
+
+```yaml
+databases:
+  - name: my_redshift_db # Unique identifier for this connection
+    type: redshift
+    host: "cluster.xxxxx.region.redshift.amazonaws.com" # Redshift endpoint
+    port: 5439 # Redshift port (default: 5439)
+    user: "awsuser" # Master username
+    password_var: "RS_PWD" # Environment variable containing password
+    database: "dev" # Database name
+```
+
+## Example Configurations
+
+<Steps>
+<Step title="Prepare password environment variable">
+
+Export the environment variable:
+
+```sh
+export RS_PWD=<your password>
+```
+
+Or put it in `.env` file:
+
+```sh
+echo RS_PWD=<your password> >> .env
+```
+
+</Step>
+
+<Step title="Add Redshift configuration">
+
+```yaml
+databases:
+  - name: rs_analytics
+    type: redshift
+    host: "my-cluster.xxxxx.us-east-1.redshift.amazonaws.com"
+    port: 5439
+    user: "awsuser"
+    password_var: "RS_PWD"
+    database: "analytics"
+```
+
+</Step>
+</Steps>
+
+## Troubleshooting
+
+- Check cluster status in AWS Console
+- View query history in Redshift console
+- Common issues:
+  - VPC/Security group misconfiguration
+  - IAM permission issues
+  - Connection timeout due to workload management
+  - Query performance problems

@@ -1,0 +1,388 @@
+---
+title: "Workflows"
+description: How to define workflows
+---
+
+A workflow is a series of tasks (`tasks`) executed sequentially. Each `task`
+can be either a deterministic command (such as `execute_sql`, in which a named
+sql query is executed) or an agent given a prompt. These tasks are composed by
+passing results from one agent to the input of another -- the output of each
+task can be accessed with Jinja as `{{ name_of_task }}`.
+
+# Workflow components
+
+Workflows are DAGs comprised of `tasks`. Each task has a few common properties:
+
+| Component | Description                                                                  | Type     |
+| --------- | ---------------------------------------------------------------------------- | -------- |
+| name      | Identifier for the task. Output of the task can be referenced as `{{name}}`. | required |
+| type      | The tool to use for this task. See the following section for possible types. | required |
+
+Specific task types have additional property requirements.
+
+## `type: agent`
+
+| Component          | Description                                                                                                                                                                       | Type                       |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
+| agent_ref          | The agent to use within the `agents` directory, referenced by the agent's `name`.                                                                                                 | required for `type: agent` |
+| prompt             | The input prompt passed to the agent for this task.                                                                                                                               | required for `type: agent` |
+| consistency_run    | Number of times to run the agent and select the most consistent output. Must be > 1 to enable.                                                                                    | optional (default: 1)      |
+| consistency_prompt | Custom evaluation prompt for consistency checking. Overrides workflow-level prompt. Supports Jinja templating with variables: `submission_1`, `submission_2`, `task_description`. | optional                   |
+
+### Agent Task Consistency Runs
+
+You can enable consistency checking on agent tasks by setting `consistency_run` to a value greater than 1. This runs the agent multiple times with the same prompt and selects the most consistent output:
+
+```yaml
+# Workflow-level consistency prompt (applies to all agent tasks)
+consistency_prompt: |
+  Your custom evaluation prompt here...
+  Use {{ submission_1 }}, {{ submission_2 }}, and {{ task_description }}
+
+tasks:
+  - name: calculate_revenue
+    type: agent
+    agent_ref: default
+    prompt: "What was our total revenue last quarter?"
+    consistency_run: 5 # Run 5 times and pick the most consistent result
+
+  - name: analyze_trends
+    type: agent
+    agent_ref: default
+    prompt: "What are the key sales trends?"
+    consistency_run: 3
+    # Task-level prompt overrides workflow-level prompt
+    consistency_prompt: |
+      Compare these trend analyses focusing on directional consistency:
+      Submission 1: {{ submission_1 }}
+      Submission 2: {{ submission_2 }}
+      Are they factually consistent? Answer A or B.
+```
+
+This is particularly useful for:
+
+- Critical calculations where consistency is important
+- Data analysis tasks that may have slight variations in output
+- Queries involving complex logic where you want to verify the agent's reasoning
+
+**Consistency Prompt Configuration:**
+
+- **Workflow-level**: Add `consistency_prompt` at the workflow root to apply to all agent tasks
+- **Task-level**: Add `consistency_prompt` to a specific task to override the workflow prompt
+- **Default**: If not specified, uses the built-in evaluation prompt optimized for data analysis (view the [default prompt source](https://github.com/oxy-hq/oxy-internal/blob/main/crates/core/src/config/constants.rs#L52-L199))
+
+**Available template variables:**
+
+- `{{ submission_1 }}` - First output
+- `{{ submission_2 }}` - Second output
+- `{{ task_description }}` - The task prompt
+
+**Note:** Custom prompts completely replace the default. To adapt the default for your domain, copy the [source](https://github.com/oxy-hq/oxy-internal/blob/main/crates/core/src/config/constants.rs#L52-L199) and modify the specific rules you need.
+
+See the [Testing](/learn-about-oxy/testing#consistency-runs-in-workflow-agent-tasks) documentation for more details on consistency checking.
+
+## `type: execute_sql`
+
+Executes a SQL query either referenced by filename or provided inline.
+
+| Component | Description                                             | Type                          |
+| --------- | ------------------------------------------------------- | ----------------------------- |
+| sql_file  | The sql file within the `data` directory to execute     | required (or use `sql_query`) |
+| sql_query | Inline SQL query to execute (alternative to `sql_file`) | required (or use `sql_file`)  |
+| database  | The name of the `database` to execute the query against | required                      |
+
+You can use either `sql_file` to reference a SQL file, or `sql_query` to provide the SQL inline.
+**Note:** These options are mutually exclusive—only one should be used at a time. Specifying both in a single task is not allowed.
+
+```yaml
+# Using sql_file
+- name: query_with_file
+  type: execute_sql
+  sql_file: my_query.sql
+  database: local
+
+# Using sql_query inline
+- name: query_inline
+  type: execute_sql
+  sql_query: |
+    SELECT * FROM users
+    WHERE created_at > '2024-01-01'
+  database: local
+```
+
+## `type: formatter`
+
+Formats the provided `template` using the outputs of other `tasks`, then passes
+the rendered template as output.
+
+| Component | Description                                       | Type     |
+| --------- | ------------------------------------------------- | -------- |
+| template  | The template to be rendered and passed as output. | required |
+
+## `type: loop_sequential`
+
+| Component | Description                                                                 | Type     |
+| --------- | --------------------------------------------------------------------------- | -------- |
+| values    | Values to iterate over for each `task` in the current task's `tasks` array. | required |
+| tasks     | Defines the tasks to execute for each `value`.                              | required |
+
+`values` are accessed within the `tasks` of the `loop_sequential` task as
+`<name>.value`, where `<name>` is the name of the task. A sample partial config
+is shown below:
+
+```yaml
+tasks:
+  - name: loop_through_animals
+    type: loop_sequential
+    values: ["whale", "dolphin", "shark"]
+    tasks:
+      - name: get_number_of_animals
+        type: agent
+        agent_ref: default
+        prompt: |
+          Get the number of {{ loop_through_animals.value }}s in the ocean.
+```
+
+### Seeding `values` with query results
+
+The `values` can be seeded with the output from a previous `execute_sql` step,
+as follows:
+
+```yaml
+  - name: get_all_animals
+    type: execute_sql
+    sql_file: outputs/cache/get_all_animals.sql
+    database: local
+
+  # Loop over every animal
+  - name: loop_through_animals
+    type loop_sequential
+    values: "{{ get_all_animals.animal_name }}"  # `animal_name` is the column name to loop over
+    tasks:
+      ...
+```
+
+### Formatting loop outputs
+
+Loops are also often combined with the `type: formatter` task, which can loop through
+the resulting outputs and form them into a single string. The output from a
+`loop_sequential` is an array of dictionaries for each `value`, where the keys
+for each element of each dictionary is named according to the `task`'s' `name`
+field. These can be accessed by using Jinja, by looping through the `{{ <loop_name> }}` variable (`{{ loop_through_animals }}` above).
+
+An example of this behavior is shown below:
+
+```yaml
+- name: format_animal_report
+  type: formatter
+  template: |
+    {% for animal in loop_through_animals %}
+    {{ animal.get_number_of_animals }}
+    {% endfor %}
+```
+
+### Concurrency
+
+Concurrency can be added to the loop by using the `concurrency` key, with the
+value specifying the number of concurrent threads to use.
+
+```yaml
+- name: loop_through_animals
+  type: loop_sequential
+  concurrency: 5
+  values: ...
+  tasks: ...
+```
+
+## `type: workflow`
+
+| Component | Description                                                                          | Type     |
+| --------- | ------------------------------------------------------------------------------------ | -------- |
+| src       | Path to the workflow yml file to execute. Relative to the root of the oxy directory. | required |
+| variables | Variables that are passed through, overriding the sub-workflow's variables.          | optional |
+
+Allows a sub-workflow to be executed. It's recommended to use this to break up
+complex workflows into smaller, easily testable chunks. The `variables` key
+here allows for parameterization of these workflows by overriding the
+workflow-level variables. This can be particularly useful when embedding a
+workflow task into a loop, as follows:
+
+```yaml
+- name: loop_brands
+  type: loop_sequential
+  values: ["brand1", "brand2"]
+  concurrency: 10
+  tasks:
+    - name: brand_stats
+      type: workflow
+      src: brand_stats.workflow.yml
+      variables:
+        brand_rollup: "{{ loop_brands.value }}"
+```
+
+# Variables
+
+It's often the case that you may want to parameterize a workflow -- for
+example, if you are trying to build an automated analysis, and want this to be
+modular with respect to the date. We enable this behavior through the use of
+the `variables` key.
+
+## Basic Variables
+
+Simple variables can be defined as key-value pairs:
+
+```yaml
+variables:
+  brand: Underbelly
+  date: 2024-01-15
+```
+
+Variables can be referenced within task fields using Jinja syntax:
+
+```yaml
+tasks:
+  - name: analyze_brand
+    type: agent
+    agent_ref: default
+    prompt: |
+      Analyze performance for {{ brand }} on {{ date }}
+```
+
+## Typed Variables with JSON Schema
+
+For better validation and documentation, you can define variables using JSON Schema:
+
+```yaml
+variables:
+  target_database:
+    type: string
+    description: Database to analyze
+    default: "analytics_db"
+
+  analysis_period:
+    type: string
+    description: Time period for analysis
+    default: "last_30_days"
+    enum:
+      - last_7_days
+      - last_30_days
+      - last_quarter
+      - custom
+
+  max_results:
+    type: integer
+    description: Maximum number of results
+    default: 100
+    minimum: 1
+    maximum: 1000
+
+  include_archived:
+    type: boolean
+    description: Include archived records
+    default: false
+```
+
+## Passing Variables to Tasks
+
+Variables can be passed to different task types:
+
+### Agent Tasks
+
+```yaml
+tasks:
+  - name: analyze_sales
+    type: agent
+    agent_ref: analytics.agent.yml
+    prompt: |
+      Analyze sales data for {{ analysis_period }}
+    variables:
+      database: "{{ target_database }}"
+      period: "{{ analysis_period }}"
+      limit: "{{ max_results }}"
+```
+
+### SQL Tasks
+
+```yaml
+tasks:
+  - name: query_data
+    type: execute_sql
+    sql_file: sales_query.sql
+    database: local
+    variables:
+      table_name: "{{ target_table }}"
+      date_column: "{{ date_field }}"
+```
+
+### Semantic Query Tasks
+
+```yaml
+tasks:
+  - name: semantic_query
+    type: semantic_query
+    topic: sales
+    dimensions:
+      - orders.order_id
+    variables:
+      orders_table: "{{ orders_table }}"
+```
+
+## Global Variables
+
+Variables can reference global semantics values:
+
+```yaml
+variables:
+  orders_table:
+    type: string
+    default: "{{ globals.semantics.tables.orders }}"
+
+tasks:
+  - name: query_orders
+    type: semantic_query
+    topic: sales
+    variables:
+      table: "{{ orders_table }}"
+```
+
+See [Global](/learn-about-oxy/globals) for more information.
+
+# Examples
+
+```yaml workflows/monthly_report.yml
+tasks:
+  - name: raw_sql_calculation
+    type: execute_sql
+    sql_file: month_over_month_overall_performance.sql # A sql file to execute deterministically
+  - name: month_over_month_metrics # An identifier for the task. Results can be referenced by jinja-wrapping this name
+    type: agent
+    agent_ref: default # The agent .yml file to use for this task
+    prompt: Calculate month-over-month performance of views and clicks for the entire ad portfolio. # The prompt given to the agent
+  - name: monthly_report
+    type: agent
+    agent_ref: local
+    prompt: |
+      Create a report using the provided data that looks as follows:
+      The overall portfolio brought in X views and Y clicks in MM/YYYY, up A% and B%, respectively.
+      {{month_over_month_metrics}}
+```
+
+# Workflows vs. chains
+
+A workflow is similar to a "chain" in the prompt engineering parlance, but with
+a few key differences:
+
+- **Workflows are DAGs.** Whereas chains can become arbitrarily complex with
+  arbitrarily nested loops, complex reply logic, and opaque branching structures,
+  workflows are DAGs, which enforce a clearer, more predictable flow from input
+  to output.
+- **Workflows separate logic from execution.** Because workflows are written in
+  yaml, the DAG definition is entirely separate from the execution engine
+  (usually Python), while other Python-based systems keep these tightly coupled
+  and so ultimately become difficult to build and maintain.
+
+These choices generally reduce the flexibility of Oxy when compared to say,
+`langchain` or `llama_index`, but they also dramatically reduce the complexity
+of the system. You can think of Oxy's `workflow` paradigm as a domain-specific
+chain-builder for data workflows, where most (if not all) tasks simply pass
+results around between different agents.

@@ -1,0 +1,59 @@
+---
+title: "oxy start"
+description: "Start PostgreSQL with Docker and launch the Oxy server"
+---
+
+The `oxy start` command is the recommended way to run Oxy with a production-ready PostgreSQL database. It automatically manages a PostgreSQL container using Docker and starts the Oxy web server.
+
+## Overview
+
+`oxy start` simplifies database setup by:
+
+1. **Checking Docker availability**
+2. **Starting PostgreSQL in a Docker container** (or creating one if it doesn't exist)
+3. **Waiting for PostgreSQL to be ready**
+4. **Configuring the database connection** automatically
+   The `oxy start` command runs Oxy with a production-ready PostgreSQL in Docker. Add `--enterprise` to also start ClickHouse and an OpenTelemetry Collector for observability.
+
+## Quick usage
+
+```bash
+oxy start            # start DB + web server
+oxy start --enterprise  # also start ClickHouse + OTel
+```
+
+## Key ports
+
+| Service                                         |   Host port |
+| ----------------------------------------------- | ----------: |
+| PostgreSQL (oxy-postgres)                       |       15432 |
+| ClickHouse (oxy-clickhouse) HTTP / Native       | 8123 / 9000 |
+| OTel Collector (oxy-otel-collector) gRPC / HTTP | 4317 / 4318 |
+
+## Environment vars (enterprise)
+
+- `OXY_CLICKHOUSE_URL` = `http://localhost:8123`
+- `OXY_CLICKHOUSE_DATABASE` = `otel`
+- `OTEL_EXPORTER_OTLP_ENDPOINT` = `http://localhost:4317`
+
+## Minimal commands
+
+- Check status: `oxy status`
+- View logs: `docker logs -f oxy-postgres` (and `oxy-clickhouse`, `oxy-otel-collector` for enterprise)
+- Stop containers: `docker stop oxy-postgres [oxy-clickhouse oxy-otel-collector]`
+
+## Notes
+
+- Docker must be installed and running.
+- Data persists in named volumes (`oxy-postgres-data`, `oxy-clickhouse-data`).
+- If a port is already in use, stop the conflicting service or run with external DBs.
+
+## Next Steps
+
+- Learn about database migrations
+- Configure environment variables
+- Set up production deployment
+- Monitor with `oxy status`
+
+- Set up [production deployment](/deployment/overview)
+- Monitor with [`oxy status`](/reference/oxy-commands#oxy-status)

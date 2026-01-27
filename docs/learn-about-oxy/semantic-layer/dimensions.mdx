@@ -1,0 +1,401 @@
+---
+title: "Dimensions"
+description: "Define dimensions for filtering and grouping data"
+---
+
+## Overview
+
+**Dimensions** are attributes that describe your entities. They're used for grouping, filtering, and segmenting data (like order status, customer name, or product category).
+
+Dimensions provide the descriptive context for your data and enable slicing and dicing your metrics.
+
+## Dimension Types
+
+Oxy supports five dimension types:
+
+| Type       | Description               | Example Values                         |
+| ---------- | ------------------------- | -------------------------------------- |
+| `string`   | Text and categorical data | "pending", "John Smith", "Electronics" |
+| `number`   | Numeric values            | 42, 3.14, 1000                         |
+| `date`     | Date values               | "2024-03-15"                           |
+| `datetime` | Date and time values      | "2024-03-15T14:30:00Z"                 |
+| `boolean`  | True/false values         | true, false                            |
+
+## Dimension Properties
+
+| Property      | Type   | Required | Description                                    |
+| ------------- | ------ | -------- | ---------------------------------------------- |
+| `name`        | string | Yes      | Unique identifier within the view              |
+| `type`        | string | Yes      | Data type                                      |
+| `description` | string | No       | Human-readable description                     |
+| `expr`        | string | Yes      | SQL expression                                 |
+| `samples`     | array  | No       | Example values for documentation               |
+| `synonyms`    | array  | No       | Alternative names for natural language queries |
+
+## Examples
+
+### String Dimensions
+
+```yaml
+dimensions:
+  # Simple string dimension
+  - name: customer_name
+    type: string
+    description: "Customer full name"
+    expr: name
+
+  # With samples and synonyms
+  - name: order_status
+    type: string
+    description: "Current order status"
+    expr: status
+    samples: ["pending", "processing", "shipped", "delivered"]
+    synonyms: ["status", "order_state", "fulfillment_status"]
+
+  # Categorical data
+  - name: product_category
+    type: string
+    description: "Product category classification"
+    expr: category
+    samples: ["Electronics", "Clothing", "Home & Garden", "Sports"]
+```
+
+### Number Dimensions
+
+```yaml
+dimensions:
+  # Integer values
+  - name: quantity
+    type: number
+    description: "Quantity of items"
+    expr: quantity
+    samples: [1, 5, 10]
+
+  # Decimal values
+  - name: discount_percent
+    type: number
+    description: "Discount percentage applied"
+    expr: discount_percent
+    samples: [0, 10, 25, 50]
+
+  # IDs
+  - name: order_id
+    type: number
+    description: "Unique order identifier"
+    expr: id
+```
+
+### Date Dimensions
+
+```yaml
+dimensions:
+  # Simple date
+  - name: order_date
+    type: date
+    description: "Date when order was placed"
+    expr: order_date
+    synonyms: ["purchase_date", "date_ordered"]
+
+  # Birth date
+  - name: birth_date
+    type: date
+    description: "Customer birth date"
+    expr: birth_date
+```
+
+### DateTime Dimensions
+
+```yaml
+dimensions:
+  # Timestamp
+  - name: created_at
+    type: datetime
+    description: "Timestamp when record was created"
+    expr: created_at
+
+  # Last updated
+  - name: updated_at
+    type: datetime
+    description: "Last update timestamp"
+    expr: updated_at
+```
+
+### Boolean Dimensions
+
+```yaml
+dimensions:
+  # Simple boolean
+  - name: is_first_order
+    type: boolean
+    description: "Whether this is customer's first order"
+    expr: is_first_order
+
+  # Active status
+  - name: is_active
+    type: boolean
+    description: "Whether the customer is active"
+    expr: is_active
+```
+
+## Computed Dimensions
+
+Use SQL expressions to create derived dimensions:
+
+```yaml
+dimensions:
+  # Extract year from date
+  - name: order_year
+    type: number
+    description: "Year of the order"
+    expr: EXTRACT(YEAR FROM order_date)
+
+  # Extract month
+  - name: order_month
+    type: number
+    description: "Month of the order"
+    expr: EXTRACT(MONTH FROM order_date)
+
+  # Concatenate fields
+  - name: full_address
+    type: string
+    description: "Complete address"
+    expr: CONCAT(street, ', ', city, ', ', state, ' ', zip)
+
+  # Conditional logic
+  - name: order_size_category
+    type: string
+    description: "Order size classification"
+    expr: |
+      CASE 
+        WHEN total_amount >= 1000 THEN 'Large'
+        WHEN total_amount >= 500 THEN 'Medium'
+        ELSE 'Small'
+      END
+    samples: ["Large", "Medium", "Small"]
+
+  # Mathematical calculation
+  - name: profit_margin_percent
+    type: number
+    description: "Profit margin as a percentage"
+    expr: ((revenue - cost) / NULLIF(revenue, 0)) * 100
+```
+
+## Using Synonyms
+
+Synonyms help AI agents understand natural language queries. Add common alternative names for your dimensions:
+
+```yaml
+dimensions:
+  - name: revenue
+    type: number
+    expr: total_amount
+    synonyms: ["sales", "income", "total_sales", "gross_revenue"]
+
+  - name: customer_name
+    type: string
+    expr: name
+    synonyms: ["name", "client_name", "customer"]
+
+  - name: order_date
+    type: date
+    expr: order_date
+    synonyms: ["purchase_date", "date_ordered", "transaction_date", "sale_date"]
+```
+
+This allows queries like:
+
+- "What's the total **sales** this month?"
+- "Show me **income** by region"
+- "List all orders by **purchase date**"
+
+## Sample Values
+
+Provide sample values to help users and AI agents understand the dimension's possible values:
+
+```yaml
+dimensions:
+  - name: order_status
+    type: string
+    description: "Current order status"
+    expr: status
+    samples:
+      ["pending", "processing", "shipped", "delivered", "cancelled", "returned"]
+
+  - name: customer_segment
+    type: string
+    description: "Customer value segmentation"
+    expr: segment
+    samples: ["High Value", "Medium Value", "Low Value", "At Risk", "New"]
+
+  - name: product_rating
+    type: number
+    description: "Product rating (1-5 stars)"
+    expr: rating
+    samples: [1, 2, 3, 4, 5]
+```
+
+## Best Practices
+
+### Naming
+
+- Use descriptive names without prefixes (e.g., `order_date` not `dim_order_date`)
+- Be consistent with naming conventions across views
+- Use business terminology rather than technical names
+
+### Documentation
+
+- Always provide clear descriptions
+- Include samples for categorical dimensions
+- Add synonyms for dimensions commonly referenced with different terms
+- Document any special logic in computed dimensions
+
+### Expression Design
+
+- Keep expressions simple when possible
+- Use `NULLIF` to handle division by zero
+- Consider database-specific SQL syntax
+- Test complex expressions thoroughly
+
+### Type Selection
+
+- Use the most specific type (e.g., `date` instead of `string` for dates)
+- Be consistent with types across related dimensions
+- Match the underlying database column type
+
+## Common Patterns
+
+### Time-Based Dimensions
+
+```yaml
+dimensions:
+  # Date
+  - name: order_date
+    type: date
+    expr: order_date
+
+  # Year
+  - name: order_year
+    type: number
+    expr: EXTRACT(YEAR FROM order_date)
+
+  # Quarter
+  - name: order_quarter
+    type: number
+    expr: EXTRACT(QUARTER FROM order_date)
+
+  # Month
+  - name: order_month
+    type: number
+    expr: EXTRACT(MONTH FROM order_date)
+
+  # Month name
+  - name: order_month_name
+    type: string
+    expr: TO_CHAR(order_date, 'Month')
+
+  # Week
+  - name: order_week
+    type: number
+    expr: EXTRACT(WEEK FROM order_date)
+
+  # Day of week
+  - name: order_day_of_week
+    type: string
+    expr: TO_CHAR(order_date, 'Day')
+```
+
+### Geographic Dimensions
+
+```yaml
+dimensions:
+  - name: country
+    type: string
+    expr: country
+    samples: ["United States", "Canada", "United Kingdom"]
+
+  - name: state
+    type: string
+    expr: state
+    samples: ["CA", "NY", "TX", "FL"]
+
+  - name: city
+    type: string
+    expr: city
+
+  - name: postal_code
+    type: string
+    expr: postal_code
+
+  - name: region
+    type: string
+    description: "Geographic region grouping"
+    expr: |
+      CASE 
+        WHEN state IN ('CA', 'OR', 'WA') THEN 'West'
+        WHEN state IN ('NY', 'MA', 'PA') THEN 'Northeast'
+        WHEN state IN ('TX', 'FL', 'GA') THEN 'South'
+        ELSE 'Other'
+      END
+    samples: ["West", "Northeast", "South", "Other"]
+```
+
+### Customer Segmentation
+
+```yaml
+dimensions:
+  - name: age_group
+    type: string
+    description: "Customer age group"
+    expr: |
+      CASE 
+        WHEN age < 18 THEN 'Under 18'
+        WHEN age BETWEEN 18 AND 24 THEN '18-24'
+        WHEN age BETWEEN 25 AND 34 THEN '25-34'
+        WHEN age BETWEEN 35 AND 44 THEN '35-44'
+        WHEN age BETWEEN 45 AND 54 THEN '45-54'
+        WHEN age >= 55 THEN '55+'
+        ELSE 'Unknown'
+      END
+    samples: ["18-24", "25-34", "35-44", "45-54", "55+"]
+
+  - name: lifetime_value_tier
+    type: string
+    description: "Customer lifetime value tier"
+    expr: |
+      CASE 
+        WHEN lifetime_value >= 10000 THEN 'Platinum'
+        WHEN lifetime_value >= 5000 THEN 'Gold'
+        WHEN lifetime_value >= 1000 THEN 'Silver'
+        ELSE 'Bronze'
+      END
+    samples: ["Platinum", "Gold", "Silver", "Bronze"]
+```
+
+## Related Documentation
+
+<CardGroup cols={2}>
+  <Card
+    title="Views"
+    icon="database"
+    href="/learn-about-oxy/semantic-layer/views"
+  >
+    Learn about creating views
+  </Card>
+  <Card
+    title="Measures"
+    icon="chart-line"
+    href="/learn-about-oxy/semantic-layer/measures"
+  >
+    Define measures and metrics
+  </Card>
+  <Card
+    title="Entities"
+    icon="link"
+    href="/learn-about-oxy/semantic-layer/entities"
+  >
+    Define entities and relationships
+  </Card>
+  <Card title="Overview" icon="book" href="/learn-about-oxy/semantic-layer">
+    Back to semantic layer overview
+  </Card>
+</CardGroup>

@@ -1,0 +1,246 @@
+---
+title: "Ontology"
+description: "Interactive graph visualization of your data project's semantic and operational assets"
+---
+
+The **Ontology** is an interactive graph-based visualization and navigation tool that maps all semantic and operational assets in your Oxy project and their relationships. It provides a complete, visual understanding of how data flows through your system by showing connections between data assets, automations, and AI agents.
+
+# What is the Ontology?
+
+The Ontology feature creates a visual knowledge graph of your entire Oxy project, displaying:
+
+- **Data Assets**: Tables, Views, Topics, Entities, SQL Queries
+- **Automation Assets**: Workflows, Apps, Automations
+- **AI Assets**: Agents (both default and routing agents)
+
+Each asset appears as a node in an interactive graph, with edges showing how they depend on, reference, or contain each other.
+
+# Key Components
+
+## Node Types
+
+The Ontology visualizes 9 different types of nodes:
+
+| Node Type    | Description                                        | Visual Representation |
+| ------------ | -------------------------------------------------- | --------------------- |
+| `table`      | Database tables from connected datasources         | Color-coded node      |
+| `view`       | Semantic views (business data models)              | Color-coded node      |
+| `topic`      | Collections of related views                       | Color-coded node      |
+| `entity`     | Semantic entities (customer, order, product, etc.) | Color-coded node      |
+| `agent`      | AI agents (default or routing types)               | Color-coded node      |
+| `workflow`   | Workflow automations                               | Color-coded node      |
+| `app`        | Standalone app files (.app.yml)                    | Color-coded node      |
+| `automation` | Automation files (.automation.yml)                 | Color-coded node      |
+| `sql_query`  | SQL query files referenced in workflows/agents     | Color-coded node      |
+
+## Edge Types
+
+Edges represent relationships between nodes:
+
+| Edge Type      | Description                              |
+| -------------- | ---------------------------------------- |
+| `uses`         | General dependency relationship          |
+| `contains`     | Topic contains views                     |
+| `derived_from` | View derived from source table           |
+| `references`   | Reference relationships between entities |
+| `routes to`    | Routing agent routes to another agent    |
+| `fallback`     | Fallback routing for routing agents      |
+
+## Semantic Layer Foundation
+
+The Ontology builds upon Oxy's semantic layer concepts:
+
+### Views (.view.yaml)
+
+Logical data models that abstract database tables, defining business concepts through Entities, Dimensions, and Measures. They enable consistent, governed access to data.
+
+### Topics (.topic.yaml)
+
+Collections of related views organized by business domain. Topics provide logical grouping for data discovery and include base views and default filters for consistent querying.
+
+### Entities
+
+Represent distinct business objects (customers, orders, products, etc.) and enable automatic relationship discovery between views. Entities can be primary (main subject) or foreign (references).
+
+### Dimensions & Measures
+
+- **Dimensions**: Attributes and properties of entities
+- **Measures**: Aggregations and calculations (count, sum, average)
+
+# How to Use the Ontology
+
+## Accessing the Ontology View
+
+Navigate to the Ontology page in the Oxy IDE to see the interactive graph visualization of your project.
+
+## Exploring the Graph
+
+1. **View All Assets**: The graph displays all assets in a force-directed layout, making it easy to see the overall structure
+2. **Identify Relationships**: Edges connect related nodes, showing data lineage and dependencies
+3. **Color Coding**: Different node types use different colors for quick identification
+
+## Focus and Filter
+
+Use the "Focus" dropdown to filter by specific asset types:
+
+- **Auto**: Show all assets
+- **Agents**: Show only AI agents and their connections
+- **Workflows**: Show only workflows and related assets
+- **Apps**: Show only app files and their dependencies
+- **Automations**: Show only automation files
+- **Topics**: Show only topics and their contained views
+- **Views**: Show only semantic views
+- **SQL Queries**: Show only SQL query files
+- **Tables**: Show only database tables
+- **Entities**: Show only semantic entities
+
+When a type is selected, the graph highlights that type and their directly connected assets.
+
+## Dive Into Details
+
+Click any node to:
+
+1. **Highlight Connections**: See all incoming and outgoing edges for that node
+2. **View Metadata**: Right sidebar opens showing:
+   - Node name and description
+   - File path
+   - Full file content preview
+3. **Open in IDE**: Click "Open in IDE" button to edit the file directly
+
+## Understanding Data Lineage
+
+The Ontology makes it easy to trace how data flows through your system:
+
+```
+Database Tables → Views → Topics → Agents/Workflows
+```
+
+You can see:
+
+- Which views are built on which tables
+- Which topics contain which views
+- Which agents have access to which topics
+- How workflows use semantic queries and SQL
+- Dependencies between different automations
+
+# Use Cases
+
+## Data Governance & Understanding
+
+- **Visualize Structure**: See your complete semantic layer at a glance
+- **Understand Relationships**: Discover how business concepts connect
+- **Identify Issues**: Find orphaned or unused assets
+- **Documentation**: Use as living documentation of your data architecture
+
+## Impact Analysis
+
+Before making changes, use the Ontology to:
+
+- See what will be affected if you modify a view or topic
+- Understand downstream dependencies
+- Plan refactoring with confidence
+- Avoid breaking changes
+
+## AI Context
+
+The Ontology helps with AI agent development:
+
+- **Agent Understanding**: Agents use the ontology to understand available data
+- **Semantic Context**: Topics provide semantic context for natural language queries
+- **Routing**: Routing agents can intelligently route between topics and workflows
+
+## Development Workflow
+
+Speed up development by:
+
+- **Quick Navigation**: Jump directly to relevant assets
+- **File Preview**: See file content before opening
+- **IDE Integration**: One-click access to edit files
+- **System Understanding**: Understand how changes affect the broader system
+
+# Technical Architecture
+
+## Graph Structure
+
+The Ontology graph follows this structure:
+
+```typescript
+OntologyGraph {
+  nodes: OntologyNode[]
+  edges: OntologyEdge[]
+}
+
+OntologyNode {
+  id: string
+  type: NodeType
+  label: string
+  data: NodeMetadata
+}
+
+OntologyEdge {
+  source: string
+  target: string
+  type: EdgeType
+}
+```
+
+## Graph Building Process
+
+The Ontology service:
+
+1. Fetches all databases and file trees
+2. Parses views, topics, agents, workflows, apps, automations, and SQL queries
+3. Builds nodes for each asset type
+4. Constructs edges by analyzing dependencies and references
+5. Returns the complete graph for visualization
+
+## UI Components
+
+The Ontology visualization uses:
+
+- **React Flow**: Interactive graph rendering with force-directed layout
+- **Custom Node Rendering**: Color-coding and styling by node type
+- **Connection Graph**: Relationship traversal and highlighting
+- **Detail Panel**: Sidebar with node information and file preview
+
+# Examples
+
+## Example: Tracing a Data Flow
+
+Imagine you have a customer analytics agent. Using the Ontology, you can trace:
+
+1. **Database Table**: `customers` table in your database
+2. **View**: `customer_view.view.yaml` derived from `customers` table
+3. **Topic**: `customer_analytics.topic.yaml` contains `customer_view`
+4. **Agent**: `customer_agent.agent.yml` has access to `customer_analytics` topic
+
+This visual trace helps you understand exactly where your agent's data comes from.
+
+## Example: Impact Analysis
+
+Before renaming an entity in a view:
+
+1. Click on the view node in the Ontology
+2. See all topics that contain this view
+3. See all agents that use those topics
+4. Understand the full scope of impact before making changes
+
+# File Locations
+
+The Ontology feature is implemented in:
+
+- **Types**: `/web-app/src/types/ontology.ts`
+- **API Service**: `/web-app/src/services/api/ontology.ts`
+- **UI Components**: `/web-app/src/pages/ontology/`
+- **React Hook**: `/web-app/src/hooks/api/ontology/useOntology.ts`
+- **Semantic Specs**: `/crates/semantic/specs/` (view.md, topic.md, entity.md)
+
+# Best Practices
+
+1. **Regular Review**: Periodically review the Ontology to understand your project's evolution
+2. **Before Major Changes**: Always check the Ontology before refactoring or renaming assets
+3. **Onboarding**: Use the Ontology to help new team members understand the project structure
+4. **Documentation**: Reference Ontology screenshots in project documentation
+5. **Cleanup**: Use the Ontology to identify and remove unused assets
+
+The Ontology is your visual map to understanding, navigating, and maintaining your Oxy data project. It transforms abstract configurations into a concrete, explorable graph that makes complex relationships immediately clear.

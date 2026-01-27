@@ -1,0 +1,63 @@
+---
+title: Snowflake
+---
+
+This guide explains how to connect to Snowflake with Oxy. Snowflake is a cloud-based data warehousing platform that provides scalable storage and compute resources.
+
+## Configuration Options
+
+Add your Snowflake configuration to `config.yml`. Here are all available parameters:
+
+```yaml
+databases:
+  - name: my_snowflake_db # Unique identifier for this connection
+    type: snowflake
+    account: "xy12345" # Your Snowflake account identifier
+    username: "your_user" # Username for authentication
+    password: <password> # Direct password (not recommended)
+    password_var: "SF_PWD" # Environment variable containing password (recommended)
+    warehouse: "COMPUTE_WH" # Warehouse to use
+    database: "ANALYTICS" # Database name
+    role: "ANALYST" # Optional: Role to assume
+```
+
+## Example Configurations
+
+<Steps>
+<Step title="Prepare password environment variable">
+
+Export the environment variables
+
+```sh
+export SF_PWD=<your password>
+```
+
+Or put it in `.env` file
+
+```sh
+echo SF_PWD=<your password> >> .env
+```
+
+</Step>
+<Step title="Add Snowflake configuration">
+
+```yaml
+databases:
+  - name: snowflake_analytics
+    type: snowflake
+    account: "xy12345.us-east-1"
+    username: "analyst"
+    password_var: "SF_PWD"
+    warehouse: "COMPUTE_WH"
+    database: "ANALYTICS"
+```
+
+</Step>
+</Steps>
+
+## Troubleshooting
+
+- Verify account identifier format (includes region if not US)
+- Check warehouse exists and is running
+- Ensure user has appropriate role permissions
+- Verify network connectivity and any IP allowlists

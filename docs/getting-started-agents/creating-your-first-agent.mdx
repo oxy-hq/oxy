@@ -1,0 +1,170 @@
+---
+title: Creating your first agent
+---
+
+<Note>
+  To learn more about agents, check out our dedicated [agents
+  section](/learn-about-oxy/agents).
+</Note>
+
+In this guide, we'll walk through building your first agent. Agents are defined
+in `.agent.yml` files, and anything with that extension within your oxy
+repository will be recognized as an agent.
+
+<Steps>
+
+  <Step title="Creating an .agent.yml file">
+
+    Create a new file in your oxy repository called `my-agent.agent.yml`. You
+    can do so by running the following command from within your oxy repository:
+
+    ```sh
+    touch my-agent.agent.yml
+    ```
+
+  </Step>
+
+  <Step title="Specifying the model to use">
+
+    Now you need to specify which model you want this agent to use. If you've
+    been following our guide thus far, you should have a model named
+    `openai-4.1`, named during our [setup](set-up-project).
+
+    Open your `my-agent.agent.yml` file in a text editor, and add the following line:
+
+    ```yaml
+    model: openai-4.1
+    ```
+
+  </Step>
+
+  <Step title="Adding system instructions">
+
+    Now we need to give the LLM some instructions. Typically, large language
+    models accept two components to a prompt: (1) the prompt itself and (2) a
+    series of system instructions indicating how the LLM should behave.
+
+    We'll be using the latter (the `system_instructions`) to give our LLM
+    general instructions as well as context on our data.
+
+    ```yaml
+    system_instructions: |
+      You are a data analyst. Write and execute SQL to answer the given question.
+    ```
+
+    <Note>
+
+    The `oxy run` command takes agent files or workflow files as arguments.
+    Therefore, if you're not in the same directory as your agent file, you need
+    to specify the relative path to the agent, with e.g. `oxy run
+    path/to/my-agent.agent.yml`.
+
+    </Note>
+
+  </Step>
+
+  <Step title="Giving your agent the ability to execute SQL">
+
+    To make this agent suitable for analytics purposes, you'll need to give it
+    the ability to execute the SQL it writes. To do this, you can add a `tools`
+    section to your `.agent.yml` file, as follows:
+
+    ```yaml
+    tools:
+      - name: execute_sql
+        type: execute_sql
+        database: local
+    ```
+
+  </Step>
+
+  <Step title="Creating a file with schema information">
+
+    The final step in getting your agent running is to give it some context to
+    get started. To do this, we'll need to create a file with some schema
+    information. Let's create a new `schema.txt`` file in the root of your
+    oxy directory.
+
+    ```sh
+    touch schema.txt
+    ```
+
+    In this file, we'll include some details about your data. We've found that
+    supplying a list of csv files, each with a list of columns and a sample row
+    works reasonably well. You can simply copy the first two lines of your csv,
+    then preface the header row with `columns:` and the row of data with
+    `sample row:`, as follows. You should also add in a sample query so the LLM
+    gets a sense of how to query this.
+
+    ```yaml
+    # Schema information
+    - `sleeps.csv`
+      columns: Cycle start time,Cycle end time,Cycle timezone
+      sample row: 2025-02-03 22:33:01,2025-02-04 08:33:01,UTC-08:00
+
+    # Sample queries
+    select "Cycle start time" from 'sleeps.csv'
+    ```
+
+    This whole thing will be slurped up into your system instructions, so feel
+    free to add any additional context about your data here as well.
+
+    <Note>
+
+    To test any queries you write, you can run `oxy run <filename>.sql`.
+
+    </Note>
+
+    <Warning>
+
+    If your agent is having trouble parsing the schema information, it may make
+    sense to instead inject it as json, or specify the sample values within a
+    [semantic model](/learn-about-oxy/semantic-model).
+
+    </Warning>
+
+  </Step>
+
+  <Step title="Giving this context to your agent">
+
+    Now you can add this file to a `context` section within your `.agent.yml`
+    file, as follows:
+
+    ```yaml
+    context:
+      - name: schema_information
+        type: file
+        src:
+          - schema.txt
+    ```
+
+    Then, reference this object with Jinja in your system instructions:
+
+    ```yaml
+    system_instructions: |
+      You are a data analyst. Write and execute SQL to answer the given question.
+
+      {{ context.schema_information }}
+    ```
+
+    <Warning>
+
+    Note that `file`-type `context` objects take an array (whereas
+    `semantic_model` type `src` entries will take a single value, because they
+    are parsed).
+
+    </Warning>
+
+  </Step>
+
+</Steps>
+
+At this point, your agent will at least be able to answer some basic questions
+about your data. You can test it by running the following from the
+command-line (replace the string in quotes with a proper question):
+
+```sh
+oxy run my-agent.agent.yml "Ask a question here"
+```
+
+You can read more about the additional options available to agents in our dedicated [agents section](learn-about-oxy/agents).

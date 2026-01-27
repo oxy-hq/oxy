@@ -1,0 +1,125 @@
+---
+title: "Quickstart"
+description: "Let's learn how to start using oxy"
+---
+
+import DownloadButton from "/snippets/download.mdx";
+
+### Overview
+
+In this quickstart guide, we will install oxy and bootstrap a simple setup
+that uses DuckDB as warehouse and OpenAI as LLM provider. For this walkthrough,
+you'll need an OpenAI API key and access to a terminal.
+
+### Install and configure oxy
+
+Oxy supports both Mac and Windows. To get started with oxy, you will need to
+work within the terminal. For Mac users, we recommend using
+[iTerm2](https://iterm2.com/) as it offers better features, customization
+options, and more frequent updates as compared to the stock Mac terminal. Other
+great terminal options include the GPU-accelerated
+[Alacritty](https://github.com/alacritty/alacritty) or AI-native
+[Warp](https://warp.dev/). For windows, we recommend installing WSL 2 (search
+for`Ubuntu` in the Microsoft store).
+
+Once you have your terminal set up, follow the steps below:
+
+<Steps>
+  <Step title="Install oxy">
+    Install oxy by running the following within your Mac/Linux/WSL terminal:
+
+    <Tabs>
+      <Tab title="Stable Release (Recommended)">
+        ```bash
+        bash <(curl --proto '=https' --tlsv1.2 -LsSf https://get.oxy.tech)
+        ```
+
+        This installs the latest stable release of Oxy.
+      </Tab>
+      <Tab title="Edge Build">
+        ```bash
+        bash <(curl --proto '=https' --tlsv1.2 -LsSf https://nightly.oxy.tech)
+        ```
+
+        This installs the latest edge build with the newest features and fixes from the main branch.
+      </Tab>
+    </Tabs>
+
+    Upon successful installation, you should see the message "Oxy has been installed successfully."
+
+    You may need to restart your terminal for the command to be recognized.
+
+    <Info>
+      For transparency, you can review the installation script source code: [stable release](https://github.com/oxy-hq/oxy/blob/main/install_oxy.sh) or [edge/nightly builds](https://github.com/oxy-hq/oxy-internal/blob/main/install_oxy_nightly.sh).
+    </Info>
+
+    <Accordion title="Verify Your Installation (Optional)">
+      After the installation is complete, you may verify that it was successful by running:
+
+      ```sh
+      oxy --version
+      ```
+
+    </Accordion>
+
+    <Accordion title="More Installation Options">
+      **Install specific versions:**
+
+      ```bash
+      # Specific stable version
+      OXY_VERSION="0.1.0" bash <(curl --proto '=https' --tlsv1.2 -LsSf https://get.oxy.tech)
+
+      # Specific edge build
+      OXY_VERSION=edge-7cbf0a5 bash <(curl --proto '=https' --tlsv1.2 -LsSf https://nightly.oxy.tech)
+
+      # Nightly build (scheduled daily)
+      OXY_CHANNEL=nightly bash <(curl --proto '=https' --tlsv1.2 -LsSf https://nightly.oxy.tech)
+      ```
+
+      Browse all available edge and nightly releases at [oxy-hq/oxy-nightly](https://github.com/oxy-hq/oxy-nightly/releases).
+    </Accordion>
+
+  </Step>
+
+  <Step title="Create a sample repository">
+    In order to get started with a base agent set up, run the following command in an empty directory where you want to store your project:
+
+    ```sh
+    oxy init
+    ```
+
+    This command will generate the main oxy configuration file (`config.yml`), a sample agent file, a sample workflow file, some data, and a sample semantic layer file.
+    If you use all the configuration defaults, you should be able to run the agent and workflow against the sample data out-of-the-box.
+
+  </Step>
+
+  <Step title="Connect oxy to OpenAI">
+    For the model, we recommend using OpenAI's gpt-4.1. For alternative models, please refer to our integration documentation, [here](/integrations/overview).
+
+    Replace `OPENAI_API_KEY` with your actual OpenAI API key.
+
+  </Step>
+</Steps>
+
+### All Done
+
+Congrats! You're ready to start using Oxy now. If you haven't changed the configuration defaults, you should be able to run the following commands to test out oxy against some sample sleep data:
+
+```bash
+oxy run sql-generator.agent.yml "On how many nights did I get good sleep in the last year?"  # ask a question to the sample agent
+oxy test sql-generator.agent.yml  # runs all defined tests against the sql-generator agent
+
+oxy run report-generator.workflow.yml  # execute the sample workflow
+oxy test report-generator.workflow.yml  # run all defined tests against the workflow
+
+oxy start  # starts PostgreSQL in Docker and launches the GUI (recommended)
+# OR
+oxy serve  # starts just the GUI (requires manual database setup)
+```
+
+<Tip>
+  **New in 0.4.0:** Use `oxy start` to automatically set up PostgreSQL with
+  Docker and launch the web interface. This is the recommended way to run Oxy
+  for both development and production. See the [oxy start
+  reference](/reference/oxy-start) for more details.
+</Tip>

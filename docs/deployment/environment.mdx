@@ -1,0 +1,87 @@
+---
+title: "Configure Environment"
+description: "Setting up environment variables and secrets management"
+sidebarTitle: "4. Environment"
+---
+
+Properly configuring your environment variables and managing secrets is crucial for a secure Oxy deployment.
+
+<Steps>
+  <Step title="Create Environment File">
+    Create a `.env` file in your workspace to store your environment variables:
+
+    ```bash
+    touch .env
+    chmod 600 .env  # Restrict permissions to owner only
+    ```
+
+  </Step>
+
+  <Step title="Add Required Secrets">
+    Add your secrets to the `.env` file:
+
+    ```plaintext
+    OPENAI_API_KEY=your-api-key
+    DATABASE_URL=your-database-connection-string
+    # Add other environment variables as needed
+    ```
+
+    <Warning>
+      Never commit your `.env` file to version control. Make sure it's included in your `.gitignore` file.
+    </Warning>
+
+  </Step>
+
+  <Step title="Advanced: Using AWS SSM Parameter Store">
+    For cloud deployments, consider using a secure method to manage secrets, such as AWS SSM Parameter Store:
+
+    ```bash
+    # Install AWS CLI if not already installed
+    sudo apt-get install -y awscli
+
+    # Configure AWS credentials
+    aws configure
+
+    # Example: Fetching environment variables from AWS SSM
+    APP_ENV=$(aws ssm get-parameter --name "/your-app/env" --query "Parameter.Value" --output text --region your-region | sed 's/\\n/\n/g')
+    echo "${APP_ENV}" > .env
+
+    # Example: Fetching API keys or credentials
+    API_KEY=$(aws ssm get-parameter --name "/your-app/api_key" --query "Parameter.Value" --output text --region your-region)
+    echo "${API_KEY}" > api-key.json
+    ```
+
+    <Tip>
+      You can automate this process by creating a script to fetch secrets during deployment or server startup.
+    </Tip>
+
+  </Step>
+
+  <Step title="Test Environment Configuration">
+    Verify that Oxy can access the environment variables:
+
+    ```bash
+    # Test if Oxy can read the environment variables
+    oxy --version
+
+    # Restart the Oxy service to apply changes
+    sudo systemctl restart oxy
+
+    # Check service status
+    sudo systemctl status oxy
+    ```
+
+  </Step>
+</Steps>
+
+<div className="mt-8">
+  <Cards>
+    <Card
+      title="Previous: Set Up Workspace & Repository"
+      icon="arrow-left"
+      href="/deployment/workspace-setup"
+    >
+      Set up your Oxy workspace and configure your repository
+    </Card>
+  </Cards>
+</div>

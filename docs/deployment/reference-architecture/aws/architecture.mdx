@@ -1,0 +1,120 @@
+---
+title: "AWS Infrastructure Architecture Overview"
+description: "Architectural overview of Oxy deployment options using AWS infrastructure including EC2 and ECS patterns"
+sidebarTitle: "Architecture Overview"
+---
+
+This document provides an architectural overview of the Oxy deployment options using AWS infrastructure. We support two primary deployment patterns: EC2-based and ECS-based deployments.
+
+## High-Level Architecture
+
+```mermaid
+graph TB
+    subgraph "AWS Cloud"
+        subgraph "VPC"
+            subgraph "Public Subnets"
+                ALB[Application Load Balancer]
+                EC2[EC2 Instance]
+                ECS_Tasks[ECS Fargate Tasks]
+            end
+
+            subgraph "Storage Layer"
+                EBS[EBS Volume<br/>EC2 Data Persistence]
+                EFS[EFS File System<br/>ECS Data Persistence]
+            end
+        end
+
+        subgraph "Built-in Auth"
+            EmailAuth[Email/Password Auth<br/>SMTP Integration]
+            GoogleAuth[Google OAuth<br/>Optional]
+        end
+
+        subgraph "Configuration"
+            ConfigFile[config.yml<br/>Application Config]
+            EnvVars[Environment Variables<br/>API Keys & Secrets]
+        end
+    end
+
+    ALB --> EC2
+    ALB --> ECS_Tasks
+    EC2 --> EBS
+    ECS_Tasks --> EFS
+    EC2 --> ConfigFile
+    ECS_Tasks --> ConfigFile
+    EC2 --> EnvVars
+    ECS_Tasks --> EnvVars
+    EC2 --> EmailAuth
+    ECS_Tasks --> EmailAuth
+    EC2 --> GoogleAuth
+    ECS_Tasks --> GoogleAuth
+
+    classDef builtinStyle fill:#00cc66,stroke:#009944,stroke-width:2px
+    class EmailAuth,GoogleAuth,ConfigFile builtinStyle
+```
+
+## Deployment Architecture Options
+
+Oxy supports two primary AWS deployment patterns, each optimized for different use cases:
+
+### [EC2 Deployment](./ec2-architecture)
+
+Direct virtual machine deployment offering simplicity and full control.
+
+- **Best for**: Development, small teams, direct server control
+- **Key benefits**: Simple setup, SSH access, cost-effective for steady workloads
+- **Architecture**: Single instance with EBS storage
+
+### [ECS Deployment](./ecs-architecture)
+
+Container-based deployment with automatic scaling and high availability.
+
+- **Best for**: Production environments, scalable applications, enterprise deployments
+- **Key benefits**: Auto-scaling, multi-AZ availability, managed infrastructure
+- **Architecture**: Fargate containers with EFS shared storage
+
+## Common Components
+
+```mermaid
+graph LR
+    subgraph "Data Sources"
+        BigQuery[BigQuery]
+        LocalFiles[Local Files]
+    end
+
+    subgraph "Oxy Platform"
+        OxyServer[Oxy Server<br/>Port 3000]
+        McpServer[MCP SSE Server<br/>Port 8000]
+    end
+
+    subgraph "Storage"
+        PersistentData[Persistent Storage<br/>EBS/EFS]
+    end
+
+    BigQuery --> OxyServer
+    LocalFiles --> OxyServer
+    OxyServer <--> McpServer
+    OxyServer --> PersistentData
+    McpServer --> PersistentData
+```
+
+## Deployment Comparison
+
+| Feature          | EC2 Deployment           | ECS Deployment          |
+| ---------------- | ------------------------ | ----------------------- |
+| **Complexity**   | Low                      | Medium                  |
+| **Scalability**  | Manual                   | Automatic               |
+| **Availability** | Single AZ                | Multi-AZ                |
+| **Storage**      | EBS (10GB)               | EFS (Shared)            |
+| **Cost**         | Fixed instance cost      | Pay per use             |
+| **Maintenance**  | Manual updates           | Managed by AWS          |
+| **Debugging**    | SSH access               | CloudWatch logs         |
+| **Ideal for**    | Development, Small teams | Production, Large teams |
+
+## Next Steps
+
+Choose your deployment architecture:
+
+### ECS Deployment
+
+- [ECS Architecture Details](./ecs-architecture) - Detailed ECS deployment architecture
+- [ECS Setup Guide](./step-by-step/ecs) - Step-by-step container deployment guide

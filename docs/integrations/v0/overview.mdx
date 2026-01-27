@@ -117,6 +117,7 @@ What would you like me to help you with?
 ```
 
 The agent will:
+
 - Analyze your request
 - Query the data using SQL
 - Persist the results
@@ -214,11 +215,13 @@ Make sure to use Oxy SDK to query the data.
 ### "V0_API_KEY environment variable not set"
 
 **Solution**: Make sure you've exported the V0_API_KEY environment variable:
+
 ```bash
 export V0_API_KEY="your-key"
 ```
 
 Verify it's set:
+
 ```bash
 echo $V0_API_KEY
 ```
@@ -230,6 +233,7 @@ echo $V0_API_KEY
 ### Data not loading in the app
 
 **Solution**: Make sure data was persisted correctly before calling v0_app. Check that:
+
 1. `execute_sql` was called with `persist: true`
 2. The file paths in the v0 prompt match the persisted table locations
 3. The schema information is accurate
@@ -241,11 +245,13 @@ echo $V0_API_KEY
 **Solution**: Verify that the `OXY_API_URL` environment variable is set correctly:
 
 1. Check if OXY_API_URL is set:
+
    ```bash
    echo $OXY_API_URL
    ```
 
 2. For local development with Oxy web app, ensure it matches where your web app is running:
+
    ```bash
    # Correct - use 127.0.0.1 for local development
    export OXY_API_URL="http://127.0.0.1:3000/api"
@@ -255,6 +261,7 @@ echo $V0_API_KEY
    ```
 
 3. For production deployments, use your public Oxy instance URL:
+
    ```bash
    export OXY_API_URL="https://your-oxy-instance.com/api"
    ```
