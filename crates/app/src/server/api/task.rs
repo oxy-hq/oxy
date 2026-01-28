@@ -136,7 +136,11 @@ impl EventHandler for TaskStream {
                         let _ = self.tx.send(message).await.map_err(|_| ());
                     }
                 }
-                _ => {}
+                Output::Bool(_)
+                | Output::SQL(_)
+                | Output::Documents(_)
+                | Output::OmniQuery(_)
+                | Output::SemanticQuery(_) => {}
             }
         }
         if let EventKind::DataAppCreated { data_app } = &event.kind {

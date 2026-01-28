@@ -208,7 +208,18 @@ impl EventHandler for AgentCLIHandler {
                             std::io::stdout().flush().unwrap();
                         }
                     }
-                    _ => {}
+                    Output::SemanticQuery(semantic_query) => {
+                        if chunk.finished {
+                            println!("{}", format!("{semantic_query:?}").primary());
+                        } else {
+                            print!("{semantic_query:?}");
+                            std::io::stdout().flush().unwrap();
+                        }
+                    }
+                    Output::Bool(_)
+                    | Output::Prompt(_)
+                    | Output::Documents(_)
+                    | Output::OmniQuery(_) => {}
                 },
                 EventKind::Message { message } => {
                     println!("{message}");

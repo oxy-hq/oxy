@@ -440,7 +440,8 @@ impl ContextMapper<TaskInput, OutputContainer> for TaskChainMapper {
     }
 }
 
-pub fn build_task_executable() -> Cache<Export<TaskExecutable, TaskExporter>, TaskCacheStorage> {
+pub(crate) fn build_task_executable()
+-> Cache<Export<TaskExecutable, TaskExporter>, TaskCacheStorage> {
     ExecutableBuilder::new()
         .cache_with(TaskCacheStorage::new())
         .export_with(TaskExporter)

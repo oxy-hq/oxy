@@ -143,6 +143,12 @@ where
                     Output::Text(text) => {
                         self.logger.log_text_chunk(&text, chunk.finished);
                     }
+                    Output::SemanticQuery(semantic_query) => {
+                        let json = serde_json::to_string_pretty(&semantic_query)
+                            .unwrap_or_else(|_| "Failed to serialize SemanticQuery".to_string());
+                        self.logger
+                            .log(&format!("Semantic Query:\n```json\n{json}\n```"));
+                    }
                     _ => {}
                 },
                 EventKind::Message { message } => {

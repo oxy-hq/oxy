@@ -14,8 +14,7 @@ use crate::execute::types::{EventKind, Output, Source, Usage};
 use crate::service::formatters::logs_persister::LogsPersister;
 use crate::service::formatters::streaming_message_persister::StreamingMessagePersister;
 use crate::service::types::{
-    AnswerStream, ArtifactValue, ContainerKind, Content, ExecuteSQL, OmniQuery, SemanticQuery,
-    SemanticQueryParams,
+    AnswerStream, ArtifactValue, ContainerKind, Content, ExecuteSQL, OmniQuery,
 };
 use crate::types::agent::LogItem;
 use oxy_shared::errors::OxyError;
@@ -30,7 +29,6 @@ pub struct BlockHandler {
     pub usage: Arc<Mutex<Usage>>,
     streaming_message_persister: Option<Arc<StreamingMessagePersister>>,
     logs_persister: Option<Arc<LogsPersister>>,
-    current_semantic_query: Option<SemanticQueryParams>,
     current_omni_query: Option<crate::types::tool_params::OmniQueryParams>,
 }
 
@@ -44,7 +42,6 @@ impl BlockHandler {
             usage: Arc::new(Mutex::new(Usage::new(0, 0))),
             streaming_message_persister: None,
             logs_persister: None,
-            current_semantic_query: None,
             current_omni_query: None,
         }
     }
@@ -105,11 +102,21 @@ impl BlockHandler {
         error: Option<String>,
     ) -> Result<(), OxyError> {
         // Get the last block before it's closed (for artifact storage)
-        if let Some(active_block) = self.block_manager.last_block()
+        let last_block = self.block_manager.last_block();
+        if let Some(active_block) = last_block
             && active_block.is_artifact()
         {
+            tracing::info!("Storing artifact for source {}({})", source.kind, source.id);
             // Store artifact
             self.artifact_tracker.store_artifact(active_block).await?;
+        } else {
+            tracing::warn!(
+                "Skipping artifact storage for source {}({}): last_block exists={}, is_artifact={}",
+                source.kind,
+                source.id,
+                last_block.is_some(),
+                last_block.map(|b| b.is_artifact()).unwrap_or(false)
+            );
         }
 
         // Finish the artifact
@@ -220,6 +227,13 @@ impl BlockHandler {
         source: &Source,
         chunk: &crate::execute::types::Chunk,
     ) -> Result<(), OxyError> {
+        tracing::info!(
+            "Handling content update for source {}({}): finished={}",
+            source.kind,
+            source.id,
+            chunk.finished
+        );
+
         if chunk.finished {
             // Process the final chunk
             if let Some(content) = self.block_manager.finalize_content(&chunk.delta)
@@ -308,88 +322,26 @@ impl BlockHandler {
                         }
                         _ => {}
                     },
-                    ArtifactKind::SemanticQuery {} => match &chunk.delta {
-                        Output::SQL(sql) => {
-                            let query_params =
-                                self.current_semantic_query.clone().unwrap_or_else(|| {
-                                    crate::service::types::SemanticQueryParams {
-                                        topic: None,
-                                        dimensions: vec![],
-                                        measures: vec![],
-                                        filters: vec![],
-                                        orders: vec![],
-                                        limit: None,
-                                        offset: None,
-                                        variables: None,
-                                    }
-                                });
-
+                    ArtifactKind::SemanticQuery {} => {
+                        tracing::debug!(
+                            "Sending SemanticQuery artifact value for chunk delta: {:?}",
+                            chunk.delta
+                        );
+                        if let Output::SemanticQuery(semantic_query) = &chunk.delta {
                             self.stream_dispatcher
                                 .send_artifact_value(
                                     artifact_id,
-                                    ArtifactValue::SemanticQuery(SemanticQuery {
-                                        database: "".to_string(),
-                                        sql_query: sql.to_string(),
-                                        result: vec![],
-                                        error: None,
-                                        validation_error: None,
-                                        sql_generation_error: None,
-                                        is_result_truncated: false,
-                                        topic: query_params.topic,
-                                        dimensions: query_params.dimensions,
-                                        measures: query_params.measures,
-                                        filters: query_params.filters,
-                                        orders: query_params.orders,
-                                        limit: query_params.limit,
-                                        offset: query_params.offset,
-                                    }),
+                                    ArtifactValue::SemanticQuery(semantic_query.clone()),
                                     &source.kind,
                                 )
                                 .await?;
+                        } else {
+                            tracing::warn!(
+                                "Unexpected chunk delta for SemanticQuery artifact: {:?}",
+                                chunk.delta
+                            );
                         }
-                        Output::Table(table) => {
-                            if let Some(reference) = &table.reference {
-                                let (table_2d_array, is_truncated) = table.to_2d_array()?;
-                                let query_params =
-                                    self.current_semantic_query.clone().unwrap_or_else(|| {
-                                        crate::service::types::SemanticQueryParams {
-                                            topic: None,
-                                            dimensions: vec![],
-                                            measures: vec![],
-                                            filters: vec![],
-                                            orders: vec![],
-                                            limit: None,
-                                            offset: None,
-                                            variables: None,
-                                        }
-                                    });
-
-                                self.stream_dispatcher
-                                    .send_artifact_value(
-                                        artifact_id,
-                                        ArtifactValue::SemanticQuery(SemanticQuery {
-                                            database: reference.database_ref.to_string(),
-                                            sql_query: reference.sql.to_string(),
-                                            result: table_2d_array,
-                                            error: None,
-                                            validation_error: None,
-                                            sql_generation_error: None,
-                                            is_result_truncated: is_truncated,
-                                            topic: query_params.topic,
-                                            dimensions: query_params.dimensions,
-                                            measures: query_params.measures,
-                                            filters: query_params.filters,
-                                            orders: query_params.orders,
-                                            limit: query_params.limit,
-                                            offset: query_params.offset,
-                                        }),
-                                        &source.kind,
-                                    )
-                                    .await?;
-                            }
-                        }
-                        _ => {}
-                    },
+                    }
                     ArtifactKind::OmniQuery { topic, .. } => {
                         if let Output::Table(table) = &chunk.delta {
                             let (table_2d_array, is_truncated) = table.to_2d_array()?;
@@ -539,11 +491,6 @@ impl SourceHandler for BlockHandler {
                         .update_usage(current_usage.input_tokens, current_usage.output_tokens)
                         .await?;
                 }
-            }
-
-            EventKind::SemanticQueryGenerated { query, .. } => {
-                // Store the semantic query parameters for later use in artifact creation
-                self.current_semantic_query = Some(query.clone());
             }
 
             EventKind::SandboxAppCreated { preview_url, kind } => {

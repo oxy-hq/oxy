@@ -6,10 +6,7 @@ use utoipa::{
     openapi::{RefOr, Schema},
 };
 
-use crate::{
-    execute::types::{Usage, VizParams},
-    types::SemanticQueryParams,
-};
+use crate::execute::types::{Usage, VizParams};
 
 use super::{Chunk, ProgressType, ReferenceKind};
 
@@ -175,10 +172,6 @@ pub enum EventKind {
         query: String,
         database: String,
         source: String,
-        is_verified: bool,
-    },
-    SemanticQueryGenerated {
-        query: SemanticQueryParams,
         is_verified: bool,
     },
     OmniQueryGenerated {

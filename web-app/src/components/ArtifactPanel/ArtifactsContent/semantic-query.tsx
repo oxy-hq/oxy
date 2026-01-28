@@ -69,10 +69,6 @@ const SemanticQueryArtifactPanel = ({ artifact }: Props) => {
       );
     }
 
-    if (artifact.content.value.result) {
-      return <Results result={artifact.content.value.result} />;
-    }
-
     return null;
   };
 

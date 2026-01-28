@@ -21,4 +21,5 @@ pub mod workflow_builder;
 
 pub use builders::*;
 pub use loggers::*;
+pub use semantic_builder::build_semantic_query_executable;
 pub use streaming_workflow_persister::StreamingWorkflowPersister;

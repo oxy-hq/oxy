@@ -1,4 +1,5 @@
 use secrecy::SecretString;
+use serde_json::Value;
 
 use super::{
     create_data_app::{CreateDataAppExecutable, CreateDataAppInput, CreateDataAppParams},
@@ -28,6 +29,7 @@ use crate::{
         sql::validate_sql::ValidateSQLExecutable,
         visualize::VisualizeParams,
     },
+    types::SemanticQuery,
 };
 use oxy_shared::errors::OxyError;
 
@@ -229,20 +231,65 @@ impl Executable<(String, Option<ToolType>, ToolRawInput)> for ToolExecutable {
                     .await
                     .map(|output| output.into()),
                 ToolType::SemanticQuery(_semantic_query_tool) => {
-                    // Try to use registered executor from higher layers
-                    if let Some(result) = global_registry()
+                    let param_obj = serde_json::from_str::<Value>(&input.param).unwrap_or_default();
+                    let mut artifact_value = create_semantic_query_artifact(&param_obj);
+
+                    tracing::debug!(
+                        "SemanticQueryToolInput param_obj: {}",
+                        param_obj.to_string()
+                    );
+                    let _ = artifact_context
+                        .write_chunk(Chunk {
+                            key: None,
+                            delta: Output::SemanticQuery(artifact_value.clone()),
+                            finished: true,
+                        })
+                        .await;
+
+                    let result_t: Result<OutputContainer, OxyError> = match global_registry()
                         .execute(execution_context, tool_type, &input)
-                        .await?
+                        .await
                     {
-                        Ok(result)
-                    } else {
-                        // No executor registered - return helpful error
-                        Err(OxyError::RuntimeError(
-                            "SemanticQuery execution not available: No executor registered. \
-                            Register a SemanticQueryExecutor at the application level."
-                                .to_string(),
-                        ))
-                    }
+                        Ok(rs) => {
+                            match rs {
+                                Some(result) => Ok(result),
+                                None => {
+                                    tracing::error!("No SemanticQueryExecutor registered");
+                                    artifact_value.validation_error =
+                                        Some("No SemanticQueryExecutor registered".to_string());
+                                    let _ = artifact_context
+                                        .write_chunk(Chunk {
+                                            key: None,
+                                            delta: Output::SemanticQuery(artifact_value.clone()),
+                                            finished: true,
+                                        })
+                                        .await;
+                                    // No executor registered - return helpful error
+                                    Err(OxyError::RuntimeError(
+                                "SemanticQuery execution not available: No executor registered. \
+                                Register a SemanticQueryExecutor at the application level."
+                                    .to_string(),
+                            ))
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            tracing::error!("Failed to parse SemanticQueryParams: {}", e);
+                            artifact_value.validation_error = Some(format!("{}", e));
+                            let _ = artifact_context
+                                .write_chunk(Chunk {
+                                    key: None,
+                                    delta: Output::SemanticQuery(artifact_value.clone()),
+                                    finished: true,
+                                })
+                                .await;
+                            Err(OxyError::ArgumentError(format!(
+                                "Invalid SemanticQueryParams: {}",
+                                e
+                            )))
+                        }
+                    };
+                    result_t
                 }
             };
 
@@ -250,61 +297,10 @@ impl Executable<(String, Option<ToolType>, ToolRawInput)> for ToolExecutable {
 
             // Write output to artifact_context if artifact exists
             if artifact.is_some() {
-                match &tool_ret {
-                    Ok(output_container) => {
-                        // Extract the Output from OutputContainer and write as a chunk
-                        let output_data: Output = match output_container {
-                            OutputContainer::Single(output) => output.clone(),
-                            OutputContainer::List(list) => {
-                                // If it's a list, try to get the first item if it's a Single
-                                if let Some(OutputContainer::Single(output)) = list.first() {
-                                    output.clone()
-                                } else {
-                                    Output::Text(format!("{} items", list.len()))
-                                }
-                            }
-                            OutputContainer::Map(_) => Output::Text("Map output".to_string()),
-                            OutputContainer::Variable(json) => Output::Text(json.to_string()),
-                            OutputContainer::Consistency { value, .. } => {
-                                if let OutputContainer::Single(output) = value.output.as_ref() {
-                                    output.clone()
-                                } else {
-                                    Output::Text("Consistency result".to_string())
-                                }
-                            }
-                            OutputContainer::Metadata { value } => {
-                                if let OutputContainer::Single(output) = value.output.as_ref() {
-                                    output.clone()
-                                } else {
-                                    Output::Text("Metadata result".to_string())
-                                }
-                            }
-                        };
-                        artifact_context
-                            .write_chunk(Chunk {
-                                key: None,
-                                delta: output_data,
-                                finished: true,
-                            })
-                            .await?;
-                        events::tool::tool_call_output(output_container);
-                    }
-                    Err(e) => {
-                        events::tool::tool_call_error(&e.to_string());
-                    }
-                }
-
-                // Write ArtifactFinished event after execution with error if present
                 let error = tool_ret.as_ref().err().map(|e| e.to_string());
                 artifact_context
                     .write_kind(EventKind::ArtifactFinished { error })
                     .await?;
-            } else {
-                // Log tool call output or error even when no artifact
-                match &tool_ret {
-                    Ok(output) => events::tool::tool_call_output(output),
-                    Err(e) => events::tool::tool_call_error(&e.to_string()),
-                }
             }
 
             let ToolRawInput {
@@ -534,6 +530,52 @@ fn build_retrieval_executable() -> impl Executable<RetrievalToolInput, Response 
     ExecutableBuilder::new()
         .map(RetrievalMapper)
         .executable(RetrievalExecutable::new())
+}
+
+fn create_semantic_query_artifact(param_obj: &Value) -> SemanticQuery {
+    let extract_string_array = |key: &str| {
+        param_obj
+            .get(key)
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|val| val.as_str().map(|s| s.to_string()))
+            .collect()
+    };
+
+    SemanticQuery {
+        database: "".to_string(),
+        sql_query: "".to_string(),
+        result: vec![],
+        error: None,
+        validation_error: None,
+        sql_generation_error: None,
+        is_result_truncated: false,
+        topic: param_obj
+            .get("topic")
+            .and_then(|v| v.as_str().map(|s| s.to_string())),
+        dimensions: extract_string_array("dimensions"),
+        measures: extract_string_array("measures"),
+        filters: param_obj
+            .get("filters")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|val| serde_json::from_value(val).ok())
+            .collect(),
+        orders: param_obj
+            .get("orders")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|val| serde_json::from_value(val).ok())
+            .collect(),
+        limit: param_obj.get("limit").and_then(|v| v.as_u64()),
+        offset: param_obj.get("offset").and_then(|v| v.as_u64()),
+    }
 }
 
 // Note: Workflow, Agent, and SemanticQuery tool executors are registered
