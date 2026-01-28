@@ -68,4 +68,12 @@ pub struct ServeArgs {
     /// and only enabled when this flag is set.
     #[clap(long, default_value_t = false)]
     pub enterprise: bool,
+
+    /// Clean start: remove existing Docker containers and volumes before starting
+    ///
+    /// When enabled, removes all Oxy-managed Docker containers and their
+    /// associated volumes to start with a fresh state. This is useful for
+    /// troubleshooting or resetting the local environment.
+    #[clap(long, default_value_t = false)]
+    pub clean: bool,
 }

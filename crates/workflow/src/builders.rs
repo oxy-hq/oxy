@@ -3,7 +3,10 @@ use minijinja::context;
 use std::{collections::HashMap, path::PathBuf};
 use tracing::Instrument;
 
-use crate::workflow_builder::build_workflow_executable;
+use crate::{
+    task_builder::{RuntimeTaskInput, create_runtime_input},
+    workflow_builder::build_workflow_executable,
+};
 
 use oxy::{
     adapters::{
@@ -413,17 +416,22 @@ impl WorkflowLauncher {
         // Capture the current span to propagate trace context to the spawned task
         let current_span = tracing::Span::current();
 
-        // Convert tasks to TaskInput
-        let task_inputs: Vec<crate::task_builder::TaskInput> = tasks
-            .into_iter()
-            .map(|task| crate::task_builder::TaskInput {
+        // Convert tasks to TaskInput with proper runtime_input
+        let mut task_inputs = Vec::new();
+        for task in tasks {
+            // Use the shared helper to create runtime_input
+            // No checkpoint context in launch_tasks, so replay_id is None
+            let runtime_input =
+                create_runtime_input(&task.task_type, &execution_context, None).await?;
+
+            task_inputs.push(crate::task_builder::TaskInput {
                 loop_idx: None,
                 task,
                 value: None,
-                runtime_input: None,
+                runtime_input,
                 workflow_consistency_prompt: None,
-            })
-            .collect();
+            });
+        }
 
         let handle = tokio::spawn(
             async move {

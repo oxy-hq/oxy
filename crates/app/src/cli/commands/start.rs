@@ -22,7 +22,17 @@ pub async fn start_database_and_server(serve_args: ServeArgs) -> Result<(), OxyE
     docker::check_docker_available().await?;
     println!("{}", "   ✓ Docker is available\n".success());
 
-    // 2. Start containers (PostgreSQL + ClickHouse in parallel if enterprise)
+    // 2. Clean existing containers and volumes if requested
+    if serve_args.clean {
+        println!(
+            "{}",
+            "🧹 Cleaning existing Docker containers and volumes...".text()
+        );
+        docker::clean_all(enterprise).await?;
+        println!("{}", "   ✓ Clean complete\n".success());
+    }
+
+    // 3. Start containers (PostgreSQL + ClickHouse in parallel if enterprise)
     let db_url = if enterprise {
         start_all_containers().await?
     } else {
@@ -169,7 +179,7 @@ async fn start_all_containers() -> Result<String, OxyError> {
     println!("{}", "   Container: oxy-otel-collector".tertiary());
     println!(
         "{}",
-        "   Image: otel/opentelemetry-collector-contrib:latest".tertiary()
+        "   Image: otel/opentelemetry-collector-contrib:0.144.0".tertiary()
     );
     println!("{}", "   Ports: 4317 (gRPC), 4318 (HTTP)".tertiary());
 

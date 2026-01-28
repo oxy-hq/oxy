@@ -15,6 +15,12 @@ This file contains Claude-specific guidelines and preferences for working on thi
 
 Release builds take significantly longer and are only needed for production distributions.
 
+**Filter build output** - Always pipe `cargo check` / `cargo build` through grep to reduce output noise:
+
+- ✅ `cargo check -p oxy 2>&1 | grep -E "^(error|warning\[)"`
+- ✅ `cargo build -p oxy 2>&1 | grep -E "^(error|warning\[)"`
+- This filters out progress lines, notes, and help suggestions, keeping only actionable errors and warnings.
+
 ## Testing the CLI
 
 After making changes to CLI commands:

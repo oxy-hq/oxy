@@ -8,7 +8,7 @@ use bollard::models::{
 };
 use bollard::query_parameters::{
     CreateContainerOptions, CreateImageOptions, InspectContainerOptions, ListContainersOptions,
-    RemoveContainerOptions, StartContainerOptions, StopContainerOptions,
+    RemoveContainerOptions, RemoveVolumeOptions, StartContainerOptions, StopContainerOptions,
 };
 use futures::StreamExt;
 use oxy_shared::errors::OxyError;
@@ -39,7 +39,7 @@ pub const CLICKHOUSE_READY_TIMEOUT_SECS: u64 = 30;
 
 /// Docker OTel Collector configuration constants
 const OTEL_CONTAINER_NAME: &str = "oxy-otel-collector";
-const OTEL_IMAGE: &str = "otel/opentelemetry-collector-contrib:latest";
+const OTEL_IMAGE: &str = "otel/opentelemetry-collector-contrib:0.144.0";
 const OTEL_GRPC_PORT: u16 = 4317;
 const OTEL_HTTP_PORT: u16 = 4318;
 
@@ -693,13 +693,21 @@ pub async fn start_otel_collector_container() -> Result<(), OxyError> {
     let local_config = std::env::current_dir()
         .ok()
         .map(|d| d.join(OTEL_CONFIG_FILENAME))
-        .filter(|p| p.exists());
+        .filter(|p| p.is_file()); // Only accept files, not directories
 
     let config_path = if let Some(path) = local_config {
         info!("Using OTel config from: {}", path.display());
         path
     } else {
-        let tmp = std::env::temp_dir().join("oxy-otel-collector-config.yaml");
+        // Use a unique temp file name to avoid conflicts
+        let pid = std::process::id();
+        let tmp = std::env::temp_dir().join(format!("oxy-otel-collector-config-{}.yaml", pid));
+
+        // If path exists as a directory, remove it first
+        if tmp.exists() && tmp.is_dir() {
+            std::fs::remove_dir_all(&tmp).ok();
+        }
+
         std::fs::write(&tmp, OTEL_COLLECTOR_CONFIG).map_err(|e| {
             OxyError::InitializationError(format!("Failed to write OTel config file: {}", e))
         })?;
@@ -833,6 +841,104 @@ pub async fn stop_enterprise_containers() -> Result<(), OxyError> {
     if let Err(e) = stop_clickhouse_container().await {
         warn!("Failed to stop ClickHouse container: {}", e);
     }
+    Ok(())
+}
+
+/// Remove a container by name (stop first if running, then remove)
+async fn remove_container(docker: &Docker, name: &str) -> Result<(), OxyError> {
+    if !is_container_exists(name).await? {
+        return Ok(());
+    }
+
+    // Stop if running
+    if is_container_running(name).await? {
+        let stop_opts = StopContainerOptions {
+            t: Some(5),
+            signal: None,
+        };
+        if let Err(e) = docker.stop_container(name, Some(stop_opts)).await {
+            warn!("Failed to stop container '{}': {}", name, e);
+        }
+    }
+
+    // Remove
+    let remove_opts = RemoveContainerOptions {
+        force: true,
+        ..Default::default()
+    };
+    docker
+        .remove_container(name, Some(remove_opts))
+        .await
+        .map_err(|e| {
+            OxyError::InitializationError(format!("Failed to remove container '{}': {}", name, e))
+        })?;
+
+    info!("Removed container '{}'", name);
+    Ok(())
+}
+
+/// Remove a Docker volume by name
+async fn remove_volume(docker: &Docker, name: &str) -> Result<(), OxyError> {
+    let opts = RemoveVolumeOptions { force: true };
+    match docker.remove_volume(name, Some(opts)).await {
+        Ok(_) => {
+            info!("Removed volume '{}'", name);
+            Ok(())
+        }
+        Err(bollard::errors::Error::DockerResponseServerError {
+            status_code: 404, ..
+        }) => {
+            // Volume doesn't exist, that's fine
+            Ok(())
+        }
+        Err(e) => Err(OxyError::InitializationError(format!(
+            "Failed to remove volume '{}': {}",
+            name, e
+        ))),
+    }
+}
+
+/// Remove the enterprise Docker network
+async fn remove_enterprise_network(docker: &Docker) -> Result<(), OxyError> {
+    match docker.remove_network(ENTERPRISE_NETWORK).await {
+        Ok(_) => {
+            info!("Removed network '{}'", ENTERPRISE_NETWORK);
+            Ok(())
+        }
+        Err(bollard::errors::Error::DockerResponseServerError {
+            status_code: 404, ..
+        }) => Ok(()),
+        Err(e) => Err(OxyError::InitializationError(format!(
+            "Failed to remove network '{}': {}",
+            ENTERPRISE_NETWORK, e
+        ))),
+    }
+}
+
+/// Clean all Oxy-managed Docker containers, volumes, and networks.
+/// Used by `oxy start --clean` to start from a fresh state.
+pub async fn clean_all(enterprise: bool) -> Result<(), OxyError> {
+    let docker = get_docker_client().await?;
+
+    if enterprise {
+        // Remove enterprise containers (order: otel → clickhouse)
+        remove_container(&docker, OTEL_CONTAINER_NAME).await?;
+        remove_container(&docker, CLICKHOUSE_CONTAINER_NAME).await?;
+    }
+
+    // Remove postgres container
+    remove_container(&docker, POSTGRES_CONTAINER_NAME).await?;
+
+    if enterprise {
+        // Remove enterprise volumes
+        remove_volume(&docker, CLICKHOUSE_VOLUME).await?;
+        // Remove enterprise network
+        remove_enterprise_network(&docker).await?;
+    }
+
+    // Remove postgres volume
+    remove_volume(&docker, POSTGRES_VOLUME).await?;
+
     Ok(())
 }
 

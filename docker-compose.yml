@@ -47,7 +47,7 @@ services:
     restart: unless-stopped
 
   otel-collector:
-    image: otel/opentelemetry-collector-contrib:latest
+    image: otel/opentelemetry-collector-contrib:0.144.0
     container_name: oxy-otel-collector
     command: ["--config=/etc/otel-collector-config.yaml"]
     volumes:

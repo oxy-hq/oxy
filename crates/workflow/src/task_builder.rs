@@ -51,6 +51,82 @@ pub enum RuntimeTaskInput {
     },
 }
 
+/// Helper function to construct RuntimeTaskInput based on task type.
+/// This is shared between launch_tasks and TaskChainMapper to avoid duplication.
+pub(crate) async fn create_runtime_input(
+    task_type: &TaskType,
+    execution_context: &ExecutionContext,
+    replay_id: Option<&str>,
+) -> Result<Option<RuntimeTaskInput>, OxyError> {
+    match task_type {
+        TaskType::LoopSequential(loop_sequential_task) => {
+            let values = match &loop_sequential_task.values {
+                LoopValues::Template(template) => {
+                    execution_context.renderer.eval_enumerate(template)?
+                }
+                LoopValues::Array(values) => values
+                    .iter()
+                    .map(minijinja::Value::from_serialize)
+                    .collect(),
+            };
+            Ok(Some(RuntimeTaskInput::Loop { values }))
+        }
+        TaskType::Workflow(workflow_task) => {
+            let variables = workflow_task
+                .variables
+                .as_ref()
+                .map(|vars| {
+                    vars.iter()
+                        .map(|(k, v)| {
+                            if let Some(template) = v.as_str() {
+                                let rendered_value =
+                                    execution_context.renderer.eval_expression(template)?;
+                                let json_value = serde_json::to_value(rendered_value)?;
+                                let final_value = if json_value.is_null() {
+                                    v.clone()
+                                } else {
+                                    json_value
+                                };
+                                Ok((k.to_string(), final_value))
+                            } else {
+                                Ok((k.to_string(), v.clone()))
+                            }
+                        })
+                        .collect::<Result<HashMap<String, JsonValue>, OxyError>>()
+                })
+                .transpose()?;
+
+            // Get run_info from checkpoint context if available
+            let run_info = match (&execution_context.checkpoint, replay_id) {
+                (Some(checkpoint_context), Some(replay_id)) => {
+                    let run_info = checkpoint_context
+                        .get_child_run_info(
+                            replay_id,
+                            &file_path_to_source_id(&workflow_task.src),
+                            variables.clone().map(|v| v.into_iter().collect()),
+                        )
+                        .await?;
+                    Some(run_info)
+                }
+                _ => None,
+            };
+
+            Ok(Some(RuntimeTaskInput::ChildRunInfo {
+                run_info,
+                variables,
+            }))
+        }
+        // These task types don't use runtime_input
+        TaskType::Agent(_)
+        | TaskType::SemanticQuery(_)
+        | TaskType::ExecuteSQL(_)
+        | TaskType::OmniQuery(_)
+        | TaskType::Formatter(_)
+        | TaskType::Conditional(_)
+        | TaskType::Unknown => Ok(None),
+    }
+}
+
 #[derive(Debug, Clone)]
 pub(super) struct TaskInput {
     pub loop_idx: Option<usize>,
@@ -465,71 +541,27 @@ impl ParamMapper<(Option<usize>, Task), TaskInput> for TaskChainMapper {
             .and_then(|v| v.as_str().map(|s| s.to_string()))
             .or_else(|| self.workflow_consistency_prompt.clone());
 
-        let mut task_input = TaskInput {
+        let task_input = TaskInput {
             task: input,
             runtime_input: None,
             loop_idx,
             value: None,
             workflow_consistency_prompt,
         };
-        let runtime_input = match task_input.task.task_type.clone() {
-            TaskType::LoopSequential(loop_sequential_task) => {
-                let values = match loop_sequential_task.values {
-                    LoopValues::Template(ref template) => {
-                        execution_context.renderer.eval_enumerate(template)?
-                    }
-                    LoopValues::Array(ref values) => values
-                        .iter()
-                        .map(minijinja::Value::from_serialize)
-                        .collect(),
-                };
-                Some(RuntimeTaskInput::Loop { values })
-            }
-            TaskType::Workflow(workflow_task) => {
-                let variables = workflow_task
-                    .variables.as_ref()
-                    .map(|vars| {
-                        vars.iter()
-                            .map(|(k, v)| {
-                                if let Some(template) = v.as_str() {
-                                    let rendered_value = execution_context
-                                        .renderer
-                                        .eval_expression(template)?;
-                                    let json_value = serde_json::to_value(rendered_value)?;
-                                    let final_value = match json_value.is_null() {
-                                        true => v.clone(),
-                                        false => json_value,
-                                    };
-                                    Ok((k.to_string(), final_value))
-                                } else {
-                                    Ok((k.to_string(), v.clone()))
-                                }
-                            })
-                            .try_collect::<(String, JsonValue), HashMap<String, JsonValue>, OxyError>()
-                    })
-                    .transpose()?;
-                let run_info = match &execution_context.checkpoint {
-                    Some(checkpoint_context) => {
-                        let run_info = checkpoint_context
-                            .get_child_run_info(
-                                &task_input.replay_id(),
-                                &file_path_to_source_id(&workflow_task.src),
-                                variables.clone().map(|v| v.into_iter().collect()),
-                            )
-                            .await?;
-                        Some(run_info)
-                    }
-                    None => None,
-                };
 
-                Some(RuntimeTaskInput::ChildRunInfo {
-                    run_info,
-                    variables,
-                })
-            }
-            _ => None,
+        // Use the shared helper to create runtime_input
+        let replay_id = task_input.replay_id();
+        let runtime_input = create_runtime_input(
+            &task_input.task.task_type,
+            execution_context,
+            Some(&replay_id),
+        )
+        .await?;
+
+        let task_input = TaskInput {
+            runtime_input,
+            ..task_input
         };
-        task_input.runtime_input = runtime_input;
 
         Ok((task_input, None))
     }
