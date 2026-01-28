@@ -18,8 +18,10 @@ The `oxy start` command is the recommended way to run Oxy with a production-read
 ## Quick usage
 
 ```bash
-oxy start            # start DB + web server
-oxy start --enterprise  # also start ClickHouse + OTel
+oxy start                    # start DB + web server
+oxy start --enterprise       # also start ClickHouse + OTel
+oxy start --clean            # clean existing containers/volumes first
+oxy start --clean --enterprise  # clean + start with enterprise features
 ```
 
 ## Key ports
@@ -29,6 +31,27 @@ oxy start --enterprise  # also start ClickHouse + OTel
 | PostgreSQL (oxy-postgres)                       |       15432 |
 | ClickHouse (oxy-clickhouse) HTTP / Native       | 8123 / 9000 |
 | OTel Collector (oxy-otel-collector) gRPC / HTTP | 4317 / 4318 |
+
+## Clean option
+
+The `--clean` flag removes all existing Oxy-managed Docker resources before starting:
+
+**Standard mode (`oxy start --clean`):**
+- Removes `oxy-postgres` container
+- Removes `oxy-postgres-data` volume (⚠️ **all data lost**)
+
+**Enterprise mode (`oxy start --clean --enterprise`):**
+- Removes `oxy-postgres`, `oxy-clickhouse`, `oxy-otel-collector` containers
+- Removes `oxy-postgres-data` and `oxy-clickhouse-data` volumes (⚠️ **all data lost**)
+- Removes the `oxy-enterprise-network` Docker network
+
+**Use cases:**
+- Troubleshooting database issues
+- Resetting to a fresh state for development
+- Clearing corrupted data
+- Starting with a clean slate after schema changes
+
+⚠️ **Warning:** The `--clean` option permanently deletes all data in the database volumes. Make sure you have backups of any important data before using this option.
 
 ## Environment vars (enterprise)
 
@@ -41,11 +64,13 @@ oxy start --enterprise  # also start ClickHouse + OTel
 - Check status: `oxy status`
 - View logs: `docker logs -f oxy-postgres` (and `oxy-clickhouse`, `oxy-otel-collector` for enterprise)
 - Stop containers: `docker stop oxy-postgres [oxy-clickhouse oxy-otel-collector]`
+- Clean restart: `oxy start --clean` (removes all containers and volumes)
 
 ## Notes
 
 - Docker must be installed and running.
 - Data persists in named volumes (`oxy-postgres-data`, `oxy-clickhouse-data`).
+- Use `--clean` to remove existing containers and volumes for a fresh start (⚠️ data loss).
 - If a port is already in use, stop the conflicting service or run with external DBs.
 
 ## Next Steps
