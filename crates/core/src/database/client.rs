@@ -12,7 +12,7 @@ pub async fn establish_connection() -> Result<DatabaseConnection, OxyError> {
         )
     })?;
 
-    tracing::info!("Connecting to PostgreSQL from OXY_DATABASE_URL");
+    tracing::debug!("Connecting to PostgreSQL from OXY_DATABASE_URL");
 
     // Validate that the URL is a PostgreSQL connection string
     if !url.starts_with("postgres://") && !url.starts_with("postgresql://") {

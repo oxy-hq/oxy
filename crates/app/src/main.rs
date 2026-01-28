@@ -51,17 +51,11 @@ fn init_tracing_logging(log_to_stdout: bool) {
     // This approach is more maintainable and ensures we don't miss any noisy dependencies
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
         EnvFilter::new(log_level)
-            // Core Oxy components
-            .add_directive("tower_http=info".parse().unwrap())
-            // Only enable trace-level HTTP logging in debug builds or when explicitly requested
-            .add_directive(if cfg!(debug_assertions) {
-                "tower_http::trace=info".parse().unwrap()
-            } else {
-                "tower_http::trace=warn".parse().unwrap()
-            })
+            // HTTP request/response logging (on_request is DEBUG, on_response is INFO in the trace layer)
+            .add_directive("tower_http::trace=info".parse().unwrap())
             // Database-related logging - SQLx can be very verbose
-            .add_directive("sqlx=warn".parse().unwrap()) // Reduce SQLx query logging noise
-            .add_directive("sea_orm=info".parse().unwrap()) // Keep SeaORM at info level if used
+            .add_directive("sqlx=warn".parse().unwrap())
+            .add_directive("sea_orm=warn".parse().unwrap())
             // Completely suppress deser_incomplete crate - it's too noisy with DEBUG logs
             .add_directive("deser_incomplete=off".parse().unwrap())
             .add_directive("deser_incomplete::options_impl=off".parse().unwrap())

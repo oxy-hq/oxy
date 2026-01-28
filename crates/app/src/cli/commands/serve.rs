@@ -142,7 +142,6 @@ async fn find_available_port(host: String, port: u16) -> Result<u16, OxyError> {
 async fn create_web_application(cloud: bool, enterprise: bool) -> Result<Router, OxyError> {
     let api_router = crate::server::router::api_router(cloud, enterprise)
         .await
-        .map(|router| router.layer(create_trace_layer()))
         .map_err(|e| OxyError::RuntimeError(format!("Failed to create API router: {}", e)))?;
     let openapi_router = crate::server::router::openapi_router().await;
     let mut openapi_doc = openapi_router.into_openapi().clone();
@@ -187,7 +186,7 @@ fn create_trace_layer()
 {
     TraceLayer::new_for_http()
         .make_span_with(trace::DefaultMakeSpan::new().level(Level::INFO))
-        .on_request(trace::DefaultOnRequest::new().level(Level::INFO))
+        .on_request(trace::DefaultOnRequest::new().level(Level::DEBUG))
         .on_response(
             trace::DefaultOnResponse::new()
                 .level(Level::INFO)

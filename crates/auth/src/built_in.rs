@@ -69,7 +69,7 @@ impl Authenticator for BuiltInAuthenticator {
 
 impl BuiltInAuthenticator {
     fn extract_token(&self, header: &axum::http::HeaderMap) -> Result<String, OxyError> {
-        tracing::info!("Extracting JWT token from header {:?}", header);
+        tracing::debug!("Extracting JWT token from header");
         header
             .get(AUTHENTICATION_HEADER_KEY)
             .and_then(|v| v.to_str().ok())
