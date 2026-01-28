@@ -1,9 +1,7 @@
 import { test, expect } from "@playwright/test";
-import { mockThreadsEndpoints } from "./mocks/threads";
 
 test.describe("Navigation", () => {
   test.beforeEach(async ({ page }) => {
-    await mockThreadsEndpoints(page);
     await page.goto("/");
     await page.waitForLoadState("networkidle");
   });

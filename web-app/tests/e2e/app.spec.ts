@@ -8,9 +8,8 @@ test.describe("App Flow", () => {
   });
 
   test("should be able to run an app and see the result", async ({ page }) => {
-    // This assumes there is at least one app available
-    // Wait for the app link to be available before clicking
-    const appLink = page.locator('[data-testid^="app-link-"]').first();
+    // Navigate to the "example" app
+    const appLink = page.getByTestId("app-link-example");
     await expect(appLink).toBeVisible({ timeout: 15000 });
     await appLink.click();
 
