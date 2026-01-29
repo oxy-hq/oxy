@@ -41,6 +41,17 @@ examples/
 # unnecessary files & folders
 json-schemas/
 .github/
+internal-docs/
+demo_project/
+scripts/
+tests/
+assets/
+sdk/
+oss/
+.claude/
+.husky/
+.turbo/
+.playwright-mcp/
 
 
 # tests
@@ -54,3 +65,22 @@ docs/
 
 # log
 *.log
+
+# config files not needed for build
+.deepsource.toml
+.env*
+.lintstagedrc.js
+.prettierignore
+.prettierrc.js
+.release-please-manifest.json
+.tool-versions
+.whitesource
+cliff.toml
+commitlint.config.js
+CONTRIBUTING.md
+CLAUDE.md
+agents.md
+release-please-config.json
+turbo.json
+biome.json
+pnpm-workspace.yaml

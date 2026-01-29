@@ -44,12 +44,16 @@ jobs:
 
   e2e-tests:
     name: E2E Tests (Playwright)
-    # Only run on approved PRs, main pushes, or manual trigger
+    # Only run on approved PRs, pushes to oxy-hq/oxy main (not oxy-internal), or manual trigger
     needs: [changesets]
     if: |
       github.event_name == 'workflow_dispatch' ||
       (
-        (github.event_name == 'push' || (github.event_name == 'pull_request_review' && github.event.review.state == 'approved')) &&
+        github.event_name == 'push' && github.repository == 'oxy-hq/oxy' &&
+        (needs.changesets.outputs.web-app == 'true' || needs.changesets.outputs.oxy == 'true')
+      ) ||
+      (
+        github.event_name == 'pull_request_review' && github.event.review.state == 'approved' &&
         (needs.changesets.outputs.web-app == 'true' || needs.changesets.outputs.oxy == 'true')
       )
     runs-on: ${{ github.repository == 'oxy-hq/oxy-internal' && (github.ref == 'refs/heads/main' && 'warp-ubuntu-latest-arm64-2x-spot' || 'warp-ubuntu-latest-arm64-2x') || 'ubuntu-latest' }}
@@ -281,21 +285,22 @@ jobs:
             ps -p $(cat /tmp/oxy-server.pid) || echo "Server process not running"
           fi
 
-      # Send Slack notification on main branch failure
+      # Send Slack notification on push failure to oxy main
       - name: Find Slack user
-        if: failure() && steps.run-playwright.outcome == 'failure' && github.ref == 'refs/heads/main' && github.repository == 'oxy-hq/oxy-internal'
+        if: failure() && steps.run-playwright.outcome == 'failure' && github.event_name == 'push' && github.repository == 'oxy-hq/oxy'
         id: find-slack-user
         uses: scribd/find-slack-user-action@v1
         continue-on-error: true
         with:
           slack-token: ${{ secrets.SLACK_BOT_TOKEN }}
-          # The action will automatically use the commit author's GitHub username
+          email: ${{ github.event.head_commit.author.email }}
 
       - name: Prepare Slack notification message
-        if: failure() && steps.run-playwright.outcome == 'failure' && github.ref == 'refs/heads/main' && github.repository == 'oxy-hq/oxy-internal'
+        if: failure() && steps.run-playwright.outcome == 'failure' && github.event_name == 'push' && github.repository == 'oxy-hq/oxy'
         id: prepare-slack
         run: |
           GITHUB_USER="${{ github.event.head_commit.author.username || github.actor }}"
+          AUTHOR_NAME="${{ github.event.head_commit.author.name || github.actor }}"
           SLACK_MEMBER_ID="${{ steps.find-slack-user.outputs.member-id }}"
 
           echo "GitHub user: $GITHUB_USER"
@@ -303,11 +308,11 @@ jobs:
 
           if [ -n "$SLACK_MEMBER_ID" ]; then
             echo "✓ Found Slack user for $GITHUB_USER"
-            AUTHOR_TEXT="*Author:*\n<@${SLACK_MEMBER_ID}> (${{ github.event.head_commit.author.name }})"
+            AUTHOR_TEXT="*Author:*\n<@${SLACK_MEMBER_ID}> (${AUTHOR_NAME})"
             MENTION_TEXT="<@${SLACK_MEMBER_ID}> - E2E tests failed on your commit"
           else
             echo "✗ No Slack user found for $GITHUB_USER"
-            AUTHOR_TEXT="*Author:*\n${{ github.event.head_commit.author.name }} (@${GITHUB_USER})"
+            AUTHOR_TEXT="*Author:*\n${AUTHOR_NAME} (@${GITHUB_USER})"
             MENTION_TEXT=""
           fi
 
@@ -321,7 +326,7 @@ jobs:
           echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Send Slack notification
-        if: failure() && steps.run-playwright.outcome == 'failure' && github.ref == 'refs/heads/main' && github.repository == 'oxy-hq/oxy-internal'
+        if: failure() && steps.run-playwright.outcome == 'failure' && github.event_name == 'push' && github.repository == 'oxy-hq/oxy'
         uses: slackapi/slack-github-action@v2.1.1
         with:
           method: chat.postMessage
@@ -329,26 +334,26 @@ jobs:
           payload: |
             {
               "channel": "eng-events-e2e",
-              "text": "🚨 E2E Tests Failed on Main Branch - ${{ steps.prepare-slack.outputs.mention_text || github.event.head_commit.author.name }}",
+              "text": "🚨 E2E Tests Failed on oxy Main Branch - ${{ steps.prepare-slack.outputs.mention_text || github.event.head_commit.author.name }}",
               "blocks": [
                 {
                   "type": "header",
                   "text": {
                     "type": "plain_text",
-                    "text": "🚨 E2E Tests Failed on Main Branch"
+                    "text": "🚨 E2E Tests Failed on oxy Main Branch"
                   }
                 },
-                ${{ steps.prepare-slack.outputs.mention_text && '{"type": "section", "text": {"type": "mrkdwn", "text": "' || '' }}${{ steps.prepare-slack.outputs.mention_text }}${{ steps.prepare-slack.outputs.mention_text && '"}},' || '' }}
+                ${{ steps.prepare-slack.outputs.mention_text && format('{{ "type": "section", "text": {{ "type": "mrkdwn", "text": "{0}" }} }},', steps.prepare-slack.outputs.mention_text) || '' }}
                 {
                   "type": "section",
                   "fields": [
                     {
                       "type": "mrkdwn",
-                      "text": "*Repository:*\n${{ github.repository }}"
+                      "text": "*Repository:*\noxy-hq/oxy"
                     },
                     {
                       "type": "mrkdwn",
-                      "text": "*Branch:*\n${{ github.ref_name }}"
+                      "text": "*Branch:*\nmain"
                     },
                     {
                       "type": "mrkdwn",
