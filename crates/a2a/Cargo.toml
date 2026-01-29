@@ -1,6 +1,6 @@
 [package]
 name = "a2a"
-version = "0.5.0"
+version = "0.5.1"
 authors.workspace = true
 description.workspace = true
 documentation.workspace = true

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/oxy-hq/oxy-internal/compare/0.4.11...0.5.1) (2026-01-29)
+
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+* release 0.5.1 ([fea7f3b](https://github.com/oxy-hq/oxy-internal/commit/fea7f3bfc5ab97636a546dffeeae72dbe1db1e71))
+
 ## [0.4.11](https://github.com/oxy-hq/oxy-internal/compare/0.4.10...0.4.11) (2026-01-29)
 
 ## [0.4.10](https://github.com/oxy-hq/oxy-internal/compare/0.4.9...0.4.10) (2026-01-22)

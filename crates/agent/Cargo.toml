@@ -1,6 +1,6 @@
 [package]
 name = "oxy-agent"
-version = "0.5.0"
+version = "0.5.1"
 authors.workspace = true
 description = "Agent execution engine for Oxy"
 documentation.workspace = true
