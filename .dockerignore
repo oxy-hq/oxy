@@ -42,7 +42,6 @@ examples/
 json-schemas/
 .github/
 internal-docs/
-demo_project/
 scripts/
 tests/
 assets/
@@ -83,4 +82,3 @@ agents.md
 release-please-config.json
 turbo.json
 biome.json
-pnpm-workspace.yaml
