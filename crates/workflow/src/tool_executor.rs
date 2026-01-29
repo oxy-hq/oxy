@@ -56,8 +56,7 @@ impl ToolExecutor for WorkflowToolExecutor {
 
                 let result = WorkflowLauncherExecutable
                     .execute(execution_context, workflow_input)
-                    .await
-                    .map(|output| output);
+                    .await;
 
                 match &result {
                     Ok(output) => events::tool::tool_call_output(output),

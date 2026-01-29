@@ -34,11 +34,11 @@ impl ContentProcessor {
             Output::Text(text) => Some(text.to_string()),
             Output::SQL(sql) => Some(format!("Query:\n```sql\n{sql}\n```\n")),
             Output::Table(table) => Some(format!("Result:\n{}\n", table.to_markdown())),
-            Output::SemanticQuery(semantic_query_params) => Some("".to_string()),
+            Output::SemanticQuery(_semantic_query_params) => Some("".to_string()),
             Output::Bool(_) => None,
-            Output::Prompt(prompt) => None,
-            Output::Documents(documents) => None,
-            Output::OmniQuery(omni_query_params) => None,
+            Output::Prompt(_prompt) => None,
+            Output::Documents(_documents) => None,
+            Output::OmniQuery(_omni_query_params) => None,
         }
     }
 

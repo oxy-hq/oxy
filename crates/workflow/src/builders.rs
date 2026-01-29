@@ -3,10 +3,7 @@ use minijinja::context;
 use std::{collections::HashMap, path::PathBuf};
 use tracing::Instrument;
 
-use crate::{
-    task_builder::{RuntimeTaskInput, create_runtime_input},
-    workflow_builder::build_workflow_executable,
-};
+use crate::{task_builder::create_runtime_input, workflow_builder::build_workflow_executable};
 
 use oxy::{
     adapters::{

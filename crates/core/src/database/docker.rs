@@ -634,7 +634,7 @@ pub async fn wait_for_clickhouse_ready(timeout_secs: u64) -> Result<(), OxyError
         }
 
         retry_count += 1;
-        if retry_count == 1 || retry_count % 5 == 0 {
+        if retry_count == 1 || retry_count.is_multiple_of(5) {
             info!(
                 "ClickHouse not ready yet, retrying... ({} seconds elapsed)",
                 start.elapsed().as_secs()
@@ -984,12 +984,12 @@ pub async fn wait_for_cubejs_ready(timeout_secs: u64) -> Result<(), OxyError> {
                 {
                     // For Cube.js, we'll check if the HTTP endpoint is responsive
                     // This is a simple check - in production you might want to check /readyz or /livez
-                    if let Ok(response) = reqwest::get("http://localhost:4000/").await {
-                        if response.status().is_success() || response.status().is_client_error() {
-                            // 200 or 4xx means the server is up (4xx is expected for unauthenticated requests)
-                            info!("Cube.js is ready!");
-                            return Ok(());
-                        }
+                    if let Ok(response) = reqwest::get("http://localhost:4000/").await
+                        && (response.status().is_success() || response.status().is_client_error())
+                    {
+                        // 200 or 4xx means the server is up (4xx is expected for unauthenticated requests)
+                        info!("Cube.js is ready!");
+                        return Ok(());
                     }
                 } else {
                     return Err(OxyError::InitializationError(format!(
@@ -1007,7 +1007,7 @@ pub async fn wait_for_cubejs_ready(timeout_secs: u64) -> Result<(), OxyError> {
         }
 
         retry_count += 1;
-        if retry_count == 1 || retry_count % 5 == 0 {
+        if retry_count == 1 || retry_count.is_multiple_of(5) {
             info!(
                 "Cube.js not ready yet, retrying... ({} seconds elapsed)",
                 start.elapsed().as_secs()
