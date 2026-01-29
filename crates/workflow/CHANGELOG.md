@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.11](https://github.com/oxy-hq/oxy-internal/compare/0.4.10...0.4.11) (2026-01-29)
+
+
+### <!-- 0 -->🚀 Features
+
+* add clean option to start command and improve Docker management ([#1568](https://github.com/oxy-hq/oxy-internal/issues/1568)) ([4ff0302](https://github.com/oxy-hq/oxy-internal/commit/4ff0302352e676bbd6d99ed27e7c0f3adb36314c))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* semantic query artifact ([#1566](https://github.com/oxy-hq/oxy-internal/issues/1566)) ([09eaf61](https://github.com/oxy-hq/oxy-internal/commit/09eaf618b92d25d734d1516ed530d1b071c53789))
+
 ## [0.4.10](https://github.com/oxy-hq/oxy-internal/compare/0.4.9...0.4.10) (2026-01-22)
 
 

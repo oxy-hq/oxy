@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.11](https://github.com/oxy-hq/oxy-internal/compare/0.4.10...0.4.11) (2026-01-29)
+
+
+### <!-- 0 -->🚀 Features
+
+* remove sqlite ([#1557](https://github.com/oxy-hq/oxy-internal/issues/1557)) ([b169340](https://github.com/oxy-hq/oxy-internal/commit/b169340c67103307754f1a21a1ba8e8ba8cbc7cb))
+
 ## [0.4.10](https://github.com/oxy-hq/oxy-internal/compare/0.4.9...0.4.10) (2026-01-22)
 
 

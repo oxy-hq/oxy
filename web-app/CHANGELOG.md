@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.4.11](https://github.com/oxy-hq/oxy-internal/compare/0.4.10...0.4.11) (2026-01-29)
+
+
+### <!-- 0 -->🚀 Features
+
+* move database management and activity logs to the developer portal ([#1550](https://github.com/oxy-hq/oxy-internal/issues/1550)) ([ba6a79b](https://github.com/oxy-hq/oxy-internal/commit/ba6a79b999fee913786da9ef29ec5f44ee5f3452))
+* remove sqlite ([#1557](https://github.com/oxy-hq/oxy-internal/issues/1557)) ([b169340](https://github.com/oxy-hq/oxy-internal/commit/b169340c67103307754f1a21a1ba8e8ba8cbc7cb))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* observability follow up ([#1555](https://github.com/oxy-hq/oxy-internal/issues/1555)) ([2ff8222](https://github.com/oxy-hq/oxy-internal/commit/2ff82224353a0170b8317d3d0caf8b306bb7d12e))
+* semantic query artifact ([#1566](https://github.com/oxy-hq/oxy-internal/issues/1566)) ([09eaf61](https://github.com/oxy-hq/oxy-internal/commit/09eaf618b92d25d734d1516ed530d1b071c53789))
+
 ## [0.4.10](https://github.com/oxy-hq/oxy-internal/compare/0.4.9...0.4.10) (2026-01-22)
 
 
