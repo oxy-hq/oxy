@@ -1127,7 +1127,6 @@ async fn handle_omni_sync() -> Result<(), OxyError> {
     let project = ProjectBuilder::new(Uuid::nil())
         .with_project_path(&project_path)
         .await?
-        .with_runs_manager(RunsManager::default(Uuid::nil(), Uuid::nil()).await?)
         .build()
         .await
         .map_err(|e| OxyError::from(anyhow::anyhow!("Failed to create project: {e}")))?;
