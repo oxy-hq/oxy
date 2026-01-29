@@ -18,5 +18,5 @@
   "crates/infrastructure/llm/ollama": "0.4.11",
   "crates/infrastructure/llm/openai": "0.4.11",
   "crates/infrastructure/llm/oxy-llm": "0.4.11",
-  "web-app": "0.4.11"
+  "web-app": "0.5.0"
 }
