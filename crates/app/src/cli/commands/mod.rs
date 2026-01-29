@@ -27,6 +27,7 @@ use ::oxy::checkpoint::types::RetryStrategy;
 use ::oxy::config::model::AppConfig;
 use ::oxy::config::*;
 use ::oxy::connector::Connector;
+use ::oxy::database::docker;
 use ::oxy::execute::types::utils::record_batches_to_table;
 use ::oxy::sentry_config;
 use ::oxy::theme::StyledText;
@@ -64,7 +65,7 @@ use tracing::{debug, error};
 const CUBE_CONFIG_DIR_PATH: &str = ".semantics";
 
 /// Get the cube configuration directory path (inside the project directory)
-fn get_cube_config_dir() -> Result<PathBuf, OxyError> {
+pub fn get_cube_config_dir() -> Result<PathBuf, OxyError> {
     Ok(resolve_local_project_path()?.join(CUBE_CONFIG_DIR_PATH))
 }
 
@@ -1674,30 +1675,15 @@ async fn handle_semantic_engine_command(semantic_args: SemanticEngineArgs) -> Re
     generate_cube_config(cube_config_dir.clone(), true, config.get_globals_registry()).await?;
 
     // Check if Docker is available
-    let docker_check = Command::new("docker").args(["--version"]).output();
+    println!("{}", "🔍 Checking Docker availability...".text());
+    docker::check_docker_available().await?;
+    println!("{}", "   ✓ Docker is available\n".success());
 
-    match docker_check {
-        Ok(output) if output.status.success() => {
-            println!("🐳 Docker detected, starting Cube.js container...");
-        }
-        _ => {
-            return Err(OxyError::RuntimeError(
-                "Docker is required to run the semantic engine. Please install Docker and try again.".to_string()
-            ));
-        }
-    }
-
-    // Prepare environment variables for Cube.js
-    let mut env_vars = vec![
-        format!("CUBEJS_DEV_MODE={}", semantic_args.dev_mode),
-        format!("CUBEJS_LOG_LEVEL={}", semantic_args.log_level),
-    ];
-
-    if let Some(default_db) = config.default_database_ref()
+    // Get database URL
+    let db_url = if let Some(default_db) = config.default_database_ref()
         && let Ok(db_config) = config.resolve_database(default_db)
     {
-        // Add database URL to environment
-        let db_url = match &db_config.database_type {
+        match &db_config.database_type {
             ::oxy::config::model::DatabaseType::Postgres(pg_config) => {
                 format!(
                     "postgresql://{}:{}@{}:{}/{}",
@@ -1722,28 +1708,17 @@ async fn handle_semantic_engine_command(semantic_args: SemanticEngineArgs) -> Re
                 tracing::warn!("Database type not supported for Cube.js connection");
                 String::new()
             }
-        };
-
-        if !db_url.is_empty() {
-            env_vars.push(format!("CUBEJS_DB_URL={}", db_url));
         }
+    } else {
+        String::new()
+    };
+
+    if db_url.is_empty() {
+        return Err(OxyError::ConfigurationError(
+            "No default database configured. Please configure a database in your oxy.toml file."
+                .to_string(),
+        ));
     }
-
-    // Build Docker command
-    let mut docker_cmd = Command::new("docker");
-    docker_cmd
-        .args(["run", "--rm", "-it"])
-        .args(["-p", &format!("{}:4000", semantic_args.port)])
-        .args(["-v", &format!("{}:/cube/conf", cube_config_dir.display())])
-        .args(["-v", &format!("{}/.db:/cube/.db", project_path.display())]);
-
-    // Add environment variables
-    for env_var in env_vars {
-        docker_cmd.args(["-e", &env_var]);
-    }
-
-    // Allow configuring Cube version ?
-    docker_cmd.args(["cubejs/cube:v1.3.81"]);
 
     let display_host = if semantic_args.host == "0.0.0.0" {
         "localhost"
@@ -1756,29 +1731,81 @@ async fn handle_semantic_engine_command(semantic_args: SemanticEngineArgs) -> Re
         "🚀 Starting Cube.js semantic engine at".text(),
         format!("http://{}:{}", display_host, semantic_args.port).secondary()
     );
-
     println!(
         "{}",
         "📊 Cube.js Developer Playground will be available for testing queries".info()
     );
-    println!("{}", "Press Ctrl+C to stop the semantic engine".tertiary());
+    println!(
+        "{}",
+        "Press Ctrl+C to stop the semantic engine\n".tertiary()
+    );
 
-    // Execute the Docker command
-    let status = docker_cmd
-        .status()
-        .map_err(|e| OxyError::RuntimeError(format!("Failed to start Cube.js container: {}", e)))?;
+    // Start Cube.js container
+    println!("{}", "🐳 Starting Cube.js container...".text());
+    println!("{}", format!("   Container: {}", "oxy-cubejs").tertiary());
+    println!(
+        "{}",
+        format!("   Image: {}", "cubejs/cube:v1.3.81").tertiary()
+    );
+    println!(
+        "{}",
+        format!("   Port: {}:4000", semantic_args.port).tertiary()
+    );
 
-    if !status.success() {
-        return Err(OxyError::RuntimeError(
-            "Cube.js container exited with non-zero status".to_string(),
-        ));
-    }
+    docker::start_cubejs_container(
+        cube_config_dir.display().to_string(),
+        project_path.display().to_string(),
+        db_url,
+        semantic_args.dev_mode,
+        semantic_args.log_level.clone(),
+    )
+    .await?;
+
+    println!("{}", "   ✓ Cube.js container started\n".success());
+
+    // Wait for Cube.js to be ready
+    println!("{}", "⏳ Waiting for Cube.js to be ready...".text());
+    docker::wait_for_cubejs_ready(docker::CUBEJS_READY_TIMEOUT_SECS).await?;
+    println!("{}", "✓ Cube.js is ready".success());
+    println!(
+        "{}",
+        format!(
+            "   Access at: http://{}:{}\n",
+            display_host, semantic_args.port
+        )
+        .tertiary()
+    );
+
+    println!("{}", "💡 Useful Docker Commands:".text());
+    println!(
+        "{}",
+        "   View logs:        docker logs oxy-cubejs".secondary()
+    );
+    println!(
+        "{}",
+        "   Follow logs:      docker logs -f oxy-cubejs".secondary()
+    );
+    println!(
+        "{}",
+        "   Stop container:   docker stop oxy-cubejs".secondary()
+    );
+    println!();
+
+    // Wait for Ctrl+C signal
+    println!("{}", "Container is running. Press Ctrl+C to stop...".text());
+    tokio::signal::ctrl_c().await.map_err(|e| {
+        OxyError::RuntimeError(format!("Failed to listen for shutdown signal: {}", e))
+    })?;
+
+    println!("\n{}", "🛑 Stopping Cube.js container...".text());
+    docker::stop_cubejs_container().await?;
+    println!("{}", "   ✓ Cube.js container stopped".success());
 
     Ok(())
 }
 
 /// Generate Cube.js configuration from semantic layer
-async fn generate_cube_config(
+pub async fn generate_cube_config(
     cube_config_dir: PathBuf,
     force: bool,
     globals_registry: GlobalRegistry,

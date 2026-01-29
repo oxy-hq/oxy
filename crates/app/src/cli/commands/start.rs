@@ -1,5 +1,7 @@
 use crate::cli::ServeArgs;
 use crate::cli::commands::serve::start_server_and_web_app;
+use crate::cli::commands::{generate_cube_config, get_cube_config_dir};
+use oxy::config::{ConfigBuilder, resolve_local_project_path, resolve_semantics_dir};
 use oxy::database::docker;
 use oxy::theme::StyledText;
 use oxy_shared::errors::OxyError;
@@ -11,7 +13,7 @@ pub async fn start_database_and_server(serve_args: ServeArgs) -> Result<(), OxyE
     if enterprise {
         println!(
             "{}",
-            "=== Starting Oxy Enterprise with Docker PostgreSQL + ClickHouse + OTel ===\n".text()
+            "=== Starting Oxy Enterprise with Docker PostgreSQL + ClickHouse + OTel + Semantic Engine ===\n".text()
         );
     } else {
         println!("{}", "=== Starting Oxy with Docker PostgreSQL ===\n".text());
@@ -194,7 +196,71 @@ async fn start_all_containers() -> Result<String, OxyError> {
     }
     println!("{}", "   ✓ OTel Collector container started\n".success());
 
+    // Start Cube.js semantic engine (depends on PostgreSQL being ready)
+    if let Err(e) = start_cubejs_semantic_engine(&db_url).await {
+        // Cube.js is optional - log the error but continue
+        eprintln!(
+            "{}",
+            format!("   ⚠️  Cube.js semantic engine could not be started: {}", e).warning()
+        );
+        eprintln!(
+            "{}",
+            "   Continuing without semantic engine. Run 'oxy semantic-engine' manually if needed.\n".warning()
+        );
+    }
+
     Ok(db_url)
+}
+
+/// Start Cube.js semantic engine container
+async fn start_cubejs_semantic_engine(db_url: &str) -> Result<(), OxyError> {
+    // Check if semantic layer exists
+    let semantic_dir = resolve_semantics_dir()?;
+    if !semantic_dir.exists() {
+        return Err(OxyError::ConfigurationError(
+            "No semantic layer found. Skipping Cube.js startup.".to_string(),
+        ));
+    }
+
+    println!("{}", "🐳 Starting Cube.js semantic engine...".text());
+    println!("{}", "   Container: oxy-cubejs".tertiary());
+    println!("{}", "   Image: cubejs/cube:v1.3.81".tertiary());
+    println!("{}", "   Port: 4000".tertiary());
+
+    // Ensure we're in a valid project
+    let project_path = resolve_local_project_path()?;
+
+    // Get config to access globals registry
+    let config = ConfigBuilder::new()
+        .with_project_path(&project_path)?
+        .build()
+        .await?;
+
+    // Ensure cube configuration directory exists and generate config
+    let cube_config_dir = get_cube_config_dir()?;
+
+    println!("{}", "   Generating Cube.js configuration...".tertiary());
+    generate_cube_config(cube_config_dir.clone(), true, config.get_globals_registry()).await?;
+
+    // Start Cube.js container
+    docker::start_cubejs_container(
+        cube_config_dir.display().to_string(),
+        project_path.display().to_string(),
+        db_url.to_string(),
+        true, // dev_mode
+        "info".to_string(),
+    )
+    .await?;
+
+    println!("{}", "   ✓ Cube.js container started\n".success());
+
+    // Wait for Cube.js to be ready
+    println!("{}", "⏳ Waiting for Cube.js to be ready...".text());
+    docker::wait_for_cubejs_ready(docker::CUBEJS_READY_TIMEOUT_SECS).await?;
+    println!("{}", "✓ Cube.js semantic engine ready".success());
+    println!("{}", "   Access at: http://localhost:4000\n".tertiary());
+
+    Ok(())
 }
 
 fn print_docker_tips(enterprise: bool) {
@@ -219,6 +285,10 @@ fn print_docker_tips(enterprise: bool) {
         println!(
             "{}",
             "   OTel logs:        docker logs oxy-otel-collector".secondary()
+        );
+        println!(
+            "{}",
+            "   Cube.js logs:     docker logs oxy-cubejs".secondary()
         );
         println!(
             "{}",
