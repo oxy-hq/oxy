@@ -76,18 +76,9 @@ pub struct ServeArgs {
 /// Arguments for the `oxy start` command (Docker containers + web server)
 #[derive(Parser, Debug)]
 pub struct StartArgs {
-    /// Server configuration options
+    /// Server configuration options (includes --enterprise flag)
     #[clap(flatten)]
     pub serve: ServeArgs,
-
-    /// Enable enterprise features (ClickHouse, OTel, Cube.js containers)
-    ///
-    /// When enabled, starts additional containers for enterprise features:
-    /// - ClickHouse for analytics
-    /// - OpenTelemetry Collector for observability
-    /// - Cube.js for semantic layer
-    #[clap(long, default_value_t = false)]
-    pub enterprise: bool,
 
     /// Clean start: remove existing Docker containers and volumes before starting
     ///
