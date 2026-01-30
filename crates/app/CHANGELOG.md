@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.3](https://github.com/oxy-hq/oxy-internal/compare/0.5.2...0.5.3) (2026-01-30)
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* bring back enterprise flag for oxy serve ([166640e](https://github.com/oxy-hq/oxy-internal/commit/166640eebbc4ed9485c2b537499c646d7dd99ec7))
+
 ## [0.5.2](https://github.com/oxy-hq/oxy-internal/compare/0.5.1...0.5.2) (2026-01-30)
 
 
