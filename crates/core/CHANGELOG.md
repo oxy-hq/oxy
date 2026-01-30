@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.2](https://github.com/oxy-hq/oxy-internal/compare/0.5.1...0.5.2) (2026-01-30)
+
+
+### <!-- 0 -->🚀 Features
+
+* add better check for better runtime and clarify in docs ([#1577](https://github.com/oxy-hq/oxy-internal/issues/1577)) ([edfbc8b](https://github.com/oxy-hq/oxy-internal/commit/edfbc8bf2d12534895bf913767d25bba1c2fe5a1))
+
 ## [0.5.1](https://github.com/oxy-hq/oxy-internal/compare/0.4.11...0.5.1) (2026-01-29)
 
 
