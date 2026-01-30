@@ -63,7 +63,9 @@ pub async fn start_database_and_server(args: StartArgs) -> Result<(), OxyError> 
 
     // 6. Start the web server (runs on host, not in Docker)
     println!("{}", "🚀 Starting Oxy server...".text());
-    start_server_and_web_app(args.serve).await?;
+    let mut serve_args = args.serve;
+    serve_args.enterprise = enterprise;
+    start_server_and_web_app(serve_args).await?;
 
     // 7. Cleanup on exit (handled by graceful shutdown in serve.rs)
     Ok(())

@@ -47,15 +47,32 @@ pub async fn start_server_and_web_app(args: ServeArgs) -> Result<(), OxyError> {
         ));
     }
 
-    run_database_migrations().await?;
+    // Validate enterprise mode requirements
+    if args.enterprise && !ClickHouseConfig::is_configured() {
+        return Err(OxyError::RuntimeError(
+            "--enterprise flag requires ClickHouse configuration.\n\n\
+            Required environment variables:\n\
+            - OXY_CLICKHOUSE_URL (e.g., http://localhost:8123)\n\n\
+            Optional environment variables:\n\
+            - OXY_CLICKHOUSE_USER (default: default)\n\
+            - OXY_CLICKHOUSE_PASSWORD\n\
+            - OXY_CLICKHOUSE_DATABASE (default: otel)\n\n\
+            Options:\n\
+            1. Use 'oxy start --enterprise' to automatically start ClickHouse with Docker\n\
+            2. Set the environment variables to point to your ClickHouse instance"
+                .to_string(),
+        ));
+    }
+
+    run_database_migrations(args.enterprise).await?;
 
     let _available_port = find_available_port(args.host.clone(), args.port).await?;
-    let app = create_web_application(args.cloud).await?;
+    let app = create_web_application(args.cloud, args.enterprise).await?;
 
     serve_application(app, args).await
 }
 
-async fn run_database_migrations() -> Result<(), OxyError> {
+async fn run_database_migrations(enterprise: bool) -> Result<(), OxyError> {
     let db = establish_connection()
         .await
         .map_err(|e| OxyError::RuntimeError(format!("Failed to connect to database: {}", e)))?;
@@ -65,29 +82,26 @@ async fn run_database_migrations() -> Result<(), OxyError> {
         .await
         .map_err(|e| OxyError::RuntimeError(format!("Failed to run database migrations: {}", e)))?;
 
-    // Run ClickHouse migrations if ClickHouse is configured (enterprise mode)
-    run_clickhouse_migrations().await?;
+    // Run ClickHouse migrations only when enterprise mode is enabled
+    if enterprise {
+        run_clickhouse_migrations().await?;
+    }
 
     Ok(())
 }
 
 async fn run_clickhouse_migrations() -> Result<(), OxyError> {
-    // Check if ClickHouse environment variables are set
-    if ClickHouseConfig::is_configured() {
-        tracing::info!("ClickHouse configuration detected, running ClickHouse migrations...");
+    tracing::info!("Running ClickHouse migrations for enterprise mode...");
 
-        let storage = ClickHouseStorage::from_env();
+    let storage = ClickHouseStorage::from_env();
 
-        // Run ClickHouse migrations
-        storage
-            .run_migrations()
-            .await
-            .map_err(|e| OxyError::RuntimeError(format!("ClickHouse migrations failed: {e}")))?;
+    // Run ClickHouse migrations
+    storage
+        .run_migrations()
+        .await
+        .map_err(|e| OxyError::RuntimeError(format!("ClickHouse migrations failed: {e}")))?;
 
-        tracing::info!("ClickHouse migrations completed successfully");
-    } else {
-        tracing::debug!("No ClickHouse configuration found, skipping ClickHouse migrations");
-    }
+    tracing::info!("ClickHouse migrations completed successfully");
 
     Ok(())
 }
@@ -137,9 +151,7 @@ async fn find_available_port(host: String, port: u16) -> Result<u16, OxyError> {
     Ok(chosen_port)
 }
 
-async fn create_web_application(cloud: bool) -> Result<Router, OxyError> {
-    // Detect enterprise mode from environment (ClickHouse configuration)
-    let enterprise = ClickHouseConfig::is_configured();
+async fn create_web_application(cloud: bool, enterprise: bool) -> Result<Router, OxyError> {
     let api_router = crate::server::router::api_router(cloud, enterprise)
         .await
         .map_err(|e| OxyError::RuntimeError(format!("Failed to create API router: {}", e)))?;

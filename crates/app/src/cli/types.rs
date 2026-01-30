@@ -61,6 +61,16 @@ pub struct ServeArgs {
 
     #[clap(long, default_value_t = false)]
     pub cloud: bool,
+
+    /// Enable enterprise features (ClickHouse observability, analytics)
+    ///
+    /// When enabled, requires ClickHouse environment variables to be set:
+    /// - OXY_CLICKHOUSE_URL (required)
+    /// - OXY_CLICKHOUSE_USER (optional, default: default)
+    /// - OXY_CLICKHOUSE_PASSWORD (optional)
+    /// - OXY_CLICKHOUSE_DATABASE (optional, default: otel)
+    #[clap(long, default_value_t = false)]
+    pub enterprise: bool,
 }
 
 /// Arguments for the `oxy start` command (Docker containers + web server)
