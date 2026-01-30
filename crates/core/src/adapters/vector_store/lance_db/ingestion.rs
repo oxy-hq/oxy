@@ -1,9 +1,10 @@
-use std::{collections::HashSet, sync::Arc};
+use std::{collections::HashMap, collections::HashSet, sync::Arc};
 
 use crate::{
     adapters::{
         openai::OpenAIClient,
         vector_store::{
+            build_index_key,
             builders::parameterized::build_parameterized_retrieval_objects,
             embedding::create_embeddings_batched,
             types::{Embedding, RetrievalItem, RetrievalObject},
@@ -109,7 +110,10 @@ impl IngestionManager {
             .zip(all_embeddings.into_iter())
             .collect();
 
-        let mut retrieval_items: Vec<RetrievalItem> = Vec::new();
+        // Use a HashMap to deduplicate items by their upsert_key (source_identifier + embedding_content)
+        // This prevents "Ambiguous merge insert" errors when the same item appears multiple times
+        let mut retrieval_items_by_key: HashMap<String, RetrievalItem> = HashMap::new();
+
         for obj in retrieval_objects.iter() {
             let content = obj.determine_content(); // a retrieval object's inclusions all have the same content
             let mut exclusion_embeddings: Vec<Embedding> = Vec::with_capacity(obj.exclusions.len());
@@ -157,18 +161,26 @@ impl IngestionManager {
                     }
                 };
 
-                retrieval_items.push(RetrievalItem {
-                    source_identifier: obj.source_identifier.clone(),
-                    embedding_content: inclusion_text.clone(),
-                    embedding,
-                    content: content.clone(),
-                    source_type: obj.source_type.clone(),
-                    radius,
-                });
+                // Generate the same upsert_key used by serialization
+                let upsert_key =
+                    build_index_key([obj.source_identifier.as_str(), inclusion_text.as_str()]);
+
+                // If duplicate, later item wins (consistent behavior)
+                retrieval_items_by_key.insert(
+                    upsert_key,
+                    RetrievalItem {
+                        source_identifier: obj.source_identifier.clone(),
+                        embedding_content: inclusion_text.clone(),
+                        embedding,
+                        content: content.clone(),
+                        source_type: obj.source_type.clone(),
+                        radius,
+                    },
+                );
             }
         }
 
-        Ok(retrieval_items)
+        Ok(retrieval_items_by_key.into_values().collect())
     }
 
     fn collect_unique_retrieval_strings(

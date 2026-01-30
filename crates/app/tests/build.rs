@@ -1,4 +1,5 @@
 use assert_cmd::Command;
+use serial_test::serial;
 use std::path::PathBuf;
 
 fn setup_command() -> Command {
@@ -8,6 +9,7 @@ fn setup_command() -> Command {
 }
 
 #[test]
+#[serial]
 fn test_build_creates_semantics_output() {
     let mut cmd = setup_command();
     cmd.assert().success();
@@ -23,6 +25,7 @@ fn test_build_creates_semantics_output() {
 }
 
 #[test]
+#[serial]
 fn test_build_with_drop_all_tables_flag() {
     let mut cmd = setup_command();
     cmd.arg("--drop-all-tables").assert().success();
