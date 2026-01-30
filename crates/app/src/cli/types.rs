@@ -25,7 +25,8 @@ pub struct A2aArgs {
     pub base_url: Option<String>,
 }
 
-#[derive(Parser, Debug)]
+/// Arguments for the `oxy serve` command (web server only, no Docker)
+#[derive(Parser, Debug, Clone)]
 pub struct ServeArgs {
     /// Port number for the web application server
     ///
@@ -60,12 +61,21 @@ pub struct ServeArgs {
 
     #[clap(long, default_value_t = false)]
     pub cloud: bool,
+}
 
-    /// Enable enterprise features including observability (OpenTelemetry)
+/// Arguments for the `oxy start` command (Docker containers + web server)
+#[derive(Parser, Debug)]
+pub struct StartArgs {
+    /// Server configuration options
+    #[clap(flatten)]
+    pub serve: ServeArgs,
+
+    /// Enable enterprise features (ClickHouse, OTel, Cube.js containers)
     ///
-    /// When enabled, activates enterprise features such as OpenTelemetry
-    /// tracing and metrics collection. Observability is disabled by default
-    /// and only enabled when this flag is set.
+    /// When enabled, starts additional containers for enterprise features:
+    /// - ClickHouse for analytics
+    /// - OpenTelemetry Collector for observability
+    /// - Cube.js for semantic layer
     #[clap(long, default_value_t = false)]
     pub enterprise: bool,
 

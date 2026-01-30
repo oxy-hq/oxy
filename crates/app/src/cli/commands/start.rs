@@ -1,4 +1,4 @@
-use crate::cli::ServeArgs;
+use crate::cli::StartArgs;
 use crate::cli::commands::serve::start_server_and_web_app;
 use crate::cli::commands::{generate_cube_config, get_cube_config_dir};
 use oxy::config::{ConfigBuilder, resolve_local_project_path, resolve_semantics_dir};
@@ -7,8 +7,8 @@ use oxy::theme::StyledText;
 use oxy_shared::errors::OxyError;
 
 /// Start the database and web server
-pub async fn start_database_and_server(serve_args: ServeArgs) -> Result<(), OxyError> {
-    let enterprise = serve_args.enterprise;
+pub async fn start_database_and_server(args: StartArgs) -> Result<(), OxyError> {
+    let enterprise = args.enterprise;
 
     if enterprise {
         println!(
@@ -19,13 +19,13 @@ pub async fn start_database_and_server(serve_args: ServeArgs) -> Result<(), OxyE
         println!("{}", "=== Starting Oxy with Docker PostgreSQL ===\n".text());
     }
 
-    // 1. Check Docker availability
-    println!("{}", "🔍 Checking Docker availability...".text());
+    // 1. Check container runtime availability
+    println!("{}", "🔍 Checking container runtime availability...".text());
     docker::check_docker_available().await?;
-    println!("{}", "   ✓ Docker is available\n".success());
+    println!("{}", "   ✓ Container runtime is available\n".success());
 
     // 2. Clean existing containers and volumes if requested
-    if serve_args.clean {
+    if args.clean {
         println!(
             "{}",
             "🧹 Cleaning existing Docker containers and volumes...".text()
@@ -41,10 +41,10 @@ pub async fn start_database_and_server(serve_args: ServeArgs) -> Result<(), OxyE
         start_postgres().await?
     };
 
-    // 5. Show helpful Docker commands
+    // 4. Show helpful Docker commands
     print_docker_tips(enterprise);
 
-    // 6. Set environment variables
+    // 5. Set environment variables for the server
     // Safety: This is safe because we're setting variables in single-threaded context
     // before the server starts, and they're only read by our own code
     unsafe {
@@ -61,11 +61,11 @@ pub async fn start_database_and_server(serve_args: ServeArgs) -> Result<(), OxyE
         }
     }
 
-    // 7. Start the web server (runs on host, not in Docker)
+    // 6. Start the web server (runs on host, not in Docker)
     println!("{}", "🚀 Starting Oxy server...".text());
-    start_server_and_web_app(serve_args).await?;
+    start_server_and_web_app(args.serve).await?;
 
-    // 8. Cleanup on exit (handled by graceful shutdown in serve.rs)
+    // 7. Cleanup on exit (handled by graceful shutdown in serve.rs)
     Ok(())
 }
 

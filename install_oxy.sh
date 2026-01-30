@@ -75,3 +75,7 @@ chmod +x oxy-$TARGET
 mv oxy-$TARGET $INSTALL_DIR/oxy
 
 echo "Oxy version $VERSION for $TARGET has been installed successfully!"
+echo ""
+echo "Note: To use 'oxy start', you'll need a Docker-compatible container engine."
+echo "Supported: Docker Engine, Docker Desktop, Rancher Desktop, Colima, Podman, etc."
+echo "See https://docs.oxy.tech/deployment/container-runtimes for installation options."

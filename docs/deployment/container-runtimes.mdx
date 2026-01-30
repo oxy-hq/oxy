@@ -1,0 +1,534 @@
+---
+title: "Container Runtime Support"
+description: "Configure and use various container runtimes with Oxy"
+---
+
+## Overview
+
+Oxy requires a **Docker API-compatible endpoint** to manage PostgreSQL, ClickHouse, and other containerized services. This means any container runtime that exposes a Docker-compatible API socket.
+
+<Warning>
+**Important:** Oxy communicates via the **Docker API** (typically through a Unix socket or TCP endpoint). You can use:
+- **Docker Engine** (dockerd) - standalone or via Docker Desktop
+- **Podman** with Docker socket emulation enabled
+- **Any runtime** that provides a Docker-compatible API socket
+
+**Note:** containerd alone does not expose a Docker API. If using containerd-based runtimes (like Rancher Desktop), select the **dockerd (moby)** engine option to get Docker API compatibility.
+</Warning>
+
+## Key Takeaway
+
+<Note>
+**TL;DR:** Oxy needs a **Docker API-compatible socket endpoint**, not a specific application.
+
+You can use:
+- Docker Engine installed directly (no GUI)
+- Docker Desktop, Rancher Desktop (with dockerd/moby), Colima, OrbStack, etc. (with GUI)
+- Podman with Docker socket emulation
+
+**Oxy doesn't care which one you choose** - they all work the same way once installed, as long as they expose a Docker-compatible API socket.
+</Note>
+
+## What Oxy Actually Needs
+
+<CardGroup cols={2}>
+  <Card title="Container Runtime" icon="engine">
+    **Docker Engine** (dockerd) or any Docker API-compatible runtime
+
+    This is the actual runtime that manages containers
+  </Card>
+
+  <Card title="Docker-Compatible API Socket" icon="plug">
+    A Docker API endpoint at:
+    - `unix:///var/run/docker.sock` (default on Linux/macOS)
+    - `npipe:////./pipe/docker_engine` (Windows)
+    - Custom location via `DOCKER_HOST` env var
+
+    This is how Oxy communicates with the runtime
+  </Card>
+</CardGroup>
+
+<Info>
+The applications listed below (Docker Desktop, Rancher Desktop, etc.) are just **convenient ways to install and manage** the underlying container engine. You can also install Docker Engine directly without any desktop application - see the "Docker Engine (Standalone)" tab.
+</Info>
+
+## Installation Options
+
+You can install a Docker-compatible container engine in several ways:
+
+## Installation & Setup
+
+<Tabs>
+  <Tab title="Docker Engine (Standalone)">
+    ### Install Docker Engine Only (No Desktop App)
+
+    <Info>
+      This installs just the Docker Engine (dockerd) without any GUI application. Perfect for servers or if you prefer a lightweight setup.
+    </Info>
+
+    <Steps>
+      <Step title="Linux Installation">
+        Follow the official Docker Engine installation for your distribution:
+
+        **Ubuntu/Debian:**
+        ```bash
+        # Add Docker's official GPG key
+        sudo apt-get update
+        sudo apt-get install ca-certificates curl
+        sudo install -m 0755 -d /etc/apt/keyrings
+        sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+        sudo chmod a+r /etc/apt/keyrings/docker.asc
+
+        # Add the repository
+        echo \
+          "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
+          $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+          sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+        # Install Docker Engine
+        sudo apt-get update
+        sudo apt-get install docker-ce docker-ce-cli containerd.io
+        ```
+
+        **Fedora/RHEL/CentOS:**
+        ```bash
+        sudo dnf -y install dnf-plugins-core
+        sudo dnf config-manager --add-repo https://download.docker.com/linux/fedora/docker-ce.repo
+        sudo dnf install docker-ce docker-ce-cli containerd.io
+        sudo systemctl start docker
+        ```
+      </Step>
+
+      <Step title="macOS (via Homebrew)">
+        ```bash
+        # Install Docker Engine without Docker Desktop
+        brew install docker docker-compose
+
+        # You'll also need a VM to run Linux containers (use Colima)
+        brew install colima
+        colima start
+        ```
+      </Step>
+
+      <Step title="Enable Docker Service (Linux)">
+        ```bash
+        sudo systemctl enable docker
+        sudo systemctl start docker
+        sudo usermod -aG docker $USER
+        newgrp docker
+        ```
+      </Step>
+
+      <Step title="Verify Installation">
+        ```bash
+        docker ps
+        oxy start
+        ```
+      </Step>
+    </Steps>
+
+    <Tip>
+      This is the most lightweight option and recommended for servers and CI/CD environments.
+    </Tip>
+  </Tab>
+
+  <Tab title="Docker Desktop">
+    ### Install Docker Desktop (GUI Application)
+
+    <Info>
+      Docker Desktop is an application that includes Docker Engine plus a GUI for container management. It's convenient but not required.
+    </Info>
+
+    <Steps>
+      <Step title="Download Docker Desktop">
+        Download from [docker.com](https://www.docker.com/products/docker-desktop/) for your platform:
+        - macOS (Apple Silicon or Intel)
+        - Windows
+        - Linux
+      </Step>
+
+      <Step title="Install and Start">
+        Follow the installer instructions. Docker Desktop includes the Docker Engine and starts it automatically.
+      </Step>
+
+      <Step title="Verify Installation">
+        ```bash
+        docker ps
+        oxy start
+        ```
+      </Step>
+    </Steps>
+  </Tab>
+
+  <Tab title="Rancher Desktop">
+    ### Install Rancher Desktop (Alternative GUI Application)
+
+    <Info>
+      Rancher Desktop is another application that can provide the Docker Engine. Like Docker Desktop, it's just one way to install the engine.
+    </Info>
+
+    <Steps>
+      <Step title="Download Rancher Desktop">
+        Download from [rancherdesktop.io](https://rancherdesktop.io/) for your platform.
+      </Step>
+
+      <Step title="Configure Container Engine">
+        <Warning>
+          **Important:** Select **dockerd (moby)** to get a Docker-compatible API.
+        </Warning>
+
+        1. Open Rancher Desktop
+        2. Go to **Preferences → Container Engine**
+        3. Select **dockerd (moby)** (this provides Docker Engine)
+        4. Wait 30-60 seconds for the engine to initialize
+      </Step>
+
+      <Step title="Verify Installation">
+        ```bash
+        docker ps
+        oxy start
+        ```
+      </Step>
+    </Steps>
+
+    <Accordion title="Why dockerd (moby) and not containerd?">
+      Rancher Desktop can install either:
+
+      - **dockerd (moby)** - Provides Docker API socket (✅ Works with Oxy)
+      - **containerd** - Does NOT expose Docker API (❌ Won't work with Oxy)
+
+      Oxy communicates via the Docker API, which containerd alone does not provide. You must select dockerd (moby) for Oxy compatibility.
+    </Accordion>
+  </Tab>
+
+  <Tab title="Colima (macOS)">
+    ### Install Colima - Lightweight Container Engine Manager
+
+    <Info>
+      Colima runs Docker Engine in a lightweight Linux VM on macOS. No heavy desktop application needed.
+    </Info>
+
+    <Steps>
+      <Step title="Install via Homebrew">
+        ```bash
+        brew install colima docker
+        ```
+
+        This installs:
+        - Colima (VM manager)
+        - Docker CLI (to communicate with the engine)
+      </Step>
+
+      <Step title="Start Colima">
+        ```bash
+        colima start
+        ```
+
+        This starts the Docker Engine in a VM.
+      </Step>
+
+      <Step title="Verify Installation">
+        ```bash
+        docker ps
+        oxy start
+        ```
+      </Step>
+    </Steps>
+
+    <Accordion title="Custom Socket Location">
+      If Colima uses a non-standard socket, set the `DOCKER_HOST` environment variable:
+
+      ```bash
+      export DOCKER_HOST=unix://$HOME/.colima/default/docker.sock
+      oxy start
+      ```
+
+      Add this to your `~/.zshrc` or `~/.bashrc` to make it permanent.
+    </Accordion>
+
+    <Tip>
+      Colima is extremely lightweight compared to desktop applications, perfect for development on macOS.
+    </Tip>
+  </Tab>
+
+  <Tab title="Podman">
+    ### Install Podman (Daemonless Alternative)
+
+    <Info>
+      Podman is a daemonless container engine that can emulate Docker. You can use Podman Desktop (GUI) or just the Podman engine.
+    </Info>
+
+    <Steps>
+      <Step title="Install Podman Engine">
+        **Linux:**
+        ```bash
+        # Fedora/RHEL/CentOS
+        sudo dnf install podman
+
+        # Ubuntu/Debian
+        sudo apt-get update
+        sudo apt-get install podman
+        ```
+
+        **macOS:**
+        ```bash
+        brew install podman
+        podman machine init
+        podman machine start
+        ```
+
+        **Windows:**
+        Download from [podman.io](https://podman.io/getting-started/installation) or use [Podman Desktop](https://podman-desktop.io/)
+      </Step>
+
+      <Step title="Enable Docker Socket Compatibility">
+        For Oxy to work, enable Podman's Docker socket emulation:
+
+        **Linux:**
+        ```bash
+        sudo systemctl enable podman.socket
+        sudo systemctl start podman.socket
+        ```
+
+        **macOS/Windows (Podman Machine):**
+        The Docker socket is enabled by default with Podman machine.
+      </Step>
+
+      <Step title="Verify Installation">
+        ```bash
+        docker ps  # or: podman ps
+        oxy start
+        ```
+      </Step>
+    </Steps>
+  </Tab>
+
+  <Tab title="OrbStack (macOS)">
+    ### Install OrbStack - Fast macOS Container Engine
+
+    <Info>
+      OrbStack runs Docker Engine with excellent performance on macOS. It's a lightweight application alternative to Docker Desktop.
+    </Info>
+
+    <Steps>
+      <Step title="Download OrbStack">
+        Download from [orbstack.dev](https://orbstack.dev/)
+      </Step>
+
+      <Step title="Install and Launch">
+        Follow the installation wizard. OrbStack automatically provides a Docker-compatible API.
+      </Step>
+
+      <Step title="Verify Installation">
+        ```bash
+        docker ps
+        oxy start
+        ```
+      </Step>
+    </Steps>
+
+    <Tip>
+      OrbStack is known for its speed and low resource usage on macOS while providing full Docker compatibility.
+    </Tip>
+  </Tab>
+</Tabs>
+
+## Custom Docker Host
+
+For non-standard socket locations or remote Docker hosts, set the `DOCKER_HOST` environment variable before running Oxy. This is the standard Docker environment variable that Oxy (and the Docker CLI) automatically respects.
+
+### Setting DOCKER_HOST
+
+```bash
+# Unix socket (Colima example)
+export DOCKER_HOST=unix://$HOME/.colima/default/docker.sock
+oxy start
+
+# TCP connection (remote Docker)
+export DOCKER_HOST=tcp://localhost:2375
+oxy start
+```
+
+You can add this to your shell profile (`~/.bashrc`, `~/.zshrc`, etc.) to make it permanent.
+
+### Common Socket Locations
+
+| Runtime          | Default Socket Location                          |
+|------------------|--------------------------------------------------|
+| Docker Desktop   | `unix:///var/run/docker.sock` (macOS/Linux)      |
+|                  | `npipe:////./pipe/docker_engine` (Windows)       |
+| Rancher Desktop  | `unix://$HOME/.rd/docker.sock` (macOS)           |
+|                  | `unix:///var/run/docker.sock` (Linux)            |
+| Colima           | `unix://$HOME/.colima/default/docker.sock`       |
+| Podman           | `unix://$XDG_RUNTIME_DIR/podman/podman.sock`     |
+| OrbStack         | `unix://$HOME/.orbstack/run/docker.sock`         |
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Failed to connect to container runtime">
+    **Check if runtime is running:**
+
+    ```bash
+    docker ps
+    ```
+
+    **Common solutions:**
+
+    1. Start your container runtime application
+    2. Wait 30-60 seconds for full initialization
+    3. Verify Docker CLI works: `docker ps`
+    4. Check DOCKER_HOST environment variable:
+       ```bash
+       echo $DOCKER_HOST
+       ```
+  </Accordion>
+
+  <Accordion title="Rancher Desktop: daemon not responding">
+    1. Open Rancher Desktop preferences
+    2. Switch Container Engine to **dockerd (moby)**
+    3. Restart Rancher Desktop
+    4. Wait for full initialization (30-60 seconds)
+    5. Retry: `oxy start`
+  </Accordion>
+
+  <Accordion title="Colima: connection refused">
+    ```bash
+    # Check Colima status
+    colima status
+
+    # Start if not running
+    colima start
+
+    # Verify socket exists
+    ls -la ~/.colima/default/docker.sock
+
+    # Set DOCKER_HOST if using non-default socket
+    export DOCKER_HOST=unix://$HOME/.colima/default/docker.sock
+    oxy start
+    ```
+  </Accordion>
+
+  <Accordion title="Podman: no such file or directory">
+    **Enable Docker socket compatibility:**
+
+    Linux:
+    ```bash
+    sudo systemctl enable podman.socket
+    sudo systemctl start podman.socket
+    ```
+
+    For Podman Desktop, enable Docker compatibility in settings.
+  </Accordion>
+
+  <Accordion title="Permission Denied (Linux)">
+    Add your user to the docker group:
+
+    ```bash
+    sudo usermod -aG docker $USER
+    newgrp docker
+    ```
+
+    Then verify:
+    ```bash
+    docker ps
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Enterprise Mode Containers
+
+When using the `--enterprise` flag, Oxy starts additional containers:
+
+<CardGroup cols={2}>
+  <Card title="PostgreSQL" icon="database">
+    Main database
+
+    Port: `15432`
+  </Card>
+
+  <Card title="ClickHouse" icon="chart-line">
+    Analytics database
+
+    Ports: `8123` (HTTP), `9000` (Native)
+  </Card>
+
+  <Card title="OpenTelemetry Collector" icon="chart-mixed">
+    Observability pipeline
+
+    Ports: `4317` (gRPC), `4318` (HTTP)
+  </Card>
+
+  <Card title="Cube.js" icon="cube">
+    Semantic layer
+
+    Port: `4000`
+  </Card>
+</CardGroup>
+
+All container runtimes support these services with identical port mappings.
+
+## Performance Considerations
+
+### macOS Performance Comparison
+
+Different runtimes have varying performance characteristics on macOS:
+
+<CardGroup cols={2}>
+  <Card title="OrbStack" icon="bolt">
+    **Fastest** - Lowest resource usage, native performance
+  </Card>
+
+  <Card title="Colima" icon="gauge-high">
+    **Fast** - Good performance, lightweight footprint
+  </Card>
+
+  <Card title="Docker Desktop" icon="docker">
+    **Good** - Excellent compatibility, higher resource usage
+  </Card>
+
+  <Card title="Rancher Desktop" icon="cow">
+    **Good** - Rich features, moderate resource usage
+  </Card>
+</CardGroup>
+
+<Info>
+  On **Linux**, all runtimes perform similarly as they use native kernel features.
+</Info>
+
+<Info>
+  On **Windows**, Docker Desktop offers the best support and performance with WSL2 integration.
+</Info>
+
+## Clean Start
+
+Remove all Oxy containers and volumes for a fresh start:
+
+```bash
+oxy start --clean
+```
+
+This removes across all container runtimes:
+- All Oxy-managed containers
+- Associated volumes
+- Container networks (enterprise mode)
+
+## Additional Resources
+
+<CardGroup cols={2}>
+  <Card title="Docker Desktop Docs" icon="docker" href="https://docs.docker.com/desktop/">
+    Official documentation
+  </Card>
+
+  <Card title="Rancher Desktop Docs" icon="book" href="https://docs.rancherdesktop.io/">
+    Setup and configuration
+  </Card>
+
+  <Card title="Colima GitHub" icon="github" href="https://github.com/abiosoft/colima">
+    Source and documentation
+  </Card>
+
+  <Card title="Podman Desktop Docs" icon="book" href="https://podman-desktop.io/docs">
+    Installation guides
+  </Card>
+</CardGroup>

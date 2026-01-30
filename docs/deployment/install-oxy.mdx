@@ -82,14 +82,27 @@ After setting up your server, the next step is to install and configure the Oxy 
     ExecStart=/bin/bash -c "/usr/local/bin/oxy serve & /usr/local/bin/oxy mcp-sse"
     Restart=always
     Environment="OXY_STATE_DIR=/home/ubuntu/oxy_data"
+    Environment="OXY_DATABASE_URL=postgresql://user:password@your-postgres-host:5432/oxy"
 
     [Install]
     WantedBy=multi-user.target
     EOF
     ```
 
+    <Info>
+      **About `oxy serve`:** This command runs the web interface only and requires an external PostgreSQL database.
+
+      **Two options for running Oxy:**
+      - **`oxy start`** - Automatically manages PostgreSQL in Docker (requires [container runtime](/deployment/container-runtimes))
+      - **`oxy serve`** - Connects to external PostgreSQL via `OXY_DATABASE_URL` (recommended for production)
+
+      For production deployments, use `oxy serve` with a managed PostgreSQL service (AWS RDS, Cloud SQL, etc.).
+    </Info>
+
     <Tip>
-      Make sure to replace `/home/ubuntu/your-oxy-project` with the actual path to your Oxy workspace that you'll set up in a later step.
+      Make sure to replace:
+      - `/home/ubuntu/your-oxy-project` with your Oxy workspace path
+      - `OXY_DATABASE_URL` value with your actual PostgreSQL connection string
     </Tip>
 
   </Step>

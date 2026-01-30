@@ -59,13 +59,75 @@ const OTEL_COLLECTOR_CONFIG: &str = include_str!("../../../../otel-collector-con
 const OTEL_CONFIG_FILENAME: &str = "otel-collector-config.yaml";
 
 /// Get Docker client connection
+///
+/// This function attempts to connect to a Docker-compatible container runtime.
+/// It works with Docker Desktop, Rancher Desktop (moby mode), Colima, Podman (with Docker socket),
+/// and other Docker API-compatible runtimes.
+///
+/// Connection is determined by the DOCKER_HOST environment variable (if set) or system defaults.
+/// Supported DOCKER_HOST formats:
+/// - `unix:///path/to/docker.sock` - Unix socket (Linux/macOS)
+/// - `npipe:////./pipe/docker_engine` - Named pipe (Windows)
+/// - `tcp://host:port` - TCP connection
 async fn get_docker_client() -> Result<Docker, OxyError> {
-    Docker::connect_with_local_defaults().map_err(|e| {
-        OxyError::InitializationError(format!(
-            "Failed to connect to Docker daemon. Please ensure Docker is installed and running. Error: {}",
-            e
-        ))
-    })
+    // Try default connection first (respects DOCKER_HOST env var)
+    if let Ok(docker) = Docker::connect_with_local_defaults() {
+        return Ok(docker);
+    }
+
+    // Fallback: try common alternative socket paths (especially for macOS)
+    // These paths are used when Docker Desktop or other runtimes are installed without admin
+    #[cfg(unix)]
+    {
+        let home_dir = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+        let alternative_paths = vec![
+            // Docker Desktop (user installation on macOS)
+            format!("{}/.docker/run/docker.sock", home_dir),
+            // Colima
+            format!("{}/.colima/default/docker.sock", home_dir),
+            // Rancher Desktop
+            format!("{}/.rd/docker.sock", home_dir),
+            // Podman (macOS machine)
+            format!(
+                "{}/.local/share/containers/podman/machine/podman.sock",
+                home_dir
+            ),
+            // OrbStack
+            format!("{}/.orbstack/run/docker.sock", home_dir),
+            // Standard system paths
+            "/var/run/docker.sock".to_string(),
+            "/run/docker.sock".to_string(),
+        ];
+
+        for socket_path in alternative_paths {
+            // Check if socket file exists before attempting connection
+            if std::path::Path::new(&socket_path).exists() {
+                if let Ok(docker) =
+                    Docker::connect_with_unix(&socket_path, 120, bollard::API_DEFAULT_VERSION)
+                {
+                    tracing::debug!("Connected to Docker using socket: {}", socket_path);
+                    return Ok(docker);
+                }
+            }
+        }
+    }
+
+    Err(OxyError::InitializationError(
+        "Failed to connect to container runtime.\n\n\
+         💡 Troubleshooting:\n\
+         • Ensure a Docker-compatible container runtime is installed and running\n\
+         • Supported: Docker Desktop, Rancher Desktop, Colima, Podman, OrbStack, etc.\n\
+         • Verify with: docker ps\n\
+         • Set DOCKER_HOST environment variable for custom socket location\n\
+         • On macOS, common socket paths:\n\
+           - Docker Desktop (admin): /var/run/docker.sock\n\
+           - Docker Desktop (user): ~/.docker/run/docker.sock\n\
+           - Colima: ~/.colima/default/docker.sock\n\
+           - Rancher Desktop: ~/.rd/docker.sock\n\
+           - OrbStack: ~/.orbstack/run/docker.sock\n\n\
+         📚 See https://docs.oxy.tech/deployment/container-runtimes for setup instructions"
+            .to_string(),
+    ))
 }
 
 /// Check if Docker is available on the system
@@ -75,7 +137,15 @@ pub async fn check_docker_available() -> Result<(), OxyError> {
     // Ping Docker daemon to verify it's responsive
     docker.ping().await.map_err(|e| {
         OxyError::InitializationError(format!(
-            "Docker daemon is not responding. Please ensure Docker is running. Error: {}",
+            "Container runtime is not responding.\n\
+             Error: {}\n\n\
+             💡 Common solutions:\n\
+             • Start your container runtime (Docker Desktop, Rancher Desktop, Colima, etc.)\n\
+             • Wait 30-60 seconds for the runtime to fully initialize\n\
+             • Check runtime status: docker ps\n\
+             • For Rancher Desktop: ensure 'dockerd (moby)' is selected, not 'containerd'\n\
+             • For Colima: verify with: colima status\n\
+             • For Podman: ensure Docker socket is enabled",
             e
         ))
     })?;

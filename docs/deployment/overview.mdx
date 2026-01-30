@@ -84,19 +84,44 @@ flowchart TD
 
 When deploying Oxy in production, it's important to understand how data is stored and persisted:
 
-- Oxy uses **PostgreSQL** for its data storage
-- Connection is configured via the `OXY_DATABASE_URL` environment variable
-- For development: Use `oxy start` to automatically set up PostgreSQL in Docker
-- For production: Connect to an external managed PostgreSQL service
+Oxy uses **PostgreSQL** for data storage and provides two ways to run:
+
+<Tabs>
+  <Tab title="oxy start">
+    **Automatic PostgreSQL Management (Recommended for Development)**
+
+    ```bash
+    oxy start
+    ```
+
+    - ✅ Automatically starts PostgreSQL in Docker
+    - ✅ All environment variables configured automatically
+    - ✅ Perfect for local development and testing
+    - Requires: [Docker-compatible container engine](/deployment/container-runtimes)
+  </Tab>
+
+  <Tab title="oxy serve">
+    **External PostgreSQL Connection (Production)**
+
+    ```bash
+    export OXY_DATABASE_URL="postgresql://user:pass@host:port/database"
+    oxy serve
+    ```
+
+    - Connects to your external PostgreSQL instance
+    - You manage the PostgreSQL server
+    - Use for: Production, managed databases (RDS, Cloud SQL), existing PostgreSQL
+  </Tab>
+</Tabs>
 
 ### Persistence Strategies
 
 For production deployments, ensure your data persistence strategy matches your reliability requirements:
 
 - **Development**: Use `oxy start` which manages PostgreSQL in Docker automatically
-- **Docker deployments**: Include PostgreSQL in your docker-compose.yml with proper volume mounting
-- **Production deployments**: Use managed PostgreSQL services (AWS RDS, Cloud SQL, Supabase, etc.)
-- **Self-hosted**: Set up PostgreSQL with regular backups and replication
+- **Docker deployments**: Use `oxy start` or include PostgreSQL in docker-compose.yml with proper volume mounting
+- **Production deployments**: Use `oxy serve` with managed PostgreSQL services (AWS RDS, Cloud SQL, Supabase, etc.)
+- **Self-hosted production**: Use `oxy serve` with self-managed PostgreSQL with regular backups and replication
 
 <Warning>
   Data loss can occur if proper database configuration and backups are not in

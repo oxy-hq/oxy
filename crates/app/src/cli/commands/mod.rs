@@ -268,7 +268,7 @@ enum SubCommand {
     /// Launch PostgreSQL in Docker and start the Oxy web server.
     /// Uses postgres:18-alpine container for modern PostgreSQL features.
     /// Data persists in Docker volume 'oxy-postgres-data'.
-    Start(ServeArgs),
+    Start(StartArgs),
     /// Start the web server (requires OXY_DATABASE_URL)
     ///
     /// Launch the Oxy server. Requires OXY_DATABASE_URL environment variable
@@ -507,9 +507,7 @@ struct SyncArgs {
     overwrite: bool,
 }
 
-pub use crate::cli::{A2aArgs, ServeArgs};
-
-// Removed duplicate A2aArgs and ServeArgs - using from cli.rs instead
+pub use crate::cli::{A2aArgs, ServeArgs, StartArgs};
 
 #[derive(Parser, Debug)]
 struct GenConfigSchemaArgs {
@@ -998,8 +996,8 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                 eprintln!("{}", format!("A2A server failed: {e}").error());
             }
         }
-        Some(SubCommand::Start(serve_args)) => {
-            if let Err(e) = start::start_database_and_server(serve_args).await {
+        Some(SubCommand::Start(start_args)) => {
+            if let Err(e) = start::start_database_and_server(start_args).await {
                 eprintln!("{}", format!("Failed to start: {e}").error());
                 exit(1);
             }
@@ -1674,9 +1672,9 @@ async fn handle_semantic_engine_command(semantic_args: SemanticEngineArgs) -> Re
     generate_cube_config(cube_config_dir.clone(), true, config.get_globals_registry()).await?;
 
     // Check if Docker is available
-    println!("{}", "🔍 Checking Docker availability...".text());
+    println!("{}", "🔍 Checking container runtime availability...".text());
     docker::check_docker_available().await?;
-    println!("{}", "   ✓ Docker is available\n".success());
+    println!("{}", "   ✓ Container runtime is available\n".success());
 
     // Get database URL
     let db_url = if let Some(default_db) = config.default_database_ref()

@@ -111,15 +111,52 @@ oxy test sql-generator.agent.yml  # runs all defined tests against the sql-gener
 
 oxy run report-generator.workflow.yml  # execute the sample workflow
 oxy test report-generator.workflow.yml  # run all defined tests against the workflow
-
-oxy start  # starts PostgreSQL in Docker and launches the GUI (recommended)
-# OR
-oxy serve  # starts just the GUI (requires manual database setup)
 ```
 
-<Tip>
-  **New in 0.4.0:** Use `oxy start` to automatically set up PostgreSQL with
-  Docker and launch the web interface. This is the recommended way to run Oxy
-  for both development and production. See the [oxy start
-  reference](/reference/oxy-start) for more details.
-</Tip>
+### Running Oxy Web Interface
+
+You have **two options** for running Oxy with PostgreSQL:
+
+<Tabs>
+  <Tab title="oxy start (Recommended)">
+    **Automatically manages PostgreSQL in Docker**
+
+    ```bash
+    oxy start
+    ```
+
+    This command:
+    - ✅ Automatically starts PostgreSQL in a Docker container
+    - ✅ Configures all database connection settings
+    - ✅ Launches the web interface
+    - ✅ No manual database setup needed
+
+    <Info>
+      **Requirements:** Needs a [Docker-compatible container engine](/deployment/container-runtimes) (Docker Engine, Colima, Podman, etc.)
+    </Info>
+
+    See the [oxy start reference](/reference/oxy-start) for more options.
+  </Tab>
+
+  <Tab title="oxy serve (External DB)">
+    **Connect to your own PostgreSQL**
+
+    ```bash
+    # Set database URL
+    export OXY_DATABASE_URL="postgresql://user:pass@host:port/database"
+
+    # Start web interface only
+    oxy serve
+    ```
+
+    This command:
+    - Launches only the web interface
+    - Connects to external PostgreSQL (your own server, RDS, Cloud SQL, etc.)
+    - Requires manual PostgreSQL setup and `OXY_DATABASE_URL` configuration
+
+    Use this for:
+    - Production deployments with managed PostgreSQL
+    - When you already have a PostgreSQL instance
+    - Environments where Docker is not available
+  </Tab>
+</Tabs>

@@ -65,6 +65,7 @@
         "deployment/install-oxy",
         "deployment/workspace-setup",
         "deployment/environment",
+        "deployment/container-runtimes",
         "deployment/docker",
         "deployment/kubernetes-helm",
         "deployment/kubernetes-raw"
