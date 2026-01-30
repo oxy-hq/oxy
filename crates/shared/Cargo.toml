@@ -46,8 +46,8 @@ async-openai = { version = "0.31.1", features = ["byot", "_api"] }
 secrecy = "0.10"
 
 # Vector store
-lancedb = "0.19.1"
-serde_arrow = { version = "0.13.7", features = ["arrow-54"] }
+lancedb = "0.23.1"
+serde_arrow = { version = "0.13.7", features = ["arrow-56"] }
 
 # Semantic layer
 oxy-semantic = { path = "../semantic" }

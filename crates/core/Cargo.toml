@@ -33,7 +33,7 @@ exclude = [
 aes-gcm = "0.10.3"
 anyhow = "1.0.100"
 argon2 = "0.5"
-arrow = { version = "=54.2.1", default-features = false, features = ["json"] } # arrow version has to comply with duckdb version
+arrow = { version = "=56.2.0", default-features = false, features = ["json"] } # arrow version has to comply with duckdb version
 assert_cmd = "2.1.2"
 async-openai = { version = "0.31.1", features = ["byot", "chat-completion-types", "response-types", "_api", "responses", "chat-completion", "embedding-types", "embedding"] }
 async-stream = "0.3.6"
@@ -52,7 +52,7 @@ connectorx = { version = "0.4.5", features = ["dst_arrow", "src_bigquery", "src_
 csv = "1.4.0"
 dirs = "6.0.0"
 dotenv = "0.15.0"
-duckdb = { version = "=1.2.2", features = ["bundled"] }
+duckdb = { version = "=1.4.4", features = ["bundled"] }
 email_address = "0.2.9"
 entity = { path = "../entity" }
 omni = { path = "../omni" }
@@ -81,10 +81,10 @@ include_dir = "0.7"
 indoc = "2.0.7"
 itertools = "0.14.0"
 jsonwebtoken = { version = "10", features = ["aws_lc_rs"] }
-lancedb = "0.19.1"
+lancedb = "0.23.1"
 lazy_static = "1.5.0"
 lettre = "0.11.19"
-libduckdb-sys = "=1.2.2" # lock version to avoid breaking changes, such as https://github.com/duckdb/duckdb-rs/issues number 436
+libduckdb-sys = "=1.4.4" # lock version to avoid breaking changes, such as https://github.com/duckdb/duckdb-rs/issues number 436
 log = { workspace = true }
 migration = { path = "../migration" }
 minijinja = { workspace = true, features = ["loader"] }
@@ -96,7 +96,7 @@ schemars = { version = "0.8.22", features = ["derive", "impl_json_schema"] }
 scopeguard = "1.2.0"
 sea-orm = { workspace = true }
 serde = { workspace = true }
-serde_arrow = { version = "0.13.7", features = ["arrow-54"] }
+serde_arrow = { version = "0.13.7", features = ["arrow-56"] }
 serde_json = { workspace = true}
 serde_urlencoded = "0.7"
 self_update = "0.42.0"
@@ -119,7 +119,7 @@ reqwest = { version = "0.12.28" }
 secrecy = "0.10.3"
 fxhash = "0.2.1"
 deser-incomplete = "0.1.2"
-snowflake-api = { git = "https://github.com/oxy-hq/snowflake-rs.git", tag = "v0.11.3-browser-auth" }
+snowflake-api = { git = "https://github.com/oxy-hq/snowflake-rs.git", tag = "v0.13.0-browser-auth" }
 rmcp = {version = "0.8.5", features = ["server", "transport-sse-server", "transport-io"]}
 serde_with = "3.16.1"
 # we use chrono::DateTimeWithTimeZone, which is not currently supported by utoipa
@@ -141,7 +141,7 @@ apalis-sql = { version = "0.7.4", features = ["postgres", "tokio"] }
 sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres"] }
 semver = "1.0"
 rustls = { version = "0.23.36", features = ["aws_lc_rs"] }
-parquet = "=54.2.1"  # needs to be the same with arrow version
+parquet = "=56.2.0"  # needs to be the same with arrow version
 short-uuid = "0.2.1"
 rapidfuzz = "0.5.0"
 indexmap = { workspace = true }
@@ -166,7 +166,7 @@ xxhash-rust = { version = "0.8", features = ["xxh3"] }
 aho-corasick = "1.1"
 rkyv = { version = "0.7.46", features = ["validation"] }
 sentry = { workspace = true }
-
+df-interchange = { version = "0.3.1", features = ["arrow_54", "arrow_56"] }
 
 [dev-dependencies]
 tempfile = { workspace = true }

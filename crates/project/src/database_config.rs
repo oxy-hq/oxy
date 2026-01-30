@@ -302,9 +302,11 @@ impl DatabaseConfigBuilder {
         Database {
             name: db_name,
             database_type: DatabaseType::DuckDB(oxy::config::model::DuckDB {
-                file_search_path: duckdb_config
-                    .file_search_path
-                    .unwrap_or_else(|| "data".to_string()),
+                options: oxy::config::model::DuckDBOptions::Local {
+                    file_search_path: duckdb_config
+                        .file_search_path
+                        .unwrap_or_else(|| "data".to_string()),
+                },
             }),
         }
     }

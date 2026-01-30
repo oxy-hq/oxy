@@ -41,7 +41,9 @@ impl TableManager {
                 let existing_schema = table.schema().await?;
                 if !SchemaUtils::schemas_match(&expected_schema, &existing_schema) {
                     drop(table);
-                    self.connection.drop_table(table_name.to_string()).await?;
+                    self.connection
+                        .drop_table(table_name.to_string(), &[])
+                        .await?;
                     self.connection
                         .create_empty_table(table_name.to_string(), expected_schema)
                         .mode(CreateTableMode::exist_ok(|builder| builder))

@@ -3,31 +3,39 @@ dimensions:
   targets:
   - local.duckdb.oxymart.Holiday_Flag
   - local.duckdb.oxymart.Holiday_Flag
+  - local.main.oxymart_csv.Holiday_Flag
 - name: Temperature
   targets:
   - local.duckdb.oxymart.Temperature
   - local.duckdb.oxymart.Temperature
+  - local.main.oxymart_csv.Temperature
 - name: Weekly_Sales
   targets:
   - local.duckdb.oxymart.Weekly_Sales
   - local.duckdb.oxymart.Weekly_Sales
+  - local.main.oxymart_csv.Weekly_Sales
 - name: Date
   targets:
   - local.duckdb.oxymart.Date
   - local.duckdb.oxymart.Date
+  - local.main.oxymart_csv.Date
 - name: Fuel_Price
   targets:
   - local.duckdb.oxymart.Fuel_Price
   - local.duckdb.oxymart.Fuel_Price
+  - local.main.oxymart_csv.Fuel_Price
 - name: Store
   targets:
   - local.duckdb.oxymart.Store
   - local.duckdb.oxymart.Store
+  - local.main.oxymart_csv.Store
 - name: CPI
   targets:
   - local.duckdb.oxymart.CPI
   - local.duckdb.oxymart.CPI
+  - local.main.oxymart_csv.CPI
 - name: Unemployment
   targets:
   - local.duckdb.oxymart.Unemployment
   - local.duckdb.oxymart.Unemployment
+  - local.main.oxymart_csv.Unemployment

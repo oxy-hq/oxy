@@ -1,6 +1,6 @@
 use include_dir::{Dir, include_dir};
 use oxy::config::model::{
-    BigQuery, ClickHouse, Config, DatabaseType, DuckDB, Mysql, Postgres, Redshift,
+    BigQuery, ClickHouse, Config, DatabaseType, DuckDB, DuckDBOptions, Mysql, Postgres, Redshift,
 };
 use oxy::config::resolve_local_project_path;
 use oxy_shared::AzureModel;
@@ -211,11 +211,13 @@ fn choose_database_type() -> Result<DatabaseType, InitError> {
         let _ = match choice.trim() {
             "1" => {
                 return Ok(DatabaseType::DuckDB(DuckDB {
-                    file_search_path: prompt_with_default(
-                        "File search path",
-                        ".db/",
-                        Some("Enter the directory where your files are located."),
-                    )?,
+                    options: DuckDBOptions::Local {
+                        file_search_path: prompt_with_default(
+                            "File search path",
+                            ".db/",
+                            Some("Enter the directory where your files are located."),
+                        )?,
+                    },
                 }));
             }
             "2" => {

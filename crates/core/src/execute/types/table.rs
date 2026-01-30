@@ -97,7 +97,13 @@ impl Table {
         max_display_rows: Option<usize>,
     ) -> Self {
         Table {
-            name: name.unwrap_or_else(|| file_path.clone()),
+            name: name.unwrap_or_else(|| {
+                PathBuf::from(&file_path)
+                    .file_prefix()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string()
+            }),
             reference: Some(reference),
             file_path,
             max_display_rows,

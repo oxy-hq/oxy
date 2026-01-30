@@ -9,8 +9,11 @@ use arrow::{
 
 use oxy_shared::errors::OxyError;
 
-pub(super) fn connector_internal_error(message: &str, e: impl std::fmt::Display) -> OxyError {
-    tracing::error!("{}: {}", message, e);
+pub(super) fn connector_internal_error(
+    message: &str,
+    e: impl std::fmt::Display + std::fmt::Debug,
+) -> OxyError {
+    tracing::error!("{}: {:?}", message, e);
     OxyError::DBError(format!("{message}: {e}"))
 }
 

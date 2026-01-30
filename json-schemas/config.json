@@ -166,14 +166,26 @@
         },
         {
           "type": "object",
+          "anyOf": [
+            {
+              "type": "object",
+              "required": [
+                "dataset"
+              ],
+              "properties": {
+                "dataset": {
+                  "type": "string"
+                }
+              }
+            },
+            {
+              "$ref": "#/definitions/DuckLakeConfig"
+            }
+          ],
           "required": [
-            "dataset",
             "type"
           ],
           "properties": {
-            "dataset": {
-              "type": "string"
-            },
             "type": {
               "type": "string",
               "enum": [
@@ -700,6 +712,102 @@
         }
       }
     },
+    "DuckLakeConfig": {
+      "type": "object",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "key_id",
+            "s3_secret_type"
+          ],
+          "properties": {
+            "endpoint_url": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "key_id": {
+              "type": "string"
+            },
+            "region": {
+              "default": "us-east-1",
+              "type": "string"
+            },
+            "s3_secret_type": {
+              "type": "string",
+              "enum": [
+                "config"
+              ]
+            },
+            "secret": {
+              "description": "The secret key, referenced by a key variable name stored in SecretManager. In YAML, specify the secret key name: `secret: AWS_S3_SECRET`",
+              "default": "DUCKLAKE_S3_SECRET",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/ManagedSecret"
+                }
+              ]
+            },
+            "url_style": {
+              "default": "path",
+              "type": "string"
+            },
+            "use_ssl": {
+              "default": false,
+              "type": "boolean"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "s3_secret_type"
+          ],
+          "properties": {
+            "chain": {
+              "default": "sso;config",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "region": {
+              "default": "us-east-1",
+              "type": "string"
+            },
+            "s3_secret_type": {
+              "type": "string",
+              "enum": [
+                "credential_chain"
+              ]
+            }
+          }
+        }
+      ],
+      "required": [
+        "data_path",
+        "schema_name"
+      ],
+      "properties": {
+        "catalog_path": {
+          "description": "The catalog path, referenced by a key variable name stored in SecretManager. The secret value should be a postgres connection string URL like: `postgres://user:pass@localhost:5432/catalog_db`",
+          "default": "DUCKLAKE_CATALOG_PATH",
+          "allOf": [
+            {
+              "$ref": "#/definitions/ManagedSecret"
+            }
+          ]
+        },
+        "data_path": {
+          "type": "string"
+        },
+        "schema_name": {
+          "type": "string"
+        }
+      }
+    },
     "HeaderValue": {
       "description": "Header value that can be either a direct string or an environment variable reference",
       "anyOf": [
@@ -783,6 +891,9 @@
           "type": "string"
         }
       }
+    },
+    "ManagedSecret": {
+      "type": "string"
     },
     "McpConfig": {
       "type": "object",

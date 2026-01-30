@@ -2,6 +2,7 @@ use std::path::Path;
 use std::{collections::HashMap, fs, sync::Arc};
 
 use crate::adapters::secrets::SecretsManager;
+use crate::config::model::DuckDBOptions;
 use crate::connector::DOMO;
 use crate::{
     config::{
@@ -287,15 +288,15 @@ impl GetSchemaQuery for Database {
 
             DatabaseType::DuckDB(_) => {
                 // DuckDB uses the information_schema structure
-                let query = "SELECT table_schema,
+                let query = "SELECT schema_name as table_schema,
                             table_name,
                             column_name,
                             data_type,
                             FALSE as is_partitioning_column,
-                            NULL as description
-                     FROM information_schema.columns
-                     WHERE table_schema NOT IN ('information_schema', 'pg_catalog')
-                     ORDER BY table_schema, table_name, ordinal_position".to_string();
+                            comment
+                     FROM duckdb_columns
+                     WHERE schema_name NOT IN ('information_schema', 'pg_catalog', 'ducklake')
+                     ORDER BY schema_name, table_name, column_index".to_string();
                 tracing::debug!("DuckDB schema query: {}", query);
                 Ok(vec![query])
             }
@@ -367,7 +368,12 @@ impl GetSchemaQuery for Database {
 
             DatabaseType::DuckDB(_) => {
                 // DuckDB supports querying table DDL via information_schema when available
-                let query = "SELECT table_schema, sql as ddl FROM information_schema.tables WHERE table_schema NOT IN ('information_schema', 'pg_catalog') AND sql IS NOT NULL".to_string();
+                let query = "SELECT schema_name as table_schema, sql as ddl
+                    FROM duckdb_tables
+                    WHERE
+                        schema_name NOT IN ('information_schema', 'pg_catalog', 'ducklake')
+                        AND sql IS NOT NULL"
+                    .to_string();
                 tracing::debug!("DuckDB DDL query: {}", query);
                 Ok(vec![query])
             }
@@ -506,51 +512,6 @@ impl SchemaLoader {
         config: &ConfigManager,
     ) -> Result<HashMap<String, HashMap<String, SemanticModels>>, OxyError> {
         match &self.database.database_type {
-            DatabaseType::DuckDB(duckdb) => {
-                let file = config.resolve_file(&duckdb.file_search_path).await?;
-                let path = Path::new(&file);
-                let mut result = HashMap::new();
-                let mut tables = HashMap::new();
-
-                for entry in fs::read_dir(path).map_err(|e| {
-                    OxyError::RuntimeError(format!("Failed to read DuckDB directory: {e}"))
-                })? {
-                    let entry = entry.map_err(|e| {
-                        OxyError::RuntimeError(format!(
-                            "Failed to read DuckDB directory entry: {e}"
-                        ))
-                    })?;
-                    let path = entry.path();
-                    let ext = path
-                        .extension()
-                        .and_then(|e| e.to_str())
-                        .unwrap_or("")
-                        .to_lowercase();
-                    let table_name = path.file_name().unwrap().to_string_lossy().to_string();
-                    let dimensions = match ext.as_str() {
-                        "csv" => extract_csv_dimensions(&path),
-                        // "parquet" | "json" => not supported for now
-                        _ => Ok(vec![]),
-                    }?;
-                    if !dimensions.is_empty() {
-                        tables.insert(
-                            path.file_stem().unwrap().to_string_lossy().to_string(),
-                            SemanticModels {
-                                database: self.database.name.clone(),
-                                table: table_name,
-                                description: "".to_string(),
-                                dimensions,
-                                entities: vec![],
-                                measures: vec![],
-                            },
-                        );
-                    }
-                }
-                if !tables.is_empty() {
-                    result.insert("duckdb".to_string(), tables);
-                }
-                Ok(result)
-            }
             DatabaseType::DOMO(domo) => {
                 let domo_client =
                     DOMO::from_config(self.secrets_manager.clone(), domo.clone()).await?;
@@ -588,12 +549,14 @@ impl SchemaLoader {
             DatabaseType::ClickHouse(_)
             | DatabaseType::Bigquery(_)
             | DatabaseType::Snowflake(_)
+            | DatabaseType::DuckDB(_)
             | DatabaseType::MotherDuck(_) => {
                 let db_type = match &self.database.database_type {
                     DatabaseType::ClickHouse(_) => "ClickHouse",
                     DatabaseType::Bigquery(_) => "BigQuery",
                     DatabaseType::Snowflake(_) => "Snowflake",
                     DatabaseType::MotherDuck(_) => "MotherDuck",
+                    DatabaseType::DuckDB(c) => "DuckDB",
                     _ => "Unknown",
                 };
                 tracing::debug!(
@@ -694,89 +657,9 @@ impl SchemaLoader {
         config: &ConfigManager,
     ) -> Result<HashMap<String, String>, OxyError> {
         match &self.database.database_type {
-            DatabaseType::DuckDB(duckdb) => {
-                let file = config.resolve_file(&duckdb.file_search_path).await?;
-                let path = Path::new(&file);
-                let mut ddls = HashMap::new();
-                let mut ddl_lines = Vec::new();
-
-                use duckdb::Connection;
-                let conn = Connection::open_in_memory().map_err(|e| {
-                    OxyError::RuntimeError(format!("Failed to open in-memory DuckDB: {e}"))
-                })?;
-
-                for entry in fs::read_dir(path).map_err(|e| {
-                    OxyError::RuntimeError(format!("Failed to read DuckDB directory: {e}"))
-                })? {
-                    let entry = entry.map_err(|e| {
-                        OxyError::RuntimeError(format!(
-                            "Failed to read DuckDB directory entry: {e}"
-                        ))
-                    })?;
-                    let path = entry.path();
-                    let ext = path
-                        .extension()
-                        .and_then(|e| e.to_str())
-                        .unwrap_or("")
-                        .to_lowercase();
-                    let file_name = path.file_name().unwrap().to_string_lossy().to_string();
-                    let columns = match ext.as_str() {
-                        "csv" => {
-                            let sql = format!(
-                                "CREATE OR REPLACE VIEW auto_csv AS SELECT * FROM read_csv_auto('{}', SAMPLE_SIZE=10000, ALL_VARCHAR=FALSE);",
-                                path.display()
-                            );
-                            conn.execute(&sql, []).map_err(|e| {
-                                OxyError::RuntimeError(format!(
-                                    "DuckDB failed to read CSV {}: {}",
-                                    path.display(),
-                                    e
-                                ))
-                            })?;
-
-                            let mut stmt =
-                                conn.prepare("PRAGMA table_info('auto_csv');")
-                                    .map_err(|e| {
-                                        OxyError::RuntimeError(format!(
-                                            "DuckDB failed to prepare schema query: {e}"
-                                        ))
-                                    })?;
-                            let mut rows = stmt.query([]).map_err(|e| {
-                                OxyError::RuntimeError(format!(
-                                    "DuckDB failed to query schema: {e}"
-                                ))
-                            })?;
-                            let mut columns: Vec<String> = Vec::new();
-                            while let Some(row) = rows.next().map_err(|e| {
-                                OxyError::RuntimeError(format!(
-                                    "DuckDB failed to read schema row: {e}"
-                                ))
-                            })? {
-                                let name: String = row.get(1).map_err(|e| {
-                                    OxyError::RuntimeError(format!("DuckDB schema row: {e}"))
-                                })?;
-                                let dtype: String = row.get(2).map_err(|e| {
-                                    OxyError::RuntimeError(format!("DuckDB schema row: {e}"))
-                                })?;
-                                columns.push(format!("\"{name}\" {dtype}"));
-                            }
-                            Ok::<Vec<String>, OxyError>(columns)
-                        }
-                        // "parquet" | "json" => not supported for now
-                        _ => Ok::<Vec<String>, OxyError>(vec![]),
-                    }?;
-                    if !columns.is_empty() {
-                        let ddl =
-                            format!("CREATE TABLE '{}' ({});", file_name, columns.join(", "),);
-                        ddl_lines.push(format!("-- {file_name}\n{ddl}"));
-                    }
-                }
-                if !ddl_lines.is_empty() {
-                    ddls.insert("duckdb".to_string(), ddl_lines.join("\n\n"));
-                }
-                Ok(ddls)
-            }
             DatabaseType::ClickHouse(_)
+            | DatabaseType::DuckDB(_)
+            | DatabaseType::MotherDuck(_)
             | DatabaseType::Bigquery(_)
             | DatabaseType::Snowflake(_) => {
                 let queries = self.database.get_ddl_queries()?;
@@ -789,7 +672,7 @@ impl SchemaLoader {
                 });
                 Ok(datasets)
             }
-            DatabaseType::DOMO(_) | DatabaseType::MotherDuck(_) => Ok(HashMap::new()),
+            DatabaseType::DOMO(_) => Ok(HashMap::new()),
             _ => Err(OxyError::ConfigurationError(
                 "Unsupported database type".to_string(),
             )),

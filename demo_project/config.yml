@@ -11,5 +11,14 @@ databases:
   - name: local
     dataset: .db/
     type: duckdb
+  # - name: ducklake
+  #   type: duckdb
+  #   s3_secret_type: config
+  #   key_id: minioadmin
+  #   secret: DUCKLAKE_S3_SECRET
+  #   endpoint_url: localhost:9002
+  #   data_path: s3://ducklake/
+  #   catalog_path: DUCKLAKE_CATALOG_PATH
+  #   schema_name: ducklake
 
 builder_agent: builder.agent.yml

@@ -1,5 +1,6 @@
 pub(super) const BIGQUERY_DIALECT: &str = "bigquery";
 pub(super) const CREATE_CONN: &str = "Failed to open connection";
+pub(super) const CREATE_TEMP_TABLE: &str = "Failed to create temporary table";
 pub(super) const EXECUTE_QUERY: &str = "Failed to execute query";
 pub(super) const LOAD_RESULT: &str = "Error loading query results";
 pub(super) const WRITE_RESULT: &str = "Failed to write result to IPC";

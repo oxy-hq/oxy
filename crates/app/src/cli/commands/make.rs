@@ -250,7 +250,9 @@ pub async fn handle_make_command(make_args: &MakeArgs) -> anyhow::Result<()> {
         databases: vec![Database {
             name: "local".to_string(),
             database_type: DatabaseType::DuckDB(DuckDB {
-                file_search_path: "db/".to_string(),
+                options: model::DuckDBOptions::Local {
+                    file_search_path: "db/".to_string(),
+                },
             }),
         }],
         defaults: Some(Defaults {

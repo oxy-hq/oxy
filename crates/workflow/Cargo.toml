@@ -27,7 +27,7 @@ tracing = { workspace = true }
 log = { workspace = true }
 
 # Utilities
-arrow = { version = "=54.2.1", default-features = false, features = ["json"] }
+arrow = { version = "=56.2.0", default-features = false, features = ["json"] }
 chrono = { workspace = true }
 csv = "1.4.0"
 fxhash = "0.2.1"

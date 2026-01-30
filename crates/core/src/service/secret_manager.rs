@@ -4,7 +4,9 @@ use aes_gcm::{
 };
 use base64::{Engine as _, engine::general_purpose};
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, QueryOrder, Set};
+use secrecy::{ExposeSecret, SecretString};
 use std::collections::HashMap;
+use std::fmt;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use uuid::Uuid;
@@ -13,6 +15,135 @@ use entity::secrets::{self, ActiveModel as SecretActiveModel, Entity as Secret};
 use oxy_shared::errors::OxyError;
 
 use crate::{database::client::establish_connection, utils::get_encryption_key};
+
+/// A managed secret that holds a reference to a secret key variable.
+///
+/// This type can be deserialized directly from a string in YAML/JSON configs:
+/// ```yaml
+/// secret: AWS_S3_SECRET
+/// ```
+///
+/// The actual secret value is retrieved via the `expose` method which
+/// looks up the secret from either `SecretManagerService` (database) or
+/// `SecretsManager` (supports both env vars and database).
+#[derive(Clone)]
+pub struct ManagedSecret {
+    key_var: String,
+}
+
+impl ManagedSecret {
+    /// Create a new ManagedSecret with the given key variable name.
+    pub fn new(key_var: impl Into<String>) -> Self {
+        Self {
+            key_var: key_var.into(),
+        }
+    }
+
+    /// Get the key variable name.
+    pub fn key_var(&self) -> &str {
+        &self.key_var
+    }
+
+    /// Expose the secret value by looking it up from the SecretManagerService.
+    ///
+    /// Returns the secret wrapped in a `SecretString` for safe handling.
+    pub async fn expose(
+        &self,
+        secret_manager: &SecretManagerService,
+    ) -> Result<SecretString, OxyError> {
+        secret_manager
+            .get_secret(&self.key_var)
+            .await
+            .map(SecretString::from)
+            .ok_or_else(|| OxyError::SecretManager(format!("Secret '{}' not found", self.key_var)))
+    }
+
+    /// Expose the secret value as a plain string using SecretManagerService.
+    ///
+    /// Use this when you need the raw string value. Prefer `expose()` when possible
+    /// to keep the secret wrapped in `SecretString`.
+    pub async fn expose_str(
+        &self,
+        secret_manager: &SecretManagerService,
+    ) -> Result<String, OxyError> {
+        let secret = self.expose(secret_manager).await?;
+        Ok(secret.expose_secret().to_string())
+    }
+
+    /// Expose the secret value using the SecretsManager adapter.
+    ///
+    /// This is the preferred method as it supports both environment variables
+    /// and database-backed secrets.
+    pub async fn expose_with_adapter(
+        &self,
+        secrets_manager: &crate::adapters::secrets::SecretsManager,
+    ) -> Result<SecretString, OxyError> {
+        secrets_manager
+            .resolve_secret(&self.key_var)
+            .await?
+            .map(SecretString::from)
+            .ok_or_else(|| OxyError::SecretManager(format!("Secret '{}' not found", self.key_var)))
+    }
+
+    /// Expose the secret value as a plain string using the SecretsManager adapter.
+    pub async fn expose_str_with_adapter(
+        &self,
+        secrets_manager: &crate::adapters::secrets::SecretsManager,
+    ) -> Result<String, OxyError> {
+        secrets_manager
+            .resolve_secret(&self.key_var)
+            .await?
+            .ok_or_else(|| OxyError::SecretManager(format!("Secret '{}' not found", self.key_var)))
+    }
+}
+
+impl fmt::Debug for ManagedSecret {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Don't expose the key_var in debug output for security
+        f.debug_struct("ManagedSecret")
+            .field("key_var", &"[REDACTED]")
+            .finish()
+    }
+}
+
+impl fmt::Display for ManagedSecret {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "ManagedSecret({})", self.key_var)
+    }
+}
+
+// Deserialize directly from a string
+impl<'de> serde::Deserialize<'de> for ManagedSecret {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let key_var = String::deserialize(deserializer)?;
+        Ok(ManagedSecret { key_var })
+    }
+}
+
+// Serialize as a string
+impl serde::Serialize for ManagedSecret {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&self.key_var)
+    }
+}
+
+// Implement JsonSchema for schemars
+impl schemars::JsonSchema for ManagedSecret {
+    fn schema_name() -> String {
+        "ManagedSecret".to_string()
+    }
+
+    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+        // ManagedSecret is serialized as a string (the key_var name)
+        <String as schemars::JsonSchema>::json_schema(generator)
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct SecretManagerService {

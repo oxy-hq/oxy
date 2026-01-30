@@ -4,6 +4,7 @@ use arrow::{array::RecordBatch, datatypes::SchemaRef};
 use bigquery::BigQuerySource;
 use bigquery_transport::BigQueryArrowTransport;
 use connectorx::prelude::{ArrowDestination, CXQuery, Dispatcher, SourceConn, get_arrow};
+use df_interchange::Interchange;
 use uuid::Uuid;
 
 use oxy_shared::errors::OxyError;
@@ -122,12 +123,17 @@ impl Engine for ConnectorX {
             let result = destination
                 .arrow()
                 .map_err(|err| connector_internal_error(LOAD_ARROW_RESULT, &err))?;
-
-            Result::<_, OxyError>::Ok((result, schema))
+            let converted_result = Interchange::from_arrow_54(result)
+                .map_err(|err| connector_internal_error(LOAD_ARROW_RESULT, &err))?
+                .to_arrow_56()
+                .map_err(|err| connector_internal_error(LOAD_ARROW_RESULT, &err))?;
+            Result::<_, OxyError>::Ok(converted_result)
         })
         .await
         .map_err(|e| connector_internal_error(FAILED_TO_RUN_BLOCKING_TASK, &e))??;
-
-        Ok(result)
+        let schema = result.first().map(|batch| batch.schema()).ok_or_else(|| {
+            OxyError::RuntimeError("No record batches returned from query".to_string())
+        })?;
+        Ok((result, schema))
     }
 }

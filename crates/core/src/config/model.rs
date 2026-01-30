@@ -22,6 +22,7 @@ use crate::config::validate::{
     validate_database_exists, validate_env_var, validate_omni_integration_exists,
     validate_task_data_reference,
 };
+pub use duckdb::{CatalogConfig, DuckDBOptions, DuckLakeConfig, S3StorageSecret, StorageConfig};
 pub use oxy_llm::{
     AnthropicModelConfig, GeminiModelConfig, HeaderValue, Model, OllamaModelConfig,
     OpenAIModelConfig, default_openai_api_url,
@@ -31,6 +32,7 @@ pub use semantics::{SemanticDimension, Semantics};
 pub use variables::Variable;
 pub use workflow::WorkflowWithRawVariables;
 
+mod duckdb;
 mod semantics;
 mod variables;
 mod workflow;
@@ -879,9 +881,9 @@ impl BigQuery {
 #[derive(Serialize, Deserialize, Debug, Validate, Clone, JsonSchema)]
 #[garde(context(ValidationContext))]
 pub struct DuckDB {
-    #[serde(alias = "dataset", rename = "dataset")]
-    #[garde(length(min = 1))]
-    pub file_search_path: String,
+    #[serde(flatten)]
+    #[garde(dive)]
+    pub options: DuckDBOptions,
 }
 
 #[derive(Serialize, Deserialize, Debug, Validate, Clone, JsonSchema)]

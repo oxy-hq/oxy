@@ -16,12 +16,13 @@ use crate::{
     },
     config::{
         ConfigManager,
-        model::{ConnectionOverride, ConnectionOverrides, Database, DatabaseType},
+        model::{ConnectionOverride, ConnectionOverrides, Database, DatabaseType, DuckDBOptions},
     },
 };
 use oxy_shared::errors::OxyError;
 
 mod clickhouse;
+pub mod connection_string;
 mod connectorx;
 mod constants;
 mod domo;
@@ -31,6 +32,10 @@ mod motherduck;
 mod snowflake;
 mod utils;
 
+pub use connection_string::{
+    ConnectionStringError, ConnectionStringFormatter, ConnectionStringParser,
+    PostgresConnectionString,
+};
 pub use utils::{load_result, write_to_ipc};
 
 #[enum_dispatch::enum_dispatch(Engine)]
@@ -95,11 +100,21 @@ impl Connector {
                     dry_run_limit.or(bigquery.dry_run_limit),
                 ))
             }
-            DatabaseType::DuckDB(duckdb) => EngineType::DuckDB(DuckDB::new(
-                config_manager
-                    .resolve_file(&duckdb.file_search_path)
-                    .await?,
-            )),
+            DatabaseType::DuckDB(duckdb) => match &duckdb.options {
+                DuckDBOptions::Local { file_search_path } => {
+                    let search_path = config_manager.resolve_file(file_search_path).await?;
+                    EngineType::DuckDB(DuckDB::new(
+                        DuckDBOptions::Local {
+                            file_search_path: search_path,
+                        },
+                        secrets_manager.clone(),
+                    ))
+                }
+                DuckDBOptions::DuckLake(config) => EngineType::DuckDB(DuckDB::new(
+                    DuckDBOptions::DuckLake(config.clone()),
+                    secrets_manager.clone(),
+                )),
+            },
             DatabaseType::Postgres(pg) => {
                 let db_path = format!(
                     "{}:{}@{}:{}/{}",

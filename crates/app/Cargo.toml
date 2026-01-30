@@ -84,8 +84,8 @@ linfa-reduction = "0.8.1"
 ndarray = { version = "0.16", features = ["rayon"] }
 
 # Data processing
-arrow = { version = "=54.2.1", default-features = false, features = ["json"] }
-parquet = "=54.2.1"
+arrow = { version = "=56.2.0", default-features = false, features = ["json"] }
+parquet = "=56.2.0"
 
 # Utilities
 uuid = { version = "1.19.0", features = ["v4", "serde"] }
