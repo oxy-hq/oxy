@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.4](https://github.com/oxy-hq/oxy-internal/compare/0.5.3...0.5.4) (2026-01-30)
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* update StartArgs to include enterprise flag in ServeArgs ([51d860e](https://github.com/oxy-hq/oxy-internal/commit/51d860e9bc03ba04565e6eeeae212ff0850b34d1))
+
 ## [0.5.3](https://github.com/oxy-hq/oxy-internal/compare/0.5.2...0.5.3) (2026-01-30)
 
 

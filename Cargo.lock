@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "a2a"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "async-trait",
  "axum 0.8.8",
@@ -3932,7 +3932,7 @@ dependencies = [
 
 [[package]]
 name = "entity"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "chrono",
  "indexmap 2.13.0",
@@ -6836,7 +6836,7 @@ checksum = "38d1115007560874e373613744c6fba374c17688327a71c1476d1a5954cc857b"
 
 [[package]]
 name = "migration"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "anyhow",
  "async-std",
@@ -7590,7 +7590,7 @@ dependencies = [
 
 [[package]]
 name = "omni"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "garde",
  "rand 0.8.5",
@@ -7928,7 +7928,7 @@ dependencies = [
 
 [[package]]
 name = "oxy"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "a2a",
  "aes-gcm",
@@ -8065,7 +8065,7 @@ dependencies = [
 
 [[package]]
 name = "oxy-agent"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "anyhow",
  "arrow 56.2.0",
@@ -8102,7 +8102,7 @@ dependencies = [
 
 [[package]]
 name = "oxy-anthropic"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "async-openai",
  "oxy-shared",
@@ -8113,7 +8113,7 @@ dependencies = [
 
 [[package]]
 name = "oxy-app"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "a2a",
  "anyhow",
@@ -8226,7 +8226,7 @@ dependencies = [
 
 [[package]]
 name = "oxy-auth"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "anyhow",
  "argon2",
@@ -8251,7 +8251,7 @@ dependencies = [
 
 [[package]]
 name = "oxy-gemini"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "async-openai",
  "oxy-shared",
@@ -8261,7 +8261,7 @@ dependencies = [
 
 [[package]]
 name = "oxy-llm"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "oxy-anthropic",
  "oxy-gemini",
@@ -8275,7 +8275,7 @@ dependencies = [
 
 [[package]]
 name = "oxy-ollama"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "async-openai",
  "oxy-shared",
@@ -8285,7 +8285,7 @@ dependencies = [
 
 [[package]]
 name = "oxy-openai"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "async-openai",
  "axum 0.8.8",
@@ -8299,7 +8299,7 @@ dependencies = [
 
 [[package]]
 name = "oxy-project"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -8327,7 +8327,7 @@ dependencies = [
 
 [[package]]
 name = "oxy-semantic"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "indexmap 2.13.0",
  "minijinja",
@@ -8344,7 +8344,7 @@ dependencies = [
 
 [[package]]
 name = "oxy-shared"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "anyhow",
  "async-openai",
@@ -8376,7 +8376,7 @@ dependencies = [
 
 [[package]]
 name = "oxy-thread"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -8395,7 +8395,7 @@ dependencies = [
 
 [[package]]
 name = "oxy-workflow"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "anyhow",
  "arrow 56.2.0",
@@ -8432,7 +8432,7 @@ dependencies = [
 
 [[package]]
 name = "oxy_globals"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "indexmap 2.13.0",
  "minijinja",
