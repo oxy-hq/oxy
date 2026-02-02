@@ -317,6 +317,7 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           build-args: BINARY_PATH=oxy
+          provenance: false
           cache-from: type=gha,scope=${{ matrix.target.name }}-${{ matrix.arch_tag }}
           cache-to: type=gha,mode=min,scope=${{ matrix.target.name }}-${{ matrix.arch_tag }}
 
