@@ -25,7 +25,7 @@ import MetricDetailPage from "@/pages/ide/observability/metrics/MetricsDetailPag
 import "@xyflow/react/dist/style.css";
 import React from "react";
 import IdePage from "./pages/ide";
-import EditorPage from "./pages/ide/Editor";
+import EditorPage from "./pages/ide/Files/Editor";
 import AppPage from "./pages/app";
 import OntologyPage from "@/pages/ontology";
 import { HotkeysProvider } from "react-hotkeys-hook";
@@ -50,6 +50,11 @@ import { ErrorBoundary } from "@/sentry";
 import ExecutionAnalytics from "./pages/ide/observability/execution-analytics";
 import DatabasesPage from "./pages/ide/settings/databases";
 import ActivityLogsPage from "./pages/ide/settings/activity-logs";
+import QueryWorkspacePage from "./pages/ide/Database/QueryWorkspace";
+import FilesLayout from "./pages/ide/Files";
+import ObservabilityLayout from "./pages/ide/observability";
+import SettingsLayout from "./pages/ide/settings";
+import DatabaseLayout from "./pages/ide/Database";
 
 const MainPageWrapper = ({ children }: { children: React.ReactNode }) => {
   return (
@@ -156,31 +161,42 @@ const MainLayout = React.memo(function MainLayout() {
           }
         />
         <Route path="/ide" element={<IdePage />}>
-          <Route path=":pathb64" element={<EditorPage />} />
-          <Route path="databases" element={<DatabasesPage />} />
-          <Route path="activity-logs" element={<ActivityLogsPage />} />
+          {/* Files routes */}
+          <Route path="files" element={<FilesLayout />}>
+            <Route path=":pathb64" element={<EditorPage />} />
+          </Route>
+
+          {/* Database routes */}
+          <Route path="database" element={<DatabaseLayout />}>
+            <Route index element={<QueryWorkspacePage />} />
+          </Route>
+
+          {/* Settings routes */}
+          <Route path="settings" element={<SettingsLayout />}>
+            <Route path="databases" element={<DatabasesPage />} />
+            <Route path="activity-logs" element={<ActivityLogsPage />} />
+          </Route>
+
+          {/* Observability routes (enterprise only) */}
           {authConfig.enterprise && (
-            <>
-              <Route path="observability/traces" element={<TracesPage />} />
+            <Route path="observability" element={<ObservabilityLayout />}>
+              <Route path="traces" element={<TracesPage />} />
+              <Route path="traces/:traceId" element={<TraceDetailPage />} />
+              <Route path="clusters" element={<ClusterMapPage />} />
+              <Route path="metrics" element={<MetricsPage />} />
               <Route
-                path="observability/clusters"
-                element={<ClusterMapPage />}
-              />
-              <Route
-                path="observability/traces/:traceId"
-                element={<TraceDetailPage />}
-              />
-              <Route path="observability/metrics" element={<MetricsPage />} />
-              <Route
-                path="observability/metrics/:metricName"
+                path="metrics/:metricName"
                 element={<MetricDetailPage />}
               />
               <Route
-                path="observability/execution-analytics"
+                path="execution-analytics"
                 element={<ExecutionAnalytics />}
               />
-            </>
+            </Route>
           )}
+
+          {/* Default redirect to files */}
+          <Route index element={<Navigate to="files" replace />} />
         </Route>
         <Route
           path="/ontology"

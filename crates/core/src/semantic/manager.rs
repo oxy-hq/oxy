@@ -81,6 +81,30 @@ impl SemanticManager {
         })
     }
 
+    /// Try to load database info from cache only, without triggering sync.
+    /// Returns None if the database hasn't been synced yet.
+    pub async fn try_load_cached_database_info(
+        &self,
+        database_ref: &str,
+    ) -> Result<Option<DatabaseInfo>, OxyError> {
+        let database = self.config.resolve_database(database_ref)?;
+        match self.storage.load_datasets(database_ref).await {
+            Ok(datasets) => Ok(Some(DatabaseInfo {
+                name: database_ref.to_string(),
+                dialect: database.dialect(),
+                datasets: datasets
+                    .into_iter()
+                    .map(|d| (d.dataset.clone(), d))
+                    .collect(),
+            })),
+            Err(OxyError::IOError(_)) => {
+                // Not synced yet, return None
+                Ok(None)
+            }
+            Err(err) => Err(err),
+        }
+    }
+
     async fn load_global_semantics(
         &self,
     ) -> Result<

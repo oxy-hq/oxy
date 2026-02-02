@@ -72,7 +72,7 @@ export default function ExecutionCard({ execution }: ExecutionCardProps) {
             <button
               onClick={() => {
                 const pathb64 = btoa(execution.sourceRef);
-                navigate(ROUTES.PROJECT(project?.id || "").IDE.FILE(pathb64));
+                navigate(ROUTES.PROJECT(project?.id || "").IDE.FILES.FILE(pathb64));
               }}
               className="text-muted-foreground hover:text-primary font-mono text-xs transition-colors underline-offset-4 hover:underline text-left"
             >
@@ -106,7 +106,7 @@ export default function ExecutionCard({ execution }: ExecutionCardProps) {
                   onClick={() => {
                     const pathb64 = btoa(execution.workflowRef || "");
                     navigate(
-                      ROUTES.PROJECT(project?.id || "").IDE.FILE(pathb64),
+                      ROUTES.PROJECT(project?.id || "").IDE.FILES.FILE(pathb64),
                     );
                   }}
                   className="hover:text-primary font-mono text-xs transition-colors underline-offset-4 hover:underline text-left"
@@ -124,7 +124,7 @@ export default function ExecutionCard({ execution }: ExecutionCardProps) {
                   onClick={() => {
                     const pathb64 = btoa(execution.agentRef || "");
                     navigate(
-                      ROUTES.PROJECT(project?.id || "").IDE.FILE(pathb64),
+                      ROUTES.PROJECT(project?.id || "").IDE.FILES.FILE(pathb64),
                     );
                   }}
                   className="hover:text-primary font-mono text-xs transition-colors underline-offset-4 hover:underline text-left"

@@ -79,6 +79,60 @@ tools:
   await writeFile(testAgentPath, originalContent, "utf-8");
 }
 
+// Delete test files created during tests
+export async function cleanupTestFiles() {
+  const { unlink, readdir } = await import("fs/promises");
+  const { existsSync } = await import("fs");
+  const path = await import("path");
+
+  const examplesDir = "../examples";
+
+  if (!existsSync(examplesDir)) {
+    return;
+  }
+
+  try {
+    // Patterns to match test files
+    const testPatterns = [
+      /^test-create-\d+\.txt$/,
+      /^nested-test-\d+\.txt$/,
+      /^test-folder-\d+$/,
+      /^test-escape-file\.txt$/,
+      /^test-spaces\.txt$/,
+      /^a{1000,}\.txt$/,
+      /^test-error-file\.txt$/,
+      /^test-network-file\.txt$/,
+      /^test-renamed-\d+\.txt$/,
+      /^renamed-.*\.txt$/,
+    ];
+
+    // Delete files in root examples directory
+    const files = await readdir(examplesDir);
+    for (const file of files) {
+      if (testPatterns.some(pattern => pattern.test(file))) {
+        const filePath = path.join(examplesDir, file);
+        await unlink(filePath).catch(() => {});
+        console.log(`Cleaned up: ${file}`);
+      }
+    }
+
+    // Delete test files in workflows subdirectory
+    const workflowsDir = path.join(examplesDir, "workflows");
+    if (existsSync(workflowsDir)) {
+      const workflowFiles = await readdir(workflowsDir);
+      for (const file of workflowFiles) {
+        if (testPatterns.some(pattern => pattern.test(file))) {
+          const filePath = path.join(workflowsDir, file);
+          await unlink(filePath).catch(() => {});
+          console.log(`Cleaned up: workflows/${file}`);
+        }
+      }
+    }
+  } catch (error) {
+    console.error("Error cleaning up test files:", error);
+  }
+}
+
 // (Removed seedThreadsDataViaAPI to centralize seeding in global setup only)
 
 // Create test threads via UI - slower but more realistic

@@ -36,7 +36,7 @@ const WorkflowPageHeader: React.FC<WorkflowPageHeaderProps> = ({
             size="sm"
             variant="ghost"
             onClick={() => {
-              const fileUri = ROUTES.PROJECT(project.id).IDE.FILE(pathb64);
+              const fileUri = ROUTES.PROJECT(project.id).IDE.FILES.FILE(pathb64);
               navigate(fileUri);
             }}
           >

@@ -2,6 +2,7 @@ export interface DatabaseInfo {
   name: string;
   dialect: string;
   datasets: Record<string, string[]>;
+  synced: boolean;
 }
 
 export interface DatabaseSyncResponse {

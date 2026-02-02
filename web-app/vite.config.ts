@@ -147,8 +147,9 @@ export default defineConfig({
     include: allDependencies,
     // Exclude packages that you're actively developing or that cause issues when pre-bundled
     exclude: [
-      // Add any packages here that you don't want pre-bundled
-      // For example, if you have local packages or packages with dynamic imports
+      // These are optional Node.js-only peer dependencies of memfs that don't exist in browser
+      "@jsonjoy.com/fs-node",
+      "@jsonjoy.com/fs-node-utils",
     ],
   },
   resolve: {

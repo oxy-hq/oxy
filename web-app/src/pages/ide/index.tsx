@@ -1,54 +1,23 @@
-import { Outlet, useParams, useLocation } from "react-router-dom";
-import {
-  ResizableHandle,
-  ResizablePanel,
-  ResizablePanelGroup,
-} from "@/components/ui/shadcn/resizable";
+import { Outlet } from "react-router-dom";
 import Sidebar from "./Sidebar";
-import { createContext, useContext, useEffect, useRef, useState } from "react";
-import { cn } from "@/libs/shadcn/utils";
-import useSidebar from "@/components/ui/shadcn/sidebar-context";
-import EmptyState from "@/components/ui/EmptyState";
+import { createContext, useContext, useEffect, useRef } from "react";
 import Header from "./Header";
 import ProjectStatus from "@/components/ProjectStatus";
-
-// Sub-view mode for Files section
-export enum FilesSubViewMode {
-  OBJECTS = "objects",
-  FILES = "files",
-}
+import useSidebar from "@/components/ui/shadcn/sidebar-context";
 
 const IDEContext = createContext<{
   insideIDE: boolean;
-  filesSubViewMode: FilesSubViewMode;
-  setFilesSubViewMode: (mode: FilesSubViewMode) => void;
 }>({
   insideIDE: false,
-  filesSubViewMode: FilesSubViewMode.OBJECTS,
-  setFilesSubViewMode: () => {},
 });
-
-// eslint-disable-next-line react-refresh/only-export-components
 export const useIDE = () => {
   return useContext(IDEContext);
 };
 
 const Ide = () => {
-  const { pathb64 } = useParams();
-  const location = useLocation();
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [filesSubViewMode, setFilesSubViewMode] = useState<FilesSubViewMode>(
-    FilesSubViewMode.OBJECTS,
-  );
   const { open, setOpen } = useSidebar();
 
   const hasClosedSidebar = useRef(false);
-
-  const isObservabilityRoute = location.pathname.includes("/ide/observability");
-  const isDatabasesRoute = location.pathname.includes("/ide/databases");
-  const isActivityLogsRoute = location.pathname.includes("/ide/activity-logs");
-  const hasContent =
-    pathb64 || isObservabilityRoute || isDatabasesRoute || isActivityLogsRoute;
 
   useEffect(() => {
     if (open && !hasClosedSidebar.current) {
@@ -58,43 +27,13 @@ const Ide = () => {
   }, [open, setOpen]);
 
   return (
-    <IDEContext.Provider
-      value={{ insideIDE: true, filesSubViewMode, setFilesSubViewMode }}
-    >
+    <IDEContext.Provider value={{ insideIDE: true }}>
       <div className="flex h-full flex-1 overflow-hidden flex-col">
         <ProjectStatus />
         <Header />
         <div className="flex flex-1 overflow-hidden">
-          <ResizablePanelGroup direction="horizontal">
-            <ResizablePanel
-              defaultSize={20}
-              minSize={10}
-              className={cn(!sidebarOpen && "flex-[unset]!")}
-            >
-              <Sidebar
-                sidebarOpen={sidebarOpen}
-                setSidebarOpen={setSidebarOpen}
-                filesSubViewMode={filesSubViewMode}
-                setFilesSubViewMode={setFilesSubViewMode}
-              />
-            </ResizablePanel>
-            <ResizableHandle />
-            <ResizablePanel
-              defaultSize={80}
-              minSize={20}
-              className={cn(!sidebarOpen && "flex-1!", "relative")}
-            >
-              {!hasContent ? (
-                <EmptyState
-                  title="No file is open"
-                  description="Select a file from the sidebar to start editing"
-                  className="absolute inset-0 mt-[-150px]"
-                />
-              ) : (
-                <Outlet />
-              )}
-            </ResizablePanel>
-          </ResizablePanelGroup>
+          <Sidebar />
+          <Outlet />
         </div>
       </div>
     </IDEContext.Provider>

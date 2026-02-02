@@ -153,7 +153,7 @@ export default function AgentBreakdownTable({
                     onClick={() => {
                       const pathb64 = btoa(agent.agentRef);
                       navigate(
-                        ROUTES.PROJECT(project?.id || "").IDE.FILE(pathb64),
+                        ROUTES.PROJECT(project?.id || "").IDE.FILES.FILE(pathb64),
                       );
                     }}
                     className="hover:text-primary transition-colors underline-offset-4 hover:underline text-left"

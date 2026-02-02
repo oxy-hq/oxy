@@ -8,8 +8,8 @@ test.describe("App Flow", () => {
   });
 
   test("should be able to run an app and see the result", async ({ page }) => {
-    // Navigate to the "example" app
-    const appLink = page.getByTestId("app-link-example");
+    // Click on the 'example' app which has all the display blocks we want to test
+    const appLink = page.locator('[data-testid="app-link-example"]');
     await expect(appLink).toBeVisible({ timeout: 15000 });
     await appLink.click();
 

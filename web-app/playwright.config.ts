@@ -45,6 +45,7 @@ export default defineConfig({
     navigationTimeout: 30000, // Increased from 15s to 30s to allow for backend initialization after database reset
     actionTimeout: 10000, // Faster action timeouts
   },
+  testIgnore: "**/ide-files/**",
 
   timeout: 60000, // Reduced from 120s to 60s
   expect: {

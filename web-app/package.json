@@ -103,6 +103,7 @@
     "reselect": "^5.1.1",
     "sonner": "^2.0.7",
     "sort-by": "^1.2.0",
+    "sql-formatter": "^15.4.5",
     "tailwind-merge": "^3.4.0",
     "tailwindcss": "^4.1.18",
     "tailwindcss-animate": "^1.0.7",

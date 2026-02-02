@@ -16,6 +16,7 @@ use axum::{
 };
 use oxy::config::model::{DatabaseType, SnowflakeAuthType};
 use oxy::connector::Connector;
+use oxy::semantic::SemanticManager;
 use oxy_auth::extractor::AuthenticatedUserExtractor;
 use scopeguard::guard;
 use serde::de::{self, Deserializer};
@@ -29,6 +30,7 @@ pub struct DatabaseInfo {
     pub name: String,
     pub dialect: String,
     pub datasets: HashMap<String, Vec<String>>,
+    pub synced: bool,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -106,6 +108,15 @@ pub async fn sync_database(
                 None
             };
 
+            // Collect error messages
+            let error_messages: Vec<String> = results
+                .iter()
+                .filter_map(|result| match result {
+                    Err(e) => Some(e.to_string()),
+                    Ok(_) => None,
+                })
+                .collect();
+
             let message = if error_count == 0 {
                 if success_count == 1 {
                     "Database synced successfully".to_string()
@@ -113,9 +124,12 @@ pub async fn sync_database(
                     format!("{success_count} databases synced successfully")
                 }
             } else if success_count == 0 {
-                "Failed to sync databases".to_string()
+                format!("Failed to sync: {}", error_messages.join("; "))
             } else {
-                format!("{success_count} databases synced, {error_count} failed")
+                format!(
+                    "{success_count} databases synced, {error_count} failed: {}",
+                    error_messages.join("; ")
+                )
             };
 
             Ok(Json(DatabaseSyncResponse {
@@ -139,16 +153,52 @@ pub async fn list_databases(
     ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
 ) -> Result<Json<Vec<DatabaseInfo>>, StatusCode> {
-    let databases = project_manager
-        .config_manager
-        .list_databases()
-        .iter()
-        .map(|db| DatabaseInfo {
+    let config_manager = &project_manager.config_manager;
+    let secrets_manager = &project_manager.secrets_manager;
+
+    let semantic_manager =
+        SemanticManager::from_config(config_manager.clone(), secrets_manager.clone(), false)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let mut databases = Vec::new();
+
+    for db in config_manager.list_databases() {
+        // Try to load cached database info (without triggering sync)
+        let (datasets, synced) = match semantic_manager
+            .try_load_cached_database_info(&db.name)
+            .await
+        {
+            Ok(Some(db_info)) => {
+                // Extract table names from semantic_info keys for each dataset
+                let datasets = db_info
+                    .datasets
+                    .into_iter()
+                    .map(|(dataset_name, dataset_info)| {
+                        let tables: Vec<String> =
+                            dataset_info.semantic_info.keys().cloned().collect();
+                        (dataset_name, tables)
+                    })
+                    .collect();
+                (datasets, true)
+            }
+            Ok(None) => {
+                // Not synced yet - return empty datasets
+                (HashMap::new(), false)
+            }
+            Err(_) => {
+                // Error loading - return empty datasets
+                (HashMap::new(), false)
+            }
+        };
+
+        databases.push(DatabaseInfo {
             name: db.name.clone(),
             dialect: db.dialect(),
-            datasets: db.datasets(),
-        })
-        .collect::<Vec<DatabaseInfo>>();
+            datasets,
+            synced,
+        });
+    }
 
     Ok(Json(databases))
 }

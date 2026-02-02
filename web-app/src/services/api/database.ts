@@ -31,13 +31,33 @@ export class DatabaseService {
     pathb64: string,
     sql: string,
     database: string,
+    resultFormat: "json" | "parquet" = "json",
   ): Promise<ExecuteSqlResponse> {
     const response = await apiClient.post(
       `/${projectId}/sql/${pathb64}`,
       {
         sql,
         database,
-        result_format: "parquet",
+        result_format: resultFormat,
+      },
+      { params: { branch: branchName } },
+    );
+    return response.data;
+  }
+
+  static async executeSqlQuery(
+    projectId: string,
+    branchName: string,
+    sql: string,
+    database: string,
+    resultFormat: "json" | "parquet" = "json",
+  ): Promise<ExecuteSqlResponse> {
+    const response = await apiClient.post(
+      `/${projectId}/sql/query`,
+      {
+        sql,
+        database,
+        result_format: resultFormat,
       },
       { params: { branch: branchName } },
     );

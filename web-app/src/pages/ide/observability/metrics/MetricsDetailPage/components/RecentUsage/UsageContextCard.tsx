@@ -85,7 +85,7 @@ export default function UsageContextCard({
             <button
               onClick={() => {
                 const pathb64 = btoa(usage.source_ref);
-                navigate(ROUTES.PROJECT(project?.id || "").IDE.FILE(pathb64));
+                navigate(ROUTES.PROJECT(project?.id || "").IDE.FILES.FILE(pathb64));
               }}
               className="text-muted-foreground hover:text-primary font-mono text-xs transition-colors underline-offset-4 hover:underline text-left"
             >

@@ -163,6 +163,7 @@ fn build_project_routes() -> Router<AppState> {
             get(agent::check_builder_availability),
         )
         .route("/sql/{pathb64}", post(data::execute_sql))
+        .route("/sql/query", post(data::execute_sql_query))
         .route("/semantic", post(semantic::execute_semantic_query))
         .route("/semantic/compile", post(semantic::compile_semantic_query))
         .route(

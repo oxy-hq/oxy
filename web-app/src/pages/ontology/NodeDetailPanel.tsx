@@ -66,7 +66,7 @@ export function NodeDetailPanel({ node, onClose }: NodeDetailPanelProps) {
   const handleOpenInIDE = () => {
     const filePath = node.data.path;
     if (filePath) {
-      const ideUri = ROUTES.PROJECT(project.id).IDE.FILE(btoa(filePath));
+      const ideUri = ROUTES.PROJECT(project.id).IDE.FILES.FILE(btoa(filePath));
       navigate(ideUri);
     }
   };

@@ -1,5 +1,5 @@
+import SqlResultsTable from "@/components/sql/SqlResultsTable";
 import { OmniQueryArtifact } from "@/types/artifact";
-import Results from "@/pages/ide/Editor/Sql/Results";
 import { Editor } from "@monaco-editor/react";
 import { Loader2 } from "lucide-react";
 
@@ -85,7 +85,7 @@ const OmniQueryArtifactPanel = ({ artifact }: Props) => {
       <div className="flex-1 overflow-auto">
         {(artifact.content.value.result ||
           artifact.content.value.result_file) && (
-          <Results
+          <SqlResultsTable
             result={artifact.content.value.result}
             resultFile={artifact.content.value.result_file}
           />

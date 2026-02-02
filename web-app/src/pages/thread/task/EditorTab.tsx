@@ -5,7 +5,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/shadcn/tabs";
 import { TabsContent } from "@radix-ui/react-tabs";
 import { Skeleton } from "@/components/ui/shadcn/skeleton";
 import AppPreview from "@/components/AppPreview";
-import EditorPageWrapper from "../../ide/Editor/components/EditorPageWrapper";
+import EditorPageWrapper from "@/pages/ide/Files/Editor/components/EditorPageWrapper";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 
 // eslint-disable-next-line sonarjs/pseudo-random

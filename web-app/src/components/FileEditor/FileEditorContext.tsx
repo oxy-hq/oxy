@@ -9,7 +9,7 @@ interface EditorProviderProps {
   children: React.ReactNode;
   pathb64: string;
   git?: boolean;
-  onSaved?: () => void;
+  onSaved?: (content?: string) => void;
   onChanged?: (content: string) => void;
 }
 
@@ -56,7 +56,7 @@ export function FileEditorProvider({
         {
           onSuccess: () => {
             setFileState("saved");
-            onSaved?.();
+            onSaved?.(content);
             onSuccess?.();
           },
           onError: () => setFileState("modified"),

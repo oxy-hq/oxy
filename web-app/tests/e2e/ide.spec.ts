@@ -11,12 +11,12 @@ test.describe("IDE Functionality", () => {
     await page.waitForLoadState("networkidle");
 
     // Wait for IDE sidebar tabs to be visible
-    await expect(page.getByRole("tab", { name: "Files view" })).toBeVisible({
+    await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
       timeout: 10000,
     });
 
     // Switch to Files view mode (default is Objects mode)
-    await page.getByRole("tab", { name: "Files view" }).click();
+    await page.getByRole("tab", { name: "Files" }).click();
     await page.waitForTimeout(500);
   });
 
@@ -116,8 +116,11 @@ test.describe("IDE Functionality", () => {
     // Switch to Objects mode
     await idePage.switchToObjectsMode();
 
-    // Verify we're in Objects mode
-    await expect(page.getByText("Objects")).toBeVisible();
+    // Verify we're in Objects mode (check the tab is active)
+    await expect(page.getByRole("tab", { name: "Objects" })).toHaveAttribute(
+      "data-state",
+      "active",
+    );
 
     // Check for at least one object group (the specific groups depend on what files exist)
     const agentsGroup = page.locator("text=Agents");

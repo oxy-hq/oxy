@@ -141,7 +141,7 @@ const SubWorkflowNavigateButton = ({
 
     const ideRoute = ROUTES.PROJECT(projectId).IDE.ROOT;
     if (location.pathname.startsWith(ideRoute)) {
-      workflowPath = ROUTES.PROJECT(projectId).IDE.FILE(pathb64);
+      workflowPath = ROUTES.PROJECT(projectId).IDE.FILES.FILE(pathb64);
     }
     navigate({
       pathname: workflowPath,
